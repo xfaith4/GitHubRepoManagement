@@ -18,6 +18,7 @@ function Get-StatusAdapterResult {
     $operation = 'status.scan'
 
     try {
+        $scanStartedAt = Get-Date
         $callerLocalRoots = @($LocalRoots)
         $callerMaxDepth = $MaxDepth
         $callerIncludeNonGitFolders = $IncludeNonGitFolders
@@ -68,7 +69,8 @@ function Get-StatusAdapterResult {
 
         Write-StructuredLog -Level Info -Component adapter.status -Operation $operation -CorrelationId $correlationId -Message 'Status scan adapter call completed' -Details @{ RepoCount = @($repos).Count; ItemCount = @($items).Count } -LogPath $LogPath
 
-        return New-AdapterResponse -Operation $operation -CorrelationId $correlationId -Success $true -Data ([pscustomobject]@{ repos = $repos }) -Meta @{ localRoots = $LocalRoots; maxDepth = $MaxDepth }
+        $scanDurationMs = [math]::Round(((Get-Date) - $scanStartedAt).TotalMilliseconds, 0)
+        return New-AdapterResponse -Operation $operation -CorrelationId $correlationId -Success $true -Data ([pscustomobject]@{ repos = $repos }) -Meta @{ localRoots = $LocalRoots; maxDepth = $MaxDepth; repoCount = @($repos).Count; itemCount = @($items).Count; scanDurationMs = $scanDurationMs }
     }
     catch {
         $errorMessage = $_.Exception.Message

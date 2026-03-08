@@ -18,7 +18,7 @@ interface DashboardProps {
   fetchRepoStatus: () => void;
   dataSource:
     | { source: 'sample' }
-    | { source: 'local'; workspacePath?: string; configuredGithubUser?: string | null }
+    | { source: 'local'; workspacePath?: string; configuredGithubUser?: string | null; repoCount?: number; scanDurationMs?: number }
     | { source: 'github'; username: string }
     | null;
   insightsMeta?: GithubInsightsMeta | null;
@@ -36,6 +36,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
+  const [loadingElapsedSec, setLoadingElapsedSec] = useState(0);
   
   useEffect(() => {
     getSettings()
@@ -43,6 +44,20 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
       .catch(err => console.error("Failed to fetch settings", err))
       .finally(() => setSettingsLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!loading) {
+      setLoadingElapsedSec(0);
+      return;
+    }
+
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      setLoadingElapsedSec(Math.floor((Date.now() - startedAt) / 1000));
+    }, 250);
+
+    return () => clearInterval(timer);
+  }, [loading]);
 
   // When repos are re-fetched, clear selection
   useEffect(() => {
@@ -163,9 +178,20 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   
   if (loading || settingsLoading) {
       return (
-          <div className="flex items-center justify-center h-96">
-              <SpinnerIcon className="w-10 h-10 text-blue-500" />
-              <p className="ml-4 text-lg">Loading repository data...</p>
+          <div className="flex flex-col items-center justify-center h-96 gap-4">
+              <div className="flex items-center">
+                <SpinnerIcon className="w-10 h-10 text-blue-500" />
+                <p className="ml-4 text-lg">Scanning repositories... {loadingElapsedSec}s</p>
+              </div>
+              <div className="w-full max-w-md h-2 rounded-full bg-gray-800 overflow-hidden">
+                <div className="h-full w-1/3 bg-blue-500 animate-pulse rounded-full" />
+              </div>
+              {dataSource?.source === 'local' && typeof dataSource.repoCount === 'number' && (
+                <p className="text-sm text-gray-400">
+                  Last completed scan: {dataSource.repoCount} repos
+                  {typeof dataSource.scanDurationMs === 'number' ? ` in ${(dataSource.scanDurationMs / 1000).toFixed(1)}s` : ''}
+                </p>
+              )}
           </div>
       );
   }
@@ -176,6 +202,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-6">
           <div className="bg-gray-800/60 border border-gray-700 rounded-lg px-4 py-3 text-sm text-gray-200">
             Showing repositories discovered under <strong>{settings?.basePath}</strong> (scan depth {settings?.scanDepth}).
+            {typeof dataSource.repoCount === 'number' && (
+              <span className="text-gray-300"> Last scan found <strong>{dataSource.repoCount}</strong> repos{typeof dataSource.scanDurationMs === 'number' ? ` in ${(dataSource.scanDurationMs / 1000).toFixed(1)}s` : ''}.</span>
+            )}
             <span className="text-gray-400"> Use Settings to change workspace path. Connect GitHub API to view repositories that exist on GitHub but are not cloned locally.</span>
           </div>
         </div>

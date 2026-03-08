@@ -76,11 +76,13 @@ function settingsFromApi(data: any): AppSettings {
   };
 }
 
-export async function getStatus(): Promise<{ repos: RepoStatus[]; source: 'sample' | 'local'; workspacePath?: string; configuredGithubUser?: string | null; }> {
+export async function getStatus(): Promise<{ repos: RepoStatus[]; source: 'sample' | 'local'; workspacePath?: string; configuredGithubUser?: string | null; repoCount?: number; scanDurationMs?: number; }> {
   if (USE_MOCK_API) {
-    return { repos: getMockRepos(), source: 'sample', configuredGithubUser: null, workspacePath: undefined };
+    const sample = getMockRepos();
+    return { repos: sample, source: 'sample', configuredGithubUser: null, workspacePath: undefined, repoCount: sample.length };
   }
 
+  const requestStartedAt = Date.now();
   const data = await fetchJson<any>(`${API_BASE_URL}/status`);
   const rawRepos = Array.isArray(data?.data?.repos) ? data.data.repos.map(normalizeRepo) : [];
   const dedupedByPath = new Map<string, RepoStatus>();
@@ -95,7 +97,9 @@ export async function getStatus(): Promise<{ repos: RepoStatus[]; source: 'sampl
     repos,
     source: 'local',
     workspacePath: undefined,
-    configuredGithubUser: null
+    configuredGithubUser: null,
+    repoCount: Number(data?.meta?.repoCount ?? repos.length),
+    scanDurationMs: Number(data?.meta?.scanDurationMs ?? (Date.now() - requestStartedAt))
   };
 }
 

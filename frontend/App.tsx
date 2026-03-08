@@ -9,7 +9,7 @@ function App() {
   const [viewMode, setViewMode] = useState<'local' | 'github'>('local');
 
   const [localRepos, setLocalRepos] = useState<RepoStatus[]>([]);
-  const [localSource, setLocalSource] = useState<{ source: 'sample' } | { source: 'local'; workspacePath?: string; configuredGithubUser?: string | null } | null>(null);
+  const [localSource, setLocalSource] = useState<{ source: 'sample' } | { source: 'local'; workspacePath?: string; configuredGithubUser?: string | null; repoCount?: number; scanDurationMs?: number } | null>(null);
 
   const [githubRepos, setGithubRepos] = useState<RepoStatus[]>([]);
   const [githubSource, setGithubSource] = useState<{ source: 'github'; username: string } | null>(null);
@@ -31,7 +31,9 @@ function App() {
         setLocalSource({
           source: 'local',
           workspacePath: localData.workspacePath,
-          configuredGithubUser: localData.configuredGithubUser
+          configuredGithubUser: localData.configuredGithubUser,
+          repoCount: localData.repoCount,
+          scanDurationMs: localData.scanDurationMs
         });
       }
 
