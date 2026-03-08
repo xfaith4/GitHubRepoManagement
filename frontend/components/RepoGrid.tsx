@@ -2,6 +2,18 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { type RepoStatus } from '../types';
 import { BuildSuccessIcon, BuildFailureIcon, BuildInProgressIcon, PullRequestIcon, NoBuildsIcon, ChevronDownIcon, ChevronRightIcon } from './icons';
 
+declare module 'react/jsx-runtime' {
+  export {};
+}
+
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      [elemName: string]: any;
+    }
+  }
+}
+
 interface RepoGridProps {
   repos: RepoStatus[];
   onViewArtifacts: (repoName: string) => void;
@@ -19,12 +31,15 @@ interface RepoGridProps {
 type SortKey = keyof RepoStatus;
 type SortOrder = 'asc' | 'desc';
 
+type DuplicateGroup = { groupKey: string; items: RepoStatus[] };
+
 const RepoGrid: React.FC<RepoGridProps> = ({ repos, onViewArtifacts, dataSource, selectedRepos, setSelectedRepos, groupBy, setGroupBy }) => {
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [filter, setFilter] = useState('');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
+  const getRepoSelectionId = (repo: RepoStatus) => repo.localPath ?? `${repo.name}::${repo.branch}`;
 
   const sortedAndFilteredRepos = useMemo(() => {
     const byPath = new Map<string, RepoStatus>();
@@ -67,7 +82,7 @@ const RepoGrid: React.FC<RepoGridProps> = ({ repos, onViewArtifacts, dataSource,
     });
   }, [repos, sortKey, sortOrder, filter]);
 
-  const duplicateLocalRepoGroups = useMemo(() => {
+  const duplicateLocalRepoGroups = useMemo<DuplicateGroup[]>(() => {
     const groups = new Map<string, RepoStatus[]>();
     for (const repo of repos) {
       if (!repo.localPath) { continue; }
@@ -100,13 +115,13 @@ const RepoGrid: React.FC<RepoGridProps> = ({ repos, onViewArtifacts, dataSource,
   
   useEffect(() => {
     if (selectAllCheckboxRef.current) {
-        const visibleRepoNames = new Set(sortedAndFilteredRepos.map(r => r.name));
-        const selectedVisible = Array.from(selectedRepos).filter(name => visibleRepoNames.has(name));
+        const visibleRepoIds = new Set(sortedAndFilteredRepos.map((r: RepoStatus) => getRepoSelectionId(r)));
+        const selectedVisible = Array.from(selectedRepos).filter(id => visibleRepoIds.has(id));
 
         if (selectedVisible.length === 0) {
             selectAllCheckboxRef.current.checked = false;
             selectAllCheckboxRef.current.indeterminate = false;
-        } else if (selectedVisible.length === visibleRepoNames.size) {
+        } else if (selectedVisible.length === visibleRepoIds.size) {
             selectAllCheckboxRef.current.checked = true;
             selectAllCheckboxRef.current.indeterminate = false;
         } else {
@@ -131,23 +146,24 @@ const RepoGrid: React.FC<RepoGridProps> = ({ repos, onViewArtifacts, dataSource,
     setSelectedRepos(prevSelected => {
         const newSelected = new Set(prevSelected);
         sortedAndFilteredRepos.forEach(repo => {
+            const repoId = getRepoSelectionId(repo);
             if (isChecked) {
-                newSelected.add(repo.name);
+                newSelected.add(repoId);
             } else {
-                newSelected.delete(repo.name);
+                newSelected.delete(repoId);
             }
         });
         return newSelected;
     });
   };
 
-  const handleSelectRepo = (repoName: string) => {
+  const handleSelectRepo = (repoId: string) => {
     setSelectedRepos(prev => {
         const newSet = new Set(prev);
-        if (newSet.has(repoName)) {
-            newSet.delete(repoName);
+        if (newSet.has(repoId)) {
+            newSet.delete(repoId);
         } else {
-            newSet.add(repoName);
+            newSet.add(repoId);
         }
         return newSet;
     });
@@ -217,11 +233,11 @@ const RepoGrid: React.FC<RepoGridProps> = ({ repos, onViewArtifacts, dataSource,
         <div className="mb-4 rounded-lg border border-yellow-700/60 bg-yellow-900/20 px-4 py-3 text-sm text-yellow-100">
           <div className="font-semibold mb-2">Duplicate local repo copies detected (cleanup candidates)</div>
           <ul className="space-y-2">
-            {duplicateLocalRepoGroups.slice(0, 10).map(group => (
+            {duplicateLocalRepoGroups.slice(0, 10).map((group: DuplicateGroup) => (
               <li key={group.groupKey}>
                 <div className="font-medium">{group.items[0].name} ({group.items.length} copies)</div>
                 <div className="text-xs text-yellow-200/90">
-                  {group.items.map(item => item.localPath).filter(Boolean).join(' | ')}
+                  {group.items.map((item: RepoStatus) => item.localPath).filter(Boolean).join(' | ')}
                 </div>
               </li>
             ))}
@@ -233,7 +249,7 @@ const RepoGrid: React.FC<RepoGridProps> = ({ repos, onViewArtifacts, dataSource,
             type="text"
             placeholder="Filter repositories..."
             value={filter}
-            onChange={(e) => setFilter(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFilter(e.target.value)}
             className="block w-full max-w-xs bg-gray-900 border border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
         />
         <div className="flex items-center gap-2">
@@ -241,7 +257,7 @@ const RepoGrid: React.FC<RepoGridProps> = ({ repos, onViewArtifacts, dataSource,
             <select
                 id="group-by"
                 value={groupBy}
-                onChange={(e) => setGroupBy(e.target.value as keyof RepoStatus | 'none')}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setGroupBy(e.target.value as keyof RepoStatus | 'none')}
                 className="block w-full max-w-xs bg-gray-900 border border-gray-600 rounded-md shadow-sm py-2 pl-3 pr-8 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
             >
                 {groupByOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
@@ -253,12 +269,15 @@ const RepoGrid: React.FC<RepoGridProps> = ({ repos, onViewArtifacts, dataSource,
             <table className="min-w-full divide-y divide-gray-700">
             <thead className="bg-gray-800">
                 <tr>
-                <th scope="col" className="px-4 py-3"><input type="checkbox" ref={selectAllCheckboxRef} onChange={handleSelectAll} className="h-4 w-4 rounded bg-gray-700 border-gray-500 text-blue-500 focus:ring-blue-500"/></th>
+                <th scope="col" className="px-4 py-3">
+                  <span className="sr-only">Select all repositories</span>
+                  <input type="checkbox" ref={selectAllCheckboxRef} onChange={handleSelectAll} className="h-4 w-4 rounded bg-gray-700 border-gray-500 text-blue-500 focus:ring-blue-500"/>
+                </th>
                 <th scope="col" onClick={() => handleSort('name')} className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">Name</th>
                 <th scope="col" onClick={() => handleSort('status')} className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">Status</th>
                 <th scope="col" onClick={() => handleSort('lastBuildStatus')} className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">Last Build</th>
                 <th scope="col" onClick={() => handleSort('openPrCount')} className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">Open PRs</th>
-                {repos.some(r => r.extended) && (
+                {repos.some((r: RepoStatus) => r.extended) && (
                   <>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">Issues</th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">Projects</th>
@@ -273,11 +292,11 @@ const RepoGrid: React.FC<RepoGridProps> = ({ repos, onViewArtifacts, dataSource,
                 </tr>
             </thead>
             <tbody className="bg-gray-900 divide-y divide-gray-700">
-                {Object.entries(groupedRepos).sort(([keyA], [keyB]) => keyA.localeCompare(keyB)).map(([groupKey, groupRepos]: [string, RepoStatus[]]) => (
+              {(Object.entries(groupedRepos) as [string, RepoStatus[]][]).sort(([keyA], [keyB]) => keyA.localeCompare(keyB)).map(([groupKey, groupRepos]) => (
                     <React.Fragment key={groupKey}>
                         {groupBy !== 'none' && (
                             <tr className="bg-gray-800/70 hover:bg-gray-800/90 cursor-pointer" onClick={() => toggleGroup(groupKey)}>
-                                <td colSpan={repos.some(r => r.extended) ? 13 : 9} className="px-4 py-2 text-sm font-bold text-gray-200">
+                      <td colSpan={repos.some((r: RepoStatus) => r.extended) ? 13 : 9} className="px-4 py-2 text-sm font-bold text-gray-200">
                                     <div className="flex items-center gap-2">
                                         {collapsedGroups.has(groupKey) ? <ChevronRightIcon className="w-4 h-4"/> : <ChevronDownIcon className="w-4 h-4"/>}
                                         {groupKey} ({groupRepos.length})
@@ -285,7 +304,7 @@ const RepoGrid: React.FC<RepoGridProps> = ({ repos, onViewArtifacts, dataSource,
                                 </td>
                             </tr>
                         )}
-                        {!collapsedGroups.has(groupKey) && groupRepos.map((repo) => {
+                  {!collapsedGroups.has(groupKey) && groupRepos.map((repo: RepoStatus) => {
                         const owner =
                           repo.owner ??
                           (dataSource?.source === 'github' ? dataSource.username : dataSource?.configuredGithubUser ?? undefined);
@@ -296,8 +315,8 @@ const RepoGrid: React.FC<RepoGridProps> = ({ repos, onViewArtifacts, dataSource,
                         const testingWorkflowCount = repo.testingWorkflowCount ?? null;
                         const workflowCount = repo.actionsWorkflowCount ?? null;
                         return (
-                        <tr key={repo.localPath ?? repo.name} className={`hover:bg-gray-800/50 ${selectedRepos.has(repo.name) ? 'bg-blue-900/30' : ''}`}>
-                            <td className="px-4 py-4"><input type="checkbox" checked={selectedRepos.has(repo.name)} onChange={() => handleSelectRepo(repo.name)} className="h-4 w-4 rounded bg-gray-700 border-gray-500 text-blue-500 focus:ring-blue-500" /></td>
+                        <tr key={repo.localPath ?? repo.name} className={`hover:bg-gray-800/50 ${selectedRepos.has(getRepoSelectionId(repo)) ? 'bg-blue-900/30' : ''}`}>
+                            <td className="px-4 py-4"><input type="checkbox" checked={selectedRepos.has(getRepoSelectionId(repo))} onChange={() => handleSelectRepo(getRepoSelectionId(repo))} className="h-4 w-4 rounded bg-gray-700 border-gray-500 text-blue-500 focus:ring-blue-500" /></td>
                             <td className="px-6 py-4 whitespace-nowrap">
                                 {repoUrl ? (
                                   <a href={repoUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-400 hover:text-blue-300 hover:underline">
@@ -343,7 +362,7 @@ const RepoGrid: React.FC<RepoGridProps> = ({ repos, onViewArtifacts, dataSource,
                                 ) : null}
                             </td>
                             
-                            {repos.some(r => r.extended) && (
+                            {repos.some((r: RepoStatus) => r.extended) && (
                               <>
                                 {/* Issues */}
                                 <td className="px-6 py-4 whitespace-nowrap">

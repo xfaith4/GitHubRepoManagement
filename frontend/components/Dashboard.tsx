@@ -31,7 +31,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [isInitModalOpen, setIsInitModalOpen] = useState(false);
   const [isArtifactsModalOpen, setIsArtifactsModalOpen] = useState(false);
   const [selectedRepoForArtifacts, setSelectedRepoForArtifacts] = useState<string | null>(null);
-  const [selectedRepos, setSelectedRepos] = useState<Set<string>>(new Set());
+  const [selectedRepoIds, setSelectedRepoIds] = useState<Set<string>>(new Set());
   const [groupBy, setGroupBy] = useState<keyof RepoStatus | 'none'>('none');
   
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -61,12 +61,24 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
 
   // When repos are re-fetched, clear selection
   useEffect(() => {
-    setSelectedRepos(new Set());
+    setSelectedRepoIds(new Set());
   }, [repos]);
 
-  const handleAction = async (operation: OperationType, repoNames?: string[]) => {
+  const getRepoSelectionId = (repo: RepoStatus) => repo.localPath ?? `${repo.name}::${repo.branch}`;
+  const resolveSelectionToRepoNames = (repoIds?: string[]) => {
+    if (!repoIds || repoIds.length === 0) {
+      return undefined;
+    }
+
+    const selected = repos.filter(r => repoIds.includes(getRepoSelectionId(r)));
+    const distinctNames = Array.from(new Set(selected.map(r => r.name)));
+    return distinctNames.length > 0 ? distinctNames : undefined;
+  };
+
+  const handleAction = async (operation: OperationType, repoIds?: string[]) => {
     setCurrentOperation(operation);
     setIsLogPanelOpen(true);
+    const repoNames = resolveSelectionToRepoNames(repoIds);
     try {
         switch(operation) {
             case 'update':
@@ -94,8 +106,8 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   
   const handleExport = async () => {
     handleAction('export');
-    const reposToExport = selectedRepos.size > 0
-        ? repos.filter(r => selectedRepos.has(r.name))
+    const reposToExport = selectedRepoIds.size > 0
+        ? repos.filter(r => selectedRepoIds.has(getRepoSelectionId(r)))
         : repos;
     
     // Export Power BI Dashboard (HTML)
@@ -294,14 +306,14 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                 isActionRunning={!!currentOperation}
                 currentOperation={currentOperation}
                 settings={settings}
-                selectedRepos={selectedRepos}
+                selectedRepos={selectedRepoIds}
             />
             <RepoGrid 
               repos={repos} 
               onViewArtifacts={handleViewArtifacts} 
               dataSource={dataSource}
-              selectedRepos={selectedRepos}
-              setSelectedRepos={setSelectedRepos}
+              selectedRepos={selectedRepoIds}
+              setSelectedRepos={setSelectedRepoIds}
               groupBy={groupBy}
               setGroupBy={setGroupBy}
             />
