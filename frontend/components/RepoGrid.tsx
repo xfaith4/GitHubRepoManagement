@@ -27,8 +27,19 @@ const RepoGrid: React.FC<RepoGridProps> = ({ repos, onViewArtifacts, dataSource,
   const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
 
   const sortedAndFilteredRepos = useMemo(() => {
-    const filtered = repos.filter(repo =>
-      repo.name.toLowerCase().includes(filter.toLowerCase())
+    const byPath = new Map<string, RepoStatus>();
+    for (const repo of repos) {
+      const key = repo.localPath ? repo.localPath.toLowerCase() : `${repo.name.toLowerCase()}::${repo.branch.toLowerCase()}`;
+      if (!byPath.has(key)) {
+        byPath.set(key, repo);
+      }
+    }
+
+    const uniqueRepos = Array.from(byPath.values());
+    const filterLower = filter.toLowerCase();
+    const filtered = uniqueRepos.filter(repo =>
+      repo.name.toLowerCase().includes(filterLower) ||
+      (repo.localPath?.toLowerCase().includes(filterLower) ?? false)
     );
 
     return filtered.sort((a, b) => {
@@ -55,6 +66,23 @@ const RepoGrid: React.FC<RepoGridProps> = ({ repos, onViewArtifacts, dataSource,
       return 0;
     });
   }, [repos, sortKey, sortOrder, filter]);
+
+  const duplicateLocalRepoGroups = useMemo(() => {
+    const groups = new Map<string, RepoStatus[]>();
+    for (const repo of repos) {
+      if (!repo.localPath) { continue; }
+      const groupKey = repo.originUrl?.trim().toLowerCase() || repo.name.trim().toLowerCase();
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, []);
+      }
+      groups.get(groupKey)!.push(repo);
+    }
+
+    return Array.from(groups.entries())
+      .map(([groupKey, items]) => ({ groupKey, items }))
+      .filter(g => g.items.length > 1)
+      .sort((a, b) => b.items.length - a.items.length);
+  }, [repos]);
 
   const groupedRepos = useMemo((): Record<string, RepoStatus[]> => {
     if (groupBy === 'none') {
@@ -185,6 +213,21 @@ const RepoGrid: React.FC<RepoGridProps> = ({ repos, onViewArtifacts, dataSource,
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-4">
+       {duplicateLocalRepoGroups.length > 0 && (
+        <div className="mb-4 rounded-lg border border-yellow-700/60 bg-yellow-900/20 px-4 py-3 text-sm text-yellow-100">
+          <div className="font-semibold mb-2">Duplicate local repo copies detected (cleanup candidates)</div>
+          <ul className="space-y-2">
+            {duplicateLocalRepoGroups.slice(0, 10).map(group => (
+              <li key={group.groupKey}>
+                <div className="font-medium">{group.items[0].name} ({group.items.length} copies)</div>
+                <div className="text-xs text-yellow-200/90">
+                  {group.items.map(item => item.localPath).filter(Boolean).join(' | ')}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+       )}
        <div className="mb-4 flex flex-wrap gap-4">
         <input
             type="text"
@@ -253,7 +296,7 @@ const RepoGrid: React.FC<RepoGridProps> = ({ repos, onViewArtifacts, dataSource,
                         const testingWorkflowCount = repo.testingWorkflowCount ?? null;
                         const workflowCount = repo.actionsWorkflowCount ?? null;
                         return (
-                        <tr key={repo.name} className={`hover:bg-gray-800/50 ${selectedRepos.has(repo.name) ? 'bg-blue-900/30' : ''}`}>
+                        <tr key={repo.localPath ?? repo.name} className={`hover:bg-gray-800/50 ${selectedRepos.has(repo.name) ? 'bg-blue-900/30' : ''}`}>
                             <td className="px-4 py-4"><input type="checkbox" checked={selectedRepos.has(repo.name)} onChange={() => handleSelectRepo(repo.name)} className="h-4 w-4 rounded bg-gray-700 border-gray-500 text-blue-500 focus:ring-blue-500" /></td>
                             <td className="px-6 py-4 whitespace-nowrap">
                                 {repoUrl ? (
@@ -268,6 +311,11 @@ const RepoGrid: React.FC<RepoGridProps> = ({ repos, onViewArtifacts, dataSource,
                                 {repoSizeMb !== null && (
                                   <div className="text-xs text-gray-500">
                                     {(repoSizeMb).toFixed(1)} MB • {artifactDetails ?? 0} artifacts
+                                  </div>
+                                )}
+                                {repo.localPath && (
+                                  <div className="text-xs text-gray-400 break-all max-w-md" title={repo.localPath}>
+                                    {repo.localPath}
                                   </div>
                                 )}
                                 {workflowCount !== null && (

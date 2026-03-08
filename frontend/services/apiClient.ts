@@ -53,6 +53,8 @@ function normalizeRepo(repo: any): RepoStatus {
     lastBuildStatus: 'none',
     openPrCount: Number(repo?.openPrCount ?? 0),
     htmlUrl: repo?.htmlUrl,
+    localPath: repo?.path ? String(repo.path) : undefined,
+    originUrl: repo?.originUrl ? String(repo.originUrl) : undefined,
     owner: repo?.owner,
     visibility: repo?.visibility,
     language: repo?.language,
@@ -80,7 +82,15 @@ export async function getStatus(): Promise<{ repos: RepoStatus[]; source: 'sampl
   }
 
   const data = await fetchJson<any>(`${API_BASE_URL}/status`);
-  const repos = Array.isArray(data?.data?.repos) ? data.data.repos.map(normalizeRepo) : [];
+  const rawRepos = Array.isArray(data?.data?.repos) ? data.data.repos.map(normalizeRepo) : [];
+  const dedupedByPath = new Map<string, RepoStatus>();
+  for (const repo of rawRepos) {
+    const key = repo.localPath ? repo.localPath.toLowerCase() : `${repo.name.toLowerCase()}::${repo.branch.toLowerCase()}`;
+    if (!dedupedByPath.has(key)) {
+      dedupedByPath.set(key, repo);
+    }
+  }
+  const repos = Array.from(dedupedByPath.values());
   return {
     repos,
     source: 'local',
