@@ -24,6 +24,7 @@ Cross-reference:
 - Add incremental scan mode for large root paths.
 - Add stricter API contract tests for all routes and error categories.
 - Add CI checks for link validation and documentation integrity.
+- Automate queue-to-workitem Copilot prompt preparation with paged dispatch outputs.
 
 ## Mid-Term Priorities (Should)
 

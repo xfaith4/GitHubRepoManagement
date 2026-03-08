@@ -140,6 +140,33 @@ Known limitations and TODOs:
 - execution status lifecycle remains mostly manual in generated index.
 - TODO: persist batch execution status via API/state file.
 
+## Feature: Stage 3a Queue Prompt Automation
+
+Description and user value:
+- Converts queue packets into deterministic Copilot workitems so operators can execute prompts in paged batches rather than manual copy/paste.
+
+Inputs/outputs and data sources:
+- Inputs: `doc-review-queue.json`, `doc-review-state.json`, queue page controls.
+- Outputs: `workitems/<QueueId>/workitem.md`, `workitem.json`, `prompt.txt`, and `copilot-workitems.json` manifest.
+
+Commands/scripts/services involved:
+- `backend/modules/docreview/Invoke-DocReviewExecution.ps1 -Mode PreparePrompts`.
+- `backend/modules/docreview/DocReview.Execution.psm1` (`Publish-DocReviewCopilotWorkItems`).
+
+Configuration knobs and defaults:
+- `PageSize` default `25`, `PageNumber` default `1`, `WorkItemRoot` default sibling `output/.../workitems`.
+
+Error cases and expected handling:
+- missing packet file: item is skipped for prompt preparation and remains in current state.
+- invalid paging params: hard fail with explicit argument error.
+
+Metrics/logging emitted:
+- run manifest includes total eligible items, selected page size, and next-page indicator for throttled execution.
+
+Known limitations and TODOs:
+- automated prompt execution engine is still operator-driven after workitem generation.
+- TODO: wire prompt execution responses back into `Validate`/`Complete` lifecycle states.
+
 ## Reconciliation Domain
 
 ## Feature: Local vs GitHub Reconciliation
