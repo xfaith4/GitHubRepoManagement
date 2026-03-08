@@ -1,15 +1,15 @@
 #Requires -Modules Pester
 <#
 .SYNOPSIS
-    Pester test suite for repo_reconciliation_dashboard.ps1 core functions.
+    Pester test suite for Invoke-Reconciliation.ps1 core functions.
 .DESCRIPTION
     Covers edge cases for collection handling, validation, fingerprinting,
     similarity scoring, comparison, and duplicate detection.
-    Run with: Invoke-Pester .\tests\repo_reconciliation.Tests.ps1 -Output Detailed
+    Run with: Invoke-Pester .\backend\modules\reconcile\repo_reconciliation.Tests.ps1 -Output Detailed
 #>
 
 BeforeAll {
-    $script:MainScript = "$PSScriptRoot\..\src\repo_reconciliation_dashboard.ps1"
+    $script:MainScript = Join-Path -Path $PSScriptRoot -ChildPath 'Invoke-Reconciliation.ps1'
     if (-not (Test-Path $script:MainScript)) {
         throw "Main script not found at: $script:MainScript"
     }

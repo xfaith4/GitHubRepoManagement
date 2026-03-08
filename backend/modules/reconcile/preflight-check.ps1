@@ -2,7 +2,7 @@
 .SYNOPSIS
     Pre-flight validation script to catch type mismatches before running the full scan.
 .DESCRIPTION
-    Loads the main dashboard script in function-only mode and validates a few
+    Loads the main reconciliation script in function-only mode and validates a few
     critical edge cases without starting a repository scan.
 #>
 
@@ -13,10 +13,6 @@ Write-Host '=== PRE-FLIGHT VALIDATION ===' -ForegroundColor Cyan
 Write-Host ''
 
 $dashboardScript = Join-Path -Path $PSScriptRoot -ChildPath 'Invoke-Reconciliation.ps1'
-if (-not (Test-Path -LiteralPath $dashboardScript)) {
-    # Backward-compatible fallback for original repository layout.
-    $dashboardScript = Join-Path -Path $PSScriptRoot -ChildPath '..\src\repo_reconciliation_dashboard.ps1'
-}
 
 Write-Host 'Loading main script...' -ForegroundColor White
 if (-not (Test-Path -LiteralPath $dashboardScript)) {
