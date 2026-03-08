@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('Start', 'Validate', 'Complete', 'Skip', 'Status')]
+    [ValidateSet('Start', 'PreparePrompts', 'Validate', 'Complete', 'Skip', 'Status')]
     [string]$Mode,
 
     [Parameter(Mandatory = $true)]
@@ -29,7 +29,16 @@ param(
     [switch]$NoLint,
 
     [Parameter()]
-    [string]$Reason
+    [string]$Reason,
+
+    [Parameter()]
+    [int]$PageSize = 25,
+
+    [Parameter()]
+    [int]$PageNumber = 1,
+
+    [Parameter()]
+    [string]$WorkItemRoot
 )
 
 Set-StrictMode -Version Latest
@@ -170,6 +179,27 @@ try {
                 Write-Host 'Validate mode scaffold acknowledged with -NoLint.'
             }
             throw 'Validate mode is scaffolded for Phase 3B and is not implemented yet.'
+        }
+        'PreparePrompts' {
+            $root = $WorkItemRoot
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                $root = Join-Path -Path (Split-Path -Parent $RunRoot) -ChildPath 'workitems'
+            }
+
+            $prepared = Publish-DocReviewCopilotWorkItems -QueueItems $queueItems -State $state -OutputRoot $root -PageSize $PageSize -PageNumber $PageNumber
+            Save-DocReviewState -StatePath $StatePath -State $state
+
+            Write-Section 'Prepared Copilot Workitems'
+            Write-Host ("Output root: {0}" -f $prepared.outputRoot)
+            Write-Host ("Page: {0} / {1}" -f $prepared.page.pageNumber, $prepared.page.pageCount)
+            Write-Host ("Selected: {0} of {1}" -f $prepared.page.selectedCount, $prepared.page.totalEligible)
+            if ($prepared.page.hasNextPage) {
+                Write-Host ("Next page: {0}" -f ($prepared.page.pageNumber + 1))
+            }
+
+            foreach ($item in @($prepared.items)) {
+                Write-Host ("  {0} -> {1}" -f $item.queueId, $item.workItemPath)
+            }
         }
         'Complete' {
             throw 'Complete mode is scaffolded for Phase 3C and is not implemented yet.'

@@ -241,7 +241,7 @@ function Get-DocReviewEligibility {
     $attemptCount = [int]$StateItem.attemptCount
     $maxRetries = [int]$Config.maxRetries
 
-    if ($status -notin @('pending', 'deferred')) {
+    if ($status -notin @('pending', 'deferred', 'ready_for_prompt')) {
         $reasons.Add("state status '$status' is not start-eligible")
     }
     if ($attemptCount -ge $maxRetries) {
@@ -482,6 +482,177 @@ function Start-DocReviewQueueItem {
     return $runSummary
 }
 
+
+function Get-DocReviewWorkItemPromptText {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)] [string]$PacketContent
+    )
+
+    $match = [regex]::Match($PacketContent, '## Suggested Copilot Prompt\s+```text\s*(?<prompt>[\s\S]*?)\s*```', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if ($match.Success) {
+        return ($match.Groups['prompt'].Value).Trim()
+    }
+
+    return $PacketContent.Trim()
+}
+
+function Publish-DocReviewCopilotWorkItems {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)] [object[]]$QueueItems,
+        [Parameter(Mandatory = $true)] [object]$State,
+        [Parameter(Mandatory = $true)] [string]$OutputRoot,
+        [Parameter()] [int]$PageSize = 25,
+        [Parameter()] [int]$PageNumber = 1
+    )
+
+    if ($PageSize -lt 1) { throw 'PageSize must be >= 1.' }
+    if ($PageNumber -lt 1) { throw 'PageNumber must be >= 1.' }
+
+    $null = New-Item -ItemType Directory -Path $OutputRoot -Force
+
+    $stateById = @{}
+    foreach ($stateItem in @($State.items)) {
+        $stateById[[string]$stateItem.queueId] = $stateItem
+    }
+
+    $eligible = New-Object System.Collections.Generic.List[object]
+    foreach ($queueItem in @($QueueItems)) {
+        $queueId = [string](Get-QueueFieldValue -Item $queueItem -Name 'QueueId')
+        if (-not $stateById.ContainsKey($queueId)) { continue }
+
+        $stateItem = $stateById[$queueId]
+        if ([string]$stateItem.status -notin @('pending', 'deferred', 'ready_for_prompt', 'in_progress')) { continue }
+
+        $packetPath = [string](Get-QueueFieldValue -Item $queueItem -Name 'PacketPath')
+        if (-not (Test-Path -LiteralPath $packetPath -PathType Leaf)) { continue }
+
+        $eligible.Add([pscustomobject]@{
+            queueItem = $queueItem
+            stateItem = $stateItem
+        })
+    }
+
+    $ordered = @($eligible | Sort-Object {
+        [int](Get-QueueFieldValue -Item $_.queueItem -Name 'BatchOrder' -Default 999)
+    }, {
+        -[int](Get-QueueFieldValue -Item $_.queueItem -Name 'QueueScore' -Default 0)
+    }, {
+        [int](Get-QueueFieldValue -Item $_.queueItem -Name 'BatchChunkIndex' -Default 0)
+    })
+
+    $totalEligible = @($ordered).Count
+    $pageCount = if ($totalEligible -eq 0) { 0 } else { [int][Math]::Ceiling($totalEligible / [double]$PageSize) }
+    $start = ($PageNumber - 1) * $PageSize
+    $pageItems = @()
+    if ($start -lt $totalEligible) {
+        $pageItems = @($ordered | Select-Object -Skip $start -First $PageSize)
+    }
+
+    $preparedItems = New-Object System.Collections.Generic.List[object]
+
+    foreach ($entry in @($pageItems)) {
+        $queueItem = $entry.queueItem
+        $stateItem = $entry.stateItem
+        $queueId = [string](Get-QueueFieldValue -Item $queueItem -Name 'QueueId')
+        $packetPath = [string](Get-QueueFieldValue -Item $queueItem -Name 'PacketPath')
+        $repoPath = [string](Get-QueueFieldValue -Item $queueItem -Name 'RepoPath')
+        $files = @([string[]](Get-QueueFieldValue -Item $queueItem -Name 'Files' -Default @()))
+        $objectives = @([string[]](Get-QueueFieldValue -Item $queueItem -Name 'Goals' -Default @()))
+        $warnings = @([string[]](Get-QueueFieldValue -Item $queueItem -Name 'Warnings' -Default @()))
+
+        $packetContent = Get-Content -LiteralPath $packetPath -Raw -Encoding UTF8
+        $promptText = Get-DocReviewWorkItemPromptText -PacketContent $packetContent
+
+        $workItemPath = Join-Path -Path $OutputRoot -ChildPath $queueId
+        $null = New-Item -ItemType Directory -Path $workItemPath -Force
+
+        Copy-Item -LiteralPath $packetPath -Destination (Join-Path -Path $workItemPath -ChildPath 'packet.md') -Force
+        Set-Content -LiteralPath (Join-Path -Path $workItemPath -ChildPath 'prompt.txt') -Value $promptText -Encoding UTF8
+
+        $instructions = @(
+            "# Copilot Workitem: $queueId",
+            '',
+            "- Repo: $([string](Get-QueueFieldValue -Item $queueItem -Name 'RepoName'))",
+            "- Repo Path: $repoPath",
+            "- Batch: $([string](Get-QueueFieldValue -Item $queueItem -Name 'BatchType'))",
+            "- Queue Score: $([int](Get-QueueFieldValue -Item $queueItem -Name 'QueueScore' -Default 0))",
+            '',
+            '## Scope files',
+            ''
+        )
+        foreach ($f in $files) {
+            $instructions += "- $f"
+        }
+
+        if ($objectives.Count -gt 0) {
+            $instructions += @('', '## Objectives', '')
+            foreach ($goal in $objectives) {
+                $instructions += "- $goal"
+            }
+        }
+
+        if ($warnings.Count -gt 0) {
+            $instructions += @('', '## Warnings', '')
+            foreach ($warning in $warnings) {
+                $instructions += "- $warning"
+            }
+        }
+
+        $instructions += @('', '## Prompt', '', '```text', $promptText, '```', '')
+        Set-Content -LiteralPath (Join-Path -Path $workItemPath -ChildPath 'workitem.md') -Value $instructions -Encoding UTF8
+
+        $workItemJson = [ordered]@{
+            queueId = $queueId
+            generatedAt = Get-DocReviewIsoNow
+            repoName = [string](Get-QueueFieldValue -Item $queueItem -Name 'RepoName')
+            repoPath = $repoPath
+            batchType = [string](Get-QueueFieldValue -Item $queueItem -Name 'BatchType')
+            queueScore = [int](Get-QueueFieldValue -Item $queueItem -Name 'QueueScore' -Default 0)
+            packetPath = $packetPath
+            promptPath = (Join-Path -Path $workItemPath -ChildPath 'prompt.txt')
+            files = @($files)
+            objectives = @($objectives)
+            warnings = @($warnings)
+            stateStatus = [string]$stateItem.status
+        }
+        Write-DocReviewJsonFile -Path (Join-Path -Path $workItemPath -ChildPath 'workitem.json') -Data $workItemJson
+
+        if ([string]$stateItem.status -eq 'pending') {
+            $stateItem.status = 'ready_for_prompt'
+            $stateItem.lastUpdatedAt = Get-DocReviewIsoNow
+            $notes = @($stateItem.notes)
+            $notes += ("[{0}] prompt workitem prepared" -f (Get-DocReviewIsoNow))
+            $stateItem.notes = @($notes)
+        }
+
+        $preparedItems.Add([pscustomobject]@{
+            queueId = $queueId
+            workItemPath = $workItemPath
+            promptPath = (Join-Path -Path $workItemPath -ChildPath 'prompt.txt')
+        })
+    }
+
+    $manifest = [ordered]@{
+        generatedAt = Get-DocReviewIsoNow
+        outputRoot = $OutputRoot
+        page = [ordered]@{
+            pageNumber = $PageNumber
+            pageSize = $PageSize
+            pageCount = $pageCount
+            totalEligible = $totalEligible
+            selectedCount = @($preparedItems).Count
+            hasNextPage = ($PageNumber -lt $pageCount)
+        }
+        items = @($preparedItems)
+    }
+
+    Write-DocReviewJsonFile -Path (Join-Path -Path $OutputRoot -ChildPath 'copilot-workitems.json') -Data $manifest
+
+    return [pscustomobject]$manifest
+}
+
 function Get-DocReviewStatusReport {
     [CmdletBinding()]
     param(
@@ -599,6 +770,7 @@ Export-ModuleMember -Function @(
     'Update-DocReviewStateItem',
     'Get-DocReviewStatusReport',
     'Set-DocReviewItemStatus',
+    'Publish-DocReviewCopilotWorkItems',
     'Get-DocReviewEligibility',
     'Get-QueueFieldValue'
 )

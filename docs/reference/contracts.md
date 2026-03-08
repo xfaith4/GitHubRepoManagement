@@ -69,6 +69,30 @@ Version: `v1`
 }
 ```
 
+## CopilotWorkItemManifest
+
+```json
+{
+  "generatedAt": "2026-03-08T07:20:00.0000000-05:00",
+  "outputRoot": "output\docreview-adapter\workitems",
+  "page": {
+    "pageNumber": 1,
+    "pageSize": 25,
+    "pageCount": 6,
+    "totalEligible": 148,
+    "selectedCount": 25,
+    "hasNextPage": true
+  },
+  "items": [
+    {
+      "queueId": "UnifiedAIToolbox.core.001",
+      "workItemPath": "output\docreview-adapter\workitems\UnifiedAIToolbox.core.001",
+      "promptPath": "output\docreview-adapter\workitems\UnifiedAIToolbox.core.001\prompt.txt"
+    }
+  ]
+}
+```
+
 ## Error Envelope
 
 ```json
