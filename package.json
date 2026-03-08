@@ -1,0 +1,12 @@
+{
+  "name": "github-repo-management",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Top-level scripts for GitHub Repo Management",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "preview": "npm --prefix frontend run preview",
+    "install:frontend": "npm --prefix frontend install"
+  }
+}

@@ -1,10 +1,6 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { type RepoStatus } from '../types';
 import { BuildSuccessIcon, BuildFailureIcon, BuildInProgressIcon, PullRequestIcon, NoBuildsIcon, ChevronDownIcon, ChevronRightIcon } from './icons';
-
-declare module 'react/jsx-runtime' {
-  export {};
-}
 
 declare global {
   namespace JSX {
@@ -33,13 +29,16 @@ type SortOrder = 'asc' | 'desc';
 
 type DuplicateGroup = { groupKey: string; items: RepoStatus[] };
 
-const RepoGrid: React.FC<RepoGridProps> = ({ repos, onViewArtifacts, dataSource, selectedRepos, setSelectedRepos, groupBy, setGroupBy }) => {
+const RepoGrid = ({ repos, onViewArtifacts, dataSource, selectedRepos, setSelectedRepos, groupBy, setGroupBy }: RepoGridProps) => {
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [filter, setFilter] = useState('');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
-  const getRepoSelectionId = (repo: RepoStatus) => repo.localPath ?? `${repo.name}::${repo.branch}`;
+  const getRepoSelectionId = useCallback(
+    (repo: RepoStatus) => repo.localPath ?? `${repo.name}::${repo.branch}`,
+    []
+  );
 
   const sortedAndFilteredRepos = useMemo(() => {
     const byPath = new Map<string, RepoStatus>();
@@ -129,7 +128,7 @@ const RepoGrid: React.FC<RepoGridProps> = ({ repos, onViewArtifacts, dataSource,
             selectAllCheckboxRef.current.indeterminate = true;
         }
     }
-  }, [selectedRepos, sortedAndFilteredRepos]);
+  }, [selectedRepos, sortedAndFilteredRepos, getRepoSelectionId]);
 
 
   const handleSort = (key: SortKey) => {
