@@ -1,17 +1,16 @@
 import React, { useEffect, useRef } from 'react';
-import { useSse, SseStatus } from '../hooks/useSse';
 import { type OperationType } from '../types';
 import { SpinnerIcon } from './icons';
 
 interface LogPanelProps {
   isOpen: boolean;
   operation: OperationType | null;
+  messages: string[];
+  status: 'idle' | 'running' | 'success' | 'error';
   onClose: () => void;
 }
 
-const LogPanel: React.FC<LogPanelProps> = ({ isOpen, operation, onClose }) => {
-  const sseUrl = operation ? `/api/streams/${operation}` : null;
-  const { messages, status } = useSse(sseUrl);
+const LogPanel: React.FC<LogPanelProps> = ({ isOpen, operation, messages, status, onClose }) => {
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   const operationTitle = operation ? operation.charAt(0).toUpperCase() + operation.slice(1) : 'Operation';
@@ -49,15 +48,16 @@ const LogPanel: React.FC<LogPanelProps> = ({ isOpen, operation, onClose }) => {
             </pre>
           </div>
           <footer className="p-3 text-sm text-center border-t border-gray-700 bg-gray-800">
-            {status === SseStatus.CONNECTING && (
+            {status === 'running' && (
               <p className="text-yellow-400 flex items-center justify-center gap-2">
                 <SpinnerIcon className="w-4 h-4" />
-                Connecting to log stream...
+                Operation in progress...
               </p>
             )}
-            {status === SseStatus.OPEN && <p className="text-green-400">Log stream active...</p>}
-            {(status === SseStatus.CLOSED || status === SseStatus.ERROR) && (
-              <p className="text-gray-400">Log stream closed. You can close this panel.</p>
+            {status === 'success' && <p className="text-green-400">Operation completed successfully.</p>}
+            {status === 'error' && <p className="text-red-400">Operation finished with errors.</p>}
+            {status === 'idle' && (
+              <p className="text-gray-400">No active operation.</p>
             )}
           </footer>
         </div>

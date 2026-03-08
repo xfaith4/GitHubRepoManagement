@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta } from '../types';
+import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult } from '../types';
 import SummaryCard from './SummaryCard';
 import ActionBar from './ActionBar';
 import RepoGrid from './RepoGrid';
@@ -37,6 +37,8 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [loadingElapsedSec, setLoadingElapsedSec] = useState(0);
+  const [logMessages, setLogMessages] = useState<string[]>([]);
+  const [logStatus, setLogStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
   
   useEffect(() => {
     getSettings()
@@ -65,42 +67,94 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   }, [repos]);
 
   const getRepoSelectionId = (repo: RepoStatus) => repo.localPath ?? `${repo.name}::${repo.branch}`;
-  const resolveSelectionToRepoNames = (repoIds?: string[]) => {
+  const resolveSelectionTargets = (repoIds?: string[]) => {
     if (!repoIds || repoIds.length === 0) {
-      return undefined;
+      return { repoNames: undefined, repoPaths: undefined };
     }
 
     const selected = repos.filter(r => repoIds.includes(getRepoSelectionId(r)));
     const distinctNames = Array.from(new Set(selected.map(r => r.name)));
-    return distinctNames.length > 0 ? distinctNames : undefined;
+    const distinctPaths = Array.from(new Set(selected.map(r => r.localPath).filter((p): p is string => Boolean(p))));
+
+    return {
+      repoNames: distinctNames.length > 0 ? distinctNames : undefined,
+      repoPaths: distinctPaths.length > 0 ? distinctPaths : undefined
+    };
+  };
+
+  const appendOperationLogs = (result: OperationResult) => {
+    const lines: string[] = [];
+    lines.push(`Found ${result.total} repositories to process.`);
+    result.results.forEach((repoResult, index) => {
+      const repoLabel = repoResult.path ? `${repoResult.name} (${repoResult.path})` : repoResult.name;
+      if (repoResult.success) {
+        lines.push(`[${index + 1}/${result.results.length}] ${repoLabel} ... done`);
+        const outputLines = String(repoResult.output ?? '')
+          .split(/\r?\n/)
+          .map(l => l.trim())
+          .filter(Boolean)
+          .slice(0, 8);
+        outputLines.forEach(line => lines.push(`  ${line}`));
+      } else {
+        lines.push(`[${index + 1}/${result.results.length}] ${repoLabel} ... FAILED`);
+        if (repoResult.error) {
+          lines.push(`  ${repoResult.error}`);
+        }
+      }
+    });
+    lines.push(`Summary: ${result.succeeded} succeeded, ${result.failed} failed.`);
+    setLogMessages(prev => [...prev, ...lines]);
   };
 
   const handleAction = async (operation: OperationType, repoIds?: string[]) => {
     setCurrentOperation(operation);
     setIsLogPanelOpen(true);
-    const repoNames = resolveSelectionToRepoNames(repoIds);
+    setLogStatus('running');
+    const selectedCount = repoIds?.length ?? 0;
+    setLogMessages([
+      `Starting: ${operation}...`,
+      selectedCount > 0 ? `Targeting ${selectedCount} selected repositories.` : 'Targeting all discovered repositories.'
+    ]);
+    const { repoNames, repoPaths } = resolveSelectionTargets(repoIds);
     try {
         switch(operation) {
             case 'update':
-                await startUpdate(repoNames);
+                {
+                  const result = await startUpdate(repoNames, repoPaths);
+                  appendOperationLogs(result);
+                  setLogStatus(result.failed > 0 ? 'error' : 'success');
+                }
                 break;
             case 'sync':
-                await startSync(repoNames);
+                {
+                  const result = await startSync(repoNames, repoPaths);
+                  appendOperationLogs(result);
+                  setLogStatus(result.failed > 0 ? 'error' : 'success');
+                }
                 break;
             case 'archive':
                 if (settings) {
                     await startArchive(settings.daysInactive, settings.zipArchive, repoNames);
                 }
+                setLogMessages(prev => [...prev, 'Archive requested.']);
+                setLogStatus('success');
                 break;
             case 'init':
                  // Init is special, it's triggered from its modal
+                setLogMessages(prev => [...prev, 'Init requested.']);
+                setLogStatus('success');
                 break;
             case 'export':
                 await startExport();
+                setLogMessages(prev => [...prev, 'Export requested.']);
+                setLogStatus('success');
                 break;
         }
     } catch (err) {
         console.error(`${operation} failed to start`, err);
+        const message = err instanceof Error ? err.message : 'Operation failed.';
+        setLogMessages(prev => [...prev, `ERROR: ${message}`]);
+        setLogStatus('error');
     }
   };
   
@@ -136,6 +190,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const handleLogPanelClose = () => {
     setIsLogPanelOpen(false);
     setCurrentOperation(null);
+    setLogStatus('idle');
     fetchRepoStatus(); // Refresh data after an operation
   };
   
@@ -323,6 +378,8 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
       <LogPanel 
         isOpen={isLogPanelOpen}
         operation={currentOperation}
+        messages={logMessages}
+        status={logStatus}
         onClose={handleLogPanelClose}
       />
       

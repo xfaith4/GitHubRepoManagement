@@ -58,6 +58,22 @@ export interface Artifact {
   downloadUrl: string;
 }
 
+export interface OperationRepoResult {
+  name: string;
+  path?: string;
+  success: boolean;
+  output?: string;
+  error?: string;
+}
+
+export interface OperationResult {
+  operation: 'pull' | 'sync';
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: OperationRepoResult[];
+}
+
 export type OperationType = 'init' | 'update' | 'sync' | 'export' | 'archive';
 
 export interface GithubInsightsMeta {

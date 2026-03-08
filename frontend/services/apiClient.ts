@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta } from '../types';
+import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -127,14 +127,20 @@ export async function startInit(githubUser: string, cloneOwned: boolean, apiKey?
   await postJson('/init', { githubUser, cloneOwned, apiKey, basePath });
 }
 
-export async function startUpdate(repoNames?: string[]): Promise<void> {
-  if (USE_MOCK_API) return;
-  await postJson('/update', { repoNames });
+export async function startUpdate(repoNames?: string[], repoPaths?: string[]): Promise<OperationResult> {
+  if (USE_MOCK_API) {
+    return { operation: 'pull', total: 0, succeeded: 0, failed: 0, results: [] };
+  }
+  const response = await postJson<any>('/update', { repoNames, repoPaths });
+  return response?.data as OperationResult;
 }
 
-export async function startSync(repoNames?: string[]): Promise<void> {
-  if (USE_MOCK_API) return;
-  await postJson('/sync', { repoNames });
+export async function startSync(repoNames?: string[], repoPaths?: string[]): Promise<OperationResult> {
+  if (USE_MOCK_API) {
+    return { operation: 'sync', total: 0, succeeded: 0, failed: 0, results: [] };
+  }
+  const response = await postJson<any>('/sync', { repoNames, repoPaths });
+  return response?.data as OperationResult;
 }
 
 export async function startExport(): Promise<void> {

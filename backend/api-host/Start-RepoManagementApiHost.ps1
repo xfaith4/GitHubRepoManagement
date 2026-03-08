@@ -328,7 +328,9 @@ function Invoke-GitOperation {
         [ValidateSet('pull', 'sync')]
         [string]$OperationType,
         [Parameter()]
-        [string[]]$RepoNames
+        [string[]]$RepoNames,
+        [Parameter()]
+        [string[]]$RepoPaths
     )
 
     $status = Get-StatusAdapterResult -LocalRoots @($WorkspaceRoot) -MaxDepth 4 -IncludeNonGitFolders:$false -LogPath $LogPath
@@ -337,7 +339,16 @@ function Invoke-GitOperation {
     }
 
     $repos = @($status.data.repos)
-    if ($RepoNames -and $RepoNames.Count -gt 0) {
+    if ($RepoPaths -and $RepoPaths.Count -gt 0) {
+        $pathSet = @{}
+        foreach ($p in $RepoPaths) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$p)) {
+                $pathSet[[string]$p] = $true
+            }
+        }
+        $repos = @($repos | Where-Object { $pathSet.ContainsKey([string]$_.path) })
+    }
+    elseif ($RepoNames -and $RepoNames.Count -gt 0) {
         $nameSet = @{}
         foreach ($n in $RepoNames) { $nameSet[$n] = $true }
         $repos = @($repos | Where-Object { $nameSet.ContainsKey($_.name) })
@@ -623,7 +634,8 @@ try {
                 'POST /api/update' {
                     $body = Parse-JsonBody -Body $req.Body
                     $repoNames = if ($body.ContainsKey('repoNames') -and $body.repoNames) { @($body.repoNames) } else { @() }
-                    $result = Invoke-GitOperation -OperationType 'pull' -RepoNames $repoNames
+                    $repoPaths = if ($body.ContainsKey('repoPaths') -and $body.repoPaths) { @($body.repoPaths) } else { @() }
+                    $result = Invoke-GitOperation -OperationType 'pull' -RepoNames $repoNames -RepoPaths $repoPaths
                     Add-MetricCounter -Name 'api_requests_total'
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
@@ -633,7 +645,8 @@ try {
                 'POST /api/sync' {
                     $body = Parse-JsonBody -Body $req.Body
                     $repoNames = if ($body.ContainsKey('repoNames') -and $body.repoNames) { @($body.repoNames) } else { @() }
-                    $result = Invoke-GitOperation -OperationType 'sync' -RepoNames $repoNames
+                    $repoPaths = if ($body.ContainsKey('repoPaths') -and $body.repoPaths) { @($body.repoPaths) } else { @() }
+                    $result = Invoke-GitOperation -OperationType 'sync' -RepoNames $repoNames -RepoPaths $repoPaths
                     Add-MetricCounter -Name 'api_requests_total'
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
