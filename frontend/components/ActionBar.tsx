@@ -1,5 +1,5 @@
 import React from 'react';
-import { InitIcon, UpdateIcon, SyncIcon, ExportIcon, ArchiveIcon, RefreshIcon, SettingsIcon, SpinnerIcon } from './icons';
+import { InitIcon, UpdateIcon, SyncIcon, ExportIcon, ArchiveIcon, RefreshIcon, SettingsIcon, SpinnerIcon, DocReviewIcon } from './icons';
 import { type OperationType, type AppSettings } from '../types';
 
 interface ActionBarProps {
@@ -8,6 +8,7 @@ interface ActionBarProps {
   onRefresh: () => void;
   onSettingsClick: () => void;
   onInitClick: () => void;
+  onDocReviewClick: () => void;
   isActionRunning: boolean;
   currentOperation: OperationType | null;
   settings: AppSettings | null;
@@ -36,7 +37,7 @@ const ActionButton: React.FC<ActionButtonProps> = ({ onClick, disabled, isLoadin
 );
 
 
-const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, onSettingsClick, onInitClick, isActionRunning, currentOperation, settings, selectedRepos }) => {
+const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, onSettingsClick, onInitClick, onDocReviewClick, isActionRunning, currentOperation, settings, selectedRepos }) => {
     
     const selection = selectedRepos.size > 0 ? Array.from(selectedRepos) : undefined;
     const selectionCount = selectedRepos.size;
@@ -75,6 +76,9 @@ const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, on
                 </ActionButton>
                 <ActionButton onClick={onExport} disabled={isActionRunning} isLoading={currentOperation === 'export'} title={`Generate report files (HTML + CSV) for ${selectionCount > 0 ? selectionCount + ' selected' : 'all'} repositories.`} icon={<ExportIcon className="w-4 h-4" />}>
                     {getButtonText('Report')}
+                </ActionButton>
+                <ActionButton onClick={onDocReviewClick} disabled={isActionRunning} isLoading={currentOperation === 'docreview'} title="Run Doc Review Inventory, queue planning, and optional repo batch plan generation." icon={<DocReviewIcon className="w-4 h-4" />}>
+                    <span className="hidden sm:inline">Doc Review</span>
                 </ActionButton>
                  <ActionButton onClick={handleArchive} disabled={isActionRunning || !settings || !archiveImplemented} isLoading={currentOperation === 'archive'} title={archiveImplemented ? `Archive ${selectionCount > 0 ? selectionCount + ' selected' : 'all'} repositories inactive for over ${settings?.daysInactive ?? 'N/A'} days (local).` : 'Planned: archive inactive repositories (not implemented in this build).'} icon={<ArchiveIcon className="w-4 h-4" />}>
                     {getButtonText(archiveImplemented ? 'Archive' : 'Archive (Planned)')}

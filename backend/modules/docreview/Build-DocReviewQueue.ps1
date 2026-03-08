@@ -22,7 +22,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# ─── Load repo overrides ──────────────────────────────────────────────────────
+# --- Load repo overrides ------------------------------------------------------
 $script:RepoOverrides = @{}
 if ($RepoOverridesPath -and (Test-Path -LiteralPath $RepoOverridesPath)) {
     $overridesJson = Get-Content -LiteralPath $RepoOverridesPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -523,7 +523,7 @@ function Get-RepoWarnings {
     if ($Repo.PSObject.Properties.Name -contains 'GitUncommittedChanges') {
         $uncommitted = [int]$Repo.GitUncommittedChanges
         if ($uncommitted -gt 0) {
-            $warnings.Add("Repo has $uncommitted uncommitted change(s) — may be mid-surgery; verify before reviewing")
+            $warnings.Add("Repo has $uncommitted uncommitted change(s) - may be mid-surgery; verify before reviewing")
         }
     }
 
@@ -534,7 +534,7 @@ function Get-RepoWarnings {
                 $commitDate = [datetime]::Parse($lastCommit)
                 $daysSince  = ([datetime]::Now - $commitDate).Days
                 if ($daysSince -gt 365) {
-                    $warnings.Add("Last commit was $daysSince days ago — verify repo is still active before investing in doc review")
+                    $warnings.Add("Last commit was $daysSince days ago - verify repo is still active before investing in doc review")
                 }
             } catch { }
         }

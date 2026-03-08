@@ -74,7 +74,7 @@ export interface OperationResult {
   results: OperationRepoResult[];
 }
 
-export type OperationType = 'init' | 'update' | 'sync' | 'export' | 'archive';
+export type OperationType = 'init' | 'update' | 'sync' | 'export' | 'archive' | 'docreview';
 
 export interface GithubInsightsMeta {
   totalRepos: number;
@@ -84,6 +84,23 @@ export interface GithubInsightsMeta {
     limit: number;
     reset: number;
   } | null;
+}
+
+export interface DocReviewRunRequest {
+  rootPath?: string;
+  maxDepth?: number;
+  outDir?: string;
+  targetRepo?: string;
+  generateQueue?: boolean;
+  generateBatchPlan?: boolean;
+}
+
+export interface DocReviewRunResult {
+  inventoryManifestPath: string;
+  inventorySummaryCsvPath: string;
+  inventoryReportPath: string;
+  queuePath?: string | null;
+  workitemsRoot?: string | null;
 }
 
 // Extended metrics for repository insights

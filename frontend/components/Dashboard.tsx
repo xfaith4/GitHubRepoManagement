@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult } from '../types';
+import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest } from '../types';
 import SummaryCard from './SummaryCard';
 import ActionBar from './ActionBar';
 import RepoGrid from './RepoGrid';
@@ -8,7 +8,8 @@ import SettingsModal from './SettingsModal';
 import InitModal from './InitModal';
 import ArtifactsModal from './ArtifactsModal';
 import ChangeHistoryPanel from './ChangeHistoryPanel';
-import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, getReportDownloadUrl, getPowerBIReportUrl } from '../services/apiClient';
+import DocReviewModal from './DocReviewModal';
+import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, getReportDownloadUrl, getPowerBIReportUrl, startDocReview } from '../services/apiClient';
 import { SpinnerIcon, IssuesIcon, ProjectsIcon, BranchIcon, HealthIcon } from './icons';
 
 interface DashboardProps {
@@ -30,6 +31,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isInitModalOpen, setIsInitModalOpen] = useState(false);
   const [isArtifactsModalOpen, setIsArtifactsModalOpen] = useState(false);
+  const [isDocReviewModalOpen, setIsDocReviewModalOpen] = useState(false);
   const [selectedRepoForArtifacts, setSelectedRepoForArtifacts] = useState<string | null>(null);
   const [selectedRepoIds, setSelectedRepoIds] = useState<Set<string>>(new Set());
   const [groupBy, setGroupBy] = useState<keyof RepoStatus | 'none'>('none');
@@ -149,12 +151,48 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                 setLogMessages(prev => [...prev, 'Export requested.']);
                 setLogStatus('success');
                 break;
+            case 'docreview':
+                setLogMessages(prev => [...prev, 'Doc review run requested.']);
+                setLogStatus('success');
+                break;
         }
     } catch (err) {
         console.error(`${operation} failed to start`, err);
         const message = err instanceof Error ? err.message : 'Operation failed.';
         setLogMessages(prev => [...prev, `ERROR: ${message}`]);
         setLogStatus('error');
+    }
+  };
+
+  const handleDocReviewRun = async (request: DocReviewRunRequest) => {
+    setCurrentOperation('docreview');
+    setIsLogPanelOpen(true);
+    setLogStatus('running');
+    setLogMessages([
+      'Starting: docreview...',
+      `Root path: ${request.rootPath ?? settings?.basePath ?? 'N/A'}`,
+      `Max depth: ${String(request.maxDepth ?? settings?.scanDepth ?? 2)}`,
+      `Generate queue: ${request.generateQueue === false ? 'No' : 'Yes'}`,
+      `Generate batch plan: ${request.generateBatchPlan ? 'Yes' : 'No'}${request.targetRepo ? ` (${request.targetRepo})` : ''}`
+    ]);
+
+    try {
+      const result = await startDocReview(request);
+      setLogMessages(prev => [
+        ...prev,
+        `Inventory manifest: ${result.inventoryManifestPath}`,
+        `Inventory summary: ${result.inventorySummaryCsvPath}`,
+        `Inventory report: ${result.inventoryReportPath}`,
+        `Queue output: ${result.queuePath ?? 'not generated'}`,
+        `Workitems root: ${result.workitemsRoot ?? 'not generated'}`,
+        'Doc review completed.'
+      ]);
+      setLogStatus('success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Doc review run failed.';
+      setLogMessages(prev => [...prev, `ERROR: ${message}`]);
+      setLogStatus('error');
+      throw error;
     }
   };
   
@@ -358,6 +396,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                 onRefresh={fetchRepoStatus}
                 onSettingsClick={() => setIsSettingsModalOpen(true)}
                 onInitClick={() => setIsInitModalOpen(true)}
+                onDocReviewClick={() => setIsDocReviewModalOpen(true)}
                 isActionRunning={!!currentOperation}
                 currentOperation={currentOperation}
                 settings={settings}
@@ -402,6 +441,14 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
         isOpen={isArtifactsModalOpen}
         onClose={() => setIsArtifactsModalOpen(false)}
         repoName={selectedRepoForArtifacts}
+      />
+
+      <DocReviewModal
+        isOpen={isDocReviewModalOpen}
+        onClose={() => setIsDocReviewModalOpen(false)}
+        onRun={handleDocReviewRun}
+        defaultRootPath={settings?.basePath}
+        defaultDepth={settings?.scanDepth}
       />
     </div>
   );

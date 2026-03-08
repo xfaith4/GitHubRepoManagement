@@ -1,0 +1,3365 @@
+﻿[
+    {
+        "RepoName":  "SystemDashboard",
+        "RepoPath":  "G:\\Development\\20_Staging\\SystemDashboard",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              ".github\\agents\\my-agent.agent.md",
+                              "ASSESSMENT-README.md",
+                              "CHANGELOG.md",
+                              "CURRENT_CONFIGURATION.md",
+                              "CURRENT-PHASE-SUMMARY.md",
+                              "DEPLOYMENT.md",
+                              "docs\\_Archive\\OPERATIONS.md",
+                              "docs\\_Archive\\README.md",
+                              "docs\\_Archive\\REFERENCE.md",
+                              "docs\\_Archive\\ROADMAP.md",
+                              "docs\\_Archive\\SETUP.md",
+                              "docs\\ADVANCED-FEATURES.md",
+                              "docs\\AI_FEEDBACK_FEATURE.md",
+                              "docs\\ANALYTICS-DEPLOYMENT-REVIEW.md",
+                              "docs\\API-REFERENCE.md",
+                              "docs\\ARCHITECTURE.md",
+                              "docs\\archive\\legacy\\ADVANCED-FEATURES.md",
+                              "docs\\archive\\legacy\\ARCHIVE.md",
+                              "docs\\archive\\legacy\\ASSESSMENT-README.md",
+                              "docs\\archive\\legacy\\CHANGELOG.md",
+                              "docs\\archive\\legacy\\CLEANUP-COMPLETE.md",
+                              "docs\\archive\\legacy\\CLEANUP-PLAN.md",
+                              "docs\\archive\\legacy\\CONSOLIDATION_STATUS.md",
+                              "docs\\archive\\legacy\\CURRENT-PHASE-SUMMARY.md",
+                              "docs\\archive\\legacy\\DATABASE-SETUP-COMPLETE.md",
+                              "docs\\archive\\legacy\\DATA-SOURCES.md",
+                              "docs\\archive\\legacy\\PERMANENT-SETUP.md",
+                              "docs\\archive\\legacy\\PHASE4-FINAL-SUMMARY.md",
+                              "docs\\archive\\legacy\\PHASE5-COMPLETION-SUMMARY.md",
+                              "docs\\archive\\legacy\\PHASE-COMPLETION-VALIDATION.md",
+                              "docs\\archive\\legacy\\PHASE-STATUS-AT-A-GLANCE.md",
+                              "docs\\archive\\legacy\\PRODUCTION-GUIDE.md",
+                              "docs\\archive\\legacy\\ProjectCheckList.md",
+                              "docs\\archive\\legacy\\PROJECT-PHASE-ASSESSMENT.md",
+                              "docs\\archive\\legacy\\README.md",
+                              "docs\\archive\\legacy\\ROADMAP.md",
+                              "docs\\archive\\legacy\\SERVICE-ISSUE-RESOLVED.md",
+                              "docs\\archive\\legacy\\VALIDATION-FIXES.md",
+                              "docs\\ASUS-MESH-MONITORING-GUIDE.md",
+                              "docs\\BACKUP-RESTORE.md",
+                              "docs\\CHANGELOG.md",
+                              "docs\\CODE-REVIEW-SUMMARY.md",
+                              "docs\\CONTRIBUTING.md",
+                              "docs\\DATABASE-SCHEMA.md",
+                              "docs\\DATA-SOURCES.md",
+                              "docs\\DEPLOYMENT.md",
+                              "docs\\FAQ.md",
+                              "docs\\GETTING-STARTED.md",
+                              "docs\\HELP.md",
+                              "docs\\IMPLEMENTATION-GUIDE.md",
+                              "docs\\LAN-OBSERVABILITY-README.md",
+                              "docs\\observability-pack-v1-design.md",
+                              "docs\\observability-pack-v1-diff-index.md",
+                              "docs\\observability-pack-v1-summary.md",
+                              "docs\\PHASE1-COMPLETION-SUMMARY.md",
+                              "docs\\PHASE1-IMPROVEMENTS.md",
+                              "docs\\PHASE2-COMPLETION-SUMMARY.md",
+                              "docs\\PHASE2-SECURITY-SUMMARY.md",
+                              "docs\\PHASE3-COMPLETION-SUMMARY.md",
+                              "docs\\PHASE3-SECURITY-SUMMARY.md",
+                              "docs\\PHASE4-CODE-QUALITY-REVIEW.md",
+                              "docs\\PHASE4-COMPLETION-SUMMARY.md",
+                              "docs\\PHASE4-SECURITY-SUMMARY.md",
+                              "docs\\README.md",
+                              "docs\\ROADMAP-QUICK-REFERENCE.md",
+                              "docs\\ROADMAP-SUMMARY.md",
+                              "docs\\screenshots\\README.md",
+                              "docs\\SECURITY-SETUP.md",
+                              "docs\\SECURITY-SUMMARY.md",
+                              "docs\\SETUP.md",
+                              "docs\\TROUBLESHOOTING.md",
+                              "LESSONS_LEARNED.md",
+                              "migrations\\README.md",
+                              "PHASE4-FINAL-SUMMARY.md",
+                              "PHASE5-COMPLETION-SUMMARY.md",
+                              "PHASE-COMPLETION-VALIDATION.md",
+                              "PHASE-STATUS-AT-A-GLANCE.md",
+                              "PORTFOLIO.md",
+                              "PROJECT-PHASE-ASSESSMENT.md",
+                              "README.md",
+                              "ROADMAP.md"
+                          ],
+        "MarkdownFileCount":  81,
+        "ActiveDocCount":  53,
+        "ArchiveDocCount":  27,
+        "GeneratedDocCount":  0,
+        "HasReadme":  true,
+        "HasDocsFolder":  true,
+        "HasContributing":  true,
+        "HasDocsIndex":  false,
+        "DocCategories":  [
+                              "architecture",
+                              "changelog",
+                              "contributing",
+                              "general",
+                              "readme",
+                              "reference",
+                              "roadmap",
+                              "setup",
+                              "troubleshooting"
+                          ],
+        "PriorityScore":  90,
+        "PriorityBand":  "High",
+        "ReviewMode":  "Full-doc pass",
+        "GitLastCommitDate":  "2026-02-14 01:34:31 -0500",
+        "GitBranch":  "main",
+        "GitUncommittedChanges":  97,
+        "DocQualityHints":  [
+                                "contains-risk-markers",
+                                "duplicate-setup-docs"
+                            ],
+        "KeyDocs":  [
+                        "docs\\API-REFERENCE.md",
+                        "docs\\ARCHITECTURE.md",
+                        "docs\\CONTRIBUTING.md",
+                        "docs\\FAQ.md",
+                        "docs\\observability-pack-v1-design.md",
+                        "docs\\README.md",
+                        "docs\\ROADMAP-QUICK-REFERENCE.md",
+                        "docs\\screenshots\\README.md",
+                        "docs\\SECURITY-SETUP.md",
+                        "docs\\SETUP.md",
+                        "docs\\TROUBLESHOOTING.md",
+                        "migrations\\README.md",
+                        "README.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  ".github\\agents\\my-agent.agent.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "ASSESSMENT-README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "CHANGELOG.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "CURRENT_CONFIGURATION.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "CURRENT-PHASE-SUMMARY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "DEPLOYMENT.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\_Archive\\OPERATIONS.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\_Archive\\README.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\_Archive\\REFERENCE.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\_Archive\\ROADMAP.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\_Archive\\SETUP.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\ADVANCED-FEATURES.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\AI_FEEDBACK_FEATURE.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\ANALYTICS-DEPLOYMENT-REVIEW.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\API-REFERENCE.md",
+                                    "DocClass":  "Reference"
+                                },
+                                {
+                                    "Path":  "docs\\ARCHITECTURE.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\legacy\\ADVANCED-FEATURES.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\legacy\\ARCHIVE.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\legacy\\ASSESSMENT-README.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\legacy\\CHANGELOG.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\legacy\\CLEANUP-COMPLETE.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\legacy\\CLEANUP-PLAN.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\legacy\\CONSOLIDATION_STATUS.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\legacy\\CURRENT-PHASE-SUMMARY.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\legacy\\DATABASE-SETUP-COMPLETE.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\legacy\\DATA-SOURCES.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\legacy\\PERMANENT-SETUP.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\legacy\\PHASE4-FINAL-SUMMARY.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\legacy\\PHASE5-COMPLETION-SUMMARY.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\legacy\\PHASE-COMPLETION-VALIDATION.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\legacy\\PHASE-STATUS-AT-A-GLANCE.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\legacy\\PRODUCTION-GUIDE.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\legacy\\ProjectCheckList.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\legacy\\PROJECT-PHASE-ASSESSMENT.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\legacy\\README.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\legacy\\ROADMAP.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\legacy\\SERVICE-ISSUE-RESOLVED.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\legacy\\VALIDATION-FIXES.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\ASUS-MESH-MONITORING-GUIDE.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\BACKUP-RESTORE.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\CHANGELOG.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\CODE-REVIEW-SUMMARY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\CONTRIBUTING.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\DATABASE-SCHEMA.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\DATA-SOURCES.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\DEPLOYMENT.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\FAQ.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\GETTING-STARTED.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\HELP.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\IMPLEMENTATION-GUIDE.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\LAN-OBSERVABILITY-README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\observability-pack-v1-design.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\observability-pack-v1-diff-index.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\observability-pack-v1-summary.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\PHASE1-COMPLETION-SUMMARY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\PHASE1-IMPROVEMENTS.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\PHASE2-COMPLETION-SUMMARY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\PHASE2-SECURITY-SUMMARY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\PHASE3-COMPLETION-SUMMARY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\PHASE3-SECURITY-SUMMARY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\PHASE4-CODE-QUALITY-REVIEW.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\PHASE4-COMPLETION-SUMMARY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\PHASE4-SECURITY-SUMMARY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\ROADMAP-QUICK-REFERENCE.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\ROADMAP-SUMMARY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\screenshots\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\SECURITY-SETUP.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\SECURITY-SUMMARY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\SETUP.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\TROUBLESHOOTING.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "LESSONS_LEARNED.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "migrations\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "PHASE4-FINAL-SUMMARY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "PHASE5-COMPLETION-SUMMARY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "PHASE-COMPLETION-VALIDATION.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "PHASE-STATUS-AT-A-GLANCE.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "PORTFOLIO.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "PROJECT-PHASE-ASSESSMENT.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "ROADMAP.md",
+                                    "DocClass":  "Active"
+                                }
+                            ]
+    },
+    {
+        "RepoName":  "AIToolbox",
+        "RepoPath":  "G:\\Development\\20_Staging\\AIToolbox",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              "AGENTS.md",
+                              "CHANGELOG.md",
+                              "CONTRIBUTING.md",
+                              "docs\\adr\\0001-use-fastapi.md",
+                              "docs\\adr\\0002-use-nextjs.md",
+                              "docs\\adr\\0003-sqlite-for-storage.md",
+                              "docs\\adr\\0004-yaml-for-prompts.md",
+                              "docs\\adr\\0005-multi-agent-architecture.md",
+                              "docs\\advanced\\hardening-pipeline.md",
+                              "docs\\advanced\\parallel-teams.md",
+                              "docs\\advanced\\requirement-wizard.md",
+                              "docs\\agents.md",
+                              "docs\\api-reference.md",
+                              "docs\\architecture.md",
+                              "docs\\backend.md",
+                              "docs\\contributing.md",
+                              "docs\\deployment.md",
+                              "docs\\development.md",
+                              "docs\\development\\architecture-deep-dive.md",
+                              "docs\\development\\backend-guide.md",
+                              "docs\\development\\debugging-guide.md",
+                              "docs\\development\\frontend-guide.md",
+                              "docs\\development\\performance-guide.md",
+                              "docs\\development\\setup.md",
+                              "docs\\development\\testing-guide.md",
+                              "docs\\FAQ.md",
+                              "docs\\frontend.md",
+                              "docs\\getting-started.md",
+                              "docs\\incident-response.md",
+                              "docs\\integrations.md",
+                              "docs\\mcp\\README.md",
+                              "docs\\orchestration.md",
+                              "docs\\PromptAsCode\\Phase 2 Cleanup Pass.md",
+                              "docs\\PromptAsCode\\POST_PROMPTCHAIN1_NEXTSTEPS.md",
+                              "docs\\PromptAsCode\\PROMPT_CHAIN_EXAMPLES.md",
+                              "docs\\PromptAsCode\\PROMPT_CHAIN_FLOW.md",
+                              "docs\\PromptAsCode\\PROMPT_CHAIN_QUICK_REFERENCE.md",
+                              "docs\\PromptAsCode\\PROMPT_CHAIN_REBUILD.md",
+                              "docs\\PromptAsCode\\PROMPT_CHAIN_REBUILD.v2.md",
+                              "docs\\PromptAsCode\\PROMPT_CHAIN_STATUS_UPDATE.md",
+                              "docs\\PromptAsCode\\PROMPT_CHAIN_SUMMARY.md",
+                              "docs\\PromptAsCode\\RealityMap.md",
+                              "docs\\prompts.md",
+                              "docs\\providers.md",
+                              "docs\\qa\\code-review-roadmap-2026-02-18.md",
+                              "docs\\qa\\documentation-review.md",
+                              "docs\\qa\\integration-report.md",
+                              "docs\\qa\\orchestration-audit-2026-02-15.md",
+                              "docs\\qa\\performance-report.md",
+                              "docs\\qa\\post-release-monitoring.md",
+                              "docs\\qa\\security-audit.md",
+                              "docs\\qa\\uat-scenarios.md",
+                              "docs\\README.md",
+                              "docs\\user-guide\\agents.md",
+                              "docs\\user-guide\\cost-analytics.md",
+                              "docs\\user-guide\\github-integration.md",
+                              "docs\\user-guide\\mcp-servers.md",
+                              "docs\\user-guide\\orchestration.md",
+                              "docs\\user-guide\\prompts.md",
+                              "README.md",
+                              "RELEASE_NOTES_v2.0.0.md"
+                          ],
+        "MarkdownFileCount":  61,
+        "ActiveDocCount":  59,
+        "ArchiveDocCount":  0,
+        "GeneratedDocCount":  0,
+        "HasReadme":  true,
+        "HasDocsFolder":  true,
+        "HasContributing":  true,
+        "HasDocsIndex":  false,
+        "DocCategories":  [
+                              "architecture",
+                              "changelog",
+                              "contributing",
+                              "general",
+                              "readme",
+                              "reference",
+                              "setup",
+                              "troubleshooting"
+                          ],
+        "PriorityScore":  90,
+        "PriorityBand":  "High",
+        "ReviewMode":  "Full-doc pass",
+        "GitLastCommitDate":  "2026-02-18 01:37:50 -0500",
+        "GitBranch":  "main",
+        "GitUncommittedChanges":  5,
+        "DocQualityHints":  [
+                                "contains-risk-markers"
+                            ],
+        "KeyDocs":  [
+                        "CONTRIBUTING.md",
+                        "docs\\adr\\0001-use-fastapi.md",
+                        "docs\\adr\\0005-multi-agent-architecture.md",
+                        "docs\\api-reference.md",
+                        "docs\\architecture.md",
+                        "docs\\contributing.md",
+                        "docs\\development\\architecture-deep-dive.md",
+                        "docs\\development\\setup.md",
+                        "docs\\FAQ.md",
+                        "docs\\mcp\\README.md",
+                        "docs\\PromptAsCode\\PROMPT_CHAIN_QUICK_REFERENCE.md",
+                        "docs\\README.md",
+                        "README.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  "AGENTS.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "CHANGELOG.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "CONTRIBUTING.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\adr\\0001-use-fastapi.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\adr\\0002-use-nextjs.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\adr\\0003-sqlite-for-storage.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\adr\\0004-yaml-for-prompts.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\adr\\0005-multi-agent-architecture.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\advanced\\hardening-pipeline.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\advanced\\parallel-teams.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\advanced\\requirement-wizard.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\agents.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\api-reference.md",
+                                    "DocClass":  "Reference"
+                                },
+                                {
+                                    "Path":  "docs\\architecture.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\backend.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\contributing.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\deployment.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\development.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\development\\architecture-deep-dive.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\development\\backend-guide.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\development\\debugging-guide.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\development\\frontend-guide.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\development\\performance-guide.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\development\\setup.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\development\\testing-guide.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\FAQ.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\frontend.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\getting-started.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\incident-response.md",
+                                    "DocClass":  "Operational"
+                                },
+                                {
+                                    "Path":  "docs\\integrations.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\mcp\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\orchestration.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\PromptAsCode\\Phase 2 Cleanup Pass.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\PromptAsCode\\POST_PROMPTCHAIN1_NEXTSTEPS.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\PromptAsCode\\PROMPT_CHAIN_EXAMPLES.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\PromptAsCode\\PROMPT_CHAIN_FLOW.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\PromptAsCode\\PROMPT_CHAIN_QUICK_REFERENCE.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\PromptAsCode\\PROMPT_CHAIN_REBUILD.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\PromptAsCode\\PROMPT_CHAIN_REBUILD.v2.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\PromptAsCode\\PROMPT_CHAIN_STATUS_UPDATE.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\PromptAsCode\\PROMPT_CHAIN_SUMMARY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\PromptAsCode\\RealityMap.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\prompts.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\providers.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\qa\\code-review-roadmap-2026-02-18.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\qa\\documentation-review.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\qa\\integration-report.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\qa\\orchestration-audit-2026-02-15.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\qa\\performance-report.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\qa\\post-release-monitoring.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\qa\\security-audit.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\qa\\uat-scenarios.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\user-guide\\agents.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\user-guide\\cost-analytics.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\user-guide\\github-integration.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\user-guide\\mcp-servers.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\user-guide\\orchestration.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\user-guide\\prompts.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "RELEASE_NOTES_v2.0.0.md",
+                                    "DocClass":  "Active"
+                                }
+                            ]
+    },
+    {
+        "RepoName":  "UnifiedAIToolbox",
+        "RepoPath":  "G:\\Development\\20_Staging\\UnifiedAIToolbox",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              ".github\\agents\\UX_Engineer_007.agent.md",
+                              ".github\\pull_request_template.md",
+                              "AGENTS.md",
+                              "apps\\orchestration-bridge\\MERGE_COORDINATOR_RUNBOOK.md",
+                              "apps\\orchestration-bridge\\README.md",
+                              "apps\\orchestration-bridge\\REVIEW.md",
+                              "apps\\orchestration-bridge\\TASK_EXECUTOR_RUNBOOK.md",
+                              "apps\\unifiedtoolbox.webapp\\docs\\information-architecture.md",
+                              "apps\\unifiedtoolbox.webapp\\docs\\roadmap.md",
+                              "apps\\unifiedtoolbox.webapp\\README.md",
+                              "archive\\ARCHIVE_MANIFEST.md",
+                              "archive\\orchestration\\legacy-runners\\README.md",
+                              "archive\\README.md",
+                              "BUILD.md",
+                              "docs\\archive\\App Lifecycle Console ROADMAP.md",
+                              "docs\\archive\\APP_FACTORY_AUDIT_2026-02-07.md",
+                              "docs\\archive\\APP_FACTORY_GITHUB_INTEGRATION.md",
+                              "docs\\archive\\architecture.md",
+                              "docs\\archive\\architecture\\ARCHITECTURE_FACTS.md",
+                              "docs\\archive\\architecture\\ARCHITECTURE_FACTS_ROLLBACK.md",
+                              "docs\\archive\\architecture\\ARCHITECTURE_FACTS_SUMMARY.md",
+                              "docs\\archive\\architecture\\RepoStructureOverview.md",
+                              "docs\\archive\\architecture\\WiringMatrix.md",
+                              "docs\\archive\\cli\\QUICK_REFERENCE.md",
+                              "docs\\archive\\cli\\UNIFIED_CLI.md",
+                              "docs\\archive\\cli\\wsl-env-passthrough.md",
+                              "docs\\archive\\contributing.md",
+                              "docs\\archive\\cost\\COST_ANALYTICS_IMPLEMENTATION.md",
+                              "docs\\archive\\cost\\cost-metrics-grafana.md",
+                              "docs\\archive\\cost-analytics.md",
+                              "docs\\archive\\current-engine-contract.md",
+                              "docs\\archive\\demos\\DEMO.md",
+                              "docs\\archive\\engine-status-schema.md",
+                              "docs\\archive\\FINAL_PRODUCT_SUMMARY.md",
+                              "docs\\archive\\getting-started.md",
+                              "docs\\archive\\GITHUB_INTEGRATION_IMPLEMENTATION.md",
+                              "docs\\archive\\github-orchestration-ui.md",
+                              "docs\\archive\\hardening.md",
+                              "docs\\archive\\hardening\\Add an Artifact Normalizer + Verifier st.md",
+                              "docs\\archive\\hardening\\APP_FACTORY_HARDENING.md",
+                              "docs\\archive\\hardening\\ARTIFACT_NORMALIZATION.md",
+                              "docs\\archive\\help\\api-reference.md",
+                              "docs\\archive\\help\\architecture.md",
+                              "docs\\archive\\help\\deployment.md",
+                              "docs\\archive\\help\\developer-guide.md",
+                              "docs\\archive\\help\\index.md",
+                              "docs\\archive\\help\\launch-guide.md",
+                              "docs\\archive\\help\\prompt-refiner.md",
+                              "docs\\archive\\help\\quick-start.md",
+                              "docs\\archive\\help\\README-original.md",
+                              "docs\\archive\\help\\testing.md",
+                              "docs\\archive\\ideation\\IdealPromptforCryptoCurrencyMonitor.md",
+                              "docs\\archive\\ideation\\NorthStarIdea.md",
+                              "docs\\archive\\ideation\\ParallelWork.md",
+                              "docs\\archive\\ideation\\runnable repos.md",
+                              "docs\\archive\\integrations.md",
+                              "docs\\archive\\integrations\\GITHUB_INTEGRATION.md",
+                              "docs\\archive\\integrations\\GITHUB_INTEGRATION_IMPLEMENTATION.md",
+                              "docs\\archive\\integrations\\GITHUB_PAGE_CHANGES.md",
+                              "docs\\archive\\integrations\\SECURITY_NOTICE_OAUTH.md",
+                              "docs\\archive\\integrations\\WEBHOOK_SETUP.md",
+                              "docs\\archive\\mcp\\MCP_GOVERNANCE_API.md",
+                              "docs\\archive\\mcp\\MCP_GOVERNANCE_DESIGN.md",
+                              "docs\\archive\\mcp\\MCP_GOVERNANCE_IMPLEMENTATION_SUMMARY.md",
+                              "docs\\archive\\mcp\\MCP_GOVERNANCE_SEQUENCE_DIAGRAM.md",
+                              "docs\\archive\\mcp\\MCP_LIBRARY_IMPLEMENTATION_ROADMAP.md",
+                              "docs\\archive\\mcp\\MCP_LIBRARY_IMPLEMENTATION_SUMMARY.md",
+                              "docs\\archive\\mcp\\MCP_LIBRARY_WALKTHROUGH.md",
+                              "docs\\archive\\mcp\\MCP_REGISTRY_INGESTION.md",
+                              "docs\\archive\\mcp\\MCPLibraryFeature_PromptChain.md",
+                              "docs\\archive\\orchestration.md",
+                              "docs\\archive\\orchestration\\current-engine-contract.md",
+                              "docs\\archive\\orchestration\\ORCHESTRATION_CONNECTION_IMPLEMENTATION.md",
+                              "docs\\archive\\orchestration\\ORCHESTRATION_RUN_TRACKING.md",
+                              "docs\\archive\\orchestration\\ORCHESTRATOR_ENHANCEMENTS.md",
+                              "docs\\archive\\orchestration\\ORCHESTRATOR_LOGGING.md",
+                              "docs\\archive\\orchestration\\ORCHESTRATOR_STATUS.md",
+                              "docs\\archive\\orchestration\\repo-orchestration.md",
+                              "docs\\archive\\orchestration\\RUN_PROCESS_EVALUATION.md",
+                              "docs\\archive\\orchestration\\run-artifacts.md",
+                              "docs\\archive\\parallel-teams.md",
+                              "docs\\archive\\phase3\\API_V2_SPEC.md",
+                              "docs\\archive\\phase3\\DB_MIGRATION_PLAN.md",
+                              "docs\\archive\\phase3\\K8S_ARCHITECTURE.md",
+                              "docs\\archive\\phase3\\PHASE_3_DEPENDENCIES.md",
+                              "docs\\archive\\phase3\\PHASE_3_METRICS.md",
+                              "docs\\archive\\phase3\\README.md",
+                              "docs\\archive\\phase3\\WEB_PORTAL_DEPLOYMENT.md",
+                              "docs\\archive\\project-brief.md",
+                              "docs\\archive\\PROMPT_CHAIN_EXAMPLES.md",
+                              "docs\\archive\\PROMPT_CHAIN_FLOW.md",
+                              "docs\\archive\\PROMPT_CHAIN_QUICK_REFERENCE.md",
+                              "docs\\archive\\PROMPT_CHAIN_REBUILD.md",
+                              "docs\\archive\\PROMPT_CHAIN_SUMMARY.md",
+                              "docs\\archive\\prompts\\PROMPT_CHAIN_QUICK_START.md",
+                              "docs\\archive\\prompts\\PROMPT_CHAIN_RECREATION.md",
+                              "docs\\archive\\prompts\\PROMPT_LIBRARY_CONSOLIDATION.md",
+                              "docs\\archive\\prompts\\PROMPTOPS.md",
+                              "docs\\archive\\prompts\\PROMPTOPS_IMPLEMENTATION_SUMMARY.md",
+                              "docs\\archive\\README.md",
+                              "docs\\archive\\reports\\ALERTING_SYSTEM.md",
+                              "docs\\archive\\reports\\CLEANUP_HISTORY.md",
+                              "docs\\archive\\reports\\DOCUMENTATION_CONSOLIDATION.md",
+                              "docs\\archive\\reports\\FINAL_PRODUCT_SUMMARY.md",
+                              "docs\\archive\\reports\\IMPLEMENTATION_SUMMARY.md",
+                              "docs\\archive\\reports\\QA_AUDIT_REPORT.md",
+                              "docs\\archive\\reports\\QUALITY_TRACKING.md",
+                              "docs\\archive\\roadmaps\\IMPLEMENTATION.md",
+                              "docs\\archive\\roadmaps\\NEXT_STEPS.MD",
+                              "docs\\archive\\roadmaps\\PHASE1_DISCOVERY_SUMMARY.md",
+                              "docs\\archive\\roadmaps\\PHASE2_WIRING_PLAN.md",
+                              "docs\\archive\\roadmaps\\PHASE5_FINAL_SUMMARY.md",
+                              "docs\\archive\\roadmaps\\PROJECT_ROADMAP.md",
+                              "docs\\archive\\roadmaps\\SPRINT4_ENHANCED_AI.md",
+                              "docs\\archive\\run-events-ui-progress.md",
+                              "docs\\archive\\run-telemetry-ui.md",
+                              "docs\\archive\\telemetry.md",
+                              "docs\\archive\\telemetry\\TELEMETRY_AND_AI_INSIGHTS.md",
+                              "docs\\archive\\telemetry\\TELEMETRY_USER_GUIDE.md",
+                              "docs\\archive\\ux\\00-stack-discovery.md",
+                              "docs\\archive\\ux\\01-local-runbook.md",
+                              "docs\\archive\\ux\\02-journey-map.md",
+                              "docs\\archive\\ux\\03-telemetry-schema.md",
+                              "docs\\archive\\ux\\04-simulation-results.md",
+                              "docs\\archive\\ux\\05-friction-log.md",
+                              "docs\\archive\\ux\\06-validation.md",
+                              "docs\\archive\\workflows.md",
+                              "docs\\archive\\workflows\\WORKFLOW_GUIDE.md",
+                              "docs\\archive\\workflows_UPDATED.md",
+                              "docs\\CONCEPTUAL_MODEL_CONTRACT.md",
+                              "docs\\concierge_loop.md",
+                              "docs\\Concierge_MajorVersion_UpgradePromptChain.md",
+                              "docs\\hardening\\GITHUB_UI_V2_HARDENING_NOTES.md",
+                              "docs\\IMPLEMENTATION_SUMMARY.md",
+                              "docs\\index.md",
+                              "docs\\knowledge.md",
+                              "docs\\management-team\\prompts\\commissioner.md",
+                              "docs\\management-team\\prompts\\concierge.md",
+                              "docs\\management-team\\prompts\\knowledge.md",
+                              "docs\\management-team\\prompts\\overseer.md",
+                              "docs\\mcp\\governance.md",
+                              "docs\\mcp\\library.md",
+                              "docs\\mcp\\README.md",
+                              "docs\\mcp\\registry-ingestion.md",
+                              "docs\\MCP_IMPLEMENTATION_SUMMARY.md",
+                              "docs\\MCP_LIBRARY_STATUS.md",
+                              "docs\\MCP_REMAINING_TASKS.md",
+                              "docs\\MIGRATION.md",
+                              "docs\\observability\\app-factory-vs-concierge.md",
+                              "docs\\README.md",
+                              "docs\\ROADMAP.md",
+                              "docs\\run-events.schema.md",
+                              "docs\\Unified-AI-Toolbox-Architecture.md",
+                              "docs\\UnifiedAIToolbox-Repo-Guide.md",
+                              "examples\\pr_publisher\\pr.md",
+                              "examples\\run-ui-validate-2026-02-08T13-52-50-181Z-2c9301-artifacts\\ARTIFACT_INGEST_REPORT.md",
+                              "examples\\run-ui-validate-2026-02-08T13-52-50-181Z-2c9301-artifacts\\ASSEMBLY_REPORT.md",
+                              "examples\\run-ui-validate-2026-02-08T13-52-50-181Z-2c9301-artifacts\\GATE_REPORT.md",
+                              "examples\\run-ui-validate-2026-02-08T13-52-50-181Z-2c9301-artifacts\\NORMALIZATION_REPORT.md",
+                              "examples\\run-ui-validate-2026-02-08T13-52-50-181Z-2c9301-artifacts\\PATCHLOG.md",
+                              "examples\\run-ui-validate-2026-02-08T13-52-50-181Z-2c9301-artifacts\\README.md",
+                              "examples\\run-ui-validate-2026-02-08T13-52-50-181Z-2c9301-artifacts\\RUN_DIAGNOSTICS.md",
+                              "examples\\run-ui-validate-2026-02-09T06-59-24-879Z-193507-artifacts\\ARTIFACT_INGEST_REPORT.md",
+                              "examples\\run-ui-validate-2026-02-09T06-59-24-879Z-193507-artifacts\\ASSEMBLY_REPORT.md",
+                              "examples\\run-ui-validate-2026-02-09T06-59-24-879Z-193507-artifacts\\critic_output.md",
+                              "examples\\run-ui-validate-2026-02-09T06-59-24-879Z-193507-artifacts\\GATE_REPORT.md",
+                              "examples\\run-ui-validate-2026-02-09T06-59-24-879Z-193507-artifacts\\NORMALIZATION_REPORT.md",
+                              "examples\\run-ui-validate-2026-02-09T06-59-24-879Z-193507-artifacts\\PATCHLOG.md",
+                              "examples\\run-ui-validate-2026-02-09T06-59-24-879Z-193507-artifacts\\README.md",
+                              "examples\\run-ui-validate-2026-02-09T06-59-24-879Z-193507-artifacts\\researcher_output.md",
+                              "examples\\run-ui-validate-2026-02-09T06-59-24-879Z-193507-artifacts\\RUN_DIAGNOSTICS.md",
+                              "examples\\ui-auto-validate-2026-02-07T22-02-35-612Z-60cfed\\repo\\ARTIFACT_INGEST_REPORT.md",
+                              "examples\\ui-auto-validate-2026-02-07T22-02-35-612Z-60cfed\\repo\\ASSEMBLY_REPORT.md",
+                              "examples\\ui-auto-validate-2026-02-07T22-02-35-612Z-60cfed\\repo\\GATE_REPORT.md",
+                              "examples\\ui-auto-validate-2026-02-07T22-02-35-612Z-60cfed\\repo\\NORMALIZATION_REPORT.md",
+                              "examples\\ui-auto-validate-2026-02-07T22-02-35-612Z-60cfed\\repo\\PATCHLOG.md",
+                              "examples\\ui-auto-validate-2026-02-07T22-02-35-612Z-60cfed\\repo\\README.md",
+                              "examples\\ui-auto-validate-2026-02-07T22-02-35-612Z-60cfed\\repo\\RUN_DIAGNOSTICS.md",
+                              "examples\\ui-auto-validate-2026-02-07T23-08-23-907Z-5cc97e\\repo\\ARTIFACT_INGEST_REPORT.md",
+                              "examples\\ui-auto-validate-2026-02-07T23-08-23-907Z-5cc97e\\repo\\ASSEMBLY_REPORT.md",
+                              "examples\\ui-auto-validate-2026-02-07T23-08-23-907Z-5cc97e\\repo\\CHANGELOG.md",
+                              "examples\\ui-auto-validate-2026-02-07T23-08-23-907Z-5cc97e\\repo\\GATE_REPORT.md",
+                              "examples\\ui-auto-validate-2026-02-07T23-08-23-907Z-5cc97e\\repo\\NORMALIZATION_REPORT.md",
+                              "examples\\ui-auto-validate-2026-02-07T23-08-23-907Z-5cc97e\\repo\\PATCHLOG.md",
+                              "examples\\ui-auto-validate-2026-02-07T23-08-23-907Z-5cc97e\\repo\\README.md",
+                              "examples\\ui-auto-validate-2026-02-07T23-08-23-907Z-5cc97e\\repo\\RUN_DIAGNOSTICS.md",
+                              "job_types.README.md",
+                              "modules\\GitHubRepoManager\\README.md",
+                              "Orchestration\\.github\\copilot-instructions.md",
+                              "Orchestration\\Agent_Workbook.md",
+                              "Orchestration\\AGENTS_SOT.md",
+                              "Orchestration\\Goals\\README.md",
+                              "Orchestration\\README.md",
+                              "packages\\prompt-registry\\README.md",
+                              "project files\\branding\\README.md",
+                              "prompts\\changelog.md",
+                              "prompts\\README.md",
+                              "README.md",
+                              "scripts\\README.md",
+                              "scripts\\README_ORCHESTRATION_DIAGNOSTICS.md",
+                              "scripts\\swarms\\.github\\PULL_REQUEST_TEMPLATE.md",
+                              "scripts\\swarms\\CODE_OF_CONDUCT.md",
+                              "scripts\\swarms\\CONTRIBUTING.md",
+                              "scripts\\swarms\\docs\\index.md",
+                              "scripts\\swarms\\docs\\quickstart.md",
+                              "scripts\\swarms\\examples\\README.md",
+                              "scripts\\swarms\\README.md",
+                              "scripts\\swarms\\SECURITY.md",
+                              "scripts\\swarms\\tests\\README.md",
+                              "SIMPLIFICATION_REPORT.md",
+                              "templates\\ci-cd-blueprint\\CHANGELOG.md",
+                              "templates\\ci-cd-blueprint\\docs\\CUSTOMIZATION_GUIDE.md",
+                              "templates\\ci-cd-blueprint\\docs\\SECRETS_AND_ENV.md",
+                              "templates\\ci-cd-blueprint\\README.md",
+                              "Unified-AI-Toolbox-Architecture.md",
+                              "UnifiedAIToolbox-Repo-Guide.md",
+                              "WORKFLOW_AUDIT_SUMMARY.md"
+                          ],
+        "MarkdownFileCount":  217,
+        "ActiveDocCount":  64,
+        "ArchiveDocCount":  118,
+        "GeneratedDocCount":  33,
+        "HasReadme":  true,
+        "HasDocsFolder":  true,
+        "HasContributing":  true,
+        "HasDocsIndex":  true,
+        "DocCategories":  [
+                              "architecture",
+                              "changelog",
+                              "contributing",
+                              "docs-index",
+                              "general",
+                              "readme",
+                              "roadmap",
+                              "runbook",
+                              "setup"
+                          ],
+        "PriorityScore":  80,
+        "PriorityBand":  "High",
+        "ReviewMode":  "Archive cleanup first",
+        "GitLastCommitDate":  "2026-03-06 01:11:37 -0500",
+        "GitBranch":  "main",
+        "GitUncommittedChanges":  0,
+        "DocQualityHints":  [
+                                "contains-risk-markers",
+                                "duplicate-setup-docs"
+                            ],
+        "KeyDocs":  [
+                        "apps\\orchestration-bridge\\MERGE_COORDINATOR_RUNBOOK.md",
+                        "apps\\orchestration-bridge\\README.md",
+                        "apps\\orchestration-bridge\\TASK_EXECUTOR_RUNBOOK.md",
+                        "apps\\unifiedtoolbox.webapp\\docs\\information-architecture.md",
+                        "apps\\unifiedtoolbox.webapp\\README.md",
+                        "docs\\index.md",
+                        "docs\\mcp\\README.md",
+                        "docs\\README.md",
+                        "docs\\Unified-AI-Toolbox-Architecture.md",
+                        "modules\\GitHubRepoManager\\README.md",
+                        "Orchestration\\Goals\\README.md",
+                        "Orchestration\\README.md",
+                        "packages\\prompt-registry\\README.md",
+                        "project files\\branding\\README.md",
+                        "prompts\\README.md",
+                        "README.md",
+                        "scripts\\README.md",
+                        "scripts\\swarms\\CONTRIBUTING.md",
+                        "scripts\\swarms\\docs\\index.md",
+                        "scripts\\swarms\\docs\\quickstart.md",
+                        "scripts\\swarms\\README.md",
+                        "scripts\\swarms\\tests\\README.md",
+                        "templates\\ci-cd-blueprint\\README.md",
+                        "Unified-AI-Toolbox-Architecture.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  ".github\\agents\\UX_Engineer_007.agent.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  ".github\\pull_request_template.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "AGENTS.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "apps\\orchestration-bridge\\MERGE_COORDINATOR_RUNBOOK.md",
+                                    "DocClass":  "Operational"
+                                },
+                                {
+                                    "Path":  "apps\\orchestration-bridge\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "apps\\orchestration-bridge\\REVIEW.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "apps\\orchestration-bridge\\TASK_EXECUTOR_RUNBOOK.md",
+                                    "DocClass":  "Operational"
+                                },
+                                {
+                                    "Path":  "apps\\unifiedtoolbox.webapp\\docs\\information-architecture.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "apps\\unifiedtoolbox.webapp\\docs\\roadmap.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "apps\\unifiedtoolbox.webapp\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "archive\\ARCHIVE_MANIFEST.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "archive\\orchestration\\legacy-runners\\README.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "archive\\README.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "BUILD.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\App Lifecycle Console ROADMAP.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\APP_FACTORY_AUDIT_2026-02-07.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\APP_FACTORY_GITHUB_INTEGRATION.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\architecture.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\architecture\\ARCHITECTURE_FACTS.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\architecture\\ARCHITECTURE_FACTS_ROLLBACK.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\architecture\\ARCHITECTURE_FACTS_SUMMARY.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\architecture\\RepoStructureOverview.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\architecture\\WiringMatrix.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\cli\\QUICK_REFERENCE.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\cli\\UNIFIED_CLI.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\cli\\wsl-env-passthrough.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\contributing.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\cost\\COST_ANALYTICS_IMPLEMENTATION.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\cost\\cost-metrics-grafana.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\cost-analytics.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\current-engine-contract.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\demos\\DEMO.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\engine-status-schema.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\FINAL_PRODUCT_SUMMARY.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\getting-started.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\GITHUB_INTEGRATION_IMPLEMENTATION.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\github-orchestration-ui.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\hardening.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\hardening\\Add an Artifact Normalizer + Verifier st.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\hardening\\APP_FACTORY_HARDENING.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\hardening\\ARTIFACT_NORMALIZATION.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\help\\api-reference.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\help\\architecture.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\help\\deployment.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\help\\developer-guide.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\help\\index.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\help\\launch-guide.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\help\\prompt-refiner.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\help\\quick-start.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\help\\README-original.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\help\\testing.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\ideation\\IdealPromptforCryptoCurrencyMonitor.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\ideation\\NorthStarIdea.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\ideation\\ParallelWork.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\ideation\\runnable repos.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\integrations.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\integrations\\GITHUB_INTEGRATION.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\integrations\\GITHUB_INTEGRATION_IMPLEMENTATION.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\integrations\\GITHUB_PAGE_CHANGES.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\integrations\\SECURITY_NOTICE_OAUTH.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\integrations\\WEBHOOK_SETUP.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\mcp\\MCP_GOVERNANCE_API.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\mcp\\MCP_GOVERNANCE_DESIGN.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\mcp\\MCP_GOVERNANCE_IMPLEMENTATION_SUMMARY.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\mcp\\MCP_GOVERNANCE_SEQUENCE_DIAGRAM.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\mcp\\MCP_LIBRARY_IMPLEMENTATION_ROADMAP.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\mcp\\MCP_LIBRARY_IMPLEMENTATION_SUMMARY.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\mcp\\MCP_LIBRARY_WALKTHROUGH.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\mcp\\MCP_REGISTRY_INGESTION.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\mcp\\MCPLibraryFeature_PromptChain.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\orchestration.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\orchestration\\current-engine-contract.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\orchestration\\ORCHESTRATION_CONNECTION_IMPLEMENTATION.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\orchestration\\ORCHESTRATION_RUN_TRACKING.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\orchestration\\ORCHESTRATOR_ENHANCEMENTS.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\orchestration\\ORCHESTRATOR_LOGGING.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\orchestration\\ORCHESTRATOR_STATUS.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\orchestration\\repo-orchestration.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\orchestration\\RUN_PROCESS_EVALUATION.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\orchestration\\run-artifacts.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\parallel-teams.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\phase3\\API_V2_SPEC.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\phase3\\DB_MIGRATION_PLAN.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\phase3\\K8S_ARCHITECTURE.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\phase3\\PHASE_3_DEPENDENCIES.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\phase3\\PHASE_3_METRICS.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\phase3\\README.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\phase3\\WEB_PORTAL_DEPLOYMENT.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\project-brief.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\PROMPT_CHAIN_EXAMPLES.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\PROMPT_CHAIN_FLOW.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\PROMPT_CHAIN_QUICK_REFERENCE.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\PROMPT_CHAIN_REBUILD.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\PROMPT_CHAIN_SUMMARY.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\prompts\\PROMPT_CHAIN_QUICK_START.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\prompts\\PROMPT_CHAIN_RECREATION.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\prompts\\PROMPT_LIBRARY_CONSOLIDATION.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\prompts\\PROMPTOPS.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\prompts\\PROMPTOPS_IMPLEMENTATION_SUMMARY.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\README.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\reports\\ALERTING_SYSTEM.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\reports\\CLEANUP_HISTORY.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\reports\\DOCUMENTATION_CONSOLIDATION.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\reports\\FINAL_PRODUCT_SUMMARY.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\reports\\IMPLEMENTATION_SUMMARY.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\reports\\QA_AUDIT_REPORT.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\reports\\QUALITY_TRACKING.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\roadmaps\\IMPLEMENTATION.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\roadmaps\\NEXT_STEPS.MD",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\roadmaps\\PHASE1_DISCOVERY_SUMMARY.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\roadmaps\\PHASE2_WIRING_PLAN.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\roadmaps\\PHASE5_FINAL_SUMMARY.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\roadmaps\\PROJECT_ROADMAP.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\roadmaps\\SPRINT4_ENHANCED_AI.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\run-events-ui-progress.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\run-telemetry-ui.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\telemetry.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\telemetry\\TELEMETRY_AND_AI_INSIGHTS.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\telemetry\\TELEMETRY_USER_GUIDE.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\ux\\00-stack-discovery.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\ux\\01-local-runbook.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\ux\\02-journey-map.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\ux\\03-telemetry-schema.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\ux\\04-simulation-results.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\ux\\05-friction-log.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\ux\\06-validation.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\workflows.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\workflows\\WORKFLOW_GUIDE.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\archive\\workflows_UPDATED.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "docs\\CONCEPTUAL_MODEL_CONTRACT.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\concierge_loop.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\Concierge_MajorVersion_UpgradePromptChain.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\hardening\\GITHUB_UI_V2_HARDENING_NOTES.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\IMPLEMENTATION_SUMMARY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\index.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\knowledge.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\management-team\\prompts\\commissioner.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\management-team\\prompts\\concierge.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\management-team\\prompts\\knowledge.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\management-team\\prompts\\overseer.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\mcp\\governance.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\mcp\\library.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\mcp\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\mcp\\registry-ingestion.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\MCP_IMPLEMENTATION_SUMMARY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\MCP_LIBRARY_STATUS.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\MCP_REMAINING_TASKS.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\MIGRATION.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\observability\\app-factory-vs-concierge.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\ROADMAP.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\run-events.schema.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\Unified-AI-Toolbox-Architecture.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\UnifiedAIToolbox-Repo-Guide.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "examples\\pr_publisher\\pr.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\run-ui-validate-2026-02-08T13-52-50-181Z-2c9301-artifacts\\ARTIFACT_INGEST_REPORT.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\run-ui-validate-2026-02-08T13-52-50-181Z-2c9301-artifacts\\ASSEMBLY_REPORT.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\run-ui-validate-2026-02-08T13-52-50-181Z-2c9301-artifacts\\GATE_REPORT.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\run-ui-validate-2026-02-08T13-52-50-181Z-2c9301-artifacts\\NORMALIZATION_REPORT.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\run-ui-validate-2026-02-08T13-52-50-181Z-2c9301-artifacts\\PATCHLOG.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\run-ui-validate-2026-02-08T13-52-50-181Z-2c9301-artifacts\\README.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\run-ui-validate-2026-02-08T13-52-50-181Z-2c9301-artifacts\\RUN_DIAGNOSTICS.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\run-ui-validate-2026-02-09T06-59-24-879Z-193507-artifacts\\ARTIFACT_INGEST_REPORT.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\run-ui-validate-2026-02-09T06-59-24-879Z-193507-artifacts\\ASSEMBLY_REPORT.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\run-ui-validate-2026-02-09T06-59-24-879Z-193507-artifacts\\critic_output.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\run-ui-validate-2026-02-09T06-59-24-879Z-193507-artifacts\\GATE_REPORT.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\run-ui-validate-2026-02-09T06-59-24-879Z-193507-artifacts\\NORMALIZATION_REPORT.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\run-ui-validate-2026-02-09T06-59-24-879Z-193507-artifacts\\PATCHLOG.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\run-ui-validate-2026-02-09T06-59-24-879Z-193507-artifacts\\README.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\run-ui-validate-2026-02-09T06-59-24-879Z-193507-artifacts\\researcher_output.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\run-ui-validate-2026-02-09T06-59-24-879Z-193507-artifacts\\RUN_DIAGNOSTICS.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\ui-auto-validate-2026-02-07T22-02-35-612Z-60cfed\\repo\\ARTIFACT_INGEST_REPORT.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\ui-auto-validate-2026-02-07T22-02-35-612Z-60cfed\\repo\\ASSEMBLY_REPORT.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\ui-auto-validate-2026-02-07T22-02-35-612Z-60cfed\\repo\\GATE_REPORT.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\ui-auto-validate-2026-02-07T22-02-35-612Z-60cfed\\repo\\NORMALIZATION_REPORT.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\ui-auto-validate-2026-02-07T22-02-35-612Z-60cfed\\repo\\PATCHLOG.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\ui-auto-validate-2026-02-07T22-02-35-612Z-60cfed\\repo\\README.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\ui-auto-validate-2026-02-07T22-02-35-612Z-60cfed\\repo\\RUN_DIAGNOSTICS.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\ui-auto-validate-2026-02-07T23-08-23-907Z-5cc97e\\repo\\ARTIFACT_INGEST_REPORT.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\ui-auto-validate-2026-02-07T23-08-23-907Z-5cc97e\\repo\\ASSEMBLY_REPORT.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\ui-auto-validate-2026-02-07T23-08-23-907Z-5cc97e\\repo\\CHANGELOG.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\ui-auto-validate-2026-02-07T23-08-23-907Z-5cc97e\\repo\\GATE_REPORT.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\ui-auto-validate-2026-02-07T23-08-23-907Z-5cc97e\\repo\\NORMALIZATION_REPORT.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\ui-auto-validate-2026-02-07T23-08-23-907Z-5cc97e\\repo\\PATCHLOG.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\ui-auto-validate-2026-02-07T23-08-23-907Z-5cc97e\\repo\\README.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\ui-auto-validate-2026-02-07T23-08-23-907Z-5cc97e\\repo\\RUN_DIAGNOSTICS.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "job_types.README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "modules\\GitHubRepoManager\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "Orchestration\\.github\\copilot-instructions.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "Orchestration\\Agent_Workbook.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "Orchestration\\AGENTS_SOT.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "Orchestration\\Goals\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "Orchestration\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "packages\\prompt-registry\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "project files\\branding\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "prompts\\changelog.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "prompts\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "scripts\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "scripts\\README_ORCHESTRATION_DIAGNOSTICS.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "scripts\\swarms\\.github\\PULL_REQUEST_TEMPLATE.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "scripts\\swarms\\CODE_OF_CONDUCT.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "scripts\\swarms\\CONTRIBUTING.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "scripts\\swarms\\docs\\index.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "scripts\\swarms\\docs\\quickstart.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "scripts\\swarms\\examples\\README.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "scripts\\swarms\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "scripts\\swarms\\SECURITY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "scripts\\swarms\\tests\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "SIMPLIFICATION_REPORT.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "templates\\ci-cd-blueprint\\CHANGELOG.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "templates\\ci-cd-blueprint\\docs\\CUSTOMIZATION_GUIDE.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "templates\\ci-cd-blueprint\\docs\\SECRETS_AND_ENV.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "templates\\ci-cd-blueprint\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "Unified-AI-Toolbox-Architecture.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "UnifiedAIToolbox-Repo-Guide.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "WORKFLOW_AUDIT_SUMMARY.md",
+                                    "DocClass":  "Active"
+                                }
+                            ]
+    },
+    {
+        "RepoName":  "ElasticSearch-1",
+        "RepoPath":  "G:\\Development\\20_Staging\\ElasticSearch-1",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              "agents\\genesys_troubleshooter\\README.md",
+                              "agents\\genesys_troubleshooter\\system_prompt.md",
+                              "agents\\platform_monitor\\README.md",
+                              "agents\\platform_monitor\\system_prompt.md",
+                              "agents\\snow_incident_formatter\\README.md",
+                              "agents\\snow_incident_formatter\\system_prompt.md",
+                              "docs\\01_getting_started.md",
+                              "docs\\02_agent_setup.md",
+                              "docs\\03_genesys_integration.md",
+                              "docs\\04_platform_monitoring.md",
+                              "docs\\05_snow_integration.md",
+                              "kibana\\README.md",
+                              "README.md",
+                              "scripts\\archive\\README.md"
+                          ],
+        "MarkdownFileCount":  14,
+        "ActiveDocCount":  11,
+        "ArchiveDocCount":  1,
+        "GeneratedDocCount":  0,
+        "HasReadme":  true,
+        "HasDocsFolder":  true,
+        "HasContributing":  false,
+        "HasDocsIndex":  false,
+        "DocCategories":  [
+                              "general",
+                              "readme",
+                              "setup",
+                              "troubleshooting"
+                          ],
+        "PriorityScore":  65,
+        "PriorityBand":  "High",
+        "ReviewMode":  "Full-doc pass",
+        "GitLastCommitDate":  "2026-02-26 12:27:00 -0500",
+        "GitBranch":  "main",
+        "GitUncommittedChanges":  0,
+        "DocQualityHints":  [
+
+                            ],
+        "KeyDocs":  [
+                        "agents\\genesys_troubleshooter\\README.md",
+                        "agents\\genesys_troubleshooter\\system_prompt.md",
+                        "agents\\platform_monitor\\README.md",
+                        "agents\\snow_incident_formatter\\README.md",
+                        "docs\\02_agent_setup.md",
+                        "kibana\\README.md",
+                        "README.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  "agents\\genesys_troubleshooter\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "agents\\genesys_troubleshooter\\system_prompt.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "agents\\platform_monitor\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "agents\\platform_monitor\\system_prompt.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "agents\\snow_incident_formatter\\README.md",
+                                    "DocClass":  "Operational"
+                                },
+                                {
+                                    "Path":  "agents\\snow_incident_formatter\\system_prompt.md",
+                                    "DocClass":  "Operational"
+                                },
+                                {
+                                    "Path":  "docs\\01_getting_started.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\02_agent_setup.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\03_genesys_integration.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\04_platform_monitoring.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\05_snow_integration.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "kibana\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "scripts\\archive\\README.md",
+                                    "DocClass":  "Archive"
+                                }
+                            ]
+    },
+    {
+        "RepoName":  "FowlingScorecard",
+        "RepoPath":  "G:\\Development\\20_Staging\\FowlingScorecard",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              "ACHIEVEMENTS.md",
+                              "ANDROID_QUICKLINK_GUIDE.md",
+                              "ANDROID_QUICKLINK_IMPLEMENTATION.md",
+                              "artifacts\\HARDENING\\followups.md",
+                              "artifacts\\HARDENING\\verification.md",
+                              "CHARTING_PROJECT_PLAN.md",
+                              "DEPLOYMENT.md",
+                              "docs\\DEV_NOTES.md",
+                              "docs\\README.md",
+                              "examples\\2026-week3-populated-scorecard-transcription.md",
+                              "examples\\league-setup-example.md",
+                              "HARDENING_NOTES.md",
+                              "IMPLEMENTATION_SUMMARY.md",
+                              "LEAGUE_MODE_IMPLEMENTATION.md",
+                              "prototype-v1\\DEV_NOTES.md",
+                              "prototype-v1\\README.md",
+                              "QUICKSTART.md",
+                              "README.md",
+                              "README_PowerShell.md",
+                              "SampleLeagueSignUpForm.md",
+                              "TESTING.md",
+                              "THURSDAY_LEAGUE_PLAYBOOK.md"
+                          ],
+        "MarkdownFileCount":  22,
+        "ActiveDocCount":  19,
+        "ArchiveDocCount":  0,
+        "GeneratedDocCount":  2,
+        "HasReadme":  true,
+        "HasDocsFolder":  true,
+        "HasContributing":  false,
+        "HasDocsIndex":  false,
+        "DocCategories":  [
+                              "general",
+                              "readme",
+                              "runbook",
+                              "setup"
+                          ],
+        "PriorityScore":  55,
+        "PriorityBand":  "High",
+        "ReviewMode":  "Full-doc pass",
+        "GitLastCommitDate":  "2026-02-27 00:01:31 -0500",
+        "GitBranch":  "main",
+        "GitUncommittedChanges":  3,
+        "DocQualityHints":  [
+                                "contains-risk-markers"
+                            ],
+        "KeyDocs":  [
+                        "docs\\README.md",
+                        "prototype-v1\\README.md",
+                        "QUICKSTART.md",
+                        "README.md",
+                        "THURSDAY_LEAGUE_PLAYBOOK.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  "ACHIEVEMENTS.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "ANDROID_QUICKLINK_GUIDE.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "ANDROID_QUICKLINK_IMPLEMENTATION.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "artifacts\\HARDENING\\followups.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "artifacts\\HARDENING\\verification.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "CHARTING_PROJECT_PLAN.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "DEPLOYMENT.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\DEV_NOTES.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "examples\\2026-week3-populated-scorecard-transcription.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "examples\\league-setup-example.md",
+                                    "DocClass":  "Generated"
+                                },
+                                {
+                                    "Path":  "HARDENING_NOTES.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "IMPLEMENTATION_SUMMARY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "LEAGUE_MODE_IMPLEMENTATION.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "prototype-v1\\DEV_NOTES.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "prototype-v1\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "QUICKSTART.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "README_PowerShell.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "SampleLeagueSignUpForm.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "TESTING.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "THURSDAY_LEAGUE_PLAYBOOK.md",
+                                    "DocClass":  "Operational"
+                                }
+                            ]
+    },
+    {
+        "RepoName":  "GenesysCloudAuditor",
+        "RepoPath":  "G:\\Development\\20_Staging\\GenesysCloudAuditor",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              "docs\\credentials_config_IncludeInactive_toggle_run_audit_progress_results_tabs_export.md",
+                              "docs\\duplicate_collisions_null_empty_leading_zeros_include_inactive.md",
+                              "docs\\GenesysExtensionAudit.sln.md",
+                              "docs\\inactive_users_toggle_pagination_limits_extension_normalization_rules__acfc93e3.md",
+                              "docs\\MSIX_or_ZIP_versioning_signing_notes.md",
+                              "docs\\OAuth_client_credentials_vs_auth_code_token_refresh_required_scopes_ra_6283b987.md",
+                              "docs\\qa_specialist_output.md",
+                              "docs\\setup_required_scopes_configuration_running_audits_interpreting_report_e7b551af.md",
+                              "docs\\trim_case_leading_zeros_policy_non-digit_filtering_as_configured.md",
+                              "docs\\users_user_work_phone_extension_field_extensions_list_join_keys_normal_2c3cee3c.md",
+                              "docs\\WPF_.NET_8_MVVM_DI_HttpClientFactory_background_tasks_progress_reporti_91de446c.md",
+                              "NOTES.md",
+                              "QA.md",
+                              "README.md"
+                          ],
+        "MarkdownFileCount":  14,
+        "ActiveDocCount":  14,
+        "ArchiveDocCount":  0,
+        "GeneratedDocCount":  0,
+        "HasReadme":  true,
+        "HasDocsFolder":  true,
+        "HasContributing":  false,
+        "HasDocsIndex":  false,
+        "DocCategories":  [
+                              "general",
+                              "readme",
+                              "setup"
+                          ],
+        "PriorityScore":  55,
+        "PriorityBand":  "High",
+        "ReviewMode":  "Full-doc pass",
+        "GitLastCommitDate":  "2026-03-03 12:22:23 -0500",
+        "GitBranch":  "main",
+        "GitUncommittedChanges":  14,
+        "DocQualityHints":  [
+                                "vague-md-names"
+                            ],
+        "KeyDocs":  [
+                        "docs\\setup_required_scopes_configuration_running_audits_interpreting_report_e7b551af.md",
+                        "README.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  "docs\\credentials_config_IncludeInactive_toggle_run_audit_progress_results_tabs_export.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\duplicate_collisions_null_empty_leading_zeros_include_inactive.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\GenesysExtensionAudit.sln.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\inactive_users_toggle_pagination_limits_extension_normalization_rules__acfc93e3.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\MSIX_or_ZIP_versioning_signing_notes.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\OAuth_client_credentials_vs_auth_code_token_refresh_required_scopes_ra_6283b987.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\qa_specialist_output.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\setup_required_scopes_configuration_running_audits_interpreting_report_e7b551af.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\trim_case_leading_zeros_policy_non-digit_filtering_as_configured.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\users_user_work_phone_extension_field_extensions_list_join_keys_normal_2c3cee3c.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "docs\\WPF_.NET_8_MVVM_DI_HttpClientFactory_background_tasks_progress_reporti_91de446c.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "NOTES.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "QA.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "README.md",
+                                    "DocClass":  "Active"
+                                }
+                            ]
+    },
+    {
+        "RepoName":  "SampleDashboardReact",
+        "RepoPath":  "G:\\Development\\20_Staging\\SampleDashboardReact",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              "docs\\test-plan.md",
+                              "README.md",
+                              "README_addon.md"
+                          ],
+        "MarkdownFileCount":  3,
+        "ActiveDocCount":  3,
+        "ArchiveDocCount":  0,
+        "GeneratedDocCount":  0,
+        "HasReadme":  true,
+        "HasDocsFolder":  true,
+        "HasContributing":  false,
+        "HasDocsIndex":  false,
+        "DocCategories":  [
+                              "general",
+                              "readme"
+                          ],
+        "PriorityScore":  45,
+        "PriorityBand":  "High",
+        "ReviewMode":  "Core-docs batch",
+        "GitLastCommitDate":  "2025-11-04 19:38:48 -0500",
+        "GitBranch":  "main",
+        "GitUncommittedChanges":  2,
+        "DocQualityHints":  [
+
+                            ],
+        "KeyDocs":  [
+                        "README.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  "docs\\test-plan.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "README_addon.md",
+                                    "DocClass":  "Active"
+                                }
+                            ]
+    },
+    {
+        "RepoName":  "AI-Orchestration",
+        "RepoPath":  "G:\\Development\\20_Staging\\AI-Orchestration",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              ".github\\copilot-instructions.md",
+                              "DEPLOYMENT_BRANCH_FIX.md",
+                              "DEPLOYMENT_INSTRUCTIONS.md",
+                              "DEPLOYMENT_QUICKSTART.md",
+                              "DEPLOYMENT_SUMMARY.md",
+                              "EXAMPLE.md",
+                              "GITHUB_ACTIONS_TEST_SUMMARY.md",
+                              "GITHUB_PAGES_FIX.md",
+                              "GITHUB_PAGES_SETUP.md",
+                              "IMPLEMENTATION_NOTES.md",
+                              "MERGE_SUMMARY.md",
+                              "MilestoneDashboard\\DEPLOYMENT.md",
+                              "MilestoneDashboard\\README.md",
+                              "MilestoneDashboard\\TEST_DOCUMENTATION.md",
+                              "MilestoneDashboard\\UX_MODERNIZATION.md",
+                              "POST_MERGE_CHECKLIST.md",
+                              "PR_SUMMARY.md",
+                              "QUICKSTART.md",
+                              "README.md"
+                          ],
+        "MarkdownFileCount":  19,
+        "ActiveDocCount":  19,
+        "ArchiveDocCount":  0,
+        "GeneratedDocCount":  0,
+        "HasReadme":  true,
+        "HasDocsFolder":  false,
+        "HasContributing":  false,
+        "HasDocsIndex":  false,
+        "DocCategories":  [
+                              "general",
+                              "readme",
+                              "setup"
+                          ],
+        "PriorityScore":  40,
+        "PriorityBand":  "High",
+        "ReviewMode":  "Needs taxonomy before rewrite",
+        "GitLastCommitDate":  "2025-10-26 22:29:50 -0400",
+        "GitBranch":  "React/Vite-Dashboard",
+        "GitUncommittedChanges":  31,
+        "DocQualityHints":  [
+                                "no-docs-folder-many-md",
+                                "duplicate-setup-docs"
+                            ],
+        "KeyDocs":  [
+                        "DEPLOYMENT_QUICKSTART.md",
+                        "GITHUB_PAGES_SETUP.md",
+                        "MilestoneDashboard\\README.md",
+                        "QUICKSTART.md",
+                        "README.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  ".github\\copilot-instructions.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "DEPLOYMENT_BRANCH_FIX.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "DEPLOYMENT_INSTRUCTIONS.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "DEPLOYMENT_QUICKSTART.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "DEPLOYMENT_SUMMARY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "EXAMPLE.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "GITHUB_ACTIONS_TEST_SUMMARY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "GITHUB_PAGES_FIX.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "GITHUB_PAGES_SETUP.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "IMPLEMENTATION_NOTES.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "MERGE_SUMMARY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "MilestoneDashboard\\DEPLOYMENT.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "MilestoneDashboard\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "MilestoneDashboard\\TEST_DOCUMENTATION.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "MilestoneDashboard\\UX_MODERNIZATION.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "POST_MERGE_CHECKLIST.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "PR_SUMMARY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "QUICKSTART.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "README.md",
+                                    "DocClass":  "Active"
+                                }
+                            ]
+    },
+    {
+        "RepoName":  "GitHubRepoManagerDashboard-1",
+        "RepoPath":  "G:\\Development\\20_Staging\\GitHubRepoManagerDashboard-1",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              "API_REFERENCE.md",
+                              "ARCHITECTURE.md",
+                              "Archive\\README.md",
+                              "backend\\README.md",
+                              "CODE_REVIEW.md",
+                              "IMPLEMENTATION_GUIDE.md",
+                              "IMPLEMENTATION_SUMMARY.md",
+                              "powerbi\\AdvancedQueries.md",
+                              "powerbi\\README.md",
+                              "PROJECT_PLAN.md",
+                              "QUICK_START.md",
+                              "README.md",
+                              "ROADMAP_SUMMARY.md"
+                          ],
+        "MarkdownFileCount":  13,
+        "ActiveDocCount":  11,
+        "ArchiveDocCount":  1,
+        "GeneratedDocCount":  0,
+        "HasReadme":  true,
+        "HasDocsFolder":  false,
+        "HasContributing":  false,
+        "HasDocsIndex":  false,
+        "DocCategories":  [
+                              "architecture",
+                              "general",
+                              "readme",
+                              "reference"
+                          ],
+        "PriorityScore":  40,
+        "PriorityBand":  "High",
+        "ReviewMode":  "Needs taxonomy before rewrite",
+        "GitLastCommitDate":  "2026-01-25 10:20:11 -0500",
+        "GitBranch":  "main",
+        "GitUncommittedChanges":  0,
+        "DocQualityHints":  [
+                                "no-docs-folder-many-md",
+                                "contains-risk-markers"
+                            ],
+        "KeyDocs":  [
+                        "API_REFERENCE.md",
+                        "ARCHITECTURE.md",
+                        "backend\\README.md",
+                        "powerbi\\README.md",
+                        "README.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  "API_REFERENCE.md",
+                                    "DocClass":  "Reference"
+                                },
+                                {
+                                    "Path":  "ARCHITECTURE.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "Archive\\README.md",
+                                    "DocClass":  "Archive"
+                                },
+                                {
+                                    "Path":  "backend\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "CODE_REVIEW.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "IMPLEMENTATION_GUIDE.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "IMPLEMENTATION_SUMMARY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "powerbi\\AdvancedQueries.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "powerbi\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "PROJECT_PLAN.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "QUICK_START.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "ROADMAP_SUMMARY.md",
+                                    "DocClass":  "Active"
+                                }
+                            ]
+    },
+    {
+        "RepoName":  "AI_PromptRefiner_GUI",
+        "RepoPath":  "G:\\Development\\20_Staging\\AI_PromptRefiner_GUI",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              "CHANGELOG.md",
+                              "CLAUDE_MIGRATION.md",
+                              "GITHUB_SETUP.md",
+                              "README.md",
+                              "TRANSPARENCY_TEST_GUIDE.md"
+                          ],
+        "MarkdownFileCount":  5,
+        "ActiveDocCount":  5,
+        "ArchiveDocCount":  0,
+        "GeneratedDocCount":  0,
+        "HasReadme":  true,
+        "HasDocsFolder":  false,
+        "HasContributing":  false,
+        "HasDocsIndex":  false,
+        "DocCategories":  [
+                              "changelog",
+                              "general",
+                              "readme",
+                              "setup"
+                          ],
+        "PriorityScore":  40,
+        "PriorityBand":  "High",
+        "ReviewMode":  "Core-docs batch",
+        "GitLastCommitDate":  "2025-09-27 12:40:28 -0400",
+        "GitBranch":  "main",
+        "GitUncommittedChanges":  2,
+        "DocQualityHints":  [
+
+                            ],
+        "KeyDocs":  [
+                        "GITHUB_SETUP.md",
+                        "README.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  "CHANGELOG.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "CLAUDE_MIGRATION.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "GITHUB_SETUP.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "TRANSPARENCY_TEST_GUIDE.md",
+                                    "DocClass":  "Active"
+                                }
+                            ]
+    },
+    {
+        "RepoName":  "PromptRefiner_GUI",
+        "RepoPath":  "G:\\Development\\20_Staging\\PromptRefiner_GUI",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              "CHANGELOG.md",
+                              "CLAUDE_MIGRATION.md",
+                              "GITHUB_SETUP.md",
+                              "README.md",
+                              "TRANSPARENCY_TEST_GUIDE.md"
+                          ],
+        "MarkdownFileCount":  5,
+        "ActiveDocCount":  5,
+        "ArchiveDocCount":  0,
+        "GeneratedDocCount":  0,
+        "HasReadme":  true,
+        "HasDocsFolder":  false,
+        "HasContributing":  false,
+        "HasDocsIndex":  false,
+        "DocCategories":  [
+                              "changelog",
+                              "general",
+                              "readme",
+                              "setup"
+                          ],
+        "PriorityScore":  40,
+        "PriorityBand":  "High",
+        "ReviewMode":  "Core-docs batch",
+        "GitLastCommitDate":  "2025-09-27 12:40:28 -0400",
+        "GitBranch":  "main",
+        "GitUncommittedChanges":  2,
+        "DocQualityHints":  [
+
+                            ],
+        "KeyDocs":  [
+                        "GITHUB_SETUP.md",
+                        "README.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  "CHANGELOG.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "CLAUDE_MIGRATION.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "GITHUB_SETUP.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "TRANSPARENCY_TEST_GUIDE.md",
+                                    "DocClass":  "Active"
+                                }
+                            ]
+    },
+    {
+        "RepoName":  "OpenAI_Refiner",
+        "RepoPath":  "G:\\Development\\20_Staging\\OpenAI_Refiner",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              "README.md"
+                          ],
+        "MarkdownFileCount":  1,
+        "ActiveDocCount":  1,
+        "ArchiveDocCount":  0,
+        "GeneratedDocCount":  0,
+        "HasReadme":  true,
+        "HasDocsFolder":  true,
+        "HasContributing":  false,
+        "HasDocsIndex":  false,
+        "DocCategories":  [
+                              "readme"
+                          ],
+        "PriorityScore":  35,
+        "PriorityBand":  "Medium",
+        "ReviewMode":  "README-only",
+        "GitLastCommitDate":  "2026-02-10 00:59:38 -0500",
+        "GitBranch":  "main",
+        "GitUncommittedChanges":  3,
+        "DocQualityHints":  [
+
+                            ],
+        "KeyDocs":  [
+                        "README.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  "README.md",
+                                    "DocClass":  "Active"
+                                }
+                            ]
+    },
+    {
+        "RepoName":  "OpsWorkbench",
+        "RepoPath":  "G:\\Development\\20_Staging\\OpsWorkbench",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              "README.md"
+                          ],
+        "MarkdownFileCount":  1,
+        "ActiveDocCount":  1,
+        "ArchiveDocCount":  0,
+        "GeneratedDocCount":  0,
+        "HasReadme":  true,
+        "HasDocsFolder":  true,
+        "HasContributing":  false,
+        "HasDocsIndex":  false,
+        "DocCategories":  [
+                              "readme"
+                          ],
+        "PriorityScore":  35,
+        "PriorityBand":  "Medium",
+        "ReviewMode":  "README-only",
+        "GitLastCommitDate":  "2025-12-25 20:43:40 -0500",
+        "GitBranch":  "main",
+        "GitUncommittedChanges":  1,
+        "DocQualityHints":  [
+
+                            ],
+        "KeyDocs":  [
+                        "README.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  "README.md",
+                                    "DocClass":  "Active"
+                                }
+                            ]
+    },
+    {
+        "RepoName":  "2026MiddleEastWar",
+        "RepoPath":  "G:\\Development\\20_Staging\\2026MiddleEastWar",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              "analysis\\analysis_report.md",
+                              "documents\\circulation_guide.md",
+                              "logs\\README.md",
+                              "outputs\\family_checklist.md",
+                              "outputs\\neighborhood_runbook.md",
+                              "README.md",
+                              "report.md",
+                              "templates\\message_templates.md",
+                              "templates\\printable_checklist.md"
+                          ],
+        "MarkdownFileCount":  9,
+        "ActiveDocCount":  8,
+        "ArchiveDocCount":  0,
+        "GeneratedDocCount":  0,
+        "HasReadme":  true,
+        "HasDocsFolder":  false,
+        "HasContributing":  false,
+        "HasDocsIndex":  false,
+        "DocCategories":  [
+                              "general",
+                              "readme",
+                              "runbook"
+                          ],
+        "PriorityScore":  30,
+        "PriorityBand":  "Medium",
+        "ReviewMode":  "Core-docs batch",
+        "GitLastCommitDate":  "2026-03-07 21:51:53 -0500",
+        "GitBranch":  "main",
+        "GitUncommittedChanges":  0,
+        "DocQualityHints":  [
+                                "no-docs-folder-many-md"
+                            ],
+        "KeyDocs":  [
+                        "logs\\README.md",
+                        "outputs\\neighborhood_runbook.md",
+                        "README.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  "analysis\\analysis_report.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "documents\\circulation_guide.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "logs\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "outputs\\family_checklist.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "outputs\\neighborhood_runbook.md",
+                                    "DocClass":  "Operational"
+                                },
+                                {
+                                    "Path":  "README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "report.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "templates\\message_templates.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "templates\\printable_checklist.md",
+                                    "DocClass":  "Active"
+                                }
+                            ]
+    },
+    {
+        "RepoName":  "SereneHarmony_Site_Starter",
+        "RepoPath":  "G:\\Development\\20_Staging\\SereneHarmony_Site_Starter",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              "custom_SereneHarmonySite\\CHECKLIST.md",
+                              "custom_SereneHarmonySite\\CODE_REVIEW.md",
+                              "custom_SereneHarmonySite\\DEPLOYMENT_GUIDE.md",
+                              "custom_SereneHarmonySite\\QUICK_START.md",
+                              "custom_SereneHarmonySite\\README.md",
+                              "custom_SereneHarmonySite\\SUMMARY.md",
+                              "README.md"
+                          ],
+        "MarkdownFileCount":  7,
+        "ActiveDocCount":  7,
+        "ArchiveDocCount":  0,
+        "GeneratedDocCount":  0,
+        "HasReadme":  true,
+        "HasDocsFolder":  false,
+        "HasContributing":  false,
+        "HasDocsIndex":  false,
+        "DocCategories":  [
+                              "general",
+                              "readme"
+                          ],
+        "PriorityScore":  30,
+        "PriorityBand":  "Medium",
+        "ReviewMode":  "Core-docs batch",
+        "GitLastCommitDate":  null,
+        "GitBranch":  "main",
+        "GitUncommittedChanges":  9,
+        "DocQualityHints":  [
+                                "no-docs-folder-many-md"
+                            ],
+        "KeyDocs":  [
+                        "custom_SereneHarmonySite\\README.md",
+                        "README.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  "custom_SereneHarmonySite\\CHECKLIST.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "custom_SereneHarmonySite\\CODE_REVIEW.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "custom_SereneHarmonySite\\DEPLOYMENT_GUIDE.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "custom_SereneHarmonySite\\QUICK_START.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "custom_SereneHarmonySite\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "custom_SereneHarmonySite\\SUMMARY.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "README.md",
+                                    "DocClass":  "Active"
+                                }
+                            ]
+    },
+    {
+        "RepoName":  "quickstart-resources",
+        "RepoPath":  "G:\\Development\\20_Staging\\quickstart-resources",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              "mcp-client-python\\README.md",
+                              "mcp-client-typescript\\README.md",
+                              "README.md",
+                              "weather-server-python\\README.md",
+                              "weather-server-rust\\README.md",
+                              "weather-server-typescript\\README.md"
+                          ],
+        "MarkdownFileCount":  6,
+        "ActiveDocCount":  6,
+        "ArchiveDocCount":  0,
+        "GeneratedDocCount":  0,
+        "HasReadme":  true,
+        "HasDocsFolder":  false,
+        "HasContributing":  false,
+        "HasDocsIndex":  false,
+        "DocCategories":  [
+                              "readme"
+                          ],
+        "PriorityScore":  30,
+        "PriorityBand":  "Medium",
+        "ReviewMode":  "Core-docs batch",
+        "GitLastCommitDate":  "2025-10-07 14:13:48 +0100",
+        "GitBranch":  "main",
+        "GitUncommittedChanges":  2,
+        "DocQualityHints":  [
+                                "no-docs-folder-many-md"
+                            ],
+        "KeyDocs":  [
+                        "mcp-client-python\\README.md",
+                        "mcp-client-typescript\\README.md",
+                        "README.md",
+                        "weather-server-python\\README.md",
+                        "weather-server-rust\\README.md",
+                        "weather-server-typescript\\README.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  "mcp-client-python\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "mcp-client-typescript\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "weather-server-python\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "weather-server-rust\\README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "weather-server-typescript\\README.md",
+                                    "DocClass":  "Active"
+                                }
+                            ]
+    },
+    {
+        "RepoName":  "DataExtraction",
+        "RepoPath":  "G:\\Development\\20_Staging\\DataExtraction",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              "out\\response.md",
+                              "out\\response_2025-09-27_04-25-48.md",
+                              "out\\response_2025-09-27_04-58-44.md",
+                              "README.md"
+                          ],
+        "MarkdownFileCount":  4,
+        "ActiveDocCount":  4,
+        "ArchiveDocCount":  0,
+        "GeneratedDocCount":  0,
+        "HasReadme":  true,
+        "HasDocsFolder":  false,
+        "HasContributing":  false,
+        "HasDocsIndex":  false,
+        "DocCategories":  [
+                              "general",
+                              "readme"
+                          ],
+        "PriorityScore":  30,
+        "PriorityBand":  "Medium",
+        "ReviewMode":  "Core-docs batch",
+        "GitLastCommitDate":  "2025-09-27 11:29:41 -0400",
+        "GitBranch":  "main",
+        "GitUncommittedChanges":  0,
+        "DocQualityHints":  [
+
+                            ],
+        "KeyDocs":  [
+                        "README.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  "out\\response.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "out\\response_2025-09-27_04-25-48.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "out\\response_2025-09-27_04-58-44.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "README.md",
+                                    "DocClass":  "Active"
+                                }
+                            ]
+    },
+    {
+        "RepoName":  "GeminiAIOrchestrator",
+        "RepoPath":  "G:\\Development\\20_Staging\\GeminiAIOrchestrator",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              "IMAGE_VIDEO_SUPPORT_IMPLEMENTATION.md",
+                              "README.md",
+                              "SQL_SUPPORT_IMPLEMENTATION.md"
+                          ],
+        "MarkdownFileCount":  3,
+        "ActiveDocCount":  3,
+        "ArchiveDocCount":  0,
+        "GeneratedDocCount":  0,
+        "HasReadme":  true,
+        "HasDocsFolder":  false,
+        "HasContributing":  false,
+        "HasDocsIndex":  false,
+        "DocCategories":  [
+                              "general",
+                              "readme"
+                          ],
+        "PriorityScore":  30,
+        "PriorityBand":  "Medium",
+        "ReviewMode":  "Core-docs batch",
+        "GitLastCommitDate":  "2025-10-25 20:46:35 -0400",
+        "GitBranch":  "main",
+        "GitUncommittedChanges":  0,
+        "DocQualityHints":  [
+
+                            ],
+        "KeyDocs":  [
+                        "README.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  "IMAGE_VIDEO_SUPPORT_IMPLEMENTATION.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "README.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "SQL_SUPPORT_IMPLEMENTATION.md",
+                                    "DocClass":  "Active"
+                                }
+                            ]
+    },
+    {
+        "RepoName":  "CoinbaseCryptoAdvisor",
+        "RepoPath":  "G:\\Development\\20_Staging\\CoinbaseCryptoAdvisor",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              "prompt01.md",
+                              "Readme.md"
+                          ],
+        "MarkdownFileCount":  2,
+        "ActiveDocCount":  2,
+        "ArchiveDocCount":  0,
+        "GeneratedDocCount":  0,
+        "HasReadme":  true,
+        "HasDocsFolder":  false,
+        "HasContributing":  false,
+        "HasDocsIndex":  false,
+        "DocCategories":  [
+                              "general",
+                              "readme"
+                          ],
+        "PriorityScore":  20,
+        "PriorityBand":  "Medium",
+        "ReviewMode":  "README-only",
+        "GitLastCommitDate":  "2025-08-23 03:39:45 -0400",
+        "GitBranch":  "main",
+        "GitUncommittedChanges":  2,
+        "DocQualityHints":  [
+
+                            ],
+        "KeyDocs":  [
+                        "Readme.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  "prompt01.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "Readme.md",
+                                    "DocClass":  "Active"
+                                }
+                            ]
+    },
+    {
+        "RepoName":  "PollingGameApp",
+        "RepoPath":  "G:\\Development\\20_Staging\\PollingGameApp",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              "ai_poll_platform.md",
+                              "README.md"
+                          ],
+        "MarkdownFileCount":  2,
+        "ActiveDocCount":  2,
+        "ArchiveDocCount":  0,
+        "GeneratedDocCount":  0,
+        "HasReadme":  true,
+        "HasDocsFolder":  false,
+        "HasContributing":  false,
+        "HasDocsIndex":  false,
+        "DocCategories":  [
+                              "general",
+                              "readme"
+                          ],
+        "PriorityScore":  20,
+        "PriorityBand":  "Medium",
+        "ReviewMode":  "README-only",
+        "GitLastCommitDate":  "2025-10-15 22:04:59 -0400",
+        "GitBranch":  "main",
+        "GitUncommittedChanges":  0,
+        "DocQualityHints":  [
+
+                            ],
+        "KeyDocs":  [
+                        "README.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  "ai_poll_platform.md",
+                                    "DocClass":  "Active"
+                                },
+                                {
+                                    "Path":  "README.md",
+                                    "DocClass":  "Active"
+                                }
+                            ]
+    },
+    {
+        "RepoName":  "2025-09-11-System-Dashboard",
+        "RepoPath":  "G:\\Development\\20_Staging\\2025-09-11-System-Dashboard",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              "ReadMe.md"
+                          ],
+        "MarkdownFileCount":  1,
+        "ActiveDocCount":  1,
+        "ArchiveDocCount":  0,
+        "GeneratedDocCount":  0,
+        "HasReadme":  true,
+        "HasDocsFolder":  false,
+        "HasContributing":  false,
+        "HasDocsIndex":  false,
+        "DocCategories":  [
+                              "readme"
+                          ],
+        "PriorityScore":  20,
+        "PriorityBand":  "Medium",
+        "ReviewMode":  "README-only",
+        "GitLastCommitDate":  "2025-09-12 01:45:59 -0400",
+        "GitBranch":  "main",
+        "GitUncommittedChanges":  3,
+        "DocQualityHints":  [
+
+                            ],
+        "KeyDocs":  [
+                        "ReadMe.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  "ReadMe.md",
+                                    "DocClass":  "Active"
+                                }
+                            ]
+    },
+    {
+        "RepoName":  "ansible-home-automation",
+        "RepoPath":  "G:\\Development\\20_Staging\\ansible-home-automation",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              "README.md"
+                          ],
+        "MarkdownFileCount":  1,
+        "ActiveDocCount":  1,
+        "ArchiveDocCount":  0,
+        "GeneratedDocCount":  0,
+        "HasReadme":  true,
+        "HasDocsFolder":  false,
+        "HasContributing":  false,
+        "HasDocsIndex":  false,
+        "DocCategories":  [
+                              "readme"
+                          ],
+        "PriorityScore":  20,
+        "PriorityBand":  "Medium",
+        "ReviewMode":  "README-only",
+        "GitLastCommitDate":  "2025-02-09 04:42:26 -0500",
+        "GitBranch":  "main",
+        "GitUncommittedChanges":  0,
+        "DocQualityHints":  [
+
+                            ],
+        "KeyDocs":  [
+                        "README.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  "README.md",
+                                    "DocClass":  "Active"
+                                }
+                            ]
+    },
+    {
+        "RepoName":  "NetworkTracker",
+        "RepoPath":  "G:\\Development\\20_Staging\\NetworkTracker",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              "README.md"
+                          ],
+        "MarkdownFileCount":  1,
+        "ActiveDocCount":  1,
+        "ArchiveDocCount":  0,
+        "GeneratedDocCount":  0,
+        "HasReadme":  true,
+        "HasDocsFolder":  false,
+        "HasContributing":  false,
+        "HasDocsIndex":  false,
+        "DocCategories":  [
+                              "readme"
+                          ],
+        "PriorityScore":  20,
+        "PriorityBand":  "Medium",
+        "ReviewMode":  "README-only",
+        "GitLastCommitDate":  "2026-02-22 07:30:13 -0500",
+        "GitBranch":  "main",
+        "GitUncommittedChanges":  1,
+        "DocQualityHints":  [
+
+                            ],
+        "KeyDocs":  [
+                        "README.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  "README.md",
+                                    "DocClass":  "Active"
+                                }
+                            ]
+    },
+    {
+        "RepoName":  "SnapGoal",
+        "RepoPath":  "G:\\Development\\20_Staging\\SnapGoal",
+        "IsGitRepo":  true,
+        "MarkdownFiles":  [
+                              "README.md"
+                          ],
+        "MarkdownFileCount":  1,
+        "ActiveDocCount":  1,
+        "ArchiveDocCount":  0,
+        "GeneratedDocCount":  0,
+        "HasReadme":  true,
+        "HasDocsFolder":  false,
+        "HasContributing":  false,
+        "HasDocsIndex":  false,
+        "DocCategories":  [
+                              "readme"
+                          ],
+        "PriorityScore":  20,
+        "PriorityBand":  "Medium",
+        "ReviewMode":  "README-only",
+        "GitLastCommitDate":  "2024-03-14 23:28:56 -0400",
+        "GitBranch":  "main",
+        "GitUncommittedChanges":  0,
+        "DocQualityHints":  [
+
+                            ],
+        "KeyDocs":  [
+                        "README.md"
+                    ],
+        "ClassifiedFiles":  [
+                                {
+                                    "Path":  "README.md",
+                                    "DocClass":  "Active"
+                                }
+                            ]
+    }
+]

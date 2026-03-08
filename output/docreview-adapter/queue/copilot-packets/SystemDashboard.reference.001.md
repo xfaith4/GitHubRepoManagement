@@ -1,0 +1,66 @@
+﻿# Queue Item: SystemDashboard.reference.001
+
+## Repo
+- Name: SystemDashboard
+- Path: G:\Development\20_Staging\SystemDashboard
+- Repo Priority: High (90)
+
+## Git State
+- Branch: main
+- Last Commit: 2026-02-14 01:34:31 -0500
+- Uncommitted Changes: 97
+
+## Batch
+- Type: reference
+- Chunk: 1
+- Complexity: high
+- Recommended Cooldown Seconds: 300
+- Queue Score: 116
+- Prompt Flavor: reference-doc-normalization
+
+## Files in Scope
+- CURRENT_CONFIGURATION.md
+- docs\_Archive\REFERENCE.md
+- docs\API-REFERENCE.md
+- docs\DATABASE-SCHEMA.md
+- docs\ROADMAP-QUICK-REFERENCE.md
+
+## Objectives
+- Normalize structure and terminology across reference docs
+- Improve scanability with disciplined headings and tables where useful
+- Reduce ambiguity while preserving technical precision
+- Keep formatting consistent and easy to navigate
+
+## Warnings / Review Notes
+- Batch contains many files; keep changes bounded and reviewable
+- docs folder exists without docs/index.md
+- Many markdown files fall into general or unclear categories
+- Multiple README.md files detected across the repo
+- Multiple setup-oriented docs may indicate overlap or duplication
+- Repo has 97 uncommitted change(s) - may be mid-surgery; verify before reviewing
+
+## Constraints
+- Preserve technical accuracy
+- Do not invent implementation details, APIs, commands, or architecture facts
+- Prefer structural improvements over cosmetic rewrites
+- Keep changes concise, professional, and reviewable
+- Use tree diagrams only where they materially improve understanding
+
+## Suggested Copilot Prompt
+
+```text
+You are performing a reference documentation normalization pass.
+
+Priorities:
+- improve consistency and scanability
+- normalize terminology, headings, and formatting
+- use tables where appropriate for options, parameters, and comparisons
+- reduce ambiguity while preserving technical precision
+- use tree diagrams only when a nested structure is genuinely hard to explain in prose
+
+Rules:
+- do not invent APIs, commands, schemas, or configuration facts
+- keep formatting disciplined and predictable
+- prefer concise, high-signal writing
+```
+

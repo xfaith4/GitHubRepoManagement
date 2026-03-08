@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult } from '../types';
+import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -162,6 +162,25 @@ export function getPowerBIReportUrl(repos: RepoStatus[]): string {
 export async function startArchive(daysInactive: number, zipArchive: boolean, repoNames?: string[]): Promise<void> {
   if (USE_MOCK_API) return;
   await postJson('/archive', { daysInactive, zipArchive, repoNames });
+}
+
+export async function startDocReview(request: DocReviewRunRequest): Promise<DocReviewRunResult> {
+  if (USE_MOCK_API) {
+    return {
+      inventoryManifestPath: '',
+      inventorySummaryCsvPath: '',
+      inventoryReportPath: '',
+      queuePath: null,
+      workitemsRoot: null
+    };
+  }
+
+  const data = await postJson<any>('/docreview/run', request);
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? data?.error ?? 'Doc review run failed.');
+  }
+
+  return data?.data as DocReviewRunResult;
 }
 
 export async function getArtifacts(repoName: string): Promise<Artifact[]> {
