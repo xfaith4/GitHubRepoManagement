@@ -1,0 +1,11 @@
+{
+  "GeneratedAt": "2026-03-07T21:30:40.3644650-05:00",
+  "WorkspaceRoot": "G:\\Development\\GitHubRepoManagement",
+  "StagingRoot": "G:\\Development\\20_Staging",
+  "LocalRoots": [
+    "g:\\Development\\GitHubRepoManagement"
+  ],
+  "GitHubOwner": "",
+  "SkipDocReview": true,
+  "SkipReconciliation": true
+}

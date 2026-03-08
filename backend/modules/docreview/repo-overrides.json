@@ -1,0 +1,14 @@
+{
+  "description": "Per-repo reviewer notes injected into AI prompt packets by Build-DocReviewQueue.ps1 and Invoke-DocReviewBatchPlan.ps1. Notes appear in every batch packet for the named repo. Add an entry for any repo requiring persistent reviewer guidance — terminology rules, known sensitivities, content conventions, or accuracy constraints.",
+  "repo_overrides": {
+    "AIToolbox": {
+      "notes": []
+    },
+    "Genesys-API-Explorer": {
+      "notes": [
+        "Keep auth terminology consistent — use 'access token', not 'bearer token' or 'API key' interchangeably",
+        "Avoid oversimplifying OAuth explanations — the target audience includes developers who need precision"
+      ]
+    }
+  }
+}

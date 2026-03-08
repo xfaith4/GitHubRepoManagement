@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "v1",
+  "inventory": {
+    "localRoots": [
+      "G:\\Development"
+    ],
+    "maxDepth": 3,
+    "includeNonGitFolders": false
+  },
+  "reconcile": {
+    "ownerType": "Auto",
+    "gitHubOwner": "",
+    "retry": {
+      "maxAttempts": 3,
+      "baseDelayMs": 300,
+      "maxDelayMs": 2000
+    }
+  },
+  "docReview": {
+    "maxDepth": 3,
+    "generateQueue": true,
+    "generateBatchPlan": false
+  },
+  "retention": {
+    "days": 30
+  },
+  "secrets": {
+    "gitHubTokenEnvVar": "GITHUB_TOKEN"
+  }
+}

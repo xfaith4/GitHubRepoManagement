@@ -1,0 +1,18 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# PowerShell / logs / temp
+*.log
+*.tmp
+
+# Build and artifacts
+backend/modules/output/
+logs/
+
+# Evidence outputs (generated)
+evidence/baseline/api-host-smoke/
+evidence/baseline/adapter-smoke/
+evidence/baseline/smoke-modular/
+evidence/baseline/regression-smoke/
