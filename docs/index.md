@@ -8,8 +8,7 @@
 ## Planning
 
 - [Roadmap](/docs/planning/roadmap.md)
-- [Migration Plan](/docs/planning/migration.md)
-- [Migration Status](/docs/planning/migration-status.md)
+- [Platform Status](/docs/planning/platform-status.md)
 
 ## Reference
 
@@ -23,3 +22,4 @@
 ## Archive
 
 - [Initial Project Prompt](/docs/archive/initial-project-prompt.md)
+- [Migration History](/docs/archive/migration-history.md)

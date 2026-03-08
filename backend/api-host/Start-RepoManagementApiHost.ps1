@@ -187,7 +187,197 @@ function Parse-QueryString {
 function Parse-JsonBody {
     param([string]$Body)
     if ([string]::IsNullOrWhiteSpace($Body)) { return @{} }
-    return ConvertFrom-Json -InputObject $Body -AsHashtable
+    return ConvertFrom-JsonCompat -Json $Body
+}
+
+function ConvertTo-HashtableRecursive {
+    param([Parameter(Mandatory = $true)][object]$InputObject)
+
+    if ($null -eq $InputObject) { return $null }
+
+    if ($InputObject -is [System.Collections.IDictionary]) {
+        $hash = @{}
+        foreach ($key in $InputObject.Keys) {
+            $hash[$key] = ConvertTo-HashtableRecursive -InputObject $InputObject[$key]
+        }
+        return $hash
+    }
+
+    if ($InputObject -is [System.Collections.IEnumerable] -and -not ($InputObject -is [string])) {
+        $list = @()
+        foreach ($item in $InputObject) {
+            $list += ConvertTo-HashtableRecursive -InputObject $item
+        }
+        return ,$list
+    }
+
+    if ($InputObject -is [pscustomobject]) {
+        $hash = @{}
+        foreach ($prop in $InputObject.PSObject.Properties) {
+            $hash[$prop.Name] = ConvertTo-HashtableRecursive -InputObject $prop.Value
+        }
+        return $hash
+    }
+
+    return $InputObject
+}
+
+function ConvertFrom-JsonCompat {
+    param([Parameter(Mandatory = $true)][string]$Json)
+
+    $obj = ConvertFrom-Json -InputObject $Json
+    return ConvertTo-HashtableRecursive -InputObject $obj
+}
+
+function Get-HostSettings {
+    $configPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
+    if (-not (Test-Path -LiteralPath $configPath)) {
+        return @{
+            inventory = @{ localRoots = @($WorkspaceRoot); maxDepth = 3; includeNonGitFolders = $false }
+            reconcile = @{ ownerType = 'Auto'; gitHubOwner = '' }
+            retention = @{ days = 30 }
+            secrets = @{ gitHubTokenEnvVar = 'GITHUB_TOKEN' }
+        }
+    }
+
+    return ConvertFrom-JsonCompat -Json (Get-Content -LiteralPath $configPath -Raw)
+}
+
+function Get-ConfiguredGitHubToken {
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Settings,
+        [Parameter()]
+        [string]$RequestToken
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($RequestToken)) {
+        return $RequestToken
+    }
+
+    $envVarName = if ($Settings.ContainsKey('secrets') -and $Settings.secrets.ContainsKey('gitHubTokenEnvVar') -and $Settings.secrets.gitHubTokenEnvVar) {
+        [string]$Settings.secrets.gitHubTokenEnvVar
+    }
+    else {
+        'GITHUB_TOKEN'
+    }
+
+    $envToken = [Environment]::GetEnvironmentVariable($envVarName)
+    if (-not [string]::IsNullOrWhiteSpace($envToken)) {
+        return $envToken
+    }
+
+    if ($Settings.ContainsKey('secrets') -and $Settings.secrets.ContainsKey('githubToken') -and $Settings.secrets.githubToken) {
+        return [string]$Settings.secrets.githubToken
+    }
+
+    return ''
+}
+
+function Get-GitHubReposViaApi {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Owner,
+        [Parameter(Mandatory = $true)]
+        [string]$Token,
+        [Parameter()]
+        [int]$RepoLimit = 50
+    )
+
+    $headers = @{
+        Authorization = "Bearer $Token"
+        'User-Agent' = 'GitHubRepoManagement'
+        Accept = 'application/vnd.github+json'
+    }
+
+    $uri = "https://api.github.com/users/$Owner/repos?per_page=100&sort=updated&type=all"
+    $reposRaw = Invoke-RestMethod -Uri $uri -Headers $headers -Method Get
+    $repos = @($reposRaw | Select-Object -First $RepoLimit | ForEach-Object {
+        [pscustomobject]@{
+            name = $_.name
+            branch = if ($_.default_branch) { $_.default_branch } else { 'main' }
+            status = 'clean'
+            lastCommitDate = $_.updated_at
+            uncommittedChanges = 0
+            isArchived = [bool]$_.archived
+            isStale = $false
+            localAhead = 0
+            remoteAhead = 0
+            openPrCount = 0
+            htmlUrl = $_.html_url
+            owner = $Owner
+            visibility = if ([bool]$_.private) { 'private' } else { 'public' }
+            language = $_.language
+            topics = if ($_.topics) { @($_.topics) } else { @() }
+        }
+    })
+
+    return [pscustomobject]@{
+        source = 'github'
+        username = $Owner
+        totalRepos = @($repos).Count
+        fetchedRepos = @($repos).Count
+        repos = $repos
+        rateLimit = $null
+    }
+}
+
+function Invoke-GitOperation {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('pull', 'sync')]
+        [string]$OperationType,
+        [Parameter()]
+        [string[]]$RepoNames
+    )
+
+    $status = Get-StatusAdapterResult -LocalRoots @($WorkspaceRoot) -MaxDepth 4 -IncludeNonGitFolders:$false -LogPath $LogPath
+    if (-not $status.success) {
+        throw "Unable to enumerate repositories for ${OperationType}: $($status.error)"
+    }
+
+    $repos = @($status.data.repos)
+    if ($RepoNames -and $RepoNames.Count -gt 0) {
+        $nameSet = @{}
+        foreach ($n in $RepoNames) { $nameSet[$n] = $true }
+        $repos = @($repos | Where-Object { $nameSet.ContainsKey($_.name) })
+    }
+
+    $results = @()
+    foreach ($repo in $repos) {
+        $repoPath = [string]$repo.path
+        $name = [string]$repo.name
+        try {
+            if ($OperationType -eq 'pull') {
+                $output = (& git -C $repoPath pull --ff-only 2>&1) | Out-String
+            }
+            else {
+                $output = (& git -C $repoPath fetch --all --prune 2>&1) | Out-String
+            }
+            $results += [pscustomobject]@{
+                name = $name
+                path = $repoPath
+                success = $true
+                output = $output.Trim()
+            }
+        }
+        catch {
+            $results += [pscustomobject]@{
+                name = $name
+                path = $repoPath
+                success = $false
+                error = $_.Exception.Message
+            }
+        }
+    }
+
+    return [pscustomobject]@{
+        operation = $OperationType
+        total = @($results).Count
+        succeeded = @($results | Where-Object { $_.success }).Count
+        failed = @($results | Where-Object { -not $_.success }).Count
+        results = $results
+    }
 }
 
 $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Parse($BindAddress), $Port)
@@ -211,6 +401,33 @@ try {
             if ($req.Method -eq 'OPTIONS') {
                 Add-MetricCounter -Name 'api_requests_total'
                 Send-HttpJson -Stream $req.Stream -StatusCode 204 -StatusText 'No Content' -Payload @{} -CorrelationId $correlationId
+                $client.Close()
+                continue
+            }
+
+            if ($req.Method -eq 'GET' -and $path -like '/api/artifacts/*') {
+                $repoName = [System.Uri]::UnescapeDataString($path.Substring('/api/artifacts/'.Length))
+                $outputRoot = Join-Path $WorkspaceRoot 'backend\modules\output'
+                $files = @()
+                if (Test-Path -LiteralPath $outputRoot) {
+                    $files = Get-ChildItem -Path $outputRoot -Recurse -File -ErrorAction SilentlyContinue | Where-Object {
+                        $_.Name -like "*$repoName*" -or $_.FullName -like "*$repoName*"
+                    } | Sort-Object LastWriteTime -Descending | Select-Object -First 200 | ForEach-Object {
+                        [pscustomobject]@{
+                            name = $_.Name
+                            path = $_.FullName
+                            sizeBytes = $_.Length
+                            lastWriteTime = $_.LastWriteTime.ToString('o')
+                        }
+                    }
+                }
+
+                Add-MetricCounter -Name 'api_requests_total'
+                Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                    success = $true
+                    repoName = $repoName
+                    artifacts = $files
+                }
                 $client.Close()
                 continue
             }
@@ -266,9 +483,14 @@ try {
                 }
                 'GET /api/status' {
                     $q = Parse-QueryString -Query $req.Query
-                    $localRoots = if ($q.ContainsKey('localRoots') -and $q.localRoots) { @($q.localRoots -split ';|,') } else { @($WorkspaceRoot) }
-                    $maxDepth = if ($q.ContainsKey('maxDepth') -and $q.maxDepth) { [int]$q.maxDepth } else { 2 }
-                    $includeNonGit = if ($q.ContainsKey('includeNonGitFolders')) { Parse-Bool -Value $q.includeNonGitFolders -Default $false } else { $false }
+                    $settings = Get-HostSettings
+                    $defaultRoots = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('localRoots') -and $settings.inventory.localRoots) { @($settings.inventory.localRoots) } else { @($WorkspaceRoot) }
+                    $defaultMaxDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 2 }
+                    $defaultIncludeNonGit = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('includeNonGitFolders')) { [bool]$settings.inventory.includeNonGitFolders } else { $false }
+
+                    $localRoots = if ($q.ContainsKey('localRoots') -and $q.localRoots) { @($q.localRoots -split ';|,') } else { $defaultRoots }
+                    $maxDepth = if ($q.ContainsKey('maxDepth') -and $q.maxDepth) { [int]$q.maxDepth } else { $defaultMaxDepth }
+                    $includeNonGit = if ($q.ContainsKey('includeNonGitFolders')) { Parse-Bool -Value $q.includeNonGitFolders -Default $defaultIncludeNonGit } else { $defaultIncludeNonGit }
 
                     $result = Get-StatusAdapterResult -LocalRoots $localRoots -MaxDepth $maxDepth -IncludeNonGitFolders:$includeNonGit -LogPath $LogPath
                     Add-MetricCounter -Name 'api_requests_total'
@@ -277,12 +499,19 @@ try {
                 }
                 'POST /api/reconcile' {
                     $body = Parse-JsonBody -Body $req.Body
-                    $localRoots = if ($body.ContainsKey('localRoots') -and $body.localRoots) { @($body.localRoots) } else { @($WorkspaceRoot) }
-                    $ownerType = if ($body.ContainsKey('ownerType') -and $body.ownerType) { [string]$body.ownerType } else { 'Auto' }
-                    $maxDepth = if ($body.ContainsKey('maxDepth') -and $body.maxDepth) { [int]$body.maxDepth } else { 3 }
-                    $includeNonGit = if ($body.ContainsKey('includeNonGitFolders')) { [bool]$body.includeNonGitFolders } else { $true }
+                    $settings = Get-HostSettings
+                    $defaultRoots = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('localRoots') -and $settings.inventory.localRoots) { @($settings.inventory.localRoots) } else { @($WorkspaceRoot) }
+                    $defaultOwnerType = if ($settings.ContainsKey('reconcile') -and $settings.reconcile.ContainsKey('ownerType') -and $settings.reconcile.ownerType) { [string]$settings.reconcile.ownerType } else { 'Auto' }
+                    $defaultGitHubOwner = if ($settings.ContainsKey('reconcile') -and $settings.reconcile.ContainsKey('gitHubOwner') -and $settings.reconcile.gitHubOwner) { [string]$settings.reconcile.gitHubOwner } else { '' }
+                    $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
+                    $defaultIncludeNonGit = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('includeNonGitFolders')) { [bool]$settings.inventory.includeNonGitFolders } else { $true }
+
+                    $localRoots = if ($body.ContainsKey('localRoots') -and $body.localRoots) { @($body.localRoots) } else { $defaultRoots }
+                    $ownerType = if ($body.ContainsKey('ownerType') -and $body.ownerType) { [string]$body.ownerType } else { $defaultOwnerType }
+                    $maxDepth = if ($body.ContainsKey('maxDepth') -and $body.maxDepth) { [int]$body.maxDepth } else { $defaultDepth }
+                    $includeNonGit = if ($body.ContainsKey('includeNonGitFolders')) { [bool]$body.includeNonGitFolders } else { $defaultIncludeNonGit }
                     $outDir = if ($body.ContainsKey('outDir')) { [string]$body.outDir } else { '' }
-                    $githubOwner = if ($body.ContainsKey('githubOwner')) { [string]$body.githubOwner } else { '' }
+                    $githubOwner = if ($body.ContainsKey('githubOwner')) { [string]$body.githubOwner } else { $defaultGitHubOwner }
 
                     $result = Invoke-ReconcileAdapter -LocalRoots $localRoots -GitHubOwner $githubOwner -OwnerType $ownerType -OutDir $outDir -MaxDepth $maxDepth -IncludeNonGitFolders:$includeNonGit -LogPath $LogPath
                     Add-MetricCounter -Name 'api_requests_total'
@@ -328,7 +557,7 @@ try {
                     $configPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
                     $config = @{}
                     if (Test-Path -LiteralPath $configPath) {
-                        $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json -AsHashtable
+                        $config = ConvertFrom-JsonCompat -Json (Get-Content -LiteralPath $configPath -Raw)
                     }
                     Add-MetricCounter -Name 'api_requests_total'
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
@@ -336,22 +565,155 @@ try {
                         data = $config
                     }
                 }
-                'POST /api/update' {
+                'POST /api/settings' {
+                    $body = Parse-JsonBody -Body $req.Body
+                    $configPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
+                    $existing = @{}
+                    if (Test-Path -LiteralPath $configPath) {
+                        $existing = ConvertFrom-JsonCompat -Json (Get-Content -LiteralPath $configPath -Raw)
+                    }
+
+                    if (-not $existing.ContainsKey('inventory')) { $existing.inventory = @{} }
+                    if (-not $existing.ContainsKey('retention')) { $existing.retention = @{} }
+                    if (-not $existing.ContainsKey('docReview')) { $existing.docReview = @{} }
+
+                    if ($body.ContainsKey('basePath') -and $body.basePath) {
+                        $existing.inventory.localRoots = @([string]$body.basePath)
+                    }
+                    if ($body.ContainsKey('scanDepth')) {
+                        $existing.inventory.maxDepth = [int]$body.scanDepth
+                    }
+                    if ($body.ContainsKey('daysInactive')) {
+                        $existing.retention.days = [int]$body.daysInactive
+                    }
+                    if ($body.ContainsKey('githubUser')) {
+                        if (-not $existing.ContainsKey('reconcile')) { $existing.reconcile = @{} }
+                        $existing.reconcile.gitHubOwner = [string]$body.githubUser
+                    }
+                    if ($body.ContainsKey('githubToken')) {
+                        if (-not $existing.ContainsKey('secrets')) { $existing.secrets = @{} }
+                        if ([string]::IsNullOrWhiteSpace([string]$body.githubToken)) {
+                            $existing.secrets.Remove('githubToken')
+                        }
+                        else {
+                            $existing.secrets.githubToken = [string]$body.githubToken
+                        }
+                    }
+                    if ($body.ContainsKey('gitHubTokenEnvVar') -and -not [string]::IsNullOrWhiteSpace([string]$body.gitHubTokenEnvVar)) {
+                        if (-not $existing.ContainsKey('secrets')) { $existing.secrets = @{} }
+                        $existing.secrets.gitHubTokenEnvVar = [string]$body.gitHubTokenEnvVar
+                    }
+
+                    ($existing | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $configPath -Encoding UTF8
+
                     Add-MetricCounter -Name 'api_requests_total'
-                    Send-HttpJson -Stream $req.Stream -StatusCode 410 -StatusText 'Gone' -CorrelationId $correlationId -Payload @{
-                        success = $false
-                        deprecated = $true
-                        replacement = '/api/status and /api/reconcile'
-                        message = 'Legacy update operation is deprecated in the consolidated host.'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = $existing
+                    }
+                }
+                'POST /api/init' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 202 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        accepted = $true
+                        message = 'Clone workflow placeholder accepted. Use existing local repo discovery and reconciliation workflows.'
+                    }
+                }
+                'POST /api/update' {
+                    $body = Parse-JsonBody -Body $req.Body
+                    $repoNames = if ($body.ContainsKey('repoNames') -and $body.repoNames) { @($body.repoNames) } else { @() }
+                    $result = Invoke-GitOperation -OperationType 'pull' -RepoNames $repoNames
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = $result
                     }
                 }
                 'POST /api/sync' {
+                    $body = Parse-JsonBody -Body $req.Body
+                    $repoNames = if ($body.ContainsKey('repoNames') -and $body.repoNames) { @($body.repoNames) } else { @() }
+                    $result = Invoke-GitOperation -OperationType 'sync' -RepoNames $repoNames
                     Add-MetricCounter -Name 'api_requests_total'
-                    Send-HttpJson -Stream $req.Stream -StatusCode 410 -StatusText 'Gone' -CorrelationId $correlationId -Payload @{
-                        success = $false
-                        deprecated = $true
-                        replacement = '/api/status and /api/reconcile'
-                        message = 'Legacy sync operation is deprecated in the consolidated host.'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = $result
+                    }
+                }
+                'POST /api/export' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 202 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        accepted = $true
+                        message = 'Client-side export supported. Artifact index available at /api/report/artifacts.'
+                    }
+                }
+                'POST /api/archive' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 202 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        accepted = $true
+                        message = 'Archive workflow is currently a planned operation in this host.'
+                    }
+                }
+                'POST /api/github/status' {
+                    $body = Parse-JsonBody -Body $req.Body
+                    $settings = Get-HostSettings
+                    $owner = if ($body.ContainsKey('githubUser') -and $body.githubUser) {
+                        [string]$body.githubUser
+                    }
+                    elseif ($settings.ContainsKey('reconcile') -and $settings.reconcile.ContainsKey('gitHubOwner') -and $settings.reconcile.gitHubOwner) {
+                        [string]$settings.reconcile.gitHubOwner
+                    }
+                    else {
+                        ''
+                    }
+                    $limit = if ($body.ContainsKey('repoLimit') -and $body.repoLimit) { [int]$body.repoLimit } else { 50 }
+                    if ([string]::IsNullOrWhiteSpace($owner)) {
+                        throw 'githubUser is required for /api/github/status'
+                    }
+                    $requestToken = if ($body.ContainsKey('apiKey') -and $body.apiKey) { [string]$body.apiKey } else { '' }
+                    $token = Get-ConfiguredGitHubToken -Settings $settings -RequestToken $requestToken
+
+                    if (-not [string]::IsNullOrWhiteSpace($token)) {
+                        $apiResult = Get-GitHubReposViaApi -Owner $owner -Token $token -RepoLimit $limit
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload $apiResult
+                        break
+                    }
+
+                    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+                        throw 'GitHub token not configured and GitHub CLI (gh) is not available.'
+                    }
+
+                    $json = (& gh repo list $owner --limit $limit --json name,nameWithOwner,url,isArchived,isPrivate,defaultBranchRef,updatedAt 2>&1) | Out-String
+                    $reposRaw = $json | ConvertFrom-Json
+                    $repos = @($reposRaw | ForEach-Object {
+                        [pscustomobject]@{
+                            name = $_.name
+                            branch = if ($_.defaultBranchRef) { $_.defaultBranchRef.name } else { 'main' }
+                            status = 'clean'
+                            lastCommitDate = $_.updatedAt
+                            uncommittedChanges = 0
+                            isArchived = [bool]$_.isArchived
+                            isStale = $false
+                            localAhead = 0
+                            remoteAhead = 0
+                            openPrCount = 0
+                            htmlUrl = $_.url
+                            owner = $owner
+                            visibility = if ([bool]$_.isPrivate) { 'private' } else { 'public' }
+                        }
+                    })
+
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        source = 'github'
+                        username = $owner
+                        totalRepos = @($repos).Count
+                        fetchedRepos = @($repos).Count
+                        repos = $repos
+                        rateLimit = $null
                     }
                 }
                 default {

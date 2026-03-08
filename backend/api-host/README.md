@@ -16,9 +16,15 @@ Minimal local PowerShell API host for adapter contracts.
 - `POST /api/reconcile`
 - `POST /api/docreview/run`
 - `GET /api/report/artifacts`
+- `GET /api/artifacts/:repoName`
 - `GET /api/settings`
-- `POST /api/update` (legacy, deprecated -> `410 Gone`)
-- `POST /api/sync` (legacy, deprecated -> `410 Gone`)
+- `POST /api/settings`
+- `POST /api/init` (accepted placeholder)
+- `POST /api/update`
+- `POST /api/sync`
+- `POST /api/export` (accepted placeholder)
+- `POST /api/archive` (accepted placeholder)
+- `POST /api/github/status`
 
 ## Start
 

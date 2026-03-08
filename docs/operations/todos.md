@@ -38,7 +38,7 @@ This file tracks unresolved details and exactly where to extract missing informa
     - `G:\Development\Doc_Review_Inventory\output\` (folder growth patterns)
     - `G:\Development\Repo_reconciliation-dashboard\output\` and `logs\` (artifact/log growth)
 
-## docs/planning/migration.md TODOs
+## docs/archive/migration-history.md TODOs
 
 - TODO: validate rename strategy against any external automation that depends on current script names.
   - Source files to inspect:
@@ -122,4 +122,5 @@ This file tracks unresolved details and exactly where to extract missing informa
 - [x] Final retention policy for logs/artifacts.
 - [x] Confirmed external consumers for output filenames.
 - [x] Production-ready secret storage policy for PATs.
+
 

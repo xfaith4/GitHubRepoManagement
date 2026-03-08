@@ -48,15 +48,17 @@ function Get-StatusAdapterResult {
 
         $repos = @(
             @($items) | Where-Object { $_.IsGitRepo } | ForEach-Object {
-                $dirty = (($_.ModifiedCount ?? 0) + ($_.UntrackedCount ?? 0))
+                $modifiedCount = if ($null -ne $_.ModifiedCount) { [int]$_.ModifiedCount } else { 0 }
+                $untrackedCount = if ($null -ne $_.UntrackedCount) { [int]$_.UntrackedCount } else { 0 }
+                $dirty = $modifiedCount + $untrackedCount
                 [pscustomobject]@{
                     name = $_.GitRepoName
                     folderName = $_.FolderName
                     path = $_.LocalPath
                     branch = $_.CurrentBranch
                     lastCommitDate = $_.LastCommitDate
-                    modifiedCount = $_.ModifiedCount
-                    untrackedCount = $_.UntrackedCount
+                    modifiedCount = $modifiedCount
+                    untrackedCount = $untrackedCount
                     dirtyCount = $dirty
                     status = if ($dirty -gt 0) { 'dirty' } else { 'clean' }
                     originUrl = $_.GitOriginUrl
