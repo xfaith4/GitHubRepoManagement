@@ -23,6 +23,9 @@ $commonRoot = Join-Path $WorkspaceRoot 'backend\modules\common'
 . (Join-Path $adapterRoot 'Reconcile.Adapter.ps1')
 . (Join-Path $adapterRoot 'DocReview.Adapter.ps1')
 
+$script:StatusCacheMemory = @{}
+$script:StatusCacheDefaultTtlSeconds = 120
+
 function Write-HostLog {
     param([string]$Message)
     $line = "[{0}] {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message
@@ -241,6 +244,212 @@ function Get-HostSettings {
     }
 
     return ConvertFrom-JsonCompat -Json (Get-Content -LiteralPath $configPath -Raw)
+}
+
+function Get-StatusCacheTtlSeconds {
+    param([hashtable]$Settings)
+
+    $ttl = $script:StatusCacheDefaultTtlSeconds
+    if (
+        $null -ne $Settings -and
+        $Settings.ContainsKey('inventory') -and
+        $Settings.inventory -is [System.Collections.IDictionary] -and
+        $Settings.inventory.ContainsKey('statusCacheTtlSeconds') -and
+        $Settings.inventory.statusCacheTtlSeconds
+    ) {
+        $candidate = [int]$Settings.inventory.statusCacheTtlSeconds
+        if ($candidate -ge 0) {
+            $ttl = $candidate
+        }
+    }
+
+    return $ttl
+}
+
+function Get-StatusCacheFilePath {
+    $cacheDir = Join-Path $WorkspaceRoot 'backend\modules\output\cache'
+    if (-not (Test-Path -LiteralPath $cacheDir)) {
+        $null = New-Item -ItemType Directory -Path $cacheDir -Force
+    }
+    return Join-Path $cacheDir 'status-cache.json'
+}
+
+function Get-StatusCacheKey {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$LocalRoots,
+        [Parameter(Mandatory = $true)]
+        [int]$MaxDepth,
+        [Parameter(Mandatory = $true)]
+        [bool]$IncludeNonGitFolders
+    )
+
+    $normalizedRoots = @(
+        $LocalRoots |
+            ForEach-Object { ([string]$_).Trim().ToLowerInvariant() } |
+            Sort-Object
+    )
+
+    return '{0}|depth:{1}|nonGit:{2}' -f ($normalizedRoots -join ';'), $MaxDepth, $IncludeNonGitFolders
+}
+
+function Get-StatusCacheMeta {
+    param(
+        [Parameter(Mandatory = $true)]
+        [bool]$Hit,
+        [Parameter(Mandatory = $true)]
+        [string]$Source,
+        [Parameter(Mandatory = $true)]
+        [int]$TtlSeconds,
+        [Parameter()]
+        [double]$AgeSeconds = 0,
+        [Parameter(Mandatory = $true)]
+        [bool]$BypassRequested
+    )
+
+    return @{
+        hit = $Hit
+        source = $Source
+        ageSeconds = [math]::Round([double]$AgeSeconds, 3)
+        ttlSeconds = $TtlSeconds
+        bypassRequested = $BypassRequested
+    }
+}
+
+function Add-StatusCacheMeta {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Result,
+        [Parameter(Mandatory = $true)]
+        [hashtable]$CacheMeta
+    )
+
+    if ($Result -is [System.Collections.IDictionary]) {
+        if (-not $Result.ContainsKey('meta') -or $null -eq $Result.meta) {
+            $Result.meta = @{}
+        }
+        if (-not ($Result.meta -is [System.Collections.IDictionary])) {
+            $Result.meta = @{ raw = $Result.meta }
+        }
+        $Result.meta.statusCache = $CacheMeta
+        return $Result
+    }
+
+    if (-not ($Result.PSObject.Properties.Name -contains 'meta') -or $null -eq $Result.meta) {
+        $Result | Add-Member -NotePropertyName meta -NotePropertyValue @{} -Force
+    }
+    elseif (-not ($Result.meta -is [System.Collections.IDictionary])) {
+        $Result.meta = @{ raw = $Result.meta }
+    }
+
+    $Result.meta.statusCache = $CacheMeta
+    return $Result
+}
+
+function Get-StatusFromCache {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Key,
+        [Parameter(Mandatory = $true)]
+        [int]$TtlSeconds
+    )
+
+    $nowUtc = (Get-Date).ToUniversalTime()
+
+    if ($script:StatusCacheMemory.ContainsKey($Key)) {
+        $memoryEntry = $script:StatusCacheMemory[$Key]
+        $ageSeconds = (($nowUtc) - [datetime]$memoryEntry.CreatedAtUtc).TotalSeconds
+        if ($ageSeconds -le $TtlSeconds) {
+            return [pscustomobject]@{
+                hit = $true
+                source = 'memory'
+                ageSeconds = $ageSeconds
+                response = $memoryEntry.Response
+            }
+        }
+    }
+
+    $cacheFile = Get-StatusCacheFilePath
+    if (-not (Test-Path -LiteralPath $cacheFile)) {
+        return [pscustomobject]@{ hit = $false }
+    }
+
+    try {
+        $raw = Get-Content -LiteralPath $cacheFile -Raw -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace($raw)) {
+            return [pscustomobject]@{ hit = $false }
+        }
+        $diskEntry = ConvertFrom-JsonCompat -Json $raw
+        if ($null -eq $diskEntry -or -not $diskEntry.ContainsKey('key') -or -not $diskEntry.ContainsKey('createdAtUtc') -or -not $diskEntry.ContainsKey('response')) {
+            return [pscustomobject]@{ hit = $false }
+        }
+        if ([string]$diskEntry.key -ne $Key) {
+            return [pscustomobject]@{ hit = $false }
+        }
+
+        $createdAtUtc = [datetime]$diskEntry.createdAtUtc
+        $ageSeconds = (($nowUtc) - $createdAtUtc).TotalSeconds
+        if ($ageSeconds -gt $TtlSeconds) {
+            return [pscustomobject]@{ hit = $false }
+        }
+
+        $script:StatusCacheMemory[$Key] = @{
+            CreatedAtUtc = $createdAtUtc
+            Response = $diskEntry.response
+        }
+
+        return [pscustomobject]@{
+            hit = $true
+            source = 'disk'
+            ageSeconds = $ageSeconds
+            response = $diskEntry.response
+        }
+    }
+    catch {
+        return [pscustomobject]@{ hit = $false }
+    }
+}
+
+function Save-StatusCache {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Key,
+        [Parameter(Mandatory = $true)]
+        [object]$Response
+    )
+
+    $nowUtc = (Get-Date).ToUniversalTime()
+    $entry = @{
+        key = $Key
+        createdAtUtc = $nowUtc.ToString('o')
+        response = $Response
+    }
+
+    $script:StatusCacheMemory[$Key] = @{
+        CreatedAtUtc = $nowUtc
+        Response = $Response
+    }
+
+    try {
+        $cacheFile = Get-StatusCacheFilePath
+        ($entry | ConvertTo-Json -Depth 20) | Set-Content -LiteralPath $cacheFile -Encoding UTF8
+    }
+    catch {
+        Write-HostLog ("Status cache write skipped: {0}" -f $_.Exception.Message)
+    }
+}
+
+function Clear-StatusCache {
+    $script:StatusCacheMemory = @{}
+    try {
+        $cacheFile = Get-StatusCacheFilePath
+        if (Test-Path -LiteralPath $cacheFile) {
+            Remove-Item -LiteralPath $cacheFile -Force -ErrorAction SilentlyContinue
+        }
+    }
+    catch {
+        Write-HostLog ("Status cache clear skipped: {0}" -f $_.Exception.Message)
+    }
 }
 
 function Get-ConfiguredGitHubToken {
@@ -502,8 +711,26 @@ try {
                     $localRoots = if ($q.ContainsKey('localRoots') -and $q.localRoots) { @($q.localRoots -split ';|,') } else { $defaultRoots }
                     $maxDepth = if ($q.ContainsKey('maxDepth') -and $q.maxDepth) { [int]$q.maxDepth } else { $defaultMaxDepth }
                     $includeNonGit = if ($q.ContainsKey('includeNonGitFolders')) { Parse-Bool -Value $q.includeNonGitFolders -Default $defaultIncludeNonGit } else { $defaultIncludeNonGit }
+                    $refresh = if ($q.ContainsKey('refresh')) { Parse-Bool -Value $q.refresh -Default $false } else { $false }
+                    $ttlSeconds = Get-StatusCacheTtlSeconds -Settings $settings
+                    $cacheKey = Get-StatusCacheKey -LocalRoots $localRoots -MaxDepth $maxDepth -IncludeNonGitFolders $includeNonGit
 
-                    $result = Get-StatusAdapterResult -LocalRoots $localRoots -MaxDepth $maxDepth -IncludeNonGitFolders:$includeNonGit -LogPath $LogPath
+                    $result = $null
+                    if ((-not $refresh) -and ($ttlSeconds -gt 0)) {
+                        $cacheHit = Get-StatusFromCache -Key $cacheKey -TtlSeconds $ttlSeconds
+                        if ($cacheHit.hit) {
+                            $result = Add-StatusCacheMeta -Result $cacheHit.response -CacheMeta (Get-StatusCacheMeta -Hit $true -Source $cacheHit.source -TtlSeconds $ttlSeconds -AgeSeconds $cacheHit.ageSeconds -BypassRequested:$false)
+                        }
+                    }
+
+                    if ($null -eq $result) {
+                        $result = Get-StatusAdapterResult -LocalRoots $localRoots -MaxDepth $maxDepth -IncludeNonGitFolders:$includeNonGit -LogPath $LogPath
+                        $result = Add-StatusCacheMeta -Result $result -CacheMeta (Get-StatusCacheMeta -Hit $false -Source 'fresh-scan' -TtlSeconds $ttlSeconds -AgeSeconds 0 -BypassRequested:$refresh)
+                        if ($result.success -and ($ttlSeconds -gt 0)) {
+                            Save-StatusCache -Key $cacheKey -Response $result
+                        }
+                    }
+
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
                     Send-HttpJson -Stream $req.Stream -StatusCode $(if ($result.success) { 200 } else { 500 }) -CorrelationId $correlationId -Payload $result
@@ -616,6 +843,7 @@ try {
                     }
 
                     ($existing | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $configPath -Encoding UTF8
+                    Clear-StatusCache
 
                     Add-MetricCounter -Name 'api_requests_total'
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
