@@ -76,10 +76,10 @@ function settingsFromApi(data: any): AppSettings {
   };
 }
 
-export async function getStatus(): Promise<{ repos: RepoStatus[]; source: 'sample' | 'local'; workspacePath?: string; configuredGithubUser?: string | null; repoCount?: number; scanDurationMs?: number; }> {
+export async function getStatus(): Promise<{ repos: RepoStatus[]; source: 'sample' | 'local'; workspacePath?: string; configuredGithubUser?: string | null; repoCount?: number; scanDurationMs?: number; dataLastUpdated?: string; cacheSource?: string; cacheAgeSeconds?: number; }> {
   if (USE_MOCK_API) {
     const sample = getMockRepos();
-    return { repos: sample, source: 'sample', configuredGithubUser: null, workspacePath: undefined, repoCount: sample.length };
+    return { repos: sample, source: 'sample', configuredGithubUser: null, workspacePath: undefined, repoCount: sample.length, dataLastUpdated: new Date().toISOString(), cacheSource: 'fresh-scan', cacheAgeSeconds: 0 };
   }
 
   const requestStartedAt = Date.now();
@@ -93,13 +93,17 @@ export async function getStatus(): Promise<{ repos: RepoStatus[]; source: 'sampl
     }
   }
   const repos = Array.from(dedupedByPath.values());
+  const cacheMeta = data?.meta?.statusCache;
   return {
     repos,
     source: 'local',
     workspacePath: undefined,
     configuredGithubUser: null,
     repoCount: Number(data?.meta?.repoCount ?? repos.length),
-    scanDurationMs: Number(data?.meta?.scanDurationMs ?? (Date.now() - requestStartedAt))
+    scanDurationMs: Number(data?.meta?.scanDurationMs ?? (Date.now() - requestStartedAt)),
+    dataLastUpdated: cacheMeta?.cachedAt ?? new Date().toISOString(),
+    cacheSource: cacheMeta?.source ?? 'fresh-scan',
+    cacheAgeSeconds: cacheMeta?.ageSeconds != null ? Number(cacheMeta.ageSeconds) : 0
   };
 }
 
@@ -162,6 +166,11 @@ export function getPowerBIReportUrl(repos: RepoStatus[]): string {
 export async function startArchive(daysInactive: number, zipArchive: boolean, repoNames?: string[]): Promise<void> {
   if (USE_MOCK_API) return;
   await postJson('/archive', { daysInactive, zipArchive, repoNames });
+}
+
+export async function clearStatusCache(): Promise<void> {
+  if (USE_MOCK_API) return;
+  await postJson('/status/cache/clear', {});
 }
 
 export async function startDocReview(request: DocReviewRunRequest): Promise<DocReviewRunResult> {

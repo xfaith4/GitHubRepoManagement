@@ -1,5 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 
+const USE_MOCK_API = (() => {
+  const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
+  const value = (env?.VITE_USE_MOCK_API as string | undefined) ?? 'false';
+  return value === 'true' || value === '1';
+})();
+
 export enum SseStatus {
   CONNECTING = 'CONNECTING',
   OPEN = 'OPEN',
@@ -10,7 +16,6 @@ export enum SseStatus {
 export const useSse = (url: string | null) => {
   const [messages, setMessages] = useState<string[]>([]);
   const [status, setStatus] = useState<SseStatus>(SseStatus.CLOSED);
-  // Fix: Replaced NodeJS.Timeout with ReturnType<typeof setTimeout> for browser compatibility.
   const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
@@ -24,91 +29,89 @@ export const useSse = (url: string | null) => {
       return;
     }
 
-    // --- Mock SSE Stream ---
-    // This simulates a live log stream for the frontend-only demo.
-    // In a real application with a backend, you would replace this with the real EventSource logic.
-    
-    const startSimulation = () => {
-      const operation = url.split('/').pop() || 'operation';
-      const mockLogs = [
-        `Starting: ${operation}...`,
-        `Authenticating with provided credentials... OK`,
-        `Locating base path... OK`,
-        `Analyzing repositories for ${operation}...`,
-        `Found 5 repositories to process.`,
-        `[1/5] Processing project-alpha... done.`,
-        `[2/5] Processing internal-tools... done.`,
-        `[3/5] Processing legacy-system... WARNING: outdated dependencies detected.`,
-        `[4/5] Processing mobile-app-sdk... done.`,
-        `[5/5] Processing archived-project... SKIPPED.`,
-        `Operation '${operation}' completed successfully.`,
-        `Summary: 4 processed, 1 skipped, 1 warning.`,
-      ];
-
-      setStatus(SseStatus.CONNECTING);
+    if (!USE_MOCK_API) {
+      // --- Real EventSource implementation ---
       setMessages([]);
-      
-      const connectTimeout = setTimeout(() => {
+      setStatus(SseStatus.CONNECTING);
+
+      const eventSource = new EventSource(url);
+
+      eventSource.onopen = () => {
         setStatus(SseStatus.OPEN);
-        setMessages(prev => [...prev, 'Mock connection established...']);
+      };
 
-        mockLogs.forEach((log, index) => {
-          const timeoutId = setTimeout(() => {
-            setMessages(prev => [...prev, log]);
-          }, (index + 1) * 600); // Stagger the messages
-          timeoutsRef.current.push(timeoutId);
-        });
+      eventSource.onmessage = (event) => {
+        setMessages(prev => [...prev, event.data]);
+      };
 
-        const closeTimeout = setTimeout(() => {
-          setStatus(SseStatus.CLOSED);
-          setMessages(prev => [...prev, 'Mock stream finished.']);
-        }, (mockLogs.length + 1) * 600);
-        timeoutsRef.current.push(closeTimeout);
+      eventSource.onerror = () => {
+        setStatus(SseStatus.ERROR);
+        eventSource.close();
+      };
 
-      }, 500); // Simulate connection delay
-      
-      timeoutsRef.current.push(connectTimeout);
-    };
+      return () => {
+        eventSource.close();
+        setStatus(SseStatus.CLOSED);
+      };
+    }
 
-    startSimulation();
+    // --- Mock SSE Stream ---
+    // Simulates a live log stream for the frontend-only demo.
+    const isScan = url.includes('scan') || url.includes('status');
+    const operation = url.split('/').pop() || 'operation';
+
+    const mockLogs = isScan ? [
+      'Initialising workspace scanner...',
+      'Loading configuration settings...',
+      'Resolving local repository roots...',
+      'Traversing directory tree (depth 2)...',
+      'Discovered 3 candidate directories.',
+      'Checking git status for: project-alpha ... clean',
+      'Checking git status for: internal-tools ... 2 modified files',
+      'Checking git status for: legacy-system ... clean',
+      'Collecting last commit metadata...',
+      'Scan complete.',
+    ] : [
+      `Starting: ${operation}...`,
+      `Authenticating with provided credentials... OK`,
+      `Locating base path... OK`,
+      `Analysing repositories for ${operation}...`,
+      `Found 5 repositories to process.`,
+      `[1/5] Processing project-alpha... done.`,
+      `[2/5] Processing internal-tools... done.`,
+      `[3/5] Processing legacy-system... WARNING: outdated dependencies detected.`,
+      `[4/5] Processing mobile-app-sdk... done.`,
+      `[5/5] Processing archived-project... SKIPPED.`,
+      `Operation '${operation}' completed successfully.`,
+      `Summary: 4 processed, 1 skipped, 1 warning.`,
+    ];
+
+    setStatus(SseStatus.CONNECTING);
+    setMessages([]);
     
-    // Cleanup function to run when the component unmounts or the URL changes
+    const connectTimeout = setTimeout(() => {
+      setStatus(SseStatus.OPEN);
+
+      mockLogs.forEach((log, index) => {
+        const timeoutId = setTimeout(() => {
+          setMessages(prev => [...prev, log]);
+        }, (index + 1) * 500);
+        timeoutsRef.current.push(timeoutId);
+      });
+
+      const closeTimeout = setTimeout(() => {
+        setStatus(SseStatus.CLOSED);
+      }, (mockLogs.length + 1) * 500);
+      timeoutsRef.current.push(closeTimeout);
+
+    }, 300);
+    
+    timeoutsRef.current.push(connectTimeout);
+    
     return () => {
       timeoutsRef.current.forEach(clearTimeout);
     };
 
-    /*
-    // --- REAL EventSource implementation ---
-    // This would be used when connecting to a real backend.
-    
-    const eventSourceRef = useRef<EventSource | null>(null);
-    setMessages([]);
-    setStatus(SseStatus.CONNECTING);
-    
-    const eventSource = new EventSource(url);
-    eventSourceRef.current = eventSource;
-
-    eventSource.onopen = () => {
-      setStatus(SseStatus.OPEN);
-      setMessages(prev => [...prev, 'Connection established...']);
-    };
-
-    eventSource.onmessage = (event) => {
-      setMessages(prev => [...prev, event.data]);
-    };
-
-    eventSource.onerror = () => {
-      setStatus(SseStatus.ERROR);
-      setMessages(prev => [...prev, 'Connection error. Stream closed.']);
-      eventSource.close();
-    };
-
-    return () => {
-      eventSource.close();
-      eventSourceRef.current = null;
-    };
-    */
-    
   }, [url]);
 
   return { messages, status };

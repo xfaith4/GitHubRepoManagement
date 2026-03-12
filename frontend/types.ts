@@ -74,7 +74,7 @@ export interface OperationResult {
   results: OperationRepoResult[];
 }
 
-export type OperationType = 'init' | 'update' | 'sync' | 'export' | 'archive' | 'docreview';
+export type OperationType = 'init' | 'update' | 'sync' | 'export' | 'archive' | 'docreview' | 'scan';
 
 export interface GithubInsightsMeta {
   totalRepos: number;

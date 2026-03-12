@@ -304,7 +304,9 @@ function Get-StatusCacheMeta {
         [Parameter()]
         [double]$AgeSeconds = 0,
         [Parameter(Mandatory = $true)]
-        [bool]$BypassRequested
+        [bool]$BypassRequested,
+        [Parameter()]
+        [string]$CachedAt = ''
     )
 
     return @{
@@ -313,6 +315,7 @@ function Get-StatusCacheMeta {
         ageSeconds = [math]::Round([double]$AgeSeconds, 3)
         ttlSeconds = $TtlSeconds
         bypassRequested = $BypassRequested
+        cachedAt = $CachedAt
     }
 }
 
@@ -364,6 +367,7 @@ function Get-StatusFromCache {
                 hit = $true
                 source = 'memory'
                 ageSeconds = $ageSeconds
+                cachedAt = ([datetime]$memoryEntry.CreatedAtUtc).ToString('o')
                 response = $memoryEntry.Response
             }
         }
@@ -402,6 +406,7 @@ function Get-StatusFromCache {
             hit = $true
             source = 'disk'
             ageSeconds = $ageSeconds
+            cachedAt = $createdAtUtc.ToString('o')
             response = $diskEntry.response
         }
     }
@@ -719,13 +724,14 @@ try {
                     if ((-not $refresh) -and ($ttlSeconds -gt 0)) {
                         $cacheHit = Get-StatusFromCache -Key $cacheKey -TtlSeconds $ttlSeconds
                         if ($cacheHit.hit) {
-                            $result = Add-StatusCacheMeta -Result $cacheHit.response -CacheMeta (Get-StatusCacheMeta -Hit $true -Source $cacheHit.source -TtlSeconds $ttlSeconds -AgeSeconds $cacheHit.ageSeconds -BypassRequested:$false)
+                            $result = Add-StatusCacheMeta -Result $cacheHit.response -CacheMeta (Get-StatusCacheMeta -Hit $true -Source $cacheHit.source -TtlSeconds $ttlSeconds -AgeSeconds $cacheHit.ageSeconds -BypassRequested:$false -CachedAt $cacheHit.cachedAt)
                         }
                     }
 
                     if ($null -eq $result) {
+                        $scanCachedAt = (Get-Date).ToUniversalTime().ToString('o')
                         $result = Get-StatusAdapterResult -LocalRoots $localRoots -MaxDepth $maxDepth -IncludeNonGitFolders:$includeNonGit -LogPath $LogPath
-                        $result = Add-StatusCacheMeta -Result $result -CacheMeta (Get-StatusCacheMeta -Hit $false -Source 'fresh-scan' -TtlSeconds $ttlSeconds -AgeSeconds 0 -BypassRequested:$refresh)
+                        $result = Add-StatusCacheMeta -Result $result -CacheMeta (Get-StatusCacheMeta -Hit $false -Source 'fresh-scan' -TtlSeconds $ttlSeconds -AgeSeconds 0 -BypassRequested:$refresh -CachedAt $scanCachedAt)
                         if ($result.success -and ($ttlSeconds -gt 0)) {
                             Save-StatusCache -Key $cacheKey -Response $result
                         }
@@ -957,11 +963,51 @@ try {
                         rateLimit = $null
                     }
                 }
+                'GET /api/status/cache' {
+                    $settings = Get-HostSettings
+                    $ttlSeconds = Get-StatusCacheTtlSeconds -Settings $settings
+                    $cacheFile = Get-StatusCacheFilePath
+                    $memoryKeys = @($script:StatusCacheMemory.Keys)
+                    $diskInfo = $null
+                    if (Test-Path -LiteralPath $cacheFile) {
+                        try {
+                            $raw = Get-Content -LiteralPath $cacheFile -Raw -ErrorAction Stop
+                            if (-not [string]::IsNullOrWhiteSpace($raw)) {
+                                $diskEntry = ConvertFrom-JsonCompat -Json $raw
+                                if ($diskEntry -and $diskEntry.ContainsKey('createdAtUtc')) {
+                                    $nowUtc = (Get-Date).ToUniversalTime()
+                                    $createdAt = [datetime]$diskEntry.createdAtUtc
+                                    $diskInfo = @{
+                                        key = [string]$diskEntry.key
+                                        createdAtUtc = $diskEntry.createdAtUtc
+                                        ageSeconds = [math]::Round(($nowUtc - $createdAt).TotalSeconds, 1)
+                                        expired = (($nowUtc - $createdAt).TotalSeconds -gt $ttlSeconds)
+                                    }
+                                }
+                            }
+                        } catch { }
+                    }
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        ttlSeconds = $ttlSeconds
+                        memoryEntries = $memoryKeys.Count
+                        memoryKeys = $memoryKeys
+                        disk = $diskInfo
+                    }
+                }
+                'POST /api/status/cache/clear' {
+                    Clear-StatusCache
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        message = 'Status cache cleared. Next GET /api/status will perform a fresh scan.'
+                    }
+                }
                 default {
                     Add-MetricCounter -Name 'api_requests_total'
                     Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{ error = 'Not Found'; method = $req.Method; path = $path }
-                }
-            }
+                }            }
         }
         catch {
             if ($client.Connected) {

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest } from '../types';
 import SummaryCard from './SummaryCard';
 import ActionBar from './ActionBar';
@@ -10,6 +10,7 @@ import ArtifactsModal from './ArtifactsModal';
 import ChangeHistoryPanel from './ChangeHistoryPanel';
 import DocReviewModal from './DocReviewModal';
 import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, getReportDownloadUrl, getPowerBIReportUrl, startDocReview } from '../services/apiClient';
+import { useSse, SseStatus } from '../hooks/useSse';
 import { SpinnerIcon, IssuesIcon, ProjectsIcon, BranchIcon, HealthIcon } from './icons';
 
 interface DashboardProps {
@@ -23,9 +24,10 @@ interface DashboardProps {
     | { source: 'github'; username: string }
     | null;
   insightsMeta?: GithubInsightsMeta | null;
+  dataLastUpdated?: Date | null;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoStatus, dataSource, insightsMeta }) => {
+const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoStatus, dataSource, insightsMeta, dataLastUpdated }) => {
   const [currentOperation, setCurrentOperation] = useState<OperationType | null>(null);
   const [isLogPanelOpen, setIsLogPanelOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -41,6 +43,12 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [loadingElapsedSec, setLoadingElapsedSec] = useState(0);
   const [logMessages, setLogMessages] = useState<string[]>([]);
   const [logStatus, setLogStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
+
+  // Scan progress sidecar: drive SSE during loading
+  const [scanSseUrl, setScanSseUrl] = useState<string | null>(null);
+  const { messages: sseMessages, status: sseStatus } = useSse(scanSseUrl);
+  // Initialise to false so the first load transition (false→true is implied by mount state) opens the panel
+  const prevLoadingRef = useRef<boolean>(false);
   
   useEffect(() => {
     getSettings()
@@ -67,6 +75,53 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   useEffect(() => {
     setSelectedRepoIds(new Set());
   }, [repos]);
+
+  // Open scan progress sidecar when loading begins; close/summarise when loading ends
+  useEffect(() => {
+    const wasLoading = prevLoadingRef.current;
+    prevLoadingRef.current = loading;
+
+    if (loading && !wasLoading) {
+      // Scan is starting — open the sidecar terminal
+      setCurrentOperation('scan');
+      setLogMessages(['Starting repository scan...']);
+      setLogStatus('running');
+      setIsLogPanelOpen(true);
+      setScanSseUrl('/api/scan/progress');
+    } else if (!loading && wasLoading) {
+      // Scan just finished — stop the SSE stream and show completion
+      setScanSseUrl(null);
+      if (currentOperation === 'scan') {
+        const repoCount = repos.length;
+        setLogMessages(prev => [
+          ...prev,
+          repoCount > 0
+            ? `Scan complete. Found ${repoCount} ${repoCount === 1 ? 'repository' : 'repositories'}.`
+            : 'Scan complete. No repositories found.'
+        ]);
+        setLogStatus(error ? 'error' : 'success');
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+
+  // Pipe SSE messages into the log panel when a scan is in progress
+  const prevSseMsgCountRef = useRef(0);
+  useEffect(() => {
+    if (currentOperation !== 'scan') return;
+    const newMessages = sseMessages.slice(prevSseMsgCountRef.current);
+    if (newMessages.length > 0) {
+      setLogMessages(prev => [...prev, ...newMessages]);
+    }
+    prevSseMsgCountRef.current = sseMessages.length;
+  }, [sseMessages, currentOperation]);
+
+  // When SSE stream closes naturally during a scan, update status
+  useEffect(() => {
+    if (currentOperation === 'scan' && sseStatus === SseStatus.CLOSED && !loading) {
+      setLogStatus(prev => prev === 'running' ? 'success' : prev);
+    }
+  }, [sseStatus, currentOperation, loading]);
 
   const getRepoSelectionId = (repo: RepoStatus) => repo.localPath ?? `${repo.name}::${repo.branch}`;
   const resolveSelectionTargets = (repoIds?: string[]) => {
@@ -226,10 +281,15 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   };
 
   const handleLogPanelClose = () => {
+    const wasScan = currentOperation === 'scan';
     setIsLogPanelOpen(false);
     setCurrentOperation(null);
     setLogStatus('idle');
-    fetchRepoStatus(); // Refresh data after an operation
+    setScanSseUrl(null);
+    // Only trigger a refresh for non-scan operations (scan was already triggered by App.tsx)
+    if (!wasScan) {
+      fetchRepoStatus();
+    }
   };
   
   const handleSaveSettings = (newSettings: AppSettings) => {
@@ -277,38 +337,46 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
     };
   }, [repos]);
 
-  if (error) {
+  if (error && repos.length === 0) {
     return <div className="text-center p-8 text-red-400">{error}</div>;
   }
-  
-  if (loading || settingsLoading) {
-      return (
-          <div className="flex flex-col items-center justify-center h-96 gap-4">
-              <div className="flex items-center">
-                <SpinnerIcon className="w-10 h-10 text-blue-500" />
-                <p className="ml-4 text-lg">Scanning repositories... {loadingElapsedSec}s</p>
-              </div>
-              <div className="w-full max-w-md h-2 rounded-full bg-gray-800 overflow-hidden">
-                <div className="h-full w-1/3 bg-blue-500 animate-pulse rounded-full" />
-              </div>
-              {dataSource?.source === 'local' && typeof dataSource.repoCount === 'number' && (
-                <p className="text-sm text-gray-400">
-                  Last completed scan: {dataSource.repoCount} repos
-                  {typeof dataSource.scanDurationMs === 'number' ? ` in ${(dataSource.scanDurationMs / 1000).toFixed(1)}s` : ''}
-                </p>
-              )}
-          </div>
-      );
-  }
+
+  const isScanning = loading || settingsLoading;
 
   return (
     <div>
+      {/* Inline scan progress indicator (non-blocking) */}
+      {isScanning && (
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+          <div className="flex items-center gap-3 bg-blue-900/20 border border-blue-700/50 rounded-lg px-4 py-2 text-sm text-blue-200">
+            <SpinnerIcon className="w-4 h-4 text-blue-400 flex-shrink-0" />
+            <span>Scanning repositories... {loadingElapsedSec}s</span>
+            <div className="flex-1 h-1.5 rounded-full bg-blue-900 overflow-hidden">
+              <div className="h-full bg-blue-500 animate-pulse rounded-full" style={{ width: '40%' }} />
+            </div>
+            <button
+              onClick={() => setIsLogPanelOpen(true)}
+              className="text-blue-300 hover:text-blue-100 underline underline-offset-2 text-xs flex-shrink-0"
+            >
+              View progress
+            </button>
+          </div>
+        </div>
+      )}
+      {error && repos.length > 0 && (
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+          <div className="bg-red-900/20 border border-red-700/50 rounded-lg px-4 py-2 text-sm text-red-300">{error}</div>
+        </div>
+      )}
       {dataSource?.source === 'local' && (
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-6">
           <div className="bg-gray-800/60 border border-gray-700 rounded-lg px-4 py-3 text-sm text-gray-200">
             Showing repositories discovered under <strong>{settings?.basePath}</strong> (scan depth {settings?.scanDepth}).
             {typeof dataSource.repoCount === 'number' && (
               <span className="text-gray-300"> Last scan found <strong>{dataSource.repoCount}</strong> repos{typeof dataSource.scanDurationMs === 'number' ? ` in ${(dataSource.scanDurationMs / 1000).toFixed(1)}s` : ''}.</span>
+            )}
+            {dataLastUpdated && (
+              <span className="text-gray-400"> Data last updated: <strong>{dataLastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong>.</span>
             )}
             <span className="text-gray-400"> Use Settings to change workspace path. Connect GitHub API to view repositories that exist on GitHub but are not cloned locally.</span>
           </div>
@@ -318,6 +386,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-6">
           <div className="bg-gray-800/60 border border-gray-700 rounded-lg px-4 py-3 text-sm text-gray-200">
             Showing repositories returned by the GitHub API for <strong>{dataSource.username}</strong>.
+            {dataLastUpdated && (
+              <span className="text-gray-400"> Data fetched at <strong>{dataLastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong>.</span>
+            )}
             <span className="text-gray-400"> Local-only repositories will not appear in this view. Use the Local tab to view your workspace scan.</span>
           </div>
         </div>
