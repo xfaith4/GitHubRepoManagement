@@ -13,7 +13,7 @@ interface LogPanelProps {
 const LogPanel: React.FC<LogPanelProps> = ({ isOpen, operation, messages, status, onClose }) => {
   const logsEndRef = useRef<HTMLDivElement>(null);
 
-  const operationTitle = operation ? operation.charAt(0).toUpperCase() + operation.slice(1) : 'Operation';
+  const operationTitle = operation === 'scan' ? 'Scan Progress' : (operation ? operation.charAt(0).toUpperCase() + operation.slice(1) : 'Operation');
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });

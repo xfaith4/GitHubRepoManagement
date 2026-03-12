@@ -5,6 +5,18 @@ import { getStatus, getGithubRepoInsights } from './services/apiClient';
 import { type RepoStatus, type GithubInsightsMeta } from './types';
 import { DatabaseIcon } from './components/icons';
 
+function formatRelativeTime(date: Date): string {
+  const diffMs = Date.now() - date.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 5) return 'just now';
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  return `${Math.floor(diffHr / 24)}d ago`;
+}
+
 function App() {
   const [viewMode, setViewMode] = useState<'local' | 'github'>('local');
 
@@ -17,6 +29,8 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [isDataSourceModalOpen, setIsDataSourceModalOpen] = useState(false);
   const [insightsMeta, setInsightsMeta] = useState<GithubInsightsMeta | null>(null);
+  const [dataLastUpdated, setDataLastUpdated] = useState<Date | null>(null);
+  const [relativeTime, setRelativeTime] = useState<string>('');
   const githubCredentialsRef = useRef<{ username: string; apiKey?: string } | null>(null);
 
   const fetchRepoStatus = useCallback(async () => {
@@ -25,6 +39,9 @@ function App() {
     try {
       const localData = await getStatus();
       setLocalRepos(localData.repos);
+      if (localData.dataLastUpdated) {
+        setDataLastUpdated(new Date(localData.dataLastUpdated));
+      }
       if (localData.source === 'sample') {
         setLocalSource({ source: 'sample' });
       } else {
@@ -72,6 +89,15 @@ function App() {
     fetchRepoStatus();
   }, [fetchRepoStatus]);
 
+  useEffect(() => {
+    if (!dataLastUpdated) return;
+    setRelativeTime(formatRelativeTime(dataLastUpdated));
+    const timer = setInterval(() => {
+      setRelativeTime(formatRelativeTime(dataLastUpdated));
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [dataLastUpdated]);
+
   const handleDataSourceChange = async (username: string, apiKey?: string) => {
     setLoading(true);
     setError(null);
@@ -108,6 +134,12 @@ function App() {
     const activeSource = viewMode === 'github' && githubSource ? githubSource : localSource;
     if (!activeSource) return null;
 
+    const updatedBadge = relativeTime ? (
+      <span className="text-gray-400 text-xs" title={dataLastUpdated?.toLocaleString()}>
+        • Updated: {relativeTime}
+      </span>
+    ) : null;
+
     if (activeSource.source === 'sample') {
       return (
         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-800 text-yellow-200 border border-yellow-700">
@@ -125,6 +157,7 @@ function App() {
           {activeSource.configuredGithubUser ? (
             <span className="text-gray-400">• GitHub user configured: {activeSource.configuredGithubUser}</span>
           ) : null}
+          {updatedBadge}
         </span>
       );
     }
@@ -140,6 +173,7 @@ function App() {
               • API {insightsMeta.rateLimit.remaining}/{insightsMeta.rateLimit.limit}
             </span>
           )}
+          {updatedBadge}
         </span>
       );
     }
@@ -208,6 +242,7 @@ function App() {
             fetchRepoStatus={fetchRepoStatus}
             dataSource={viewMode === 'github' && githubSource ? githubSource : localSource}
             insightsMeta={viewMode === 'github' && githubSource ? insightsMeta : null}
+            dataLastUpdated={dataLastUpdated}
         />
       </main>
       <footer className="text-center py-4 text-gray-500 text-sm border-t border-gray-800 mt-8">
