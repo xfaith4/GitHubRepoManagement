@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest } from '../types';
+import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry } from '../types';
 import SummaryCard from './SummaryCard';
 import ActionBar from './ActionBar';
 import RepoGrid from './RepoGrid';
@@ -9,7 +9,8 @@ import InitModal from './InitModal';
 import ArtifactsModal from './ArtifactsModal';
 import ChangeHistoryPanel from './ChangeHistoryPanel';
 import DocReviewModal from './DocReviewModal';
-import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, getReportDownloadUrl, getPowerBIReportUrl, startDocReview } from '../services/apiClient';
+import RoadmapViewerModal from './RoadmapViewerModal';
+import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, getReportDownloadUrl, getPowerBIReportUrl, startDocReview, getRoadmapIndex, triggerRoadmapScan } from '../services/apiClient';
 import { useSse, SseStatus } from '../hooks/useSse';
 import { SpinnerIcon, IssuesIcon, ProjectsIcon, BranchIcon, HealthIcon } from './icons';
 
@@ -35,6 +36,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [isArtifactsModalOpen, setIsArtifactsModalOpen] = useState(false);
   const [isDocReviewModalOpen, setIsDocReviewModalOpen] = useState(false);
   const [selectedRepoForArtifacts, setSelectedRepoForArtifacts] = useState<string | null>(null);
+  const [isRoadmapViewerOpen, setIsRoadmapViewerOpen] = useState(false);
+  const [selectedRoadmapRepo, setSelectedRoadmapRepo] = useState<string | null>(null);
+  const [roadmapEntries, setRoadmapEntries] = useState<RoadmapEntry[]>([]);
   const [selectedRepoIds, setSelectedRepoIds] = useState<Set<string>>(new Set());
   const [groupBy, setGroupBy] = useState<keyof RepoStatus | 'none'>('none');
   
@@ -55,6 +59,11 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
       .then(setSettings)
       .catch(err => console.error("Failed to fetch settings", err))
       .finally(() => setSettingsLoading(false));
+  }, []);
+
+  // Lazy roadmap index fetch — runs after initial mount, never blocks page load
+  useEffect(() => {
+    getRoadmapIndex().then(index => setRoadmapEntries(index.entries)).catch(() => {/* silent — badge just won't show */});
   }, []);
 
   useEffect(() => {
@@ -210,6 +219,15 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                 setLogMessages(prev => [...prev, 'Doc review run requested.']);
                 setLogStatus('success');
                 break;
+            case 'roadmap-scan':
+                {
+                  setLogMessages(prev => [...prev, 'Scanning all repositories for ROADMAP files...']);
+                  const result = await triggerRoadmapScan();
+                  setRoadmapEntries(result.entries);
+                  setLogMessages(prev => [...prev, `Scan complete. Found ${result.count} ROADMAP ${result.count === 1 ? 'file' : 'files'}.`]);
+                  setLogStatus('success');
+                }
+                break;
         }
     } catch (err) {
         console.error(`${operation} failed to start`, err);
@@ -313,6 +331,24 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
     setSelectedRepoForArtifacts(repoName);
     setIsArtifactsModalOpen(true);
   };
+
+  const handleViewRoadmap = (repoName: string) => {
+    setSelectedRoadmapRepo(repoName);
+    setIsRoadmapViewerOpen(true);
+  };
+
+  const handleRoadmapScanComplete = (count: number) => {
+    // Re-fetch the index so badges update
+    getRoadmapIndex(true).then(index => setRoadmapEntries(index.entries)).catch(() => {});
+    setLogMessages(prev => [...prev, `Roadmap scan complete. Found ${count} ROADMAP ${count === 1 ? 'file' : 'files'}.`]);
+  };
+
+  // Enrich repos with hasRoadmap flag from the lazily-fetched index
+  const reposWithRoadmap = useMemo(() => {
+    if (roadmapEntries.length === 0) return repos;
+    const roadmapSet = new Set(roadmapEntries.map(e => e.repoName.toLowerCase()));
+    return repos.map(r => roadmapSet.has(r.name.toLowerCase()) ? { ...r, hasRoadmap: true } : r);
+  }, [repos, roadmapEntries]);
 
   const summary = useMemo(() => {
     const total = repos.length;
@@ -473,9 +509,10 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                 settings={settings}
                 selectedRepos={selectedRepoIds}
             />
-            <RepoGrid 
-              repos={repos} 
-              onViewArtifacts={handleViewArtifacts} 
+            <RepoGrid
+              repos={reposWithRoadmap}
+              onViewArtifacts={handleViewArtifacts}
+              onViewRoadmap={handleViewRoadmap}
               dataSource={dataSource}
               selectedRepos={selectedRepoIds}
               setSelectedRepos={setSelectedRepoIds}
@@ -520,6 +557,13 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
         onRun={handleDocReviewRun}
         defaultRootPath={settings?.basePath}
         defaultDepth={settings?.scanDepth}
+      />
+
+      <RoadmapViewerModal
+        isOpen={isRoadmapViewerOpen}
+        repoName={selectedRoadmapRepo}
+        onClose={() => setIsRoadmapViewerOpen(false)}
+        onScanComplete={handleRoadmapScanComplete}
       />
     </div>
   );

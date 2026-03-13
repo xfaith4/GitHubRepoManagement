@@ -1,5 +1,5 @@
 import React from 'react';
-import { InitIcon, UpdateIcon, SyncIcon, ExportIcon, ArchiveIcon, RefreshIcon, SettingsIcon, SpinnerIcon, DocReviewIcon } from './icons';
+import { InitIcon, UpdateIcon, SyncIcon, ExportIcon, ArchiveIcon, RefreshIcon, SettingsIcon, SpinnerIcon, DocReviewIcon, RoadmapIcon } from './icons';
 import { type OperationType, type AppSettings } from '../types';
 
 interface ActionBarProps {
@@ -79,6 +79,9 @@ const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, on
                 </ActionButton>
                 <ActionButton onClick={onDocReviewClick} disabled={isActionRunning} isLoading={currentOperation === 'docreview'} title="Run Doc Review Inventory, queue planning, and optional repo batch plan generation." icon={<DocReviewIcon className="w-4 h-4" />}>
                     <span className="hidden sm:inline">Doc Review</span>
+                </ActionButton>
+                <ActionButton onClick={() => onAction('roadmap-scan')} disabled={isActionRunning} isLoading={currentOperation === 'roadmap-scan'} title="Scan all repositories for ROADMAP files and update the index." icon={<RoadmapIcon className="w-4 h-4" />}>
+                    <span className="hidden sm:inline">Roadmap Scan</span>
                 </ActionButton>
                  <ActionButton onClick={handleArchive} disabled={isActionRunning || !settings || !archiveImplemented} isLoading={currentOperation === 'archive'} title={archiveImplemented ? `Archive ${selectionCount > 0 ? selectionCount + ' selected' : 'all'} repositories inactive for over ${settings?.daysInactive ?? 'N/A'} days (local).` : 'Planned: archive inactive repositories (not implemented in this build).'} icon={<ArchiveIcon className="w-4 h-4" />}>
                     {getButtonText(archiveImplemented ? 'Archive' : 'Archive (Planned)')}

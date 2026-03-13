@@ -13,6 +13,7 @@ declare global {
 interface RepoGridProps {
   repos: RepoStatus[];
   onViewArtifacts: (repoName: string) => void;
+  onViewRoadmap?: (repoName: string) => void;
   dataSource:
     | { source: 'sample' }
     | { source: 'local'; workspacePath?: string; configuredGithubUser?: string | null }
@@ -29,7 +30,7 @@ type SortOrder = 'asc' | 'desc';
 
 type DuplicateGroup = { groupKey: string; items: RepoStatus[] };
 
-const RepoGrid = ({ repos, onViewArtifacts, dataSource, selectedRepos, setSelectedRepos, groupBy, setGroupBy }: RepoGridProps) => {
+const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, dataSource, selectedRepos, setSelectedRepos, groupBy, setGroupBy }: RepoGridProps) => {
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [filter, setFilter] = useState('');
@@ -335,6 +336,15 @@ const RepoGrid = ({ repos, onViewArtifacts, dataSource, selectedRepos, setSelect
                                   <div className="text-xs text-gray-400 break-all max-w-md" title={repo.localPath}>
                                     {repo.localPath}
                                   </div>
+                                )}
+                                {repo.hasRoadmap && onViewRoadmap && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); onViewRoadmap(repo.name); }}
+                                    className="mt-1 inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-indigo-900/50 text-indigo-300 border border-indigo-700/50 hover:bg-indigo-800/60 hover:text-indigo-100 transition-colors"
+                                    title="View ROADMAP"
+                                  >
+                                    ROADMAP
+                                  </button>
                                 )}
                                 {workflowCount !== null && (
                                   <div className="text-xs text-gray-500">

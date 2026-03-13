@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult } from '../types';
+import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type RoadmapIndex, type RoadmapContent } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -274,4 +274,50 @@ const MOCK_REPOS: RepoStatus[] = [
 
 function getMockRepos(): RepoStatus[] {
   return MOCK_REPOS.map((r) => ({ ...r }));
+}
+
+export async function getRoadmapIndex(refresh = false): Promise<RoadmapIndex> {
+  if (USE_MOCK_API) {
+    return { entries: [], scannedAt: new Date().toISOString(), count: 0, cacheSource: 'fresh-scan', cacheAgeSeconds: 0 };
+  }
+  const qs = refresh ? '?refresh=true' : '';
+  const data = await fetchJson<any>(`${API_BASE_URL}/roadmap/index${qs}`);
+  const d = data?.data ?? {};
+  return {
+    entries: Array.isArray(d.entries) ? d.entries : [],
+    scannedAt: d.scannedAt ?? new Date().toISOString(),
+    count: Number(d.count ?? 0),
+    cacheSource: d.cacheSource ?? 'fresh-scan',
+    cacheAgeSeconds: Number(d.cacheAgeSeconds ?? 0),
+  };
+}
+
+export async function getRoadmapContent(repoName: string): Promise<RoadmapContent> {
+  if (USE_MOCK_API) {
+    return { repoName, content: '# ROADMAP\n\nNo content available in mock mode.', path: '', sizeBytes: 0, lastModified: new Date().toISOString() };
+  }
+  const data = await fetchJson<any>(`${API_BASE_URL}/roadmap/content?repo=${encodeURIComponent(repoName)}`);
+  const d = data?.data ?? {};
+  return {
+    repoName: d.repoName ?? repoName,
+    content: d.content ?? '',
+    path: d.path ?? '',
+    sizeBytes: Number(d.sizeBytes ?? 0),
+    lastModified: d.lastModified ?? new Date().toISOString(),
+  };
+}
+
+export async function triggerRoadmapScan(): Promise<RoadmapIndex> {
+  if (USE_MOCK_API) {
+    return { entries: [], scannedAt: new Date().toISOString(), count: 0, cacheSource: 'fresh-scan', cacheAgeSeconds: 0 };
+  }
+  const data = await postJson<any>('/roadmap/scan', {});
+  const d = data?.data ?? {};
+  return {
+    entries: Array.isArray(d.entries) ? d.entries : [],
+    scannedAt: d.scannedAt ?? new Date().toISOString(),
+    count: Number(d.count ?? 0),
+    cacheSource: d.cacheSource ?? 'fresh-scan',
+    cacheAgeSeconds: 0,
+  };
 }

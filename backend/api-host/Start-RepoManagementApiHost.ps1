@@ -26,6 +26,9 @@ $commonRoot = Join-Path $WorkspaceRoot 'backend\modules\common'
 $script:StatusCacheMemory = @{}
 $script:StatusCacheDefaultTtlSeconds = 120
 
+$script:RoadmapCacheMemory = @{}
+$script:RoadmapCacheDefaultTtlSeconds = 300
+
 function Write-HostLog {
     param([string]$Message)
     $line = "[{0}] {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message
@@ -605,6 +608,121 @@ function Invoke-GitOperation {
     }
 }
 
+function Get-RoadmapCacheFilePath {
+    $cacheDir = Join-Path $WorkspaceRoot 'backend\modules\output\cache'
+    if (-not (Test-Path -LiteralPath $cacheDir)) {
+        $null = New-Item -ItemType Directory -Path $cacheDir -Force
+    }
+    return Join-Path $cacheDir 'roadmap-index-cache.json'
+}
+
+function Get-RoadmapCacheTtlSeconds {
+    param([hashtable]$Settings)
+    $ttl = $script:RoadmapCacheDefaultTtlSeconds
+    if (
+        $null -ne $Settings -and
+        $Settings.ContainsKey('roadmap') -and
+        $Settings.roadmap -is [System.Collections.IDictionary] -and
+        $Settings.roadmap.ContainsKey('scanCacheTtlSeconds') -and
+        $Settings.roadmap.scanCacheTtlSeconds
+    ) {
+        $candidate = [int]$Settings.roadmap.scanCacheTtlSeconds
+        if ($candidate -ge 0) { $ttl = $candidate }
+    }
+    return $ttl
+}
+
+function Get-RoadmapFromCache {
+    param([int]$TtlSeconds)
+    $nowUtc = (Get-Date).ToUniversalTime()
+    $key = 'roadmap-global'
+
+    if ($script:RoadmapCacheMemory.ContainsKey($key)) {
+        $entry = $script:RoadmapCacheMemory[$key]
+        $age = (($nowUtc) - [datetime]$entry.CreatedAtUtc).TotalSeconds
+        if ($age -le $TtlSeconds) {
+            return [pscustomobject]@{ hit = $true; source = 'memory'; ageSeconds = $age; cachedAt = ([datetime]$entry.CreatedAtUtc).ToString('o'); entries = $entry.Entries; scannedAt = $entry.ScannedAt }
+        }
+    }
+
+    $cacheFile = Get-RoadmapCacheFilePath
+    if (-not (Test-Path -LiteralPath $cacheFile)) { return [pscustomobject]@{ hit = $false } }
+
+    try {
+        $raw = Get-Content -LiteralPath $cacheFile -Raw -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace($raw)) { return [pscustomobject]@{ hit = $false } }
+        $disk = ConvertFrom-JsonCompat -Json $raw
+        if ($null -eq $disk -or -not $disk.ContainsKey('createdAtUtc')) { return [pscustomobject]@{ hit = $false } }
+        $created = [datetime]$disk.createdAtUtc
+        $age = (($nowUtc) - $created).TotalSeconds
+        if ($age -gt $TtlSeconds) { return [pscustomobject]@{ hit = $false } }
+        $script:RoadmapCacheMemory[$key] = @{ CreatedAtUtc = $created; Entries = $disk.entries; ScannedAt = [string]$disk.scannedAt }
+        return [pscustomobject]@{ hit = $true; source = 'disk'; ageSeconds = $age; cachedAt = $created.ToString('o'); entries = $disk.entries; scannedAt = [string]$disk.scannedAt }
+    }
+    catch { return [pscustomobject]@{ hit = $false } }
+}
+
+function Save-RoadmapCache {
+    param([array]$Entries, [string]$ScannedAt)
+    $nowUtc = (Get-Date).ToUniversalTime()
+    $key = 'roadmap-global'
+    $script:RoadmapCacheMemory[$key] = @{ CreatedAtUtc = $nowUtc; Entries = $Entries; ScannedAt = $ScannedAt }
+    try {
+        $cacheFile = Get-RoadmapCacheFilePath
+        (@{ createdAtUtc = $nowUtc.ToString('o'); scannedAt = $ScannedAt; entries = $Entries } | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $cacheFile -Encoding UTF8
+    }
+    catch { Write-HostLog ("Roadmap cache write skipped: {0}" -f $_.Exception.Message) }
+}
+
+function Clear-RoadmapCache {
+    $script:RoadmapCacheMemory = @{}
+    try {
+        $cacheFile = Get-RoadmapCacheFilePath
+        if (Test-Path -LiteralPath $cacheFile) { Remove-Item -LiteralPath $cacheFile -Force -ErrorAction SilentlyContinue }
+    }
+    catch { Write-HostLog ("Roadmap cache clear skipped: {0}" -f $_.Exception.Message) }
+}
+
+function Invoke-RoadmapScan {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$LocalRoots,
+        [Parameter()]
+        [int]$MaxDepth = 3
+    )
+
+    $entries = [System.Collections.Generic.List[object]]::new()
+    foreach ($root in $LocalRoots) {
+        if (-not (Test-Path -LiteralPath $root)) { continue }
+        try {
+            $files = Get-ChildItem -Path $root -Recurse -Depth $MaxDepth -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -imatch '^ROADMAP(\..+)?$' }
+            foreach ($file in $files) {
+                $repoName = $file.Directory.Name
+                $repoPath = $file.DirectoryName
+                $dir = $file.Directory
+                while ($null -ne $dir) {
+                    if (Test-Path (Join-Path $dir.FullName '.git')) {
+                        $repoName = $dir.Name
+                        $repoPath = $dir.FullName
+                        break
+                    }
+                    $dir = $dir.Parent
+                }
+                $entries.Add([pscustomobject]@{
+                    repoName = $repoName
+                    repoPath = $repoPath
+                    roadmapPath = $file.FullName
+                    lastModified = $file.LastWriteTime.ToString('o')
+                    sizeBytes = [long]$file.Length
+                })
+            }
+        }
+        catch { Write-HostLog ("[TRACE] roadmap.scan root_error root={0} error={1}" -f $root, $_.Exception.Message) }
+    }
+    return @($entries)
+}
+
 $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Parse($BindAddress), $Port)
 $listener.Start()
 Write-HostLog ("Repo Management API host started on http://{0}:{1}" -f $BindAddress, $Port)
@@ -1002,6 +1120,168 @@ try {
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         message = 'Status cache cleared. Next GET /api/status will perform a fresh scan.'
+                    }
+                }
+                'GET /api/roadmap/index' {
+                    Write-HostLog ("[TRACE] roadmap.index correlationId={0} start" -f $correlationId)
+                    $q = Parse-QueryString -Query $req.Query
+                    $refresh = if ($q.ContainsKey('refresh')) { Parse-Bool -Value $q.refresh -Default $false } else { $false }
+                    $settings = Get-HostSettings
+                    $ttlSeconds = Get-RoadmapCacheTtlSeconds -Settings $settings
+                    $defaultRoots = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('localRoots') -and $settings.inventory.localRoots) { @($settings.inventory.localRoots) } else { @($WorkspaceRoot) }
+                    $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
+
+                    $cacheHit = $null
+                    if ((-not $refresh) -and ($ttlSeconds -gt 0)) {
+                        $cacheHit = Get-RoadmapFromCache -TtlSeconds $ttlSeconds
+                    }
+
+                    if ($null -ne $cacheHit -and $cacheHit.hit) {
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                        Write-HostLog ("[TRACE] roadmap.index correlationId={0} done source=cache ageSeconds={1} durationMs={2}" -f $correlationId, [math]::Round($cacheHit.ageSeconds, 1), [int]((Get-Date) - $requestStart).TotalMilliseconds)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data = @{
+                                entries = $cacheHit.entries
+                                scannedAt = $cacheHit.scannedAt
+                                count = @($cacheHit.entries).Count
+                                cacheSource = $cacheHit.source
+                                cacheAgeSeconds = [math]::Round($cacheHit.ageSeconds, 1)
+                            }
+                        }
+                    } else {
+                        $scannedAt = (Get-Date).ToUniversalTime().ToString('o')
+                        $entries = Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth
+                        Save-RoadmapCache -Entries $entries -ScannedAt $scannedAt
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                        Write-HostLog ("[TRACE] roadmap.index correlationId={0} done source=fresh-scan count={1} durationMs={2}" -f $correlationId, @($entries).Count, [int]((Get-Date) - $requestStart).TotalMilliseconds)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data = @{
+                                entries = $entries
+                                scannedAt = $scannedAt
+                                count = @($entries).Count
+                                cacheSource = 'fresh-scan'
+                                cacheAgeSeconds = 0
+                            }
+                        }
+                    }
+                }
+                'GET /api/roadmap/content' {
+                    Write-HostLog ("[TRACE] roadmap.content correlationId={0} start" -f $correlationId)
+                    $q = Parse-QueryString -Query $req.Query
+                    $repoName = if ($q.ContainsKey('repo') -and $q.repo) { [System.Uri]::UnescapeDataString([string]$q.repo) } else { '' }
+                    $requestedPath = if ($q.ContainsKey('path') -and $q.path) { [System.Uri]::UnescapeDataString([string]$q.path) } else { '' }
+
+                    $targetPath = $requestedPath
+                    if ([string]::IsNullOrWhiteSpace($targetPath) -and -not [string]::IsNullOrWhiteSpace($repoName)) {
+                        $settings = Get-HostSettings
+                        $defaultRoots = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('localRoots') -and $settings.inventory.localRoots) { @($settings.inventory.localRoots) } else { @($WorkspaceRoot) }
+                        $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
+                        $ttlSeconds = Get-RoadmapCacheTtlSeconds -Settings $settings
+                        $cached = Get-RoadmapFromCache -TtlSeconds $ttlSeconds
+                        $indexEntries = if ($cached.hit) { @($cached.entries) } else { @(Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth) }
+                        $match = $indexEntries | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1
+                        if ($null -ne $match) { $targetPath = [string]$match.roadmapPath }
+                    }
+
+                    if ([string]::IsNullOrWhiteSpace($targetPath) -or -not (Test-Path -LiteralPath $targetPath)) {
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error = @{ category = 'validation'; message = 'ROADMAP file not found for the specified repo or path.' }
+                        }
+                    } else {
+                        $fileInfo = Get-Item -LiteralPath $targetPath
+                        $maxBytes = 512 * 1024
+                        $content = if ($fileInfo.Length -le $maxBytes) {
+                            Get-Content -LiteralPath $targetPath -Raw -Encoding UTF8 -ErrorAction Stop
+                        } else {
+                            $stream = [System.IO.File]::OpenRead($targetPath)
+                            $buf = New-Object byte[] $maxBytes
+                            $null = $stream.Read($buf, 0, $maxBytes)
+                            $stream.Close()
+                            [System.Text.Encoding]::UTF8.GetString($buf) + "`n`n[... file truncated at 512 KB ...]"
+                        }
+                        $inferredRepoName = if (-not [string]::IsNullOrWhiteSpace($repoName)) { $repoName } else { $fileInfo.Directory.Name }
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                        Write-HostLog ("[TRACE] roadmap.content correlationId={0} done repo={1} sizeBytes={2} durationMs={3}" -f $correlationId, $inferredRepoName, $fileInfo.Length, [int]((Get-Date) - $requestStart).TotalMilliseconds)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data = @{
+                                repoName = $inferredRepoName
+                                content = $content
+                                path = $targetPath
+                                sizeBytes = [long]$fileInfo.Length
+                                lastModified = $fileInfo.LastWriteTime.ToString('o')
+                            }
+                        }
+                    }
+                }
+                'POST /api/roadmap/scan' {
+                    Write-HostLog ("[TRACE] roadmap.scan correlationId={0} start" -f $correlationId)
+                    $settings = Get-HostSettings
+                    $defaultRoots = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('localRoots') -and $settings.inventory.localRoots) { @($settings.inventory.localRoots) } else { @($WorkspaceRoot) }
+                    $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
+                    $scannedAt = (Get-Date).ToUniversalTime().ToString('o')
+                    $entries = Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth
+                    Save-RoadmapCache -Entries $entries -ScannedAt $scannedAt
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Write-HostLog ("[TRACE] roadmap.scan correlationId={0} done count={1} durationMs={2}" -f $correlationId, @($entries).Count, [int]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = @{
+                            entries = $entries
+                            scannedAt = $scannedAt
+                            count = @($entries).Count
+                            cacheSource = 'fresh-scan'
+                            cacheAgeSeconds = 0
+                        }
+                    }
+                }
+                'GET /api/roadmap/cache' {
+                    $settings = Get-HostSettings
+                    $ttlSeconds = Get-RoadmapCacheTtlSeconds -Settings $settings
+                    $cacheFile = Get-RoadmapCacheFilePath
+                    $diskInfo = $null
+                    if (Test-Path -LiteralPath $cacheFile) {
+                        try {
+                            $raw = Get-Content -LiteralPath $cacheFile -Raw -ErrorAction Stop
+                            if (-not [string]::IsNullOrWhiteSpace($raw)) {
+                                $disk = ConvertFrom-JsonCompat -Json $raw
+                                if ($disk -and $disk.ContainsKey('createdAtUtc')) {
+                                    $nowUtc = (Get-Date).ToUniversalTime()
+                                    $created = [datetime]$disk.createdAtUtc
+                                    $diskInfo = @{
+                                        scannedAt = [string]$disk.scannedAt
+                                        createdAtUtc = $disk.createdAtUtc
+                                        ageSeconds = [math]::Round(($nowUtc - $created).TotalSeconds, 1)
+                                        expired = (($nowUtc - $created).TotalSeconds -gt $ttlSeconds)
+                                        entryCount = @($disk.entries).Count
+                                    }
+                                }
+                            }
+                        } catch { }
+                    }
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        ttlSeconds = $ttlSeconds
+                        memoryEntries = $script:RoadmapCacheMemory.Count
+                        disk = $diskInfo
+                    }
+                }
+                'POST /api/roadmap/cache/clear' {
+                    Clear-RoadmapCache
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Write-HostLog ("[TRACE] roadmap.cache.clear correlationId={0}" -f $correlationId)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        message = 'Roadmap cache cleared. Next GET /api/roadmap/index will perform a fresh scan.'
                     }
                 }
                 default {

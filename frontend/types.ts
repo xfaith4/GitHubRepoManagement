@@ -34,6 +34,8 @@ export interface RepoStatus {
   language?: string | null;
   topics?: string[];
   
+  hasRoadmap?: boolean;
+
   // Optional extended metrics
   extended?: ExtendedRepoMetrics;
   branches?: BranchInfo[];
@@ -74,7 +76,7 @@ export interface OperationResult {
   results: OperationRepoResult[];
 }
 
-export type OperationType = 'init' | 'update' | 'sync' | 'export' | 'archive' | 'docreview' | 'scan';
+export type OperationType = 'init' | 'update' | 'sync' | 'export' | 'archive' | 'docreview' | 'scan' | 'roadmap-scan' | 'roadmap-agent';
 
 export interface GithubInsightsMeta {
   totalRepos: number;
@@ -157,4 +159,28 @@ export interface IssueStats {
   openEnhancements: number;
   avgResolutionDays: number | null;
   oldestOpenDays: number | null;
+}
+
+export interface RoadmapEntry {
+  repoName: string;
+  repoPath: string;
+  roadmapPath: string;
+  lastModified: string;
+  sizeBytes: number;
+}
+
+export interface RoadmapIndex {
+  entries: RoadmapEntry[];
+  scannedAt: string;
+  count: number;
+  cacheSource: 'fresh-scan' | 'cache' | 'memory' | 'disk';
+  cacheAgeSeconds: number;
+}
+
+export interface RoadmapContent {
+  repoName: string;
+  content: string;
+  path: string;
+  sizeBytes: number;
+  lastModified: string;
 }
