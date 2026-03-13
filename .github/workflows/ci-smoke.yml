@@ -15,12 +15,12 @@ jobs:
 
       - name: Run module smoke test
         shell: pwsh
-        run: ./scripts/Invoke-ModuleSmokeTest.ps1
+        run: ./scripts/Invoke-ModuleSmokeTest.ps1 -WorkspaceRoot "${{ github.workspace }}"
 
       - name: Run adapter smoke test
         shell: pwsh
-        run: ./scripts/Invoke-AdapterSmokeTest.ps1
+        run: ./scripts/Invoke-AdapterSmokeTest.ps1 -WorkspaceRoot "${{ github.workspace }}"
 
       - name: Run API host smoke test
         shell: pwsh
-        run: ./scripts/Invoke-ApiHostSmokeTest.ps1
+        run: ./scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "${{ github.workspace }}"
