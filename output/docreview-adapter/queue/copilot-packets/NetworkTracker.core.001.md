@@ -1,4 +1,4 @@
-﻿# Queue Item: NetworkTracker.core.001
+# Queue Item: NetworkTracker.core.001
 
 ## Repo
 - Name: NetworkTracker

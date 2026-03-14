@@ -1,29 +1,27 @@
-﻿# Queue Item: UnifiedAIToolbox.reference.001
+# Queue Item: UnifiedAIToolbox.reference.001
 
 ## Repo
 - Name: UnifiedAIToolbox
 - Path: G:\Development\20_Staging\UnifiedAIToolbox
-- Repo Priority: High (80)
+- Repo Priority: High (70)
 
 ## Git State
 - Branch: main
-- Last Commit: 2026-03-06 01:11:37 -0500
-- Uncommitted Changes: 0
+- Last Commit: 2026-03-13 03:31:48 -0400
+- Uncommitted Changes: 5
 
 ## Batch
 - Type: reference
 - Chunk: 1
-- Complexity: high
-- Recommended Cooldown Seconds: 300
-- Queue Score: 106
+- Complexity: medium
+- Recommended Cooldown Seconds: 180
+- Queue Score: 93
 - Prompt Flavor: reference-doc-normalization
 
 ## Files in Scope
-- docs\archive\cli\QUICK_REFERENCE.md
-- docs\archive\cli\UNIFIED_CLI.md
-- docs\archive\cli\wsl-env-passthrough.md
 - docs\archive\engine-status-schema.md
-- docs\archive\help\api-reference.md
+- docs\archive\PROMPT_CHAIN_QUICK_REFERENCE.md
+- docs\run-events.schema.md
 
 ## Objectives
 - Normalize structure and terminology across reference docs
@@ -32,10 +30,9 @@
 - Keep formatting consistent and easy to navigate
 
 ## Warnings / Review Notes
-- Batch contains many files; keep changes bounded and reviewable
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Multiple setup-oriented docs may indicate overlap or duplication
+- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Constraints
 - Preserve technical accuracy

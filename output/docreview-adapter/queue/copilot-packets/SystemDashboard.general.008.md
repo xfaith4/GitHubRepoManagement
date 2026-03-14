@@ -1,4 +1,4 @@
-﻿# Queue Item: SystemDashboard.general.008
+# Queue Item: SystemDashboard.general.008
 
 ## Repo
 - Name: SystemDashboard
@@ -19,10 +19,10 @@
 - Prompt Flavor: general-doc-improvement
 
 ## Files in Scope
-- docs\DEPLOYMENT.md
-- docs\HELP.md
-- docs\IMPLEMENTATION-GUIDE.md
-- docs\LAN-OBSERVABILITY-README.md
+- PHASE-COMPLETION-VALIDATION.md
+- PHASE-STATUS-AT-A-GLANCE.md
+- PHASE4-FINAL-SUMMARY.md
+- PHASE5-COMPLETION-SUMMARY.md
 
 ## Objectives
 - Improve structure and readability

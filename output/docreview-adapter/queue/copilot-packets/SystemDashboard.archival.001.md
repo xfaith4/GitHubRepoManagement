@@ -1,4 +1,4 @@
-﻿# Queue Item: SystemDashboard.archival.001
+# Queue Item: SystemDashboard.archival.001
 
 ## Repo
 - Name: SystemDashboard
@@ -21,8 +21,8 @@
 ## Files in Scope
 - CHANGELOG.md
 - docs\_Archive\ROADMAP.md
-- docs\archive\legacy\CHANGELOG.md
-- docs\archive\legacy\ROADMAP.md
+- docs\CHANGELOG.md
+- docs\ROADMAP-SUMMARY.md
 
 ## Objectives
 - Clarify status and intent of planning or historical docs

@@ -1,4 +1,4 @@
-﻿# Queue Item: DataExtraction.general.001
+# Queue Item: DataExtraction.general.001
 
 ## Repo
 - Name: DataExtraction
@@ -19,9 +19,9 @@
 - Prompt Flavor: general-doc-improvement
 
 ## Files in Scope
-- out\response.md
 - out\response_2025-09-27_04-25-48.md
 - out\response_2025-09-27_04-58-44.md
+- out\response.md
 
 ## Objectives
 - Improve structure and readability

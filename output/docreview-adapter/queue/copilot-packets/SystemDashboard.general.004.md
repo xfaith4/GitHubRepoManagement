@@ -1,4 +1,4 @@
-﻿# Queue Item: SystemDashboard.general.004
+# Queue Item: SystemDashboard.general.004
 
 ## Repo
 - Name: SystemDashboard
@@ -19,10 +19,10 @@
 - Prompt Flavor: general-doc-improvement
 
 ## Files in Scope
-- docs\archive\legacy\CONSOLIDATION_STATUS.md
-- docs\archive\legacy\CURRENT-PHASE-SUMMARY.md
-- docs\archive\legacy\DATA-SOURCES.md
-- docs\archive\legacy\PHASE4-FINAL-SUMMARY.md
+- docs\HELP.md
+- docs\IMPLEMENTATION-GUIDE.md
+- docs\LAN-OBSERVABILITY-README.md
+- docs\observability-pack-v1-diff-index.md
 
 ## Objectives
 - Improve structure and readability

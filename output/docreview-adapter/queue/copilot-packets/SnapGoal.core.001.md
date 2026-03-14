@@ -1,4 +1,4 @@
-﻿# Queue Item: SnapGoal.core.001
+# Queue Item: SnapGoal.core.001
 
 ## Repo
 - Name: SnapGoal
@@ -28,7 +28,7 @@
 - Strengthen cross-linking among high-value docs
 
 ## Warnings / Review Notes
-- Last commit was 723 days ago - verify repo is still active before investing in doc review
+- Last commit was 729 days ago - verify repo is still active before investing in doc review
 
 ## Constraints
 - Preserve technical accuracy

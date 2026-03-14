@@ -1,4 +1,4 @@
-﻿# Queue Item: SystemDashboard.general.002
+# Queue Item: SystemDashboard.general.002
 
 ## Repo
 - Name: SystemDashboard
@@ -22,7 +22,7 @@
 - docs\ADVANCED-FEATURES.md
 - docs\AI_FEEDBACK_FEATURE.md
 - docs\ANALYTICS-DEPLOYMENT-REVIEW.md
-- docs\archive\legacy\ADVANCED-FEATURES.md
+- docs\ASUS-MESH-MONITORING-GUIDE.md
 
 ## Objectives
 - Improve structure and readability

@@ -1,26 +1,28 @@
-﻿# Queue Item: GenesysCloudAuditor.general.002
+# Queue Item: GenesysCloudAuditor.general.002
 
 ## Repo
 - Name: GenesysCloudAuditor
 - Path: G:\Development\20_Staging\GenesysCloudAuditor
-- Repo Priority: High (55)
+- Repo Priority: High (70)
 
 ## Git State
 - Branch: main
-- Last Commit: 2026-03-03 12:22:23 -0500
-- Uncommitted Changes: 14
+- Last Commit: 2026-03-11 08:42:15 -0400
+- Uncommitted Changes: 1
 
 ## Batch
 - Type: general
 - Chunk: 2
-- Complexity: low
-- Recommended Cooldown Seconds: 90
-- Queue Score: 65
+- Complexity: medium
+- Recommended Cooldown Seconds: 180
+- Queue Score: 83
 - Prompt Flavor: general-doc-improvement
 
 ## Files in Scope
-- docs\users_user_work_phone_extension_field_extensions_list_join_keys_normal_2c3cee3c.md
-- QA.md
+- docs\detailed-qa-matrix.md
+- docs\examples\did-mismatches.md
+- docs\examples\empty-groups.md
+- docs\examples\empty-queues.md
 
 ## Objectives
 - Improve structure and readability
@@ -31,7 +33,8 @@
 ## Warnings / Review Notes
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
-- Repo has 14 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Multiple README.md files detected across the repo
+- Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Constraints
 - Preserve technical accuracy

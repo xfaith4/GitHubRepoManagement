@@ -1,4 +1,4 @@
-﻿# Queue Item: FowlingScorecard.archival.001
+# Queue Item: FowlingScorecard.archival.001
 
 ## Repo
 - Name: FowlingScorecard

@@ -1,4 +1,4 @@
-﻿# Queue Item: quickstart-resources.core.001
+# Queue Item: quickstart-resources.core.001
 
 ## Repo
 - Name: quickstart-resources

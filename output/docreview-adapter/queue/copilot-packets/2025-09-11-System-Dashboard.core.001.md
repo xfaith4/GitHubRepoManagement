@@ -1,4 +1,4 @@
-﻿# Queue Item: 2025-09-11-System-Dashboard.core.001
+# Queue Item: 2025-09-11-System-Dashboard.core.001
 
 ## Repo
 - Name: 2025-09-11-System-Dashboard
@@ -7,8 +7,8 @@
 
 ## Git State
 - Branch: main
-- Last Commit: 2025-09-12 01:45:59 -0400
-- Uncommitted Changes: 3
+- Last Commit: 2026-03-09 04:01:14 -0400
+- Uncommitted Changes: 1
 
 ## Batch
 - Type: core
@@ -19,7 +19,7 @@
 - Prompt Flavor: core-doc-modernization
 
 ## Files in Scope
-- ReadMe.md
+- README.md
 
 ## Objectives
 - Improve first-use readability and onboarding clarity
@@ -28,7 +28,7 @@
 - Strengthen cross-linking among high-value docs
 
 ## Warnings / Review Notes
-- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Constraints
 - Preserve technical accuracy

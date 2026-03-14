@@ -1,28 +1,28 @@
-﻿# Queue Item: UnifiedAIToolbox.general.010
+# Queue Item: UnifiedAIToolbox.general.010
 
 ## Repo
 - Name: UnifiedAIToolbox
 - Path: G:\Development\20_Staging\UnifiedAIToolbox
-- Repo Priority: High (80)
+- Repo Priority: High (70)
 
 ## Git State
 - Branch: main
-- Last Commit: 2026-03-06 01:11:37 -0500
-- Uncommitted Changes: 0
+- Last Commit: 2026-03-13 03:31:48 -0400
+- Uncommitted Changes: 5
 
 ## Batch
 - Type: general
 - Chunk: 10
 - Complexity: medium
 - Recommended Cooldown Seconds: 180
-- Queue Score: 77
+- Queue Score: 67
 - Prompt Flavor: general-doc-improvement
 
 ## Files in Scope
-- docs\archive\mcp\MCP_LIBRARY_WALKTHROUGH.md
-- docs\archive\mcp\MCP_REGISTRY_INGESTION.md
-- docs\archive\mcp\MCPLibraryFeature_PromptChain.md
-- docs\archive\orchestration.md
+- docs\MIGRATION.md
+- docs\observability\app-factory-vs-concierge.md
+- docs\UnifiedAIToolbox-Repo-Guide.md
+- examples\pr_publisher\pr.md
 
 ## Objectives
 - Improve structure and readability
@@ -33,7 +33,7 @@
 ## Warnings / Review Notes
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Multiple setup-oriented docs may indicate overlap or duplication
+- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Constraints
 - Preserve technical accuracy

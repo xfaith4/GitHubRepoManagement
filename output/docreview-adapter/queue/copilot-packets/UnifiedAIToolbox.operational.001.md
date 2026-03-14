@@ -1,29 +1,29 @@
-﻿# Queue Item: UnifiedAIToolbox.operational.001
+# Queue Item: UnifiedAIToolbox.operational.001
 
 ## Repo
 - Name: UnifiedAIToolbox
 - Path: G:\Development\20_Staging\UnifiedAIToolbox
-- Repo Priority: High (80)
+- Repo Priority: High (70)
 
 ## Git State
 - Branch: main
-- Last Commit: 2026-03-06 01:11:37 -0500
-- Uncommitted Changes: 0
+- Last Commit: 2026-03-13 03:31:48 -0400
+- Uncommitted Changes: 5
 
 ## Batch
 - Type: operational
 - Chunk: 1
 - Complexity: high
 - Recommended Cooldown Seconds: 300
-- Queue Score: 114
+- Queue Score: 104
 - Prompt Flavor: operational-doc-clarification
 
 ## Files in Scope
 - apps\orchestration-bridge\MERGE_COORDINATOR_RUNBOOK.md
 - apps\orchestration-bridge\TASK_EXECUTOR_RUNBOOK.md
-- docs\archive\ux\01-local-runbook.md
+- docs\archive\workflows_UPDATED.md
 - docs\archive\workflows.md
-- docs\archive\workflows\WORKFLOW_GUIDE.md
+- WORKFLOW_AUDIT_SUMMARY.md
 
 ## Objectives
 - Make procedures easier to follow and verify
@@ -35,7 +35,7 @@
 - Batch contains many files; keep changes bounded and reviewable
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Multiple setup-oriented docs may indicate overlap or duplication
+- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Constraints
 - Preserve technical accuracy

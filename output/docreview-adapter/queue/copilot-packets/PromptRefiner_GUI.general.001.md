@@ -1,4 +1,4 @@
-﻿# Queue Item: PromptRefiner_GUI.general.001
+# Queue Item: PromptRefiner_GUI.general.001
 
 ## Repo
 - Name: PromptRefiner_GUI

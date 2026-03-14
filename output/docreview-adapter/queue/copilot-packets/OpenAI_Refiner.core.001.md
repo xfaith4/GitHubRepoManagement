@@ -1,4 +1,4 @@
-﻿# Queue Item: OpenAI_Refiner.core.001
+# Queue Item: OpenAI_Refiner.core.001
 
 ## Repo
 - Name: OpenAI_Refiner

@@ -1,4 +1,4 @@
-﻿# Queue Item: AI-Orchestration.general.003
+# Queue Item: AI-Orchestration.general.003
 
 ## Repo
 - Name: AI-Orchestration

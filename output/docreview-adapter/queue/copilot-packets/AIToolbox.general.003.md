@@ -1,4 +1,4 @@
-﻿# Queue Item: AIToolbox.general.003
+# Queue Item: AIToolbox.general.003
 
 ## Repo
 - Name: AIToolbox

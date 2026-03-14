@@ -1,28 +1,28 @@
-﻿# Queue Item: GenesysCloudAuditor.general.001
+# Queue Item: GenesysCloudAuditor.general.001
 
 ## Repo
 - Name: GenesysCloudAuditor
 - Path: G:\Development\20_Staging\GenesysCloudAuditor
-- Repo Priority: High (55)
+- Repo Priority: High (70)
 
 ## Git State
 - Branch: main
-- Last Commit: 2026-03-03 12:22:23 -0500
-- Uncommitted Changes: 14
+- Last Commit: 2026-03-11 08:42:15 -0400
+- Uncommitted Changes: 1
 
 ## Batch
 - Type: general
 - Chunk: 1
 - Complexity: medium
 - Recommended Cooldown Seconds: 180
-- Queue Score: 70
+- Queue Score: 85
 - Prompt Flavor: general-doc-improvement
 
 ## Files in Scope
-- docs\duplicate_collisions_null_empty_leading_zeros_include_inactive.md
-- docs\GenesysExtensionAudit.sln.md
-- docs\inactive_users_toggle_pagination_limits_extension_normalization_rules__acfc93e3.md
-- docs\qa_specialist_output.md
+- docs\audit-checks.md
+- docs\authentication.md
+- docs\data-model-and-audit-algorithms.md
+- docs\deployment.md
 
 ## Objectives
 - Improve structure and readability
@@ -33,7 +33,8 @@
 ## Warnings / Review Notes
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
-- Repo has 14 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Multiple README.md files detected across the repo
+- Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Constraints
 - Preserve technical accuracy

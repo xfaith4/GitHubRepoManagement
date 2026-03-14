@@ -1,29 +1,29 @@
-﻿# Queue Item: UnifiedAIToolbox.core.005
+# Queue Item: UnifiedAIToolbox.core.005
 
 ## Repo
 - Name: UnifiedAIToolbox
 - Path: G:\Development\20_Staging\UnifiedAIToolbox
-- Repo Priority: High (80)
+- Repo Priority: High (70)
 
 ## Git State
 - Branch: main
-- Last Commit: 2026-03-06 01:11:37 -0500
-- Uncommitted Changes: 0
+- Last Commit: 2026-03-13 03:31:48 -0400
+- Uncommitted Changes: 5
 
 ## Batch
 - Type: core
 - Chunk: 5
 - Complexity: high
 - Recommended Cooldown Seconds: 300
-- Queue Score: 118
+- Queue Score: 108
 - Prompt Flavor: core-doc-modernization
 
 ## Files in Scope
-- docs\mcp\README.md
-- docs\README.md
-- docs\Unified-AI-Toolbox-Architecture.md
-- examples\run-ui-validate-2026-02-08T13-52-50-181Z-2c9301-artifacts\README.md
-- examples\run-ui-validate-2026-02-09T06-59-24-879Z-193507-artifacts\README.md
+- scripts\README.md
+- scripts\swarms\CONTRIBUTING.md
+- scripts\swarms\README.md
+- templates\ci-cd-blueprint\README.md
+- Unified-AI-Toolbox-Architecture.md
 
 ## Objectives
 - Improve first-use readability and onboarding clarity
@@ -35,7 +35,7 @@
 - Batch contains many files; keep changes bounded and reviewable
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Multiple setup-oriented docs may indicate overlap or duplication
+- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Constraints
 - Preserve technical accuracy

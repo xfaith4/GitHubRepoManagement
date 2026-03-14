@@ -1,4 +1,4 @@
-﻿# Queue Item: SystemDashboard.core.002
+# Queue Item: SystemDashboard.core.002
 
 ## Repo
 - Name: SystemDashboard
@@ -19,11 +19,11 @@
 - Prompt Flavor: core-doc-modernization
 
 ## Files in Scope
-- docs\archive\legacy\README.md
-- docs\CONTRIBUTING.md
-- docs\GETTING-STARTED.md
 - docs\observability-pack-v1-design.md
 - docs\README.md
+- docs\screenshots\README.md
+- docs\SECURITY-SETUP.md
+- docs\SETUP.md
 
 ## Objectives
 - Improve first-use readability and onboarding clarity

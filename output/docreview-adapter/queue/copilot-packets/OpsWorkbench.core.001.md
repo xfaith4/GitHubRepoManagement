@@ -1,4 +1,4 @@
-﻿# Queue Item: OpsWorkbench.core.001
+# Queue Item: OpsWorkbench.core.001
 
 ## Repo
 - Name: OpsWorkbench

@@ -1,26 +1,27 @@
-﻿# Queue Item: GenesysCloudAuditor.archival.001
+# Queue Item: GenesysCloudAuditor.archival.001
 
 ## Repo
 - Name: GenesysCloudAuditor
 - Path: G:\Development\20_Staging\GenesysCloudAuditor
-- Repo Priority: High (55)
+- Repo Priority: High (70)
 
 ## Git State
 - Branch: main
-- Last Commit: 2026-03-03 12:22:23 -0500
-- Uncommitted Changes: 14
+- Last Commit: 2026-03-11 08:42:15 -0400
+- Uncommitted Changes: 1
 
 ## Batch
 - Type: archival
 - Chunk: 1
-- Complexity: low
-- Recommended Cooldown Seconds: 90
-- Queue Score: 63
+- Complexity: medium
+- Recommended Cooldown Seconds: 180
+- Queue Score: 81
 - Prompt Flavor: archival-doc-tidy-pass
 
 ## Files in Scope
-- docs\MSIX_or_ZIP_versioning_signing_notes.md
+- docs\release-packaging-and-signing.md
 - NOTES.md
+- ROADMAP.md
 
 ## Objectives
 - Clarify status and intent of planning or historical docs
@@ -31,7 +32,8 @@
 ## Warnings / Review Notes
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
-- Repo has 14 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Multiple README.md files detected across the repo
+- Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Constraints
 - Preserve technical accuracy

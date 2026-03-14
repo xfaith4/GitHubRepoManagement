@@ -1,4 +1,4 @@
-﻿# Queue Item: ElasticSearch-1.core.002
+# Queue Item: ElasticSearch-1.core.002
 
 ## Repo
 - Name: ElasticSearch-1

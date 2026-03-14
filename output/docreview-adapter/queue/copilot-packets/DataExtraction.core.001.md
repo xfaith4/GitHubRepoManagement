@@ -1,4 +1,4 @@
-﻿# Queue Item: DataExtraction.core.001
+# Queue Item: DataExtraction.core.001
 
 ## Repo
 - Name: DataExtraction

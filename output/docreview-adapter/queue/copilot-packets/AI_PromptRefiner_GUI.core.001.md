@@ -1,4 +1,4 @@
-﻿# Queue Item: AI_PromptRefiner_GUI.core.001
+# Queue Item: AI_PromptRefiner_GUI.core.001
 
 ## Repo
 - Name: AI_PromptRefiner_GUI

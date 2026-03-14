@@ -1,4 +1,4 @@
-﻿# Queue Item: SampleDashboardReact.core.001
+# Queue Item: SampleDashboardReact.core.001
 
 ## Repo
 - Name: SampleDashboardReact

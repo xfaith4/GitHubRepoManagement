@@ -1,26 +1,29 @@
-﻿# Queue Item: GenesysCloudAuditor.core.001
+# Queue Item: GenesysCloudAuditor.core.001
 
 ## Repo
 - Name: GenesysCloudAuditor
 - Path: G:\Development\20_Staging\GenesysCloudAuditor
-- Repo Priority: High (55)
+- Repo Priority: High (70)
 
 ## Git State
 - Branch: main
-- Last Commit: 2026-03-03 12:22:23 -0500
-- Uncommitted Changes: 14
+- Last Commit: 2026-03-11 08:42:15 -0400
+- Uncommitted Changes: 1
 
 ## Batch
 - Type: core
 - Chunk: 1
-- Complexity: low
-- Recommended Cooldown Seconds: 90
-- Queue Score: 95
+- Complexity: high
+- Recommended Cooldown Seconds: 300
+- Queue Score: 116
 - Prompt Flavor: core-doc-modernization
 
 ## Files in Scope
-- docs\setup_required_scopes_configuration_running_audits_interpreting_report_e7b551af.md
-- README.md
+- docs\application-architecture.md
+- docs\architecture.md
+- docs\examples\README.md
+- docs\README.md
+- docs\setup-and-operations.md
 
 ## Objectives
 - Improve first-use readability and onboarding clarity
@@ -29,9 +32,11 @@
 - Strengthen cross-linking among high-value docs
 
 ## Warnings / Review Notes
+- Batch contains many files; keep changes bounded and reviewable
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
-- Repo has 14 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Multiple README.md files detected across the repo
+- Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Constraints
 - Preserve technical accuracy

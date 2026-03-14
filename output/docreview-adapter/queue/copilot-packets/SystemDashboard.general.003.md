@@ -1,4 +1,4 @@
-﻿# Queue Item: SystemDashboard.general.003
+# Queue Item: SystemDashboard.general.003
 
 ## Repo
 - Name: SystemDashboard
@@ -19,10 +19,10 @@
 - Prompt Flavor: general-doc-improvement
 
 ## Files in Scope
-- docs\archive\legacy\ARCHIVE.md
-- docs\archive\legacy\ASSESSMENT-README.md
-- docs\archive\legacy\CLEANUP-COMPLETE.md
-- docs\archive\legacy\CLEANUP-PLAN.md
+- docs\BACKUP-RESTORE.md
+- docs\CODE-REVIEW-SUMMARY.md
+- docs\DATA-SOURCES.md
+- docs\DEPLOYMENT.md
 
 ## Objectives
 - Improve structure and readability

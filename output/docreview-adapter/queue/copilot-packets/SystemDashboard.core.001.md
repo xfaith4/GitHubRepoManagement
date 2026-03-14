@@ -1,4 +1,4 @@
-﻿# Queue Item: SystemDashboard.core.001
+# Queue Item: SystemDashboard.core.001
 
 ## Repo
 - Name: SystemDashboard
@@ -22,8 +22,8 @@
 - docs\_Archive\README.md
 - docs\_Archive\SETUP.md
 - docs\ARCHITECTURE.md
-- docs\archive\legacy\DATABASE-SETUP-COMPLETE.md
-- docs\archive\legacy\PERMANENT-SETUP.md
+- docs\CONTRIBUTING.md
+- docs\GETTING-STARTED.md
 
 ## Objectives
 - Improve first-use readability and onboarding clarity

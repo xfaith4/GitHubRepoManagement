@@ -1,24 +1,25 @@
-﻿# Queue Item: SereneHarmony_Site_Starter.core.001
+# Queue Item: SereneHarmony_Site_Starter.core.001
 
 ## Repo
 - Name: SereneHarmony_Site_Starter
 - Path: G:\Development\20_Staging\SereneHarmony_Site_Starter
-- Repo Priority: Medium (30)
+- Repo Priority: High (40)
 
 ## Git State
 - Branch: main
-- Last Commit: unknown
-- Uncommitted Changes: 9
+- Last Commit: 2026-03-12 18:28:27 -0400
+- Uncommitted Changes: 0
 
 ## Batch
 - Type: core
 - Chunk: 1
-- Complexity: low
-- Recommended Cooldown Seconds: 90
-- Queue Score: 70
+- Complexity: medium
+- Recommended Cooldown Seconds: 180
+- Queue Score: 83
 - Prompt Flavor: core-doc-modernization
 
 ## Files in Scope
+- custom_SereneHarmonySite\FORM_SETUP.md
 - custom_SereneHarmonySite\README.md
 - README.md
 
@@ -30,7 +31,6 @@
 
 ## Warnings / Review Notes
 - Multiple README.md files detected across the repo
-- Repo has 9 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Constraints
 - Preserve technical accuracy

@@ -1,4 +1,4 @@
-﻿# Queue Item: SystemDashboard.general.009
+# Queue Item: SystemDashboard.general.009
 
 ## Repo
 - Name: SystemDashboard
@@ -13,16 +13,14 @@
 ## Batch
 - Type: general
 - Chunk: 9
-- Complexity: medium
-- Recommended Cooldown Seconds: 180
-- Queue Score: 89
+- Complexity: low
+- Recommended Cooldown Seconds: 90
+- Queue Score: 86
 - Prompt Flavor: general-doc-improvement
 
 ## Files in Scope
-- docs\observability-pack-v1-diff-index.md
-- docs\observability-pack-v1-summary.md
-- docs\PHASE1-COMPLETION-SUMMARY.md
-- docs\PHASE1-IMPROVEMENTS.md
+- PORTFOLIO.md
+- PROJECT-PHASE-ASSESSMENT.md
 
 ## Objectives
 - Improve structure and readability

@@ -1,4 +1,4 @@
-﻿# Queue Item: 2026MiddleEastWar.general.001
+# Queue Item: 2026MiddleEastWar.general.001
 
 ## Repo
 - Name: 2026MiddleEastWar

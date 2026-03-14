@@ -1,4 +1,4 @@
-﻿# Queue Item: SystemDashboard.core.003
+# Queue Item: SystemDashboard.core.003
 
 ## Repo
 - Name: SystemDashboard
@@ -13,15 +13,12 @@
 ## Batch
 - Type: core
 - Chunk: 3
-- Complexity: high
-- Recommended Cooldown Seconds: 300
-- Queue Score: 132
+- Complexity: low
+- Recommended Cooldown Seconds: 90
+- Queue Score: 126
 - Prompt Flavor: core-doc-modernization
 
 ## Files in Scope
-- docs\screenshots\README.md
-- docs\SECURITY-SETUP.md
-- docs\SETUP.md
 - migrations\README.md
 - README.md
 
@@ -32,7 +29,6 @@
 - Strengthen cross-linking among high-value docs
 
 ## Warnings / Review Notes
-- Batch contains many files; keep changes bounded and reviewable
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo

@@ -1,4 +1,4 @@
-﻿# Queue Item: GeminiAIOrchestrator.general.001
+# Queue Item: GeminiAIOrchestrator.general.001
 
 ## Repo
 - Name: GeminiAIOrchestrator

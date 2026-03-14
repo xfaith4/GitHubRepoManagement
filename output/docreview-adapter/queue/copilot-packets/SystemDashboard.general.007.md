@@ -1,4 +1,4 @@
-﻿# Queue Item: SystemDashboard.general.007
+# Queue Item: SystemDashboard.general.007
 
 ## Repo
 - Name: SystemDashboard
@@ -19,10 +19,10 @@
 - Prompt Flavor: general-doc-improvement
 
 ## Files in Scope
-- docs\ASUS-MESH-MONITORING-GUIDE.md
-- docs\BACKUP-RESTORE.md
-- docs\CODE-REVIEW-SUMMARY.md
-- docs\DATA-SOURCES.md
+- docs\PHASE4-COMPLETION-SUMMARY.md
+- docs\PHASE4-SECURITY-SUMMARY.md
+- docs\SECURITY-SUMMARY.md
+- LESSONS_LEARNED.md
 
 ## Objectives
 - Improve structure and readability

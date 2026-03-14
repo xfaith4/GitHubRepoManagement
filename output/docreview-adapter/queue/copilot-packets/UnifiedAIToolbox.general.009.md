@@ -1,28 +1,28 @@
-﻿# Queue Item: UnifiedAIToolbox.general.009
+# Queue Item: UnifiedAIToolbox.general.009
 
 ## Repo
 - Name: UnifiedAIToolbox
 - Path: G:\Development\20_Staging\UnifiedAIToolbox
-- Repo Priority: High (80)
+- Repo Priority: High (70)
 
 ## Git State
 - Branch: main
-- Last Commit: 2026-03-06 01:11:37 -0500
-- Uncommitted Changes: 0
+- Last Commit: 2026-03-13 03:31:48 -0400
+- Uncommitted Changes: 5
 
 ## Batch
 - Type: general
 - Chunk: 9
 - Complexity: medium
 - Recommended Cooldown Seconds: 180
-- Queue Score: 79
+- Queue Score: 69
 - Prompt Flavor: general-doc-improvement
 
 ## Files in Scope
-- docs\archive\integrations\SECURITY_NOTICE_OAUTH.md
-- docs\archive\mcp\MCP_GOVERNANCE_IMPLEMENTATION_SUMMARY.md
-- docs\archive\mcp\MCP_GOVERNANCE_SEQUENCE_DIAGRAM.md
-- docs\archive\mcp\MCP_LIBRARY_IMPLEMENTATION_SUMMARY.md
+- docs\MCP_REMAINING_TASKS.md
+- docs\mcp\governance.md
+- docs\mcp\library.md
+- docs\mcp\registry-ingestion.md
 
 ## Objectives
 - Improve structure and readability
@@ -33,7 +33,7 @@
 ## Warnings / Review Notes
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Multiple setup-oriented docs may indicate overlap or duplication
+- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Constraints
 - Preserve technical accuracy

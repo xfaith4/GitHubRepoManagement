@@ -1,4 +1,4 @@
-﻿# Queue Item: SystemDashboard.general.001
+# Queue Item: SystemDashboard.general.001
 
 ## Repo
 - Name: SystemDashboard

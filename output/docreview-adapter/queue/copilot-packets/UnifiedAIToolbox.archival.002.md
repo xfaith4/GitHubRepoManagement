@@ -1,28 +1,25 @@
-﻿# Queue Item: UnifiedAIToolbox.archival.002
+# Queue Item: UnifiedAIToolbox.archival.002
 
 ## Repo
 - Name: UnifiedAIToolbox
 - Path: G:\Development\20_Staging\UnifiedAIToolbox
-- Repo Priority: High (80)
+- Repo Priority: High (70)
 
 ## Git State
 - Branch: main
-- Last Commit: 2026-03-06 01:11:37 -0500
-- Uncommitted Changes: 0
+- Last Commit: 2026-03-13 03:31:48 -0400
+- Uncommitted Changes: 5
 
 ## Batch
 - Type: archival
 - Chunk: 2
-- Complexity: medium
-- Recommended Cooldown Seconds: 180
-- Queue Score: 89
+- Complexity: low
+- Recommended Cooldown Seconds: 90
+- Queue Score: 76
 - Prompt Flavor: archival-doc-tidy-pass
 
 ## Files in Scope
-- docs\archive\ideation\ParallelWork.md
-- docs\archive\ideation\runnable repos.md
-- docs\archive\mcp\MCP_LIBRARY_IMPLEMENTATION_ROADMAP.md
-- docs\archive\reports\CLEANUP_HISTORY.md
+- templates\ci-cd-blueprint\CHANGELOG.md
 
 ## Objectives
 - Clarify status and intent of planning or historical docs
@@ -31,10 +28,9 @@
 - Preserve useful historical context while reducing clutter
 
 ## Warnings / Review Notes
-- Archival batch is relatively large; avoid over-investing in polish
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Multiple setup-oriented docs may indicate overlap or duplication
+- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Constraints
 - Preserve technical accuracy

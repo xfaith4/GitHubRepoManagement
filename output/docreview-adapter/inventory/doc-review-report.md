@@ -1,53 +1,21 @@
-﻿# Documentation Review Inventory
+# Documentation Review Inventory
 
-Generated: 2026-03-08 05:25:47
+Generated: 2026-03-14 01:34:03
 
 ## Summary
 
-- Repos with Markdown docs: 24
+- Repos with Markdown docs: 21
 - High priority: 11
-- Medium priority: 13
+- Medium priority: 10
 - Low priority: 1
 
 ### Review Modes
 
-- **Full-doc pass:** 5
-- **Core-docs batch:** 8
-- **Needs taxonomy before rewrite:** 2
+- **Full-doc pass:** 6
+- **Core-docs batch:** 9
+- **Needs taxonomy before rewrite:** 1
 - **Archive cleanup first:** 1
-- **README-only:** 8
-
-## SystemDashboard
-
-- **Path:** G:\Development\20_Staging\SystemDashboard
-- **Priority:** High (90)
-- **Review mode:** Full-doc pass
-- **Docs:** 53 active / 27 archive / 0 generated (total 81)
-- **Categories:** architecture, changelog, contributing, general, readme, reference, roadmap, setup, troubleshooting
-- **Has README:** True
-- **Has docs folder:** True
-- **Has contributing guide:** True
-- **Has docs index:** False
-- **Git branch:** main
-- **Last commit:** 2026-02-14 01:34:31 -0500
-- **Uncommitted changes:** 97
-- **Doc quality hints:** contains-risk-markers, duplicate-setup-docs
-
-### Key Docs
-
-- `docs\API-REFERENCE.md` _Reference_
-- `docs\ARCHITECTURE.md` _Active_
-- `docs\CONTRIBUTING.md` _Active_
-- `docs\FAQ.md` _Active_
-- `docs\observability-pack-v1-design.md` _Active_
-- `docs\README.md` _Active_
-- `docs\ROADMAP-QUICK-REFERENCE.md` _Active_
-- `docs\screenshots\README.md` _Active_
-- `docs\SECURITY-SETUP.md` _Active_
-- `docs\SETUP.md` _Active_
-- `docs\TROUBLESHOOTING.md` _Active_
-- `migrations\README.md` _Active_
-- `README.md` _Active_
+- **README-only:** 5
 
 ## AIToolbox
 
@@ -81,28 +49,59 @@ Generated: 2026-03-08 05:25:47
 - `docs\README.md` _Active_
 - `README.md` _Active_
 
+## SystemDashboard
+
+- **Path:** G:\Development\20_Staging\SystemDashboard
+- **Priority:** High (90)
+- **Review mode:** Full-doc pass
+- **Docs:** 53 active / 5 archive / 0 generated (total 59)
+- **Categories:** architecture, changelog, contributing, general, readme, reference, roadmap, setup, troubleshooting
+- **Has README:** True
+- **Has docs folder:** True
+- **Has contributing guide:** True
+- **Has docs index:** False
+- **Git branch:** main
+- **Last commit:** 2026-02-14 01:34:31 -0500
+- **Uncommitted changes:** 97
+- **Doc quality hints:** contains-risk-markers, duplicate-setup-docs
+
+### Key Docs
+
+- `docs\API-REFERENCE.md` _Reference_
+- `docs\ARCHITECTURE.md` _Active_
+- `docs\CONTRIBUTING.md` _Active_
+- `docs\FAQ.md` _Active_
+- `docs\observability-pack-v1-design.md` _Active_
+- `docs\README.md` _Active_
+- `docs\ROADMAP-QUICK-REFERENCE.md` _Active_
+- `docs\screenshots\README.md` _Active_
+- `docs\SECURITY-SETUP.md` _Active_
+- `docs\SETUP.md` _Active_
+- `docs\TROUBLESHOOTING.md` _Active_
+- `migrations\README.md` _Active_
+- `README.md` _Active_
+
 ## UnifiedAIToolbox
 
 - **Path:** G:\Development\20_Staging\UnifiedAIToolbox
-- **Priority:** High (80)
-- **Review mode:** Archive cleanup first
-- **Docs:** 64 active / 118 archive / 33 generated (total 217)
+- **Priority:** High (70)
+- **Review mode:** Full-doc pass
+- **Docs:** 52 active / 30 archive / 17 generated (total 101)
 - **Categories:** architecture, changelog, contributing, docs-index, general, readme, roadmap, runbook, setup
 - **Has README:** True
 - **Has docs folder:** True
 - **Has contributing guide:** True
 - **Has docs index:** True
 - **Git branch:** main
-- **Last commit:** 2026-03-06 01:11:37 -0500
-- **Uncommitted changes:** 0
-- **Doc quality hints:** contains-risk-markers, duplicate-setup-docs
+- **Last commit:** 2026-03-13 03:31:48 -0400
+- **Uncommitted changes:** 5
+- **Doc quality hints:** contains-risk-markers
 
 ### Key Docs
 
 - `apps\orchestration-bridge\MERGE_COORDINATOR_RUNBOOK.md` _Operational_
 - `apps\orchestration-bridge\README.md` _Active_
 - `apps\orchestration-bridge\TASK_EXECUTOR_RUNBOOK.md` _Operational_
-- `apps\unifiedtoolbox.webapp\docs\information-architecture.md` _Active_
 - `apps\unifiedtoolbox.webapp\README.md` _Active_
 - `docs\index.md` _Active_
 - `docs\mcp\README.md` _Active_
@@ -117,12 +116,35 @@ Generated: 2026-03-08 05:25:47
 - `README.md` _Active_
 - `scripts\README.md` _Active_
 - `scripts\swarms\CONTRIBUTING.md` _Active_
-- `scripts\swarms\docs\index.md` _Active_
-- `scripts\swarms\docs\quickstart.md` _Active_
 - `scripts\swarms\README.md` _Active_
-- `scripts\swarms\tests\README.md` _Active_
 - `templates\ci-cd-blueprint\README.md` _Active_
 - `Unified-AI-Toolbox-Architecture.md` _Active_
+
+## GenesysCloudAuditor
+
+- **Path:** G:\Development\20_Staging\GenesysCloudAuditor
+- **Priority:** High (70)
+- **Review mode:** Full-doc pass
+- **Docs:** 24 active / 0 archive / 11 generated (total 35)
+- **Categories:** architecture, general, readme, reference, roadmap, setup
+- **Has README:** True
+- **Has docs folder:** True
+- **Has contributing guide:** False
+- **Has docs index:** False
+- **Git branch:** main
+- **Last commit:** 2026-03-11 08:42:15 -0400
+- **Uncommitted changes:** 1
+- **Doc quality hints:** vague-md-names, contains-risk-markers
+
+### Key Docs
+
+- `docs\application-architecture.md` _Active_
+- `docs\architecture.md` _Active_
+- `docs\oauth-and-api-resilience.md` _Active_
+- `docs\README.md` _Active_
+- `docs\setup-and-operations.md` _Active_
+- `QuickStart.md` _Active_
+- `README.md` _Active_
 
 ## ElasticSearch-1
 
@@ -173,27 +195,6 @@ Generated: 2026-03-08 05:25:47
 - `README.md` _Active_
 - `THURSDAY_LEAGUE_PLAYBOOK.md` _Operational_
 
-## GenesysCloudAuditor
-
-- **Path:** G:\Development\20_Staging\GenesysCloudAuditor
-- **Priority:** High (55)
-- **Review mode:** Full-doc pass
-- **Docs:** 14 active / 0 archive / 0 generated (total 14)
-- **Categories:** general, readme, setup
-- **Has README:** True
-- **Has docs folder:** True
-- **Has contributing guide:** False
-- **Has docs index:** False
-- **Git branch:** main
-- **Last commit:** 2026-03-03 12:22:23 -0500
-- **Uncommitted changes:** 14
-- **Doc quality hints:** vague-md-names
-
-### Key Docs
-
-- `docs\setup_required_scopes_configuration_running_audits_interpreting_report_e7b551af.md` _Active_
-- `README.md` _Active_
-
 ## SampleDashboardReact
 
 - **Path:** G:\Development\20_Staging\SampleDashboardReact
@@ -237,28 +238,26 @@ Generated: 2026-03-08 05:25:47
 - `QUICKSTART.md` _Active_
 - `README.md` _Active_
 
-## GitHubRepoManagerDashboard-1
+## SereneHarmony_Site_Starter
 
-- **Path:** G:\Development\20_Staging\GitHubRepoManagerDashboard-1
+- **Path:** G:\Development\20_Staging\SereneHarmony_Site_Starter
 - **Priority:** High (40)
-- **Review mode:** Needs taxonomy before rewrite
-- **Docs:** 11 active / 1 archive / 0 generated (total 13)
-- **Categories:** architecture, general, readme, reference
+- **Review mode:** Core-docs batch
+- **Docs:** 8 active / 0 archive / 0 generated (total 8)
+- **Categories:** general, readme, setup
 - **Has README:** True
 - **Has docs folder:** False
 - **Has contributing guide:** False
 - **Has docs index:** False
 - **Git branch:** main
-- **Last commit:** 2026-01-25 10:20:11 -0500
+- **Last commit:** 2026-03-12 18:28:27 -0400
 - **Uncommitted changes:** 0
-- **Doc quality hints:** no-docs-folder-many-md, contains-risk-markers
+- **Doc quality hints:** no-docs-folder-many-md
 
 ### Key Docs
 
-- `API_REFERENCE.md` _Reference_
-- `ARCHITECTURE.md` _Active_
-- `backend\README.md` _Active_
-- `powerbi\README.md` _Active_
+- `custom_SereneHarmonySite\FORM_SETUP.md` _Active_
+- `custom_SereneHarmonySite\README.md` _Active_
 - `README.md` _Active_
 
 ## AI_PromptRefiner_GUI
@@ -361,27 +360,6 @@ Generated: 2026-03-08 05:25:47
 - `outputs\neighborhood_runbook.md` _Operational_
 - `README.md` _Active_
 
-## SereneHarmony_Site_Starter
-
-- **Path:** G:\Development\20_Staging\SereneHarmony_Site_Starter
-- **Priority:** Medium (30)
-- **Review mode:** Core-docs batch
-- **Docs:** 7 active / 0 archive / 0 generated (total 7)
-- **Categories:** general, readme
-- **Has README:** True
-- **Has docs folder:** False
-- **Has contributing guide:** False
-- **Has docs index:** False
-- **Git branch:** main
-- **Last commit:** 
-- **Uncommitted changes:** 9
-- **Doc quality hints:** no-docs-folder-many-md
-
-### Key Docs
-
-- `custom_SereneHarmonySite\README.md` _Active_
-- `README.md` _Active_
-
 ## quickstart-resources
 
 - **Path:** G:\Development\20_Staging\quickstart-resources
@@ -406,6 +384,25 @@ Generated: 2026-03-08 05:25:47
 - `weather-server-python\README.md` _Active_
 - `weather-server-rust\README.md` _Active_
 - `weather-server-typescript\README.md` _Active_
+
+## Ideal-Prompt-Library
+
+- **Path:** G:\Development\20_Staging\Ideal-Prompt-Library
+- **Priority:** Medium (30)
+- **Review mode:** Core-docs batch
+- **Docs:** 5 active / 0 archive / 0 generated (total 5)
+- **Categories:** changelog, general, readme
+- **Has README:** True
+- **Has docs folder:** False
+- **Has contributing guide:** False
+- **Has docs index:** False
+- **Git branch:** main
+- **Last commit:** 2026-03-08 23:24:29 -0400
+- **Uncommitted changes:** 2
+
+### Key Docs
+
+- `README.md` _Active_
 
 ## DataExtraction
 
@@ -445,44 +442,6 @@ Generated: 2026-03-08 05:25:47
 
 - `README.md` _Active_
 
-## CoinbaseCryptoAdvisor
-
-- **Path:** G:\Development\20_Staging\CoinbaseCryptoAdvisor
-- **Priority:** Medium (20)
-- **Review mode:** README-only
-- **Docs:** 2 active / 0 archive / 0 generated (total 2)
-- **Categories:** general, readme
-- **Has README:** True
-- **Has docs folder:** False
-- **Has contributing guide:** False
-- **Has docs index:** False
-- **Git branch:** main
-- **Last commit:** 2025-08-23 03:39:45 -0400
-- **Uncommitted changes:** 2
-
-### Key Docs
-
-- `Readme.md` _Active_
-
-## PollingGameApp
-
-- **Path:** G:\Development\20_Staging\PollingGameApp
-- **Priority:** Medium (20)
-- **Review mode:** README-only
-- **Docs:** 2 active / 0 archive / 0 generated (total 2)
-- **Categories:** general, readme
-- **Has README:** True
-- **Has docs folder:** False
-- **Has contributing guide:** False
-- **Has docs index:** False
-- **Git branch:** main
-- **Last commit:** 2025-10-15 22:04:59 -0400
-- **Uncommitted changes:** 0
-
-### Key Docs
-
-- `README.md` _Active_
-
 ## 2025-09-11-System-Dashboard
 
 - **Path:** G:\Development\20_Staging\2025-09-11-System-Dashboard
@@ -495,27 +454,8 @@ Generated: 2026-03-08 05:25:47
 - **Has contributing guide:** False
 - **Has docs index:** False
 - **Git branch:** main
-- **Last commit:** 2025-09-12 01:45:59 -0400
-- **Uncommitted changes:** 3
-
-### Key Docs
-
-- `ReadMe.md` _Active_
-
-## ansible-home-automation
-
-- **Path:** G:\Development\20_Staging\ansible-home-automation
-- **Priority:** Medium (20)
-- **Review mode:** README-only
-- **Docs:** 1 active / 0 archive / 0 generated (total 1)
-- **Categories:** readme
-- **Has README:** True
-- **Has docs folder:** False
-- **Has contributing guide:** False
-- **Has docs index:** False
-- **Git branch:** main
-- **Last commit:** 2025-02-09 04:42:26 -0500
-- **Uncommitted changes:** 0
+- **Last commit:** 2026-03-09 04:01:14 -0400
+- **Uncommitted changes:** 1
 
 ### Key Docs
 

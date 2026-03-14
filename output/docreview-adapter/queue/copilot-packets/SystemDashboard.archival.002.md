@@ -1,4 +1,4 @@
-﻿# Queue Item: SystemDashboard.archival.002
+# Queue Item: SystemDashboard.archival.002
 
 ## Repo
 - Name: SystemDashboard
@@ -13,14 +13,12 @@
 ## Batch
 - Type: archival
 - Chunk: 2
-- Complexity: medium
-- Recommended Cooldown Seconds: 180
-- Queue Score: 99
+- Complexity: low
+- Recommended Cooldown Seconds: 90
+- Queue Score: 96
 - Prompt Flavor: archival-doc-tidy-pass
 
 ## Files in Scope
-- docs\CHANGELOG.md
-- docs\ROADMAP-SUMMARY.md
 - ROADMAP.md
 
 ## Objectives

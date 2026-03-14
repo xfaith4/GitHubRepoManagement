@@ -1,28 +1,27 @@
-﻿# Queue Item: UnifiedAIToolbox.general.016
+# Queue Item: UnifiedAIToolbox.general.016
 
 ## Repo
 - Name: UnifiedAIToolbox
 - Path: G:\Development\20_Staging\UnifiedAIToolbox
-- Repo Priority: High (80)
+- Repo Priority: High (70)
 
 ## Git State
 - Branch: main
-- Last Commit: 2026-03-06 01:11:37 -0500
-- Uncommitted Changes: 0
+- Last Commit: 2026-03-13 03:31:48 -0400
+- Uncommitted Changes: 5
 
 ## Batch
 - Type: general
 - Chunk: 16
 - Complexity: medium
 - Recommended Cooldown Seconds: 180
-- Queue Score: 65
+- Queue Score: 55
 - Prompt Flavor: general-doc-improvement
 
 ## Files in Scope
-- docs\archive\prompts\PROMPT_CHAIN_RECREATION.md
-- docs\archive\prompts\PROMPT_LIBRARY_CONSOLIDATION.md
-- docs\archive\prompts\PROMPTOPS.md
-- docs\archive\prompts\PROMPTOPS_IMPLEMENTATION_SUMMARY.md
+- scripts\swarms\SECURITY.md
+- SIMPLIFICATION_REPORT.md
+- UnifiedAIToolbox-Repo-Guide.md
 
 ## Objectives
 - Improve structure and readability
@@ -33,7 +32,7 @@
 ## Warnings / Review Notes
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Multiple setup-oriented docs may indicate overlap or duplication
+- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Constraints
 - Preserve technical accuracy
