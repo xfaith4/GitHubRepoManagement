@@ -11,7 +11,9 @@ import ChangeHistoryPanel from './ChangeHistoryPanel';
 import DocReviewModal from './DocReviewModal';
 import RoadmapViewerModal from './RoadmapViewerModal';
 import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, getReportDownloadUrl, getPowerBIReportUrl, startDocReview, getRoadmapIndex, triggerRoadmapScan } from '../services/apiClient';
-import { useSse, SseStatus } from '../hooks/useSse';
+import { useSse } from '../hooks/useSse';
+import { useBackendLog } from '../hooks/useBackendLog';
+import { useHealthPing } from '../hooks/useHealthPing';
 import { SpinnerIcon, IssuesIcon, ProjectsIcon, BranchIcon, HealthIcon } from './icons';
 
 interface DashboardProps {
@@ -48,11 +50,19 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [logMessages, setLogMessages] = useState<string[]>([]);
   const [logStatus, setLogStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
 
-  // Scan progress sidecar: drive SSE during loading
-  const [scanSseUrl, setScanSseUrl] = useState<string | null>(null);
-  const { messages: sseMessages, status: sseStatus } = useSse(scanSseUrl);
+  // Backend health indicator — polls /health/live every 15 s
+  const backendHealth = useHealthPing(15_000);
+
+  // Backend log polling — active whenever a scan or operation is running
+  const logPollActive = loading || (!!currentOperation && currentOperation !== 'scan');
+  const { entries: backendLogEntries } = useBackendLog(logPollActive, { includeHistory: false });
+
+  // SSE hook kept for future streaming endpoints (pass null = idle/no-op)
+  useSse(null);
+
   // Initialise to false so the first load transition (false→true is implied by mount state) opens the panel
   const prevLoadingRef = useRef<boolean>(false);
+  const prevBackendLogCountRef = useRef(0);
   
   useEffect(() => {
     getSettings()
@@ -96,10 +106,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
       setLogMessages(['Starting repository scan...']);
       setLogStatus('running');
       setIsLogPanelOpen(true);
-      setScanSseUrl('/api/scan/progress');
+      prevBackendLogCountRef.current = 0;
     } else if (!loading && wasLoading) {
-      // Scan just finished — stop the SSE stream and show completion
-      setScanSseUrl(null);
+      // Scan finished
       if (currentOperation === 'scan') {
         const repoCount = repos.length;
         setLogMessages(prev => [
@@ -114,23 +123,20 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading]);
 
-  // Pipe SSE messages into the log panel when a scan is in progress
-  const prevSseMsgCountRef = useRef(0);
+  // Pipe backend log poll entries into the log panel during active operations
   useEffect(() => {
-    if (currentOperation !== 'scan') return;
-    const newMessages = sseMessages.slice(prevSseMsgCountRef.current);
-    if (newMessages.length > 0) {
-      setLogMessages(prev => [...prev, ...newMessages]);
-    }
-    prevSseMsgCountRef.current = sseMessages.length;
-  }, [sseMessages, currentOperation]);
-
-  // When SSE stream closes naturally during a scan, update status
-  useEffect(() => {
-    if (currentOperation === 'scan' && sseStatus === SseStatus.CLOSED && !loading) {
-      setLogStatus(prev => prev === 'running' ? 'success' : prev);
-    }
-  }, [sseStatus, currentOperation, loading]);
+    const newEntries = backendLogEntries.slice(prevBackendLogCountRef.current);
+    if (newEntries.length === 0) return;
+    prevBackendLogCountRef.current = backendLogEntries.length;
+    // Filter out TRACE noise from health pings; surface meaningful events only
+    const lines = newEntries
+      .filter(e => e.level !== 'TRACE' || e.msg.includes('correlationId'))
+      .map(e => {
+        const prefix = e.level === 'ERROR' ? 'ERROR: ' : e.level === 'WARN' ? 'WARN: ' : '';
+        return `${prefix}${e.msg}`;
+      });
+    if (lines.length > 0) setLogMessages(prev => [...prev, ...lines]);
+  }, [backendLogEntries]);
 
   const getRepoSelectionId = (repo: RepoStatus) => repo.localPath ?? `${repo.name}::${repo.branch}`;
   const resolveSelectionTargets = (repoIds?: string[]) => {
@@ -303,7 +309,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
     setIsLogPanelOpen(false);
     setCurrentOperation(null);
     setLogStatus('idle');
-    setScanSseUrl(null);
+    prevBackendLogCountRef.current = 0;
     // Only trigger a refresh for non-scan operations (scan was already triggered by App.tsx)
     if (!wasScan) {
       fetchRepoStatus();
@@ -379,8 +385,22 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
 
   const isScanning = loading || settingsLoading;
 
+  const healthDot = backendHealth === 'online'
+    ? 'bg-green-400'
+    : backendHealth === 'offline'
+    ? 'bg-red-500'
+    : 'bg-yellow-400 animate-pulse';
+  const healthLabel = backendHealth === 'online' ? 'Backend: Online' : backendHealth === 'offline' ? 'Backend: Offline' : 'Backend: Connecting…';
+
   return (
     <div>
+      {/* Backend connectivity badge */}
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-3 flex justify-end">
+        <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
+          <span className={`inline-block w-2 h-2 rounded-full ${healthDot}`} />
+          {healthLabel}
+        </span>
+      </div>
       {/* Inline scan progress indicator (non-blocking) */}
       {isScanning && (
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-4">

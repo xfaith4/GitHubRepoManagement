@@ -1,4 +1,4 @@
-# GitHub Repo Management
+﻿# GitHub Repo Management
 
 Windows-first repository standardization and operations toolkit with a unified local API, PowerShell modules, and operational automation scripts.
 
@@ -80,22 +80,68 @@ $env:GITHUB_TOKEN = '<token>'
 
 ## Run
 
-Start API host:
+### Normal use — single launcher, no visible terminals
+
+```bat
+start-silent.bat
+```
+
+Both the API host and the Vite frontend start as hidden background processes.
+The browser opens automatically. All output is captured to
+`backend/modules/output/logs/`. Runtime telemetry (startup, scan progress,
+operation results) streams into the dashboard Operation Log panel via
+`GET /api/log/tail`.
+
+To stop:
+
+```bat
+stop.bat
+```
+
+### Debug / developer mode — visible terminals
+
+```bat
+start-live.bat
+```
+
+Opens the API host in a separate terminal window and runs the Vite dev server
+in the current window. Hot-module reload is active. Use this when you need
+to watch raw process output or interact with the PowerShell host directly.
+
+PowerShell shorthand for both modes:
+
+```powershell
+.\Start-App.ps1              # silent (default)
+.\Start-App.ps1 -Mode debug  # two visible terminals
+.\Stop-App.ps1               # stop silent-mode processes
+```
+
+### Frontend mock mode (no backend required)
+
+```bat
+start.bat
+```
+
+### Log files (silent mode)
+
+| File | Contents |
+| ---- | -------- |
+| `backend/modules/output/logs/backend.log` | API host stdout |
+| `backend/modules/output/logs/backend-err.log` | API host stderr |
+| `backend/modules/output/logs/frontend.log` | Vite dev server output |
+| `backend/modules/output/logs/operations.jsonl` | Structured JSONL event log (polled by dashboard) |
+
+### Dashboard Operation Log
+
+The dashboard polls `GET /api/log/tail` every 2.5 s during active operations
+and displays backend log events in the slide-out Operation Log panel. A
+**Backend: Online / Offline** badge in the header reflects connectivity state
+(polled via `GET /health/live` every 15 s).
+
+Start API host directly:
 
 ```powershell
 .\backend\api-host\Start-RepoManagementApiHost.ps1 -BindAddress '127.0.0.1' -Port 7071
-```
-
-Start dashboard (frontend + API host):
-
-```powershell
-.\start-live.bat
-```
-
-Start dashboard frontend only (mock mode):
-
-```powershell
-.\start.bat
 ```
 
 Smoke validation:
@@ -136,4 +182,3 @@ standards/
 - [ADRs](docs/architecture/adr.md)
 - [Roadmap](docs/planning/roadmap.md)
 - [Contracts](docs/reference/contracts.md)
-

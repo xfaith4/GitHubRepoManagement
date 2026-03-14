@@ -93,6 +93,94 @@ Version: `v1`
 }
 ```
 
+## RoadmapEntry
+
+```json
+{
+  "repoName": "MyRepo",
+  "repoPath": "G:\\Development\\MyRepo",
+  "roadmapPath": "G:\\Development\\MyRepo\\ROADMAP.md",
+  "lastModified": "2026-03-13T09:00:00.0000000Z",
+  "sizeBytes": 2048
+}
+```
+
+## RoadmapIndex (GET /api/roadmap/index, POST /api/roadmap/scan)
+
+Query parameters (GET): `localRoots` (encoded path), `maxDepth` (int), `refresh=true` (bust cache).
+Body parameters (POST): `{ localRoots: string[], maxDepth: int }`.
+
+```json
+{
+  "success": true,
+  "data": {
+    "entries": [ /* RoadmapEntry[] */ ],
+    "count": 4,
+    "scannedAt": "2026-03-13T14:00:00.0000000Z",
+    "cacheSource": "cache",
+    "cacheAgeSeconds": 87
+  }
+}
+```
+
+`cacheSource` values: `"memory"` | `"disk"` | `"fresh-scan"`.
+
+## RoadmapContent (GET /api/roadmap/content)
+
+Query parameters: `repo=<repoName>` (URL-encoded).
+
+```json
+{
+  "success": true,
+  "data": {
+    "repoName": "MyRepo",
+    "content": "# ROADMAP\n...",
+    "path": "G:\\Development\\MyRepo\\ROADMAP.md",
+    "sizeBytes": 2048,
+    "lastModified": "2026-03-13T09:00:00.0000000Z"
+  }
+}
+```
+
+Content is limited to 512 KB. Returns `404` with `success: false` if the repo has no roadmap or the file is unreadable.
+
+## RoadmapCacheMeta (GET /api/roadmap/cache)
+
+```json
+{
+  "success": true,
+  "data": {
+    "memoryHit": true,
+    "diskCachePath": "backend\\modules\\output\\cache\\roadmap-index-cache.json",
+    "cacheAgeSeconds": 87,
+    "ttlSeconds": 300,
+    "entryCount": 4
+  }
+}
+```
+
+POST `/api/roadmap/cache/clear` — clears both memory and disk cache. Returns `{ "success": true }`.
+
+## OperationsLogEntry (GET /api/log/tail)
+
+Query parameters: `lines` (int, default 100, max 500), `since` (epoch milliseconds — returns only entries newer than this timestamp).
+
+```json
+{
+  "success": true,
+  "count": 3,
+  "entries": [
+    { "ts": "2026-03-13T14:00:01.000Z", "level": "INFO",  "msg": "API host started on 127.0.0.1:7071" },
+    { "ts": "2026-03-13T14:00:05.000Z", "level": "TRACE", "msg": "[TRACE] roadmap.index correlationId=abc123 start" },
+    { "ts": "2026-03-13T14:00:05.050Z", "level": "TRACE", "msg": "[TRACE] roadmap.index correlationId=abc123 done durationMs=48" }
+  ]
+}
+```
+
+`level` values: `"INFO"` | `"WARN"` | `"ERROR"` | `"TRACE"`.
+
+Log is sourced from `backend/modules/output/logs/operations.jsonl`. The `since` cursor allows the dashboard to poll incrementally without re-reading already-seen entries.
+
 ## Error Envelope
 
 ```json

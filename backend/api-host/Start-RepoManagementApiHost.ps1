@@ -29,12 +29,35 @@ $script:StatusCacheDefaultTtlSeconds = 120
 $script:RoadmapCacheMemory = @{}
 $script:RoadmapCacheDefaultTtlSeconds = 300
 
+# Structured operations log (JSONL) — dashboard /api/log/tail reads this
+$script:OpsLogPath = $null
+try {
+    $opsLogDir = Join-Path $WorkspaceRoot 'backend\modules\output\logs'
+    if (-not (Test-Path -LiteralPath $opsLogDir)) {
+        $null = New-Item -ItemType Directory -Path $opsLogDir -Force
+    }
+    $script:OpsLogPath = Join-Path $opsLogDir 'operations.jsonl'
+} catch { }
+
 function Write-HostLog {
     param([string]$Message)
     $line = "[{0}] {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message
     Write-Host $line
     if ($LogPath) {
         Add-Content -LiteralPath $LogPath -Value $line -Encoding UTF8
+    }
+    # Also write structured JSONL for the dashboard log tail endpoint
+    if ($script:OpsLogPath) {
+        try {
+            $lvl = if ($Message -match '^ERROR|FAIL|\[ERR\]')   { 'ERROR' }
+                   elseif ($Message -match '^WARN|\[WARN\]')     { 'WARN'  }
+                   elseif ($Message -match '^\[TRACE\]')         { 'TRACE' }
+                   else                                           { 'INFO'  }
+            $entry = '{"ts":"{0}","level":"{1}","msg":{2}}' -f `
+                (Get-Date).ToUniversalTime().ToString('o'), $lvl,
+                ($Message | ConvertTo-Json -Compress)
+            Add-Content -LiteralPath $script:OpsLogPath -Value $entry -Encoding UTF8
+        } catch { }
     }
 }
 
@@ -726,6 +749,7 @@ function Invoke-RoadmapScan {
 $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Parse($BindAddress), $Port)
 $listener.Start()
 Write-HostLog ("Repo Management API host started on http://{0}:{1}" -f $BindAddress, $Port)
+Write-HostLog ("Ops log: {0}" -f ($script:OpsLogPath ?? '(none)'))
 
 try {
     while ($true) {
@@ -1282,6 +1306,40 @@ try {
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         message = 'Roadmap cache cleared. Next GET /api/roadmap/index will perform a fresh scan.'
+                    }
+                }
+                'GET /api/log/tail' {
+                    $q = Parse-QueryString -Query $req.Query
+                    $maxLines = if ($q.ContainsKey('lines') -and $q.lines) { [int]$q.lines } else { 100 }
+                    if ($maxLines -gt 500) { $maxLines = 500 }
+                    # 'since' is epoch milliseconds from the client (Date.now())
+                    $sinceMs = if ($q.ContainsKey('since') -and $q.since -match '^\d+$') { [long]$q.since } else { 0 }
+
+                    $entries = [System.Collections.Generic.List[object]]::new()
+                    if ($null -ne $script:OpsLogPath -and (Test-Path -LiteralPath $script:OpsLogPath)) {
+                        try {
+                            $rawLines = Get-Content -LiteralPath $script:OpsLogPath -Encoding UTF8 -ErrorAction Stop |
+                                Select-Object -Last $maxLines
+                            foreach ($rawLine in $rawLines) {
+                                if ([string]::IsNullOrWhiteSpace($rawLine)) { continue }
+                                try {
+                                    $obj = $rawLine | ConvertFrom-Json
+                                    if ($sinceMs -gt 0 -and $obj.ts) {
+                                        $lineMs = [long](([datetime]$obj.ts).ToUniversalTime() -
+                                            [datetime]::UnixEpoch).TotalMilliseconds
+                                        if ($lineMs -le $sinceMs) { continue }
+                                    }
+                                    $entries.Add($obj)
+                                } catch { }
+                            }
+                        } catch { }
+                    }
+
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        entries = @($entries)
+                        count = $entries.Count
                     }
                 }
                 default {

@@ -52,6 +52,34 @@ try {
     Write-Host '[STEP] Metrics route' -ForegroundColor Cyan
     $metrics = Invoke-RestMethod -Uri "$BaseUrl/metrics" -Method Get
 
+    Write-Host '[STEP] Roadmap index route' -ForegroundColor Cyan
+    $roadmapIndex = Invoke-RestMethod -Uri "$BaseUrl/api/roadmap/index?localRoots=$([uri]::EscapeDataString($WorkspaceRoot))&maxDepth=3" -Method Get
+    if (-not $roadmapIndex.success) { throw 'roadmap/index returned success=false' }
+
+    Write-Host '[STEP] Roadmap scan route' -ForegroundColor Cyan
+    $roadmapScanBody = @{
+        localRoots = @($WorkspaceRoot)
+        maxDepth = 3
+    } | ConvertTo-Json -Depth 3
+    $roadmapScan = Invoke-RestMethod -Uri "$BaseUrl/api/roadmap/scan" -Method Post -ContentType 'application/json' -Body $roadmapScanBody
+    if (-not $roadmapScan.success) { throw 'roadmap/scan returned success=false' }
+
+    Write-Host '[STEP] Roadmap content route' -ForegroundColor Cyan
+    $roadmapContentOk = $false
+    $firstEntry = @($roadmapScan.data.entries)[0]
+    if ($firstEntry) {
+        $encodedRepo = [uri]::EscapeDataString($firstEntry.repoName)
+        $contentResponse = Invoke-WebRequest -Uri "$BaseUrl/api/roadmap/content?repo=$encodedRepo" -Method Get -SkipHttpErrorCheck
+        $roadmapContentOk = ($contentResponse.StatusCode -eq 200)
+    } else {
+        Write-Host '  (no roadmap entries found — content route skipped)' -ForegroundColor Yellow
+        $roadmapContentOk = $true
+    }
+
+    Write-Host '[STEP] Log tail route' -ForegroundColor Cyan
+    $logTail = Invoke-RestMethod -Uri "$BaseUrl/api/log/tail?lines=10" -Method Get
+    if (-not $logTail.success) { throw 'api/log/tail returned success=false' }
+
     Write-Host '[PASS] API host smoke completed' -ForegroundColor Green
     [pscustomobject]@{
         liveStatus = $live.status
@@ -63,6 +91,10 @@ try {
         docreviewSuccess = $doc.success
         artifactsCount = @($artifacts.artifacts).Count
         metricsGeneratedAt = $metrics.generatedAt
+        roadmapIndexCount = $roadmapIndex.data.count
+        roadmapScanCount = $roadmapScan.data.count
+        roadmapContentOk = $roadmapContentOk
+        logTailEntryCount = $logTail.count
     } | Format-List
 }
 finally {
