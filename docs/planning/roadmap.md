@@ -124,6 +124,7 @@ The dashboard should:
 ## Required behavior
 
 ### 1. Cache-first startup
+
 On app/API start or initial dashboard load:
 
 - return the latest cached inventory snapshot immediately if one exists,
@@ -135,6 +136,7 @@ On app/API start or initial dashboard load:
   - partial/full snapshot indicator
 
 ### 2. Background refresh
+
 A backend refresh process should update inventory asynchronously:
 
 - start automatically when appropriate,
@@ -143,6 +145,7 @@ A backend refresh process should update inventory asynchronously:
 - safely update the cache when complete.
 
 ### 3. Incremental refresh strategy
+
 Avoid unnecessary full rescans when possible.
 
 Evaluate and implement the best realistic model for this repo, such as:
@@ -156,6 +159,7 @@ Evaluate and implement the best realistic model for this repo, such as:
 If true incremental correctness is too large for one pass, implement the best coherent stepwise version and update the roadmap accordingly.
 
 ### 4. Stable persisted cache
+
 Persist cache on disk in a clean, inspectable format.
 
 Consider:
@@ -173,6 +177,7 @@ The cache must be robust against:
 - git command failures on individual repos
 
 ### 5. Usable UI state model
+
 The dashboard should distinguish between:
 
 - cached data loaded
@@ -319,17 +324,20 @@ Use the repository’s current docs and code reality to guide implementation:
 ## Primary goals
 
 ### Goal A — Startup/runtime unification
+
 - one command or launcher starts the app
 - no normal-path dependence on two visible consoles
 - backend and frontend can run hidden/backgrounded where feasible on Windows
 - debug mode remains available for developers
 
 ### Goal B — Dashboard-native runtime telemetry
+
 - all meaningful activity appears in the dashboard `Operation Log`
 - startup, readiness, operations, warnings, and failures are surfaced there
 - replace placeholder/unwired log behavior with a real backend-driven mechanism
 
 ### Goal C — Cache-first repository inventory
+
 - last known good repo inventory loads immediately
 - backend continues background refresh
 - UI remains usable during refresh
@@ -338,6 +346,7 @@ Use the repository’s current docs and code reality to guide implementation:
 ## Required execution order
 
 ### Phase 1 — Audit current state
+
 Inspect:
 - startup scripts and package scripts
 - backend host startup and routing
@@ -347,6 +356,7 @@ Inspect:
 - any existing output/cache/log folders and conventions
 
 ### Phase 2 — Runtime/logging hardening
+
 Implement:
 - single launcher strategy
 - silent/background mode where feasible
@@ -356,6 +366,7 @@ Implement:
 - startup readiness visibility
 
 ### Phase 3 — Cache-first scan hardening
+
 Implement:
 - persisted inventory snapshot cache
 - immediate return of cached data
@@ -365,6 +376,7 @@ Implement:
 - UI freshness indicators
 
 ### Phase 4 — UX and docs completion
+
 Update:
 - operation log UX
 - startup instructions
@@ -375,6 +387,7 @@ Update:
 ## Required contracts
 
 ### Operation log event shape
+
 Prefer a structured schema including:
 - timestamp
 - level
@@ -385,6 +398,7 @@ Prefer a structured schema including:
 - details
 
 ### Inventory/status response shape
+
 Expose fields such as:
 - data source: cache | live | partial
 - generatedAt
@@ -423,10 +437,15 @@ Produce:
 7. a concise implementation summary in this format:
 
 ### Runtime/startup changes
+
 ### Operation log changes
+
 ### Cache/refresh changes
+
 ### UX changes
+
 ### Docs/roadmap changes
+
 ### Remaining risks / next hardening opportunities
 
 ## Guardrails
