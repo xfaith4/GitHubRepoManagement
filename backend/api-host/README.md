@@ -40,6 +40,7 @@ Minimal local PowerShell API host for adapter contracts.
 ```
 
 Notes:
+
 - Host uses `TcpListener` loopback binding.
 - CORS headers are enabled for local frontend integration.
 - `GET /health/ready` and `GET /health/dependencies` always return HTTP 200 and surface degraded state in the response payload.

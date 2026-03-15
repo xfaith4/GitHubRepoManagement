@@ -22,11 +22,15 @@ From repo root:
 
 ```powershell
 Set-Location .\frontend
-npm install
+npm install --include=optional
 $env:VITE_USE_MOCK_API = 'false'
 $env:VITE_API_PROXY_TARGET = 'http://localhost:7071'
 npm run dev
 ```
+
+## Rollup native package recovery
+
+If npm skips Rollup's optional native dependency on Windows, `npm run dev`, `npm run build`, and `npm run preview` will now install the matching `@rollup/rollup-*` package automatically before starting Vite.
 
 ## GitHub API auth
 

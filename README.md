@@ -65,6 +65,7 @@ From `backend/api-host/Start-RepoManagementApiHost.ps1`:
 ```powershell
 git clone <repo-url> G:\Development\GitHubRepoManagement
 Set-Location G:\Development\GitHubRepoManagement
+npm run install:frontend
 ```
 
 ## Configuration
@@ -100,6 +101,16 @@ GitHub auth precedence for dashboard scans:
 - Saved `Settings` fallback token
 
 If a default GitHub user/org is saved in Settings, the dashboard can refresh GitHub repository data without re-entering a token in the UI when one of the sources above is available.
+
+## Frontend build note
+
+Recent npm versions sometimes skip Rollup's platform-native optional package on Windows. The frontend `dev`, `build`, and `preview` scripts now detect that condition and install the matching `@rollup/rollup-*` package automatically before running Vite.
+
+If your frontend dependencies are missing entirely, run:
+
+```powershell
+npm run install:frontend
+```
 
 ## Run
 

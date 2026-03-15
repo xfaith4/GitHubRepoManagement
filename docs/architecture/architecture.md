@@ -9,16 +9,19 @@ This consolidation merges three separate tools into one Windows-first Repository
 - `Repo_reconciliation-dashboard` (PowerShell reconciliation/reporting utility)
 
 Intent:
+
 - unify operator workflows in one interface/API,
 - preserve script-level reliability and machine-readable outputs,
 - reduce duplicated scanning/reconciliation logic.
 
 Non-goals:
+
 - replacing GitHub itself for PR/permissions management,
 - introducing distributed multi-node infrastructure,
 - forcing a cloud dependency for home-lab execution.
 
 Success criteria:
+
 - one canonical API and output contract,
 - parity for high-value workflows (scan, reconcile, queue plan, export),
 - consistent logging/metrics/health behavior across modules,
@@ -29,9 +32,11 @@ Success criteria:
 ### 1) `G:\Development\20_Staging\GitHubRepoManagerDashboard`
 
 Purpose:
+
 - operator dashboard for local repo status and optional GitHub insights.
 
 Major features:
+
 - local repo scan and git status (`/api/status`),
 - repo actions (`/api/update`, `/api/sync`),
 - settings API (`/api/settings`),
@@ -39,18 +44,22 @@ Major features:
 - React grid, filters, grouping, summary cards, export helpers.
 
 Key components:
+
 - `backend/server.js` (Express API + git command execution + GitHub API integration),
 - `services/apiClient.ts` (frontend API abstraction, mock/live modes),
 - `components/*.tsx` (dashboard UI, table, actions, settings/init/data source modals).
 
 Dependencies:
+
 - Node runtime, Express, Octokit, git executable, browser runtime.
 
 I/O:
+
 - input: local filesystem paths, git repos, optional GitHub PAT.
 - output: API JSON responses; client-side CSV/HTML export data URLs.
 
 Known gaps/issues:
+
 - `init/archive/export/artifacts` endpoints are mostly placeholders.
 - frontend log panel expects SSE stream endpoints (`/api/streams/*`) not implemented in backend.
 - logging is mostly unstructured `console.log`.
@@ -59,28 +68,34 @@ Known gaps/issues:
 ### 2) `G:\Development\Doc_Review_Inventory`
 
 Purpose:
+
 - human-in-the-loop documentation review planning across many repos.
 
 Major features:
+
 - Stage 1 manifest generation (`Invoke-DocReviewInventory.ps1`),
 - Stage 2a cross-repo queue planning (`Build-DocReviewQueue.ps1`),
 - Stage 2b per-repo semantic batch planning (`Invoke-DocReviewBatchPlan.ps1`),
 - packet/checklist/playbook generation for AI-assisted review.
 
 Key components:
+
 - `scripts/Invoke-DocReviewInventory.ps1`,
 - `scripts/Build-DocReviewQueue.ps1`,
 - `scripts/Invoke-DocReviewBatchPlan.ps1`,
 - `config/repo-overrides.json`.
 
 Dependencies:
+
 - PowerShell, git (for freshness metadata), local filesystem.
 
 I/O:
+
 - input: repo roots/manifests/override rules.
 - output: JSON/CSV/Markdown artifacts in `output/`.
 
 Known gaps/issues:
+
 - no API surface; script-oriented only.
 - observability is console-centric and unstructured.
 - generated outputs are large; lifecycle/retention policy not standardized.
@@ -88,9 +103,11 @@ Known gaps/issues:
 ### 3) `G:\Development\Repo_reconciliation-dashboard`
 
 Purpose:
+
 - inventory local folders/repos, compare against GitHub owner, detect duplicates, and export reports.
 
 Major features:
+
 - path traversal with include/exclude controls,
 - git metadata + origin extraction,
 - GitHub inventory via `gh repo list`,
@@ -99,18 +116,22 @@ Major features:
 - exports: JSON, CSV, duplicate CSV, HTML report.
 
 Key components:
+
 - `src/repo_reconciliation_dashboard.ps1` (primary engine),
 - `tests/repo_reconciliation.Tests.ps1` + support scripts,
 - docs for preflight/error handling.
 
 Dependencies:
+
 - PowerShell, git, optional `gh`, Pester for tests.
 
 I/O:
+
 - input: local roots, owner/type, ignore patterns.
 - output: reconciliation artifacts and execution logs.
 
 Known gaps/issues:
+
 - monolithic script structure; reuse boundaries not yet extracted.
 - quadratic duplicate analysis may grow expensive at high repo counts.
 - logging format differs from other tools.
@@ -131,11 +152,13 @@ Known gaps/issues:
 | Automated tests | Minimal frontend/backend | Limited | Strong Pester coverage | Standardize test pyramid |
 
 Conflicts:
+
 - Different runtime center of gravity (Node vs PowerShell scripts).
 - Different GitHub access paths (Octokit API vs `gh` CLI).
 - Inconsistent logging and health semantics.
 
 Gaps:
+
 - unified API contracts and versioned schemas,
 - consistent error model,
 - shared config/secrets pattern,
@@ -234,6 +257,7 @@ UI <- API <- Comparison + duplicates + artifacts
 ### Data Model and Storage
 
 Canonical model groups:
+
 - `RepoItem` (name/path/git status/branch/commit freshness/dirty counts).
 - `RemoteRepoItem` (owner/name/url/archived/privacy/default branch).
 - `ComparisonItem` (status, reason, local+remote fields).
@@ -242,16 +266,19 @@ Canonical model groups:
 - `QueueItem` and `BatchPlanItem` for doc-review planning.
 
 Storage strategy:
+
 - stateless runtime services where possible,
 - persisted artifacts on disk under configured `outputRoot`,
 - optional lightweight metadata cache for expensive GitHub metrics.
 
 Configuration strategy:
+
 - single config file for non-secret operational settings,
 - environment variables for secrets/tokens,
 - per-service sectioning (inventory/reconcile/doc-review/report/ui).
 
 Secrets handling:
+
 - no token persistence in client/browser storage,
 - pass secret only to backend process memory scope,
 - redact token material from logs.
@@ -259,18 +286,22 @@ Secrets handling:
 ## Error Handling and Resilience
 
 Retry/backoff guidance:
+
 - retry transient external operations only (GitHub API/`gh`, filesystem locks).
 - exponential backoff with jitter for remote calls.
 - cap attempts and surface partial results with clear warning state.
 
 Idempotency guidance:
+
 - `status`, `reconcile`, `doc-inventory`, `queue-plan`, `batch-plan` should be repeatable and side-effect safe.
 - `pull`/`fetch` actions should track per-repo outcome and avoid global fail-fast.
 
 Circuit-breaker guidance:
+
 - if GitHub dependency repeatedly fails, degrade gracefully to local-only mode and annotate UI state.
 
 Correctness after retries:
+
 - include run correlation ID and attempt count in logs,
 - validate output schema before writing artifacts,
 - on partial failure, still emit machine-readable summary with failure list.
@@ -292,6 +323,7 @@ Required fields:
 | `details` | object payload (counts, path, owner, error category) |
 
 Write targets:
+
 - console (interactive runs),
 - rolling file (`logs/*.log`),
 - optional ETW sink for Windows host diagnostics.
@@ -323,6 +355,7 @@ Write targets:
   - detailed per dependency (git, gh, GitHub API, output path writable).
 
 Semantics:
+
 - `200`: request handled successfully,
 - degraded or unready health states are reported in the response body `status` field,
 - response body includes component statuses and failure reasons.
@@ -344,58 +377,71 @@ Semantics:
 ## Technology Decisions and Trade-offs
 
 Chosen direction:
+
 - keep frontend as lightweight web UI,
 - move orchestration and critical operations to PowerShell/.NET-first backend.
 
 Trade-offs:
+
 - retaining Node backend is fastest short-term but conflicts with long-term platform target.
 - pure script execution is flexible but needs stronger module boundaries and schema contracts.
 - dual GitHub adapters (`gh` + API) increase complexity but improve resilience and compatibility.
 
 Alternatives considered:
+
 - full rewrite into one .NET app immediately: rejected for migration risk.
 - keep tools independent and integrate only via links: rejected due to duplicated logic/operations.
 
 ## UI/UX Alignment
 
 Navigation/layout:
+
 - top-level tabs: `Overview`, `Inventory`, `Reconciliation`, `Doc Review`, `Operations`, `Settings`.
 
 Status/health surfaces:
+
 - global banner for dependency degradation (e.g., GitHub unreachable),
 - per-run status card with timestamps, counts, and artifact links.
 
 Tables/forms:
+
 - searchable, sortable tables with sticky headers,
 - consistent filter chips and saved filter presets,
 - explicit empty states with next action hints.
 
 Pagination/filtering:
+
 - client-side for small datasets,
 - server-side pagination for large repo inventories.
 
 Error states:
+
 - actionable messages with error category and correlation ID,
 - links to logs/artifacts for diagnostics.
 
 ## Testing and Quality Approach
 
 PowerShell:
+
 - keep/expand Pester suites for inventory, comparison, duplicate scoring, and output schema validation.
 
 .NET/API host:
+
 - unit tests for orchestration and contract mapping,
 - integration tests for route -> service -> output behavior.
 
 Frontend:
+
 - component tests for grid filtering/grouping and operation states,
 - API contract tests against sample payloads.
 
 Static checks:
+
 - PowerShell linting/formatting in CI,
 - TypeScript linting/type checks in UI package.
 
 Local dev workflow:
+
 - run services independently first,
 - run end-to-end smoke script covering status/reconcile/doc queue generation.
 
