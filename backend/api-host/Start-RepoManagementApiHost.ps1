@@ -568,12 +568,89 @@ function Get-ConfiguredGitHubToken {
     return ''
 }
 
+function Get-GitHubOwnerTypeViaApi {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Owner,
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Headers
+    )
+
+    try {
+        $uri = "https://api.github.com/users/$Owner"
+        $response = Invoke-RestMethod -Uri $uri -Headers $Headers -Method Get
+        if ($response -and $response.type) {
+            $typeValue = [string]$response.type
+            if ($typeValue -eq 'Organization') { return 'Organization' }
+            return 'User'
+        }
+    }
+    catch {
+        Write-HostLog ("[TRACE] github.ownerType lookup failed owner={0} error={1}" -f $Owner, $_.Exception.Message)
+    }
+
+    return 'User'
+}
+
+function Get-GitHubCommitCountViaApi {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Owner,
+        [Parameter(Mandatory = $true)]
+        [string]$Repo,
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Headers,
+        [Parameter(Mandatory = $true)]
+        [int]$SinceDays
+    )
+
+    $since = (Get-Date).ToUniversalTime().AddDays(-1 * [math]::Abs($SinceDays)).ToString('o')
+    $uri = "https://api.github.com/repos/$Owner/$Repo/commits?per_page=1&since=$([System.Uri]::EscapeDataString($since))"
+
+    try {
+        $response = Invoke-WebRequest -Uri $uri -Headers $Headers -Method Get
+        $bodyText = [string]$response.Content
+        $bodyItems = @()
+        if (-not [string]::IsNullOrWhiteSpace($bodyText)) {
+            try { $bodyItems = @(ConvertFrom-Json -InputObject $bodyText) } catch { $bodyItems = @() }
+        }
+
+        if ($bodyItems.Count -eq 0) {
+            return 0
+        }
+
+        $linkHeader = [string]$response.Headers['Link']
+        if (-not [string]::IsNullOrWhiteSpace($linkHeader)) {
+            if ($linkHeader -match 'page=(\d+)>;\s*rel="last"') {
+                return [int]$matches[1]
+            }
+            if ($linkHeader -match 'rel="next"') {
+                return 2
+            }
+        }
+
+        return 1
+    }
+    catch {
+        Write-HostLog ("[TRACE] github.commitCount failed owner={0} repo={1} sinceDays={2} error={3}" -f $Owner, $Repo, $SinceDays, $_.Exception.Message)
+        return 0
+    }
+}
+
 function Get-GitHubReposViaApi {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Owner,
         [Parameter(Mandatory = $true)]
         [string]$Token,
+        [Parameter()]
+        [bool]$IncludePrivate = $true,
+        [Parameter()]
+        [bool]$IncludeForks = $false,
+        [Parameter()]
+        [bool]$IncludeArchived = $true,
+        [Parameter()]
+        [bool]$FetchCommitMetrics = $true,
         [Parameter()]
         [int]$RepoLimit = 50
     )
@@ -592,19 +669,73 @@ function Get-GitHubReposViaApi {
         Write-HostLog ("[TRACE] github.openpr api aggregation failed owner={0} error={1}" -f $Owner, $_.Exception.Message)
     }
 
-    $uri = "https://api.github.com/users/$Owner/repos?per_page=100&sort=updated&type=all"
-    $reposRaw = Invoke-RestMethod -Uri $uri -Headers $headers -Method Get
-    $repos = @($reposRaw | Select-Object -First $RepoLimit | ForEach-Object {
+    $ownerType = Get-GitHubOwnerTypeViaApi -Owner $Owner -Headers $headers
+    $repoType = if ($IncludePrivate) { 'all' } else { 'public' }
+
+    $uris = @()
+    if ($ownerType -eq 'Organization') {
+        $uris += "https://api.github.com/orgs/$Owner/repos?per_page=100&sort=updated&type=$repoType"
+    }
+    else {
+        $uris += "https://api.github.com/users/$Owner/repos?per_page=100&sort=updated&type=$repoType"
+        if ($IncludePrivate) {
+            $uris += "https://api.github.com/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member"
+        }
+    }
+
+    $repoMap = @{}
+    foreach ($uri in $uris) {
+        try {
+            $reposRaw = @(Invoke-RestMethod -Uri $uri -Headers $headers -Method Get)
+            foreach ($repoItem in $reposRaw) {
+                if ($null -eq $repoItem -or -not $repoItem.name) { continue }
+
+                $repoOwner = if ($repoItem.owner -and $repoItem.owner.login) { [string]$repoItem.owner.login } else { '' }
+                if (-not [string]::IsNullOrWhiteSpace($repoOwner) -and $repoOwner.ToLowerInvariant() -ne $Owner.ToLowerInvariant()) { continue }
+
+                if ((-not $IncludeForks) -and [bool]$repoItem.fork) { continue }
+                if ((-not $IncludeArchived) -and [bool]$repoItem.archived) { continue }
+
+                $key = [string]$repoItem.name
+                if (-not $repoMap.ContainsKey($key)) {
+                    $repoMap[$key] = $repoItem
+                }
+            }
+        }
+        catch {
+            Write-HostLog ("[TRACE] github.repos fetch failed owner={0} uri={1} error={2}" -f $Owner, $uri, $_.Exception.Message)
+            continue
+        }
+    }
+
+    $allRepos = @($repoMap.Values | Sort-Object -Property updated_at -Descending)
+    $repos = @($allRepos | Select-Object -First $RepoLimit | ForEach-Object {
         $repoOpenPrCount = 0
         if ($openPrCounts.ContainsKey($_.name)) {
             $repoOpenPrCount = [int]$openPrCounts[$_.name]
+        }
+
+        $commitCountWeek = 0
+        $commitCountMonth = 0
+        if ($FetchCommitMetrics) {
+            $commitCountWeek = Get-GitHubCommitCountViaApi -Owner $Owner -Repo ([string]$_.name) -Headers $headers -SinceDays 7
+            $commitCountMonth = Get-GitHubCommitCountViaApi -Owner $Owner -Repo ([string]$_.name) -Headers $headers -SinceDays 30
+        }
+
+        $lastCommitAuthor = ''
+        if ($_.owner -and $_.owner.login) {
+            $lastCommitAuthor = [string]$_.owner.login
         }
 
         [pscustomobject]@{
             name = $_.name
             branch = if ($_.default_branch) { $_.default_branch } else { 'main' }
             status = 'clean'
-            lastCommitDate = $_.updated_at
+            lastCommitDate = if ($_.pushed_at) { $_.pushed_at } else { $_.updated_at }
+            lastCommitMessage = if ($_.description) { [string]$_.description } else { '' }
+            lastCommitAuthor = $lastCommitAuthor
+            commitsLastWeek = $commitCountWeek
+            commitsLastMonth = $commitCountMonth
             uncommittedChanges = 0
             isArchived = [bool]$_.archived
             isStale = $false
@@ -622,7 +753,7 @@ function Get-GitHubReposViaApi {
     return [pscustomobject]@{
         source = 'github'
         username = $Owner
-        totalRepos = @($repos).Count
+        totalRepos = @($allRepos).Count
         fetchedRepos = @($repos).Count
         repos = $repos
         rateLimit = $null
@@ -1259,6 +1390,10 @@ try {
                         ''
                     }
                     $limit = if ($body.ContainsKey('repoLimit') -and $body.repoLimit) { [int]$body.repoLimit } else { 50 }
+                    $includePrivate = if ($body.ContainsKey('includePrivate')) { [bool]$body.includePrivate } else { $true }
+                    $includeForks = if ($body.ContainsKey('includeForks')) { [bool]$body.includeForks } else { $false }
+                    $includeArchived = if ($body.ContainsKey('includeArchived')) { [bool]$body.includeArchived } else { $true }
+                    $fetchExtendedMetrics = if ($body.ContainsKey('fetchExtendedMetrics')) { [bool]$body.fetchExtendedMetrics } else { $true }
                     if ([string]::IsNullOrWhiteSpace($owner)) {
                         throw 'githubUser is required for /api/github/status'
                     }
@@ -1266,7 +1401,7 @@ try {
                     $token = Get-ConfiguredGitHubToken -Settings $settings -RequestToken $requestToken
 
                     if (-not [string]::IsNullOrWhiteSpace($token)) {
-                        $apiResult = Get-GitHubReposViaApi -Owner $owner -Token $token -RepoLimit $limit
+                        $apiResult = Get-GitHubReposViaApi -Owner $owner -Token $token -RepoLimit $limit -IncludePrivate:$includePrivate -IncludeForks:$includeForks -IncludeArchived:$includeArchived -FetchCommitMetrics:$fetchExtendedMetrics
                         Add-MetricCounter -Name 'api_requests_total'
                         Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload $apiResult
                         break
@@ -1284,9 +1419,12 @@ try {
                         Write-HostLog ("[TRACE] github.openpr gh aggregation failed owner={0} error={1}" -f $owner, $_.Exception.Message)
                     }
 
-                    $json = (& gh repo list $owner --limit $limit --json name,nameWithOwner,url,isArchived,isPrivate,defaultBranchRef,updatedAt 2>&1) | Out-String
+                    $json = (& gh repo list $owner --limit $limit --json name,nameWithOwner,url,isArchived,isPrivate,isFork,defaultBranchRef,updatedAt,pushedAt 2>&1) | Out-String
                     $reposRaw = $json | ConvertFrom-Json
                     $repos = @($reposRaw | ForEach-Object {
+                        if ((-not $includeForks) -and [bool]$_.isFork) { return }
+                        if ((-not $includeArchived) -and [bool]$_.isArchived) { return }
+
                         $repoOpenPrCount = 0
                         if ($openPrCounts.ContainsKey($_.name)) {
                             $repoOpenPrCount = [int]$openPrCounts[$_.name]
@@ -1296,7 +1434,11 @@ try {
                             name = $_.name
                             branch = if ($_.defaultBranchRef) { $_.defaultBranchRef.name } else { 'main' }
                             status = 'clean'
-                            lastCommitDate = $_.updatedAt
+                            lastCommitDate = if ($_.pushedAt) { $_.pushedAt } else { $_.updatedAt }
+                            lastCommitMessage = ''
+                            lastCommitAuthor = $owner
+                            commitsLastWeek = 0
+                            commitsLastMonth = 0
                             uncommittedChanges = 0
                             isArchived = [bool]$_.isArchived
                             isStale = $false
