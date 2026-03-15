@@ -10,6 +10,7 @@
     "preview": "npm run ensure:rollup && vite preview"
   },
   "dependencies": {
+    "github-repo-management": "file:..",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
