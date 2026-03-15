@@ -10,6 +10,7 @@ import ArtifactsModal from './ArtifactsModal';
 import ChangeHistoryPanel from './ChangeHistoryPanel';
 import DocReviewModal from './DocReviewModal';
 import RoadmapViewerModal from './RoadmapViewerModal';
+import ApiDocsModal from './ApiDocsModal';
 import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, getReportDownloadUrl, getPowerBIReportUrl, startDocReview, getRoadmapIndex, triggerRoadmapScan } from '../services/apiClient';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
@@ -39,6 +40,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [isDocReviewModalOpen, setIsDocReviewModalOpen] = useState(false);
   const [selectedRepoForArtifacts, setSelectedRepoForArtifacts] = useState<string | null>(null);
   const [isRoadmapViewerOpen, setIsRoadmapViewerOpen] = useState(false);
+  const [isApiDocsOpen, setIsApiDocsOpen] = useState(false);
   const [selectedRoadmapRepo, setSelectedRoadmapRepo] = useState<string | null>(null);
   const [roadmapEntries, setRoadmapEntries] = useState<RoadmapEntry[]>([]);
   const [selectedRepoIds, setSelectedRepoIds] = useState<Set<string>>(new Set());
@@ -524,6 +526,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                 onSettingsClick={() => setIsSettingsModalOpen(true)}
                 onInitClick={() => setIsInitModalOpen(true)}
                 onDocReviewClick={() => setIsDocReviewModalOpen(true)}
+                onApiDocsClick={() => setIsApiDocsOpen(true)}
                 isActionRunning={!!currentOperation}
                 currentOperation={currentOperation}
                 settings={settings}
@@ -584,6 +587,11 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
         repoName={selectedRoadmapRepo}
         onClose={() => setIsRoadmapViewerOpen(false)}
         onScanComplete={handleRoadmapScanComplete}
+      />
+
+      <ApiDocsModal
+        isOpen={isApiDocsOpen}
+        onClose={() => setIsApiDocsOpen(false)}
       />
     </div>
   );

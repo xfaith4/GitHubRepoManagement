@@ -1,5 +1,5 @@
 import React from 'react';
-import { InitIcon, UpdateIcon, SyncIcon, ExportIcon, ArchiveIcon, RefreshIcon, SettingsIcon, SpinnerIcon, DocReviewIcon, RoadmapIcon } from './icons';
+import { InitIcon, UpdateIcon, SyncIcon, ExportIcon, ArchiveIcon, RefreshIcon, SettingsIcon, SpinnerIcon, DocReviewIcon, RoadmapIcon, ApiDocsIcon } from './icons';
 import { type OperationType, type AppSettings } from '../types';
 
 interface ActionBarProps {
@@ -9,6 +9,7 @@ interface ActionBarProps {
   onSettingsClick: () => void;
   onInitClick: () => void;
   onDocReviewClick: () => void;
+  onApiDocsClick: () => void;
   isActionRunning: boolean;
   currentOperation: OperationType | null;
   settings: AppSettings | null;
@@ -37,7 +38,7 @@ const ActionButton: React.FC<ActionButtonProps> = ({ onClick, disabled, isLoadin
 );
 
 
-const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, onSettingsClick, onInitClick, onDocReviewClick, isActionRunning, currentOperation, settings, selectedRepos }) => {
+const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, onSettingsClick, onInitClick, onDocReviewClick, onApiDocsClick, isActionRunning, currentOperation, settings, selectedRepos }) => {
     
     const selection = selectedRepos.size > 0 ? Array.from(selectedRepos) : undefined;
     const selectionCount = selectedRepos.size;
@@ -88,6 +89,7 @@ const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, on
                 </ActionButton>
             </div>
             <div className="flex gap-3">
+                 <ActionButton onClick={onApiDocsClick} disabled={false} title="View API reference documentation for all backend endpoints." icon={<ApiDocsIcon className="w-4 h-4" />} />
                  <ActionButton onClick={onRefresh} disabled={isActionRunning} title="Refresh the current view." icon={<RefreshIcon className="w-4 h-4" />} />
                  <ActionButton onClick={onSettingsClick} disabled={isActionRunning} title="Configure local workspace settings (path, scan depth, thresholds)." icon={<SettingsIcon className="w-4 h-4" />} />
             </div>
