@@ -1,30 +1,30 @@
 {
-  "schemaVersion": "v1",
-  "inventory": {
-    "localRoots": [
-      "G:\\Development"
-    ],
-    "maxDepth": 3,
-    "includeNonGitFolders": false
+  "retention": {
+    "days": 30
   },
-  "reconcile": {
-    "ownerType": "Auto",
-    "gitHubOwner": "",
-    "retry": {
-      "maxAttempts": 3,
-      "baseDelayMs": 300,
-      "maxDelayMs": 2000
-    }
+  "secrets": {
+    "gitHubTokenEnvVar": "GITHUB_TOKEN"
   },
   "docReview": {
     "maxDepth": 3,
     "generateQueue": true,
     "generateBatchPlan": false
   },
-  "retention": {
-    "days": 30
+  "reconcile": {
+    "gitHubOwner": "",
+    "retry": {
+      "baseDelayMs": 300,
+      "maxAttempts": 3,
+      "maxDelayMs": 2000
+    },
+    "ownerType": "Auto"
   },
-  "secrets": {
-    "gitHubTokenEnvVar": "GITHUB_TOKEN"
+  "schemaVersion": "v1",
+  "inventory": {
+    "maxDepth": 3,
+    "localRoots": [
+      "G:\\Development"
+    ],
+    "includeNonGitFolders": false
   }
 }

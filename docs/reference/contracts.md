@@ -148,7 +148,7 @@ Query parameters: `repo=<repoName>` (URL-encoded).
 }
 ```
 
-Content is limited to 512 KB. Returns `404` with `success: false` if the repo has no roadmap or the file is unreadable.
+Returns the full roadmap file contents. Returns `404` with `success: false` if the repo has no roadmap or the file is unreadable.
 
 ## RoadmapCacheMeta (GET /api/roadmap/cache)
 

@@ -36,7 +36,8 @@ From `backend/api-host/Start-RepoManagementApiHost.ps1`:
 - `POST /api/init` (accepted placeholder)
 - `POST /api/update`
 - `POST /api/sync`
-- `POST /api/export` (accepted placeholder)
+- `POST /api/export`
+- `GET /api/reports/:reportName`
 - `POST /api/archive` (accepted placeholder)
 - `POST /api/github/status`
 - `GET /api/status/cache`
@@ -78,9 +79,12 @@ Key sections:
 - `retention`: cleanup retention days
 - `secrets`: environment variable key for token (`GITHUB_TOKEN`) and optional fallback token
 
+Generated dashboard reports are saved under [reports](reports).
+
 UI location:
 
 - `Settings` dialog -> `Workspace Path` sets local repo root.
+- `Settings` dialog -> `GitHub User/Org (default)` is reused by the dashboard GitHub API view on load and refresh.
 - `Settings` dialog -> `GitHub Token (fallback)` stores token fallback used only when `GITHUB_TOKEN` is not set.
 
 Example secret setup:
@@ -88,6 +92,14 @@ Example secret setup:
 ```powershell
 $env:GITHUB_TOKEN = '<token>'
 ```
+
+GitHub auth precedence for dashboard scans:
+
+- Token entered in the `GitHub API` dialog for the current browser session
+- Environment variable `GITHUB_TOKEN`
+- Saved `Settings` fallback token
+
+If a default GitHub user/org is saved in Settings, the dashboard can refresh GitHub repository data without re-entering a token in the UI when one of the sources above is available.
 
 ## Run
 

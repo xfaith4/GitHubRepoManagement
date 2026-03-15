@@ -18,3 +18,7 @@ evidence/baseline/api-host-smoke/
 evidence/baseline/adapter-smoke/
 evidence/baseline/smoke-modular/
 evidence/baseline/regression-smoke/
+
+# Saved reports (keep folder, ignore generated contents)
+reports/*
+!reports/.gitkeep

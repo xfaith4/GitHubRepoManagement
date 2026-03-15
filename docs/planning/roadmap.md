@@ -34,7 +34,7 @@ Cross-reference:
 
 ## Active / Next
 
-- [ ] Add smoke test coverage for roadmap API routes (`/api/roadmap/index`, `/api/roadmap/content`, `/api/roadmap/scan`) in `Invoke-ApiHostSmokeTest.ps1`.
+- [x] Add smoke test coverage for roadmap API routes (`/api/roadmap/index`, `/api/roadmap/content`, `/api/roadmap/scan`) in `Invoke-ApiHostSmokeTest.ps1`.
 - [ ] Add smoke test coverage for roadmap-agent routes (`/api/roadmap-agent/preview`, `/api/roadmap-agent/start`, `/api/roadmap-agent/history`).
 - [ ] Ops log rolling: cap `operations.jsonl` at 500 lines to prevent unbounded growth on long-running instances.
 

@@ -105,6 +105,41 @@ function Send-HttpJson {
     $Stream.Flush()
 }
 
+function Send-HttpContent {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Net.Sockets.NetworkStream]$Stream,
+        [Parameter(Mandatory = $true)]
+        [int]$StatusCode,
+        [Parameter(Mandatory = $true)]
+        [byte[]]$BodyBytes,
+        [Parameter()]
+        [string]$ContentType = 'application/octet-stream',
+        [Parameter()]
+        [string]$StatusText = 'OK',
+        [Parameter()]
+        [string]$CorrelationId
+    )
+
+    $headers = @(
+        "HTTP/1.1 $StatusCode $StatusText",
+        "Content-Type: $ContentType",
+        "Content-Length: $($BodyBytes.Length)",
+        'Connection: close',
+        'Access-Control-Allow-Origin: *',
+        'Access-Control-Allow-Methods: GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers: Content-Type, Authorization',
+        $(if ($CorrelationId) { "X-Correlation-Id: $CorrelationId" } else { '' }),
+        '',
+        ''
+    ) -join "`r`n"
+
+    $headerBytes = [System.Text.Encoding]::ASCII.GetBytes($headers)
+    $Stream.Write($headerBytes, 0, $headerBytes.Length)
+    $Stream.Write($BodyBytes, 0, $BodyBytes.Length)
+    $Stream.Flush()
+}
+
 function Get-ErrorCategory {
     param([string]$Message)
 
@@ -257,6 +292,471 @@ function ConvertFrom-JsonCompat {
 
     $obj = ConvertFrom-Json -InputObject $Json
     return ConvertTo-HashtableRecursive -InputObject $obj
+}
+
+function Get-ReportsRootPath {
+    $reportsRoot = Join-Path $WorkspaceRoot 'reports'
+    if (-not (Test-Path -LiteralPath $reportsRoot)) {
+        $null = New-Item -ItemType Directory -Path $reportsRoot -Force
+    }
+    return $reportsRoot
+}
+
+function Get-ConfiguredLocalRootsOrWorkspace {
+    param([hashtable]$Settings)
+
+    $configuredRoots = if ($Settings.ContainsKey('inventory') -and $Settings.inventory.ContainsKey('localRoots') -and $Settings.inventory.localRoots) {
+        @($Settings.inventory.localRoots)
+    }
+    else {
+        @()
+    }
+
+    $validRoots = @($configuredRoots | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) -and (Test-Path -LiteralPath [string]$_) })
+    if ($validRoots.Count -gt 0) {
+        return $validRoots
+    }
+
+    return @($WorkspaceRoot)
+}
+
+function ConvertTo-HtmlEncodedText {
+    param([object]$Value)
+    return [System.Net.WebUtility]::HtmlEncode([string]$Value)
+}
+
+function New-RepoStatusCsvContent {
+    param([object[]]$Repos)
+
+    $rows = @('Repository,Branch,Status,LastCommitDate,LastCommitAuthor,OpenPrCount,CommitsLastWeek,CommitsLastMonth,UncommittedChanges,Archived,Stale,Owner,Visibility,Language,LocalPath,HtmlUrl')
+    foreach ($repo in @($Repos)) {
+        $values = @(
+            [string]($repo.name ?? ''),
+            [string]($repo.branch ?? ''),
+            [string]($repo.status ?? ''),
+            [string]($repo.lastCommitDate ?? ''),
+            [string]($repo.lastCommitAuthor ?? ''),
+            [string]($repo.openPrCount ?? 0),
+            [string]($repo.commitsLastWeek ?? 0),
+            [string]($repo.commitsLastMonth ?? 0),
+            [string]($repo.uncommittedChanges ?? 0),
+            [string]([bool]($repo.isArchived ?? $false)),
+            [string]([bool]($repo.isStale ?? $false)),
+            [string]($repo.owner ?? ''),
+            [string]($repo.visibility ?? ''),
+            [string]($repo.language ?? ''),
+            [string]($repo.localPath ?? $repo.path ?? ''),
+            [string]($repo.htmlUrl ?? '')
+        ) | ForEach-Object { '"' + ([string]$_).Replace('"', '""') + '"' }
+
+        $rows += ($values -join ',')
+    }
+
+    return ($rows -join "`r`n")
+}
+
+function New-RepoStatusHtmlContent {
+    param(
+        [object[]]$Repos,
+        [string]$SourceLabel,
+        [datetime]$GeneratedAt
+    )
+
+    $repoList = @($Repos)
+    $repoCount = $repoList.Count
+    $dirtyCount = @($repoList | Where-Object { [int]($_.uncommittedChanges ?? 0) -gt 0 -or [string]($_.status ?? '') -eq 'dirty' }).Count
+    $archivedCount = @($repoList | Where-Object { [bool]($_.isArchived ?? $false) }).Count
+    $staleCount = @($repoList | Where-Object { [bool]($_.isStale ?? $false) }).Count
+    $openPrTotal = ($repoList | Measure-Object -Property openPrCount -Sum).Sum
+    $weeklyCommitTotal = ($repoList | Measure-Object -Property commitsLastWeek -Sum).Sum
+    $monthlyCommitTotal = ($repoList | Measure-Object -Property commitsLastMonth -Sum).Sum
+    $generatedDisplay = $GeneratedAt.ToString('yyyy-MM-dd HH:mm:ss')
+    $sourceDisplay = if ([string]::IsNullOrWhiteSpace($SourceLabel)) { 'Repository dashboard export' } else { $SourceLabel }
+
+    $rowMarkup = foreach ($repo in $repoList) {
+        $name = ConvertTo-HtmlEncodedText ($repo.name ?? 'unknown')
+        $branch = ConvertTo-HtmlEncodedText ($repo.branch ?? '')
+        $statusRaw = [string]($repo.status ?? 'unknown')
+        $status = ConvertTo-HtmlEncodedText $statusRaw
+        $statusClass = switch ($statusRaw.ToLowerInvariant()) {
+            'dirty' { 'warn' }
+            'ahead' { 'accent' }
+            'behind' { 'warn' }
+            'diverged' { 'danger' }
+            default { 'ok' }
+        }
+        $lastCommitDate = ConvertTo-HtmlEncodedText ($repo.lastCommitDate ?? '')
+        $lastCommitAuthor = ConvertTo-HtmlEncodedText ($repo.lastCommitAuthor ?? '')
+        $owner = ConvertTo-HtmlEncodedText ($repo.owner ?? '')
+        $visibility = ConvertTo-HtmlEncodedText ($repo.visibility ?? '')
+        $language = ConvertTo-HtmlEncodedText ($repo.language ?? '')
+        $topics = @($repo.topics)
+        $topicMarkup = if ($topics.Count -gt 0) {
+            ($topics | Select-Object -First 4 | ForEach-Object { "<span class=""chip"">$(ConvertTo-HtmlEncodedText $_)</span>" }) -join ''
+        }
+        else {
+            '<span class="muted">No topics</span>'
+        }
+        $pathValue = [string]($repo.localPath ?? $repo.path ?? '')
+        $pathMarkup = if (-not [string]::IsNullOrWhiteSpace($pathValue)) {
+            "<div class=""meta-line""><span class=""meta-label"">Path</span><code>$(ConvertTo-HtmlEncodedText $pathValue)</code></div>"
+        }
+        else {
+            ''
+        }
+        $htmlUrlValue = [string]($repo.htmlUrl ?? '')
+        $htmlLinkMarkup = if (-not [string]::IsNullOrWhiteSpace($htmlUrlValue)) {
+            "<div class=""meta-line""><span class=""meta-label"">Remote</span><a href=""$(ConvertTo-HtmlEncodedText $htmlUrlValue)"" target=""_blank"" rel=""noreferrer"">$(ConvertTo-HtmlEncodedText $htmlUrlValue)</a></div>"
+        }
+        else {
+            '<div class="meta-line"><span class="meta-label">Remote</span><span class="muted">n/a</span></div>'
+        }
+
+@"
+          <tr>
+            <td>
+              <div class="repo-name">$name</div>
+              <div class="repo-meta">
+                <span>$owner</span>
+                <span>$visibility</span>
+                <span>$language</span>
+              </div>
+              <div class="chip-row">$topicMarkup</div>
+            </td>
+            <td><code>$branch</code></td>
+            <td><span class="badge $statusClass">$status</span></td>
+            <td>
+              <div>$lastCommitDate</div>
+              <div class="muted">$lastCommitAuthor</div>
+            </td>
+            <td class="numeric">$([int]($repo.openPrCount ?? 0))</td>
+            <td class="numeric">$([int]($repo.commitsLastWeek ?? 0))</td>
+            <td class="numeric">$([int]($repo.commitsLastMonth ?? 0))</td>
+            <td class="numeric">$([int]($repo.uncommittedChanges ?? 0))</td>
+            <td>
+              $pathMarkup
+              $htmlLinkMarkup
+            </td>
+          </tr>
+"@
+    }
+
+    if (@($rowMarkup).Count -eq 0) {
+        $rowMarkup = @'
+          <tr>
+            <td colspan="9" class="empty-state">No repositories were included in this export.</td>
+          </tr>
+'@
+    }
+
+@"
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Repository Report - $generatedDisplay</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #08111f;
+      --panel: rgba(10, 24, 45, 0.82);
+      --panel-strong: #0d1e36;
+      --line: rgba(142, 169, 197, 0.22);
+      --text: #e7eef7;
+      --muted: #97a8bc;
+      --accent: #34d399;
+      --accent-strong: #10b981;
+      --warn: #f59e0b;
+      --danger: #f97316;
+      --shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(52, 211, 153, 0.18), transparent 28%),
+        radial-gradient(circle at top right, rgba(59, 130, 246, 0.18), transparent 32%),
+        linear-gradient(180deg, #09101d 0%, #08111f 52%, #050a12 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .shell {
+      width: min(1400px, calc(100% - 32px));
+      margin: 32px auto;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background: var(--panel);
+      backdrop-filter: blur(18px);
+      box-shadow: var(--shadow);
+    }
+    .hero {
+      display: grid;
+      gap: 20px;
+      grid-template-columns: 1.5fr 1fr;
+      align-items: end;
+      margin-bottom: 28px;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(52, 211, 153, 0.12);
+      color: #b6f4df;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 14px 0 10px;
+      font-size: clamp(32px, 4vw, 54px);
+      line-height: 1;
+    }
+    .lede {
+      margin: 0;
+      color: var(--muted);
+      max-width: 70ch;
+      line-height: 1.6;
+    }
+    .meta-card {
+      padding: 20px;
+      border-radius: 22px;
+      background: linear-gradient(180deg, rgba(13, 30, 54, 0.94), rgba(8, 17, 31, 0.94));
+      border: 1px solid var(--line);
+    }
+    .meta-card strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
+      color: #bcd0e8;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .meta-card span {
+      display: block;
+      color: var(--text);
+      line-height: 1.6;
+      word-break: break-word;
+    }
+    .stats {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      margin-bottom: 24px;
+    }
+    .stat {
+      padding: 18px;
+      border-radius: 20px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .stat .label {
+      display: block;
+      margin-bottom: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .stat .value {
+      display: block;
+      font-size: clamp(24px, 3vw, 34px);
+      font-weight: 700;
+    }
+    .table-shell {
+      overflow: hidden;
+      border-radius: 24px;
+      border: 1px solid var(--line);
+      background: rgba(4, 10, 20, 0.55);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    thead th {
+      text-align: left;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #a9bdd3;
+      background: rgba(13, 30, 54, 0.94);
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+    }
+    tbody td {
+      padding: 16px 18px;
+      border-bottom: 1px solid rgba(142, 169, 197, 0.12);
+      vertical-align: top;
+    }
+    tbody tr:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .repo-name {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .repo-meta, .chip-row, .meta-line {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 10px;
+      align-items: center;
+    }
+    .repo-meta {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.12);
+      color: #d5dfeb;
+      font-size: 12px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 86px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .badge.ok { background: rgba(16, 185, 129, 0.14); color: #b6f4df; }
+    .badge.warn { background: rgba(245, 158, 11, 0.16); color: #f9d48e; }
+    .badge.accent { background: rgba(59, 130, 246, 0.16); color: #b9d5ff; }
+    .badge.danger { background: rgba(249, 115, 22, 0.16); color: #ffca9c; }
+    .muted, .meta-label {
+      color: var(--muted);
+    }
+    .meta-label {
+      min-width: 52px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .numeric {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    a { color: #9fd0ff; }
+    code {
+      font-family: "Cascadia Code", Consolas, monospace;
+      font-size: 12px;
+      background: rgba(148, 163, 184, 0.1);
+      padding: 2px 6px;
+      border-radius: 8px;
+      word-break: break-all;
+    }
+    .empty-state {
+      text-align: center;
+      color: var(--muted);
+      padding: 40px 18px;
+    }
+    @media (max-width: 1100px) {
+      .hero, .stats { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 820px) {
+      .shell { width: min(100% - 20px, 1400px); padding: 18px; margin: 14px auto; }
+      .hero, .stats { grid-template-columns: 1fr; }
+      .table-shell { overflow-x: auto; }
+      table { min-width: 980px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <span class="eyebrow">Repo Management Report</span>
+        <h1>Repository Status Snapshot</h1>
+        <p class="lede">A saved dashboard export with repository health, activity, and discovery metadata. This file was generated from the current application view and written into the repo-local reports folder for later review.</p>
+      </div>
+      <aside class="meta-card">
+        <strong>Export Context</strong>
+        <span>Source: $(ConvertTo-HtmlEncodedText $sourceDisplay)</span>
+        <span>Generated: $(ConvertTo-HtmlEncodedText $generatedDisplay)</span>
+        <span>Repository Count: $repoCount</span>
+      </aside>
+    </section>
+
+    <section class="stats">
+      <article class="stat"><span class="label">Repositories</span><span class="value">$repoCount</span></article>
+      <article class="stat"><span class="label">Dirty</span><span class="value">$dirtyCount</span></article>
+      <article class="stat"><span class="label">Archived</span><span class="value">$archivedCount</span></article>
+      <article class="stat"><span class="label">Stale</span><span class="value">$staleCount</span></article>
+      <article class="stat"><span class="label">Open PRs</span><span class="value">$([int]($openPrTotal ?? 0))</span></article>
+      <article class="stat"><span class="label">Commits 7d / 30d</span><span class="value">$([int]($weeklyCommitTotal ?? 0)) / $([int]($monthlyCommitTotal ?? 0))</span></article>
+    </section>
+
+    <section class="table-shell">
+      <table>
+        <thead>
+          <tr>
+            <th>Repository</th>
+            <th>Branch</th>
+            <th>Status</th>
+            <th>Last Commit</th>
+            <th>Open PRs</th>
+            <th>Commits 7d</th>
+            <th>Commits 30d</th>
+            <th>Changes</th>
+            <th>Links</th>
+          </tr>
+        </thead>
+        <tbody>
+$(($rowMarkup -join "`n"))
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>
+"@
+}
+
+function Export-RepoStatusReports {
+    param(
+        [object[]]$Repos,
+        [string]$SourceLabel
+    )
+
+    $reportsRoot = Get-ReportsRootPath
+    $generatedAt = Get-Date
+    $timestamp = $generatedAt.ToString('yyyyMMdd_HHmmssfff')
+    $htmlFileName = "repo-status-report_$timestamp.html"
+    $csvFileName = "repo-status-report_$timestamp.csv"
+    $htmlPath = Join-Path $reportsRoot $htmlFileName
+    $csvPath = Join-Path $reportsRoot $csvFileName
+
+    $htmlContent = New-RepoStatusHtmlContent -Repos $Repos -SourceLabel $SourceLabel -GeneratedAt $generatedAt
+    $csvContent = New-RepoStatusCsvContent -Repos $Repos
+
+    Set-Content -LiteralPath $htmlPath -Value $htmlContent -Encoding UTF8
+    Set-Content -LiteralPath $csvPath -Value $csvContent -Encoding UTF8
+
+    return [pscustomobject]@{
+        generatedAt = $generatedAt.ToString('o')
+        repoCount = @($Repos).Count
+        sourceLabel = $SourceLabel
+        reportFileName = $htmlFileName
+        reportPath = $htmlPath
+        reportUrl = "/api/reports/$([System.Uri]::EscapeDataString($htmlFileName))"
+        csvFileName = $csvFileName
+        csvPath = $csvPath
+    }
 }
 
 function Invoke-PowerShellScriptFile {
@@ -1131,6 +1631,31 @@ try {
                 continue
             }
 
+            if ($req.Method -eq 'GET' -and $path -like '/api/reports/*') {
+                $reportName = [System.IO.Path]::GetFileName([System.Uri]::UnescapeDataString($path.Substring('/api/reports/'.Length)))
+                $reportsRoot = Get-ReportsRootPath
+                $reportPath = Join-Path $reportsRoot $reportName
+
+                if ([string]::IsNullOrWhiteSpace($reportName) -or -not (Test-Path -LiteralPath $reportPath)) {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-ErrorJson -Stream $req.Stream -StatusCode 404 -ErrorMessage 'Report file not found.' -CorrelationId $correlationId -Operation 'reports.open'
+                    $client.Close()
+                    continue
+                }
+
+                $contentType = switch ([System.IO.Path]::GetExtension($reportPath).ToLowerInvariant()) {
+                    '.html' { 'text/html; charset=utf-8' }
+                    '.csv' { 'text/csv; charset=utf-8' }
+                    default { 'application/octet-stream' }
+                }
+
+                Add-MetricCounter -Name 'api_requests_total'
+                Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                Send-HttpContent -Stream $req.Stream -StatusCode 200 -ContentType $contentType -CorrelationId $correlationId -BodyBytes ([System.IO.File]::ReadAllBytes($reportPath))
+                $client.Close()
+                continue
+            }
+
             switch ("$($req.Method) $path") {
                 'GET /health/live' {
                     Add-MetricCounter -Name 'api_requests_total'
@@ -1145,7 +1670,7 @@ try {
                     }
                     $healthy = -not ($checks.Values -contains $false)
                     Add-MetricCounter -Name 'api_requests_total'
-                    Send-HttpJson -Stream $req.Stream -StatusCode $(if ($healthy) { 200 } else { 503 }) -CorrelationId $correlationId -Payload @{ status = if ($healthy) { 'ready' } else { 'degraded' }; checks = $checks }
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{ status = if ($healthy) { 'ready' } else { 'degraded' }; checks = $checks }
                 }
                 'GET /health/dependencies' {
                     $depChecks = [ordered]@{
@@ -1170,7 +1695,7 @@ try {
 
                     $healthy = -not ($depChecks.Values -contains $false)
                     Add-MetricCounter -Name 'api_requests_total'
-                    Send-HttpJson -Stream $req.Stream -StatusCode $(if ($healthy) { 200 } else { 503 }) -CorrelationId $correlationId -Payload @{
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         status = if ($healthy) { 'healthy' } else { 'degraded' }
                         dependencies = $depChecks
                     }
@@ -1183,9 +1708,10 @@ try {
                 'GET /api/status' {
                     $q = Parse-QueryString -Query $req.Query
                     $settings = Get-HostSettings
-                    $defaultRoots = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('localRoots') -and $settings.inventory.localRoots) { @($settings.inventory.localRoots) } else { @($WorkspaceRoot) }
+                    $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
                     $defaultMaxDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 2 }
                     $defaultIncludeNonGit = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('includeNonGitFolders')) { [bool]$settings.inventory.includeNonGitFolders } else { $false }
+                    $configuredGitHubUser = if ($settings.ContainsKey('reconcile') -and $settings.reconcile.ContainsKey('gitHubOwner') -and $settings.reconcile.gitHubOwner) { [string]$settings.reconcile.gitHubOwner } else { '' }
 
                     $localRoots = if ($q.ContainsKey('localRoots') -and $q.localRoots) { @($q.localRoots -split ';|,') } else { $defaultRoots }
                     $maxDepth = if ($q.ContainsKey('maxDepth') -and $q.maxDepth) { [int]$q.maxDepth } else { $defaultMaxDepth }
@@ -1211,6 +1737,12 @@ try {
                         }
                     }
 
+                    if ($null -eq $result.meta) {
+                        $result | Add-Member -NotePropertyName meta -NotePropertyValue @{} -Force
+                    }
+                    $result.meta.workspacePath = if (@($localRoots).Count -gt 0) { [string]$localRoots[0] } else { '' }
+                    $result.meta.configuredGithubUser = $configuredGitHubUser
+
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
                     Send-HttpJson -Stream $req.Stream -StatusCode $(if ($result.success) { 200 } else { 500 }) -CorrelationId $correlationId -Payload $result
@@ -1218,7 +1750,7 @@ try {
                 'POST /api/reconcile' {
                     $body = Parse-JsonBody -Body $req.Body
                     $settings = Get-HostSettings
-                    $defaultRoots = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('localRoots') -and $settings.inventory.localRoots) { @($settings.inventory.localRoots) } else { @($WorkspaceRoot) }
+                    $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
                     $defaultOwnerType = if ($settings.ContainsKey('reconcile') -and $settings.reconcile.ContainsKey('ownerType') -and $settings.reconcile.ownerType) { [string]$settings.reconcile.ownerType } else { 'Auto' }
                     $defaultGitHubOwner = if ($settings.ContainsKey('reconcile') -and $settings.reconcile.ContainsKey('gitHubOwner') -and $settings.reconcile.gitHubOwner) { [string]$settings.reconcile.gitHubOwner } else { '' }
                     $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
@@ -1362,11 +1894,15 @@ try {
                     }
                 }
                 'POST /api/export' {
+                    $body = Parse-JsonBody -Body $req.Body
+                    $repos = if ($body.ContainsKey('repos') -and $body.repos) { @($body.repos) } else { @() }
+                    $sourceLabel = if ($body.ContainsKey('sourceLabel') -and $body.sourceLabel) { [string]$body.sourceLabel } else { 'Repository dashboard export' }
+                    $result = Export-RepoStatusReports -Repos $repos -SourceLabel $sourceLabel
                     Add-MetricCounter -Name 'api_requests_total'
-                    Send-HttpJson -Stream $req.Stream -StatusCode 202 -CorrelationId $correlationId -Payload @{
+                    Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
-                        accepted = $true
-                        message = 'Client-side export supported. Artifact index available at /api/report/artifacts.'
+                        data = $result
                     }
                 }
                 'POST /api/archive' {
@@ -1581,11 +2117,14 @@ try {
                     $refresh = if ($q.ContainsKey('refresh')) { Parse-Bool -Value $q.refresh -Default $false } else { $false }
                     $settings = Get-HostSettings
                     $ttlSeconds = Get-RoadmapCacheTtlSeconds -Settings $settings
-                    $defaultRoots = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('localRoots') -and $settings.inventory.localRoots) { @($settings.inventory.localRoots) } else { @($WorkspaceRoot) }
+                    $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
                     $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
+                    $localRoots = if ($q.ContainsKey('localRoots') -and $q.localRoots) { @($q.localRoots -split ';|,') } else { $defaultRoots }
+                    $maxDepth = if ($q.ContainsKey('maxDepth') -and $q.maxDepth) { [int]$q.maxDepth } else { $defaultDepth }
+                    $useDefaultScope = ($maxDepth -eq $defaultDepth) -and ((@($localRoots) -join '|') -eq (@($defaultRoots) -join '|'))
 
                     $cacheHit = $null
-                    if ((-not $refresh) -and ($ttlSeconds -gt 0)) {
+                    if ($useDefaultScope -and (-not $refresh) -and ($ttlSeconds -gt 0)) {
                         $cacheHit = Get-RoadmapFromCache -TtlSeconds $ttlSeconds
                     }
 
@@ -1605,8 +2144,10 @@ try {
                         }
                     } else {
                         $scannedAt = (Get-Date).ToUniversalTime().ToString('o')
-                        $entries = Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth
-                        Save-RoadmapCache -Entries $entries -ScannedAt $scannedAt
+                        $entries = Invoke-RoadmapScan -LocalRoots $localRoots -MaxDepth $maxDepth
+                        if ($useDefaultScope) {
+                            Save-RoadmapCache -Entries $entries -ScannedAt $scannedAt
+                        }
                         Add-MetricCounter -Name 'api_requests_total'
                         Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
                         Write-HostLog ("[TRACE] roadmap.index correlationId={0} done source=fresh-scan count={1} durationMs={2}" -f $correlationId, @($entries).Count, [int]((Get-Date) - $requestStart).TotalMilliseconds)
@@ -1631,7 +2172,7 @@ try {
                     $targetPath = $requestedPath
                     if ([string]::IsNullOrWhiteSpace($targetPath) -and -not [string]::IsNullOrWhiteSpace($repoName)) {
                         $settings = Get-HostSettings
-                        $defaultRoots = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('localRoots') -and $settings.inventory.localRoots) { @($settings.inventory.localRoots) } else { @($WorkspaceRoot) }
+                        $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
                         $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
                         $ttlSeconds = Get-RoadmapCacheTtlSeconds -Settings $settings
                         $cached = Get-RoadmapFromCache -TtlSeconds $ttlSeconds
@@ -1648,16 +2189,7 @@ try {
                         }
                     } else {
                         $fileInfo = Get-Item -LiteralPath $targetPath
-                        $maxBytes = 512 * 1024
-                        $content = if ($fileInfo.Length -le $maxBytes) {
-                            Get-Content -LiteralPath $targetPath -Raw -Encoding UTF8 -ErrorAction Stop
-                        } else {
-                            $stream = [System.IO.File]::OpenRead($targetPath)
-                            $buf = New-Object byte[] $maxBytes
-                            $null = $stream.Read($buf, 0, $maxBytes)
-                            $stream.Close()
-                            [System.Text.Encoding]::UTF8.GetString($buf) + "`n`n[... file truncated at 512 KB ...]"
-                        }
+                        $content = Get-Content -LiteralPath $targetPath -Raw -Encoding UTF8 -ErrorAction Stop
                         $inferredRepoName = if (-not [string]::IsNullOrWhiteSpace($repoName)) { $repoName } else { $fileInfo.Directory.Name }
                         Add-MetricCounter -Name 'api_requests_total'
                         Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
@@ -1676,12 +2208,18 @@ try {
                 }
                 'POST /api/roadmap/scan' {
                     Write-HostLog ("[TRACE] roadmap.scan correlationId={0} start" -f $correlationId)
+                    $body = Parse-JsonBody -Body $req.Body
                     $settings = Get-HostSettings
-                    $defaultRoots = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('localRoots') -and $settings.inventory.localRoots) { @($settings.inventory.localRoots) } else { @($WorkspaceRoot) }
+                    $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
                     $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
+                    $localRoots = if ($body.ContainsKey('localRoots') -and $body.localRoots) { @($body.localRoots) } else { $defaultRoots }
+                    $maxDepth = if ($body.ContainsKey('maxDepth') -and $body.maxDepth) { [int]$body.maxDepth } else { $defaultDepth }
+                    $useDefaultScope = ($maxDepth -eq $defaultDepth) -and ((@($localRoots) -join '|') -eq (@($defaultRoots) -join '|'))
                     $scannedAt = (Get-Date).ToUniversalTime().ToString('o')
-                    $entries = Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth
-                    Save-RoadmapCache -Entries $entries -ScannedAt $scannedAt
+                    $entries = Invoke-RoadmapScan -LocalRoots $localRoots -MaxDepth $maxDepth
+                    if ($useDefaultScope) {
+                        Save-RoadmapCache -Entries $entries -ScannedAt $scannedAt
+                    }
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
                     Write-HostLog ("[TRACE] roadmap.scan correlationId={0} done count={1} durationMs={2}" -f $correlationId, @($entries).Count, [int]((Get-Date) - $requestStart).TotalMilliseconds)

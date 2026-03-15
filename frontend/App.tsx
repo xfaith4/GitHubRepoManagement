@@ -54,27 +54,45 @@ function App() {
         });
       }
 
-      if (githubCredentialsRef.current) {
-        const { username, apiKey } = githubCredentialsRef.current;
-        const data = await getGithubRepoInsights({
-          githubUser: username,
-          apiKey,
-          includePrivate: true,
-          includeForks: false,
-          repoLimit: 50,
-          fetchExtendedMetrics: true
-        });
-        setGithubRepos(data.repos);
-        setGithubSource({ source: 'github', username: data.username });
-        setInsightsMeta({
-          totalRepos: data.totalRepos,
-          fetchedRepos: data.fetchedRepos,
-          rateLimit: data.rateLimit
-        });
-      } else {
+      const clearGithubData = () => {
         setGithubRepos([]);
         setGithubSource(null);
         setInsightsMeta(null);
+      };
+
+      const activeGithubUsername = githubCredentialsRef.current?.username?.trim()
+        || (localData.source === 'local' ? localData.configuredGithubUser?.trim() ?? '' : '');
+      const activeGithubApiKey = githubCredentialsRef.current?.apiKey?.trim() || undefined;
+
+      if (activeGithubUsername) {
+        try {
+          const data = await getGithubRepoInsights({
+            githubUser: activeGithubUsername,
+            apiKey: activeGithubApiKey,
+            includePrivate: true,
+            includeForks: false,
+            repoLimit: 50,
+            fetchExtendedMetrics: true
+          });
+
+          setGithubRepos(data.repos);
+          setGithubSource({ source: 'github', username: data.username });
+          setInsightsMeta({
+            totalRepos: data.totalRepos,
+            fetchedRepos: data.fetchedRepos,
+            rateLimit: data.rateLimit
+          });
+        } catch (githubError) {
+          clearGithubData();
+
+          if (githubCredentialsRef.current?.username) {
+            throw githubError;
+          }
+
+          console.warn('Automatic GitHub scan skipped.', githubError);
+        }
+      } else {
+        clearGithubData();
       }
     } catch (err) {
       console.error(err);
@@ -102,15 +120,16 @@ function App() {
     setLoading(true);
     setError(null);
     try {
+      const normalizedApiKey = apiKey?.trim() ? apiKey.trim() : undefined;
       const data = await getGithubRepoInsights({
         githubUser: username,
-        apiKey,
+        apiKey: normalizedApiKey,
         includePrivate: true,
         includeForks: false,
         repoLimit: 50,
         fetchExtendedMetrics: true
       });
-      githubCredentialsRef.current = { username, apiKey };
+      githubCredentialsRef.current = { username, apiKey: normalizedApiKey };
       setGithubRepos(data.repos);
       setGithubSource({ source: 'github', username: data.username });
       setInsightsMeta({
@@ -225,7 +244,7 @@ function App() {
                 <button
                   onClick={() => setIsDataSourceModalOpen(true)}
                   className="ml-3 inline-flex items-center px-3 py-1.5 border border-gray-600 rounded-md text-sm font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 transition-colors"
-                  title="Connect to GitHub API via token"
+                  title="Connect to GitHub API using a typed token, GITHUB_TOKEN, or the saved fallback token"
                 >
                   <DatabaseIcon className="w-4 h-4 mr-2" />
                   GitHub API
@@ -253,7 +272,7 @@ function App() {
         isOpen={isDataSourceModalOpen}
         onClose={() => setIsDataSourceModalOpen(false)}
         onSave={handleDataSourceChange}
-        currentUsername={githubSource?.username}
+        currentUsername={githubSource?.username ?? (localSource?.source === 'local' ? localSource.configuredGithubUser ?? undefined : undefined)}
       />
     </div>
   );

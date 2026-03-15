@@ -91,7 +91,12 @@ if ($LocalRoots.Count -eq 0) {
 }
 
 if (-not $OutDir) {
+    if ($LoadFunctionsOnly) {
+        $OutDir = [string]$LocalRoots[0]
+    }
+    else {
     $OutDir = Join-Path -Path (Join-Path -Path $LocalRoots[0] -ChildPath 'Repo_reconciliation-dashboard') -ChildPath '_repo_reconciliation'
+    }
 }
 
 $script:SIMILARITY_SCORE_THRESHOLD         = 65

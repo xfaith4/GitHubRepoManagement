@@ -323,8 +323,8 @@ Write targets:
   - detailed per dependency (git, gh, GitHub API, output path writable).
 
 Semantics:
-- `200`: healthy,
-- `503`: degraded/unready,
+- `200`: request handled successfully,
+- degraded or unready health states are reported in the response body `status` field,
 - response body includes component statuses and failure reasons.
 
 ## Windows-Specific Considerations

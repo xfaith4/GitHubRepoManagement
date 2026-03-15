@@ -22,7 +22,8 @@ Minimal local PowerShell API host for adapter contracts.
 - `POST /api/init` (accepted placeholder)
 - `POST /api/update`
 - `POST /api/sync`
-- `POST /api/export` (accepted placeholder)
+- `POST /api/export`
+- `GET /api/reports/:reportName`
 - `POST /api/archive` (accepted placeholder)
 - `POST /api/github/status`
 
@@ -41,4 +42,9 @@ Minimal local PowerShell API host for adapter contracts.
 Notes:
 - Host uses `TcpListener` loopback binding.
 - CORS headers are enabled for local frontend integration.
+- `GET /health/ready` and `GET /health/dependencies` always return HTTP 200 and surface degraded state in the response payload.
+- `POST /api/export` writes timestamped HTML and CSV reports into the repo-local `reports/` folder.
+- `GET /api/reports/:reportName` serves a saved report file back to the browser so the HTML report can open in a new tab.
+- `POST /api/github/status` resolves auth in this order: request token, `GITHUB_TOKEN`, saved fallback token.
+- `GET /api/status` includes the configured default GitHub user in response metadata so the frontend can bootstrap GitHub scans without prompting for a token.
 - This host is intentionally minimal and intended as a migration bridge before a full production host.

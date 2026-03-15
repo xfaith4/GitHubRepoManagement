@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 interface DataSourceModalProps {
   isOpen: boolean;
@@ -12,6 +12,10 @@ const DataSourceModal: React.FC<DataSourceModalProps> = ({ isOpen, onClose, onSa
   const [apiKey, setApiKey] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    setUsername(currentUsername || '');
+  }, [currentUsername, isOpen]);
 
   if (!isOpen) return null;
 
@@ -50,10 +54,10 @@ const DataSourceModal: React.FC<DataSourceModalProps> = ({ isOpen, onClose, onSa
           <div className="p-6">
             <h2 className="text-xl font-bold text-white mb-4">Connect GitHub API</h2>
             <p className="text-sm text-gray-400 mb-4">
-              Enter a GitHub username or organization and a Personal Access Token to query GitHub metadata via the GitHub API. This does not scan or transmit local files.
+              Enter a GitHub username or organization to query GitHub metadata via the GitHub API. The token field is optional when <code>GITHUB_TOKEN</code> is already set before launch or a fallback token is saved in Settings.
             </p>
             <p className="text-xs text-gray-500 mb-4">
-              Token handling: stored in memory for this session only (not written to disk by the frontend).
+              This workflow does not scan or transmit local files. Any token entered here is stored in memory for this session only.
             </p>
             {error && (
               <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-md text-sm text-red-200">

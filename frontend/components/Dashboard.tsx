@@ -11,7 +11,7 @@ import ChangeHistoryPanel from './ChangeHistoryPanel';
 import DocReviewModal from './DocReviewModal';
 import RoadmapViewerModal from './RoadmapViewerModal';
 import ApiDocsModal from './ApiDocsModal';
-import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, getReportDownloadUrl, getPowerBIReportUrl, startDocReview, getRoadmapIndex, triggerRoadmapScan } from '../services/apiClient';
+import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan } from '../services/apiClient';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
 import { useHealthPing } from '../hooks/useHealthPing';
@@ -278,32 +278,55 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   };
 
   const handleExport = async () => {
-    handleAction('export');
     const reposToExport = selectedRepoIds.size > 0
         ? repos.filter(r => selectedRepoIds.has(getRepoSelectionId(r)))
         : repos;
+    const targetCount = reposToExport.length;
+    const sourceLabel = dataSource?.source === 'github'
+      ? `GitHub API: ${dataSource.username}`
+      : dataSource?.source === 'local'
+        ? `Local Scan${dataSource.workspacePath ? ` (${dataSource.workspacePath})` : ''}`
+        : 'Sample Data';
 
-    // Export Power BI Dashboard (HTML)
-    const powerBIUrl = getPowerBIReportUrl(reposToExport);
-    const powerBILink = document.createElement('a');
-    powerBILink.href = powerBIUrl;
-    powerBILink.setAttribute('download', 'RepoStatusReport_PowerBI.html');
-    document.body.appendChild(powerBILink);
-    powerBILink.click();
-    document.body.removeChild(powerBILink);
+    const reportWindow = window.open('', '_blank');
+    if (reportWindow && !reportWindow.closed) {
+      reportWindow.document.write('<!doctype html><html><head><title>Generating report...</title></head><body style="font-family: Segoe UI, sans-serif; padding: 32px; background: #0f172a; color: #e2e8f0;"><h1>Generating report...</h1><p>Your saved report will open here when export completes.</p></body></html>');
+      reportWindow.document.close();
+    }
 
-    // Also export CSV for backward compatibility
-    // Delay prevents browser from blocking multiple simultaneous downloads
-    const DOWNLOAD_DELAY_MS = 100;
-    setTimeout(() => {
-      const csvUrl = getReportDownloadUrl(reposToExport);
-      const csvLink = document.createElement('a');
-      csvLink.href = csvUrl;
-      csvLink.setAttribute('download', 'RepoStatusReport.csv');
-      document.body.appendChild(csvLink);
-      csvLink.click();
-      document.body.removeChild(csvLink);
-    }, DOWNLOAD_DELAY_MS);
+    setCurrentOperation('export');
+    setIsLogPanelOpen(true);
+    setLogStatus('running');
+    setLogMessages([
+      'Starting: export...',
+      targetCount > 0 ? `Generating report for ${targetCount} repositories.` : 'Generating report for the current view.',
+      `Source: ${sourceLabel}`
+    ]);
+
+    try {
+      const result = await startExport(reposToExport, sourceLabel);
+      setLogMessages(prev => [
+        ...prev,
+        `HTML report saved: ${result.reportPath}`,
+        `CSV report saved: ${result.csvPath}`,
+        `Generated at: ${result.generatedAt}`,
+        'HTML report opened in a new tab.'
+      ]);
+      setLogStatus('success');
+
+      if (reportWindow && !reportWindow.closed) {
+        reportWindow.location.href = result.reportUrl;
+      } else {
+        window.open(result.reportUrl, '_blank');
+      }
+    } catch (error) {
+      if (reportWindow && !reportWindow.closed) {
+        reportWindow.close();
+      }
+      const message = error instanceof Error ? error.message : 'Report export failed.';
+      setLogMessages(prev => [...prev, `ERROR: ${message}`]);
+      setLogStatus('error');
+    }
   };
 
   const handleLogPanelClose = () => {

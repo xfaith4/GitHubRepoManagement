@@ -76,6 +76,17 @@ export interface OperationResult {
   results: OperationRepoResult[];
 }
 
+export interface ReportExportResult {
+  generatedAt: string;
+  repoCount: number;
+  sourceLabel: string;
+  reportFileName: string;
+  reportPath: string;
+  reportUrl: string;
+  csvFileName: string;
+  csvPath: string;
+}
+
 export type OperationType = 'init' | 'update' | 'sync' | 'export' | 'archive' | 'docreview' | 'scan' | 'roadmap-scan' | 'roadmap-agent';
 
 export interface GithubInsightsMeta {

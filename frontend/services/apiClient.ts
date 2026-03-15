@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem } from '../types';
+import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -69,7 +69,7 @@ function settingsFromApi(data: any): AppSettings {
   const root = data?.data ?? data ?? {};
   return {
     basePath: (root?.inventory?.localRoots?.[0] as string | undefined) ?? 'G:\\Development',
-    reportPath: 'backend\\modules\\output',
+    reportPath: 'reports',
     staleThreshold: 14,
     daysInactive: Number(root?.retention?.days ?? 30),
     zipArchive: true,
@@ -100,8 +100,8 @@ export async function getStatus(): Promise<{ repos: RepoStatus[]; source: 'sampl
   return {
     repos,
     source: 'local',
-    workspacePath: undefined,
-    configuredGithubUser: null,
+    workspacePath: data?.meta?.workspacePath ? String(data.meta.workspacePath) : undefined,
+    configuredGithubUser: data?.meta?.configuredGithubUser ? String(data.meta.configuredGithubUser) : null,
     repoCount: Number(data?.meta?.repoCount ?? repos.length),
     scanDurationMs: Number(data?.meta?.scanDurationMs ?? (Date.now() - requestStartedAt)),
     dataLastUpdated: cacheMeta?.cachedAt ?? new Date().toISOString(),
@@ -150,20 +150,64 @@ export async function startSync(repoNames?: string[], repoPaths?: string[]): Pro
   return response?.data as OperationResult;
 }
 
-export async function startExport(): Promise<void> {
-  if (USE_MOCK_API) return;
-  await postJson('/export', {});
+function buildMockReportHtml(repos: RepoStatus[], sourceLabel: string, generatedAt: string): string {
+  const rows = repos.map((repo) => `
+    <tr>
+      <td>${repo.name}</td>
+      <td>${repo.branch}</td>
+      <td>${repo.status}</td>
+      <td>${repo.lastCommitDate}</td>
+      <td>${repo.uncommittedChanges}</td>
+    </tr>
+  `).join('');
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mock Repository Report</title>
+</head>
+<body style="font-family: Segoe UI, sans-serif; margin: 0; padding: 32px; background: #0f172a; color: #e2e8f0;">
+  <h1 style="margin-top: 0;">Mock Repository Report</h1>
+  <p style="color: #94a3b8; margin-bottom: 24px;">Source: ${sourceLabel} | Generated: ${generatedAt}</p>
+  <table style="width: 100%; border-collapse: collapse; background: #111827;">
+    <thead>
+      <tr><th style="padding: 12px; border-bottom: 1px solid #1f2937; text-align: left; color: #93c5fd;">Repository</th><th style="padding: 12px; border-bottom: 1px solid #1f2937; text-align: left; color: #93c5fd;">Branch</th><th style="padding: 12px; border-bottom: 1px solid #1f2937; text-align: left; color: #93c5fd;">Status</th><th style="padding: 12px; border-bottom: 1px solid #1f2937; text-align: left; color: #93c5fd;">Last Commit</th><th style="padding: 12px; border-bottom: 1px solid #1f2937; text-align: left; color: #93c5fd;">Changes</th></tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+</body>
+</html>`;
 }
 
-export function getReportDownloadUrl(repos: RepoStatus[]): string {
-  const headers = 'Repository,Branch,Status,LastCommitDate,UncommittedChanges\n';
-  const rows = repos.map(r => [r.name, r.branch, r.status, r.lastCommitDate, r.uncommittedChanges].map(v => `"${String(v ?? '')}"`).join(',')).join('\n');
-  return `data:text/csv;charset=utf-8,${encodeURIComponent(headers + rows)}`;
-}
+export async function startExport(repos: RepoStatus[], sourceLabel: string): Promise<ReportExportResult> {
+  if (USE_MOCK_API) {
+    const generatedAt = new Date().toISOString();
+    const timestamp = generatedAt
+      .replaceAll('-', '')
+      .replaceAll(':', '')
+      .replaceAll('T', '')
+      .replaceAll('Z', '')
+      .replaceAll('.', '')
+      .slice(0, 17);
+    return {
+      generatedAt,
+      repoCount: repos.length,
+      sourceLabel,
+      reportFileName: `repo-status-report_${timestamp}.html`,
+      reportPath: `reports/repo-status-report_${timestamp}.html`,
+      reportUrl: `data:text/html;charset=utf-8,${encodeURIComponent(buildMockReportHtml(repos, sourceLabel, generatedAt))}`,
+      csvFileName: `repo-status-report_${timestamp}.csv`,
+      csvPath: `reports/repo-status-report_${timestamp}.csv`,
+    };
+  }
 
-export function getPowerBIReportUrl(repos: RepoStatus[]): string {
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Repo Report</title></head><body><h1>Repository Report</h1><pre>${JSON.stringify(repos, null, 2)}</pre></body></html>`;
-  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+  const data = await postJson<any>('/export', { repos, sourceLabel });
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? data?.error ?? 'Report export failed.');
+  }
+  return data.data as ReportExportResult;
 }
 
 export async function startArchive(daysInactive: number, zipArchive: boolean, repoNames?: string[]): Promise<void> {
@@ -248,7 +292,7 @@ export async function getGithubRepoInsights(request: GithubStatusRequest): Promi
 
 const mockSettings: AppSettings = {
   basePath: 'G:\\Development',
-  reportPath: 'backend\\modules\\output',
+  reportPath: 'reports',
   staleThreshold: 14,
   daysInactive: 30,
   zipArchive: true,

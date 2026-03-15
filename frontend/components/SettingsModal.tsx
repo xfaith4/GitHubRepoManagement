@@ -78,8 +78,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onSave, 
                 </p>
               </div>
               <div>
-                <label htmlFor="reportPath" className="block text-sm font-medium text-gray-300">Report Path</label>
-                <input type="text" name="reportPath" id="reportPath" value={settings.reportPath} onChange={handleChange} className="mt-1 block w-full bg-gray-900 border border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
+                <label htmlFor="reportPath" className="block text-sm font-medium text-gray-300">Report Folder</label>
+                <input type="text" name="reportPath" id="reportPath" value={settings.reportPath} readOnly disabled className="mt-1 block w-full bg-gray-900/60 border border-gray-700 rounded-md shadow-sm py-2 px-3 text-gray-400 cursor-not-allowed sm:text-sm" />
+                <p className="mt-1 text-xs text-gray-500">
+                  Dashboard exports are saved in the repo-local <code>reports</code> folder with timestamped filenames.
+                </p>
               </div>
               <div>
                 <label htmlFor="staleThreshold" className="block text-sm font-medium text-gray-300">Stale Threshold (days)</label>
