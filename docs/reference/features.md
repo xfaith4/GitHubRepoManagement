@@ -273,6 +273,40 @@ Known limitations and TODOs:
 - log panel expects SSE stream not currently backed by API.
 - TODO: implement operation stream endpoint or replace with polling job logs.
 
+## Feature: Roadmap Copilot Task Automation
+
+Description and user value:
+- Lets operators preview and start roadmap-driven Copilot tasks directly from the ROADMAP viewer UI, without leaving the dashboard.
+
+Inputs/outputs and data sources:
+- Inputs: target `owner/repo`, optional base branch, optional custom agent, optional roadmap path.
+- Data sources: GitHub roadmap file content (via `gh api`), local script-generated history store.
+- Outputs: generated task prompt preview, Copilot task start result, recent task run history.
+
+Commands/scripts/services involved:
+- `scripts/Start-RoadmapCopilotTask.ps1` (roadmap parsing, next-task selection, preview/start flow).
+- `scripts/Start-GitHubCopilotTask.ps1` (delegated `gh agent-task create` launcher).
+- API routes: `POST /api/roadmap-agent/preview`, `POST /api/roadmap-agent/start`, `GET /api/roadmap-agent/history`.
+- UI: `RoadmapViewerModal` controls for preview/start/history.
+
+Configuration knobs and defaults:
+- Roadmap candidate path search starts with `ROADMAP.md`, then common fallback paths.
+- Section-aware priority for unchecked tasks: Active/Next, near-term, mid-term, long-term, technical debt.
+
+Error cases and expected handling:
+- missing roadmap file: explicit validation error listing paths attempted.
+- gh/token/auth failures: run recorded as failed with error in history summary.
+- preview mode does not create tasks and still records an auditable run.
+
+Metrics/logging emitted:
+- JSONL audit trail in `output/roadmap-task-history/history.jsonl`.
+- Per-run files: `runs/<runId>.events.jsonl` and `runs/<runId>.summary.json`.
+- API call lifecycle events for roadmap content and task initiation.
+
+Known limitations and TODOs:
+- task execution follow-up status is delegated to gh output, not a long-lived backend job tracker.
+- TODO: add smoke tests for roadmap-agent API routes.
+
 ## Feature: GitHub Insights View
 
 Description and user value:
@@ -297,6 +331,34 @@ Metrics/logging emitted:
 Known limitations and TODOs:
 - potential rate pressure when extended metrics enabled for many repos.
 - TODO: add bounded concurrency and adaptive throttling.
+
+## Feature: Local Commit Activity and Open PR Metrics Accuracy
+
+Description and user value:
+- Ensures dashboard activity panels and Open PR columns reflect real values instead of fallback zeros.
+
+Inputs/outputs and data sources:
+- Local commit metrics source: `git log` + `git rev-list` per local repo.
+- Open PR metrics source: GitHub Search API (`is:pr is:open`) via token path or `gh` fallback path.
+- Outputs: `lastCommitMessage`, `lastCommitAuthor`, `commitsLastWeek`, `commitsLastMonth`, and `openPrCount` in repo payloads.
+
+Commands/scripts/services involved:
+- Local scan enrichment in reconciliation inventory routines.
+- API host open-PR aggregation for both direct API and gh-backed flows.
+
+Configuration knobs and defaults:
+- Commit windows are fixed at 7 days and 30 days for dashboard consistency.
+
+Error cases and expected handling:
+- git metadata errors for one repo do not fail the scan; affected repo fields default safely.
+- GitHub PR aggregation failures degrade gracefully and are trace-logged.
+
+Metrics/logging emitted:
+- Trace logs for PR aggregation failures and scan/cache execution paths.
+- Status cache schema versioning to invalidate stale payloads when repo contract fields change.
+
+Known limitations and TODOs:
+- PR aggregation currently returns counts only (no aging or review-state breakdown).
 
 ## Behavioral Reconciliation Notes
 

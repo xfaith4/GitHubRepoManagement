@@ -14,11 +14,17 @@
 - [x] Structured operations log (JSONL); `GET /api/log/tail` polled by dashboard Operation Log panel.
 - [x] Backend connectivity indicator (`useHealthPing`) shown in dashboard header.
 - [x] CI smoke workflow covering module, adapter, and API host smoke tests.
+- [x] Roadmap task automation scripts: `Start-RoadmapCopilotTask.ps1` + `Start-GitHubCopilotTask.ps1` with preview mode.
+- [x] Persistent roadmap task history and API call logging (`output/roadmap-task-history/*.json*`).
+- [x] New roadmap agent API routes: `/api/roadmap-agent/preview`, `/api/roadmap-agent/start`, `/api/roadmap-agent/history`.
+- [x] Dashboard ROADMAP modal upgraded to preview/start roadmap Copilot tasks and view recent task history.
+- [x] Local status scan now populates `lastCommitMessage`, `lastCommitAuthor`, `commitsLastWeek`, `commitsLastMonth`.
+- [x] GitHub insights now aggregate real open PR counts (removed hardcoded zeros in API/gh paths).
 
 ## Active / Next
 
 - [ ] Smoke test coverage for roadmap API routes in `Invoke-ApiHostSmokeTest.ps1`.
-- [ ] Document `/api/roadmap/*` and `/api/log/tail` in `docs/reference/contracts.md`.
+- [ ] Add smoke test coverage for roadmap-agent routes (`/api/roadmap-agent/preview`, `/api/roadmap-agent/start`, `/api/roadmap-agent/history`).
 - [ ] Ops log rolling: cap `operations.jsonl` at 500 lines.
 
 ## Near-Term (Must)

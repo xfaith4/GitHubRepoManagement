@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type RoadmapIndex, type RoadmapContent } from '../types';
+import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -52,6 +52,9 @@ function normalizeRepo(repo: any): RepoStatus {
     hasArtifacts: Boolean(repo?.hasArtifacts ?? false),
     lastBuildStatus: 'none',
     openPrCount: Number(repo?.openPrCount ?? 0),
+    commitsLastWeek: Number(repo?.commitsLastWeek ?? 0),
+    commitsLastMonth: Number(repo?.commitsLastMonth ?? 0),
+    pendingReviewPrCount: Number(repo?.pendingReviewPrCount ?? 0),
     htmlUrl: repo?.htmlUrl,
     localPath: repo?.path ? String(repo.path) : undefined,
     originUrl: repo?.originUrl ? String(repo.originUrl) : undefined,
@@ -320,4 +323,40 @@ export async function triggerRoadmapScan(): Promise<RoadmapIndex> {
     cacheSource: d.cacheSource ?? 'fresh-scan',
     cacheAgeSeconds: 0,
   };
+}
+
+interface RoadmapTaskRequest {
+  repository: string;
+  baseBranch?: string;
+  customAgent?: string;
+  roadmapPath?: string;
+  follow?: boolean;
+}
+
+export async function previewRoadmapTask(request: RoadmapTaskRequest): Promise<RoadmapTaskPreview> {
+  const data = await postJson<any>('/roadmap-agent/preview', request);
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? 'Roadmap task preview failed.');
+  }
+  return data.data as RoadmapTaskPreview;
+}
+
+export async function startRoadmapTask(request: RoadmapTaskRequest): Promise<{ message: string; output: string; latestHistory: RoadmapTaskHistoryItem | null }> {
+  const data = await postJson<any>('/roadmap-agent/start', request);
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? 'Roadmap task start failed.');
+  }
+  return {
+    message: String(data?.data?.message ?? 'Roadmap Copilot task initiated.'),
+    output: String(data?.data?.output ?? ''),
+    latestHistory: (data?.data?.latestHistory ?? null) as RoadmapTaskHistoryItem | null
+  };
+}
+
+export async function getRoadmapTaskHistory(limit = 25): Promise<RoadmapTaskHistoryItem[]> {
+  const data = await fetchJson<any>(`${API_BASE_URL}/roadmap-agent/history?limit=${encodeURIComponent(String(limit))}`);
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? 'Failed to load roadmap task history.');
+  }
+  return Array.isArray(data?.data?.items) ? data.data.items : [];
 }

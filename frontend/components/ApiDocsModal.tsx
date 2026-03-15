@@ -327,6 +327,50 @@ const CATEGORIES: CategoryDef[] = [
         ],
       },
       {
+        method: 'POST',
+        path: '/api/roadmap-agent/preview',
+        summary: 'Builds a roadmap-driven Copilot task preview for a target GitHub repository without creating a task.',
+        bodyParams: [
+          { name: 'repository', type: 'string', required: true, description: 'Target repository in owner/repo format' },
+          { name: 'baseBranch', type: 'string', description: 'Optional base branch override' },
+          { name: 'customAgent', type: 'string', description: 'Optional custom Copilot agent name' },
+          { name: 'roadmapPath', type: 'string', description: 'Optional explicit roadmap path in target repo' },
+        ],
+        responseFields: [
+          { name: 'data.selectedTask', type: 'object', description: 'Next selected unchecked roadmap task' },
+          { name: 'data.generatedTaskDescription', type: 'string', description: 'Generated Copilot task prompt' },
+          { name: 'data.history', type: 'object', description: 'History file locations for this preview run' },
+        ],
+      },
+      {
+        method: 'POST',
+        path: '/api/roadmap-agent/start',
+        summary: 'Starts a roadmap-driven Copilot task for a target repository and records execution history.',
+        bodyParams: [
+          { name: 'repository', type: 'string', required: true, description: 'Target repository in owner/repo format' },
+          { name: 'baseBranch', type: 'string', description: 'Optional base branch override' },
+          { name: 'customAgent', type: 'string', description: 'Optional custom Copilot agent name' },
+          { name: 'follow', type: 'bool', description: 'Whether to follow task output stream from gh' },
+        ],
+        responseFields: [
+          { name: 'data.message', type: 'string', description: 'Start status message' },
+          { name: 'data.output', type: 'string', description: 'Raw command output from script invocation' },
+          { name: 'data.latestHistory', type: 'object', description: 'Most recent history summary entry' },
+        ],
+      },
+      {
+        method: 'GET',
+        path: '/api/roadmap-agent/history',
+        summary: 'Returns recent roadmap task execution history entries.',
+        queryParams: [
+          { name: 'limit', type: 'int', description: 'Max history entries to return (default: 25)' },
+        ],
+        responseFields: [
+          { name: 'data.items', type: 'object[]', description: 'Recent roadmap task run summaries' },
+          { name: 'data.count', type: 'number', description: 'Number of returned history entries' },
+        ],
+      },
+      {
         method: 'GET',
         path: '/api/roadmap/cache',
         summary: 'Returns roadmap cache metadata (TTL, age, entry count, disk path).',

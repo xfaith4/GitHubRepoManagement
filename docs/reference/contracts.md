@@ -11,11 +11,17 @@ Version: `v1`
   "path": "G:\\Development\\RepoName",
   "branch": "main",
   "lastCommitDate": "2026-03-07T12:00:00.0000000-05:00",
+  "lastCommitMessage": "Fix status cache schema handling",
+  "lastCommitAuthor": "Jane Doe",
+  "commitsLastWeek": 4,
+  "commitsLastMonth": 17,
   "modifiedCount": 0,
   "untrackedCount": 0,
   "dirtyCount": 0,
   "status": "clean",
-  "originUrl": "https://github.com/org/repo.git"
+  "originUrl": "https://github.com/org/repo.git",
+  "openPrCount": 3,
+  "pendingReviewPrCount": 1
 }
 ```
 
@@ -117,7 +123,7 @@ Body parameters (POST): `{ localRoots: string[], maxDepth: int }`.
     "entries": [ /* RoadmapEntry[] */ ],
     "count": 4,
     "scannedAt": "2026-03-13T14:00:00.0000000Z",
-    "cacheSource": "cache",
+    "cacheSource": "disk",
     "cacheAgeSeconds": 87
   }
 }
@@ -160,6 +166,112 @@ Content is limited to 512 KB. Returns `404` with `success: false` if the repo ha
 ```
 
 POST `/api/roadmap/cache/clear` — clears both memory and disk cache. Returns `{ "success": true }`.
+
+## RoadmapTaskPreview (POST /api/roadmap-agent/preview)
+
+Request body:
+
+```json
+{
+  "repository": "owner/repo",
+  "baseBranch": "main",
+  "customAgent": "",
+  "roadmapPath": ""
+}
+```
+
+Response payload:
+
+```json
+{
+  "success": true,
+  "data": {
+    "runId": "20260315-121530-a1b2c3d4",
+    "repository": "owner/repo",
+    "roadmapPath": "ROADMAP.md",
+    "selectedTask": {
+      "heading": "Active / Next",
+      "lineNumber": 27,
+      "text": "Add smoke test coverage for roadmap routes"
+    },
+    "followUpCandidates": [
+      {
+        "heading": "Near-Term",
+        "lineNumber": 33,
+        "text": "Add stricter API contract tests"
+      }
+    ],
+    "generatedTaskDescription": "Continue roadmap execution ...",
+    "history": {
+      "rootPath": "output\\roadmap-task-history",
+      "runEventsPath": "output\\roadmap-task-history\\runs\\20260315-121530-a1b2c3d4.events.jsonl",
+      "runSummaryPath": "output\\roadmap-task-history\\runs\\20260315-121530-a1b2c3d4.summary.json",
+      "historyPath": "output\\roadmap-task-history\\history.jsonl"
+    }
+  }
+}
+```
+
+## RoadmapTaskStart (POST /api/roadmap-agent/start)
+
+Request body:
+
+```json
+{
+  "repository": "owner/repo",
+  "baseBranch": "main",
+  "customAgent": "",
+  "follow": false
+}
+```
+
+Response payload:
+
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Roadmap Copilot task initiated.",
+    "output": "...script output...",
+    "latestHistory": {
+      "runId": "20260315-121530-a1b2c3d4",
+      "status": "started",
+      "repository": "owner/repo",
+      "selectedTask": "Add smoke test coverage for roadmap routes",
+      "roadmapPath": "ROADMAP.md",
+      "startedAt": "2026-03-15T12:15:30.0000000-05:00",
+      "completedAt": "2026-03-15T12:15:34.0000000-05:00",
+      "summaryPath": "...summary.json"
+    }
+  }
+}
+```
+
+## RoadmapTaskHistory (GET /api/roadmap-agent/history)
+
+Query parameters: `limit` (int, default 25).
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "runId": "20260315-121530-a1b2c3d4",
+        "status": "preview",
+        "repository": "owner/repo",
+        "selectedTask": "Add smoke test coverage for roadmap routes",
+        "roadmapPath": "ROADMAP.md",
+        "startedAt": "2026-03-15T12:15:30.0000000-05:00",
+        "completedAt": "2026-03-15T12:15:31.0000000-05:00",
+        "error": "",
+        "summaryPath": "...summary.json"
+      }
+    ],
+    "count": 1
+  }
+}
+```
 
 ## OperationsLogEntry (GET /api/log/tail)
 

@@ -384,6 +384,10 @@ function Get-LocalFolderInventory {
                     $branch         = $null
                     $statusShort    = @()
                     $lastCommitDate = $null
+                    $lastCommitMessage = $null
+                    $lastCommitAuthor = $null
+                    $commitsLastWeek = 0
+                    $commitsLastMonth = 0
                     $repoNameGuess  = $child.Name
                     $ownerGuess     = $null
 
@@ -424,6 +428,42 @@ function Get-LocalFolderInventory {
                             Write-Log "Git status query error for '$fullPath': $_" -Level Debug
                             $statusShort = @()
                         }
+
+                        try {
+                            $lastCommitMessage = (& git -C $fullPath log -1 --format=%s 2>$null)
+                            if ($LASTEXITCODE -ne 0) { $lastCommitMessage = $null }
+                        }
+                        catch {
+                            Write-Log "Git last commit message query error for '$fullPath': $_" -Level Debug
+                            $lastCommitMessage = $null
+                        }
+
+                        try {
+                            $lastCommitAuthor = (& git -C $fullPath log -1 --format=%an 2>$null)
+                            if ($LASTEXITCODE -ne 0) { $lastCommitAuthor = $null }
+                        }
+                        catch {
+                            Write-Log "Git last commit author query error for '$fullPath': $_" -Level Debug
+                            $lastCommitAuthor = $null
+                        }
+
+                        try {
+                            $weekCountRaw = (& git -C $fullPath rev-list --count --since="7 days ago" HEAD 2>$null)
+                            if ($LASTEXITCODE -eq 0 -and $weekCountRaw -match '^\d+$') { $commitsLastWeek = [int]$weekCountRaw }
+                        }
+                        catch {
+                            Write-Log "Git weekly commit count query error for '$fullPath': $_" -Level Debug
+                            $commitsLastWeek = 0
+                        }
+
+                        try {
+                            $monthCountRaw = (& git -C $fullPath rev-list --count --since="30 days ago" HEAD 2>$null)
+                            if ($LASTEXITCODE -eq 0 -and $monthCountRaw -match '^\d+$') { $commitsLastMonth = [int]$monthCountRaw }
+                        }
+                        catch {
+                            Write-Log "Git monthly commit count query error for '$fullPath': $_" -Level Debug
+                            $commitsLastMonth = 0
+                        }
                     }
 
                     if ($originUrl -and ($originUrl -match 'github\.com[:/](?<owner>[^/]+)/(?<repo>[^/.]+)(\.git)?$')) {
@@ -457,6 +497,10 @@ function Get-LocalFolderInventory {
                         GitRepoName      = $repoNameGuess
                         CurrentBranch    = $branch
                         LastCommitDate   = $lastCommitDate
+                        LastCommitMessage = $lastCommitMessage
+                        LastCommitAuthor = $lastCommitAuthor
+                        CommitsLastWeek  = $commitsLastWeek
+                        CommitsLastMonth = $commitsLastMonth
                         ModifiedCount    = $modifiedCount
                         UntrackedCount   = $untrackedCount
                         OtherStatusCount = $otherStatusCount

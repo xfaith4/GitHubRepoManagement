@@ -33,7 +33,7 @@ export interface RepoStatus {
   visibility?: string;
   language?: string | null;
   topics?: string[];
-  
+
   hasRoadmap?: boolean;
 
   // Optional extended metrics
@@ -112,29 +112,29 @@ export interface ExtendedRepoMetrics {
   closedIssuesCount: number;
   issuesClosedLast30Days: number;
   oldestOpenIssueDays: number | null;
-  
-  // Branches  
+
+  // Branches
   totalBranches: number;
   staleBranches: number;
   protectedBranches: number;
   defaultBranchProtected: boolean;
-  
+
   // Projects
   projectsCount: number;
   activeProjects: number;
-  
+
   // Releases
   latestRelease: string | null;
   latestReleaseDate: string | null;
   totalReleases: number;
-  
+
   // Health & Security
   healthScore: number;
   hasReadme: boolean;
   hasLicense: boolean;
   hasSecurityPolicy: boolean;
   vulnerabilitiesCount: number;
-  
+
   // Social
   stars: number;
   forks: number;
@@ -183,4 +183,39 @@ export interface RoadmapContent {
   path: string;
   sizeBytes: number;
   lastModified: string;
+}
+
+export interface RoadmapTaskCandidate {
+  heading: string;
+  lineNumber: number;
+  text: string;
+}
+
+export interface RoadmapTaskHistoryInfo {
+  rootPath: string;
+  runEventsPath: string;
+  runSummaryPath: string;
+  historyPath: string;
+}
+
+export interface RoadmapTaskPreview {
+  runId: string;
+  repository: string;
+  roadmapPath: string;
+  selectedTask: RoadmapTaskCandidate;
+  followUpCandidates: RoadmapTaskCandidate[];
+  generatedTaskDescription: string;
+  history: RoadmapTaskHistoryInfo;
+}
+
+export interface RoadmapTaskHistoryItem {
+  runId: string;
+  status: string;
+  repository: string;
+  selectedTask: string;
+  roadmapPath: string;
+  startedAt: string;
+  completedAt: string;
+  error?: string;
+  summaryPath: string;
 }

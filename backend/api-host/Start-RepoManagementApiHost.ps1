@@ -25,6 +25,7 @@ $commonRoot = Join-Path $WorkspaceRoot 'backend\modules\common'
 
 $script:StatusCacheMemory = @{}
 $script:StatusCacheDefaultTtlSeconds = 120
+$script:StatusCacheSchemaVersion = 2
 
 $script:RoadmapCacheMemory = @{}
 $script:RoadmapCacheDefaultTtlSeconds = 300
@@ -258,6 +259,55 @@ function ConvertFrom-JsonCompat {
     return ConvertTo-HashtableRecursive -InputObject $obj
 }
 
+function Invoke-PowerShellScriptFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ScriptPath,
+        [Parameter()]
+        [string[]]$Arguments = @(),
+        [Parameter()]
+        [switch]$AllowFailure
+    )
+
+    if (-not (Test-Path -LiteralPath $ScriptPath)) {
+        throw "Script not found: $ScriptPath"
+    }
+
+    $rawOutput = @(& pwsh -NoProfile -ExecutionPolicy Bypass -File $ScriptPath @Arguments 2>&1)
+    $exitCode = $LASTEXITCODE
+    $outputText = ($rawOutput | ForEach-Object { $_.ToString() }) -join "`n"
+
+    if (($exitCode -ne 0) -and (-not $AllowFailure.IsPresent)) {
+        if ([string]::IsNullOrWhiteSpace($outputText)) {
+            throw "Script failed with exit code ${exitCode}: $ScriptPath"
+        }
+        throw $outputText
+    }
+
+    return [pscustomobject]@{
+        ExitCode = $exitCode
+        Output = $outputText
+        Lines = @($rawOutput)
+    }
+}
+
+function Get-JsonObjectFromText {
+    param([Parameter(Mandatory = $true)][string]$Text)
+
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        throw 'No output received from script.'
+    }
+
+    $start = $Text.IndexOf('{')
+    $end = $Text.LastIndexOf('}')
+    if ($start -lt 0 -or $end -le $start) {
+        throw 'Script output did not contain a JSON object.'
+    }
+
+    $json = $Text.Substring($start, $end - $start + 1)
+    return ConvertFrom-JsonCompat -Json $json
+}
+
 function Get-HostSettings {
     $configPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
     if (-not (Test-Path -LiteralPath $configPath)) {
@@ -413,6 +463,9 @@ function Get-StatusFromCache {
         if ($null -eq $diskEntry -or -not $diskEntry.ContainsKey('key') -or -not $diskEntry.ContainsKey('createdAtUtc') -or -not $diskEntry.ContainsKey('response')) {
             return [pscustomobject]@{ hit = $false }
         }
+        if (-not $diskEntry.ContainsKey('schemaVersion') -or [int]$diskEntry.schemaVersion -ne $script:StatusCacheSchemaVersion) {
+            return [pscustomobject]@{ hit = $false }
+        }
         if ([string]$diskEntry.key -ne $Key) {
             return [pscustomobject]@{ hit = $false }
         }
@@ -451,6 +504,7 @@ function Save-StatusCache {
 
     $nowUtc = (Get-Date).ToUniversalTime()
     $entry = @{
+        schemaVersion = $script:StatusCacheSchemaVersion
         key = $Key
         createdAtUtc = $nowUtc.ToString('o')
         response = $Response
@@ -530,9 +584,22 @@ function Get-GitHubReposViaApi {
         Accept = 'application/vnd.github+json'
     }
 
+    $openPrCounts = @{}
+    try {
+        $openPrCounts = Get-GitHubOpenPrCountsViaApi -Owner $Owner -Token $Token
+    }
+    catch {
+        Write-HostLog ("[TRACE] github.openpr api aggregation failed owner={0} error={1}" -f $Owner, $_.Exception.Message)
+    }
+
     $uri = "https://api.github.com/users/$Owner/repos?per_page=100&sort=updated&type=all"
     $reposRaw = Invoke-RestMethod -Uri $uri -Headers $headers -Method Get
     $repos = @($reposRaw | Select-Object -First $RepoLimit | ForEach-Object {
+        $repoOpenPrCount = 0
+        if ($openPrCounts.ContainsKey($_.name)) {
+            $repoOpenPrCount = [int]$openPrCounts[$_.name]
+        }
+
         [pscustomobject]@{
             name = $_.name
             branch = if ($_.default_branch) { $_.default_branch } else { 'main' }
@@ -543,7 +610,7 @@ function Get-GitHubReposViaApi {
             isStale = $false
             localAhead = 0
             remoteAhead = 0
-            openPrCount = 0
+            openPrCount = $repoOpenPrCount
             htmlUrl = $_.html_url
             owner = $Owner
             visibility = if ([bool]$_.private) { 'private' } else { 'public' }
@@ -560,6 +627,97 @@ function Get-GitHubReposViaApi {
         repos = $repos
         rateLimit = $null
     }
+}
+
+function Get-GitHubOpenPrCountsViaApi {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Owner,
+        [Parameter(Mandatory = $true)]
+        [string]$Token
+    )
+
+    $headers = @{
+        Authorization = "Bearer $Token"
+        'User-Agent' = 'GitHubRepoManagement'
+        Accept = 'application/vnd.github+json'
+    }
+
+    $counts = @{}
+    $page = 1
+    $maxPages = 10
+    while ($page -le $maxPages) {
+        $query = [System.Uri]::EscapeDataString("user:$Owner is:pr is:open")
+        $uri = "https://api.github.com/search/issues?q=$query&per_page=100&page=$page"
+        $response = Invoke-RestMethod -Uri $uri -Headers $headers -Method Get
+        $items = @($response.items)
+        if ($items.Count -eq 0) {
+            break
+        }
+
+        foreach ($item in $items) {
+            if ($null -eq $item.repository_url) { continue }
+            $segments = ([string]$item.repository_url).TrimEnd('/') -split '/'
+            if ($segments.Length -lt 1) { continue }
+            $repoName = $segments[$segments.Length - 1]
+            if (-not $counts.ContainsKey($repoName)) {
+                $counts[$repoName] = 0
+            }
+            $counts[$repoName] = [int]$counts[$repoName] + 1
+        }
+
+        if ($items.Count -lt 100) {
+            break
+        }
+
+        $page++
+    }
+
+    return $counts
+}
+
+function Get-GitHubOpenPrCountsViaGh {
+    param([Parameter(Mandatory = $true)][string]$Owner)
+
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+        return @{}
+    }
+
+    $counts = @{}
+    $page = 1
+    $maxPages = 10
+    while ($page -le $maxPages) {
+        $query = "user:$Owner is:pr is:open"
+        $json = (& gh api "search/issues" --field q="$query" --field per_page='100' --field page="$page" 2>$null) | Out-String
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($json)) {
+            break
+        }
+
+        $response = ConvertFrom-Json $json
+        $items = @($response.items)
+        if ($items.Count -eq 0) {
+            break
+        }
+
+        foreach ($item in $items) {
+            $repoUrl = [string]$item.repository_url
+            if ([string]::IsNullOrWhiteSpace($repoUrl)) { continue }
+            $segments = $repoUrl.TrimEnd('/') -split '/'
+            if ($segments.Length -lt 1) { continue }
+            $repoName = $segments[$segments.Length - 1]
+            if (-not $counts.ContainsKey($repoName)) {
+                $counts[$repoName] = 0
+            }
+            $counts[$repoName] = [int]$counts[$repoName] + 1
+        }
+
+        if ($items.Count -lt 100) {
+            break
+        }
+        $page++
+    }
+
+    return $counts
 }
 
 function Invoke-GitOperation {
@@ -744,6 +902,49 @@ function Invoke-RoadmapScan {
         catch { Write-HostLog ("[TRACE] roadmap.scan root_error root={0} error={1}" -f $root, $_.Exception.Message) }
     }
     return @($entries)
+}
+
+function Get-RoadmapTaskHistory {
+    param(
+        [Parameter()]
+        [int]$Limit = 25
+    )
+
+    $historyRoot = Join-Path $WorkspaceRoot 'output\roadmap-task-history'
+    $runsPath = Join-Path $historyRoot 'runs'
+
+    if (-not (Test-Path -LiteralPath $runsPath)) {
+        return @()
+    }
+
+    $files = Get-ChildItem -Path $runsPath -Filter '*.summary.json' -File -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First ([math]::Max($Limit, 1))
+
+    $items = @()
+    foreach ($file in $files) {
+        try {
+            $raw = Get-Content -LiteralPath $file.FullName -Raw -ErrorAction Stop
+            if ([string]::IsNullOrWhiteSpace($raw)) { continue }
+            $summary = ConvertFrom-JsonCompat -Json $raw
+            $items += [pscustomobject]@{
+                runId = [string]$summary.runId
+                status = [string]$summary.status
+                repository = [string]$summary.repository
+                selectedTask = if ($summary.ContainsKey('selectedTask')) { [string]$summary.selectedTask } else { '' }
+                roadmapPath = if ($summary.ContainsKey('roadmapPath')) { [string]$summary.roadmapPath } else { '' }
+                startedAt = if ($summary.ContainsKey('startedAt')) { [string]$summary.startedAt } else { '' }
+                completedAt = if ($summary.ContainsKey('completedAt')) { [string]$summary.completedAt } else { '' }
+                error = if ($summary.ContainsKey('error')) { [string]$summary.error } else { '' }
+                summaryPath = $file.FullName
+            }
+        }
+        catch {
+            continue
+        }
+    }
+
+    return @($items)
 }
 
 $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Parse($BindAddress), $Port)
@@ -1075,9 +1276,22 @@ try {
                         throw 'GitHub token not configured and GitHub CLI (gh) is not available.'
                     }
 
+                    $openPrCounts = @{}
+                    try {
+                        $openPrCounts = Get-GitHubOpenPrCountsViaGh -Owner $owner
+                    }
+                    catch {
+                        Write-HostLog ("[TRACE] github.openpr gh aggregation failed owner={0} error={1}" -f $owner, $_.Exception.Message)
+                    }
+
                     $json = (& gh repo list $owner --limit $limit --json name,nameWithOwner,url,isArchived,isPrivate,defaultBranchRef,updatedAt 2>&1) | Out-String
                     $reposRaw = $json | ConvertFrom-Json
                     $repos = @($reposRaw | ForEach-Object {
+                        $repoOpenPrCount = 0
+                        if ($openPrCounts.ContainsKey($_.name)) {
+                            $repoOpenPrCount = [int]$openPrCounts[$_.name]
+                        }
+
                         [pscustomobject]@{
                             name = $_.name
                             branch = if ($_.defaultBranchRef) { $_.defaultBranchRef.name } else { 'main' }
@@ -1088,7 +1302,7 @@ try {
                             isStale = $false
                             localAhead = 0
                             remoteAhead = 0
-                            openPrCount = 0
+                            openPrCount = $repoOpenPrCount
                             htmlUrl = $_.url
                             owner = $owner
                             visibility = if ([bool]$_.isPrivate) { 'private' } else { 'public' }
@@ -1144,6 +1358,79 @@ try {
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         message = 'Status cache cleared. Next GET /api/status will perform a fresh scan.'
+                    }
+                }
+                'POST /api/roadmap-agent/preview' {
+                    $body = Parse-JsonBody -Body $req.Body
+                    $repository = if ($body.ContainsKey('repository') -and $body.repository) { [string]$body.repository } else { '' }
+                    if ([string]::IsNullOrWhiteSpace($repository)) {
+                        throw 'repository is required for /api/roadmap-agent/preview'
+                    }
+
+                    $baseBranch = if ($body.ContainsKey('baseBranch') -and $body.baseBranch) { [string]$body.baseBranch } else { '' }
+                    $customAgent = if ($body.ContainsKey('customAgent') -and $body.customAgent) { [string]$body.customAgent } else { '' }
+                    $roadmapPath = if ($body.ContainsKey('roadmapPath') -and $body.roadmapPath) { [string]$body.roadmapPath } else { '' }
+
+                    $scriptPath = Join-Path $WorkspaceRoot 'scripts\Start-RoadmapCopilotTask.ps1'
+                    $scriptArgs = @('-Repository', $repository, '-PreviewOnly')
+                    if (-not [string]::IsNullOrWhiteSpace($baseBranch)) { $scriptArgs += @('-BaseBranch', $baseBranch) }
+                    if (-not [string]::IsNullOrWhiteSpace($customAgent)) { $scriptArgs += @('-CustomAgent', $customAgent) }
+                    if (-not [string]::IsNullOrWhiteSpace($roadmapPath)) { $scriptArgs += @('-RoadmapPath', $roadmapPath) }
+
+                    $runResult = Invoke-PowerShellScriptFile -ScriptPath $scriptPath -Arguments $scriptArgs
+                    $previewData = Get-JsonObjectFromText -Text $runResult.Output
+
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = $previewData
+                    }
+                }
+                'POST /api/roadmap-agent/start' {
+                    $body = Parse-JsonBody -Body $req.Body
+                    $repository = if ($body.ContainsKey('repository') -and $body.repository) { [string]$body.repository } else { '' }
+                    if ([string]::IsNullOrWhiteSpace($repository)) {
+                        throw 'repository is required for /api/roadmap-agent/start'
+                    }
+
+                    $baseBranch = if ($body.ContainsKey('baseBranch') -and $body.baseBranch) { [string]$body.baseBranch } else { '' }
+                    $customAgent = if ($body.ContainsKey('customAgent') -and $body.customAgent) { [string]$body.customAgent } else { '' }
+                    $roadmapPath = if ($body.ContainsKey('roadmapPath') -and $body.roadmapPath) { [string]$body.roadmapPath } else { '' }
+                    $follow = if ($body.ContainsKey('follow')) { [bool]$body.follow } else { $false }
+
+                    $scriptPath = Join-Path $WorkspaceRoot 'scripts\Start-RoadmapCopilotTask.ps1'
+                    $scriptArgs = @('-Repository', $repository)
+                    if (-not [string]::IsNullOrWhiteSpace($baseBranch)) { $scriptArgs += @('-BaseBranch', $baseBranch) }
+                    if (-not [string]::IsNullOrWhiteSpace($customAgent)) { $scriptArgs += @('-CustomAgent', $customAgent) }
+                    if (-not [string]::IsNullOrWhiteSpace($roadmapPath)) { $scriptArgs += @('-RoadmapPath', $roadmapPath) }
+                    if ($follow) { $scriptArgs += '-Follow' }
+
+                    $runResult = Invoke-PowerShellScriptFile -ScriptPath $scriptPath -Arguments $scriptArgs
+                    $historyItems = Get-RoadmapTaskHistory -Limit 1
+                    $latest = if ($historyItems.Count -gt 0) { $historyItems[0] } else { $null }
+
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = @{
+                            message = 'Roadmap Copilot task initiated.'
+                            output = $runResult.Output
+                            latestHistory = $latest
+                        }
+                    }
+                }
+                'GET /api/roadmap-agent/history' {
+                    $q = Parse-QueryString -Query $req.Query
+                    $limit = if ($q.ContainsKey('limit') -and $q.limit) { [int]$q.limit } else { 25 }
+                    $items = Get-RoadmapTaskHistory -Limit $limit
+
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = @{
+                            items = $items
+                            count = @($items).Count
+                        }
                     }
                 }
                 'GET /api/roadmap/index' {

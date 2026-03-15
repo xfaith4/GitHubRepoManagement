@@ -45,7 +45,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [roadmapEntries, setRoadmapEntries] = useState<RoadmapEntry[]>([]);
   const [selectedRepoIds, setSelectedRepoIds] = useState<Set<string>>(new Set());
   const [groupBy, setGroupBy] = useState<keyof RepoStatus | 'none'>('none');
-  
+
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [loadingElapsedSec, setLoadingElapsedSec] = useState(0);
@@ -65,7 +65,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   // Initialise to false so the first load transition (false→true is implied by mount state) opens the panel
   const prevLoadingRef = useRef<boolean>(false);
   const prevBackendLogCountRef = useRef(0);
-  
+
   useEffect(() => {
     getSettings()
       .then(setSettings)
@@ -276,13 +276,13 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
       throw error;
     }
   };
-  
+
   const handleExport = async () => {
     handleAction('export');
     const reposToExport = selectedRepoIds.size > 0
         ? repos.filter(r => selectedRepoIds.has(getRepoSelectionId(r)))
         : repos;
-    
+
     // Export Power BI Dashboard (HTML)
     const powerBIUrl = getPowerBIReportUrl(reposToExport);
     const powerBILink = document.createElement('a');
@@ -291,7 +291,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
     document.body.appendChild(powerBILink);
     powerBILink.click();
     document.body.removeChild(powerBILink);
-    
+
     // Also export CSV for backward compatibility
     // Delay prevents browser from blocking multiple simultaneous downloads
     const DOWNLOAD_DELAY_MS = 100;
@@ -317,13 +317,13 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
       fetchRepoStatus();
     }
   };
-  
+
   const handleSaveSettings = (newSettings: AppSettings) => {
     setSettings(newSettings);
     setIsSettingsModalOpen(false);
     fetchRepoStatus(); // Refresh, as some settings might affect repo status (e.g. stale threshold)
   };
-  
+
   const handleInit = async (githubUser: string, cloneOwned: boolean, apiKey?: string, basePath?: string) => {
       try {
         await startInit(githubUser, cloneOwned, apiKey, basePath);
@@ -334,7 +334,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
         setIsInitModalOpen(false);
       }
   };
-  
+
   const handleViewArtifacts = (repoName: string) => {
     setSelectedRepoForArtifacts(repoName);
     setIsArtifactsModalOpen(true);
@@ -365,17 +365,17 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
     const stale = repos.filter(r => r.isStale).length;
     const commitsThisWeek = repos.reduce((sum, r) => sum + (r.commitsLastWeek ?? 0), 0);
     const commitsThisMonth = repos.reduce((sum, r) => sum + (r.commitsLastMonth ?? 0), 0);
-    
+
     // Extended metrics
     const totalIssues = repos.reduce((sum, r) => sum + (r.extended?.openIssuesCount || 0), 0);
     const totalProjects = repos.reduce((sum, r) => sum + (r.extended?.projectsCount || 0), 0);
     const totalStaleBranches = repos.reduce((sum, r) => sum + (r.extended?.staleBranches || 0), 0);
     const reposWithVulnerabilities = repos.filter(r => (r.extended?.vulnerabilitiesCount || 0) > 0).length;
-    const avgHealthScore = repos.length > 0 
+    const avgHealthScore = repos.length > 0
       ? Math.round(repos.reduce((sum, r) => sum + (r.extended?.healthScore || 0), 0) / repos.length)
       : 0;
-    
-    return { 
+
+    return {
       total, dirty, needsSync, stale, commitsThisWeek, commitsThisMonth,
       totalIssues, totalProjects, totalStaleBranches, reposWithVulnerabilities, avgHealthScore
     };
@@ -484,40 +484,40 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
             No repositories found. Confirm the workspace path contains git repositories and adjust scan depth if your repos are nested.
           </div>
         )}
-        
+
         {repos.some(r => r.extended) && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
-            <SummaryCard 
-              title="Open Issues" 
-              value={summary.totalIssues} 
-              color="yellow" 
+            <SummaryCard
+              title="Open Issues"
+              value={summary.totalIssues}
+              color="yellow"
               icon={<IssuesIcon className="w-6 h-6" />}
             />
-            <SummaryCard 
-              title="Active Projects" 
-              value={summary.totalProjects} 
-              color="purple" 
+            <SummaryCard
+              title="Active Projects"
+              value={summary.totalProjects}
+              color="purple"
               icon={<ProjectsIcon className="w-6 h-6" />}
             />
-            <SummaryCard 
-              title="Stale Branches" 
-              value={summary.totalStaleBranches} 
-              color="orange" 
+            <SummaryCard
+              title="Stale Branches"
+              value={summary.totalStaleBranches}
+              color="orange"
               icon={<BranchIcon className="w-6 h-6" />}
             />
-            <SummaryCard 
-              title="Avg Health Score" 
-              value={`${summary.avgHealthScore}%`} 
-              color="green" 
+            <SummaryCard
+              title="Avg Health Score"
+              value={`${summary.avgHealthScore}%`}
+              color="green"
               icon={<HealthIcon className="w-6 h-6" />}
             />
           </div>
         )}
       </div>
-      
+
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <ChangeHistoryPanel repos={repos} />
-        
+
         <div className="bg-gray-800/50 border border-gray-700 rounded-lg mt-4">
             <ActionBar
                 onAction={handleAction}
@@ -544,31 +544,31 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
             />
         </div>
       </div>
-      
-      <LogPanel 
+
+      <LogPanel
         isOpen={isLogPanelOpen}
         operation={currentOperation}
         messages={logMessages}
         status={logStatus}
         onClose={handleLogPanelClose}
       />
-      
+
       {settings && (
-        <SettingsModal 
+        <SettingsModal
           isOpen={isSettingsModalOpen}
           onClose={() => setIsSettingsModalOpen(false)}
           onSave={handleSaveSettings}
           currentSettings={settings}
         />
       )}
-      
-      <InitModal 
+
+      <InitModal
         isOpen={isInitModalOpen}
         onClose={() => setIsInitModalOpen(false)}
         onInit={handleInit}
       />
 
-      <ArtifactsModal 
+      <ArtifactsModal
         isOpen={isArtifactsModalOpen}
         onClose={() => setIsArtifactsModalOpen(false)}
         repoName={selectedRepoForArtifacts}
@@ -585,6 +585,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
       <RoadmapViewerModal
         isOpen={isRoadmapViewerOpen}
         repoName={selectedRoadmapRepo}
+        defaultOwner={dataSource?.source === 'github' ? dataSource.username : dataSource?.source === 'local' ? (dataSource.configuredGithubUser ?? null) : null}
         onClose={() => setIsRoadmapViewerOpen(false)}
         onScanComplete={handleRoadmapScanComplete}
       />

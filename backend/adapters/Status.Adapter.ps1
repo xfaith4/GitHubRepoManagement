@@ -58,6 +58,10 @@ function Get-StatusAdapterResult {
                     path = $_.LocalPath
                     branch = $_.CurrentBranch
                     lastCommitDate = $_.LastCommitDate
+                    lastCommitMessage = $_.LastCommitMessage
+                    lastCommitAuthor = $_.LastCommitAuthor
+                    commitsLastWeek = if ($null -ne $_.CommitsLastWeek) { [int]$_.CommitsLastWeek } else { 0 }
+                    commitsLastMonth = if ($null -ne $_.CommitsLastMonth) { [int]$_.CommitsLastMonth } else { 0 }
                     modifiedCount = $modifiedCount
                     untrackedCount = $untrackedCount
                     dirtyCount = $dirty

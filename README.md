@@ -39,6 +39,17 @@ From `backend/api-host/Start-RepoManagementApiHost.ps1`:
 - `POST /api/export` (accepted placeholder)
 - `POST /api/archive` (accepted placeholder)
 - `POST /api/github/status`
+- `GET /api/status/cache`
+- `POST /api/status/cache/clear`
+- `GET /api/roadmap/index`
+- `GET /api/roadmap/content`
+- `POST /api/roadmap/scan`
+- `GET /api/roadmap/cache`
+- `POST /api/roadmap/cache/clear`
+- `GET /api/log/tail`
+- `POST /api/roadmap-agent/preview`
+- `POST /api/roadmap-agent/start`
+- `GET /api/roadmap-agent/history`
 
 ## Requirements
 
@@ -158,7 +169,30 @@ Operations:
 ```powershell
 .\scripts\Register-ScheduledTasks.Template.ps1 -WorkspaceRoot 'G:\Development\GitHubRepoManagement' -TaskPrefix 'RepoMgmt'
 .\scripts\Invoke-RetentionCleanup.ps1 -WorkspaceRoot 'G:\Development\GitHubRepoManagement' -RetentionDays 30
+.\scripts\Start-GitHubCopilotTask.ps1 -Repository 'owner/repo' -BaseBranch 'main' -Follow
+.\scripts\Start-RoadmapCopilotTask.ps1 -Repository 'owner/repo' -BaseBranch 'main' -Follow
+.\scripts\Start-RoadmapCopilotTask.ps1 -Repository 'owner/repo' -PreviewOnly
 ```
+
+Copilot roadmap task helper:
+
+- Uses `gh agent-task create` to start a roadmap-driven task in a target repo.
+- Defaults the task description to continue roadmap progress (verify completed items, find next uncompleted task, implement safely).
+- Requires one of these environment variables: `GitHub_Token` or `GITHUB_TOKEN`.
+
+Roadmap auto-selection helper:
+
+- Finds a roadmap file in the target repo (`ROADMAP.md` first, then common fallback paths).
+- Selects the next unchecked `- [ ]` roadmap item with section-aware priority (`Active / Next`, then near/mid/long-term).
+- Builds a structured Copilot task description and delegates task creation to `scripts/Start-GitHubCopilotTask.ps1`.
+- Supports `-PreviewOnly` to print the selected roadmap task and generated prompt without creating a Copilot task.
+
+Roadmap task history and logging:
+
+- All roadmap task preview/start runs write JSON history under `output/roadmap-task-history/`.
+- Global timeline: `output/roadmap-task-history/history.jsonl`.
+- Per-run files: `output/roadmap-task-history/runs/<runId>.events.jsonl` and `<runId>.summary.json`.
+- API routes for UI integration: `POST /api/roadmap-agent/preview`, `POST /api/roadmap-agent/start`, `GET /api/roadmap-agent/history`.
 
 ## Repository Layout
 

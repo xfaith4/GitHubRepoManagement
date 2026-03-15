@@ -1,20 +1,29 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { type RoadmapContent } from '../types';
-import { getRoadmapContent, triggerRoadmapScan } from '../services/apiClient';
+import { type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem } from '../types';
+import { getRoadmapContent, triggerRoadmapScan, previewRoadmapTask, startRoadmapTask, getRoadmapTaskHistory } from '../services/apiClient';
 
 interface RoadmapViewerModalProps {
   isOpen: boolean;
   repoName: string | null;
+  defaultOwner?: string | null;
   onClose: () => void;
   onScanComplete?: (count: number) => void;
 }
 
-const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoName, onClose, onScanComplete }) => {
+const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoName, defaultOwner, onClose, onScanComplete }) => {
   const [content, setContent] = useState<RoadmapContent | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
+  const [repositoryInput, setRepositoryInput] = useState('');
+  const [baseBranch, setBaseBranch] = useState('main');
+  const [customAgent, setCustomAgent] = useState('');
+  const [taskRunning, setTaskRunning] = useState(false);
+  const [taskPreview, setTaskPreview] = useState<RoadmapTaskPreview | null>(null);
+  const [taskMessage, setTaskMessage] = useState<string | null>(null);
+  const [taskHistory, setTaskHistory] = useState<RoadmapTaskHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const loadContent = useCallback(async (name: string) => {
     setLoading(true);
@@ -34,8 +43,30 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
     if (isOpen && repoName) {
       loadContent(repoName);
       setScanMessage(null);
+
+      const owner = (defaultOwner ?? '').trim();
+      if (owner) {
+        setRepositoryInput(`${owner}/${repoName}`);
+      } else if (!repositoryInput) {
+        setRepositoryInput(`OWNER/${repoName}`);
+      }
+
+      void loadHistory();
     }
-  }, [isOpen, repoName, loadContent]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, repoName, defaultOwner, loadContent]);
+
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const items = await getRoadmapTaskHistory(10);
+      setTaskHistory(items);
+    } catch {
+      setTaskHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
 
   const handleScanAll = async () => {
     setScanning(true);
@@ -48,6 +79,45 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
       setScanMessage('Scan failed: ' + (err instanceof Error ? err.message : 'Unknown error'));
     } finally {
       setScanning(false);
+    }
+  };
+  const handlePreviewTask = async () => {
+    setTaskMessage(null);
+    setTaskPreview(null);
+    setTaskRunning(true);
+    try {
+      const preview = await previewRoadmapTask({
+        repository: repositoryInput.trim(),
+        baseBranch: baseBranch.trim() || undefined,
+        customAgent: customAgent.trim() || undefined
+      });
+      setTaskPreview(preview);
+      setTaskMessage(`Preview ready for ${preview.selectedTask.text}`);
+      await loadHistory();
+    } catch (err) {
+      setTaskMessage(err instanceof Error ? err.message : 'Roadmap preview failed.');
+    } finally {
+      setTaskRunning(false);
+    }
+  };
+
+  const handleStartTask = async () => {
+    setTaskMessage(null);
+    setTaskRunning(true);
+    try {
+      const result = await startRoadmapTask({
+        repository: repositoryInput.trim(),
+        baseBranch: baseBranch.trim() || undefined,
+        customAgent: customAgent.trim() || undefined,
+        follow: false
+      });
+      const runId = result.latestHistory?.runId ? ` (run ${result.latestHistory.runId})` : '';
+      setTaskMessage(`${result.message}${runId}`);
+      await loadHistory();
+    } catch (err) {
+      setTaskMessage(err instanceof Error ? err.message : 'Roadmap task start failed.');
+    } finally {
+      setTaskRunning(false);
     }
   };
 
@@ -113,6 +183,90 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
             {scanMessage}
           </div>
         )}
+
+        <div className="px-5 py-3 border-b border-gray-700 bg-gray-950/40 flex-shrink-0 space-y-2">
+          <div className="text-xs font-semibold text-gray-300">Roadmap Copilot Task</div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <input
+              value={repositoryInput}
+              onChange={(e) => setRepositoryInput(e.target.value)}
+              placeholder="owner/repo"
+              className="rounded bg-gray-800 border border-gray-600 px-2 py-1.5 text-xs text-gray-100"
+            />
+            <input
+              value={baseBranch}
+              onChange={(e) => setBaseBranch(e.target.value)}
+              placeholder="base branch"
+              className="rounded bg-gray-800 border border-gray-600 px-2 py-1.5 text-xs text-gray-100"
+            />
+            <input
+              value={customAgent}
+              onChange={(e) => setCustomAgent(e.target.value)}
+              placeholder="custom agent (optional)"
+              className="rounded bg-gray-800 border border-gray-600 px-2 py-1.5 text-xs text-gray-100"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handlePreviewTask}
+              disabled={taskRunning || !repositoryInput.trim()}
+              className="text-xs px-3 py-1.5 rounded bg-indigo-700 hover:bg-indigo-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {taskRunning ? 'Working...' : 'Preview Task'}
+            </button>
+            <button
+              onClick={handleStartTask}
+              disabled={taskRunning || !repositoryInput.trim()}
+              className="text-xs px-3 py-1.5 rounded bg-green-700 hover:bg-green-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Start Task
+            </button>
+            <button
+              onClick={() => void loadHistory()}
+              disabled={historyLoading}
+              className="text-xs px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 text-gray-200 disabled:opacity-50"
+            >
+              {historyLoading ? 'Loading history...' : 'Refresh History'}
+            </button>
+          </div>
+
+          {taskMessage && (
+            <div className="text-xs rounded px-2 py-1.5 bg-blue-900/30 border border-blue-700/40 text-blue-200">{taskMessage}</div>
+          )}
+
+          {taskPreview && (
+            <div className="rounded border border-gray-700 p-2 bg-gray-900/50">
+              <div className="text-xs text-gray-300 mb-1">
+                Next task: <span className="text-indigo-300">{taskPreview.selectedTask.text}</span>
+              </div>
+              <textarea
+                value={taskPreview.generatedTaskDescription}
+                readOnly
+                className="w-full h-24 rounded bg-gray-950 border border-gray-700 px-2 py-1.5 text-xs text-gray-200"
+              />
+            </div>
+          )}
+
+          <div className="rounded border border-gray-700 p-2 bg-gray-900/30">
+            <div className="text-xs font-semibold text-gray-300 mb-1">Recent Task History</div>
+            {taskHistory.length === 0 ? (
+              <div className="text-xs text-gray-500">No roadmap task runs found yet.</div>
+            ) : (
+              <div className="max-h-24 overflow-auto space-y-1">
+                {taskHistory.map(item => (
+                  <div key={item.runId} className="text-xs border-b border-gray-800 pb-1">
+                    <div className="flex justify-between gap-2">
+                      <span className="font-mono text-gray-400">{item.runId}</span>
+                      <span className={item.status === 'failed' ? 'text-red-400' : 'text-green-400'}>{item.status}</span>
+                    </div>
+                    <div className="text-gray-300 truncate" title={item.repository}>{item.repository}</div>
+                    <div className="text-gray-500 truncate" title={item.selectedTask}>{item.selectedTask}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* File meta */}
         {content && !loading && (
