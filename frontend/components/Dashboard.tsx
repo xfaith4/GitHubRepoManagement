@@ -52,6 +52,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [activeView, setActiveView] = useState<'repos' | 'work-queue'>('repos');
   const [docsAuditIndex, setDocsAuditIndex] = useState<DocAuditIndex | null>(null);
   const [docsAuditLoading, setDocsAuditLoading] = useState(false);
+  const [docsAuditError, setDocsAuditError] = useState<string | null>(null);
 
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
@@ -88,7 +89,15 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   // Lazy docs-audit fetch — runs after initial mount, pre-warms Work Queue view
   useEffect(() => {
     setDocsAuditLoading(true);
-    getDocsAudit().then(index => setDocsAuditIndex(index)).catch(() => {}).finally(() => setDocsAuditLoading(false));
+    getDocsAudit()
+      .then(index => {
+        setDocsAuditIndex(index);
+        setDocsAuditError(null);
+      })
+      .catch(err => {
+        setDocsAuditError(err instanceof Error ? err.message : 'Docs audit is unavailable.');
+      })
+      .finally(() => setDocsAuditLoading(false));
   }, []);
 
   useEffect(() => {
@@ -253,12 +262,16 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                 {
                   setLogMessages(prev => [...prev, 'Running documentation audit across all repositories...']);
                   setDocsAuditLoading(true);
-                  const auditResult = await triggerDocsAuditScan();
-                  setDocsAuditIndex(auditResult);
-                  const readyCount = auditResult.entries.filter(e => e.dispatchReadiness === 'ready').length;
-                  setLogMessages(prev => [...prev, `Audit complete. ${auditResult.count} repos audited. ${readyCount} ready for dispatch.`]);
-                  setLogStatus('success');
-                  setDocsAuditLoading(false);
+                  try {
+                    const auditResult = await triggerDocsAuditScan();
+                    setDocsAuditIndex(auditResult);
+                    setDocsAuditError(null);
+                    const readyCount = auditResult.entries.filter(e => e.dispatchReadiness === 'ready').length;
+                    setLogMessages(prev => [...prev, `Audit complete. ${auditResult.count} repos audited. ${readyCount} ready for dispatch.`]);
+                    setLogStatus('success');
+                  } finally {
+                    setDocsAuditLoading(false);
+                  }
                 }
                 break;
         }
@@ -405,7 +418,15 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
 
   const handleDocsAuditRefresh = () => {
     setDocsAuditLoading(true);
-    getDocsAudit(true).then(index => setDocsAuditIndex(index)).catch(() => {}).finally(() => setDocsAuditLoading(false));
+    getDocsAudit(true)
+      .then(index => {
+        setDocsAuditIndex(index);
+        setDocsAuditError(null);
+      })
+      .catch(err => {
+        setDocsAuditError(err instanceof Error ? err.message : 'Docs audit refresh failed.');
+      })
+      .finally(() => setDocsAuditLoading(false));
   };
 
   const handlePreviewCopilotTask = (repoName: string) => {
@@ -655,6 +676,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
               <WorkQueueView
                 auditIndex={docsAuditIndex}
                 loading={docsAuditLoading}
+                error={docsAuditError}
                 onRefresh={handleDocsAuditRefresh}
                 onScan={handleDocsAuditScan}
                 onViewRoadmap={handleViewRoadmap}

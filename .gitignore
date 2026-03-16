@@ -7,18 +7,27 @@ Thumbs.db
 *.log
 *.tmp
 
-# Build and artifacts
-backend/modules/output/
-logs/
+# Frontend build and dependency artifacts
 frontend/node_modules/
 frontend/dist/
 
-# Evidence outputs (generated)
-evidence/baseline/api-host-smoke/
-evidence/baseline/adapter-smoke/
-evidence/baseline/smoke-modular/
-evidence/baseline/regression-smoke/
+# Backend runtime/build artifacts
+backend/modules/output/**
+!backend/modules/output/**/
+!backend/modules/output/**/.gitkeep
+/logs/
+
+# Generated adapter output (keep structure only)
+output/**
+!output/**/
+!output/**/.gitkeep
+
+# Generated evidence and baselines (keep structure only)
+evidence/**
+!evidence/**/
+!evidence/**/.gitkeep
 
 # Saved reports (keep folder, ignore generated contents)
-reports/*
+reports/**
+!reports/
 !reports/.gitkeep

@@ -5,6 +5,7 @@ import { SpinnerIcon } from './icons';
 interface WorkQueueViewProps {
   auditIndex: DocAuditIndex | null;
   loading: boolean;
+  error?: string | null;
   onRefresh: () => void;
   onScan: () => void;
   onViewRoadmap?: (repoName: string) => void;
@@ -80,6 +81,7 @@ function ReadinessBadge({ readiness }: { readiness: DispatchReadiness }) {
 const WorkQueueView: React.FC<WorkQueueViewProps> = ({
   auditIndex,
   loading,
+  error,
   onRefresh,
   onScan,
   onViewRoadmap,
@@ -163,6 +165,12 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
           </button>
         </div>
       </div>
+
+      {error && (
+        <div className="mb-4 rounded-lg border border-red-700/50 bg-red-900/20 px-4 py-3 text-sm text-red-200">
+          {error}
+        </div>
+      )}
 
       {/* Summary strip */}
       {entries.length > 0 && (

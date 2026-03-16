@@ -442,35 +442,53 @@ function normalizeDocAuditEntry(e: any): DocAuditEntry {
   };
 }
 
+function normalizeDocsAuditError(error: unknown, endpoint: '/docs-audit' | '/docs-audit/scan'): Error {
+  const message = error instanceof Error ? error.message : 'Docs audit request failed.';
+  if (/404|not found/i.test(message)) {
+    return new Error(
+      `The running backend does not expose ${endpoint}. Restart the API host from this repo checkout and try the docs audit again.`
+    );
+  }
+  return error instanceof Error ? error : new Error(message);
+}
+
 export async function getDocsAudit(refresh = false): Promise<DocAuditIndex> {
   if (USE_MOCK_API) {
     return { entries: [], auditedAt: new Date().toISOString(), count: 0, cacheSource: 'fresh-scan', cacheAgeSeconds: 0 };
   }
   const qs = refresh ? '?refresh=true' : '';
-  const data = await fetchJson<any>(`${API_BASE_URL}/docs-audit${qs}`);
-  const d = data?.data ?? {};
-  return {
-    entries: Array.isArray(d.entries) ? d.entries.map(normalizeDocAuditEntry) : [],
-    auditedAt: d.auditedAt ?? new Date().toISOString(),
-    count: Number(d.count ?? 0),
-    cacheSource: d.cacheSource ?? 'fresh-scan',
-    cacheAgeSeconds: Number(d.cacheAgeSeconds ?? 0),
-  };
+  try {
+    const data = await fetchJson<any>(`${API_BASE_URL}/docs-audit${qs}`);
+    const d = data?.data ?? {};
+    return {
+      entries: Array.isArray(d.entries) ? d.entries.map(normalizeDocAuditEntry) : [],
+      auditedAt: d.auditedAt ?? new Date().toISOString(),
+      count: Number(d.count ?? 0),
+      cacheSource: d.cacheSource ?? 'fresh-scan',
+      cacheAgeSeconds: Number(d.cacheAgeSeconds ?? 0),
+    };
+  } catch (error) {
+    throw normalizeDocsAuditError(error, '/docs-audit');
+  }
 }
 
 export async function triggerDocsAuditScan(): Promise<DocAuditIndex> {
   if (USE_MOCK_API) {
     return { entries: [], auditedAt: new Date().toISOString(), count: 0, cacheSource: 'fresh-scan', cacheAgeSeconds: 0 };
   }
-  const data = await postJson<any>('/docs-audit/scan', {});
-  const d = data?.data ?? {};
-  return {
-    entries: Array.isArray(d.entries) ? d.entries.map(normalizeDocAuditEntry) : [],
-    auditedAt: d.auditedAt ?? new Date().toISOString(),
-    count: Number(d.count ?? 0),
-    cacheSource: 'fresh-scan',
-    cacheAgeSeconds: 0,
-  };
+  try {
+    const data = await postJson<any>('/docs-audit/scan', {});
+    const d = data?.data ?? {};
+    return {
+      entries: Array.isArray(d.entries) ? d.entries.map(normalizeDocAuditEntry) : [],
+      auditedAt: d.auditedAt ?? new Date().toISOString(),
+      count: Number(d.count ?? 0),
+      cacheSource: 'fresh-scan',
+      cacheAgeSeconds: 0,
+    };
+  } catch (error) {
+    throw normalizeDocsAuditError(error, '/docs-audit/scan');
+  }
 }
 
 export async function previewCopilotTaskPacket(repoName: string, roadmapPath?: string): Promise<CopilotTaskPacket> {
