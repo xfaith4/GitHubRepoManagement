@@ -2,6 +2,15 @@
 setlocal
 
 set ROOT=%~dp0
+set PS7_EXE=
+
+where pwsh.exe >nul 2>nul
+if errorlevel 1 (
+  echo ERROR: PowerShell 7 ^(`pwsh`^) is required but was not found on PATH.
+  echo Install PowerShell 7 and rerun this launcher.
+  exit /b 1
+)
+set "PS7_EXE=pwsh.exe"
 
 echo ========================================
 echo GitHub Repo Management (Live)
@@ -12,10 +21,10 @@ set API_PORT=7071
 set API_URL=http://%API_HOST%:%API_PORT%
 
 echo Starting backend API host on %API_URL% ...
-start "Repo Management API Host" cmd /k "cd /d %ROOT% && powershell -NoProfile -ExecutionPolicy Bypass -File .\backend\api-host\Start-RepoManagementApiHost.ps1 -BindAddress %API_HOST% -Port %API_PORT%"
+start "Repo Management API Host" cmd /k "cd /d %ROOT% && %PS7_EXE% -NoProfile -ExecutionPolicy Bypass -File .\backend\api-host\Start-RepoManagementApiHost.ps1 -BindAddress %API_HOST% -Port %API_PORT%"
 
 echo Waiting for backend readiness...
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+"%PS7_EXE%" -NoProfile -ExecutionPolicy Bypass -Command ^
   "$ok=$false; for($i=0; $i -lt 20; $i++){ try { Invoke-RestMethod -Uri '%API_URL%/health/live' -Method Get -TimeoutSec 2 | Out-Null; $ok=$true; break } catch { Start-Sleep -Milliseconds 500 } }; if(-not $ok){ exit 1 }"
 if errorlevel 1 (
   echo.
