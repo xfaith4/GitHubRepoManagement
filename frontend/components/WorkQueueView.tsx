@@ -8,6 +8,7 @@ interface WorkQueueViewProps {
   onRefresh: () => void;
   onScan: () => void;
   onViewRoadmap?: (repoName: string) => void;
+  onPreviewTask?: (repoName: string, roadmapPath?: string) => void;
   isScanning: boolean;
 }
 
@@ -82,6 +83,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
   onRefresh,
   onScan,
   onViewRoadmap,
+  onPreviewTask,
   isScanning,
 }) => {
   const [readinessFilter, setReadinessFilter] = useState<ReadinessFilter>('all');
@@ -313,15 +315,26 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                     )}
                   </div>
 
-                  {/* Roadmap button */}
-                  {onViewRoadmap && entry.roadmapState && entry.roadmapState !== 'missing' && (
-                    <button
-                      onClick={e => { e.stopPropagation(); onViewRoadmap(entry.repoName); }}
-                      className="flex-shrink-0 text-xs px-2 py-1 rounded border border-indigo-700/50 bg-indigo-900/40 text-indigo-300 hover:bg-indigo-800/60 transition-colors"
-                    >
-                      Roadmap
-                    </button>
-                  )}
+                  {/* Action buttons */}
+                  <div className="flex-shrink-0 flex items-center gap-1.5">
+                    {onPreviewTask && entry.dispatchReadiness === 'ready' && (
+                      <button
+                        onClick={e => { e.stopPropagation(); onPreviewTask(entry.repoName); }}
+                        className="text-xs px-2 py-1 rounded border border-green-700/50 bg-green-900/40 text-green-300 hover:bg-green-800/60 transition-colors"
+                        title="Preview Copilot Task Packet"
+                      >
+                        Preview Task
+                      </button>
+                    )}
+                    {onViewRoadmap && entry.roadmapState && entry.roadmapState !== 'missing' && (
+                      <button
+                        onClick={e => { e.stopPropagation(); onViewRoadmap(entry.repoName); }}
+                        className="text-xs px-2 py-1 rounded border border-indigo-700/50 bg-indigo-900/40 text-indigo-300 hover:bg-indigo-800/60 transition-colors"
+                      >
+                        Roadmap
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Findings panel */}
