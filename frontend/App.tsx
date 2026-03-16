@@ -26,6 +26,7 @@ function App() {
   const [githubRepos, setGithubRepos] = useState<RepoStatus[]>([]);
   const [githubSource, setGithubSource] = useState<{ source: 'github'; username: string } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDataSourceModalOpen, setIsDataSourceModalOpen] = useState(false);
   const [insightsMeta, setInsightsMeta] = useState<GithubInsightsMeta | null>(null);
@@ -33,26 +34,33 @@ function App() {
   const [relativeTime, setRelativeTime] = useState<string>('');
   const githubCredentialsRef = useRef<{ username: string; apiKey?: string } | null>(null);
 
+  // Apply local repo data returned from getStatus() to component state.
+  const applyLocalData = useCallback((localData: Awaited<ReturnType<typeof getStatus>>) => {
+    setLocalRepos(localData.repos);
+    if (localData.dataLastUpdated) {
+      setDataLastUpdated(new Date(localData.dataLastUpdated));
+    }
+    if (localData.source === 'sample') {
+      setLocalSource({ source: 'sample' });
+    } else {
+      setLocalSource({
+        source: 'local',
+        workspacePath: localData.workspacePath,
+        configuredGithubUser: localData.configuredGithubUser,
+        repoCount: localData.repoCount,
+        scanDurationMs: localData.scanDurationMs
+      });
+    }
+  }, []);
+
+  // fetchRepoStatus — called explicitly by Dashboard after user-triggered operations.
+  // Always requests a fresh scan (bypasses cache) so post-operation results are current.
   const fetchRepoStatus = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const localData = await getStatus();
-      setLocalRepos(localData.repos);
-      if (localData.dataLastUpdated) {
-        setDataLastUpdated(new Date(localData.dataLastUpdated));
-      }
-      if (localData.source === 'sample') {
-        setLocalSource({ source: 'sample' });
-      } else {
-        setLocalSource({
-          source: 'local',
-          workspacePath: localData.workspacePath,
-          configuredGithubUser: localData.configuredGithubUser,
-          repoCount: localData.repoCount,
-          scanDurationMs: localData.scanDurationMs
-        });
-      }
+      const localData = await getStatus({ refresh: true });
+      applyLocalData(localData);
 
       const clearGithubData = () => {
         setGithubRepos([]);
@@ -74,7 +82,6 @@ function App() {
             repoLimit: 50,
             fetchExtendedMetrics: true
           });
-
           setGithubRepos(data.repos);
           setGithubSource({ source: 'github', username: data.username });
           setInsightsMeta({
@@ -84,11 +91,9 @@ function App() {
           });
         } catch (githubError) {
           clearGithubData();
-
           if (githubCredentialsRef.current?.username) {
             throw githubError;
           }
-
           console.warn('Automatic GitHub scan skipped.', githubError);
         }
       } else {
@@ -101,11 +106,49 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [applyLocalData]);
 
+  // Initial load: two-phase stale-while-revalidate.
+  // Phase 1 — serve cached data immediately (no TTL check) so the UI is never blank on launch.
+  // Phase 2 — background refresh to pick up any changes since the last scan.
   useEffect(() => {
-    fetchRepoStatus();
-  }, [fetchRepoStatus]);
+    let cancelled = false;
+
+    const doInitialLoad = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        // Phase 1: return whatever is on disk, regardless of TTL
+        const localData = await getStatus({ stale: true });
+        if (cancelled) return;
+        applyLocalData(localData);
+      } catch (err) {
+        if (cancelled) return;
+        const message = err instanceof Error ? err.message : 'Failed to fetch repository status.';
+        setError(message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+
+      if (cancelled) return;
+
+      // Phase 2: silently refresh in the background so we always end up with current data
+      setIsBackgroundRefreshing(true);
+      try {
+        const freshData = await getStatus({ refresh: true });
+        if (cancelled) return;
+        applyLocalData(freshData);
+      } catch (refreshErr) {
+        console.warn('Background cache refresh failed.', refreshErr);
+      } finally {
+        if (!cancelled) setIsBackgroundRefreshing(false);
+      }
+    };
+
+    doInitialLoad();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!dataLastUpdated) return;
@@ -240,6 +283,15 @@ function App() {
             </div>
             <div className="flex items-center">
                 {renderDataSourceLabel()}
+                {isBackgroundRefreshing && (
+                  <span className="ml-2 inline-flex items-center gap-1.5 text-xs text-blue-400" title="Refreshing repository data in the background…">
+                    <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z"/>
+                    </svg>
+                    Refreshing…
+                  </span>
+                )}
                 {renderViewToggle()}
                 <button
                   onClick={() => setIsDataSourceModalOpen(true)}

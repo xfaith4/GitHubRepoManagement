@@ -930,7 +930,10 @@ function Get-StatusFromCache {
         [Parameter(Mandatory = $true)]
         [string]$Key,
         [Parameter(Mandatory = $true)]
-        [int]$TtlSeconds
+        [int]$TtlSeconds,
+        # When set, returns cached data regardless of TTL (stale-while-revalidate support)
+        [Parameter()]
+        [switch]$IgnoreTtl
     )
 
     $nowUtc = (Get-Date).ToUniversalTime()
@@ -938,7 +941,7 @@ function Get-StatusFromCache {
     if ($script:StatusCacheMemory.ContainsKey($Key)) {
         $memoryEntry = $script:StatusCacheMemory[$Key]
         $ageSeconds = (($nowUtc) - [datetime]$memoryEntry.CreatedAtUtc).TotalSeconds
-        if ($ageSeconds -le $TtlSeconds) {
+        if ($IgnoreTtl.IsPresent -or $ageSeconds -le $TtlSeconds) {
             return [pscustomobject]@{
                 hit = $true
                 source = 'memory'
@@ -972,7 +975,7 @@ function Get-StatusFromCache {
 
         $createdAtUtc = [datetime]$diskEntry.createdAtUtc
         $ageSeconds = (($nowUtc) - $createdAtUtc).TotalSeconds
-        if ($ageSeconds -gt $TtlSeconds) {
+        if ((-not $IgnoreTtl.IsPresent) -and ($ageSeconds -gt $TtlSeconds)) {
             return [pscustomobject]@{ hit = $false }
         }
 
@@ -1717,14 +1720,19 @@ try {
                     $maxDepth = if ($q.ContainsKey('maxDepth') -and $q.maxDepth) { [int]$q.maxDepth } else { $defaultMaxDepth }
                     $includeNonGit = if ($q.ContainsKey('includeNonGitFolders')) { Parse-Bool -Value $q.includeNonGitFolders -Default $defaultIncludeNonGit } else { $defaultIncludeNonGit }
                     $refresh = if ($q.ContainsKey('refresh')) { Parse-Bool -Value $q.refresh -Default $false } else { $false }
+                    # stale=true: return disk cache immediately regardless of TTL (stale-while-revalidate)
+                    $stale = if ($q.ContainsKey('stale')) { Parse-Bool -Value $q.stale -Default $false } else { $false }
                     $ttlSeconds = Get-StatusCacheTtlSeconds -Settings $settings
                     $cacheKey = Get-StatusCacheKey -LocalRoots $localRoots -MaxDepth $maxDepth -IncludeNonGitFolders $includeNonGit
 
                     $result = $null
-                    if ((-not $refresh) -and ($ttlSeconds -gt 0)) {
-                        $cacheHit = Get-StatusFromCache -Key $cacheKey -TtlSeconds $ttlSeconds
-                        if ($cacheHit.hit) {
-                            $result = Add-StatusCacheMeta -Result $cacheHit.response -CacheMeta (Get-StatusCacheMeta -Hit $true -Source $cacheHit.source -TtlSeconds $ttlSeconds -AgeSeconds $cacheHit.ageSeconds -BypassRequested:$false -CachedAt $cacheHit.cachedAt)
+                    if (-not $refresh) {
+                        # With stale=true we bypass TTL; otherwise only hit cache when TTL > 0
+                        if ($stale -or ($ttlSeconds -gt 0)) {
+                            $cacheHit = Get-StatusFromCache -Key $cacheKey -TtlSeconds $ttlSeconds -IgnoreTtl:$stale
+                            if ($cacheHit.hit) {
+                                $result = Add-StatusCacheMeta -Result $cacheHit.response -CacheMeta (Get-StatusCacheMeta -Hit $true -Source $cacheHit.source -TtlSeconds $ttlSeconds -AgeSeconds $cacheHit.ageSeconds -BypassRequested:$false -CachedAt $cacheHit.cachedAt)
+                            }
                         }
                     }
 

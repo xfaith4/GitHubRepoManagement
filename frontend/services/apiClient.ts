@@ -79,14 +79,19 @@ function settingsFromApi(data: any): AppSettings {
   };
 }
 
-export async function getStatus(): Promise<{ repos: RepoStatus[]; source: 'sample' | 'local'; workspacePath?: string; configuredGithubUser?: string | null; repoCount?: number; scanDurationMs?: number; dataLastUpdated?: string; cacheSource?: string; cacheAgeSeconds?: number; }> {
+export async function getStatus(options?: { stale?: boolean; refresh?: boolean }): Promise<{ repos: RepoStatus[]; source: 'sample' | 'local'; workspacePath?: string; configuredGithubUser?: string | null; repoCount?: number; scanDurationMs?: number; dataLastUpdated?: string; cacheSource?: string; cacheAgeSeconds?: number; fromCache: boolean; }> {
   if (USE_MOCK_API) {
     const sample = getMockRepos();
-    return { repos: sample, source: 'sample', configuredGithubUser: null, workspacePath: undefined, repoCount: sample.length, dataLastUpdated: new Date().toISOString(), cacheSource: 'fresh-scan', cacheAgeSeconds: 0 };
+    return { repos: sample, source: 'sample', configuredGithubUser: null, workspacePath: undefined, repoCount: sample.length, dataLastUpdated: new Date().toISOString(), cacheSource: 'fresh-scan', cacheAgeSeconds: 0, fromCache: false };
   }
 
+  const params = new URLSearchParams();
+  if (options?.stale) params.set('stale', 'true');
+  if (options?.refresh) params.set('refresh', 'true');
+  const qs = params.size > 0 ? `?${params.toString()}` : '';
+
   const requestStartedAt = Date.now();
-  const data = await fetchJson<any>(`${API_BASE_URL}/status`);
+  const data = await fetchJson<any>(`${API_BASE_URL}/status${qs}`);
   const rawRepos = Array.isArray(data?.data?.repos) ? data.data.repos.map(normalizeRepo) : [];
   const dedupedByPath = new Map<string, RepoStatus>();
   for (const repo of rawRepos) {
@@ -106,7 +111,8 @@ export async function getStatus(): Promise<{ repos: RepoStatus[]; source: 'sampl
     scanDurationMs: Number(data?.meta?.scanDurationMs ?? (Date.now() - requestStartedAt)),
     dataLastUpdated: cacheMeta?.cachedAt ?? new Date().toISOString(),
     cacheSource: cacheMeta?.source ?? 'fresh-scan',
-    cacheAgeSeconds: cacheMeta?.ageSeconds != null ? Number(cacheMeta.ageSeconds) : 0
+    cacheAgeSeconds: cacheMeta?.ageSeconds != null ? Number(cacheMeta.ageSeconds) : 0,
+    fromCache: cacheMeta?.source === 'memory' || cacheMeta?.source === 'disk'
   };
 }
 
@@ -207,7 +213,17 @@ export async function startExport(repos: RepoStatus[], sourceLabel: string): Pro
   if (!data?.success) {
     throw new Error(data?.error?.message ?? data?.error ?? 'Report export failed.');
   }
-  return data.data as ReportExportResult;
+  const result = data.data as ReportExportResult;
+  if (!result) {
+    throw new Error('Export succeeded but the server returned no result data.');
+  }
+  // Make reportUrl absolute so it navigates directly to the backend regardless of
+  // whether the frontend dev/preview server has an /api proxy configured.
+  if (result.reportUrl && !result.reportUrl.startsWith('http')) {
+    const backendOrigin = API_BASE_URL.replace(/\/api\/?$/, '');
+    return { ...result, reportUrl: `${backendOrigin}${result.reportUrl}` };
+  }
+  return result;
 }
 
 export async function startArchive(daysInactive: number, zipArchive: boolean, repoNames?: string[]): Promise<void> {
