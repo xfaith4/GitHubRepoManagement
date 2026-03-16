@@ -2,6 +2,58 @@
 
 All notable changes to this project are documented here.
 
+## 2026-03-16 — Release 1.1: Standardization, Guardrails, and Continuous Improvement
+
+### Added
+
+- **`Roadmap.Linter.ps1`** — new backend module with exported function `Invoke-LintRoadmapContent`. Runs 7 policy checks against raw ROADMAP.md content:
+  - LINT-001 (error): Release headings must match `## Release X.Y — Title` format.
+  - LINT-002 (error): Checkbox items must use `- [ ]` or `- [x]` format (detects malformed checkboxes).
+  - LINT-003 (warning): Product Intent section must be present.
+  - LINT-004 (warning): Completed-work section (Recently Completed or similar) must be present.
+  - LINT-005 (warning): Each release section must contain at least one checklist item.
+  - LINT-006 (info): Vague checklist item text detected (improve, fix, refactor, todo, misc, etc.).
+  - LINT-007 (info): Version gaps detected across release headings.
+- **`MaturityDrift.Monitor.ps1`** — new backend module with three exported functions:
+  - `Set-MaturityBaseline` — stores per-repo target maturity level in `output/maturity-baselines.json`. Upserts existing entries.
+  - `Get-MaturityDrift` — compares current audit results against baselines; emits `driftSeverity` (`warning` = 1 level below, `critical` = 2+ levels below) per drifted repo.
+  - `Confirm-MaturityDriftAcknowledged` — stamps `lastAcknowledgedAt` on a baseline entry to silence alerts.
+- **`DocStandardization.Previewer.ps1`** — new backend module (`backend/modules/docstandardization/`) with:
+  - `Invoke-PreviewReadmeStandardization` — analyzes README.md against standard expectations (title, required sections: Installation, Usage, Contributing, License; minimum length). Returns `previewState`: `standardization-preview-ready`, `standardization-blocked`, or `already-standard`, with proposed content and per-action severity list.
+  - `Invoke-ApplyReadmeStandardization` — backs up original README, writes proposed content, appends JSONL history entry.
+- **`NotificationHub.ps1`** — new common module with:
+  - `Register-NotificationWebhook` — registers a webhook URL subscribed to named events (`scan.completed`, `repair.applied`, `execution.failed`, `drift.detected`). Stored in `output/notification-webhooks.json`.
+  - `Get-NotificationWebhooks` — returns all registered webhooks.
+  - `Remove-NotificationWebhook` — removes a webhook by id.
+  - `Send-NotificationEvent` — fires HTTP POST to all webhooks subscribed to the event; failures are caught and reported without crashing callers.
+- **`GET /api/roadmap/lint`** — returns lint result for a named repo (requires `repoName` query parameter).
+- **`POST /api/roadmap/lint/scan`** — runs lint checks across all repos in the roadmap index; returns per-repo results.
+- **`POST /api/readme/standardize/preview`** — builds a full README standardization preview for a named repo.
+- **`POST /api/readme/standardize/apply`** — applies an operator-approved README standardization (backs up original, writes proposed content, logs to history).
+- **`GET /api/readme/standardize/history`** — returns README standardization history (preview and apply events) with `limit` query parameter.
+- **`GET /api/roadmap/drift`** — returns contract drift alerts for all repos with active maturity baselines.
+- **`POST /api/roadmap/drift/baseline`** — sets or updates the target maturity level baseline for a named repo.
+- **`POST /api/roadmap/drift/acknowledge`** — acknowledges drift for a repo, stamping `lastAcknowledgedAt`.
+- **`GET /api/notifications/webhooks`** — lists all registered notification webhooks.
+- **`POST /api/notifications/webhooks`** — registers a new notification webhook.
+- **`POST /api/notifications/webhooks/remove`** — removes a webhook by id.
+- **`POST /api/roadmap/completion-preview`** — after task execution, generates a proposed roadmap update with completed items marked (`- [ ]` → `- [x]`). Returns `previewId`, `currentContent`, `proposedContent`, and `markedCount`.
+- **`RoadmapLintModal` component** — per-repo lint findings modal showing pass/fail status, error/warning/info counts, and expandable findings with recommended actions.
+- **`ReadmeStandardizationModal` component** — three-tab modal (Standardization Plan / Diff Preview / History) with editable proposed content textarea and explicit two-step apply workflow.
+- **Saved operator filters** in `WorkQueueView` — filter presets persisted to `localStorage`; operators can name and save current readiness/maturity/search combinations and load them with one click.
+- **"Lint" button in `WorkQueueView`** — appears for repos with a roadmap; opens `RoadmapLintModal`.
+- **"Standardize" button in `WorkQueueView`** — opens `ReadmeStandardizationModal` for any repo.
+- **`onLintRoadmap` and `onStandardizeReadme` props on `WorkQueueView`** — wired up in `Dashboard.tsx`.
+- **`OperationType` extended** with `'roadmap-lint-scan'`, `'readme-standardize-preview'`, `'readme-standardize-apply'`.
+- **New frontend types** in `frontend/types.ts`: `RoadmapLintFinding`, `RoadmapLintResult`, `ReadmeStandardizationPreviewState`, `ReadmeStandardizationAction`, `ReadmeStandardizationPreview`, `ReadmeStandardizationHistoryItem`, `MaturityDriftAlert`, `MaturityDriftResult`, `NotificationWebhook`, `RoadmapCompletionPreview`.
+- **New API client functions** in `frontend/services/apiClient.ts`: `getRoadmapLint()`, `triggerRoadmapLintScan()`, `previewReadmeStandardization()`, `applyReadmeStandardization()`, `getReadmeStandardizationHistory()`, `getMaturityDrift()`, `setMaturityBaseline()`, `acknowledgeMaturityDrift()`, `getNotificationWebhooks()`, `registerNotificationWebhook()`, `removeNotificationWebhook()`, `previewRoadmapCompletion()`.
+- **Module smoke test** — new steps cover loading all four new modules, linting well-formed and malformed roadmaps, setting maturity baselines and detecting drift, previewing README standardization for missing and partial READMEs, and the full notification webhook lifecycle.
+- **API smoke test** — new Release 1.1 steps cover `GET /api/roadmap/lint` and `POST /api/roadmap/lint/scan`, `POST /api/readme/standardize/preview` and `GET /api/readme/standardize/history`, `GET /api/roadmap/drift`, `GET/POST /api/notifications/webhooks`, and `POST /api/roadmap/completion-preview`, with contract field validation where applicable.
+
+### Changed
+
+- ROADMAP.md: Release 1.1 milestones marked complete; "Immediate Next Focus" updated to next release.
+
 ## 2026-03-16 — Release 0.9: Roadmap Repair Preview & Standardization Workflow
 
 ### Added

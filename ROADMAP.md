@@ -99,6 +99,18 @@ The following progress is preserved from prior execution history and remains fou
 - [x] Repos ranked by priority score (maturity score + readiness bonus) to surface best candidates.
 - [x] Requeue and retry semantics: blocked repos requeueable with force; retries tracked; max retry threshold transitions to blocked.
 - [x] Module smoke and API host smoke extended with execution ledger coverage (Release 1.0).
+- [x] Roadmap linter (`Invoke-LintRoadmapContent`) — 7 policy checks for release headings, checkbox format, required sections, version gaps, and vague items.
+- [x] README standardization preview workflow (`Invoke-PreviewReadmeStandardization`, `Invoke-ApplyReadmeStandardization`) — proposes missing sections, backs up originals, logs history.
+- [x] Roadmap lint API routes: `GET /api/roadmap/lint`, `POST /api/roadmap/lint/scan`.
+- [x] README standardization API routes: `POST /api/readme/standardize/preview`, `POST /api/readme/standardize/apply`, `GET /api/readme/standardize/history`.
+- [x] Maturity drift monitor (`Set-MaturityBaseline`, `Get-MaturityDrift`, `Confirm-MaturityDriftAcknowledged`) — per-repo baseline tracking and drift severity alerts.
+- [x] Contract drift API routes: `GET /api/roadmap/drift`, `POST /api/roadmap/drift/baseline`, `POST /api/roadmap/drift/acknowledge`.
+- [x] Notification hub (`Register-NotificationWebhook`, `Send-NotificationEvent`) — webhook registration and event firing for scan/repair/execution/drift events.
+- [x] Notification webhook API routes: `GET/POST /api/notifications/webhooks`, `POST /api/notifications/webhooks/remove`.
+- [x] Roadmap completion update preview (`POST /api/roadmap/completion-preview`) — after task execution, generates proposed roadmap with completed items marked.
+- [x] `RoadmapLintModal` and `ReadmeStandardizationModal` dashboard components — Lint findings panel and three-tab standardization modal with diff preview and apply workflow.
+- [x] Saved operator filters in Work Queue — named filter presets persisted to localStorage; loadable in one click.
+- [x] Module smoke and API host smoke extended with Release 1.1 coverage (linter, drift monitor, doc standardization, notification hub).
 
 ---
 
@@ -351,14 +363,14 @@ The following progress is preserved from prior execution history and remains fou
 
 ### Engineering milestones
 
-- [ ] Publish recommended `ROADMAP.md` structure standard for managed repos.
-- [ ] Add roadmap linting or policy checks for release headings, checkbox formatting, required sections, and parseability.
-- [ ] Add README standardization preview workflow.
-- [ ] Add proposed roadmap completion/update preview after successful task execution.
-- [ ] Add saved operator filters/views for common triage patterns.
-- [ ] Add notification hooks for scheduled scans and execution failures.
-- [ ] Add policy-as-code checks for repository standards enforcement.
-- [ ] Add contract drift alerts when a roadmap falls below a target maturity level.
+- [x] Publish recommended `ROADMAP.md` structure standard for managed repos.
+- [x] Add roadmap linting or policy checks for release headings, checkbox formatting, required sections, and parseability.
+- [x] Add README standardization preview workflow.
+- [x] Add proposed roadmap completion/update preview after successful task execution.
+- [x] Add saved operator filters/views for common triage patterns.
+- [x] Add notification hooks for scheduled scans and execution failures.
+- [x] Add policy-as-code checks for repository standards enforcement.
+- [x] Add contract drift alerts when a roadmap falls below a target maturity level.
 
 ### Acceptance criteria
 
@@ -489,13 +501,12 @@ The product is moving in the right direction when:
 
 The recommended immediate execution target is:
 
-### **Release 1.1 — Standardization, Guardrails, and Continuous Improvement**
+### **Release 1.2 — Enhanced Portfolio Intelligence**
 
-Specifically:
+The next logical evolution is to deepen portfolio-level intelligence and improve operator workflows:
 
-- publish recommended `ROADMAP.md` structure standard for managed repos
-- add roadmap linting or policy checks for release headings, checkbox formatting, required sections, and parseability
-- add README standardization preview workflow
-- add proposed roadmap completion/update preview after successful task execution
-- add saved operator filters/views for common triage patterns
-- add contract drift alerts when a roadmap falls below a target maturity level
+- add scheduled background scan support (configurable interval for automatic re-auditing)
+- add cross-repo dependency tracking (identify repos that reference each other in roadmap items)
+- add execution throughput metrics and trend visualization in the dashboard
+- add roadmap item tagging for cross-cutting concerns (security, infrastructure, breaking changes)
+- improve the Copilot task prompt quality based on execution history and audit outcomes
