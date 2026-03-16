@@ -171,6 +171,26 @@ foreach ($r in @($scanResults)) {
 }
 Write-Host '  all scanned repos have valid dispatchReadiness values' -ForegroundColor DarkGray
 
+Write-Step 'Roadmap parser — smoke: section-order neighboring context extraction'
+$neighborContent = @"
+## Now
+- [ ] First task
+- [ ] Second task
+## Next
+- [ ] Third task
+- [x] Already done
+"@
+$neighborResult = Invoke-ParseRoadmapContent -Content $neighborContent
+if ($neighborResult.roadmapState -ne 'pending') { throw "Expected state=pending for neighboring context test, got $($neighborResult.roadmapState)" }
+if ($neighborResult.nextPendingItem.text -ne 'First task') { throw "Expected nextPendingItem='First task', got '$($neighborResult.nextPendingItem.text)'" }
+# Validate section ordering is preserved in sections array
+$sectionNames = @($neighborResult.sections | ForEach-Object { $_.name })
+if ($sectionNames[0] -ne 'Now') { throw "Expected first section name='Now', got '$($sectionNames[0])'" }
+if ($sectionNames[1] -ne 'Next') { throw "Expected second section name='Next', got '$($sectionNames[1])'" }
+$nowSection = $neighborResult.sections | Where-Object { $_.name -eq 'Now' } | Select-Object -First 1
+if (@($nowSection.pendingItems).Count -ne 2) { throw "Expected 2 pending items in 'Now' section, got $(@($nowSection.pendingItems).Count)" }
+Write-Host '  neighboring context section ordering verified' -ForegroundColor DarkGray
+
 Write-Step 'Running reconciliation preflight check'
 & (Join-Path $WorkspaceRoot 'backend\modules\reconcile\preflight-check.ps1')
 

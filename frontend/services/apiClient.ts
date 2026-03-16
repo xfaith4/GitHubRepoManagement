@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry } from '../types';
+import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -471,4 +471,20 @@ export async function triggerDocsAuditScan(): Promise<DocAuditIndex> {
     cacheSource: 'fresh-scan',
     cacheAgeSeconds: 0,
   };
+}
+
+export async function previewCopilotTaskPacket(repoName: string, roadmapPath?: string): Promise<CopilotTaskPacket> {
+  const data = await postJson<any>('/copilot-task/preview', { repoName, roadmapPath: roadmapPath ?? '' });
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? data?.error ?? 'Copilot task preview failed.');
+  }
+  return data.data as CopilotTaskPacket;
+}
+
+export async function getCopilotTaskHistory(limit = 25): Promise<CopilotTaskHistoryItem[]> {
+  const data = await fetchJson<any>(`${API_BASE_URL}/copilot-task/history?limit=${encodeURIComponent(String(limit))}`);
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? 'Failed to load Copilot task history.');
+  }
+  return Array.isArray(data?.data?.items) ? data.data.items : [];
 }

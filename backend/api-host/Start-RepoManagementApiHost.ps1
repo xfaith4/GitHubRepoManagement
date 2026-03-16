@@ -1729,6 +1729,198 @@ function Get-RoadmapTaskHistory {
     return @($items)
 }
 
+function Build-CopilotTaskPacket {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoName,
+
+        [Parameter()]
+        [string]$RoadmapPath = '',
+
+        [Parameter()]
+        [object]$AuditEntry = $null
+    )
+
+    # Step 1: Resolve roadmap path from cache or parameter
+    $settings  = Get-HostSettings
+    $roadmapTtl = Get-RoadmapCacheTtlSeconds -Settings $settings
+    $roadmapCache = Get-RoadmapFromCache -TtlSeconds $roadmapTtl
+    $roadmapEntry = $null
+    if ($roadmapCache.hit -and $roadmapCache.entries) {
+        $roadmapEntry = @($roadmapCache.entries) | Where-Object { [string]$_.repoName -eq $RepoName } | Select-Object -First 1
+    }
+
+    $effectiveRoadmapPath = $RoadmapPath
+    if ([string]::IsNullOrWhiteSpace($effectiveRoadmapPath) -and $null -ne $roadmapEntry) {
+        $rp = if ($roadmapEntry -is [System.Collections.IDictionary]) { $roadmapEntry['roadmapPath'] } else { $roadmapEntry.roadmapPath }
+        if (-not [string]::IsNullOrWhiteSpace([string]$rp)) { $effectiveRoadmapPath = [string]$rp }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($effectiveRoadmapPath) -or -not (Test-Path -LiteralPath $effectiveRoadmapPath)) {
+        throw "Roadmap file not found for repo '$RepoName'. Ensure a roadmap scan has been run (GET /api/roadmap/index or POST /api/roadmap/scan) first."
+    }
+
+    # Step 2: Parse roadmap with full section context
+    $rawContent = Get-Content -LiteralPath $effectiveRoadmapPath -Raw -Encoding UTF8
+    $parseResult = Invoke-ParseRoadmapContent -Content $rawContent -SourcePath $effectiveRoadmapPath
+
+    if ($parseResult.roadmapState -ne 'pending') {
+        throw "Repository '$RepoName' has no pending roadmap items (state: $($parseResult.roadmapState))."
+    }
+
+    # Step 3: Extract selected item + neighboring context (preserving document order)
+    $selected = $parseResult.nextPendingItem
+    $allPendingInOrder = [System.Collections.Generic.List[pscustomobject]]::new()
+    foreach ($sec in @($parseResult.sections)) {
+        $secName = [string]$sec.name
+        foreach ($item in @($sec.pendingItems)) {
+            $allPendingInOrder.Add([pscustomobject]@{ text = [string]$item; section = $secName })
+        }
+    }
+
+    $selectedIdx = -1
+    for ($i = 0; $i -lt $allPendingInOrder.Count; $i++) {
+        if ($allPendingInOrder[$i].text -eq [string]$selected.text -and $allPendingInOrder[$i].section -eq [string]$selected.section) {
+            $selectedIdx = $i
+            break
+        }
+    }
+
+    $previousItem = $null
+    $followUpCandidates = @()
+    if ($selectedIdx -ge 0) {
+        if ($selectedIdx -gt 0) {
+            $previousItem = [string]$allPendingInOrder[$selectedIdx - 1].text
+        }
+        $followUpCandidates = @($allPendingInOrder | Select-Object -Skip ($selectedIdx + 1) -First 3 | ForEach-Object {
+            @{ text = [string]$_.text; section = [string]$_.section }
+        })
+    }
+
+    # Step 4: Extract doc findings from audit entry
+    $docFindings = @()
+    $repoPath = ''
+    $dispatchReadiness = 'ready'
+    if ($null -ne $AuditEntry) {
+        $docFindings = if ($AuditEntry -is [System.Collections.IDictionary]) {
+            if ($AuditEntry.ContainsKey('docFindings') -and $null -ne $AuditEntry['docFindings']) { @($AuditEntry['docFindings']) } else { @() }
+        } else {
+            if ($null -ne $AuditEntry.PSObject -and ($AuditEntry.PSObject.Properties.Name -contains 'docFindings')) { @($AuditEntry.docFindings) } else { @() }
+        }
+        $repoPath = if ($AuditEntry -is [System.Collections.IDictionary]) { [string]($AuditEntry['repoPath'] ?? '') } else { [string]($AuditEntry.repoPath ?? '') }
+        $dispatchReadiness = if ($AuditEntry -is [System.Collections.IDictionary]) { [string]($AuditEntry['dispatchReadiness'] ?? 'ready') } else { [string]($AuditEntry.dispatchReadiness ?? 'ready') }
+    } elseif ($null -ne $roadmapEntry) {
+        $repoPath = if ($roadmapEntry -is [System.Collections.IDictionary]) { [string]($roadmapEntry['repoPath'] ?? '') } else { [string]($roadmapEntry.repoPath ?? '') }
+    }
+
+    # Step 5: Build acceptance criteria
+    $acceptanceCriteria = @(
+        "The selected roadmap item is implemented end-to-end with production-safe changes.",
+        "All affected tests pass and no new test failures are introduced.",
+        "Documentation updated to reflect the change (README, CHANGELOG, relevant docs).",
+        "Roadmap checkbox for the completed item is marked `- [x]` in $([System.IO.Path]::GetFileName($effectiveRoadmapPath)).",
+        "No placeholder stubs or TODO comments left in modified code."
+    )
+    $criticalFindings = @($docFindings | Where-Object {
+        $sev = if ($_ -is [System.Collections.IDictionary]) { [string]$_['severity'] } else { [string]$_.severity }
+        $sev -eq 'critical'
+    })
+    if ($criticalFindings.Count -gt 0) {
+        $acceptanceCriteria += "Resolve the $($criticalFindings.Count) critical documentation finding(s) listed in this packet."
+    }
+
+    # Step 6: Guardrails
+    $guardrails = @(
+        @{ rule = "Do not introduce placeholder stub-outs or empty TODO blocks." },
+        @{ rule = "Update affected documentation when any workflow or API behavior changes." },
+        @{ rule = "Preserve existing launcher, logging, and API host behavior unless the selected roadmap item explicitly changes them." },
+        @{ rule = "Keep all changes tightly scoped to the selected roadmap item." },
+        @{ rule = "Do not silently mark roadmap items complete without fully implementing them." },
+        @{ rule = "Run the relevant tests/quality gates before finalizing." }
+    )
+
+    # Step 7: Neighboring-context lines for the prompt
+    $neighboringLines = ''
+    if (-not [string]::IsNullOrWhiteSpace($previousItem)) {
+        $neighboringLines += "`n  Previous item: $previousItem"
+    }
+    if ($followUpCandidates.Count -gt 0) {
+        $followUpLines = @($followUpCandidates | ForEach-Object { "  - $($_['text']) (section: $($_['section']))" })
+        $neighboringLines += "`n  Follow-up candidates after this item:`n" + ($followUpLines -join "`n")
+    }
+
+    # Doc findings block for prompt
+    $docFindingsSummary = ''
+    if ($docFindings.Count -gt 0) {
+        $lines = @($docFindings | ForEach-Object {
+            $sev  = if ($_ -is [System.Collections.IDictionary]) { [string]$_['severity'] } else { [string]$_.severity }
+            $file = if ($_ -is [System.Collections.IDictionary]) { [string]$_['file'] } else { [string]$_.file }
+            $msg  = if ($_ -is [System.Collections.IDictionary]) { [string]$_['message'] } else { [string]$_.message }
+            $rec  = if ($_ -is [System.Collections.IDictionary]) { [string]$_['recommendedAction'] } else { [string]$_.recommendedAction }
+            "  [$($sev.ToUpper())] $file`: $msg → $rec"
+        })
+        $docFindingsSummary = "`n`nDocumentation findings for this repository:`n" + ($lines -join "`n")
+    }
+
+    $guardrailLines = @($guardrails | ForEach-Object { "- $($_['rule'])" })
+    $criteriLines   = @($acceptanceCriteria | ForEach-Object { "- $_" })
+
+    $generatedPrompt = @"
+Continue roadmap execution for repository: $RepoName
+
+Roadmap file: $effectiveRoadmapPath
+Selected section: $([string]$selected.section)
+Selected task: $([string]$selected.text)$neighboringLines
+
+Dispatch readiness: $dispatchReadiness$docFindingsSummary
+
+Acceptance criteria:
+$($criteriLines -join "`n")
+
+Guardrails (must be respected):
+$($guardrailLines -join "`n")
+
+Execution requirements:
+1. Verify the most recently completed roadmap entries are truly complete across code, tests, and docs.
+2. Implement the selected task end-to-end with production-safe changes.
+3. Update documentation (README, CHANGELOG, etc.) for completed work.
+4. Mark the completed roadmap checkbox as ``- [x]`` in the roadmap file.
+5. Run the repo's relevant tests/quality gates before finalizing.
+"@
+
+    # Step 8: Stable run ID and history paths
+    $runId = "{0}-{1}" -f (Get-Date -Format 'yyyyMMdd-HHmmss'), ([guid]::NewGuid().ToString('N').Substring(0, 8))
+    $historyRoot = Join-Path $WorkspaceRoot 'output\roadmap-task-history'
+    $runsPath    = Join-Path $historyRoot 'runs'
+    $null = New-Item -ItemType Directory -Path $runsPath -Force -ErrorAction SilentlyContinue
+
+    return @{
+        packetVersion      = '1.0'
+        runId              = $runId
+        createdAt          = (Get-Date).ToUniversalTime().ToString('o')
+        repoContext        = @{
+            repoName          = $RepoName
+            repoPath          = $repoPath
+            roadmapPath       = $effectiveRoadmapPath
+            dispatchReadiness = $dispatchReadiness
+        }
+        selectedRoadmapItem = @{
+            text         = [string]$selected.text
+            section      = [string]$selected.section
+            previousItem = $previousItem
+            nextItem     = if ($followUpCandidates.Count -gt 0) { [string]$followUpCandidates[0]['text'] } else { $null }
+        }
+        followUpCandidates = @($followUpCandidates)
+        docFindings        = @($docFindings)
+        acceptanceCriteria = @($acceptanceCriteria)
+        guardrails         = @($guardrails)
+        generatedPrompt    = $generatedPrompt
+        historyPath        = (Join-Path $historyRoot 'history.jsonl')
+        runEventsPath      = (Join-Path $runsPath ("{0}.events.jsonl" -f $runId))
+        runSummaryPath     = (Join-Path $runsPath ("{0}.summary.json" -f $runId))
+    }
+}
+
 $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Parse($BindAddress), $Port)
 $listener.Start()
 Write-HostLog ("Repo Management API host started on http://{0}:{1}" -f $BindAddress, $Port)
@@ -2508,6 +2700,64 @@ try {
                             count = @($entries).Count
                             cacheSource = 'fresh-scan'
                             cacheAgeSeconds = 0
+                        }
+                    }
+                }
+                'POST /api/copilot-task/preview' {
+                    Write-HostLog ("[TRACE] copilot-task.preview correlationId={0} start" -f $correlationId)
+                    $body = Parse-JsonBody -Body $req.Body
+                    $repoName = if ($body.ContainsKey('repoName') -and $body.repoName) { [string]$body.repoName } else { '' }
+                    $roadmapPath = if ($body.ContainsKey('roadmapPath') -and $body.roadmapPath) { [string]$body.roadmapPath } else { '' }
+                    if ([string]::IsNullOrWhiteSpace($repoName)) {
+                        throw 'repoName is required for /api/copilot-task/preview'
+                    }
+
+                    # Look up doc audit entry from cache (no-TTL miss is acceptable; null → packet built without findings)
+                    $settings   = Get-HostSettings
+                    $auditTtl   = Get-DocAuditCacheTtlSeconds -Settings $settings
+                    $auditCache = Get-DocAuditFromCache -TtlSeconds $auditTtl
+                    $auditEntry = $null
+                    if ($auditCache.hit -and $auditCache.entries) {
+                        $auditEntry = @($auditCache.entries) | Where-Object {
+                            $n = if ($_ -is [System.Collections.IDictionary]) { [string]$_['repoName'] } else { [string]$_.repoName }
+                            $n -eq $repoName
+                        } | Select-Object -First 1
+                    }
+
+                    $packet = Build-CopilotTaskPacket -RepoName $repoName -RoadmapPath $roadmapPath -AuditEntry $auditEntry
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Write-HostLog ("[TRACE] copilot-task.preview correlationId={0} done repoName={1} runId={2}" -f $correlationId, $repoName, $packet.runId)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = $packet
+                    }
+                }
+                'GET /api/copilot-task/history' {
+                    $q     = Parse-QueryString -Query $req.Query
+                    $limit = if ($q.ContainsKey('limit') -and $q.limit) { [int]$q.limit } else { 25 }
+                    $rawItems = Get-RoadmapTaskHistory -Limit $limit
+
+                    $items = @($rawItems | ForEach-Object {
+                        @{
+                            runId       = [string]$_.runId
+                            status      = [string]$_.status
+                            repoName    = [string]$_.repository
+                            roadmapItem = [string]$_.selectedTask
+                            roadmapPath = [string]$_.roadmapPath
+                            startedAt   = [string]$_.startedAt
+                            completedAt = [string]$_.completedAt
+                            error       = [string]$_.error
+                            summaryPath = [string]$_.summaryPath
+                        }
+                    })
+
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = @{
+                            items = $items
+                            count = @($items).Count
                         }
                     }
                 }

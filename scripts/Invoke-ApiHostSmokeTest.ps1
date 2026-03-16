@@ -274,6 +274,38 @@ try {
     Assert-Not503 -Name '/api/roadmap-agent/start' -Response $roadmapStartResponse
     Assert-Not503 -Name '/api/roadmap-agent/history' -Response $roadmapHistoryResponse
 
+    Write-Host '[STEP] Copilot task packet routes (Release 0.6)' -ForegroundColor Cyan
+    # Preview with a missing repoName should return non-503 (400/500 is acceptable)
+    $copilotPreviewMissingBody = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/copilot-task/preview" -Body @{}
+    Assert-Not503 -Name '/api/copilot-task/preview (no repoName)' -Response $copilotPreviewMissingBody
+    Write-Host ("  /api/copilot-task/preview (no repoName) -> HTTP {0}" -f $copilotPreviewMissingBody.StatusCode) -ForegroundColor DarkGray
+
+    # Preview with workspace repo name — may succeed if roadmap index is warm, or fail gracefully
+    $workspaceRepoName = Split-Path $WorkspaceRoot -Leaf
+    $copilotPreviewResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/copilot-task/preview" -Body @{ repoName = $workspaceRepoName }
+    Assert-Not503 -Name '/api/copilot-task/preview' -Response $copilotPreviewResponse
+    $copilotPreviewJson = $copilotPreviewResponse.Json
+    $copilotPreviewPacketOk = $false
+    if ($copilotPreviewJson -and $copilotPreviewJson.success -eq $true) {
+        $packet = $copilotPreviewJson.data
+        if ($packet -and $packet.packetVersion -and $packet.runId -and $packet.repoContext -and $packet.selectedRoadmapItem -and $packet.generatedPrompt) {
+            $copilotPreviewPacketOk = $true
+            Write-Host ("  /api/copilot-task/preview -> packet runId={0} section='{1}'" -f $packet.runId, $packet.selectedRoadmapItem.section) -ForegroundColor DarkGray
+        } else {
+            Write-Host '  /api/copilot-task/preview returned success=true but packet fields missing' -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host ("  /api/copilot-task/preview -> HTTP {0} (non-ready repo or missing roadmap index — acceptable)" -f $copilotPreviewResponse.StatusCode) -ForegroundColor DarkGray
+        $copilotPreviewPacketOk = $true  # graceful error is OK in smoke context
+    }
+
+    $copilotHistoryResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/copilot-task/history?limit=5"
+    Assert-Not503 -Name '/api/copilot-task/history' -Response $copilotHistoryResponse
+    $copilotHistoryJson = $copilotHistoryResponse.Json
+    if (-not $copilotHistoryJson.success) { throw '/api/copilot-task/history returned success=false' }
+    $copilotHistoryItemsOk = ($copilotHistoryJson.data -and $copilotHistoryJson.data.PSObject.Properties.Name -contains 'items')
+    Write-Host ("  /api/copilot-task/history -> {0} item(s)" -f @($copilotHistoryJson.data.items).Count) -ForegroundColor DarkGray
+
     Write-Host '[STEP] Log tail route' -ForegroundColor Cyan
     $logTailResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/log/tail?lines=10"
     Assert-Not503 -Name '/api/log/tail' -Response $logTailResponse
@@ -314,6 +346,10 @@ try {
         docsAuditGetSuccess = $docsAuditData.success
         docsAuditScanSuccess = $docsAuditScanData.success
         docsAuditRepoCount = $docsAuditData.data.count
+        copilotPreviewStatusCode = $copilotPreviewResponse.StatusCode
+        copilotPreviewPacketOk = $copilotPreviewPacketOk
+        copilotHistorySuccess = $copilotHistoryJson.success
+        copilotHistoryItemsOk = $copilotHistoryItemsOk
     } | Format-List
 }
 finally {

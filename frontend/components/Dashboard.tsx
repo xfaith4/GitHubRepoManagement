@@ -12,6 +12,7 @@ import DocReviewModal from './DocReviewModal';
 import RoadmapViewerModal from './RoadmapViewerModal';
 import ApiDocsModal from './ApiDocsModal';
 import WorkQueueView from './WorkQueueView';
+import CopilotTaskPreviewModal from './CopilotTaskPreviewModal';
 import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan } from '../services/apiClient';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
@@ -43,6 +44,8 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [isRoadmapViewerOpen, setIsRoadmapViewerOpen] = useState(false);
   const [isApiDocsOpen, setIsApiDocsOpen] = useState(false);
   const [selectedRoadmapRepo, setSelectedRoadmapRepo] = useState<string | null>(null);
+  const [isCopilotTaskPreviewOpen, setIsCopilotTaskPreviewOpen] = useState(false);
+  const [copilotTaskPreviewRepo, setCopilotTaskPreviewRepo] = useState<string | null>(null);
   const [roadmapEntries, setRoadmapEntries] = useState<RoadmapEntry[]>([]);
   const [selectedRepoIds, setSelectedRepoIds] = useState<Set<string>>(new Set());
   const [groupBy, setGroupBy] = useState<keyof RepoStatus | 'none'>('none');
@@ -405,6 +408,11 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
     getDocsAudit(true).then(index => setDocsAuditIndex(index)).catch(() => {}).finally(() => setDocsAuditLoading(false));
   };
 
+  const handlePreviewCopilotTask = (repoName: string) => {
+    setCopilotTaskPreviewRepo(repoName);
+    setIsCopilotTaskPreviewOpen(true);
+  };
+
   // Enrich repos with hasRoadmap flag, roadmapState, nextPendingRoadmapItem, and dispatchReadiness
   const reposWithRoadmap = useMemo(() => {
     const roadmapMap = roadmapEntries.length > 0
@@ -650,6 +658,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                 onRefresh={handleDocsAuditRefresh}
                 onScan={handleDocsAuditScan}
                 onViewRoadmap={handleViewRoadmap}
+                onPreviewTask={handlePreviewCopilotTask}
                 isScanning={currentOperation === 'docs-audit-scan'}
               />
             )}
@@ -704,6 +713,12 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
       <ApiDocsModal
         isOpen={isApiDocsOpen}
         onClose={() => setIsApiDocsOpen(false)}
+      />
+
+      <CopilotTaskPreviewModal
+        isOpen={isCopilotTaskPreviewOpen}
+        repoName={copilotTaskPreviewRepo}
+        onClose={() => setIsCopilotTaskPreviewOpen(false)}
       />
     </div>
   );

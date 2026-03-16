@@ -149,17 +149,17 @@ The following progress is preserved from prior execution history and remains fou
 
 ### Engineering milestones
 
-- [ ] Define a normalized task packet model containing repo context, selected roadmap item, local documentation findings, acceptance criteria, and constraints.
-- [ ] Add `Preview Copilot Task` as a first-class action from the Work Queue.
-- [ ] Include neighboring roadmap context (previous item, section, next item) in the task packet.
-- [ ] Include documentation findings and repo standards in preview payload.
-- [ ] Add repo-level guardrails in generated prompts:
+- [x] Define a normalized task packet model containing repo context, selected roadmap item, local documentation findings, acceptance criteria, and constraints.
+- [x] Add `Preview Copilot Task` as a first-class action from the Work Queue.
+- [x] Include neighboring roadmap context (previous item, section, next item) in the task packet.
+- [x] Include documentation findings and repo standards in preview payload.
+- [x] Add repo-level guardrails in generated prompts:
   - no placeholder stub-outs
   - update affected docs when workflow changes
   - preserve existing launcher/logging behavior unless intentionally changed
   - keep changes aligned to the selected roadmap item
-- [ ] Persist preview/start metadata with stable task identifiers.
-- [ ] Improve recent task history views with repo, roadmap item, started time, and outcome.
+- [x] Persist preview/start metadata with stable task identifiers.
+- [x] Improve recent task history views with repo, roadmap item, started time, and outcome.
 
 ### Acceptance criteria
 
@@ -170,7 +170,6 @@ The following progress is preserved from prior execution history and remains fou
 ---
 
 ## Release 0.7 — Two-Lane Execution Queue
-
 **Goal:** keep up to two Copilot agents productively occupied across separate repos without collisions.
 
 ### Product outcomes
@@ -304,13 +303,11 @@ The product is moving in the right direction when:
 
 The recommended immediate execution target is:
 
-### **Release 0.6 — Copilot Task Packaging & Preview Workflow**
+### **Release 0.7 — Two-Lane Execution Queue**
 
 Specifically:
 
-- normalized task packet model with repo context + roadmap item + doc findings
-- `Preview Copilot Task` action from the Work Queue view
-- structured prompts with guardrails against stubs, drift, and scope creep
-- task history that links back to the dispatched roadmap item
-
-That release bridges the Work Queue produced in 0.5 into a trustworthy Copilot dispatch pipeline.
+- persistent execution state ledger for repo assignments and task outcomes
+- duplicate dispatch prevention (same repo or same roadmap item)
+- two-lane execution board in the dashboard showing active tasks and the ready queue
+- priority ranking of ready repos to surface the best next candidate

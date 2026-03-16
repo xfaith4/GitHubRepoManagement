@@ -90,7 +90,7 @@ export interface ReportExportResult {
   csvPath: string;
 }
 
-export type OperationType = 'init' | 'update' | 'sync' | 'export' | 'archive' | 'docreview' | 'scan' | 'roadmap-scan' | 'roadmap-agent' | 'docs-audit-scan';
+export type OperationType = 'init' | 'update' | 'sync' | 'export' | 'archive' | 'docreview' | 'scan' | 'roadmap-scan' | 'roadmap-agent' | 'docs-audit-scan' | 'copilot-task-preview';
 
 export interface GithubInsightsMeta {
   totalRepos: number;
@@ -277,4 +277,52 @@ export interface DocAuditIndex {
   count: number;
   cacheSource: 'fresh-scan' | 'cache' | 'memory' | 'disk';
   cacheAgeSeconds: number;
+}
+
+// Release 0.6 — Copilot Task Packaging & Preview Workflow
+
+export interface CopilotTaskPacketContext {
+  repoName: string;
+  repoPath?: string;
+  roadmapPath: string;
+  dispatchReadiness?: DispatchReadiness;
+}
+
+export interface CopilotTaskPacketRoadmapItem {
+  text: string;
+  section: string;
+  previousItem?: string | null;
+  nextItem?: string | null;
+}
+
+export interface CopilotTaskPacketGuardrail {
+  rule: string;
+}
+
+export interface CopilotTaskPacket {
+  packetVersion: string;
+  runId: string;
+  createdAt: string;
+  repoContext: CopilotTaskPacketContext;
+  selectedRoadmapItem: CopilotTaskPacketRoadmapItem;
+  followUpCandidates: Array<{ text: string; section: string }>;
+  docFindings: DocFinding[];
+  acceptanceCriteria: string[];
+  guardrails: CopilotTaskPacketGuardrail[];
+  generatedPrompt: string;
+  historyPath?: string;
+  runEventsPath?: string;
+  runSummaryPath?: string;
+}
+
+export interface CopilotTaskHistoryItem {
+  runId: string;
+  status: string;
+  repoName: string;
+  roadmapItem: string;
+  roadmapPath: string;
+  startedAt: string;
+  completedAt?: string;
+  error?: string;
+  summaryPath?: string;
 }
