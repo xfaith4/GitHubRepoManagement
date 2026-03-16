@@ -74,6 +74,10 @@ The following progress is preserved from prior execution history and remains fou
 - [x] CI smoke extended with doc-standards.json integrity check and `/api/docs-audit` route coverage.
 - [x] Release-oriented roadmap format adopted for this repository to improve agent execution boundaries.
 - [x] Initial Roadmap Contract Standard package drafted: canonical template, schema, audit rules, maturity model, and repair prompt.
+- [x] Roadmap Contract Standard package delivered under `standards/roadmap/`: ROADMAP_TEMPLATE.md, roadmap-contract.schema.json, roadmap-audit-rules.json (10 weighted rules), ROADMAP_MATURITY_MODEL.md (L0–L4), roadmap-repair-prompt.md.
+- [x] Backend loader (`GET /api/roadmap/standard`) reads audit rules from `standards/roadmap/roadmap-audit-rules.json` at runtime without code changes.
+- [x] App documentation added: `docs/reference/roadmap-contracts.md` covering contract model, scoring, authoring guidance, and API reference.
+- [x] CI smoke and module smoke extended with roadmap standard asset integrity checks.
 
 ---
 
@@ -186,13 +190,13 @@ The following progress is preserved from prior execution history and remains fou
 
 ### Engineering milestones
 
-- [ ] Add `standards/roadmap/ROADMAP_TEMPLATE.md` as the canonical authoring template.
-- [ ] Add `standards/roadmap/roadmap-contract.schema.json` for normalized contract validation.
-- [ ] Add `standards/roadmap/roadmap-audit-rules.json` with weighted scoring, severities, and repair guidance.
-- [ ] Add `standards/roadmap/ROADMAP_MATURITY_MODEL.md` defining levels from absent to orchestration-ready.
-- [ ] Add `standards/roadmap/roadmap-repair-prompt.md` for preview-based roadmap rewrite workflows.
-- [ ] Add app documentation explaining roadmap contracts, contract audit goals, and how release-scoped work should be authored.
-- [ ] Add backend loader for roadmap standard assets so audit logic reads rules from data instead of hardcoded assumptions.
+- [x] Add `standards/roadmap/ROADMAP_TEMPLATE.md` as the canonical authoring template.
+- [x] Add `standards/roadmap/roadmap-contract.schema.json` for normalized contract validation.
+- [x] Add `standards/roadmap/roadmap-audit-rules.json` with weighted scoring, severities, and repair guidance.
+- [x] Add `standards/roadmap/ROADMAP_MATURITY_MODEL.md` defining levels from absent to orchestration-ready.
+- [x] Add `standards/roadmap/roadmap-repair-prompt.md` for preview-based roadmap rewrite workflows.
+- [x] Add app documentation explaining roadmap contracts, contract audit goals, and how release-scoped work should be authored.
+- [x] Add backend loader for roadmap standard assets so audit logic reads rules from data instead of hardcoded assumptions.
 
 ### Acceptance criteria
 
@@ -464,11 +468,13 @@ The product is moving in the right direction when:
 
 The recommended immediate execution target is:
 
-### **Release 0.7 — Roadmap Contract Standard Foundation**
+### **Release 0.8 — Roadmap Contract Audit & Maturity Scoring**
 
 Specifically:
 
-- canonical roadmap template under `standards/roadmap/`
-- contract schema and audit rules under source control
-- maturity model and repair prompt for preview-based normalization
-- backend loading of roadmap standard assets from data files instead of hardcoded assumptions
+- implement roadmap contract normalization layer (map parsed markdown into the stable internal model from `roadmap-contract.schema.json`)
+- implement rule-based roadmap auditor using the JSON rule pack in `standards/roadmap/roadmap-audit-rules.json`
+- compute weighted roadmap audit score and grade per repo using the maturity thresholds
+- assign roadmap maturity level per repo (L0–L4) and expose in API responses
+- add audit findings with severity, code, message, and recommended fix to repo records
+- add roadmap audit summary UI elements and maturity filters to the dashboard

@@ -1,0 +1,142 @@
+{
+  "version": "1.0",
+  "description": "Weighted audit rules for roadmap contract quality scoring. Each rule is evaluated against a parsed roadmap contract and contributes to a 0–100 maturity score.",
+  "rules": [
+    {
+      "id": "ROADMAP-001",
+      "name": "roadmap-file-present",
+      "description": "A ROADMAP.md (or equivalent) file exists in the repository root.",
+      "severity": "critical",
+      "scoreWeight": 20,
+      "failCondition": "roadmapState === 'missing'",
+      "message": "No ROADMAP.md file found. The repository has no roadmap at all.",
+      "recommendedAction": "Create a ROADMAP.md using the canonical template at standards/roadmap/ROADMAP_TEMPLATE.md."
+    },
+    {
+      "id": "ROADMAP-002",
+      "name": "roadmap-parseable",
+      "description": "The roadmap file can be parsed without errors (contains at least one checkbox item).",
+      "severity": "critical",
+      "scoreWeight": 15,
+      "failCondition": "roadmapState === 'parse-error'",
+      "message": "Roadmap file exists but could not be parsed. No checkbox items were found.",
+      "recommendedAction": "Add at least one release section with checklist items using '- [ ] task' and '- [x] done' syntax."
+    },
+    {
+      "id": "ROADMAP-003",
+      "name": "roadmap-has-pending-work",
+      "description": "The roadmap contains at least one unchecked item, indicating active work.",
+      "severity": "warning",
+      "scoreWeight": 10,
+      "failCondition": "roadmapState === 'complete'",
+      "message": "All roadmap items are marked complete. No pending work is visible.",
+      "recommendedAction": "Add a new release section with future milestones, or archive this roadmap and create a new one."
+    },
+    {
+      "id": "ROADMAP-004",
+      "name": "has-product-intent-section",
+      "description": "The roadmap includes a product intent or scope section that describes what the product does and who it serves.",
+      "severity": "warning",
+      "scoreWeight": 10,
+      "failCondition": "hasProductIntent !== true",
+      "message": "No product intent or scope section detected.",
+      "recommendedAction": "Add a 'Product Intent' section near the top of ROADMAP.md describing what the product does, who it serves, and the problem it solves."
+    },
+    {
+      "id": "ROADMAP-005",
+      "name": "uses-release-sections",
+      "description": "Work is organized into release-scoped sections (e.g. '## Release X.Y — Title') rather than a single flat list.",
+      "severity": "warning",
+      "scoreWeight": 15,
+      "failCondition": "hasReleaseSections !== true",
+      "message": "Roadmap does not use release-scoped sections. Work items appear in a flat or informal structure.",
+      "recommendedAction": "Reorganize the roadmap into bounded release sections. Each release should have a heading, goal statement, and checklist."
+    },
+    {
+      "id": "ROADMAP-006",
+      "name": "has-acceptance-criteria",
+      "description": "At least one release section includes acceptance criteria defining when the release can be declared done.",
+      "severity": "warning",
+      "scoreWeight": 10,
+      "failCondition": "hasAcceptanceCriteria !== true",
+      "message": "No acceptance criteria found in any release section.",
+      "recommendedAction": "Add an 'Acceptance criteria' subsection to each release with observable conditions for completion."
+    },
+    {
+      "id": "ROADMAP-007",
+      "name": "has-out-of-scope-boundaries",
+      "description": "At least one release section explicitly defines what is out of scope.",
+      "severity": "info",
+      "scoreWeight": 5,
+      "failCondition": "hasOutOfScope !== true",
+      "message": "No out-of-scope boundaries found in any release section.",
+      "recommendedAction": "Add an 'Out of scope' subsection to each release to prevent scope creep and reduce ambiguity for coding agents."
+    },
+    {
+      "id": "ROADMAP-008",
+      "name": "sufficient-pending-item-count",
+      "description": "The roadmap contains enough pending items to justify Copilot dispatch (minimum 3 unchecked items).",
+      "severity": "info",
+      "scoreWeight": 5,
+      "failCondition": "pendingCount < 3 && roadmapState === 'pending'",
+      "message": "Fewer than 3 pending roadmap items. The roadmap may not provide sufficient context for reliable dispatch.",
+      "recommendedAction": "Add more concrete, testable milestones to give Copilot enough bounded work to deliver."
+    },
+    {
+      "id": "ROADMAP-009",
+      "name": "has-multiple-releases",
+      "description": "The roadmap defines more than one release, showing a multi-step plan rather than a single sprint.",
+      "severity": "info",
+      "scoreWeight": 5,
+      "failCondition": "releaseCount !== null && releaseCount < 2",
+      "message": "Only one release section found. A multi-release roadmap provides better forward visibility.",
+      "recommendedAction": "Add a second release section for the next planned increment of work."
+    },
+    {
+      "id": "ROADMAP-010",
+      "name": "no-vague-checklist-items",
+      "description": "Checklist items are concrete and testable, not vague placeholders.",
+      "severity": "warning",
+      "scoreWeight": 5,
+      "failCondition": "vagueItemCount > 0",
+      "vaguePatterns": [
+        "^improve\\b",
+        "^refactor\\b",
+        "^finish\\b",
+        "^do\\b",
+        "^fix\\b",
+        "^update\\s+\\w+$",
+        "^misc\\b"
+      ],
+      "message": "One or more checklist items appear to be vague placeholders.",
+      "recommendedAction": "Replace vague items with concrete, testable, implementation-specific steps."
+    }
+  ],
+  "maturityThresholds": {
+    "L0-Absent": {
+      "minScore": 0,
+      "maxScore": 0,
+      "description": "No roadmap file present."
+    },
+    "L1-Informal": {
+      "minScore": 1,
+      "maxScore": 39,
+      "description": "Roadmap exists but is a flat list, lacks structure, or has parse errors."
+    },
+    "L2-Structured": {
+      "minScore": 40,
+      "maxScore": 64,
+      "description": "Roadmap has checkboxes and some organization, but lacks release sections or acceptance criteria."
+    },
+    "L3-Contract-Ready": {
+      "minScore": 65,
+      "maxScore": 84,
+      "description": "Roadmap uses release sections, has acceptance criteria, and is parseable. Ready for supervised dispatch."
+    },
+    "L4-Orchestration-Ready": {
+      "minScore": 85,
+      "maxScore": 100,
+      "description": "Roadmap passes all critical and warning rules. Suitable for autonomous or semi-autonomous Copilot orchestration."
+    }
+  }
+}

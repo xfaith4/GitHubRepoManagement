@@ -1505,6 +1505,36 @@ function Clear-RoadmapCache {
     catch { Write-HostLog ("Roadmap cache clear skipped: {0}" -f $_.Exception.Message) }
 }
 
+function Get-RoadmapStandard {
+    <#
+    .SYNOPSIS
+        Load and return the roadmap audit rules and maturity thresholds from
+        standards/roadmap/roadmap-audit-rules.json.
+    .OUTPUTS
+        [pscustomobject] with rules, maturityThresholds, version, ruleCount, loadedAt — or $null on failure.
+    #>
+    $standardPath = Join-Path $WorkspaceRoot 'standards\roadmap\roadmap-audit-rules.json'
+    if (-not (Test-Path -LiteralPath $standardPath)) {
+        return $null
+    }
+    try {
+        $raw = Get-Content -LiteralPath $standardPath -Raw -Encoding UTF8 -ErrorAction Stop
+        $parsed = ConvertFrom-Json -InputObject $raw
+        return [pscustomobject]@{
+            version           = [string]$parsed.version
+            description       = [string]$parsed.description
+            rules             = @($parsed.rules)
+            maturityThresholds = $parsed.maturityThresholds
+            ruleCount         = @($parsed.rules).Count
+            maturityLevels    = @($parsed.maturityThresholds.PSObject.Properties.Name)
+            loadedAt          = (Get-Date).ToUniversalTime().ToString('o')
+        }
+    }
+    catch {
+        return $null
+    }
+}
+
 function Get-DocAuditCacheFilePath {
     $cacheDir = Join-Path $WorkspaceRoot 'backend\modules\output\cache'
     if (-not (Test-Path -LiteralPath $cacheDir)) {
@@ -2621,6 +2651,24 @@ try {
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         message = 'Roadmap cache cleared. Next GET /api/roadmap/index will perform a fresh scan.'
+                    }
+                }
+                'GET /api/roadmap/standard' {
+                    Write-HostLog ("[TRACE] roadmap.standard correlationId={0} start" -f $correlationId)
+                    $standard = Get-RoadmapStandard
+                    Add-MetricCounter -Name 'api_requests_total'
+                    if ($null -eq $standard) {
+                        Write-HostLog ("[TRACE] roadmap.standard correlationId={0} not-found" -f $correlationId)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error   = 'Roadmap standard assets not found. Ensure standards/roadmap/roadmap-audit-rules.json exists in the workspace.'
+                        }
+                    } else {
+                        Write-HostLog ("[TRACE] roadmap.standard correlationId={0} done ruleCount={1}" -f $correlationId, $standard.ruleCount)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = $standard
+                        }
                     }
                 }
                 'GET /api/docs-audit' {

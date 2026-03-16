@@ -253,6 +253,21 @@ try {
     Assert-Not503 -Name '/api/roadmap/cache' -Response $roadmapCache
     Assert-Not503 -Name '/api/roadmap/cache/clear' -Response $roadmapCacheClear
 
+    Write-Host '[STEP] Roadmap standard assets route (Release 0.7)' -ForegroundColor Cyan
+    $roadmapStandardResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/roadmap/standard"
+    Assert-Not503 -Name '/api/roadmap/standard' -Response $roadmapStandardResponse
+    $roadmapStandardJson = $roadmapStandardResponse.Json
+    if ($roadmapStandardJson -and $roadmapStandardJson.success -eq $true) {
+        $std = $roadmapStandardJson.data
+        if ($null -eq $std.rules -or @($std.rules).Count -eq 0) { throw '/api/roadmap/standard returned no rules' }
+        if ($null -eq $std.maturityThresholds)                   { throw '/api/roadmap/standard missing maturityThresholds' }
+        Write-Host ("  /api/roadmap/standard -> ruleCount={0} maturityLevels={1}" -f $std.ruleCount, (@($std.maturityLevels) -join ',')) -ForegroundColor DarkGray
+    } elseif ($roadmapStandardResponse.StatusCode -eq 404) {
+        Write-Host '  /api/roadmap/standard -> 404 (standards/roadmap/roadmap-audit-rules.json not found — acceptable in non-workspace CI)' -ForegroundColor Yellow
+    } else {
+        throw ('/api/roadmap/standard returned unexpected status {0}' -f $roadmapStandardResponse.StatusCode)
+    }
+
     Write-Host '[STEP] Docs audit routes' -ForegroundColor Cyan
     $docsAuditGet = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/docs-audit"
     $docsAuditScan = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/docs-audit/scan" -Body @{}
