@@ -30,6 +30,11 @@ $executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 . (Join-Path $roadmapModuleRoot 'Roadmap.Repairer.ps1')
 . (Join-Path $docAuditModuleRoot 'DocAudit.Scanner.ps1')
 . (Join-Path $executionModuleRoot 'Execution.Ledger.ps1')
+$docStdModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\docstandardization'
+. (Join-Path $roadmapModuleRoot 'Roadmap.Linter.ps1')
+. (Join-Path $roadmapModuleRoot 'MaturityDrift.Monitor.ps1')
+. (Join-Path $docStdModuleRoot 'DocStandardization.Previewer.ps1')
+. (Join-Path $commonRoot 'NotificationHub.ps1')
 
 $script:StatusCacheMemory = @{}
 $script:StatusCacheDefaultTtlSeconds = 120
@@ -3487,6 +3492,334 @@ try {
                         }
                     } catch {
                         Send-ErrorJson -Stream $req.Stream -StatusCode 400 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'execution.requeue'
+                    }
+                }
+                # -------------------------------------------------------
+                # Release 1.1 — Roadmap Linting
+                # -------------------------------------------------------
+                'GET /api/roadmap/lint' {
+                    Write-HostLog ("[TRACE] roadmap.lint correlationId={0} start" -f $correlationId)
+                    try {
+                        $q = Parse-QueryString -Query $req.Query
+                        $repoName = if ($q.ContainsKey('repoName') -and $q.repoName) { [string]$q.repoName } else { $null }
+                        if ([string]::IsNullOrWhiteSpace($repoName)) {
+                            throw 'repoName query parameter is required'
+                        }
+                        # Load roadmap content from index cache
+                        $roadmapPath = $null
+                        $rawContent  = ''
+                        $roadmapIndexEntries = @()
+                        if ($null -ne $script:RoadmapCacheMemory -and $script:RoadmapCacheMemory.ContainsKey('entries')) {
+                            $roadmapIndexEntries = @($script:RoadmapCacheMemory.entries)
+                        }
+                        $entry = $roadmapIndexEntries | Where-Object { $_.repoName -eq $repoName } | Select-Object -First 1
+                        if ($null -ne $entry -and $entry.roadmapPath -and (Test-Path -LiteralPath $entry.roadmapPath)) {
+                            $roadmapPath = $entry.roadmapPath
+                            $rawContent  = Get-Content -LiteralPath $roadmapPath -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+                            if ($null -eq $rawContent) { $rawContent = '' }
+                        }
+                        $lintResult = Invoke-LintRoadmapContent -RawContent $rawContent -RepoName $repoName
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = $lintResult
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 400 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'roadmap.lint'
+                    }
+                }
+                'POST /api/roadmap/lint/scan' {
+                    Write-HostLog ("[TRACE] roadmap.lint.scan correlationId={0} start" -f $correlationId)
+                    try {
+                        $results = [System.Collections.Generic.List[object]]::new()
+                        $roadmapIndexEntries = @()
+                        if ($null -ne $script:RoadmapCacheMemory -and $script:RoadmapCacheMemory.ContainsKey('entries')) {
+                            $roadmapIndexEntries = @($script:RoadmapCacheMemory.entries)
+                        }
+                        foreach ($entry in $roadmapIndexEntries) {
+                            $rawContent = ''
+                            if ($entry.roadmapPath -and (Test-Path -LiteralPath $entry.roadmapPath)) {
+                                try {
+                                    $rawContent = Get-Content -LiteralPath $entry.roadmapPath -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+                                    if ($null -eq $rawContent) { $rawContent = '' }
+                                } catch { $rawContent = '' }
+                            }
+                            $lintResult = Invoke-LintRoadmapContent -RawContent $rawContent -RepoName $entry.repoName
+                            $results.Add($lintResult)
+                        }
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success   = $true
+                            data      = @{
+                                results   = @($results)
+                                count     = $results.Count
+                                scannedAt = (Get-Date).ToUniversalTime().ToString('o')
+                            }
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'roadmap.lint.scan'
+                    }
+                }
+                # -------------------------------------------------------
+                # Release 1.1 — README Standardization
+                # -------------------------------------------------------
+                'POST /api/readme/standardize/preview' {
+                    Write-HostLog ("[TRACE] readme.standardize.preview correlationId={0} start" -f $correlationId)
+                    try {
+                        $body = $req.Body
+                        $repoName = if ($body -and $body.repoName) { [string]$body.repoName } else { $null }
+                        if ([string]::IsNullOrWhiteSpace($repoName)) {
+                            throw 'repoName is required for /api/readme/standardize/preview'
+                        }
+                        $repoPath = if ($body -and $body.repoPath) { [string]$body.repoPath } else { '' }
+
+                        # Try to find repo path from roadmap index if not provided
+                        if ([string]::IsNullOrWhiteSpace($repoPath)) {
+                            $roadmapIndexEntries = @()
+                            if ($null -ne $script:RoadmapCacheMemory -and $script:RoadmapCacheMemory.ContainsKey('entries')) {
+                                $roadmapIndexEntries = @($script:RoadmapCacheMemory.entries)
+                            }
+                            $indexEntry = $roadmapIndexEntries | Where-Object { $_.repoName -eq $repoName } | Select-Object -First 1
+                            if ($null -ne $indexEntry -and $indexEntry.repoPath) {
+                                $repoPath = $indexEntry.repoPath
+                            }
+                        }
+
+                        $preview = Invoke-PreviewReadmeStandardization -RepoName $repoName -RepoPath $repoPath
+                        Write-HostLog ("[TRACE] readme.standardize.preview repoName={0} previewState={1}" -f $repoName, $preview.previewState)
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = $preview
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'readme.standardize.preview'
+                    }
+                }
+                'POST /api/readme/standardize/apply' {
+                    Write-HostLog ("[TRACE] readme.standardize.apply correlationId={0} start" -f $correlationId)
+                    try {
+                        $body = $req.Body
+                        $repoName       = if ($body -and $body.repoName)       { [string]$body.repoName       } else { $null }
+                        $previewId      = if ($body -and $body.previewId)      { [string]$body.previewId      } else { $null }
+                        $proposedContent = if ($body -and $body.proposedContent) { [string]$body.proposedContent } else { $null }
+                        $repoPath       = if ($body -and $body.repoPath)       { [string]$body.repoPath       } else { '' }
+                        if ([string]::IsNullOrWhiteSpace($repoName))       { throw 'repoName is required' }
+                        if ([string]::IsNullOrWhiteSpace($previewId))      { throw 'previewId is required' }
+                        if ([string]::IsNullOrWhiteSpace($proposedContent)) { throw 'proposedContent is required' }
+
+                        if ([string]::IsNullOrWhiteSpace($repoPath)) {
+                            $roadmapIndexEntries = @()
+                            if ($null -ne $script:RoadmapCacheMemory -and $script:RoadmapCacheMemory.ContainsKey('entries')) {
+                                $roadmapIndexEntries = @($script:RoadmapCacheMemory.entries)
+                            }
+                            $indexEntry = $roadmapIndexEntries | Where-Object { $_.repoName -eq $repoName } | Select-Object -First 1
+                            if ($null -ne $indexEntry -and $indexEntry.repoPath) {
+                                $repoPath = $indexEntry.repoPath
+                            }
+                        }
+
+                        $applyResult = Invoke-ApplyReadmeStandardization -RepoName $repoName -PreviewId $previewId -ProposedContent $proposedContent -RepoPath $repoPath -WorkspaceRoot $WorkspaceRoot
+                        Write-HostLog ("[TRACE] readme.standardize.apply repoName={0} success={1}" -f $repoName, $applyResult.success)
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = $applyResult
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'readme.standardize.apply'
+                    }
+                }
+                'GET /api/readme/standardize/history' {
+                    Write-HostLog ("[TRACE] readme.standardize.history correlationId={0} start" -f $correlationId)
+                    try {
+                        $q = Parse-QueryString -Query $req.Query
+                        $limit = if ($q.ContainsKey('limit') -and $q.limit -match '^\d+$') { [int]$q.limit } else { 25 }
+                        if ($limit -gt 200) { $limit = 200 }
+                        $historyPath = Join-Path $WorkspaceRoot 'output\readme-standardization-history\standardization-history.jsonl'
+                        $items = [System.Collections.Generic.List[object]]::new()
+                        if (Test-Path -LiteralPath $historyPath) {
+                            $lines = Get-Content -LiteralPath $historyPath -Encoding UTF8 -ErrorAction SilentlyContinue | Select-Object -Last $limit
+                            foreach ($line in $lines) {
+                                if ([string]::IsNullOrWhiteSpace($line)) { continue }
+                                try { $items.Add(($line | ConvertFrom-Json)) } catch { }
+                            }
+                        }
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = @{ items = @($items); count = $items.Count }
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'readme.standardize.history'
+                    }
+                }
+                # -------------------------------------------------------
+                # Release 1.1 — Contract Drift Alerts
+                # -------------------------------------------------------
+                'GET /api/roadmap/drift' {
+                    Write-HostLog ("[TRACE] roadmap.drift correlationId={0} start" -f $correlationId)
+                    try {
+                        $roadmapAuditEntries = @()
+                        $cachedAudit = $script:RoadmapAuditCacheMemory
+                        if ($null -ne $cachedAudit -and $cachedAudit.ContainsKey('entries')) {
+                            $roadmapAuditEntries = @($cachedAudit.entries)
+                        }
+                        $driftResult = Get-MaturityDrift -WorkspaceRoot $WorkspaceRoot -CurrentAuditEntries $roadmapAuditEntries
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = $driftResult
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'roadmap.drift'
+                    }
+                }
+                'POST /api/roadmap/drift/baseline' {
+                    Write-HostLog ("[TRACE] roadmap.drift.baseline correlationId={0} start" -f $correlationId)
+                    try {
+                        $body = $req.Body
+                        $repoName    = if ($body -and $body.repoName)    { [string]$body.repoName    } else { $null }
+                        $targetLevel = if ($body -and $body.targetLevel) { [string]$body.targetLevel } else { $null }
+                        if ([string]::IsNullOrWhiteSpace($repoName))    { throw 'repoName is required' }
+                        if ([string]::IsNullOrWhiteSpace($targetLevel)) { throw 'targetLevel is required' }
+                        $result = Set-MaturityBaseline -WorkspaceRoot $WorkspaceRoot -RepoName $repoName -TargetLevel $targetLevel
+                        Write-HostLog ("[TRACE] roadmap.drift.baseline repoName={0} targetLevel={1}" -f $repoName, $targetLevel)
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = $result
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 400 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'roadmap.drift.baseline'
+                    }
+                }
+                'POST /api/roadmap/drift/acknowledge' {
+                    Write-HostLog ("[TRACE] roadmap.drift.acknowledge correlationId={0} start" -f $correlationId)
+                    try {
+                        $body = $req.Body
+                        $repoName = if ($body -and $body.repoName) { [string]$body.repoName } else { $null }
+                        if ([string]::IsNullOrWhiteSpace($repoName)) { throw 'repoName is required' }
+                        $result = Confirm-MaturityDriftAcknowledged -WorkspaceRoot $WorkspaceRoot -RepoName $repoName
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = $result
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 400 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'roadmap.drift.acknowledge'
+                    }
+                }
+                # -------------------------------------------------------
+                # Release 1.1 — Notification Webhooks
+                # -------------------------------------------------------
+                'GET /api/notifications/webhooks' {
+                    Write-HostLog ("[TRACE] notifications.webhooks.get correlationId={0} start" -f $correlationId)
+                    try {
+                        $webhooks = Get-NotificationWebhooks -WorkspaceRoot $WorkspaceRoot
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = @{ webhooks = @($webhooks); count = @($webhooks).Count }
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'notifications.webhooks.get'
+                    }
+                }
+                'POST /api/notifications/webhooks' {
+                    Write-HostLog ("[TRACE] notifications.webhooks.register correlationId={0} start" -f $correlationId)
+                    try {
+                        $body = $req.Body
+                        $webhookUrl = if ($body -and $body.url)    { [string]$body.url    } else { $null }
+                        $label      = if ($body -and $body.label)  { [string]$body.label  } else { '' }
+                        $events     = if ($body -and $body.events) { @($body.events)       } else { @() }
+                        if ([string]::IsNullOrWhiteSpace($webhookUrl)) { throw 'url is required' }
+                        $result = Register-NotificationWebhook -WorkspaceRoot $WorkspaceRoot -WebhookUrl $webhookUrl -Events $events -Label $label
+                        Write-HostLog ("[TRACE] notifications.webhooks.register id={0} url={1}" -f $result.id, $webhookUrl)
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = $result
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 400 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'notifications.webhooks.register'
+                    }
+                }
+                'POST /api/notifications/webhooks/remove' {
+                    Write-HostLog ("[TRACE] notifications.webhooks.remove correlationId={0} start" -f $correlationId)
+                    try {
+                        $body = $req.Body
+                        $webhookId = if ($body -and $body.id) { [string]$body.id } else { $null }
+                        if ([string]::IsNullOrWhiteSpace($webhookId)) { throw 'id is required' }
+                        $result = Remove-NotificationWebhook -WorkspaceRoot $WorkspaceRoot -WebhookId $webhookId
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = $result
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 400 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'notifications.webhooks.remove'
+                    }
+                }
+                # -------------------------------------------------------
+                # Release 1.1 — Roadmap Completion Update Preview
+                # -------------------------------------------------------
+                'POST /api/roadmap/completion-preview' {
+                    Write-HostLog ("[TRACE] roadmap.completion-preview correlationId={0} start" -f $correlationId)
+                    try {
+                        $body = $req.Body
+                        $repoName        = if ($body -and $body.repoName)        { [string]$body.repoName        } else { $null }
+                        $completedItems  = if ($body -and $body.completedItems)  { @($body.completedItems)        } else { @() }
+                        if ([string]::IsNullOrWhiteSpace($repoName)) { throw 'repoName is required' }
+
+                        # Load current roadmap content
+                        $roadmapPath = $null
+                        $rawContent  = ''
+                        $roadmapIndexEntries = @()
+                        if ($null -ne $script:RoadmapCacheMemory -and $script:RoadmapCacheMemory.ContainsKey('entries')) {
+                            $roadmapIndexEntries = @($script:RoadmapCacheMemory.entries)
+                        }
+                        $indexEntry = $roadmapIndexEntries | Where-Object { $_.repoName -eq $repoName } | Select-Object -First 1
+                        if ($null -ne $indexEntry -and $indexEntry.roadmapPath -and (Test-Path -LiteralPath $indexEntry.roadmapPath)) {
+                            $roadmapPath = $indexEntry.roadmapPath
+                            $rawContent  = Get-Content -LiteralPath $roadmapPath -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+                            if ($null -eq $rawContent) { $rawContent = '' }
+                        }
+
+                        if ([string]::IsNullOrWhiteSpace($rawContent)) {
+                            throw "No roadmap content found for repo '$repoName'"
+                        }
+
+                        # Mark completedItems as done: replace `- [ ] {itemText}` with `- [x] {itemText}`
+                        $proposedContent = $rawContent
+                        $markedCount = 0
+                        foreach ($itemText in $completedItems) {
+                            if ([string]::IsNullOrWhiteSpace($itemText)) { continue }
+                            $escaped = [regex]::Escape($itemText.Trim())
+                            $pattern = "(?m)^(\s*)-\s+\[\s\]\s+" + $escaped
+                            if ($proposedContent -match $pattern) {
+                                $proposedContent = $proposedContent -replace $pattern, ('$1- [x] ' + $itemText.Trim())
+                                $markedCount++
+                            }
+                        }
+
+                        $previewId = [guid]::NewGuid().ToString('n')
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = @{
+                                previewId        = $previewId
+                                repoName         = $repoName
+                                roadmapPath      = $roadmapPath
+                                currentContent   = $rawContent
+                                proposedContent  = $proposedContent
+                                markedCount      = $markedCount
+                                completedItems   = @($completedItems)
+                                generatedAt      = (Get-Date).ToUniversalTime().ToString('o')
+                            }
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 400 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'roadmap.completion-preview'
                     }
                 }
                 'GET /api/log/tail' {
