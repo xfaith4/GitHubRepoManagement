@@ -19,11 +19,13 @@ $ErrorActionPreference = 'Stop'
 $adapterRoot = Join-Path $WorkspaceRoot 'backend\adapters'
 $commonRoot = Join-Path $WorkspaceRoot 'backend\modules\common'
 $roadmapModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\roadmap'
+$docAuditModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\docaudit'
 . (Join-Path $commonRoot 'Metrics.ps1')
 . (Join-Path $adapterRoot 'Status.Adapter.ps1')
 . (Join-Path $adapterRoot 'Reconcile.Adapter.ps1')
 . (Join-Path $adapterRoot 'DocReview.Adapter.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.Parser.ps1')
+. (Join-Path $docAuditModuleRoot 'DocAudit.Scanner.ps1')
 
 $script:StatusCacheMemory = @{}
 $script:StatusCacheDefaultTtlSeconds = 120
@@ -31,6 +33,9 @@ $script:StatusCacheSchemaVersion = 2
 
 $script:RoadmapCacheMemory = @{}
 $script:RoadmapCacheDefaultTtlSeconds = 300
+
+$script:DocAuditCacheMemory = @{}
+$script:DocAuditCacheDefaultTtlSeconds = 300
 
 # Structured operations log (JSONL) — dashboard /api/log/tail reads this
 $script:OpsLogPath = $null
@@ -1500,6 +1505,114 @@ function Clear-RoadmapCache {
     catch { Write-HostLog ("Roadmap cache clear skipped: {0}" -f $_.Exception.Message) }
 }
 
+function Get-DocAuditCacheFilePath {
+    $cacheDir = Join-Path $WorkspaceRoot 'backend\modules\output\cache'
+    if (-not (Test-Path -LiteralPath $cacheDir)) {
+        $null = New-Item -ItemType Directory -Path $cacheDir -Force
+    }
+    return Join-Path $cacheDir 'docs-audit-cache.json'
+}
+
+function Get-DocAuditCacheTtlSeconds {
+    param([hashtable]$Settings)
+    $ttl = $script:DocAuditCacheDefaultTtlSeconds
+    if (
+        $null -ne $Settings -and
+        $Settings.ContainsKey('docAudit') -and
+        $Settings.docAudit -is [System.Collections.IDictionary] -and
+        $Settings.docAudit.ContainsKey('scanCacheTtlSeconds') -and
+        $Settings.docAudit.scanCacheTtlSeconds
+    ) {
+        $candidate = [int]$Settings.docAudit.scanCacheTtlSeconds
+        if ($candidate -ge 0) { $ttl = $candidate }
+    }
+    return $ttl
+}
+
+function Get-DocAuditFromCache {
+    param([int]$TtlSeconds)
+    $nowUtc = (Get-Date).ToUniversalTime()
+    $key = 'docaudit-global'
+
+    if ($script:DocAuditCacheMemory.ContainsKey($key)) {
+        $entry = $script:DocAuditCacheMemory[$key]
+        $age = (($nowUtc) - [datetime]$entry.CreatedAtUtc).TotalSeconds
+        if ($age -le $TtlSeconds) {
+            return [pscustomobject]@{ hit = $true; source = 'memory'; ageSeconds = $age; cachedAt = ([datetime]$entry.CreatedAtUtc).ToString('o'); entries = $entry.Entries; auditedAt = $entry.AuditedAt }
+        }
+    }
+
+    $cacheFile = Get-DocAuditCacheFilePath
+    if (-not (Test-Path -LiteralPath $cacheFile)) { return [pscustomobject]@{ hit = $false } }
+
+    try {
+        $raw = Get-Content -LiteralPath $cacheFile -Raw -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace($raw)) { return [pscustomobject]@{ hit = $false } }
+        $disk = ConvertFrom-JsonCompat -Json $raw
+        if ($null -eq $disk -or -not $disk.ContainsKey('createdAtUtc')) { return [pscustomobject]@{ hit = $false } }
+        $created = [datetime]$disk.createdAtUtc
+        $age = (($nowUtc) - $created).TotalSeconds
+        if ($age -gt $TtlSeconds) { return [pscustomobject]@{ hit = $false } }
+        $script:DocAuditCacheMemory[$key] = @{ CreatedAtUtc = $created; Entries = $disk.entries; AuditedAt = [string]$disk.auditedAt }
+        return [pscustomobject]@{ hit = $true; source = 'disk'; ageSeconds = $age; cachedAt = $created.ToString('o'); entries = $disk.entries; auditedAt = [string]$disk.auditedAt }
+    }
+    catch { return [pscustomobject]@{ hit = $false } }
+}
+
+function Save-DocAuditCache {
+    param([array]$Entries, [string]$AuditedAt)
+    $nowUtc = (Get-Date).ToUniversalTime()
+    $key = 'docaudit-global'
+    $script:DocAuditCacheMemory[$key] = @{ CreatedAtUtc = $nowUtc; Entries = $Entries; AuditedAt = $AuditedAt }
+    try {
+        $cacheFile = Get-DocAuditCacheFilePath
+        (@{ createdAtUtc = $nowUtc.ToString('o'); auditedAt = $AuditedAt; entries = $Entries } | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $cacheFile -Encoding UTF8
+    }
+    catch { Write-HostLog ("DocAudit cache write skipped: {0}" -f $_.Exception.Message) }
+}
+
+function Clear-DocAuditCache {
+    $script:DocAuditCacheMemory = @{}
+    try {
+        $cacheFile = Get-DocAuditCacheFilePath
+        if (Test-Path -LiteralPath $cacheFile) { Remove-Item -LiteralPath $cacheFile -Force -ErrorAction SilentlyContinue }
+    }
+    catch { Write-HostLog ("DocAudit cache clear skipped: {0}" -f $_.Exception.Message) }
+}
+
+function Invoke-DocAuditScan {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$LocalRoots,
+        [Parameter()]
+        [int]$MaxDepth = 3
+    )
+
+    $standardsPath = Join-Path $WorkspaceRoot 'backend\config\doc-standards.json'
+    $standards = Get-DocStandards -StandardsPath $standardsPath
+
+    # Reuse the roadmap cache to enrich audit with roadmap state (avoid double scan)
+    $settings = Get-HostSettings
+    $ttlSeconds = Get-RoadmapCacheTtlSeconds -Settings $settings
+    $roadmapCached = Get-RoadmapFromCache -TtlSeconds $ttlSeconds
+    $roadmapEntries = if ($roadmapCached.hit) { @($roadmapCached.entries) } else {
+        @(Invoke-RoadmapScan -LocalRoots $LocalRoots -MaxDepth $MaxDepth)
+    }
+
+    $results = Invoke-AuditRepoScan `
+        -LocalRoots $LocalRoots `
+        -MaxDepth $MaxDepth `
+        -RoadmapEntries $roadmapEntries `
+        -Standards $standards
+
+    foreach ($r in @($results)) {
+        $readinessLabel = [string]$r.dispatchReadiness
+        Write-HostLog ("[TRACE] docaudit.scan repoName={0} readiness={1} critical={2} warning={3}" -f $r.repoName, $readinessLabel, $r.criticalCount, $r.warningCount)
+    }
+
+    return @($results)
+}
+
 function Invoke-RoadmapScan {
     param(
         [Parameter(Mandatory = $true)]
@@ -2316,6 +2429,86 @@ try {
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         message = 'Roadmap cache cleared. Next GET /api/roadmap/index will perform a fresh scan.'
+                    }
+                }
+                'GET /api/docs-audit' {
+                    Write-HostLog ("[TRACE] docs-audit.index correlationId={0} start" -f $correlationId)
+                    $q = Parse-QueryString -Query $req.Query
+                    $refresh = if ($q.ContainsKey('refresh')) { Parse-Bool -Value $q.refresh -Default $false } else { $false }
+                    $settings = Get-HostSettings
+                    $ttlSeconds = Get-DocAuditCacheTtlSeconds -Settings $settings
+                    $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
+                    $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
+                    $localRoots = if ($q.ContainsKey('localRoots') -and $q.localRoots) { @($q.localRoots -split ';|,') } else { $defaultRoots }
+                    $maxDepth = if ($q.ContainsKey('maxDepth') -and $q.maxDepth) { [int]$q.maxDepth } else { $defaultDepth }
+                    $useDefaultScope = ($maxDepth -eq $defaultDepth) -and ((@($localRoots) -join '|') -eq (@($defaultRoots) -join '|'))
+
+                    $cacheHit = $null
+                    if ($useDefaultScope -and (-not $refresh) -and ($ttlSeconds -gt 0)) {
+                        $cacheHit = Get-DocAuditFromCache -TtlSeconds $ttlSeconds
+                    }
+
+                    if ($null -ne $cacheHit -and $cacheHit.hit) {
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                        Write-HostLog ("[TRACE] docs-audit.index correlationId={0} done source=cache ageSeconds={1}" -f $correlationId, [math]::Round($cacheHit.ageSeconds, 1))
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data = @{
+                                entries = $cacheHit.entries
+                                auditedAt = $cacheHit.auditedAt
+                                count = @($cacheHit.entries).Count
+                                cacheSource = $cacheHit.source
+                                cacheAgeSeconds = [math]::Round($cacheHit.ageSeconds, 1)
+                            }
+                        }
+                    } else {
+                        $auditedAt = (Get-Date).ToUniversalTime().ToString('o')
+                        $entries = Invoke-DocAuditScan -LocalRoots $localRoots -MaxDepth $maxDepth
+                        if ($useDefaultScope) {
+                            Save-DocAuditCache -Entries $entries -AuditedAt $auditedAt
+                        }
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                        Write-HostLog ("[TRACE] docs-audit.index correlationId={0} done source=fresh-scan count={1} durationMs={2}" -f $correlationId, @($entries).Count, [int]((Get-Date) - $requestStart).TotalMilliseconds)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data = @{
+                                entries = $entries
+                                auditedAt = $auditedAt
+                                count = @($entries).Count
+                                cacheSource = 'fresh-scan'
+                                cacheAgeSeconds = 0
+                            }
+                        }
+                    }
+                }
+                'POST /api/docs-audit/scan' {
+                    Write-HostLog ("[TRACE] docs-audit.scan correlationId={0} start" -f $correlationId)
+                    $body = Parse-JsonBody -Body $req.Body
+                    $settings = Get-HostSettings
+                    $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
+                    $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
+                    $localRoots = if ($body.ContainsKey('localRoots') -and $body.localRoots) { @($body.localRoots) } else { $defaultRoots }
+                    $maxDepth = if ($body.ContainsKey('maxDepth') -and $body.maxDepth) { [int]$body.maxDepth } else { $defaultDepth }
+                    $useDefaultScope = ($maxDepth -eq $defaultDepth) -and ((@($localRoots) -join '|') -eq (@($defaultRoots) -join '|'))
+                    $auditedAt = (Get-Date).ToUniversalTime().ToString('o')
+                    $entries = Invoke-DocAuditScan -LocalRoots $localRoots -MaxDepth $maxDepth
+                    if ($useDefaultScope) {
+                        Save-DocAuditCache -Entries $entries -AuditedAt $auditedAt
+                    }
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Write-HostLog ("[TRACE] docs-audit.scan correlationId={0} done count={1} durationMs={2}" -f $correlationId, @($entries).Count, [int]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = @{
+                            entries = $entries
+                            auditedAt = $auditedAt
+                            count = @($entries).Count
+                            cacheSource = 'fresh-scan'
+                            cacheAgeSeconds = 0
+                        }
                     }
                 }
                 'GET /api/log/tail' {

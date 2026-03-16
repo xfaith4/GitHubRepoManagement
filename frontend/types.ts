@@ -37,6 +37,7 @@ export interface RepoStatus {
   hasRoadmap?: boolean;
   roadmapState?: 'missing' | 'complete' | 'pending' | 'parse-error';
   nextPendingRoadmapItem?: string;
+  dispatchReadiness?: DispatchReadiness;
 
   // Optional extended metrics
   extended?: ExtendedRepoMetrics;
@@ -89,7 +90,7 @@ export interface ReportExportResult {
   csvPath: string;
 }
 
-export type OperationType = 'init' | 'update' | 'sync' | 'export' | 'archive' | 'docreview' | 'scan' | 'roadmap-scan' | 'roadmap-agent';
+export type OperationType = 'init' | 'update' | 'sync' | 'export' | 'archive' | 'docreview' | 'scan' | 'roadmap-scan' | 'roadmap-agent' | 'docs-audit-scan';
 
 export interface GithubInsightsMeta {
   totalRepos: number;
@@ -235,4 +236,45 @@ export interface RoadmapTaskHistoryItem {
   completedAt: string;
   error?: string;
   summaryPath: string;
+}
+
+// Dispatch readiness states for Release 0.5
+export type DispatchReadiness =
+  | 'ready'
+  | 'needs-doc-standardization'
+  | 'missing-roadmap'
+  | 'roadmap-complete'
+  | 'parse-error'
+  | 'blocked';
+
+// A single documentation finding for a repository
+export interface DocFinding {
+  file: string;
+  message: string;
+  severity: 'critical' | 'warning' | 'info';
+  recommendedAction: string;
+}
+
+// Per-repo documentation audit result
+export interface DocAuditEntry {
+  repoName: string;
+  repoPath: string;
+  dispatchReadiness: DispatchReadiness;
+  docFindings: DocFinding[];
+  roadmapState?: 'missing' | 'complete' | 'pending' | 'parse-error';
+  nextPendingRoadmapItem?: string | null;
+  auditedAt: string;
+  criticalCount: number;
+  warningCount: number;
+  infoCount: number;
+  readyForDispatch: boolean;
+}
+
+// Docs audit index returned by /api/docs-audit
+export interface DocAuditIndex {
+  entries: DocAuditEntry[];
+  auditedAt: string;
+  count: number;
+  cacheSource: 'fresh-scan' | 'cache' | 'memory' | 'disk';
+  cacheAgeSeconds: number;
 }

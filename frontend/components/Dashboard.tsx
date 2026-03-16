@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry } from '../types';
+import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry, type DocAuditIndex } from '../types';
 import SummaryCard from './SummaryCard';
 import ActionBar from './ActionBar';
 import RepoGrid from './RepoGrid';
@@ -11,7 +11,8 @@ import ChangeHistoryPanel from './ChangeHistoryPanel';
 import DocReviewModal from './DocReviewModal';
 import RoadmapViewerModal from './RoadmapViewerModal';
 import ApiDocsModal from './ApiDocsModal';
-import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan } from '../services/apiClient';
+import WorkQueueView from './WorkQueueView';
+import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan } from '../services/apiClient';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
 import { useHealthPing } from '../hooks/useHealthPing';
@@ -45,6 +46,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [roadmapEntries, setRoadmapEntries] = useState<RoadmapEntry[]>([]);
   const [selectedRepoIds, setSelectedRepoIds] = useState<Set<string>>(new Set());
   const [groupBy, setGroupBy] = useState<keyof RepoStatus | 'none'>('none');
+  const [activeView, setActiveView] = useState<'repos' | 'work-queue'>('repos');
+  const [docsAuditIndex, setDocsAuditIndex] = useState<DocAuditIndex | null>(null);
+  const [docsAuditLoading, setDocsAuditLoading] = useState(false);
 
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
@@ -76,6 +80,12 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   // Lazy roadmap index fetch — runs after initial mount, never blocks page load
   useEffect(() => {
     getRoadmapIndex().then(index => setRoadmapEntries(index.entries)).catch(() => {/* silent — badge just won't show */});
+  }, []);
+
+  // Lazy docs-audit fetch — runs after initial mount, pre-warms Work Queue view
+  useEffect(() => {
+    setDocsAuditLoading(true);
+    getDocsAudit().then(index => setDocsAuditIndex(index)).catch(() => {}).finally(() => setDocsAuditLoading(false));
   }, []);
 
   useEffect(() => {
@@ -236,6 +246,18 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                   setLogStatus('success');
                 }
                 break;
+            case 'docs-audit-scan':
+                {
+                  setLogMessages(prev => [...prev, 'Running documentation audit across all repositories...']);
+                  setDocsAuditLoading(true);
+                  const auditResult = await triggerDocsAuditScan();
+                  setDocsAuditIndex(auditResult);
+                  const readyCount = auditResult.entries.filter(e => e.dispatchReadiness === 'ready').length;
+                  setLogMessages(prev => [...prev, `Audit complete. ${auditResult.count} repos audited. ${readyCount} ready for dispatch.`]);
+                  setLogStatus('success');
+                  setDocsAuditLoading(false);
+                }
+                break;
         }
     } catch (err) {
         console.error(`${operation} failed to start`, err);
@@ -374,21 +396,36 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
     setLogMessages(prev => [...prev, `Roadmap scan complete. Found ${count} ROADMAP ${count === 1 ? 'file' : 'files'}.`]);
   };
 
-  // Enrich repos with hasRoadmap flag, roadmapState, and nextPendingRoadmapItem from the lazily-fetched index
+  const handleDocsAuditScan = async () => {
+    handleAction('docs-audit-scan');
+  };
+
+  const handleDocsAuditRefresh = () => {
+    setDocsAuditLoading(true);
+    getDocsAudit(true).then(index => setDocsAuditIndex(index)).catch(() => {}).finally(() => setDocsAuditLoading(false));
+  };
+
+  // Enrich repos with hasRoadmap flag, roadmapState, nextPendingRoadmapItem, and dispatchReadiness
   const reposWithRoadmap = useMemo(() => {
-    if (roadmapEntries.length === 0) return repos;
-    const roadmapMap = new Map(roadmapEntries.map(e => [e.repoName.toLowerCase(), e]));
+    const roadmapMap = roadmapEntries.length > 0
+      ? new Map(roadmapEntries.map(e => [e.repoName.toLowerCase(), e]))
+      : new Map<string, typeof roadmapEntries[0]>();
+    const auditMap = docsAuditIndex && docsAuditIndex.entries.length > 0
+      ? new Map(docsAuditIndex.entries.map(e => [e.repoName.toLowerCase(), e]))
+      : new Map<string, typeof docsAuditIndex.entries[0]>();
+
     return repos.map(r => {
-      const entry = roadmapMap.get(r.name.toLowerCase());
-      if (!entry) return r;
+      const roadmapEntry = roadmapMap.get(r.name.toLowerCase());
+      const auditEntry = auditMap.get(r.name.toLowerCase());
       return {
         ...r,
-        hasRoadmap: true,
-        roadmapState: entry.roadmapState,
-        nextPendingRoadmapItem: entry.nextPendingItem?.text ?? undefined,
+        hasRoadmap: roadmapEntry ? true : r.hasRoadmap,
+        roadmapState: roadmapEntry?.roadmapState ?? r.roadmapState,
+        nextPendingRoadmapItem: roadmapEntry?.nextPendingItem?.text ?? r.nextPendingRoadmapItem,
+        dispatchReadiness: auditEntry?.dispatchReadiness ?? r.dispatchReadiness,
       };
     });
-  }, [repos, roadmapEntries]);
+  }, [repos, roadmapEntries, docsAuditIndex]);
 
   const summary = useMemo(() => {
     const total = repos.length;
@@ -551,29 +588,71 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
         <ChangeHistoryPanel repos={repos} />
 
         <div className="bg-gray-800/50 border border-gray-700 rounded-lg mt-4">
-            <ActionBar
-                onAction={handleAction}
-                onExport={handleExport}
-                onRefresh={fetchRepoStatus}
-                onSettingsClick={() => setIsSettingsModalOpen(true)}
-                onInitClick={() => setIsInitModalOpen(true)}
-                onDocReviewClick={() => setIsDocReviewModalOpen(true)}
-                onApiDocsClick={() => setIsApiDocsOpen(true)}
-                isActionRunning={!!currentOperation}
-                currentOperation={currentOperation}
-                settings={settings}
-                selectedRepos={selectedRepoIds}
-            />
-            <RepoGrid
-              repos={reposWithRoadmap}
-              onViewArtifacts={handleViewArtifacts}
-              onViewRoadmap={handleViewRoadmap}
-              dataSource={dataSource}
-              selectedRepos={selectedRepoIds}
-              setSelectedRepos={setSelectedRepoIds}
-              groupBy={groupBy}
-              setGroupBy={setGroupBy}
-            />
+            {/* View tabs */}
+            <div className="flex border-b border-gray-700 px-4 pt-3 gap-1">
+              <button
+                onClick={() => setActiveView('repos')}
+                className={`px-4 py-2 text-sm font-medium rounded-t border-b-2 transition-colors ${
+                  activeView === 'repos'
+                    ? 'border-indigo-500 text-indigo-300 bg-gray-700/40'
+                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-700/20'
+                }`}
+              >
+                Repository Grid
+              </button>
+              <button
+                onClick={() => setActiveView('work-queue')}
+                className={`px-4 py-2 text-sm font-medium rounded-t border-b-2 transition-colors flex items-center gap-1.5 ${
+                  activeView === 'work-queue'
+                    ? 'border-indigo-500 text-indigo-300 bg-gray-700/40'
+                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-700/20'
+                }`}
+              >
+                Work Queue
+                {docsAuditIndex && docsAuditIndex.entries.filter(e => e.dispatchReadiness === 'ready').length > 0 && (
+                  <span className="inline-flex items-center justify-center w-5 h-5 text-xs rounded-full bg-green-700 text-green-100 font-semibold">
+                    {docsAuditIndex.entries.filter(e => e.dispatchReadiness === 'ready').length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {activeView === 'repos' ? (
+              <>
+                <ActionBar
+                    onAction={handleAction}
+                    onExport={handleExport}
+                    onRefresh={fetchRepoStatus}
+                    onSettingsClick={() => setIsSettingsModalOpen(true)}
+                    onInitClick={() => setIsInitModalOpen(true)}
+                    onDocReviewClick={() => setIsDocReviewModalOpen(true)}
+                    onApiDocsClick={() => setIsApiDocsOpen(true)}
+                    isActionRunning={!!currentOperation}
+                    currentOperation={currentOperation}
+                    settings={settings}
+                    selectedRepos={selectedRepoIds}
+                />
+                <RepoGrid
+                  repos={reposWithRoadmap}
+                  onViewArtifacts={handleViewArtifacts}
+                  onViewRoadmap={handleViewRoadmap}
+                  dataSource={dataSource}
+                  selectedRepos={selectedRepoIds}
+                  setSelectedRepos={setSelectedRepoIds}
+                  groupBy={groupBy}
+                  setGroupBy={setGroupBy}
+                />
+              </>
+            ) : (
+              <WorkQueueView
+                auditIndex={docsAuditIndex}
+                loading={docsAuditLoading}
+                onRefresh={handleDocsAuditRefresh}
+                onScan={handleDocsAuditScan}
+                onViewRoadmap={handleViewRoadmap}
+                isScanning={currentOperation === 'docs-audit-scan'}
+              />
+            )}
         </div>
       </div>
 

@@ -1,0 +1,377 @@
+import React, { useState, useMemo } from 'react';
+import { type DocAuditEntry, type DocAuditIndex, type DispatchReadiness } from '../types';
+import { SpinnerIcon } from './icons';
+
+interface WorkQueueViewProps {
+  auditIndex: DocAuditIndex | null;
+  loading: boolean;
+  onRefresh: () => void;
+  onScan: () => void;
+  onViewRoadmap?: (repoName: string) => void;
+  isScanning: boolean;
+}
+
+type ReadinessFilter = DispatchReadiness | 'all';
+
+const READINESS_CONFIG: Record<DispatchReadiness, { label: string; badgeClass: string; dotClass: string; priority: number }> = {
+  ready: {
+    label: 'Ready',
+    badgeClass: 'bg-green-900/50 text-green-300 border-green-700/50',
+    dotClass: 'bg-green-400',
+    priority: 1,
+  },
+  'needs-doc-standardization': {
+    label: 'Needs Docs',
+    badgeClass: 'bg-yellow-900/50 text-yellow-300 border-yellow-700/50',
+    dotClass: 'bg-yellow-400',
+    priority: 2,
+  },
+  'missing-roadmap': {
+    label: 'No Roadmap',
+    badgeClass: 'bg-gray-700/60 text-gray-300 border-gray-600/50',
+    dotClass: 'bg-gray-400',
+    priority: 3,
+  },
+  'roadmap-complete': {
+    label: 'Roadmap Complete',
+    badgeClass: 'bg-blue-900/50 text-blue-300 border-blue-700/50',
+    dotClass: 'bg-blue-400',
+    priority: 4,
+  },
+  'parse-error': {
+    label: 'Parse Error',
+    badgeClass: 'bg-orange-900/50 text-orange-300 border-orange-700/50',
+    dotClass: 'bg-orange-400',
+    priority: 5,
+  },
+  blocked: {
+    label: 'Blocked',
+    badgeClass: 'bg-red-900/50 text-red-300 border-red-700/50',
+    dotClass: 'bg-red-500',
+    priority: 6,
+  },
+};
+
+const SEVERITY_COLORS: Record<string, string> = {
+  critical: 'text-red-400',
+  warning: 'text-yellow-400',
+  info: 'text-blue-400',
+};
+
+const SEVERITY_BG: Record<string, string> = {
+  critical: 'bg-red-900/30 border-red-700/40',
+  warning: 'bg-yellow-900/30 border-yellow-700/40',
+  info: 'bg-blue-900/20 border-blue-700/30',
+};
+
+function ReadinessBadge({ readiness }: { readiness: DispatchReadiness }) {
+  const config = READINESS_CONFIG[readiness] ?? READINESS_CONFIG['missing-roadmap'];
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded border text-xs font-medium ${config.badgeClass}`}
+    >
+      <span className={`inline-block w-1.5 h-1.5 rounded-full ${config.dotClass}`} />
+      {config.label}
+    </span>
+  );
+}
+
+const WorkQueueView: React.FC<WorkQueueViewProps> = ({
+  auditIndex,
+  loading,
+  onRefresh,
+  onScan,
+  onViewRoadmap,
+  isScanning,
+}) => {
+  const [readinessFilter, setReadinessFilter] = useState<ReadinessFilter>('all');
+  const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
+  const [filterText, setFilterText] = useState('');
+
+  const entries = auditIndex?.entries ?? [];
+
+  const readinessCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const e of entries) {
+      counts[e.dispatchReadiness] = (counts[e.dispatchReadiness] ?? 0) + 1;
+    }
+    return counts;
+  }, [entries]);
+
+  const filteredEntries = useMemo(() => {
+    let result = [...entries];
+    if (readinessFilter !== 'all') {
+      result = result.filter(e => e.dispatchReadiness === readinessFilter);
+    }
+    if (filterText.trim()) {
+      const lower = filterText.toLowerCase();
+      result = result.filter(e =>
+        e.repoName.toLowerCase().includes(lower) ||
+        (e.nextPendingRoadmapItem ?? '').toLowerCase().includes(lower)
+      );
+    }
+    return result.sort(
+      (a, b) =>
+        (READINESS_CONFIG[a.dispatchReadiness]?.priority ?? 99) -
+        (READINESS_CONFIG[b.dispatchReadiness]?.priority ?? 99)
+    );
+  }, [entries, readinessFilter, filterText]);
+
+  const toggleExpand = (repoName: string) => {
+    setExpandedRepos(prev => {
+      const next = new Set(prev);
+      if (next.has(repoName)) {
+        next.delete(repoName);
+      } else {
+        next.add(repoName);
+      }
+      return next;
+    });
+  };
+
+  const readyCount = readinessCounts['ready'] ?? 0;
+  const needsDocsCount = readinessCounts['needs-doc-standardization'] ?? 0;
+  const blockedCount = readinessCounts['blocked'] ?? 0;
+
+  return (
+    <div className="px-4 sm:px-6 lg:px-8 py-4">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-white">Documentation Audit &amp; Work Queue</h2>
+          <p className="text-sm text-gray-400 mt-0.5">
+            Per-repo dispatch readiness based on roadmap state and documentation standards.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onRefresh}
+            disabled={loading}
+            className="px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 text-gray-200 rounded border border-gray-600 disabled:opacity-50 transition-colors"
+          >
+            Refresh
+          </button>
+          <button
+            onClick={onScan}
+            disabled={isScanning}
+            className="px-3 py-1.5 text-sm bg-indigo-700 hover:bg-indigo-600 text-white rounded border border-indigo-600 disabled:opacity-50 flex items-center gap-1.5 transition-colors"
+          >
+            {isScanning && <SpinnerIcon className="w-3.5 h-3.5 animate-spin" />}
+            {isScanning ? 'Scanning…' : 'Scan All'}
+          </button>
+        </div>
+      </div>
+
+      {/* Summary strip */}
+      {entries.length > 0 && (
+        <div className="flex flex-wrap gap-3 mb-4">
+          <div className="px-3 py-2 bg-green-900/20 border border-green-700/40 rounded-lg text-sm">
+            <span className="text-green-300 font-semibold">{readyCount}</span>
+            <span className="text-green-400/80 ml-1.5">ready for dispatch</span>
+          </div>
+          <div className="px-3 py-2 bg-yellow-900/20 border border-yellow-700/40 rounded-lg text-sm">
+            <span className="text-yellow-300 font-semibold">{needsDocsCount}</span>
+            <span className="text-yellow-400/80 ml-1.5">need doc improvements</span>
+          </div>
+          {blockedCount > 0 && (
+            <div className="px-3 py-2 bg-red-900/20 border border-red-700/40 rounded-lg text-sm">
+              <span className="text-red-300 font-semibold">{blockedCount}</span>
+              <span className="text-red-400/80 ml-1.5">blocked</span>
+            </div>
+          )}
+          <div className="px-3 py-2 bg-gray-800/60 border border-gray-700/40 rounded-lg text-sm">
+            <span className="text-gray-300 font-semibold">{entries.length}</span>
+            <span className="text-gray-400/80 ml-1.5">repos audited</span>
+          </div>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3 mb-4">
+        <input
+          type="text"
+          placeholder="Filter by repo name..."
+          value={filterText}
+          onChange={e => setFilterText(e.target.value)}
+          className="block w-full max-w-xs bg-gray-900 border border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+        />
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setReadinessFilter('all')}
+            className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${
+              readinessFilter === 'all'
+                ? 'bg-indigo-700 text-white border-indigo-600'
+                : 'bg-gray-800 text-gray-300 border-gray-600 hover:bg-gray-700'
+            }`}
+          >
+            All ({entries.length})
+          </button>
+          {(Object.keys(READINESS_CONFIG) as DispatchReadiness[]).map(r => {
+            const count = readinessCounts[r] ?? 0;
+            if (count === 0) return null;
+            const cfg = READINESS_CONFIG[r];
+            return (
+              <button
+                key={r}
+                onClick={() => setReadinessFilter(r)}
+                className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${
+                  readinessFilter === r
+                    ? 'bg-indigo-700 text-white border-indigo-600'
+                    : 'bg-gray-800 text-gray-300 border-gray-600 hover:bg-gray-700'
+                }`}
+              >
+                {cfg.label} ({count})
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Loading state */}
+      {loading && entries.length === 0 && (
+        <div className="flex items-center gap-3 py-8 text-gray-400 justify-center">
+          <SpinnerIcon className="w-5 h-5 animate-spin" />
+          <span>Loading documentation audit…</span>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!loading && entries.length === 0 && (
+        <div className="text-center py-10 text-gray-500">
+          <p className="mb-3">No documentation audit data available.</p>
+          <button
+            onClick={onScan}
+            className="px-4 py-2 bg-indigo-700 hover:bg-indigo-600 text-white rounded border border-indigo-600 text-sm transition-colors"
+          >
+            Run Documentation Audit
+          </button>
+        </div>
+      )}
+
+      {/* Repo list */}
+      {filteredEntries.length > 0 && (
+        <div className="space-y-2">
+          {filteredEntries.map(entry => {
+            const isExpanded = expandedRepos.has(entry.repoName);
+            const hasFindings = entry.docFindings.length > 0;
+            return (
+              <div
+                key={entry.repoPath || entry.repoName}
+                className="border border-gray-700 rounded-lg bg-gray-800/40 overflow-hidden"
+              >
+                {/* Repo row header */}
+                <div
+                  className={`flex items-start gap-3 px-4 py-3 ${hasFindings ? 'cursor-pointer hover:bg-gray-700/40' : ''}`}
+                  onClick={() => hasFindings && toggleExpand(entry.repoName)}
+                >
+                  {/* Expand toggle */}
+                  <div className="mt-0.5 w-4 flex-shrink-0 text-gray-500">
+                    {hasFindings ? (
+                      <span className="text-xs">{isExpanded ? '▼' : '▶'}</span>
+                    ) : (
+                      <span className="text-xs text-gray-600">—</span>
+                    )}
+                  </div>
+
+                  {/* Repo info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <span className="text-sm font-semibold text-white truncate">{entry.repoName}</span>
+                      <ReadinessBadge readiness={entry.dispatchReadiness} />
+                      {entry.criticalCount > 0 && (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-red-900/40 text-red-300 border border-red-700/40">
+                          {entry.criticalCount} critical
+                        </span>
+                      )}
+                      {entry.warningCount > 0 && (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-900/30 text-yellow-300 border border-yellow-700/30">
+                          {entry.warningCount} warning
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Next pending roadmap item */}
+                    {entry.roadmapState === 'pending' && entry.nextPendingRoadmapItem && (
+                      <div className="text-xs text-indigo-400/80 truncate mb-1" title={entry.nextPendingRoadmapItem}>
+                        ↳ {entry.nextPendingRoadmapItem}
+                      </div>
+                    )}
+
+                    {/* Recommended action for blocked/needs-doc */}
+                    {(entry.dispatchReadiness === 'blocked' || entry.dispatchReadiness === 'needs-doc-standardization') &&
+                      entry.docFindings.length > 0 && (
+                        <div className="text-xs text-gray-400 truncate">
+                          {entry.docFindings[0].recommendedAction}
+                        </div>
+                      )}
+
+                    {/* Local path */}
+                    {entry.repoPath && (
+                      <div className="text-xs text-gray-500 truncate mt-0.5" title={entry.repoPath}>
+                        {entry.repoPath}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Roadmap button */}
+                  {onViewRoadmap && entry.roadmapState && entry.roadmapState !== 'missing' && (
+                    <button
+                      onClick={e => { e.stopPropagation(); onViewRoadmap(entry.repoName); }}
+                      className="flex-shrink-0 text-xs px-2 py-1 rounded border border-indigo-700/50 bg-indigo-900/40 text-indigo-300 hover:bg-indigo-800/60 transition-colors"
+                    >
+                      Roadmap
+                    </button>
+                  )}
+                </div>
+
+                {/* Findings panel */}
+                {isExpanded && hasFindings && (
+                  <div className="border-t border-gray-700 px-4 py-3 bg-gray-900/40">
+                    <div className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">
+                      Documentation Findings
+                    </div>
+                    <div className="space-y-2">
+                      {entry.docFindings.map((finding, idx) => (
+                        <div
+                          key={idx}
+                          className={`rounded border px-3 py-2 text-xs ${SEVERITY_BG[finding.severity] ?? SEVERITY_BG['info']}`}
+                        >
+                          <div className="flex items-start gap-2">
+                            <span className={`font-semibold uppercase flex-shrink-0 ${SEVERITY_COLORS[finding.severity] ?? 'text-gray-400'}`}>
+                              [{finding.severity}]
+                            </span>
+                            <div>
+                              <div className="text-gray-200 mb-0.5">{finding.message}</div>
+                              <div className="text-gray-400">→ {finding.recommendedAction}</div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* No results after filter */}
+      {!loading && entries.length > 0 && filteredEntries.length === 0 && (
+        <div className="text-center py-8 text-gray-500 text-sm">
+          No repositories match the current filter.
+        </div>
+      )}
+
+      {/* Cache info */}
+      {auditIndex && (
+        <div className="mt-4 text-xs text-gray-600 text-right">
+          Audited at {new Date(auditIndex.auditedAt).toLocaleTimeString()} · {auditIndex.cacheSource}
+          {auditIndex.cacheAgeSeconds > 0 && ` · ${Math.round(auditIndex.cacheAgeSeconds)}s ago`}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default WorkQueueView;

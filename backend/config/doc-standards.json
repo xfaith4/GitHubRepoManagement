@@ -1,0 +1,62 @@
+{
+  "version": "1.0",
+  "description": "Machine-readable documentation standards for managed repositories.",
+  "requiredRootFiles": [
+    {
+      "name": "README.md",
+      "required": true,
+      "severity": "critical",
+      "recommendedAction": "Create a README.md with project description, installation steps, and usage guide."
+    },
+    {
+      "name": "LICENSE",
+      "required": false,
+      "severity": "warning",
+      "recommendedAction": "Add a LICENSE file to clarify terms of use."
+    },
+    {
+      "name": "CONTRIBUTING.md",
+      "required": false,
+      "severity": "info",
+      "recommendedAction": "Add CONTRIBUTING.md to guide contributors on how to submit changes."
+    },
+    {
+      "name": "CHANGELOG.md",
+      "required": false,
+      "severity": "info",
+      "recommendedAction": "Add CHANGELOG.md to document notable changes between versions."
+    }
+  ],
+  "readmeStandards": {
+    "minLengthChars": 300,
+    "minLengthSeverity": "warning",
+    "minLengthRecommendedAction": "Expand README.md to at least 300 characters with meaningful project information.",
+    "recommendedSections": [
+      {
+        "heading": "## Installation",
+        "severity": "warning",
+        "recommendedAction": "Add an Installation section describing how to set up the project."
+      },
+      {
+        "heading": "## Usage",
+        "severity": "warning",
+        "recommendedAction": "Add a Usage section showing how to run or use the project."
+      },
+      {
+        "heading": "## Contributing",
+        "severity": "info",
+        "recommendedAction": "Add a Contributing section or reference CONTRIBUTING.md."
+      }
+    ]
+  },
+  "dispatchReadinessRules": {
+    "readyRequires": [
+      "README.md present",
+      "README.md meets minimum length",
+      "roadmap state is pending"
+    ],
+    "blockedWhen": [
+      "README.md missing"
+    ]
+  }
+}
