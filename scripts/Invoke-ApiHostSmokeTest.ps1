@@ -321,6 +321,38 @@ try {
     $copilotHistoryItemsOk = ($copilotHistoryJson.data -and $copilotHistoryJson.data.PSObject.Properties.Name -contains 'items')
     Write-Host ("  /api/copilot-task/history -> {0} item(s)" -f @($copilotHistoryJson.data.items).Count) -ForegroundColor DarkGray
 
+    Write-Host '[STEP] Roadmap audit routes (Release 0.8)' -ForegroundColor Cyan
+    $roadmapAuditGetResponse  = Invoke-ApiRequest -Method Get  -Uri "$BaseUrl/api/roadmap/audit"
+    $roadmapAuditScanResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/audit/scan" -Body @{}
+    Assert-Not503 -Name '/api/roadmap/audit'      -Response $roadmapAuditGetResponse
+    Assert-Not503 -Name '/api/roadmap/audit/scan' -Response $roadmapAuditScanResponse
+    $roadmapAuditData     = $roadmapAuditGetResponse.Json
+    $roadmapAuditScanData = $roadmapAuditScanResponse.Json
+    if (-not $roadmapAuditData.success)     { throw '/api/roadmap/audit returned success=false' }
+    if (-not $roadmapAuditScanData.success) { throw '/api/roadmap/audit/scan returned success=false' }
+    Write-Host ("  /api/roadmap/audit -> {0} repos audited" -f $roadmapAuditData.data.count) -ForegroundColor DarkGray
+
+    # Validate contract fields on the first entry (if any returned)
+    $roadmapAuditFieldsOk = $true
+    if ($roadmapAuditData.data.entries -and @($roadmapAuditData.data.entries).Count -gt 0) {
+        $firstEntry = @($roadmapAuditData.data.entries)[0]
+        $requiredFields = @('repoName','roadmapState','maturityLevel','maturityScore','pendingCount','completedCount','parsedAt')
+        foreach ($field in $requiredFields) {
+            if ($null -eq $firstEntry.$field -and $field -ne 'auditFindings') {
+                Write-Host ("  WARNING: /api/roadmap/audit entry missing field '{0}'" -f $field) -ForegroundColor Yellow
+                $roadmapAuditFieldsOk = $false
+            }
+        }
+        $validLevels = @('L0-Absent','L1-Informal','L2-Structured','L3-Contract-Ready','L4-Orchestration-Ready')
+        if ($firstEntry.maturityLevel -notin $validLevels) {
+            Write-Host ("  WARNING: unexpected maturityLevel '{0}'" -f $firstEntry.maturityLevel) -ForegroundColor Yellow
+            $roadmapAuditFieldsOk = $false
+        }
+        if ($roadmapAuditFieldsOk) {
+            Write-Host ("  /api/roadmap/audit first entry: repo={0} maturityLevel={1} score={2}" -f $firstEntry.repoName, $firstEntry.maturityLevel, $firstEntry.maturityScore) -ForegroundColor DarkGray
+        }
+    }
+
     Write-Host '[STEP] Log tail route' -ForegroundColor Cyan
     $logTailResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/log/tail?lines=10"
     Assert-Not503 -Name '/api/log/tail' -Response $logTailResponse
@@ -365,6 +397,10 @@ try {
         copilotPreviewPacketOk = $copilotPreviewPacketOk
         copilotHistorySuccess = $copilotHistoryJson.success
         copilotHistoryItemsOk = $copilotHistoryItemsOk
+        roadmapAuditGetSuccess  = $roadmapAuditData.success
+        roadmapAuditScanSuccess = $roadmapAuditScanData.success
+        roadmapAuditRepoCount   = $roadmapAuditData.data.count
+        roadmapAuditFieldsOk    = $roadmapAuditFieldsOk
     } | Format-List
 }
 finally {

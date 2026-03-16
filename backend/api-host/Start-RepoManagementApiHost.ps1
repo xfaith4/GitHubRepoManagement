@@ -25,6 +25,7 @@ $docAuditModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\docaudit'
 . (Join-Path $adapterRoot 'Reconcile.Adapter.ps1')
 . (Join-Path $adapterRoot 'DocReview.Adapter.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.Parser.ps1')
+. (Join-Path $roadmapModuleRoot 'Roadmap.Auditor.ps1')
 . (Join-Path $docAuditModuleRoot 'DocAudit.Scanner.ps1')
 
 $script:StatusCacheMemory = @{}
@@ -36,6 +37,9 @@ $script:RoadmapCacheDefaultTtlSeconds = 300
 
 $script:DocAuditCacheMemory = @{}
 $script:DocAuditCacheDefaultTtlSeconds = 300
+
+$script:RoadmapAuditCacheMemory = @{}
+$script:RoadmapAuditCacheDefaultTtlSeconds = 300
 
 # Structured operations log (JSONL) — dashboard /api/log/tail reads this
 $script:OpsLogPath = $null
@@ -1535,6 +1539,161 @@ function Get-RoadmapStandard {
     }
 }
 
+function Get-RoadmapAuditCacheFilePath {
+    $cacheDir = Join-Path $WorkspaceRoot 'backend\modules\output\cache'
+    if (-not (Test-Path -LiteralPath $cacheDir)) {
+        $null = New-Item -ItemType Directory -Path $cacheDir -Force
+    }
+    return Join-Path $cacheDir 'roadmap-audit-cache.json'
+}
+
+function Get-RoadmapAuditCacheTtlSeconds {
+    param([hashtable]$Settings)
+    $ttl = $script:RoadmapAuditCacheDefaultTtlSeconds
+    if (
+        $null -ne $Settings -and
+        $Settings.ContainsKey('roadmap') -and
+        $Settings.roadmap -is [System.Collections.IDictionary] -and
+        $Settings.roadmap.ContainsKey('auditCacheTtlSeconds') -and
+        $Settings.roadmap.auditCacheTtlSeconds
+    ) {
+        $candidate = [int]$Settings.roadmap.auditCacheTtlSeconds
+        if ($candidate -ge 0) { $ttl = $candidate }
+    }
+    return $ttl
+}
+
+function Get-RoadmapAuditFromCache {
+    param([int]$TtlSeconds)
+    $nowUtc = (Get-Date).ToUniversalTime()
+    $key = 'roadmap-audit-global'
+
+    if ($script:RoadmapAuditCacheMemory.ContainsKey($key)) {
+        $entry = $script:RoadmapAuditCacheMemory[$key]
+        $age = (($nowUtc) - [datetime]$entry.CreatedAtUtc).TotalSeconds
+        if ($age -le $TtlSeconds) {
+            return [pscustomobject]@{ hit = $true; source = 'memory'; ageSeconds = $age; cachedAt = ([datetime]$entry.CreatedAtUtc).ToString('o'); entries = $entry.Entries; auditedAt = $entry.AuditedAt }
+        }
+    }
+
+    $cacheFile = Get-RoadmapAuditCacheFilePath
+    if (-not (Test-Path -LiteralPath $cacheFile)) { return [pscustomobject]@{ hit = $false } }
+
+    try {
+        $raw = Get-Content -LiteralPath $cacheFile -Raw -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace($raw)) { return [pscustomobject]@{ hit = $false } }
+        $disk = ConvertFrom-JsonCompat -Json $raw
+        if ($null -eq $disk -or -not $disk.ContainsKey('createdAtUtc')) { return [pscustomobject]@{ hit = $false } }
+        $created = [datetime]$disk.createdAtUtc
+        $age = (($nowUtc) - $created).TotalSeconds
+        if ($age -gt $TtlSeconds) { return [pscustomobject]@{ hit = $false } }
+        $script:RoadmapAuditCacheMemory[$key] = @{ CreatedAtUtc = $created; Entries = $disk.entries; AuditedAt = [string]$disk.auditedAt }
+        return [pscustomobject]@{ hit = $true; source = 'disk'; ageSeconds = $age; cachedAt = $created.ToString('o'); entries = $disk.entries; auditedAt = [string]$disk.auditedAt }
+    }
+    catch { return [pscustomobject]@{ hit = $false } }
+}
+
+function Save-RoadmapAuditCache {
+    param([array]$Entries, [string]$AuditedAt)
+    $nowUtc = (Get-Date).ToUniversalTime()
+    $key = 'roadmap-audit-global'
+    $script:RoadmapAuditCacheMemory[$key] = @{ CreatedAtUtc = $nowUtc; Entries = $Entries; AuditedAt = $AuditedAt }
+    try {
+        $cacheFile = Get-RoadmapAuditCacheFilePath
+        (@{ createdAtUtc = $nowUtc.ToString('o'); auditedAt = $AuditedAt; entries = $Entries } | ConvertTo-Json -Depth 15) | Set-Content -LiteralPath $cacheFile -Encoding UTF8
+    }
+    catch { Write-HostLog ("Roadmap audit cache write skipped: {0}" -f $_.Exception.Message) }
+}
+
+function Clear-RoadmapAuditCache {
+    $script:RoadmapAuditCacheMemory = @{}
+    try {
+        $cacheFile = Get-RoadmapAuditCacheFilePath
+        if (Test-Path -LiteralPath $cacheFile) { Remove-Item -LiteralPath $cacheFile -Force -ErrorAction SilentlyContinue }
+    }
+    catch { Write-HostLog ("Roadmap audit cache clear skipped: {0}" -f $_.Exception.Message) }
+}
+
+function Invoke-RoadmapAuditScan {
+    <#
+    .SYNOPSIS
+        Scan all roadmap entries, normalize each contract, and apply the audit
+        rule pack. Returns an array of RoadmapAuditEntry objects.
+    #>
+    param(
+        [string[]]$LocalRoots,
+        [int]$MaxDepth = 3
+    )
+
+    Write-HostLog '[TRACE] roadmap.audit.scan normalize-start'
+    $auditRules = Get-RoadmapStandard
+    if ($null -eq $auditRules) {
+        Write-HostLog '[WARN] roadmap.audit.scan audit-rules-missing — scoring skipped'
+    }
+
+    $roadmapEntries = Invoke-RoadmapScan -LocalRoots $LocalRoots -MaxDepth $MaxDepth
+    $results = [System.Collections.Generic.List[pscustomobject]]::new()
+
+    foreach ($entry in $roadmapEntries) {
+        $repoName = [string]$entry.repoName
+        $repoPath = [string]$entry.repoPath
+        $roadmapPath = [string]$entry.roadmapPath
+
+        try {
+            # Read raw content
+            $rawContent = ''
+            if (-not [string]::IsNullOrWhiteSpace($roadmapPath) -and (Test-Path -LiteralPath $roadmapPath)) {
+                $rawContent = Get-Content -LiteralPath $roadmapPath -Raw -Encoding UTF8 -ErrorAction Stop
+            }
+
+            # Parse
+            Write-HostLog ("[TRACE] roadmap.audit.scan parse repoName={0}" -f $repoName)
+            $parsed = Invoke-ParseRoadmapContent -Content $rawContent -SourcePath $roadmapPath
+
+            # Normalize
+            Write-HostLog ("[TRACE] roadmap.audit.scan normalize repoName={0} state={1}" -f $repoName, $parsed.roadmapState)
+            $contract = Invoke-NormalizeRoadmapContract -ParsedResult $parsed -RawContent $rawContent -RepoName $repoName -RepoPath $repoPath -RoadmapPath $roadmapPath
+
+            # Audit / score
+            if ($null -ne $auditRules) {
+                Write-HostLog ("[TRACE] roadmap.audit.scan score repoName={0}" -f $repoName)
+                $contract = Invoke-AuditRoadmapContract -Contract $contract -AuditRules $auditRules
+            }
+
+            $results.Add($contract)
+        }
+        catch {
+            Write-HostLog ("[WARN] roadmap.audit.scan audit-rule-failure repoName={0} error={1}" -f $repoName, $_.Exception.Message)
+            $results.Add([pscustomobject]@{
+                schemaVersion         = '1.0'
+                repoName              = $repoName
+                repoPath              = $repoPath
+                roadmapPath           = $roadmapPath
+                roadmapState          = 'parse-error'
+                maturityLevel         = 'L0-Absent'
+                maturityScore         = 0
+                pendingCount          = 0
+                completedCount        = 0
+                totalCount            = 0
+                nextPendingItem       = $null
+                sections              = @()
+                hasProductIntent      = $false
+                hasReleaseSections    = $false
+                hasAcceptanceCriteria = $false
+                hasOutOfScope         = $false
+                releaseCount          = 0
+                vagueItemCount        = 0
+                parseError            = $_.Exception.Message
+                auditFindings         = @()
+                parsedAt              = (Get-Date).ToUniversalTime().ToString('o')
+            })
+        }
+    }
+
+    Write-HostLog ("[TRACE] roadmap.audit.scan done auditedCount={0}" -f $results.Count)
+    return @($results)
+}
+
 function Get-DocAuditCacheFilePath {
     $cacheDir = Join-Path $WorkspaceRoot 'backend\modules\output\cache'
     if (-not (Test-Path -LiteralPath $cacheDir)) {
@@ -2806,6 +2965,86 @@ try {
                         data    = @{
                             items = $items
                             count = @($items).Count
+                        }
+                    }
+                }
+                'GET /api/roadmap/audit' {
+                    Write-HostLog ("[TRACE] roadmap.audit.index correlationId={0} start" -f $correlationId)
+                    $q = Parse-QueryString -Query $req.Query
+                    $refresh = if ($q.ContainsKey('refresh')) { Parse-Bool -Value $q.refresh -Default $false } else { $false }
+                    $settings = Get-HostSettings
+                    $ttlSeconds = Get-RoadmapAuditCacheTtlSeconds -Settings $settings
+                    $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
+                    $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
+                    $localRoots = if ($q.ContainsKey('localRoots') -and $q.localRoots) { @($q.localRoots -split ';|,') } else { $defaultRoots }
+                    $maxDepth = if ($q.ContainsKey('maxDepth') -and $q.maxDepth) { [int]$q.maxDepth } else { $defaultDepth }
+                    $useDefaultScope = ($maxDepth -eq $defaultDepth) -and ((@($localRoots) -join '|') -eq (@($defaultRoots) -join '|'))
+
+                    $cacheHit = $null
+                    if ($useDefaultScope -and (-not $refresh) -and ($ttlSeconds -gt 0)) {
+                        $cacheHit = Get-RoadmapAuditFromCache -TtlSeconds $ttlSeconds
+                    }
+
+                    if ($null -ne $cacheHit -and $cacheHit.hit) {
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                        Write-HostLog ("[TRACE] roadmap.audit.index correlationId={0} done source=cache ageSeconds={1}" -f $correlationId, [math]::Round($cacheHit.ageSeconds, 1))
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success   = $true
+                            data      = @{
+                                entries       = $cacheHit.entries
+                                auditedAt     = $cacheHit.auditedAt
+                                count         = @($cacheHit.entries).Count
+                                cacheSource   = $cacheHit.source
+                                cacheAgeSeconds = [math]::Round($cacheHit.ageSeconds, 1)
+                            }
+                        }
+                    } else {
+                        $auditedAt = (Get-Date).ToUniversalTime().ToString('o')
+                        $entries = Invoke-RoadmapAuditScan -LocalRoots $localRoots -MaxDepth $maxDepth
+                        if ($useDefaultScope) {
+                            Save-RoadmapAuditCache -Entries $entries -AuditedAt $auditedAt
+                        }
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                        Write-HostLog ("[TRACE] roadmap.audit.index correlationId={0} done source=fresh-scan count={1} durationMs={2}" -f $correlationId, @($entries).Count, [int]((Get-Date) - $requestStart).TotalMilliseconds)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = @{
+                                entries         = $entries
+                                auditedAt       = $auditedAt
+                                count           = @($entries).Count
+                                cacheSource     = 'fresh-scan'
+                                cacheAgeSeconds = 0
+                            }
+                        }
+                    }
+                }
+                'POST /api/roadmap/audit/scan' {
+                    Write-HostLog ("[TRACE] roadmap.audit.scan correlationId={0} start" -f $correlationId)
+                    $body = Parse-JsonBody -Body $req.Body
+                    $settings = Get-HostSettings
+                    $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
+                    $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
+                    $localRoots = if ($body.ContainsKey('localRoots') -and $body.localRoots) { @($body.localRoots) } else { $defaultRoots }
+                    $maxDepth = if ($body.ContainsKey('maxDepth') -and $body.maxDepth) { [int]$body.maxDepth } else { $defaultDepth }
+                    $useDefaultScope = ($maxDepth -eq $defaultDepth) -and ((@($localRoots) -join '|') -eq (@($defaultRoots) -join '|'))
+                    $auditedAt = (Get-Date).ToUniversalTime().ToString('o')
+                    $entries = Invoke-RoadmapAuditScan -LocalRoots $localRoots -MaxDepth $maxDepth
+                    if ($useDefaultScope) {
+                        Save-RoadmapAuditCache -Entries $entries -AuditedAt $auditedAt
+                    }
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Write-HostLog ("[TRACE] roadmap.audit.scan correlationId={0} done count={1} durationMs={2}" -f $correlationId, @($entries).Count, [int]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = @{
+                            entries         = $entries
+                            auditedAt       = $auditedAt
+                            count           = @($entries).Count
+                            cacheSource     = 'fresh-scan'
+                            cacheAgeSeconds = 0
                         }
                     }
                 }

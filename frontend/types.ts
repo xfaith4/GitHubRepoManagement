@@ -90,7 +90,7 @@ export interface ReportExportResult {
   csvPath: string;
 }
 
-export type OperationType = 'init' | 'update' | 'sync' | 'export' | 'archive' | 'docreview' | 'scan' | 'roadmap-scan' | 'roadmap-agent' | 'docs-audit-scan' | 'copilot-task-preview';
+export type OperationType = 'init' | 'update' | 'sync' | 'export' | 'archive' | 'docreview' | 'scan' | 'roadmap-scan' | 'roadmap-agent' | 'docs-audit-scan' | 'copilot-task-preview' | 'roadmap-audit-scan';
 
 export interface GithubInsightsMeta {
   totalRepos: number;
@@ -326,3 +326,58 @@ export interface CopilotTaskHistoryItem {
   error?: string;
   summaryPath?: string;
 }
+
+// Release 0.8 — Roadmap Contract Audit & Maturity Scoring
+
+export type RoadmapMaturityLevel =
+  | 'L0-Absent'
+  | 'L1-Informal'
+  | 'L2-Structured'
+  | 'L3-Contract-Ready'
+  | 'L4-Orchestration-Ready';
+
+export type RoadmapMaturityFilter = RoadmapMaturityLevel | 'all';
+
+// Per-rule finding returned by the roadmap auditor
+export interface RoadmapAuditFinding {
+  ruleId: string;
+  severity: 'critical' | 'warning' | 'info';
+  message: string;
+  recommendedAction?: string | null;
+  scoreImpact?: number | null;
+}
+
+// Normalized roadmap contract with audit score — matches roadmap-contract.schema.json
+export interface RoadmapAuditEntry {
+  schemaVersion: string;
+  repoName: string;
+  repoPath?: string | null;
+  roadmapPath?: string | null;
+  roadmapState: 'pending' | 'complete' | 'missing' | 'parse-error';
+  maturityLevel: RoadmapMaturityLevel;
+  maturityScore: number;
+  pendingCount: number;
+  completedCount: number;
+  totalCount: number;
+  nextPendingItem?: { text: string; section: string } | null;
+  sections: Array<{ name: string; pendingItems: string[]; completedItems: string[] }>;
+  hasProductIntent?: boolean | null;
+  hasReleaseSections?: boolean | null;
+  hasAcceptanceCriteria?: boolean | null;
+  hasOutOfScope?: boolean | null;
+  releaseCount?: number | null;
+  vagueItemCount?: number;
+  parseError?: string | null;
+  auditFindings?: RoadmapAuditFinding[] | null;
+  parsedAt: string;
+}
+
+// Index returned by GET /api/roadmap/audit and POST /api/roadmap/audit/scan
+export interface RoadmapAuditIndex {
+  entries: RoadmapAuditEntry[];
+  auditedAt: string;
+  count: number;
+  cacheSource: 'fresh-scan' | 'cache' | 'memory' | 'disk';
+  cacheAgeSeconds: number;
+}
+

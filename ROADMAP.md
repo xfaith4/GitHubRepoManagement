@@ -78,6 +78,13 @@ The following progress is preserved from prior execution history and remains fou
 - [x] Backend loader (`GET /api/roadmap/standard`) reads audit rules from `standards/roadmap/roadmap-audit-rules.json` at runtime without code changes.
 - [x] App documentation added: `docs/reference/roadmap-contracts.md` covering contract model, scoring, authoring guidance, and API reference.
 - [x] CI smoke and module smoke extended with roadmap standard asset integrity checks.
+- [x] Roadmap contract normalization layer (`Invoke-NormalizeRoadmapContract`) maps parsed markdown into the stable internal model from `roadmap-contract.schema.json`.
+- [x] Rule-based roadmap auditor (`Invoke-AuditRoadmapContract`) applies the JSON rule pack and computes a 0–100 maturity score per repo.
+- [x] Roadmap maturity level (L0-Absent through L4-Orchestration-Ready) assigned and exposed in API responses (`GET /api/roadmap/audit`, `POST /api/roadmap/audit/scan`).
+- [x] Per-rule audit findings with severity, message, recommended action, and score impact returned in every contract audit result.
+- [x] Roadmap contract audit modal (`RoadmapAuditModal`) added to the dashboard — shows maturity level badge, score bar, structural flags, and expandable findings.
+- [x] Maturity-level filter and maturity mini-badges added to the Work Queue view.
+- [x] Module smoke and API host smoke extended with roadmap auditor coverage (Release 0.8).
 
 ---
 
@@ -223,19 +230,19 @@ The following progress is preserved from prior execution history and remains fou
 
 ### Engineering milestones
 
-- [ ] Implement roadmap contract normalization layer that maps parsed markdown into a stable internal model.
-- [ ] Implement rule-based roadmap auditor using the JSON rule pack.
-- [ ] Compute weighted roadmap audit score and grade per repo.
-- [ ] Assign roadmap maturity level per repo:
+- [x] Implement roadmap contract normalization layer that maps parsed markdown into a stable internal model.
+- [x] Implement rule-based roadmap auditor using the JSON rule pack.
+- [x] Compute weighted roadmap audit score and grade per repo.
+- [x] Assign roadmap maturity level per repo:
   - `L0 Absent`
   - `L1 Informal`
   - `L2 Structured`
   - `L3 Contract-Ready`
   - `L4 Orchestration-Ready`
-- [ ] Add audit findings with severity, code, message, and recommended fix.
-- [ ] Add roadmap audit summary card and details panel to the UI.
-- [ ] Add filters for roadmap missing, repairable, compliant, and orchestration-ready.
-- [ ] Add operations-log traces for parse, normalize, score, and audit-rule failures.
+- [x] Add audit findings with severity, code, message, and recommended fix.
+- [x] Add roadmap audit summary card and details panel to the UI.
+- [x] Add filters for roadmap missing, repairable, compliant, and orchestration-ready.
+- [x] Add operations-log traces for parse, normalize, score, and audit-rule failures.
 
 ### Acceptance criteria
 
@@ -468,13 +475,15 @@ The product is moving in the right direction when:
 
 The recommended immediate execution target is:
 
-### **Release 0.8 — Roadmap Contract Audit & Maturity Scoring**
+### **Release 0.9 — Roadmap Repair Preview & Standardization Workflow**
 
 Specifically:
 
-- implement roadmap contract normalization layer (map parsed markdown into the stable internal model from `roadmap-contract.schema.json`)
-- implement rule-based roadmap auditor using the JSON rule pack in `standards/roadmap/roadmap-audit-rules.json`
-- compute weighted roadmap audit score and grade per repo using the maturity thresholds
-- assign roadmap maturity level per repo (L0–L4) and expose in API responses
-- add audit findings with severity, code, message, and recommended fix to repo records
-- add roadmap audit summary UI elements and maturity filters to the dashboard
+- implement roadmap repair planner that maps audit findings (from the Release 0.8 auditor) to concrete repair actions
+- generate proposed normalized roadmap markdown using `standards/roadmap/ROADMAP_TEMPLATE.md` and `standards/roadmap/roadmap-repair-prompt.md`
+- preserve completion history while restructuring future work into release-scoped sections with per-release checklists
+- add roadmap diff preview in the UI (current vs proposed) before any write-back
+- add explicit preview states: `repair-preview-ready`, `repair-blocked`, `rewrite-not-recommended`
+- support augmentation of missing contract sections (acceptance criteria, out-of-scope, release status)
+- add apply workflow with explicit user approval and operation logging
+- persist rewrite history metadata for traceability

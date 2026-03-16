@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem } from '../types';
+import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -505,4 +505,79 @@ export async function getCopilotTaskHistory(limit = 25): Promise<CopilotTaskHist
     throw new Error(data?.error?.message ?? 'Failed to load Copilot task history.');
   }
   return Array.isArray(data?.data?.items) ? data.data.items : [];
+}
+
+// Release 0.8 — Roadmap Contract Audit & Maturity Scoring
+
+function normalizeRoadmapAuditEntry(e: any): RoadmapAuditEntry {
+  return {
+    schemaVersion: String(e?.schemaVersion ?? '1.0'),
+    repoName: String(e?.repoName ?? ''),
+    repoPath: e?.repoPath ?? null,
+    roadmapPath: e?.roadmapPath ?? null,
+    roadmapState: (e?.roadmapState ?? 'missing') as RoadmapAuditEntry['roadmapState'],
+    maturityLevel: (e?.maturityLevel ?? 'L0-Absent') as RoadmapAuditEntry['maturityLevel'],
+    maturityScore: Number(e?.maturityScore ?? 0),
+    pendingCount: Number(e?.pendingCount ?? 0),
+    completedCount: Number(e?.completedCount ?? 0),
+    totalCount: Number(e?.totalCount ?? 0),
+    nextPendingItem: e?.nextPendingItem ?? null,
+    sections: Array.isArray(e?.sections) ? e.sections : [],
+    hasProductIntent: e?.hasProductIntent ?? null,
+    hasReleaseSections: e?.hasReleaseSections ?? null,
+    hasAcceptanceCriteria: e?.hasAcceptanceCriteria ?? null,
+    hasOutOfScope: e?.hasOutOfScope ?? null,
+    releaseCount: e?.releaseCount ?? null,
+    vagueItemCount: Number(e?.vagueItemCount ?? 0),
+    parseError: e?.parseError ?? null,
+    auditFindings: Array.isArray(e?.auditFindings) ? e.auditFindings : [],
+    parsedAt: String(e?.parsedAt ?? new Date().toISOString()),
+  };
+}
+
+function normalizeRoadmapAuditError(error: unknown): Error {
+  const message = error instanceof Error ? error.message : 'Roadmap audit request failed.';
+  if (message.includes('503') || message.includes('ECONNREFUSED') || message.includes('fetch')) {
+    return new Error(
+      `The running backend does not expose /api/roadmap/audit. Restart the API host from this repo checkout and try again. (${message})`
+    );
+  }
+  return new Error(message);
+}
+
+export async function getRoadmapAudit(opts?: { refresh?: boolean; localRoots?: string[]; maxDepth?: number }): Promise<RoadmapAuditIndex> {
+  try {
+    const params: string[] = [];
+    if (opts?.refresh) params.push('refresh=true');
+    if (opts?.localRoots?.length) params.push(`localRoots=${encodeURIComponent(opts.localRoots.join(';'))}`);
+    if (opts?.maxDepth != null) params.push(`maxDepth=${opts.maxDepth}`);
+    const qs = params.length > 0 ? `?${params.join('&')}` : '';
+    const data = await fetchJson<any>(`${API_BASE_URL}/roadmap/audit${qs}`);
+    const d = data?.data ?? {};
+    return {
+      entries: Array.isArray(d.entries) ? d.entries.map(normalizeRoadmapAuditEntry) : [],
+      auditedAt: d.auditedAt ?? new Date().toISOString(),
+      count: Number(d.count ?? 0),
+      cacheSource: d.cacheSource ?? 'fresh-scan',
+      cacheAgeSeconds: Number(d.cacheAgeSeconds ?? 0),
+    };
+  } catch (error) {
+    throw normalizeRoadmapAuditError(error);
+  }
+}
+
+export async function triggerRoadmapAuditScan(): Promise<RoadmapAuditIndex> {
+  try {
+    const data = await postJson<any>('/roadmap/audit/scan', {});
+    const d = data?.data ?? {};
+    return {
+      entries: Array.isArray(d.entries) ? d.entries.map(normalizeRoadmapAuditEntry) : [],
+      auditedAt: d.auditedAt ?? new Date().toISOString(),
+      count: Number(d.count ?? 0),
+      cacheSource: 'fresh-scan',
+      cacheAgeSeconds: 0,
+    };
+  } catch (error) {
+    throw normalizeRoadmapAuditError(error);
+  }
 }
