@@ -426,4 +426,105 @@ Write-Step 'Running modular reconciliation smoke test (narrow scope)'
     -IncludeNonGitFolders:$false `
     -MaxDepth 2 | Out-Null
 
+Write-Step 'Loading roadmap linter module (Release 1.1)'
+$roadmapLinterPath = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Linter.ps1'
+if (-not (Test-Path -LiteralPath $roadmapLinterPath)) { throw "Roadmap.Linter.ps1 not found at: $roadmapLinterPath" }
+. $roadmapLinterPath
+Write-Host 'Roadmap linter module loaded successfully' -ForegroundColor Green
+
+Write-Step 'Roadmap linter — smoke: lint a well-formed roadmap'
+$wellFormedContent = @"
+# My Project Roadmap
+
+## Product Intent
+This project does something useful.
+
+## Recently Completed
+- [x] Completed task one
+
+## Release 1.0 — Initial Release
+
+### Engineering milestones
+- [ ] Implement feature A
+- [ ] Implement feature B
+
+### Acceptance criteria
+- Feature A works correctly
+"@
+$wellFormedResult = Invoke-LintRoadmapContent -RawContent $wellFormedContent -RepoName 'smoke-lint-wellformed'
+if ($null -eq $wellFormedResult) { throw 'Expected lint result, got null' }
+if (-not $wellFormedResult.PSObject.Properties.Name -contains 'findings') { throw 'Expected findings property in lint result' }
+Write-Host ("  lint result: lintPassed={0} findings={1}" -f $wellFormedResult.lintPassed, @($wellFormedResult.findings).Count) -ForegroundColor DarkGray
+
+Write-Step 'Roadmap linter — smoke: lint a malformed roadmap detects errors'
+$malformedContent = @"
+## Release Bad Heading
+
+- [] malformed checkbox
+- [ ] valid item
+"@
+$malformedResult = Invoke-LintRoadmapContent -RawContent $malformedContent -RepoName 'smoke-lint-malformed'
+$lintErrors = @($malformedResult.findings | Where-Object { $_.severity -eq 'error' })
+if ($lintErrors.Count -eq 0) { throw 'Expected at least one error finding for malformed roadmap' }
+Write-Host ("  malformed roadmap: errorCount={0} lintPassed={1}" -f $lintErrors.Count, $malformedResult.lintPassed) -ForegroundColor DarkGray
+
+Write-Step 'Loading maturity drift monitor module (Release 1.1)'
+$maturityDriftPath = Join-Path $WorkspaceRoot 'backend\modules\roadmap\MaturityDrift.Monitor.ps1'
+if (-not (Test-Path -LiteralPath $maturityDriftPath)) { throw "MaturityDrift.Monitor.ps1 not found at: $maturityDriftPath" }
+. $maturityDriftPath
+Write-Host 'Maturity drift monitor module loaded successfully' -ForegroundColor Green
+
+Write-Step 'Maturity drift monitor — smoke: set baseline and detect drift'
+$driftWs = Join-Path $WorkspaceRoot 'evidence\baseline\smoke-drift'
+$null = New-Item -ItemType Directory -Path (Join-Path $driftWs 'output') -Force -ErrorAction SilentlyContinue
+$baselineResult = Set-MaturityBaseline -WorkspaceRoot $driftWs -RepoName 'smoke-drift-repo' -TargetLevel 'L3-Contract-Ready'
+if (-not $baselineResult.persisted) { throw "Expected baseline to be persisted, got persisted=$($baselineResult.persisted)" }
+Write-Host ("  baseline set: repoName={0} targetLevel={1}" -f $baselineResult.repoName, $baselineResult.targetLevel) -ForegroundColor DarkGray
+
+$smokeAuditEntries = @(
+    [PSCustomObject]@{
+        repoName = 'smoke-drift-repo'; maturityLevel = 'L1-Informal'; maturityScore = 30
+    }
+)
+$driftResult = Get-MaturityDrift -WorkspaceRoot $driftWs -CurrentAuditEntries $smokeAuditEntries
+if ($driftResult.driftCount -ne 1) { throw "Expected 1 drift alert, got $($driftResult.driftCount)" }
+$alert = $driftResult.driftAlerts | Select-Object -First 1
+if ($alert.driftSeverity -notin @('warning','critical')) { throw "Expected driftSeverity warning or critical, got $($alert.driftSeverity)" }
+Write-Host ("  drift detected: repoName={0} severity={1}" -f $alert.repoName, $alert.driftSeverity) -ForegroundColor DarkGray
+
+Write-Step 'Loading doc standardization previewer module (Release 1.1)'
+$docStdPath = Join-Path $WorkspaceRoot 'backend\modules\docstandardization\DocStandardization.Previewer.ps1'
+if (-not (Test-Path -LiteralPath $docStdPath)) { throw "DocStandardization.Previewer.ps1 not found at: $docStdPath" }
+. $docStdPath
+Write-Host 'Doc standardization previewer module loaded successfully' -ForegroundColor Green
+
+Write-Step 'Doc standardization — smoke: preview for repo without README'
+$stdPreviewMissing = Invoke-PreviewReadmeStandardization -RepoName 'smoke-std-no-readme' -RepoPath 'C:\nonexistent\path'
+if ($null -eq $stdPreviewMissing) { throw 'Expected preview result, got null' }
+Write-Host ("  preview (no README): previewState={0} actions={1}" -f $stdPreviewMissing.previewState, @($stdPreviewMissing.standardizationActions).Count) -ForegroundColor DarkGray
+
+Write-Step 'Doc standardization — smoke: preview for repo with partial README'
+$partialReadme = "# My Repo`n`nThis is a description."
+$stdPreviewPartial = Invoke-PreviewReadmeStandardization -RepoName 'smoke-std-partial' -RawContent $partialReadme
+if ($stdPreviewPartial.previewState -eq 'already-standard') { throw 'Expected non-standard state for partial README' }
+if ([string]::IsNullOrWhiteSpace($stdPreviewPartial.proposedContent)) { throw 'Expected proposedContent to be populated for partial README' }
+Write-Host ("  preview (partial README): previewState={0} actions={1}" -f $stdPreviewPartial.previewState, @($stdPreviewPartial.standardizationActions).Count) -ForegroundColor DarkGray
+
+Write-Step 'Loading notification hub module (Release 1.1)'
+$notificationHubPath = Join-Path $WorkspaceRoot 'backend\modules\common\NotificationHub.ps1'
+if (-not (Test-Path -LiteralPath $notificationHubPath)) { throw "NotificationHub.ps1 not found at: $notificationHubPath" }
+. $notificationHubPath
+Write-Host 'Notification hub module loaded successfully' -ForegroundColor Green
+
+Write-Step 'Notification hub — smoke: register and retrieve webhooks'
+$notifWs = Join-Path $WorkspaceRoot 'evidence\baseline\smoke-notifications'
+$null = New-Item -ItemType Directory -Path (Join-Path $notifWs 'output') -Force -ErrorAction SilentlyContinue
+$webhook = Register-NotificationWebhook -WorkspaceRoot $notifWs -WebhookUrl 'https://example.com/webhook' -Events @('scan.completed','execution.failed') -Label 'Smoke Test Webhook'
+if ([string]::IsNullOrWhiteSpace($webhook.id)) { throw 'Expected webhook id to be populated' }
+$webhooks = Get-NotificationWebhooks -WorkspaceRoot $notifWs
+if (@($webhooks).Count -eq 0) { throw 'Expected at least one webhook after registration' }
+$removeResult = Remove-NotificationWebhook -WorkspaceRoot $notifWs -WebhookId $webhook.id
+if (-not $removeResult.success) { throw "Expected webhook removal to succeed, got success=$($removeResult.success)" }
+Write-Host ("  webhook register/get/remove smoke ok: id={0}" -f $webhook.id) -ForegroundColor DarkGray
+
 Write-Step 'Smoke test completed'
