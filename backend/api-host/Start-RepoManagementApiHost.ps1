@@ -3805,11 +3805,11 @@ try {
                     Write-HostLog ("[TRACE] readme.standardize.preview correlationId={0} start" -f $correlationId)
                     try {
                         $body = $req.Body
-                        $repoName = if ($body -and $body.repoName) { [string]$body.repoName } else { $null }
+                        $repoName = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'repoName' -Default $null)
                         if ([string]::IsNullOrWhiteSpace($repoName)) {
                             throw 'repoName is required for /api/readme/standardize/preview'
                         }
-                        $repoPath = if ($body -and $body.repoPath) { [string]$body.repoPath } else { '' }
+                        $repoPath = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'repoPath' -Default '')
 
                         # Try to find repo path from roadmap index if not provided
                         if ([string]::IsNullOrWhiteSpace($repoPath)) {
@@ -3841,10 +3841,10 @@ try {
                     Write-HostLog ("[TRACE] readme.standardize.apply correlationId={0} start" -f $correlationId)
                     try {
                         $body = $req.Body
-                        $repoName       = if ($body -and $body.repoName)       { [string]$body.repoName       } else { $null }
-                        $previewId      = if ($body -and $body.previewId)      { [string]$body.previewId      } else { $null }
-                        $proposedContent = if ($body -and $body.proposedContent) { [string]$body.proposedContent } else { $null }
-                        $repoPath       = if ($body -and $body.repoPath)       { [string]$body.repoPath       } else { '' }
+                        $repoName        = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'repoName' -Default $null)
+                        $previewId       = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'previewId' -Default $null)
+                        $proposedContent = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'proposedContent' -Default $null)
+                        $repoPath        = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'repoPath' -Default '')
                         if ([string]::IsNullOrWhiteSpace($repoName))       { throw 'repoName is required' }
                         if ([string]::IsNullOrWhiteSpace($previewId))      { throw 'previewId is required' }
                         if ([string]::IsNullOrWhiteSpace($proposedContent)) { throw 'proposedContent is required' }
