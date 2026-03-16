@@ -14,6 +14,7 @@ import ApiDocsModal from './ApiDocsModal';
 import WorkQueueView from './WorkQueueView';
 import CopilotTaskPreviewModal from './CopilotTaskPreviewModal';
 import RoadmapAuditModal from './RoadmapAuditModal';
+import RoadmapRepairModal from './RoadmapRepairModal';
 import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan } from '../services/apiClient';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
@@ -58,6 +59,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [roadmapAuditIndex, setRoadmapAuditIndex] = useState<RoadmapAuditIndex | null>(null);
   const [isRoadmapAuditModalOpen, setIsRoadmapAuditModalOpen] = useState(false);
   const [roadmapAuditModalRepo, setRoadmapAuditModalRepo] = useState<string | null>(null);
+
+  const [isRoadmapRepairModalOpen, setIsRoadmapRepairModalOpen] = useState(false);
+  const [roadmapRepairModalRepo, setRoadmapRepairModalRepo] = useState<string | null>(null);
 
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
@@ -466,6 +470,11 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
     setIsRoadmapAuditModalOpen(true);
   };
 
+  const handleRepairRoadmap = (repoName: string) => {
+    setRoadmapRepairModalRepo(repoName);
+    setIsRoadmapRepairModalOpen(true);
+  };
+
   // Enrich repos with hasRoadmap flag, roadmapState, nextPendingRoadmapItem, and dispatchReadiness
   const reposWithRoadmap = useMemo(() => {
     const roadmapMap = roadmapEntries.length > 0
@@ -714,6 +723,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                 onViewRoadmap={handleViewRoadmap}
                 onPreviewTask={handlePreviewCopilotTask}
                 onViewRoadmapAudit={handleViewRoadmapAudit}
+                onRepairRoadmap={handleRepairRoadmap}
                 isScanning={currentOperation === 'docs-audit-scan'}
                 roadmapAuditIndex={roadmapAuditIndex}
               />
@@ -781,6 +791,17 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
         isOpen={isRoadmapAuditModalOpen}
         repoName={roadmapAuditModalRepo}
         onClose={() => setIsRoadmapAuditModalOpen(false)}
+      />
+
+      <RoadmapRepairModal
+        isOpen={isRoadmapRepairModalOpen}
+        repoName={roadmapRepairModalRepo}
+        onClose={() => setIsRoadmapRepairModalOpen(false)}
+        onRepairApplied={() => {
+          setIsRoadmapRepairModalOpen(false);
+          // Refresh roadmap audit data after a repair is applied
+          getRoadmapAudit({ refresh: true }).then(setRoadmapAuditIndex).catch(() => {});
+        }}
       />
     </div>
   );

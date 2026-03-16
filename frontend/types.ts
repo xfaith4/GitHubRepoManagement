@@ -90,7 +90,7 @@ export interface ReportExportResult {
   csvPath: string;
 }
 
-export type OperationType = 'init' | 'update' | 'sync' | 'export' | 'archive' | 'docreview' | 'scan' | 'roadmap-scan' | 'roadmap-agent' | 'docs-audit-scan' | 'copilot-task-preview' | 'roadmap-audit-scan';
+export type OperationType = 'init' | 'update' | 'sync' | 'export' | 'archive' | 'docreview' | 'scan' | 'roadmap-scan' | 'roadmap-agent' | 'docs-audit-scan' | 'copilot-task-preview' | 'roadmap-audit-scan' | 'roadmap-repair-preview' | 'roadmap-repair-apply';
 
 export interface GithubInsightsMeta {
   totalRepos: number;
@@ -381,3 +381,48 @@ export interface RoadmapAuditIndex {
   cacheAgeSeconds: number;
 }
 
+
+// Release 0.9 — Roadmap Repair Preview & Standardization Workflow
+
+export type RoadmapRepairPreviewState =
+  | 'repair-preview-ready'
+  | 'repair-blocked'
+  | 'rewrite-not-recommended';
+
+// A single concrete repair action produced by the planner
+export interface RoadmapRepairAction {
+  actionId: string;
+  description: string;
+  affectsSection: string;
+  severity: 'critical' | 'warning' | 'info';
+}
+
+// Full repair preview returned by POST /api/roadmap/repair/preview
+export interface RoadmapRepairPreview {
+  previewId: string;
+  previewState: RoadmapRepairPreviewState;
+  blockReason?: string | null;
+  repoName: string;
+  roadmapPath?: string | null;
+  originalMaturityLevel: RoadmapMaturityLevel;
+  originalMaturityScore: number;
+  currentContent: string;
+  proposedContent?: string | null;
+  repairActions: RoadmapRepairAction[];
+  auditFindings?: RoadmapAuditFinding[] | null;
+  completedItemCount: number;
+  pendingItemCount: number;
+  generatedAt: string;
+}
+
+// History record returned by GET /api/roadmap/repair/history
+export interface RoadmapRepairHistoryItem {
+  previewId: string;
+  repoName: string;
+  roadmapPath?: string | null;
+  previewState: string;
+  originalMaturityLevel: string;
+  event: 'preview' | 'apply';
+  timestamp: string;
+  appliedAt?: string | null;
+}

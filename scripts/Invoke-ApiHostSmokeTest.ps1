@@ -353,6 +353,46 @@ try {
         }
     }
 
+    Write-Host '[STEP] Roadmap repair routes (Release 0.9)' -ForegroundColor Cyan
+    # Pick a repo to use for repair preview (use first audit entry if available, else fallback to a dummy name)
+    $repairTestRepoName = ''
+    if ($roadmapAuditData.data.entries -and @($roadmapAuditData.data.entries).Count -gt 0) {
+        $repairTestRepoName = [string](@($roadmapAuditData.data.entries)[0].repoName)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($repairTestRepoName)) {
+        $repairPreviewResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/repair/preview" -Body @{ repoName = $repairTestRepoName }
+        Assert-Not503 -Name '/api/roadmap/repair/preview' -Response $repairPreviewResponse
+        $repairPreviewJson = $repairPreviewResponse.Json
+        if (-not $repairPreviewJson.success) { throw '/api/roadmap/repair/preview returned success=false' }
+        $repairPreviewData = $repairPreviewJson.data
+        $repairPreviewFieldsOk = $true
+        $requiredRepairFields = @('previewId', 'previewState', 'repoName', 'completedItemCount', 'pendingItemCount', 'generatedAt')
+        foreach ($field in $requiredRepairFields) {
+            if ($null -eq $repairPreviewData.$field) {
+                Write-Host ("  WARNING: /api/roadmap/repair/preview response missing field '{0}'" -f $field) -ForegroundColor Yellow
+                $repairPreviewFieldsOk = $false
+            }
+        }
+        $validRepairStates = @('repair-preview-ready', 'repair-blocked', 'rewrite-not-recommended')
+        if ($repairPreviewData.previewState -notin $validRepairStates) {
+            Write-Host ("  WARNING: unexpected previewState '{0}'" -f $repairPreviewData.previewState) -ForegroundColor Yellow
+            $repairPreviewFieldsOk = $false
+        }
+        if ($repairPreviewFieldsOk) {
+            Write-Host ("  /api/roadmap/repair/preview -> repo={0} previewState={1} actions={2}" -f $repairPreviewData.repoName, $repairPreviewData.previewState, @($repairPreviewData.repairActions).Count) -ForegroundColor DarkGray
+        }
+    } else {
+        Write-Host '  /api/roadmap/repair/preview skipped (no audited repos available)' -ForegroundColor Yellow
+        $repairPreviewFieldsOk = $true
+    }
+
+    $repairHistoryResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/roadmap/repair/history?limit=5"
+    Assert-Not503 -Name '/api/roadmap/repair/history' -Response $repairHistoryResponse
+    $repairHistoryJson = $repairHistoryResponse.Json
+    if (-not $repairHistoryJson.success) { throw '/api/roadmap/repair/history returned success=false' }
+    $repairHistoryItemsOk = ($repairHistoryJson.data -and $repairHistoryJson.data.PSObject.Properties.Name -contains 'items')
+    Write-Host ("  /api/roadmap/repair/history -> {0} item(s)" -f @($repairHistoryJson.data.items).Count) -ForegroundColor DarkGray
+
     Write-Host '[STEP] Log tail route' -ForegroundColor Cyan
     $logTailResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/log/tail?lines=10"
     Assert-Not503 -Name '/api/log/tail' -Response $logTailResponse
@@ -401,6 +441,8 @@ try {
         roadmapAuditScanSuccess = $roadmapAuditScanData.success
         roadmapAuditRepoCount   = $roadmapAuditData.data.count
         roadmapAuditFieldsOk    = $roadmapAuditFieldsOk
+        repairPreviewFieldsOk   = $repairPreviewFieldsOk
+        repairHistoryItemsOk    = $repairHistoryItemsOk
     } | Format-List
 }
 finally {
