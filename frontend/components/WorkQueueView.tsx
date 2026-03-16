@@ -11,6 +11,7 @@ interface WorkQueueViewProps {
   onViewRoadmap?: (repoName: string) => void;
   onPreviewTask?: (repoName: string, roadmapPath?: string) => void;
   onViewRoadmapAudit?: (repoName: string) => void;
+  onRepairRoadmap?: (repoName: string) => void;
   isScanning: boolean;
   roadmapAuditIndex?: RoadmapAuditIndex | null;
 }
@@ -130,6 +131,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
   onViewRoadmap,
   onPreviewTask,
   onViewRoadmapAudit,
+  onRepairRoadmap,
   isScanning,
   roadmapAuditIndex,
 }) => {
@@ -450,6 +452,15 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                         title="View Roadmap Contract Audit"
                       >
                         Audit
+                      </button>
+                    )}
+                    {onRepairRoadmap && auditByRepo.has(entry.repoName) && ['L0-Absent', 'L1-Informal', 'L2-Structured'].includes(auditByRepo.get(entry.repoName)?.maturityLevel ?? '') && (
+                      <button
+                        onClick={e => { e.stopPropagation(); onRepairRoadmap(entry.repoName); }}
+                        className="text-xs px-2 py-1 rounded border border-orange-700/50 bg-orange-900/40 text-orange-300 hover:bg-orange-800/60 transition-colors"
+                        title="Preview Roadmap Repair"
+                      >
+                        Repair
                       </button>
                     )}
                     {onViewRoadmap && entry.roadmapState && entry.roadmapState !== 'missing' && (

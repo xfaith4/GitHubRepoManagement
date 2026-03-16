@@ -85,6 +85,13 @@ The following progress is preserved from prior execution history and remains fou
 - [x] Roadmap contract audit modal (`RoadmapAuditModal`) added to the dashboard — shows maturity level badge, score bar, structural flags, and expandable findings.
 - [x] Maturity-level filter and maturity mini-badges added to the Work Queue view.
 - [x] Module smoke and API host smoke extended with roadmap auditor coverage (Release 0.8).
+- [x] Roadmap repair planner (`Invoke-PlanRoadmapRepair`) maps audit findings to concrete repair actions with `previewState` assignment.
+- [x] Repair preview generator (`Invoke-GenerateRepairPreview`) produces proposed normalized roadmap markdown preserving completed history.
+- [x] Repair API routes: `POST /api/roadmap/repair/preview`, `POST /api/roadmap/repair/apply`, `GET /api/roadmap/repair/history`.
+- [x] Repair history persistence (JSONL append-log) and original roadmap backup-before-write-back.
+- [x] `RoadmapRepairModal` dashboard component — Repair Plan, Diff Preview, and History tabs with explicit two-step apply workflow.
+- [x] "Repair" button in Work Queue for L0–L2 repos; cache invalidated after successful apply.
+- [x] Module smoke and API host smoke extended with roadmap repair coverage (Release 0.9).
 
 ---
 
@@ -269,14 +276,14 @@ The following progress is preserved from prior execution history and remains fou
 
 ### Engineering milestones
 
-- [ ] Implement roadmap repair planner that maps audit findings to repair actions.
-- [ ] Generate proposed normalized roadmap markdown using the canonical template.
-- [ ] Preserve completion history while restructuring future work into releases with per-release checklists.
-- [ ] Add roadmap diff preview in UI with current vs proposed content.
-- [ ] Add explicit preview states: `repair-preview-ready`, `repair-blocked`, `rewrite-not-recommended`.
-- [ ] Support augmentation of missing contract sections such as acceptance criteria, out-of-scope, and release status.
-- [ ] Add apply workflow with explicit user approval and operation logging.
-- [ ] Persist rewrite history metadata for traceability.
+- [x] Implement roadmap repair planner that maps audit findings to repair actions.
+- [x] Generate proposed normalized roadmap markdown using the canonical template.
+- [x] Preserve completion history while restructuring future work into releases with per-release checklists.
+- [x] Add roadmap diff preview in UI with current vs proposed content.
+- [x] Add explicit preview states: `repair-preview-ready`, `repair-blocked`, `rewrite-not-recommended`.
+- [x] Support augmentation of missing contract sections such as acceptance criteria, out-of-scope, and release status.
+- [x] Add apply workflow with explicit user approval and operation logging.
+- [x] Persist rewrite history metadata for traceability.
 
 ### Acceptance criteria
 
@@ -475,15 +482,13 @@ The product is moving in the right direction when:
 
 The recommended immediate execution target is:
 
-### **Release 0.9 — Roadmap Repair Preview & Standardization Workflow**
+### **Release 1.0 — Two-Lane Execution Queue**
 
 Specifically:
 
-- implement roadmap repair planner that maps audit findings (from the Release 0.8 auditor) to concrete repair actions
-- generate proposed normalized roadmap markdown using `standards/roadmap/ROADMAP_TEMPLATE.md` and `standards/roadmap/roadmap-repair-prompt.md`
-- preserve completion history while restructuring future work into release-scoped sections with per-release checklists
-- add roadmap diff preview in the UI (current vs proposed) before any write-back
-- add explicit preview states: `repair-preview-ready`, `repair-blocked`, `rewrite-not-recommended`
-- support augmentation of missing contract sections (acceptance criteria, out-of-scope, release status)
-- add apply workflow with explicit user approval and operation logging
-- persist rewrite history metadata for traceability
+- introduce a persistent execution state ledger for repo assignments and task outcomes
+- prevent duplicate dispatch of the same repo while a task is active
+- add explicit execution states: `idle`, `ready`, `running`, `blocked`, `complete`
+- add a two-lane execution board or lane panel to the dashboard
+- rank ready repos by priority/readiness score to surface the best next candidates
+- add cancellation/failure handling and clear retry semantics

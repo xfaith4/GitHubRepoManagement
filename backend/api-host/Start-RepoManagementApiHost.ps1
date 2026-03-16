@@ -26,6 +26,7 @@ $docAuditModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\docaudit'
 . (Join-Path $adapterRoot 'DocReview.Adapter.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.Parser.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.Auditor.ps1')
+. (Join-Path $roadmapModuleRoot 'Roadmap.Repairer.ps1')
 . (Join-Path $docAuditModuleRoot 'DocAudit.Scanner.ps1')
 
 $script:StatusCacheMemory = @{}
@@ -40,6 +41,8 @@ $script:DocAuditCacheDefaultTtlSeconds = 300
 
 $script:RoadmapAuditCacheMemory = @{}
 $script:RoadmapAuditCacheDefaultTtlSeconds = 300
+
+$script:RoadmapRepairHistoryRoot = Join-Path $WorkspaceRoot 'output\roadmap-repair-history'
 
 # Structured operations log (JSONL) — dashboard /api/log/tail reads this
 $script:OpsLogPath = $null
@@ -1694,6 +1697,247 @@ function Invoke-RoadmapAuditScan {
     return @($results)
 }
 
+# ---------------------------------------------------------------------------
+# Roadmap Repair helpers (Release 0.9)
+# ---------------------------------------------------------------------------
+
+function Get-RoadmapRepairHistoryPath {
+    if (-not (Test-Path -LiteralPath $script:RoadmapRepairHistoryRoot)) {
+        $null = New-Item -ItemType Directory -Path $script:RoadmapRepairHistoryRoot -Force -ErrorAction SilentlyContinue
+    }
+    return $script:RoadmapRepairHistoryRoot
+}
+
+function Save-RoadmapRepairHistoryEntry {
+    <#
+    .SYNOPSIS
+        Persist a repair history record to disk.
+    #>
+    param(
+        [string]$PreviewId,
+        [string]$RepoName,
+        [string]$RoadmapPath,
+        [string]$PreviewState,
+        [string]$OriginalMaturityLevel,
+        [string]$Event,        # 'preview' or 'apply'
+        [string]$AppliedAt     = ''
+    )
+    try {
+        $historyRoot = Get-RoadmapRepairHistoryPath
+        $historyFile = Join-Path $historyRoot 'repair-history.jsonl'
+        $record = [ordered]@{
+            previewId            = $PreviewId
+            repoName             = $RepoName
+            roadmapPath          = $RoadmapPath
+            previewState         = $PreviewState
+            originalMaturityLevel = $OriginalMaturityLevel
+            event                = $Event
+            timestamp            = (Get-Date).ToUniversalTime().ToString('o')
+        }
+        if (-not [string]::IsNullOrWhiteSpace($AppliedAt)) {
+            $record['appliedAt'] = $AppliedAt
+        }
+        $line = ConvertTo-Json -InputObject $record -Compress -Depth 5
+        Add-Content -LiteralPath $historyFile -Value $line -Encoding UTF8 -ErrorAction SilentlyContinue
+    }
+    catch {
+        Write-HostLog ("Roadmap repair history write skipped: {0}" -f $_.Exception.Message)
+    }
+}
+
+function Get-RoadmapRepairHistory {
+    <#
+    .SYNOPSIS
+        Read the last N repair history entries from disk.
+    #>
+    param([int]$Limit = 25)
+    $historyRoot = Get-RoadmapRepairHistoryPath
+    $historyFile = Join-Path $historyRoot 'repair-history.jsonl'
+    $items = [System.Collections.Generic.List[object]]::new()
+    if (-not (Test-Path -LiteralPath $historyFile)) { return @() }
+    try {
+        $lines = Get-Content -LiteralPath $historyFile -Encoding UTF8 -ErrorAction Stop | Select-Object -Last $Limit
+        foreach ($line in $lines) {
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            try {
+                $obj = $line | ConvertFrom-Json
+                $items.Add($obj)
+            } catch { }
+        }
+    } catch { }
+    return @($items)
+}
+
+function Build-RoadmapRepairPreview {
+    <#
+    .SYNOPSIS
+        Build a full repair preview for a named repository.
+        Reads the roadmap, runs audit, plans repair, generates proposed content.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoName,
+
+        [Parameter()]
+        [string]$RoadmapPath = ''
+    )
+
+    # Resolve roadmap path
+    $settings  = Get-HostSettings
+    $roadmapTtl = Get-RoadmapCacheTtlSeconds -Settings $settings
+    $roadmapCacheResult = Get-RoadmapFromCache -TtlSeconds $roadmapTtl
+    $roadmapEntry = $null
+    if ($roadmapCacheResult.hit -and $roadmapCacheResult.entries) {
+        $roadmapEntry = @($roadmapCacheResult.entries) | Where-Object { [string]$_.repoName -eq $RepoName } | Select-Object -First 1
+    }
+
+    $effectiveRoadmapPath = $RoadmapPath
+    if ([string]::IsNullOrWhiteSpace($effectiveRoadmapPath) -and $null -ne $roadmapEntry) {
+        $rp = if ($roadmapEntry -is [System.Collections.IDictionary]) { $roadmapEntry['roadmapPath'] } else { $roadmapEntry.roadmapPath }
+        if (-not [string]::IsNullOrWhiteSpace([string]$rp)) { $effectiveRoadmapPath = [string]$rp }
+    }
+
+    $rawContent = ''
+    $parsedResult = $null
+    if (-not [string]::IsNullOrWhiteSpace($effectiveRoadmapPath) -and (Test-Path -LiteralPath $effectiveRoadmapPath)) {
+        Write-HostLog ("[TRACE] roadmap.repair.preview read repoName={0} path={1}" -f $RepoName, $effectiveRoadmapPath)
+        $rawContent = Get-Content -LiteralPath $effectiveRoadmapPath -Raw -Encoding UTF8 -ErrorAction Stop
+        $parsedResult = Invoke-ParseRoadmapContent -Content $rawContent -SourcePath $effectiveRoadmapPath
+    }
+
+    # Normalize and audit
+    $repoPath = ''
+    if ($null -ne $roadmapEntry) {
+        $repoPath = if ($roadmapEntry -is [System.Collections.IDictionary]) { [string]($roadmapEntry['repoPath'] ?? '') } else { [string]($roadmapEntry.repoPath ?? '') }
+    }
+    $contract = Invoke-NormalizeRoadmapContract `
+        -ParsedResult $parsedResult `
+        -RawContent $rawContent `
+        -RepoName $RepoName `
+        -RepoPath $repoPath `
+        -RoadmapPath $effectiveRoadmapPath
+
+    $auditRules = Get-RoadmapStandard
+    if ($null -ne $auditRules) {
+        $contract = Invoke-AuditRoadmapContract -Contract $contract -AuditRules $auditRules
+    }
+
+    Write-HostLog ("[TRACE] roadmap.repair.preview plan repoName={0} maturityLevel={1}" -f $RepoName, $contract.maturityLevel)
+
+    # Plan the repair
+    $repairPlan = Invoke-PlanRoadmapRepair -Contract $contract
+
+    # Generate preview
+    $preview = Invoke-GenerateRepairPreview `
+        -Contract    $contract `
+        -RepairPlan  $repairPlan `
+        -RawContent  $rawContent `
+        -RepoName    $RepoName
+
+    # Attach extra context
+    $preview | Add-Member -NotePropertyName 'repoName'             -NotePropertyValue $RepoName               -Force
+    $preview | Add-Member -NotePropertyName 'roadmapPath'          -NotePropertyValue $effectiveRoadmapPath   -Force
+    $preview | Add-Member -NotePropertyName 'originalMaturityLevel' -NotePropertyValue $contract.maturityLevel -Force
+    $preview | Add-Member -NotePropertyName 'originalMaturityScore' -NotePropertyValue $contract.maturityScore -Force
+    $preview | Add-Member -NotePropertyName 'auditFindings'         -NotePropertyValue @($contract.auditFindings ?? @()) -Force
+
+    # Persist preview event to history
+    Save-RoadmapRepairHistoryEntry `
+        -PreviewId            $preview.previewId `
+        -RepoName             $RepoName `
+        -RoadmapPath          $effectiveRoadmapPath `
+        -PreviewState         $preview.previewState `
+        -OriginalMaturityLevel $contract.maturityLevel `
+        -Event                'preview'
+
+    return $preview
+}
+
+function Apply-RoadmapRepair {
+    <#
+    .SYNOPSIS
+        Apply a previously generated repair preview to the roadmap file.
+        Requires explicit operator approval via the previewId.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PreviewId,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ProposedContent,
+
+        [Parameter()]
+        [string]$RoadmapPath = '',
+
+        [Parameter()]
+        [string]$OriginalMaturityLevel = ''
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ProposedContent)) {
+        throw 'proposedContent is required to apply a repair.'
+    }
+
+    # Resolve roadmap path
+    $settings  = Get-HostSettings
+    $roadmapTtl = Get-RoadmapCacheTtlSeconds -Settings $settings
+    $roadmapCacheResult = Get-RoadmapFromCache -TtlSeconds $roadmapTtl
+    $roadmapEntry = $null
+    if ($roadmapCacheResult.hit -and $roadmapCacheResult.entries) {
+        $roadmapEntry = @($roadmapCacheResult.entries) | Where-Object { [string]$_.repoName -eq $RepoName } | Select-Object -First 1
+    }
+
+    $effectiveRoadmapPath = $RoadmapPath
+    if ([string]::IsNullOrWhiteSpace($effectiveRoadmapPath) -and $null -ne $roadmapEntry) {
+        $rp = if ($roadmapEntry -is [System.Collections.IDictionary]) { $roadmapEntry['roadmapPath'] } else { $roadmapEntry.roadmapPath }
+        if (-not [string]::IsNullOrWhiteSpace([string]$rp)) { $effectiveRoadmapPath = [string]$rp }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($effectiveRoadmapPath)) {
+        throw "Cannot apply repair: roadmap path could not be resolved for repo '$RepoName'. Run a roadmap scan first."
+    }
+
+    # Backup original before write
+    $backupDir = Join-Path $script:RoadmapRepairHistoryRoot 'backups'
+    $null = New-Item -ItemType Directory -Path $backupDir -Force -ErrorAction SilentlyContinue
+    $backupFile = Join-Path $backupDir ("$RepoName-$PreviewId-original.md")
+    if (Test-Path -LiteralPath $effectiveRoadmapPath) {
+        Copy-Item -LiteralPath $effectiveRoadmapPath -Destination $backupFile -Force -ErrorAction SilentlyContinue
+    }
+
+    # Write proposed content to roadmap file
+    Write-HostLog ("[TRACE] roadmap.repair.apply write repoName={0} path={1} previewId={2}" -f $RepoName, $effectiveRoadmapPath, $PreviewId)
+    Set-Content -LiteralPath $effectiveRoadmapPath -Value $ProposedContent -Encoding UTF8
+
+    # Invalidate roadmap and audit caches so next fetch reflects the new file
+    Clear-RoadmapCache
+    Clear-RoadmapAuditCache
+
+    $appliedAt = (Get-Date).ToUniversalTime().ToString('o')
+
+    # Persist apply event to history
+    Save-RoadmapRepairHistoryEntry `
+        -PreviewId            $PreviewId `
+        -RepoName             $RepoName `
+        -RoadmapPath          $effectiveRoadmapPath `
+        -PreviewState         'applied' `
+        -OriginalMaturityLevel $OriginalMaturityLevel `
+        -Event                'apply' `
+        -AppliedAt            $appliedAt
+
+    Write-HostLog ("[TRACE] roadmap.repair.apply done repoName={0} appliedAt={1}" -f $RepoName, $appliedAt)
+
+    return [pscustomobject]@{
+        repoName      = $RepoName
+        roadmapPath   = $effectiveRoadmapPath
+        previewId     = $PreviewId
+        appliedAt     = $appliedAt
+        backupPath    = $backupFile
+    }
+}
+
 function Get-DocAuditCacheFilePath {
     $cacheDir = Join-Path $WorkspaceRoot 'backend\modules\output\cache'
     if (-not (Test-Path -LiteralPath $cacheDir)) {
@@ -3045,6 +3289,58 @@ try {
                             count           = @($entries).Count
                             cacheSource     = 'fresh-scan'
                             cacheAgeSeconds = 0
+                        }
+                    }
+                }
+                'POST /api/roadmap/repair/preview' {
+                    Write-HostLog ("[TRACE] roadmap.repair.preview correlationId={0} start" -f $correlationId)
+                    $body = Parse-JsonBody -Body $req.Body
+                    $repoName = if ($body.ContainsKey('repoName') -and $body.repoName) { [string]$body.repoName } else { '' }
+                    $roadmapPath = if ($body.ContainsKey('roadmapPath') -and $body.roadmapPath) { [string]$body.roadmapPath } else { '' }
+                    if ([string]::IsNullOrWhiteSpace($repoName)) {
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{ error = 'repoName is required for /api/roadmap/repair/preview' }
+                    } else {
+                        $preview = Build-RoadmapRepairPreview -RepoName $repoName -RoadmapPath $roadmapPath
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Write-HostLog ("[TRACE] roadmap.repair.preview correlationId={0} done repoName={1} previewId={2} previewState={3}" -f $correlationId, $repoName, $preview.previewId, $preview.previewState)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = $preview
+                        }
+                    }
+                }
+                'POST /api/roadmap/repair/apply' {
+                    Write-HostLog ("[TRACE] roadmap.repair.apply correlationId={0} start" -f $correlationId)
+                    $body = Parse-JsonBody -Body $req.Body
+                    $repoName       = if ($body.ContainsKey('repoName') -and $body.repoName)             { [string]$body.repoName }             else { '' }
+                    $previewId      = if ($body.ContainsKey('previewId') -and $body.previewId)           { [string]$body.previewId }            else { '' }
+                    $proposedContent = if ($body.ContainsKey('proposedContent') -and $body.proposedContent) { [string]$body.proposedContent } else { '' }
+                    $roadmapPath    = if ($body.ContainsKey('roadmapPath') -and $body.roadmapPath)       { [string]$body.roadmapPath }          else { '' }
+                    $origLevel      = if ($body.ContainsKey('originalMaturityLevel') -and $body.originalMaturityLevel) { [string]$body.originalMaturityLevel } else { '' }
+                    if ([string]::IsNullOrWhiteSpace($repoName) -or [string]::IsNullOrWhiteSpace($previewId) -or [string]::IsNullOrWhiteSpace($proposedContent)) {
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{ error = 'repoName, previewId, and proposedContent are required for /api/roadmap/repair/apply' }
+                    } else {
+                        $result = Apply-RoadmapRepair -RepoName $repoName -PreviewId $previewId -ProposedContent $proposedContent -RoadmapPath $roadmapPath -OriginalMaturityLevel $origLevel
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Write-HostLog ("[TRACE] roadmap.repair.apply correlationId={0} done repoName={1} previewId={2} appliedAt={3}" -f $correlationId, $repoName, $previewId, $result.appliedAt)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = $result
+                        }
+                    }
+                }
+                'GET /api/roadmap/repair/history' {
+                    Write-HostLog ("[TRACE] roadmap.repair.history correlationId={0} start" -f $correlationId)
+                    $q = Parse-QueryString -Query $req.Query
+                    $limit = if ($q.ContainsKey('limit') -and $q.limit -match '^\d+$') { [int]$q.limit } else { 25 }
+                    if ($limit -gt 100) { $limit = 100 }
+                    $historyItems = Get-RoadmapRepairHistory -Limit $limit
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = @{
+                            items = @($historyItems)
+                            count = @($historyItems).Count
                         }
                     }
                 }

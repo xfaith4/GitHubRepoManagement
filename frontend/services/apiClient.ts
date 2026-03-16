@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry } from '../types';
+import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -580,4 +580,35 @@ export async function triggerRoadmapAuditScan(): Promise<RoadmapAuditIndex> {
   } catch (error) {
     throw normalizeRoadmapAuditError(error);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Release 0.9 — Roadmap Repair Preview & Standardization Workflow
+// ---------------------------------------------------------------------------
+
+export async function previewRoadmapRepair(repoName: string, roadmapPath?: string): Promise<RoadmapRepairPreview> {
+  const body: Record<string, string> = { repoName };
+  if (roadmapPath) body.roadmapPath = roadmapPath;
+  const data = await postJson<any>('/roadmap/repair/preview', body);
+  const d = data?.data ?? data ?? {};
+  return d as RoadmapRepairPreview;
+}
+
+export async function applyRoadmapRepair(
+  repoName: string,
+  previewId: string,
+  proposedContent: string,
+  roadmapPath?: string,
+  originalMaturityLevel?: string,
+): Promise<{ repoName: string; roadmapPath: string; previewId: string; appliedAt: string }> {
+  const body: Record<string, string> = { repoName, previewId, proposedContent };
+  if (roadmapPath) body.roadmapPath = roadmapPath;
+  if (originalMaturityLevel) body.originalMaturityLevel = originalMaturityLevel;
+  const data = await postJson<any>('/roadmap/repair/apply', body);
+  return data?.data ?? data;
+}
+
+export async function getRoadmapRepairHistory(limit = 25): Promise<RoadmapRepairHistoryItem[]> {
+  const data = await fetchJson<any>(`/roadmap/repair/history?limit=${limit}`);
+  return Array.isArray(data?.data?.items) ? data.data.items : [];
 }
