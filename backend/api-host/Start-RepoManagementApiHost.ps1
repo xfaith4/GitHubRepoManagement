@@ -18,10 +18,12 @@ $ErrorActionPreference = 'Stop'
 
 $adapterRoot = Join-Path $WorkspaceRoot 'backend\adapters'
 $commonRoot = Join-Path $WorkspaceRoot 'backend\modules\common'
+$roadmapModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\roadmap'
 . (Join-Path $commonRoot 'Metrics.ps1')
 . (Join-Path $adapterRoot 'Status.Adapter.ps1')
 . (Join-Path $adapterRoot 'Reconcile.Adapter.ps1')
 . (Join-Path $adapterRoot 'DocReview.Adapter.ps1')
+. (Join-Path $roadmapModuleRoot 'Roadmap.Parser.ps1')
 
 $script:StatusCacheMemory = @{}
 $script:StatusCacheDefaultTtlSeconds = 120
@@ -1524,12 +1526,45 @@ function Invoke-RoadmapScan {
                     }
                     $dir = $dir.Parent
                 }
+                # Parse the roadmap content to classify state and extract next pending item
+                $parseResult = $null
+                try {
+                    $rawContent = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8 -ErrorAction Stop
+                    $parseResult = Invoke-ParseRoadmapContent -Content $rawContent -SourcePath $file.FullName
+                    Write-HostLog ("[TRACE] roadmap.parse repoName={0} state={1} pendingCount={2} completedCount={3}" -f $repoName, $parseResult.roadmapState, $parseResult.pendingCount, $parseResult.completedCount)
+                    if ($parseResult.roadmapState -eq 'parse-error') {
+                        Write-HostLog ("[WARN] roadmap.parse repoName={0} parseError={1}" -f $repoName, $parseResult.parseError)
+                    }
+                } catch {
+                    Write-HostLog ("[WARN] roadmap.parse repoName={0} error={1}" -f $repoName, $_.Exception.Message)
+                    $parseResult = [pscustomobject]@{
+                        roadmapState    = 'parse-error'
+                        pendingCount    = 0
+                        completedCount  = 0
+                        totalCount      = 0
+                        nextPendingItem = $null
+                        parseError      = $_.Exception.Message
+                    }
+                }
+
+                $nextItem = $null
+                if ($null -ne $parseResult -and $null -ne $parseResult.nextPendingItem) {
+                    $nextItem = @{
+                        text    = [string]$parseResult.nextPendingItem.text
+                        section = [string]$parseResult.nextPendingItem.section
+                    }
+                }
+
                 $entries.Add([pscustomobject]@{
-                    repoName = $repoName
-                    repoPath = $repoPath
-                    roadmapPath = $file.FullName
-                    lastModified = $file.LastWriteTime.ToString('o')
-                    sizeBytes = [long]$file.Length
+                    repoName        = $repoName
+                    repoPath        = $repoPath
+                    roadmapPath     = $file.FullName
+                    lastModified    = $file.LastWriteTime.ToString('o')
+                    sizeBytes       = [long]$file.Length
+                    roadmapState    = if ($null -ne $parseResult) { [string]$parseResult.roadmapState } else { 'parse-error' }
+                    pendingCount    = if ($null -ne $parseResult) { [int]$parseResult.pendingCount    } else { 0 }
+                    completedCount  = if ($null -ne $parseResult) { [int]$parseResult.completedCount  } else { 0 }
+                    nextPendingItem = $nextItem
                 })
             }
         }

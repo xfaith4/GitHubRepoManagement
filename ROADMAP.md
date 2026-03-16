@@ -80,14 +80,14 @@ The following progress is preserved from prior execution history and remains fou
 
 ### Engineering milestones
 
-- [ ] Build structured roadmap parser for checkbox items, section grouping, and ordered pending-item extraction.
-- [ ] Add normalized roadmap state model to backend responses.
-- [ ] Add roadmap completion status and pending count to repo records.
-- [ ] Surface `nextPendingRoadmapItem` in the main dashboard grid.
-- [ ] Distinguish `missing`, `complete`, `pending`, and `parse-error` roadmap states in UI badges.
-- [ ] Add smoke/API contract coverage for roadmap API routes.
-- [ ] Add smoke/API contract coverage for roadmap-agent routes.
-- [ ] Add roadmap parse diagnostics to the operations log.
+- [x] Build structured roadmap parser for checkbox items, section grouping, and ordered pending-item extraction.
+- [x] Add normalized roadmap state model to backend responses.
+- [x] Add roadmap completion status and pending count to repo records.
+- [x] Surface `nextPendingRoadmapItem` in the main dashboard grid.
+- [x] Distinguish `missing`, `complete`, `pending`, and `parse-error` roadmap states in UI badges.
+- [x] Add smoke/API contract coverage for roadmap API routes.
+- [x] Add smoke/API contract coverage for roadmap-agent routes.
+- [x] Add roadmap parse diagnostics to the operations log.
 
 ### Acceptance criteria
 
