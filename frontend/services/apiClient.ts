@@ -866,6 +866,31 @@ export async function triggerRoadmapLintScan(): Promise<{ results: RoadmapLintRe
   };
 }
 
+function normalizeReadmeStandardizationPreview(raw: any): ReadmeStandardizationPreview {
+  const data = raw?.data ?? raw ?? {};
+  return {
+    previewId: String(data?.previewId ?? ''),
+    repoName: String(data?.repoName ?? ''),
+    previewState: data?.previewState ?? 'standardization-blocked',
+    blockReason: data?.blockReason ?? null,
+    currentContent: String(data?.currentContent ?? ''),
+    proposedContent: data?.proposedContent ?? null,
+    standardizationActions: Array.isArray(data?.standardizationActions) ? data.standardizationActions : [],
+    generatedAt: data?.generatedAt ?? new Date().toISOString(),
+  };
+}
+
+function normalizeReadmeStandardizationHistoryItem(raw: any): ReadmeStandardizationHistoryItem {
+  return {
+    previewId: String(raw?.previewId ?? ''),
+    repoName: String(raw?.repoName ?? ''),
+    repoPath: raw?.repoPath ?? null,
+    event: raw?.event ?? 'apply',
+    timestamp: raw?.timestamp ?? raw?.appliedAt ?? new Date().toISOString(),
+    appliedAt: raw?.appliedAt ?? null,
+  };
+}
+
 export async function previewReadmeStandardization(repoName: string, repoPath?: string): Promise<ReadmeStandardizationPreview> {
   const body: Record<string, string> = { repoName };
   if (repoPath) body.repoPath = repoPath;
@@ -873,7 +898,7 @@ export async function previewReadmeStandardization(repoName: string, repoPath?: 
   if (!data?.success) {
     throw new Error(data?.error?.message ?? 'README standardization preview failed.');
   }
-  return data.data as ReadmeStandardizationPreview;
+  return normalizeReadmeStandardizationPreview(data);
 }
 
 export async function applyReadmeStandardization(
@@ -890,7 +915,7 @@ export async function applyReadmeStandardization(
 
 export async function getReadmeStandardizationHistory(limit = 25): Promise<ReadmeStandardizationHistoryItem[]> {
   const data = await fetchJson<any>(`${API_BASE_URL}/readme/standardize/history?limit=${limit}`);
-  return Array.isArray(data?.data?.items) ? data.data.items : [];
+  return Array.isArray(data?.data?.items) ? data.data.items.map(normalizeReadmeStandardizationHistoryItem) : [];
 }
 
 export async function getMaturityDrift(): Promise<MaturityDriftResult> {

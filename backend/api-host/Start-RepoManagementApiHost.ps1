@@ -208,6 +208,35 @@ function Get-ValueOrDefault {
     return $Default
 }
 
+function Get-ObjectPropertyValue {
+    param(
+        [Parameter()]
+        [object]$InputObject,
+        [Parameter(Mandatory = $true)]
+        [string]$PropertyName,
+        [Parameter()]
+        [object]$Default = $null
+    )
+
+    if ($null -eq $InputObject) {
+        return $Default
+    }
+
+    if ($InputObject -is [System.Collections.IDictionary]) {
+        if ($InputObject.Contains($PropertyName)) {
+            return Get-ValueOrDefault $InputObject[$PropertyName] $Default
+        }
+
+        return $Default
+    }
+
+    if ($null -ne $InputObject.PSObject -and ($InputObject.PSObject.Properties.Name -contains $PropertyName)) {
+        return Get-ValueOrDefault $InputObject.$PropertyName $Default
+    }
+
+    return $Default
+}
+
 function Send-HttpJson {
     param(
         [Parameter(Mandatory = $true)]
@@ -3788,9 +3817,12 @@ try {
                             if ($null -ne $script:RoadmapCacheMemory -and $script:RoadmapCacheMemory.ContainsKey('entries')) {
                                 $roadmapIndexEntries = @($script:RoadmapCacheMemory.entries)
                             }
-                            $indexEntry = $roadmapIndexEntries | Where-Object { $_.repoName -eq $repoName } | Select-Object -First 1
-                            if ($null -ne $indexEntry -and $indexEntry.repoPath) {
-                                $repoPath = $indexEntry.repoPath
+                            $indexEntry = $roadmapIndexEntries | Where-Object {
+                                [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '') -eq $repoName
+                            } | Select-Object -First 1
+                            $indexedRepoPath = [string](Get-ObjectPropertyValue -InputObject $indexEntry -PropertyName 'repoPath' -Default '')
+                            if (-not [string]::IsNullOrWhiteSpace($indexedRepoPath)) {
+                                $repoPath = $indexedRepoPath
                             }
                         }
 
@@ -3822,9 +3854,12 @@ try {
                             if ($null -ne $script:RoadmapCacheMemory -and $script:RoadmapCacheMemory.ContainsKey('entries')) {
                                 $roadmapIndexEntries = @($script:RoadmapCacheMemory.entries)
                             }
-                            $indexEntry = $roadmapIndexEntries | Where-Object { $_.repoName -eq $repoName } | Select-Object -First 1
-                            if ($null -ne $indexEntry -and $indexEntry.repoPath) {
-                                $repoPath = $indexEntry.repoPath
+                            $indexEntry = $roadmapIndexEntries | Where-Object {
+                                [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '') -eq $repoName
+                            } | Select-Object -First 1
+                            $indexedRepoPath = [string](Get-ObjectPropertyValue -InputObject $indexEntry -PropertyName 'repoPath' -Default '')
+                            if (-not [string]::IsNullOrWhiteSpace($indexedRepoPath)) {
+                                $repoPath = $indexedRepoPath
                             }
                         }
 
@@ -3851,7 +3886,17 @@ try {
                             $lines = Get-Content -LiteralPath $historyPath -Encoding UTF8 -ErrorAction SilentlyContinue | Select-Object -Last $limit
                             foreach ($line in $lines) {
                                 if ([string]::IsNullOrWhiteSpace($line)) { continue }
-                                try { $items.Add(($line | ConvertFrom-Json)) } catch { }
+                                try {
+                                    $entry = $line | ConvertFrom-Json
+                                    $items.Add([pscustomobject]@{
+                                        previewId = [string](Get-ObjectPropertyValue -InputObject $entry -PropertyName 'previewId' -Default '')
+                                        repoName  = [string](Get-ObjectPropertyValue -InputObject $entry -PropertyName 'repoName' -Default '')
+                                        repoPath  = [string](Get-ObjectPropertyValue -InputObject $entry -PropertyName 'repoPath' -Default $null)
+                                        event     = [string](Get-ObjectPropertyValue -InputObject $entry -PropertyName 'event' -Default 'apply')
+                                        timestamp = [string](Get-ObjectPropertyValue -InputObject $entry -PropertyName 'timestamp' -Default (Get-ObjectPropertyValue -InputObject $entry -PropertyName 'appliedAt' -Default ''))
+                                        appliedAt = [string](Get-ObjectPropertyValue -InputObject $entry -PropertyName 'appliedAt' -Default $null)
+                                    })
+                                } catch { }
                             }
                         }
                         Add-MetricCounter -Name 'api_requests_total'
