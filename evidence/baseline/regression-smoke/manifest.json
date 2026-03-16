@@ -1,0 +1,55 @@
+[
+  {
+    "RepoName": "RepoHigh",
+    "RepoPath": "G:\\Repos\\RepoHigh",
+    "PriorityBand": "High",
+    "PriorityScore": 90,
+    "MarkdownFiles": [
+      "README.md",
+      "docs\\architecture.md"
+    ],
+    "FileBuckets": {
+      "core": [
+        "README.md"
+      ],
+      "general": [
+        "docs\\architecture.md"
+      ],
+      "reference": [],
+      "operational": [],
+      "archival": [],
+      "unclear": []
+    },
+    "GitStatus": {
+      "Branch": "main",
+      "LastCommitDate": "",
+      "DirtyFileCount": 0
+    },
+    "Notes": []
+  },
+  {
+    "RepoName": "RepoLow",
+    "RepoPath": "G:\\Repos\\RepoLow",
+    "PriorityBand": "Low",
+    "PriorityScore": 20,
+    "MarkdownFiles": [
+      "README.md"
+    ],
+    "FileBuckets": {
+      "core": [],
+      "general": [
+        "README.md"
+      ],
+      "reference": [],
+      "operational": [],
+      "archival": [],
+      "unclear": []
+    },
+    "GitStatus": {
+      "Branch": "main",
+      "LastCommitDate": "",
+      "DirtyFileCount": 0
+    },
+    "Notes": []
+  }
+]

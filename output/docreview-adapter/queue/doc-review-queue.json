@@ -288,8 +288,7 @@
       "Batch contains many files; keep changes bounded and reviewable",
       "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo",
-      "Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Multiple README.md files detected across the repo"
     ],
     "Files": [
       "docs\\application-architecture.md",
@@ -299,8 +298,8 @@
       "docs\\setup-and-operations.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-11 08:42:15 -0400",
-    "GitDirty": 1,
+    "GitLastCommit": "2026-03-16 03:48:56 -0400",
+    "GitDirty": 0,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GenesysCloudAuditor.core.001.md"
   },
@@ -327,7 +326,7 @@
       "Batch contains many files; keep changes bounded and reviewable",
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "apps\\orchestration-bridge\\README.md",
@@ -337,8 +336,8 @@
       "docs\\archive\\contributing.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.core.001.md"
   },
@@ -405,7 +404,7 @@
       "Batch contains many files; keep changes bounded and reviewable",
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "docs\\archive\\getting-started.md",
@@ -415,8 +414,8 @@
       "docs\\README.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.core.002.md"
   },
@@ -479,7 +478,7 @@
       "Batch contains many files; keep changes bounded and reviewable",
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "docs\\Unified-AI-Toolbox-Architecture.md",
@@ -489,8 +488,8 @@
       "Orchestration\\Goals\\README.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.core.003.md"
   },
@@ -555,7 +554,7 @@
       "Batch contains many files; keep changes bounded and reviewable",
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "Orchestration\\README.md",
@@ -565,8 +564,8 @@
       "README.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.core.004.md"
   },
@@ -592,16 +591,15 @@
     "Warnings": [
       "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo",
-      "Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Multiple README.md files detected across the repo"
     ],
     "Files": [
       "QuickStart.md",
       "README.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-11 08:42:15 -0400",
-    "GitDirty": 1,
+    "GitLastCommit": "2026-03-16 03:48:56 -0400",
+    "GitDirty": 0,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GenesysCloudAuditor.core.002.md"
   },
@@ -628,7 +626,7 @@
       "Batch contains many files; keep changes bounded and reviewable",
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "scripts\\README.md",
@@ -638,8 +636,8 @@
       "Unified-AI-Toolbox-Architecture.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.core.005.md"
   },
@@ -741,7 +739,7 @@
       "Batch contains many files; keep changes bounded and reviewable",
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "apps\\orchestration-bridge\\MERGE_COORDINATOR_RUNBOOK.md",
@@ -751,8 +749,8 @@
       "WORKFLOW_AUDIT_SUMMARY.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.operational.001.md"
   },
@@ -1153,15 +1151,14 @@
     "Warnings": [
       "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo",
-      "Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Multiple README.md files detected across the repo"
     ],
     "Files": [
       "docs\\run-audit-workflow.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-11 08:42:15 -0400",
-    "GitDirty": 1,
+    "GitLastCommit": "2026-03-16 03:48:56 -0400",
+    "GitDirty": 0,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GenesysCloudAuditor.operational.001.md"
   },
@@ -1405,7 +1402,7 @@
     "Warnings": [
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "docs\\archive\\engine-status-schema.md",
@@ -1413,8 +1410,8 @@
       "docs\\run-events.schema.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.reference.001.md"
   },
@@ -1590,15 +1587,14 @@
     "Warnings": [
       "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo",
-      "Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Multiple README.md files detected across the repo"
     ],
     "Files": [
       "docs\\oauth-and-api-resilience.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-11 08:42:15 -0400",
-    "GitDirty": 1,
+    "GitLastCommit": "2026-03-16 03:48:56 -0400",
+    "GitDirty": 0,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GenesysCloudAuditor.reference.001.md"
   },
@@ -1841,8 +1837,7 @@
     "Warnings": [
       "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo",
-      "Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Multiple README.md files detected across the repo"
     ],
     "Files": [
       "docs\\audit-checks.md",
@@ -1851,8 +1846,8 @@
       "docs\\deployment.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-11 08:42:15 -0400",
-    "GitDirty": 1,
+    "GitLastCommit": "2026-03-16 03:48:56 -0400",
+    "GitDirty": 0,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GenesysCloudAuditor.general.001.md"
   },
@@ -1878,7 +1873,7 @@
     "Warnings": [
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       ".github\\agents\\UX_Engineer_007.agent.md",
@@ -1887,8 +1882,8 @@
       "apps\\orchestration-bridge\\REVIEW.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.general.001.md"
   },
@@ -1981,8 +1976,7 @@
     "Warnings": [
       "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo",
-      "Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Multiple README.md files detected across the repo"
     ],
     "Files": [
       "docs\\detailed-qa-matrix.md",
@@ -1991,8 +1985,8 @@
       "docs\\examples\\empty-queues.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-11 08:42:15 -0400",
-    "GitDirty": 1,
+    "GitLastCommit": "2026-03-16 03:48:56 -0400",
+    "GitDirty": 0,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GenesysCloudAuditor.general.002.md"
   },
@@ -2018,7 +2012,7 @@
     "Warnings": [
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "archive\\ARCHIVE_MANIFEST.md",
@@ -2027,8 +2021,8 @@
       "docs\\archive\\APP_FACTORY_GITHUB_INTEGRATION.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.general.002.md"
   },
@@ -2054,8 +2048,7 @@
     "Warnings": [
       "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo",
-      "Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Multiple README.md files detected across the repo"
     ],
     "Files": [
       "docs\\examples\\ext-assign-vs-profile.md",
@@ -2064,8 +2057,8 @@
       "docs\\examples\\inactive-users.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-11 08:42:15 -0400",
-    "GitDirty": 1,
+    "GitLastCommit": "2026-03-16 03:48:56 -0400",
+    "GitDirty": 0,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GenesysCloudAuditor.general.003.md"
   },
@@ -2091,7 +2084,7 @@
     "Warnings": [
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "docs\\archive\\cost-analytics.md",
@@ -2100,8 +2093,8 @@
       "docs\\archive\\GITHUB_INTEGRATION_IMPLEMENTATION.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.general.003.md"
   },
@@ -2127,8 +2120,7 @@
     "Warnings": [
       "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo",
-      "Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Multiple README.md files detected across the repo"
     ],
     "Files": [
       "docs\\release-packaging-and-signing.md",
@@ -2136,8 +2128,8 @@
       "ROADMAP.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-11 08:42:15 -0400",
-    "GitDirty": 1,
+    "GitLastCommit": "2026-03-16 03:48:56 -0400",
+    "GitDirty": 0,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GenesysCloudAuditor.archival.001.md"
   },
@@ -2164,7 +2156,7 @@
       "Archival batch is relatively large; avoid over-investing in polish",
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "docs\\archive\\App Lifecycle Console ROADMAP.md",
@@ -2173,8 +2165,8 @@
       "prompts\\changelog.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.archival.001.md"
   },
@@ -2300,8 +2292,7 @@
     "Warnings": [
       "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo",
-      "Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Multiple README.md files detected across the repo"
     ],
     "Files": [
       "docs\\examples\\invalid-extensions.md",
@@ -2310,8 +2301,8 @@
       "docs\\extension-collision-tests.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-11 08:42:15 -0400",
-    "GitDirty": 1,
+    "GitLastCommit": "2026-03-16 03:48:56 -0400",
+    "GitDirty": 0,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GenesysCloudAuditor.general.004.md"
   },
@@ -2337,7 +2328,7 @@
     "Warnings": [
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "docs\\archive\\github-orchestration-ui.md",
@@ -2346,8 +2337,8 @@
       "docs\\archive\\orchestration.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.general.004.md"
   },
@@ -2373,8 +2364,7 @@
     "Warnings": [
       "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo",
-      "Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Multiple README.md files detected across the repo"
     ],
     "Files": [
       "docs\\extension-normalization-policy.md",
@@ -2383,8 +2373,8 @@
       "docs\\requirements-inactive-pagination-normalization.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-11 08:42:15 -0400",
-    "GitDirty": 1,
+    "GitLastCommit": "2026-03-16 03:48:56 -0400",
+    "GitDirty": 0,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GenesysCloudAuditor.general.005.md"
   },
@@ -2410,7 +2400,7 @@
     "Warnings": [
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "docs\\archive\\parallel-teams.md",
@@ -2419,8 +2409,8 @@
       "docs\\archive\\PROMPT_CHAIN_FLOW.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.general.005.md"
   },
@@ -2483,14 +2473,14 @@
     "Warnings": [
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "templates\\ci-cd-blueprint\\CHANGELOG.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.archival.002.md"
   },
@@ -2580,8 +2570,7 @@
     "Warnings": [
       "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo",
-      "Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Multiple README.md files detected across the repo"
     ],
     "Files": [
       "docs\\solution-and-project-map.md",
@@ -2589,8 +2578,8 @@
       "QA.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-11 08:42:15 -0400",
-    "GitDirty": 1,
+    "GitLastCommit": "2026-03-16 03:48:56 -0400",
+    "GitDirty": 0,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GenesysCloudAuditor.general.006.md"
   },
@@ -2616,7 +2605,7 @@
     "Warnings": [
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "docs\\archive\\PROMPT_CHAIN_REBUILD.md",
@@ -2625,8 +2614,8 @@
       "docs\\archive\\run-telemetry-ui.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.general.006.md"
   },
@@ -2686,7 +2675,7 @@
     "Warnings": [
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "docs\\archive\\telemetry.md",
@@ -2695,8 +2684,8 @@
       "docs\\Concierge_MajorVersion_UpgradePromptChain.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.general.007.md"
   },
@@ -2722,7 +2711,7 @@
     "Warnings": [
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "docs\\IMPLEMENTATION_SUMMARY.md",
@@ -2731,8 +2720,8 @@
       "docs\\MCP_LIBRARY_STATUS.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.general.008.md"
   },
@@ -2917,7 +2906,7 @@
     "Warnings": [
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "docs\\MCP_REMAINING_TASKS.md",
@@ -2926,8 +2915,8 @@
       "docs\\mcp\\registry-ingestion.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.general.009.md"
   },
@@ -3022,7 +3011,7 @@
     "Warnings": [
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "docs\\MIGRATION.md",
@@ -3031,8 +3020,8 @@
       "examples\\pr_publisher\\pr.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.general.010.md"
   },
@@ -3131,7 +3120,7 @@
     "Warnings": [
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "examples\\run-ui-validate-2026-02-08T13-52-50-181Z-2c9301-artifacts\\ARTIFACT_INGEST_REPORT.md",
@@ -3140,8 +3129,8 @@
       "examples\\run-ui-validate-2026-02-08T13-52-50-181Z-2c9301-artifacts\\NORMALIZATION_REPORT.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.general.011.md"
   },
@@ -3167,7 +3156,7 @@
     "Warnings": [
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "examples\\run-ui-validate-2026-02-08T13-52-50-181Z-2c9301-artifacts\\PATCHLOG.md",
@@ -3176,8 +3165,8 @@
       "examples\\run-ui-validate-2026-02-09T06-59-24-879Z-193507-artifacts\\ASSEMBLY_REPORT.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.general.012.md"
   },
@@ -3203,7 +3192,7 @@
     "Warnings": [
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "examples\\run-ui-validate-2026-02-09T06-59-24-879Z-193507-artifacts\\critic_output.md",
@@ -3212,8 +3201,8 @@
       "examples\\run-ui-validate-2026-02-09T06-59-24-879Z-193507-artifacts\\PATCHLOG.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.general.013.md"
   },
@@ -3366,7 +3355,7 @@
     "Warnings": [
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "examples\\run-ui-validate-2026-02-09T06-59-24-879Z-193507-artifacts\\researcher_output.md",
@@ -3375,8 +3364,8 @@
       "Orchestration\\.github\\copilot-instructions.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.general.014.md"
   },
@@ -3434,7 +3423,7 @@
     "Warnings": [
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "Orchestration\\Agent_Workbook.md",
@@ -3443,8 +3432,8 @@
       "scripts\\swarms\\CODE_OF_CONDUCT.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.general.015.md"
   },
@@ -3503,7 +3492,7 @@
     "Warnings": [
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "scripts\\swarms\\SECURITY.md",
@@ -3511,8 +3500,8 @@
       "UnifiedAIToolbox-Repo-Guide.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-13 03:31:48 -0400",
-    "GitDirty": 5,
+    "GitLastCommit": "2026-03-14 02:36:12 -0400",
+    "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.general.016.md"
   },

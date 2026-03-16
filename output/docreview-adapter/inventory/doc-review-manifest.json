@@ -832,9 +832,9 @@
     "PriorityScore": 70,
     "PriorityBand": "High",
     "ReviewMode": "Full-doc pass",
-    "GitLastCommitDate": "2026-03-13 03:31:48 -0400",
+    "GitLastCommitDate": "2026-03-14 02:36:12 -0400",
     "GitBranch": "main",
-    "GitUncommittedChanges": 5,
+    "GitUncommittedChanges": 3,
     "DocQualityHints": [
       "contains-risk-markers"
     ],
@@ -1327,9 +1327,9 @@
     "PriorityScore": 70,
     "PriorityBand": "High",
     "ReviewMode": "Full-doc pass",
-    "GitLastCommitDate": "2026-03-11 08:42:15 -0400",
+    "GitLastCommitDate": "2026-03-16 03:48:56 -0400",
     "GitBranch": "main",
-    "GitUncommittedChanges": 1,
+    "GitUncommittedChanges": 0,
     "DocQualityHints": [
       "vague-md-names",
       "contains-risk-markers"

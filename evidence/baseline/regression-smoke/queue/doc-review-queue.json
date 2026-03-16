@@ -1,0 +1,32 @@
+{
+  "QueueId": "RepoHigh.core.001",
+  "RepoName": "RepoHigh",
+  "RepoPath": "G:\\Repos\\RepoHigh",
+  "RepoPriorityBand": "High",
+  "RepoPriorityScore": 90,
+  "BatchType": "core",
+  "BatchOrder": 1,
+  "BatchChunkIndex": 1,
+  "EstimatedComplexity": "low",
+  "RecommendedCooldownSeconds": 90,
+  "QueueScore": 130,
+  "PromptFlavor": "core-doc-modernization",
+  "Goals": [
+    "Improve first-use readability and onboarding clarity",
+    "Tighten headings, structure, and opening summaries",
+    "Clarify architecture, setup, and contributor guidance",
+    "Strengthen cross-linking among high-value docs"
+  ],
+  "Warnings": [
+    "Repository has markdown docs but no README.md"
+  ],
+  "Files": [
+    "docs\\architecture.md",
+    "README.md"
+  ],
+  "GitBranch": "",
+  "GitLastCommit": "",
+  "GitDirty": 0,
+  "RepoNotes": [],
+  "PacketPath": "G:\\Development\\GitHubRepoManagement\\evidence\\baseline\\regression-smoke\\queue\\copilot-packets\\RepoHigh.core.001.md"
+}

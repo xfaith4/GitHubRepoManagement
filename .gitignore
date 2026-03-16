@@ -17,17 +17,20 @@ backend/modules/output/**
 !backend/modules/output/**/.gitkeep
 /logs/
 
-# Generated adapter output (keep structure only)
-output/**
+# Generated adapter output
+output/*
+!output/.gitkeep
 !output/**/
 !output/**/.gitkeep
 
-# Generated evidence and baselines (keep structure only)
-evidence/**
+# Generated evidence
+evidence/*
+!evidence/.gitkeep
 !evidence/**/
 !evidence/**/.gitkeep
 
-# Saved reports (keep folder, ignore generated contents)
-reports/**
-!reports/
+# Saved reports
+reports/*
 !reports/.gitkeep
+!reports/**/
+!reports/**/.gitkeep

@@ -7,8 +7,8 @@
 
 ## Git State
 - Branch: main
-- Last Commit: 2026-03-13 03:31:48 -0400
-- Uncommitted Changes: 5
+- Last Commit: 2026-03-14 02:36:12 -0400
+- Uncommitted Changes: 3
 
 ## Batch
 - Type: archival
@@ -30,7 +30,7 @@
 ## Warnings / Review Notes
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Constraints
 - Preserve technical accuracy

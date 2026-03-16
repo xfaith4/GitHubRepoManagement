@@ -1,6 +1,6 @@
 # Documentation Review Queue Playbook
 
-Generated: 2026-03-15 23:57:40
+Generated: 2026-03-16 04:34:53
 
 ## Summary
 
@@ -924,7 +924,6 @@ Generated: 2026-03-15 23:57:40
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### GenesysCloudAuditor.core.002
 
@@ -942,7 +941,6 @@ Generated: 2026-03-15 23:57:40
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### GenesysCloudAuditor.operational.001
 
@@ -959,7 +957,6 @@ Generated: 2026-03-15 23:57:40
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### GenesysCloudAuditor.reference.001
 
@@ -976,7 +973,6 @@ Generated: 2026-03-15 23:57:40
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### GenesysCloudAuditor.general.001
 
@@ -996,7 +992,6 @@ Generated: 2026-03-15 23:57:40
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### GenesysCloudAuditor.general.002
 
@@ -1016,7 +1011,6 @@ Generated: 2026-03-15 23:57:40
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### GenesysCloudAuditor.general.003
 
@@ -1036,7 +1030,6 @@ Generated: 2026-03-15 23:57:40
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### GenesysCloudAuditor.general.004
 
@@ -1056,7 +1049,6 @@ Generated: 2026-03-15 23:57:40
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### GenesysCloudAuditor.general.005
 
@@ -1076,7 +1068,6 @@ Generated: 2026-03-15 23:57:40
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### GenesysCloudAuditor.general.006
 
@@ -1095,7 +1086,6 @@ Generated: 2026-03-15 23:57:40
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### GenesysCloudAuditor.archival.001
 
@@ -1114,7 +1104,6 @@ Generated: 2026-03-15 23:57:40
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Ideal-Prompt-Library
 
@@ -1795,7 +1784,7 @@ Generated: 2026-03-15 23:57:40
 - Batch contains many files; keep changes bounded and reviewable
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.core.002
 
@@ -1816,7 +1805,7 @@ Generated: 2026-03-15 23:57:40
 - Batch contains many files; keep changes bounded and reviewable
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.core.003
 
@@ -1837,7 +1826,7 @@ Generated: 2026-03-15 23:57:40
 - Batch contains many files; keep changes bounded and reviewable
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.core.004
 
@@ -1858,7 +1847,7 @@ Generated: 2026-03-15 23:57:40
 - Batch contains many files; keep changes bounded and reviewable
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.core.005
 
@@ -1879,7 +1868,7 @@ Generated: 2026-03-15 23:57:40
 - Batch contains many files; keep changes bounded and reviewable
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.operational.001
 
@@ -1900,7 +1889,7 @@ Generated: 2026-03-15 23:57:40
 - Batch contains many files; keep changes bounded and reviewable
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.reference.001
 
@@ -1918,7 +1907,7 @@ Generated: 2026-03-15 23:57:40
 **Warnings:**
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.general.001
 
@@ -1937,7 +1926,7 @@ Generated: 2026-03-15 23:57:40
 **Warnings:**
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.general.002
 
@@ -1956,7 +1945,7 @@ Generated: 2026-03-15 23:57:40
 **Warnings:**
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.general.003
 
@@ -1975,7 +1964,7 @@ Generated: 2026-03-15 23:57:40
 **Warnings:**
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.general.004
 
@@ -1994,7 +1983,7 @@ Generated: 2026-03-15 23:57:40
 **Warnings:**
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.general.005
 
@@ -2013,7 +2002,7 @@ Generated: 2026-03-15 23:57:40
 **Warnings:**
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.general.006
 
@@ -2032,7 +2021,7 @@ Generated: 2026-03-15 23:57:40
 **Warnings:**
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.general.007
 
@@ -2051,7 +2040,7 @@ Generated: 2026-03-15 23:57:40
 **Warnings:**
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.general.008
 
@@ -2070,7 +2059,7 @@ Generated: 2026-03-15 23:57:40
 **Warnings:**
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.general.009
 
@@ -2089,7 +2078,7 @@ Generated: 2026-03-15 23:57:40
 **Warnings:**
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.general.010
 
@@ -2108,7 +2097,7 @@ Generated: 2026-03-15 23:57:40
 **Warnings:**
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.general.011
 
@@ -2127,7 +2116,7 @@ Generated: 2026-03-15 23:57:40
 **Warnings:**
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.general.012
 
@@ -2146,7 +2135,7 @@ Generated: 2026-03-15 23:57:40
 **Warnings:**
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.general.013
 
@@ -2165,7 +2154,7 @@ Generated: 2026-03-15 23:57:40
 **Warnings:**
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.general.014
 
@@ -2184,7 +2173,7 @@ Generated: 2026-03-15 23:57:40
 **Warnings:**
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.general.015
 
@@ -2203,7 +2192,7 @@ Generated: 2026-03-15 23:57:40
 **Warnings:**
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.general.016
 
@@ -2221,7 +2210,7 @@ Generated: 2026-03-15 23:57:40
 **Warnings:**
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.archival.001
 
@@ -2241,7 +2230,7 @@ Generated: 2026-03-15 23:57:40
 - Archival batch is relatively large; avoid over-investing in polish
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### UnifiedAIToolbox.archival.002
 
@@ -2257,6 +2246,6 @@ Generated: 2026-03-15 23:57:40
 **Warnings:**
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 5 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 
