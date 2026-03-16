@@ -88,6 +88,111 @@ function Write-Step { param([string]$Msg) Write-Host "  $Msg" -ForegroundColor C
 function Write-Ok   { param([string]$Msg) Write-Host "  [OK] $Msg" -ForegroundColor Green }
 function Write-Fail { param([string]$Msg) Write-Host "  [!!] $Msg" -ForegroundColor Red }
 
+function Get-ListeningProcessIds {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$LocalPort
+    )
+
+    $processIds = @()
+
+    $getNetTcpConnection = Get-Command -Name 'Get-NetTCPConnection' -ErrorAction SilentlyContinue
+    if ($getNetTcpConnection) {
+        try {
+            $connections = @(Get-NetTCPConnection -LocalPort $LocalPort -State Listen -ErrorAction Stop)
+            if ($connections.Count -gt 0) {
+                return @($connections | Select-Object -ExpandProperty OwningProcess -Unique)
+            }
+        } catch { }
+    }
+
+    $ssCommand = Get-Command -Name 'ss' -ErrorAction SilentlyContinue
+    if ($ssCommand) {
+        foreach ($line in @(ss -ltnpH "sport = :$LocalPort" 2>$null)) {
+            foreach ($match in [regex]::Matches($line, 'pid=(\d+)')) {
+                $processIds += [int]$match.Groups[1].Value
+            }
+        }
+
+        if ($processIds.Count -gt 0) {
+            return @($processIds | Sort-Object -Unique)
+        }
+    }
+
+    $netstatCommand = Get-Command -Name 'netstat' -ErrorAction SilentlyContinue
+    if (-not $netstatCommand) {
+        return @()
+    }
+
+    foreach ($line in @(netstat -ano -p tcp 2>$null)) {
+        $trimmed = $line.Trim()
+        if ($trimmed -notmatch '^TCP\s+') { continue }
+
+        $parts = $trimmed -split '\s+'
+        if ($parts.Count -lt 5) { continue }
+        if ($parts[3] -ne 'LISTENING') { continue }
+
+        $localAddress = $parts[1]
+        $separatorIndex = $localAddress.LastIndexOf(':')
+        if ($separatorIndex -lt 0) { continue }
+
+        $portText = $localAddress.Substring($separatorIndex + 1)
+        if ($portText -ne [string]$LocalPort) { continue }
+
+        if ($parts[4] -match '^\d+$') {
+            $processIds += [int]$parts[4]
+        }
+    }
+
+    return @($processIds | Sort-Object -Unique)
+}
+
+function Stop-PortListeners {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$LocalPort,
+        [Parameter(Mandatory = $true)]
+        [string]$ServiceName
+    )
+
+    $listenerPids = @(Get-ListeningProcessIds -LocalPort $LocalPort | Where-Object { $_ -gt 0 -and $_ -ne $PID } | Sort-Object -Unique)
+    if ($listenerPids.Count -eq 0) {
+        return
+    }
+
+    foreach ($listenerPid in $listenerPids) {
+        $processLabel = "PID $listenerPid"
+        try {
+            $process = Get-Process -Id $listenerPid -ErrorAction Stop
+            $processLabel = "$($process.ProcessName) (PID $listenerPid)"
+        } catch { }
+
+        Write-Step "$ServiceName needs port $LocalPort. Terminating $processLabel."
+
+        try {
+            Stop-Process -Id $listenerPid -Force -ErrorAction Stop
+        } catch {
+            throw "$ServiceName needs port $LocalPort, but $processLabel could not be terminated. $($_.Exception.Message)"
+        }
+
+        $released = $false
+        for ($attempt = 0; $attempt -lt 20; $attempt++) {
+            Start-Sleep -Milliseconds 250
+            $remaining = @(Get-ListeningProcessIds -LocalPort $LocalPort | Where-Object { $_ -eq $listenerPid })
+            if ($remaining.Count -eq 0) {
+                $released = $true
+                break
+            }
+        }
+
+        if (-not $released) {
+            throw "Terminated $processLabel for $ServiceName, but port $LocalPort is still reported as in use."
+        }
+
+        Write-Ok "$ServiceName reclaimed port $LocalPort from $processLabel"
+    }
+}
+
 Write-Host ''
 Write-Host '====================================' -ForegroundColor White
 Write-Host ' GitHub Repo Management' -ForegroundColor White
@@ -176,6 +281,7 @@ Write-Ok "API host ready at $apiUrl"
 # 4. Start frontend (Vite dev server)
 # ------------------------------------------------------------------
 Write-Step "Starting frontend ($frontendUrl) in $Mode mode..."
+Stop-PortListeners -LocalPort $FrontendPort -ServiceName 'Frontend'
 
 $env:VITE_USE_MOCK_API        = 'false'
 $env:VITE_API_PROXY_TARGET    = $apiUrl
@@ -184,7 +290,7 @@ $frontendPid = $null
 
 if ($Mode -eq 'debug') {
     Start-Process -FilePath 'cmd.exe' `
-        -ArgumentList '/k', "cd /d `"$frontendDir`" && npm run dev" `
+        -ArgumentList '/k', "cd /d `"$frontendDir`" && npm run dev -- --port $FrontendPort" `
         -WindowStyle Normal
     $frontendPid = 0
 } else {
@@ -194,7 +300,7 @@ if ($Mode -eq 'debug') {
 `$env:VITE_USE_MOCK_API     = 'false'
 `$env:VITE_API_PROXY_TARGET = '$apiUrl'
 Set-Location '$frontendDir'
-npm run dev *>&1 | Out-File -FilePath '$frontendLog' -Encoding UTF8 -Append
+npm run dev -- --port $FrontendPort *>&1 | Out-File -FilePath '$frontendLog' -Encoding UTF8 -Append
 "@ | Set-Content -LiteralPath $wrapperPath -Encoding UTF8
 
     $proc = Start-Process -FilePath 'pwsh' `

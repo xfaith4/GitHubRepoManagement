@@ -90,6 +90,109 @@ function Parse-Bool {
     return $text -match '^(1|true|yes|on)$'
 }
 
+function Get-ListeningProcessIds {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$LocalPort
+    )
+
+    $processIds = @()
+
+    $getNetTcpConnection = Get-Command -Name 'Get-NetTCPConnection' -ErrorAction SilentlyContinue
+    if ($getNetTcpConnection) {
+        try {
+            $connections = @(Get-NetTCPConnection -LocalPort $LocalPort -State Listen -ErrorAction Stop)
+            if ($connections.Count -gt 0) {
+                return @($connections | Select-Object -ExpandProperty OwningProcess -Unique)
+            }
+        } catch { }
+    }
+
+    $ssCommand = Get-Command -Name 'ss' -ErrorAction SilentlyContinue
+    if ($ssCommand) {
+        foreach ($line in @(ss -ltnpH "sport = :$LocalPort" 2>$null)) {
+            foreach ($match in [regex]::Matches($line, 'pid=(\d+)')) {
+                $processIds += [int]$match.Groups[1].Value
+            }
+        }
+
+        if ($processIds.Count -gt 0) {
+            return @($processIds | Sort-Object -Unique)
+        }
+    }
+
+    $netstatCommand = Get-Command -Name 'netstat' -ErrorAction SilentlyContinue
+    if (-not $netstatCommand) {
+        return @()
+    }
+
+    foreach ($line in @(netstat -ano -p tcp 2>$null)) {
+        $trimmed = $line.Trim()
+        if ($trimmed -notmatch '^TCP\s+') { continue }
+
+        $parts = $trimmed -split '\s+'
+        if ($parts.Count -lt 5) { continue }
+        if ($parts[3] -ne 'LISTENING') { continue }
+
+        $localAddress = $parts[1]
+        $separatorIndex = $localAddress.LastIndexOf(':')
+        if ($separatorIndex -lt 0) { continue }
+
+        $portText = $localAddress.Substring($separatorIndex + 1)
+        if ($portText -ne [string]$LocalPort) { continue }
+
+        if ($parts[4] -match '^\d+$') {
+            $processIds += [int]$parts[4]
+        }
+    }
+
+    return @($processIds | Sort-Object -Unique)
+}
+
+function Stop-PortListeners {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$LocalPort
+    )
+
+    $listenerPids = @(Get-ListeningProcessIds -LocalPort $LocalPort | Where-Object { $_ -gt 0 -and $_ -ne $PID } | Sort-Object -Unique)
+    if ($listenerPids.Count -eq 0) {
+        return
+    }
+
+    foreach ($listenerPid in $listenerPids) {
+        $processLabel = "PID $listenerPid"
+        try {
+            $process = Get-Process -Id $listenerPid -ErrorAction Stop
+            $processLabel = "$($process.ProcessName) (PID $listenerPid)"
+        } catch { }
+
+        Write-HostLog "Port $LocalPort is already in use by $processLabel. Terminating it before startup."
+
+        try {
+            Stop-Process -Id $listenerPid -Force -ErrorAction Stop
+        } catch {
+            throw "Port $LocalPort is already in use by $processLabel and it could not be terminated. $($_.Exception.Message)"
+        }
+
+        $released = $false
+        for ($attempt = 0; $attempt -lt 20; $attempt++) {
+            Start-Sleep -Milliseconds 250
+            $remaining = @(Get-ListeningProcessIds -LocalPort $LocalPort | Where-Object { $_ -eq $listenerPid })
+            if ($remaining.Count -eq 0) {
+                $released = $true
+                break
+            }
+        }
+
+        if (-not $released) {
+            throw "Terminated $processLabel, but port $LocalPort is still reported as in use."
+        }
+
+        Write-HostLog "Released port $LocalPort from $processLabel."
+    }
+}
+
 function Get-ValueOrDefault {
     param(
         [Parameter()]
@@ -2438,7 +2541,9 @@ Execution requirements:
     }
 }
 
-$listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Parse($BindAddress), $Port)
+$listenerAddress = [System.Net.IPAddress]::Parse($BindAddress)
+Stop-PortListeners -LocalPort $Port
+$listener = [System.Net.Sockets.TcpListener]::new($listenerAddress, $Port)
 $listener.Start()
 Write-HostLog ("Repo Management API host started on http://{0}:{1}" -f $BindAddress, $Port)
 Write-HostLog ("Ops log: {0}" -f (Get-ValueOrDefault $script:OpsLogPath '(none)'))
