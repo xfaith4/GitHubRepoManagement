@@ -340,11 +340,17 @@ const ExecutionQueuePanel: React.FC<ExecutionQueuePanelProps> = ({ onDispatchPre
   }, [loadQueue]);
 
   const lanesAvailable = (queueData?.activeLaneCount ?? 0) < 2;
+  const rankedQueue = Array.isArray(queueData?.rankedQueue) ? queueData.rankedQueue : [];
+  const recentHistory = Array.isArray(queueData?.recentHistory) ? queueData.recentHistory : [];
+  const allEntries = Array.isArray(queueData?.entries) ? queueData.entries : [];
+  const otherEntries = allEntries
+    .filter(e => e.executionState !== 'ready')
+    .sort((a, b) => b.priorityScore - a.priorityScore);
 
   const tabs: Array<{ id: PanelTab; label: string; count?: number }> = [
     { id: 'lanes', label: 'Active Lanes', count: queueData?.activeLaneCount ?? 0 },
-    { id: 'queue', label: 'Ready Queue', count: queueData?.rankedQueue?.length ?? 0 },
-    { id: 'history', label: 'History', count: queueData?.recentHistory?.length ?? 0 },
+    { id: 'queue', label: 'Ready Queue', count: rankedQueue.length },
+    { id: 'history', label: 'History', count: recentHistory.length },
   ];
 
   return (
@@ -461,13 +467,13 @@ const ExecutionQueuePanel: React.FC<ExecutionQueuePanelProps> = ({ onDispatchPre
             </div>
 
             {/* Quick-dispatch from ranked queue if lanes available */}
-            {lanesAvailable && queueData.rankedQueue.length > 0 && (
+            {lanesAvailable && rankedQueue.length > 0 && (
               <div className="mt-4">
                 <div className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">
                   Top Candidates
                 </div>
                 <div className="space-y-1.5">
-                  {queueData.rankedQueue.slice(0, 3).map((entry, i) => (
+                  {rankedQueue.slice(0, 3).map((entry, i) => (
                     <QueueRow
                       key={entry.repoName}
                       entry={entry}
@@ -491,7 +497,7 @@ const ExecutionQueuePanel: React.FC<ExecutionQueuePanelProps> = ({ onDispatchPre
 
         {queueData && activeTab === 'queue' && (
           <div className="space-y-1.5">
-            {queueData.rankedQueue.length === 0 ? (
+            {rankedQueue.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 No repos in the ready queue.
                 {queueData.stateCounts.idle > 0 && (
@@ -499,7 +505,7 @@ const ExecutionQueuePanel: React.FC<ExecutionQueuePanelProps> = ({ onDispatchPre
                 )}
               </div>
             ) : (
-              queueData.rankedQueue.map((entry, i) => (
+              rankedQueue.map((entry, i) => (
                 <QueueRow
                   key={entry.repoName}
                   entry={entry}
@@ -518,16 +524,13 @@ const ExecutionQueuePanel: React.FC<ExecutionQueuePanelProps> = ({ onDispatchPre
             )}
 
             {/* All entries — non-ready states */}
-            {queueData.entries.filter(e => e.executionState !== 'ready').length > 0 && (
+            {otherEntries.length > 0 && (
               <div className="mt-4">
                 <div className="text-xs font-medium text-gray-600 uppercase tracking-wide mb-2 pt-2 border-t border-gray-800">
                   Other repos
                 </div>
                 <div className="space-y-1.5">
-                  {queueData.entries
-                    .filter(e => e.executionState !== 'ready')
-                    .sort((a, b) => b.priorityScore - a.priorityScore)
-                    .map(entry => (
+                  {otherEntries.map(entry => (
                       <div key={entry.repoName} className="flex items-center gap-3 px-4 py-2 border border-gray-800/50 rounded-lg text-xs">
                         <div className="flex-1 min-w-0">
                           <span className="text-gray-300 truncate mr-2">{entry.repoName}</span>
@@ -553,11 +556,11 @@ const ExecutionQueuePanel: React.FC<ExecutionQueuePanelProps> = ({ onDispatchPre
 
         {queueData && activeTab === 'history' && (
           <div>
-            {queueData.recentHistory.length === 0 ? (
+            {recentHistory.length === 0 ? (
               <div className="text-center py-8 text-gray-500">No execution history yet.</div>
             ) : (
               <div className="divide-y divide-gray-800 rounded border border-gray-800 bg-gray-900/30 px-3 py-1">
-                {[...queueData.recentHistory].reverse().map((item) => (
+                {[...recentHistory].reverse().map((item) => (
                   <HistoryRow key={`${item.repoName}-${item.timestamp}`} item={item} />
                 ))}
               </div>

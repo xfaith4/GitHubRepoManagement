@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview } from '../types';
+import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -677,6 +677,68 @@ function normalizeExecutionQueueError(error: unknown, endpoint: string): Error {
   return error instanceof Error ? error : new Error(message);
 }
 
+function normalizeExecutionLaneEntry(entry: any): ExecutionLaneEntry {
+  return {
+    repoName: String(entry?.repoName ?? ''),
+    repoPath: entry?.repoPath ?? undefined,
+    executionState: entry?.executionState ?? 'idle',
+    roadmapPath: entry?.roadmapPath ?? undefined,
+    currentTaskText: entry?.currentTaskText ?? undefined,
+    currentTaskSection: entry?.currentTaskSection ?? undefined,
+    currentRunId: entry?.currentRunId ?? null,
+    laneSlot: entry?.laneSlot ?? null,
+    priorityScore: Number(entry?.priorityScore ?? 0),
+    assignedAt: entry?.assignedAt ?? null,
+    completedAt: entry?.completedAt ?? null,
+    lastOutcome: entry?.lastOutcome ?? null,
+    retryCount: Number(entry?.retryCount ?? 0),
+    errorMessage: entry?.errorMessage ?? null,
+    updatedAt: entry?.updatedAt ?? new Date().toISOString(),
+  };
+}
+
+function normalizeExecutionHistoryRecord(item: any): ExecutionHistoryRecord {
+  return {
+    repoName: String(item?.repoName ?? ''),
+    event: item?.event ?? 'assigned',
+    runId: item?.runId ?? undefined,
+    taskText: item?.taskText ?? undefined,
+    outcome: item?.outcome ?? undefined,
+    errorMessage: item?.errorMessage ?? undefined,
+    timestamp: item?.timestamp ?? new Date().toISOString(),
+  };
+}
+
+function normalizeExecutionQueueSummary(raw: any): ExecutionQueueSummary {
+  const data = raw?.data ?? raw ?? {};
+  const entries = Array.isArray(data.entries) ? data.entries.map(normalizeExecutionLaneEntry) : [];
+  const rankedQueue = Array.isArray(data.rankedQueue) ? data.rankedQueue.map(normalizeExecutionLaneEntry) : [];
+  const recentHistory = Array.isArray(data.recentHistory) ? data.recentHistory.map(normalizeExecutionHistoryRecord) : [];
+  const lane1 = data?.lanes?.lane1 ? normalizeExecutionLaneEntry(data.lanes.lane1) : null;
+  const lane2 = data?.lanes?.lane2 ? normalizeExecutionLaneEntry(data.lanes.lane2) : null;
+
+  return {
+    schemaVersion: String(data?.schemaVersion ?? '1'),
+    updatedAt: data?.updatedAt ?? new Date().toISOString(),
+    totalRepos: Number(data?.totalRepos ?? entries.length),
+    stateCounts: {
+      idle: Number(data?.stateCounts?.idle ?? 0),
+      ready: Number(data?.stateCounts?.ready ?? 0),
+      running: Number(data?.stateCounts?.running ?? 0),
+      blocked: Number(data?.stateCounts?.blocked ?? 0),
+      complete: Number(data?.stateCounts?.complete ?? 0),
+    },
+    activeLaneCount: Number(data?.activeLaneCount ?? [lane1, lane2].filter(Boolean).length),
+    lanes: {
+      lane1,
+      lane2,
+    },
+    rankedQueue,
+    entries,
+    recentHistory,
+  };
+}
+
 export async function getExecutionQueue(): Promise<ExecutionQueueSummary> {
   const cachedError = getOptionalApiUnavailableError('execution-queue');
   if (cachedError) {
@@ -684,7 +746,7 @@ export async function getExecutionQueue(): Promise<ExecutionQueueSummary> {
   }
   try {
     const data = await fetchJson<any>(`${API_BASE_URL}/execution/queue`);
-    return data?.data ?? data;
+    return normalizeExecutionQueueSummary(data);
   } catch (error) {
     throw normalizeExecutionQueueError(error, '/execution/queue');
   }
@@ -697,7 +759,7 @@ export async function syncExecutionQueue(): Promise<ExecutionQueueSummary> {
   }
   try {
     const data = await postJson<any>('/execution/sync', {});
-    return data?.data ?? data;
+    return normalizeExecutionQueueSummary(data);
   } catch (error) {
     throw normalizeExecutionQueueError(error, '/execution/sync');
   }
