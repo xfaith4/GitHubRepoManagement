@@ -2,28 +2,31 @@
 
 > Status: Active
 >
-> Product direction: evolve from a general repo utility into a **roadmap-driven work queue and Copilot dispatch console** for multi-repo momentum.
+> Product direction: evolve from a general repo utility into a **roadmap-driven work queue, roadmap contract auditor, and Copilot dispatch console** for multi-repo momentum.
 
 ## 1. Product Intent
 
-GitHub Repo Management is being reshaped into a clean, operator-friendly tool that helps answer five questions across a portfolio of repositories:
+GitHub Repo Management is being reshaped into a clean, operator-friendly tool that helps answer seven questions across a portfolio of repositories:
 
-1. Which repos have a usable roadmap?
-2. Which repos have a clearly actionable next item?
-3. Which repos are blocked by missing or weak documentation?
-4. Which repos are currently safe to dispatch to GitHub Copilot?
-5. How do we keep limited Copilot capacity continuously focused on the best next work?
+1. Which repos have a roadmap at all?
+2. Which repos have a roadmap that is **contract-quality** rather than informal markdown?
+3. Which repos have a clearly actionable next release or next pending work item?
+4. Which repos are blocked by missing or weak documentation?
+5. Which repos are currently safe to dispatch to GitHub Copilot?
+6. Which repos require roadmap repair, augmentation, or standardization before orchestration?
+7. How do we keep limited Copilot capacity continuously focused on the best next work without duplicate effort or drift?
 
-The long-term goal is not generic repository browsing. The goal is a **portfolio execution console** that continuously surfaces the next best roadmap work, packages clean context, and launches or tracks Copilot tasks across repositories without duplicate effort or drift.
+The long-term goal is not generic repository browsing. The goal is a **portfolio execution console** that continuously audits roadmap quality, surfaces the next best roadmap work, packages clean context, and launches or tracks Copilot tasks across repositories without duplicate effort or hidden ambiguity.
 
 ---
 
 ## 2. Product Principles
 
 - **Roadmap-first workflow** — roadmap files are a primary source of truth for next work.
-- **Explainable automation** — every dispatch decision should be inspectable and grounded in visible repo state.
-- **Human review before irreversible action** — preview task packaging before launch; avoid silent magical behavior.
-- **Portfolio visibility over repo trivia** — make missing roadmaps, completed roadmaps, pending work, and blocked repos obvious.
+- **Roadmap as contract** — a roadmap is not merely documentation; it is a machine-readable work contract for execution and orchestration.
+- **Explainable automation** — every audit, readiness score, and dispatch decision should be inspectable and grounded in visible repo state.
+- **Human review before irreversible action** — preview repair, preview task packaging, and preview write-back before mutation.
+- **Portfolio visibility over repo trivia** — make missing roadmaps, weak roadmaps, completed roadmaps, pending work, and blocked repos obvious.
 - **Operational continuity** — preserve current launcher, logging, API host, and dashboard foundations rather than rebuilding from scratch.
 - **Continuous improvement of roadmap quality** — roadmap format itself should improve over time to support better parsing and safer automation.
 
@@ -39,7 +42,7 @@ The project already has the foundational pieces needed for a roadmap-aware execu
 - operation log plumbing
 - Copilot task preview/start/history plumbing for roadmap-driven execution
 
-The next stage is to convert these foundations into a coherent work queue product.
+The next stage is to convert these foundations into a coherent work queue product **and** a formal roadmap contract system.
 
 ---
 
@@ -69,6 +72,8 @@ The following progress is preserved from prior execution history and remains fou
 - [x] Work Queue primary view in the dashboard — filters repos by dispatch readiness; shows findings with severity and recommended actions.
 - [x] Dispatch readiness badges and readiness filter dropdown added to the Repository Grid view.
 - [x] CI smoke extended with doc-standards.json integrity check and `/api/docs-audit` route coverage.
+- [x] Release-oriented roadmap format adopted for this repository to improve agent execution boundaries.
+- [x] Initial Roadmap Contract Standard package drafted: canonical template, schema, audit rules, maturity model, and repair prompt.
 
 ---
 
@@ -169,7 +174,114 @@ The following progress is preserved from prior execution history and remains fou
 
 ---
 
-## Release 0.7 — Two-Lane Execution Queue
+## Release 0.7 — Roadmap Contract Standard Foundation
+
+**Goal:** define the canonical standard that turns roadmap markdown into a normalized contract model suitable for audit, repair, and orchestration.
+
+### Product outcomes
+
+- The app has an official roadmap contract standard instead of ad hoc roadmap interpretation.
+- Managed repos can be measured against a clear roadmap quality target.
+- Roadmap repair and Copilot dispatch can be grounded in the same contract model.
+
+### Engineering milestones
+
+- [ ] Add `standards/roadmap/ROADMAP_TEMPLATE.md` as the canonical authoring template.
+- [ ] Add `standards/roadmap/roadmap-contract.schema.json` for normalized contract validation.
+- [ ] Add `standards/roadmap/roadmap-audit-rules.json` with weighted scoring, severities, and repair guidance.
+- [ ] Add `standards/roadmap/ROADMAP_MATURITY_MODEL.md` defining levels from absent to orchestration-ready.
+- [ ] Add `standards/roadmap/roadmap-repair-prompt.md` for preview-based roadmap rewrite workflows.
+- [ ] Add app documentation explaining roadmap contracts, contract audit goals, and how release-scoped work should be authored.
+- [ ] Add backend loader for roadmap standard assets so audit logic reads rules from data instead of hardcoded assumptions.
+
+### Acceptance criteria
+
+- The repo contains a complete Roadmap Contract Standard package under source control.
+- The standard is documented clearly enough for both humans and coding agents to follow.
+- Audit logic can load the standard package without code edits for rule changes.
+
+### Out of scope
+
+- Full portfolio-wide roadmap repair write-back.
+- Autonomous task dispatch.
+
+---
+
+## Release 0.8 — Roadmap Contract Audit & Maturity Scoring
+
+**Goal:** formally audit whether each roadmap is a valid machine-readable work contract.
+
+### Product outcomes
+
+- The app can grade roadmap quality instead of merely detecting file presence.
+- Each repo receives a roadmap score, maturity level, and actionable findings.
+- Operators can identify which repos are orchestration-ready and which need roadmap repair first.
+
+### Engineering milestones
+
+- [ ] Implement roadmap contract normalization layer that maps parsed markdown into a stable internal model.
+- [ ] Implement rule-based roadmap auditor using the JSON rule pack.
+- [ ] Compute weighted roadmap audit score and grade per repo.
+- [ ] Assign roadmap maturity level per repo:
+  - `L0 Absent`
+  - `L1 Informal`
+  - `L2 Structured`
+  - `L3 Contract-Ready`
+  - `L4 Orchestration-Ready`
+- [ ] Add audit findings with severity, code, message, and recommended fix.
+- [ ] Add roadmap audit summary card and details panel to the UI.
+- [ ] Add filters for roadmap missing, repairable, compliant, and orchestration-ready.
+- [ ] Add operations-log traces for parse, normalize, score, and audit-rule failures.
+
+### Acceptance criteria
+
+- Every repo with a roadmap receives a score or an explicit parse/audit failure.
+- The UI can explain why a roadmap is weak, not just that it is weak.
+- The app can distinguish `has roadmap` from `has valid work contract`.
+
+### Out of scope
+
+- Automatic roadmap rewrite application.
+- Two-lane scheduling.
+
+---
+
+## Release 0.9 — Roadmap Repair Preview & Standardization Workflow
+
+**Goal:** let operators preview a corrected, augmented roadmap before applying any write-back.
+
+### Product outcomes
+
+- Weak roadmaps can be repaired into the standard without manual reinvention.
+- Completed history is preserved while future work is normalized into release-scoped contracts.
+- Operators can diff current vs proposed roadmap before approving changes.
+
+### Engineering milestones
+
+- [ ] Implement roadmap repair planner that maps audit findings to repair actions.
+- [ ] Generate proposed normalized roadmap markdown using the canonical template.
+- [ ] Preserve completion history while restructuring future work into releases with per-release checklists.
+- [ ] Add roadmap diff preview in UI with current vs proposed content.
+- [ ] Add explicit preview states: `repair-preview-ready`, `repair-blocked`, `rewrite-not-recommended`.
+- [ ] Support augmentation of missing contract sections such as acceptance criteria, out-of-scope, and release status.
+- [ ] Add apply workflow with explicit user approval and operation logging.
+- [ ] Persist rewrite history metadata for traceability.
+
+### Acceptance criteria
+
+- A non-compliant roadmap can be preview-rewritten into the contract format without losing true completed history.
+- Operators can review structural changes before write-back.
+- Rewrite activity is logged and traceable.
+
+### Out of scope
+
+- Unreviewed automatic mutation of roadmaps across the portfolio.
+- Autonomous completion marking.
+
+---
+
+## Release 1.0 — Two-Lane Execution Queue
+
 **Goal:** keep up to two Copilot agents productively occupied across separate repos without collisions.
 
 ### Product outcomes
@@ -195,11 +307,16 @@ The following progress is preserved from prior execution history and remains fou
 - Operators can see which two tasks are active and what remains next in queue.
 - Completed or failed tasks are reflected back into repo readiness on refresh.
 
+### Out of scope
+
+- Unlimited parallel orchestration.
+- Fully autonomous agent fleet behavior.
+
 ---
 
-## Release 0.8 — Standardization, Guardrails, and Continuous Improvement
+## Release 1.1 — Standardization, Guardrails, and Continuous Improvement
 
-**Goal:** reduce ambiguity in roadmap-driven automation and make the system safer over time.
+**Goal:** reduce ambiguity in roadmap-driven automation and make the system safer and more deterministic over time.
 
 ### Product outcomes
 
@@ -210,18 +327,24 @@ The following progress is preserved from prior execution history and remains fou
 ### Engineering milestones
 
 - [ ] Publish recommended `ROADMAP.md` structure standard for managed repos.
-- [ ] Add roadmap linting or policy checks for section names, checkbox formatting, and parseability.
+- [ ] Add roadmap linting or policy checks for release headings, checkbox formatting, required sections, and parseability.
 - [ ] Add README standardization preview workflow.
 - [ ] Add proposed roadmap completion/update preview after successful task execution.
 - [ ] Add saved operator filters/views for common triage patterns.
 - [ ] Add notification hooks for scheduled scans and execution failures.
 - [ ] Add policy-as-code checks for repository standards enforcement.
+- [ ] Add contract drift alerts when a roadmap falls below a target maturity level.
 
 ### Acceptance criteria
 
 - The app can identify roadmap formatting drift before it breaks downstream automation.
 - Standardization tasks can be previewed before modification.
 - Repo management becomes progressively more deterministic over time.
+
+### Out of scope
+
+- Silent autonomous mutation of docs and roadmaps.
+- Removing the operator from review loops.
 
 ---
 
@@ -230,12 +353,13 @@ The following progress is preserved from prior execution history and remains fou
 These items support all releases and should be advanced continuously:
 
 - [ ] Strengthen API contract tests for all routes and error categories.
-- [ ] Expand smoke coverage around launcher, health, roadmap parsing, and task history flows.
+- [ ] Expand smoke coverage around launcher, health, roadmap parsing, contract audit, repair preview, docs-audit, and task history flows.
 - [ ] Add incremental scan mode for large repo roots (skip unchanged directories where safe).
 - [ ] Improve cache invalidation and scan performance for large local inventories.
 - [ ] Cap or roll `operations.jsonl` with configurable retention.
-- [ ] Keep structured logs rich enough to diagnose scan, parse, preview, and start failures.
+- [ ] Keep structured logs rich enough to diagnose scan, parse, normalize, audit, preview, apply, and start failures.
 - [ ] Continue improving operator-facing documentation as workflows evolve.
+- [ ] Keep rule packs and schemas data-driven where practical so standards can evolve without broad code rewrites.
 
 ---
 
@@ -247,6 +371,7 @@ These items support all releases and should be advanced continuously:
 - README quality may be insufficient for meaningful Copilot context.
 - Queue automation can create duplicate or low-value work if readiness is weak.
 - Hidden background execution can obscure failures if logs and history are not clear.
+- Repair flows can accidentally erase real completed history if not handled carefully.
 
 ### Guardrails
 
@@ -255,59 +380,95 @@ These items support all releases and should be advanced continuously:
 - Do not silently mark roadmap items complete based only on code churn.
 - Prefer preview-first workflows before write-back or autonomous mutation.
 - Keep the product operator-readable; this is a control console, not a magic box.
+- Preserve genuine completion history when rewriting roadmaps.
+- Treat roadmap audit failures as first-class findings, not hidden parser trivia.
 
 ---
 
-## 8. Suggested Roadmap File Standard for Managed Repos
+## 8. Roadmap Contract Standard for Managed Repos
 
-To support safe parsing across repos, the recommended roadmap format should converge toward:
+Managed repos should converge toward a release-oriented roadmap format that is both human-readable and machine-parseable.
+
+### Minimum contract expectations
+
+- Clear roadmap title
+- Product intent or scope
+- Preserved completion history where relevant
+- Release-oriented future plan
+- Per-release checklist
+- Acceptance criteria per release
+- Out-of-scope boundaries for larger releases
+- Stable release identifiers
+- Explicit status markers where practical
+
+### Recommended release structure
 
 ```md
-# ROADMAP
+## Release 0.4 — Example Release Title
 
-## Now
-- [ ] Highest-priority actionable work item
-- [ ] Another clearly scoped item
+**Goal:** Describe the functioning version this release should deliver.
 
-## Next
-- [ ] Follow-on work that depends on Now or is lower priority
+### Product outcomes
+- Outcome visible to operators or users
 
-## Later
-- [ ] Useful but non-immediate future work
+### Engineering milestones
+- [ ] Concrete, testable implementation step
+- [ ] Another concrete, testable implementation step
+
+### Acceptance criteria
+- The release can be judged complete in observable terms
+
+### Out of scope
+- Explicitly deferred work
 ```
 
-Formatting guidance:
+### Formatting guidance
 
-- Prefer checkbox items for actionable work.
-- Keep each item concrete and implementation-testable.
-- Avoid mixing completed history into future sections except where explicitly archived.
-- Keep section names stable where possible.
-- Avoid vague placeholders like `misc cleanup` or `improve app`.
+- Prefer release-scoped checklists instead of one giant top-level checklist.
+- Treat each release as a bounded work package for coding agents.
+- Keep checklist items concrete, implementation-testable, and aligned to a functioning version.
+- Avoid vague placeholders such as `improve app`, `refactor stuff`, or `finish later`.
+- Preserve completed history rather than rewriting the past into fiction.
 
 ---
 
-## 9. Definition of Useful Product Progress
+## 9. Definition of Done for Release Execution
+
+A release should not be marked complete unless:
+
+- all checklist items for that release are truly implemented or explicitly blocked
+- UI elements are connected to real behavior rather than placeholders
+- affected docs are updated where workflow or product behavior changed
+- logging and error handling are sufficient to diagnose failures
+- later releases were not partially started just to create the illusion of momentum
+
+This roadmap intentionally treats each release as a bounded, agent-usable execution contract.
+
+---
+
+## 10. Definition of Useful Product Progress
 
 The product is moving in the right direction when:
 
 - missing or weak roadmaps become obvious immediately
 - next pending work is visible without opening files
 - repos can be filtered by dispatch readiness
+- roadmap quality can be scored and explained, not merely guessed
 - Copilot tasks are launched from structured context, not wishful prompting
 - two active Copilot lanes can stay busy on separate repos without confusion
 - progress history remains preserved while future work becomes increasingly formal and deterministic
 
 ---
 
-## 10. Immediate Next Focus
+## 11. Immediate Next Focus
 
 The recommended immediate execution target is:
 
-### **Release 0.7 — Two-Lane Execution Queue**
+### **Release 0.7 — Roadmap Contract Standard Foundation**
 
 Specifically:
 
-- persistent execution state ledger for repo assignments and task outcomes
-- duplicate dispatch prevention (same repo or same roadmap item)
-- two-lane execution board in the dashboard showing active tasks and the ready queue
-- priority ranking of ready repos to surface the best next candidate
+- canonical roadmap template under `standards/roadmap/`
+- contract schema and audit rules under source control
+- maturity model and repair prompt for preview-based normalization
+- backend loading of roadmap standard assets from data files instead of hardcoded assumptions
