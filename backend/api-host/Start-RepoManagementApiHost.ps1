@@ -3619,7 +3619,7 @@ try {
                             }
                         }
 
-                        $applyResult = Invoke-ApplyReadmeStandardization -RepoName $repoName -PreviewId $previewId -ProposedContent $proposedContent -RepoPath $repoPath -WorkspaceRoot $WorkspaceRoot
+                        $applyResult = Invoke-ApplyReadmeStandardization -RepoName $repoName -PreviewId $previewId -ProposedContent $proposedContent -RepoPath $repoPath
                         Write-HostLog ("[TRACE] readme.standardize.apply repoName={0} success={1}" -f $repoName, $applyResult.success)
                         Add-MetricCounter -Name 'api_requests_total'
                         Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
