@@ -24,3 +24,14 @@ jobs:
       - name: Run API host smoke test
         shell: pwsh
         run: ./scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "${{ github.workspace }}"
+
+      - name: Check doc-standards.json integrity
+        shell: pwsh
+        run: |
+          $path = "${{ github.workspace }}/backend/config/doc-standards.json"
+          if (-not (Test-Path -LiteralPath $path)) { throw "doc-standards.json not found at $path" }
+          $content = Get-Content -LiteralPath $path -Raw -Encoding UTF8
+          $parsed = ConvertFrom-Json -InputObject $content
+          if ($null -eq $parsed.requiredRootFiles) { throw "doc-standards.json missing requiredRootFiles" }
+          if ($null -eq $parsed.readmeStandards) { throw "doc-standards.json missing readmeStandards" }
+          Write-Host "doc-standards.json valid: $(@($parsed.requiredRootFiles).Count) required file specs"

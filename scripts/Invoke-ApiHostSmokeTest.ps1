@@ -253,6 +253,17 @@ try {
     Assert-Not503 -Name '/api/roadmap/cache' -Response $roadmapCache
     Assert-Not503 -Name '/api/roadmap/cache/clear' -Response $roadmapCacheClear
 
+    Write-Host '[STEP] Docs audit routes' -ForegroundColor Cyan
+    $docsAuditGet = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/docs-audit"
+    $docsAuditScan = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/docs-audit/scan" -Body @{}
+    Assert-Not503 -Name '/api/docs-audit' -Response $docsAuditGet
+    Assert-Not503 -Name '/api/docs-audit/scan' -Response $docsAuditScan
+    $docsAuditData = $docsAuditGet.Json
+    $docsAuditScanData = $docsAuditScan.Json
+    if (-not $docsAuditData.success) { throw '/api/docs-audit returned success=false' }
+    if (-not $docsAuditScanData.success) { throw '/api/docs-audit/scan returned success=false' }
+    Write-Host ("  docs-audit: {0} repos audited" -f $docsAuditData.data.count) -ForegroundColor DarkGray
+
     Write-Host '[STEP] GitHub and roadmap-agent routes' -ForegroundColor Cyan
     $githubStatusResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/github/status" -Body @{}
     $roadmapPreviewResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap-agent/preview" -Body @{}
@@ -300,6 +311,9 @@ try {
         roadmapStartStatusCode = $roadmapStartResponse.StatusCode
         roadmapHistoryStatusCode = $roadmapHistoryResponse.StatusCode
         logTailEntryCount = $logTail.count
+        docsAuditGetSuccess = $docsAuditData.success
+        docsAuditScanSuccess = $docsAuditScanData.success
+        docsAuditRepoCount = $docsAuditData.data.count
     } | Format-List
 }
 finally {

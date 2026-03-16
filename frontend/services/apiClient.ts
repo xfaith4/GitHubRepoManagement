@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem } from '../types';
+import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -419,4 +419,56 @@ export async function getRoadmapTaskHistory(limit = 25): Promise<RoadmapTaskHist
     throw new Error(data?.error?.message ?? 'Failed to load roadmap task history.');
   }
   return Array.isArray(data?.data?.items) ? data.data.items : [];
+}
+
+function normalizeDocAuditEntry(e: any): DocAuditEntry {
+  return {
+    repoName: String(e?.repoName ?? ''),
+    repoPath: String(e?.repoPath ?? ''),
+    dispatchReadiness: (e?.dispatchReadiness ?? 'missing-roadmap') as DocAuditEntry['dispatchReadiness'],
+    docFindings: Array.isArray(e?.docFindings) ? e.docFindings.map((f: any) => ({
+      file: String(f?.file ?? ''),
+      message: String(f?.message ?? ''),
+      severity: (f?.severity ?? 'info') as 'critical' | 'warning' | 'info',
+      recommendedAction: String(f?.recommendedAction ?? ''),
+    })) : [],
+    roadmapState: e?.roadmapState,
+    nextPendingRoadmapItem: e?.nextPendingRoadmapItem ?? null,
+    auditedAt: String(e?.auditedAt ?? new Date().toISOString()),
+    criticalCount: Number(e?.criticalCount ?? 0),
+    warningCount: Number(e?.warningCount ?? 0),
+    infoCount: Number(e?.infoCount ?? 0),
+    readyForDispatch: Boolean(e?.readyForDispatch ?? false),
+  };
+}
+
+export async function getDocsAudit(refresh = false): Promise<DocAuditIndex> {
+  if (USE_MOCK_API) {
+    return { entries: [], auditedAt: new Date().toISOString(), count: 0, cacheSource: 'fresh-scan', cacheAgeSeconds: 0 };
+  }
+  const qs = refresh ? '?refresh=true' : '';
+  const data = await fetchJson<any>(`${API_BASE_URL}/docs-audit${qs}`);
+  const d = data?.data ?? {};
+  return {
+    entries: Array.isArray(d.entries) ? d.entries.map(normalizeDocAuditEntry) : [],
+    auditedAt: d.auditedAt ?? new Date().toISOString(),
+    count: Number(d.count ?? 0),
+    cacheSource: d.cacheSource ?? 'fresh-scan',
+    cacheAgeSeconds: Number(d.cacheAgeSeconds ?? 0),
+  };
+}
+
+export async function triggerDocsAuditScan(): Promise<DocAuditIndex> {
+  if (USE_MOCK_API) {
+    return { entries: [], auditedAt: new Date().toISOString(), count: 0, cacheSource: 'fresh-scan', cacheAgeSeconds: 0 };
+  }
+  const data = await postJson<any>('/docs-audit/scan', {});
+  const d = data?.data ?? {};
+  return {
+    entries: Array.isArray(d.entries) ? d.entries.map(normalizeDocAuditEntry) : [],
+    auditedAt: d.auditedAt ?? new Date().toISOString(),
+    count: Number(d.count ?? 0),
+    cacheSource: 'fresh-scan',
+    cacheAgeSeconds: 0,
+  };
 }

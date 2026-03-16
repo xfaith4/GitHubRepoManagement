@@ -63,6 +63,12 @@ The following progress is preserved from prior execution history and remains fou
 - [x] Dashboard ROADMAP modal upgraded to preview/start roadmap Copilot tasks and view recent task history.
 - [x] Local status scan now populates `lastCommitMessage`, `lastCommitAuthor`, `commitsLastWeek`, `commitsLastMonth`.
 - [x] GitHub insights now aggregate real open PR counts (removed hardcoded zeros in API/gh paths).
+- [x] Documentation audit scanner (`DocAudit.Scanner.ps1`) computes per-repo `DispatchReadiness` from roadmap state + doc findings.
+- [x] Machine-readable documentation standards (`backend/config/doc-standards.json`) for README presence, length, sections, and required files.
+- [x] New docs-audit API routes: `GET /api/docs-audit` and `POST /api/docs-audit/scan` with TTL cache.
+- [x] Work Queue primary view in the dashboard — filters repos by dispatch readiness; shows findings with severity and recommended actions.
+- [x] Dispatch readiness badges and readiness filter dropdown added to the Repository Grid view.
+- [x] CI smoke extended with doc-standards.json integrity check and `/api/docs-audit` route coverage.
 
 ---
 
@@ -109,20 +115,19 @@ The following progress is preserved from prior execution history and remains fou
 
 ### Engineering milestones
 
-- [ ] Introduce a `Documentation Audit` or `Work Queue` primary view in the UI.
-- [ ] Add machine-readable documentation standards for README and required repo-root documents.
-- [ ] Implement combined docs-audit backend route family (inventory + README findings + roadmap findings + readiness status).
-- [ ] Compute per-repo `DispatchReadiness` state:
+- [x] Introduce a `Documentation Audit` or `Work Queue` primary view in the UI.
+- [x] Add machine-readable documentation standards for README and required repo-root documents.
+- [x] Implement combined docs-audit backend route family (inventory + README findings + roadmap findings + readiness status).
+- [x] Compute per-repo `DispatchReadiness` state:
   - `missing-roadmap`
   - `roadmap-complete`
   - `needs-doc-standardization`
   - `ready`
-  - `agent-running`
   - `blocked`
-- [ ] Show missing docs, README quality findings, and roadmap readiness in a single repo details panel.
-- [ ] Add filters for missing roadmap, roadmap complete, pending work, docs non-compliant, ready for dispatch, and blocked.
-- [ ] Add severity/recommended-action summaries to each repo row.
-- [ ] Add CI checks for documentation integrity and broken internal links where practical.
+- [x] Show missing docs, README quality findings, and roadmap readiness in a single repo details panel.
+- [x] Add filters for missing roadmap, roadmap complete, pending work, docs non-compliant, ready for dispatch, and blocked.
+- [x] Add severity/recommended-action summaries to each repo row.
+- [x] Add CI checks for documentation integrity and broken internal links where practical.
 
 ### Acceptance criteria
 
@@ -299,14 +304,13 @@ The product is moving in the right direction when:
 
 The recommended immediate execution target is:
 
-### **Release 0.4 — Roadmap Intelligence Foundation**
+### **Release 0.6 — Copilot Task Packaging & Preview Workflow**
 
 Specifically:
 
-- structured roadmap parser
-- roadmap state classification
-- next pending item extraction
-- main-grid visibility for actionable next work
-- roadmap and roadmap-agent smoke/API contract coverage
+- normalized task packet model with repo context + roadmap item + doc findings
+- `Preview Copilot Task` action from the Work Queue view
+- structured prompts with guardrails against stubs, drift, and scope creep
+- task history that links back to the dispatched roadmap item
 
-That release creates the minimum viable spine for the entire product direction.
+That release bridges the Work Queue produced in 0.5 into a trustworthy Copilot dispatch pipeline.

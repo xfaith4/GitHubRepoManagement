@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { type RepoStatus } from '../types';
+import { type RepoStatus, type DispatchReadiness } from '../types';
 import { BuildSuccessIcon, BuildFailureIcon, BuildInProgressIcon, PullRequestIcon, NoBuildsIcon, ChevronDownIcon, ChevronRightIcon } from './icons';
 
 declare global {
@@ -59,6 +59,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, dataSource, selectedR
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [filter, setFilter] = useState('');
+  const [readinessFilter, setReadinessFilter] = useState<DispatchReadiness | 'all'>('all');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
   const getRepoSelectionId = useCallback(
@@ -77,10 +78,14 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, dataSource, selectedR
 
     const uniqueRepos = Array.from(byPath.values());
     const filterLower = filter.toLowerCase();
-    const filtered = uniqueRepos.filter(repo =>
-      repo.name.toLowerCase().includes(filterLower) ||
-      (repo.localPath?.toLowerCase().includes(filterLower) ?? false)
-    );
+    const filtered = uniqueRepos.filter(repo => {
+      const matchesText =
+        repo.name.toLowerCase().includes(filterLower) ||
+        (repo.localPath?.toLowerCase().includes(filterLower) ?? false);
+      const matchesReadiness =
+        readinessFilter === 'all' || repo.dispatchReadiness === readinessFilter;
+      return matchesText && matchesReadiness;
+    });
 
     return filtered.sort((a, b) => {
       const aValue = a[sortKey];
@@ -105,7 +110,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, dataSource, selectedR
       
       return 0;
     });
-  }, [repos, sortKey, sortOrder, filter]);
+  }, [repos, sortKey, sortOrder, filter, readinessFilter]);
 
   const duplicateLocalRepoGroups = useMemo<DuplicateGroup[]>(() => {
     const groups = new Map<string, RepoStatus[]>();
@@ -252,6 +257,18 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, dataSource, selectedR
       { value: 'lastBuildStatus', label: 'Build Status' },
   ];
 
+  const readinessFilterOptions: { value: DispatchReadiness | 'all'; label: string }[] = [
+    { value: 'all', label: 'All' },
+    { value: 'ready', label: 'Ready' },
+    { value: 'needs-doc-standardization', label: 'Needs Docs' },
+    { value: 'missing-roadmap', label: 'No Roadmap' },
+    { value: 'roadmap-complete', label: 'Roadmap Complete' },
+    { value: 'parse-error', label: 'Parse Error' },
+    { value: 'blocked', label: 'Blocked' },
+  ];
+
+  const hasReadinessData = repos.some(r => r.dispatchReadiness !== undefined);
+
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-4">
        {duplicateLocalRepoGroups.length > 0 && (
@@ -288,6 +305,19 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, dataSource, selectedR
                 {groupByOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
             </select>
         </div>
+        {hasReadinessData && (
+          <div className="flex items-center gap-2">
+            <label htmlFor="readiness-filter" className="text-sm font-medium text-gray-300">Readiness:</label>
+            <select
+              id="readiness-filter"
+              value={readinessFilter}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setReadinessFilter(e.target.value as DispatchReadiness | 'all')}
+              className="block w-full max-w-xs bg-gray-900 border border-gray-600 rounded-md shadow-sm py-2 pl-3 pr-8 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+            >
+              {readinessFilterOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+            </select>
+          </div>
+        )}
        </div>
       <div className="shadow overflow-hidden border-b border-gray-700 sm:rounded-lg">
         <div className="overflow-x-auto">
@@ -384,6 +414,25 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, dataSource, selectedR
                                     </div>
                                   );
                                 })()}
+                                 {repo.dispatchReadiness && (() => {
+                                   const readinessBadge: Record<string, { cls: string; label: string }> = {
+                                     ready: { cls: 'bg-green-900/40 text-green-300 border-green-700/40', label: '✓ Ready' },
+                                     'needs-doc-standardization': { cls: 'bg-yellow-900/40 text-yellow-300 border-yellow-700/40', label: '⚠ Needs Docs' },
+                                     blocked: { cls: 'bg-red-900/40 text-red-300 border-red-700/40', label: '✕ Blocked' },
+                                     'missing-roadmap': { cls: 'bg-gray-700/50 text-gray-400 border-gray-600/40', label: 'No Roadmap' },
+                                     'roadmap-complete': { cls: 'bg-blue-900/40 text-blue-300 border-blue-700/40', label: 'Roadmap Done' },
+                                     'parse-error': { cls: 'bg-orange-900/40 text-orange-300 border-orange-700/40', label: '! Parse Error' },
+                                   };
+                                   const cfg = readinessBadge[repo.dispatchReadiness];
+                                   if (!cfg) return null;
+                                   return (
+                                     <div className="mt-1">
+                                       <span className={`inline-flex items-center text-xs px-1.5 py-0.5 rounded border ${cfg.cls}`}>
+                                         {cfg.label}
+                                       </span>
+                                     </div>
+                                   );
+                                 })()}
                                 {workflowCount !== null && (
                                   <div className="text-xs text-gray-500">
                                     {workflowCount} workflows{testingWorkflowCount !== null && ` · ${testingWorkflowCount} testing`}
