@@ -11,6 +11,10 @@ export default defineConfig(({ mode }) => {
         port: 7000,
         host: '0.0.0.0',
         proxy: {
+          '/health': {
+            target: apiProxyTarget,
+            changeOrigin: true,
+          },
           '/api': {
             target: apiProxyTarget,
             changeOrigin: true,

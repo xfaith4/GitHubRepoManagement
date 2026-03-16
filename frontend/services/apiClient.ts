@@ -13,7 +13,7 @@ const API_BASE_URL = (() => {
   return viteUrl ?? (isDev ? '/api' : 'http://localhost:7071/api');
 })();
 
-type OptionalApiFeature = 'docs-audit' | 'roadmap-audit';
+type OptionalApiFeature = 'docs-audit' | 'roadmap-audit' | 'execution-queue';
 
 class OptionalApiUnavailableError extends Error {
   code: 'OPTIONAL_API_UNAVAILABLE';
@@ -669,22 +669,56 @@ export async function getRoadmapRepairHistory(limit = 25): Promise<RoadmapRepair
 
 // Release 1.0 — Execution Queue API
 
+function normalizeExecutionQueueError(error: unknown, endpoint: string): Error {
+  const message = error instanceof Error ? error.message : 'Execution queue request failed.';
+  if (/404|not found/i.test(message)) {
+    return markOptionalApiUnavailable('execution-queue', endpoint);
+  }
+  return error instanceof Error ? error : new Error(message);
+}
+
 export async function getExecutionQueue(): Promise<ExecutionQueueSummary> {
-  const data = await fetchJson<any>(`${API_BASE_URL}/execution/queue`);
-  return data?.data ?? data;
+  const cachedError = getOptionalApiUnavailableError('execution-queue');
+  if (cachedError) {
+    throw cachedError;
+  }
+  try {
+    const data = await fetchJson<any>(`${API_BASE_URL}/execution/queue`);
+    return data?.data ?? data;
+  } catch (error) {
+    throw normalizeExecutionQueueError(error, '/execution/queue');
+  }
 }
 
 export async function syncExecutionQueue(): Promise<ExecutionQueueSummary> {
-  const data = await postJson<any>('/execution/sync', {});
-  return data?.data ?? data;
+  const cachedError = getOptionalApiUnavailableError('execution-queue');
+  if (cachedError) {
+    throw cachedError;
+  }
+  try {
+    const data = await postJson<any>('/execution/sync', {});
+    return data?.data ?? data;
+  } catch (error) {
+    throw normalizeExecutionQueueError(error, '/execution/sync');
+  }
 }
 
 export async function assignExecutionLane(repoName: string, options?: { runId?: string; taskText?: string; taskSection?: string }): Promise<{ success: boolean; laneSlot?: number; runId?: string; error?: string }> {
+  const cachedError = getOptionalApiUnavailableError('execution-queue');
+  if (cachedError) {
+    return { success: false, error: cachedError.message };
+  }
   const body: Record<string, unknown> = { repoName };
   if (options?.runId) body.runId = options.runId;
   if (options?.taskText) body.taskText = options.taskText;
   if (options?.taskSection) body.taskSection = options.taskSection;
-  const data = await postJson<any>('/execution/assign', body);
+  let data: any;
+  try {
+    data = await postJson<any>('/execution/assign', body);
+  } catch (error) {
+    const normalized = normalizeExecutionQueueError(error, '/execution/assign');
+    return { success: false, error: normalized.message };
+  }
   if (!data?.success) {
     return { success: false, error: data?.error?.message ?? 'Failed to assign lane' };
   }
@@ -692,10 +726,20 @@ export async function assignExecutionLane(repoName: string, options?: { runId?: 
 }
 
 export async function completeExecutionTask(repoName: string, options?: { outcome?: string; hasRemainingWork?: boolean }): Promise<{ success: boolean; newState?: string; error?: string }> {
+  const cachedError = getOptionalApiUnavailableError('execution-queue');
+  if (cachedError) {
+    return { success: false, error: cachedError.message };
+  }
   const body: Record<string, unknown> = { repoName };
   if (options?.outcome) body.outcome = options.outcome;
   if (options?.hasRemainingWork !== undefined) body.hasRemainingWork = options.hasRemainingWork;
-  const data = await postJson<any>('/execution/complete', body);
+  let data: any;
+  try {
+    data = await postJson<any>('/execution/complete', body);
+  } catch (error) {
+    const normalized = normalizeExecutionQueueError(error, '/execution/complete');
+    return { success: false, error: normalized.message };
+  }
   if (!data?.success) {
     return { success: false, error: data?.error?.message ?? 'Failed to complete task' };
   }
@@ -703,7 +747,17 @@ export async function completeExecutionTask(repoName: string, options?: { outcom
 }
 
 export async function cancelExecutionTask(repoName: string, reason?: string): Promise<{ success: boolean; newState?: string; retryCount?: number; error?: string }> {
-  const data = await postJson<any>('/execution/cancel', { repoName, reason: reason ?? 'cancelled' });
+  const cachedError = getOptionalApiUnavailableError('execution-queue');
+  if (cachedError) {
+    return { success: false, error: cachedError.message };
+  }
+  let data: any;
+  try {
+    data = await postJson<any>('/execution/cancel', { repoName, reason: reason ?? 'cancelled' });
+  } catch (error) {
+    const normalized = normalizeExecutionQueueError(error, '/execution/cancel');
+    return { success: false, error: normalized.message };
+  }
   if (!data?.success) {
     return { success: false, error: data?.error?.message ?? 'Failed to cancel task' };
   }
@@ -711,7 +765,17 @@ export async function cancelExecutionTask(repoName: string, reason?: string): Pr
 }
 
 export async function requeueExecution(repoName: string, force = false): Promise<{ success: boolean; error?: string }> {
-  const data = await postJson<any>('/execution/requeue', { repoName, force });
+  const cachedError = getOptionalApiUnavailableError('execution-queue');
+  if (cachedError) {
+    return { success: false, error: cachedError.message };
+  }
+  let data: any;
+  try {
+    data = await postJson<any>('/execution/requeue', { repoName, force });
+  } catch (error) {
+    const normalized = normalizeExecutionQueueError(error, '/execution/requeue');
+    return { success: false, error: normalized.message };
+  }
   if (!data?.success) {
     return { success: false, error: data?.error?.message ?? 'Failed to requeue' };
   }
