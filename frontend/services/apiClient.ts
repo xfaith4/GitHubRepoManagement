@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem } from '../types';
+import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -611,4 +611,55 @@ export async function applyRoadmapRepair(
 export async function getRoadmapRepairHistory(limit = 25): Promise<RoadmapRepairHistoryItem[]> {
   const data = await fetchJson<any>(`/roadmap/repair/history?limit=${limit}`);
   return Array.isArray(data?.data?.items) ? data.data.items : [];
+}
+
+// Release 1.0 — Execution Queue API
+
+export async function getExecutionQueue(): Promise<ExecutionQueueSummary> {
+  const data = await fetchJson<any>(`${API_BASE_URL}/execution/queue`);
+  return data?.data ?? data;
+}
+
+export async function syncExecutionQueue(): Promise<ExecutionQueueSummary> {
+  const data = await postJson<any>('/execution/sync', {});
+  return data?.data ?? data;
+}
+
+export async function assignExecutionLane(repoName: string, options?: { runId?: string; taskText?: string; taskSection?: string }): Promise<{ success: boolean; laneSlot?: number; runId?: string; error?: string }> {
+  const body: Record<string, unknown> = { repoName };
+  if (options?.runId) body.runId = options.runId;
+  if (options?.taskText) body.taskText = options.taskText;
+  if (options?.taskSection) body.taskSection = options.taskSection;
+  const data = await postJson<any>('/execution/assign', body);
+  if (!data?.success) {
+    return { success: false, error: data?.error?.message ?? 'Failed to assign lane' };
+  }
+  return { success: true, laneSlot: data?.data?.laneSlot, runId: data?.data?.runId };
+}
+
+export async function completeExecutionTask(repoName: string, options?: { outcome?: string; hasRemainingWork?: boolean }): Promise<{ success: boolean; newState?: string; error?: string }> {
+  const body: Record<string, unknown> = { repoName };
+  if (options?.outcome) body.outcome = options.outcome;
+  if (options?.hasRemainingWork !== undefined) body.hasRemainingWork = options.hasRemainingWork;
+  const data = await postJson<any>('/execution/complete', body);
+  if (!data?.success) {
+    return { success: false, error: data?.error?.message ?? 'Failed to complete task' };
+  }
+  return { success: true, newState: data?.data?.newState };
+}
+
+export async function cancelExecutionTask(repoName: string, reason?: string): Promise<{ success: boolean; newState?: string; retryCount?: number; error?: string }> {
+  const data = await postJson<any>('/execution/cancel', { repoName, reason: reason ?? 'cancelled' });
+  if (!data?.success) {
+    return { success: false, error: data?.error?.message ?? 'Failed to cancel task' };
+  }
+  return { success: true, newState: data?.data?.newState, retryCount: data?.data?.retryCount };
+}
+
+export async function requeueExecution(repoName: string, force = false): Promise<{ success: boolean; error?: string }> {
+  const data = await postJson<any>('/execution/requeue', { repoName, force });
+  if (!data?.success) {
+    return { success: false, error: data?.error?.message ?? 'Failed to requeue' };
+  }
+  return { success: true };
 }

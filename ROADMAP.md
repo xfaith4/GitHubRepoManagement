@@ -92,6 +92,13 @@ The following progress is preserved from prior execution history and remains fou
 - [x] `RoadmapRepairModal` dashboard component — Repair Plan, Diff Preview, and History tabs with explicit two-step apply workflow.
 - [x] "Repair" button in Work Queue for L0–L2 repos; cache invalidated after successful apply.
 - [x] Module smoke and API host smoke extended with roadmap repair coverage (Release 0.9).
+- [x] Persistent execution state ledger (`Execution.Ledger.ps1`) — tracks repo assignments, two-lane slots, execution states, history.
+- [x] Explicit execution states: `idle`, `ready`, `running`, `blocked`, `complete` with duplicate-dispatch guards.
+- [x] Execution API routes: `GET /api/execution/queue`, `POST /api/execution/sync`, `POST /api/execution/assign`, `POST /api/execution/complete`, `POST /api/execution/cancel`, `POST /api/execution/requeue`.
+- [x] Two-lane Execution Queue panel (`ExecutionQueuePanel`) in dashboard — Active Lanes board, ranked Ready Queue, and execution history tabs.
+- [x] Repos ranked by priority score (maturity score + readiness bonus) to surface best candidates.
+- [x] Requeue and retry semantics: blocked repos requeueable with force; retries tracked; max retry threshold transitions to blocked.
+- [x] Module smoke and API host smoke extended with execution ledger coverage (Release 1.0).
 
 ---
 
@@ -310,14 +317,14 @@ The following progress is preserved from prior execution history and remains fou
 
 ### Engineering milestones
 
-- [ ] Introduce persistent execution state ledger for repo assignments and task outcomes.
-- [ ] Prevent duplicate dispatch of the same repo while a task is active.
-- [ ] Prevent duplicate dispatch of the same roadmap item.
-- [ ] Add explicit execution states: `idle`, `ready`, `running`, `blocked`, `complete`.
-- [ ] Add two-lane execution board or lane panel to the dashboard.
-- [ ] Rank ready repos by priority/readiness score to surface the best next candidates.
-- [ ] Requeue repos automatically after refresh when more pending work remains.
-- [ ] Add cancellation/failure handling and clear retry semantics.
+- [x] Introduce persistent execution state ledger for repo assignments and task outcomes.
+- [x] Prevent duplicate dispatch of the same repo while a task is active.
+- [x] Prevent duplicate dispatch of the same roadmap item.
+- [x] Add explicit execution states: `idle`, `ready`, `running`, `blocked`, `complete`.
+- [x] Add two-lane execution board or lane panel to the dashboard.
+- [x] Rank ready repos by priority/readiness score to surface the best next candidates.
+- [x] Requeue repos automatically after refresh when more pending work remains.
+- [x] Add cancellation/failure handling and clear retry semantics.
 
 ### Acceptance criteria
 
@@ -482,13 +489,13 @@ The product is moving in the right direction when:
 
 The recommended immediate execution target is:
 
-### **Release 1.0 — Two-Lane Execution Queue**
+### **Release 1.1 — Standardization, Guardrails, and Continuous Improvement**
 
 Specifically:
 
-- introduce a persistent execution state ledger for repo assignments and task outcomes
-- prevent duplicate dispatch of the same repo while a task is active
-- add explicit execution states: `idle`, `ready`, `running`, `blocked`, `complete`
-- add a two-lane execution board or lane panel to the dashboard
-- rank ready repos by priority/readiness score to surface the best next candidates
-- add cancellation/failure handling and clear retry semantics
+- publish recommended `ROADMAP.md` structure standard for managed repos
+- add roadmap linting or policy checks for release headings, checkbox formatting, required sections, and parseability
+- add README standardization preview workflow
+- add proposed roadmap completion/update preview after successful task execution
+- add saved operator filters/views for common triage patterns
+- add contract drift alerts when a roadmap falls below a target maturity level

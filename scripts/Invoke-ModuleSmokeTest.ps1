@@ -342,6 +342,83 @@ Write-Host '  blocked preview correctly returns null proposedContent' -Foregroun
 Write-Step 'Running reconciliation preflight check'
 & (Join-Path $WorkspaceRoot 'backend\modules\reconcile\preflight-check.ps1')
 
+Write-Step 'Loading execution ledger module (Release 1.0)'
+$executionLedgerPath = Join-Path $WorkspaceRoot 'backend\modules\execution\Execution.Ledger.ps1'
+if (-not (Test-Path -LiteralPath $executionLedgerPath)) { throw "Execution.Ledger.ps1 not found at: $executionLedgerPath" }
+. $executionLedgerPath
+Write-Host 'Execution ledger module loaded successfully' -ForegroundColor Green
+
+Write-Step 'Execution ledger — smoke: sync from audit data and verify states'
+$smokeWs = Join-Path $WorkspaceRoot 'evidence\baseline\smoke-execution'
+if (-not (Test-Path -LiteralPath $smokeWs)) {
+    $null = New-Item -ItemType Directory -Path $smokeWs -Force
+}
+$null = New-Item -ItemType Directory -Path (Join-Path $smokeWs 'output\execution') -Force -ErrorAction SilentlyContinue
+$smokeDocEntries = @(
+    [PSCustomObject]@{
+        repoName = 'smoke-repo-ready'; repoPath = $smokeWs; dispatchReadiness = 'ready'
+        nextPendingRoadmapItem = 'Implement feature smoke-A'; roadmapState = 'pending'
+        criticalCount = 0; warningCount = 0; infoCount = 0; readyForDispatch = $true
+        auditedAt = (Get-Date).ToString('o'); docFindings = @()
+    },
+    [PSCustomObject]@{
+        repoName = 'smoke-repo-blocked'; repoPath = $smokeWs; dispatchReadiness = 'blocked'
+        nextPendingRoadmapItem = ''; roadmapState = 'missing'
+        criticalCount = 2; warningCount = 0; infoCount = 0; readyForDispatch = $false
+        auditedAt = (Get-Date).ToString('o'); docFindings = @()
+    }
+)
+$smokeRoadmapEntries = @(
+    [PSCustomObject]@{
+        repoName = 'smoke-repo-ready'; maturityScore = 70
+        nextPendingItem = [PSCustomObject]@{ text = 'Implement feature smoke-A'; section = 'Release 1.0' }
+        roadmapPath = (Join-Path $smokeWs 'ROADMAP.md')
+    }
+)
+$smokedLedger = Sync-LedgerFromAudit -WorkspaceRoot $smokeWs -DocAuditEntries $smokeDocEntries -RoadmapAuditEntries $smokeRoadmapEntries
+$smokeReady   = @($smokedLedger.entries | Where-Object { $_.executionState -eq 'ready'   }).Count
+$smokeBlocked = @($smokedLedger.entries | Where-Object { $_.executionState -eq 'blocked' }).Count
+if ($smokeReady   -ne 1) { throw "Expected 1 ready entry after sync, got $smokeReady"   }
+if ($smokeBlocked -ne 1) { throw "Expected 1 blocked entry after sync, got $smokeBlocked" }
+Write-Host ('  sync: ready=' + $smokeReady + ' blocked=' + $smokeBlocked) -ForegroundColor DarkGray
+
+Write-Step 'Execution ledger — smoke: assign lane and verify duplicate guard'
+$assignResult = Invoke-AssignLane -WorkspaceRoot $smokeWs -RepoName 'smoke-repo-ready'
+if (-not $assignResult.success) { throw "Expected assign to succeed, got error: $($assignResult.error)" }
+if ($assignResult.laneSlot -ne 1) { throw "Expected laneSlot=1, got $($assignResult.laneSlot)" }
+$dupResult = Invoke-AssignLane -WorkspaceRoot $smokeWs -RepoName 'smoke-repo-ready'
+if ($dupResult.success) { throw "Expected duplicate assign to fail, but it succeeded" }
+Write-Host ('  assign lane=1 ok; duplicate blocked correctly') -ForegroundColor DarkGray
+
+Write-Step 'Execution ledger — smoke: complete task and verify state transition'
+$completeResult = Invoke-CompleteTask -WorkspaceRoot $smokeWs -RepoName 'smoke-repo-ready' -Outcome 'success' -HasRemainingWork $false
+if (-not $completeResult.success) { throw "Expected complete to succeed, got error: $($completeResult.error)" }
+if ($completeResult.newState -ne 'complete') { throw "Expected newState=complete, got $($completeResult.newState)" }
+Write-Host '  complete task -> state=complete correctly' -ForegroundColor DarkGray
+
+Write-Step 'Execution ledger — smoke: cancel task and verify retry count'
+# Re-sync to get the ready repo back
+$smokedLedger2 = Sync-LedgerFromAudit -WorkspaceRoot $smokeWs -DocAuditEntries $smokeDocEntries -RoadmapAuditEntries $smokeRoadmapEntries
+$null = Invoke-AssignLane -WorkspaceRoot $smokeWs -RepoName 'smoke-repo-ready'
+$cancelResult = Invoke-CancelTask -WorkspaceRoot $smokeWs -RepoName 'smoke-repo-ready' -Reason 'test-cancel' -MaxRetries 3
+if (-not $cancelResult.success) { throw "Expected cancel to succeed, got error: $($cancelResult.error)" }
+if ($cancelResult.newState -notin @('ready','blocked')) { throw "Expected newState=ready or blocked after cancel, got $($cancelResult.newState)" }
+Write-Host ('  cancel -> newState=' + $cancelResult.newState + ' retryCount=' + $cancelResult.retryCount) -ForegroundColor DarkGray
+
+Write-Step 'Execution ledger — smoke: requeue blocked repo'
+$null = Invoke-RequeueRepo -WorkspaceRoot $smokeWs -RepoName 'smoke-repo-blocked' -Force $true
+$summaryAfterRequeue = Get-ExecutionQueueSummary -WorkspaceRoot $smokeWs
+$requeuedEntry = $summaryAfterRequeue.entries | Where-Object { $_.repoName -eq 'smoke-repo-blocked' } | Select-Object -First 1
+if ($requeuedEntry.executionState -ne 'ready') { throw "Expected smoke-repo-blocked to be 'ready' after requeue, got $($requeuedEntry.executionState)" }
+Write-Host '  requeue blocked -> ready correctly' -ForegroundColor DarkGray
+
+Write-Step 'Execution ledger — smoke: ranked queue and summary'
+$summary = Get-ExecutionQueueSummary -WorkspaceRoot $smokeWs
+if ($null -eq $summary.lanes)       { throw 'Expected summary.lanes to be present' }
+if ($null -eq $summary.rankedQueue) { throw 'Expected summary.rankedQueue to be present' }
+if ($null -eq $summary.stateCounts) { throw 'Expected summary.stateCounts to be present' }
+Write-Host ("  queue summary: total={0} activeLanes={1} rankedQueue={2}" -f $summary.totalRepos, $summary.activeLaneCount, @($summary.rankedQueue).Count) -ForegroundColor DarkGray
+
 Write-Step 'Running modular reconciliation smoke test (narrow scope)'
 & $reconcileModular `
     -LocalRoots @($WorkspaceRoot) `

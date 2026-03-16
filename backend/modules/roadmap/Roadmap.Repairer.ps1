@@ -433,7 +433,7 @@ function Invoke-GenerateRepairPreview {
         # If existing sections already look like releases, keep their names;
         # otherwise bucket everything into a single next release.
         $releaseSections = @($sections | Where-Object { $_.name -imatch 'release\s+\d' })
-        $nonReleaseSections = @($sections | Where-Object { $_.name -notimatch 'release\s+\d' })
+        $nonReleaseSections = @($sections | Where-Object { $_.name -notmatch 'release\s+\d' })
 
         # Collect pending from non-release sections to fold into a release
         $ungroupedPending = [System.Collections.Generic.List[string]]::new()

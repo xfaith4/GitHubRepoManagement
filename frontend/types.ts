@@ -426,3 +426,63 @@ export interface RoadmapRepairHistoryItem {
   timestamp: string;
   appliedAt?: string | null;
 }
+
+// Release 1.0 — Two-Lane Execution Queue
+
+export type ExecutionState =
+  | 'idle'
+  | 'ready'
+  | 'running'
+  | 'blocked'
+  | 'complete';
+
+export interface ExecutionLaneEntry {
+  repoName: string;
+  repoPath?: string;
+  executionState: ExecutionState;
+  roadmapPath?: string;
+  currentTaskText?: string;
+  currentTaskSection?: string;
+  currentRunId?: string | null;
+  laneSlot?: number | null;
+  priorityScore: number;
+  assignedAt?: string | null;
+  completedAt?: string | null;
+  lastOutcome?: string | null;
+  retryCount: number;
+  errorMessage?: string | null;
+  updatedAt: string;
+}
+
+export interface ExecutionLaneStateCounts {
+  idle: number;
+  ready: number;
+  running: number;
+  blocked: number;
+  complete: number;
+}
+
+export interface ExecutionQueueSummary {
+  schemaVersion: string;
+  updatedAt: string;
+  totalRepos: number;
+  stateCounts: ExecutionLaneStateCounts;
+  activeLaneCount: number;
+  lanes: {
+    lane1: ExecutionLaneEntry | null;
+    lane2: ExecutionLaneEntry | null;
+  };
+  rankedQueue: ExecutionLaneEntry[];
+  entries: ExecutionLaneEntry[];
+  recentHistory: ExecutionHistoryRecord[];
+}
+
+export interface ExecutionHistoryRecord {
+  repoName: string;
+  event: 'assigned' | 'completed' | 'cancelled' | 'requeued';
+  runId?: string;
+  taskText?: string;
+  outcome?: string;
+  errorMessage?: string;
+  timestamp: string;
+}

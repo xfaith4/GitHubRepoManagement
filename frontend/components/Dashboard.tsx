@@ -15,6 +15,7 @@ import WorkQueueView from './WorkQueueView';
 import CopilotTaskPreviewModal from './CopilotTaskPreviewModal';
 import RoadmapAuditModal from './RoadmapAuditModal';
 import RoadmapRepairModal from './RoadmapRepairModal';
+import ExecutionQueuePanel from './ExecutionQueuePanel';
 import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan } from '../services/apiClient';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
@@ -51,7 +52,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [roadmapEntries, setRoadmapEntries] = useState<RoadmapEntry[]>([]);
   const [selectedRepoIds, setSelectedRepoIds] = useState<Set<string>>(new Set());
   const [groupBy, setGroupBy] = useState<keyof RepoStatus | 'none'>('none');
-  const [activeView, setActiveView] = useState<'repos' | 'work-queue'>('repos');
+  const [activeView, setActiveView] = useState<'repos' | 'work-queue' | 'execution-queue'>('repos');
   const [docsAuditIndex, setDocsAuditIndex] = useState<DocAuditIndex | null>(null);
   const [docsAuditLoading, setDocsAuditLoading] = useState(false);
   const [docsAuditError, setDocsAuditError] = useState<string | null>(null);
@@ -685,6 +686,16 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                   </span>
                 )}
               </button>
+              <button
+                onClick={() => setActiveView('execution-queue')}
+                className={`px-4 py-2 text-sm font-medium rounded-t border-b-2 transition-colors flex items-center gap-1.5 ${
+                  activeView === 'execution-queue'
+                    ? 'border-blue-500 text-blue-300 bg-gray-700/40'
+                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-700/20'
+                }`}
+              >
+                Execution Queue
+              </button>
             </div>
 
             {activeView === 'repos' ? (
@@ -713,7 +724,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                   setGroupBy={setGroupBy}
                 />
               </>
-            ) : (
+            ) : activeView === 'work-queue' ? (
               <WorkQueueView
                 auditIndex={docsAuditIndex}
                 loading={docsAuditLoading}
@@ -726,6 +737,10 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                 onRepairRoadmap={handleRepairRoadmap}
                 isScanning={currentOperation === 'docs-audit-scan'}
                 roadmapAuditIndex={roadmapAuditIndex}
+              />
+            ) : (
+              <ExecutionQueuePanel
+                onDispatchPreviewTask={handlePreviewCopilotTask}
               />
             )}
         </div>
