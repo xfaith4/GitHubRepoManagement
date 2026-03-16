@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { type DocAuditEntry, type DocAuditIndex, type DispatchReadiness } from '../types';
+import { type DocAuditEntry, type DocAuditIndex, type DispatchReadiness, type RoadmapAuditIndex, type RoadmapMaturityLevel, type RoadmapMaturityFilter } from '../types';
 import { SpinnerIcon } from './icons';
 
 interface WorkQueueViewProps {
@@ -10,10 +10,53 @@ interface WorkQueueViewProps {
   onScan: () => void;
   onViewRoadmap?: (repoName: string) => void;
   onPreviewTask?: (repoName: string, roadmapPath?: string) => void;
+  onViewRoadmapAudit?: (repoName: string) => void;
   isScanning: boolean;
+  roadmapAuditIndex?: RoadmapAuditIndex | null;
 }
 
 type ReadinessFilter = DispatchReadiness | 'all';
+
+const MATURITY_CONFIG: Record<RoadmapMaturityLevel, { label: string; badgeClass: string; dotClass: string }> = {
+  'L0-Absent': {
+    label: 'L0',
+    badgeClass: 'bg-gray-800 text-gray-400 border-gray-600',
+    dotClass: 'bg-gray-500',
+  },
+  'L1-Informal': {
+    label: 'L1',
+    badgeClass: 'bg-red-900/40 text-red-300 border-red-700/40',
+    dotClass: 'bg-red-400',
+  },
+  'L2-Structured': {
+    label: 'L2',
+    badgeClass: 'bg-orange-900/40 text-orange-300 border-orange-700/40',
+    dotClass: 'bg-orange-400',
+  },
+  'L3-Contract-Ready': {
+    label: 'L3',
+    badgeClass: 'bg-yellow-900/40 text-yellow-300 border-yellow-700/40',
+    dotClass: 'bg-yellow-400',
+  },
+  'L4-Orchestration-Ready': {
+    label: 'L4',
+    badgeClass: 'bg-green-900/40 text-green-300 border-green-700/40',
+    dotClass: 'bg-green-400',
+  },
+};
+
+function MaturityMiniBadge({ level }: { level: RoadmapMaturityLevel }) {
+  const config = MATURITY_CONFIG[level] ?? MATURITY_CONFIG['L0-Absent'];
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-xs font-medium ${config.badgeClass}`}
+      title={level}
+    >
+      <span className={`inline-block w-1.5 h-1.5 rounded-full ${config.dotClass}`} />
+      {config.label}
+    </span>
+  );
+}
 
 const READINESS_CONFIG: Record<DispatchReadiness, { label: string; badgeClass: string; dotClass: string; priority: number }> = {
   ready: {
@@ -86,13 +129,25 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
   onScan,
   onViewRoadmap,
   onPreviewTask,
+  onViewRoadmapAudit,
   isScanning,
+  roadmapAuditIndex,
 }) => {
   const [readinessFilter, setReadinessFilter] = useState<ReadinessFilter>('all');
+  const [maturityFilter, setMaturityFilter] = useState<RoadmapMaturityFilter>('all');
   const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
   const [filterText, setFilterText] = useState('');
 
   const entries = auditIndex?.entries ?? [];
+
+  // Build a lookup for roadmap audit entries by repoName
+  const auditByRepo = useMemo(() => {
+    const map = new Map<string, import('../types').RoadmapAuditEntry>();
+    for (const e of (roadmapAuditIndex?.entries ?? [])) {
+      map.set(e.repoName, e);
+    }
+    return map;
+  }, [roadmapAuditIndex]);
 
   const readinessCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -107,6 +162,12 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
     if (readinessFilter !== 'all') {
       result = result.filter(e => e.dispatchReadiness === readinessFilter);
     }
+    if (maturityFilter !== 'all') {
+      result = result.filter(e => {
+        const audit = auditByRepo.get(e.repoName);
+        return audit?.maturityLevel === maturityFilter;
+      });
+    }
     if (filterText.trim()) {
       const lower = filterText.toLowerCase();
       result = result.filter(e =>
@@ -119,7 +180,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
         (READINESS_CONFIG[a.dispatchReadiness]?.priority ?? 99) -
         (READINESS_CONFIG[b.dispatchReadiness]?.priority ?? 99)
     );
-  }, [entries, readinessFilter, filterText]);
+  }, [entries, readinessFilter, maturityFilter, filterText, auditByRepo]);
 
   const toggleExpand = (repoName: string) => {
     setExpandedRepos(prev => {
@@ -136,6 +197,15 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
   const readyCount = readinessCounts['ready'] ?? 0;
   const needsDocsCount = readinessCounts['needs-doc-standardization'] ?? 0;
   const blockedCount = readinessCounts['blocked'] ?? 0;
+
+  // Count how many repos are at each maturity level
+  const maturityCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const e of (roadmapAuditIndex?.entries ?? [])) {
+      counts[e.maturityLevel] = (counts[e.maturityLevel] ?? 0) + 1;
+    }
+    return counts;
+  }, [roadmapAuditIndex]);
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-4">
@@ -235,6 +305,41 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
             );
           })}
         </div>
+        {/* Maturity filter */}
+        {roadmapAuditIndex && roadmapAuditIndex.entries.length > 0 && (
+          <div className="flex flex-wrap gap-2 items-center">
+            <span className="text-xs text-gray-500 font-medium">Maturity:</span>
+            <button
+              onClick={() => setMaturityFilter('all')}
+              className={`px-2 py-0.5 rounded text-xs font-medium border transition-colors ${
+                maturityFilter === 'all'
+                  ? 'bg-indigo-700 text-white border-indigo-600'
+                  : 'bg-gray-800 text-gray-300 border-gray-600 hover:bg-gray-700'
+              }`}
+            >
+              All
+            </button>
+            {(Object.keys(MATURITY_CONFIG) as RoadmapMaturityLevel[]).map(level => {
+              const count = maturityCounts[level] ?? 0;
+              if (count === 0) return null;
+              const cfg = MATURITY_CONFIG[level];
+              return (
+                <button
+                  key={level}
+                  onClick={() => setMaturityFilter(level)}
+                  className={`px-2 py-0.5 rounded text-xs font-medium border transition-colors ${
+                    maturityFilter === level
+                      ? 'bg-indigo-700 text-white border-indigo-600'
+                      : `${cfg.badgeClass} hover:opacity-80`
+                  }`}
+                  title={level}
+                >
+                  {cfg.label} ({count})
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Loading state */}
@@ -288,6 +393,10 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                     <div className="flex flex-wrap items-center gap-2 mb-1">
                       <span className="text-sm font-semibold text-white truncate">{entry.repoName}</span>
                       <ReadinessBadge readiness={entry.dispatchReadiness} />
+                      {/* Roadmap maturity badge from contract audit */}
+                      {auditByRepo.get(entry.repoName) && (
+                        <MaturityMiniBadge level={auditByRepo.get(entry.repoName)!.maturityLevel} />
+                      )}
                       {entry.criticalCount > 0 && (
                         <span className="text-xs px-1.5 py-0.5 rounded bg-red-900/40 text-red-300 border border-red-700/40">
                           {entry.criticalCount} critical
@@ -332,6 +441,15 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                         title="Preview Copilot Task Packet"
                       >
                         Preview Task
+                      </button>
+                    )}
+                    {onViewRoadmapAudit && auditByRepo.has(entry.repoName) && (
+                      <button
+                        onClick={e => { e.stopPropagation(); onViewRoadmapAudit(entry.repoName); }}
+                        className="text-xs px-2 py-1 rounded border border-purple-700/50 bg-purple-900/40 text-purple-300 hover:bg-purple-800/60 transition-colors"
+                        title="View Roadmap Contract Audit"
+                      >
+                        Audit
                       </button>
                     )}
                     {onViewRoadmap && entry.roadmapState && entry.roadmapState !== 'missing' && (

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry, type DocAuditIndex } from '../types';
+import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry, type DocAuditIndex, type RoadmapAuditIndex } from '../types';
 import SummaryCard from './SummaryCard';
 import ActionBar from './ActionBar';
 import RepoGrid from './RepoGrid';
@@ -13,7 +13,8 @@ import RoadmapViewerModal from './RoadmapViewerModal';
 import ApiDocsModal from './ApiDocsModal';
 import WorkQueueView from './WorkQueueView';
 import CopilotTaskPreviewModal from './CopilotTaskPreviewModal';
-import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan } from '../services/apiClient';
+import RoadmapAuditModal from './RoadmapAuditModal';
+import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan } from '../services/apiClient';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
 import { useHealthPing } from '../hooks/useHealthPing';
@@ -53,6 +54,10 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [docsAuditIndex, setDocsAuditIndex] = useState<DocAuditIndex | null>(null);
   const [docsAuditLoading, setDocsAuditLoading] = useState(false);
   const [docsAuditError, setDocsAuditError] = useState<string | null>(null);
+
+  const [roadmapAuditIndex, setRoadmapAuditIndex] = useState<RoadmapAuditIndex | null>(null);
+  const [isRoadmapAuditModalOpen, setIsRoadmapAuditModalOpen] = useState(false);
+  const [roadmapAuditModalRepo, setRoadmapAuditModalRepo] = useState<string | null>(null);
 
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
@@ -98,6 +103,13 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
         setDocsAuditError(err instanceof Error ? err.message : 'Docs audit is unavailable.');
       })
       .finally(() => setDocsAuditLoading(false));
+  }, []);
+
+  // Lazy roadmap audit fetch — pre-warms maturity data for Work Queue view
+  useEffect(() => {
+    getRoadmapAudit()
+      .then(index => setRoadmapAuditIndex(index))
+      .catch(() => {/* silent — maturity badges just won't show */});
   }, []);
 
   useEffect(() => {
@@ -274,6 +286,21 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                   }
                 }
                 break;
+            case 'roadmap-audit-scan':
+                {
+                  setLogMessages(prev => [...prev, 'Running roadmap contract audit across all repositories...']);
+                  try {
+                    const auditResult = await triggerRoadmapAuditScan();
+                    setRoadmapAuditIndex(auditResult);
+                    const l4Count = auditResult.entries.filter(e => e.maturityLevel === 'L4-Orchestration-Ready').length;
+                    setLogMessages(prev => [...prev, `Roadmap audit complete. ${auditResult.count} repos audited. ${l4Count} at L4 Orchestration-Ready.`]);
+                    setLogStatus('success');
+                  } catch (auditErr) {
+                    setLogMessages(prev => [...prev, `Roadmap audit scan failed: ${auditErr instanceof Error ? auditErr.message : String(auditErr)}`]);
+                    setLogStatus('error');
+                  }
+                }
+                break;
         }
     } catch (err) {
         console.error(`${operation} failed to start`, err);
@@ -432,6 +459,11 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const handlePreviewCopilotTask = (repoName: string) => {
     setCopilotTaskPreviewRepo(repoName);
     setIsCopilotTaskPreviewOpen(true);
+  };
+
+  const handleViewRoadmapAudit = (repoName: string) => {
+    setRoadmapAuditModalRepo(repoName);
+    setIsRoadmapAuditModalOpen(true);
   };
 
   // Enrich repos with hasRoadmap flag, roadmapState, nextPendingRoadmapItem, and dispatchReadiness
@@ -681,7 +713,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                 onScan={handleDocsAuditScan}
                 onViewRoadmap={handleViewRoadmap}
                 onPreviewTask={handlePreviewCopilotTask}
+                onViewRoadmapAudit={handleViewRoadmapAudit}
                 isScanning={currentOperation === 'docs-audit-scan'}
+                roadmapAuditIndex={roadmapAuditIndex}
               />
             )}
         </div>
@@ -741,6 +775,12 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
         isOpen={isCopilotTaskPreviewOpen}
         repoName={copilotTaskPreviewRepo}
         onClose={() => setIsCopilotTaskPreviewOpen(false)}
+      />
+
+      <RoadmapAuditModal
+        isOpen={isRoadmapAuditModalOpen}
+        repoName={roadmapAuditModalRepo}
+        onClose={() => setIsRoadmapAuditModalOpen(false)}
       />
     </div>
   );

@@ -18,6 +18,7 @@ $reconcile = Join-Path $WorkspaceRoot 'backend\modules\reconcile\Invoke-Reconcil
 $reconcileModular = Join-Path $WorkspaceRoot 'backend\modules\reconcile\Invoke-Reconciliation.Modular.ps1'
 $reconcileTests = Join-Path $WorkspaceRoot 'backend\modules\reconcile\repo_reconciliation.Tests.ps1'
 $roadmapParser = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Parser.ps1'
+$roadmapAuditor = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Auditor.ps1'
 $docAuditScanner = Join-Path $WorkspaceRoot 'backend\modules\docaudit\DocAudit.Scanner.ps1'
 $docStandards = Join-Path $WorkspaceRoot 'backend\config\doc-standards.json'
 
@@ -26,7 +27,7 @@ Write-Step 'Loading reconciliation module functions only'
 Write-Host 'Loaded reconciliation module successfully' -ForegroundColor Green
 
 Write-Step 'Validating copied module files exist'
-@($docInventory, $docQueue, $docBatch, $reconcile, $reconcileModular, $reconcileTests, $roadmapParser, $docAuditScanner, $docStandards) | ForEach-Object {
+@($docInventory, $docQueue, $docBatch, $reconcile, $reconcileModular, $reconcileTests, $roadmapParser, $roadmapAuditor, $docAuditScanner, $docStandards) | ForEach-Object {
     if (-not (Test-Path -LiteralPath $_)) {
         throw "Missing module file: $_"
     }
@@ -190,6 +191,85 @@ if ($sectionNames[1] -ne 'Next') { throw "Expected second section name='Next', g
 $nowSection = $neighborResult.sections | Where-Object { $_.name -eq 'Now' } | Select-Object -First 1
 if (@($nowSection.pendingItems).Count -ne 2) { throw "Expected 2 pending items in 'Now' section, got $(@($nowSection.pendingItems).Count)" }
 Write-Host '  neighboring context section ordering verified' -ForegroundColor DarkGray
+
+Write-Step 'Loading roadmap auditor module (Release 0.8)'
+$roadmapAuditor = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Auditor.ps1'
+if (-not (Test-Path -LiteralPath $roadmapAuditor)) { throw "Roadmap.Auditor.ps1 not found at: $roadmapAuditor" }
+. $roadmapAuditor
+Write-Host 'Roadmap auditor module loaded successfully' -ForegroundColor Green
+
+Write-Step 'Roadmap auditor — smoke: normalize missing roadmap'
+$missingContract = Invoke-NormalizeRoadmapContract -ParsedResult $null -RepoName 'smoke-missing-repo'
+if ($missingContract.roadmapState -ne 'missing')   { throw "Expected roadmapState=missing for null ParsedResult, got $($missingContract.roadmapState)" }
+if ($missingContract.maturityLevel -ne 'L0-Absent') { throw "Expected maturityLevel=L0-Absent for missing roadmap, got $($missingContract.maturityLevel)" }
+Write-Host '  missing roadmap normalized to L0-Absent' -ForegroundColor DarkGray
+
+Write-Step 'Roadmap auditor — smoke: normalize pending roadmap'
+$pendingContent = @"
+# Product Intent
+
+This product does something.
+
+## Release 1.0 — First Release
+
+### Acceptance criteria
+
+- The feature works.
+
+### Out of scope
+
+- Not this.
+
+- [ ] Implement feature A
+- [ ] Implement feature B
+- [ ] Implement feature C
+- [x] Done already
+"@
+$pendingParsed   = Invoke-ParseRoadmapContent -Content $pendingContent
+$pendingContract = Invoke-NormalizeRoadmapContract -ParsedResult $pendingParsed -RawContent $pendingContent -RepoName 'smoke-pending-repo'
+if ($pendingContract.roadmapState -ne 'pending')     { throw "Expected roadmapState=pending, got $($pendingContract.roadmapState)" }
+if ($pendingContract.pendingCount -ne 3)             { throw "Expected pendingCount=3, got $($pendingContract.pendingCount)" }
+if ($pendingContract.hasProductIntent -ne $true)     { throw "Expected hasProductIntent=true" }
+if ($pendingContract.hasReleaseSections -ne $true)   { throw "Expected hasReleaseSections=true" }
+if ($pendingContract.hasAcceptanceCriteria -ne $true) { throw "Expected hasAcceptanceCriteria=true" }
+if ($pendingContract.hasOutOfScope -ne $true)        { throw "Expected hasOutOfScope=true" }
+Write-Host '  pending roadmap normalized with structure flags detected' -ForegroundColor DarkGray
+
+Write-Step 'Roadmap auditor — smoke: audit scoring and maturity level assignment'
+$roadmapAuditRulesRaw  = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'standards\roadmap\roadmap-audit-rules.json') -Raw -Encoding UTF8
+$roadmapAuditRulesParsed = ConvertFrom-Json -InputObject $roadmapAuditRulesRaw
+$auditRulesObj = [pscustomobject]@{
+    rules             = @($roadmapAuditRulesParsed.rules)
+    maturityThresholds = $roadmapAuditRulesParsed.maturityThresholds
+}
+# Score the well-formed pending contract
+$scoredContract = Invoke-AuditRoadmapContract -Contract $pendingContract -AuditRules $auditRulesObj
+if ($scoredContract.maturityScore -lt 0 -or $scoredContract.maturityScore -gt 100) {
+    throw "Maturity score out of range 0-100: $($scoredContract.maturityScore)"
+}
+if ($scoredContract.maturityLevel -notin @('L0-Absent','L1-Informal','L2-Structured','L3-Contract-Ready','L4-Orchestration-Ready')) {
+    throw "Unexpected maturityLevel: $($scoredContract.maturityLevel)"
+}
+# A well-formed roadmap with all structural flags should score at least L3
+if ($scoredContract.maturityLevel -notin @('L3-Contract-Ready','L4-Orchestration-Ready')) {
+    Write-Host ("  NOTE: full-featured roadmap scored $($scoredContract.maturityScore) -> $($scoredContract.maturityLevel) (may be below L3 if vague items detected)") -ForegroundColor Yellow
+} else {
+    Write-Host ("  full-featured roadmap scored $($scoredContract.maturityScore) -> $($scoredContract.maturityLevel)") -ForegroundColor DarkGray
+}
+# Score a completely missing roadmap — must be L0
+$missingScored = Invoke-AuditRoadmapContract -Contract $missingContract -AuditRules $auditRulesObj
+if ($missingScored.maturityLevel -ne 'L0-Absent') { throw "Expected L0-Absent for missing roadmap after audit, got $($missingScored.maturityLevel)" }
+if ($missingScored.maturityScore -ne 0)           { throw "Expected maturityScore=0 for missing roadmap, got $($missingScored.maturityScore)" }
+Write-Host '  missing roadmap correctly scored as L0-Absent with score=0' -ForegroundColor DarkGray
+
+Write-Step 'Roadmap auditor — smoke: audit findings contain expected rule IDs'
+if ($null -eq $scoredContract.auditFindings) { throw "auditFindings should not be null after audit" }
+# A well-structured roadmap should not have critical findings
+$criticalFindings = @($scoredContract.auditFindings | Where-Object { $_.severity -eq 'critical' })
+if ($criticalFindings.Count -gt 0) {
+    throw "Well-formed roadmap should have no critical findings, got: $(($criticalFindings | ForEach-Object { $_.ruleId }) -join ', ')"
+}
+Write-Host ("  audit findings: {0} total, 0 critical" -f @($scoredContract.auditFindings).Count) -ForegroundColor DarkGray
 
 Write-Step 'Roadmap standard assets — smoke: validate roadmap-audit-rules.json (Release 0.7)'
 $roadmapAuditRulesPath   = Join-Path $WorkspaceRoot 'standards\roadmap\roadmap-audit-rules.json'
