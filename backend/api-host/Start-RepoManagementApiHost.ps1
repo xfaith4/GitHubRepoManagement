@@ -912,9 +912,36 @@ function Invoke-PowerShellScriptFile {
         throw "Script not found: $ScriptPath"
     }
 
+    function ConvertTo-PlainScriptOutput {
+        param([string]$Text)
+
+        if ([string]::IsNullOrWhiteSpace($Text)) {
+            return $Text
+        }
+
+        $withoutAnsi = [regex]::Replace($Text, '\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])', '')
+        $trimmed = $withoutAnsi.Trim()
+        $lines = @($trimmed -split "`r?`n" | ForEach-Object { $_.TrimEnd() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        if ($lines.Count -gt 1 -and $lines[0] -match '^[A-Za-z]+(?:\.[A-Za-z]+)*:') {
+            $messageLines = @(
+                $lines |
+                    Where-Object { $_ -match '^\|\s+' } |
+                    ForEach-Object { ($_ -replace '^\|\s+', '').Trim() } |
+                    Where-Object { $_ -notmatch '^\d+\s+\|' } |
+                    Where-Object { $_ -notmatch '^~+$' } |
+                    Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+            )
+            if ($messageLines.Count -gt 0) {
+                return (($messageLines -join ' ') -replace '\s{2,}', ' ').Trim()
+            }
+        }
+
+        return $trimmed
+    }
+
     $rawOutput = @(& pwsh -NoProfile -ExecutionPolicy Bypass -File $ScriptPath @Arguments 2>&1)
     $exitCode = $LASTEXITCODE
-    $outputText = ($rawOutput | ForEach-Object { $_.ToString() }) -join "`n"
+    $outputText = ConvertTo-PlainScriptOutput -Text (($rawOutput | ForEach-Object { $_.ToString() }) -join "`n")
 
     if (($exitCode -ne 0) -and (-not $AllowFailure.IsPresent)) {
         if ([string]::IsNullOrWhiteSpace($outputText)) {

@@ -1,0 +1,1 @@
+{"timestamp":"2026-03-16T06:48:03.9512364-04:00","runId":"20260316-064803-69204cc2","type":"run_failed","data":{"error":"GitHub CLI 'gh' was not found. Install GitHub CLI or set GH_CLI_PATH to gh.exe."}}

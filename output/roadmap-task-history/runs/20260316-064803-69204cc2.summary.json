@@ -1,0 +1,9 @@
+{
+  "runId": "20260316-064803-69204cc2",
+  "status": "failed",
+  "startedAt": "2026-03-16T06:48:03.9157847-04:00",
+  "completedAt": "2026-03-16T06:48:03.9945882-04:00",
+  "repository": "xfaith4/example",
+  "error": "GitHub CLI 'gh' was not found. Install GitHub CLI or set GH_CLI_PATH to gh.exe.",
+  "historyEventsPath": "/mnt/g/Development/GitHubRepoManagement/output/roadmap-task-history/runs/20260316-064803-69204cc2.events.jsonl"
+}

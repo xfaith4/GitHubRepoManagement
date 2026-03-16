@@ -133,6 +133,8 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const isTaskError = taskMessage !== null && /failed|error|not found|not installed|required/i.test(taskMessage);
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
@@ -231,7 +233,7 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
           </div>
 
           {taskMessage && (
-            <div className="text-xs rounded px-2 py-1.5 bg-blue-900/30 border border-blue-700/40 text-blue-200">{taskMessage}</div>
+            <div className={`text-xs rounded px-2 py-1.5 border ${isTaskError ? 'bg-red-900/30 border-red-700/40 text-red-200' : 'bg-blue-900/30 border-blue-700/40 text-blue-200'}`}>{taskMessage}</div>
           )}
 
           {taskPreview && (

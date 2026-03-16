@@ -95,6 +95,30 @@ function Test-CommandExists {
     return [bool](Get-Command -Name $Name -ErrorAction SilentlyContinue)
 }
 
+function Resolve-GhCommandPath {
+    $command = Get-Command -Name 'gh' -ErrorAction SilentlyContinue
+    if ($command -and -not [string]::IsNullOrWhiteSpace($command.Source)) {
+        return $command.Source
+    }
+
+    $candidatePaths = @(
+        $env:GH_CLI_PATH,
+        $(if ($env:ProgramFiles) { Join-Path $env:ProgramFiles 'GitHub CLI\gh.exe' }),
+        $(if (${env:ProgramFiles(x86)}) { Join-Path ${env:ProgramFiles(x86)} 'GitHub CLI\gh.exe' }),
+        $(if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'Programs\GitHub CLI\gh.exe' }),
+        $(if ($env:ChocolateyInstall) { Join-Path $env:ChocolateyInstall 'bin\gh.exe' }),
+        $(if ($env:USERPROFILE) { Join-Path $env:USERPROFILE 'scoop\shims\gh.exe' })
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+
+    foreach ($candidatePath in $candidatePaths) {
+        if (Test-Path -LiteralPath $candidatePath) {
+            return $candidatePath
+        }
+    }
+
+    return $null
+}
+
 function Resolve-GitHubToken {
     if (-not [string]::IsNullOrWhiteSpace($env:GitHub_Token)) {
         return $env:GitHub_Token
@@ -130,7 +154,7 @@ function Get-RoadmapContent {
                 }
             }
 
-            $response = gh api ("repos/{0}/contents/{1}" -f $Repo, $candidate) --jq '{ path: .path, encoding: .encoding, content: .content }' 2>$null | ConvertFrom-Json
+            $response = & $script:GhCommandPath api ("repos/{0}/contents/{1}" -f $Repo, $candidate) --jq '{ path: .path, encoding: .encoding, content: .content }' 2>$null | ConvertFrom-Json
             if ($null -eq $response) {
                 if ($script:HistoryStore) {
                     Write-HistoryEvent -Store $script:HistoryStore -Type 'api_call_completed' -Data @{
@@ -271,15 +295,16 @@ function Get-NextRoadmapTask {
     }
 }
 
-if (-not (Test-CommandExists -Name "gh")) {
-    throw "GitHub CLI 'gh' is not installed or not in PATH."
-}
-
 $historyStore = Initialize-HistoryStore -RootPath $HistoryRoot
 $script:HistoryStore = $historyStore
 $startedAt = Get-Date
 
 try {
+    $script:GhCommandPath = Resolve-GhCommandPath
+    if ([string]::IsNullOrWhiteSpace($script:GhCommandPath)) {
+        throw "GitHub CLI 'gh' was not found. Install GitHub CLI or set GH_CLI_PATH to gh.exe."
+    }
+
     Write-HistoryEvent -Store $historyStore -Type 'run_started' -Data @{
         repository = $Repository
         baseBranch = $BaseBranch
@@ -452,5 +477,6 @@ catch {
         }
         $summary | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $historyStore.RunSummaryPath
     }
-    throw
+    Write-Output $errorMessage
+    exit 1
 }

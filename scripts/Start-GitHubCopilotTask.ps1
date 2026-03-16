@@ -45,6 +45,30 @@ function Test-CommandExists {
     return [bool](Get-Command -Name $Name -ErrorAction SilentlyContinue)
 }
 
+function Resolve-GhCommandPath {
+    $command = Get-Command -Name 'gh' -ErrorAction SilentlyContinue
+    if ($command -and -not [string]::IsNullOrWhiteSpace($command.Source)) {
+        return $command.Source
+    }
+
+    $candidatePaths = @(
+        $env:GH_CLI_PATH,
+        $(if ($env:ProgramFiles) { Join-Path $env:ProgramFiles 'GitHub CLI\gh.exe' }),
+        $(if (${env:ProgramFiles(x86)}) { Join-Path ${env:ProgramFiles(x86)} 'GitHub CLI\gh.exe' }),
+        $(if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'Programs\GitHub CLI\gh.exe' }),
+        $(if ($env:ChocolateyInstall) { Join-Path $env:ChocolateyInstall 'bin\gh.exe' }),
+        $(if ($env:USERPROFILE) { Join-Path $env:USERPROFILE 'scoop\shims\gh.exe' })
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+
+    foreach ($candidatePath in $candidatePaths) {
+        if (Test-Path -LiteralPath $candidatePath) {
+            return $candidatePath
+        }
+    }
+
+    return $null
+}
+
 function Initialize-HistoryStore {
     param(
         [Parameter()]
@@ -113,17 +137,17 @@ function Invoke-GhCommand {
 
     Write-HistoryEvent -Store $Store -Type 'api_call_started' -Data @{
         operation = $Operation
-        command = 'gh'
+        command = $script:GhCommandPath
         args = @($Args)
     }
 
-    $captured = @(& gh @Args 2>&1 | Tee-Object -Variable __commandOutput)
+    $captured = @(& $script:GhCommandPath @Args 2>&1 | Tee-Object -Variable __commandOutput)
     $exitCode = $LASTEXITCODE
     $outputText = ($captured | ForEach-Object { $_.ToString() }) -join "`n"
 
     Write-HistoryEvent -Store $Store -Type 'api_call_completed' -Data @{
         operation = $Operation
-        command = 'gh'
+        command = $script:GhCommandPath
         args = @($Args)
         exitCode = $exitCode
         output = $outputText
@@ -168,8 +192,9 @@ try {
         throw "GitHub token not found. Set either GitHub_Token or GITHUB_TOKEN in your environment."
     }
 
-    if (-not (Test-CommandExists -Name "gh")) {
-        throw "GitHub CLI 'gh' is not installed or not in PATH."
+    $script:GhCommandPath = Resolve-GhCommandPath
+    if ([string]::IsNullOrWhiteSpace($script:GhCommandPath)) {
+        throw "GitHub CLI 'gh' was not found. Install GitHub CLI or set GH_CLI_PATH to gh.exe."
     }
 
     $env:GH_TOKEN = $token
