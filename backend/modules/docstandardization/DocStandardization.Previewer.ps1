@@ -279,22 +279,23 @@ function Invoke-ApplyReadmeStandardization {
     $now        = (Get-Date).ToUniversalTime().ToString('o')
     $readmePath = Join-Path $RepoPath 'README.md'
 
-    # Determine workspace root (two levels up from repo path is not reliable; use output relative to RepoPath)
-    # The history dirs are written relative to the workspace root passed as RepoPath's parent — but since
-    # the spec says output/ lives at workspace root, we treat RepoPath as workspace root for output.
+    # output/ history dirs are created relative to RepoPath, which serves as the workspace root.
+    # Callers that have a separate workspace root should pass that instead of the repository subdirectory.
     _EnsureOutputDirs -WorkspaceRoot $RepoPath
 
     # ---- Backup existing README ----
-    $backedUpPath = $null
+    $backedUpPath  = $null
+    $backupSuccess = $false
     if (Test-Path -LiteralPath $readmePath) {
         try {
             $timestamp    = (Get-Date).ToUniversalTime().ToString('yyyyMMddHHmmss')
             $backupName   = "README.$RepoName.$timestamp.md"
             $backupDest   = Join-Path $RepoPath $script:BackupDir $backupName
             Copy-Item -LiteralPath $readmePath -Destination $backupDest -Force
-            $backedUpPath = $backupDest
+            $backedUpPath  = $backupDest
+            $backupSuccess = $true
         } catch {
-            # Non-fatal — continue with write
+            # Non-fatal — caller is informed via backupSuccess = $false in the return value
         }
     }
 
@@ -326,9 +327,11 @@ function Invoke-ApplyReadmeStandardization {
     }
 
     return [pscustomobject]@{
-        success   = $true
-        repoName  = $RepoName
-        appliedAt = $now
+        success       = $true
+        repoName      = $RepoName
+        appliedAt     = $now
+        backupSuccess = $backupSuccess
+        backedUpTo    = $backedUpPath
     }
 }
 

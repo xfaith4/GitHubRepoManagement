@@ -228,6 +228,11 @@ function Remove-NotificationWebhook {
     The event name (e.g. 'scan.completed').
 .PARAMETER EventPayload
     Hashtable of event-specific data to include in the POST body.
+.NOTES
+    Dispatch is synchronous: webhooks are called sequentially, each with a
+    10-second timeout. Total blocking time scales linearly with the number of
+    subscribed webhooks. Individual webhook failures are caught and do not
+    propagate to the caller.
 .OUTPUTS
     [pscustomobject] with fired (array of {webhookId, success, error}),
     eventName, sentAt.

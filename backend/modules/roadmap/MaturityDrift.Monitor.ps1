@@ -145,13 +145,20 @@ function Set-MaturityBaseline {
     try {
         _WriteBaselines -WorkspaceRoot $WorkspaceRoot -Data $data
     } catch {
-        # Return success anyway — caller can retry
+        return [pscustomobject]@{
+            repoName    = $RepoName
+            targetLevel = $TargetLevel
+            setAt       = $now
+            persisted   = $false
+            error       = "Baseline updated in-memory but could not be saved: $_"
+        }
     }
 
     return [pscustomobject]@{
         repoName    = $RepoName
         targetLevel = $TargetLevel
         setAt       = $now
+        persisted   = $true
     }
 }
 

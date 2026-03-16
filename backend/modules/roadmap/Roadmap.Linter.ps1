@@ -72,15 +72,17 @@ function _LintRule001 {
 function _LintRule002 {
     param([string[]]$Lines)
     $findings = [System.Collections.Generic.List[pscustomobject]]::new()
+    # A valid checkbox is exactly: optional-indent dash single-space [ or x ] whitespace-or-EOL
+    $validCheckbox = [regex]'^\s*-\s\[(x| )\](\s|$)'
     # Detect lines that look like checkbox attempts but are malformed
     $malformedPatterns = @(
-        [regex]'^\s*-\s*\[\s*\]\s+',   # - [] or -  [ ]  (no space inside brackets OR extra spaces)
-        [regex]'^\s*-\[\s',             # -[ ] (no space after dash)
-        [regex]'^\s*\*\s*\[[ x]\]',    # * [ ] (asterisk instead of dash)
-        [regex]'^\s*-\s*\[(?![x ]\])', # - [anything other than 'x ' or ' ']
-        [regex]'^\s*-\s*\[\]'          # - [] (empty brackets)
+        [regex]'^\s*-\s*\[\]',          # - [] (empty brackets, no space)
+        [regex]'^\s*-\s*\[\s{2,}\]',    # - [  ] (two or more spaces inside brackets)
+        [regex]'^\s*-\[\s',             # -[ ] (no space between dash and bracket)
+        [regex]'^\s*\*\s*\[(x| )\]',   # * [ ] (asterisk instead of dash)
+        [regex]'^\s*-\s+\[',           # -  [ ] (multiple spaces between dash and bracket)
+        [regex]'^\s*-\s\[(?!(?:x| )\])' # - [anything other than single 'x' or single ' ']
     )
-    $validCheckbox = [regex]'^\s*-\s\[[ x]\]\s'
     for ($i = 0; $i -lt $Lines.Count; $i++) {
         $line = $Lines[$i]
         # Skip lines that are already valid
@@ -138,7 +140,7 @@ function _LintRule005 {
     param([string[]]$Lines)
     $findings = [System.Collections.Generic.List[pscustomobject]]::new()
     $releaseHeading = [regex]'^##\s+Release\s+'
-    $checkboxItem   = [regex]'^\s*-\s\[[ x]\]'
+    $checkboxItem   = [regex]'^\s*-\s\[(x| )\]'
     $anyHeading     = [regex]'^#{1,6}\s+'
 
     $currentRelease = $null
@@ -186,7 +188,7 @@ function _LintRule005 {
 function _LintRule006 {
     param([string[]]$Lines)
     $findings = [System.Collections.Generic.List[pscustomobject]]::new()
-    $checkboxItem   = [regex]'^\s*-\s\[[ x]\]\s+(.+)$'
+    $checkboxItem   = [regex]'^\s*-\s\[(x| )\]\s+(.+)$'
     $vagueWords     = @('\bimprove\b', '\bfix\b', '\brefactor\b', '\bfinish\b', '\bupdate\b',
                         '\badd\b', '\bdo\b', '\btodo\b', '\bmisc\b', '\bcleanup\b', '\bclean up\b',
                         '\bvarious\b', '\bother\b', '\bstuff\b', '\bthings\b')
@@ -196,7 +198,7 @@ function _LintRule006 {
         $line = $Lines[$i]
         $m = $checkboxItem.Match($line)
         if ($m.Success) {
-            $itemText = $m.Groups[1].Value.Trim()
+            $itemText = $m.Groups[2].Value.Trim()
             if ($vaguePattern.IsMatch($itemText)) {
                 $findings.Add((_BuildFinding `
                     -RuleId 'LINT-006' `
