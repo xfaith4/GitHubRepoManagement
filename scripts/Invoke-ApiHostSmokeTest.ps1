@@ -450,6 +450,67 @@ try {
     }
     Write-Host ("  /api/execution/cancel (no repoName) -> HTTP {0} correctly rejected" -f $execCancelMissing.StatusCode) -ForegroundColor DarkGray
 
+    Write-Host '[STEP] Roadmap lint routes (Release 1.1)' -ForegroundColor Cyan
+    # GET /api/roadmap/lint without repoName — should return 400
+    $lintNoRepo = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/roadmap/lint"
+    if ($lintNoRepo.StatusCode -notin @(400, 500)) {
+        throw ("/api/roadmap/lint (no repoName) expected 4xx, got {0}" -f $lintNoRepo.StatusCode)
+    }
+    Write-Host ("  /api/roadmap/lint (no repoName) -> HTTP {0} correctly rejected" -f $lintNoRepo.StatusCode) -ForegroundColor DarkGray
+
+    $lintScanResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/lint/scan" -Body @{}
+    Assert-Not503 -Name '/api/roadmap/lint/scan' -Response $lintScanResponse
+    $lintScanJson = $lintScanResponse.Json
+    if (-not $lintScanJson.success) { throw '/api/roadmap/lint/scan returned success=false' }
+    Write-Host ("  /api/roadmap/lint/scan -> count={0}" -f $lintScanJson.data.count) -ForegroundColor DarkGray
+
+    Write-Host '[STEP] README standardization routes (Release 1.1)' -ForegroundColor Cyan
+    # POST /api/readme/standardize/preview without repoName — should return 4xx
+    $stdPreviewNoRepo = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/readme/standardize/preview" -Body @{}
+    if ($stdPreviewNoRepo.StatusCode -notin @(400, 500)) {
+        throw ("/api/readme/standardize/preview (no repoName) expected 4xx, got {0}" -f $stdPreviewNoRepo.StatusCode)
+    }
+    Write-Host ("  /api/readme/standardize/preview (no repoName) -> HTTP {0} correctly rejected" -f $stdPreviewNoRepo.StatusCode) -ForegroundColor DarkGray
+
+    $stdHistoryResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/readme/standardize/history?limit=5"
+    Assert-Not503 -Name '/api/readme/standardize/history' -Response $stdHistoryResponse
+    $stdHistoryJson = $stdHistoryResponse.Json
+    if (-not $stdHistoryJson.success) { throw '/api/readme/standardize/history returned success=false' }
+    Write-Host ("  /api/readme/standardize/history -> items={0}" -f @($stdHistoryJson.data.items).Count) -ForegroundColor DarkGray
+
+    Write-Host '[STEP] Contract drift routes (Release 1.1)' -ForegroundColor Cyan
+    $driftResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/roadmap/drift"
+    Assert-Not503 -Name '/api/roadmap/drift' -Response $driftResponse
+    $driftJson = $driftResponse.Json
+    if (-not $driftJson.success) { throw '/api/roadmap/drift returned success=false' }
+    $driftFieldsOk = $null -ne $driftJson.data -and
+        ($driftJson.data.PSObject.Properties.Name -contains 'driftAlerts') -and
+        ($driftJson.data.PSObject.Properties.Name -contains 'driftCount')
+    if (-not $driftFieldsOk) { throw '/api/roadmap/drift response missing expected fields (driftAlerts, driftCount)' }
+    Write-Host ("  /api/roadmap/drift -> driftCount={0} baselineCount={1}" -f $driftJson.data.driftCount, $driftJson.data.baselineCount) -ForegroundColor DarkGray
+
+    Write-Host '[STEP] Notification webhook routes (Release 1.1)' -ForegroundColor Cyan
+    $webhooksResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/notifications/webhooks"
+    Assert-Not503 -Name '/api/notifications/webhooks' -Response $webhooksResponse
+    $webhooksJson = $webhooksResponse.Json
+    if (-not $webhooksJson.success) { throw '/api/notifications/webhooks returned success=false' }
+    Write-Host ("  /api/notifications/webhooks -> count={0}" -f $webhooksJson.data.count) -ForegroundColor DarkGray
+
+    # POST without url — should return 400
+    $webhookRegNoUrl = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/notifications/webhooks" -Body @{}
+    if ($webhookRegNoUrl.StatusCode -notin @(400, 500)) {
+        throw ("/api/notifications/webhooks (no url) expected 4xx, got {0}" -f $webhookRegNoUrl.StatusCode)
+    }
+    Write-Host ("  /api/notifications/webhooks (no url) -> HTTP {0} correctly rejected" -f $webhookRegNoUrl.StatusCode) -ForegroundColor DarkGray
+
+    Write-Host '[STEP] Roadmap completion preview route (Release 1.1)' -ForegroundColor Cyan
+    # POST /api/roadmap/completion-preview without repoName — should return 400
+    $completionPreviewNoRepo = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/completion-preview" -Body @{}
+    if ($completionPreviewNoRepo.StatusCode -notin @(400, 500)) {
+        throw ("/api/roadmap/completion-preview (no repoName) expected 4xx, got {0}" -f $completionPreviewNoRepo.StatusCode)
+    }
+    Write-Host ("  /api/roadmap/completion-preview (no repoName) -> HTTP {0} correctly rejected" -f $completionPreviewNoRepo.StatusCode) -ForegroundColor DarkGray
+
     Write-Host '[PASS] API host smoke completed' -ForegroundColor Green
     [pscustomobject]@{
         liveStatus = $live.status
@@ -495,6 +556,10 @@ try {
         repairPreviewFieldsOk   = $repairPreviewFieldsOk
         repairHistoryItemsOk    = $repairHistoryItemsOk
         execQueueFieldsOk       = $execQueueFieldsOk
+        lintScanSuccess       = $lintScanJson.success
+        stdHistorySuccess     = $stdHistoryJson.success
+        driftFieldsOk         = $driftFieldsOk
+        webhooksGetSuccess    = $webhooksJson.success
     } | Format-List
 }
 finally {

@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary } from '../types';
+import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -780,4 +780,97 @@ export async function requeueExecution(repoName: string, force = false): Promise
     return { success: false, error: data?.error?.message ?? 'Failed to requeue' };
   }
   return { success: true };
+}
+
+// ---------------------------------------------------------------------------
+// Release 1.1 — Standardization, Guardrails, and Continuous Improvement
+// ---------------------------------------------------------------------------
+
+export async function getRoadmapLint(repoName: string): Promise<RoadmapLintResult> {
+  const data = await fetchJson<any>(`${API_BASE_URL}/roadmap/lint?repoName=${encodeURIComponent(repoName)}`);
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? 'Roadmap lint request failed.');
+  }
+  return data.data as RoadmapLintResult;
+}
+
+export async function triggerRoadmapLintScan(): Promise<{ results: RoadmapLintResult[]; count: number; scannedAt: string }> {
+  const data = await postJson<any>('/roadmap/lint/scan', {});
+  const d = data?.data ?? {};
+  return {
+    results: Array.isArray(d.results) ? d.results : [],
+    count: Number(d.count ?? 0),
+    scannedAt: d.scannedAt ?? new Date().toISOString(),
+  };
+}
+
+export async function previewReadmeStandardization(repoName: string, repoPath?: string): Promise<ReadmeStandardizationPreview> {
+  const body: Record<string, string> = { repoName };
+  if (repoPath) body.repoPath = repoPath;
+  const data = await postJson<any>('/readme/standardize/preview', body);
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? 'README standardization preview failed.');
+  }
+  return data.data as ReadmeStandardizationPreview;
+}
+
+export async function applyReadmeStandardization(
+  repoName: string,
+  previewId: string,
+  proposedContent: string,
+  repoPath?: string,
+): Promise<{ success: boolean; repoName: string; appliedAt: string }> {
+  const body: Record<string, string> = { repoName, previewId, proposedContent };
+  if (repoPath) body.repoPath = repoPath;
+  const data = await postJson<any>('/readme/standardize/apply', body);
+  return data?.data ?? data;
+}
+
+export async function getReadmeStandardizationHistory(limit = 25): Promise<ReadmeStandardizationHistoryItem[]> {
+  const data = await fetchJson<any>(`${API_BASE_URL}/readme/standardize/history?limit=${limit}`);
+  return Array.isArray(data?.data?.items) ? data.data.items : [];
+}
+
+export async function getMaturityDrift(): Promise<MaturityDriftResult> {
+  const data = await fetchJson<any>(`${API_BASE_URL}/roadmap/drift`);
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? 'Maturity drift request failed.');
+  }
+  return data.data as MaturityDriftResult;
+}
+
+export async function setMaturityBaseline(repoName: string, targetLevel: string): Promise<{ repoName: string; targetLevel: string; setAt: string }> {
+  const data = await postJson<any>('/roadmap/drift/baseline', { repoName, targetLevel });
+  return data?.data ?? data;
+}
+
+export async function acknowledgeMaturityDrift(repoName: string): Promise<{ success: boolean; repoName: string }> {
+  const data = await postJson<any>('/roadmap/drift/acknowledge', { repoName });
+  return data?.data ?? data;
+}
+
+export async function getNotificationWebhooks(): Promise<NotificationWebhook[]> {
+  const data = await fetchJson<any>(`${API_BASE_URL}/notifications/webhooks`);
+  return Array.isArray(data?.data?.webhooks) ? data.data.webhooks : [];
+}
+
+export async function registerNotificationWebhook(url: string, events: string[], label?: string): Promise<NotificationWebhook> {
+  const data = await postJson<any>('/notifications/webhooks', { url, events, label: label ?? '' });
+  return data?.data as NotificationWebhook;
+}
+
+export async function removeNotificationWebhook(id: string): Promise<{ success: boolean }> {
+  const data = await postJson<any>('/notifications/webhooks/remove', { id });
+  return data?.data ?? { success: true };
+}
+
+export async function previewRoadmapCompletion(
+  repoName: string,
+  completedItems: string[],
+): Promise<RoadmapCompletionPreview> {
+  const data = await postJson<any>('/roadmap/completion-preview', { repoName, completedItems });
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? 'Roadmap completion preview failed.');
+  }
+  return data.data as RoadmapCompletionPreview;
 }

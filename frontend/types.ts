@@ -90,7 +90,7 @@ export interface ReportExportResult {
   csvPath: string;
 }
 
-export type OperationType = 'init' | 'update' | 'sync' | 'export' | 'archive' | 'docreview' | 'scan' | 'roadmap-scan' | 'roadmap-agent' | 'docs-audit-scan' | 'copilot-task-preview' | 'roadmap-audit-scan' | 'roadmap-repair-preview' | 'roadmap-repair-apply';
+export type OperationType = 'init' | 'update' | 'sync' | 'export' | 'archive' | 'docreview' | 'scan' | 'roadmap-scan' | 'roadmap-agent' | 'docs-audit-scan' | 'copilot-task-preview' | 'roadmap-audit-scan' | 'roadmap-repair-preview' | 'roadmap-repair-apply' | 'roadmap-lint-scan' | 'readme-standardize-preview' | 'readme-standardize-apply';
 
 export interface GithubInsightsMeta {
   totalRepos: number;
@@ -485,4 +485,100 @@ export interface ExecutionHistoryRecord {
   outcome?: string;
   errorMessage?: string;
   timestamp: string;
+}
+
+// Release 1.1 — Standardization, Guardrails, and Continuous Improvement
+
+// Roadmap Lint Finding
+export interface RoadmapLintFinding {
+  ruleId: string;
+  severity: 'error' | 'warning' | 'info';
+  message: string;
+  line?: number | null;
+  recommendedAction?: string | null;
+}
+
+// Roadmap Lint Result (per repo)
+export interface RoadmapLintResult {
+  repoName: string;
+  lintPassed: boolean;
+  findings: RoadmapLintFinding[];
+  summary: string;
+  lintedAt: string;
+}
+
+// README Standardization Preview
+export type ReadmeStandardizationPreviewState =
+  | 'standardization-preview-ready'
+  | 'standardization-blocked'
+  | 'already-standard';
+
+export interface ReadmeStandardizationAction {
+  actionId: string;
+  description: string;
+  severity: 'error' | 'warning' | 'info';
+}
+
+export interface ReadmeStandardizationPreview {
+  previewId: string;
+  repoName: string;
+  previewState: ReadmeStandardizationPreviewState;
+  blockReason?: string | null;
+  currentContent: string;
+  proposedContent?: string | null;
+  standardizationActions: ReadmeStandardizationAction[];
+  generatedAt: string;
+}
+
+export interface ReadmeStandardizationHistoryItem {
+  previewId: string;
+  repoName: string;
+  repoPath?: string | null;
+  event: 'preview' | 'apply';
+  timestamp: string;
+  appliedAt?: string | null;
+}
+
+// Maturity Drift Alert
+export type DriftSeverity = 'critical' | 'warning';
+
+export interface MaturityDriftAlert {
+  repoName: string;
+  targetLevel: string;
+  currentLevel: string;
+  currentScore: number;
+  driftSeverity: DriftSeverity;
+  detectedAt: string;
+  lastAcknowledgedAt?: string | null;
+}
+
+export interface MaturityDriftResult {
+  driftAlerts: MaturityDriftAlert[];
+  baselineCount: number;
+  driftCount: number;
+  evaluatedAt: string;
+}
+
+// Notification Webhooks
+export interface NotificationWebhook {
+  id: string;
+  url: string;
+  label: string;
+  events: string[];
+  registeredAt: string;
+  enabled: boolean;
+  lastFiredAt?: string | null;
+  lastFireResult?: string | null;
+}
+
+// Roadmap Completion Preview
+export interface RoadmapCompletionPreview {
+  previewId: string;
+  repoName: string;
+  roadmapPath?: string | null;
+  currentContent: string;
+  proposedContent: string;
+  markedCount: number;
+  completedItems: string[];
+  generatedAt: string;
 }

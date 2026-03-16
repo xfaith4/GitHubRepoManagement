@@ -12,6 +12,8 @@ interface WorkQueueViewProps {
   onPreviewTask?: (repoName: string, roadmapPath?: string) => void;
   onViewRoadmapAudit?: (repoName: string) => void;
   onRepairRoadmap?: (repoName: string) => void;
+  onLintRoadmap?: (repoName: string) => void;
+  onStandardizeReadme?: (repoName: string) => void;
   isScanning: boolean;
   roadmapAuditIndex?: RoadmapAuditIndex | null;
 }
@@ -122,6 +124,15 @@ function ReadinessBadge({ readiness }: { readiness: DispatchReadiness }) {
   );
 }
 
+const SAVED_FILTERS_KEY = 'work-queue-saved-filters';
+
+interface SavedFilter {
+  name: string;
+  readinessFilter: string;
+  maturityFilter: string;
+  searchText: string;
+}
+
 const WorkQueueView: React.FC<WorkQueueViewProps> = ({
   auditIndex,
   loading,
@@ -132,6 +143,8 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
   onPreviewTask,
   onViewRoadmapAudit,
   onRepairRoadmap,
+  onLintRoadmap,
+  onStandardizeReadme,
   isScanning,
   roadmapAuditIndex,
 }) => {
@@ -139,6 +152,14 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
   const [maturityFilter, setMaturityFilter] = useState<RoadmapMaturityFilter>('all');
   const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
   const [filterText, setFilterText] = useState('');
+  const [savedFilters, setSavedFilters] = useState<SavedFilter[]>(() => {
+    try {
+      const raw = localStorage.getItem(SAVED_FILTERS_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  });
+  const [showSaveFilter, setShowSaveFilter] = useState(false);
+  const [newFilterName, setNewFilterName] = useState('');
 
   const entries = auditIndex?.entries ?? [];
 
@@ -342,6 +363,86 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
             })}
           </div>
         )}
+        {/* Saved filters */}
+        <div className="flex flex-wrap gap-2 items-center w-full mt-1">
+          {savedFilters.length > 0 && (
+            <>
+              <span className="text-xs text-gray-500 font-medium">Saved:</span>
+              {savedFilters.map((sf, i) => (
+                <button
+                  key={i}
+                  onClick={() => {
+                    setReadinessFilter(sf.readinessFilter as ReadinessFilter);
+                    setMaturityFilter(sf.maturityFilter as RoadmapMaturityFilter);
+                    setFilterText(sf.searchText);
+                  }}
+                  className="px-2 py-0.5 rounded text-xs font-medium border bg-gray-800 text-gray-300 border-gray-600 hover:bg-gray-700 transition-colors"
+                  title={`Readiness: ${sf.readinessFilter}, Maturity: ${sf.maturityFilter}, Search: "${sf.searchText}"`}
+                >
+                  {sf.name}
+                </button>
+              ))}
+              <button
+                onClick={() => {
+                  const updated: SavedFilter[] = [];
+                  localStorage.setItem(SAVED_FILTERS_KEY, JSON.stringify(updated));
+                  setSavedFilters(updated);
+                }}
+                className="px-2 py-0.5 rounded text-xs font-medium border bg-gray-800 text-red-400 border-gray-600 hover:bg-gray-700 transition-colors"
+                title="Clear all saved filters"
+              >
+                Clear saved
+              </button>
+            </>
+          )}
+          {!showSaveFilter ? (
+            <button
+              onClick={() => { setShowSaveFilter(true); setNewFilterName(''); }}
+              className="px-2 py-0.5 rounded text-xs font-medium border bg-gray-800 text-indigo-300 border-indigo-700/50 hover:bg-gray-700 transition-colors"
+            >
+              + Save View
+            </button>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <input
+                type="text"
+                placeholder="Filter name…"
+                value={newFilterName}
+                onChange={e => setNewFilterName(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Escape') setShowSaveFilter(false);
+                }}
+                className="bg-gray-900 border border-gray-600 rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 w-32"
+                autoFocus
+              />
+              <button
+                disabled={!newFilterName.trim()}
+                onClick={() => {
+                  const entry: SavedFilter = {
+                    name: newFilterName.trim(),
+                    readinessFilter,
+                    maturityFilter,
+                    searchText: filterText,
+                  };
+                  const updated = [...savedFilters, entry];
+                  localStorage.setItem(SAVED_FILTERS_KEY, JSON.stringify(updated));
+                  setSavedFilters(updated);
+                  setShowSaveFilter(false);
+                  setNewFilterName('');
+                }}
+                className="px-2 py-0.5 rounded text-xs font-medium border bg-indigo-700 text-white border-indigo-600 hover:bg-indigo-600 disabled:opacity-40 transition-colors"
+              >
+                Save
+              </button>
+              <button
+                onClick={() => setShowSaveFilter(false)}
+                className="px-2 py-0.5 rounded text-xs text-gray-400 hover:text-gray-200"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Loading state */}
@@ -461,6 +562,24 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                         title="Preview Roadmap Repair"
                       >
                         Repair
+                      </button>
+                    )}
+                    {onLintRoadmap && entry.roadmapState && entry.roadmapState !== 'missing' && (
+                      <button
+                        onClick={e => { e.stopPropagation(); onLintRoadmap(entry.repoName); }}
+                        className="text-xs px-2 py-1 rounded border border-teal-700/50 bg-teal-900/40 text-teal-300 hover:bg-teal-800/60 transition-colors"
+                        title="Lint Roadmap"
+                      >
+                        Lint
+                      </button>
+                    )}
+                    {onStandardizeReadme && (
+                      <button
+                        onClick={e => { e.stopPropagation(); onStandardizeReadme(entry.repoName); }}
+                        className="text-xs px-2 py-1 rounded border border-cyan-700/50 bg-cyan-900/40 text-cyan-300 hover:bg-cyan-800/60 transition-colors"
+                        title="Standardize README"
+                      >
+                        Standardize
                       </button>
                     )}
                     {onViewRoadmap && entry.roadmapState && entry.roadmapState !== 'missing' && (
