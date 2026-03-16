@@ -86,7 +86,7 @@ function Invoke-PlanRoadmapRepair {
         }
     }
 
-    # Already at L3 or L4 — minor augmentation only
+    # Already at L3 or L4 - minor augmentation only
     if ($Contract.maturityLevel -in @('L3-Contract-Ready', 'L4-Orchestration-Ready')) {
         return [pscustomobject]@{
             previewState = 'rewrite-not-recommended'
@@ -114,7 +114,7 @@ function Invoke-PlanRoadmapRepair {
             'ROADMAP-005' {
                 $actions.Add([pscustomobject]@{
                     actionId       = 'ADD-RELEASE-SECTIONS'
-                    description    = 'Reorganize pending checklist items into bounded release sections (## Release X.Y — Title) with goal statements.'
+                    description    = 'Reorganize pending checklist items into bounded release sections (## Release X.Y - Title) with goal statements.'
                     affectsSection = 'Release Roadmap'
                     severity       = [string]$finding.severity
                 })
@@ -197,7 +197,7 @@ function Invoke-PlanRoadmapRepair {
 
 function _EscapeMarkdown {
     param([string]$Text)
-    # No escaping needed — just return as-is for markdown generation
+    # No escaping needed - just return as-is for markdown generation
     return $Text
 }
 
@@ -217,9 +217,9 @@ function _BuildPrinciplesSection {
     return @"
 ## 2. Product Principles
 
-- **Roadmap-first workflow** — roadmap files are a primary source of truth for next work.
-- **Explainable automation** — every audit, readiness score, and dispatch decision should be inspectable.
-- **Human review before irreversible action** — preview changes before applying them.
+- **Roadmap-first workflow** - roadmap files are a primary source of truth for next work.
+- **Explainable automation** - every audit, readiness score, and dispatch decision should be inspectable.
+- **Human review before irreversible action** - preview changes before applying them.
 
 ---
 "@
@@ -254,7 +254,7 @@ function _BuildReleaseSection {
         [bool]$AddOutOfScope
     )
     $lines = [System.Collections.Generic.List[string]]::new()
-    $lines.Add("## $ReleaseId — $ReleaseTitle")
+    $lines.Add("## $ReleaseId - $ReleaseTitle")
     $lines.Add('')
     $lines.Add('**Goal:** Implement the next set of concrete, testable improvements for this repository.')
     $lines.Add('')
@@ -367,7 +367,7 @@ function Invoke-GenerateRepairPreview {
     # -----------------------------------------------------------------------
     # Title
     # -----------------------------------------------------------------------
-    $output.Add("# $RepoName — Product & Engineering Roadmap")
+    $output.Add("# $RepoName - Product & Engineering Roadmap")
     $output.Add('')
     $output.Add('> Status: Active')
     $output.Add('>')
@@ -462,7 +462,7 @@ function Invoke-GenerateRepairPreview {
         # Create a new release for ungrouped pending items
         if ($ungroupedPending.Count -gt 0) {
             $releaseLabel = "Release $releaseIdx.0"
-            $output.Add("## $releaseLabel — Next Release")
+            $output.Add("## $releaseLabel - Next Release")
             $output.Add('')
             $output.Add('**Goal:** Implement the next set of concrete, testable improvements.')
             $output.Add('')
@@ -493,7 +493,7 @@ function Invoke-GenerateRepairPreview {
             $output.Add('')
         } elseif ($releaseSections.Count -eq 0 -and $allPendingItems.Count -gt 0) {
             # No release sections and no ungrouped items found but there are pending items
-            $output.Add("## Release 1.0 — First Release")
+            $output.Add("## Release 1.0 - First Release")
             $output.Add('')
             $output.Add('**Goal:** Deliver the first set of concrete, testable milestones.')
             $output.Add('')
@@ -519,7 +519,7 @@ function Invoke-GenerateRepairPreview {
             $output.Add('')
         }
     } else {
-        # Structure is mostly OK — preserve existing release section text from RawContent
+        # Structure is mostly OK - preserve existing release section text from RawContent
         if (-not [string]::IsNullOrWhiteSpace($RawContent)) {
             $releaseBlock = [regex]::Match($RawContent, '(?is)(^#{1,3}\s+release\s+.+)')
             if ($releaseBlock.Success) {
