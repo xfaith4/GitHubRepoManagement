@@ -16,7 +16,7 @@ import CopilotTaskPreviewModal from './CopilotTaskPreviewModal';
 import RoadmapAuditModal from './RoadmapAuditModal';
 import RoadmapRepairModal from './RoadmapRepairModal';
 import ExecutionQueuePanel from './ExecutionQueuePanel';
-import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan } from '../services/apiClient';
+import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError } from '../services/apiClient';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
 import { useHealthPing } from '../hooks/useHealthPing';
@@ -56,8 +56,10 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [docsAuditIndex, setDocsAuditIndex] = useState<DocAuditIndex | null>(null);
   const [docsAuditLoading, setDocsAuditLoading] = useState(false);
   const [docsAuditError, setDocsAuditError] = useState<string | null>(null);
+  const [hasAttemptedDocsAuditLoad, setHasAttemptedDocsAuditLoad] = useState(false);
 
   const [roadmapAuditIndex, setRoadmapAuditIndex] = useState<RoadmapAuditIndex | null>(null);
+  const [hasAttemptedRoadmapAuditLoad, setHasAttemptedRoadmapAuditLoad] = useState(false);
   const [isRoadmapAuditModalOpen, setIsRoadmapAuditModalOpen] = useState(false);
   const [roadmapAuditModalRepo, setRoadmapAuditModalRepo] = useState<string | null>(null);
 
@@ -96,8 +98,12 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
     getRoadmapIndex().then(index => setRoadmapEntries(index.entries)).catch(() => {/* silent — badge just won't show */});
   }, []);
 
-  // Lazy docs-audit fetch — runs after initial mount, pre-warms Work Queue view
+  // Load docs audit when the Work Queue view is first opened.
   useEffect(() => {
+    if (activeView !== 'work-queue' || hasAttemptedDocsAuditLoad) {
+      return;
+    }
+    setHasAttemptedDocsAuditLoad(true);
     setDocsAuditLoading(true);
     getDocsAudit()
       .then(index => {
@@ -105,17 +111,26 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
         setDocsAuditError(null);
       })
       .catch(err => {
+        if (isOptionalApiUnavailableError(err)) {
+          setDocsAuditIndex(null);
+          setDocsAuditError(err.message);
+          return;
+        }
         setDocsAuditError(err instanceof Error ? err.message : 'Docs audit is unavailable.');
       })
       .finally(() => setDocsAuditLoading(false));
-  }, []);
+  }, [activeView, hasAttemptedDocsAuditLoad]);
 
-  // Lazy roadmap audit fetch — pre-warms maturity data for Work Queue view
+  // Load roadmap audit when the Work Queue view is first opened.
   useEffect(() => {
+    if (activeView !== 'work-queue' || hasAttemptedRoadmapAuditLoad) {
+      return;
+    }
+    setHasAttemptedRoadmapAuditLoad(true);
     getRoadmapAudit()
       .then(index => setRoadmapAuditIndex(index))
       .catch(() => {/* silent — maturity badges just won't show */});
-  }, []);
+  }, [activeView, hasAttemptedRoadmapAuditLoad]);
 
   useEffect(() => {
     if (!loading) {

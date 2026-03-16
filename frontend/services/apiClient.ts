@@ -13,6 +13,43 @@ const API_BASE_URL = (() => {
   return viteUrl ?? (isDev ? '/api' : 'http://localhost:7071/api');
 })();
 
+type OptionalApiFeature = 'docs-audit' | 'roadmap-audit';
+
+class OptionalApiUnavailableError extends Error {
+  code: 'OPTIONAL_API_UNAVAILABLE';
+  feature: OptionalApiFeature;
+
+  constructor(feature: OptionalApiFeature, message: string) {
+    super(message);
+    this.name = 'OptionalApiUnavailableError';
+    this.code = 'OPTIONAL_API_UNAVAILABLE';
+    this.feature = feature;
+  }
+}
+
+const optionalApiAvailability = new Map<OptionalApiFeature, OptionalApiUnavailableError>();
+
+function getOptionalApiUnavailableError(feature: OptionalApiFeature): OptionalApiUnavailableError | null {
+  return optionalApiAvailability.get(feature) ?? null;
+}
+
+function markOptionalApiUnavailable(feature: OptionalApiFeature, endpoint: string): OptionalApiUnavailableError {
+  const error = new OptionalApiUnavailableError(
+    feature,
+    `The running backend does not expose /api${endpoint}. Restart the API host from this repo checkout and try again.`
+  );
+  optionalApiAvailability.set(feature, error);
+  return error;
+}
+
+export function isOptionalApiUnavailableError(error: unknown): error is OptionalApiUnavailableError {
+  return error instanceof OptionalApiUnavailableError || (
+    error instanceof Error &&
+    'code' in error &&
+    (error as { code?: string }).code === 'OPTIONAL_API_UNAVAILABLE'
+  );
+}
+
 async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);
   const text = await response.text();
@@ -445,9 +482,7 @@ function normalizeDocAuditEntry(e: any): DocAuditEntry {
 function normalizeDocsAuditError(error: unknown, endpoint: '/docs-audit' | '/docs-audit/scan'): Error {
   const message = error instanceof Error ? error.message : 'Docs audit request failed.';
   if (/404|not found/i.test(message)) {
-    return new Error(
-      `The running backend does not expose ${endpoint}. Restart the API host from this repo checkout and try the docs audit again.`
-    );
+    return markOptionalApiUnavailable('docs-audit', endpoint);
   }
   return error instanceof Error ? error : new Error(message);
 }
@@ -455,6 +490,10 @@ function normalizeDocsAuditError(error: unknown, endpoint: '/docs-audit' | '/doc
 export async function getDocsAudit(refresh = false): Promise<DocAuditIndex> {
   if (USE_MOCK_API) {
     return { entries: [], auditedAt: new Date().toISOString(), count: 0, cacheSource: 'fresh-scan', cacheAgeSeconds: 0 };
+  }
+  const cachedError = getOptionalApiUnavailableError('docs-audit');
+  if (cachedError) {
+    throw cachedError;
   }
   const qs = refresh ? '?refresh=true' : '';
   try {
@@ -475,6 +514,10 @@ export async function getDocsAudit(refresh = false): Promise<DocAuditIndex> {
 export async function triggerDocsAuditScan(): Promise<DocAuditIndex> {
   if (USE_MOCK_API) {
     return { entries: [], auditedAt: new Date().toISOString(), count: 0, cacheSource: 'fresh-scan', cacheAgeSeconds: 0 };
+  }
+  const cachedError = getOptionalApiUnavailableError('docs-audit');
+  if (cachedError) {
+    throw cachedError;
   }
   try {
     const data = await postJson<any>('/docs-audit/scan', {});
@@ -535,17 +578,24 @@ function normalizeRoadmapAuditEntry(e: any): RoadmapAuditEntry {
   };
 }
 
-function normalizeRoadmapAuditError(error: unknown): Error {
+function normalizeRoadmapAuditError(error: unknown, endpoint: '/roadmap/audit' | '/roadmap/audit/scan'): Error {
   const message = error instanceof Error ? error.message : 'Roadmap audit request failed.';
+  if (/404|not found/i.test(message)) {
+    return markOptionalApiUnavailable('roadmap-audit', endpoint);
+  }
   if (message.includes('503') || message.includes('ECONNREFUSED') || message.includes('fetch')) {
     return new Error(
-      `The running backend does not expose /api/roadmap/audit. Restart the API host from this repo checkout and try again. (${message})`
+      `The running backend does not expose /api${endpoint}. Restart the API host from this repo checkout and try again. (${message})`
     );
   }
   return new Error(message);
 }
 
 export async function getRoadmapAudit(opts?: { refresh?: boolean; localRoots?: string[]; maxDepth?: number }): Promise<RoadmapAuditIndex> {
+  const cachedError = getOptionalApiUnavailableError('roadmap-audit');
+  if (cachedError) {
+    throw cachedError;
+  }
   try {
     const params: string[] = [];
     if (opts?.refresh) params.push('refresh=true');
@@ -562,11 +612,15 @@ export async function getRoadmapAudit(opts?: { refresh?: boolean; localRoots?: s
       cacheAgeSeconds: Number(d.cacheAgeSeconds ?? 0),
     };
   } catch (error) {
-    throw normalizeRoadmapAuditError(error);
+    throw normalizeRoadmapAuditError(error, '/roadmap/audit');
   }
 }
 
 export async function triggerRoadmapAuditScan(): Promise<RoadmapAuditIndex> {
+  const cachedError = getOptionalApiUnavailableError('roadmap-audit');
+  if (cachedError) {
+    throw cachedError;
+  }
   try {
     const data = await postJson<any>('/roadmap/audit/scan', {});
     const d = data?.data ?? {};
@@ -578,7 +632,7 @@ export async function triggerRoadmapAuditScan(): Promise<RoadmapAuditIndex> {
       cacheAgeSeconds: 0,
     };
   } catch (error) {
-    throw normalizeRoadmapAuditError(error);
+    throw normalizeRoadmapAuditError(error, '/roadmap/audit/scan');
   }
 }
 
