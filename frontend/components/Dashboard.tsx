@@ -15,6 +15,8 @@ import WorkQueueView from './WorkQueueView';
 import CopilotTaskPreviewModal from './CopilotTaskPreviewModal';
 import RoadmapAuditModal from './RoadmapAuditModal';
 import RoadmapRepairModal from './RoadmapRepairModal';
+import { ReadmeStandardizationModal } from './ReadmeStandardizationModal';
+import { RoadmapLintModal } from './RoadmapLintModal';
 import ExecutionQueuePanel from './ExecutionQueuePanel';
 import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan } from '../services/apiClient';
 import { useSse } from '../hooks/useSse';
@@ -63,6 +65,8 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
 
   const [isRoadmapRepairModalOpen, setIsRoadmapRepairModalOpen] = useState(false);
   const [roadmapRepairModalRepo, setRoadmapRepairModalRepo] = useState<string | null>(null);
+  const [lintModalRepo, setLintModalRepo] = useState<string | null>(null);
+  const [standardizeModalRepo, setStandardizeModalRepo] = useState<string | null>(null);
 
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
@@ -735,6 +739,8 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                 onPreviewTask={handlePreviewCopilotTask}
                 onViewRoadmapAudit={handleViewRoadmapAudit}
                 onRepairRoadmap={handleRepairRoadmap}
+                onLintRoadmap={(repoName) => setLintModalRepo(repoName)}
+                onStandardizeReadme={(repoName) => setStandardizeModalRepo(repoName)}
                 isScanning={currentOperation === 'docs-audit-scan'}
                 roadmapAuditIndex={roadmapAuditIndex}
               />
@@ -818,6 +824,22 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
           getRoadmapAudit({ refresh: true }).then(setRoadmapAuditIndex).catch(() => {});
         }}
       />
+
+      {lintModalRepo && (
+        <RoadmapLintModal
+          repoName={lintModalRepo}
+          onClose={() => setLintModalRepo(null)}
+        />
+      )}
+
+      {standardizeModalRepo && (
+        <ReadmeStandardizationModal
+          repoName={standardizeModalRepo}
+          repoPath={reposWithRoadmap.find(r => r.name === standardizeModalRepo)?.localPath}
+          onClose={() => setStandardizeModalRepo(null)}
+          onApplied={() => setStandardizeModalRepo(null)}
+        />
+      )}
     </div>
   );
 };
