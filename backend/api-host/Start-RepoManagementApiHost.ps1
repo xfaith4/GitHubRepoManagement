@@ -33,7 +33,7 @@ $executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 
 $script:StatusCacheMemory = @{}
 $script:StatusCacheDefaultTtlSeconds = 120
-$script:StatusCacheSchemaVersion = 2
+$script:StatusCacheSchemaVersion = 3
 
 $script:RoadmapCacheMemory = @{}
 $script:RoadmapCacheDefaultTtlSeconds = 300
@@ -941,6 +941,59 @@ function Add-StatusCacheMeta {
     return $Result
 }
 
+function Test-StatusResponseHasActivityMetrics {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Response
+    )
+
+    $repoItems = @()
+    if ($Response -is [System.Collections.IDictionary]) {
+        if ($Response.ContainsKey('data') -and $Response.data -is [System.Collections.IDictionary] -and $Response.data.ContainsKey('repos')) {
+            $repoItems = @($Response.data.repos)
+        }
+    }
+    elseif ($Response.PSObject.Properties.Name -contains 'data' -and $null -ne $Response.data) {
+        $data = $Response.data
+        if ($data -is [System.Collections.IDictionary]) {
+            if ($data.ContainsKey('repos')) {
+                $repoItems = @($data.repos)
+            }
+        }
+        elseif ($data.PSObject.Properties.Name -contains 'repos') {
+            $repoItems = @($data.repos)
+        }
+    }
+
+    if (@($repoItems).Count -eq 0) {
+        return $true
+    }
+
+    foreach ($repo in @($repoItems)) {
+        if ($repo -is [System.Collections.IDictionary]) {
+            if (
+                (-not $repo.ContainsKey('lastCommitAuthor')) -or
+                (-not $repo.ContainsKey('commitsLastWeek')) -or
+                (-not $repo.ContainsKey('commitsLastMonth'))
+            ) {
+                return $false
+            }
+            continue
+        }
+
+        $props = @($repo.PSObject.Properties.Name)
+        if (
+            ($props -notcontains 'lastCommitAuthor') -or
+            ($props -notcontains 'commitsLastWeek') -or
+            ($props -notcontains 'commitsLastMonth')
+        ) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
 function Get-StatusFromCache {
     param(
         [Parameter(Mandatory = $true)]
@@ -958,6 +1011,11 @@ function Get-StatusFromCache {
         $memoryEntry = $script:StatusCacheMemory[$Key]
         $ageSeconds = (($nowUtc) - [datetime]$memoryEntry.CreatedAtUtc).TotalSeconds
         if ($IgnoreTtl.IsPresent -or $ageSeconds -le $TtlSeconds) {
+            if (-not (Test-StatusResponseHasActivityMetrics -Response $memoryEntry.Response)) {
+                $script:StatusCacheMemory.Remove($Key)
+                Write-HostLog ("Status cache miss: memory entry missing activity metrics for key '{0}'" -f $Key)
+                return [pscustomobject]@{ hit = $false }
+            }
             return [pscustomobject]@{
                 hit = $true
                 source = 'memory'
@@ -986,6 +1044,10 @@ function Get-StatusFromCache {
             return [pscustomobject]@{ hit = $false }
         }
         if ([string]$diskEntry.key -ne $Key) {
+            return [pscustomobject]@{ hit = $false }
+        }
+        if (-not (Test-StatusResponseHasActivityMetrics -Response $diskEntry.response)) {
+            Write-HostLog ("Status cache miss: disk entry missing activity metrics for key '{0}'" -f $Key)
             return [pscustomobject]@{ hit = $false }
         }
 

@@ -7,11 +7,16 @@ interface ChangeHistoryPanelProps {
 
 const ChangeHistoryPanel: React.FC<ChangeHistoryPanelProps> = ({ repos }) => {
   const activityMetrics = useMemo(() => {
+    const now = Date.now();
+    const weekWindowMs = 7 * 24 * 60 * 60 * 1000;
+    const monthWindowMs = 30 * 24 * 60 * 60 * 1000;
     const totalCommitsWeek = repos.reduce((sum, r) => sum + (r.commitsLastWeek ?? 0), 0);
     const totalCommitsMonth = repos.reduce((sum, r) => sum + (r.commitsLastMonth ?? 0), 0);
     
     const uniqueContributorsWeek = new Set<string>();
     const uniqueContributorsMonth = new Set<string>();
+    let recentReposByDateWeek = 0;
+    let recentReposByDateMonth = 0;
     
     repos.forEach(r => {
       if ((r.commitsLastWeek ?? 0) > 0) {
@@ -20,10 +25,23 @@ const ChangeHistoryPanel: React.FC<ChangeHistoryPanelProps> = ({ repos }) => {
       if ((r.commitsLastMonth ?? 0) > 0) {
         uniqueContributorsMonth.add(r.lastCommitAuthor);
       }
+
+      const lastCommitDateValue = r.lastCommitDate ? Date.parse(r.lastCommitDate) : Number.NaN;
+      if (Number.isFinite(lastCommitDateValue)) {
+        const ageMs = now - lastCommitDateValue;
+        if (ageMs <= weekWindowMs) {
+          recentReposByDateWeek += 1;
+        }
+        if (ageMs <= monthWindowMs) {
+          recentReposByDateMonth += 1;
+        }
+      }
     });
     
     const activeReposWeek = repos.filter(r => (r.commitsLastWeek ?? 0) > 0).length;
     const activeReposMonth = repos.filter(r => (r.commitsLastMonth ?? 0) > 0).length;
+    const commitMetricsUnavailableWeek = totalCommitsWeek === 0 && recentReposByDateWeek > 0;
+    const commitMetricsUnavailableMonth = totalCommitsMonth === 0 && recentReposByDateMonth > 0;
     
     // Calculate average commits per active repo
     const avgCommitsPerRepoWeek = activeReposWeek > 0 ? (totalCommitsWeek / activeReposWeek).toFixed(1) : '0';
@@ -45,6 +63,10 @@ const ChangeHistoryPanel: React.FC<ChangeHistoryPanelProps> = ({ repos }) => {
       avgCommitsPerRepoWeek,
       avgCommitsPerRepoMonth,
       topActiveReposWeek,
+      recentReposByDateWeek,
+      recentReposByDateMonth,
+      commitMetricsUnavailableWeek,
+      commitMetricsUnavailableMonth,
     };
   }, [repos]);
   
@@ -57,6 +79,8 @@ const ChangeHistoryPanel: React.FC<ChangeHistoryPanelProps> = ({ repos }) => {
   
   const weekActivity = getActivityLevel(activityMetrics.totalCommitsWeek);
   const monthActivity = getActivityLevel(activityMetrics.totalCommitsMonth);
+  const displayActiveReposWeek = activityMetrics.commitMetricsUnavailableWeek ? activityMetrics.recentReposByDateWeek : activityMetrics.activeReposWeek;
+  const displayActiveReposMonth = activityMetrics.commitMetricsUnavailableMonth ? activityMetrics.recentReposByDateMonth : activityMetrics.activeReposMonth;
   
   return (
     <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-6 mb-4">
@@ -86,23 +110,31 @@ const ChangeHistoryPanel: React.FC<ChangeHistoryPanelProps> = ({ repos }) => {
           <div className="space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-400">Total Commits</span>
-              <span className="text-2xl font-bold text-blue-400">{activityMetrics.totalCommitsWeek}</span>
+              <span className="text-2xl font-bold text-blue-400">
+                {activityMetrics.commitMetricsUnavailableWeek ? '—' : activityMetrics.totalCommitsWeek}
+              </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-400">Active Repositories</span>
-              <span className="text-xl font-semibold text-gray-200">{activityMetrics.activeReposWeek}</span>
+              <span className="text-xl font-semibold text-gray-200">{displayActiveReposWeek}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-400">Active Contributors</span>
-              <span className="text-xl font-semibold text-gray-200">{activityMetrics.activeContributorsWeek}</span>
+              <span className="text-xl font-semibold text-gray-200">
+                {activityMetrics.commitMetricsUnavailableWeek ? '—' : activityMetrics.activeContributorsWeek}
+              </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-400">Avg Commits/Repo</span>
-              <span className="text-xl font-semibold text-gray-200">{activityMetrics.avgCommitsPerRepoWeek}</span>
+              <span className="text-xl font-semibold text-gray-200">
+                {activityMetrics.commitMetricsUnavailableWeek ? '—' : activityMetrics.avgCommitsPerRepoWeek}
+              </span>
             </div>
             <div className="flex justify-between items-center pt-2 border-t border-gray-700">
               <span className="text-sm text-gray-400">Activity Level</span>
-              <span className={`text-lg font-bold ${weekActivity.color}`}>{weekActivity.level}</span>
+              <span className={`text-lg font-bold ${activityMetrics.commitMetricsUnavailableWeek ? 'text-yellow-400' : weekActivity.color}`}>
+                {activityMetrics.commitMetricsUnavailableWeek ? 'Unavailable' : weekActivity.level}
+              </span>
             </div>
           </div>
         </div>
@@ -121,23 +153,31 @@ const ChangeHistoryPanel: React.FC<ChangeHistoryPanelProps> = ({ repos }) => {
           <div className="space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-400">Total Commits</span>
-              <span className="text-2xl font-bold text-green-400">{activityMetrics.totalCommitsMonth}</span>
+              <span className="text-2xl font-bold text-green-400">
+                {activityMetrics.commitMetricsUnavailableMonth ? '—' : activityMetrics.totalCommitsMonth}
+              </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-400">Active Repositories</span>
-              <span className="text-xl font-semibold text-gray-200">{activityMetrics.activeReposMonth}</span>
+              <span className="text-xl font-semibold text-gray-200">{displayActiveReposMonth}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-400">Active Contributors</span>
-              <span className="text-xl font-semibold text-gray-200">{activityMetrics.activeContributorsMonth}</span>
+              <span className="text-xl font-semibold text-gray-200">
+                {activityMetrics.commitMetricsUnavailableMonth ? '—' : activityMetrics.activeContributorsMonth}
+              </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-400">Avg Commits/Repo</span>
-              <span className="text-xl font-semibold text-gray-200">{activityMetrics.avgCommitsPerRepoMonth}</span>
+              <span className="text-xl font-semibold text-gray-200">
+                {activityMetrics.commitMetricsUnavailableMonth ? '—' : activityMetrics.avgCommitsPerRepoMonth}
+              </span>
             </div>
             <div className="flex justify-between items-center pt-2 border-t border-gray-700">
               <span className="text-sm text-gray-400">Activity Level</span>
-              <span className={`text-lg font-bold ${monthActivity.color}`}>{monthActivity.level}</span>
+              <span className={`text-lg font-bold ${activityMetrics.commitMetricsUnavailableMonth ? 'text-yellow-400' : monthActivity.color}`}>
+                {activityMetrics.commitMetricsUnavailableMonth ? 'Unavailable' : monthActivity.level}
+              </span>
             </div>
           </div>
         </div>
@@ -190,7 +230,9 @@ const ChangeHistoryPanel: React.FC<ChangeHistoryPanelProps> = ({ repos }) => {
           <div className="text-sm text-gray-300">
             <strong className="text-blue-400">Executive Summary:</strong> 
             {activityMetrics.totalCommitsWeek > 0 ? (
-              <span> Your team has made <strong>{activityMetrics.totalCommitsWeek}</strong> commits across <strong>{activityMetrics.activeReposWeek}</strong> repositories in the last 7 days, with <strong>{activityMetrics.activeContributorsWeek}</strong> active contributors. This month, there have been <strong>{activityMetrics.totalCommitsMonth}</strong> total commits.</span>
+              <span> Your team has made <strong>{activityMetrics.totalCommitsWeek}</strong> commits across <strong>{displayActiveReposWeek}</strong> repositories in the last 7 days, with <strong>{activityMetrics.activeContributorsWeek}</strong> active contributors. This month, there have been <strong>{activityMetrics.totalCommitsMonth}</strong> total commits.</span>
+            ) : activityMetrics.commitMetricsUnavailableWeek || activityMetrics.commitMetricsUnavailableMonth ? (
+              <span> Recent repository updates were detected, but commit-count activity metrics are unavailable in the current status payload. Restart the API host from this repo checkout or clear the status cache to rebuild those metrics.</span>
             ) : (
               <span> No commit activity detected in the last 7 days. Consider checking team engagement or data source configuration.</span>
             )}

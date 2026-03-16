@@ -83,6 +83,17 @@ try {
     $statusResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/status?localRoots=$([uri]::EscapeDataString($WorkspaceRoot))&maxDepth=2&includeNonGitFolders=false"
     Assert-Not503 -Name '/api/status' -Response $statusResponse
     $status = $statusResponse.Json
+    $statusRepos = @($status.data.repos)
+    if ($statusRepos.Count -gt 0) {
+        $firstStatusRepo = $statusRepos[0]
+        foreach ($field in @('lastCommitAuthor', 'commitsLastWeek', 'commitsLastMonth')) {
+            if (-not ($firstStatusRepo.PSObject.Properties.Name -contains $field)) {
+                throw "/api/status repo entry missing '$field' field"
+            }
+        }
+    } else {
+        Write-Host '  /api/status returned no repos for contract field validation; activity field check skipped' -ForegroundColor Yellow
+    }
 
     Write-Host '[STEP] Status cache routes' -ForegroundColor Cyan
     $statusCache = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/status/cache"
