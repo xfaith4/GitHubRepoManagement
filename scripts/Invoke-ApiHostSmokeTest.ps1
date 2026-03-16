@@ -399,6 +399,46 @@ try {
     $logTail = $logTailResponse.Json
     if (-not $logTail.success) { throw 'api/log/tail returned success=false' }
 
+    Write-Host '[STEP] Execution queue routes (Release 1.0)' -ForegroundColor Cyan
+    $execQueueResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/execution/queue"
+    Assert-Not503 -Name '/api/execution/queue' -Response $execQueueResponse
+    $execQueueJson = $execQueueResponse.Json
+    if (-not $execQueueJson.success) { throw '/api/execution/queue returned success=false' }
+    $execQueueData = $execQueueJson.data
+    $execQueueFieldsOk = $null -ne $execQueueData -and
+        ($execQueueData.PSObject.Properties.Name -contains 'lanes') -and
+        ($execQueueData.PSObject.Properties.Name -contains 'rankedQueue') -and
+        ($execQueueData.PSObject.Properties.Name -contains 'stateCounts')
+    if (-not $execQueueFieldsOk) { throw '/api/execution/queue response missing expected fields (lanes, rankedQueue, stateCounts)' }
+    Write-Host ("  /api/execution/queue -> totalRepos={0} activeLanes={1}" -f $execQueueData.totalRepos, $execQueueData.activeLaneCount) -ForegroundColor DarkGray
+
+    $execSyncResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/execution/sync" -Body @{}
+    Assert-Not503 -Name '/api/execution/sync' -Response $execSyncResponse
+    $execSyncJson = $execSyncResponse.Json
+    if (-not $execSyncJson.success) { throw '/api/execution/sync returned success=false' }
+    Write-Host ("  /api/execution/sync -> totalRepos={0}" -f $execSyncJson.data.totalRepos) -ForegroundColor DarkGray
+
+    # Test assign with no repoName — should return 400
+    $execAssignMissingBody = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/execution/assign" -Body @{}
+    if ($execAssignMissingBody.StatusCode -notin @(400, 409, 500)) {
+        throw ("/api/execution/assign (no repoName) expected 4xx, got {0}" -f $execAssignMissingBody.StatusCode)
+    }
+    Write-Host ("  /api/execution/assign (no repoName) -> HTTP {0} correctly rejected" -f $execAssignMissingBody.StatusCode) -ForegroundColor DarkGray
+
+    # Test assign with unknown repo — should return 409
+    $execAssignUnknown = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/execution/assign" -Body @{ repoName = '__smoke-unknown-repo__' }
+    if ($execAssignUnknown.StatusCode -notin @(400, 409, 500)) {
+        throw ("/api/execution/assign (unknown repo) expected 4xx, got {0}" -f $execAssignUnknown.StatusCode)
+    }
+    Write-Host ("  /api/execution/assign (unknown repo) -> HTTP {0} correctly rejected" -f $execAssignUnknown.StatusCode) -ForegroundColor DarkGray
+
+    # Test cancel with no repoName — should return 400
+    $execCancelMissing = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/execution/cancel" -Body @{}
+    if ($execCancelMissing.StatusCode -notin @(400, 409, 500)) {
+        throw ("/api/execution/cancel (no repoName) expected 4xx, got {0}" -f $execCancelMissing.StatusCode)
+    }
+    Write-Host ("  /api/execution/cancel (no repoName) -> HTTP {0} correctly rejected" -f $execCancelMissing.StatusCode) -ForegroundColor DarkGray
+
     Write-Host '[PASS] API host smoke completed' -ForegroundColor Green
     [pscustomobject]@{
         liveStatus = $live.status
@@ -443,6 +483,7 @@ try {
         roadmapAuditFieldsOk    = $roadmapAuditFieldsOk
         repairPreviewFieldsOk   = $repairPreviewFieldsOk
         repairHistoryItemsOk    = $repairHistoryItemsOk
+        execQueueFieldsOk       = $execQueueFieldsOk
     } | Format-List
 }
 finally {

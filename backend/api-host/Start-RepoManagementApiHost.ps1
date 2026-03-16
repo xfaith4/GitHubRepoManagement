@@ -20,6 +20,7 @@ $adapterRoot = Join-Path $WorkspaceRoot 'backend\adapters'
 $commonRoot = Join-Path $WorkspaceRoot 'backend\modules\common'
 $roadmapModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\roadmap'
 $docAuditModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\docaudit'
+$executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 . (Join-Path $commonRoot 'Metrics.ps1')
 . (Join-Path $adapterRoot 'Status.Adapter.ps1')
 . (Join-Path $adapterRoot 'Reconcile.Adapter.ps1')
@@ -28,6 +29,7 @@ $docAuditModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\docaudit'
 . (Join-Path $roadmapModuleRoot 'Roadmap.Auditor.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.Repairer.ps1')
 . (Join-Path $docAuditModuleRoot 'DocAudit.Scanner.ps1')
+. (Join-Path $executionModuleRoot 'Execution.Ledger.ps1')
 
 $script:StatusCacheMemory = @{}
 $script:StatusCacheDefaultTtlSeconds = 120
@@ -3342,6 +3344,149 @@ try {
                             items = @($historyItems)
                             count = @($historyItems).Count
                         }
+                    }
+                }
+                # -------------------------------------------------------
+                # Release 1.0 — Execution Queue API Routes
+                # -------------------------------------------------------
+                'GET /api/execution/queue' {
+                    Write-HostLog ("[TRACE] execution.queue correlationId={0} start" -f $correlationId)
+                    try {
+                        $queueSummary = Get-ExecutionQueueSummary -WorkspaceRoot $WorkspaceRoot
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = $queueSummary
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'execution.queue'
+                    }
+                }
+                'POST /api/execution/sync' {
+                    Write-HostLog ("[TRACE] execution.sync correlationId={0} start" -f $correlationId)
+                    try {
+                        # Sync ledger from current cached doc-audit + roadmap-audit data
+                        $settings = Get-HostSettings
+                        $localRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
+                        $maxDepth   = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 2 }
+
+                        # Load doc-audit (use cache if available)
+                        $docAuditResult = $null
+                        try {
+                            $docAuditResult = Invoke-DocAuditScan -LocalRoots $localRoots -MaxDepth $maxDepth
+                        } catch { $docAuditResult = $null }
+
+                        $docEntries = if ($null -ne $docAuditResult -and $null -ne $docAuditResult.entries) { @($docAuditResult.entries) } else { @() }
+
+                        # Load roadmap-audit from cache if available
+                        $roadmapAuditEntries = @()
+                        $cachedAudit = $script:RoadmapAuditCacheMemory
+                        if ($null -ne $cachedAudit -and $cachedAudit.ContainsKey('entries')) {
+                            $roadmapAuditEntries = @($cachedAudit.entries)
+                        }
+
+                        $syncedLedger = Sync-LedgerFromAudit -WorkspaceRoot $WorkspaceRoot -DocAuditEntries $docEntries -RoadmapAuditEntries $roadmapAuditEntries
+                        $queueSummary = Get-ExecutionQueueSummary -WorkspaceRoot $WorkspaceRoot
+
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = $queueSummary
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'execution.sync'
+                    }
+                }
+                'POST /api/execution/assign' {
+                    Write-HostLog ("[TRACE] execution.assign correlationId={0} start" -f $correlationId)
+                    try {
+                        $body = $req.Body
+                        $repoName = if ($body -and $body.repoName) { [string]$body.repoName } else { $null }
+                        if ([string]::IsNullOrWhiteSpace($repoName)) {
+                            throw 'repoName is required for /api/execution/assign'
+                        }
+                        $runId      = if ($body -and $body.runId)      { [string]$body.runId      } else { '' }
+                        $taskText   = if ($body -and $body.taskText)    { [string]$body.taskText   } else { '' }
+                        $taskSection = if ($body -and $body.taskSection) { [string]$body.taskSection } else { '' }
+
+                        $result = Invoke-AssignLane -WorkspaceRoot $WorkspaceRoot -RepoName $repoName -RunId $runId -TaskText $taskText -TaskSection $taskSection
+                        $statusCode = if ($result.success) { 200 } else { 409 }
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode $statusCode -CorrelationId $correlationId -Payload @{
+                            success = $result.success
+                            data    = if ($result.success) { @{ laneSlot = $result.laneSlot; runId = $result.runId; entry = $result.entry } } else { $null }
+                            error   = if (-not $result.success) { @{ message = $result.error } } else { $null }
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 400 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'execution.assign'
+                    }
+                }
+                'POST /api/execution/complete' {
+                    Write-HostLog ("[TRACE] execution.complete correlationId={0} start" -f $correlationId)
+                    try {
+                        $body = $req.Body
+                        $repoName = if ($body -and $body.repoName) { [string]$body.repoName } else { $null }
+                        if ([string]::IsNullOrWhiteSpace($repoName)) {
+                            throw 'repoName is required for /api/execution/complete'
+                        }
+                        $outcome          = if ($body -and $body.outcome)          { [string]$body.outcome }          else { 'success' }
+                        $hasRemainingWork = if ($body -and $null -ne $body.hasRemainingWork) { [bool]$body.hasRemainingWork } else { $false }
+
+                        $result = Invoke-CompleteTask -WorkspaceRoot $WorkspaceRoot -RepoName $repoName -Outcome $outcome -HasRemainingWork $hasRemainingWork
+                        $statusCode = if ($result.success) { 200 } else { 409 }
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode $statusCode -CorrelationId $correlationId -Payload @{
+                            success = $result.success
+                            data    = if ($result.success) { @{ newState = $result.newState } } else { $null }
+                            error   = if (-not $result.success) { @{ message = $result.error } } else { $null }
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 400 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'execution.complete'
+                    }
+                }
+                'POST /api/execution/cancel' {
+                    Write-HostLog ("[TRACE] execution.cancel correlationId={0} start" -f $correlationId)
+                    try {
+                        $body = $req.Body
+                        $repoName = if ($body -and $body.repoName) { [string]$body.repoName } else { $null }
+                        if ([string]::IsNullOrWhiteSpace($repoName)) {
+                            throw 'repoName is required for /api/execution/cancel'
+                        }
+                        $reason     = if ($body -and $body.reason)     { [string]$body.reason }     else { 'cancelled' }
+                        $maxRetries = if ($body -and $body.maxRetries) { [int]$body.maxRetries }     else { 3 }
+
+                        $result = Invoke-CancelTask -WorkspaceRoot $WorkspaceRoot -RepoName $repoName -Reason $reason -MaxRetries $maxRetries
+                        $statusCode = if ($result.success) { 200 } else { 409 }
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode $statusCode -CorrelationId $correlationId -Payload @{
+                            success = $result.success
+                            data    = if ($result.success) { @{ newState = $result.newState; retryCount = $result.retryCount } } else { $null }
+                            error   = if (-not $result.success) { @{ message = $result.error } } else { $null }
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 400 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'execution.cancel'
+                    }
+                }
+                'POST /api/execution/requeue' {
+                    Write-HostLog ("[TRACE] execution.requeue correlationId={0} start" -f $correlationId)
+                    try {
+                        $body = $req.Body
+                        $repoName = if ($body -and $body.repoName) { [string]$body.repoName } else { $null }
+                        if ([string]::IsNullOrWhiteSpace($repoName)) {
+                            throw 'repoName is required for /api/execution/requeue'
+                        }
+                        $force = if ($body -and $null -ne $body.force) { [bool]$body.force } else { $false }
+
+                        $result = Invoke-RequeueRepo -WorkspaceRoot $WorkspaceRoot -RepoName $repoName -Force $force
+                        $statusCode = if ($result.success) { 200 } else { 409 }
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode $statusCode -CorrelationId $correlationId -Payload @{
+                            success = $result.success
+                            data    = if ($result.success) { @{ newState = $result.newState } } else { $null }
+                            error   = if (-not $result.success) { @{ message = $result.error } } else { $null }
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 400 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'execution.requeue'
                     }
                 }
                 'GET /api/log/tail' {
