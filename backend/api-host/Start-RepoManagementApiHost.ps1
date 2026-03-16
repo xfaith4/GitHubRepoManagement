@@ -341,14 +341,14 @@ function Get-ReportsRootPath {
 function Get-ConfiguredLocalRootsOrWorkspace {
     param([hashtable]$Settings)
 
-    $configuredRoots = if ($Settings.ContainsKey('inventory') -and $Settings.inventory.ContainsKey('localRoots') -and $Settings.inventory.localRoots) {
-        @($Settings.inventory.localRoots)
-    }
-    else {
-        @()
+    # Use separate declaration + assignment to prevent PowerShell from unwrapping
+    # a single-element array when the if/else block is used as an expression on the RHS.
+    [string[]]$configuredRoots = @()
+    if ($Settings.ContainsKey('inventory') -and $Settings.inventory.ContainsKey('localRoots') -and $Settings.inventory.localRoots) {
+        $configuredRoots = @($Settings.inventory.localRoots | ForEach-Object { [string]$_ })
     }
 
-    $validRoots = @($configuredRoots | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) -and (Test-Path -LiteralPath [string]$_) })
+    $validRoots = @($configuredRoots | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path -LiteralPath $_) })
     if ($validRoots.Count -gt 0) {
         return $validRoots
     }
