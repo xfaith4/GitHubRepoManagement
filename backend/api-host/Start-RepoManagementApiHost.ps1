@@ -85,6 +85,21 @@ function Parse-Bool {
     return $text -match '^(1|true|yes|on)$'
 }
 
+function Get-ValueOrDefault {
+    param(
+        [Parameter()]
+        [object]$Value,
+        [Parameter()]
+        [object]$Default = $null
+    )
+
+    if ($null -ne $Value) {
+        return $Value
+    }
+
+    return $Default
+}
+
 function Send-HttpJson {
     param(
         [Parameter(Mandatory = $true)]
@@ -347,22 +362,22 @@ function New-RepoStatusCsvContent {
     $rows = @('Repository,Branch,Status,LastCommitDate,LastCommitAuthor,OpenPrCount,CommitsLastWeek,CommitsLastMonth,UncommittedChanges,Archived,Stale,Owner,Visibility,Language,LocalPath,HtmlUrl')
     foreach ($repo in @($Repos)) {
         $values = @(
-            [string]($repo.name ?? ''),
-            [string]($repo.branch ?? ''),
-            [string]($repo.status ?? ''),
-            [string]($repo.lastCommitDate ?? ''),
-            [string]($repo.lastCommitAuthor ?? ''),
-            [string]($repo.openPrCount ?? 0),
-            [string]($repo.commitsLastWeek ?? 0),
-            [string]($repo.commitsLastMonth ?? 0),
-            [string]($repo.uncommittedChanges ?? 0),
-            [string]([bool]($repo.isArchived ?? $false)),
-            [string]([bool]($repo.isStale ?? $false)),
-            [string]($repo.owner ?? ''),
-            [string]($repo.visibility ?? ''),
-            [string]($repo.language ?? ''),
-            [string]($repo.localPath ?? $repo.path ?? ''),
-            [string]($repo.htmlUrl ?? '')
+            [string](Get-ValueOrDefault $repo.name ''),
+            [string](Get-ValueOrDefault $repo.branch ''),
+            [string](Get-ValueOrDefault $repo.status ''),
+            [string](Get-ValueOrDefault $repo.lastCommitDate ''),
+            [string](Get-ValueOrDefault $repo.lastCommitAuthor ''),
+            [string](Get-ValueOrDefault $repo.openPrCount 0),
+            [string](Get-ValueOrDefault $repo.commitsLastWeek 0),
+            [string](Get-ValueOrDefault $repo.commitsLastMonth 0),
+            [string](Get-ValueOrDefault $repo.uncommittedChanges 0),
+            [string]([bool](Get-ValueOrDefault $repo.isArchived $false)),
+            [string]([bool](Get-ValueOrDefault $repo.isStale $false)),
+            [string](Get-ValueOrDefault $repo.owner ''),
+            [string](Get-ValueOrDefault $repo.visibility ''),
+            [string](Get-ValueOrDefault $repo.language ''),
+            [string](Get-ValueOrDefault (Get-ValueOrDefault $repo.localPath $repo.path) ''),
+            [string](Get-ValueOrDefault $repo.htmlUrl '')
         ) | ForEach-Object { '"' + ([string]$_).Replace('"', '""') + '"' }
 
         $rows += ($values -join ',')
@@ -380,9 +395,9 @@ function New-RepoStatusHtmlContent {
 
     $repoList = @($Repos)
     $repoCount = $repoList.Count
-    $dirtyCount = @($repoList | Where-Object { [int]($_.uncommittedChanges ?? 0) -gt 0 -or [string]($_.status ?? '') -eq 'dirty' }).Count
-    $archivedCount = @($repoList | Where-Object { [bool]($_.isArchived ?? $false) }).Count
-    $staleCount = @($repoList | Where-Object { [bool]($_.isStale ?? $false) }).Count
+    $dirtyCount = @($repoList | Where-Object { [int](Get-ValueOrDefault $_.uncommittedChanges 0) -gt 0 -or [string](Get-ValueOrDefault $_.status '') -eq 'dirty' }).Count
+    $archivedCount = @($repoList | Where-Object { [bool](Get-ValueOrDefault $_.isArchived $false) }).Count
+    $staleCount = @($repoList | Where-Object { [bool](Get-ValueOrDefault $_.isStale $false) }).Count
     $openPrTotal = ($repoList | Measure-Object -Property openPrCount -Sum).Sum
     $weeklyCommitTotal = ($repoList | Measure-Object -Property commitsLastWeek -Sum).Sum
     $monthlyCommitTotal = ($repoList | Measure-Object -Property commitsLastMonth -Sum).Sum
@@ -390,9 +405,9 @@ function New-RepoStatusHtmlContent {
     $sourceDisplay = if ([string]::IsNullOrWhiteSpace($SourceLabel)) { 'Repository dashboard export' } else { $SourceLabel }
 
     $rowMarkup = foreach ($repo in $repoList) {
-        $name = ConvertTo-HtmlEncodedText ($repo.name ?? 'unknown')
-        $branch = ConvertTo-HtmlEncodedText ($repo.branch ?? '')
-        $statusRaw = [string]($repo.status ?? 'unknown')
+        $name = ConvertTo-HtmlEncodedText (Get-ValueOrDefault $repo.name 'unknown')
+        $branch = ConvertTo-HtmlEncodedText (Get-ValueOrDefault $repo.branch '')
+        $statusRaw = [string](Get-ValueOrDefault $repo.status 'unknown')
         $status = ConvertTo-HtmlEncodedText $statusRaw
         $statusClass = switch ($statusRaw.ToLowerInvariant()) {
             'dirty' { 'warn' }
@@ -401,11 +416,11 @@ function New-RepoStatusHtmlContent {
             'diverged' { 'danger' }
             default { 'ok' }
         }
-        $lastCommitDate = ConvertTo-HtmlEncodedText ($repo.lastCommitDate ?? '')
-        $lastCommitAuthor = ConvertTo-HtmlEncodedText ($repo.lastCommitAuthor ?? '')
-        $owner = ConvertTo-HtmlEncodedText ($repo.owner ?? '')
-        $visibility = ConvertTo-HtmlEncodedText ($repo.visibility ?? '')
-        $language = ConvertTo-HtmlEncodedText ($repo.language ?? '')
+        $lastCommitDate = ConvertTo-HtmlEncodedText (Get-ValueOrDefault $repo.lastCommitDate '')
+        $lastCommitAuthor = ConvertTo-HtmlEncodedText (Get-ValueOrDefault $repo.lastCommitAuthor '')
+        $owner = ConvertTo-HtmlEncodedText (Get-ValueOrDefault $repo.owner '')
+        $visibility = ConvertTo-HtmlEncodedText (Get-ValueOrDefault $repo.visibility '')
+        $language = ConvertTo-HtmlEncodedText (Get-ValueOrDefault $repo.language '')
         $topics = @($repo.topics)
         $topicMarkup = if ($topics.Count -gt 0) {
             ($topics | Select-Object -First 4 | ForEach-Object { "<span class=""chip"">$(ConvertTo-HtmlEncodedText $_)</span>" }) -join ''
@@ -413,14 +428,14 @@ function New-RepoStatusHtmlContent {
         else {
             '<span class="muted">No topics</span>'
         }
-        $pathValue = [string]($repo.localPath ?? $repo.path ?? '')
+        $pathValue = [string](Get-ValueOrDefault (Get-ValueOrDefault $repo.localPath $repo.path) '')
         $pathMarkup = if (-not [string]::IsNullOrWhiteSpace($pathValue)) {
             "<div class=""meta-line""><span class=""meta-label"">Path</span><code>$(ConvertTo-HtmlEncodedText $pathValue)</code></div>"
         }
         else {
             ''
         }
-        $htmlUrlValue = [string]($repo.htmlUrl ?? '')
+        $htmlUrlValue = [string](Get-ValueOrDefault $repo.htmlUrl '')
         $htmlLinkMarkup = if (-not [string]::IsNullOrWhiteSpace($htmlUrlValue)) {
             "<div class=""meta-line""><span class=""meta-label"">Remote</span><a href=""$(ConvertTo-HtmlEncodedText $htmlUrlValue)"" target=""_blank"" rel=""noreferrer"">$(ConvertTo-HtmlEncodedText $htmlUrlValue)</a></div>"
         }
@@ -445,10 +460,10 @@ function New-RepoStatusHtmlContent {
               <div>$lastCommitDate</div>
               <div class="muted">$lastCommitAuthor</div>
             </td>
-            <td class="numeric">$([int]($repo.openPrCount ?? 0))</td>
-            <td class="numeric">$([int]($repo.commitsLastWeek ?? 0))</td>
-            <td class="numeric">$([int]($repo.commitsLastMonth ?? 0))</td>
-            <td class="numeric">$([int]($repo.uncommittedChanges ?? 0))</td>
+            <td class="numeric">$([int](Get-ValueOrDefault $repo.openPrCount 0))</td>
+            <td class="numeric">$([int](Get-ValueOrDefault $repo.commitsLastWeek 0))</td>
+            <td class="numeric">$([int](Get-ValueOrDefault $repo.commitsLastMonth 0))</td>
+            <td class="numeric">$([int](Get-ValueOrDefault $repo.uncommittedChanges 0))</td>
             <td>
               $pathMarkup
               $htmlLinkMarkup
@@ -713,8 +728,8 @@ function New-RepoStatusHtmlContent {
       <article class="stat"><span class="label">Dirty</span><span class="value">$dirtyCount</span></article>
       <article class="stat"><span class="label">Archived</span><span class="value">$archivedCount</span></article>
       <article class="stat"><span class="label">Stale</span><span class="value">$staleCount</span></article>
-      <article class="stat"><span class="label">Open PRs</span><span class="value">$([int]($openPrTotal ?? 0))</span></article>
-      <article class="stat"><span class="label">Commits 7d / 30d</span><span class="value">$([int]($weeklyCommitTotal ?? 0)) / $([int]($monthlyCommitTotal ?? 0))</span></article>
+      <article class="stat"><span class="label">Open PRs</span><span class="value">$([int](Get-ValueOrDefault $openPrTotal 0))</span></article>
+      <article class="stat"><span class="label">Commits 7d / 30d</span><span class="value">$([int](Get-ValueOrDefault $weeklyCommitTotal 0)) / $([int](Get-ValueOrDefault $monthlyCommitTotal 0))</span></article>
     </section>
 
     <section class="table-shell">
@@ -1872,7 +1887,7 @@ function Build-RoadmapRepairPreview {
     # Normalize and audit
     $repoPath = ''
     if ($null -ne $roadmapEntry) {
-        $repoPath = if ($roadmapEntry -is [System.Collections.IDictionary]) { [string]($roadmapEntry['repoPath'] ?? '') } else { [string]($roadmapEntry.repoPath ?? '') }
+        $repoPath = if ($roadmapEntry -is [System.Collections.IDictionary]) { [string](Get-ValueOrDefault $roadmapEntry['repoPath'] '') } else { [string](Get-ValueOrDefault $roadmapEntry.repoPath '') }
     }
     $contract = Invoke-NormalizeRoadmapContract `
         -ParsedResult $parsedResult `
@@ -1903,7 +1918,7 @@ function Build-RoadmapRepairPreview {
     $preview | Add-Member -NotePropertyName 'roadmapPath'          -NotePropertyValue $effectiveRoadmapPath   -Force
     $preview | Add-Member -NotePropertyName 'originalMaturityLevel' -NotePropertyValue $contract.maturityLevel -Force
     $preview | Add-Member -NotePropertyName 'originalMaturityScore' -NotePropertyValue $contract.maturityScore -Force
-    $preview | Add-Member -NotePropertyName 'auditFindings'         -NotePropertyValue @($contract.auditFindings ?? @()) -Force
+    $preview | Add-Member -NotePropertyName 'auditFindings'         -NotePropertyValue @(Get-ValueOrDefault $contract.auditFindings @()) -Force
 
     # Persist preview event to history
     Save-RoadmapRepairHistoryEntry `
@@ -2304,10 +2319,10 @@ function Build-CopilotTaskPacket {
         } else {
             if ($null -ne $AuditEntry.PSObject -and ($AuditEntry.PSObject.Properties.Name -contains 'docFindings')) { @($AuditEntry.docFindings) } else { @() }
         }
-        $repoPath = if ($AuditEntry -is [System.Collections.IDictionary]) { [string]($AuditEntry['repoPath'] ?? '') } else { [string]($AuditEntry.repoPath ?? '') }
-        $dispatchReadiness = if ($AuditEntry -is [System.Collections.IDictionary]) { [string]($AuditEntry['dispatchReadiness'] ?? 'ready') } else { [string]($AuditEntry.dispatchReadiness ?? 'ready') }
+        $repoPath = if ($AuditEntry -is [System.Collections.IDictionary]) { [string](Get-ValueOrDefault $AuditEntry['repoPath'] '') } else { [string](Get-ValueOrDefault $AuditEntry.repoPath '') }
+        $dispatchReadiness = if ($AuditEntry -is [System.Collections.IDictionary]) { [string](Get-ValueOrDefault $AuditEntry['dispatchReadiness'] 'ready') } else { [string](Get-ValueOrDefault $AuditEntry.dispatchReadiness 'ready') }
     } elseif ($null -ne $roadmapEntry) {
-        $repoPath = if ($roadmapEntry -is [System.Collections.IDictionary]) { [string]($roadmapEntry['repoPath'] ?? '') } else { [string]($roadmapEntry.repoPath ?? '') }
+        $repoPath = if ($roadmapEntry -is [System.Collections.IDictionary]) { [string](Get-ValueOrDefault $roadmapEntry['repoPath'] '') } else { [string](Get-ValueOrDefault $roadmapEntry.repoPath '') }
     }
 
     # Step 5: Build acceptance criteria
@@ -2421,7 +2436,7 @@ Execution requirements:
 $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Parse($BindAddress), $Port)
 $listener.Start()
 Write-HostLog ("Repo Management API host started on http://{0}:{1}" -f $BindAddress, $Port)
-Write-HostLog ("Ops log: {0}" -f ($script:OpsLogPath ?? '(none)'))
+Write-HostLog ("Ops log: {0}" -f (Get-ValueOrDefault $script:OpsLogPath '(none)'))
 
 try {
     while ($true) {
