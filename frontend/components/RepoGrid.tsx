@@ -30,6 +30,31 @@ type SortOrder = 'asc' | 'desc';
 
 type DuplicateGroup = { groupKey: string; items: RepoStatus[] };
 
+type RoadmapBadgeState = 'pending' | 'complete' | 'parse-error' | undefined;
+
+function getRoadmapBadgeConfig(state: RoadmapBadgeState): { className: string; label: string; title: string } {
+  switch (state) {
+    case 'complete':
+      return {
+        className: 'bg-green-900/50 text-green-300 border-green-700/50 hover:bg-green-800/60 hover:text-green-100',
+        label: 'ROADMAP ✓',
+        title: 'Roadmap complete — no pending items',
+      };
+    case 'parse-error':
+      return {
+        className: 'bg-orange-900/50 text-orange-300 border-orange-700/50 hover:bg-orange-800/60 hover:text-orange-100',
+        label: 'ROADMAP !',
+        title: 'Roadmap found but could not be parsed',
+      };
+    default:
+      return {
+        className: 'bg-indigo-900/50 text-indigo-300 border-indigo-700/50 hover:bg-indigo-800/60 hover:text-indigo-100',
+        label: 'ROADMAP',
+        title: 'View ROADMAP',
+      };
+  }
+}
+
 const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, dataSource, selectedRepos, setSelectedRepos, groupBy, setGroupBy }: RepoGridProps) => {
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
@@ -337,15 +362,28 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, dataSource, selectedR
                                     {repo.localPath}
                                   </div>
                                 )}
-                                {repo.hasRoadmap && onViewRoadmap && (
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); onViewRoadmap(repo.name); }}
-                                    className="mt-1 inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-indigo-900/50 text-indigo-300 border border-indigo-700/50 hover:bg-indigo-800/60 hover:text-indigo-100 transition-colors"
-                                    title="View ROADMAP"
-                                  >
-                                    ROADMAP
-                                  </button>
-                                )}
+                                {repo.hasRoadmap && onViewRoadmap && (() => {
+                                  const { className, label, title: titleText } = getRoadmapBadgeConfig(repo.roadmapState as RoadmapBadgeState);
+                                  return (
+                                    <div className="mt-1 flex flex-col gap-0.5">
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); onViewRoadmap(repo.name); }}
+                                        className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded border transition-colors ${className}`}
+                                        title={titleText}
+                                      >
+                                        {label}
+                                      </button>
+                                      {repo.roadmapState === 'pending' && repo.nextPendingRoadmapItem && (
+                                        <div
+                                          className="text-xs text-indigo-400/80 max-w-xs truncate"
+                                          title={repo.nextPendingRoadmapItem}
+                                        >
+                                          ↳ {repo.nextPendingRoadmapItem}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                                 {workflowCount !== null && (
                                   <div className="text-xs text-gray-500">
                                     {workflowCount} workflows{testingWorkflowCount !== null && ` · ${testingWorkflowCount} testing`}

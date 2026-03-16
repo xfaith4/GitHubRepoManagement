@@ -35,6 +35,8 @@ export interface RepoStatus {
   topics?: string[];
 
   hasRoadmap?: boolean;
+  roadmapState?: 'missing' | 'complete' | 'pending' | 'parse-error';
+  nextPendingRoadmapItem?: string;
 
   // Optional extended metrics
   extended?: ExtendedRepoMetrics;
@@ -178,6 +180,10 @@ export interface RoadmapEntry {
   roadmapPath: string;
   lastModified: string;
   sizeBytes: number;
+  roadmapState?: 'complete' | 'pending' | 'parse-error';
+  pendingCount?: number;
+  completedCount?: number;
+  nextPendingItem?: { text: string; section: string } | null;
 }
 
 export interface RoadmapIndex {

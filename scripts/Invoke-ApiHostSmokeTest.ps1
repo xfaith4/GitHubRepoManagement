@@ -201,9 +201,30 @@ try {
     $roadmapScan = $roadmapScanResponse.Json
     if (-not $roadmapScan.success) { throw 'roadmap/scan returned success=false' }
 
+    Write-Host '[STEP] Roadmap scan entry state fields' -ForegroundColor Cyan
+    $roadmapStateFieldsOk = $true
+    $firstEntry = @($roadmapScan.data.entries)[0]
+    if ($firstEntry) {
+        $validStates = @('pending', 'complete', 'parse-error')
+        if (-not ($firstEntry.PSObject.Properties.Name -contains 'roadmapState')) {
+            throw "roadmap/scan entry missing 'roadmapState' field"
+        }
+        if ([string]$firstEntry.roadmapState -notin $validStates) {
+            throw ("roadmap/scan entry has unexpected roadmapState: '{0}'" -f $firstEntry.roadmapState)
+        }
+        if (-not ($firstEntry.PSObject.Properties.Name -contains 'pendingCount')) {
+            throw "roadmap/scan entry missing 'pendingCount' field"
+        }
+        if (-not ($firstEntry.PSObject.Properties.Name -contains 'completedCount')) {
+            throw "roadmap/scan entry missing 'completedCount' field"
+        }
+        Write-Host ("  entry state={0} pendingCount={1} completedCount={2}" -f $firstEntry.roadmapState, $firstEntry.pendingCount, $firstEntry.completedCount) -ForegroundColor DarkGray
+    } else {
+        Write-Host '  (no roadmap entries found — state field check skipped)' -ForegroundColor Yellow
+    }
+
     Write-Host '[STEP] Roadmap content route' -ForegroundColor Cyan
     $roadmapContentOk = $false
-    $firstEntry = @($roadmapScan.data.entries)[0]
     if ($firstEntry) {
         $encodedRepo = [uri]::EscapeDataString($firstEntry.repoName)
         $contentResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/roadmap/content?repo=$encodedRepo"
@@ -270,6 +291,7 @@ try {
         metricsGeneratedAt = $metrics.generatedAt
         roadmapIndexCount = $roadmapIndex.data.count
         roadmapScanCount = $roadmapScan.data.count
+        roadmapStateFieldsOk = $roadmapStateFieldsOk
         roadmapContentOk = $roadmapContentOk
         roadmapFullContentOk = $fullRoadmapReturnedAll
         roadmapCacheStatusCode = $roadmapCache.StatusCode

@@ -374,11 +374,20 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
     setLogMessages(prev => [...prev, `Roadmap scan complete. Found ${count} ROADMAP ${count === 1 ? 'file' : 'files'}.`]);
   };
 
-  // Enrich repos with hasRoadmap flag from the lazily-fetched index
+  // Enrich repos with hasRoadmap flag, roadmapState, and nextPendingRoadmapItem from the lazily-fetched index
   const reposWithRoadmap = useMemo(() => {
     if (roadmapEntries.length === 0) return repos;
-    const roadmapSet = new Set(roadmapEntries.map(e => e.repoName.toLowerCase()));
-    return repos.map(r => roadmapSet.has(r.name.toLowerCase()) ? { ...r, hasRoadmap: true } : r);
+    const roadmapMap = new Map(roadmapEntries.map(e => [e.repoName.toLowerCase(), e]));
+    return repos.map(r => {
+      const entry = roadmapMap.get(r.name.toLowerCase());
+      if (!entry) return r;
+      return {
+        ...r,
+        hasRoadmap: true,
+        roadmapState: entry.roadmapState,
+        nextPendingRoadmapItem: entry.nextPendingItem?.text ?? undefined,
+      };
+    });
   }, [repos, roadmapEntries]);
 
   const summary = useMemo(() => {
