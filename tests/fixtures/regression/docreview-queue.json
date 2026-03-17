@@ -1,0 +1,20 @@
+[
+  {
+    "queueId": "SampleRepo.core.001",
+    "repoName": "SampleRepo",
+    "batchType": "core",
+    "QueueScore": 97
+  },
+  {
+    "queueId": "AnotherRepo.general.001",
+    "repoName": "AnotherRepo",
+    "batchType": "general",
+    "QueueScore": 84
+  },
+  {
+    "queueId": "ArchiveRepo.archival.001",
+    "repoName": "ArchiveRepo",
+    "batchType": "archival",
+    "QueueScore": 63
+  }
+]

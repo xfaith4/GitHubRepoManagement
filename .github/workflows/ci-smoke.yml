@@ -25,6 +25,10 @@ jobs:
         shell: pwsh
         run: ./scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "${{ github.workspace }}"
 
+      - name: Audit repository structure
+        shell: pwsh
+        run: ./scripts/Invoke-RepositoryStructureAudit.ps1 -WorkspaceRoot "${{ github.workspace }}"
+
       - name: Check doc-standards.json integrity
         shell: pwsh
         run: |

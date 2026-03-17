@@ -15,7 +15,7 @@ $ErrorActionPreference = 'Stop'
 
 $cutoff = (Get-Date).AddDays(-1 * [math]::Abs($RetentionDays))
 $paths = @(
-    (Join-Path $WorkspaceRoot 'evidence\baseline'),
+    (Join-Path $WorkspaceRoot 'output'),
     (Join-Path $WorkspaceRoot 'backend\modules\output'),
     (Join-Path $WorkspaceRoot 'logs')
 )

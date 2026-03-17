@@ -70,7 +70,9 @@ catch {
 Write-Host ''
 Write-Host 'TEST 4: Export-Csv with empty collection' -ForegroundColor Yellow
 try {
-    $tempCsv = Join-Path -Path $env:TEMP -ChildPath ("preflight-{0}.csv" -f (Get-Random))
+    $tempRoot = Join-Path -Path $PSScriptRoot -ChildPath '..\output\runtime\preflight'
+    $null = New-Item -ItemType Directory -Path $tempRoot -Force
+    $tempCsv = Join-Path -Path $tempRoot -ChildPath ("preflight-{0}.csv" -f (Get-Random))
     @() | Export-Csv -LiteralPath $tempCsv -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
     Remove-Item -LiteralPath $tempCsv -ErrorAction SilentlyContinue
     Write-Host 'PASS: Empty CSV export succeeded' -ForegroundColor Green

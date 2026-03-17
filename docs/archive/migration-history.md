@@ -4,8 +4,8 @@ This document preserves historical context for the consolidation effort that pro
 
 The migration work is complete. Ongoing planning and execution now live in:
 
-- `/docs/planning/roadmap.md`
-- `/docs/planning/platform-status.md` (current platform status)
+- `../planning/roadmap.md`
+- `../planning/platform-status.md` (current platform status)
 
-Historical evidence and migration-era artifacts remain in `/evidence/` for traceability.
+Historical migration notes remain in this archive. Curated regression fixtures now live under `tests/fixtures/`, while generated smoke and operator artifacts are treated as runtime output rather than repository source.
 

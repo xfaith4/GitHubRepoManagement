@@ -83,7 +83,7 @@ Cross-reference:
 ### Monthly
 
 - [ ] Review `docs/planning/platform-status.md` — update version, key metrics, known issues.
-- [ ] Check for stale `evidence/baseline/` artifacts older than 30 days; run `Invoke-RetentionCleanup.ps1`.
+- [ ] Check for stale generated artifacts under `output/` and `backend/modules/output/`; run `Invoke-RetentionCleanup.ps1`.
 - [ ] Assess open technical debt items; promote to active or close each one.
 
 ## Definition of Done for New Features

@@ -213,7 +213,13 @@ function Get-MaturityDrift {
         if ($null -eq $auditEntry) { continue }
 
         $currentLevel = [string]($auditEntry.maturityLevel ?? 'L0')
-        $currentScore = if ($null -ne $auditEntry.score) { [double]$auditEntry.score } else { 0 }
+        $currentScore = 0
+        if ($auditEntry.PSObject.Properties.Name -contains 'score' -and $null -ne $auditEntry.score) {
+            $currentScore = [double]$auditEntry.score
+        }
+        elseif ($auditEntry.PSObject.Properties.Name -contains 'maturityScore' -and $null -ne $auditEntry.maturityScore) {
+            $currentScore = [double]$auditEntry.maturityScore
+        }
         $currentRank  = _LevelRank -Level $currentLevel
 
         if ($currentRank -lt $targetRank) {

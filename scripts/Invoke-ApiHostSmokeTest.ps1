@@ -9,7 +9,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $hostScript = Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1'
-$logPath = Join-Path $WorkspaceRoot 'evidence\baseline\api-host-smoke.log'
+$smokeRoot = Join-Path $WorkspaceRoot 'output\smoke\api-host'
+$null = New-Item -ItemType Directory -Path $smokeRoot -Force
+$logPath = Join-Path $smokeRoot 'api-host-smoke.log'
 
 function Invoke-ApiRequest {
     param(
@@ -60,14 +62,48 @@ function Assert-Not503 {
     }
 }
 
+function Wait-ApiHostReady {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Uri,
+        [Parameter(Mandatory = $true)]
+        [System.Management.Automation.Job]$Job,
+        [Parameter()]
+        [int]$TimeoutSeconds = 30
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        if ($Job.State -in @('Failed', 'Stopped', 'Completed')) {
+            $jobOutput = Receive-Job -Job $Job -Keep -ErrorAction SilentlyContinue | Out-String
+            throw ("API host job exited before readiness check completed. State={0}. Output={1}" -f $Job.State, $jobOutput.Trim())
+        }
+
+        try {
+            $response = Invoke-WebRequest -Uri $Uri -Method Get -SkipHttpErrorCheck -TimeoutSec 5
+            if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 500) {
+                return
+            }
+        }
+        catch {
+            Start-Sleep -Milliseconds 500
+            continue
+        }
+
+        Start-Sleep -Milliseconds 500
+    }
+
+    throw "API host did not become ready within $TimeoutSeconds seconds."
+}
+
 $job = Start-Job -ScriptBlock {
     param($ScriptPath, $Root, $Log, $ListenPort)
     & $ScriptPath -WorkspaceRoot $Root -BindAddress '127.0.0.1' -Port $ListenPort -LogPath $Log
 } -ArgumentList $hostScript, $WorkspaceRoot, $logPath, $Port
 
-Start-Sleep -Seconds 2
-
 try {
+    Wait-ApiHostReady -Uri "$BaseUrl/health/live" -Job $job
+
     Write-Host '[STEP] Health checks' -ForegroundColor Cyan
     $liveResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/health/live"
     $readyResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/health/ready"
@@ -129,7 +165,7 @@ try {
         localRoots = @($WorkspaceRoot)
         maxDepth = 2
         includeNonGitFolders = $false
-        outDir = (Join-Path $WorkspaceRoot 'evidence\baseline\api-host-smoke\reconcile')
+        outDir = (Join-Path $smokeRoot 'reconcile')
     }
     $reconcileResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/reconcile" -Body $reconcileBody
     Assert-Not503 -Name '/api/reconcile' -Response $reconcileResponse
@@ -139,7 +175,7 @@ try {
     $docBody = @{
         rootPath = $WorkspaceRoot
         maxDepth = 2
-        outDir = (Join-Path $WorkspaceRoot 'evidence\baseline\api-host-smoke\docreview')
+        outDir = (Join-Path $smokeRoot 'docreview')
         generateQueue = $false
         generateBatchPlan = $false
     }
@@ -246,7 +282,7 @@ try {
         $roadmapContentOk = $true
     }
 
-    $largeRoadmapPath = Join-Path $WorkspaceRoot 'evidence\baseline\api-host-smoke\full-roadmap-test.md'
+    $largeRoadmapPath = Join-Path $smokeRoot 'full-roadmap-test.md'
     $largeRoadmapDir = Split-Path $largeRoadmapPath -Parent
     $null = New-Item -ItemType Directory -Path $largeRoadmapDir -Force
     $largeRoadmapContent = ('# LARGE ROADMAP' + "`n") + ('0123456789abcdef' * 40000)

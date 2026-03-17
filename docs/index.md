@@ -2,24 +2,28 @@
 
 ## Architecture
 
-- [Architecture](/docs/architecture/architecture.md)
-- [ADRs](/docs/architecture/adr.md)
+- [Architecture](architecture/architecture.md)
+- [ADRs](architecture/adr.md)
 
 ## Planning
 
-- [Roadmap](/docs/planning/roadmap.md)
-- [Platform Status](/docs/planning/platform-status.md)
+- [Roadmap](planning/roadmap.md)
+- [Platform Status](planning/platform-status.md)
 
 ## Reference
 
-- [Features](/docs/reference/features.md)
-- [Contracts](/docs/reference/contracts.md)
+- [Features](reference/features.md)
+- [Contracts](reference/contracts.md)
 
 ## Operations
 
-- [TODO Tracker](/docs/operations/todos.md)
+- [TODO Tracker](operations/todos.md)
+
+## Governance
+
+- [Repository Structure](governance/repository-structure.md)
 
 ## Archive
 
-- [Initial Project Prompt](/docs/archive/initial-project-prompt.md)
-- [Migration History](/docs/archive/migration-history.md)
+- [Initial Project Prompt](archive/initial-project-prompt.md)
+- [Migration History](archive/migration-history.md)

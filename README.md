@@ -80,7 +80,7 @@ Key sections:
 - `retention`: cleanup retention days
 - `secrets`: environment variable key for token (`GITHUB_TOKEN`) and optional fallback token
 
-Generated dashboard reports are saved under [reports](reports).
+Generated dashboard reports are saved under [reports](reports) during local runs, but that folder is treated as generated output and is not part of the source layout.
 
 UI location:
 
@@ -221,21 +221,40 @@ Roadmap task history and logging:
 
 ```text
 backend/
+  README.md
   adapters/
   api-host/
   config/
   modules/
 frontend/
+tests/
+  fixtures/
 scripts/
 docs/
+  architecture/
+  governance/
+  operations/
+  planning/
+  reference/
 .github/
 standards/
+output/              # generated local artifacts; not source-controlled
+reports/             # generated exports; not source-controlled
 ```
+
+Repository layout policy:
+
+- Source code lives in `backend/`, `frontend/`, and `scripts/`.
+- Canonical documentation lives under `docs/`.
+- Reusable evaluation standards live under `standards/`.
+- Checked-in test fixtures live under `tests/fixtures/`.
+- Generated runtime data, smoke outputs, exports, caches, and logs belong under ignored output paths and are not repository source.
 
 ## Documentation
 
 - [Docs Index](docs/index.md)
 - [Architecture](docs/architecture/architecture.md)
 - [ADRs](docs/architecture/adr.md)
+- [Repository Structure Policy](docs/governance/repository-structure.md)
 - [Roadmap](docs/planning/roadmap.md)
 - [Contracts](docs/reference/contracts.md)

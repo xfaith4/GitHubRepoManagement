@@ -7,7 +7,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$tempRoot = Join-Path $WorkspaceRoot 'evidence\baseline\regression-smoke'
+$tempRoot = Join-Path $WorkspaceRoot 'output\smoke\regression'
 $null = New-Item -ItemType Directory -Path $tempRoot -Force
 
 Write-Host '[STEP] Duplicate detection regression check' -ForegroundColor Cyan
@@ -51,7 +51,7 @@ if ($dupes.Count -lt 1) {
 }
 
 Write-Host '[STEP] Doc queue scoring regression check' -ForegroundColor Cyan
-$queuePath = Join-Path $WorkspaceRoot 'evidence\baseline\20260307_213547\docreview\queue\doc-review-queue.json'
+$queuePath = Join-Path $WorkspaceRoot 'tests\fixtures\regression\docreview-queue.json'
 if (-not (Test-Path -LiteralPath $queuePath)) {
     throw "Queue regression source artifact not found: $queuePath"
 }

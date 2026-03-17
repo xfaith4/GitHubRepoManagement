@@ -11,6 +11,10 @@ Thumbs.db
 frontend/node_modules/
 frontend/dist/
 
+# Generated documentation exports
+*.pdf
+docs/*.html
+
 # Backend runtime/build artifacts
 backend/modules/output/**
 !backend/modules/output/**/

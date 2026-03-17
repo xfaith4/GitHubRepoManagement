@@ -18,14 +18,14 @@ if (-not $status.success) {
 }
 
 Write-Host '[STEP] Reconcile adapter smoke run' -ForegroundColor Cyan
-$reconcileOut = Join-Path $WorkspaceRoot 'evidence\baseline\adapter-smoke\reconcile'
+$reconcileOut = Join-Path $WorkspaceRoot 'output\smoke\adapter\reconcile'
 $reconcile = Invoke-ReconcileAdapter -LocalRoots @($WorkspaceRoot) -OutDir $reconcileOut -IncludeNonGitFolders:$false -MaxDepth 2
 if (-not $reconcile.success) {
     throw "Reconcile adapter failed: $($reconcile.error)"
 }
 
 Write-Host '[STEP] DocReview adapter smoke run' -ForegroundColor Cyan
-$docOut = Join-Path $WorkspaceRoot 'evidence\baseline\adapter-smoke\docreview'
+$docOut = Join-Path $WorkspaceRoot 'output\smoke\adapter\docreview'
 $docreview = Invoke-DocReviewAdapter -RootPath $WorkspaceRoot -OutDir $docOut -GenerateQueue:$false -GenerateBatchPlan:$false
 if (-not $docreview.success) {
     throw "DocReview adapter failed: $($docreview.error)"

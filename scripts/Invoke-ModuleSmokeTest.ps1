@@ -349,7 +349,7 @@ if (-not (Test-Path -LiteralPath $executionLedgerPath)) { throw "Execution.Ledge
 Write-Host 'Execution ledger module loaded successfully' -ForegroundColor Green
 
 Write-Step 'Execution ledger — smoke: sync from audit data and verify states'
-$smokeWs = Join-Path $WorkspaceRoot 'evidence\baseline\smoke-execution'
+$smokeWs = Join-Path $WorkspaceRoot 'output\smoke\module\execution'
 if (-not (Test-Path -LiteralPath $smokeWs)) {
     $null = New-Item -ItemType Directory -Path $smokeWs -Force
 }
@@ -422,7 +422,7 @@ Write-Host ("  queue summary: total={0} activeLanes={1} rankedQueue={2}" -f $sum
 Write-Step 'Running modular reconciliation smoke test (narrow scope)'
 & $reconcileModular `
     -LocalRoots @($WorkspaceRoot) `
-    -OutDir (Join-Path $WorkspaceRoot 'evidence\baseline\smoke-modular') `
+    -OutDir (Join-Path $WorkspaceRoot 'output\smoke\module\reconcile') `
     -IncludeNonGitFolders:$false `
     -MaxDepth 2 | Out-Null
 
@@ -475,7 +475,7 @@ if (-not (Test-Path -LiteralPath $maturityDriftPath)) { throw "MaturityDrift.Mon
 Write-Host 'Maturity drift monitor module loaded successfully' -ForegroundColor Green
 
 Write-Step 'Maturity drift monitor — smoke: set baseline and detect drift'
-$driftWs = Join-Path $WorkspaceRoot 'evidence\baseline\smoke-drift'
+$driftWs = Join-Path $WorkspaceRoot 'output\smoke\module\drift'
 $null = New-Item -ItemType Directory -Path (Join-Path $driftWs 'output') -Force -ErrorAction SilentlyContinue
 $baselineResult = Set-MaturityBaseline -WorkspaceRoot $driftWs -RepoName 'smoke-drift-repo' -TargetLevel 'L3-Contract-Ready'
 if (-not $baselineResult.persisted) { throw "Expected baseline to be persisted, got persisted=$($baselineResult.persisted)" }
@@ -499,7 +499,8 @@ if (-not (Test-Path -LiteralPath $docStdPath)) { throw "DocStandardization.Previ
 Write-Host 'Doc standardization previewer module loaded successfully' -ForegroundColor Green
 
 Write-Step 'Doc standardization — smoke: preview for repo without README'
-$stdPreviewMissing = Invoke-PreviewReadmeStandardization -RepoName 'smoke-std-no-readme' -RepoPath 'C:\nonexistent\path'
+$missingReadmeRepoPath = Join-Path $WorkspaceRoot 'output\smoke\module\missing-readme-repo'
+$stdPreviewMissing = Invoke-PreviewReadmeStandardization -RepoName 'smoke-std-no-readme' -RepoPath $missingReadmeRepoPath
 if ($null -eq $stdPreviewMissing) { throw 'Expected preview result, got null' }
 Write-Host ("  preview (no README): previewState={0} actions={1}" -f $stdPreviewMissing.previewState, @($stdPreviewMissing.standardizationActions).Count) -ForegroundColor DarkGray
 
@@ -517,7 +518,7 @@ if (-not (Test-Path -LiteralPath $notificationHubPath)) { throw "NotificationHub
 Write-Host 'Notification hub module loaded successfully' -ForegroundColor Green
 
 Write-Step 'Notification hub — smoke: register and retrieve webhooks'
-$notifWs = Join-Path $WorkspaceRoot 'evidence\baseline\smoke-notifications'
+$notifWs = Join-Path $WorkspaceRoot 'output\smoke\module\notifications'
 $null = New-Item -ItemType Directory -Path (Join-Path $notifWs 'output') -Force -ErrorAction SilentlyContinue
 $webhook = Register-NotificationWebhook -WorkspaceRoot $notifWs -WebhookUrl 'https://example.com/webhook' -Events @('scan.completed','execution.failed') -Label 'Smoke Test Webhook'
 if ([string]::IsNullOrWhiteSpace($webhook.id)) { throw 'Expected webhook id to be populated' }
