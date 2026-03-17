@@ -499,22 +499,22 @@ function New-RepoStatusCsvContent {
     $rows = @('Repository,Branch,Status,LastCommitDate,LastCommitAuthor,OpenPrCount,CommitsLastWeek,CommitsLastMonth,UncommittedChanges,Archived,Stale,Owner,Visibility,Language,LocalPath,HtmlUrl')
     foreach ($repo in @($Repos)) {
         $values = @(
-            [string](Get-ValueOrDefault $repo.name ''),
-            [string](Get-ValueOrDefault $repo.branch ''),
-            [string](Get-ValueOrDefault $repo.status ''),
-            [string](Get-ValueOrDefault $repo.lastCommitDate ''),
-            [string](Get-ValueOrDefault $repo.lastCommitAuthor ''),
-            [string](Get-ValueOrDefault $repo.openPrCount 0),
-            [string](Get-ValueOrDefault $repo.commitsLastWeek 0),
-            [string](Get-ValueOrDefault $repo.commitsLastMonth 0),
-            [string](Get-ValueOrDefault $repo.uncommittedChanges 0),
-            [string]([bool](Get-ValueOrDefault $repo.isArchived $false)),
-            [string]([bool](Get-ValueOrDefault $repo.isStale $false)),
-            [string](Get-ValueOrDefault $repo.owner ''),
-            [string](Get-ValueOrDefault $repo.visibility ''),
-            [string](Get-ValueOrDefault $repo.language ''),
-            [string](Get-ValueOrDefault (Get-ValueOrDefault $repo.localPath $repo.path) ''),
-            [string](Get-ValueOrDefault $repo.htmlUrl '')
+            [string](Get-ObjectPropertyValue $repo 'name' ''),
+            [string](Get-ObjectPropertyValue $repo 'branch' ''),
+            [string](Get-ObjectPropertyValue $repo 'status' ''),
+            [string](Get-ObjectPropertyValue $repo 'lastCommitDate' ''),
+            [string](Get-ObjectPropertyValue $repo 'lastCommitAuthor' ''),
+            [string](Get-ObjectPropertyValue $repo 'openPrCount' 0),
+            [string](Get-ObjectPropertyValue $repo 'commitsLastWeek' 0),
+            [string](Get-ObjectPropertyValue $repo 'commitsLastMonth' 0),
+            [string](Get-ObjectPropertyValue $repo 'uncommittedChanges' 0),
+            [string]([bool](Get-ObjectPropertyValue $repo 'isArchived' $false)),
+            [string]([bool](Get-ObjectPropertyValue $repo 'isStale' $false)),
+            [string](Get-ObjectPropertyValue $repo 'owner' ''),
+            [string](Get-ObjectPropertyValue $repo 'visibility' ''),
+            [string](Get-ObjectPropertyValue $repo 'language' ''),
+            [string](Get-ValueOrDefault (Get-ObjectPropertyValue $repo 'localPath' (Get-ObjectPropertyValue $repo 'path' '')) ''),
+            [string](Get-ObjectPropertyValue $repo 'htmlUrl' '')
         ) | ForEach-Object { '"' + ([string]$_).Replace('"', '""') + '"' }
 
         $rows += ($values -join ',')
@@ -553,26 +553,26 @@ function New-RepoStatusHtmlContent {
             'diverged' { 'danger' }
             default { 'ok' }
         }
-        $lastCommitDate = ConvertTo-HtmlEncodedText (Get-ValueOrDefault $repo.lastCommitDate '')
-        $lastCommitAuthor = ConvertTo-HtmlEncodedText (Get-ValueOrDefault $repo.lastCommitAuthor '')
-        $owner = ConvertTo-HtmlEncodedText (Get-ValueOrDefault $repo.owner '')
-        $visibility = ConvertTo-HtmlEncodedText (Get-ValueOrDefault $repo.visibility '')
-        $language = ConvertTo-HtmlEncodedText (Get-ValueOrDefault $repo.language '')
-        $topics = @($repo.topics)
+        $lastCommitDate = ConvertTo-HtmlEncodedText (Get-ObjectPropertyValue $repo 'lastCommitDate' '')
+        $lastCommitAuthor = ConvertTo-HtmlEncodedText (Get-ObjectPropertyValue $repo 'lastCommitAuthor' '')
+        $owner = ConvertTo-HtmlEncodedText (Get-ObjectPropertyValue $repo 'owner' '')
+        $visibility = ConvertTo-HtmlEncodedText (Get-ObjectPropertyValue $repo 'visibility' '')
+        $language = ConvertTo-HtmlEncodedText (Get-ObjectPropertyValue $repo 'language' '')
+        $topics = @(Get-ObjectPropertyValue $repo 'topics' @())
         $topicMarkup = if ($topics.Count -gt 0) {
             ($topics | Select-Object -First 4 | ForEach-Object { "<span class=""chip"">$(ConvertTo-HtmlEncodedText $_)</span>" }) -join ''
         }
         else {
             '<span class="muted">No topics</span>'
         }
-        $pathValue = [string](Get-ValueOrDefault (Get-ValueOrDefault $repo.localPath $repo.path) '')
+        $pathValue = [string](Get-ValueOrDefault (Get-ObjectPropertyValue $repo 'localPath' (Get-ObjectPropertyValue $repo 'path' '')) '')
         $pathMarkup = if (-not [string]::IsNullOrWhiteSpace($pathValue)) {
             "<div class=""meta-line""><span class=""meta-label"">Path</span><code>$(ConvertTo-HtmlEncodedText $pathValue)</code></div>"
         }
         else {
             ''
         }
-        $htmlUrlValue = [string](Get-ValueOrDefault $repo.htmlUrl '')
+        $htmlUrlValue = [string](Get-ObjectPropertyValue $repo 'htmlUrl' '')
         $htmlLinkMarkup = if (-not [string]::IsNullOrWhiteSpace($htmlUrlValue)) {
             "<div class=""meta-line""><span class=""meta-label"">Remote</span><a href=""$(ConvertTo-HtmlEncodedText $htmlUrlValue)"" target=""_blank"" rel=""noreferrer"">$(ConvertTo-HtmlEncodedText $htmlUrlValue)</a></div>"
         }
