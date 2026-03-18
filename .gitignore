@@ -2,8 +2,8 @@
 .DS_Store
 Thumbs.db
 .vscode/
-/backend/config/settings.json
-backend/
+backend/config/settings.json
+
 # PowerShell / logs / temp
 *.log
 *.tmp
