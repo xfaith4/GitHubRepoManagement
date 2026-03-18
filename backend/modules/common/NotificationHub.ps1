@@ -111,6 +111,17 @@ function Register-NotificationWebhook {
         [string]$Label = ''
     )
 
+    # Validate URL scheme — only allow HTTP(S) to prevent SSRF via file://, ftp://, etc.
+    if ($WebhookUrl -notmatch '^https?://') {
+        throw "Invalid webhook URL '$WebhookUrl': only http:// and https:// URLs are accepted."
+    }
+
+    # Validate that at least one recognised event is specified
+    $invalid = @($Events | Where-Object { $_ -notin $script:SupportedEvents })
+    if ($invalid.Count -gt 0) {
+        throw "Unknown event name(s): $($invalid -join ', '). Supported events: $($script:SupportedEvents -join ', ')."
+    }
+
     $now   = (Get-Date).ToUniversalTime().ToString('o')
     $id    = [guid]::NewGuid().ToString('n')
     $store = _ReadWebhooksStore -WorkspaceRoot $WorkspaceRoot
@@ -131,7 +142,7 @@ function Register-NotificationWebhook {
     try {
         _WriteWebhooksStore -WorkspaceRoot $WorkspaceRoot -Store $store
     } catch {
-        # Return the object even if persist failed
+        Write-Warning "NotificationHub: webhook '$id' registered in-memory but could not be persisted: $_"
     }
 
     return [pscustomobject]@{
@@ -265,7 +276,8 @@ function Send-NotificationEvent {
     foreach ($webhook in $store.webhooks) {
         # Only dispatch to enabled webhooks subscribed to this event
         if (-not $webhook.enabled) { continue }
-        $subscribed = @($webhook.events) | Where-Object { $_ -eq $EventName }
+        $webhookEvents = if ($null -ne $webhook.events -and $webhook.events -is [array]) { $webhook.events } else { @() }
+        $subscribed = @($webhookEvents | Where-Object { $_ -eq $EventName })
         if (-not $subscribed) { continue }
 
         $result = [pscustomobject]@{ webhookId = $webhook.id; success = $false; error = $null }
@@ -324,7 +336,7 @@ function Send-NotificationEvent {
         try {
             _WriteWebhooksStore -WorkspaceRoot $WorkspaceRoot -Store $store
         } catch {
-            # Non-fatal
+            Write-Warning "NotificationHub: webhook metadata (lastFiredAt/lastFireResult) could not be persisted: $_"
         }
     }
 
