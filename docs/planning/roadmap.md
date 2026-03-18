@@ -31,6 +31,7 @@ Cross-reference:
 - [x] Local status scanning now captures `lastCommitMessage`, `lastCommitAuthor`, `commitsLastWeek`, and `commitsLastMonth`.
 - [x] GitHub status route now computes open PR counts via GitHub search (API and gh paths) instead of returning hardcoded zero.
 - [x] Status cache schema versioning added to invalidate stale cache payloads after contract expansion.
+- [x] Dedicated API contract test suite added for route success envelopes, validation failures, and error category handling.
 
 ## Active / Next
 
@@ -41,7 +42,7 @@ Cross-reference:
 ## Near-Term Priorities (Must)
 
 - Add incremental scan mode for large root paths (skip unchanged directories).
-- Add stricter API contract tests for all routes and error categories (validation, timeout, dependency failure categories).
+- Maintain strict API contract tests for route envelopes and error categories (validation, timeout, dependency, internal).
 - Add CI checks for link validation and documentation integrity.
 
 ## Mid-Term Priorities (Should)

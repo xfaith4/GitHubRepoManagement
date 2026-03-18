@@ -10,7 +10,10 @@ param(
     [string]$WorkspaceRoot = 'G:\Development\GitHubRepoManagement',
 
     [Parameter()]
-    [string]$LogPath
+    [string]$LogPath,
+
+    [Parameter()]
+    [string]$ShutdownSignalPath
 )
 
 Set-StrictMode -Version Latest
@@ -35,6 +38,7 @@ $docStdModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\docstandardization
 . (Join-Path $roadmapModuleRoot 'MaturityDrift.Monitor.ps1')
 . (Join-Path $docStdModuleRoot 'DocStandardization.Previewer.ps1')
 . (Join-Path $commonRoot 'NotificationHub.ps1')
+. (Join-Path $PSScriptRoot 'ApiHost.ErrorHandling.ps1')
 
 $script:StatusCacheMemory = @{}
 $script:StatusCacheDefaultTtlSeconds = 120
@@ -308,17 +312,6 @@ function Send-HttpContent {
     $Stream.Flush()
 }
 
-function Get-ErrorCategory {
-    param([string]$Message)
-
-    if ([string]::IsNullOrWhiteSpace($Message)) { return 'internal' }
-    $text = $Message.ToLowerInvariant()
-    if ($text -match 'validation|invalid|missing required|cannot bind') { return 'validation' }
-    if ($text -match 'timeout|timed out') { return 'timeout' }
-    if ($text -match 'gh|github|network|dns|socket|connection|api') { return 'dependency' }
-    return 'internal'
-}
-
 function Send-ErrorJson {
     param(
         [Parameter(Mandatory = $true)]
@@ -400,6 +393,39 @@ function Read-HttpRequest {
         Headers = $headers
         Body = $body
         Stream = $stream
+    }
+}
+
+function Test-ShutdownRequested {
+    if ([string]::IsNullOrWhiteSpace($ShutdownSignalPath)) {
+        return $false
+    }
+
+    return (Test-Path -LiteralPath $ShutdownSignalPath)
+}
+
+function Get-NextTcpClient {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Net.Sockets.TcpListener]$Listener,
+        [Parameter()]
+        [int]$PollMilliseconds = 100
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ShutdownSignalPath)) {
+        return $Listener.AcceptTcpClient()
+    }
+
+    while ($true) {
+        if (Test-ShutdownRequested) {
+            return $null
+        }
+
+        if ($Listener.Pending()) {
+            return $Listener.AcceptTcpClient()
+        }
+
+        Start-Sleep -Milliseconds $PollMilliseconds
     }
 }
 
@@ -2606,7 +2632,10 @@ Write-HostLog ("Ops log: {0}" -f (Get-ValueOrDefault $script:OpsLogPath '(none)'
 
 try {
     while ($true) {
-        $client = $listener.AcceptTcpClient()
+        $client = Get-NextTcpClient -Listener $listener
+        if ($null -eq $client) {
+            break
+        }
         try {
             $req = Read-HttpRequest -Client $client
             if ($null -eq $req) {
@@ -3643,14 +3672,14 @@ try {
                 'POST /api/execution/assign' {
                     Write-HostLog ("[TRACE] execution.assign correlationId={0} start" -f $correlationId)
                     try {
-                        $body = $req.Body
-                        $repoName = if ($body -and $body.repoName) { [string]$body.repoName } else { $null }
+                        $body = Parse-JsonBody -Body $req.Body
+                        $repoName = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'repoName' -Default $null)
                         if ([string]::IsNullOrWhiteSpace($repoName)) {
                             throw 'repoName is required for /api/execution/assign'
                         }
-                        $runId      = if ($body -and $body.runId)      { [string]$body.runId      } else { '' }
-                        $taskText   = if ($body -and $body.taskText)    { [string]$body.taskText   } else { '' }
-                        $taskSection = if ($body -and $body.taskSection) { [string]$body.taskSection } else { '' }
+                        $runId = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'runId' -Default '')
+                        $taskText = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'taskText' -Default '')
+                        $taskSection = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'taskSection' -Default '')
 
                         $result = Invoke-AssignLane -WorkspaceRoot $WorkspaceRoot -RepoName $repoName -RunId $runId -TaskText $taskText -TaskSection $taskSection
                         $statusCode = if ($result.success) { 200 } else { 409 }
@@ -3667,13 +3696,13 @@ try {
                 'POST /api/execution/complete' {
                     Write-HostLog ("[TRACE] execution.complete correlationId={0} start" -f $correlationId)
                     try {
-                        $body = $req.Body
-                        $repoName = if ($body -and $body.repoName) { [string]$body.repoName } else { $null }
+                        $body = Parse-JsonBody -Body $req.Body
+                        $repoName = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'repoName' -Default $null)
                         if ([string]::IsNullOrWhiteSpace($repoName)) {
                             throw 'repoName is required for /api/execution/complete'
                         }
-                        $outcome          = if ($body -and $body.outcome)          { [string]$body.outcome }          else { 'success' }
-                        $hasRemainingWork = if ($body -and $null -ne $body.hasRemainingWork) { [bool]$body.hasRemainingWork } else { $false }
+                        $outcome = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'outcome' -Default 'success')
+                        $hasRemainingWork = [bool](Get-ObjectPropertyValue -InputObject $body -PropertyName 'hasRemainingWork' -Default $false)
 
                         $result = Invoke-CompleteTask -WorkspaceRoot $WorkspaceRoot -RepoName $repoName -Outcome $outcome -HasRemainingWork $hasRemainingWork
                         $statusCode = if ($result.success) { 200 } else { 409 }
@@ -3690,13 +3719,13 @@ try {
                 'POST /api/execution/cancel' {
                     Write-HostLog ("[TRACE] execution.cancel correlationId={0} start" -f $correlationId)
                     try {
-                        $body = $req.Body
-                        $repoName = if ($body -and $body.repoName) { [string]$body.repoName } else { $null }
+                        $body = Parse-JsonBody -Body $req.Body
+                        $repoName = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'repoName' -Default $null)
                         if ([string]::IsNullOrWhiteSpace($repoName)) {
                             throw 'repoName is required for /api/execution/cancel'
                         }
-                        $reason     = if ($body -and $body.reason)     { [string]$body.reason }     else { 'cancelled' }
-                        $maxRetries = if ($body -and $body.maxRetries) { [int]$body.maxRetries }     else { 3 }
+                        $reason = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'reason' -Default 'cancelled')
+                        $maxRetries = [int](Get-ObjectPropertyValue -InputObject $body -PropertyName 'maxRetries' -Default 3)
 
                         $result = Invoke-CancelTask -WorkspaceRoot $WorkspaceRoot -RepoName $repoName -Reason $reason -MaxRetries $maxRetries
                         $statusCode = if ($result.success) { 200 } else { 409 }
@@ -3713,12 +3742,12 @@ try {
                 'POST /api/execution/requeue' {
                     Write-HostLog ("[TRACE] execution.requeue correlationId={0} start" -f $correlationId)
                     try {
-                        $body = $req.Body
-                        $repoName = if ($body -and $body.repoName) { [string]$body.repoName } else { $null }
+                        $body = Parse-JsonBody -Body $req.Body
+                        $repoName = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'repoName' -Default $null)
                         if ([string]::IsNullOrWhiteSpace($repoName)) {
                             throw 'repoName is required for /api/execution/requeue'
                         }
-                        $force = if ($body -and $null -ne $body.force) { [bool]$body.force } else { $false }
+                        $force = [bool](Get-ObjectPropertyValue -InputObject $body -PropertyName 'force' -Default $false)
 
                         $result = Invoke-RequeueRepo -WorkspaceRoot $WorkspaceRoot -RepoName $repoName -Force $force
                         $statusCode = if ($result.success) { 200 } else { 409 }
@@ -3834,7 +3863,8 @@ try {
                             data    = $preview
                         }
                     } catch {
-                        Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'readme.standardize.preview'
+                        $statusCode = Get-ErrorStatusCode -Message $_.Exception.Message -DefaultStatusCode 500
+                        Send-ErrorJson -Stream $req.Stream -StatusCode $statusCode -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'readme.standardize.preview'
                     }
                 }
                 'POST /api/readme/standardize/apply' {
@@ -3871,7 +3901,8 @@ try {
                             data    = $applyResult
                         }
                     } catch {
-                        Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'readme.standardize.apply'
+                        $statusCode = Get-ErrorStatusCode -Message $_.Exception.Message -DefaultStatusCode 500
+                        Send-ErrorJson -Stream $req.Stream -StatusCode $statusCode -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'readme.standardize.apply'
                     }
                 }
                 'GET /api/readme/standardize/history' {
@@ -3932,9 +3963,9 @@ try {
                 'POST /api/roadmap/drift/baseline' {
                     Write-HostLog ("[TRACE] roadmap.drift.baseline correlationId={0} start" -f $correlationId)
                     try {
-                        $body = $req.Body
-                        $repoName    = if ($body -and $body.repoName)    { [string]$body.repoName    } else { $null }
-                        $targetLevel = if ($body -and $body.targetLevel) { [string]$body.targetLevel } else { $null }
+                        $body = Parse-JsonBody -Body $req.Body
+                        $repoName = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'repoName' -Default $null)
+                        $targetLevel = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'targetLevel' -Default $null)
                         if ([string]::IsNullOrWhiteSpace($repoName))    { throw 'repoName is required' }
                         if ([string]::IsNullOrWhiteSpace($targetLevel)) { throw 'targetLevel is required' }
                         $result = Set-MaturityBaseline -WorkspaceRoot $WorkspaceRoot -RepoName $repoName -TargetLevel $targetLevel
@@ -3951,8 +3982,8 @@ try {
                 'POST /api/roadmap/drift/acknowledge' {
                     Write-HostLog ("[TRACE] roadmap.drift.acknowledge correlationId={0} start" -f $correlationId)
                     try {
-                        $body = $req.Body
-                        $repoName = if ($body -and $body.repoName) { [string]$body.repoName } else { $null }
+                        $body = Parse-JsonBody -Body $req.Body
+                        $repoName = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'repoName' -Default $null)
                         if ([string]::IsNullOrWhiteSpace($repoName)) { throw 'repoName is required' }
                         $result = Confirm-MaturityDriftAcknowledged -WorkspaceRoot $WorkspaceRoot -RepoName $repoName
                         Add-MetricCounter -Name 'api_requests_total'
@@ -3983,10 +4014,10 @@ try {
                 'POST /api/notifications/webhooks' {
                     Write-HostLog ("[TRACE] notifications.webhooks.register correlationId={0} start" -f $correlationId)
                     try {
-                        $body = $req.Body
-                        $webhookUrl = if ($body -and $body.url)    { [string]$body.url    } else { $null }
-                        $label      = if ($body -and $body.label)  { [string]$body.label  } else { '' }
-                        $events     = if ($body -and $body.events) { @($body.events)       } else { @() }
+                        $body = Parse-JsonBody -Body $req.Body
+                        $webhookUrl = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'url' -Default $null)
+                        $label = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'label' -Default '')
+                        $events = @(Get-ObjectPropertyValue -InputObject $body -PropertyName 'events' -Default @())
                         if ([string]::IsNullOrWhiteSpace($webhookUrl)) { throw 'url is required' }
                         $result = Register-NotificationWebhook -WorkspaceRoot $WorkspaceRoot -WebhookUrl $webhookUrl -Events $events -Label $label
                         Write-HostLog ("[TRACE] notifications.webhooks.register id={0} url={1}" -f $result.id, $webhookUrl)
@@ -4002,8 +4033,8 @@ try {
                 'POST /api/notifications/webhooks/remove' {
                     Write-HostLog ("[TRACE] notifications.webhooks.remove correlationId={0} start" -f $correlationId)
                     try {
-                        $body = $req.Body
-                        $webhookId = if ($body -and $body.id) { [string]$body.id } else { $null }
+                        $body = Parse-JsonBody -Body $req.Body
+                        $webhookId = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'id' -Default $null)
                         if ([string]::IsNullOrWhiteSpace($webhookId)) { throw 'id is required' }
                         $result = Remove-NotificationWebhook -WorkspaceRoot $WorkspaceRoot -WebhookId $webhookId
                         Add-MetricCounter -Name 'api_requests_total'
@@ -4021,9 +4052,9 @@ try {
                 'POST /api/roadmap/completion-preview' {
                     Write-HostLog ("[TRACE] roadmap.completion-preview correlationId={0} start" -f $correlationId)
                     try {
-                        $body = $req.Body
-                        $repoName        = if ($body -and $body.repoName)        { [string]$body.repoName        } else { $null }
-                        $completedItems  = if ($body -and $body.completedItems)  { @($body.completedItems)        } else { @() }
+                        $body = Parse-JsonBody -Body $req.Body
+                        $repoName = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'repoName' -Default $null)
+                        $completedItems = @(Get-ObjectPropertyValue -InputObject $body -PropertyName 'completedItems' -Default @())
                         if ([string]::IsNullOrWhiteSpace($repoName)) { throw 'repoName is required' }
 
                         # Load current roadmap content

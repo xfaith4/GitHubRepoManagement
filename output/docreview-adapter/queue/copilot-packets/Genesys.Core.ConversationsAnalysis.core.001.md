@@ -7,8 +7,8 @@
 
 ## Git State
 - Branch: main
-- Last Commit: 2026-03-17 18:14:41 -0400
-- Uncommitted Changes: 3
+- Last Commit: 2026-03-17 19:09:28 -0400
+- Uncommitted Changes: 0
 
 ## Batch
 - Type: core
@@ -27,9 +27,6 @@
 - Tighten headings, structure, and opening summaries
 - Clarify architecture, setup, and contributor guidance
 - Strengthen cross-linking among high-value docs
-
-## Warnings / Review Notes
-- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Constraints
 - Preserve technical accuracy

@@ -7,8 +7,8 @@
 
 ## Git State
 - Branch: main
-- Last Commit: 2026-03-17 18:14:41 -0400
-- Uncommitted Changes: 3
+- Last Commit: 2026-03-17 19:09:28 -0400
+- Uncommitted Changes: 0
 
 ## Batch
 - Type: archival
@@ -27,9 +27,6 @@
 - Trim noise and improve readability without over-investing
 - Flag stale or speculative content for review
 - Preserve useful historical context while reducing clutter
-
-## Warnings / Review Notes
-- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Constraints
 - Preserve technical accuracy

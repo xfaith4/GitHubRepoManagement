@@ -2221,16 +2221,14 @@
       "Clarify architecture, setup, and contributor guidance",
       "Strengthen cross-linking among high-value docs"
     ],
-    "Warnings": [
-      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
-    ],
+    "Warnings": [],
     "Files": [
       "Database_Design.md",
       "README.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-17 18:14:41 -0400",
-    "GitDirty": 3,
+    "GitLastCommit": "2026-03-17 19:09:28 -0400",
+    "GitDirty": 0,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Genesys.Core.ConversationsAnalysis.core.001.md"
   },
@@ -3696,16 +3694,14 @@
       "Standardize formatting and headings",
       "Make content more deliberate and maintainable"
     ],
-    "Warnings": [
-      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
-    ],
+    "Warnings": [],
     "Files": [
       "Case_Lifecycle_and_Retention.md",
       "Importer_Behavior.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-17 18:14:41 -0400",
-    "GitDirty": 3,
+    "GitLastCommit": "2026-03-17 19:09:28 -0400",
+    "GitDirty": 0,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Genesys.Core.ConversationsAnalysis.general.001.md"
   },
@@ -3893,16 +3889,14 @@
       "Flag stale or speculative content for review",
       "Preserve useful historical context while reducing clutter"
     ],
-    "Warnings": [
-      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
-    ],
+    "Warnings": [],
     "Files": [
       "ConversationAnalytics_Roadmap.md",
       "IdealPrompt_GenesysCore_ConversationsAnalysis.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-17 18:14:41 -0400",
-    "GitDirty": 3,
+    "GitLastCommit": "2026-03-17 19:09:28 -0400",
+    "GitDirty": 0,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Genesys.Core.ConversationsAnalysis.archival.001.md"
   },

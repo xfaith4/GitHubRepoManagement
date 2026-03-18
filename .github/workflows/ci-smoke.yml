@@ -25,6 +25,10 @@ jobs:
         shell: pwsh
         run: ./scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "${{ github.workspace }}"
 
+      - name: Run API contract test
+        shell: pwsh
+        run: ./scripts/Invoke-ApiContractTest.ps1 -WorkspaceRoot "${{ github.workspace }}"
+
       - name: Audit repository structure
         shell: pwsh
         run: ./scripts/Invoke-RepositoryStructureAudit.ps1 -WorkspaceRoot "${{ github.workspace }}"

@@ -307,3 +307,5 @@ Log is sourced from `backend/modules/output/logs/operations.jsonl`. The `since` 
   }
 }
 ```
+
+`error.category` values: `"validation"` | `"timeout"` | `"dependency"` | `"internal"`.

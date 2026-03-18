@@ -389,7 +389,7 @@ The following progress is preserved from prior execution history and remains fou
 
 These items support all releases and should be advanced continuously:
 
-- [ ] Strengthen API contract tests for all routes and error categories.
+- [x] Strengthen API contract tests for all routes and error categories.
 - [ ] Expand smoke coverage around launcher, health, roadmap parsing, contract audit, repair preview, docs-audit, and task history flows.
 - [ ] Add incremental scan mode for large repo roots (skip unchanged directories where safe).
 - [ ] Improve cache invalidation and scan performance for large local inventories.
