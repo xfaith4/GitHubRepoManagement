@@ -301,8 +301,27 @@ function Invoke-LintRoadmapContent {
         }
     }
 
-    # Normalise line endings and split
+    # Guard against pathologically large content that would produce meaningless results
+    $script:MaxLintSizeBytes = 512 * 1024   # 512 KB
+    $script:MaxLintLines     = 5000
+
+    # Normalise line endings and split early so we can check line count
     $lines = $RawContent -replace "`r`n", "`n" -replace "`r", "`n" -split "`n"
+
+    if ($RawContent.Length -gt $script:MaxLintSizeBytes -or $lines.Count -gt $script:MaxLintLines) {
+        $allFindings.Add((_BuildFinding `
+            -RuleId 'LINT-SIZE' `
+            -Severity 'warning' `
+            -Message "Roadmap content is large ($($lines.Count) lines, $([Math]::Round($RawContent.Length / 1024, 1)) KB) — content has been truncated to the first $($script:MaxLintLines) lines for linting. Results may be incomplete." `
+            -Line $null `
+            -RecommendedAction 'Consider splitting the roadmap into smaller release-scoped files.'
+        ))
+    }
+
+    # Trim to the maximum line budget before running any per-line rule
+    if ($lines.Count -gt $script:MaxLintLines) {
+        $lines = $lines[0..($script:MaxLintLines - 1)]
+    }
 
     foreach ($finding in (_LintRule001 -Lines $lines))         { $allFindings.Add($finding) }
     foreach ($finding in (_LintRule002 -Lines $lines))         { $allFindings.Add($finding) }

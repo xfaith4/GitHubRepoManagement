@@ -2,6 +2,42 @@
 
 All notable changes to this project are documented here.
 
+## 2026-03-18 — Production Hardening Audit
+
+### Security
+
+- **`NotificationHub.ps1`** — `Register-NotificationWebhook` now validates the webhook URL scheme before registration. Only `http://` and `https://` URLs are accepted; `file://`, `ftp://`, and other schemes throw immediately, preventing SSRF-class abuse.
+- **`NotificationHub.ps1`** — `Register-NotificationWebhook` now validates that every supplied event name is in the declared `$script:SupportedEvents` list before writing to disk. Unknown event names throw with a descriptive message.
+- **`Start-RepoManagementApiHost.ps1`** — `Read-HttpRequest` now caps `Content-Length` to 10 MB. Requests advertising a body larger than this are rejected (returning `null`) to prevent memory exhaustion from large or malicious payloads.
+- **`Start-RepoManagementApiHost.ps1`** — `Get-JsonObjectFromText` now explicitly checks `$end -lt 0` in addition to `$end -le $start`, preventing an out-of-range substring on output that contains `{` but no `}`.
+
+### Reliability
+
+- **`Execution.Ledger.ps1`** — duplicate-task guard in `Invoke-AssignLane` now normalizes task text with `.Trim().ToLowerInvariant()` before comparison, preventing the same task from running in two lanes when its text differs only in case or leading/trailing whitespace.
+- **`Execution.Ledger.ps1`** — `Read-ExecutionLedger` now emits a `Write-Warning` before returning the empty fallback when the ledger file cannot be parsed, making corruption visible to operators rather than silently resetting state.
+- **`MaturityDrift.Monitor.ps1`** — `Get-MaturityDrift` now uses `[double]::TryParse()` with `InvariantCulture` instead of a bare `[double]` cast when extracting the current score from audit entries. Malformed or non-numeric score values no longer throw; they default to `0`.
+- **`NotificationHub.ps1`** — `Send-NotificationEvent` now guards against `null` or non-array `events` properties on webhook objects using an explicit array type check before filtering, preventing a potential null-reference during dispatch.
+- **`NotificationHub.ps1`** — The previously silent `catch {}` blocks when persisting webhook registration and metadata updates now emit `Write-Warning` so operators are informed that the in-memory state could not be flushed to disk.
+
+### Performance / Robustness
+
+- **`Roadmap.Linter.ps1`** — `Invoke-LintRoadmapContent` now enforces a 5 000-line and 512 KB budget on roadmap content before running per-line rules. Content that exceeds either limit is silently trimmed to the budget and a new `LINT-SIZE` (warning) finding is added to inform the operator. This prevents runaway processing on pathological or accidentally concatenated roadmap files.
+- **`Roadmap.Parser.ps1`** — `Invoke-ParseRoadmapContent` now enforces the same 5 000-line limit before iterating content. Lines beyond the limit are silently ignored, keeping parse time bounded for large inputs.
+
+### Maintenance
+
+- **`backend/config/settings2.json`** — Removed. This file was byte-for-byte identical to `settings.json` and was not referenced by any code or script. It was a source of potential configuration drift.
+
+### Testing
+
+- **`scripts/Invoke-ModuleSmokeTest.ps1`** — Added three new smoke steps that directly exercise the new hardening:
+  - _Notification hub URL validation guard_ — verifies that `Register-NotificationWebhook` throws for `file://` URLs.
+  - _Notification hub unknown event type guard_ — verifies that `Register-NotificationWebhook` throws for unrecognized event names.
+  - _Execution ledger case-insensitive duplicate task guard_ — assigns one repo with task text `"Implement feature X"` then confirms the second repo is rejected when using the same text in a different case (`"Implement Feature X"`).
+  - _Roadmap linter oversized content truncation guard_ — lints a 6 000-line roadmap and confirms the `LINT-SIZE` warning finding is present.
+
+---
+
 ## 2026-03-16 — Release 1.1: Standardization, Guardrails, and Continuous Improvement
 
 ### Added
