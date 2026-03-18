@@ -1,16 +1,16 @@
 # Documentation Review Queue Playbook
 
-Generated: 2026-03-16 07:10:12
+Generated: 2026-03-17 19:02:56
 
 ## Summary
 
-- Queue items: 115
-- Repos represented: 21
-- Core batches: 31
+- Queue items: 118
+- Repos represented: 22
+- Core batches: 32
 - Operational batches: 7
 - Reference batches: 4
-- General batches: 62
-- Archival batches: 11
+- General batches: 63
+- Archival batches: 12
 
 ## 2025-09-11-System-Dashboard
 
@@ -898,6 +898,57 @@ Generated: 2026-03-16 07:10:12
 - IMAGE_VIDEO_SUPPORT_IMPLEMENTATION.md
 - SQL_SUPPORT_IMPLEMENTATION.md
 
+## Genesys.Core.ConversationsAnalysis
+
+- **Path:** G:\Development\20_Staging\Genesys.Core.ConversationsAnalysis
+- **Repo Priority:** High (40)
+- **Queue Items:** 3
+
+### Genesys.Core.ConversationsAnalysis.core.001
+
+- **Batch Type:** core
+- **Complexity:** low
+- **Cooldown Hint:** 90 seconds
+- **Prompt Flavor:** core-doc-modernization
+- **Packet:** G:\Development\GitHubRepoManagement\output\docreview-adapter\queue\copilot-packets\Genesys.Core.ConversationsAnalysis.core.001.md
+
+**Files:**
+- Database_Design.md
+- README.md
+
+**Warnings:**
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
+
+### Genesys.Core.ConversationsAnalysis.general.001
+
+- **Batch Type:** general
+- **Complexity:** low
+- **Cooldown Hint:** 90 seconds
+- **Prompt Flavor:** general-doc-improvement
+- **Packet:** G:\Development\GitHubRepoManagement\output\docreview-adapter\queue\copilot-packets\Genesys.Core.ConversationsAnalysis.general.001.md
+
+**Files:**
+- Case_Lifecycle_and_Retention.md
+- Importer_Behavior.md
+
+**Warnings:**
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
+
+### Genesys.Core.ConversationsAnalysis.archival.001
+
+- **Batch Type:** archival
+- **Complexity:** low
+- **Cooldown Hint:** 90 seconds
+- **Prompt Flavor:** archival-doc-tidy-pass
+- **Packet:** G:\Development\GitHubRepoManagement\output\docreview-adapter\queue\copilot-packets\Genesys.Core.ConversationsAnalysis.archival.001.md
+
+**Files:**
+- ConversationAnalytics_Roadmap.md
+- IdealPrompt_GenesysCore_ConversationsAnalysis.md
+
+**Warnings:**
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
+
 ## GenesysCloudAuditor
 
 - **Path:** G:\Development\20_Staging\GenesysCloudAuditor
@@ -1416,7 +1467,7 @@ Generated: 2026-03-16 07:10:12
 - README.md
 
 **Warnings:**
-- Last commit was 731 days ago - verify repo is still active before investing in doc review
+- Last commit was 732 days ago - verify repo is still active before investing in doc review
 
 ## SystemDashboard
 

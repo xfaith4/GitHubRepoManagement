@@ -2001,6 +2001,72 @@
     ]
   },
   {
+    "RepoName": "Genesys.Core.ConversationsAnalysis",
+    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core.ConversationsAnalysis",
+    "IsGitRepo": true,
+    "MarkdownFiles": [
+      "Case_Lifecycle_and_Retention.md",
+      "ConversationAnalytics_Roadmap.md",
+      "Database_Design.md",
+      "IdealPrompt_GenesysCore_ConversationsAnalysis.md",
+      "Importer_Behavior.md",
+      "README.md"
+    ],
+    "MarkdownFileCount": 6,
+    "ActiveDocCount": 6,
+    "ArchiveDocCount": 0,
+    "GeneratedDocCount": 0,
+    "HasReadme": true,
+    "HasDocsFolder": false,
+    "HasContributing": false,
+    "HasDocsIndex": false,
+    "DocCategories": [
+      "architecture",
+      "general",
+      "readme"
+    ],
+    "PriorityScore": 40,
+    "PriorityBand": "High",
+    "ReviewMode": "Core-docs batch",
+    "GitLastCommitDate": "2026-03-17 18:14:41 -0400",
+    "GitBranch": "main",
+    "GitUncommittedChanges": 3,
+    "DocQualityHints": [
+      "no-docs-folder-many-md",
+      "contains-risk-markers"
+    ],
+    "KeyDocs": [
+      "Database_Design.md",
+      "README.md"
+    ],
+    "ClassifiedFiles": [
+      {
+        "Path": "Case_Lifecycle_and_Retention.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "ConversationAnalytics_Roadmap.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "Database_Design.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "IdealPrompt_GenesysCore_ConversationsAnalysis.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "Importer_Behavior.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "README.md",
+        "DocClass": "Active"
+      }
+    ]
+  },
+  {
     "RepoName": "AI_PromptRefiner_GUI",
     "RepoPath": "G:\\Development\\20_Staging\\AI_PromptRefiner_GUI",
     "IsGitRepo": true,

@@ -2203,6 +2203,38 @@
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\AI_PromptRefiner_GUI.core.001.md"
   },
   {
+    "QueueId": "Genesys.Core.ConversationsAnalysis.core.001",
+    "RepoName": "Genesys.Core.ConversationsAnalysis",
+    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core.ConversationsAnalysis",
+    "RepoPriorityBand": "High",
+    "RepoPriorityScore": 40,
+    "BatchType": "core",
+    "BatchOrder": 1,
+    "BatchChunkIndex": 1,
+    "EstimatedComplexity": "low",
+    "RecommendedCooldownSeconds": 90,
+    "QueueScore": 80,
+    "PromptFlavor": "core-doc-modernization",
+    "Goals": [
+      "Improve first-use readability and onboarding clarity",
+      "Tighten headings, structure, and opening summaries",
+      "Clarify architecture, setup, and contributor guidance",
+      "Strengthen cross-linking among high-value docs"
+    ],
+    "Warnings": [
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+    ],
+    "Files": [
+      "Database_Design.md",
+      "README.md"
+    ],
+    "GitBranch": "main",
+    "GitLastCommit": "2026-03-17 18:14:41 -0400",
+    "GitDirty": 3,
+    "RepoNotes": [],
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Genesys.Core.ConversationsAnalysis.core.001.md"
+  },
+  {
     "QueueId": "PromptRefiner_GUI.core.001",
     "RepoName": "PromptRefiner_GUI",
     "RepoPath": "G:\\Development\\20_Staging\\PromptRefiner_GUI",
@@ -3322,7 +3354,7 @@
       "Strengthen cross-linking among high-value docs"
     ],
     "Warnings": [
-      "Last commit was 731 days ago - verify repo is still active before investing in doc review"
+      "Last commit was 732 days ago - verify repo is still active before investing in doc review"
     ],
     "Files": [
       "README.md"
@@ -3646,6 +3678,38 @@
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\AI_PromptRefiner_GUI.general.001.md"
   },
   {
+    "QueueId": "Genesys.Core.ConversationsAnalysis.general.001",
+    "RepoName": "Genesys.Core.ConversationsAnalysis",
+    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core.ConversationsAnalysis",
+    "RepoPriorityBand": "High",
+    "RepoPriorityScore": 40,
+    "BatchType": "general",
+    "BatchOrder": 4,
+    "BatchChunkIndex": 1,
+    "EstimatedComplexity": "low",
+    "RecommendedCooldownSeconds": 90,
+    "QueueScore": 52,
+    "PromptFlavor": "general-doc-improvement",
+    "Goals": [
+      "Improve structure and readability",
+      "Reduce repetition and vague wording",
+      "Standardize formatting and headings",
+      "Make content more deliberate and maintainable"
+    ],
+    "Warnings": [
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+    ],
+    "Files": [
+      "Case_Lifecycle_and_Retention.md",
+      "Importer_Behavior.md"
+    ],
+    "GitBranch": "main",
+    "GitLastCommit": "2026-03-17 18:14:41 -0400",
+    "GitDirty": 3,
+    "RepoNotes": [],
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Genesys.Core.ConversationsAnalysis.general.001.md"
+  },
+  {
     "QueueId": "PromptRefiner_GUI.general.001",
     "RepoName": "PromptRefiner_GUI",
     "RepoPath": "G:\\Development\\20_Staging\\PromptRefiner_GUI",
@@ -3809,6 +3873,38 @@
     "GitDirty": 31,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\AI-Orchestration.archival.001.md"
+  },
+  {
+    "QueueId": "Genesys.Core.ConversationsAnalysis.archival.001",
+    "RepoName": "Genesys.Core.ConversationsAnalysis",
+    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core.ConversationsAnalysis",
+    "RepoPriorityBand": "High",
+    "RepoPriorityScore": 40,
+    "BatchType": "archival",
+    "BatchOrder": 5,
+    "BatchChunkIndex": 1,
+    "EstimatedComplexity": "low",
+    "RecommendedCooldownSeconds": 90,
+    "QueueScore": 48,
+    "PromptFlavor": "archival-doc-tidy-pass",
+    "Goals": [
+      "Clarify status and intent of planning or historical docs",
+      "Trim noise and improve readability without over-investing",
+      "Flag stale or speculative content for review",
+      "Preserve useful historical context while reducing clutter"
+    ],
+    "Warnings": [
+      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+    ],
+    "Files": [
+      "ConversationAnalytics_Roadmap.md",
+      "IdealPrompt_GenesysCore_ConversationsAnalysis.md"
+    ],
+    "GitBranch": "main",
+    "GitLastCommit": "2026-03-17 18:14:41 -0400",
+    "GitDirty": 3,
+    "RepoNotes": [],
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Genesys.Core.ConversationsAnalysis.archival.001.md"
   },
   {
     "QueueId": "PromptRefiner_GUI.archival.001",

@@ -1,18 +1,18 @@
 # Documentation Review Inventory
 
-Generated: 2026-03-16 07:10:12
+Generated: 2026-03-17 19:02:56
 
 ## Summary
 
-- Repos with Markdown docs: 21
-- High priority: 11
+- Repos with Markdown docs: 22
+- High priority: 12
 - Medium priority: 10
 - Low priority: 1
 
 ### Review Modes
 
 - **Full-doc pass:** 6
-- **Core-docs batch:** 9
+- **Core-docs batch:** 10
 - **Needs taxonomy before rewrite:** 1
 - **Archive cleanup first:** 1
 - **README-only:** 5
@@ -258,6 +258,27 @@ Generated: 2026-03-16 07:10:12
 
 - `custom_SereneHarmonySite\FORM_SETUP.md` _Active_
 - `custom_SereneHarmonySite\README.md` _Active_
+- `README.md` _Active_
+
+## Genesys.Core.ConversationsAnalysis
+
+- **Path:** G:\Development\20_Staging\Genesys.Core.ConversationsAnalysis
+- **Priority:** High (40)
+- **Review mode:** Core-docs batch
+- **Docs:** 6 active / 0 archive / 0 generated (total 6)
+- **Categories:** architecture, general, readme
+- **Has README:** True
+- **Has docs folder:** False
+- **Has contributing guide:** False
+- **Has docs index:** False
+- **Git branch:** main
+- **Last commit:** 2026-03-17 18:14:41 -0400
+- **Uncommitted changes:** 3
+- **Doc quality hints:** no-docs-folder-many-md, contains-risk-markers
+
+### Key Docs
+
+- `Database_Design.md` _Active_
 - `README.md` _Active_
 
 ## AI_PromptRefiner_GUI

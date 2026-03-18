@@ -3804,7 +3804,7 @@ try {
                 'POST /api/readme/standardize/preview' {
                     Write-HostLog ("[TRACE] readme.standardize.preview correlationId={0} start" -f $correlationId)
                     try {
-                        $body = $req.Body
+                        $body = Parse-JsonBody -Body $req.Body
                         $repoName = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'repoName' -Default $null)
                         if ([string]::IsNullOrWhiteSpace($repoName)) {
                             throw 'repoName is required for /api/readme/standardize/preview'
@@ -3840,7 +3840,7 @@ try {
                 'POST /api/readme/standardize/apply' {
                     Write-HostLog ("[TRACE] readme.standardize.apply correlationId={0} start" -f $correlationId)
                     try {
-                        $body = $req.Body
+                        $body = Parse-JsonBody -Body $req.Body
                         $repoName        = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'repoName' -Default $null)
                         $previewId       = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'previewId' -Default $null)
                         $proposedContent = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'proposedContent' -Default $null)

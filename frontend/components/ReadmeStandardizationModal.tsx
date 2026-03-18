@@ -34,6 +34,10 @@ export const ReadmeStandardizationModal: React.FC<ReadmeStandardizationModalProp
   const [editedContent, setEditedContent] = useState<string>('');
 
   const loadPreview = useCallback(async () => {
+    if (!repoName.trim()) {
+      setError('Repository name is missing for README standardization preview.');
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
@@ -67,6 +71,10 @@ export const ReadmeStandardizationModal: React.FC<ReadmeStandardizationModalProp
 
   const handleApply = useCallback(async () => {
     if (!preview) return;
+    if (!repoName.trim()) {
+      setError('Repository name is missing for README standardization apply.');
+      return;
+    }
     setIsApplying(true);
     setError(null);
     try {

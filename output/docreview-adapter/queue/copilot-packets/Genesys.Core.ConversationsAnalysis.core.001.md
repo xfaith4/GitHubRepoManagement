@@ -1,24 +1,25 @@
-# Queue Item: SnapGoal.core.001
+# Queue Item: Genesys.Core.ConversationsAnalysis.core.001
 
 ## Repo
-- Name: SnapGoal
-- Path: G:\Development\20_Staging\SnapGoal
-- Repo Priority: Medium (20)
+- Name: Genesys.Core.ConversationsAnalysis
+- Path: G:\Development\20_Staging\Genesys.Core.ConversationsAnalysis
+- Repo Priority: High (40)
 
 ## Git State
 - Branch: main
-- Last Commit: 2024-03-14 23:28:56 -0400
-- Uncommitted Changes: 0
+- Last Commit: 2026-03-17 18:14:41 -0400
+- Uncommitted Changes: 3
 
 ## Batch
 - Type: core
 - Chunk: 1
 - Complexity: low
 - Recommended Cooldown Seconds: 90
-- Queue Score: 60
+- Queue Score: 80
 - Prompt Flavor: core-doc-modernization
 
 ## Files in Scope
+- Database_Design.md
 - README.md
 
 ## Objectives
@@ -28,7 +29,7 @@
 - Strengthen cross-linking among high-value docs
 
 ## Warnings / Review Notes
-- Last commit was 732 days ago - verify repo is still active before investing in doc review
+- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Constraints
 - Preserve technical accuracy
