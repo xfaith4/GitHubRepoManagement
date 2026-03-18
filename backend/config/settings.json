@@ -1,6 +1,5 @@
 {
   "secrets": {
-    "githubToken": "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",
     "gitHubTokenEnvVar": "GITHUB_TOKEN"
   },
   "reconcile": {
