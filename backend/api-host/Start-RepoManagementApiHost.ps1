@@ -3637,24 +3637,38 @@ try {
                 'POST /api/execution/sync' {
                     Write-HostLog ("[TRACE] execution.sync correlationId={0} start" -f $correlationId)
                     try {
-                        # Sync ledger from current cached doc-audit + roadmap-audit data
+                        # Sync ledger from current doc-audit + roadmap-audit data.
                         $settings = Get-HostSettings
                         $localRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
                         $maxDepth   = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 2 }
 
-                        # Load doc-audit (use cache if available)
+                        # Invoke-DocAuditScan returns an array, not an envelope with an entries property.
                         $docAuditResult = $null
                         try {
                             $docAuditResult = Invoke-DocAuditScan -LocalRoots $localRoots -MaxDepth $maxDepth
                         } catch { $docAuditResult = $null }
 
-                        $docEntries = if ($null -ne $docAuditResult -and $null -ne $docAuditResult.entries) { @($docAuditResult.entries) } else { @() }
+                        [object[]]$docEntries = @()
+                        if ($null -ne $docAuditResult) {
+                            $docEntries = @($docAuditResult)
+                        }
 
-                        # Load roadmap-audit from cache if available
-                        $roadmapAuditEntries = @()
-                        $cachedAudit = $script:RoadmapAuditCacheMemory
-                        if ($null -ne $cachedAudit -and $cachedAudit.ContainsKey('entries')) {
+                        # Prefer the cached roadmap audit envelope and fall back to a fresh scan.
+                        [object[]]$roadmapAuditEntries = @()
+                        $roadmapAuditCacheTtlSeconds = Get-RoadmapAuditCacheTtlSeconds -Settings $settings
+                        $cachedAudit = $null
+                        try {
+                            $cachedAudit = Get-RoadmapAuditFromCache -TtlSeconds $roadmapAuditCacheTtlSeconds
+                        } catch { $cachedAudit = $null }
+
+                        if ($null -ne $cachedAudit -and $cachedAudit.hit) {
                             $roadmapAuditEntries = @($cachedAudit.entries)
+                        } else {
+                            try {
+                                $roadmapAuditEntries = @(Invoke-RoadmapAuditScan -LocalRoots $localRoots -MaxDepth $maxDepth)
+                            } catch {
+                                $roadmapAuditEntries = @()
+                            }
                         }
 
                         $syncedLedger = Sync-LedgerFromAudit -WorkspaceRoot $WorkspaceRoot -DocAuditEntries $docEntries -RoadmapAuditEntries $roadmapAuditEntries

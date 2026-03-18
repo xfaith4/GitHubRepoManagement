@@ -239,8 +239,10 @@ function Sync-LedgerFromAudit {
         [Parameter(Mandatory = $true)]
         [string]$WorkspaceRoot,
         [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
         [object[]]$DocAuditEntries,
         [Parameter()]
+        [AllowEmptyCollection()]
         [object[]]$RoadmapAuditEntries = @()
     )
 
