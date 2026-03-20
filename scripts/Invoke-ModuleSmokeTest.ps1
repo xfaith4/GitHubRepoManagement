@@ -528,4 +528,49 @@ $removeResult = Remove-NotificationWebhook -WorkspaceRoot $notifWs -WebhookId $w
 if (-not $removeResult.success) { throw "Expected webhook removal to succeed, got success=$($removeResult.success)" }
 Write-Host ("  webhook register/get/remove smoke ok: id={0}" -f $webhook.id) -ForegroundColor DarkGray
 
+Write-Step 'Notification hub — smoke: URL validation guard'
+$invalidUrlRejected = $false
+try {
+    $null = Register-NotificationWebhook -WorkspaceRoot $notifWs -WebhookUrl 'file:///etc/passwd' -Events @('scan.completed') -Label 'Bad URL'
+} catch {
+    $invalidUrlRejected = $true
+}
+if (-not $invalidUrlRejected) { throw 'Expected Register-NotificationWebhook to reject a non-HTTP(S) URL' }
+Write-Host '  invalid URL correctly rejected' -ForegroundColor DarkGray
+
+Write-Step 'Notification hub — smoke: unknown event type guard'
+$unknownEventRejected = $false
+try {
+    $null = Register-NotificationWebhook -WorkspaceRoot $notifWs -WebhookUrl 'https://example.com/hook' -Events @('unknown.event') -Label 'Bad Event'
+} catch {
+    $unknownEventRejected = $true
+}
+if (-not $unknownEventRejected) { throw 'Expected Register-NotificationWebhook to reject an unknown event name' }
+Write-Host '  unknown event name correctly rejected' -ForegroundColor DarkGray
+
+Write-Step 'Execution ledger — smoke: case-insensitive duplicate task guard'
+$ciDedupWs = Join-Path $WorkspaceRoot 'output\smoke\module\execution-ci'
+$null = New-Item -ItemType Directory -Path (Join-Path $ciDedupWs 'output\execution') -Force -ErrorAction SilentlyContinue
+# Remove stale ledger so this step is idempotent across repeated smoke runs
+$ciDedupLedgerFile = Join-Path $ciDedupWs 'output\execution\execution-ledger.json'
+if (Test-Path -LiteralPath $ciDedupLedgerFile) { Remove-Item -LiteralPath $ciDedupLedgerFile -Force }
+$ciDedupDocs = @(
+    [pscustomobject]@{ repoName = 'ci-repo-a'; repoPath = '/tmp/ci-a'; dispatchReadiness = 'ready'; nextPendingRoadmapItem = 'Implement feature X' },
+    [pscustomobject]@{ repoName = 'ci-repo-b'; repoPath = '/tmp/ci-b'; dispatchReadiness = 'ready'; nextPendingRoadmapItem = 'Implement Feature X' }
+)
+$ciDedupLedger = Sync-LedgerFromAudit -WorkspaceRoot $ciDedupWs -DocAuditEntries $ciDedupDocs
+$assignCiA = Invoke-AssignLane -WorkspaceRoot $ciDedupWs -RepoName 'ci-repo-a' -TaskText 'Implement feature X'
+if (-not $assignCiA.success) { throw "Expected ci-repo-a lane assignment to succeed: $($assignCiA.error)" }
+$assignCiB = Invoke-AssignLane -WorkspaceRoot $ciDedupWs -RepoName 'ci-repo-b' -TaskText 'Implement Feature X'
+if ($assignCiB.success) { throw 'Expected ci-repo-b lane assignment to be rejected due to case-insensitive task duplicate guard' }
+Write-Host '  case-insensitive duplicate task guard working correctly' -ForegroundColor DarkGray
+
+Write-Step 'Roadmap linter — smoke: oversized content truncation guard'
+$bigContent = ("## Release 0.1 — Test`n" + ("- [ ] Item`n" * 6000))
+$bigLintResult = Invoke-LintRoadmapContent -RawContent $bigContent -RepoName 'smoke-lint-oversized'
+if ($null -eq $bigLintResult) { throw 'Expected lint result for oversized content, got null' }
+$sizeWarning = @($bigLintResult.findings | Where-Object { $_.ruleId -eq 'LINT-SIZE' })
+if ($sizeWarning.Count -eq 0) { throw 'Expected LINT-SIZE warning for oversized roadmap content' }
+Write-Host ("  oversized content guard working: findings={0}" -f $bigLintResult.findings.Count) -ForegroundColor DarkGray
+
 Write-Step 'Smoke test completed'

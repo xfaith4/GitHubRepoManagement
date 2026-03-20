@@ -215,10 +215,16 @@ function Get-MaturityDrift {
         $currentLevel = [string]($auditEntry.maturityLevel ?? 'L0')
         $currentScore = 0
         if ($auditEntry.PSObject.Properties.Name -contains 'score' -and $null -ne $auditEntry.score) {
-            $currentScore = [double]$auditEntry.score
+            $parsed = 0.0
+            if ([double]::TryParse([string]$auditEntry.score, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$parsed)) {
+                $currentScore = $parsed
+            }
         }
         elseif ($auditEntry.PSObject.Properties.Name -contains 'maturityScore' -and $null -ne $auditEntry.maturityScore) {
-            $currentScore = [double]$auditEntry.maturityScore
+            $parsed = 0.0
+            if ([double]::TryParse([string]$auditEntry.maturityScore, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$parsed)) {
+                $currentScore = $parsed
+            }
         }
         $currentRank  = _LevelRank -Level $currentLevel
 

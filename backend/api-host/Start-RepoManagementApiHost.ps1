@@ -377,6 +377,12 @@ function Read-HttpRequest {
         [void][int]::TryParse($headers['content-length'], [ref]$contentLength)
     }
 
+    # Cap body reads to 10 MB to prevent memory exhaustion from malicious requests
+    $script:MaxRequestBodyBytes = 10 * 1024 * 1024
+    if ($contentLength -gt $script:MaxRequestBodyBytes) {
+        return $null
+    }
+
     if ($contentLength -gt 0) {
         $buffer = New-Object char[] $contentLength
         $read = $reader.ReadBlock($buffer, 0, $contentLength)
@@ -1021,7 +1027,7 @@ function Get-JsonObjectFromText {
 
     $start = $Text.IndexOf('{')
     $end = $Text.LastIndexOf('}')
-    if ($start -lt 0 -or $end -le $start) {
+    if ($start -lt 0 -or $end -lt 0 -or $end -le $start) {
         throw 'Script output did not contain a JSON object.'
     }
 

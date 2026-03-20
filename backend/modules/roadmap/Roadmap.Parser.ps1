@@ -63,6 +63,14 @@ function Invoke-ParseRoadmapContent {
     }
 
     $lines        = $Content -split '\r?\n'
+
+    # Guard against pathologically large roadmaps — cap at 5 000 lines to keep
+    # parsing predictable; the linter enforces the same limit.
+    $script:MaxParserLines = 5000
+    if ($lines.Count -gt $script:MaxParserLines) {
+        $lines = $lines[0..($script:MaxParserLines - 1)]
+    }
+
     $currentSection = 'General'
     $sections       = [System.Collections.Generic.List[pscustomobject]]::new()
     $sectionMap     = @{}   # section name → index in $sections

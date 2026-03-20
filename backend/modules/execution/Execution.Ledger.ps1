@@ -76,6 +76,7 @@ function Read-ExecutionLedger {
             history       = @($parsed.history ?? @())
         }
     } catch {
+        Write-Warning "Execution.Ledger: ledger file at '$path' could not be parsed (returning empty ledger). Error: $_"
         return $empty
     }
 }
@@ -384,10 +385,11 @@ function Invoke-AssignLane {
     # Duplicate roadmap item guard: same task text cannot be active in both lanes
     $effectiveTask = if (-not [string]::IsNullOrWhiteSpace($TaskText)) { $TaskText } else { $entry.currentTaskText }
     if (-not [string]::IsNullOrWhiteSpace($effectiveTask)) {
+        $effectiveTaskNorm = $effectiveTask.Trim().ToLowerInvariant()
         $duplicate = $ledger.entries | Where-Object {
             $_.executionState -eq 'running' -and
             -not [string]::IsNullOrWhiteSpace($_.currentTaskText) -and
-            $_.currentTaskText -eq $effectiveTask
+            $_.currentTaskText.Trim().ToLowerInvariant() -eq $effectiveTaskNorm
         }
         if ($null -ne $duplicate) {
             return @{ success = $false; laneSlot = $null; error = "Roadmap item '$effectiveTask' is already running in lane $($duplicate.laneSlot)" }
