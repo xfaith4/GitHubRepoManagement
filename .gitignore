@@ -23,19 +23,16 @@ backend/modules/output/**
 /logs/
 
 # Generated adapter output
-output/*
-!output/.gitkeep
-!output/**/
-!output/**/.gitkeep
+/output/**
+!/output/**/
+!/output/**/.gitkeep
 
 # Generated evidence
-evidence/*
-!evidence/.gitkeep
-!evidence/**/
-!evidence/**/.gitkeep
+/evidence/**
+!/evidence/**/
+!/evidence/**/.gitkeep
 
 # Saved reports
-reports/*
-!reports/.gitkeep
-!reports/**/
-!reports/**/.gitkeep
+/reports/**
+!/reports/**/
+!/reports/**/.gitkeep

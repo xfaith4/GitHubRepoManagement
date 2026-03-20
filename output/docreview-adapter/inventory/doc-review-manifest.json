@@ -1327,9 +1327,9 @@
     "PriorityScore": 70,
     "PriorityBand": "High",
     "ReviewMode": "Full-doc pass",
-    "GitLastCommitDate": "2026-03-16 03:48:56 -0400",
+    "GitLastCommitDate": "2026-03-18 12:34:23 -0400",
     "GitBranch": "main",
-    "GitUncommittedChanges": 0,
+    "GitUncommittedChanges": 16,
     "DocQualityHints": [
       "vague-md-names",
       "contains-risk-markers"
@@ -1745,6 +1745,183 @@
     ]
   },
   {
+    "RepoName": "Genesys.Core",
+    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core",
+    "IsGitRepo": true,
+    "MarkdownFiles": [
+      ".agents\\AGENTS.md",
+      "apps\\AuditLogsConsole\\Architecture.md",
+      "apps\\AuditLogsConsole\\README.md",
+      "apps\\AuditLogsConsole\\UX-Spec.md",
+      "apps\\AuditLogsConsole\\ValidationChecklist.md",
+      "apps\\ConversationAnalysis\\README.md",
+      "docs\\AppPrompts\\ElasticSearchPromptLibrary.md",
+      "docs\\AppPrompts\\IdealPrompt_GenesysCore_ConversationsAnalysis.md",
+      "docs\\AppPrompts\\IdealPrompt_GenesysCore_WrapperApp_Template.md",
+      "docs\\CHANGELOG.md",
+      "docs\\Clean-upPrompt.md",
+      "docs\\CODE_REVIEW_SUMMARY.md",
+      "docs\\Comparison Report (as of 2026-02-22).md",
+      "docs\\ENGINEER_INTEGRATIONS_AUTH.md",
+      "docs\\ONBOARDING.md",
+      "docs\\PromptChain\\Prompt0.md",
+      "docs\\PromptChain\\Prompt1.md",
+      "docs\\PromptChain\\Prompt2.md",
+      "docs\\PromptChain\\Prompt3.md",
+      "docs\\PromptChain\\Prompt4.md",
+      "docs\\PromptChain\\Prompt5.md",
+      "docs\\PromptChain\\Prompt6.md",
+      "docs\\READINESS_REVIEW.md",
+      "docs\\REPO_SCHEMATIC.md",
+      "docs\\ROADMAP.md",
+      "docs\\training\\Training.md",
+      "README.md",
+      "TESTING.md"
+    ],
+    "MarkdownFileCount": 28,
+    "ActiveDocCount": 28,
+    "ArchiveDocCount": 0,
+    "GeneratedDocCount": 0,
+    "HasReadme": true,
+    "HasDocsFolder": true,
+    "HasContributing": false,
+    "HasDocsIndex": false,
+    "DocCategories": [
+      "architecture",
+      "changelog",
+      "general",
+      "readme",
+      "roadmap"
+    ],
+    "PriorityScore": 50,
+    "PriorityBand": "High",
+    "ReviewMode": "Full-doc pass",
+    "GitLastCommitDate": "2026-03-17 23:50:37 -0400",
+    "GitBranch": "main",
+    "GitUncommittedChanges": 0,
+    "DocQualityHints": [],
+    "KeyDocs": [
+      "apps\\AuditLogsConsole\\Architecture.md",
+      "apps\\AuditLogsConsole\\README.md",
+      "apps\\ConversationAnalysis\\README.md",
+      "README.md"
+    ],
+    "ClassifiedFiles": [
+      {
+        "Path": ".agents\\AGENTS.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "apps\\AuditLogsConsole\\Architecture.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "apps\\AuditLogsConsole\\README.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "apps\\AuditLogsConsole\\UX-Spec.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "apps\\AuditLogsConsole\\ValidationChecklist.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "apps\\ConversationAnalysis\\README.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "docs\\AppPrompts\\ElasticSearchPromptLibrary.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "docs\\AppPrompts\\IdealPrompt_GenesysCore_ConversationsAnalysis.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "docs\\AppPrompts\\IdealPrompt_GenesysCore_WrapperApp_Template.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "docs\\CHANGELOG.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "docs\\Clean-upPrompt.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "docs\\CODE_REVIEW_SUMMARY.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "docs\\Comparison Report (as of 2026-02-22).md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "docs\\ENGINEER_INTEGRATIONS_AUTH.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "docs\\ONBOARDING.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "docs\\PromptChain\\Prompt0.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "docs\\PromptChain\\Prompt1.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "docs\\PromptChain\\Prompt2.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "docs\\PromptChain\\Prompt3.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "docs\\PromptChain\\Prompt4.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "docs\\PromptChain\\Prompt5.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "docs\\PromptChain\\Prompt6.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "docs\\READINESS_REVIEW.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "docs\\REPO_SCHEMATIC.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "docs\\ROADMAP.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "docs\\training\\Training.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "README.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "TESTING.md",
+        "DocClass": "Active"
+      }
+    ]
+  },
+  {
     "RepoName": "SampleDashboardReact",
     "RepoPath": "G:\\Development\\20_Staging\\SampleDashboardReact",
     "IsGitRepo": true,
@@ -2001,8 +2178,8 @@
     ]
   },
   {
-    "RepoName": "Genesys.Core.ConversationsAnalysis",
-    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core.ConversationsAnalysis",
+    "RepoName": "Genesys.Core.ConversationalAnalytics",
+    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core.ConversationalAnalytics",
     "IsGitRepo": true,
     "MarkdownFiles": [
       "Case_Lifecycle_and_Retention.md",
@@ -2028,9 +2205,75 @@
     "PriorityScore": 40,
     "PriorityBand": "High",
     "ReviewMode": "Core-docs batch",
-    "GitLastCommitDate": "2026-03-17 19:09:28 -0400",
+    "GitLastCommitDate": "2026-03-17 23:53:01 -0400",
     "GitBranch": "main",
     "GitUncommittedChanges": 0,
+    "DocQualityHints": [
+      "no-docs-folder-many-md",
+      "contains-risk-markers"
+    ],
+    "KeyDocs": [
+      "Database_Design.md",
+      "README.md"
+    ],
+    "ClassifiedFiles": [
+      {
+        "Path": "Case_Lifecycle_and_Retention.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "ConversationAnalytics_Roadmap.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "Database_Design.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "IdealPrompt_GenesysCore_ConversationsAnalysis.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "Importer_Behavior.md",
+        "DocClass": "Active"
+      },
+      {
+        "Path": "README.md",
+        "DocClass": "Active"
+      }
+    ]
+  },
+  {
+    "RepoName": "Genesys.Core.Convo_v2",
+    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core.Convo_v2",
+    "IsGitRepo": true,
+    "MarkdownFiles": [
+      "Case_Lifecycle_and_Retention.md",
+      "ConversationAnalytics_Roadmap.md",
+      "Database_Design.md",
+      "IdealPrompt_GenesysCore_ConversationsAnalysis.md",
+      "Importer_Behavior.md",
+      "README.md"
+    ],
+    "MarkdownFileCount": 6,
+    "ActiveDocCount": 6,
+    "ArchiveDocCount": 0,
+    "GeneratedDocCount": 0,
+    "HasReadme": true,
+    "HasDocsFolder": false,
+    "HasContributing": false,
+    "HasDocsIndex": false,
+    "DocCategories": [
+      "architecture",
+      "general",
+      "readme"
+    ],
+    "PriorityScore": 40,
+    "PriorityBand": "High",
+    "ReviewMode": "Core-docs batch",
+    "GitLastCommitDate": "2026-03-18 09:53:19 -0400",
+    "GitBranch": "main",
+    "GitUncommittedChanges": 2,
     "DocQualityHints": [
       "no-docs-folder-many-md",
       "contains-risk-markers"
@@ -2287,7 +2530,7 @@
     "ReviewMode": "Core-docs batch",
     "GitLastCommitDate": "2026-03-07 21:51:53 -0500",
     "GitBranch": "main",
-    "GitUncommittedChanges": 0,
+    "GitUncommittedChanges": 2,
     "DocQualityHints": [
       "no-docs-folder-many-md"
     ],

@@ -7,8 +7,8 @@
 
 ## Git State
 - Branch: main
-- Last Commit: 2026-03-16 03:48:56 -0400
-- Uncommitted Changes: 0
+- Last Commit: 2026-03-18 12:34:23 -0400
+- Uncommitted Changes: 16
 
 ## Batch
 - Type: core
@@ -32,6 +32,7 @@
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
+- Repo has 16 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Constraints
 - Preserve technical accuracy

@@ -1,18 +1,18 @@
 # Documentation Review Inventory
 
-Generated: 2026-03-17 21:44:09
+Generated: 2026-03-18 12:37:25
 
 ## Summary
 
-- Repos with Markdown docs: 22
-- High priority: 12
+- Repos with Markdown docs: 24
+- High priority: 14
 - Medium priority: 10
 - Low priority: 1
 
 ### Review Modes
 
-- **Full-doc pass:** 6
-- **Core-docs batch:** 10
+- **Full-doc pass:** 7
+- **Core-docs batch:** 11
 - **Needs taxonomy before rewrite:** 1
 - **Archive cleanup first:** 1
 - **README-only:** 5
@@ -132,8 +132,8 @@ Generated: 2026-03-17 21:44:09
 - **Has contributing guide:** False
 - **Has docs index:** False
 - **Git branch:** main
-- **Last commit:** 2026-03-16 03:48:56 -0400
-- **Uncommitted changes:** 0
+- **Last commit:** 2026-03-18 12:34:23 -0400
+- **Uncommitted changes:** 16
 - **Doc quality hints:** vague-md-names, contains-risk-markers
 
 ### Key Docs
@@ -194,6 +194,28 @@ Generated: 2026-03-17 21:44:09
 - `QUICKSTART.md` _Active_
 - `README.md` _Active_
 - `THURSDAY_LEAGUE_PLAYBOOK.md` _Operational_
+
+## Genesys.Core
+
+- **Path:** G:\Development\20_Staging\Genesys.Core
+- **Priority:** High (50)
+- **Review mode:** Full-doc pass
+- **Docs:** 28 active / 0 archive / 0 generated (total 28)
+- **Categories:** architecture, changelog, general, readme, roadmap
+- **Has README:** True
+- **Has docs folder:** True
+- **Has contributing guide:** False
+- **Has docs index:** False
+- **Git branch:** main
+- **Last commit:** 2026-03-17 23:50:37 -0400
+- **Uncommitted changes:** 0
+
+### Key Docs
+
+- `apps\AuditLogsConsole\Architecture.md` _Active_
+- `apps\AuditLogsConsole\README.md` _Active_
+- `apps\ConversationAnalysis\README.md` _Active_
+- `README.md` _Active_
 
 ## SampleDashboardReact
 
@@ -260,9 +282,9 @@ Generated: 2026-03-17 21:44:09
 - `custom_SereneHarmonySite\README.md` _Active_
 - `README.md` _Active_
 
-## Genesys.Core.ConversationsAnalysis
+## Genesys.Core.ConversationalAnalytics
 
-- **Path:** G:\Development\20_Staging\Genesys.Core.ConversationsAnalysis
+- **Path:** G:\Development\20_Staging\Genesys.Core.ConversationalAnalytics
 - **Priority:** High (40)
 - **Review mode:** Core-docs batch
 - **Docs:** 6 active / 0 archive / 0 generated (total 6)
@@ -272,8 +294,29 @@ Generated: 2026-03-17 21:44:09
 - **Has contributing guide:** False
 - **Has docs index:** False
 - **Git branch:** main
-- **Last commit:** 2026-03-17 19:09:28 -0400
+- **Last commit:** 2026-03-17 23:53:01 -0400
 - **Uncommitted changes:** 0
+- **Doc quality hints:** no-docs-folder-many-md, contains-risk-markers
+
+### Key Docs
+
+- `Database_Design.md` _Active_
+- `README.md` _Active_
+
+## Genesys.Core.Convo_v2
+
+- **Path:** G:\Development\20_Staging\Genesys.Core.Convo_v2
+- **Priority:** High (40)
+- **Review mode:** Core-docs batch
+- **Docs:** 6 active / 0 archive / 0 generated (total 6)
+- **Categories:** architecture, general, readme
+- **Has README:** True
+- **Has docs folder:** False
+- **Has contributing guide:** False
+- **Has docs index:** False
+- **Git branch:** main
+- **Last commit:** 2026-03-18 09:53:19 -0400
+- **Uncommitted changes:** 2
 - **Doc quality hints:** no-docs-folder-many-md, contains-risk-markers
 
 ### Key Docs
@@ -372,7 +415,7 @@ Generated: 2026-03-17 21:44:09
 - **Has docs index:** False
 - **Git branch:** main
 - **Last commit:** 2026-03-07 21:51:53 -0500
-- **Uncommitted changes:** 0
+- **Uncommitted changes:** 2
 - **Doc quality hints:** no-docs-folder-many-md
 
 ### Key Docs

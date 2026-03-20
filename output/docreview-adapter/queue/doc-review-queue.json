@@ -288,7 +288,8 @@
       "Batch contains many files; keep changes bounded and reviewable",
       "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo"
+      "Multiple README.md files detected across the repo",
+      "Repo has 16 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "docs\\application-architecture.md",
@@ -298,8 +299,8 @@
       "docs\\setup-and-operations.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-16 03:48:56 -0400",
-    "GitDirty": 0,
+    "GitLastCommit": "2026-03-18 12:34:23 -0400",
+    "GitDirty": 16,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GenesysCloudAuditor.core.001.md"
   },
@@ -591,15 +592,16 @@
     "Warnings": [
       "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo"
+      "Multiple README.md files detected across the repo",
+      "Repo has 16 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "QuickStart.md",
       "README.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-16 03:48:56 -0400",
-    "GitDirty": 0,
+    "GitLastCommit": "2026-03-18 12:34:23 -0400",
+    "GitDirty": 16,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GenesysCloudAuditor.core.002.md"
   },
@@ -1151,14 +1153,15 @@
     "Warnings": [
       "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo"
+      "Multiple README.md files detected across the repo",
+      "Repo has 16 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "docs\\run-audit-workflow.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-16 03:48:56 -0400",
-    "GitDirty": 0,
+    "GitLastCommit": "2026-03-18 12:34:23 -0400",
+    "GitDirty": 16,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GenesysCloudAuditor.operational.001.md"
   },
@@ -1236,6 +1239,42 @@
     "GitDirty": 97,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\SystemDashboard.general.005.md"
+  },
+  {
+    "QueueId": "Genesys.Core.core.001",
+    "RepoName": "Genesys.Core",
+    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core",
+    "RepoPriorityBand": "High",
+    "RepoPriorityScore": 50,
+    "BatchType": "core",
+    "BatchOrder": 1,
+    "BatchChunkIndex": 1,
+    "EstimatedComplexity": "high",
+    "RecommendedCooldownSeconds": 300,
+    "QueueScore": 96,
+    "PromptFlavor": "core-doc-modernization",
+    "Goals": [
+      "Improve first-use readability and onboarding clarity",
+      "Tighten headings, structure, and opening summaries",
+      "Clarify architecture, setup, and contributor guidance",
+      "Strengthen cross-linking among high-value docs"
+    ],
+    "Warnings": [
+      "docs folder exists without docs/index.md",
+      "Many markdown files fall into general or unclear categories",
+      "Multiple README.md files detected across the repo"
+    ],
+    "Files": [
+      "apps\\AuditLogsConsole\\Architecture.md",
+      "apps\\AuditLogsConsole\\README.md",
+      "apps\\ConversationAnalysis\\README.md",
+      "README.md"
+    ],
+    "GitBranch": "main",
+    "GitLastCommit": "2026-03-17 23:50:37 -0400",
+    "GitDirty": 0,
+    "RepoNotes": [],
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Genesys.Core.core.001.md"
   },
   {
     "QueueId": "SystemDashboard.archival.002",
@@ -1587,14 +1626,15 @@
     "Warnings": [
       "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo"
+      "Multiple README.md files detected across the repo",
+      "Repo has 16 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "docs\\oauth-and-api-resilience.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-16 03:48:56 -0400",
-    "GitDirty": 0,
+    "GitLastCommit": "2026-03-18 12:34:23 -0400",
+    "GitDirty": 16,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GenesysCloudAuditor.reference.001.md"
   },
@@ -1837,7 +1877,8 @@
     "Warnings": [
       "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo"
+      "Multiple README.md files detected across the repo",
+      "Repo has 16 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "docs\\audit-checks.md",
@@ -1846,8 +1887,8 @@
       "docs\\deployment.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-16 03:48:56 -0400",
-    "GitDirty": 0,
+    "GitLastCommit": "2026-03-18 12:34:23 -0400",
+    "GitDirty": 16,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GenesysCloudAuditor.general.001.md"
   },
@@ -1976,7 +2017,8 @@
     "Warnings": [
       "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo"
+      "Multiple README.md files detected across the repo",
+      "Repo has 16 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "docs\\detailed-qa-matrix.md",
@@ -1985,8 +2027,8 @@
       "docs\\examples\\empty-queues.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-16 03:48:56 -0400",
-    "GitDirty": 0,
+    "GitLastCommit": "2026-03-18 12:34:23 -0400",
+    "GitDirty": 16,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GenesysCloudAuditor.general.002.md"
   },
@@ -2048,7 +2090,8 @@
     "Warnings": [
       "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo"
+      "Multiple README.md files detected across the repo",
+      "Repo has 16 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "docs\\examples\\ext-assign-vs-profile.md",
@@ -2057,8 +2100,8 @@
       "docs\\examples\\inactive-users.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-16 03:48:56 -0400",
-    "GitDirty": 0,
+    "GitLastCommit": "2026-03-18 12:34:23 -0400",
+    "GitDirty": 16,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GenesysCloudAuditor.general.003.md"
   },
@@ -2120,7 +2163,8 @@
     "Warnings": [
       "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo"
+      "Multiple README.md files detected across the repo",
+      "Repo has 16 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "docs\\release-packaging-and-signing.md",
@@ -2128,8 +2172,8 @@
       "ROADMAP.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-16 03:48:56 -0400",
-    "GitDirty": 0,
+    "GitLastCommit": "2026-03-18 12:34:23 -0400",
+    "GitDirty": 16,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GenesysCloudAuditor.archival.001.md"
   },
@@ -2203,9 +2247,9 @@
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\AI_PromptRefiner_GUI.core.001.md"
   },
   {
-    "QueueId": "Genesys.Core.ConversationsAnalysis.core.001",
-    "RepoName": "Genesys.Core.ConversationsAnalysis",
-    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core.ConversationsAnalysis",
+    "QueueId": "Genesys.Core.ConversationalAnalytics.core.001",
+    "RepoName": "Genesys.Core.ConversationalAnalytics",
+    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core.ConversationalAnalytics",
     "RepoPriorityBand": "High",
     "RepoPriorityScore": 40,
     "BatchType": "core",
@@ -2227,10 +2271,42 @@
       "README.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-17 19:09:28 -0400",
+    "GitLastCommit": "2026-03-17 23:53:01 -0400",
     "GitDirty": 0,
     "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Genesys.Core.ConversationsAnalysis.core.001.md"
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Genesys.Core.ConversationalAnalytics.core.001.md"
+  },
+  {
+    "QueueId": "Genesys.Core.Convo_v2.core.001",
+    "RepoName": "Genesys.Core.Convo_v2",
+    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core.Convo_v2",
+    "RepoPriorityBand": "High",
+    "RepoPriorityScore": 40,
+    "BatchType": "core",
+    "BatchOrder": 1,
+    "BatchChunkIndex": 1,
+    "EstimatedComplexity": "low",
+    "RecommendedCooldownSeconds": 90,
+    "QueueScore": 80,
+    "PromptFlavor": "core-doc-modernization",
+    "Goals": [
+      "Improve first-use readability and onboarding clarity",
+      "Tighten headings, structure, and opening summaries",
+      "Clarify architecture, setup, and contributor guidance",
+      "Strengthen cross-linking among high-value docs"
+    ],
+    "Warnings": [
+      "Repo has 2 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+    ],
+    "Files": [
+      "Database_Design.md",
+      "README.md"
+    ],
+    "GitBranch": "main",
+    "GitLastCommit": "2026-03-18 09:53:19 -0400",
+    "GitDirty": 2,
+    "RepoNotes": [],
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Genesys.Core.Convo_v2.core.001.md"
   },
   {
     "QueueId": "PromptRefiner_GUI.core.001",
@@ -2322,7 +2398,8 @@
     "Warnings": [
       "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo"
+      "Multiple README.md files detected across the repo",
+      "Repo has 16 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "docs\\examples\\invalid-extensions.md",
@@ -2331,8 +2408,8 @@
       "docs\\extension-collision-tests.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-16 03:48:56 -0400",
-    "GitDirty": 0,
+    "GitLastCommit": "2026-03-18 12:34:23 -0400",
+    "GitDirty": 16,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GenesysCloudAuditor.general.004.md"
   },
@@ -2394,7 +2471,8 @@
     "Warnings": [
       "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo"
+      "Multiple README.md files detected across the repo",
+      "Repo has 16 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "docs\\extension-normalization-policy.md",
@@ -2403,8 +2481,8 @@
       "docs\\requirements-inactive-pagination-normalization.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-16 03:48:56 -0400",
-    "GitDirty": 0,
+    "GitLastCommit": "2026-03-18 12:34:23 -0400",
+    "GitDirty": 16,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GenesysCloudAuditor.general.005.md"
   },
@@ -2600,7 +2678,8 @@
     "Warnings": [
       "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo"
+      "Multiple README.md files detected across the repo",
+      "Repo has 16 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "docs\\solution-and-project-map.md",
@@ -2608,8 +2687,8 @@
       "QA.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-16 03:48:56 -0400",
-    "GitDirty": 0,
+    "GitLastCommit": "2026-03-18 12:34:23 -0400",
+    "GitDirty": 16,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GenesysCloudAuditor.general.006.md"
   },
@@ -2776,7 +2855,8 @@
     ],
     "Warnings": [
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo"
+      "Multiple README.md files detected across the repo",
+      "Repo has 2 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "logs\\README.md",
@@ -2784,7 +2864,7 @@
     ],
     "GitBranch": "main",
     "GitLastCommit": "2026-03-07 21:51:53 -0500",
-    "GitDirty": 0,
+    "GitDirty": 2,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\2026MiddleEastWar.core.001.md"
   },
@@ -2876,6 +2956,39 @@
     "GitDirty": 2,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Ideal-Prompt-Library.core.001.md"
+  },
+  {
+    "QueueId": "Genesys.Core.reference.001",
+    "RepoName": "Genesys.Core",
+    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core",
+    "RepoPriorityBand": "High",
+    "RepoPriorityScore": 50,
+    "BatchType": "reference",
+    "BatchOrder": 3,
+    "BatchChunkIndex": 1,
+    "EstimatedComplexity": "low",
+    "RecommendedCooldownSeconds": 90,
+    "QueueScore": 70,
+    "PromptFlavor": "reference-doc-normalization",
+    "Goals": [
+      "Normalize structure and terminology across reference docs",
+      "Improve scanability with disciplined headings and tables where useful",
+      "Reduce ambiguity while preserving technical precision",
+      "Keep formatting consistent and easy to navigate"
+    ],
+    "Warnings": [
+      "docs folder exists without docs/index.md",
+      "Many markdown files fall into general or unclear categories",
+      "Multiple README.md files detected across the repo"
+    ],
+    "Files": [
+      "docs\\REPO_SCHEMATIC.md"
+    ],
+    "GitBranch": "main",
+    "GitLastCommit": "2026-03-17 23:50:37 -0400",
+    "GitDirty": 0,
+    "RepoNotes": [],
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Genesys.Core.reference.001.md"
   },
   {
     "QueueId": "FowlingScorecard.general.001",
@@ -3165,6 +3278,42 @@
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.general.011.md"
   },
   {
+    "QueueId": "Genesys.Core.general.001",
+    "RepoName": "Genesys.Core",
+    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core",
+    "RepoPriorityBand": "High",
+    "RepoPriorityScore": 50,
+    "BatchType": "general",
+    "BatchOrder": 4,
+    "BatchChunkIndex": 1,
+    "EstimatedComplexity": "medium",
+    "RecommendedCooldownSeconds": 180,
+    "QueueScore": 65,
+    "PromptFlavor": "general-doc-improvement",
+    "Goals": [
+      "Improve structure and readability",
+      "Reduce repetition and vague wording",
+      "Standardize formatting and headings",
+      "Make content more deliberate and maintainable"
+    ],
+    "Warnings": [
+      "docs folder exists without docs/index.md",
+      "Many markdown files fall into general or unclear categories",
+      "Multiple README.md files detected across the repo"
+    ],
+    "Files": [
+      ".agents\\AGENTS.md",
+      "apps\\AuditLogsConsole\\UX-Spec.md",
+      "apps\\AuditLogsConsole\\ValidationChecklist.md",
+      "docs\\AppPrompts\\ElasticSearchPromptLibrary.md"
+    ],
+    "GitBranch": "main",
+    "GitLastCommit": "2026-03-17 23:50:37 -0400",
+    "GitDirty": 0,
+    "RepoNotes": [],
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Genesys.Core.general.001.md"
+  },
+  {
     "QueueId": "UnifiedAIToolbox.general.012",
     "RepoName": "UnifiedAIToolbox",
     "RepoPath": "G:\\Development\\20_Staging\\UnifiedAIToolbox",
@@ -3199,6 +3348,42 @@
     "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.general.012.md"
+  },
+  {
+    "QueueId": "Genesys.Core.general.002",
+    "RepoName": "Genesys.Core",
+    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core",
+    "RepoPriorityBand": "High",
+    "RepoPriorityScore": 50,
+    "BatchType": "general",
+    "BatchOrder": 4,
+    "BatchChunkIndex": 2,
+    "EstimatedComplexity": "medium",
+    "RecommendedCooldownSeconds": 180,
+    "QueueScore": 63,
+    "PromptFlavor": "general-doc-improvement",
+    "Goals": [
+      "Improve structure and readability",
+      "Reduce repetition and vague wording",
+      "Standardize formatting and headings",
+      "Make content more deliberate and maintainable"
+    ],
+    "Warnings": [
+      "docs folder exists without docs/index.md",
+      "Many markdown files fall into general or unclear categories",
+      "Multiple README.md files detected across the repo"
+    ],
+    "Files": [
+      "docs\\Clean-upPrompt.md",
+      "docs\\CODE_REVIEW_SUMMARY.md",
+      "docs\\Comparison Report (as of 2026-02-22).md",
+      "docs\\ENGINEER_INTEGRATIONS_AUTH.md"
+    ],
+    "GitBranch": "main",
+    "GitLastCommit": "2026-03-17 23:50:37 -0400",
+    "GitDirty": 0,
+    "RepoNotes": [],
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Genesys.Core.general.002.md"
   },
   {
     "QueueId": "UnifiedAIToolbox.general.013",
@@ -3269,6 +3454,79 @@
     "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\FowlingScorecard.general.004.md"
+  },
+  {
+    "QueueId": "Genesys.Core.general.003",
+    "RepoName": "Genesys.Core",
+    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core",
+    "RepoPriorityBand": "High",
+    "RepoPriorityScore": 50,
+    "BatchType": "general",
+    "BatchOrder": 4,
+    "BatchChunkIndex": 3,
+    "EstimatedComplexity": "medium",
+    "RecommendedCooldownSeconds": 180,
+    "QueueScore": 61,
+    "PromptFlavor": "general-doc-improvement",
+    "Goals": [
+      "Improve structure and readability",
+      "Reduce repetition and vague wording",
+      "Standardize formatting and headings",
+      "Make content more deliberate and maintainable"
+    ],
+    "Warnings": [
+      "docs folder exists without docs/index.md",
+      "Many markdown files fall into general or unclear categories",
+      "Multiple README.md files detected across the repo"
+    ],
+    "Files": [
+      "docs\\ONBOARDING.md",
+      "docs\\PromptChain\\Prompt0.md",
+      "docs\\PromptChain\\Prompt1.md",
+      "docs\\PromptChain\\Prompt2.md"
+    ],
+    "GitBranch": "main",
+    "GitLastCommit": "2026-03-17 23:50:37 -0400",
+    "GitDirty": 0,
+    "RepoNotes": [],
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Genesys.Core.general.003.md"
+  },
+  {
+    "QueueId": "Genesys.Core.archival.001",
+    "RepoName": "Genesys.Core",
+    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core",
+    "RepoPriorityBand": "High",
+    "RepoPriorityScore": 50,
+    "BatchType": "archival",
+    "BatchOrder": 5,
+    "BatchChunkIndex": 1,
+    "EstimatedComplexity": "medium",
+    "RecommendedCooldownSeconds": 180,
+    "QueueScore": 61,
+    "PromptFlavor": "archival-doc-tidy-pass",
+    "Goals": [
+      "Clarify status and intent of planning or historical docs",
+      "Trim noise and improve readability without over-investing",
+      "Flag stale or speculative content for review",
+      "Preserve useful historical context while reducing clutter"
+    ],
+    "Warnings": [
+      "Archival batch is relatively large; avoid over-investing in polish",
+      "docs folder exists without docs/index.md",
+      "Many markdown files fall into general or unclear categories",
+      "Multiple README.md files detected across the repo"
+    ],
+    "Files": [
+      "docs\\AppPrompts\\IdealPrompt_GenesysCore_ConversationsAnalysis.md",
+      "docs\\AppPrompts\\IdealPrompt_GenesysCore_WrapperApp_Template.md",
+      "docs\\CHANGELOG.md",
+      "docs\\ROADMAP.md"
+    ],
+    "GitBranch": "main",
+    "GitLastCommit": "2026-03-17 23:50:37 -0400",
+    "GitDirty": 0,
+    "RepoNotes": [],
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Genesys.Core.archival.001.md"
   },
   {
     "QueueId": "2025-09-11-System-Dashboard.core.001",
@@ -3352,7 +3610,7 @@
       "Strengthen cross-linking among high-value docs"
     ],
     "Warnings": [
-      "Last commit was 732 days ago - verify repo is still active before investing in doc review"
+      "Last commit was 733 days ago - verify repo is still active before investing in doc review"
     ],
     "Files": [
       "README.md"
@@ -3400,6 +3658,42 @@
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.general.014.md"
   },
   {
+    "QueueId": "Genesys.Core.general.004",
+    "RepoName": "Genesys.Core",
+    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core",
+    "RepoPriorityBand": "High",
+    "RepoPriorityScore": 50,
+    "BatchType": "general",
+    "BatchOrder": 4,
+    "BatchChunkIndex": 4,
+    "EstimatedComplexity": "medium",
+    "RecommendedCooldownSeconds": 180,
+    "QueueScore": 59,
+    "PromptFlavor": "general-doc-improvement",
+    "Goals": [
+      "Improve structure and readability",
+      "Reduce repetition and vague wording",
+      "Standardize formatting and headings",
+      "Make content more deliberate and maintainable"
+    ],
+    "Warnings": [
+      "docs folder exists without docs/index.md",
+      "Many markdown files fall into general or unclear categories",
+      "Multiple README.md files detected across the repo"
+    ],
+    "Files": [
+      "docs\\PromptChain\\Prompt3.md",
+      "docs\\PromptChain\\Prompt4.md",
+      "docs\\PromptChain\\Prompt5.md",
+      "docs\\PromptChain\\Prompt6.md"
+    ],
+    "GitBranch": "main",
+    "GitLastCommit": "2026-03-17 23:50:37 -0400",
+    "GitDirty": 0,
+    "RepoNotes": [],
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Genesys.Core.general.004.md"
+  },
+  {
     "QueueId": "2026MiddleEastWar.operational.001",
     "RepoName": "2026MiddleEastWar",
     "RepoPath": "G:\\Development\\20_Staging\\2026MiddleEastWar",
@@ -3420,14 +3714,15 @@
     ],
     "Warnings": [
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo"
+      "Multiple README.md files detected across the repo",
+      "Repo has 2 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "outputs\\neighborhood_runbook.md"
     ],
     "GitBranch": "main",
     "GitLastCommit": "2026-03-07 21:51:53 -0500",
-    "GitDirty": 0,
+    "GitDirty": 2,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\2026MiddleEastWar.operational.001.md"
   },
@@ -3466,6 +3761,41 @@
     "GitDirty": 3,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\UnifiedAIToolbox.general.015.md"
+  },
+  {
+    "QueueId": "Genesys.Core.general.005",
+    "RepoName": "Genesys.Core",
+    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core",
+    "RepoPriorityBand": "High",
+    "RepoPriorityScore": 50,
+    "BatchType": "general",
+    "BatchOrder": 4,
+    "BatchChunkIndex": 5,
+    "EstimatedComplexity": "medium",
+    "RecommendedCooldownSeconds": 180,
+    "QueueScore": 57,
+    "PromptFlavor": "general-doc-improvement",
+    "Goals": [
+      "Improve structure and readability",
+      "Reduce repetition and vague wording",
+      "Standardize formatting and headings",
+      "Make content more deliberate and maintainable"
+    ],
+    "Warnings": [
+      "docs folder exists without docs/index.md",
+      "Many markdown files fall into general or unclear categories",
+      "Multiple README.md files detected across the repo"
+    ],
+    "Files": [
+      "docs\\READINESS_REVIEW.md",
+      "docs\\training\\Training.md",
+      "TESTING.md"
+    ],
+    "GitBranch": "main",
+    "GitLastCommit": "2026-03-17 23:50:37 -0400",
+    "GitDirty": 0,
+    "RepoNotes": [],
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Genesys.Core.general.005.md"
   },
   {
     "QueueId": "SampleDashboardReact.general.001",
@@ -3676,9 +4006,9 @@
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\AI_PromptRefiner_GUI.general.001.md"
   },
   {
-    "QueueId": "Genesys.Core.ConversationsAnalysis.general.001",
-    "RepoName": "Genesys.Core.ConversationsAnalysis",
-    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core.ConversationsAnalysis",
+    "QueueId": "Genesys.Core.ConversationalAnalytics.general.001",
+    "RepoName": "Genesys.Core.ConversationalAnalytics",
+    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core.ConversationalAnalytics",
     "RepoPriorityBand": "High",
     "RepoPriorityScore": 40,
     "BatchType": "general",
@@ -3700,10 +4030,42 @@
       "Importer_Behavior.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-17 19:09:28 -0400",
+    "GitLastCommit": "2026-03-17 23:53:01 -0400",
     "GitDirty": 0,
     "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Genesys.Core.ConversationsAnalysis.general.001.md"
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Genesys.Core.ConversationalAnalytics.general.001.md"
+  },
+  {
+    "QueueId": "Genesys.Core.Convo_v2.general.001",
+    "RepoName": "Genesys.Core.Convo_v2",
+    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core.Convo_v2",
+    "RepoPriorityBand": "High",
+    "RepoPriorityScore": 40,
+    "BatchType": "general",
+    "BatchOrder": 4,
+    "BatchChunkIndex": 1,
+    "EstimatedComplexity": "low",
+    "RecommendedCooldownSeconds": 90,
+    "QueueScore": 52,
+    "PromptFlavor": "general-doc-improvement",
+    "Goals": [
+      "Improve structure and readability",
+      "Reduce repetition and vague wording",
+      "Standardize formatting and headings",
+      "Make content more deliberate and maintainable"
+    ],
+    "Warnings": [
+      "Repo has 2 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+    ],
+    "Files": [
+      "Case_Lifecycle_and_Retention.md",
+      "Importer_Behavior.md"
+    ],
+    "GitBranch": "main",
+    "GitLastCommit": "2026-03-18 09:53:19 -0400",
+    "GitDirty": 2,
+    "RepoNotes": [],
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Genesys.Core.Convo_v2.general.001.md"
   },
   {
     "QueueId": "PromptRefiner_GUI.general.001",
@@ -3871,9 +4233,9 @@
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\AI-Orchestration.archival.001.md"
   },
   {
-    "QueueId": "Genesys.Core.ConversationsAnalysis.archival.001",
-    "RepoName": "Genesys.Core.ConversationsAnalysis",
-    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core.ConversationsAnalysis",
+    "QueueId": "Genesys.Core.ConversationalAnalytics.archival.001",
+    "RepoName": "Genesys.Core.ConversationalAnalytics",
+    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core.ConversationalAnalytics",
     "RepoPriorityBand": "High",
     "RepoPriorityScore": 40,
     "BatchType": "archival",
@@ -3895,10 +4257,42 @@
       "IdealPrompt_GenesysCore_ConversationsAnalysis.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-17 19:09:28 -0400",
+    "GitLastCommit": "2026-03-17 23:53:01 -0400",
     "GitDirty": 0,
     "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Genesys.Core.ConversationsAnalysis.archival.001.md"
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Genesys.Core.ConversationalAnalytics.archival.001.md"
+  },
+  {
+    "QueueId": "Genesys.Core.Convo_v2.archival.001",
+    "RepoName": "Genesys.Core.Convo_v2",
+    "RepoPath": "G:\\Development\\20_Staging\\Genesys.Core.Convo_v2",
+    "RepoPriorityBand": "High",
+    "RepoPriorityScore": 40,
+    "BatchType": "archival",
+    "BatchOrder": 5,
+    "BatchChunkIndex": 1,
+    "EstimatedComplexity": "low",
+    "RecommendedCooldownSeconds": 90,
+    "QueueScore": 48,
+    "PromptFlavor": "archival-doc-tidy-pass",
+    "Goals": [
+      "Clarify status and intent of planning or historical docs",
+      "Trim noise and improve readability without over-investing",
+      "Flag stale or speculative content for review",
+      "Preserve useful historical context while reducing clutter"
+    ],
+    "Warnings": [
+      "Repo has 2 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+    ],
+    "Files": [
+      "ConversationAnalytics_Roadmap.md",
+      "IdealPrompt_GenesysCore_ConversationsAnalysis.md"
+    ],
+    "GitBranch": "main",
+    "GitLastCommit": "2026-03-18 09:53:19 -0400",
+    "GitDirty": 2,
+    "RepoNotes": [],
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\Genesys.Core.Convo_v2.archival.001.md"
   },
   {
     "QueueId": "PromptRefiner_GUI.archival.001",
@@ -3986,7 +4380,8 @@
     ],
     "Warnings": [
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo"
+      "Multiple README.md files detected across the repo",
+      "Repo has 2 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "analysis\\analysis_report.md",
@@ -3996,7 +4391,7 @@
     ],
     "GitBranch": "main",
     "GitLastCommit": "2026-03-07 21:51:53 -0500",
-    "GitDirty": 0,
+    "GitDirty": 2,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\2026MiddleEastWar.general.001.md"
   },
@@ -4115,7 +4510,8 @@
     ],
     "Warnings": [
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo"
+      "Multiple README.md files detected across the repo",
+      "Repo has 2 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
       "templates\\message_templates.md",
@@ -4123,7 +4519,7 @@
     ],
     "GitBranch": "main",
     "GitLastCommit": "2026-03-07 21:51:53 -0500",
-    "GitDirty": 0,
+    "GitDirty": 2,
     "RepoNotes": [],
     "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\2026MiddleEastWar.general.002.md"
   },

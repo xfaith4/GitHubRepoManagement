@@ -24,7 +24,7 @@
   },
   "docReview": {
     "maxDepth": 3,
-    "generateBatchPlan": false,
+    "generateBatchPlan": true,
     "generateQueue": true
   }
 }

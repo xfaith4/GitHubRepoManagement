@@ -28,7 +28,7 @@
 - Strengthen cross-linking among high-value docs
 
 ## Warnings / Review Notes
-- Last commit was 732 days ago - verify repo is still active before investing in doc review
+- Last commit was 733 days ago - verify repo is still active before investing in doc review
 
 ## Constraints
 - Preserve technical accuracy

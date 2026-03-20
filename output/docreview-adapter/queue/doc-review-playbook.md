@@ -1,16 +1,16 @@
 # Documentation Review Queue Playbook
 
-Generated: 2026-03-17 21:44:10
+Generated: 2026-03-18 12:37:27
 
 ## Summary
 
-- Queue items: 118
-- Repos represented: 22
-- Core batches: 32
+- Queue items: 129
+- Repos represented: 24
+- Core batches: 34
 - Operational batches: 7
-- Reference batches: 4
-- General batches: 63
-- Archival batches: 12
+- Reference batches: 5
+- General batches: 69
+- Archival batches: 14
 
 ## 2025-09-11-System-Dashboard
 
@@ -53,6 +53,7 @@ Generated: 2026-03-17 21:44:10
 **Warnings:**
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
+- Repo has 2 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### 2026MiddleEastWar.operational.001
 
@@ -68,6 +69,7 @@ Generated: 2026-03-17 21:44:10
 **Warnings:**
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
+- Repo has 2 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### 2026MiddleEastWar.general.001
 
@@ -86,6 +88,7 @@ Generated: 2026-03-17 21:44:10
 **Warnings:**
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
+- Repo has 2 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### 2026MiddleEastWar.general.002
 
@@ -102,6 +105,7 @@ Generated: 2026-03-17 21:44:10
 **Warnings:**
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
+- Repo has 2 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## AI_PromptRefiner_GUI
 
@@ -898,47 +902,253 @@ Generated: 2026-03-17 21:44:10
 - IMAGE_VIDEO_SUPPORT_IMPLEMENTATION.md
 - SQL_SUPPORT_IMPLEMENTATION.md
 
-## Genesys.Core.ConversationsAnalysis
+## Genesys.Core
 
-- **Path:** G:\Development\20_Staging\Genesys.Core.ConversationsAnalysis
+- **Path:** G:\Development\20_Staging\Genesys.Core
+- **Repo Priority:** High (50)
+- **Queue Items:** 8
+
+### Genesys.Core.core.001
+
+- **Batch Type:** core
+- **Complexity:** high
+- **Cooldown Hint:** 300 seconds
+- **Prompt Flavor:** core-doc-modernization
+- **Packet:** G:\Development\GitHubRepoManagement\output\docreview-adapter\queue\copilot-packets\Genesys.Core.core.001.md
+
+**Files:**
+- apps\AuditLogsConsole\Architecture.md
+- apps\AuditLogsConsole\README.md
+- apps\ConversationAnalysis\README.md
+- README.md
+
+**Warnings:**
+- docs folder exists without docs/index.md
+- Many markdown files fall into general or unclear categories
+- Multiple README.md files detected across the repo
+
+### Genesys.Core.reference.001
+
+- **Batch Type:** reference
+- **Complexity:** low
+- **Cooldown Hint:** 90 seconds
+- **Prompt Flavor:** reference-doc-normalization
+- **Packet:** G:\Development\GitHubRepoManagement\output\docreview-adapter\queue\copilot-packets\Genesys.Core.reference.001.md
+
+**Files:**
+- docs\REPO_SCHEMATIC.md
+
+**Warnings:**
+- docs folder exists without docs/index.md
+- Many markdown files fall into general or unclear categories
+- Multiple README.md files detected across the repo
+
+### Genesys.Core.general.001
+
+- **Batch Type:** general
+- **Complexity:** medium
+- **Cooldown Hint:** 180 seconds
+- **Prompt Flavor:** general-doc-improvement
+- **Packet:** G:\Development\GitHubRepoManagement\output\docreview-adapter\queue\copilot-packets\Genesys.Core.general.001.md
+
+**Files:**
+- .agents\AGENTS.md
+- apps\AuditLogsConsole\UX-Spec.md
+- apps\AuditLogsConsole\ValidationChecklist.md
+- docs\AppPrompts\ElasticSearchPromptLibrary.md
+
+**Warnings:**
+- docs folder exists without docs/index.md
+- Many markdown files fall into general or unclear categories
+- Multiple README.md files detected across the repo
+
+### Genesys.Core.general.002
+
+- **Batch Type:** general
+- **Complexity:** medium
+- **Cooldown Hint:** 180 seconds
+- **Prompt Flavor:** general-doc-improvement
+- **Packet:** G:\Development\GitHubRepoManagement\output\docreview-adapter\queue\copilot-packets\Genesys.Core.general.002.md
+
+**Files:**
+- docs\Clean-upPrompt.md
+- docs\CODE_REVIEW_SUMMARY.md
+- docs\Comparison Report (as of 2026-02-22).md
+- docs\ENGINEER_INTEGRATIONS_AUTH.md
+
+**Warnings:**
+- docs folder exists without docs/index.md
+- Many markdown files fall into general or unclear categories
+- Multiple README.md files detected across the repo
+
+### Genesys.Core.general.003
+
+- **Batch Type:** general
+- **Complexity:** medium
+- **Cooldown Hint:** 180 seconds
+- **Prompt Flavor:** general-doc-improvement
+- **Packet:** G:\Development\GitHubRepoManagement\output\docreview-adapter\queue\copilot-packets\Genesys.Core.general.003.md
+
+**Files:**
+- docs\ONBOARDING.md
+- docs\PromptChain\Prompt0.md
+- docs\PromptChain\Prompt1.md
+- docs\PromptChain\Prompt2.md
+
+**Warnings:**
+- docs folder exists without docs/index.md
+- Many markdown files fall into general or unclear categories
+- Multiple README.md files detected across the repo
+
+### Genesys.Core.general.004
+
+- **Batch Type:** general
+- **Complexity:** medium
+- **Cooldown Hint:** 180 seconds
+- **Prompt Flavor:** general-doc-improvement
+- **Packet:** G:\Development\GitHubRepoManagement\output\docreview-adapter\queue\copilot-packets\Genesys.Core.general.004.md
+
+**Files:**
+- docs\PromptChain\Prompt3.md
+- docs\PromptChain\Prompt4.md
+- docs\PromptChain\Prompt5.md
+- docs\PromptChain\Prompt6.md
+
+**Warnings:**
+- docs folder exists without docs/index.md
+- Many markdown files fall into general or unclear categories
+- Multiple README.md files detected across the repo
+
+### Genesys.Core.general.005
+
+- **Batch Type:** general
+- **Complexity:** medium
+- **Cooldown Hint:** 180 seconds
+- **Prompt Flavor:** general-doc-improvement
+- **Packet:** G:\Development\GitHubRepoManagement\output\docreview-adapter\queue\copilot-packets\Genesys.Core.general.005.md
+
+**Files:**
+- docs\READINESS_REVIEW.md
+- docs\training\Training.md
+- TESTING.md
+
+**Warnings:**
+- docs folder exists without docs/index.md
+- Many markdown files fall into general or unclear categories
+- Multiple README.md files detected across the repo
+
+### Genesys.Core.archival.001
+
+- **Batch Type:** archival
+- **Complexity:** medium
+- **Cooldown Hint:** 180 seconds
+- **Prompt Flavor:** archival-doc-tidy-pass
+- **Packet:** G:\Development\GitHubRepoManagement\output\docreview-adapter\queue\copilot-packets\Genesys.Core.archival.001.md
+
+**Files:**
+- docs\AppPrompts\IdealPrompt_GenesysCore_ConversationsAnalysis.md
+- docs\AppPrompts\IdealPrompt_GenesysCore_WrapperApp_Template.md
+- docs\CHANGELOG.md
+- docs\ROADMAP.md
+
+**Warnings:**
+- Archival batch is relatively large; avoid over-investing in polish
+- docs folder exists without docs/index.md
+- Many markdown files fall into general or unclear categories
+- Multiple README.md files detected across the repo
+
+## Genesys.Core.ConversationalAnalytics
+
+- **Path:** G:\Development\20_Staging\Genesys.Core.ConversationalAnalytics
 - **Repo Priority:** High (40)
 - **Queue Items:** 3
 
-### Genesys.Core.ConversationsAnalysis.core.001
+### Genesys.Core.ConversationalAnalytics.core.001
 
 - **Batch Type:** core
 - **Complexity:** low
 - **Cooldown Hint:** 90 seconds
 - **Prompt Flavor:** core-doc-modernization
-- **Packet:** G:\Development\GitHubRepoManagement\output\docreview-adapter\queue\copilot-packets\Genesys.Core.ConversationsAnalysis.core.001.md
+- **Packet:** G:\Development\GitHubRepoManagement\output\docreview-adapter\queue\copilot-packets\Genesys.Core.ConversationalAnalytics.core.001.md
 
 **Files:**
 - Database_Design.md
 - README.md
 
-### Genesys.Core.ConversationsAnalysis.general.001
+### Genesys.Core.ConversationalAnalytics.general.001
 
 - **Batch Type:** general
 - **Complexity:** low
 - **Cooldown Hint:** 90 seconds
 - **Prompt Flavor:** general-doc-improvement
-- **Packet:** G:\Development\GitHubRepoManagement\output\docreview-adapter\queue\copilot-packets\Genesys.Core.ConversationsAnalysis.general.001.md
+- **Packet:** G:\Development\GitHubRepoManagement\output\docreview-adapter\queue\copilot-packets\Genesys.Core.ConversationalAnalytics.general.001.md
 
 **Files:**
 - Case_Lifecycle_and_Retention.md
 - Importer_Behavior.md
 
-### Genesys.Core.ConversationsAnalysis.archival.001
+### Genesys.Core.ConversationalAnalytics.archival.001
 
 - **Batch Type:** archival
 - **Complexity:** low
 - **Cooldown Hint:** 90 seconds
 - **Prompt Flavor:** archival-doc-tidy-pass
-- **Packet:** G:\Development\GitHubRepoManagement\output\docreview-adapter\queue\copilot-packets\Genesys.Core.ConversationsAnalysis.archival.001.md
+- **Packet:** G:\Development\GitHubRepoManagement\output\docreview-adapter\queue\copilot-packets\Genesys.Core.ConversationalAnalytics.archival.001.md
 
 **Files:**
 - ConversationAnalytics_Roadmap.md
 - IdealPrompt_GenesysCore_ConversationsAnalysis.md
+
+## Genesys.Core.Convo_v2
+
+- **Path:** G:\Development\20_Staging\Genesys.Core.Convo_v2
+- **Repo Priority:** High (40)
+- **Queue Items:** 3
+
+### Genesys.Core.Convo_v2.core.001
+
+- **Batch Type:** core
+- **Complexity:** low
+- **Cooldown Hint:** 90 seconds
+- **Prompt Flavor:** core-doc-modernization
+- **Packet:** G:\Development\GitHubRepoManagement\output\docreview-adapter\queue\copilot-packets\Genesys.Core.Convo_v2.core.001.md
+
+**Files:**
+- Database_Design.md
+- README.md
+
+**Warnings:**
+- Repo has 2 uncommitted change(s) - may be mid-surgery; verify before reviewing
+
+### Genesys.Core.Convo_v2.general.001
+
+- **Batch Type:** general
+- **Complexity:** low
+- **Cooldown Hint:** 90 seconds
+- **Prompt Flavor:** general-doc-improvement
+- **Packet:** G:\Development\GitHubRepoManagement\output\docreview-adapter\queue\copilot-packets\Genesys.Core.Convo_v2.general.001.md
+
+**Files:**
+- Case_Lifecycle_and_Retention.md
+- Importer_Behavior.md
+
+**Warnings:**
+- Repo has 2 uncommitted change(s) - may be mid-surgery; verify before reviewing
+
+### Genesys.Core.Convo_v2.archival.001
+
+- **Batch Type:** archival
+- **Complexity:** low
+- **Cooldown Hint:** 90 seconds
+- **Prompt Flavor:** archival-doc-tidy-pass
+- **Packet:** G:\Development\GitHubRepoManagement\output\docreview-adapter\queue\copilot-packets\Genesys.Core.Convo_v2.archival.001.md
+
+**Files:**
+- ConversationAnalytics_Roadmap.md
+- IdealPrompt_GenesysCore_ConversationsAnalysis.md
+
+**Warnings:**
+- Repo has 2 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## GenesysCloudAuditor
 
@@ -966,6 +1176,7 @@ Generated: 2026-03-17 21:44:10
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
+- Repo has 16 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### GenesysCloudAuditor.core.002
 
@@ -983,6 +1194,7 @@ Generated: 2026-03-17 21:44:10
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
+- Repo has 16 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### GenesysCloudAuditor.operational.001
 
@@ -999,6 +1211,7 @@ Generated: 2026-03-17 21:44:10
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
+- Repo has 16 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### GenesysCloudAuditor.reference.001
 
@@ -1015,6 +1228,7 @@ Generated: 2026-03-17 21:44:10
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
+- Repo has 16 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### GenesysCloudAuditor.general.001
 
@@ -1034,6 +1248,7 @@ Generated: 2026-03-17 21:44:10
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
+- Repo has 16 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### GenesysCloudAuditor.general.002
 
@@ -1053,6 +1268,7 @@ Generated: 2026-03-17 21:44:10
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
+- Repo has 16 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### GenesysCloudAuditor.general.003
 
@@ -1072,6 +1288,7 @@ Generated: 2026-03-17 21:44:10
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
+- Repo has 16 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### GenesysCloudAuditor.general.004
 
@@ -1091,6 +1308,7 @@ Generated: 2026-03-17 21:44:10
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
+- Repo has 16 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### GenesysCloudAuditor.general.005
 
@@ -1110,6 +1328,7 @@ Generated: 2026-03-17 21:44:10
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
+- Repo has 16 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### GenesysCloudAuditor.general.006
 
@@ -1128,6 +1347,7 @@ Generated: 2026-03-17 21:44:10
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
+- Repo has 16 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ### GenesysCloudAuditor.archival.001
 
@@ -1146,6 +1366,7 @@ Generated: 2026-03-17 21:44:10
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
+- Repo has 16 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Ideal-Prompt-Library
 
@@ -1458,7 +1679,7 @@ Generated: 2026-03-17 21:44:10
 - README.md
 
 **Warnings:**
-- Last commit was 732 days ago - verify repo is still active before investing in doc review
+- Last commit was 733 days ago - verify repo is still active before investing in doc review
 
 ## SystemDashboard
 
