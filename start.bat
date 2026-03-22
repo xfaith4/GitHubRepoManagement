@@ -1,23 +1,19 @@
 @echo off
+:: GitHub Repo Management — launcher (alias for start-live.bat)
+:: Kept for convenience; delegates to Start-App.ps1 -Mode silent.
 setlocal
 
-set ROOT=%~dp0
+set "ROOT=%~dp0"
 
-if not exist "%ROOT%frontend\node_modules\" (
-  echo Installing frontend dependencies...
-  pushd "%ROOT%frontend"
-  call npm install
-  if errorlevel 1 (
-    popd
-    echo Failed to install frontend dependencies.
-    exit /b 1
-  )
-  popd
+where pwsh.exe >nul 2>nul
+if errorlevel 1 (
+  echo ERROR: PowerShell 7 ^(pwsh^) is required but was not found on PATH.
+  echo Install from https://aka.ms/pscore6 and retry.
+  pause
+  exit /b 1
 )
 
-set VITE_USE_MOCK_API=true
-pushd "%ROOT%frontend"
-call npm run dev
-popd
+start "" pwsh.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden ^
+  -File "%ROOT%Start-App.ps1" -Mode silent
 
 endlocal
