@@ -111,6 +111,12 @@ The following progress is preserved from prior execution history and remains fou
 - [x] `RoadmapLintModal` and `ReadmeStandardizationModal` dashboard components — Lint findings panel and three-tab standardization modal with diff preview and apply workflow.
 - [x] Saved operator filters in Work Queue — named filter presets persisted to localStorage; loadable in one click.
 - [x] Module smoke and API host smoke extended with Release 1.1 coverage (linter, drift monitor, doc standardization, notification hub).
+- [x] Operations log (`operations.jsonl`) capped with configurable `retention.maxOpsLogLines` setting (default 5 000); trimmed on startup and every 250 writes.
+- [x] Scheduled background scan support (`scanning.autoScanIntervalMinutes` setting); background runspace invalidates all caches on interval; `GET /api/scan/schedule` exposes status.
+- [x] Execution throughput metrics (`GET /api/execution/metrics`) — completed today/week, average run time, error rate, and state counts from the execution ledger.
+- [x] Roadmap item tagging — inline `[tag]` tokens (e.g. `[security]`, `[infra]`, `[breaking]`) extracted from checkbox items; `allTags` and per-item `tags` added to parse result; tags stripped from display text.
+- [x] Cross-repo dependency tracker (`Roadmap.DependencyTracker.ps1`) — detects GitHub URL, hash-ref, and keyword-based references between portfolio repos; `GET /api/roadmap/dependencies` returns full graph and summary.
+- [x] Copilot task prompt enriched with execution history, roadmap audit quality context, and cross-cutting tag context (Steps 6b–6d in `Build-CopilotTaskPacket`).
 
 ---
 
@@ -499,14 +505,14 @@ The product is moving in the right direction when:
 
 ## 11. Immediate Next Focus
 
-The recommended immediate execution target is:
+Release 1.2 backend features are complete. The recommended next execution target is:
 
-### **Release 1.2 — Enhanced Portfolio Intelligence**
+### **Release 1.2 — Enhanced Portfolio Intelligence (frontend + smoke coverage)**
 
-The next logical evolution is to deepen portfolio-level intelligence and improve operator workflows:
+Backend features delivered. Remaining work:
 
-- add scheduled background scan support (configurable interval for automatic re-auditing)
-- add cross-repo dependency tracking (identify repos that reference each other in roadmap items)
-- add execution throughput metrics and trend visualization in the dashboard
-- add roadmap item tagging for cross-cutting concerns (security, infrastructure, breaking changes)
-- improve the Copilot task prompt quality based on execution history and audit outcomes
+- [ ] Execution throughput metrics card in the dashboard (consumes `GET /api/execution/metrics`)
+- [ ] Dependency graph panel in the dashboard (consumes `GET /api/roadmap/dependencies`)
+- [ ] Tag filter in Work Queue (filter by `[security]`, `[infra]`, `[breaking]`, etc.)
+- [ ] Auto-scan schedule indicator in the dashboard header or settings modal
+- [ ] Smoke coverage for the new Release 1.2 API routes (`/api/execution/metrics`, `/api/roadmap/dependencies`, `/api/scan/schedule`)

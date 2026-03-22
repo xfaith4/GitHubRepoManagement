@@ -33,9 +33,13 @@ $ErrorActionPreference = 'Stop'
       pendingCount      int
       completedCount    int
       totalCount        int
-      nextPendingItem   pscustomobject { text, section } or $null
+      nextPendingItem   pscustomobject { text, section, tags } or $null
       sections          array of { name, pendingItems[], completedItems[] }
+      allTags           string[]  unique tags found across all items
       parseError        string or $null
+
+    Tags are bracketed tokens in item text, e.g. `[security]`, `[infra]`, `[breaking]`.
+    They are stripped from the display text stored in pendingItems/completedItems.
 #>
 function Invoke-ParseRoadmapContent {
     [CmdletBinding()]
@@ -58,11 +62,12 @@ function Invoke-ParseRoadmapContent {
             totalCount      = 0
             nextPendingItem = $null
             sections        = @()
+            allTags         = @()
             parseError      = 'Roadmap content is empty.'
         }
     }
 
-    $lines        = $Content -split '\r?\n'
+    $lines = $Content -split '\r?\n'
 
     # Guard against pathologically large roadmaps — cap at 5 000 lines to keep
     # parsing predictable; the linter enforces the same limit.
@@ -71,13 +76,23 @@ function Invoke-ParseRoadmapContent {
         $lines = $lines[0..($script:MaxParserLines - 1)]
     }
 
-    $currentSection = 'General'
-    $sections       = [System.Collections.Generic.List[pscustomobject]]::new()
-    $sectionMap     = @{}   # section name → index in $sections
+    $currentSection  = 'General'
+    $sections        = [System.Collections.Generic.List[pscustomobject]]::new()
+    $sectionMap      = @{}   # section name → index in $sections
+    $allTagsSet      = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
-    $pendingCount   = 0
-    $completedCount = 0
+    $pendingCount    = 0
+    $completedCount  = 0
     $nextPendingItem = $null
+
+    # Extract bracketed tags from an item string, e.g. "[security] [infra]".
+    # Returns a hashtable: { text = cleaned text; tags = string[] }
+    function Get-ItemTagsAndText {
+        param([string]$Raw)
+        $tags = @([regex]::Matches($Raw, '\[([a-zA-Z0-9_-]+)\]') | ForEach-Object { $_.Groups[1].Value.ToLowerInvariant() })
+        $cleaned = ([regex]::Replace($Raw, '\s*\[[a-zA-Z0-9_-]+\]', '')).Trim()
+        return @{ text = $cleaned; tags = $tags }
+    }
 
     foreach ($line in $lines) {
         # Detect section headings (## or ###)
@@ -110,13 +125,17 @@ function Invoke-ParseRoadmapContent {
 
         # Pending item:  - [ ] text  (space inside brackets)
         if ($line -match '^\s*-\s+\[\s\]\s+(.+)$') {
-            $itemText = $Matches[1].Trim()
+            $parsed   = Get-ItemTagsAndText -Raw $Matches[1].Trim()
+            $itemText = $parsed.text
+            $itemTags = $parsed.tags
+            foreach ($t in $itemTags) { $null = $allTagsSet.Add($t) }
             $sec.pendingItems.Add($itemText)
             $pendingCount++
             if ($null -eq $nextPendingItem) {
                 $nextPendingItem = [pscustomobject]@{
                     text    = $itemText
                     section = $currentSection
+                    tags    = $itemTags
                 }
             }
             continue
@@ -124,7 +143,10 @@ function Invoke-ParseRoadmapContent {
 
         # Completed item: - [x] or - [X] text
         if ($line -match '^\s*-\s+\[[xX]\]\s+(.+)$') {
-            $itemText = $Matches[1].Trim()
+            $parsed   = Get-ItemTagsAndText -Raw $Matches[1].Trim()
+            $itemText = $parsed.text
+            $itemTags = $parsed.tags
+            foreach ($t in $itemTags) { $null = $allTagsSet.Add($t) }
             $sec.completedItems.Add($itemText)
             $completedCount++
             continue
@@ -135,7 +157,7 @@ function Invoke-ParseRoadmapContent {
 
     # Classify state
     if ($totalCount -eq 0) {
-        $state = 'parse-error'
+        $state    = 'parse-error'
         $errorMsg = if ([string]::IsNullOrWhiteSpace($SourcePath)) {
             'No checkbox items found in roadmap content.'
         } else {
@@ -156,6 +178,7 @@ function Invoke-ParseRoadmapContent {
         totalCount      = $totalCount
         nextPendingItem = $nextPendingItem
         sections        = @($sections)
+        allTags         = @($allTagsSet | Sort-Object)
         parseError      = $errorMsg
     }
 }

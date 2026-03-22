@@ -36,6 +36,7 @@ $executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 $docStdModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\docstandardization'
 . (Join-Path $roadmapModuleRoot 'Roadmap.Linter.ps1')
 . (Join-Path $roadmapModuleRoot 'MaturityDrift.Monitor.ps1')
+. (Join-Path $roadmapModuleRoot 'Roadmap.DependencyTracker.ps1')
 . (Join-Path $docStdModuleRoot 'DocStandardization.Previewer.ps1')
 . (Join-Path $commonRoot 'NotificationHub.ps1')
 . (Join-Path $PSScriptRoot 'ApiHost.ErrorHandling.ps1')
@@ -56,7 +57,19 @@ $script:RoadmapAuditCacheDefaultTtlSeconds = 300
 $script:RoadmapRepairHistoryRoot = Join-Path $WorkspaceRoot 'output\roadmap-repair-history'
 
 # Structured operations log (JSONL) — dashboard /api/log/tail reads this
-$script:OpsLogPath = $null
+$script:OpsLogPath       = $null
+$script:OpsLogWriteCount = 0
+$script:OpsLogMaxLines   = 5000    # default; overridden from retention.maxOpsLogLines
+
+# Auto-scan shared state — thread-safe; written by background runspace, read by main loop
+$script:AutoScanState = [hashtable]::Synchronized(@{
+    Enabled             = $false
+    IntervalMinutes     = 0
+    NextScanAt          = [datetime]::MaxValue
+    LastScanAt          = $null
+    PendingInvalidation = $false
+})
+
 try {
     $opsLogDir = Join-Path $WorkspaceRoot 'backend\modules\output\logs'
     if (-not (Test-Path -LiteralPath $opsLogDir)) {
@@ -83,8 +96,25 @@ function Write-HostLog {
                 (Get-Date).ToUniversalTime().ToString('o'), $lvl,
                 ($Message | ConvertTo-Json -Compress)
             Add-Content -LiteralPath $script:OpsLogPath -Value $entry -Encoding UTF8
+            $script:OpsLogWriteCount++
+            if ($script:OpsLogWriteCount % 250 -eq 0) {
+                Invoke-TrimOpsLog -MaxLines $script:OpsLogMaxLines
+            }
         } catch { }
     }
+}
+
+# Trim operations.jsonl to at most $MaxLines lines, keeping the most recent entries.
+function Invoke-TrimOpsLog {
+    param([int]$MaxLines = 5000)
+    if (-not $script:OpsLogPath) { return }
+    if (-not (Test-Path -LiteralPath $script:OpsLogPath)) { return }
+    try {
+        $allLines = [System.IO.File]::ReadAllLines($script:OpsLogPath)
+        if ($allLines.Count -le $MaxLines) { return }
+        $kept = $allLines[($allLines.Count - $MaxLines)..($allLines.Count - 1)]
+        [System.IO.File]::WriteAllLines($script:OpsLogPath, $kept, [System.Text.Encoding]::UTF8)
+    } catch { }
 }
 
 function Parse-Bool {
@@ -2547,7 +2577,62 @@ function Build-CopilotTaskPacket {
         @{ rule = "Run the relevant tests/quality gates before finalizing." }
     )
 
-    # Step 7: Neighboring-context lines for the prompt
+    # Step 6b: Recent execution history for this repo — surface what has already run and outcomes
+    $executionHistorySection = ''
+    try {
+        $ledger     = Read-ExecutionLedger -WorkspaceRoot $WorkspaceRoot
+        $repoHistory = @($ledger.history | Where-Object { $_.repoName -eq $RepoName } | Select-Object -Last 5)
+        if ($repoHistory.Count -gt 0) {
+            $histLines = @($repoHistory | ForEach-Object {
+                $ts    = if ($_.timestamp) { ([datetime]$_.timestamp).ToString('yyyy-MM-dd') } else { 'unknown' }
+                $task  = if ([string]::IsNullOrWhiteSpace($_.taskText)) { '(unknown task)' } else { $_.taskText }
+                $out   = if ([string]::IsNullOrWhiteSpace($_.outcome)) { $_.event } else { $_.outcome }
+                "  [$ts] $($_.event): $task — $out"
+            })
+            $executionHistorySection = "`n`nExecution history for this repo (most recent first):`n" + ($histLines -join "`n")
+        }
+    } catch { }
+
+    # Step 6c: Roadmap audit quality context — maturity level and high-severity findings
+    $auditQualitySection = ''
+    try {
+        if ($script:RoadmapAuditCacheMemory.ContainsKey($RepoName)) {
+            $cachedAudit  = $script:RoadmapAuditCacheMemory[$RepoName]
+            $auditScore   = if ($cachedAudit -is [System.Collections.IDictionary]) { $cachedAudit['score'] } else { $cachedAudit.score }
+            $auditLevel   = if ($cachedAudit -is [System.Collections.IDictionary]) { $cachedAudit['maturityLevel'] } else { $cachedAudit.maturityLevel }
+            if ($null -ne $auditScore -or $null -ne $auditLevel) {
+                $auditQualitySection = "`n`nRoadmap quality: $auditLevel (score $auditScore/100)"
+                $auditFindings = if ($cachedAudit -is [System.Collections.IDictionary]) {
+                    if ($cachedAudit.ContainsKey('findings') -and $null -ne $cachedAudit['findings']) { @($cachedAudit['findings']) } else { @() }
+                } else {
+                    if ($null -ne $cachedAudit.PSObject -and ($cachedAudit.PSObject.Properties.Name -contains 'findings')) { @($cachedAudit.findings) } else { @() }
+                }
+                $critAudit = @($auditFindings | Where-Object {
+                    $sev = if ($_ -is [System.Collections.IDictionary]) { [string]$_['severity'] } else { [string]$_.severity }
+                    $sev -in @('critical', 'high')
+                } | Select-Object -First 3)
+                if ($critAudit.Count -gt 0) {
+                    $auditLines = @($critAudit | ForEach-Object {
+                        $code = if ($_ -is [System.Collections.IDictionary]) { [string]$_['ruleCode'] } else { [string]$_.ruleCode }
+                        $msg  = if ($_ -is [System.Collections.IDictionary]) { [string]$_['message'] } else { [string]$_.message }
+                        "  [$code] $msg"
+                    })
+                    $auditQualitySection += " — high/critical audit findings:`n" + ($auditLines -join "`n")
+                }
+            }
+        }
+    } catch { }
+
+    # Step 6d: Cross-cutting tag context from parsed roadmap
+    $tagSection = ''
+    if ($parseResult.PSObject.Properties['allTags'] -and $parseResult.allTags.Count -gt 0) {
+        $tagSection = "`n`nCross-cutting concern tags across pending items: " + ($parseResult.allTags -join ', ')
+        if ($null -ne $selected -and $selected.PSObject.Properties['tags'] -and @($selected.tags).Count -gt 0) {
+            $tagSection += "`nThis task is tagged: " + (@($selected.tags) -join ', ')
+        }
+    }
+
+    # Step 7: Assemble prompt from all context
     $neighboringLines = ''
     if (-not [string]::IsNullOrWhiteSpace($previousItem)) {
         $neighboringLines += "`n  Previous item: $previousItem"
@@ -2580,7 +2665,7 @@ Roadmap file: $effectiveRoadmapPath
 Selected section: $([string]$selected.section)
 Selected task: $([string]$selected.text)$neighboringLines
 
-Dispatch readiness: $dispatchReadiness$docFindingsSummary
+Dispatch readiness: $dispatchReadiness$auditQualitySection$tagSection$docFindingsSummary$executionHistorySection
 
 Acceptance criteria:
 $($criteriLines -join "`n")
@@ -2636,8 +2721,66 @@ $listener.Start()
 Write-HostLog ("Repo Management API host started on http://{0}:{1}" -f $BindAddress, $Port)
 Write-HostLog ("Ops log: {0}" -f (Get-ValueOrDefault $script:OpsLogPath '(none)'))
 
+# Apply startup settings: ops log cap and auto-scan interval
+try {
+    $startupSettings = Get-HostSettings
+    # --- ops log max lines ---
+    if ($startupSettings.ContainsKey('retention') -and
+        $null -ne $startupSettings.retention -and
+        $startupSettings.retention -is [hashtable] -and
+        $startupSettings.retention.ContainsKey('maxOpsLogLines')) {
+        $cfgMax = [int]$startupSettings.retention.maxOpsLogLines
+        if ($cfgMax -gt 0) { $script:OpsLogMaxLines = $cfgMax }
+    }
+    Invoke-TrimOpsLog -MaxLines $script:OpsLogMaxLines
+
+    # --- auto-scan ---
+    if ($startupSettings.ContainsKey('scanning') -and
+        $null -ne $startupSettings.scanning -and
+        $startupSettings.scanning -is [hashtable] -and
+        $startupSettings.scanning.ContainsKey('autoScanIntervalMinutes')) {
+        $cfgInterval = [int]$startupSettings.scanning.autoScanIntervalMinutes
+        if ($cfgInterval -gt 0) {
+            $script:AutoScanState.Enabled         = $true
+            $script:AutoScanState.IntervalMinutes = $cfgInterval
+            $script:AutoScanState.NextScanAt      = (Get-Date).AddMinutes($cfgInterval)
+            Write-HostLog ("Auto-scan enabled: every {0} minute(s). Next at {1}." -f $cfgInterval, $script:AutoScanState.NextScanAt.ToString('HH:mm:ss'))
+
+            # Background runspace — fires every 30 s, sets PendingInvalidation when interval elapses
+            $autoRunspace = [runspacefactory]::CreateRunspace()
+            $autoRunspace.Open()
+            $autoRunspace.SessionStateProxy.SetVariable('AutoScanState', $script:AutoScanState)
+            $autoPs = [powershell]::Create()
+            $autoPs.Runspace = $autoRunspace
+            $null = $autoPs.AddScript({
+                while ($true) {
+                    Start-Sleep -Seconds 30
+                    if ($AutoScanState.Enabled -and (Get-Date) -ge $AutoScanState.NextScanAt) {
+                        $AutoScanState.PendingInvalidation = $true
+                        $AutoScanState.LastScanAt          = Get-Date
+                        $AutoScanState.NextScanAt          = (Get-Date).AddMinutes($AutoScanState.IntervalMinutes)
+                    }
+                }
+            })
+            $null = $autoPs.BeginInvoke()
+        }
+    }
+} catch {
+    Write-HostLog ("WARN startup settings init failed: {0}" -f $_.Exception.Message)
+}
+
 try {
     while ($true) {
+        # Drain any pending auto-scan cache invalidation from the background runspace
+        if ($script:AutoScanState.PendingInvalidation) {
+            $script:AutoScanState.PendingInvalidation = $false
+            Clear-StatusCache
+            Clear-RoadmapCache
+            Clear-RoadmapAuditCache
+            Clear-DocAuditCache
+            Write-HostLog ("Auto-scan: all caches invalidated at {0}." -f (Get-Date).ToString('HH:mm:ss'))
+        }
+
         $client = Get-NextTcpClient -Listener $listener
         if ($null -eq $client) {
             break
@@ -3625,6 +3768,77 @@ try {
                     }
                 }
                 # -------------------------------------------------------
+                # Release 1.2 — Scheduled Scan and Execution Metrics
+                # -------------------------------------------------------
+                'GET /api/scan/schedule' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success         = $true
+                        enabled         = $script:AutoScanState.Enabled
+                        intervalMinutes = $script:AutoScanState.IntervalMinutes
+                        nextScanAt      = if ($script:AutoScanState.NextScanAt -lt [datetime]::MaxValue) { $script:AutoScanState.NextScanAt.ToString('o') } else { $null }
+                        lastScanAt      = if ($null -ne $script:AutoScanState.LastScanAt) { ([datetime]$script:AutoScanState.LastScanAt).ToString('o') } else { $null }
+                    }
+                }
+                'GET /api/execution/metrics' {
+                    Write-HostLog ("[TRACE] execution.metrics correlationId={0} start" -f $correlationId)
+                    try {
+                        $ledger     = Read-ExecutionLedger -WorkspaceRoot $WorkspaceRoot
+                        $now        = Get-Date
+                        $todayStart = $now.Date
+                        $weekStart  = $now.Date.AddDays(-7)
+                        $history    = @($ledger.history)
+
+                        $completedHistory = @($history | Where-Object { $_.event -eq 'completed' -and $_.outcome -eq 'success' })
+                        $cancelledHistory = @($history | Where-Object { $_.event -eq 'completed' -and $_.outcome -ne 'success' })
+
+                        $completedToday    = @($completedHistory | Where-Object {
+                            $_.timestamp -and [datetime]$_.timestamp -ge $todayStart
+                        }).Count
+                        $completedThisWeek = @($completedHistory | Where-Object {
+                            $_.timestamp -and [datetime]$_.timestamp -ge $weekStart
+                        }).Count
+
+                        # Average minutes a currently-running task has been in flight
+                        $runningEntries  = @($ledger.entries | Where-Object { $_.executionState -eq 'running' -and $_.assignedAt })
+                        $avgRunningMins  = $null
+                        if ($runningEntries.Count -gt 0) {
+                            $sumMins = ($runningEntries | ForEach-Object {
+                                ($now - [datetime]$_.assignedAt).TotalMinutes
+                            } | Measure-Object -Sum).Sum
+                            $avgRunningMins = [math]::Round($sumMins / $runningEntries.Count, 1)
+                        }
+
+                        $totalAttempted = $completedHistory.Count + $cancelledHistory.Count
+                        $errorRatePct   = if ($totalAttempted -gt 0) {
+                            [math]::Round($cancelledHistory.Count / $totalAttempted * 100, 1)
+                        } else { 0.0 }
+
+                        $stateCounts = @{}
+                        foreach ($st in @('idle','ready','running','blocked','complete')) {
+                            $stateCounts[$st] = @($ledger.entries | Where-Object { $_.executionState -eq $st }).Count
+                        }
+
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            metrics = @{
+                                completedToday    = $completedToday
+                                completedThisWeek = $completedThisWeek
+                                totalCompleted    = $completedHistory.Count
+                                totalCancelled    = $cancelledHistory.Count
+                                avgCurrentRunMins = $avgRunningMins
+                                errorRatePct      = $errorRatePct
+                                stateCounts       = $stateCounts
+                                computedAt        = $now.ToString('o')
+                            }
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage ("Failed to compute execution metrics: {0}" -f $_.Exception.Message) -CorrelationId $correlationId -Operation 'execution.metrics'
+                    }
+                }
+
+                # -------------------------------------------------------
                 # Release 1.0 — Execution Queue API Routes
                 # -------------------------------------------------------
                 'GET /api/execution/queue' {
@@ -3959,6 +4173,40 @@ try {
                         Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'readme.standardize.history'
                     }
                 }
+                # -------------------------------------------------------
+                # Release 1.2 — Cross-Repo Dependency Tracking
+                # -------------------------------------------------------
+                'GET /api/roadmap/dependencies' {
+                    Write-HostLog ("[TRACE] roadmap.dependencies correlationId={0} start" -f $correlationId)
+                    try {
+                        $settings    = Get-HostSettings
+                        $gitHubOwner = if ($settings.ContainsKey('reconcile') -and $settings.reconcile.ContainsKey('gitHubOwner')) { [string]$settings.reconcile.gitHubOwner } else { '' }
+
+                        # Reuse the roadmap cache for content
+                        $ttlSeconds   = Get-RoadmapCacheTtlSeconds -Settings $settings
+                        $roadmapCache = Get-RoadmapFromCache -TtlSeconds $ttlSeconds
+                        $entries      = if ($roadmapCache.hit) { @($roadmapCache.entries) } else {
+                            $defaultRoots    = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
+                            $defaultMaxDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth')) { [int]$settings.inventory.maxDepth } else { 3 }
+                            $scanned = Invoke-ScanRoadmapFiles -LocalRoots $defaultRoots -MaxDepth $defaultMaxDepth
+                            Set-RoadmapCache -Entries $scanned
+                            @($scanned)
+                        }
+
+                        $depResult = Invoke-ScanRoadmapDependencies -RoadmapEntries $entries -GitHubOwner $gitHubOwner
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success    = $true
+                            graph      = $depResult.graph
+                            summary    = $depResult.summary
+                            totalEdges = $depResult.totalEdges
+                            scannedAt  = $depResult.scannedAt
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage ("Failed to scan roadmap dependencies: {0}" -f $_.Exception.Message) -CorrelationId $correlationId -Operation 'roadmap.dependencies'
+                    }
+                }
+
                 # -------------------------------------------------------
                 # Release 1.1 — Contract Drift Alerts
                 # -------------------------------------------------------
