@@ -14,6 +14,7 @@ interface WorkQueueViewProps {
   onRepairRoadmap?: (repoName: string) => void;
   onLintRoadmap?: (repoName: string) => void;
   onStandardizeReadme?: (repoName: string) => void;
+  onEvaluateRepo?: (repoName: string) => void;
   isScanning: boolean;
   roadmapAuditIndex?: RoadmapAuditIndex | null;
 }
@@ -146,6 +147,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
   onRepairRoadmap,
   onLintRoadmap,
   onStandardizeReadme,
+  onEvaluateRepo,
   isScanning,
   roadmapAuditIndex,
 }) => {
@@ -631,6 +633,15 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                         title="Standardize README"
                       >
                         Standardize
+                      </button>
+                    )}
+                    {onEvaluateRepo && (
+                      <button
+                        onClick={e => { e.stopPropagation(); onEvaluateRepo(entry.repoName); }}
+                        className="text-xs px-2 py-1 rounded border border-violet-700/50 bg-violet-900/40 text-violet-300 hover:bg-violet-800/60 transition-colors"
+                        title="Evaluate repo structure and get hardening suggestions"
+                      >
+                        Evaluate
                       </button>
                     )}
                     {onViewRoadmap && entry.roadmapState && entry.roadmapState !== 'missing' && (

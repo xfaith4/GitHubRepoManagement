@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph } from '../types';
+import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -1007,4 +1007,37 @@ export async function getRoadmapDependencies(refresh = false): Promise<RoadmapDe
     totalEdges: Number(d.totalEdges ?? 0),
     scannedAt: d.scannedAt ?? new Date().toISOString(),
   };
+}
+
+// Release 1.4 — Repo Evaluation Pipeline
+
+export async function evaluateRepo(repoName: string, localPath?: string): Promise<RepoEvaluationResult> {
+  const body: Record<string, string> = { repoName };
+  if (localPath) body.localPath = localPath;
+  const data = await fetchJson<any>(`${API_BASE_URL}/repo/evaluate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return (data?.data ?? data) as RepoEvaluationResult;
+}
+
+export async function createRepoRoadmap(repoName: string, content: string, localPath?: string): Promise<{ repoName: string; roadmapPath: string; createdAt: string }> {
+  const body: Record<string, string> = { repoName, content };
+  if (localPath) body.localPath = localPath;
+  const data = await fetchJson<any>(`${API_BASE_URL}/repo/roadmap/create`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return (data?.data ?? data) as { repoName: string; roadmapPath: string; createdAt: string };
+}
+
+export async function getRepoEvaluationHistory(repoName?: string, limit = 25): Promise<RepoEvaluationResult[]> {
+  const qs = new URLSearchParams();
+  if (repoName) qs.set('repoName', repoName);
+  qs.set('limit', String(limit));
+  const data = await fetchJson<any>(`${API_BASE_URL}/repo/evaluate/history?${qs.toString()}`);
+  const d = data?.data ?? data ?? {};
+  return Array.isArray(d.items) ? d.items : [];
 }

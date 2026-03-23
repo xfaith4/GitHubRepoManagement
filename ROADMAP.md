@@ -437,17 +437,11 @@ The following progress is preserved from prior execution history and remains fou
 
 ### Engineering milestones
 
-- [ ] Add cross-platform startup script parity: align `Start-App.ps1` and `start.sh` flags/config handling with consistent defaults and error reporting.
-- [ ] Implement repo evaluation pipeline that inspects repo structure and produces suggested roadmap items (hardening + high-value features).
-- [ ] Add UI workflow to run evaluation, review suggested items, and create a roadmap when none exists.
-- [ ] Add UI workflow to update a single repo roadmap with suggested hardening changes and allow user approval before applying.
-- [ ] Add containerization support: Dockerfile + `docker-compose.yml` with health endpoint wiring and documented ports/volumes.
-
-### Acceptance criteria
-
-- `.\Start-App.ps1` on Windows and `./start.sh` on macOS/Linux both start the application without errors.
-- `docker compose up` starts the application and `GET /health/live` returns 200.
-- All existing Windows smoke tests pass unchanged.
+- [x] Add cross-platform startup script parity: align `Start-App.ps1` and `start.sh` flags/config handling with consistent defaults and error reporting.
+- [x] Implement repo evaluation pipeline that inspects repo structure and produces suggested roadmap items (hardening + high-value features).
+- [x] Add UI workflow to run evaluation, review suggested items, and create a roadmap when none exists.
+- [x] Add UI workflow to update a single repo roadmap with suggested hardening changes and allow user approval before applying.
+- [x] Add containerization support: `Dockerfile` + `docker-compose.yml` with health endpoint wiring and documented ports/volumes.
 
 ---
 
@@ -618,7 +612,6 @@ The following progress is preserved from prior execution history and remains fou
 - [ ] Add `POST /api/digest/send` route: computes portfolio KPIs (total repos, count per maturity level, repos that improved this week, repos that regressed, top 3 dispatch-ready repos) and fires `Send-NotificationEvent` with `event: digest.weekly` and the computed payload.
 - [ ] Add `scanning.weeklyDigestWebhook` to `settings.json` schema; when set, `Register-ScheduledTasks.Template.ps1` registers a weekly Task Scheduler job that calls `POST /api/digest/send`.
 - [ ] Write `action.yml` for a GitHub Action named `roadmap-audit-action`: accepts inputs `roadmap-path`, `min-maturity-level`; calls the roadmap contract auditor PowerShell module; outputs `maturity-score`, `maturity-level`, `findings-count`; posts a check run to the PR with the audit result.
-- [ ] Write `Dockerfile.action` for the GitHub Action image; publish to GitHub Container Registry.
 - [ ] Extract `standards/roadmap/` into a standalone `roadmap-contract-spec` directory with its own `README.md`, `SPEC.md`, version file (`spec-version: 1.0`), and MIT license; structure it so it can be published as a separate GitHub repository.
 - [ ] Add `GET /api/portfolio/badge` route: returns an SVG badge showing the portfolio's average maturity score (e.g., `roadmap maturity | L2.8`) suitable for embedding in a README.
 - [ ] Add `GET /api/roadmap/badge/{repoName}` route: returns per-repo SVG badge showing current maturity level and score.

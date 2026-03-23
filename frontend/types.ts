@@ -627,3 +627,40 @@ export interface RoadmapDependencyGraph {
   totalEdges: number;
   scannedAt: string;
 }
+
+// Release 1.4 — Repo Evaluation Pipeline
+
+export type EvaluationFindingSeverity = 'critical' | 'high' | 'medium' | 'low';
+export type EvaluationFindingCategory = 'hardening' | 'documentation' | 'ci' | 'testing' | 'security' | 'compliance';
+export type RepoType = 'node' | 'dotnet' | 'python' | 'rust' | 'powershell' | 'other';
+
+export interface EvaluationFinding {
+  findingId: string;
+  category: EvaluationFindingCategory;
+  severity: EvaluationFindingSeverity;
+  title: string;
+  description: string;
+  roadmapItem: string;
+}
+
+export interface EvaluationSuggestedAddition {
+  severity: EvaluationFindingSeverity;
+  category: EvaluationFindingCategory;
+  title: string;
+  roadmapItem: string;
+}
+
+export interface RepoEvaluationResult {
+  evaluationId: string;
+  repoName: string;
+  localPath: string;
+  repoType: RepoType;
+  evaluatedAt: string;
+  hasExistingRoadmap: boolean;
+  findings: EvaluationFinding[];
+  findingCount: number;
+  criticalCount: number;
+  highCount: number;
+  suggestedRoadmapContent: string | null;
+  suggestedAdditions: EvaluationSuggestedAddition[];
+}

@@ -1,0 +1,13 @@
+frontend/node_modules
+frontend/dist
+output/
+backend/modules/output/
+backend/config/settings.json
+*.bat
+start.sh
+Stop-App.ps1
+Start-App.ps1
+.git
+.github
+.vscode
+*.md

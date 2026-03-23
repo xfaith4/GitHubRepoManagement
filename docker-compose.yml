@@ -1,0 +1,24 @@
+services:
+  app:
+    build: .
+    image: github-repo-mgmt:latest
+    container_name: github-repo-mgmt
+    ports:
+      - "7071:7071"
+    environment:
+      # Optional: pass a GitHub token for /api/github/status
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+    volumes:
+      # Persist output data (roadmap history, evaluations, logs) across restarts
+      - ./output:/app/output
+      - ./backend/modules/output:/app/backend/modules/output
+      # Bind-mount settings.json so configuration survives image rebuilds
+      - ./backend/config/settings.json:/app/backend/config/settings.json
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pwsh", "-NoProfile", "-Command",
+             "try { $null = Invoke-RestMethod -Uri 'http://localhost:7071/health/live' -TimeoutSec 4; exit 0 } catch { exit 1 }"]
+      interval: 15s
+      timeout: 6s
+      retries: 3
+      start_period: 25s

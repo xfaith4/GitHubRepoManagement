@@ -37,6 +37,7 @@ $docStdModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\docstandardization
 . (Join-Path $roadmapModuleRoot 'Roadmap.Linter.ps1')
 . (Join-Path $roadmapModuleRoot 'MaturityDrift.Monitor.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.DependencyTracker.ps1')
+. (Join-Path $roadmapModuleRoot 'Roadmap.Evaluator.ps1')
 . (Join-Path $docStdModuleRoot 'DocStandardization.Previewer.ps1')
 . (Join-Path $commonRoot 'NotificationHub.ps1')
 . (Join-Path $PSScriptRoot 'ApiHost.ErrorHandling.ps1')
@@ -54,7 +55,8 @@ $script:DocAuditCacheDefaultTtlSeconds = 300
 $script:RoadmapAuditCacheMemory = @{}
 $script:RoadmapAuditCacheDefaultTtlSeconds = 300
 
-$script:RoadmapRepairHistoryRoot = Join-Path $WorkspaceRoot 'output\roadmap-repair-history'
+$script:RoadmapRepairHistoryRoot   = Join-Path $WorkspaceRoot 'output\roadmap-repair-history'
+$script:RepoEvaluationHistoryRoot  = Join-Path $WorkspaceRoot 'output\repo-evaluations'
 
 # Release 1.3 — production static frontend bundle path
 $script:FrontendDistPath = Join-Path $WorkspaceRoot 'frontend\dist'
@@ -4409,6 +4411,118 @@ try {
                         }
                     } catch {
                         Send-ErrorJson -Stream $req.Stream -StatusCode 400 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'notifications.webhooks.remove'
+                    }
+                }
+                # -------------------------------------------------------
+                # Release 1.4 — Repo Evaluation Pipeline
+                # -------------------------------------------------------
+                'POST /api/repo/evaluate' {
+                    Write-HostLog ("[TRACE] repo.evaluate correlationId={0} start" -f $correlationId)
+                    try {
+                        $body     = Parse-JsonBody -Body $req.Body
+                        $repoName = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'repoName' -Default '')
+                        $localPath = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'localPath' -Default '')
+
+                        if ([string]::IsNullOrWhiteSpace($repoName)) {
+                            throw 'repoName is required for /api/repo/evaluate'
+                        }
+
+                        # Resolve local path from roadmap index if not supplied
+                        if ([string]::IsNullOrWhiteSpace($localPath)) {
+                            $settings     = Get-HostSettings
+                            $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
+                            $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
+                            $ttlSeconds   = Get-RoadmapCacheTtlSeconds -Settings $settings
+                            $cached       = Get-RoadmapFromCache -TtlSeconds $ttlSeconds
+                            $indexEntries = if ($cached.hit) { @($cached.entries) } else { @(Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth) }
+                            $match        = $indexEntries | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1
+                            if ($null -ne $match -and -not [string]::IsNullOrWhiteSpace($match.localPath)) {
+                                $localPath = [string]$match.localPath
+                            } elseif ($null -ne $match -and -not [string]::IsNullOrWhiteSpace($match.roadmapPath)) {
+                                # Fall back to the directory containing the roadmap
+                                $localPath = [System.IO.Path]::GetDirectoryName([string]$match.roadmapPath)
+                            }
+                        }
+
+                        if ([string]::IsNullOrWhiteSpace($localPath) -or -not (Test-Path -LiteralPath $localPath -PathType Container)) {
+                            throw "Local path for repo '$repoName' could not be resolved. Pass localPath explicitly or ensure a roadmap scan has been run."
+                        }
+
+                        $result = Invoke-RepoEvaluation -RepoName $repoName -LocalPath $localPath -HistoryRoot $script:RepoEvaluationHistoryRoot
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Write-HostLog ("[TRACE] repo.evaluate correlationId={0} done repoName={1} findings={2} hasRoadmap={3}" -f $correlationId, $repoName, $result.findingCount, $result.hasExistingRoadmap)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = $result
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'repo.evaluate'
+                    }
+                }
+                'GET /api/repo/evaluate/history' {
+                    Write-HostLog ("[TRACE] repo.evaluate.history correlationId={0} start" -f $correlationId)
+                    try {
+                        $q        = Parse-QueryString -Query $req.Query
+                        $limit    = if ($q.ContainsKey('limit') -and $q.limit -match '^\d+$') { [int]$q.limit } else { 25 }
+                        if ($limit -gt 100) { $limit = 100 }
+                        $filterRepo = if ($q.ContainsKey('repoName') -and $q.repoName) { [System.Uri]::UnescapeDataString([string]$q.repoName) } else { '' }
+                        $items = @(Get-RepoEvaluationHistory -HistoryRoot $script:RepoEvaluationHistoryRoot -Limit $limit -RepoName $filterRepo)
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = @{ items = @($items); count = @($items).Count }
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'repo.evaluate.history'
+                    }
+                }
+                'POST /api/repo/roadmap/create' {
+                    Write-HostLog ("[TRACE] repo.roadmap.create correlationId={0} start" -f $correlationId)
+                    try {
+                        $body      = Parse-JsonBody -Body $req.Body
+                        $repoName  = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'repoName' -Default '')
+                        $localPath = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'localPath' -Default '')
+                        $content   = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'content' -Default '')
+
+                        if ([string]::IsNullOrWhiteSpace($repoName)) { throw 'repoName is required' }
+                        if ([string]::IsNullOrWhiteSpace($content))  { throw 'content is required' }
+
+                        # Resolve local path from index if not supplied
+                        if ([string]::IsNullOrWhiteSpace($localPath)) {
+                            $settings     = Get-HostSettings
+                            $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
+                            $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
+                            $ttlSeconds   = Get-RoadmapCacheTtlSeconds -Settings $settings
+                            $cached       = Get-RoadmapFromCache -TtlSeconds $ttlSeconds
+                            $indexEntries = if ($cached.hit) { @($cached.entries) } else { @(Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth) }
+                            $match        = $indexEntries | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1
+                            if ($null -ne $match -and -not [string]::IsNullOrWhiteSpace($match.localPath)) {
+                                $localPath = [string]$match.localPath
+                            } elseif ($null -ne $match -and -not [string]::IsNullOrWhiteSpace($match.roadmapPath)) {
+                                $localPath = [System.IO.Path]::GetDirectoryName([string]$match.roadmapPath)
+                            }
+                        }
+
+                        if ([string]::IsNullOrWhiteSpace($localPath) -or -not (Test-Path -LiteralPath $localPath -PathType Container)) {
+                            throw "Local path for repo '$repoName' could not be resolved. Pass localPath explicitly."
+                        }
+
+                        $roadmapPath = Join-Path $localPath 'ROADMAP.md'
+                        if (Test-Path -LiteralPath $roadmapPath -PathType Leaf) {
+                            throw "ROADMAP.md already exists for '$repoName'. Use roadmap repair/apply to update it."
+                        }
+
+                        Set-Content -LiteralPath $roadmapPath -Value $content -Encoding UTF8 -NoNewline:$false
+                        # Invalidate roadmap cache so next scan picks up the new file
+                        $script:RoadmapCacheMemory = @{}
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Write-HostLog ("[TRACE] repo.roadmap.create correlationId={0} done repoName={1} path={2}" -f $correlationId, $repoName, $roadmapPath)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success  = $true
+                            data     = @{ repoName = $repoName; roadmapPath = $roadmapPath; createdAt = (Get-Date).ToUniversalTime().ToString('o') }
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'repo.roadmap.create'
                     }
                 }
                 # -------------------------------------------------------
