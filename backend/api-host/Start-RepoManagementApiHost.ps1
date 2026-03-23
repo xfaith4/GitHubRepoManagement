@@ -38,6 +38,7 @@ $docStdModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\docstandardization
 . (Join-Path $roadmapModuleRoot 'MaturityDrift.Monitor.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.DependencyTracker.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.Evaluator.ps1')
+. (Join-Path $roadmapModuleRoot 'Roadmap.Dispatcher.ps1')
 . (Join-Path $docStdModuleRoot 'DocStandardization.Previewer.ps1')
 . (Join-Path $commonRoot 'NotificationHub.ps1')
 . (Join-Path $PSScriptRoot 'ApiHost.ErrorHandling.ps1')
@@ -3731,6 +3732,186 @@ try {
                         data    = @{
                             items = $items
                             count = @($items).Count
+                        }
+                    }
+                }
+                'POST /api/roadmap/dispatch/check' {
+                    Write-HostLog ("[TRACE] roadmap.dispatch.check correlationId={0} start" -f $correlationId)
+                    $body = Parse-JsonBody -Body $req.Body
+                    $repoName  = if ($body.ContainsKey('repoName')  -and $body.repoName)  { [string]$body.repoName }  else { '' }
+                    $localPath = if ($body.ContainsKey('localPath') -and $body.localPath) { [string]$body.localPath } else { '' }
+                    if ([string]::IsNullOrWhiteSpace($repoName)) {
+                        throw 'repoName is required for /api/roadmap/dispatch/check'
+                    }
+
+                    # Resolve roadmap path from cache (same pattern as Build-RoadmapRepairPreview)
+                    $settings     = Get-HostSettings
+                    $roadmapTtl   = Get-RoadmapCacheTtlSeconds -Settings $settings
+                    $roadmapCache = Get-RoadmapFromCache -TtlSeconds $roadmapTtl
+                    $roadmapEntry = $null
+                    if ($roadmapCache.hit -and $roadmapCache.entries) {
+                        $roadmapEntry = @($roadmapCache.entries) | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1
+                    }
+
+                    $effectiveRoadmapPath = ''
+                    if ($null -ne $roadmapEntry) {
+                        $rp = if ($roadmapEntry -is [System.Collections.IDictionary]) { $roadmapEntry['roadmapPath'] } else { $roadmapEntry.roadmapPath }
+                        if (-not [string]::IsNullOrWhiteSpace([string]$rp)) { $effectiveRoadmapPath = [string]$rp }
+                    }
+
+                    if ([string]::IsNullOrWhiteSpace($effectiveRoadmapPath) -or -not (Test-Path -LiteralPath $effectiveRoadmapPath)) {
+                        throw "Cannot check dispatch readiness: roadmap file not found for repo '$repoName'. Run a roadmap scan first."
+                    }
+
+                    # Resolve localPath
+                    if ([string]::IsNullOrWhiteSpace($localPath) -and $null -ne $roadmapEntry) {
+                        $rpp = if ($roadmapEntry -is [System.Collections.IDictionary]) { [string]$roadmapEntry['repoPath'] } else { [string]$roadmapEntry.repoPath }
+                        if (-not [string]::IsNullOrWhiteSpace($rpp)) { $localPath = $rpp }
+                        elseif (-not [string]::IsNullOrWhiteSpace($effectiveRoadmapPath)) {
+                            $localPath = Split-Path -LiteralPath $effectiveRoadmapPath -Parent
+                        }
+                    }
+
+                    # Parse, normalize, audit
+                    $rawContent   = Get-Content -LiteralPath $effectiveRoadmapPath -Raw -Encoding UTF8 -ErrorAction Stop
+                    $parsedResult = Invoke-ParseRoadmapContent -Content $rawContent -SourcePath $effectiveRoadmapPath
+                    $repoPath     = if (-not [string]::IsNullOrWhiteSpace($localPath)) { $localPath } else { Split-Path -LiteralPath $effectiveRoadmapPath -Parent }
+                    $contract     = Invoke-NormalizeRoadmapContract `
+                                        -ParsedResult $parsedResult `
+                                        -RawContent   $rawContent `
+                                        -RepoName     $repoName `
+                                        -RepoPath     $repoPath `
+                                        -RoadmapPath  $effectiveRoadmapPath
+                    $auditRules   = Get-RoadmapStandard
+                    if ($null -ne $auditRules) {
+                        $contract = Invoke-AuditRoadmapContract -Contract $contract -AuditRules $auditRules
+                    }
+
+                    Write-HostLog ("[TRACE] roadmap.dispatch.check correlationId={0} repoName={1} maturity={2}" -f $correlationId, $repoName, $contract.maturityLevel)
+
+                    # Maturity gate: L3+ required for dispatch
+                    $dispatchReady   = $contract.maturityLevel -in @('L3-Contract-Ready', 'L4-Orchestration-Ready')
+                    $repairPreview   = $null
+                    $releasePacket   = $null
+
+                    if (-not $dispatchReady) {
+                        # Below L3 — generate repair preview so the UI can surface it
+                        $repairPreview = Build-RoadmapRepairPreview -RepoName $repoName -RoadmapPath $effectiveRoadmapPath
+                    } else {
+                        # L3+ — build release dispatch packet (no GitHub slug at check-time)
+                        $releasePacket = Build-ReleaseDispatchPacket `
+                            -RepoName     $repoName `
+                            -RoadmapContent $rawContent `
+                            -RoadmapPath  $effectiveRoadmapPath `
+                            -GitHubRepo   '' `
+                            -AuditContract $contract
+                    }
+
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Write-HostLog ("[TRACE] roadmap.dispatch.check correlationId={0} done repoName={1} dispatchReady={2}" -f $correlationId, $repoName, $dispatchReady)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = @{
+                            repoName      = $repoName
+                            maturityLevel = [string]$contract.maturityLevel
+                            maturityScore = [int]$contract.maturityScore
+                            dispatchReady = $dispatchReady
+                            localPath     = $localPath
+                            roadmapPath   = $effectiveRoadmapPath
+                            repairPreview = $repairPreview
+                            releasePacket = $releasePacket
+                        }
+                    }
+                }
+                'POST /api/roadmap/dispatch/execute' {
+                    Write-HostLog ("[TRACE] roadmap.dispatch.execute correlationId={0} start" -f $correlationId)
+                    $body       = Parse-JsonBody -Body $req.Body
+                    $repoName   = if ($body.ContainsKey('repoName')   -and $body.repoName)   { [string]$body.repoName }   else { '' }
+                    $prompt     = if ($body.ContainsKey('prompt')     -and $body.prompt)     { [string]$body.prompt }     else { '' }
+                    $localPath  = if ($body.ContainsKey('localPath')  -and $body.localPath)  { [string]$body.localPath }  else { '' }
+                    $baseBranch = if ($body.ContainsKey('baseBranch') -and $body.baseBranch) { [string]$body.baseBranch } else { '' }
+                    $follow     = if ($body.ContainsKey('follow'))  { [bool]$body.follow }  else { $false }
+
+                    if ([string]::IsNullOrWhiteSpace($repoName)) {
+                        throw 'repoName is required for /api/roadmap/dispatch/execute'
+                    }
+                    if ([string]::IsNullOrWhiteSpace($prompt)) {
+                        throw 'prompt is required for /api/roadmap/dispatch/execute'
+                    }
+
+                    # Check for GitHub token before attempting dispatch
+                    $ghToken = $env:GitHub_Token
+                    if ([string]::IsNullOrWhiteSpace($ghToken)) { $ghToken = $env:GITHUB_TOKEN }
+                    if ([string]::IsNullOrWhiteSpace($ghToken)) {
+                        throw 'GitHub token not found. Set GitHub_Token or GITHUB_TOKEN in your environment before dispatching.'
+                    }
+
+                    # Resolve localPath from body or roadmap cache
+                    if ([string]::IsNullOrWhiteSpace($localPath)) {
+                        $settings     = Get-HostSettings
+                        $roadmapTtl   = Get-RoadmapCacheTtlSeconds -Settings $settings
+                        $roadmapCache = Get-RoadmapFromCache -TtlSeconds $roadmapTtl
+                        if ($roadmapCache.hit -and $roadmapCache.entries) {
+                            $roadmapEntry = @($roadmapCache.entries) | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1
+                            if ($null -ne $roadmapEntry) {
+                                $rpp = if ($roadmapEntry -is [System.Collections.IDictionary]) { [string]$roadmapEntry['repoPath'] } else { [string]$roadmapEntry.repoPath }
+                                if (-not [string]::IsNullOrWhiteSpace($rpp)) { $localPath = $rpp }
+                                else {
+                                    $rp = if ($roadmapEntry -is [System.Collections.IDictionary]) { [string]$roadmapEntry['roadmapPath'] } else { [string]$roadmapEntry.roadmapPath }
+                                    if (-not [string]::IsNullOrWhiteSpace($rp)) { $localPath = Split-Path -LiteralPath $rp -Parent }
+                                }
+                            }
+                        }
+                    }
+
+                    if ([string]::IsNullOrWhiteSpace($localPath)) {
+                        throw "localPath could not be resolved for repo '$repoName'. Provide localPath in the request or run a roadmap scan first."
+                    }
+
+                    # Resolve GitHub owner/repo from git remote, falling back to settings owner
+                    $settingsForFallback = Get-HostSettings
+                    $fallbackOwner = ''
+                    if ($settingsForFallback.ContainsKey('reconcile') -and $settingsForFallback.reconcile.ContainsKey('gitHubOwner')) {
+                        $fallbackOwner = [string]$settingsForFallback.reconcile.gitHubOwner
+                    }
+                    $githubRepo = Resolve-GitHubRepoIdentity `
+                        -LocalPath        $localPath `
+                        -FallbackOwner    $fallbackOwner `
+                        -FallbackRepoName $repoName
+
+                    Write-HostLog ("[TRACE] roadmap.dispatch.execute correlationId={0} repoName={1} githubRepo={2}" -f $correlationId, $repoName, $githubRepo)
+
+                    # Invoke Start-GitHubCopilotTask.ps1 directly with the pre-built prompt
+                    $historyRoot = Join-Path $WorkspaceRoot 'output\roadmap-task-history'
+                    $startScriptPath = Join-Path $WorkspaceRoot 'scripts\Start-GitHubCopilotTask.ps1'
+                    $scriptArgs = @(
+                        '-Repository',    $githubRepo,
+                        '-TaskDescription', $prompt,
+                        '-HistoryRoot',   $historyRoot,
+                        '-InitiatedBy',   'release-dispatch-api'
+                    )
+                    if (-not [string]::IsNullOrWhiteSpace($baseBranch)) { $scriptArgs += @('-BaseBranch', $baseBranch) }
+                    if ($follow) { $scriptArgs += '-Follow' }
+
+                    $runResult = Invoke-PowerShellScriptFile -ScriptPath $startScriptPath -Arguments $scriptArgs
+
+                    # Read back the latest history entry to surface the run ID
+                    $historyItems = Get-RoadmapTaskHistory -Limit 1
+                    $latest = if (@($historyItems).Count -gt 0) { $historyItems[0] } else { $null }
+                    $runId = if ($null -ne $latest) { [string]$latest.runId } else { '' }
+
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Write-HostLog ("[TRACE] roadmap.dispatch.execute correlationId={0} done repoName={1} runId={2}" -f $correlationId, $repoName, $runId)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = @{
+                            runId      = $runId
+                            status     = 'started'
+                            githubRepo = $githubRepo
+                            startedAt  = (Get-Date).ToUniversalTime().ToString('o')
+                            message    = "Copilot task dispatched for $githubRepo"
                         }
                     }
                 }

@@ -14,7 +14,7 @@ boundaries, acceptance criteria, and out-of-scope declarations — into a stable
 A roadmap contract differs from a plain roadmap document in the following ways:
 
 | Aspect | Plain Roadmap | Roadmap Contract |
-|--------|--------------|-----------------|
+| -------- | -------------- | ----------------- |
 | Format | Markdown prose | Normalized structured model |
 | Purpose | Human communication | Audit, scoring, and dispatch input |
 | Validity | Always exists (it is just a file) | Validated against a schema and rule pack |
@@ -35,7 +35,7 @@ the parsed contract against the rules defined in
 The score determines the **maturity level**:
 
 | Score | Level | Meaning |
-|-------|-------|---------|
+| -------- | -------------- | ----------------- |
 | 0 | L0 — Absent | No roadmap file |
 | 1–39 | L1 — Informal | Roadmap exists but is structurally weak |
 | 40–64 | L2 — Structured | Organized checkboxes but missing formal sections |

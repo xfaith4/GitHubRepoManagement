@@ -90,7 +90,7 @@ export interface ReportExportResult {
   csvPath: string;
 }
 
-export type OperationType = 'init' | 'update' | 'sync' | 'export' | 'archive' | 'docreview' | 'scan' | 'roadmap-scan' | 'roadmap-agent' | 'docs-audit-scan' | 'copilot-task-preview' | 'roadmap-audit-scan' | 'roadmap-repair-preview' | 'roadmap-repair-apply' | 'roadmap-lint-scan' | 'readme-standardize-preview' | 'readme-standardize-apply';
+export type OperationType = 'init' | 'update' | 'sync' | 'export' | 'archive' | 'docreview' | 'scan' | 'roadmap-scan' | 'roadmap-agent' | 'docs-audit-scan' | 'copilot-task-preview' | 'roadmap-audit-scan' | 'roadmap-repair-preview' | 'roadmap-repair-apply' | 'roadmap-lint-scan' | 'readme-standardize-preview' | 'readme-standardize-apply' | 'roadmap-dispatch-check' | 'roadmap-dispatch-execute';
 
 export interface GithubInsightsMeta {
   totalRepos: number;
@@ -663,4 +663,58 @@ export interface RepoEvaluationResult {
   highCount: number;
   suggestedRoadmapContent: string | null;
   suggestedAdditions: EvaluationSuggestedAddition[];
+}
+
+// Release 1.6 — Roadmap-Driven Release Dispatch to GitHub Copilot
+
+export interface PendingRelease {
+  releaseName: string;
+  releaseVersion: string;
+  releaseTitle: string;
+  goal: string;
+  pendingMilestones: string[];
+  completedMilestones: string[];
+  acceptanceCriteria: string[];
+  outOfScope: string[];
+  milestoneCount: number;
+  pendingCount: number;
+  completedCount: number;
+}
+
+export interface ReleaseDispatchPacket {
+  packetVersion: string;
+  packetId: string;
+  createdAt: string;
+  repoName: string;
+  githubRepo: string;
+  roadmapPath: string;
+  releaseName: string;
+  releaseVersion: string;
+  releaseGoal: string;
+  pendingMilestones: string[];
+  acceptanceCriteria: string[];
+  outOfScope: string[];
+  generatedPrompt: string;
+  maturityLevel: RoadmapMaturityLevel;
+  maturityScore: number;
+}
+
+export interface ReleaseDispatchCheck {
+  repoName: string;
+  maturityLevel: RoadmapMaturityLevel;
+  maturityScore: number;
+  dispatchReady: boolean;
+  localPath?: string | null;
+  roadmapPath?: string | null;
+  repairPreview?: RoadmapRepairPreview | null;
+  releasePacket?: ReleaseDispatchPacket | null;
+}
+
+export interface DispatchExecuteResult {
+  runId: string;
+  status: 'started' | 'failed';
+  githubRepo: string;
+  startedAt: string;
+  message: string;
+  error?: string | null;
 }

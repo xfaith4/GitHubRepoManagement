@@ -445,7 +445,82 @@ The following progress is preserved from prior execution history and remains fou
 
 ---
 
-## Release 1.5 — API Authentication and Network Security
+## Release 1.5 — Copilot-Assisted README Generation
+
+**Goal:** Give operators a one-click path to generate a high-quality `README.md` for any repository that currently lacks one, by sending the repo's file structure, code samples, and detected features to GitHub Copilot and presenting the result for review before writing it to disk.
+
+### Product outcomes
+
+- Operators can select any repo without a `README.md` in the Work Queue and trigger a Copilot-backed generation pass.
+- The generated README accurately reflects the repo's current functioning features, installation steps, and usage patterns — not just boilerplate.
+- The operator reviews the generated content in a side-by-side preview before committing it to the repository.
+- The workflow is non-destructive: the file is only written when the operator explicitly confirms.
+
+### Engineering milestones
+
+- [ ] Add `POST /api/readme/generate` route: accepts `{ repoName, localPath? }`; collects repo context (file tree, entry points, `package.json` / `*.csproj` / `*.ps1` entrypoints, existing doc comments); constructs a structured Copilot prompt; returns `{ generationId, previewContent, contextSummary, generatedAt }`.
+- [ ] Implement `Invoke-CopilotReadmeGeneration` function in a new `backend/modules/readme/Readme.Generator.ps1` module: discovers repo type and entry points, extracts representative code snippets (first 50 lines of each entry point), builds a prompt skeleton, calls the configured GitHub Copilot API endpoint or `gh copilot` CLI, returns the generated markdown string.
+- [ ] Add `POST /api/readme/generate/apply` route: accepts `{ repoName, localPath?, generationId, content }`; validates the repo has no existing `README.md`; writes the file; invalidates any docs-audit cache for the repo; returns `{ repoName, readmePath, writtenAt }`.
+- [ ] Add `GET /api/readme/generate/history` route: returns the last 25 generation records for audit, with `{ generationId, repoName, generatedAt, appliedAt?, appliedBy? }`.
+- [ ] Add `ReadmeGenerateModal.tsx` React component: triggered from the Work Queue for repos where `readmeMissing` is true (derived from docs audit `missing-readme` finding); shows a loading state while the generation runs, a markdown preview panel, a plain-text editor for the operator to refine the content, and Confirm / Cancel buttons.
+- [ ] Surface "Generate README" action button in `WorkQueueView.tsx` on rows where the docs-audit `missing-readme` finding is present; the button opens `ReadmeGenerateModal`.
+- [ ] Add `readme.copilotApiUrl` and `readme.copilotApiKey` fields to `settings.json` schema (defaults to the GitHub Copilot chat completions endpoint); fall back to `gh copilot suggest` CLI if the API is not configured.
+- [ ] Add smoke test: `POST /api/readme/generate` for a repo with no README returns a `previewContent` string of at least 200 characters; `POST /api/readme/generate/apply` writes the file and returns 200.
+
+### Acceptance criteria
+
+- For a repo that has no `README.md`, clicking "Generate README" in the Work Queue calls the Copilot API and returns a populated preview within 30 seconds.
+- The operator can edit the preview content inline before confirming.
+- Confirming writes `README.md` to the repository root and the next docs-audit scan no longer reports a `missing-readme` finding for that repo.
+- If `readme.copilotApiKey` is not configured, the route returns a clear `412 Precondition Failed` with a message directing the operator to configure the key in Settings.
+
+### Out of scope
+
+- Updating an existing `README.md` (handled by the README Standardization feature).
+- Automatic commit or PR creation (operator writes the file manually via this UI; PR submission deferred to Release 2.2).
+- Bulk README generation for multiple repos in one action.
+
+---
+
+## Release 1.6 — Roadmap-Driven Release Dispatch to GitHub Copilot
+
+**Goal:** Close the gap between roadmap preview and actual dispatch — give operators a one-click path to package an entire pending release section as a structured Copilot task prompt, validate roadmap quality before dispatch, and send it directly to `gh agent-task create` from the UI.
+
+### Product outcomes
+
+- Operators can dispatch a full release (all milestones + acceptance criteria + out-of-scope guardrails) to GitHub Copilot in a single supervised workflow.
+- The system enforces L3+ roadmap maturity before dispatch, with an inline repair-and-continue path for repos that fall short.
+- The generated prompt is editable before dispatch so operators can adjust context without editing the roadmap.
+- Dispatch results (run ID, status) are surfaced immediately in the UI.
+
+### Engineering milestones
+
+- [x] Add `Roadmap.Dispatcher.ps1` module: `Get-NextPendingRelease`, `Build-ReleaseDispatchPacket`, `Resolve-GitHubRepoIdentity`.
+- [x] Add `POST /api/roadmap/dispatch/check` route — returns maturity gate result and release packet or repair preview.
+- [x] Add `POST /api/roadmap/dispatch/execute` route — resolves git remote, calls `Start-GitHubCopilotTask.ps1`, returns run ID.
+- [x] Add `PendingRelease`, `ReleaseDispatchPacket`, `ReleaseDispatchCheck`, `DispatchExecuteResult` TypeScript types.
+- [x] Add `checkRoadmapDispatch` and `executeRoadmapDispatch` API client functions.
+- [x] Build `RoadmapDispatchModal.tsx` with 8-phase state machine (checking, repair-needed, repairing, review-packet, edit-prompt, dispatching, done, error).
+- [x] Add "Dispatch Release" button to `WorkQueueView` for repos with pending roadmap items.
+- [x] Wire modal into `Dashboard.tsx` and connect `onDispatchComplete` to refresh roadmap audit.
+
+### Acceptance criteria
+
+- A repo at L3+ can be dispatched to Copilot without leaving the UI, producing a visible run ID.
+- A repo below L3 is shown the repair diff and cannot be dispatched until the repair is applied (or the user cancels).
+- The generated prompt matches the documented template with release name, all milestones, acceptance criteria, and out-of-scope guardrails.
+- Git identity resolution works for both HTTPS and SSH remotes.
+
+### Out of scope
+
+- Autonomous dispatch without operator review.
+- Bulk dispatch of multiple repos in one action.
+- Streaming of Copilot task output into the UI (deferred to a later release).
+- PR creation from within the UI.
+
+---
+
+## Release 1.7 — API Authentication and Network Security
 
 **Goal:** Harden the API host so it can be safely exposed beyond `127.0.0.1` without risk of unauthenticated access or information disclosure.
 
@@ -476,12 +551,12 @@ The following progress is preserved from prior execution history and remains fou
 
 ### Out of scope
 
-- OAuth / GitHub App authentication (deferred to Release 1.8).
+- OAuth / GitHub App authentication (deferred to Release 2.0).
 - Role-based access control.
 
 ---
 
-## Release 1.6 — Persistent Data Layer
+## Release 1.8 — Persistent Data Layer
 
 **Goal:** Replace JSON file storage with a SQLite database for the execution ledger, maturity history, and operations log so the application is reliable at scale and supports time-series queries.
 
@@ -520,7 +595,7 @@ The following progress is preserved from prior execution history and remains fou
 
 ---
 
-## Release 1.7 — Complete the Doc Review Pipeline
+## Release 1.9 — Complete the Doc Review Pipeline
 
 **Goal:** Deliver the Validate and Complete modes of the documentation review pipeline that are currently scaffolded but not implemented, and implement the Clone and Archive UI actions.
 
@@ -558,7 +633,7 @@ The following progress is preserved from prior execution history and remains fou
 
 ---
 
-## Release 1.8 — Guided Onboarding and GitHub App Integration
+## Release 2.0 — Guided Onboarding and GitHub App Integration
 
 **Goal:** Replace the manual PAT + settings.json setup with a guided first-run experience and a proper GitHub App OAuth flow so any engineer can go from zero to running in under five minutes.
 
@@ -589,12 +664,12 @@ The following progress is preserved from prior execution history and remains fou
 
 ### Out of scope
 
-- GitHub Marketplace listing (deferred to Release 1.9).
+- GitHub Marketplace listing (deferred to Release 2.1).
 - Multi-installation GitHub App support (one installation per running instance).
 
 ---
 
-## Release 1.9 — Portfolio Analytics, Trend Visualization, and Distribution
+## Release 2.1 — Portfolio Analytics, Trend Visualization, and Distribution
 
 **Goal:** Add historical trend charts, a portfolio health digest, and distribution artifacts that make the application shareable and self-promoting.
 
@@ -631,7 +706,7 @@ The following progress is preserved from prior execution history and remains fou
 
 ---
 
-## Release 2.0 — Agent Integration Protocol and AI Repair Loop
+## Release 2.2 — Agent Integration Protocol and AI Repair Loop
 
 **Goal:** Publish a formal machine-readable API contract that AI coding agents can query before starting work, and implement an AI-driven repair loop that submits roadmap and README improvements as GitHub pull requests for human review.
 

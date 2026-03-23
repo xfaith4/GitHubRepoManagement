@@ -15,6 +15,7 @@ interface WorkQueueViewProps {
   onLintRoadmap?: (repoName: string) => void;
   onStandardizeReadme?: (repoName: string) => void;
   onEvaluateRepo?: (repoName: string) => void;
+  onDispatchRelease?: (repoName: string) => void;
   isScanning: boolean;
   roadmapAuditIndex?: RoadmapAuditIndex | null;
 }
@@ -148,6 +149,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
   onLintRoadmap,
   onStandardizeReadme,
   onEvaluateRepo,
+  onDispatchRelease,
   isScanning,
   roadmapAuditIndex,
 }) => {
@@ -642,6 +644,15 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                         title="Evaluate repo structure and get hardening suggestions"
                       >
                         Evaluate
+                      </button>
+                    )}
+                    {onDispatchRelease && entry.roadmapState === 'pending' && (
+                      <button
+                        onClick={e => { e.stopPropagation(); onDispatchRelease(entry.repoName); }}
+                        className="text-xs px-2 py-1 rounded border border-blue-700/50 bg-blue-900/40 text-blue-300 hover:bg-blue-800/60 transition-colors"
+                        title="Standardize roadmap and dispatch next release to GitHub Copilot"
+                      >
+                        Dispatch Release
                       </button>
                     )}
                     {onViewRoadmap && entry.roadmapState && entry.roadmapState !== 'missing' && (

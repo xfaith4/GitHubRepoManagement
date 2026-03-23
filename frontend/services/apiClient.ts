@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult } from '../types';
+import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -665,6 +665,31 @@ export async function applyRoadmapRepair(
 export async function getRoadmapRepairHistory(limit = 25): Promise<RoadmapRepairHistoryItem[]> {
   const data = await fetchJson<any>(`/roadmap/repair/history?limit=${limit}`);
   return Array.isArray(data?.data?.items) ? data.data.items : [];
+}
+
+// Release 1.6 — Roadmap-Driven Release Dispatch to GitHub Copilot
+
+export async function checkRoadmapDispatch(
+  repoName: string,
+  localPath?: string
+): Promise<ReleaseDispatchCheck> {
+  const body: Record<string, string> = { repoName };
+  if (localPath) body.localPath = localPath;
+  const data = await postJson<any>('/roadmap/dispatch/check', body);
+  return (data?.data ?? data ?? {}) as ReleaseDispatchCheck;
+}
+
+export async function executeRoadmapDispatch(
+  repoName: string,
+  prompt: string,
+  options?: { localPath?: string; baseBranch?: string; follow?: boolean }
+): Promise<DispatchExecuteResult> {
+  const body: Record<string, unknown> = { repoName, prompt };
+  if (options?.localPath) body.localPath = options.localPath;
+  if (options?.baseBranch) body.baseBranch = options.baseBranch;
+  if (options?.follow !== undefined) body.follow = options.follow;
+  const data = await postJson<any>('/roadmap/dispatch/execute', body);
+  return (data?.data ?? data ?? {}) as DispatchExecuteResult;
 }
 
 // Release 1.0 — Execution Queue API

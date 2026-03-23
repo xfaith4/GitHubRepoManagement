@@ -19,6 +19,7 @@ import { ReadmeStandardizationModal } from './ReadmeStandardizationModal';
 import { RoadmapLintModal } from './RoadmapLintModal';
 import ExecutionQueuePanel from './ExecutionQueuePanel';
 import RepoEvaluationModal from './RepoEvaluationModal';
+import RoadmapDispatchModal from './RoadmapDispatchModal';
 import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getRoadmapDependencies } from '../services/apiClient';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
@@ -71,6 +72,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [lintModalRepo, setLintModalRepo] = useState<string | null>(null);
   const [standardizeModalRepo, setStandardizeModalRepo] = useState<string | null>(null);
   const [evaluationModalRepo, setEvaluationModalRepo] = useState<string | null>(null);
+  const [dispatchModalRepo, setDispatchModalRepo] = useState<string | null>(null);
 
   // Release 1.2 — execution metrics, auto-scan schedule, dependency graph
   const [executionMetrics, setExecutionMetrics] = useState<ExecutionMetrics | null>(null);
@@ -525,6 +527,10 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
     setEvaluationModalRepo(repoName);
   };
 
+  const handleDispatchRelease = (repoName: string) => {
+    setDispatchModalRepo(repoName);
+  };
+
   // Enrich repos with hasRoadmap flag, roadmapState, nextPendingRoadmapItem, and dispatchReadiness
   const reposWithRoadmap = useMemo(() => {
     const roadmapMap = roadmapEntries.length > 0
@@ -850,6 +856,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                 onLintRoadmap={(repoName) => setLintModalRepo(repoName)}
                 onStandardizeReadme={(repoName) => setStandardizeModalRepo(repoName)}
                 onEvaluateRepo={handleEvaluateRepo}
+                onDispatchRelease={handleDispatchRelease}
                 isScanning={currentOperation === 'docs-audit-scan'}
                 roadmapAuditIndex={roadmapAuditIndex}
               />
@@ -1026,6 +1033,16 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
           }}
         />
       )}
+
+      <RoadmapDispatchModal
+        isOpen={dispatchModalRepo !== null}
+        repoName={dispatchModalRepo}
+        onClose={() => setDispatchModalRepo(null)}
+        onDispatchComplete={() => {
+          setDispatchModalRepo(null);
+          getRoadmapAudit({ refresh: true }).then(setRoadmapAuditIndex).catch(() => {});
+        }}
+      />
     </div>
   );
 };
