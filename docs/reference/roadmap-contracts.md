@@ -108,11 +108,13 @@ To reach L3 or higher, a `ROADMAP.md` file should follow the canonical template 
 ### Checklist item authoring
 
 Good items:
+
 - `- [ ] Add structured roadmap parser for checkbox items and section grouping`
 - `- [ ] Implement doc-standards.json integrity check in CI smoke workflow`
 - `- [ ] Surface nextPendingRoadmapItem in the main dashboard grid row`
 
 Bad items (vague — will trigger `ROADMAP-010`):
+
 - `- [ ] Improve roadmap`
 - `- [ ] Refactor backend`
 - `- [ ] Fix stuff`
@@ -139,7 +141,7 @@ Key constraints when applying a repair:
 The following files make up the Roadmap Contract Standard package:
 
 | File | Purpose |
-|------|---------|
+| ------ | --------- |
 | `standards/roadmap/ROADMAP_TEMPLATE.md` | Canonical authoring template for new roadmaps |
 | `standards/roadmap/roadmap-contract.schema.json` | JSON Schema for the normalized contract model |
 | `standards/roadmap/roadmap-audit-rules.json` | Weighted scoring rules and maturity thresholds |
