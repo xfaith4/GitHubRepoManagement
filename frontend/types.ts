@@ -359,7 +359,7 @@ export interface RoadmapAuditEntry {
   pendingCount: number;
   completedCount: number;
   totalCount: number;
-  nextPendingItem?: { text: string; section: string } | null;
+  nextPendingItem?: { text: string; section: string; tags?: string[] } | null;
   sections: Array<{ name: string; pendingItems: string[]; completedItems: string[] }>;
   hasProductIntent?: boolean | null;
   hasReleaseSections?: boolean | null;
@@ -581,4 +581,49 @@ export interface RoadmapCompletionPreview {
   markedCount: number;
   completedItems: string[];
   generatedAt: string;
+}
+
+// Release 1.2 — Execution metrics, auto-scan schedule, cross-repo dependency graph
+
+export interface ExecutionMetrics {
+  completedToday: number;
+  completedThisWeek: number;
+  totalCompleted: number;
+  totalCancelled: number;
+  avgCurrentRunMins: number;
+  errorRatePct: number;
+  stateCounts: {
+    idle: number;
+    ready: number;
+    running: number;
+    blocked: number;
+    complete: number;
+  };
+}
+
+export interface ScanSchedule {
+  enabled: boolean;
+  intervalMinutes: number;
+  nextScanAt: string | null;
+  lastScanAt: string | null;
+}
+
+export interface RoadmapDependencyRef {
+  targetRepo: string;
+  context: string;
+  lineNumber: number;
+  pattern: 'github-url' | 'hash-ref' | 'keyword';
+}
+
+export interface RoadmapDependencySummaryEntry {
+  repoName: string;
+  dependsOn: string[];
+  dependedOnBy: string[];
+}
+
+export interface RoadmapDependencyGraph {
+  graph: Record<string, RoadmapDependencyRef[]>;
+  summary: RoadmapDependencySummaryEntry[];
+  totalEdges: number;
+  scannedAt: string;
 }

@@ -13,7 +13,12 @@ if errorlevel 1 (
   exit /b 1
 )
 
-start "" pwsh.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden ^
-  -File "%ROOT%Start-App.ps1" -Mode silent
+IF NOT EXIST "%ROOT%frontend\dist\index.html" (
+  start "" pwsh.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden ^
+    -File "%ROOT%Start-App.ps1" -Mode silent -Rebuild
+) ELSE (
+  start "" pwsh.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden ^
+    -File "%ROOT%Start-App.ps1" -Mode silent
+)
 
 endlocal

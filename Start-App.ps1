@@ -3,7 +3,8 @@
     Single-entrypoint launcher for GitHub Repo Management.
 
 .DESCRIPTION
-    Starts the PowerShell API host and the Vite frontend in one command.
+    Starts the PowerShell API host and optionally the Vite frontend in one command.
+
     Two modes are supported:
 
       silent  (default) — both processes run with no visible terminal windows.
@@ -11,9 +12,15 @@
                           backend/modules/output/logs/. The browser opens
                           automatically when both services are ready.
 
-      debug   — backend and frontend each open in a visible terminal window.
-                Equivalent to the old start-live.bat two-window workflow.
-                Useful for interactive development and troubleshooting.
+      debug   — backend (and frontend when using Vite) each open in a visible
+                terminal window. Useful for interactive development.
+
+    Production frontend bundle (Release 1.3):
+      If frontend/dist/index.html exists and -Dev is not passed, the compiled
+      bundle is served directly by the API host. No Vite process is started.
+
+      Pass -Rebuild to force a fresh 'npm run build' even if dist/ already exists.
+      Pass -Dev to always use the Vite dev server regardless of dist/ state.
 
     Process IDs are written to backend/modules/output/runtime/app.pid so that
     Stop-App.ps1 can terminate them cleanly without hunting for them.
@@ -32,17 +39,30 @@
     Port for the API host. Default: 7071
 
 .PARAMETER FrontendPort
-    Port Vite binds to. Default: 7000
+    Port Vite binds to. Default: 7000 (only used when running Vite).
 
 .PARAMETER NoBrowser
     Suppress automatic browser launch.
 
+.PARAMETER Dev
+    Force Vite dev server even if frontend/dist/ is built. Useful when actively
+    developing frontend code.
+
+.PARAMETER Rebuild
+    Force 'npm run build' before starting, even if frontend/dist/index.html exists.
+
 .EXAMPLE
-    # Normal daily use — no terminal clutter:
+    # Normal daily use — no terminal clutter, static bundle served by API host:
     .\Start-App.ps1
 
-    # Developer/debug mode — two visible terminal windows:
-    .\Start-App.ps1 -Mode debug
+    # Force a fresh frontend build then start:
+    .\Start-App.ps1 -Rebuild
+
+    # Use Vite dev server (hot reload) for frontend development:
+    .\Start-App.ps1 -Dev
+
+    # Developer/debug mode with Vite:
+    .\Start-App.ps1 -Mode debug -Dev
 
     # Stop everything started by a previous silent run:
     .\Stop-App.ps1
@@ -60,7 +80,11 @@ param(
 
     [int]$FrontendPort = 7000,
 
-    [switch]$NoBrowser
+    [switch]$NoBrowser,
+
+    [switch]$Dev,
+
+    [switch]$Rebuild
 )
 
 Set-StrictMode -Version Latest
@@ -83,6 +107,7 @@ $backendLog      = Join-Path $logDir 'backend.log'
 $frontendLog     = Join-Path $logDir 'frontend.log'
 $backendScript   = Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1'
 $frontendDir     = Join-Path $WorkspaceRoot 'frontend'
+$distIndexHtml   = Join-Path $frontendDir 'dist\index.html'
 
 function Write-Step { param([string]$Msg) Write-Host "  $Msg" -ForegroundColor Cyan }
 function Write-Ok   { param([string]$Msg) Write-Host "  [OK] $Msg" -ForegroundColor Green }
@@ -196,7 +221,7 @@ function Stop-PortListeners {
 Write-Host ''
 Write-Host '====================================' -ForegroundColor White
 Write-Host ' GitHub Repo Management' -ForegroundColor White
-Write-Host " Mode: $Mode" -ForegroundColor Gray
+Write-Host " Mode: $Mode$(if ($Dev) { ' [Dev/Vite]' } elseif ($Rebuild) { ' [Rebuild]' })" -ForegroundColor Gray
 Write-Host '====================================' -ForegroundColor White
 Write-Host ''
 
@@ -216,7 +241,37 @@ if (-not (Test-Path -LiteralPath (Join-Path $frontendDir 'node_modules'))) {
 }
 
 # ------------------------------------------------------------------
-# 2. Start API host
+# 2. Build frontend (Release 1.3) — skip when -Dev forces Vite
+# ------------------------------------------------------------------
+$servingFromDist = $false
+
+if ($Dev) {
+    Write-Step 'Dev mode: Vite dev server will be used (skipping production build).'
+} else {
+    $needsBuild = $Rebuild -or -not (Test-Path -LiteralPath $distIndexHtml)
+    if ($needsBuild) {
+        $buildReason = if ($Rebuild) { 'forced by -Rebuild' } else { 'frontend/dist/ not found' }
+        Write-Step "Building frontend ($buildReason)..."
+        Push-Location $frontendDir
+        try {
+            npm run build
+            if ($LASTEXITCODE -ne 0) { throw 'npm run build failed. Check frontend build errors above.' }
+        } finally {
+            Pop-Location
+        }
+        Write-Ok 'Frontend built to frontend/dist/.'
+    }
+
+    if (Test-Path -LiteralPath $distIndexHtml) {
+        $servingFromDist = $true
+        Write-Ok 'Production build found — API host will serve the static frontend bundle.'
+    } else {
+        Write-Step 'No production build available — falling back to Vite dev server.'
+    }
+}
+
+# ------------------------------------------------------------------
+# 3. Start API host
 # ------------------------------------------------------------------
 Write-Step "Starting API host ($apiUrl) in $Mode mode..."
 
@@ -253,7 +308,7 @@ if ($Mode -eq 'debug') {
 }
 
 # ------------------------------------------------------------------
-# 3. Wait for API host to become ready
+# 4. Wait for API host to become ready
 # ------------------------------------------------------------------
 Write-Step 'Waiting for API host readiness...'
 
@@ -278,78 +333,84 @@ if (-not $ready) {
 Write-Ok "API host ready at $apiUrl"
 
 # ------------------------------------------------------------------
-# 4. Start frontend (Vite dev server)
+# 5. Start Vite dev server — only when not serving from built dist/
 # ------------------------------------------------------------------
-Write-Step "Starting frontend ($frontendUrl) in $Mode mode..."
-Stop-PortListeners -LocalPort $FrontendPort -ServiceName 'Frontend'
-
-$env:VITE_USE_MOCK_API        = 'false'
-$env:VITE_API_PROXY_TARGET    = $apiUrl
-
 $frontendPid = $null
 
-if ($Mode -eq 'debug') {
-    Start-Process -FilePath 'cmd.exe' `
-        -ArgumentList '/k', "cd /d `"$frontendDir`" && npm run dev -- --port $FrontendPort" `
-        -WindowStyle Normal
+if ($servingFromDist) {
+    # No Vite process needed — API host serves the static bundle at the API URL
     $frontendPid = 0
+    $frontendUrl = $apiUrl
+    Write-Ok "Static frontend available at $frontendUrl"
 } else {
-    # Write a tiny wrapper so we can set env vars before npm run dev in the hidden window
-    $wrapperPath = Join-Path $runtimeDir 'start-frontend.ps1'
-    @"
-`$env:VITE_USE_MOCK_API     = 'false'
+    Write-Step "Starting Vite dev server ($frontendUrl) in $Mode mode..."
+    Stop-PortListeners -LocalPort $FrontendPort -ServiceName 'Frontend'
+
+    $env:VITE_API_PROXY_TARGET = $apiUrl
+
+    if ($Mode -eq 'debug') {
+        Start-Process -FilePath 'cmd.exe' `
+            -ArgumentList '/k', "cd /d `"$frontendDir`" && npm run dev -- --port $FrontendPort" `
+            -WindowStyle Normal
+        $frontendPid = 0
+    } else {
+        # Write a tiny wrapper so we can set env vars before npm run dev in the hidden window
+        $wrapperPath = Join-Path $runtimeDir 'start-frontend.ps1'
+        @"
 `$env:VITE_API_PROXY_TARGET = '$apiUrl'
 Set-Location '$frontendDir'
 npm run dev -- --port $FrontendPort *>&1 | Out-File -FilePath '$frontendLog' -Encoding UTF8 -Append
 "@ | Set-Content -LiteralPath $wrapperPath -Encoding UTF8
 
-    $proc = Start-Process -FilePath 'pwsh' `
-        -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $wrapperPath `
-        -WindowStyle Hidden `
-        -PassThru
-    $frontendPid = $proc.Id
-    Write-Ok "Frontend started (PID $frontendPid). Log: $frontendLog"
-}
-
-# ------------------------------------------------------------------
-# 5. Wait for frontend to respond
-# ------------------------------------------------------------------
-Write-Step 'Waiting for frontend readiness...'
-
-$feReady = $false
-for ($i = 0; $i -lt 40; $i++) {
-    try {
-        $null = Invoke-WebRequest -Uri $frontendUrl -Method Get -TimeoutSec 2 -UseBasicParsing
-        $feReady = $true
-        break
-    } catch {
-        Start-Sleep -Milliseconds 500
+        $proc = Start-Process -FilePath 'pwsh' `
+            -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $wrapperPath `
+            -WindowStyle Hidden `
+            -PassThru
+        $frontendPid = $proc.Id
+        Write-Ok "Vite dev server started (PID $frontendPid). Log: $frontendLog"
     }
-}
 
-if (-not $feReady) {
-    Write-Fail "Frontend did not respond at $frontendUrl within 20 s."
-    if ($Mode -eq 'silent') {
-        Write-Host "  Check: $frontendLog" -ForegroundColor Yellow
+    # ------------------------------------------------------------------
+    # 6. Wait for Vite to respond
+    # ------------------------------------------------------------------
+    Write-Step 'Waiting for Vite dev server readiness...'
+
+    $feReady = $false
+    for ($i = 0; $i -lt 40; $i++) {
+        try {
+            $null = Invoke-WebRequest -Uri $frontendUrl -Method Get -TimeoutSec 2 -UseBasicParsing
+            $feReady = $true
+            break
+        } catch {
+            Start-Sleep -Milliseconds 500
+        }
     }
-    exit 1
+
+    if (-not $feReady) {
+        Write-Fail "Vite dev server did not respond at $frontendUrl within 20 s."
+        if ($Mode -eq 'silent') {
+            Write-Host "  Check: $frontendLog" -ForegroundColor Yellow
+        }
+        exit 1
+    }
+    Write-Ok "Vite dev server ready at $frontendUrl"
 }
-Write-Ok "Frontend ready at $frontendUrl"
 
 # ------------------------------------------------------------------
-# 6. Write PID file for Stop-App.ps1
+# 7. Write PID file for Stop-App.ps1
 # ------------------------------------------------------------------
 @{
-    backendPid  = $backendPid
-    frontendPid = $frontendPid
-    mode        = $Mode
-    apiUrl      = $apiUrl
-    frontendUrl = $frontendUrl
-    startedAt   = (Get-Date).ToString('o')
+    backendPid     = $backendPid
+    frontendPid    = $frontendPid
+    mode           = $Mode
+    servingFromDist = $servingFromDist
+    apiUrl         = $apiUrl
+    frontendUrl    = $frontendUrl
+    startedAt      = (Get-Date).ToString('o')
 } | ConvertTo-Json | Set-Content -LiteralPath $pidFile -Encoding UTF8
 
 # ------------------------------------------------------------------
-# 7. Open browser
+# 8. Open browser
 # ------------------------------------------------------------------
 if (-not $NoBrowser) {
     Start-Process $frontendUrl
@@ -364,5 +425,8 @@ if ($Mode -eq 'silent') {
     Write-Host '  Stop : .\Stop-App.ps1' -ForegroundColor Gray
 } else {
     Write-Host '  Close the terminal windows to stop.' -ForegroundColor Gray
+}
+if ($servingFromDist) {
+    Write-Host "  Serving built frontend — run '.\Start-App.ps1 -Dev' to use Vite hot-reload." -ForegroundColor Gray
 }
 Write-Host ''

@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview } from '../types';
+import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -960,4 +960,51 @@ export async function previewRoadmapCompletion(
     throw new Error(data?.error?.message ?? 'Roadmap completion preview failed.');
   }
   return data.data as RoadmapCompletionPreview;
+}
+
+// ---------------------------------------------------------------------------
+// Release 1.2 — Execution metrics, auto-scan schedule, dependency graph
+// ---------------------------------------------------------------------------
+
+export async function getExecutionMetrics(): Promise<ExecutionMetrics> {
+  const data = await fetchJson<any>(`${API_BASE_URL}/execution/metrics`);
+  const d = data?.data ?? data ?? {};
+  return {
+    completedToday: Number(d.completedToday ?? 0),
+    completedThisWeek: Number(d.completedThisWeek ?? 0),
+    totalCompleted: Number(d.totalCompleted ?? 0),
+    totalCancelled: Number(d.totalCancelled ?? 0),
+    avgCurrentRunMins: Number(d.avgCurrentRunMins ?? 0),
+    errorRatePct: Number(d.errorRatePct ?? 0),
+    stateCounts: {
+      idle: Number(d.stateCounts?.idle ?? 0),
+      ready: Number(d.stateCounts?.ready ?? 0),
+      running: Number(d.stateCounts?.running ?? 0),
+      blocked: Number(d.stateCounts?.blocked ?? 0),
+      complete: Number(d.stateCounts?.complete ?? 0),
+    },
+  };
+}
+
+export async function getScanSchedule(): Promise<ScanSchedule> {
+  const data = await fetchJson<any>(`${API_BASE_URL}/scan/schedule`);
+  const d = data?.data ?? data ?? {};
+  return {
+    enabled: Boolean(d.enabled ?? false),
+    intervalMinutes: Number(d.intervalMinutes ?? 0),
+    nextScanAt: d.nextScanAt ?? null,
+    lastScanAt: d.lastScanAt ?? null,
+  };
+}
+
+export async function getRoadmapDependencies(refresh = false): Promise<RoadmapDependencyGraph> {
+  const qs = refresh ? '?refresh=true' : '';
+  const data = await fetchJson<any>(`${API_BASE_URL}/roadmap/dependencies${qs}`);
+  const d = data?.data ?? data ?? {};
+  return {
+    graph: d.graph ?? {},
+    summary: Array.isArray(d.summary) ? d.summary : [],
+    totalEdges: Number(d.totalEdges ?? 0),
+    scannedAt: d.scannedAt ?? new Date().toISOString(),
+  };
 }

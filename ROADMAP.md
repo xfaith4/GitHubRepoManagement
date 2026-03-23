@@ -391,15 +391,317 @@ The following progress is preserved from prior execution history and remains fou
 
 ---
 
+---
+
+## Release 1.3 — Production Frontend Build
+
+**Goal:** Eliminate the Vite development server from the runtime path so the application can run as a single deployable unit without Node.js present after build time.
+
+### Product outcomes
+
+- The frontend is a compiled static bundle served directly by the PowerShell API host.
+- No `npm run dev` process is required at runtime.
+- The application starts faster, consumes fewer resources, and is safe to expose on a local network.
+- A single launcher command produces a production-grade running application.
+
+### Engineering milestones
+
+- [x] Add `npm run build` step to `Start-App.ps1` that compiles the Vite frontend to `frontend/dist/` when `dist/` is absent or `--rebuild` is passed.
+- [x] Implement `Send-StaticFile` in `Start-RepoManagementApiHost.ps1` that reads files from `frontend/dist/`, sets correct `Content-Type` by extension, and adds `Cache-Control` headers for assets (1 year for hashed filenames, no-cache for `index.html`).
+- [x] Add catch-all route `GET /*` that serves `frontend/dist/index.html` for any path not matched by an API route (client-side routing support).
+- [x] Add `GET /` route that redirects to the SPA entry point.
+- [x] Compress files larger than 1 KB with gzip when the request `Accept-Encoding` header includes `gzip`; serve with `Content-Encoding: gzip`.
+- [x] Update `Start-App.ps1` to skip the Vite dev server process entirely in silent mode when `frontend/dist/index.html` exists.
+- [x] Add `--dev` flag to `Start-App.ps1` that retains the Vite dev server for active frontend development.
+- [x] Update `start.bat` and `start-live.bat` to pass `--rebuild` on first launch or when `frontend/dist/` is missing.
+- [x] Remove `VITE_USE_MOCK_API` environment variable from all launchers; mock mode becomes a build-time flag only.
+- [x] Smoke test: `GET /` returns 200 with `text/html`; `GET /assets/*.js` returns 200 with correct MIME type and `Cache-Control`.
+
+### Acceptance criteria
+
+- Running `.\Start-App.ps1` on a machine with Node.js builds the frontend once and never starts a Vite process again unless `--dev` is passed.
+- The application is fully functional through the compiled bundle.
+- Removing Node.js from PATH after the initial build does not prevent the app from running.
+
+### Out of scope
+
+- CDN deployment or static hosting.
+- Server-side rendering.
+
+---
+
+## Release 1.4 — Cross-Platform and Containerized Deployment
+
+**Goal:** Make the application runnable on macOS and Linux, and distributable as a Docker container, so it is not restricted to Windows operators.
+
+### Product outcomes
+
+- Engineering teams on macOS and Linux can run the full stack without workarounds.
+- The application can be deployed as a container in CI, homelab, or cloud environments.
+- Windows operators are unaffected; existing launch scripts continue to work.
+
+### Engineering milestones
+
+- [ ] Audit all path construction in `Start-RepoManagementApiHost.ps1` and replace every hardcoded `\` separator with `[System.IO.Path]::Combine()` or `Join-Path`.
+- [ ] Replace `backend\modules\output\logs` and equivalent Windows-style path strings in all `.ps1` files with `Join-Path` calls.
+- [ ] Audit all `Start-Process` calls and `cmd /k` references in launchers; replace with cross-platform equivalents using `pwsh` and `npm`.
+- [ ] Rewrite `Start-App.ps1` to detect OS (`$IsWindows`, `$IsLinux`, `$IsMacOS`) and use appropriate process management for each platform.
+- [ ] Create `start.sh` launcher for macOS/Linux with the same silent-mode behavior as `start-live.bat`: launches `Start-App.ps1 -Mode silent` with no terminal visible.
+- [ ] Create `stop.sh` that reads `app.pid` and sends SIGTERM to the API host process.
+- [ ] Write `Dockerfile` that installs PowerShell 7, Node.js 20, and the application; runs `npm run build` at image build time; exposes port 7071; `CMD` starts `Start-RepoManagementApiHost.ps1`.
+- [ ] Write `docker-compose.yml` with a single service, volume mount for `backend/config/settings.json` and `output/`, and environment variable pass-through for `GITHUB_TOKEN` and `GH_CLI_PATH`.
+- [ ] Add `.dockerignore` excluding `frontend/node_modules`, `frontend/dist`, `output/`, `backend/modules/output/`.
+- [ ] Document Docker usage in `README.md` with `docker compose up` getting-started steps.
+- [ ] CI smoke test: run `Invoke-ModuleSmokeTest.ps1` inside the Docker container via `docker run ... pwsh -File scripts/Invoke-ModuleSmokeTest.ps1`; assert exit code 0.
+
+### Acceptance criteria
+
+- `.\Start-App.ps1` on Windows and `./start.sh` on macOS/Linux both start the application without errors.
+- `docker compose up` starts the application and `GET /health/live` returns 200.
+- All existing Windows smoke tests pass unchanged.
+
+### Out of scope
+
+- Kubernetes manifests (deferred to a cloud deployment release).
+- Windows Subsystem for Linux (WSL) specific support.
+
+---
+
+## Release 1.5 — API Authentication and Network Security
+
+**Goal:** Harden the API host so it can be safely exposed beyond `127.0.0.1` without risk of unauthenticated access or information disclosure.
+
+### Product outcomes
+
+- The API requires a valid token for all non-health routes.
+- The application can be run on a local network and shared with teammates without exposing an open, unauthenticated API.
+- Security-conscious operators can configure HTTPS for local or network deployment.
+
+### Engineering milestones
+
+- [ ] Add `auth.apiKey` field to `settings.json` schema; on startup, if set, all routes except `/health/live` and `/health/ready` require `Authorization: Bearer <key>` or `X-Api-Key: <key>`; return 401 on mismatch.
+- [ ] Add `auth.apiKeyEnvVar` alternative so the key can be injected via environment variable without storing it in `settings.json`.
+- [ ] Generate a random API key on first startup if `auth.apiKey` and `auth.apiKeyEnvVar` are both unset; write the generated key to `backend/modules/output/runtime/api-key.txt` with a startup log message pointing to it.
+- [ ] Add CORS configuration to `settings.json`: `cors.allowedOrigins` array (default `["http://localhost:7000", "http://127.0.0.1:7000"]`); replace the current `Access-Control-Allow-Origin: *` with the configured origins.
+- [ ] Implement per-IP request rate limiting: track request counts in a script-scoped hashtable; return 429 with `Retry-After` header when any single IP exceeds `security.maxRequestsPerMinute` (default 300).
+- [ ] Add `network.bindAddress` to `settings.json` (default `127.0.0.1`); validate that non-loopback bind requires `auth.apiKey` or `auth.apiKeyEnvVar` to be set, and refuse to start without it.
+- [ ] Implement TLS option: if `tls.certPath` and `tls.keyPath` are set in `settings.json`, wrap the `TcpListener` with `SslStream` using the provided certificate; serve HTTPS on the configured port.
+- [ ] Add `GET /api/auth/verify` route that returns 200 `{ valid: true }` for authenticated requests; used by frontend to confirm auth state on load.
+- [ ] Frontend: read `VITE_API_KEY` from build env or prompt on first load if `/api/auth/verify` returns 401; store in `sessionStorage`; include in all API requests as `X-Api-Key` header.
+- [ ] Smoke test: unauthenticated `GET /api/status` returns 401 when `auth.apiKey` is configured; authenticated request returns 200.
+
+### Acceptance criteria
+
+- An operator who sets `auth.apiKey` and `network.bindAddress: 0.0.0.0` can share the dashboard URL with a teammate on the same network and require authentication.
+- The application refuses to bind to a non-loopback address without auth configured.
+- All existing smoke tests pass with a configured API key.
+
+### Out of scope
+
+- OAuth / GitHub App authentication (deferred to Release 1.8).
+- Role-based access control.
+
+---
+
+## Release 1.6 — Persistent Data Layer
+
+**Goal:** Replace JSON file storage with a SQLite database for the execution ledger, maturity history, and operations log so the application is reliable at scale and supports time-series queries.
+
+### Product outcomes
+
+- The execution ledger does not corrupt or lose history when multiple operations happen in quick succession.
+- Maturity scores are stored over time, enabling trend charts in the dashboard.
+- The operations log is queryable by time range, level, and keyword without reading the entire file.
+- The application handles portfolios of 200+ repos without file I/O degradation.
+
+### Engineering milestones
+
+- [ ] Add `System.Data.SQLite` via the `PSSQLite` PowerShell module or direct .NET assembly; add dependency check to startup with a clear error message if unavailable.
+- [ ] Create `Initialize-AppDatabase` function that creates `output/app.db` with schema: `execution_entries` table, `execution_history` table, `maturity_snapshots` table (repoName, score, level, capturedAt), `ops_log` table (ts, level, msg).
+- [ ] Migrate `Execution.Ledger.ps1` to read/write `execution_entries` and `execution_history` via parameterized SQL queries; remove `execution-ledger.json` write path.
+- [ ] Add daily maturity snapshot write: after every roadmap audit scan, insert a row into `maturity_snapshots` for each repo with its current score and level.
+- [ ] Migrate `Write-HostLog` JSONL append to an INSERT into `ops_log`; keep `Invoke-TrimOpsLog` as a fallback for non-database mode; `GET /api/log/tail` queries `ops_log` with `ORDER BY ts DESC LIMIT ?`.
+- [ ] Add `GET /api/roadmap/maturity-history` route: accepts `?repoName=&days=30` query params; queries `maturity_snapshots`; returns array of `{ capturedAt, score, level }` for charting.
+- [ ] Add maturity trend sparkline to the repository grid row: fetch last 14 days of snapshots and render a 14-point SVG sparkline in the repo row.
+- [ ] Add `GET /api/portfolio/trend` route: returns aggregate portfolio stats by day — count of repos at each maturity level — for the last 90 days.
+- [ ] Write `Invoke-DatabaseMigration.ps1` that detects the existing JSON ledger file and imports its entries into the SQLite database on first run; skips if DB already populated.
+- [ ] Keep JSON file output as an optional export: `POST /api/export` still writes JSON/CSV artifacts; the source of truth is SQLite.
+- [ ] Smoke test: write 100 execution history records via the ledger API, read them back via `GET /api/execution/metrics`; assert counts are correct.
+
+### Acceptance criteria
+
+- The execution ledger survives a concurrent assign + complete call without data loss.
+- `GET /api/roadmap/maturity-history?repoName=X&days=30` returns an ordered array of score snapshots.
+- The ops log is queryable by time range via `GET /api/log/tail?since=<ISO>&level=ERROR`.
+- All existing smoke tests pass against the SQLite backend.
+
+### Out of scope
+
+- PostgreSQL or remote database support.
+- Multi-writer / multi-instance database access.
+
+---
+
+## Release 1.7 — Complete the Doc Review Pipeline
+
+**Goal:** Deliver the Validate and Complete modes of the documentation review pipeline that are currently scaffolded but not implemented, and implement the Clone and Archive UI actions.
+
+### Product outcomes
+
+- Operators can validate whether a documentation improvement was actually applied correctly.
+- Operators can mark a documentation review cycle as complete and record the outcome.
+- Repositories can be cloned from GitHub into a configured local workspace from the UI.
+- Stale or archived repositories can be marked as inactive so they exit the work queue.
+
+### Engineering milestones
+
+- [ ] Implement `Validate` mode in `Invoke-DocReviewExecution.ps1`: re-run the doc standards audit against the repo after a Copilot task has run; compare findings before and after; return a structured diff of resolved vs remaining findings.
+- [ ] Implement `Complete` mode in `Invoke-DocReviewExecution.ps1`: accept a `--Outcome` parameter (`improved`, `skipped`, `deferred`); write a completion record to `output/docreview/history.jsonl` with repoName, outcome, completedAt, and finding summary.
+- [ ] Add `POST /api/docreview/validate` route that calls Validate mode for a given repo and returns before/after finding comparison.
+- [ ] Add `POST /api/docreview/complete` route that calls Complete mode and returns the written history record.
+- [ ] Add `GET /api/docreview/history` route that reads `output/docreview/history.jsonl` and returns the last 100 completion records.
+- [ ] Implement Clone action: `POST /api/clone` accepts `{ repoFullName, targetRoot }`, validates `targetRoot` is in `inventory.localRoots`, runs `gh repo clone {repoFullName} {targetPath}`, returns the local path; enable Clone button in `ActionBar.tsx` and set `cloneImplemented = true`.
+- [ ] Implement Archive action: `POST /api/archive` accepts `{ repoName }`, writes an `archived: true` flag to the repo's status cache entry, excludes it from the work queue and dispatch queue; enable Archive button in `ActionBar.tsx` and set `archiveImplemented = true`.
+- [ ] Add `GET /api/status?includeArchived=true` filter support so archived repos remain visible in a dedicated "Archived" view but are excluded from default scans.
+- [ ] Add DocReview history tab to `DocReviewModal` showing completion records from `GET /api/docreview/history`.
+- [ ] Smoke test: call Validate mode on a repo that has had a doc standardization applied; assert the before/after diff contains at least one resolved finding.
+
+### Acceptance criteria
+
+- Validate mode returns a structured before/after finding comparison with `resolvedCount` and `remainingCount`.
+- Complete mode writes a history record that is retrievable via `GET /api/docreview/history`.
+- Clone button clones a repo and triggers a status cache refresh.
+- Archive button removes the repo from the active work queue without deleting it from disk.
+
+### Out of scope
+
+- Bulk archive of multiple repos in one action.
+- Restoring archived repos from the UI (use `settings.json` edit for now).
+
+---
+
+## Release 1.8 — Guided Onboarding and GitHub App Integration
+
+**Goal:** Replace the manual PAT + settings.json setup with a guided first-run experience and a proper GitHub App OAuth flow so any engineer can go from zero to running in under five minutes.
+
+### Product outcomes
+
+- A first-time user can complete setup without reading any documentation.
+- The application authenticates with GitHub via OAuth rather than a Personal Access Token.
+- The setup flow validates each prerequisite before proceeding and surfaces a clear error for any failure.
+
+### Engineering milestones
+
+- [ ] Add startup detection: if `backend/config/settings.json` is missing or has `schemaVersion` absent, redirect all non-health API routes to `GET /setup/status` which returns the list of incomplete setup steps.
+- [ ] Implement `GET /setup/status` route: checks prerequisites in order — `pwsh` version ≥ 7.0, Node.js version ≥ 18, `gh` CLI present, `GITHUB_TOKEN` or GitHub App token set, at least one `inventory.localRoots` path exists and is readable; returns array of `{ step, status, message }`.
+- [ ] Implement `POST /setup/config` route: accepts partial settings object, merges with defaults, validates, and writes `backend/config/settings.json`; returns validation errors for each invalid field.
+- [ ] Build `SetupWizard` React component: four-step flow — (1) prerequisites check with per-item status badges, (2) local repo roots picker with directory browser, (3) GitHub authentication method selection, (4) first scan confirmation; shown when `GET /setup/status` reports incomplete steps.
+- [ ] Implement `GET /setup/prerequisites` route: returns per-tool version check results for `pwsh`, `node`, `npm`, `git`, `gh`; includes download URL for each missing tool.
+- [ ] Register a GitHub App (owner: application developer); add `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_PATH`, and `GITHUB_APP_INSTALLATION_ID` to `settings.json` schema as alternatives to `secrets.gitHubTokenEnvVar`.
+- [ ] Add `GET /auth/github/callback` route: receives OAuth code from GitHub, exchanges for installation token via GitHub App API, stores token in `backend/modules/output/runtime/github-token.json` with expiry; refresh automatically when expired.
+- [ ] Add `GET /auth/status` route: returns `{ method: "pat" | "app" | "none", authenticated: bool, scopes: [], rateLimitRemaining: int }`.
+- [ ] Update all GitHub API calls in the API host to read the token from the App token file first, falling back to the PAT env var, then to unauthenticated.
+- [ ] Smoke test: run `GET /setup/status` against a fresh `settings.json`-less environment; assert all steps return `incomplete`; post a valid config; assert all steps return `complete`.
+
+### Acceptance criteria
+
+- A fresh install with no `settings.json` redirects the user to the setup wizard on first browser open.
+- Completing the wizard writes a valid `settings.json` and triggers the first repo scan without manual steps.
+- GitHub App authentication produces a working token that is refreshed automatically before expiry.
+
+### Out of scope
+
+- GitHub Marketplace listing (deferred to Release 1.9).
+- Multi-installation GitHub App support (one installation per running instance).
+
+---
+
+## Release 1.9 — Portfolio Analytics, Trend Visualization, and Distribution
+
+**Goal:** Add historical trend charts, a portfolio health digest, and distribution artifacts that make the application shareable and self-promoting.
+
+### Product outcomes
+
+- Operators can see how maturity scores have changed across the portfolio over the last 90 days.
+- A weekly digest is sent to a configured webhook with portfolio health KPIs.
+- The application is distributable as a GitHub Action that posts roadmap audit results as PR checks.
+- The Roadmap Contract Standard is published as a standalone open specification.
+
+### Engineering milestones
+
+- [ ] Add `PortfolioTrendChart` React component that fetches `GET /api/portfolio/trend` and renders a stacked area chart (L0–L4 counts per day for last 90 days) using a lightweight charting library (e.g., Recharts).
+- [ ] Add `MaturitySparkline` component in the repo grid row: fetches `GET /api/roadmap/maturity-history?repoName=X&days=14` and renders a 14-point SVG path showing score trend.
+- [ ] Add `POST /api/digest/send` route: computes portfolio KPIs (total repos, count per maturity level, repos that improved this week, repos that regressed, top 3 dispatch-ready repos) and fires `Send-NotificationEvent` with `event: digest.weekly` and the computed payload.
+- [ ] Add `scanning.weeklyDigestWebhook` to `settings.json` schema; when set, `Register-ScheduledTasks.Template.ps1` registers a weekly Task Scheduler job that calls `POST /api/digest/send`.
+- [ ] Write `action.yml` for a GitHub Action named `roadmap-audit-action`: accepts inputs `roadmap-path`, `min-maturity-level`; calls the roadmap contract auditor PowerShell module; outputs `maturity-score`, `maturity-level`, `findings-count`; posts a check run to the PR with the audit result.
+- [ ] Write `Dockerfile.action` for the GitHub Action image; publish to GitHub Container Registry.
+- [ ] Extract `standards/roadmap/` into a standalone `roadmap-contract-spec` directory with its own `README.md`, `SPEC.md`, version file (`spec-version: 1.0`), and MIT license; structure it so it can be published as a separate GitHub repository.
+- [ ] Add `GET /api/portfolio/badge` route: returns an SVG badge showing the portfolio's average maturity score (e.g., `roadmap maturity | L2.8`) suitable for embedding in a README.
+- [ ] Add `GET /api/roadmap/badge/{repoName}` route: returns per-repo SVG badge showing current maturity level and score.
+- [ ] Smoke test: `GET /api/portfolio/trend?days=7` returns an array of 7 daily entries each with `{ date, l0, l1, l2, l3, l4 }`.
+
+### Acceptance criteria
+
+- The portfolio trend chart renders in the dashboard and shows at least 7 days of history after 7 days of operation.
+- `POST /api/digest/send` fires a webhook payload that includes `totalRepos`, `byLevel`, `improvedThisWeek`, and `topCandidates`.
+- The GitHub Action runs in a GitHub-hosted runner, audits a roadmap file, and posts a passing or failing check run.
+- The roadmap contract spec directory is self-contained and can be copied to a new repository without modification.
+
+### Out of scope
+
+- GitHub Marketplace listing for the GitHub Action (requires manual submission after release).
+- Email digest (webhook-only for this release).
+
+---
+
+## Release 2.0 — Agent Integration Protocol and AI Repair Loop
+
+**Goal:** Publish a formal machine-readable API contract that AI coding agents can query before starting work, and implement an AI-driven repair loop that submits roadmap and README improvements as GitHub pull requests for human review.
+
+### Product outcomes
+
+- AI coding agents (Claude Code, Copilot, Devin, custom agents) can query the application to determine whether a repo is safe to act on and what the next task is.
+- Operators can trigger an AI-generated roadmap or README repair that opens a GitHub PR for review — no direct file mutation.
+- The application becomes infrastructure that AI tools depend on, not just a dashboard humans look at.
+
+### Engineering milestones
+
+- [ ] Define and publish `GET /api/v1/agent/readiness/{repoName}` route with stable contract: returns `{ schemaVersion: "1.0", repoName, dispatchSafe: bool, maturityLevel, maturityScore, selectedTask: { text, section, tags }, constraints: [], auditFindings: [], nextSteps: [] }`; version the contract with a `schemaVersion` field; treat as a stable public API.
+- [ ] Add `GET /api/v1/agent/queue` route: returns the top 5 dispatch-ready repos as an ordered list with per-repo readiness packets; designed for agents that self-assign rather than being told which repo to work on.
+- [ ] Add `POST /api/v1/agent/claim/{repoName}` route: atomically marks a repo as `running` in the execution ledger and returns the full task packet; rejects if already claimed; designed for agent self-registration.
+- [ ] Add `POST /api/v1/agent/complete/{repoName}` route: accepts `{ runId, outcome, summary }`; marks the task complete; triggers a completion-preview diff for the roadmap; designed for agents reporting back autonomously.
+- [ ] Implement `Invoke-AiRepairSubmission` function: takes a roadmap repair preview, creates a feature branch in the repo via `gh`, commits the proposed content, and opens a PR with the diff and audit finding context as the PR body; never pushes to the default branch directly.
+- [ ] Add `POST /api/roadmap/repair/submit-pr` route: calls `Invoke-AiRepairSubmission` with the current repair preview for the given repo; returns the PR URL.
+- [ ] Implement `Invoke-AiReadmeSubmission` function: equivalent to `Invoke-AiRepairSubmission` but for README standardization previews; creates a branch, commits the proposed README, and opens a PR.
+- [ ] Add `POST /api/readme/standardize/submit-pr` route: calls `Invoke-AiReadmeSubmission`; returns the PR URL.
+- [ ] Add `SubmitPR` button to `RoadmapRepairModal` and `ReadmeStandardizationModal` that calls the respective submit-pr routes; shows the returned PR URL as a clickable link.
+- [ ] Publish OpenAPI 3.1 spec for all `/api/v1/agent/*` routes as `docs/reference/agent-api.yaml`; generate from route definitions.
+- [ ] Smoke test: call `GET /api/v1/agent/readiness/{repoName}` for a repo with a known maturity level; assert `schemaVersion`, `dispatchSafe`, `maturityLevel`, and `selectedTask.text` are all present.
+
+### Acceptance criteria
+
+- `GET /api/v1/agent/readiness/{repoName}` returns a stable JSON contract that does not change shape between calls for the same repo state.
+- `POST /api/roadmap/repair/submit-pr` creates a GitHub PR in the target repo with the repair diff as the PR body.
+- `POST /api/v1/agent/claim/{repoName}` rejects a second concurrent claim for the same repo with a 409 Conflict response.
+- The agent API spec file `docs/reference/agent-api.yaml` is valid OpenAPI 3.1.
+
+### Out of scope
+
+- Autonomous agent execution without operator approval of PRs.
+- Billing or usage metering for agent API access.
+- Multi-tenant agent API with per-agent authentication.
+
+---
+
 ## 6. Cross-Cutting Engineering Work
 
 These items support all releases and should be advanced continuously:
 
 - [x] Strengthen API contract tests for all routes and error categories.
+- [x] Cap or roll `operations.jsonl` with configurable retention.
 - [ ] Expand smoke coverage around launcher, health, roadmap parsing, contract audit, repair preview, docs-audit, and task history flows.
 - [ ] Add incremental scan mode for large repo roots (skip unchanged directories where safe).
 - [ ] Improve cache invalidation and scan performance for large local inventories.
-- [ ] Cap or roll `operations.jsonl` with configurable retention.
 - [ ] Keep structured logs rich enough to diagnose scan, parse, normalize, audit, preview, apply, and start failures.
 - [ ] Continue improving operator-facing documentation as workflows evolve.
 - [ ] Keep rule packs and schemas data-driven where practical so standards can evolve without broad code rewrites.

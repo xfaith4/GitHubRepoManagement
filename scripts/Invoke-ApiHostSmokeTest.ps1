@@ -547,6 +547,99 @@ try {
     }
     Write-Host ("  /api/roadmap/completion-preview (no repoName) -> HTTP {0} correctly rejected" -f $completionPreviewNoRepo.StatusCode) -ForegroundColor DarkGray
 
+    Write-Host '[STEP] Execution metrics route (Release 1.2)' -ForegroundColor Cyan
+    $execMetricsResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/execution/metrics"
+    Assert-Not503 -Name '/api/execution/metrics' -Response $execMetricsResponse
+    $execMetricsJson = $execMetricsResponse.Json
+    if (-not $execMetricsJson.success) { throw '/api/execution/metrics returned success=false' }
+    $execMetricsData = $execMetricsJson.data
+    $execMetricsFieldsOk = $null -ne $execMetricsData -and
+        ($execMetricsData.PSObject.Properties.Name -contains 'completedToday') -and
+        ($execMetricsData.PSObject.Properties.Name -contains 'completedThisWeek') -and
+        ($execMetricsData.PSObject.Properties.Name -contains 'errorRatePct') -and
+        ($execMetricsData.PSObject.Properties.Name -contains 'stateCounts')
+    if (-not $execMetricsFieldsOk) { throw '/api/execution/metrics response missing expected fields' }
+    Write-Host ("  /api/execution/metrics -> completedToday={0} completedThisWeek={1} errorRatePct={2}" -f $execMetricsData.completedToday, $execMetricsData.completedThisWeek, $execMetricsData.errorRatePct) -ForegroundColor DarkGray
+
+    Write-Host '[STEP] Auto-scan schedule route (Release 1.2)' -ForegroundColor Cyan
+    $scanScheduleResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/scan/schedule"
+    Assert-Not503 -Name '/api/scan/schedule' -Response $scanScheduleResponse
+    $scanScheduleJson = $scanScheduleResponse.Json
+    if (-not $scanScheduleJson.success) { throw '/api/scan/schedule returned success=false' }
+    $scanScheduleData = $scanScheduleJson.data
+    $scanScheduleFieldsOk = $null -ne $scanScheduleData -and
+        ($scanScheduleData.PSObject.Properties.Name -contains 'enabled') -and
+        ($scanScheduleData.PSObject.Properties.Name -contains 'intervalMinutes')
+    if (-not $scanScheduleFieldsOk) { throw '/api/scan/schedule response missing expected fields (enabled, intervalMinutes)' }
+    Write-Host ("  /api/scan/schedule -> enabled={0} intervalMinutes={1}" -f $scanScheduleData.enabled, $scanScheduleData.intervalMinutes) -ForegroundColor DarkGray
+
+    Write-Host '[STEP] Roadmap dependency graph route (Release 1.2)' -ForegroundColor Cyan
+    $depGraphResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/roadmap/dependencies"
+    Assert-Not503 -Name '/api/roadmap/dependencies' -Response $depGraphResponse
+    $depGraphJson = $depGraphResponse.Json
+    if (-not $depGraphJson.success) { throw '/api/roadmap/dependencies returned success=false' }
+    $depGraphData = $depGraphJson.data
+    $depGraphFieldsOk = $null -ne $depGraphData -and
+        ($depGraphData.PSObject.Properties.Name -contains 'totalEdges') -and
+        ($depGraphData.PSObject.Properties.Name -contains 'summary') -and
+        ($depGraphData.PSObject.Properties.Name -contains 'scannedAt')
+    if (-not $depGraphFieldsOk) { throw '/api/roadmap/dependencies response missing expected fields (totalEdges, summary, scannedAt)' }
+    Write-Host ("  /api/roadmap/dependencies -> totalEdges={0} summaryCount={1}" -f $depGraphData.totalEdges, @($depGraphData.summary).Count) -ForegroundColor DarkGray
+
+    # ------------------------------------------------------------------
+    # Release 1.3 — Production static frontend bundle
+    # ------------------------------------------------------------------
+    Write-Host '[STEP] Static frontend bundle (Release 1.3)' -ForegroundColor Cyan
+    $distIndexHtmlPath = Join-Path $WorkspaceRoot 'frontend\dist\index.html'
+    $staticIndexOk   = $false
+    $staticAssetsOk  = $false
+    $staticSkipped   = $false
+
+    if (-not (Test-Path -LiteralPath $distIndexHtmlPath -PathType Leaf)) {
+        Write-Host '  frontend/dist/index.html not found — static-bundle tests SKIPPED (run Start-App.ps1 -Rebuild first)' -ForegroundColor Yellow
+        $staticSkipped = $true
+        $staticIndexOk = $true   # not a failure
+        $staticAssetsOk = $true
+    } else {
+        # Test 1: GET / returns 200 text/html (SPA index)
+        $staticRootResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/"
+        if ($staticRootResponse.StatusCode -ne 200) {
+            throw ("GET / expected HTTP 200, got {0}" -f $staticRootResponse.StatusCode)
+        }
+        $rootContentType = [string]$staticRootResponse.ContentType
+        if ($rootContentType -notlike '*text/html*') {
+            throw ("GET / expected text/html Content-Type, got '{0}'" -f $rootContentType)
+        }
+        $staticIndexOk = $true
+        Write-Host ("  GET / -> HTTP 200 {0}" -f $rootContentType) -ForegroundColor DarkGray
+
+        # Test 2: GET /assets/<hashed>.js returns correct MIME + Cache-Control immutable
+        $assetsDir = Join-Path $WorkspaceRoot 'frontend\dist\assets'
+        $jsFile = Get-ChildItem -LiteralPath $assetsDir -Filter '*.js' -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($null -eq $jsFile) {
+            Write-Host '  No .js file found in frontend/dist/assets — asset MIME test skipped' -ForegroundColor Yellow
+            $staticAssetsOk = $true
+        } else {
+            $assetRelPath = '/assets/' + $jsFile.Name
+            $assetResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl$assetRelPath"
+            if ($assetResponse.StatusCode -ne 200) {
+                throw ("GET $assetRelPath expected HTTP 200, got {0}" -f $assetResponse.StatusCode)
+            }
+            $assetContentType = [string]$assetResponse.ContentType
+            if ($assetContentType -notlike '*javascript*' -and $assetContentType -notlike '*application/js*') {
+                throw ("GET $assetRelPath expected javascript Content-Type, got '{0}'" -f $assetContentType)
+            }
+            # Verify Cache-Control: immutable is set
+            $assetRaw = Invoke-WebRequest -Uri "$BaseUrl$assetRelPath" -Method Get -UseBasicParsing -TimeoutSec 10 -SkipHttpErrorCheck
+            $cacheControl = [string]$assetRaw.Headers['Cache-Control']
+            if ($cacheControl -notlike '*immutable*') {
+                throw ("GET $assetRelPath expected Cache-Control immutable, got '{0}'" -f $cacheControl)
+            }
+            $staticAssetsOk = $true
+            Write-Host ("  GET {0} -> HTTP 200 {1} | Cache-Control: {2}" -f $assetRelPath, $assetContentType, $cacheControl) -ForegroundColor DarkGray
+        }
+    }
+
     Write-Host '[PASS] API host smoke completed' -ForegroundColor Green
     [pscustomobject]@{
         liveStatus = $live.status
@@ -596,6 +689,13 @@ try {
         stdHistorySuccess     = $stdHistoryJson.success
         driftFieldsOk         = $driftFieldsOk
         webhooksGetSuccess    = $webhooksJson.success
+        execMetricsFieldsOk   = $execMetricsFieldsOk
+        scanScheduleFieldsOk  = $scanScheduleFieldsOk
+        depGraphFieldsOk      = $depGraphFieldsOk
+        depGraphTotalEdges    = $depGraphData.totalEdges
+        staticIndexOk         = $staticIndexOk
+        staticAssetsOk        = $staticAssetsOk
+        staticSkipped         = $staticSkipped
     } | Format-List
 }
 finally {

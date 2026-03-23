@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry, type DocAuditIndex, type RoadmapAuditIndex } from '../types';
+import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry, type DocAuditIndex, type RoadmapAuditIndex, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph } from '../types';
 import SummaryCard from './SummaryCard';
 import ActionBar from './ActionBar';
 import RepoGrid from './RepoGrid';
@@ -18,7 +18,7 @@ import RoadmapRepairModal from './RoadmapRepairModal';
 import { ReadmeStandardizationModal } from './ReadmeStandardizationModal';
 import { RoadmapLintModal } from './RoadmapLintModal';
 import ExecutionQueuePanel from './ExecutionQueuePanel';
-import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError } from '../services/apiClient';
+import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getRoadmapDependencies } from '../services/apiClient';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
 import { useHealthPing } from '../hooks/useHealthPing';
@@ -54,7 +54,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [roadmapEntries, setRoadmapEntries] = useState<RoadmapEntry[]>([]);
   const [selectedRepoIds, setSelectedRepoIds] = useState<Set<string>>(new Set());
   const [groupBy, setGroupBy] = useState<keyof RepoStatus | 'none'>('none');
-  const [activeView, setActiveView] = useState<'repos' | 'work-queue' | 'execution-queue'>('repos');
+  const [activeView, setActiveView] = useState<'repos' | 'work-queue' | 'execution-queue' | 'dependencies'>('repos');
   const [docsAuditIndex, setDocsAuditIndex] = useState<DocAuditIndex | null>(null);
   const [docsAuditLoading, setDocsAuditLoading] = useState(false);
   const [docsAuditError, setDocsAuditError] = useState<string | null>(null);
@@ -69,6 +69,13 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [roadmapRepairModalRepo, setRoadmapRepairModalRepo] = useState<string | null>(null);
   const [lintModalRepo, setLintModalRepo] = useState<string | null>(null);
   const [standardizeModalRepo, setStandardizeModalRepo] = useState<string | null>(null);
+
+  // Release 1.2 — execution metrics, auto-scan schedule, dependency graph
+  const [executionMetrics, setExecutionMetrics] = useState<ExecutionMetrics | null>(null);
+  const [scanSchedule, setScanSchedule] = useState<ScanSchedule | null>(null);
+  const [dependencyGraph, setDependencyGraph] = useState<RoadmapDependencyGraph | null>(null);
+  const [dependencyGraphLoading, setDependencyGraphLoading] = useState(false);
+  const [hasAttemptedDepsLoad, setHasAttemptedDepsLoad] = useState(false);
 
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
@@ -101,6 +108,23 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   useEffect(() => {
     getRoadmapIndex().then(index => setRoadmapEntries(index.entries)).catch(() => {/* silent — badge just won't show */});
   }, []);
+
+  // Release 1.2 — fetch execution metrics and auto-scan schedule on mount (silent failures)
+  useEffect(() => {
+    getExecutionMetrics().then(setExecutionMetrics).catch(() => {/* silent */});
+    getScanSchedule().then(setScanSchedule).catch(() => {/* silent */});
+  }, []);
+
+  // Release 1.2 — load dependency graph when Dependencies tab is first opened
+  useEffect(() => {
+    if (activeView !== 'dependencies' || hasAttemptedDepsLoad) return;
+    setHasAttemptedDepsLoad(true);
+    setDependencyGraphLoading(true);
+    getRoadmapDependencies()
+      .then(setDependencyGraph)
+      .catch(() => {/* silent — panel shows empty state */})
+      .finally(() => setDependencyGraphLoading(false));
+  }, [activeView, hasAttemptedDepsLoad]);
 
   // Load docs audit when the Work Queue view is first opened.
   useEffect(() => {
@@ -555,8 +579,22 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
 
   return (
     <div>
-      {/* Backend connectivity badge */}
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-3 flex justify-end">
+      {/* Backend connectivity badge + auto-scan schedule */}
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-3 flex justify-end items-center gap-4">
+        {scanSchedule && (
+          <span className="inline-flex items-center gap-1.5 text-xs text-gray-500" title={scanSchedule.nextScanAt ? `Next scan: ${new Date(scanSchedule.nextScanAt).toLocaleTimeString()}` : 'Auto-scan disabled'}>
+            <span className={`inline-block w-1.5 h-1.5 rounded-full ${scanSchedule.enabled ? 'bg-indigo-400' : 'bg-gray-600'}`} />
+            {scanSchedule.enabled
+              ? scanSchedule.nextScanAt
+                ? (() => {
+                    const diffMs = new Date(scanSchedule.nextScanAt).getTime() - Date.now();
+                    const diffMin = Math.ceil(diffMs / 60000);
+                    return diffMin > 0 ? `Auto-scan in ${diffMin}m` : 'Auto-scan pending';
+                  })()
+                : 'Auto-scan on'
+              : 'Auto-scan off'}
+          </span>
+        )}
         <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
           <span className={`inline-block w-2 h-2 rounded-full ${healthDot}`} />
           {healthLabel}
@@ -638,6 +676,40 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
           <SummaryCard title="Commits This Month" value={summary.commitsThisMonth} color="blue" />
         </div>
 
+        {/* Execution throughput metrics (Release 1.2) — shown when queue has activity */}
+        {executionMetrics && (executionMetrics.totalCompleted > 0 || executionMetrics.stateCounts.running > 0 || executionMetrics.stateCounts.ready > 0) && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-4">
+            <div className="px-3 py-2 bg-gray-800/60 border border-gray-700 rounded-lg text-center">
+              <div className="text-lg font-bold text-green-300">{executionMetrics.completedToday}</div>
+              <div className="text-xs text-gray-400 mt-0.5">Done Today</div>
+            </div>
+            <div className="px-3 py-2 bg-gray-800/60 border border-gray-700 rounded-lg text-center">
+              <div className="text-lg font-bold text-blue-300">{executionMetrics.completedThisWeek}</div>
+              <div className="text-xs text-gray-400 mt-0.5">Done This Week</div>
+            </div>
+            <div className="px-3 py-2 bg-gray-800/60 border border-gray-700 rounded-lg text-center">
+              <div className="text-lg font-bold text-indigo-300">{executionMetrics.stateCounts.running}</div>
+              <div className="text-xs text-gray-400 mt-0.5">Running</div>
+            </div>
+            <div className="px-3 py-2 bg-gray-800/60 border border-gray-700 rounded-lg text-center">
+              <div className="text-lg font-bold text-yellow-300">{executionMetrics.stateCounts.ready}</div>
+              <div className="text-xs text-gray-400 mt-0.5">Ready</div>
+            </div>
+            <div className="px-3 py-2 bg-gray-800/60 border border-gray-700 rounded-lg text-center">
+              <div className={`text-lg font-bold ${executionMetrics.errorRatePct > 20 ? 'text-red-300' : 'text-gray-300'}`}>
+                {executionMetrics.errorRatePct.toFixed(0)}%
+              </div>
+              <div className="text-xs text-gray-400 mt-0.5">Error Rate</div>
+            </div>
+            <div className="px-3 py-2 bg-gray-800/60 border border-gray-700 rounded-lg text-center">
+              <div className="text-lg font-bold text-gray-300">
+                {executionMetrics.avgCurrentRunMins > 0 ? `${executionMetrics.avgCurrentRunMins.toFixed(0)}m` : '—'}
+              </div>
+              <div className="text-xs text-gray-400 mt-0.5">Avg Run</div>
+            </div>
+          </div>
+        )}
+
         {repos.length === 0 && dataSource?.source === 'local' && (
           <div className="mt-4 bg-yellow-900/20 border border-yellow-700/60 rounded-lg px-4 py-3 text-sm text-yellow-100">
             No repositories found. Confirm the workspace path contains git repositories and adjust scan depth if your repos are nested.
@@ -715,6 +787,21 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
               >
                 Execution Queue
               </button>
+              <button
+                onClick={() => setActiveView('dependencies')}
+                className={`px-4 py-2 text-sm font-medium rounded-t border-b-2 transition-colors flex items-center gap-1.5 ${
+                  activeView === 'dependencies'
+                    ? 'border-teal-500 text-teal-300 bg-gray-700/40'
+                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-700/20'
+                }`}
+              >
+                Dependencies
+                {dependencyGraph && dependencyGraph.totalEdges > 0 && (
+                  <span className="inline-flex items-center justify-center w-5 h-5 text-xs rounded-full bg-teal-700 text-teal-100 font-semibold">
+                    {dependencyGraph.totalEdges}
+                  </span>
+                )}
+              </button>
             </div>
 
             {activeView === 'repos' ? (
@@ -759,10 +846,75 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                 isScanning={currentOperation === 'docs-audit-scan'}
                 roadmapAuditIndex={roadmapAuditIndex}
               />
-            ) : (
+            ) : activeView === 'execution-queue' ? (
               <ExecutionQueuePanel
                 onDispatchPreviewTask={handlePreviewCopilotTask}
               />
+            ) : (
+              /* Dependencies view — Release 1.2 */
+              <div className="px-4 sm:px-6 lg:px-8 py-4">
+                <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold text-white">Cross-Repo Dependency Graph</h2>
+                    <p className="text-sm text-gray-400 mt-0.5">
+                      References detected across portfolio roadmaps (GitHub URLs, hash refs, keyword patterns).
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setHasAttemptedDepsLoad(false);
+                      setDependencyGraph(null);
+                    }}
+                    disabled={dependencyGraphLoading}
+                    className="px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 text-gray-200 rounded border border-gray-600 disabled:opacity-50 transition-colors"
+                  >
+                    Refresh
+                  </button>
+                </div>
+
+                {dependencyGraphLoading && (
+                  <div className="flex items-center gap-3 py-8 text-gray-400 justify-center">
+                    <SpinnerIcon className="w-5 h-5 animate-spin" />
+                    <span>Scanning roadmaps for dependencies…</span>
+                  </div>
+                )}
+
+                {!dependencyGraphLoading && (!dependencyGraph || dependencyGraph.summary.length === 0) && (
+                  <div className="text-center py-10 text-gray-500 text-sm">
+                    <p className="mb-1">No cross-repo dependencies detected.</p>
+                    <p className="text-gray-600 text-xs">Dependencies are found via GitHub URLs, <code>RepoName#42</code> refs, and keywords like "depends on" in roadmap files.</p>
+                  </div>
+                )}
+
+                {!dependencyGraphLoading && dependencyGraph && dependencyGraph.summary.length > 0 && (
+                  <div className="space-y-2">
+                    {dependencyGraph.summary.map(entry => (
+                      <div key={entry.repoName} className="border border-gray-700 rounded-lg bg-gray-800/40 px-4 py-3">
+                        <div className="font-semibold text-white text-sm mb-2">{entry.repoName}</div>
+                        {entry.dependsOn.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                            <span className="text-xs text-gray-500 w-20 flex-shrink-0">depends on:</span>
+                            {entry.dependsOn.map(dep => (
+                              <span key={dep} className="text-xs px-1.5 py-0.5 rounded border bg-orange-900/30 text-orange-300 border-orange-700/40">{dep}</span>
+                            ))}
+                          </div>
+                        )}
+                        {entry.dependedOnBy.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-xs text-gray-500 w-20 flex-shrink-0">used by:</span>
+                            {entry.dependedOnBy.map(src => (
+                              <span key={src} className="text-xs px-1.5 py-0.5 rounded border bg-blue-900/30 text-blue-300 border-blue-700/40">{src}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    <div className="text-xs text-gray-600 text-right pt-1">
+                      {dependencyGraph.totalEdges} edge{dependencyGraph.totalEdges !== 1 ? 's' : ''} · scanned {new Date(dependencyGraph.scannedAt).toLocaleTimeString()}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
         </div>
       </div>

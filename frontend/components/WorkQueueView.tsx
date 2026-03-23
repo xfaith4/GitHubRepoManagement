@@ -130,6 +130,7 @@ interface SavedFilter {
   name: string;
   readinessFilter: string;
   maturityFilter: string;
+  tagFilter: string;
   searchText: string;
 }
 
@@ -150,6 +151,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
 }) => {
   const [readinessFilter, setReadinessFilter] = useState<ReadinessFilter>('all');
   const [maturityFilter, setMaturityFilter] = useState<RoadmapMaturityFilter>('all');
+  const [tagFilter, setTagFilter] = useState<string>('all');
   const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
   const [filterText, setFilterText] = useState('');
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>(() => {
@@ -191,6 +193,12 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
         return audit?.maturityLevel === maturityFilter;
       });
     }
+    if (tagFilter !== 'all') {
+      result = result.filter(e => {
+        const audit = auditByRepo.get(e.repoName);
+        return (audit?.nextPendingItem?.tags ?? []).includes(tagFilter);
+      });
+    }
     if (filterText.trim()) {
       const lower = filterText.toLowerCase();
       result = result.filter(e =>
@@ -203,7 +211,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
         (READINESS_CONFIG[a.dispatchReadiness]?.priority ?? 99) -
         (READINESS_CONFIG[b.dispatchReadiness]?.priority ?? 99)
     );
-  }, [entries, readinessFilter, maturityFilter, filterText, auditByRepo]);
+  }, [entries, readinessFilter, maturityFilter, tagFilter, filterText, auditByRepo]);
 
   const toggleExpand = (repoName: string) => {
     setExpandedRepos(prev => {
@@ -220,6 +228,17 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
   const readyCount = readinessCounts['ready'] ?? 0;
   const needsDocsCount = readinessCounts['needs-doc-standardization'] ?? 0;
   const blockedCount = readinessCounts['blocked'] ?? 0;
+
+  // Collect all tags from roadmap audit next-pending items
+  const availableTags = useMemo(() => {
+    const tagSet = new Set<string>();
+    for (const e of (roadmapAuditIndex?.entries ?? [])) {
+      for (const tag of (e.nextPendingItem?.tags ?? [])) {
+        tagSet.add(tag);
+      }
+    }
+    return Array.from(tagSet).sort();
+  }, [roadmapAuditIndex]);
 
   // Count how many repos are at each maturity level
   const maturityCounts = useMemo(() => {
@@ -363,6 +382,36 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
             })}
           </div>
         )}
+        {/* Tag filter — only shown when at least one tag exists */}
+        {availableTags.length > 0 && (
+          <div className="flex flex-wrap gap-2 items-center">
+            <span className="text-xs text-gray-500 font-medium">Tag:</span>
+            <button
+              onClick={() => setTagFilter('all')}
+              className={`px-2 py-0.5 rounded text-xs font-medium border transition-colors ${
+                tagFilter === 'all'
+                  ? 'bg-indigo-700 text-white border-indigo-600'
+                  : 'bg-gray-800 text-gray-300 border-gray-600 hover:bg-gray-700'
+              }`}
+            >
+              All
+            </button>
+            {availableTags.map(tag => (
+              <button
+                key={tag}
+                onClick={() => setTagFilter(tag)}
+                className={`px-2 py-0.5 rounded text-xs font-medium border transition-colors ${
+                  tagFilter === tag
+                    ? 'bg-indigo-700 text-white border-indigo-600'
+                    : 'bg-gray-800 text-gray-300 border-gray-600 hover:bg-gray-700'
+                }`}
+              >
+                [{tag}]
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Saved filters */}
         <div className="flex flex-wrap gap-2 items-center w-full mt-1">
           {savedFilters.length > 0 && (
@@ -374,10 +423,11 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                   onClick={() => {
                     setReadinessFilter(sf.readinessFilter as ReadinessFilter);
                     setMaturityFilter(sf.maturityFilter as RoadmapMaturityFilter);
+                    setTagFilter(sf.tagFilter ?? 'all');
                     setFilterText(sf.searchText);
                   }}
                   className="px-2 py-0.5 rounded text-xs font-medium border bg-gray-800 text-gray-300 border-gray-600 hover:bg-gray-700 transition-colors"
-                  title={`Readiness: ${sf.readinessFilter}, Maturity: ${sf.maturityFilter}, Search: "${sf.searchText}"`}
+                  title={`Readiness: ${sf.readinessFilter}, Maturity: ${sf.maturityFilter}, Tag: ${sf.tagFilter ?? 'all'}, Search: "${sf.searchText}"`}
                 >
                   {sf.name}
                 </button>
@@ -422,6 +472,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                     name: newFilterName.trim(),
                     readinessFilter,
                     maturityFilter,
+                    tagFilter,
                     searchText: filterText,
                   };
                   const updated = [...savedFilters, entry];

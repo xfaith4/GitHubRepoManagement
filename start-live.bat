@@ -17,7 +17,12 @@ if errorlevel 1 (
 :: Launch Start-App.ps1 in silent mode with a hidden PowerShell window.
 :: start "" = required title placeholder; -WindowStyle Hidden = no console shown.
 :: The batch exits immediately; Start-App.ps1 handles readiness + browser launch.
-start "" pwsh.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden ^
-  -File "%ROOT%Start-App.ps1" -Mode silent
+IF NOT EXIST "%ROOT%frontend\dist\index.html" (
+  start "" pwsh.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden ^
+    -File "%ROOT%Start-App.ps1" -Mode silent -Rebuild
+) ELSE (
+  start "" pwsh.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden ^
+    -File "%ROOT%Start-App.ps1" -Mode silent
+)
 
 endlocal

@@ -56,6 +56,9 @@ $script:RoadmapAuditCacheDefaultTtlSeconds = 300
 
 $script:RoadmapRepairHistoryRoot = Join-Path $WorkspaceRoot 'output\roadmap-repair-history'
 
+# Release 1.3 — production static frontend bundle path
+$script:FrontendDistPath = Join-Path $WorkspaceRoot 'frontend\dist'
+
 # Structured operations log (JSONL) — dashboard /api/log/tail reads this
 $script:OpsLogPath       = $null
 $script:OpsLogWriteCount = 0
@@ -339,6 +342,100 @@ function Send-HttpContent {
     $headerBytes = [System.Text.Encoding]::ASCII.GetBytes($headers)
     $Stream.Write($headerBytes, 0, $headerBytes.Length)
     $Stream.Write($BodyBytes, 0, $BodyBytes.Length)
+    $Stream.Flush()
+}
+
+<#
+.SYNOPSIS
+    Serve a file from the built frontend dist/ directory (Release 1.3).
+.DESCRIPTION
+    Reads the file at $FilePath, detects MIME type, sets Cache-Control, optionally
+    compresses with gzip when the client accepts it and the file is larger than 1 KB.
+#>
+function Send-StaticFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Net.Sockets.NetworkStream]$Stream,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+
+        [Parameter()]
+        [hashtable]$RequestHeaders = @{},
+
+        [Parameter()]
+        [string]$CorrelationId = ''
+    )
+
+    $ext = [System.IO.Path]::GetExtension($FilePath).ToLowerInvariant()
+    $contentType = switch ($ext) {
+        '.html'  { 'text/html; charset=utf-8' }
+        '.js'    { 'application/javascript; charset=utf-8' }
+        '.mjs'   { 'application/javascript; charset=utf-8' }
+        '.css'   { 'text/css; charset=utf-8' }
+        '.json'  { 'application/json; charset=utf-8' }
+        '.svg'   { 'image/svg+xml' }
+        '.png'   { 'image/png' }
+        '.jpg'   { 'image/jpeg' }
+        '.jpeg'  { 'image/jpeg' }
+        '.gif'   { 'image/gif' }
+        '.ico'   { 'image/x-icon' }
+        '.woff'  { 'font/woff' }
+        '.woff2' { 'font/woff2' }
+        '.ttf'   { 'font/ttf' }
+        '.map'   { 'application/json' }
+        '.txt'   { 'text/plain; charset=utf-8' }
+        '.xml'   { 'application/xml' }
+        default  { 'application/octet-stream' }
+    }
+
+    # Cache-Control: Vite emits assets with 8-char hashes in the filename (e.g. index-BxA1c2D3.js).
+    # Those are immutable — cache for 1 year.  index.html and anything else: no-cache.
+    $baseName = [System.IO.Path]::GetFileNameWithoutExtension($FilePath)
+    $isHashedAsset = $baseName -match '-[A-Za-z0-9_]{8,}$' -and $ext -ne '.html'
+    $cacheControl = if ($isHashedAsset) { 'public, max-age=31536000, immutable' } else { 'no-cache, no-store, must-revalidate' }
+
+    $bodyBytes = [System.IO.File]::ReadAllBytes($FilePath)
+    $useGzip = $false
+
+    if ($bodyBytes.Length -gt 1024) {
+        $acceptEncoding = if ($RequestHeaders.ContainsKey('accept-encoding')) { $RequestHeaders['accept-encoding'] } else { '' }
+        if ($acceptEncoding -like '*gzip*') {
+            try {
+                $ms = New-Object System.IO.MemoryStream
+                $gz = New-Object System.IO.Compression.GZipStream($ms, [System.IO.Compression.CompressionMode]::Compress, $true)
+                $gz.Write($bodyBytes, 0, $bodyBytes.Length)
+                $gz.Close()
+                $bodyBytes = $ms.ToArray()
+                $useGzip = $true
+            } catch {
+                # Compression failed — serve uncompressed
+                $bodyBytes = [System.IO.File]::ReadAllBytes($FilePath)
+                $useGzip = $false
+            }
+        }
+    }
+
+    $headerLines = [System.Collections.Generic.List[string]]::new()
+    $headerLines.Add('HTTP/1.1 200 OK')
+    $headerLines.Add("Content-Type: $contentType")
+    $headerLines.Add("Content-Length: $($bodyBytes.Length)")
+    $headerLines.Add("Cache-Control: $cacheControl")
+    $headerLines.Add('Connection: close')
+    $headerLines.Add('Access-Control-Allow-Origin: *')
+    $headerLines.Add('Access-Control-Allow-Methods: GET, POST, OPTIONS')
+    $headerLines.Add('Access-Control-Allow-Headers: Content-Type, Authorization')
+    if ($useGzip) {
+        $headerLines.Add('Content-Encoding: gzip')
+        $headerLines.Add('Vary: Accept-Encoding')
+    }
+    if ($CorrelationId) { $headerLines.Add("X-Correlation-Id: $CorrelationId") }
+    $headerLines.Add('')
+    $headerLines.Add('')
+
+    $headerBytes = [System.Text.Encoding]::ASCII.GetBytes($headerLines -join "`r`n")
+    $Stream.Write($headerBytes, 0, $headerBytes.Length)
+    $Stream.Write($bodyBytes, 0, $bodyBytes.Length)
     $Stream.Flush()
 }
 
@@ -4411,7 +4508,29 @@ try {
                 }
                 default {
                     Add-MetricCounter -Name 'api_requests_total'
-                    Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{ error = 'Not Found'; method = $req.Method; path = $path }
+                    # Release 1.3 — static frontend serving + SPA catch-all
+                    # For GET requests, try to serve from frontend/dist/ first, then SPA fallback.
+                    $distIndexHtml = Join-Path $script:FrontendDistPath 'index.html'
+                    if ($req.Method -eq 'GET' -and (Test-Path -LiteralPath $distIndexHtml -ErrorAction SilentlyContinue)) {
+                        $requestedRelPath = if ([string]::IsNullOrEmpty($path)) { 'index.html' } else { $path.TrimStart('/').Replace('/', [System.IO.Path]::DirectorySeparatorChar) }
+                        $distRoot      = [System.IO.Path]::GetFullPath($script:FrontendDistPath)
+                        $candidatePath = [System.IO.Path]::GetFullPath((Join-Path $script:FrontendDistPath $requestedRelPath))
+                        if ($candidatePath.StartsWith($distRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase) -or
+                            $candidatePath -eq $distRoot) {
+                            if ((Test-Path -LiteralPath $candidatePath -PathType Leaf -ErrorAction SilentlyContinue)) {
+                                # Exact file found — serve it directly
+                                Send-StaticFile -Stream $req.Stream -FilePath $candidatePath -RequestHeaders $req.Headers -CorrelationId $correlationId
+                            } else {
+                                # SPA fallback — serve index.html for client-side routes
+                                Send-StaticFile -Stream $req.Stream -FilePath $distIndexHtml -RequestHeaders $req.Headers -CorrelationId $correlationId
+                            }
+                        } else {
+                            # Path traversal attempt — serve index.html as safe fallback
+                            Send-StaticFile -Stream $req.Stream -FilePath $distIndexHtml -RequestHeaders $req.Headers -CorrelationId $correlationId
+                        }
+                    } else {
+                        Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{ error = 'Not Found'; method = $req.Method; path = $path }
+                    }
                 }            }
         }
         catch {

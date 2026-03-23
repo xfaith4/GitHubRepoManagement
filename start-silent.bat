@@ -15,5 +15,9 @@ if errorlevel 1 (
   exit /b 1
 )
 
-pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "%ROOT%Start-App.ps1" -Mode silent
+IF NOT EXIST "%ROOT%frontend\dist\index.html" (
+  pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "%ROOT%Start-App.ps1" -Mode silent -Rebuild
+) ELSE (
+  pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "%ROOT%Start-App.ps1" -Mode silent
+)
 endlocal
