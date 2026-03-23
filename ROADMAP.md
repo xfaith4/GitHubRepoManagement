@@ -282,11 +282,6 @@ The following progress is preserved from prior execution history and remains fou
 - The UI can explain why a roadmap is weak, not just that it is weak.
 - The app can distinguish `has roadmap` from `has valid work contract`.
 
-### Out of scope
-
-- Automatic roadmap rewrite application.
-- Two-lane scheduling.
-
 ---
 
 ## Release 0.9 — Roadmap Repair Preview & Standardization Workflow
@@ -432,38 +427,27 @@ The following progress is preserved from prior execution history and remains fou
 
 ## Release 1.4 — Cross-Platform and Containerized Deployment
 
-**Goal:** Make the application runnable on macOS and Linux, and distributable as a Docker container, so it is not restricted to Windows operators.
+**Goal:** Enhance this application with the ability to implement the necessary changes to Roadmaps that are determined weak.  For repos that do not have a roadmap, this application should give the option to evalutate the repo in order to determine logical action items to added to a roadmap.
 
 ### Product outcomes
 
-- Engineering teams on macOS and Linux can run the full stack without workarounds.
-- The application can be deployed as a container in CI, homelab, or cloud environments.
-- Windows operators are unaffected; existing launch scripts continue to work.
+- Fully functional option in UI to Update a single repo roadmap with suggested hardening changes.
+- Fully functional option in UI to evaluate a repo in order to create a logical roadmap with code hardening changes and\or reasonable features with great value.
+
 
 ### Engineering milestones
 
-- [ ] Audit all path construction in `Start-RepoManagementApiHost.ps1` and replace every hardcoded `\` separator with `[System.IO.Path]::Combine()` or `Join-Path`.
-- [ ] Replace `backend\modules\output\logs` and equivalent Windows-style path strings in all `.ps1` files with `Join-Path` calls.
-- [ ] Audit all `Start-Process` calls and `cmd /k` references in launchers; replace with cross-platform equivalents using `pwsh` and `npm`.
-- [ ] Rewrite `Start-App.ps1` to detect OS (`$IsWindows`, `$IsLinux`, `$IsMacOS`) and use appropriate process management for each platform.
-- [ ] Create `start.sh` launcher for macOS/Linux with the same silent-mode behavior as `start-live.bat`: launches `Start-App.ps1 -Mode silent` with no terminal visible.
-- [ ] Create `stop.sh` that reads `app.pid` and sends SIGTERM to the API host process.
-- [ ] Write `Dockerfile` that installs PowerShell 7, Node.js 20, and the application; runs `npm run build` at image build time; exposes port 7071; `CMD` starts `Start-RepoManagementApiHost.ps1`.
-- [ ] Write `docker-compose.yml` with a single service, volume mount for `backend/config/settings.json` and `output/`, and environment variable pass-through for `GITHUB_TOKEN` and `GH_CLI_PATH`.
-- [ ] Add `.dockerignore` excluding `frontend/node_modules`, `frontend/dist`, `output/`, `backend/modules/output/`.
-- [ ] Document Docker usage in `README.md` with `docker compose up` getting-started steps.
-- [ ] CI smoke test: run `Invoke-ModuleSmokeTest.ps1` inside the Docker container via `docker run ... pwsh -File scripts/Invoke-ModuleSmokeTest.ps1`; assert exit code 0.
+- [ ] Add cross-platform startup script parity: align `Start-App.ps1` and `start.sh` flags/config handling with consistent defaults and error reporting.
+- [ ] Implement repo evaluation pipeline that inspects repo structure and produces suggested roadmap items (hardening + high-value features).
+- [ ] Add UI workflow to run evaluation, review suggested items, and create a roadmap when none exists.
+- [ ] Add UI workflow to update a single repo roadmap with suggested hardening changes and allow user approval before applying.
+- [ ] Add containerization support: Dockerfile + `docker-compose.yml` with health endpoint wiring and documented ports/volumes.
 
 ### Acceptance criteria
 
 - `.\Start-App.ps1` on Windows and `./start.sh` on macOS/Linux both start the application without errors.
 - `docker compose up` starts the application and `GET /health/live` returns 200.
 - All existing Windows smoke tests pass unchanged.
-
-### Out of scope
-
-- Kubernetes manifests (deferred to a cloud deployment release).
-- Windows Subsystem for Linux (WSL) specific support.
 
 ---
 
