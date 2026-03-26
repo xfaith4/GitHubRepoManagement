@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult } from '../types';
+import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -690,6 +690,39 @@ export async function executeRoadmapDispatch(
   if (options?.follow !== undefined) body.follow = options.follow;
   const data = await postJson<any>('/roadmap/dispatch/execute', body);
   return (data?.data ?? data ?? {}) as DispatchExecuteResult;
+}
+
+// Release 1.7 — Repo Git Status Detail
+
+export async function getRepoGitStatusDetail(
+  repoName: string,
+  localPath?: string
+): Promise<RepoGitStatusDetail> {
+  const body: Record<string, string> = { repoName };
+  if (localPath) body.localPath = localPath;
+  const data = await postJson<any>('/repo/git-status-detail', body);
+  return (data?.data ?? data ?? {}) as RepoGitStatusDetail;
+}
+
+export async function stashRepoChanges(
+  repoName: string,
+  localPath?: string
+): Promise<GitActionResult> {
+  const body: Record<string, string> = { repoName };
+  if (localPath) body.localPath = localPath;
+  const data = await postJson<any>('/repo/git-stash', body);
+  return (data?.data ?? data ?? {}) as GitActionResult;
+}
+
+export async function discardRepoChanges(
+  repoName: string,
+  includeUntracked: boolean,
+  localPath?: string
+): Promise<GitActionResult> {
+  const body: Record<string, unknown> = { repoName, includeUntracked };
+  if (localPath) body.localPath = localPath;
+  const data = await postJson<any>('/repo/git-discard', body);
+  return (data?.data ?? data ?? {}) as GitActionResult;
 }
 
 // Release 1.0 — Execution Queue API

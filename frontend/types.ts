@@ -718,3 +718,45 @@ export interface DispatchExecuteResult {
   message: string;
   error?: string | null;
 }
+
+// Release 1.7 — Repo Git Status Detail: Dirty badge visibility and action pathways
+
+export interface GitStatusFile {
+  status: string;       // single-char git status code: M, A, D, R, C, ?
+  path: string;
+  origPath?: string | null;  // for renames: the old path
+}
+
+export interface GitCommitRef {
+  hash: string;
+  message: string;
+}
+
+export interface RepoGitStatusDetail {
+  repoName: string;
+  localPath: string;
+  branch: string;
+  upstream: string;
+  isMidMerge?: boolean;
+  isMidRebase?: boolean;
+  stagedFiles: GitStatusFile[];
+  unstagedFiles: GitStatusFile[];
+  untrackedFiles: GitStatusFile[];
+  conflictedFiles: GitStatusFile[];
+  stagedCount: number;
+  unstagedCount: number;
+  untrackedCount: number;
+  conflictedCount: number;
+  unpushedCommits: GitCommitRef[];
+  unpulledCommits: GitCommitRef[];
+  unpushedCount: number;
+  unpulledCount: number;
+  stashCount: number;
+  scannedAt: string;
+}
+
+export interface GitActionResult {
+  success: boolean;
+  output: string;
+  error?: string | null;
+}

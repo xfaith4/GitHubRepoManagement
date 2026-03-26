@@ -20,6 +20,7 @@ import { RoadmapLintModal } from './RoadmapLintModal';
 import ExecutionQueuePanel from './ExecutionQueuePanel';
 import RepoEvaluationModal from './RepoEvaluationModal';
 import RoadmapDispatchModal from './RoadmapDispatchModal';
+import RepoGitStatusModal from './RepoGitStatusModal';
 import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getRoadmapDependencies } from '../services/apiClient';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
@@ -73,6 +74,8 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [standardizeModalRepo, setStandardizeModalRepo] = useState<string | null>(null);
   const [evaluationModalRepo, setEvaluationModalRepo] = useState<string | null>(null);
   const [dispatchModalRepo, setDispatchModalRepo] = useState<string | null>(null);
+  const [gitStatusModalRepo, setGitStatusModalRepo] = useState<string | null>(null);
+  const [gitStatusModalPath, setGitStatusModalPath] = useState<string | null>(null);
 
   // Release 1.2 — execution metrics, auto-scan schedule, dependency graph
   const [executionMetrics, setExecutionMetrics] = useState<ExecutionMetrics | null>(null);
@@ -531,6 +534,11 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
     setDispatchModalRepo(repoName);
   };
 
+  const handleViewGitStatus = (repoName: string, localPath?: string) => {
+    setGitStatusModalRepo(repoName);
+    setGitStatusModalPath(localPath ?? null);
+  };
+
   // Enrich repos with hasRoadmap flag, roadmapState, nextPendingRoadmapItem, and dispatchReadiness
   const reposWithRoadmap = useMemo(() => {
     const roadmapMap = roadmapEntries.length > 0
@@ -835,6 +843,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                   repos={reposWithRoadmap}
                   onViewArtifacts={handleViewArtifacts}
                   onViewRoadmap={handleViewRoadmap}
+                  onViewGitStatus={handleViewGitStatus}
                   dataSource={dataSource}
                   selectedRepos={selectedRepoIds}
                   setSelectedRepos={setSelectedRepoIds}
@@ -1042,6 +1051,14 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
           setDispatchModalRepo(null);
           getRoadmapAudit({ refresh: true }).then(setRoadmapAuditIndex).catch(() => {});
         }}
+      />
+
+      <RepoGitStatusModal
+        isOpen={gitStatusModalRepo !== null}
+        repoName={gitStatusModalRepo}
+        localPath={gitStatusModalPath}
+        onClose={() => { setGitStatusModalRepo(null); setGitStatusModalPath(null); }}
+        onStatusChanged={() => { fetchRepoStatus(); }}
       />
     </div>
   );

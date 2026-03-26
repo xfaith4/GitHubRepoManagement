@@ -14,6 +14,7 @@ interface RepoGridProps {
   repos: RepoStatus[];
   onViewArtifacts: (repoName: string) => void;
   onViewRoadmap?: (repoName: string) => void;
+  onViewGitStatus?: (repoName: string, localPath?: string) => void;
   dataSource:
     | { source: 'sample' }
     | { source: 'local'; workspacePath?: string; configuredGithubUser?: string | null }
@@ -55,7 +56,7 @@ function getRoadmapBadgeConfig(state: RoadmapBadgeState): { className: string; l
   }
 }
 
-const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, dataSource, selectedRepos, setSelectedRepos, groupBy, setGroupBy }: RepoGridProps) => {
+const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, dataSource, selectedRepos, setSelectedRepos, groupBy, setGroupBy }: RepoGridProps) => {
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [filter, setFilter] = useState('');
@@ -211,7 +212,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, dataSource, selectedR
     });
   };
 
-  const getStatusBadge = (status: RepoStatus['status']) => {
+  const getStatusBadge = (status: RepoStatus['status'], repo: RepoStatus) => {
     const statusMap: Record<RepoStatus['status'], { text: string; color: string }> = {
       clean: { text: "Clean", color: "bg-green-800 text-green-200" },
       dirty: { text: "Dirty", color: "bg-yellow-800 text-yellow-200" },
@@ -220,6 +221,17 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, dataSource, selectedR
       diverged: { text: "Diverged", color: "bg-red-800 text-red-200" },
     };
     const { text, color } = statusMap[status] || { text: 'Unknown', color: 'bg-gray-700 text-gray-300' };
+    if (onViewGitStatus && status !== 'clean') {
+      return (
+        <button
+          onClick={e => { e.stopPropagation(); onViewGitStatus(repo.name, repo.localPath ?? undefined); }}
+          className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${color} hover:opacity-80 cursor-pointer transition-opacity`}
+          title="Click to see what changed"
+        >
+          {text}
+        </button>
+      );
+    }
     return <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${color}`}>{text}</span>;
   }
 
@@ -439,7 +451,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, dataSource, selectedR
                                   </div>
                                 )}
                               </td>
-                            <td className="px-6 py-4 whitespace-nowrap">{getStatusBadge(repo.status)}</td>
+                            <td className="px-6 py-4 whitespace-nowrap">{getStatusBadge(repo.status, repo)}</td>
                             <td className="px-6 py-4 whitespace-nowrap">{getBuildStatusBadge(repo)}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
                                 {pullsUrl ? (

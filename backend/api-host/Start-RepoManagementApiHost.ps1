@@ -39,6 +39,8 @@ $docStdModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\docstandardization
 . (Join-Path $roadmapModuleRoot 'Roadmap.DependencyTracker.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.Evaluator.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.Dispatcher.ps1')
+$gitModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\git'
+. (Join-Path $gitModuleRoot 'Git.StatusDetail.ps1')
 . (Join-Path $docStdModuleRoot 'DocStandardization.Previewer.ps1')
 . (Join-Path $commonRoot 'NotificationHub.ps1')
 . (Join-Path $PSScriptRoot 'ApiHost.ErrorHandling.ps1')
@@ -3912,6 +3914,149 @@ try {
                             githubRepo = $githubRepo
                             startedAt  = (Get-Date).ToUniversalTime().ToString('o')
                             message    = "Copilot task dispatched for $githubRepo"
+                        }
+                    }
+                }
+                'POST /api/repo/git-status-detail' {
+                    Write-HostLog ("[TRACE] repo.git-status-detail correlationId={0} start" -f $correlationId)
+                    $body      = Parse-JsonBody -Body $req.Body
+                    $repoName  = if ($body.ContainsKey('repoName')  -and $body.repoName)  { [string]$body.repoName }  else { '' }
+                    $localPath = if ($body.ContainsKey('localPath') -and $body.localPath) { [string]$body.localPath } else { '' }
+
+                    if ([string]::IsNullOrWhiteSpace($repoName)) {
+                        throw 'repoName is required for /api/repo/git-status-detail'
+                    }
+
+                    # Resolve localPath: body → status cache lookup
+                    if ([string]::IsNullOrWhiteSpace($localPath)) {
+                        foreach ($cacheKey in @($script:StatusCacheMemory.Keys)) {
+                            $entry = $script:StatusCacheMemory[$cacheKey]
+                            if ($null -ne $entry -and $null -ne $entry.Response) {
+                                $cachedRepos = if ($entry.Response.PSObject.Properties['repos']) { @($entry.Response.repos) } else { @() }
+                                $match = $cachedRepos | Where-Object { $_.name -eq $repoName } | Select-Object -First 1
+                                if ($null -ne $match -and -not [string]::IsNullOrWhiteSpace($match.localPath)) {
+                                    $localPath = [string]$match.localPath
+                                    break
+                                }
+                            }
+                        }
+                    }
+
+                    if ([string]::IsNullOrWhiteSpace($localPath)) {
+                        throw "Could not resolve localPath for repo '$repoName' — provide localPath in the request body or ensure a status cache entry exists"
+                    }
+
+                    $detail = Get-RepoGitStatusDetail -LocalPath $localPath -RepoName $repoName
+
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Write-HostLog ("[TRACE] repo.git-status-detail correlationId={0} done repoName={1} staged={2} unstaged={3} untracked={4}" -f $correlationId, $repoName, $detail.stagedCount, $detail.unstagedCount, $detail.untrackedCount)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = $detail
+                    }
+                }
+                'POST /api/repo/git-stash' {
+                    Write-HostLog ("[TRACE] repo.git-stash correlationId={0} start" -f $correlationId)
+                    $body      = Parse-JsonBody -Body $req.Body
+                    $repoName  = if ($body.ContainsKey('repoName')  -and $body.repoName)  { [string]$body.repoName }  else { '' }
+                    $localPath = if ($body.ContainsKey('localPath') -and $body.localPath) { [string]$body.localPath } else { '' }
+
+                    if ([string]::IsNullOrWhiteSpace($repoName)) {
+                        throw 'repoName is required for /api/repo/git-stash'
+                    }
+
+                    # Resolve localPath from cache if not provided
+                    if ([string]::IsNullOrWhiteSpace($localPath)) {
+                        foreach ($cacheKey in @($script:StatusCacheMemory.Keys)) {
+                            $entry = $script:StatusCacheMemory[$cacheKey]
+                            if ($null -ne $entry -and $null -ne $entry.Response) {
+                                $cachedRepos = if ($entry.Response.PSObject.Properties['repos']) { @($entry.Response.repos) } else { @() }
+                                $match = $cachedRepos | Where-Object { $_.name -eq $repoName } | Select-Object -First 1
+                                if ($null -ne $match -and -not [string]::IsNullOrWhiteSpace($match.localPath)) {
+                                    $localPath = [string]$match.localPath
+                                    break
+                                }
+                            }
+                        }
+                    }
+
+                    if ([string]::IsNullOrWhiteSpace($localPath)) {
+                        throw "Could not resolve localPath for repo '$repoName'"
+                    }
+
+                    $stashResult = Invoke-GitStash -LocalPath $localPath
+
+                    # Invalidate status cache entry for this repo
+                    $keysToRemove = @($script:StatusCacheMemory.Keys | Where-Object {
+                        $entry = $script:StatusCacheMemory[$_]
+                        $null -ne $entry -and $null -ne $entry.Response -and
+                        $entry.Response.PSObject.Properties['repos'] -and
+                        (@($entry.Response.repos) | Where-Object { $_.name -eq $repoName }).Count -gt 0
+                    })
+                    foreach ($k in $keysToRemove) { $script:StatusCacheMemory.Remove($k) }
+
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Write-HostLog ("[TRACE] repo.git-stash correlationId={0} done repoName={1} success={2}" -f $correlationId, $repoName, $stashResult.success)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $stashResult.success
+                        data    = @{
+                            output   = $stashResult.output
+                            stashRef = $stashResult.stashRef
+                        }
+                    }
+                }
+                'POST /api/repo/git-discard' {
+                    Write-HostLog ("[TRACE] repo.git-discard correlationId={0} start" -f $correlationId)
+                    $body             = Parse-JsonBody -Body $req.Body
+                    $repoName         = if ($body.ContainsKey('repoName')         -and $body.repoName)         { [string]$body.repoName }                        else { '' }
+                    $localPath        = if ($body.ContainsKey('localPath')        -and $body.localPath)        { [string]$body.localPath }                       else { '' }
+                    $includeUntracked = if ($body.ContainsKey('includeUntracked'))                             { [bool]$body.includeUntracked }                  else { $false }
+
+                    if ([string]::IsNullOrWhiteSpace($repoName)) {
+                        throw 'repoName is required for /api/repo/git-discard'
+                    }
+
+                    # Resolve localPath from cache if not provided
+                    if ([string]::IsNullOrWhiteSpace($localPath)) {
+                        foreach ($cacheKey in @($script:StatusCacheMemory.Keys)) {
+                            $entry = $script:StatusCacheMemory[$cacheKey]
+                            if ($null -ne $entry -and $null -ne $entry.Response) {
+                                $cachedRepos = if ($entry.Response.PSObject.Properties['repos']) { @($entry.Response.repos) } else { @() }
+                                $match = $cachedRepos | Where-Object { $_.name -eq $repoName } | Select-Object -First 1
+                                if ($null -ne $match -and -not [string]::IsNullOrWhiteSpace($match.localPath)) {
+                                    $localPath = [string]$match.localPath
+                                    break
+                                }
+                            }
+                        }
+                    }
+
+                    if ([string]::IsNullOrWhiteSpace($localPath)) {
+                        throw "Could not resolve localPath for repo '$repoName'"
+                    }
+
+                    $discardResult = Invoke-GitDiscard -LocalPath $localPath -IncludeUntracked $includeUntracked
+
+                    # Invalidate status cache entry for this repo
+                    $keysToRemove = @($script:StatusCacheMemory.Keys | Where-Object {
+                        $entry = $script:StatusCacheMemory[$_]
+                        $null -ne $entry -and $null -ne $entry.Response -and
+                        $entry.Response.PSObject.Properties['repos'] -and
+                        (@($entry.Response.repos) | Where-Object { $_.name -eq $repoName }).Count -gt 0
+                    })
+                    foreach ($k in $keysToRemove) { $script:StatusCacheMemory.Remove($k) }
+
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Write-HostLog ("[TRACE] repo.git-discard correlationId={0} done repoName={1} success={2} includeUntracked={3}" -f $correlationId, $repoName, $discardResult.success, $includeUntracked)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $discardResult.success
+                        data    = @{
+                            output        = $discardResult.output
+                            filesRestored = $discardResult.filesRestored
+                            filesRemoved  = $discardResult.filesRemoved
                         }
                     }
                 }
