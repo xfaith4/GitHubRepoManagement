@@ -25,9 +25,7 @@ $roadmapModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\roadmap'
 $docAuditModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\docaudit'
 $executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 . (Join-Path $commonRoot 'Metrics.ps1')
-. (Join-Path $adapterRoot 'Status.Adapter.ps1')
-. (Join-Path $adapterRoot 'Reconcile.Adapter.ps1')
-. (Join-Path $adapterRoot 'DocReview.Adapter.ps1')
+. (Join-Path $adapterRoot 'Adapters.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.Parser.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.Auditor.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.Repairer.ps1')
@@ -2965,9 +2963,7 @@ try {
                 'GET /health/ready' {
                     $checks = @{
                         adaptersPath = Test-Path -LiteralPath $adapterRoot
-                        statusAdapter = Test-Path -LiteralPath (Join-Path $adapterRoot 'Status.Adapter.ps1')
-                        reconcileAdapter = Test-Path -LiteralPath (Join-Path $adapterRoot 'Reconcile.Adapter.ps1')
-                        docreviewAdapter = Test-Path -LiteralPath (Join-Path $adapterRoot 'DocReview.Adapter.ps1')
+                        adapters = Test-Path -LiteralPath (Join-Path $adapterRoot 'Adapters.ps1')
                     }
                     $healthy = -not ($checks.Values -contains $false)
                     Add-MetricCounter -Name 'api_requests_total'

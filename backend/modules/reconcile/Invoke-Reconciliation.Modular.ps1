@@ -62,6 +62,7 @@ $callerMaxDepth = $MaxDepth
 . (Join-Path $workspaceRoot 'modules\common\Logging.ps1')
 . (Join-Path $workspaceRoot 'modules\common\Metrics.ps1')
 . (Join-Path $workspaceRoot 'modules\common\Retry.ps1')
+. (Join-Path $workspaceRoot 'modules\common\Validation.ps1')
 
 # Load proven function library from copied script without executing workflow
 . (Join-Path $moduleRoot 'Invoke-Reconciliation.ps1') -LoadFunctionsOnly
@@ -77,10 +78,125 @@ $IgnoreDirNames = $callerIgnoreDirNames
 $IgnorePathRegex = $callerIgnorePathRegex
 $MaxDepth = $callerMaxDepth
 
-# Load modular wrappers
-. (Join-Path $moduleRoot 'Reconcile.Scanner.ps1')
-. (Join-Path $moduleRoot 'Reconcile.Matcher.ps1')
-. (Join-Path $moduleRoot 'Reconcile.Reporter.ps1')
+# ---------------------------------------------------------------------------
+# Inline helpers (formerly Reconcile.Scanner.ps1, Reconcile.Matcher.ps1,
+# and Reconcile.Reporter.ps1)
+# ---------------------------------------------------------------------------
+
+function Invoke-ReconcileScan {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$LocalRoots,
+        [Parameter(Mandatory = $true)]
+        [string[]]$IgnoreDirNames,
+        [Parameter(Mandatory = $true)]
+        [string[]]$IgnorePathRegex,
+        [Parameter(Mandatory = $true)]
+        [int]$MaxDepth,
+        [Parameter(Mandatory = $true)]
+        [bool]$IncludeNonGitFolders
+    )
+
+    $items = Get-LocalFolderInventory `
+        -Roots $LocalRoots `
+        -IgnoreDirNames $IgnoreDirNames `
+        -IgnorePathRegex $IgnorePathRegex `
+        -MaxDepth $MaxDepth `
+        -IncludeNonGitFolders:$IncludeNonGitFolders
+
+    if ($null -eq $items) {
+        return ,@()
+    }
+
+    return ,@($items)
+}
+
+function Invoke-ReconcileMatch {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$LocalItems,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$GitHubItems
+    )
+
+    $comparison = Compare-LocalAndGitHub -LocalItems $LocalItems -GitHubItems $GitHubItems
+    $duplicates = Get-PotentialLocalDuplicates -LocalItems $LocalItems
+
+    return [pscustomobject]@{
+        Comparison = @($comparison)
+        PotentialDuplicates = @($duplicates)
+    }
+}
+
+function Invoke-ReconcileReportExport {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$OutDir,
+        [Parameter(Mandatory = $true)]
+        [string[]]$LocalRoots,
+        [Parameter()]
+        [string]$GitHubOwner,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$LocalItems,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$GitHubItems,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$Comparison,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$PotentialDuplicates
+    )
+
+    $shape = Test-ReconciliationArtifactShape `
+        -LocalItems $LocalItems `
+        -GitHubItems $GitHubItems `
+        -Comparison $Comparison `
+        -PotentialDuplicates $PotentialDuplicates
+
+    if (-not $shape.IsValid) {
+        throw "Validation failed before artifact write: $($shape.Reason)"
+    }
+
+    $null = New-Item -ItemType Directory -Path $OutDir -Force -ErrorAction Stop
+
+    $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+    $jsonPath = Join-Path -Path $OutDir -ChildPath ("repo-reconciliation_{0}.json" -f $stamp)
+    $csvPath = Join-Path -Path $OutDir -ChildPath ("repo-reconciliation_{0}.csv" -f $stamp)
+    $dupesCsvPath = Join-Path -Path $OutDir -ChildPath ("repo-duplicates_{0}.csv" -f $stamp)
+
+    [pscustomobject]@{
+        GeneratedAt         = (Get-Date).ToString('o')
+        LocalRoots          = @($LocalRoots)
+        GitHubOwner         = $GitHubOwner
+        LocalItemsCount     = @($LocalItems).Count
+        GitHubItemsCount    = @($GitHubItems).Count
+        MatchedCount        = @($Comparison | Where-Object { $_.Status -eq 'Matched' }).Count
+        LocalOnlyCount      = @($Comparison | Where-Object { $_.Status -eq 'LocalOnly' }).Count
+        GitHubOnlyCount     = @($Comparison | Where-Object { $_.Status -eq 'GitHubOnly' }).Count
+        DuplicateCount      = @($PotentialDuplicates).Count
+        LocalItems          = @($LocalItems)
+        GitHubItems         = @($GitHubItems)
+        Comparison          = @($Comparison)
+        PotentialDuplicates = @($PotentialDuplicates)
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $jsonPath -Encoding UTF8
+
+    $Comparison | Export-Csv -LiteralPath $csvPath -NoTypeInformation -Encoding UTF8
+    $PotentialDuplicates | Export-Csv -LiteralPath $dupesCsvPath -NoTypeInformation -Encoding UTF8
+
+    return [pscustomobject]@{
+        JsonPath = $jsonPath
+        CsvPath = $csvPath
+        DuplicatesCsvPath = $dupesCsvPath
+    }
+}
 
 Write-StructuredLog -Level Info -Component reconcile -Operation reconcile.run -CorrelationId $correlationId -Message 'Starting modular reconciliation run' -Details @{ LocalRoots = $LocalRoots; GitHubOwner = $GitHubOwner; OwnerType = $OwnerType; OutDir = $OutDir } -LogPath $LogPath
 $runStart = Get-Date
