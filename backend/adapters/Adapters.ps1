@@ -1,0 +1,315 @@
+# =============================================================================
+# Adapters.ps1 — unified adapter layer
+# Merges: Adapter.Common.ps1, Status.Adapter.ps1,
+#         Reconcile.Adapter.ps1, DocReview.Adapter.ps1
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Shared response envelope (was Adapter.Common.ps1)
+# ---------------------------------------------------------------------------
+
+function New-AdapterResponse {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Operation,
+
+        [Parameter(Mandatory = $true)]
+        [string]$CorrelationId,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$Success,
+
+        [Parameter()]
+        [object]$Data,
+
+        [Parameter()]
+        [string]$Error,
+
+        [Parameter()]
+        [hashtable]$Meta
+    )
+
+    return [pscustomobject]@{
+        operation = $Operation
+        correlationId = $CorrelationId
+        success = $Success
+        timestamp = (Get-Date).ToString('o')
+        data = $Data
+        error = $Error
+        meta = if ($Meta) { $Meta } else { @{} }
+    }
+}
+
+function Get-ErrorCategory {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [string]$Message
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Message)) {
+        return 'internal'
+    }
+
+    $text = $Message.ToLowerInvariant()
+    if ($text -match 'validation|invalid|missing required|cannot bind') {
+        return 'validation'
+    }
+    if ($text -match 'timeout|timed out') {
+        return 'timeout'
+    }
+    if ($text -match 'gh|github|network|dns|socket|connection|api') {
+        return 'dependency'
+    }
+
+    return 'internal'
+}
+
+# ---------------------------------------------------------------------------
+# Status adapter (was Status.Adapter.ps1)
+# ---------------------------------------------------------------------------
+
+function Get-StatusAdapterResult {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [string[]]$LocalRoots = @('G:\Development'),
+
+        [Parameter()]
+        [int]$MaxDepth = 2,
+
+        [Parameter()]
+        [switch]$IncludeNonGitFolders,
+
+        [Parameter()]
+        [string]$LogPath
+    )
+
+    $correlationId = [guid]::NewGuid().ToString('n')
+    $operation = 'status.scan'
+
+    try {
+        $scanStartedAt = Get-Date
+        $callerLocalRoots = @($LocalRoots)
+        $callerMaxDepth = $MaxDepth
+        $callerIncludeNonGitFolders = $IncludeNonGitFolders
+
+        . (Join-Path $PSScriptRoot '..\modules\common\Logging.ps1')
+        . (Join-Path $PSScriptRoot '..\modules\reconcile\Invoke-Reconciliation.ps1') -LoadFunctionsOnly
+
+        # Restore caller values after dot-sourcing legacy script with overlapping params.
+        $LocalRoots = $callerLocalRoots
+        $MaxDepth = $callerMaxDepth
+        $IncludeNonGitFolders = $callerIncludeNonGitFolders
+
+        $ignoreDirNames = @(
+            'node_modules','vendor','dist','build','out','.vs','.idea','.vscode',
+            'bin','obj','.venv','venv','__pycache__','.next','.pytest_cache'
+        )
+        $ignorePathRegex = @('[/\\]\.git([/\\]|$)')
+
+        Write-StructuredLog -Level Info -Component adapter.status -Operation $operation -CorrelationId $correlationId -Message 'Starting status scan adapter call' -Details @{ LocalRoots = $LocalRoots; MaxDepth = $MaxDepth } -LogPath $LogPath
+
+        $items = Get-LocalFolderInventory `
+            -Roots $LocalRoots `
+            -IgnoreDirNames $ignoreDirNames `
+            -IgnorePathRegex $ignorePathRegex `
+            -MaxDepth $MaxDepth `
+            -IncludeNonGitFolders:$IncludeNonGitFolders
+
+        $repos = @(
+            @($items) | Where-Object { $_.IsGitRepo } | ForEach-Object {
+                $modifiedCount = if ($null -ne $_.ModifiedCount) { [int]$_.ModifiedCount } else { 0 }
+                $untrackedCount = if ($null -ne $_.UntrackedCount) { [int]$_.UntrackedCount } else { 0 }
+                $dirty = $modifiedCount + $untrackedCount
+                [pscustomobject]@{
+                    name = $_.GitRepoName
+                    folderName = $_.FolderName
+                    path = $_.LocalPath
+                    branch = $_.CurrentBranch
+                    lastCommitDate = $_.LastCommitDate
+                    lastCommitMessage = $_.LastCommitMessage
+                    lastCommitAuthor = $_.LastCommitAuthor
+                    commitsLastWeek = if ($null -ne $_.CommitsLastWeek) { [int]$_.CommitsLastWeek } else { 0 }
+                    commitsLastMonth = if ($null -ne $_.CommitsLastMonth) { [int]$_.CommitsLastMonth } else { 0 }
+                    modifiedCount = $modifiedCount
+                    untrackedCount = $untrackedCount
+                    dirtyCount = $dirty
+                    status = if ($dirty -gt 0) { 'dirty' } else { 'clean' }
+                    originUrl = $_.GitOriginUrl
+                }
+            }
+        )
+
+        Write-StructuredLog -Level Info -Component adapter.status -Operation $operation -CorrelationId $correlationId -Message 'Status scan adapter call completed' -Details @{ RepoCount = @($repos).Count; ItemCount = @($items).Count } -LogPath $LogPath
+
+        $scanDurationMs = [math]::Round(((Get-Date) - $scanStartedAt).TotalMilliseconds, 0)
+        return New-AdapterResponse -Operation $operation -CorrelationId $correlationId -Success $true -Data ([pscustomobject]@{ repos = $repos }) -Meta @{ localRoots = $LocalRoots; maxDepth = $MaxDepth; repoCount = @($repos).Count; itemCount = @($items).Count; scanDurationMs = $scanDurationMs }
+    }
+    catch {
+        $errorMessage = $_.Exception.Message
+        return New-AdapterResponse `
+            -Operation $operation `
+            -CorrelationId $correlationId `
+            -Success $false `
+            -Error $errorMessage `
+            -Meta @{ errorCategory = (Get-ErrorCategory -Message $errorMessage) }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Reconcile adapter (was Reconcile.Adapter.ps1)
+# ---------------------------------------------------------------------------
+
+function Invoke-ReconcileAdapter {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [string[]]$LocalRoots = @('G:\Development'),
+
+        [Parameter()]
+        [string]$GitHubOwner,
+
+        [Parameter()]
+        [ValidateSet('User','Org','Auto')]
+        [string]$OwnerType = 'Auto',
+
+        [Parameter()]
+        [string]$OutDir,
+
+        [Parameter()]
+        [int]$MaxDepth = 3,
+
+        [Parameter()]
+        [switch]$IncludeNonGitFolders = $true,
+
+        [Parameter()]
+        [string]$LogPath
+    )
+
+    $correlationId = [guid]::NewGuid().ToString('n')
+    $operation = 'reconcile.run'
+
+    try {
+        . (Join-Path $PSScriptRoot '..\modules\common\Logging.ps1')
+
+        if (-not $OutDir) {
+            $OutDir = Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'output\reconcile-adapter'
+        }
+
+        Write-StructuredLog -Level Info -Component adapter.reconcile -Operation $operation -CorrelationId $correlationId -Message 'Starting reconcile adapter call' -Details @{ LocalRoots = $LocalRoots; GitHubOwner = $GitHubOwner; OutDir = $OutDir } -LogPath $LogPath
+
+        $result = & (Join-Path $PSScriptRoot '..\modules\reconcile\Invoke-Reconciliation.Modular.ps1') `
+            -LocalRoots $LocalRoots `
+            -GitHubOwner $GitHubOwner `
+            -OwnerType $OwnerType `
+            -OutDir $OutDir `
+            -MaxDepth $MaxDepth `
+            -IncludeNonGitFolders:$IncludeNonGitFolders `
+            -LogPath $LogPath
+
+        Write-StructuredLog -Level Info -Component adapter.reconcile -Operation $operation -CorrelationId $correlationId -Message 'Reconcile adapter call completed' -Details @{ JsonPath = $result.JsonPath; ComparisonCount = $result.ComparisonCount } -LogPath $LogPath
+
+        return New-AdapterResponse -Operation $operation -CorrelationId $correlationId -Success $true -Data $result -Meta @{ outDir = $OutDir }
+    }
+    catch {
+        $errorMessage = $_.Exception.Message
+        return New-AdapterResponse `
+            -Operation $operation `
+            -CorrelationId $correlationId `
+            -Success $false `
+            -Error $errorMessage `
+            -Meta @{ errorCategory = (Get-ErrorCategory -Message $errorMessage) }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# DocReview adapter (was DocReview.Adapter.ps1)
+# ---------------------------------------------------------------------------
+
+function Invoke-DocReviewAdapter {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [string]$RootPath = 'G:\Development\20_Staging',
+
+        [Parameter()]
+        [int]$MaxDepth = 3,
+
+        [Parameter()]
+        [string]$TargetRepo,
+
+        [Parameter()]
+        [string]$OutDir,
+
+        [Parameter()]
+        [switch]$GenerateQueue = $true,
+
+        [Parameter()]
+        [switch]$GenerateBatchPlan,
+
+        [Parameter()]
+        [string]$LogPath
+    )
+
+    $correlationId = [guid]::NewGuid().ToString('n')
+    $operation = 'docreview.run'
+
+    try {
+        . (Join-Path $PSScriptRoot '..\modules\common\Logging.ps1')
+
+        if (-not $OutDir) {
+            $OutDir = Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'output\docreview-adapter'
+        }
+        $inventoryDir = Join-Path $OutDir 'inventory'
+        $queueDir = Join-Path $OutDir 'queue'
+        $workitemsDir = Join-Path $OutDir 'workitems'
+
+        $null = New-Item -ItemType Directory -Force -Path $inventoryDir
+        $null = New-Item -ItemType Directory -Force -Path $queueDir
+        $null = New-Item -ItemType Directory -Force -Path $workitemsDir
+
+        Write-StructuredLog -Level Info -Component adapter.docreview -Operation $operation -CorrelationId $correlationId -Message 'Starting doc-review adapter run' -Details @{ RootPath = $RootPath; OutDir = $OutDir; GenerateQueue = $GenerateQueue.IsPresent; GenerateBatchPlan = $GenerateBatchPlan.IsPresent; TargetRepo = $TargetRepo } -LogPath $LogPath
+
+        & (Join-Path $PSScriptRoot '..\modules\docreview\Invoke-DocReviewInventory.ps1') `
+            -RootPath $RootPath `
+            -OutDir $inventoryDir `
+            -MaxDepth $MaxDepth
+
+        $manifestPath = Join-Path $inventoryDir 'doc-review-manifest.json'
+
+        if ($GenerateQueue) {
+            & (Join-Path $PSScriptRoot '..\modules\docreview\Build-DocReviewQueue.ps1') `
+                -ManifestPath $manifestPath `
+                -OutDir $queueDir `
+                -MaxFilesPerBatch 5
+        }
+
+        if ($GenerateBatchPlan -and -not [string]::IsNullOrWhiteSpace($TargetRepo)) {
+            & (Join-Path $PSScriptRoot '..\modules\docreview\Invoke-DocReviewBatchPlan.ps1') `
+                -ManifestPath $manifestPath `
+                -TargetRepo $TargetRepo `
+                -OutDir $workitemsDir
+        }
+
+        Write-StructuredLog -Level Info -Component adapter.docreview -Operation $operation -CorrelationId $correlationId -Message 'Doc-review adapter run completed' -Details @{ ManifestPath = $manifestPath } -LogPath $LogPath
+
+        return New-AdapterResponse -Operation $operation -CorrelationId $correlationId -Success $true -Data ([pscustomobject]@{
+            inventoryManifestPath = $manifestPath
+            inventorySummaryCsvPath = (Join-Path $inventoryDir 'doc-review-summary.csv')
+            inventoryReportPath = (Join-Path $inventoryDir 'doc-review-report.md')
+            queuePath = if ($GenerateQueue) { Join-Path $queueDir 'doc-review-queue.json' } else { $null }
+            workitemsRoot = if ($GenerateBatchPlan -and $TargetRepo) { Join-Path $workitemsDir $TargetRepo } else { $null }
+        }) -Meta @{ outDir = $OutDir }
+    }
+    catch {
+        $errorMessage = $_.Exception.Message
+        return New-AdapterResponse `
+            -Operation $operation `
+            -CorrelationId $correlationId `
+            -Success $false `
+            -Error $errorMessage `
+            -Meta @{ errorCategory = (Get-ErrorCategory -Message $errorMessage) }
+    }
+}

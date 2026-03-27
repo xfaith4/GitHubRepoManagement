@@ -37,8 +37,12 @@ function Invoke-ApiRequest {
 
     $response = Invoke-WebRequest @invokeSplat
     $json = $null
-    if (-not [string]::IsNullOrWhiteSpace($response.Content) -and $response.Headers['Content-Type'] -like 'application/json*') {
-        $json = $response.Content | ConvertFrom-Json
+    if (-not [string]::IsNullOrWhiteSpace($response.Content)) {
+        $contentType = [string]$response.Headers['Content-Type']
+        $looksLikeJson = $response.Content.TrimStart() -match '^[\{\[]'
+        if ($contentType -like 'application/json*' -or $looksLikeJson) {
+            try { $json = $response.Content | ConvertFrom-Json } catch { $json = $null }
+        }
     }
 
     return [pscustomobject]@{
@@ -119,6 +123,22 @@ try {
     $statusResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/status?localRoots=$([uri]::EscapeDataString($WorkspaceRoot))&maxDepth=2&includeNonGitFolders=false"
     Assert-Not503 -Name '/api/status' -Response $statusResponse
     $status = $statusResponse.Json
+    if ($null -eq $status) {
+        throw "/api/status did not return JSON. HTTP $($statusResponse.StatusCode). Content-Type=$($statusResponse.ContentType). Body=$($statusResponse.Content)"
+    }
+    if (-not ($status.PSObject.Properties.Name -contains 'success')) {
+        throw "/api/status response missing 'success'. Body=$($statusResponse.Content)"
+    }
+    if ($status.success -ne $true) {
+        $err = if ($status.PSObject.Properties.Name -contains 'error') { $status.error } else { $statusResponse.Content }
+        throw "/api/status returned success=false. HTTP $($statusResponse.StatusCode). Error=$err"
+    }
+    if (-not ($status.PSObject.Properties.Name -contains 'data') -or $null -eq $status.data) {
+        throw "/api/status returned success=true but missing 'data'. Body=$($statusResponse.Content)"
+    }
+    if (-not ($status.data.PSObject.Properties.Name -contains 'repos')) {
+        throw "/api/status returned success=true but data.repos is missing. Body=$($statusResponse.Content)"
+    }
     $statusRepos = @($status.data.repos)
     if ($statusRepos.Count -gt 0) {
         $firstStatusRepo = $statusRepos[0]
@@ -141,6 +161,19 @@ try {
     $settingsGet = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/settings"
     Assert-Not503 -Name '/api/settings (GET)' -Response $settingsGet
     $settingsJson = $settingsGet.Json
+    if ($null -eq $settingsJson) {
+        throw "/api/settings did not return JSON. HTTP $($settingsGet.StatusCode). Content-Type=$($settingsGet.ContentType). Body=$($settingsGet.Content)"
+    }
+    if (-not ($settingsJson.PSObject.Properties.Name -contains 'success')) {
+        throw "/api/settings response missing 'success'. Body=$($settingsGet.Content)"
+    }
+    if ($settingsJson.success -ne $true) {
+        $err = if ($settingsJson.PSObject.Properties.Name -contains 'error') { $settingsJson.error } else { $settingsGet.Content }
+        throw "/api/settings returned success=false. HTTP $($settingsGet.StatusCode). Error=$err"
+    }
+    if (-not ($settingsJson.PSObject.Properties.Name -contains 'data') -or $null -eq $settingsJson.data) {
+        throw "/api/settings returned success=true but missing 'data'. Body=$($settingsGet.Content)"
+    }
     $settingsPostBody = @{
         basePath = [string]($settingsJson.data.inventory.localRoots[0] ?? $WorkspaceRoot)
         scanDepth = [int]($settingsJson.data.inventory.maxDepth ?? 3)
