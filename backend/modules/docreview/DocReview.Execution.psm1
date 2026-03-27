@@ -1,8 +1,135 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-Import-Module (Join-Path $PSScriptRoot 'DocReview.Git.psm1') -Force
-Import-Module (Join-Path $PSScriptRoot 'DocReview.Validation.psm1') -Force
+# ---------------------------------------------------------------------------
+# Git utilities (formerly DocReview.Git.psm1)
+# ---------------------------------------------------------------------------
+
+function Test-DocReviewGitRepo {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoPath
+    )
+
+    if (-not (Test-Path -LiteralPath $RepoPath -PathType Container)) {
+        return $false
+    }
+
+    try {
+        $null = (& git -C $RepoPath rev-parse --is-inside-work-tree 2>$null)
+        return ($LASTEXITCODE -eq 0)
+    }
+    catch {
+        return $false
+    }
+}
+
+function Get-DocReviewWorkingTreeDirtyCount {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoPath
+    )
+
+    $output = (& git -C $RepoPath status --porcelain 2>&1) | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to inspect git status for '$RepoPath': $output"
+    }
+
+    $lines = @($output -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    return [int]$lines.Count
+}
+
+function Ensure-DocReviewBranch {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$BranchName
+    )
+
+    $verifyOutput = (& git -C $RepoPath rev-parse --verify --quiet ("refs/heads/{0}" -f $BranchName) 2>&1) | Out-String
+    $exists = ($LASTEXITCODE -eq 0)
+
+    if ($exists) {
+        $checkoutOutput = (& git -C $RepoPath checkout $BranchName 2>&1) | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to checkout existing branch '$BranchName' in '$RepoPath': $checkoutOutput"
+        }
+    }
+    else {
+        $createOutput = (& git -C $RepoPath checkout -b $BranchName 2>&1) | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to create branch '$BranchName' in '$RepoPath': $createOutput"
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Path/file validation utilities (formerly DocReview.Validation.psm1)
+# ---------------------------------------------------------------------------
+
+function Test-DocReviewPathContainsArchiveOrExample {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [string[]]$Files
+    )
+
+    $patterns = @(
+        '\\archive\\',
+        '\\_Archive\\',
+        '\\examples\\',
+        'run-ui-validate-',
+        'ui-auto-validate-'
+    )
+
+    foreach ($file in @($Files)) {
+        $normalized = ($file ?? '').Replace('/', '\')
+        foreach ($pattern in $patterns) {
+            if ($normalized -imatch [regex]::Escape($pattern)) {
+                return $true
+            }
+        }
+    }
+
+    return $false
+}
+
+function Test-DocReviewPacketExists {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PacketPath
+    )
+
+    return (Test-Path -LiteralPath $PacketPath -PathType Leaf)
+}
+
+function Get-DocReviewMissingTargetFiles {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoPath,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [string[]]$Files
+    )
+
+    $missing = New-Object System.Collections.Generic.List[string]
+    foreach ($relativePath in @($Files)) {
+        $fullPath = Join-Path -Path $RepoPath -ChildPath $relativePath
+        if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
+            $missing.Add($relativePath)
+        }
+    }
+    return @($missing)
+}
 
 function Get-DocReviewIsoNow {
     return (Get-Date).ToString('o')
@@ -772,5 +899,11 @@ Export-ModuleMember -Function @(
     'Set-DocReviewItemStatus',
     'Publish-DocReviewCopilotWorkItems',
     'Get-DocReviewEligibility',
-    'Get-QueueFieldValue'
+    'Get-QueueFieldValue',
+    'Test-DocReviewGitRepo',
+    'Get-DocReviewWorkingTreeDirtyCount',
+    'Ensure-DocReviewBranch',
+    'Test-DocReviewPathContainsArchiveOrExample',
+    'Test-DocReviewPacketExists',
+    'Get-DocReviewMissingTargetFiles'
 )

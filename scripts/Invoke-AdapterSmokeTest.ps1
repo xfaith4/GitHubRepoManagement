@@ -6,10 +6,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-. (Join-Path $WorkspaceRoot 'backend\adapters\Adapter.Common.ps1')
-. (Join-Path $WorkspaceRoot 'backend\adapters\Status.Adapter.ps1')
-. (Join-Path $WorkspaceRoot 'backend\adapters\Reconcile.Adapter.ps1')
-. (Join-Path $WorkspaceRoot 'backend\adapters\DocReview.Adapter.ps1')
+. (Join-Path $WorkspaceRoot 'backend\adapters\Adapters.ps1')
 
 Write-Host '[STEP] Status adapter smoke run' -ForegroundColor Cyan
 $status = Get-StatusAdapterResult -LocalRoots @($WorkspaceRoot) -MaxDepth 2 -IncludeNonGitFolders:$false
