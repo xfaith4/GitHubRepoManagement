@@ -195,17 +195,19 @@ function Invoke-GitDiscard {
         throw "LocalPath not found: $LocalPath"
     }
 
-    # Restore tracked files (staged and unstaged)
-    $checkoutOut = & git -C $LocalPath checkout -- . 2>&1
-    $checkoutExit = $LASTEXITCODE
-    $outputLines  = @($checkoutOut)
-
-    # Reset staged changes back to unstaged first, then checkout again
+    # Step 1: Unstage any staged changes so checkout can restore them
     $resetOut = & git -C $LocalPath reset HEAD -- . 2>&1
-    if ($LASTEXITCODE -eq 0) {
-        $checkoutOut2 = & git -C $LocalPath checkout -- . 2>&1
-        $checkoutExit = $LASTEXITCODE
-        $outputLines += $checkoutOut2
+    $outputLines = @($resetOut)
+
+    # Step 2: Restore tracked files (discards both staged-then-unstaged and unstaged changes)
+    $checkoutOut  = & git -C $LocalPath checkout -- . 2>&1
+    $checkoutExit = $LASTEXITCODE
+    $outputLines += $checkoutOut
+
+    # Count files restored from checkout output (lines like "Updated 3 paths...")
+    $filesRestored = 0
+    foreach ($line in $checkoutOut) {
+        if ($line -match 'Updated (\d+) path') { $filesRestored += [int]$Matches[1] }
     }
 
     $filesRemoved = 0
@@ -213,29 +215,30 @@ function Invoke-GitDiscard {
         $cleanOut  = & git -C $LocalPath clean -fd 2>&1
         $cleanExit = $LASTEXITCODE
         $outputLines += $cleanOut
-        # Count removed files from clean output
         $filesRemoved = @($cleanOut | Where-Object { $_ -match '^Removing ' }).Count
         if ($cleanExit -ne 0) {
             return [pscustomobject]@{
                 success       = $false
                 output        = ($outputLines | Out-String).Trim()
-                filesRestored = 0
+                filesRestored = $filesRestored
                 filesRemoved  = 0
             }
         }
     }
 
-    if ($checkoutExit -ne 0 -and $checkoutExit -ne $null) {
-        # checkout -- . on a clean worktree exits 0; treat non-zero as failure
-        # but only if there were actual tracked changes
+    if ($checkoutExit -ne 0) {
+        return [pscustomobject]@{
+            success       = $false
+            output        = ($outputLines | Out-String).Trim()
+            filesRestored = 0
+            filesRemoved  = 0
+        }
     }
-
-    $outputText = ($outputLines | Out-String).Trim()
 
     return [pscustomobject]@{
         success       = $true
-        output        = $outputText
-        filesRestored = @($outputLines | Where-Object { $_ -match '\S' }).Count
+        output        = ($outputLines | Out-String).Trim()
+        filesRestored = $filesRestored
         filesRemoved  = $filesRemoved
     }
 }

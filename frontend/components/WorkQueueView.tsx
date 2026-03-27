@@ -14,6 +14,7 @@ interface WorkQueueViewProps {
   onRepairRoadmap?: (repoName: string) => void;
   onLintRoadmap?: (repoName: string) => void;
   onStandardizeReadme?: (repoName: string) => void;
+  onGenerateReadme?: (repoName: string) => void;
   onEvaluateRepo?: (repoName: string) => void;
   onDispatchRelease?: (repoName: string) => void;
   isScanning: boolean;
@@ -148,6 +149,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
   onRepairRoadmap,
   onLintRoadmap,
   onStandardizeReadme,
+  onGenerateReadme,
   onEvaluateRepo,
   onDispatchRelease,
   isScanning,
@@ -527,6 +529,9 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
           {filteredEntries.map(entry => {
             const isExpanded = expandedRepos.has(entry.repoName);
             const hasFindings = entry.docFindings.length > 0;
+            const hasMissingReadme = (entry.docFindings ?? []).some(
+              f => /readme/i.test(f.file ?? '') && f.severity === 'critical'
+            );
             return (
               <div
                 key={entry.repoPath || entry.repoName}
@@ -635,6 +640,15 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                         title="Standardize README"
                       >
                         Standardize
+                      </button>
+                    )}
+                    {onGenerateReadme && hasMissingReadme && (
+                      <button
+                        onClick={e => { e.stopPropagation(); onGenerateReadme(entry.repoName); }}
+                        className="text-xs px-2 py-1 rounded border border-emerald-700/50 bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/60 transition-colors"
+                        title="Generate README with GitHub Copilot"
+                      >
+                        Generate README
                       </button>
                     )}
                     {onEvaluateRepo && (

@@ -39,8 +39,10 @@ $docStdModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\docstandardization
 . (Join-Path $roadmapModuleRoot 'Roadmap.DependencyTracker.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.Evaluator.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.Dispatcher.ps1')
-$gitModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\git'
+$gitModuleRoot    = Join-Path $WorkspaceRoot 'backend\modules\git'
 . (Join-Path $gitModuleRoot 'Git.StatusDetail.ps1')
+$readmeModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\readme'
+. (Join-Path $readmeModuleRoot 'Readme.Generator.ps1')
 . (Join-Path $docStdModuleRoot 'DocStandardization.Previewer.ps1')
 . (Join-Path $commonRoot 'NotificationHub.ps1')
 . (Join-Path $PSScriptRoot 'ApiHost.ErrorHandling.ps1')
@@ -4058,6 +4060,146 @@ try {
                             filesRestored = $discardResult.filesRestored
                             filesRemoved  = $discardResult.filesRemoved
                         }
+                    }
+                }
+                # Release 1.5 — Copilot-Assisted README Generation
+                # -------------------------------------------------------
+                'POST /api/readme/generate' {
+                    Write-HostLog ("[TRACE] readme.generate correlationId={0} start" -f $correlationId)
+                    try {
+                        $body      = Parse-JsonBody -Body $req.Body
+                        $repoName  = if ($body.ContainsKey('repoName')  -and $body.repoName)  { [string]$body.repoName }  else { '' }
+                        $localPath = if ($body.ContainsKey('localPath') -and $body.localPath) { [string]$body.localPath } else { '' }
+
+                        if ([string]::IsNullOrWhiteSpace($repoName)) {
+                            throw 'repoName is required for /api/readme/generate'
+                        }
+
+                        # Resolve localPath: body → status cache lookup
+                        if ([string]::IsNullOrWhiteSpace($localPath)) {
+                            foreach ($cacheKey in @($script:StatusCacheMemory.Keys)) {
+                                $entry = $script:StatusCacheMemory[$cacheKey]
+                                if ($null -ne $entry -and $null -ne $entry.Response) {
+                                    $cachedRepos = if ($entry.Response.PSObject.Properties['repos']) { @($entry.Response.repos) } else { @() }
+                                    $match = $cachedRepos | Where-Object { $_.name -eq $repoName } | Select-Object -First 1
+                                    if ($null -ne $match -and -not [string]::IsNullOrWhiteSpace($match.localPath)) {
+                                        $localPath = [string]$match.localPath
+                                        break
+                                    }
+                                }
+                            }
+                        }
+
+                        if ([string]::IsNullOrWhiteSpace($localPath)) {
+                            throw "Could not resolve localPath for repo '$repoName' — provide localPath in the request body or ensure a status cache entry exists"
+                        }
+
+                        $settings = Get-HostSettings
+                        $result = Invoke-CopilotReadmeGeneration -RepoName $repoName -LocalPath $localPath -Settings $settings
+                        Write-HostLog ("[TRACE] readme.generate correlationId={0} done repoName={1} repoType={2}" -f $correlationId, $repoName, $result.repoType)
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = $result
+                        }
+                    } catch {
+                        $errMsg = $_.Exception.Message
+                        if ($errMsg -match '^412:') {
+                            Send-HttpJson -Stream $req.Stream -StatusCode 412 -CorrelationId $correlationId -Payload @{
+                                success            = $false
+                                preconditionFailed = $true
+                                message            = $errMsg -replace '^412:\s*', ''
+                            }
+                        } else {
+                            $statusCode = Get-ErrorStatusCode -Message $errMsg -DefaultStatusCode 500
+                            Send-ErrorJson -Stream $req.Stream -StatusCode $statusCode -ErrorMessage $errMsg -CorrelationId $correlationId -Operation 'readme.generate'
+                        }
+                    }
+                }
+                'POST /api/readme/generate/apply' {
+                    Write-HostLog ("[TRACE] readme.generate.apply correlationId={0} start" -f $correlationId)
+                    try {
+                        $body         = Parse-JsonBody -Body $req.Body
+                        $repoName     = if ($body.ContainsKey('repoName')     -and $body.repoName)     { [string]$body.repoName }     else { '' }
+                        $localPath    = if ($body.ContainsKey('localPath')    -and $body.localPath)    { [string]$body.localPath }    else { '' }
+                        $generationId = if ($body.ContainsKey('generationId') -and $body.generationId) { [string]$body.generationId } else { '' }
+                        $content      = if ($body.ContainsKey('content')      -and $body.content)      { [string]$body.content }      else { '' }
+
+                        if ([string]::IsNullOrWhiteSpace($repoName))     { throw 'repoName is required' }
+                        if ([string]::IsNullOrWhiteSpace($generationId)) { throw 'generationId is required' }
+                        if ([string]::IsNullOrWhiteSpace($content))      { throw 'content is required' }
+
+                        # Resolve localPath: body → status cache lookup
+                        if ([string]::IsNullOrWhiteSpace($localPath)) {
+                            foreach ($cacheKey in @($script:StatusCacheMemory.Keys)) {
+                                $entry = $script:StatusCacheMemory[$cacheKey]
+                                if ($null -ne $entry -and $null -ne $entry.Response) {
+                                    $cachedRepos = if ($entry.Response.PSObject.Properties['repos']) { @($entry.Response.repos) } else { @() }
+                                    $match = $cachedRepos | Where-Object { $_.name -eq $repoName } | Select-Object -First 1
+                                    if ($null -ne $match -and -not [string]::IsNullOrWhiteSpace($match.localPath)) {
+                                        $localPath = [string]$match.localPath
+                                        break
+                                    }
+                                }
+                            }
+                        }
+
+                        if ([string]::IsNullOrWhiteSpace($localPath)) {
+                            throw "Could not resolve localPath for repo '$repoName' — provide localPath in the request body or ensure a status cache entry exists"
+                        }
+
+                        $readmePath = Join-Path $localPath 'README.md'
+                        if (Test-Path -LiteralPath $readmePath) {
+                            Send-HttpJson -Stream $req.Stream -StatusCode 409 -CorrelationId $correlationId -Payload @{
+                                success       = $false
+                                alreadyExists = $true
+                                readmePath    = $readmePath
+                            }
+                            break
+                        }
+
+                        Set-Content -LiteralPath $readmePath -Value $content -Encoding UTF8
+                        $writtenAt = (Get-Date).ToUniversalTime().ToString('o')
+                        Write-ReadmeGenerationHistoryEntry -WorkspaceRoot $WorkspaceRoot -Entry @{
+                            generationId = $generationId
+                            repoName     = $repoName
+                            localPath    = $localPath
+                            event        = 'apply'
+                            appliedAt    = $writtenAt
+                            readmePath   = $readmePath
+                        }
+
+                        Write-HostLog ("[TRACE] readme.generate.apply correlationId={0} done repoName={1} readmePath={2}" -f $correlationId, $repoName, $readmePath)
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = @{
+                                repoName   = $repoName
+                                readmePath = $readmePath
+                                writtenAt  = $writtenAt
+                            }
+                        }
+                    } catch {
+                        $statusCode = Get-ErrorStatusCode -Message $_.Exception.Message -DefaultStatusCode 500
+                        Send-ErrorJson -Stream $req.Stream -StatusCode $statusCode -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'readme.generate.apply'
+                    }
+                }
+                'GET /api/readme/generate/history' {
+                    Write-HostLog ("[TRACE] readme.generate.history correlationId={0} start" -f $correlationId)
+                    try {
+                        $q     = Parse-QueryString -Query $req.Query
+                        $limit = if ($q.ContainsKey('limit') -and $q.limit -match '^\d+$') { [int]$q.limit } else { 25 }
+                        if ($limit -gt 100) { $limit = 100 }
+                        $items = Get-ReadmeGenerationHistory -WorkspaceRoot $WorkspaceRoot -Limit $limit
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = @{ items = @($items); count = @($items).Count }
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'readme.generate.history'
                     }
                 }
                 'GET /api/roadmap/audit' {

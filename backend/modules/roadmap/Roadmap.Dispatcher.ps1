@@ -76,10 +76,6 @@ function _ExtractGoal {
     param([string[]]$Lines)
 
     foreach ($line in $Lines) {
-        if ($line -match '^\*\*Goal:\*\*\s*(.+)$') {
-            return $matches[1].Trim()
-        }
-        # Also match inline: **Goal:** text on the same line
         if ($line -match '\*\*Goal:\*\*\s*(.+)') {
             return $matches[1].Trim()
         }

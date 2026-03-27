@@ -117,6 +117,8 @@ The following progress is preserved from prior execution history and remains fou
 - [x] Roadmap item tagging — inline `[tag]` tokens (e.g. `[security]`, `[infra]`, `[breaking]`) extracted from checkbox items; `allTags` and per-item `tags` added to parse result; tags stripped from display text.
 - [x] Cross-repo dependency tracker (`Roadmap.DependencyTracker.ps1`) — detects GitHub URL, hash-ref, and keyword-based references between portfolio repos; `GET /api/roadmap/dependencies` returns full graph and summary.
 - [x] Copilot task prompt enriched with execution history, roadmap audit quality context, and cross-cutting tag context (Steps 6b–6d in `Build-CopilotTaskPacket`).
+- [x] Release-level Copilot dispatch (`Roadmap.Dispatcher.ps1`) — `Get-NextPendingRelease`, `Build-ReleaseDispatchPacket`, `Resolve-GitHubRepoIdentity`; maturity gate enforces L3+ before dispatch; `RoadmapDispatchModal` with 8-phase state machine; "Dispatch Release" button in Work Queue.
+- [x] Repo git status detail — `Git.StatusDetail.ps1` (`Get-RepoGitStatusDetail`, `Invoke-GitStash`, `Invoke-GitDiscard`); `POST /api/repo/git-status-detail`, `git-stash`, `git-discard` routes; `RepoGitStatusModal` with file groups, commit banners, Pull/Stash/Discard actions; Dirty/Ahead/Behind/Diverged badges in repo grid are now clickable.
 
 ---
 
@@ -434,7 +436,6 @@ The following progress is preserved from prior execution history and remains fou
 - Fully functional option in UI to Update a single repo roadmap with suggested hardening changes.
 - Fully functional option in UI to evaluate a repo in order to create a logical roadmap with code hardening changes and\or reasonable features with great value.
 
-
 ### Engineering milestones
 
 - [x] Add cross-platform startup script parity: align `Start-App.ps1` and `start.sh` flags/config handling with consistent defaults and error reporting.
@@ -458,14 +459,14 @@ The following progress is preserved from prior execution history and remains fou
 
 ### Engineering milestones
 
-- [ ] Add `POST /api/readme/generate` route: accepts `{ repoName, localPath? }`; collects repo context (file tree, entry points, `package.json` / `*.csproj` / `*.ps1` entrypoints, existing doc comments); constructs a structured Copilot prompt; returns `{ generationId, previewContent, contextSummary, generatedAt }`.
-- [ ] Implement `Invoke-CopilotReadmeGeneration` function in a new `backend/modules/readme/Readme.Generator.ps1` module: discovers repo type and entry points, extracts representative code snippets (first 50 lines of each entry point), builds a prompt skeleton, calls the configured GitHub Copilot API endpoint or `gh copilot` CLI, returns the generated markdown string.
-- [ ] Add `POST /api/readme/generate/apply` route: accepts `{ repoName, localPath?, generationId, content }`; validates the repo has no existing `README.md`; writes the file; invalidates any docs-audit cache for the repo; returns `{ repoName, readmePath, writtenAt }`.
-- [ ] Add `GET /api/readme/generate/history` route: returns the last 25 generation records for audit, with `{ generationId, repoName, generatedAt, appliedAt?, appliedBy? }`.
-- [ ] Add `ReadmeGenerateModal.tsx` React component: triggered from the Work Queue for repos where `readmeMissing` is true (derived from docs audit `missing-readme` finding); shows a loading state while the generation runs, a markdown preview panel, a plain-text editor for the operator to refine the content, and Confirm / Cancel buttons.
-- [ ] Surface "Generate README" action button in `WorkQueueView.tsx` on rows where the docs-audit `missing-readme` finding is present; the button opens `ReadmeGenerateModal`.
-- [ ] Add `readme.copilotApiUrl` and `readme.copilotApiKey` fields to `settings.json` schema (defaults to the GitHub Copilot chat completions endpoint); fall back to `gh copilot suggest` CLI if the API is not configured.
-- [ ] Add smoke test: `POST /api/readme/generate` for a repo with no README returns a `previewContent` string of at least 200 characters; `POST /api/readme/generate/apply` writes the file and returns 200.
+- [x] Add `POST /api/readme/generate` route: accepts `{ repoName, localPath? }`; collects repo context (file tree, entry points, `package.json` / `*.csproj` / `*.ps1` entrypoints, existing doc comments); constructs a structured Copilot prompt; returns `{ generationId, previewContent, contextSummary, generatedAt }`.
+- [x] Implement `Invoke-CopilotReadmeGeneration` function in a new `backend/modules/readme/Readme.Generator.ps1` module: discovers repo type and entry points, extracts representative code snippets (first 50 lines of each entry point), builds a prompt skeleton, calls the configured GitHub Copilot API endpoint or `gh copilot` CLI, returns the generated markdown string.
+- [x] Add `POST /api/readme/generate/apply` route: accepts `{ repoName, localPath?, generationId, content }`; validates the repo has no existing `README.md`; writes the file; invalidates any docs-audit cache for the repo; returns `{ repoName, readmePath, writtenAt }`.
+- [x] Add `GET /api/readme/generate/history` route: returns the last 25 generation records for audit, with `{ generationId, repoName, generatedAt, appliedAt?, appliedBy? }`.
+- [x] Add `ReadmeGenerateModal.tsx` React component: triggered from the Work Queue for repos where `readmeMissing` is true (derived from docs audit `missing-readme` finding); shows a loading state while the generation runs, a markdown preview panel, a plain-text editor for the operator to refine the content, and Confirm / Cancel buttons.
+- [x] Surface "Generate README" action button in `WorkQueueView.tsx` on rows where the docs-audit `missing-readme` finding is present; the button opens `ReadmeGenerateModal`.
+- [x] Add `readme.copilotApiUrl` and `readme.copilotApiKey` fields to `settings.json` schema (defaults to the GitHub Copilot chat completions endpoint); fall back to `gh copilot suggest` CLI if the API is not configured.
+- [x] Add smoke test: `POST /api/readme/generate` for a repo with no README returns a `previewContent` string of at least 200 characters; `POST /api/readme/generate/apply` writes the file and returns 200.
 
 ### Acceptance criteria
 
@@ -477,7 +478,7 @@ The following progress is preserved from prior execution history and remains fou
 ### Out of scope
 
 - Updating an existing `README.md` (handled by the README Standardization feature).
-- Automatic commit or PR creation (operator writes the file manually via this UI; PR submission deferred to Release 2.2).
+- Automatic commit or PR creation (operator writes the file manually via this UI; PR submission deferred to Release 2.3).
 - Bulk README generation for multiple repos in one action.
 
 ---
@@ -520,7 +521,48 @@ The following progress is preserved from prior execution history and remains fou
 
 ---
 
-## Release 1.7 — API Authentication and Network Security
+## Release 1.7 — Repo Git Status Detail: Dirty Badge Visibility and Action Pathways
+
+**Goal:** Make every non-clean repo status badge actionable — show operators exactly which files are changed and why, and provide direct pathways (pull, stash, discard) to correct the situation without leaving the UI.
+
+### Product outcomes
+
+- Clicking a Dirty, Ahead, Behind, or Diverged badge opens a drill-down view of the exact git state.
+- Operators can see staged, unstaged, untracked, and conflicted files grouped by category with status codes.
+- Unpushed and unpulled commits are surfaced alongside file changes in the same panel.
+- Corrective actions (pull, stash, discard) are available with appropriate guardrails.
+
+### Engineering milestones
+
+- [x] Create `backend/modules/git/Git.StatusDetail.ps1` with `Get-RepoGitStatusDetail`, `Invoke-GitStash`, and `Invoke-GitDiscard` functions.
+- [x] Parse `git status --porcelain=v1` into staged, unstaged, untracked, and conflicted file groups with single-char status codes.
+- [x] Detect mid-merge and mid-rebase state via `.git/MERGE_HEAD` and `.git/rebase-merge` presence.
+- [x] Fetch unpushed commits (`log origin/branch..HEAD`) and unpulled commits (`log HEAD..origin/branch`) when an upstream tracking branch is configured.
+- [x] Add `POST /api/repo/git-status-detail`, `POST /api/repo/git-stash`, and `POST /api/repo/git-discard` routes to the API host; resolve `localPath` from request body or status cache.
+- [x] Add `GitStatusFile`, `GitCommitRef`, `RepoGitStatusDetail`, and `GitActionResult` TypeScript types.
+- [x] Add `getRepoGitStatusDetail`, `stashRepoChanges`, and `discardRepoChanges` API client functions.
+- [x] Build `RepoGitStatusModal.tsx` with phase state machine (loading, loaded, acting, error); file groups with color-coded section borders; commit banners for unpulled/unpushed; Pull, Stash, and Discard actions with two-step discard confirmation.
+- [x] Make Dirty/Ahead/Behind/Diverged status badges in `RepoGrid.tsx` clickable buttons when `onViewGitStatus` handler is provided; Clean badges remain static spans.
+- [x] Wire `handleViewGitStatus` handler, modal state, and `onStatusChanged` refresh callback into `Dashboard.tsx`.
+
+### Acceptance criteria
+
+- Clicking a non-clean status badge opens the git status modal within 2 seconds.
+- The modal groups files correctly by staged, unstaged, untracked, and conflicted categories.
+- The Discard action requires two clicks (open panel + confirm) and cannot be triggered accidentally.
+- After any action (pull, stash, discard), the file list re-fetches and the parent repo status badge updates.
+- Clean repos have non-clickable static badges — no false affordance.
+
+### Out of scope
+
+- Staging individual files or partial staging (git add -p).
+- Committing changes from the UI (deferred to a later release).
+- Pushing commits from the UI.
+- Resolving merge conflicts through the UI.
+
+---
+
+## Release 1.8 — API Authentication and Network Security
 
 **Goal:** Harden the API host so it can be safely exposed beyond `127.0.0.1` without risk of unauthenticated access or information disclosure.
 
@@ -551,12 +593,12 @@ The following progress is preserved from prior execution history and remains fou
 
 ### Out of scope
 
-- OAuth / GitHub App authentication (deferred to Release 2.0).
+- OAuth / GitHub App authentication (deferred to Release 2.1).
 - Role-based access control.
 
 ---
 
-## Release 1.8 — Persistent Data Layer
+## Release 1.9 — Persistent Data Layer
 
 **Goal:** Replace JSON file storage with a SQLite database for the execution ledger, maturity history, and operations log so the application is reliable at scale and supports time-series queries.
 
@@ -595,7 +637,7 @@ The following progress is preserved from prior execution history and remains fou
 
 ---
 
-## Release 1.9 — Complete the Doc Review Pipeline
+## Release 2.0 — Complete the Doc Review Pipeline
 
 **Goal:** Deliver the Validate and Complete modes of the documentation review pipeline that are currently scaffolded but not implemented, and implement the Clone and Archive UI actions.
 
@@ -633,7 +675,7 @@ The following progress is preserved from prior execution history and remains fou
 
 ---
 
-## Release 2.0 — Guided Onboarding and GitHub App Integration
+## Release 2.1 — Guided Onboarding and GitHub App Integration
 
 **Goal:** Replace the manual PAT + settings.json setup with a guided first-run experience and a proper GitHub App OAuth flow so any engineer can go from zero to running in under five minutes.
 
@@ -664,12 +706,12 @@ The following progress is preserved from prior execution history and remains fou
 
 ### Out of scope
 
-- GitHub Marketplace listing (deferred to Release 2.1).
+- GitHub Marketplace listing (deferred to Release 2.2).
 - Multi-installation GitHub App support (one installation per running instance).
 
 ---
 
-## Release 2.1 — Portfolio Analytics, Trend Visualization, and Distribution
+## Release 2.2 — Portfolio Analytics, Trend Visualization, and Distribution
 
 **Goal:** Add historical trend charts, a portfolio health digest, and distribution artifacts that make the application shareable and self-promoting.
 
@@ -706,7 +748,7 @@ The following progress is preserved from prior execution history and remains fou
 
 ---
 
-## Release 2.2 — Agent Integration Protocol and AI Repair Loop
+## Release 2.3 — Agent Integration Protocol and AI Repair Loop
 
 **Goal:** Publish a formal machine-readable API contract that AI coding agents can query before starting work, and implement an AI-driven repair loop that submits roadmap and README improvements as GitHub pull requests for human review.
 

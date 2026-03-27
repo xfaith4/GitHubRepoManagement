@@ -90,7 +90,7 @@ export interface ReportExportResult {
   csvPath: string;
 }
 
-export type OperationType = 'init' | 'update' | 'sync' | 'export' | 'archive' | 'docreview' | 'scan' | 'roadmap-scan' | 'roadmap-agent' | 'docs-audit-scan' | 'copilot-task-preview' | 'roadmap-audit-scan' | 'roadmap-repair-preview' | 'roadmap-repair-apply' | 'roadmap-lint-scan' | 'readme-standardize-preview' | 'readme-standardize-apply' | 'roadmap-dispatch-check' | 'roadmap-dispatch-execute';
+export type OperationType = 'init' | 'update' | 'sync' | 'export' | 'archive' | 'docreview' | 'scan' | 'roadmap-scan' | 'roadmap-agent' | 'docs-audit-scan' | 'copilot-task-preview' | 'roadmap-audit-scan' | 'roadmap-repair-preview' | 'roadmap-repair-apply' | 'roadmap-lint-scan' | 'readme-standardize-preview' | 'readme-standardize-apply' | 'roadmap-dispatch-check' | 'roadmap-dispatch-execute' | 'readme-generate' | 'readme-generate-apply';
 
 export interface GithubInsightsMeta {
   totalRepos: number;
@@ -537,6 +537,35 @@ export interface ReadmeStandardizationHistoryItem {
   event: 'preview' | 'apply';
   timestamp: string;
   appliedAt?: string | null;
+}
+
+// Release 1.5 — Copilot-Assisted README Generation
+
+export interface ReadmeGenerationResult {
+  generationId: string;
+  repoName: string;
+  localPath: string;
+  repoType: string;
+  contextSummary: string;
+  previewContent: string;
+  generatedAt: string;
+}
+
+export interface ReadmeGenerationApplyResult {
+  repoName: string;
+  readmePath: string;
+  writtenAt: string;
+}
+
+export interface ReadmeGenerationHistoryItem {
+  generationId: string;
+  repoName: string;
+  localPath?: string | null;
+  repoType?: string | null;
+  contextSummary?: string | null;
+  generatedAt: string;
+  appliedAt?: string | null;
+  readmePath?: string | null;
 }
 
 // Maturity Drift Alert

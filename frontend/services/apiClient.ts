@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult } from '../types';
+import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -974,6 +974,38 @@ export async function applyReadmeStandardization(
 export async function getReadmeStandardizationHistory(limit = 25): Promise<ReadmeStandardizationHistoryItem[]> {
   const data = await fetchJson<any>(`${API_BASE_URL}/readme/standardize/history?limit=${limit}`);
   return Array.isArray(data?.data?.items) ? data.data.items.map(normalizeReadmeStandardizationHistoryItem) : [];
+}
+
+// Release 1.5 — Copilot-Assisted README Generation
+
+export async function generateReadme(repoName: string, localPath?: string): Promise<ReadmeGenerationResult> {
+  const body: Record<string, string> = { repoName };
+  if (localPath) body.localPath = localPath;
+  const data = await postJson<any>('/readme/generate', body);
+  if (!data?.success) {
+    throw new Error(data?.message ?? data?.error?.message ?? 'README generation failed.');
+  }
+  return data.data as ReadmeGenerationResult;
+}
+
+export async function applyGeneratedReadme(
+  repoName: string,
+  generationId: string,
+  content: string,
+  localPath?: string
+): Promise<ReadmeGenerationApplyResult> {
+  const body: Record<string, string> = { repoName, generationId, content };
+  if (localPath) body.localPath = localPath;
+  const data = await postJson<any>('/readme/generate/apply', body);
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? 'README apply failed.');
+  }
+  return data.data as ReadmeGenerationApplyResult;
+}
+
+export async function getReadmeGenerationHistory(limit = 25): Promise<ReadmeGenerationHistoryItem[]> {
+  const data = await fetchJson<any>(`${API_BASE_URL}/readme/generate/history?limit=${limit}`);
+  return Array.isArray(data?.data?.items) ? data.data.items : [];
 }
 
 export async function getMaturityDrift(): Promise<MaturityDriftResult> {

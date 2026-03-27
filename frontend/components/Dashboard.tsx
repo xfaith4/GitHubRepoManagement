@@ -21,6 +21,7 @@ import ExecutionQueuePanel from './ExecutionQueuePanel';
 import RepoEvaluationModal from './RepoEvaluationModal';
 import RoadmapDispatchModal from './RoadmapDispatchModal';
 import RepoGitStatusModal from './RepoGitStatusModal';
+import ReadmeGenerateModal from './ReadmeGenerateModal';
 import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getRoadmapDependencies } from '../services/apiClient';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
@@ -76,6 +77,8 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [dispatchModalRepo, setDispatchModalRepo] = useState<string | null>(null);
   const [gitStatusModalRepo, setGitStatusModalRepo] = useState<string | null>(null);
   const [gitStatusModalPath, setGitStatusModalPath] = useState<string | null>(null);
+  const [readmeGenerateRepo, setReadmeGenerateRepo] = useState<string | null>(null);
+  const [readmeGeneratePath, setReadmeGeneratePath] = useState<string | null>(null);
 
   // Release 1.2 — execution metrics, auto-scan schedule, dependency graph
   const [executionMetrics, setExecutionMetrics] = useState<ExecutionMetrics | null>(null);
@@ -539,6 +542,11 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
     setGitStatusModalPath(localPath ?? null);
   };
 
+  const handleGenerateReadme = (repoName: string) => {
+    setReadmeGenerateRepo(repoName);
+    setReadmeGeneratePath(repos.find(r => r.name === repoName)?.localPath ?? null);
+  };
+
   // Enrich repos with hasRoadmap flag, roadmapState, nextPendingRoadmapItem, and dispatchReadiness
   const reposWithRoadmap = useMemo(() => {
     const roadmapMap = roadmapEntries.length > 0
@@ -864,6 +872,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                 onRepairRoadmap={handleRepairRoadmap}
                 onLintRoadmap={(repoName) => setLintModalRepo(repoName)}
                 onStandardizeReadme={(repoName) => setStandardizeModalRepo(repoName)}
+                onGenerateReadme={handleGenerateReadme}
                 onEvaluateRepo={handleEvaluateRepo}
                 onDispatchRelease={handleDispatchRelease}
                 isScanning={currentOperation === 'docs-audit-scan'}
@@ -1059,6 +1068,18 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
         localPath={gitStatusModalPath}
         onClose={() => { setGitStatusModalRepo(null); setGitStatusModalPath(null); }}
         onStatusChanged={() => { fetchRepoStatus(); }}
+      />
+
+      <ReadmeGenerateModal
+        isOpen={readmeGenerateRepo !== null}
+        repoName={readmeGenerateRepo}
+        localPath={readmeGeneratePath}
+        onClose={() => { setReadmeGenerateRepo(null); setReadmeGeneratePath(null); }}
+        onApplied={() => {
+          setReadmeGenerateRepo(null);
+          setReadmeGeneratePath(null);
+          fetchRepoStatus();
+        }}
       />
     </div>
   );
