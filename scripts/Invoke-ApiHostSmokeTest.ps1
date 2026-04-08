@@ -279,11 +279,27 @@ try {
     $roadmapScanResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/scan" -Body $roadmapScanBody
     Assert-Not503 -Name '/api/roadmap/scan' -Response $roadmapScanResponse
     $roadmapScan = $roadmapScanResponse.Json
-    if (-not $roadmapScan.success) { throw 'roadmap/scan returned success=false' }
+    if ($null -eq $roadmapScan) {
+        throw "/api/roadmap/scan did not return JSON. HTTP $($roadmapScanResponse.StatusCode). Content-Type=$($roadmapScanResponse.ContentType). Body=$($roadmapScanResponse.Content)"
+    }
+    if (-not ($roadmapScan.PSObject.Properties.Name -contains 'success')) {
+        throw "/api/roadmap/scan response missing 'success'. Body=$($roadmapScanResponse.Content)"
+    }
+    if (-not $roadmapScan.success) {
+        $err = if ($roadmapScan.PSObject.Properties.Name -contains 'error') { $roadmapScan.error } else { $roadmapScanResponse.Content }
+        throw "/api/roadmap/scan returned success=false. HTTP $($roadmapScanResponse.StatusCode). Error=$err"
+    }
+    if (-not ($roadmapScan.PSObject.Properties.Name -contains 'data') -or $null -eq $roadmapScan.data) {
+        throw "/api/roadmap/scan returned success=true but missing 'data'. Body=$($roadmapScanResponse.Content)"
+    }
+    if (-not ($roadmapScan.data.PSObject.Properties.Name -contains 'entries')) {
+        throw "/api/roadmap/scan returned success=true but missing 'data.entries'. Body=$($roadmapScanResponse.Content)"
+    }
 
     Write-Host '[STEP] Roadmap scan entry state fields' -ForegroundColor Cyan
     $roadmapStateFieldsOk = $true
-    $firstEntry = @($roadmapScan.data.entries)[0]
+    $entries = @($roadmapScan.data.entries)
+    $firstEntry = if ($entries.Count -gt 0) { $entries[0] } else { $null }
     if ($firstEntry) {
         $validStates = @('pending', 'complete', 'parse-error')
         if (-not ($firstEntry.PSObject.Properties.Name -contains 'roadmapState')) {
@@ -584,7 +600,19 @@ try {
     $execMetricsResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/execution/metrics"
     Assert-Not503 -Name '/api/execution/metrics' -Response $execMetricsResponse
     $execMetricsJson = $execMetricsResponse.Json
-    if (-not $execMetricsJson.success) { throw '/api/execution/metrics returned success=false' }
+    if ($null -eq $execMetricsJson) {
+        throw "/api/execution/metrics did not return JSON. HTTP $($execMetricsResponse.StatusCode). Content-Type=$($execMetricsResponse.ContentType). Body=$($execMetricsResponse.Content)"
+    }
+    if (-not ($execMetricsJson.PSObject.Properties.Name -contains 'success')) {
+        throw "/api/execution/metrics response missing 'success'. Body=$($execMetricsResponse.Content)"
+    }
+    if (-not $execMetricsJson.success) {
+        $err = if ($execMetricsJson.PSObject.Properties.Name -contains 'error') { $execMetricsJson.error } else { $execMetricsResponse.Content }
+        throw "/api/execution/metrics returned success=false. HTTP $($execMetricsResponse.StatusCode). Error=$err"
+    }
+    if (-not ($execMetricsJson.PSObject.Properties.Name -contains 'data') -or $null -eq $execMetricsJson.data) {
+        throw "/api/execution/metrics returned success=true but missing 'data'. Body=$($execMetricsResponse.Content)"
+    }
     $execMetricsData = $execMetricsJson.data
     $execMetricsFieldsOk = $null -ne $execMetricsData -and
         ($execMetricsData.PSObject.Properties.Name -contains 'completedToday') -and
@@ -598,7 +626,19 @@ try {
     $scanScheduleResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/scan/schedule"
     Assert-Not503 -Name '/api/scan/schedule' -Response $scanScheduleResponse
     $scanScheduleJson = $scanScheduleResponse.Json
-    if (-not $scanScheduleJson.success) { throw '/api/scan/schedule returned success=false' }
+    if ($null -eq $scanScheduleJson) {
+        throw "/api/scan/schedule did not return JSON. HTTP $($scanScheduleResponse.StatusCode). Content-Type=$($scanScheduleResponse.ContentType). Body=$($scanScheduleResponse.Content)"
+    }
+    if (-not ($scanScheduleJson.PSObject.Properties.Name -contains 'success')) {
+        throw "/api/scan/schedule response missing 'success'. Body=$($scanScheduleResponse.Content)"
+    }
+    if (-not $scanScheduleJson.success) {
+        $err = if ($scanScheduleJson.PSObject.Properties.Name -contains 'error') { $scanScheduleJson.error } else { $scanScheduleResponse.Content }
+        throw "/api/scan/schedule returned success=false. HTTP $($scanScheduleResponse.StatusCode). Error=$err"
+    }
+    if (-not ($scanScheduleJson.PSObject.Properties.Name -contains 'data') -or $null -eq $scanScheduleJson.data) {
+        throw "/api/scan/schedule returned success=true but missing 'data'. Body=$($scanScheduleResponse.Content)"
+    }
     $scanScheduleData = $scanScheduleJson.data
     $scanScheduleFieldsOk = $null -ne $scanScheduleData -and
         ($scanScheduleData.PSObject.Properties.Name -contains 'enabled') -and
@@ -610,7 +650,19 @@ try {
     $depGraphResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/roadmap/dependencies"
     Assert-Not503 -Name '/api/roadmap/dependencies' -Response $depGraphResponse
     $depGraphJson = $depGraphResponse.Json
-    if (-not $depGraphJson.success) { throw '/api/roadmap/dependencies returned success=false' }
+    if ($null -eq $depGraphJson) {
+        throw "/api/roadmap/dependencies did not return JSON. HTTP $($depGraphResponse.StatusCode). Content-Type=$($depGraphResponse.ContentType). Body=$($depGraphResponse.Content)"
+    }
+    if (-not ($depGraphJson.PSObject.Properties.Name -contains 'success')) {
+        throw "/api/roadmap/dependencies response missing 'success'. Body=$($depGraphResponse.Content)"
+    }
+    if (-not $depGraphJson.success) {
+        $err = if ($depGraphJson.PSObject.Properties.Name -contains 'error') { $depGraphJson.error } else { $depGraphResponse.Content }
+        throw "/api/roadmap/dependencies returned success=false. HTTP $($depGraphResponse.StatusCode). Error=$err"
+    }
+    if (-not ($depGraphJson.PSObject.Properties.Name -contains 'data') -or $null -eq $depGraphJson.data) {
+        throw "/api/roadmap/dependencies returned success=true but missing 'data'. Body=$($depGraphResponse.Content)"
+    }
     $depGraphData = $depGraphJson.data
     $depGraphFieldsOk = $null -ne $depGraphData -and
         ($depGraphData.PSObject.Properties.Name -contains 'totalEdges') -and
