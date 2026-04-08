@@ -7,8 +7,8 @@
 
 ## Git State
 - Branch: main
-- Last Commit: 2026-02-22 07:30:13 -0500
-- Uncommitted Changes: 1
+- Last Commit: 2026-03-20 20:54:57 -0400
+- Uncommitted Changes: 2
 
 ## Batch
 - Type: core
@@ -28,7 +28,7 @@
 - Strengthen cross-linking among high-value docs
 
 ## Warnings / Review Notes
-- Repo has 1 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 2 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Constraints
 - Preserve technical accuracy
