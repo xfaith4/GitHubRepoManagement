@@ -4336,11 +4336,13 @@ try {
                 'GET /api/scan/schedule' {
                     Add-MetricCounter -Name 'api_requests_total'
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
-                        success         = $true
-                        enabled         = $script:AutoScanState.Enabled
-                        intervalMinutes = $script:AutoScanState.IntervalMinutes
-                        nextScanAt      = if ($script:AutoScanState.NextScanAt -lt [datetime]::MaxValue) { $script:AutoScanState.NextScanAt.ToString('o') } else { $null }
-                        lastScanAt      = if ($null -ne $script:AutoScanState.LastScanAt) { ([datetime]$script:AutoScanState.LastScanAt).ToString('o') } else { $null }
+                        success = $true
+                        data    = @{
+                            enabled         = $script:AutoScanState.Enabled
+                            intervalMinutes = $script:AutoScanState.IntervalMinutes
+                            nextScanAt      = if ($script:AutoScanState.NextScanAt -lt [datetime]::MaxValue) { $script:AutoScanState.NextScanAt.ToString('o') } else { $null }
+                            lastScanAt      = if ($null -ne $script:AutoScanState.LastScanAt) { ([datetime]$script:AutoScanState.LastScanAt).ToString('o') } else { $null }
+                        }
                     }
                 }
                 'GET /api/execution/metrics' {
@@ -4385,7 +4387,7 @@ try {
                         Add-MetricCounter -Name 'api_requests_total'
                         Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                             success = $true
-                            metrics = @{
+                            data    = @{
                                 completedToday    = $completedToday
                                 completedThisWeek = $completedThisWeek
                                 totalCompleted    = $completedHistory.Count
