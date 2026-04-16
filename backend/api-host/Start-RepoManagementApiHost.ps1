@@ -4753,8 +4753,9 @@ try {
                         $entries      = if ($roadmapCache.hit) { @($roadmapCache.entries) } else {
                             $defaultRoots    = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
                             $defaultMaxDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth')) { [int]$settings.inventory.maxDepth } else { 3 }
+                            $scannedAt = (Get-Date).ToUniversalTime().ToString('o')
                             $scanned = Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultMaxDepth
-                            Set-RoadmapCache -Entries $scanned
+                            Save-RoadmapCache -Entries $scanned -ScannedAt $scannedAt
                             @($scanned)
                         }
 
