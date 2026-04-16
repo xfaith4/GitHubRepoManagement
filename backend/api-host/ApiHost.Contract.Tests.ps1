@@ -193,6 +193,17 @@ Describe 'API Success Contracts' {
         $response.Json.data.PSObject.Properties.Name | Should -Contain 'items'
         $response.Json.data.PSObject.Properties.Name | Should -Contain 'count'
     }
+
+    It 'returns a success envelope for GET /api/roadmap/dependencies' {
+        $response = Invoke-ContractApiRequest -Method GET -Path '/api/roadmap/dependencies'
+        $response.StatusCode | Should -Be 200
+        $response.Json.success | Should -BeTrue
+        $response.Json.data | Should -Not -BeNull
+        $response.Json.data.PSObject.Properties.Name | Should -Contain 'graph'
+        $response.Json.data.PSObject.Properties.Name | Should -Contain 'summary'
+        $response.Json.data.PSObject.Properties.Name | Should -Contain 'totalEdges'
+        $response.Json.data.PSObject.Properties.Name | Should -Contain 'scannedAt'
+    }
 }
 
 Describe 'API Validation Error Contracts' {
