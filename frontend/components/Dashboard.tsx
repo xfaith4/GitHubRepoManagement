@@ -22,6 +22,7 @@ import RepoEvaluationModal from './RepoEvaluationModal';
 import RoadmapDispatchModal from './RoadmapDispatchModal';
 import RepoGitStatusModal from './RepoGitStatusModal';
 import ReadmeGenerateModal from './ReadmeGenerateModal';
+import HelpModal from './HelpModal';
 import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getRoadmapDependencies } from '../services/apiClient';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
@@ -52,6 +53,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [selectedRepoForArtifacts, setSelectedRepoForArtifacts] = useState<string | null>(null);
   const [isRoadmapViewerOpen, setIsRoadmapViewerOpen] = useState(false);
   const [isApiDocsOpen, setIsApiDocsOpen] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [selectedRoadmapRepo, setSelectedRoadmapRepo] = useState<string | null>(null);
   const [isCopilotTaskPreviewOpen, setIsCopilotTaskPreviewOpen] = useState(false);
   const [copilotTaskPreviewRepo, setCopilotTaskPreviewRepo] = useState<string | null>(null);
@@ -842,6 +844,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                     onInitClick={() => setIsInitModalOpen(true)}
                     onDocReviewClick={() => setIsDocReviewModalOpen(true)}
                     onApiDocsClick={() => setIsApiDocsOpen(true)}
+                    onHelpClick={() => setIsHelpOpen(true)}
                     isActionRunning={!!currentOperation}
                     currentOperation={currentOperation}
                     settings={settings}
@@ -999,6 +1002,11 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
       <ApiDocsModal
         isOpen={isApiDocsOpen}
         onClose={() => setIsApiDocsOpen(false)}
+      />
+
+      <HelpModal
+        isOpen={isHelpOpen}
+        onClose={() => setIsHelpOpen(false)}
       />
 
       <CopilotTaskPreviewModal

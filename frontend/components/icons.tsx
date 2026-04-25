@@ -93,3 +93,7 @@ export const RoadmapIcon: React.FC<{className?: string}> = ({ className }) => (
 export const ApiDocsIcon: React.FC<{className?: string}> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} {...iconProps}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
 );
+
+export const HelpIcon: React.FC<{className?: string}> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} {...iconProps}><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 1 1 5.82 1c-.54.92-1.42 1.32-2.14 1.87-.55.42-.77.82-.77 1.63"></path><path d="M12 17h.01"></path></svg>
+);
