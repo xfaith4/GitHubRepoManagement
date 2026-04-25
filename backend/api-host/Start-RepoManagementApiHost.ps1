@@ -4336,11 +4336,13 @@ try {
                 'GET /api/scan/schedule' {
                     Add-MetricCounter -Name 'api_requests_total'
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
-                        success         = $true
-                        enabled         = $script:AutoScanState.Enabled
-                        intervalMinutes = $script:AutoScanState.IntervalMinutes
-                        nextScanAt      = if ($script:AutoScanState.NextScanAt -lt [datetime]::MaxValue) { $script:AutoScanState.NextScanAt.ToString('o') } else { $null }
-                        lastScanAt      = if ($null -ne $script:AutoScanState.LastScanAt) { ([datetime]$script:AutoScanState.LastScanAt).ToString('o') } else { $null }
+                        success = $true
+                        data    = @{
+                            enabled         = $script:AutoScanState.Enabled
+                            intervalMinutes = $script:AutoScanState.IntervalMinutes
+                            nextScanAt      = if ($script:AutoScanState.NextScanAt -lt [datetime]::MaxValue) { $script:AutoScanState.NextScanAt.ToString('o') } else { $null }
+                            lastScanAt      = if ($null -ne $script:AutoScanState.LastScanAt) { ([datetime]$script:AutoScanState.LastScanAt).ToString('o') } else { $null }
+                        }
                     }
                 }
                 'GET /api/execution/metrics' {
@@ -4385,7 +4387,7 @@ try {
                         Add-MetricCounter -Name 'api_requests_total'
                         Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                             success = $true
-                            metrics = @{
+                            data    = @{
                                 completedToday    = $completedToday
                                 completedThisWeek = $completedThisWeek
                                 totalCompleted    = $completedHistory.Count
@@ -4751,19 +4753,22 @@ try {
                         $entries      = if ($roadmapCache.hit) { @($roadmapCache.entries) } else {
                             $defaultRoots    = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
                             $defaultMaxDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth')) { [int]$settings.inventory.maxDepth } else { 3 }
-                            $scanned = Invoke-ScanRoadmapFiles -LocalRoots $defaultRoots -MaxDepth $defaultMaxDepth
-                            Set-RoadmapCache -Entries $scanned
+                            $scannedAt = (Get-Date).ToUniversalTime().ToString('o')
+                            $scanned = Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultMaxDepth
+                            Save-RoadmapCache -Entries $scanned -ScannedAt $scannedAt
                             @($scanned)
                         }
 
                         $depResult = Invoke-ScanRoadmapDependencies -RoadmapEntries $entries -GitHubOwner $gitHubOwner
                         Add-MetricCounter -Name 'api_requests_total'
                         Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
-                            success    = $true
-                            graph      = $depResult.graph
-                            summary    = $depResult.summary
-                            totalEdges = $depResult.totalEdges
-                            scannedAt  = $depResult.scannedAt
+                            success = $true
+                            data    = @{
+                                graph      = $depResult.graph
+                                summary    = $depResult.summary
+                                totalEdges = $depResult.totalEdges
+                                scannedAt  = $depResult.scannedAt
+                            }
                         }
                     } catch {
                         Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage ("Failed to scan roadmap dependencies: {0}" -f $_.Exception.Message) -CorrelationId $correlationId -Operation 'roadmap.dependencies'
