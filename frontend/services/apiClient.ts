@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem } from '../types';
+import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -1130,4 +1130,37 @@ export async function getRepoEvaluationHistory(repoName?: string, limit = 25): P
   const data = await fetchJson<any>(`${API_BASE_URL}/repo/evaluate/history?${qs.toString()}`);
   const d = data?.data ?? data ?? {};
   return Array.isArray(d.items) ? d.items : [];
+}
+
+// Release 1.7.5 — Portfolio Mission Alignment
+
+export async function getPortfolioAssessment(options: { refresh?: boolean; includeGithub?: boolean } = {}): Promise<PortfolioAssessmentResult> {
+  const qs = new URLSearchParams();
+  if (options.refresh) qs.set('refresh', 'true');
+  if (options.includeGithub) qs.set('includeGithub', 'true');
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  const data = await fetchJson<any>(`${API_BASE_URL}/portfolio/assessment${suffix}`);
+  const d = data?.data ?? data ?? {};
+  const entries: PortfolioAssessmentEntry[] = Array.isArray(d.entries) ? d.entries : [];
+  const summaryRaw = d.summary ?? {};
+  const summary: PortfolioAssessmentSummary = {
+    totalRepos: Number(summaryRaw.totalRepos ?? entries.length),
+    byLifecycle: summaryRaw.byLifecycle ?? {},
+    bySourceCoverage: summaryRaw.bySourceCoverage ?? {},
+    missingReadmeCount: Number(summaryRaw.missingReadmeCount ?? 0),
+    missingRoadmapCount: Number(summaryRaw.missingRoadmapCount ?? 0),
+    weakRoadmapCount: Number(summaryRaw.weakRoadmapCount ?? 0),
+    readyForWorkCount: Number(summaryRaw.readyForWorkCount ?? 0),
+    runningCount: Number(summaryRaw.runningCount ?? 0),
+    blockedCount: Number(summaryRaw.blockedCount ?? 0),
+  };
+  return {
+    entries,
+    summary,
+    signalSources: d.signalSources ?? {},
+    generatedAt: String(d.generatedAt ?? new Date().toISOString()),
+    count: Number(d.count ?? entries.length),
+    cacheSource: d.cacheSource === 'memory' ? 'memory' : 'fresh-scan',
+    cacheAgeSeconds: Number(d.cacheAgeSeconds ?? 0),
+  };
 }

@@ -789,3 +789,80 @@ export interface GitActionResult {
   output: string;
   error?: string | null;
 }
+
+// Release 1.7.5 — Portfolio Mission Alignment
+
+export type RepoLifecycleState =
+  | 'discovered'
+  | 'needs-readme'
+  | 'needs-roadmap'
+  | 'needs-roadmap-repair'
+  | 'needs-structure'
+  | 'ready-for-work'
+  | 'running'
+  | 'completed'
+  | 'monitored'
+  | 'archived'
+  | 'parse-error';
+
+export type SourceCoverage = 'local' | 'github' | 'local+github';
+
+export interface RepoStructureFinding {
+  kind: 'missing-root-file' | 'missing-root-folder' | 'missing-ci-signal' | 'missing-test-signal';
+  target: string;
+  category: string;
+  severity: 'critical' | 'warning' | 'info';
+  recommendedAction: string;
+}
+
+export interface PortfolioAssessmentEntry {
+  repoName: string;
+  localPath: string;
+  htmlUrl: string;
+  branch: string;
+  gitStatus: string;
+  isArchived: boolean;
+  sourceCoverage: SourceCoverage;
+  repoType: string;
+  lifecycleState: RepoLifecycleState;
+  recommendedAction: string;
+  blockingReasons: string[];
+  roadmapState: 'pending' | 'complete' | 'missing' | 'parse-error';
+  roadmapPath: string;
+  hasRoadmap: boolean;
+  pendingItemCount: number;
+  nextPendingItemText: string;
+  maturityLevel: RoadmapMaturityLevel;
+  maturityScore: number;
+  dispatchReadiness: DispatchReadiness;
+  executionState: ExecutionState;
+  hasReadme: boolean;
+  hasCiSignal: boolean;
+  hasTestSignal: boolean;
+  structureFindings: RepoStructureFinding[];
+  docFindingCount: number;
+}
+
+export interface PortfolioAssessmentSummary {
+  totalRepos: number;
+  byLifecycle: Record<RepoLifecycleState, number>;
+  bySourceCoverage: Record<SourceCoverage, number>;
+  missingReadmeCount: number;
+  missingRoadmapCount: number;
+  weakRoadmapCount: number;
+  readyForWorkCount: number;
+  runningCount: number;
+  blockedCount: number;
+}
+
+export type PortfolioSignalSource = 'cache' | 'fresh-scan' | 'ledger' | 'api' | 'unavailable' | 'not-evaluated' | 'no-token' | 'no-owner-configured' | 'error';
+
+export interface PortfolioAssessmentResult {
+  entries: PortfolioAssessmentEntry[];
+  summary: PortfolioAssessmentSummary;
+  signalSources: Partial<Record<'status' | 'roadmap' | 'docAudit' | 'roadmapAudit' | 'execution' | 'github', PortfolioSignalSource>>;
+  generatedAt: string;
+  count: number;
+  cacheSource: 'memory' | 'fresh-scan';
+  cacheAgeSeconds: number;
+}

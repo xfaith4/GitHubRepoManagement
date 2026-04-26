@@ -672,6 +672,55 @@ try {
     Write-Host ("  /api/roadmap/dependencies -> totalEdges={0} summaryCount={1}" -f $depGraphData.totalEdges, @($depGraphData.summary).Count) -ForegroundColor DarkGray
 
     # ------------------------------------------------------------------
+    # Release 1.7.5 — Portfolio Mission Alignment
+    # ------------------------------------------------------------------
+    Write-Host '[STEP] Portfolio assessment route (Release 1.7.5)' -ForegroundColor Cyan
+    $portfolioResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment"
+    Assert-Not503 -Name '/api/portfolio/assessment' -Response $portfolioResponse
+    $portfolioJson = $portfolioResponse.Json
+    if ($null -eq $portfolioJson) {
+        throw "/api/portfolio/assessment did not return JSON. HTTP $($portfolioResponse.StatusCode). Content-Type=$($portfolioResponse.ContentType). Body=$($portfolioResponse.Content)"
+    }
+    if (-not ($portfolioJson.PSObject.Properties.Name -contains 'success')) {
+        throw "/api/portfolio/assessment response missing 'success'. Body=$($portfolioResponse.Content)"
+    }
+    if (-not $portfolioJson.success) {
+        $err = if ($portfolioJson.PSObject.Properties.Name -contains 'error') { $portfolioJson.error } else { $portfolioResponse.Content }
+        throw "/api/portfolio/assessment returned success=false. HTTP $($portfolioResponse.StatusCode). Error=$err"
+    }
+    if (-not ($portfolioJson.PSObject.Properties.Name -contains 'data') -or $null -eq $portfolioJson.data) {
+        throw "/api/portfolio/assessment returned success=true but missing 'data'. Body=$($portfolioResponse.Content)"
+    }
+    $portfolioData = $portfolioJson.data
+    $portfolioFieldsOk = $null -ne $portfolioData -and
+        ($portfolioData.PSObject.Properties.Name -contains 'entries') -and
+        ($portfolioData.PSObject.Properties.Name -contains 'summary') -and
+        ($portfolioData.PSObject.Properties.Name -contains 'signalSources') -and
+        ($portfolioData.PSObject.Properties.Name -contains 'generatedAt')
+    if (-not $portfolioFieldsOk) { throw '/api/portfolio/assessment response missing expected fields (entries, summary, signalSources, generatedAt)' }
+
+    $portfolioSummaryFieldsOk = $null -ne $portfolioData.summary -and
+        ($portfolioData.summary.PSObject.Properties.Name -contains 'totalRepos') -and
+        ($portfolioData.summary.PSObject.Properties.Name -contains 'byLifecycle') -and
+        ($portfolioData.summary.PSObject.Properties.Name -contains 'bySourceCoverage') -and
+        ($portfolioData.summary.PSObject.Properties.Name -contains 'readyForWorkCount') -and
+        ($portfolioData.summary.PSObject.Properties.Name -contains 'blockedCount')
+    if (-not $portfolioSummaryFieldsOk) { throw '/api/portfolio/assessment summary missing expected fields (totalRepos, byLifecycle, bySourceCoverage, readyForWorkCount, blockedCount)' }
+
+    $portfolioEntryFieldsOk = $true
+    if (@($portfolioData.entries).Count -gt 0) {
+        $first = @($portfolioData.entries)[0]
+        $portfolioEntryFieldsOk = $null -ne $first -and
+            ($first.PSObject.Properties.Name -contains 'lifecycleState') -and
+            ($first.PSObject.Properties.Name -contains 'sourceCoverage') -and
+            ($first.PSObject.Properties.Name -contains 'recommendedAction') -and
+            ($first.PSObject.Properties.Name -contains 'blockingReasons')
+        if (-not $portfolioEntryFieldsOk) { throw '/api/portfolio/assessment first entry missing expected fields (lifecycleState, sourceCoverage, recommendedAction, blockingReasons)' }
+    }
+
+    Write-Host ("  /api/portfolio/assessment -> count={0} ready={1} blocked={2} cacheSource={3}" -f $portfolioData.count, $portfolioData.summary.readyForWorkCount, $portfolioData.summary.blockedCount, $portfolioData.cacheSource) -ForegroundColor DarkGray
+
+    # ------------------------------------------------------------------
     # Release 1.3 — Production static frontend bundle
     # ------------------------------------------------------------------
     Write-Host '[STEP] Static frontend bundle (Release 1.3)' -ForegroundColor Cyan
@@ -778,6 +827,10 @@ try {
         scanScheduleFieldsOk  = $scanScheduleFieldsOk
         depGraphFieldsOk      = $depGraphFieldsOk
         depGraphTotalEdges    = $depGraphData.totalEdges
+        portfolioFieldsOk     = $portfolioFieldsOk
+        portfolioSummaryFieldsOk = $portfolioSummaryFieldsOk
+        portfolioEntryFieldsOk   = $portfolioEntryFieldsOk
+        portfolioRepoCount    = [int]$portfolioData.count
         staticIndexOk         = $staticIndexOk
         staticAssetsOk        = $staticAssetsOk
         staticSkipped         = $staticSkipped
