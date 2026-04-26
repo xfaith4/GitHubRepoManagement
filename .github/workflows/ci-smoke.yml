@@ -62,3 +62,7 @@ jobs:
           $schema = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $schemaPath -Raw -Encoding UTF8)
           if ($null -eq $schema.properties)        { throw "roadmap-contract.schema.json missing 'properties'" }
           Write-Host "Roadmap standard assets valid: $(@($rules.rules).Count) audit rules, $(@($rules.maturityThresholds.PSObject.Properties).Count) maturity levels"
+
+      - name: Validate ROADMAP.md structure
+        shell: pwsh
+        run: ./tools/Test-RoadmapStructure.ps1 -Path "${{ github.workspace }}/ROADMAP.md" -FailOnError

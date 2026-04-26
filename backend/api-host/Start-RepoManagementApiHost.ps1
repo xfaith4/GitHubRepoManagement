@@ -3789,13 +3789,20 @@ try {
                         }
                     }
                     if ($null -eq $statusResult) {
+                        Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} cold-status-scan localRoots={1} depth={2}" -f $correlationId, ($defaultRoots -join ','), $defaultDepth)
                         $statusResult = Get-StatusAdapterResult -LocalRoots $defaultRoots -MaxDepth $defaultDepth -IncludeNonGitFolders:$false -LogPath $LogPath
-                        $signalSources['status'] = 'fresh-scan'
-                        if ($statusResult.success -and $statusTtl -gt 0) {
-                            Save-StatusCache -Key $statusKey -Response $statusResult
+                        if ($null -ne $statusResult -and $statusResult.success) {
+                            $signalSources['status'] = 'fresh-scan'
+                            if ($statusTtl -gt 0) {
+                                Save-StatusCache -Key $statusKey -Response $statusResult
+                            }
+                        } else {
+                            $signalSources['status'] = 'error'
+                            $errMsg = if ($null -ne $statusResult -and $statusResult.PSObject.Properties.Name -contains 'error') { [string]$statusResult.error } else { 'unknown error' }
+                            Write-HostLog ("ERROR portfolio.assessment correlationId={0} status scan failed: {1}" -f $correlationId, $errMsg)
                         }
                     }
-                    $localRepos = if ($statusResult.success -and $null -ne $statusResult.data) { @($statusResult.data.repos) } else { @() }
+                    $localRepos = if ($null -ne $statusResult -and $statusResult.success -and $null -ne $statusResult.data) { @($statusResult.data.repos) } else { @() }
 
                     # 2) Roadmap entries
                     $roadmapTtl     = Get-RoadmapCacheTtlSeconds -Settings $settings
@@ -3808,6 +3815,7 @@ try {
                         }
                     }
                     if (@($roadmapEntries).Count -eq 0) {
+                        Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} cold-roadmap-scan" -f $correlationId)
                         $roadmapEntries = @(Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth)
                         $signalSources['roadmap'] = 'fresh-scan'
                     }
@@ -3823,6 +3831,7 @@ try {
                         }
                     }
                     if (@($docAuditEntries).Count -eq 0) {
+                        Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} cold-doc-audit-scan" -f $correlationId)
                         $docAuditEntries = @(Invoke-DocAuditScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth)
                         $signalSources['docAudit'] = 'fresh-scan'
                         $auditedAt = (Get-Date).ToUniversalTime().ToString('o')

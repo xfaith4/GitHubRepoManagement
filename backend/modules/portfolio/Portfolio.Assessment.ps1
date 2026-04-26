@@ -57,7 +57,7 @@ function Get-RepoStructureStandards {
 
 function _DetectRepoTypeForStructure {
     param([string]$LocalPath)
-    if ([string]::IsNullOrWhiteSpace($LocalPath) -or -not (Test-Path -LiteralPath $LocalPath)) { return 'other' }
+    if ([string]::IsNullOrWhiteSpace($LocalPath) -or -not (Test-Path -LiteralPath $LocalPath -ErrorAction SilentlyContinue)) { return 'other' }
 
     if (Test-Path -LiteralPath (Join-Path $LocalPath 'package.json') -PathType Leaf) { return 'node' }
     if (Test-Path -LiteralPath (Join-Path $LocalPath 'go.mod')       -PathType Leaf) { return 'go' }
@@ -78,9 +78,13 @@ function _DetectRepoTypeForStructure {
 }
 
 function _HasTestSignal {
+    # NOTE: patterns are hard-coded by repo type below. The JSON config exposes
+    # repoTypes.<type>.testSignalGlobs as a forward-compatibility hook; it is
+    # not consumed yet. A future enhancement can switch to data-driven globs
+    # without changing this function's contract.
     param([string]$LocalPath, [string]$RepoType, [object]$Standards)
 
-    if ([string]::IsNullOrWhiteSpace($LocalPath) -or -not (Test-Path -LiteralPath $LocalPath)) { return $false }
+    if ([string]::IsNullOrWhiteSpace($LocalPath) -or -not (Test-Path -LiteralPath $LocalPath -ErrorAction SilentlyContinue)) { return $false }
 
     foreach ($d in @('test', 'tests', '__tests__', 'spec', 'specs')) {
         if (Test-Path -LiteralPath (Join-Path $LocalPath $d) -PathType Container) { return $true }
@@ -119,7 +123,10 @@ function Invoke-RepoStructureAudit {
     $findings = [System.Collections.Generic.List[object]]::new()
     $repoType = _DetectRepoTypeForStructure -LocalPath $RepoPath
 
-    if ($null -eq $Standards -or -not $Standards.PSObject.Properties.Name -contains 'common') {
+    # NOTE: parens around `-contains` are required — `-not` binds tighter than
+    # `-contains`, so without them this guard becomes `(-not <array>) -contains 'common'`
+    # which is always false and silently lets a malformed Standards object through.
+    if ($null -eq $Standards -or -not ($Standards.PSObject.Properties.Name -contains 'common')) {
         return [pscustomobject]@{
             repoType   = $repoType
             findings   = @()
@@ -398,12 +405,12 @@ function _GetField {
 function Invoke-PortfolioAssessment {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)][object[]]$LocalRepos,
-        [Parameter()][object[]]$RoadmapEntries     = @(),
-        [Parameter()][object[]]$DocAuditEntries    = @(),
-        [Parameter()][object[]]$RoadmapAuditEntries = @(),
-        [Parameter()][object[]]$ExecutionEntries   = @(),
-        [Parameter()][object[]]$GitHubRepos        = @(),
+        [Parameter()][AllowEmptyCollection()][object[]]$LocalRepos = @(),
+        [Parameter()][AllowEmptyCollection()][object[]]$RoadmapEntries      = @(),
+        [Parameter()][AllowEmptyCollection()][object[]]$DocAuditEntries     = @(),
+        [Parameter()][AllowEmptyCollection()][object[]]$RoadmapAuditEntries = @(),
+        [Parameter()][AllowEmptyCollection()][object[]]$ExecutionEntries    = @(),
+        [Parameter()][AllowEmptyCollection()][object[]]$GitHubRepos         = @(),
         [Parameter()][object]$StructureStandards
     )
 
@@ -466,7 +473,7 @@ function Invoke-PortfolioAssessment {
 
         # Structure audit
         $structAudit = $null
-        if (-not [string]::IsNullOrWhiteSpace($localPath) -and (Test-Path -LiteralPath $localPath)) {
+        if (-not [string]::IsNullOrWhiteSpace($localPath) -and (Test-Path -LiteralPath $localPath -ErrorAction SilentlyContinue)) {
             $structAudit = Invoke-RepoStructureAudit -RepoPath $localPath -Standards $StructureStandards
         }
         $structFindings = if ($null -ne $structAudit) { @($structAudit.findings) } else { @() }
@@ -565,7 +572,7 @@ function Invoke-PortfolioAssessment {
 
 function Get-PortfolioAssessmentSummary {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][object[]]$Assessments)
+    param([Parameter()][AllowEmptyCollection()][object[]]$Assessments = @())
 
     $entries = @($Assessments)
     $total = $entries.Count
