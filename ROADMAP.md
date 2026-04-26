@@ -2,21 +2,24 @@
 
 > Status: Active
 >
-> Product direction: evolve from a general repo utility into a **roadmap-driven work queue, roadmap contract auditor, and Copilot dispatch console** for multi-repo momentum.
+> Product direction: evolve from a general repo utility into a **portfolio intelligence and execution console** that assesses an entire local and GitHub repository collection, standardizes repo readiness, creates or repairs roadmaps, ranks the highest-value incomplete roadmap work, and prepares reviewed GitHub Copilot Agent prompts.
 
 ## 1. Product Intent
 
-GitHub Repo Management is being reshaped into a clean, operator-friendly tool that helps answer seven questions across a portfolio of repositories:
+GitHub Repo Management is being reshaped into a clean, operator-friendly tool that helps answer the core questions across a portfolio of repositories:
 
-1. Which repos have a roadmap at all?
-2. Which repos have a roadmap that is **contract-quality** rather than informal markdown?
-3. Which repos have a clearly actionable next release or next pending work item?
-4. Which repos are blocked by missing or weak documentation?
-5. Which repos are currently safe to dispatch to GitHub Copilot?
-6. Which repos require roadmap repair, augmentation, or standardization before orchestration?
-7. How do we keep limited Copilot capacity continuously focused on the best next work without duplicate effort or drift?
+1. What repositories exist locally, on GitHub, or in both places?
+2. Which repos are structurally healthy, well documented, and standardized enough to work on safely?
+3. Which repos have a roadmap at all?
+4. Which repos have a roadmap that is **contract-quality** rather than informal markdown?
+5. Which repos need a new roadmap generated from real repo assessment?
+6. Which repos have a clearly actionable next release or next pending work item?
+7. Which incomplete roadmap item would bring the highest value if worked next?
+8. Which repos are currently safe to dispatch to GitHub Copilot?
+9. What prompt, context, constraints, and acceptance criteria should be sent to GitHub Copilot Agent?
+10. What is the current status of the whole repository collection, in plain operator-readable terms?
 
-The long-term goal is not generic repository browsing. The goal is a **portfolio execution console** that continuously audits roadmap quality, surfaces the next best roadmap work, packages clean context, and launches or tracks Copilot tasks across repositories without duplicate effort or hidden ambiguity.
+The long-term goal is not generic repository browsing. The goal is a **portfolio execution console** that continuously assesses the whole collection, makes repo health and progress obvious, creates missing roadmap contracts, improves weak roadmaps and documentation, ranks the next best work by value, packages clean Copilot Agent prompts, and reports progress without duplicate effort or hidden ambiguity.
 
 ---
 
@@ -42,7 +45,7 @@ The project already has the foundational pieces needed for a roadmap-aware execu
 - operation log plumbing
 - Copilot task preview/start/history plumbing for roadmap-driven execution
 
-The next stage is to convert these foundations into a coherent work queue product **and** a formal roadmap contract system.
+The next stage is to reconnect these foundations into a coherent portfolio assessment and work selection product: every repo should have a visible lifecycle state, an explainable next action, and a path toward standardized structure, documentation, roadmap quality, and Copilot-ready execution.
 
 ---
 
@@ -559,6 +562,51 @@ The following progress is preserved from prior execution history and remains fou
 - Committing changes from the UI (deferred to a later release).
 - Pushing commits from the UI.
 - Resolving merge conflicts through the UI.
+
+---
+
+## Release 1.7.5 — Portfolio Mission Alignment and Value-Ranked Work Planning
+
+**Goal:** Re-center the product around its primary mission: assess the full local and GitHub repository collection, standardize repo readiness, create or repair missing roadmap contracts, rank the highest-value incomplete roadmap work, and prepare clear Copilot Agent prompts while reporting collection status in plain language.
+
+### Product outcomes
+
+- Operators can see the overall state of the full repository collection without opening individual repos.
+- Every repo has a visible lifecycle state: discovered, needs structure, needs README, needs roadmap, needs roadmap repair, ready for work queue, running, completed, or monitored.
+- Repos without a roadmap have a guided path to create one from actual repo structure, documentation gaps, test coverage, and likely high-value work.
+- Incomplete roadmap items are ranked by value, not just by file order.
+- A Copilot Agent prompt can be reviewed and refined with clear context, constraints, value rationale, and acceptance criteria before dispatch.
+- The app reports progress to the user as a collection-level operating picture, not only as individual modal results.
+
+### Engineering milestones
+
+- [x] Add first-class in-app Help guide explaining the app purpose, main window, popups, and common end-user workflows.
+- [ ] Add a Portfolio Mission panel to the dashboard summarizing collection state: total repos, local-only, GitHub-only, linked local+GitHub, missing roadmap, weak roadmap, missing README, ready, running, blocked, and completed.
+- [ ] Define a `RepoLifecycleState` model that combines git status, documentation status, roadmap state, roadmap maturity, dispatch readiness, and execution state into one operator-facing state per repo.
+- [ ] Add `GET /api/portfolio/assessment` route that returns one normalized assessment record per repo with lifecycle state, blocking reasons, recommended next action, and source coverage (`local`, `github`, or `local+github`).
+- [ ] Add GitHub-vs-local coverage reporting so the app clearly shows repos that exist only on GitHub, only on disk, or in both places.
+- [ ] Add repo structure standard audit for required root files and folders: README, ROADMAP, LICENSE, SECURITY, CONTRIBUTING, tests, CI workflow, package/project manifest, and expected docs directory.
+- [ ] Expand repo evaluation for missing roadmaps beyond hardening checks: include likely feature opportunities, modernization work, test/documentation improvements, security posture, and user-visible value.
+- [ ] Add a value scoring model for incomplete roadmap items using impact, unblock potential, risk reduction, repo maturity, effort estimate, dependency reduction, and recency.
+- [ ] Show value score and rationale in Work Queue so the operator can understand why one repo or roadmap item is recommended before another.
+- [ ] Add a Prompt Refinement view that composes the Copilot Agent prompt from repo assessment, selected roadmap item, acceptance criteria, constraints, relevant docs, and value rationale; allow final operator edits before dispatch.
+- [ ] Add Collection Status Report export: a plain-language HTML/CSV report showing repo lifecycle states, blockers, next actions, and top recommended work.
+- [ ] Update Help and reference documentation so the north-star workflow is explicit: assess collection, standardize repos, create or repair roadmap, rank work, refine prompt, dispatch, report progress.
+
+### Acceptance criteria
+
+- Every repo shown in the dashboard has one lifecycle state and one recommended next action.
+- A repo with no roadmap can be evaluated into a roadmap draft that includes both hardening work and value-oriented feature/work suggestions.
+- Work Queue ranking explains why the top recommended item is valuable.
+- The prompt refinement screen shows the selected work item, repo context, constraints, acceptance criteria, and value rationale before dispatch.
+- The collection report can answer: "What is the state of my repo collection, and what should I work on next?"
+
+### Out of scope
+
+- API authentication and network hardening (Release 1.8).
+- SQLite persistence and historical trend storage (Release 1.9).
+- GitHub App OAuth setup (Release 2.1).
+- Fully autonomous work dispatch without operator review.
 
 ---
 
