@@ -42,6 +42,8 @@ $gitModuleRoot    = Join-Path $WorkspaceRoot 'backend\modules\git'
 $readmeModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\readme'
 . (Join-Path $readmeModuleRoot 'Readme.Generator.ps1')
 . (Join-Path $docStdModuleRoot 'DocStandardization.Previewer.ps1')
+$portfolioModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\portfolio'
+. (Join-Path $portfolioModuleRoot 'Portfolio.Assessment.ps1')
 . (Join-Path $commonRoot 'NotificationHub.ps1')
 . (Join-Path $PSScriptRoot 'ApiHost.ErrorHandling.ps1')
 
@@ -57,6 +59,9 @@ $script:DocAuditCacheDefaultTtlSeconds = 300
 
 $script:RoadmapAuditCacheMemory = @{}
 $script:RoadmapAuditCacheDefaultTtlSeconds = 300
+
+$script:PortfolioAssessmentCacheMemory = @{}
+$script:PortfolioAssessmentCacheDefaultTtlSeconds = 180
 
 $script:RoadmapRepairHistoryRoot   = Join-Path $WorkspaceRoot 'output\roadmap-repair-history'
 $script:RepoEvaluationHistoryRoot  = Join-Path $WorkspaceRoot 'output\repo-evaluations'
@@ -2411,6 +2416,65 @@ function Save-DocAuditCache {
     catch { Write-HostLog ("DocAudit cache write skipped: {0}" -f $_.Exception.Message) }
 }
 
+function Get-PortfolioAssessmentCacheTtlSeconds {
+    param([hashtable]$Settings)
+    $ttl = $script:PortfolioAssessmentCacheDefaultTtlSeconds
+    if (
+        $null -ne $Settings -and
+        $Settings.ContainsKey('portfolio') -and
+        $Settings.portfolio -is [System.Collections.IDictionary] -and
+        $Settings.portfolio.ContainsKey('assessmentCacheTtlSeconds') -and
+        $Settings.portfolio.assessmentCacheTtlSeconds
+    ) {
+        $candidate = [int]$Settings.portfolio.assessmentCacheTtlSeconds
+        if ($candidate -ge 0) { $ttl = $candidate }
+    }
+    return $ttl
+}
+
+function Get-PortfolioAssessmentFromCache {
+    param([int]$TtlSeconds)
+    $nowUtc = (Get-Date).ToUniversalTime()
+    $key = 'portfolio-assessment-global'
+    if ($script:PortfolioAssessmentCacheMemory.ContainsKey($key)) {
+        $entry = $script:PortfolioAssessmentCacheMemory[$key]
+        $age = ($nowUtc - [datetime]$entry.CreatedAtUtc).TotalSeconds
+        if ($age -le $TtlSeconds) {
+            return [pscustomobject]@{
+                hit          = $true
+                source       = 'memory'
+                ageSeconds   = $age
+                generatedAt  = $entry.GeneratedAt
+                entries      = $entry.Entries
+                summary      = $entry.Summary
+                signalSources = $entry.SignalSources
+            }
+        }
+    }
+    return [pscustomobject]@{ hit = $false }
+}
+
+function Save-PortfolioAssessmentCache {
+    param(
+        [array]$Entries,
+        [object]$Summary,
+        [object]$SignalSources,
+        [string]$GeneratedAt
+    )
+    $nowUtc = (Get-Date).ToUniversalTime()
+    $script:PortfolioAssessmentCacheMemory['portfolio-assessment-global'] = @{
+        CreatedAtUtc  = $nowUtc
+        GeneratedAt   = $GeneratedAt
+        Entries       = $Entries
+        Summary       = $Summary
+        SignalSources = $SignalSources
+    }
+}
+
+function Clear-PortfolioAssessmentCache {
+    $script:PortfolioAssessmentCacheMemory = @{}
+}
+
 function Clear-DocAuditCache {
     $script:DocAuditCacheMemory = @{}
     try {
@@ -3673,6 +3737,186 @@ try {
                             auditedAt = $auditedAt
                             count = @($entries).Count
                             cacheSource = 'fresh-scan'
+                            cacheAgeSeconds = 0
+                        }
+                    }
+                }
+                'GET /api/portfolio/assessment' {
+                    Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} start" -f $correlationId)
+                    $q = Parse-QueryString -Query $req.Query
+                    $refresh = if ($q.ContainsKey('refresh')) { Parse-Bool -Value $q.refresh -Default $false } else { $false }
+
+                    $settings   = Get-HostSettings
+                    $ttlSeconds = Get-PortfolioAssessmentCacheTtlSeconds -Settings $settings
+
+                    if (-not $refresh -and $ttlSeconds -gt 0) {
+                        $cacheHit = Get-PortfolioAssessmentFromCache -TtlSeconds $ttlSeconds
+                        if ($cacheHit.hit) {
+                            Add-MetricCounter -Name 'api_requests_total'
+                            Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                            Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} done source=cache ageSeconds={1}" -f $correlationId, [math]::Round($cacheHit.ageSeconds, 1))
+                            Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                                success = $true
+                                data = @{
+                                    entries         = $cacheHit.entries
+                                    summary         = $cacheHit.summary
+                                    signalSources   = $cacheHit.signalSources
+                                    generatedAt     = $cacheHit.generatedAt
+                                    count           = @($cacheHit.entries).Count
+                                    cacheSource     = 'memory'
+                                    cacheAgeSeconds = [math]::Round($cacheHit.ageSeconds, 1)
+                                }
+                            }
+                            break
+                        }
+                    }
+
+                    $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
+                    $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
+
+                    # Pull cached signal sources where available; otherwise enumerate live for that signal only.
+                    $signalSources = @{}
+
+                    # 1) Local repo inventory (status)
+                    $statusTtl = Get-StatusCacheTtlSeconds -Settings $settings
+                    $statusKey = Get-StatusCacheKey -LocalRoots $defaultRoots -MaxDepth $defaultDepth -IncludeNonGitFolders $false
+                    $statusResult = $null
+                    if (-not $refresh -and $statusTtl -gt 0) {
+                        $statusCached = Get-StatusFromCache -Key $statusKey -TtlSeconds $statusTtl
+                        if ($statusCached.hit) {
+                            $statusResult = $statusCached.response
+                            $signalSources['status'] = 'cache'
+                        }
+                    }
+                    if ($null -eq $statusResult) {
+                        $statusResult = Get-StatusAdapterResult -LocalRoots $defaultRoots -MaxDepth $defaultDepth -IncludeNonGitFolders:$false -LogPath $LogPath
+                        $signalSources['status'] = 'fresh-scan'
+                        if ($statusResult.success -and $statusTtl -gt 0) {
+                            Save-StatusCache -Key $statusKey -Response $statusResult
+                        }
+                    }
+                    $localRepos = if ($statusResult.success -and $null -ne $statusResult.data) { @($statusResult.data.repos) } else { @() }
+
+                    # 2) Roadmap entries
+                    $roadmapTtl     = Get-RoadmapCacheTtlSeconds -Settings $settings
+                    $roadmapEntries = @()
+                    if (-not $refresh) {
+                        $rmCached = Get-RoadmapFromCache -TtlSeconds $roadmapTtl
+                        if ($rmCached.hit) {
+                            $roadmapEntries = @($rmCached.entries)
+                            $signalSources['roadmap'] = 'cache'
+                        }
+                    }
+                    if (@($roadmapEntries).Count -eq 0) {
+                        $roadmapEntries = @(Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth)
+                        $signalSources['roadmap'] = 'fresh-scan'
+                    }
+
+                    # 3) Doc audit entries
+                    $docAuditTtl     = Get-DocAuditCacheTtlSeconds -Settings $settings
+                    $docAuditEntries = @()
+                    if (-not $refresh) {
+                        $daCached = Get-DocAuditFromCache -TtlSeconds $docAuditTtl
+                        if ($daCached.hit) {
+                            $docAuditEntries = @($daCached.entries)
+                            $signalSources['docAudit'] = 'cache'
+                        }
+                    }
+                    if (@($docAuditEntries).Count -eq 0) {
+                        $docAuditEntries = @(Invoke-DocAuditScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth)
+                        $signalSources['docAudit'] = 'fresh-scan'
+                        $auditedAt = (Get-Date).ToUniversalTime().ToString('o')
+                        if ($docAuditTtl -gt 0) { Save-DocAuditCache -Entries $docAuditEntries -AuditedAt $auditedAt }
+                    }
+
+                    # 4) Roadmap audit entries (maturity) — opportunistic; absent cache => empty signal.
+                    $roadmapAuditEntries = @()
+                    $rmAuditTtl = Get-RoadmapAuditCacheTtlSeconds -Settings $settings
+                    if (-not $refresh) {
+                        $raCached = Get-RoadmapAuditFromCache -TtlSeconds $rmAuditTtl
+                        if ($raCached.hit) {
+                            $roadmapAuditEntries = @($raCached.entries)
+                            $signalSources['roadmapAudit'] = 'cache'
+                        }
+                    }
+                    if (@($roadmapAuditEntries).Count -eq 0) {
+                        $signalSources['roadmapAudit'] = 'unavailable'
+                    }
+
+                    # 5) Execution ledger entries
+                    $executionEntries = @()
+                    try {
+                        $ledger = Read-ExecutionLedger -WorkspaceRoot $WorkspaceRoot
+                        $executionEntries = @($ledger.entries)
+                        $signalSources['execution'] = 'ledger'
+                    } catch {
+                        $signalSources['execution'] = 'unavailable'
+                    }
+
+                    # 6) GitHub repos (only when explicitly requested or githubOwner is configured)
+                    $githubRepos = @()
+                    $signalSources['github'] = 'not-evaluated'
+                    $includeGithub = if ($q.ContainsKey('includeGithub')) { Parse-Bool -Value $q.includeGithub -Default $false } else { $false }
+                    if ($includeGithub) {
+                        $owner = if ($settings.ContainsKey('reconcile') -and $settings.reconcile.ContainsKey('gitHubOwner') -and $settings.reconcile.gitHubOwner) {
+                            [string]$settings.reconcile.gitHubOwner
+                        } else { '' }
+                        if (-not [string]::IsNullOrWhiteSpace($owner)) {
+                            try {
+                                $token = Get-ConfiguredGitHubToken -Settings $settings -RequestToken ''
+                                if (-not [string]::IsNullOrWhiteSpace($token)) {
+                                    $apiResult = Get-GitHubReposViaApi -Owner $owner -Token $token -RepoLimit 100 -IncludePrivate:$true -IncludeForks:$false -IncludeArchived:$true -FetchCommitMetrics:$false
+                                    if ($apiResult.success -and $null -ne $apiResult.data) {
+                                        $githubRepos = @($apiResult.data.repos)
+                                        $signalSources['github'] = 'api'
+                                    } else {
+                                        $signalSources['github'] = 'unavailable'
+                                    }
+                                } else {
+                                    $signalSources['github'] = 'no-token'
+                                }
+                            } catch {
+                                $signalSources['github'] = 'error'
+                                Write-HostLog ("[TRACE] portfolio.assessment github fetch failed: {0}" -f $_.Exception.Message)
+                            }
+                        } else {
+                            $signalSources['github'] = 'no-owner-configured'
+                        }
+                    }
+
+                    # 7) Structure standards
+                    $standardsPath = Join-Path $WorkspaceRoot 'backend\config\repo-structure-standards.json'
+                    $structStandards = Get-RepoStructureStandards -StandardsPath $standardsPath
+
+                    # Run the assessment
+                    $assessments = Invoke-PortfolioAssessment `
+                        -LocalRepos          $localRepos `
+                        -RoadmapEntries      $roadmapEntries `
+                        -DocAuditEntries     $docAuditEntries `
+                        -RoadmapAuditEntries $roadmapAuditEntries `
+                        -ExecutionEntries    $executionEntries `
+                        -GitHubRepos         $githubRepos `
+                        -StructureStandards  $structStandards
+
+                    $summary = Get-PortfolioAssessmentSummary -Assessments $assessments
+                    $generatedAt = (Get-Date).ToUniversalTime().ToString('o')
+
+                    if ($ttlSeconds -gt 0) {
+                        Save-PortfolioAssessmentCache -Entries $assessments -Summary $summary -SignalSources $signalSources -GeneratedAt $generatedAt
+                    }
+
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} done count={1} ready={2} blocked={3} durationMs={4}" -f $correlationId, @($assessments).Count, $summary.readyForWorkCount, $summary.blockedCount, [int]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = @{
+                            entries         = $assessments
+                            summary         = $summary
+                            signalSources   = $signalSources
+                            generatedAt     = $generatedAt
+                            count           = @($assessments).Count
+                            cacheSource     = 'fresh-scan'
                             cacheAgeSeconds = 0
                         }
                     }

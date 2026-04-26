@@ -1,0 +1,97 @@
+{
+  "version": "1.0",
+  "description": "Machine-readable repository structure standard. Defines the root files, folders, and CI signals expected of a managed repository, with per-repo-type overlays. Consumed by Portfolio.Assessment.ps1 to compute structural readiness as one input to the lifecycle state.",
+  "common": {
+    "requiredRootFiles": [
+      {
+        "name": "README.md",
+        "severity": "critical",
+        "category": "documentation",
+        "recommendedAction": "Create README.md with project description, install steps, and usage."
+      },
+      {
+        "name": "ROADMAP.md",
+        "severity": "warning",
+        "category": "roadmap",
+        "recommendedAction": "Add ROADMAP.md so the repo can participate in portfolio work selection."
+      },
+      {
+        "name": "LICENSE",
+        "severity": "warning",
+        "category": "compliance",
+        "altNames": ["LICENSE.txt", "LICENSE.md"],
+        "recommendedAction": "Add a LICENSE file to make terms of use explicit."
+      },
+      {
+        "name": "SECURITY.md",
+        "severity": "info",
+        "category": "security",
+        "recommendedAction": "Add SECURITY.md so vulnerability reports have a documented destination."
+      },
+      {
+        "name": "CONTRIBUTING.md",
+        "severity": "info",
+        "category": "documentation",
+        "recommendedAction": "Add CONTRIBUTING.md describing how outside contributors should submit changes."
+      },
+      {
+        "name": ".gitignore",
+        "severity": "info",
+        "category": "hygiene",
+        "recommendedAction": "Add a .gitignore to prevent local artifacts from leaking into commits."
+      }
+    ],
+    "requiredRootFolders": [
+      {
+        "name": "docs",
+        "severity": "info",
+        "category": "documentation",
+        "altNames": ["doc"],
+        "recommendedAction": "Add a docs/ directory to host architecture, ADRs, and reference content."
+      }
+    ],
+    "ciSignals": [
+      {
+        "kind": "github-actions",
+        "path": ".github/workflows",
+        "severity": "warning",
+        "category": "ci",
+        "recommendedAction": "Add a GitHub Actions workflow under .github/workflows/ to provide a CI signal."
+      }
+    ],
+    "testSignals": {
+      "severity": "warning",
+      "category": "testing",
+      "recommendedAction": "Add tests appropriate to the repo type so changes can be validated automatically."
+    }
+  },
+  "repoTypes": {
+    "node": {
+      "manifest": "package.json",
+      "testSignalGlobs": ["test", "tests", "__tests__", "spec", "**/*.test.*", "**/*.spec.*"]
+    },
+    "dotnet": {
+      "manifestGlobs": ["*.csproj", "*.sln", "*.fsproj"],
+      "testSignalGlobs": ["**/*Tests*", "**/*Test.csproj"]
+    },
+    "python": {
+      "manifestCandidates": ["pyproject.toml", "setup.py", "requirements.txt"],
+      "testSignalGlobs": ["test", "tests", "**/test_*.py"]
+    },
+    "rust": {
+      "manifest": "Cargo.toml",
+      "testSignalGlobs": ["tests"]
+    },
+    "powershell": {
+      "manifestGlobs": ["*.psd1", "*.psm1"],
+      "testSignalGlobs": ["**/*.Tests.ps1", "tests"]
+    },
+    "go": {
+      "manifest": "go.mod",
+      "testSignalGlobs": ["**/*_test.go"]
+    },
+    "other": {
+      "testSignalGlobs": ["test", "tests"]
+    }
+  }
+}
