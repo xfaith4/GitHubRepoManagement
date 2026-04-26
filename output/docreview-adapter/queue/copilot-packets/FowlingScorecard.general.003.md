@@ -7,22 +7,19 @@
 
 ## Git State
 - Branch: main
-- Last Commit: 2026-02-27 00:01:31 -0500
-- Uncommitted Changes: 3
+- Last Commit: 2026-04-25 01:33:10 -0400
+- Uncommitted Changes: 2
 
 ## Batch
 - Type: general
 - Chunk: 3
-- Complexity: medium
-- Recommended Cooldown Seconds: 180
-- Queue Score: 66
+- Complexity: low
+- Recommended Cooldown Seconds: 90
+- Queue Score: 63
 - Prompt Flavor: general-doc-improvement
 
 ## Files in Scope
-- IMPLEMENTATION_SUMMARY.md
-- LEAGUE_MODE_IMPLEMENTATION.md
-- README_PowerShell.md
-- SampleLeagueSignUpForm.md
+- TESTING.md
 
 ## Objectives
 - Improve structure and readability
@@ -34,7 +31,7 @@
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 2 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Constraints
 - Preserve technical accuracy

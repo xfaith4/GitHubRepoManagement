@@ -1,525 +1,180 @@
-[
-  {
-    "RepoName": "ElasticSearch-1",
-    "RepoPath": "G:\\Development\\20_Staging\\ElasticSearch-1",
-    "IsGitRepo": true,
-    "MarkdownFiles": [
-      "agents\\genesys_troubleshooter\\README.md",
-      "agents\\genesys_troubleshooter\\system_prompt.md",
-      "agents\\platform_monitor\\README.md",
-      "agents\\platform_monitor\\system_prompt.md",
-      "agents\\snow_incident_formatter\\README.md",
-      "agents\\snow_incident_formatter\\system_prompt.md",
-      "docs\\01_getting_started.md",
-      "docs\\02_agent_setup.md",
-      "docs\\03_genesys_integration.md",
-      "docs\\04_platform_monitoring.md",
-      "docs\\05_snow_integration.md",
-      "kibana\\README.md",
-      "README.md",
-      "scripts\\archive\\README.md"
-    ],
-    "MarkdownFileCount": 14,
-    "ActiveDocCount": 11,
-    "ArchiveDocCount": 1,
-    "GeneratedDocCount": 0,
-    "HasReadme": true,
-    "HasDocsFolder": true,
-    "HasContributing": false,
-    "HasDocsIndex": false,
-    "DocCategories": [
-      "general",
-      "readme",
-      "setup",
-      "troubleshooting"
-    ],
-    "PriorityScore": 65,
-    "PriorityBand": "High",
-    "ReviewMode": "Full-doc pass",
-    "GitLastCommitDate": "2026-02-26 12:27:00 -0500",
-    "GitBranch": "main",
-    "GitUncommittedChanges": 0,
-    "DocQualityHints": [],
-    "KeyDocs": [
-      "agents\\genesys_troubleshooter\\README.md",
-      "agents\\genesys_troubleshooter\\system_prompt.md",
-      "agents\\platform_monitor\\README.md",
-      "agents\\snow_incident_formatter\\README.md",
-      "docs\\02_agent_setup.md",
-      "kibana\\README.md",
-      "README.md"
-    ],
-    "ClassifiedFiles": [
-      {
-        "Path": "agents\\genesys_troubleshooter\\README.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "agents\\genesys_troubleshooter\\system_prompt.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "agents\\platform_monitor\\README.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "agents\\platform_monitor\\system_prompt.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "agents\\snow_incident_formatter\\README.md",
-        "DocClass": "Operational"
-      },
-      {
-        "Path": "agents\\snow_incident_formatter\\system_prompt.md",
-        "DocClass": "Operational"
-      },
-      {
-        "Path": "docs\\01_getting_started.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "docs\\02_agent_setup.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "docs\\03_genesys_integration.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "docs\\04_platform_monitoring.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "docs\\05_snow_integration.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "kibana\\README.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "README.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "scripts\\archive\\README.md",
-        "DocClass": "Archive"
-      }
-    ]
-  },
-  {
-    "RepoName": "FowlingScorecard",
-    "RepoPath": "G:\\Development\\20_Staging\\FowlingScorecard",
-    "IsGitRepo": true,
-    "MarkdownFiles": [
-      "ACHIEVEMENTS.md",
-      "ANDROID_QUICKLINK_GUIDE.md",
-      "ANDROID_QUICKLINK_IMPLEMENTATION.md",
-      "artifacts\\HARDENING\\followups.md",
-      "artifacts\\HARDENING\\verification.md",
-      "CHARTING_PROJECT_PLAN.md",
-      "DEPLOYMENT.md",
-      "docs\\DEV_NOTES.md",
-      "docs\\README.md",
-      "examples\\2026-week3-populated-scorecard-transcription.md",
-      "examples\\league-setup-example.md",
-      "HARDENING_NOTES.md",
-      "IMPLEMENTATION_SUMMARY.md",
-      "LEAGUE_MODE_IMPLEMENTATION.md",
-      "prototype-v1\\DEV_NOTES.md",
-      "prototype-v1\\README.md",
-      "QUICKSTART.md",
-      "README_PowerShell.md",
-      "README.md",
-      "SampleLeagueSignUpForm.md",
-      "TESTING.md",
-      "THURSDAY_LEAGUE_PLAYBOOK.md"
-    ],
-    "MarkdownFileCount": 22,
-    "ActiveDocCount": 19,
-    "ArchiveDocCount": 0,
-    "GeneratedDocCount": 2,
-    "HasReadme": true,
-    "HasDocsFolder": true,
-    "HasContributing": false,
-    "HasDocsIndex": false,
-    "DocCategories": [
-      "general",
-      "readme",
-      "runbook",
-      "setup"
-    ],
-    "PriorityScore": 55,
-    "PriorityBand": "High",
-    "ReviewMode": "Full-doc pass",
-    "GitLastCommitDate": "2026-02-27 00:01:31 -0500",
-    "GitBranch": "main",
-    "GitUncommittedChanges": 3,
-    "DocQualityHints": [
-      "contains-risk-markers"
-    ],
-    "KeyDocs": [
-      "docs\\README.md",
-      "prototype-v1\\README.md",
-      "QUICKSTART.md",
-      "README.md",
-      "THURSDAY_LEAGUE_PLAYBOOK.md"
-    ],
-    "ClassifiedFiles": [
-      {
-        "Path": "ACHIEVEMENTS.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "ANDROID_QUICKLINK_GUIDE.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "ANDROID_QUICKLINK_IMPLEMENTATION.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "artifacts\\HARDENING\\followups.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "artifacts\\HARDENING\\verification.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "CHARTING_PROJECT_PLAN.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "DEPLOYMENT.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "docs\\DEV_NOTES.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "docs\\README.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "examples\\2026-week3-populated-scorecard-transcription.md",
-        "DocClass": "Generated"
-      },
-      {
-        "Path": "examples\\league-setup-example.md",
-        "DocClass": "Generated"
-      },
-      {
-        "Path": "HARDENING_NOTES.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "IMPLEMENTATION_SUMMARY.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "LEAGUE_MODE_IMPLEMENTATION.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "prototype-v1\\DEV_NOTES.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "prototype-v1\\README.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "QUICKSTART.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "README_PowerShell.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "README.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "SampleLeagueSignUpForm.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "TESTING.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "THURSDAY_LEAGUE_PLAYBOOK.md",
-        "DocClass": "Operational"
-      }
-    ]
-  },
-  {
-    "RepoName": "SereneHarmony_Site_Starter",
-    "RepoPath": "G:\\Development\\20_Staging\\SereneHarmony_Site_Starter",
-    "IsGitRepo": true,
-    "MarkdownFiles": [
-      "custom_SereneHarmonySite\\CHECKLIST.md",
-      "custom_SereneHarmonySite\\CODE_REVIEW.md",
-      "custom_SereneHarmonySite\\DEPLOYMENT_GUIDE.md",
-      "custom_SereneHarmonySite\\FORM_SETUP.md",
-      "custom_SereneHarmonySite\\QUICK_START.md",
-      "custom_SereneHarmonySite\\README.md",
-      "custom_SereneHarmonySite\\SUMMARY.md",
-      "README.md"
-    ],
-    "MarkdownFileCount": 8,
-    "ActiveDocCount": 8,
-    "ArchiveDocCount": 0,
-    "GeneratedDocCount": 0,
-    "HasReadme": true,
-    "HasDocsFolder": false,
-    "HasContributing": false,
-    "HasDocsIndex": false,
-    "DocCategories": [
-      "general",
-      "readme",
-      "setup"
-    ],
-    "PriorityScore": 40,
-    "PriorityBand": "High",
-    "ReviewMode": "Core-docs batch",
-    "GitLastCommitDate": "2026-03-12 18:28:27 -0400",
-    "GitBranch": "main",
-    "GitUncommittedChanges": 0,
-    "DocQualityHints": [
-      "no-docs-folder-many-md"
-    ],
-    "KeyDocs": [
-      "custom_SereneHarmonySite\\FORM_SETUP.md",
-      "custom_SereneHarmonySite\\README.md",
-      "README.md"
-    ],
-    "ClassifiedFiles": [
-      {
-        "Path": "custom_SereneHarmonySite\\CHECKLIST.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "custom_SereneHarmonySite\\CODE_REVIEW.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "custom_SereneHarmonySite\\DEPLOYMENT_GUIDE.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "custom_SereneHarmonySite\\FORM_SETUP.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "custom_SereneHarmonySite\\QUICK_START.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "custom_SereneHarmonySite\\README.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "custom_SereneHarmonySite\\SUMMARY.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "README.md",
-        "DocClass": "Active"
-      }
-    ]
-  },
-  {
-    "RepoName": "2026MiddleEastWar",
-    "RepoPath": "G:\\Development\\20_Staging\\2026MiddleEastWar",
-    "IsGitRepo": true,
-    "MarkdownFiles": [
-      "analysis\\analysis_report.md",
-      "documents\\circulation_guide.md",
-      "logs\\README.md",
-      "outputs\\family_checklist.md",
-      "outputs\\neighborhood_runbook.md",
-      "README.md",
-      "report.md",
-      "ROADMAP.md",
-      "templates\\message_templates.md",
-      "templates\\printable_checklist.md"
-    ],
-    "MarkdownFileCount": 10,
-    "ActiveDocCount": 9,
-    "ArchiveDocCount": 0,
-    "GeneratedDocCount": 0,
-    "HasReadme": true,
-    "HasDocsFolder": false,
-    "HasContributing": false,
-    "HasDocsIndex": false,
-    "DocCategories": [
-      "general",
-      "readme",
-      "roadmap",
-      "runbook"
-    ],
-    "PriorityScore": 30,
-    "PriorityBand": "Medium",
-    "ReviewMode": "Core-docs batch",
-    "GitLastCommitDate": "2026-03-07 21:51:53 -0500",
-    "GitBranch": "main",
-    "GitUncommittedChanges": 3,
-    "DocQualityHints": [
-      "no-docs-folder-many-md"
-    ],
-    "KeyDocs": [
-      "logs\\README.md",
-      "outputs\\neighborhood_runbook.md",
-      "README.md"
-    ],
-    "ClassifiedFiles": [
-      {
-        "Path": "analysis\\analysis_report.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "documents\\circulation_guide.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "logs\\README.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "outputs\\family_checklist.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "outputs\\neighborhood_runbook.md",
-        "DocClass": "Operational"
-      },
-      {
-        "Path": "README.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "report.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "ROADMAP.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "templates\\message_templates.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "templates\\printable_checklist.md",
-        "DocClass": "Active"
-      }
-    ]
-  },
-  {
-    "RepoName": "quickstart-resources",
-    "RepoPath": "G:\\Development\\20_Staging\\quickstart-resources",
-    "IsGitRepo": true,
-    "MarkdownFiles": [
-      "mcp-client-python\\README.md",
-      "mcp-client-typescript\\README.md",
-      "README.md",
-      "weather-server-python\\README.md",
-      "weather-server-rust\\README.md",
-      "weather-server-typescript\\README.md"
-    ],
-    "MarkdownFileCount": 6,
-    "ActiveDocCount": 6,
-    "ArchiveDocCount": 0,
-    "GeneratedDocCount": 0,
-    "HasReadme": true,
-    "HasDocsFolder": false,
-    "HasContributing": false,
-    "HasDocsIndex": false,
-    "DocCategories": [
-      "readme"
-    ],
-    "PriorityScore": 30,
-    "PriorityBand": "Medium",
-    "ReviewMode": "Core-docs batch",
-    "GitLastCommitDate": "2025-10-07 14:13:48 +0100",
-    "GitBranch": "main",
-    "GitUncommittedChanges": 2,
-    "DocQualityHints": [
-      "no-docs-folder-many-md"
-    ],
-    "KeyDocs": [
-      "mcp-client-python\\README.md",
-      "mcp-client-typescript\\README.md",
-      "README.md",
-      "weather-server-python\\README.md",
-      "weather-server-rust\\README.md",
-      "weather-server-typescript\\README.md"
-    ],
-    "ClassifiedFiles": [
-      {
-        "Path": "mcp-client-python\\README.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "mcp-client-typescript\\README.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "README.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "weather-server-python\\README.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "weather-server-rust\\README.md",
-        "DocClass": "Active"
-      },
-      {
-        "Path": "weather-server-typescript\\README.md",
-        "DocClass": "Active"
-      }
-    ]
-  },
-  {
-    "RepoName": "NetworkTracker",
-    "RepoPath": "G:\\Development\\20_Staging\\NetworkTracker",
-    "IsGitRepo": true,
-    "MarkdownFiles": [
-      "README.md"
-    ],
-    "MarkdownFileCount": 1,
-    "ActiveDocCount": 1,
-    "ArchiveDocCount": 0,
-    "GeneratedDocCount": 0,
-    "HasReadme": true,
-    "HasDocsFolder": false,
-    "HasContributing": false,
-    "HasDocsIndex": false,
-    "DocCategories": [
-      "readme"
-    ],
-    "PriorityScore": 20,
-    "PriorityBand": "Medium",
-    "ReviewMode": "README-only",
-    "GitLastCommitDate": "2026-03-20 20:54:57 -0400",
-    "GitBranch": "main",
-    "GitUncommittedChanges": 2,
-    "DocQualityHints": [],
-    "KeyDocs": [
-      "README.md"
-    ],
-    "ClassifiedFiles": [
-      {
-        "Path": "README.md",
-        "DocClass": "Active"
-      }
-    ]
-  }
-]
+{
+  "RepoName": "GitHubRepoManagement",
+  "RepoPath": "G:\\Development\\GitHubRepoManagement",
+  "IsGitRepo": true,
+  "MarkdownFiles": [
+    ".github\\ISSUE_TEMPLATE\\bug_report.md",
+    ".github\\ISSUE_TEMPLATE\\standardization_task.md",
+    ".github\\PULL_REQUEST_TEMPLATE.md",
+    "backend\\api-host\\README.md",
+    "CHANGELOG.md",
+    "CODE_OF_CONDUCT.md",
+    "CONTRIBUTING.md",
+    "docs\\architecture\\adr.md",
+    "docs\\architecture\\architecture.md",
+    "docs\\governance\\repository-structure.md",
+    "docs\\history\\completed-releases.md",
+    "docs\\index.md",
+    "docs\\product\\portfolio-execution-console.md",
+    "docs\\reference\\contracts.md",
+    "docs\\reference\\features.md",
+    "docs\\reference\\portfolio-assessment.md",
+    "docs\\reference\\roadmap-contracts.md",
+    "frontend\\README.md",
+    "README.md",
+    "ROADMAP.md",
+    "SECURITY.md",
+    "standards\\README.md",
+    "standards\\roadmap\\ROADMAP_MATURITY_MODEL.md",
+    "standards\\roadmap\\ROADMAP_TEMPLATE.md",
+    "standards\\roadmap\\roadmap-repair-prompt.md",
+    "SUPPORT.md"
+  ],
+  "MarkdownFileCount": 26,
+  "ActiveDocCount": 22,
+  "ArchiveDocCount": 0,
+  "GeneratedDocCount": 0,
+  "HasReadme": true,
+  "HasDocsFolder": true,
+  "HasContributing": true,
+  "HasDocsIndex": true,
+  "DocCategories": [
+    "architecture",
+    "changelog",
+    "contributing",
+    "docs-index",
+    "general",
+    "readme",
+    "reference",
+    "roadmap"
+  ],
+  "PriorityScore": 70,
+  "PriorityBand": "High",
+  "ReviewMode": "Full-doc pass",
+  "GitLastCommitDate": "2026-04-26 03:34:03 -0400",
+  "GitBranch": "main",
+  "GitUncommittedChanges": 17,
+  "DocQualityHints": [
+    "contains-risk-markers"
+  ],
+  "KeyDocs": [
+    "backend\\api-host\\README.md",
+    "CONTRIBUTING.md",
+    "docs\\architecture\\adr.md",
+    "docs\\architecture\\architecture.md",
+    "docs\\index.md",
+    "docs\\reference\\contracts.md",
+    "docs\\reference\\features.md",
+    "docs\\reference\\portfolio-assessment.md",
+    "docs\\reference\\roadmap-contracts.md",
+    "frontend\\README.md",
+    "README.md",
+    "standards\\README.md"
+  ],
+  "ClassifiedFiles": [
+    {
+      "Path": ".github\\ISSUE_TEMPLATE\\bug_report.md",
+      "DocClass": "Active"
+    },
+    {
+      "Path": ".github\\ISSUE_TEMPLATE\\standardization_task.md",
+      "DocClass": "Active"
+    },
+    {
+      "Path": ".github\\PULL_REQUEST_TEMPLATE.md",
+      "DocClass": "Active"
+    },
+    {
+      "Path": "backend\\api-host\\README.md",
+      "DocClass": "Active"
+    },
+    {
+      "Path": "CHANGELOG.md",
+      "DocClass": "Active"
+    },
+    {
+      "Path": "CODE_OF_CONDUCT.md",
+      "DocClass": "Active"
+    },
+    {
+      "Path": "CONTRIBUTING.md",
+      "DocClass": "Active"
+    },
+    {
+      "Path": "docs\\architecture\\adr.md",
+      "DocClass": "Active"
+    },
+    {
+      "Path": "docs\\architecture\\architecture.md",
+      "DocClass": "Active"
+    },
+    {
+      "Path": "docs\\governance\\repository-structure.md",
+      "DocClass": "Active"
+    },
+    {
+      "Path": "docs\\history\\completed-releases.md",
+      "DocClass": "Active"
+    },
+    {
+      "Path": "docs\\index.md",
+      "DocClass": "Active"
+    },
+    {
+      "Path": "docs\\product\\portfolio-execution-console.md",
+      "DocClass": "Active"
+    },
+    {
+      "Path": "docs\\reference\\contracts.md",
+      "DocClass": "Reference"
+    },
+    {
+      "Path": "docs\\reference\\features.md",
+      "DocClass": "Reference"
+    },
+    {
+      "Path": "docs\\reference\\portfolio-assessment.md",
+      "DocClass": "Reference"
+    },
+    {
+      "Path": "docs\\reference\\roadmap-contracts.md",
+      "DocClass": "Reference"
+    },
+    {
+      "Path": "frontend\\README.md",
+      "DocClass": "Active"
+    },
+    {
+      "Path": "README.md",
+      "DocClass": "Active"
+    },
+    {
+      "Path": "ROADMAP.md",
+      "DocClass": "Active"
+    },
+    {
+      "Path": "SECURITY.md",
+      "DocClass": "Active"
+    },
+    {
+      "Path": "standards\\README.md",
+      "DocClass": "Active"
+    },
+    {
+      "Path": "standards\\roadmap\\ROADMAP_MATURITY_MODEL.md",
+      "DocClass": "Active"
+    },
+    {
+      "Path": "standards\\roadmap\\ROADMAP_TEMPLATE.md",
+      "DocClass": "Active"
+    },
+    {
+      "Path": "standards\\roadmap\\roadmap-repair-prompt.md",
+      "DocClass": "Active"
+    },
+    {
+      "Path": "SUPPORT.md",
+      "DocClass": "Active"
+    }
+  ]
+}

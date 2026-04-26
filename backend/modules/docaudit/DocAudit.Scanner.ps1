@@ -50,6 +50,36 @@ function Get-DocStandards {
     }
 }
 
+function Get-DocAuditObjectValue {
+    param(
+        [Parameter()]
+        [object]$InputObject,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PropertyName,
+
+        [Parameter()]
+        [object]$Default = $null
+    )
+
+    if ($null -eq $InputObject) { return $Default }
+
+    if ($InputObject -is [System.Collections.IDictionary]) {
+        if ($InputObject.ContainsKey($PropertyName)) {
+            $value = $InputObject[$PropertyName]
+            if ($null -ne $value) { return $value }
+        }
+        return $Default
+    }
+
+    $property = $InputObject.PSObject.Properties[$PropertyName]
+    if ($null -ne $property -and $null -ne $property.Value) {
+        return $property.Value
+    }
+
+    return $Default
+}
+
 <#
 .SYNOPSIS
     Audit a single repository directory against the documentation standards.
@@ -285,12 +315,12 @@ function Invoke-AuditRepoScan {
     $roadmapMap = @{}
     foreach ($entry in @($RoadmapEntries)) {
         if ($null -eq $entry) { continue }
-        $key = ([string]($entry.repoPath ?? '')).ToLowerInvariant()
+        $key = ([string](Get-DocAuditObjectValue -InputObject $entry -PropertyName 'repoPath' -Default '')).ToLowerInvariant()
         if (-not [string]::IsNullOrWhiteSpace($key)) {
             $roadmapMap[$key] = $entry
         }
         # Also index by repoName for fallback matching
-        $nameKey = ([string]($entry.repoName ?? '')).ToLowerInvariant()
+        $nameKey = ([string](Get-DocAuditObjectValue -InputObject $entry -PropertyName 'repoName' -Default '')).ToLowerInvariant()
         if (-not [string]::IsNullOrWhiteSpace($nameKey) -and -not $roadmapMap.ContainsKey($nameKey)) {
             $roadmapMap[$nameKey] = $entry
         }
@@ -324,9 +354,9 @@ function Invoke-AuditRepoScan {
                       else { $null }
 
                 if ($null -ne $rm) {
-                    $roadmapState = if ($rm.ContainsKey('roadmapState') -and $rm.roadmapState) { [string]$rm.roadmapState } else { 'missing' }
-                    $npi = if ($rm.ContainsKey('nextPendingItem') -and $rm.nextPendingItem) { $rm.nextPendingItem } else { $null }
-                    $nextPendingItem = if ($null -ne $npi -and $npi.ContainsKey('text')) { [string]$npi.text } else { '' }
+                    $roadmapState = [string](Get-DocAuditObjectValue -InputObject $rm -PropertyName 'roadmapState' -Default 'missing')
+                    $npi = Get-DocAuditObjectValue -InputObject $rm -PropertyName 'nextPendingItem' -Default $null
+                    $nextPendingItem = [string](Get-DocAuditObjectValue -InputObject $npi -PropertyName 'text' -Default '')
                 }
 
                 $auditResult = Invoke-AuditRepoDocumentation `

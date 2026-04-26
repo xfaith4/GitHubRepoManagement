@@ -127,6 +127,12 @@ function ReadinessBadge({ readiness }: { readiness: DispatchReadiness }) {
   );
 }
 
+function getDefaultRoadmapPath(repoPath?: string | null): string | undefined {
+  if (!repoPath) return undefined;
+  const trimmed = repoPath.replace(/[\\/]+$/, '');
+  return trimmed ? `${trimmed}\\ROADMAP.md` : undefined;
+}
+
 const SAVED_FILTERS_KEY = 'work-queue-saved-filters';
 
 interface SavedFilter {
@@ -599,7 +605,11 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                   <div className="flex-shrink-0 flex items-center gap-1.5">
                     {onPreviewTask && entry.dispatchReadiness === 'ready' && (
                       <button
-                        onClick={e => { e.stopPropagation(); onPreviewTask(entry.repoName); }}
+                        onClick={e => {
+                          e.stopPropagation();
+                          const entryRoadmapPath = (entry as DocAuditEntry & { roadmapPath?: string | null }).roadmapPath;
+                          onPreviewTask(entry.repoName, entryRoadmapPath ?? auditByRepo.get(entry.repoName)?.roadmapPath ?? getDefaultRoadmapPath(entry.repoPath));
+                        }}
                         className="text-xs px-2 py-1 rounded border border-green-700/50 bg-green-900/40 text-green-300 hover:bg-green-800/60 transition-colors"
                         title="Preview Copilot Task Packet"
                       >

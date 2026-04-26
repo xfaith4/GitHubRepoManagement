@@ -7,20 +7,19 @@
 
 ## Git State
 - Branch: main
-- Last Commit: 2026-02-27 00:01:31 -0500
-- Uncommitted Changes: 3
+- Last Commit: 2026-04-25 01:33:10 -0400
+- Uncommitted Changes: 2
 
 ## Batch
 - Type: archival
 - Chunk: 1
-- Complexity: medium
-- Recommended Cooldown Seconds: 180
-- Queue Score: 66
+- Complexity: low
+- Recommended Cooldown Seconds: 90
+- Queue Score: 63
 - Prompt Flavor: archival-doc-tidy-pass
 
 ## Files in Scope
 - docs\DEV_NOTES.md
-- HARDENING_NOTES.md
 - prototype-v1\DEV_NOTES.md
 
 ## Objectives
@@ -33,7 +32,7 @@
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 2 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Constraints
 - Preserve technical accuracy

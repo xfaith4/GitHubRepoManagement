@@ -7,7 +7,7 @@
 
 ## Git State
 - Branch: main
-- Last Commit: 2026-02-26 12:27:00 -0500
+- Last Commit: 2026-04-22 12:54:13 -0400
 - Uncommitted Changes: 0
 
 ## Batch
@@ -23,7 +23,7 @@
 - agents\platform_monitor\README.md
 - agents\snow_incident_formatter\README.md
 - docs\02_agent_setup.md
-- kibana\README.md
+- esql\README.md
 
 ## Objectives
 - Improve first-use readability and onboarding clarity

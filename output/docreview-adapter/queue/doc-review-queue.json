@@ -1,15 +1,53 @@
 [
   {
-    "QueueId": "ElasticSearch-1.core.001",
-    "RepoName": "ElasticSearch-1",
-    "RepoPath": "G:\\Development\\20_Staging\\ElasticSearch-1",
+    "QueueId": "GitHubRepoManagement.core.001",
+    "RepoName": "GitHubRepoManagement",
+    "RepoPath": "G:\\Development\\GitHubRepoManagement",
     "RepoPriorityBand": "High",
-    "RepoPriorityScore": 65,
+    "RepoPriorityScore": 70,
     "BatchType": "core",
     "BatchOrder": 1,
     "BatchChunkIndex": 1,
     "EstimatedComplexity": "high",
     "RecommendedCooldownSeconds": 300,
+    "QueueScore": 116,
+    "PromptFlavor": "core-doc-modernization",
+    "Goals": [
+      "Improve first-use readability and onboarding clarity",
+      "Tighten headings, structure, and opening summaries",
+      "Clarify architecture, setup, and contributor guidance",
+      "Strengthen cross-linking among high-value docs"
+    ],
+    "Warnings": [
+      "Batch contains many files; keep changes bounded and reviewable",
+      "Many markdown files fall into general or unclear categories",
+      "Multiple README.md files detected across the repo",
+      "Repo has 17 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+    ],
+    "Files": [
+      "backend\\api-host\\README.md",
+      "CONTRIBUTING.md",
+      "docs\\architecture\\adr.md",
+      "docs\\architecture\\architecture.md",
+      "docs\\index.md"
+    ],
+    "GitBranch": "main",
+    "GitLastCommit": "2026-04-26 03:34:03 -0400",
+    "GitDirty": 17,
+    "RepoNotes": [],
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GitHubRepoManagement.core.001.md"
+  },
+  {
+    "QueueId": "GitHubRepoManagement.core.002",
+    "RepoName": "GitHubRepoManagement",
+    "RepoPath": "G:\\Development\\GitHubRepoManagement",
+    "RepoPriorityBand": "High",
+    "RepoPriorityScore": 70,
+    "BatchType": "core",
+    "BatchOrder": 1,
+    "BatchChunkIndex": 2,
+    "EstimatedComplexity": "medium",
+    "RecommendedCooldownSeconds": 180,
     "QueueScore": 111,
     "PromptFlavor": "core-doc-modernization",
     "Goals": [
@@ -19,209 +57,141 @@
       "Strengthen cross-linking among high-value docs"
     ],
     "Warnings": [
-      "Batch contains many files; keep changes bounded and reviewable",
-      "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo"
+      "Multiple README.md files detected across the repo",
+      "Repo has 17 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
-      "agents\\genesys_troubleshooter\\README.md",
-      "agents\\platform_monitor\\README.md",
-      "agents\\snow_incident_formatter\\README.md",
-      "docs\\02_agent_setup.md",
-      "kibana\\README.md"
-    ],
-    "GitBranch": "main",
-    "GitLastCommit": "2026-02-26 12:27:00 -0500",
-    "GitDirty": 0,
-    "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\ElasticSearch-1.core.001.md"
-  },
-  {
-    "QueueId": "ElasticSearch-1.core.002",
-    "RepoName": "ElasticSearch-1",
-    "RepoPath": "G:\\Development\\20_Staging\\ElasticSearch-1",
-    "RepoPriorityBand": "High",
-    "RepoPriorityScore": 65,
-    "BatchType": "core",
-    "BatchOrder": 1,
-    "BatchChunkIndex": 2,
-    "EstimatedComplexity": "low",
-    "RecommendedCooldownSeconds": 90,
-    "QueueScore": 103,
-    "PromptFlavor": "core-doc-modernization",
-    "Goals": [
-      "Improve first-use readability and onboarding clarity",
-      "Tighten headings, structure, and opening summaries",
-      "Clarify architecture, setup, and contributor guidance",
-      "Strengthen cross-linking among high-value docs"
-    ],
-    "Warnings": [
-      "docs folder exists without docs/index.md",
-      "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo"
-    ],
-    "Files": [
+      "frontend\\README.md",
       "README.md",
-      "scripts\\archive\\README.md"
+      "standards\\README.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-02-26 12:27:00 -0500",
-    "GitDirty": 0,
+    "GitLastCommit": "2026-04-26 03:34:03 -0400",
+    "GitDirty": 17,
     "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\ElasticSearch-1.core.002.md"
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GitHubRepoManagement.core.002.md"
   },
   {
-    "QueueId": "FowlingScorecard.core.001",
-    "RepoName": "FowlingScorecard",
-    "RepoPath": "G:\\Development\\20_Staging\\FowlingScorecard",
+    "QueueId": "GitHubRepoManagement.operational.001",
+    "RepoName": "GitHubRepoManagement",
+    "RepoPath": "G:\\Development\\GitHubRepoManagement",
     "RepoPriorityBand": "High",
-    "RepoPriorityScore": 55,
-    "BatchType": "core",
-    "BatchOrder": 1,
+    "RepoPriorityScore": 70,
+    "BatchType": "operational",
+    "BatchOrder": 2,
     "BatchChunkIndex": 1,
-    "EstimatedComplexity": "high",
-    "RecommendedCooldownSeconds": 300,
+    "EstimatedComplexity": "medium",
+    "RecommendedCooldownSeconds": 180,
     "QueueScore": 101,
-    "PromptFlavor": "core-doc-modernization",
+    "PromptFlavor": "operational-doc-clarification",
     "Goals": [
-      "Improve first-use readability and onboarding clarity",
-      "Tighten headings, structure, and opening summaries",
-      "Clarify architecture, setup, and contributor guidance",
-      "Strengthen cross-linking among high-value docs"
+      "Make procedures easier to follow and verify",
+      "Clarify troubleshooting steps, warnings, and prerequisites",
+      "Reduce ambiguity in operational flows and runbooks",
+      "Improve scanability for maintenance and support use"
     ],
     "Warnings": [
-      "Batch contains many files; keep changes bounded and reviewable",
-      "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 17 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
-      "docs\\README.md",
-      "examples\\league-setup-example.md",
-      "prototype-v1\\README.md",
-      "QUICKSTART.md",
-      "README.md"
+      ".github\\ISSUE_TEMPLATE\\standardization_task.md",
+      "standards\\roadmap\\ROADMAP_MATURITY_MODEL.md",
+      "standards\\roadmap\\ROADMAP_TEMPLATE.md",
+      "standards\\roadmap\\roadmap-repair-prompt.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-02-27 00:01:31 -0500",
-    "GitDirty": 3,
+    "GitLastCommit": "2026-04-26 03:34:03 -0400",
+    "GitDirty": 17,
     "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\FowlingScorecard.core.001.md"
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GitHubRepoManagement.operational.001.md"
   },
   {
-    "QueueId": "ElasticSearch-1.operational.001",
-    "RepoName": "ElasticSearch-1",
-    "RepoPath": "G:\\Development\\20_Staging\\ElasticSearch-1",
+    "QueueId": "GitHubRepoManagement.reference.001",
+    "RepoName": "GitHubRepoManagement",
+    "RepoPath": "G:\\Development\\GitHubRepoManagement",
     "RepoPriorityBand": "High",
-    "RepoPriorityScore": 65,
-    "BatchType": "operational",
-    "BatchOrder": 2,
+    "RepoPriorityScore": 70,
+    "BatchType": "reference",
+    "BatchOrder": 3,
     "BatchChunkIndex": 1,
-    "EstimatedComplexity": "low",
-    "RecommendedCooldownSeconds": 90,
+    "EstimatedComplexity": "medium",
+    "RecommendedCooldownSeconds": 180,
     "QueueScore": 93,
-    "PromptFlavor": "operational-doc-clarification",
+    "PromptFlavor": "reference-doc-normalization",
     "Goals": [
-      "Make procedures easier to follow and verify",
-      "Clarify troubleshooting steps, warnings, and prerequisites",
-      "Reduce ambiguity in operational flows and runbooks",
-      "Improve scanability for maintenance and support use"
+      "Normalize structure and terminology across reference docs",
+      "Improve scanability with disciplined headings and tables where useful",
+      "Reduce ambiguity while preserving technical precision",
+      "Keep formatting consistent and easy to navigate"
     ],
     "Warnings": [
-      "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo"
+      "Multiple README.md files detected across the repo",
+      "Repo has 17 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
-      "agents\\genesys_troubleshooter\\system_prompt.md"
+      "docs\\reference\\contracts.md",
+      "docs\\reference\\features.md",
+      "docs\\reference\\portfolio-assessment.md",
+      "docs\\reference\\roadmap-contracts.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-02-26 12:27:00 -0500",
-    "GitDirty": 0,
+    "GitLastCommit": "2026-04-26 03:34:03 -0400",
+    "GitDirty": 17,
     "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\ElasticSearch-1.operational.001.md"
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GitHubRepoManagement.reference.001.md"
   },
   {
-    "QueueId": "SereneHarmony_Site_Starter.core.001",
-    "RepoName": "SereneHarmony_Site_Starter",
-    "RepoPath": "G:\\Development\\20_Staging\\SereneHarmony_Site_Starter",
+    "QueueId": "GitHubRepoManagement.general.001",
+    "RepoName": "GitHubRepoManagement",
+    "RepoPath": "G:\\Development\\GitHubRepoManagement",
     "RepoPriorityBand": "High",
-    "RepoPriorityScore": 40,
-    "BatchType": "core",
-    "BatchOrder": 1,
+    "RepoPriorityScore": 70,
+    "BatchType": "general",
+    "BatchOrder": 4,
     "BatchChunkIndex": 1,
+    "EstimatedComplexity": "medium",
+    "RecommendedCooldownSeconds": 180,
+    "QueueScore": 85,
+    "PromptFlavor": "general-doc-improvement",
+    "Goals": [
+      "Improve structure and readability",
+      "Reduce repetition and vague wording",
+      "Standardize formatting and headings",
+      "Make content more deliberate and maintainable"
+    ],
+    "Warnings": [
+      "Many markdown files fall into general or unclear categories",
+      "Multiple README.md files detected across the repo",
+      "Repo has 17 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+    ],
+    "Files": [
+      ".github\\ISSUE_TEMPLATE\\bug_report.md",
+      ".github\\PULL_REQUEST_TEMPLATE.md",
+      "CODE_OF_CONDUCT.md",
+      "docs\\governance\\repository-structure.md"
+    ],
+    "GitBranch": "main",
+    "GitLastCommit": "2026-04-26 03:34:03 -0400",
+    "GitDirty": 17,
+    "RepoNotes": [],
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GitHubRepoManagement.general.001.md"
+  },
+  {
+    "QueueId": "GitHubRepoManagement.general.002",
+    "RepoName": "GitHubRepoManagement",
+    "RepoPath": "G:\\Development\\GitHubRepoManagement",
+    "RepoPriorityBand": "High",
+    "RepoPriorityScore": 70,
+    "BatchType": "general",
+    "BatchOrder": 4,
+    "BatchChunkIndex": 2,
     "EstimatedComplexity": "medium",
     "RecommendedCooldownSeconds": 180,
     "QueueScore": 83,
-    "PromptFlavor": "core-doc-modernization",
-    "Goals": [
-      "Improve first-use readability and onboarding clarity",
-      "Tighten headings, structure, and opening summaries",
-      "Clarify architecture, setup, and contributor guidance",
-      "Strengthen cross-linking among high-value docs"
-    ],
-    "Warnings": [
-      "Multiple README.md files detected across the repo"
-    ],
-    "Files": [
-      "custom_SereneHarmonySite\\FORM_SETUP.md",
-      "custom_SereneHarmonySite\\README.md",
-      "README.md"
-    ],
-    "GitBranch": "main",
-    "GitLastCommit": "2026-03-12 18:28:27 -0400",
-    "GitDirty": 0,
-    "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\SereneHarmony_Site_Starter.core.001.md"
-  },
-  {
-    "QueueId": "FowlingScorecard.operational.001",
-    "RepoName": "FowlingScorecard",
-    "RepoPath": "G:\\Development\\20_Staging\\FowlingScorecard",
-    "RepoPriorityBand": "High",
-    "RepoPriorityScore": 55,
-    "BatchType": "operational",
-    "BatchOrder": 2,
-    "BatchChunkIndex": 1,
-    "EstimatedComplexity": "low",
-    "RecommendedCooldownSeconds": 90,
-    "QueueScore": 83,
-    "PromptFlavor": "operational-doc-clarification",
-    "Goals": [
-      "Make procedures easier to follow and verify",
-      "Clarify troubleshooting steps, warnings, and prerequisites",
-      "Reduce ambiguity in operational flows and runbooks",
-      "Improve scanability for maintenance and support use"
-    ],
-    "Warnings": [
-      "docs folder exists without docs/index.md",
-      "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo",
-      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
-    ],
-    "Files": [
-      "THURSDAY_LEAGUE_PLAYBOOK.md"
-    ],
-    "GitBranch": "main",
-    "GitLastCommit": "2026-02-27 00:01:31 -0500",
-    "GitDirty": 3,
-    "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\FowlingScorecard.operational.001.md"
-  },
-  {
-    "QueueId": "ElasticSearch-1.general.001",
-    "RepoName": "ElasticSearch-1",
-    "RepoPath": "G:\\Development\\20_Staging\\ElasticSearch-1",
-    "RepoPriorityBand": "High",
-    "RepoPriorityScore": 65,
-    "BatchType": "general",
-    "BatchOrder": 4,
-    "BatchChunkIndex": 1,
-    "EstimatedComplexity": "medium",
-    "RecommendedCooldownSeconds": 180,
-    "QueueScore": 80,
     "PromptFlavor": "general-doc-improvement",
     "Goals": [
       "Improve structure and readability",
@@ -230,551 +200,33 @@
       "Make content more deliberate and maintainable"
     ],
     "Warnings": [
-      "docs folder exists without docs/index.md",
       "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo"
-    ],
-    "Files": [
-      "agents\\platform_monitor\\system_prompt.md",
-      "agents\\snow_incident_formatter\\system_prompt.md",
-      "docs\\01_getting_started.md",
-      "docs\\03_genesys_integration.md"
-    ],
-    "GitBranch": "main",
-    "GitLastCommit": "2026-02-26 12:27:00 -0500",
-    "GitDirty": 0,
-    "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\ElasticSearch-1.general.001.md"
-  },
-  {
-    "QueueId": "quickstart-resources.core.001",
-    "RepoName": "quickstart-resources",
-    "RepoPath": "G:\\Development\\20_Staging\\quickstart-resources",
-    "RepoPriorityBand": "Medium",
-    "RepoPriorityScore": 30,
-    "BatchType": "core",
-    "BatchOrder": 1,
-    "BatchChunkIndex": 1,
-    "EstimatedComplexity": "high",
-    "RecommendedCooldownSeconds": 300,
-    "QueueScore": 76,
-    "PromptFlavor": "core-doc-modernization",
-    "Goals": [
-      "Improve first-use readability and onboarding clarity",
-      "Tighten headings, structure, and opening summaries",
-      "Clarify architecture, setup, and contributor guidance",
-      "Strengthen cross-linking among high-value docs"
-    ],
-    "Warnings": [
-      "Batch contains many files; keep changes bounded and reviewable",
       "Multiple README.md files detected across the repo",
-      "Repo has 2 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 17 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
-      "mcp-client-python\\README.md",
-      "mcp-client-typescript\\README.md",
-      "README.md",
-      "weather-server-python\\README.md",
-      "weather-server-rust\\README.md"
+      "docs\\product\\portfolio-execution-console.md",
+      "SECURITY.md",
+      "SUPPORT.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2025-10-07 14:13:48 +0100",
-    "GitDirty": 2,
+    "GitLastCommit": "2026-04-26 03:34:03 -0400",
+    "GitDirty": 17,
     "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\quickstart-resources.core.001.md"
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GitHubRepoManagement.general.002.md"
   },
   {
-    "QueueId": "ElasticSearch-1.general.002",
-    "RepoName": "ElasticSearch-1",
-    "RepoPath": "G:\\Development\\20_Staging\\ElasticSearch-1",
+    "QueueId": "GitHubRepoManagement.archival.001",
+    "RepoName": "GitHubRepoManagement",
+    "RepoPath": "G:\\Development\\GitHubRepoManagement",
     "RepoPriorityBand": "High",
-    "RepoPriorityScore": 65,
-    "BatchType": "general",
-    "BatchOrder": 4,
-    "BatchChunkIndex": 2,
-    "EstimatedComplexity": "low",
-    "RecommendedCooldownSeconds": 90,
-    "QueueScore": 75,
-    "PromptFlavor": "general-doc-improvement",
-    "Goals": [
-      "Improve structure and readability",
-      "Reduce repetition and vague wording",
-      "Standardize formatting and headings",
-      "Make content more deliberate and maintainable"
-    ],
-    "Warnings": [
-      "docs folder exists without docs/index.md",
-      "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo"
-    ],
-    "Files": [
-      "docs\\04_platform_monitoring.md",
-      "docs\\05_snow_integration.md"
-    ],
-    "GitBranch": "main",
-    "GitLastCommit": "2026-02-26 12:27:00 -0500",
-    "GitDirty": 0,
-    "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\ElasticSearch-1.general.002.md"
-  },
-  {
-    "QueueId": "2026MiddleEastWar.core.001",
-    "RepoName": "2026MiddleEastWar",
-    "RepoPath": "G:\\Development\\20_Staging\\2026MiddleEastWar",
-    "RepoPriorityBand": "Medium",
-    "RepoPriorityScore": 30,
-    "BatchType": "core",
-    "BatchOrder": 1,
-    "BatchChunkIndex": 1,
-    "EstimatedComplexity": "low",
-    "RecommendedCooldownSeconds": 90,
-    "QueueScore": 70,
-    "PromptFlavor": "core-doc-modernization",
-    "Goals": [
-      "Improve first-use readability and onboarding clarity",
-      "Tighten headings, structure, and opening summaries",
-      "Clarify architecture, setup, and contributor guidance",
-      "Strengthen cross-linking among high-value docs"
-    ],
-    "Warnings": [
-      "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo",
-      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
-    ],
-    "Files": [
-      "logs\\README.md",
-      "README.md"
-    ],
-    "GitBranch": "main",
-    "GitLastCommit": "2026-03-07 21:51:53 -0500",
-    "GitDirty": 3,
-    "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\2026MiddleEastWar.core.001.md"
-  },
-  {
-    "QueueId": "FowlingScorecard.general.001",
-    "RepoName": "FowlingScorecard",
-    "RepoPath": "G:\\Development\\20_Staging\\FowlingScorecard",
-    "RepoPriorityBand": "High",
-    "RepoPriorityScore": 55,
-    "BatchType": "general",
-    "BatchOrder": 4,
-    "BatchChunkIndex": 1,
-    "EstimatedComplexity": "medium",
-    "RecommendedCooldownSeconds": 180,
-    "QueueScore": 70,
-    "PromptFlavor": "general-doc-improvement",
-    "Goals": [
-      "Improve structure and readability",
-      "Reduce repetition and vague wording",
-      "Standardize formatting and headings",
-      "Make content more deliberate and maintainable"
-    ],
-    "Warnings": [
-      "docs folder exists without docs/index.md",
-      "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo",
-      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
-    ],
-    "Files": [
-      "ACHIEVEMENTS.md",
-      "ANDROID_QUICKLINK_GUIDE.md",
-      "ANDROID_QUICKLINK_IMPLEMENTATION.md",
-      "artifacts\\HARDENING\\followups.md"
-    ],
-    "GitBranch": "main",
-    "GitLastCommit": "2026-02-27 00:01:31 -0500",
-    "GitDirty": 3,
-    "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\FowlingScorecard.general.001.md"
-  },
-  {
-    "QueueId": "quickstart-resources.core.002",
-    "RepoName": "quickstart-resources",
-    "RepoPath": "G:\\Development\\20_Staging\\quickstart-resources",
-    "RepoPriorityBand": "Medium",
-    "RepoPriorityScore": 30,
-    "BatchType": "core",
-    "BatchOrder": 1,
-    "BatchChunkIndex": 2,
-    "EstimatedComplexity": "low",
-    "RecommendedCooldownSeconds": 90,
-    "QueueScore": 68,
-    "PromptFlavor": "core-doc-modernization",
-    "Goals": [
-      "Improve first-use readability and onboarding clarity",
-      "Tighten headings, structure, and opening summaries",
-      "Clarify architecture, setup, and contributor guidance",
-      "Strengthen cross-linking among high-value docs"
-    ],
-    "Warnings": [
-      "Multiple README.md files detected across the repo",
-      "Repo has 2 uncommitted change(s) - may be mid-surgery; verify before reviewing"
-    ],
-    "Files": [
-      "weather-server-typescript\\README.md"
-    ],
-    "GitBranch": "main",
-    "GitLastCommit": "2025-10-07 14:13:48 +0100",
-    "GitDirty": 2,
-    "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\quickstart-resources.core.002.md"
-  },
-  {
-    "QueueId": "FowlingScorecard.general.002",
-    "RepoName": "FowlingScorecard",
-    "RepoPath": "G:\\Development\\20_Staging\\FowlingScorecard",
-    "RepoPriorityBand": "High",
-    "RepoPriorityScore": 55,
-    "BatchType": "general",
-    "BatchOrder": 4,
-    "BatchChunkIndex": 2,
-    "EstimatedComplexity": "medium",
-    "RecommendedCooldownSeconds": 180,
-    "QueueScore": 68,
-    "PromptFlavor": "general-doc-improvement",
-    "Goals": [
-      "Improve structure and readability",
-      "Reduce repetition and vague wording",
-      "Standardize formatting and headings",
-      "Make content more deliberate and maintainable"
-    ],
-    "Warnings": [
-      "docs folder exists without docs/index.md",
-      "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo",
-      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
-    ],
-    "Files": [
-      "artifacts\\HARDENING\\verification.md",
-      "CHARTING_PROJECT_PLAN.md",
-      "DEPLOYMENT.md",
-      "examples\\2026-week3-populated-scorecard-transcription.md"
-    ],
-    "GitBranch": "main",
-    "GitLastCommit": "2026-02-27 00:01:31 -0500",
-    "GitDirty": 3,
-    "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\FowlingScorecard.general.002.md"
-  },
-  {
-    "QueueId": "FowlingScorecard.general.003",
-    "RepoName": "FowlingScorecard",
-    "RepoPath": "G:\\Development\\20_Staging\\FowlingScorecard",
-    "RepoPriorityBand": "High",
-    "RepoPriorityScore": 55,
-    "BatchType": "general",
-    "BatchOrder": 4,
-    "BatchChunkIndex": 3,
-    "EstimatedComplexity": "medium",
-    "RecommendedCooldownSeconds": 180,
-    "QueueScore": 66,
-    "PromptFlavor": "general-doc-improvement",
-    "Goals": [
-      "Improve structure and readability",
-      "Reduce repetition and vague wording",
-      "Standardize formatting and headings",
-      "Make content more deliberate and maintainable"
-    ],
-    "Warnings": [
-      "docs folder exists without docs/index.md",
-      "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo",
-      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
-    ],
-    "Files": [
-      "IMPLEMENTATION_SUMMARY.md",
-      "LEAGUE_MODE_IMPLEMENTATION.md",
-      "README_PowerShell.md",
-      "SampleLeagueSignUpForm.md"
-    ],
-    "GitBranch": "main",
-    "GitLastCommit": "2026-02-27 00:01:31 -0500",
-    "GitDirty": 3,
-    "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\FowlingScorecard.general.003.md"
-  },
-  {
-    "QueueId": "FowlingScorecard.archival.001",
-    "RepoName": "FowlingScorecard",
-    "RepoPath": "G:\\Development\\20_Staging\\FowlingScorecard",
-    "RepoPriorityBand": "High",
-    "RepoPriorityScore": 55,
+    "RepoPriorityScore": 70,
     "BatchType": "archival",
     "BatchOrder": 5,
     "BatchChunkIndex": 1,
     "EstimatedComplexity": "medium",
     "RecommendedCooldownSeconds": 180,
-    "QueueScore": 66,
-    "PromptFlavor": "archival-doc-tidy-pass",
-    "Goals": [
-      "Clarify status and intent of planning or historical docs",
-      "Trim noise and improve readability without over-investing",
-      "Flag stale or speculative content for review",
-      "Preserve useful historical context while reducing clutter"
-    ],
-    "Warnings": [
-      "docs folder exists without docs/index.md",
-      "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo",
-      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
-    ],
-    "Files": [
-      "docs\\DEV_NOTES.md",
-      "HARDENING_NOTES.md",
-      "prototype-v1\\DEV_NOTES.md"
-    ],
-    "GitBranch": "main",
-    "GitLastCommit": "2026-02-27 00:01:31 -0500",
-    "GitDirty": 3,
-    "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\FowlingScorecard.archival.001.md"
-  },
-  {
-    "QueueId": "FowlingScorecard.general.004",
-    "RepoName": "FowlingScorecard",
-    "RepoPath": "G:\\Development\\20_Staging\\FowlingScorecard",
-    "RepoPriorityBand": "High",
-    "RepoPriorityScore": 55,
-    "BatchType": "general",
-    "BatchOrder": 4,
-    "BatchChunkIndex": 4,
-    "EstimatedComplexity": "low",
-    "RecommendedCooldownSeconds": 90,
-    "QueueScore": 61,
-    "PromptFlavor": "general-doc-improvement",
-    "Goals": [
-      "Improve structure and readability",
-      "Reduce repetition and vague wording",
-      "Standardize formatting and headings",
-      "Make content more deliberate and maintainable"
-    ],
-    "Warnings": [
-      "docs folder exists without docs/index.md",
-      "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo",
-      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
-    ],
-    "Files": [
-      "TESTING.md"
-    ],
-    "GitBranch": "main",
-    "GitLastCommit": "2026-02-27 00:01:31 -0500",
-    "GitDirty": 3,
-    "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\FowlingScorecard.general.004.md"
-  },
-  {
-    "QueueId": "NetworkTracker.core.001",
-    "RepoName": "NetworkTracker",
-    "RepoPath": "G:\\Development\\20_Staging\\NetworkTracker",
-    "RepoPriorityBand": "Medium",
-    "RepoPriorityScore": 20,
-    "BatchType": "core",
-    "BatchOrder": 1,
-    "BatchChunkIndex": 1,
-    "EstimatedComplexity": "low",
-    "RecommendedCooldownSeconds": 90,
-    "QueueScore": 60,
-    "PromptFlavor": "core-doc-modernization",
-    "Goals": [
-      "Improve first-use readability and onboarding clarity",
-      "Tighten headings, structure, and opening summaries",
-      "Clarify architecture, setup, and contributor guidance",
-      "Strengthen cross-linking among high-value docs"
-    ],
-    "Warnings": [
-      "Repo has 2 uncommitted change(s) - may be mid-surgery; verify before reviewing"
-    ],
-    "Files": [
-      "README.md"
-    ],
-    "GitBranch": "main",
-    "GitLastCommit": "2026-03-20 20:54:57 -0400",
-    "GitDirty": 2,
-    "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\NetworkTracker.core.001.md"
-  },
-  {
-    "QueueId": "2026MiddleEastWar.operational.001",
-    "RepoName": "2026MiddleEastWar",
-    "RepoPath": "G:\\Development\\20_Staging\\2026MiddleEastWar",
-    "RepoPriorityBand": "Medium",
-    "RepoPriorityScore": 30,
-    "BatchType": "operational",
-    "BatchOrder": 2,
-    "BatchChunkIndex": 1,
-    "EstimatedComplexity": "low",
-    "RecommendedCooldownSeconds": 90,
-    "QueueScore": 58,
-    "PromptFlavor": "operational-doc-clarification",
-    "Goals": [
-      "Make procedures easier to follow and verify",
-      "Clarify troubleshooting steps, warnings, and prerequisites",
-      "Reduce ambiguity in operational flows and runbooks",
-      "Improve scanability for maintenance and support use"
-    ],
-    "Warnings": [
-      "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo",
-      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
-    ],
-    "Files": [
-      "outputs\\neighborhood_runbook.md"
-    ],
-    "GitBranch": "main",
-    "GitLastCommit": "2026-03-07 21:51:53 -0500",
-    "GitDirty": 3,
-    "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\2026MiddleEastWar.operational.001.md"
-  },
-  {
-    "QueueId": "SereneHarmony_Site_Starter.general.001",
-    "RepoName": "SereneHarmony_Site_Starter",
-    "RepoPath": "G:\\Development\\20_Staging\\SereneHarmony_Site_Starter",
-    "RepoPriorityBand": "High",
-    "RepoPriorityScore": 40,
-    "BatchType": "general",
-    "BatchOrder": 4,
-    "BatchChunkIndex": 1,
-    "EstimatedComplexity": "medium",
-    "RecommendedCooldownSeconds": 180,
-    "QueueScore": 55,
-    "PromptFlavor": "general-doc-improvement",
-    "Goals": [
-      "Improve structure and readability",
-      "Reduce repetition and vague wording",
-      "Standardize formatting and headings",
-      "Make content more deliberate and maintainable"
-    ],
-    "Warnings": [
-      "Multiple README.md files detected across the repo"
-    ],
-    "Files": [
-      "custom_SereneHarmonySite\\CHECKLIST.md",
-      "custom_SereneHarmonySite\\CODE_REVIEW.md",
-      "custom_SereneHarmonySite\\DEPLOYMENT_GUIDE.md",
-      "custom_SereneHarmonySite\\QUICK_START.md"
-    ],
-    "GitBranch": "main",
-    "GitLastCommit": "2026-03-12 18:28:27 -0400",
-    "GitDirty": 0,
-    "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\SereneHarmony_Site_Starter.general.001.md"
-  },
-  {
-    "QueueId": "SereneHarmony_Site_Starter.general.002",
-    "RepoName": "SereneHarmony_Site_Starter",
-    "RepoPath": "G:\\Development\\20_Staging\\SereneHarmony_Site_Starter",
-    "RepoPriorityBand": "High",
-    "RepoPriorityScore": 40,
-    "BatchType": "general",
-    "BatchOrder": 4,
-    "BatchChunkIndex": 2,
-    "EstimatedComplexity": "low",
-    "RecommendedCooldownSeconds": 90,
-    "QueueScore": 50,
-    "PromptFlavor": "general-doc-improvement",
-    "Goals": [
-      "Improve structure and readability",
-      "Reduce repetition and vague wording",
-      "Standardize formatting and headings",
-      "Make content more deliberate and maintainable"
-    ],
-    "Warnings": [
-      "Multiple README.md files detected across the repo"
-    ],
-    "Files": [
-      "custom_SereneHarmonySite\\SUMMARY.md"
-    ],
-    "GitBranch": "main",
-    "GitLastCommit": "2026-03-12 18:28:27 -0400",
-    "GitDirty": 0,
-    "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\SereneHarmony_Site_Starter.general.002.md"
-  },
-  {
-    "QueueId": "2026MiddleEastWar.general.001",
-    "RepoName": "2026MiddleEastWar",
-    "RepoPath": "G:\\Development\\20_Staging\\2026MiddleEastWar",
-    "RepoPriorityBand": "Medium",
-    "RepoPriorityScore": 30,
-    "BatchType": "general",
-    "BatchOrder": 4,
-    "BatchChunkIndex": 1,
-    "EstimatedComplexity": "medium",
-    "RecommendedCooldownSeconds": 180,
-    "QueueScore": 45,
-    "PromptFlavor": "general-doc-improvement",
-    "Goals": [
-      "Improve structure and readability",
-      "Reduce repetition and vague wording",
-      "Standardize formatting and headings",
-      "Make content more deliberate and maintainable"
-    ],
-    "Warnings": [
-      "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo",
-      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
-    ],
-    "Files": [
-      "analysis\\analysis_report.md",
-      "documents\\circulation_guide.md",
-      "outputs\\family_checklist.md",
-      "report.md"
-    ],
-    "GitBranch": "main",
-    "GitLastCommit": "2026-03-07 21:51:53 -0500",
-    "GitDirty": 3,
-    "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\2026MiddleEastWar.general.001.md"
-  },
-  {
-    "QueueId": "2026MiddleEastWar.general.002",
-    "RepoName": "2026MiddleEastWar",
-    "RepoPath": "G:\\Development\\20_Staging\\2026MiddleEastWar",
-    "RepoPriorityBand": "Medium",
-    "RepoPriorityScore": 30,
-    "BatchType": "general",
-    "BatchOrder": 4,
-    "BatchChunkIndex": 2,
-    "EstimatedComplexity": "low",
-    "RecommendedCooldownSeconds": 90,
-    "QueueScore": 40,
-    "PromptFlavor": "general-doc-improvement",
-    "Goals": [
-      "Improve structure and readability",
-      "Reduce repetition and vague wording",
-      "Standardize formatting and headings",
-      "Make content more deliberate and maintainable"
-    ],
-    "Warnings": [
-      "Many markdown files fall into general or unclear categories",
-      "Multiple README.md files detected across the repo",
-      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
-    ],
-    "Files": [
-      "templates\\message_templates.md",
-      "templates\\printable_checklist.md"
-    ],
-    "GitBranch": "main",
-    "GitLastCommit": "2026-03-07 21:51:53 -0500",
-    "GitDirty": 3,
-    "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\2026MiddleEastWar.general.002.md"
-  },
-  {
-    "QueueId": "2026MiddleEastWar.archival.001",
-    "RepoName": "2026MiddleEastWar",
-    "RepoPath": "G:\\Development\\20_Staging\\2026MiddleEastWar",
-    "RepoPriorityBand": "Medium",
-    "RepoPriorityScore": 30,
-    "BatchType": "archival",
-    "BatchOrder": 5,
-    "BatchChunkIndex": 1,
-    "EstimatedComplexity": "low",
-    "RecommendedCooldownSeconds": 90,
-    "QueueScore": 38,
+    "QueueScore": 81,
     "PromptFlavor": "archival-doc-tidy-pass",
     "Goals": [
       "Clarify status and intent of planning or historical docs",
@@ -785,15 +237,17 @@
     "Warnings": [
       "Many markdown files fall into general or unclear categories",
       "Multiple README.md files detected across the repo",
-      "Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing"
+      "Repo has 17 uncommitted change(s) - may be mid-surgery; verify before reviewing"
     ],
     "Files": [
+      "CHANGELOG.md",
+      "docs\\history\\completed-releases.md",
       "ROADMAP.md"
     ],
     "GitBranch": "main",
-    "GitLastCommit": "2026-03-07 21:51:53 -0500",
-    "GitDirty": 3,
+    "GitLastCommit": "2026-04-26 03:34:03 -0400",
+    "GitDirty": 17,
     "RepoNotes": [],
-    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\2026MiddleEastWar.archival.001.md"
+    "PacketPath": "G:\\Development\\GitHubRepoManagement\\output\\docreview-adapter\\queue\\copilot-packets\\GitHubRepoManagement.archival.001.md"
   }
 ]

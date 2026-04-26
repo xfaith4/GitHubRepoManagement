@@ -7,18 +7,19 @@
 
 ## Git State
 - Branch: main
-- Last Commit: 2026-02-26 12:27:00 -0500
+- Last Commit: 2026-04-22 12:54:13 -0400
 - Uncommitted Changes: 0
 
 ## Batch
 - Type: core
 - Chunk: 2
-- Complexity: low
-- Recommended Cooldown Seconds: 90
-- Queue Score: 103
+- Complexity: medium
+- Recommended Cooldown Seconds: 180
+- Queue Score: 106
 - Prompt Flavor: core-doc-modernization
 
 ## Files in Scope
+- kibana\README.md
 - README.md
 - scripts\archive\README.md
 

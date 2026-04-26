@@ -41,6 +41,8 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
 
   useEffect(() => {
     if (isOpen && repoName) {
+      setTaskMessage(null);
+      setTaskPreview(null);
       loadContent(repoName);
       setScanMessage(null);
 
@@ -134,6 +136,7 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
   };
 
   const isTaskError = taskMessage !== null && /failed|error|not found|not installed|required/i.test(taskMessage);
+  const hasLocalRoadmap = Boolean(content?.path);
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -188,6 +191,9 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
 
         <div className="px-5 py-3 border-b border-gray-700 bg-gray-950/40 flex-shrink-0 space-y-2">
           <div className="text-xs font-semibold text-gray-300">Roadmap Copilot Task</div>
+          <div className="text-xs text-gray-500">
+            This section checks the GitHub repository for dispatch. The local roadmap viewer below can still show a file even when GitHub task preview cannot find one remotely.
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
             <input
               value={repositoryInput}
@@ -233,7 +239,17 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
           </div>
 
           {taskMessage && (
-            <div className={`text-xs rounded px-2 py-1.5 border ${isTaskError ? 'bg-red-900/30 border-red-700/40 text-red-200' : 'bg-blue-900/30 border-blue-700/40 text-blue-200'}`}>{taskMessage}</div>
+            <div className={`text-xs rounded px-3 py-2 border ${isTaskError ? 'bg-red-950/60 border-red-700/60 text-red-100' : 'bg-blue-900/30 border-blue-700/40 text-blue-200'}`}>
+              <div className="font-semibold mb-1">
+                {isTaskError ? 'Copilot task preview issue' : 'Copilot task preview'}
+              </div>
+              <div>{taskMessage}</div>
+              {isTaskError && hasLocalRoadmap && (
+                <div className="mt-1 text-red-200/80">
+                  The local roadmap is loaded below from {content?.path}. This warning only means the task preview could not resolve a roadmap through GitHub for the repository field above.
+                </div>
+              )}
+            </div>
           )}
 
           {taskPreview && (
@@ -275,6 +291,7 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
           <div className="px-5 py-2 border-b border-gray-700 flex-shrink-0 flex flex-wrap gap-4 text-xs text-gray-400">
             <span>Last modified: <span className="text-gray-300">{formatDate(content.lastModified)}</span></span>
             <span>Size: <span className="text-gray-300">{formatSize(content.sizeBytes)}</span></span>
+            <span className="text-gray-500">Local roadmap:</span>
             <span className="font-mono text-gray-500 truncate max-w-xs" title={content.path}>{content.path}</span>
           </div>
         )}

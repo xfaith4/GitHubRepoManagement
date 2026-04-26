@@ -7,8 +7,8 @@
 
 ## Git State
 - Branch: main
-- Last Commit: 2026-02-27 00:01:31 -0500
-- Uncommitted Changes: 3
+- Last Commit: 2026-04-25 01:33:10 -0400
+- Uncommitted Changes: 2
 
 ## Batch
 - Type: general
@@ -19,10 +19,10 @@
 - Prompt Flavor: general-doc-improvement
 
 ## Files in Scope
-- artifacts\HARDENING\verification.md
-- CHARTING_PROJECT_PLAN.md
-- DEPLOYMENT.md
-- examples\2026-week3-populated-scorecard-transcription.md
+- IMPLEMENTATION_SUMMARY.md
+- LEAGUE_MODE_IMPLEMENTATION.md
+- README_PowerShell.md
+- SampleLeagueSignUpForm.md
 
 ## Objectives
 - Improve structure and readability
@@ -34,7 +34,7 @@
 - docs folder exists without docs/index.md
 - Many markdown files fall into general or unclear categories
 - Multiple README.md files detected across the repo
-- Repo has 3 uncommitted change(s) - may be mid-surgery; verify before reviewing
+- Repo has 2 uncommitted change(s) - may be mid-surgery; verify before reviewing
 
 ## Constraints
 - Preserve technical accuracy

@@ -95,27 +95,27 @@ export const ReadmeStandardizationModal: React.FC<ReadmeStandardizationModalProp
   const canApply = stateLabel === 'standardization-preview-ready' && !applySuccess;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 sm:p-6">
+      <div className="bg-gray-950 border border-gray-700 rounded-lg shadow-2xl w-full max-w-[96rem] h-[92vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 bg-gray-900">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">README Standardization</h2>
-            <p className="text-sm text-gray-500 mt-0.5">{repoName}</p>
+            <h2 className="text-lg font-semibold text-gray-100">README Standardization</h2>
+            <p className="text-sm text-gray-400 mt-0.5">{repoName}</p>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-100 text-2xl leading-none">&times;</button>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-gray-200 px-6">
+        <div className="flex border-b border-gray-800 px-6 bg-gray-900/80">
           {(['preview', 'diff', 'history'] as ModalTab[]).map(tab => (
             <button
               key={tab}
               onClick={() => handleTabChange(tab)}
               className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors capitalize ${
                 activeTab === tab
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  ? 'border-blue-400 text-blue-300'
+                  : 'border-transparent text-gray-400 hover:text-gray-200'
               }`}
             >
               {tab === 'diff' ? 'Diff Preview' : tab === 'preview' ? 'Standardization Plan' : 'History'}
@@ -124,10 +124,10 @@ export const ReadmeStandardizationModal: React.FC<ReadmeStandardizationModalProp
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 min-h-0 overflow-y-auto p-6 bg-gray-950">
           {isLoading && (
             <div className="flex items-center justify-center py-12">
-              <div className="text-gray-500">Loading preview...</div>
+              <div className="text-gray-400">Loading preview...</div>
             </div>
           )}
 
@@ -191,18 +191,17 @@ export const ReadmeStandardizationModal: React.FC<ReadmeStandardizationModalProp
 
           {!isLoading && activeTab === 'diff' && preview && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Current README</h3>
-                  <pre className="bg-gray-50 border border-gray-200 rounded p-3 text-xs overflow-auto max-h-96 whitespace-pre-wrap">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 h-full min-h-[32rem]">
+                <div className="min-w-0 flex flex-col">
+                  <h3 className="text-xs font-semibold text-gray-300 uppercase mb-2 tracking-wide">Current README</h3>
+                  <pre className="flex-1 min-h-[32rem] bg-gray-900 border border-gray-700 rounded-md p-4 text-sm leading-6 text-gray-100 overflow-auto whitespace-pre-wrap font-mono">
                     {preview.currentContent || '(empty)'}
                   </pre>
                 </div>
-                <div>
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Proposed README</h3>
+                <div className="min-w-0 flex flex-col">
+                  <h3 className="text-xs font-semibold text-gray-300 uppercase mb-2 tracking-wide">Proposed README</h3>
                   <textarea
-                    className="w-full bg-blue-50 border border-blue-200 rounded p-3 text-xs max-h-96 font-mono resize-none"
-                    rows={20}
+                    className="flex-1 min-h-[32rem] w-full bg-slate-900 border border-blue-500/60 rounded-md p-4 text-sm leading-6 text-gray-100 font-mono resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-400"
                     value={editedContent}
                     onChange={e => setEditedContent(e.target.value)}
                   />
@@ -214,17 +213,17 @@ export const ReadmeStandardizationModal: React.FC<ReadmeStandardizationModalProp
           {activeTab === 'history' && (
             <div className="space-y-2">
               {history.length === 0 ? (
-                <p className="text-sm text-gray-500">No standardization history for this repo.</p>
+                <p className="text-sm text-gray-400">No standardization history for this repo.</p>
               ) : (
                 history.map((item, i) => (
-                  <div key={i} className="p-3 rounded border border-gray-200 text-sm">
+                  <div key={i} className="p-3 rounded border border-gray-700 bg-gray-900 text-sm">
                     <div className="flex items-center gap-2">
                       <span className={`px-2 py-0.5 rounded text-xs ${item.event === 'apply' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
                         {item.event}
                       </span>
-                      <span className="text-gray-500">{new Date(item.timestamp).toLocaleString()}</span>
+                      <span className="text-gray-300">{new Date(item.timestamp).toLocaleString()}</span>
                     </div>
-                    <p className="text-gray-400 text-xs mt-1">ID: {item.previewId}</p>
+                    <p className="text-gray-500 text-xs mt-1">ID: {item.previewId}</p>
                   </div>
                 ))
               )}
@@ -234,10 +233,10 @@ export const ReadmeStandardizationModal: React.FC<ReadmeStandardizationModalProp
 
         {/* Footer */}
         {canApply && activeTab !== 'history' && (
-          <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+          <div className="px-6 py-4 border-t border-gray-800 bg-gray-900 flex justify-end gap-3">
             {!confirmApply ? (
               <>
-                <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">
+                <button onClick={onClose} className="px-4 py-2 text-sm text-gray-300 hover:text-white">
                   Cancel
                 </button>
                 <button
@@ -249,7 +248,7 @@ export const ReadmeStandardizationModal: React.FC<ReadmeStandardizationModalProp
               </>
             ) : (
               <>
-                <button onClick={() => setConfirmApply(false)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">
+                <button onClick={() => setConfirmApply(false)} className="px-4 py-2 text-sm text-gray-300 hover:text-white">
                   Cancel
                 </button>
                 <button

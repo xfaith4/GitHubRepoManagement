@@ -57,6 +57,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [selectedRoadmapRepo, setSelectedRoadmapRepo] = useState<string | null>(null);
   const [isCopilotTaskPreviewOpen, setIsCopilotTaskPreviewOpen] = useState(false);
   const [copilotTaskPreviewRepo, setCopilotTaskPreviewRepo] = useState<string | null>(null);
+  const [copilotTaskPreviewRoadmapPath, setCopilotTaskPreviewRoadmapPath] = useState<string | undefined>(undefined);
   const [roadmapEntries, setRoadmapEntries] = useState<RoadmapEntry[]>([]);
   const [selectedRepoIds, setSelectedRepoIds] = useState<Set<string>>(new Set());
   const [groupBy, setGroupBy] = useState<keyof RepoStatus | 'none'>('none');
@@ -516,8 +517,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
       .finally(() => setDocsAuditLoading(false));
   };
 
-  const handlePreviewCopilotTask = (repoName: string) => {
+  const handlePreviewCopilotTask = (repoName: string, roadmapPath?: string) => {
     setCopilotTaskPreviewRepo(repoName);
+    setCopilotTaskPreviewRoadmapPath(roadmapPath);
     setIsCopilotTaskPreviewOpen(true);
   };
 
@@ -1012,7 +1014,11 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
       <CopilotTaskPreviewModal
         isOpen={isCopilotTaskPreviewOpen}
         repoName={copilotTaskPreviewRepo}
-        onClose={() => setIsCopilotTaskPreviewOpen(false)}
+        roadmapPath={copilotTaskPreviewRoadmapPath}
+        onClose={() => {
+          setIsCopilotTaskPreviewOpen(false);
+          setCopilotTaskPreviewRoadmapPath(undefined);
+        }}
       />
 
       <RoadmapAuditModal

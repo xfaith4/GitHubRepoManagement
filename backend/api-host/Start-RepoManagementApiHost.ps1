@@ -62,6 +62,7 @@ $script:RoadmapAuditCacheDefaultTtlSeconds = 300
 
 $script:PortfolioAssessmentCacheMemory = @{}
 $script:PortfolioAssessmentCacheDefaultTtlSeconds = 180
+$script:ClientIoTimeoutMs = 15000
 
 $script:RoadmapRepairHistoryRoot   = Join-Path $WorkspaceRoot 'output\roadmap-repair-history'
 $script:RepoEvaluationHistoryRoot  = Join-Path $WorkspaceRoot 'output\repo-evaluations'
@@ -300,6 +301,7 @@ function Send-HttpJson {
 
     $json = $Payload | ConvertTo-Json -Depth 12
     $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+    try { $Stream.WriteTimeout = $script:ClientIoTimeoutMs } catch { }
 
     $headers = @(
         "HTTP/1.1 $StatusCode $StatusText",
@@ -481,6 +483,10 @@ function Read-HttpRequest {
     param([System.Net.Sockets.TcpClient]$Client)
 
     $stream = $Client.GetStream()
+    try {
+        $stream.ReadTimeout = $script:ClientIoTimeoutMs
+        $stream.WriteTimeout = $script:ClientIoTimeoutMs
+    } catch { }
     $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::ASCII, $false, 4096, $true)
 
     $requestLine = $reader.ReadLine()
@@ -2654,14 +2660,38 @@ function Build-CopilotTaskPacket {
         $roadmapEntry = @($roadmapCache.entries) | Where-Object { [string]$_.repoName -eq $RepoName } | Select-Object -First 1
     }
 
+    if ($null -eq $roadmapEntry) {
+        $roadmapAuditTtl = Get-RoadmapAuditCacheTtlSeconds -Settings $settings
+        $roadmapAuditCache = Get-RoadmapAuditFromCache -TtlSeconds $roadmapAuditTtl
+        if ($roadmapAuditCache.hit -and $roadmapAuditCache.entries) {
+            $roadmapEntry = @($roadmapAuditCache.entries) | Where-Object {
+                $n = if ($_ -is [System.Collections.IDictionary]) { [string]$_['repoName'] } else { [string]$_.repoName }
+                $n -eq $RepoName
+            } | Select-Object -First 1
+        }
+    }
+
     $effectiveRoadmapPath = $RoadmapPath
     if ([string]::IsNullOrWhiteSpace($effectiveRoadmapPath) -and $null -ne $roadmapEntry) {
         $rp = if ($roadmapEntry -is [System.Collections.IDictionary]) { $roadmapEntry['roadmapPath'] } else { $roadmapEntry.roadmapPath }
         if (-not [string]::IsNullOrWhiteSpace([string]$rp)) { $effectiveRoadmapPath = [string]$rp }
     }
 
+    if ([string]::IsNullOrWhiteSpace($effectiveRoadmapPath) -and $null -ne $AuditEntry) {
+        $auditRepoPath = if ($AuditEntry -is [System.Collections.IDictionary]) { [string](Get-ValueOrDefault $AuditEntry['repoPath'] '') } else { [string](Get-ValueOrDefault $AuditEntry.repoPath '') }
+        if (-not [string]::IsNullOrWhiteSpace($auditRepoPath) -and (Test-Path -LiteralPath $auditRepoPath -PathType Container)) {
+            foreach ($candidateName in @('ROADMAP.md', 'Roadmap.md', 'docs\planning\roadmap.md', 'docs\ROADMAP.md', 'roadmap.md')) {
+                $candidatePath = Join-Path $auditRepoPath $candidateName
+                if (Test-Path -LiteralPath $candidatePath -PathType Leaf) {
+                    $effectiveRoadmapPath = $candidatePath
+                    break
+                }
+            }
+        }
+    }
+
     if ([string]::IsNullOrWhiteSpace($effectiveRoadmapPath) -or -not (Test-Path -LiteralPath $effectiveRoadmapPath)) {
-        throw "Roadmap file not found for repo '$RepoName'. Ensure a roadmap scan has been run (GET /api/roadmap/index or POST /api/roadmap/scan) first."
+        throw "Roadmap file not found for repo '$RepoName'. Ensure a roadmap scan has been run (GET /api/roadmap/index or POST /api/roadmap/scan), or provide roadmapPath from the Work Queue entry."
     }
 
     # Step 2: Parse roadmap with full section context

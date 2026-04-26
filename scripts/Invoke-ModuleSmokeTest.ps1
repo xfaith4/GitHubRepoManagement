@@ -173,6 +173,36 @@ foreach ($r in @($scanResults)) {
 }
 Write-Host '  all scanned repos have valid dispatchReadiness values' -ForegroundColor DarkGray
 
+Write-Step 'Doc audit scanner — smoke: cached roadmap entries as JSON objects'
+$tmpScanRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('docaudit-smoke-cache-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
+$tmpCachedRepo = Join-Path $tmpScanRoot 'cached-roadmap-repo'
+$null = New-Item -ItemType Directory -Path (Join-Path $tmpCachedRepo '.git') -Force
+$cachedReadme = "# Cached Roadmap Repo`n`n" + ('C' * 400)
+Set-Content -LiteralPath (Join-Path $tmpCachedRepo 'README.md') -Value $cachedReadme -Encoding UTF8
+$cachedRoadmapJson = @"
+[
+  {
+    "repoName": "cached-roadmap-repo",
+    "repoPath": "$($tmpCachedRepo.Replace('\', '\\'))",
+    "roadmapState": "pending",
+    "nextPendingItem": {
+      "text": "Add cached roadmap support"
+    }
+  }
+]
+"@
+$cachedRoadmapEntries = @($cachedRoadmapJson | ConvertFrom-Json)
+try {
+    $cachedScanResults = Invoke-AuditRepoScan -LocalRoots @($tmpScanRoot) -MaxDepth 2 -RoadmapEntries $cachedRoadmapEntries -Standards $standards
+    if (@($cachedScanResults).Count -ne 1) { throw "Expected 1 repo from cached roadmap scan, got $(@($cachedScanResults).Count)" }
+    $cachedResult = @($cachedScanResults)[0]
+    if ($cachedResult.roadmapState -ne 'pending') { throw "Expected roadmapState=pending, got $($cachedResult.roadmapState)" }
+    if ($cachedResult.nextPendingRoadmapItem -ne 'Add cached roadmap support') { throw "Expected cached next pending item, got $($cachedResult.nextPendingRoadmapItem)" }
+    Write-Host '  cached roadmap entries classified correctly' -ForegroundColor DarkGray
+} finally {
+    Remove-Item -LiteralPath $tmpScanRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 Write-Step 'Roadmap parser — smoke: section-order neighboring context extraction'
 $neighborContent = @"
 ## Now
