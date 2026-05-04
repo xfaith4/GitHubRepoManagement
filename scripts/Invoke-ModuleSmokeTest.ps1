@@ -609,13 +609,20 @@ Write-Host ("  oversized content guard working: findings={0}" -f $bigLintResult.
 
 Write-Step 'Portfolio assessment — smoke: load module + standards'
 $portfolioModule = Join-Path $WorkspaceRoot 'backend\modules\portfolio\Portfolio.Assessment.ps1'
+$portfolioValueModule = Join-Path $WorkspaceRoot 'backend\modules\portfolio\Portfolio.ValueScorer.ps1'
 $portfolioStandards = Join-Path $WorkspaceRoot 'backend\config\repo-structure-standards.json'
+$portfolioValueConfigPath = Join-Path $WorkspaceRoot 'backend\config\value-scoring.json'
 if (-not (Test-Path -LiteralPath $portfolioModule)) { throw "Missing module file: $portfolioModule" }
+if (-not (Test-Path -LiteralPath $portfolioValueModule)) { throw "Missing module file: $portfolioValueModule" }
 if (-not (Test-Path -LiteralPath $portfolioStandards)) { throw "Missing standards file: $portfolioStandards" }
+if (-not (Test-Path -LiteralPath $portfolioValueConfigPath)) { throw "Missing value-scoring config: $portfolioValueConfigPath" }
+. $portfolioValueModule
 . $portfolioModule
 $structStds = Get-RepoStructureStandards -StandardsPath $portfolioStandards
+$valueScoringConfig = Get-PortfolioValueScoringConfig -ConfigPath $portfolioValueConfigPath
 if ($null -eq $structStds) { throw 'Get-RepoStructureStandards returned null for an existing standards file' }
 if ($null -eq $structStds.common) { throw 'Standards file is missing the common section' }
+if ($null -eq $valueScoringConfig) { throw 'Get-PortfolioValueScoringConfig returned null for an existing config file' }
 Write-Host ("  standards loaded version={0} commonRequired={1}" -f $structStds.version, @($structStds.common.requiredRootFiles).Count) -ForegroundColor DarkGray
 
 Write-Step 'Portfolio assessment — smoke: structure audit on workspace itself'
@@ -669,13 +676,42 @@ if (@($bothAssess).Count -ne 1)                  { throw "Expected single dedupe
 if ($bothAssess[0].sourceCoverage -ne 'local+github') { throw "Expected sourceCoverage=local+github, got '$($bothAssess[0].sourceCoverage)'" }
 Write-Host '  local+github source coverage correct' -ForegroundColor DarkGray
 
+Write-Step 'Portfolio value scoring — smoke: security/test work ranks above generic chores'
+$highValue = Invoke-PortfolioValueScore `
+    -ItemText 'Add API authentication and contract smoke tests for dispatch endpoints' `
+    -Section 'Engineering milestones' `
+    -Tags @('security','testing') `
+    -ItemIndex 0 `
+    -RepoContext ([pscustomobject]@{ maturityLevel = 'L4-Orchestration-Ready' }) `
+    -ScoringConfig $valueScoringConfig
+$lowValue = Invoke-PortfolioValueScore `
+    -ItemText 'Polish miscellaneous wording in old docs' `
+    -Section 'Backlog' `
+    -Tags @() `
+    -ItemIndex 8 `
+    -RepoContext ([pscustomobject]@{ maturityLevel = 'L1-Informal' }) `
+    -ScoringConfig $valueScoringConfig
+if ($highValue.valueScore -le $lowValue.valueScore) { throw "Expected security/test work score to exceed generic docs work; high=$($highValue.valueScore) low=$($lowValue.valueScore)" }
+if (@($highValue.valueRationale).Count -eq 0) { throw 'Expected value-scored item to include rationale' }
+Write-Host ("  value scorer ranked high={0} low={1}" -f $highValue.valueScore, $lowValue.valueScore) -ForegroundColor DarkGray
+
 Write-Step 'Portfolio assessment — smoke: ready-for-work fires on L4 + pending items'
 $readyRepo = [pscustomobject]@{ name = 'ready-repo'; localPath = $WorkspaceRoot; isArchived = $false; htmlUrl = ''; branch = 'main'; status = 'clean' }
 $readyRoadmap = @([pscustomobject]@{ repoName = 'ready-repo'; roadmapPath = (Join-Path $WorkspaceRoot 'ROADMAP.md'); roadmapState = 'pending'; pendingCount = 5; nextPendingItem = [pscustomobject]@{ text = 'next thing' } })
-$readyMaturity = @([pscustomobject]@{ repoName = 'ready-repo'; maturityLevel = 'L4-Orchestration-Ready'; maturityScore = 100 })
-$readyAssess = Invoke-PortfolioAssessment -LocalRepos @($readyRepo) -RoadmapEntries $readyRoadmap -RoadmapAuditEntries $readyMaturity -StructureStandards $structStds
+$readyMaturity = @([pscustomobject]@{
+    repoName = 'ready-repo'
+    maturityLevel = 'L4-Orchestration-Ready'
+    maturityScore = 100
+    sections = @(
+        [pscustomobject]@{ name = 'Engineering milestones'; pendingItems = @('Add API authentication and contract smoke tests for dispatch endpoints', 'Polish miscellaneous wording in old docs'); completedItems = @() }
+    )
+})
+$readyAssess = Invoke-PortfolioAssessment -LocalRepos @($readyRepo) -RoadmapEntries $readyRoadmap -RoadmapAuditEntries $readyMaturity -StructureStandards $structStds -ValueScoringConfig $valueScoringConfig
 if ($readyAssess[0].lifecycleState -ne 'ready-for-work') { throw "Expected lifecycleState=ready-for-work for L4 + pending, got '$($readyAssess[0].lifecycleState)'" }
 if ($readyAssess[0].pendingItemCount -ne 5)              { throw "Expected pendingItemCount=5, got $($readyAssess[0].pendingItemCount)" }
+if (@($readyAssess[0].pendingItems).Count -ne 2)         { throw "Expected 2 scored pendingItems, got $(@($readyAssess[0].pendingItems).Count)" }
+if ($null -eq $readyAssess[0].topValueItem)              { throw 'Expected topValueItem to be populated for ready repo with pending items' }
+if ($readyAssess[0].topValueItem.text -notmatch 'authentication') { throw "Expected topValueItem to select authentication/test work, got '$($readyAssess[0].topValueItem.text)'" }
 Write-Host '  ready-for-work classification correct' -ForegroundColor DarkGray
 
 Write-Step 'Portfolio assessment — smoke: summary aggregator counts lifecycle states'

@@ -43,6 +43,7 @@ $readmeModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\readme'
 . (Join-Path $readmeModuleRoot 'Readme.Generator.ps1')
 . (Join-Path $docStdModuleRoot 'DocStandardization.Previewer.ps1')
 $portfolioModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\portfolio'
+. (Join-Path $portfolioModuleRoot 'Portfolio.ValueScorer.ps1')
 . (Join-Path $portfolioModuleRoot 'Portfolio.Assessment.ps1')
 . (Join-Path $commonRoot 'NotificationHub.ps1')
 . (Join-Path $PSScriptRoot 'ApiHost.ErrorHandling.ps1')
@@ -3926,6 +3927,8 @@ try {
                     # 7) Structure standards
                     $standardsPath = Join-Path $WorkspaceRoot 'backend\config\repo-structure-standards.json'
                     $structStandards = Get-RepoStructureStandards -StandardsPath $standardsPath
+                    $valueScoringPath = Join-Path $WorkspaceRoot 'backend\config\value-scoring.json'
+                    $valueScoringConfig = Get-PortfolioValueScoringConfig -ConfigPath $valueScoringPath
 
                     # Run the assessment
                     $assessments = Invoke-PortfolioAssessment `
@@ -3935,7 +3938,8 @@ try {
                         -RoadmapAuditEntries $roadmapAuditEntries `
                         -ExecutionEntries    $executionEntries `
                         -GitHubRepos         $githubRepos `
-                        -StructureStandards  $structStandards
+                        -StructureStandards  $structStandards `
+                        -ValueScoringConfig  $valueScoringConfig
 
                     $summary = Get-PortfolioAssessmentSummary -Assessments $assessments
                     $generatedAt = (Get-Date).ToUniversalTime().ToString('o')

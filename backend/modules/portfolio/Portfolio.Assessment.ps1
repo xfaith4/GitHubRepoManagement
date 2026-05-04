@@ -17,7 +17,7 @@
 
       Invoke-PortfolioAssessment -LocalRepos -RoadmapEntries -DocAuditEntries
                                  -RoadmapAuditEntries -ExecutionEntries
-                                 -GitHubRepos -StructureStandards
+                                 -GitHubRepos -StructureStandards -ValueScoringConfig
         Produces a normalized assessment record per repo combining every input
         signal, plus a single lifecycleState per repo and a portfolio-level
         summary.
@@ -398,6 +398,95 @@ function _GetField {
     return $Default
 }
 
+function _GetPendingRoadmapItems {
+    param([object]$RoadmapEntry, [object]$MaturityEntry)
+
+    $source = if ($null -ne $MaturityEntry) { $MaturityEntry } else { $RoadmapEntry }
+    $items = [System.Collections.Generic.List[object]]::new()
+    $nextPending = _GetField -Obj $source -Name 'nextPendingItem' -Default (_GetField -Obj $RoadmapEntry -Name 'nextPendingItem' -Default $null)
+    $nextText = if ($null -ne $nextPending) { [string](_GetField -Obj $nextPending -Name 'text' -Default '') } else { '' }
+    $nextTags = if ($null -ne $nextPending) { @(_GetField -Obj $nextPending -Name 'tags' -Default @() | ForEach-Object { [string]$_ }) } else { @() }
+
+    foreach ($sec in @(_GetField -Obj $source -Name 'sections' -Default @())) {
+        if ($null -eq $sec) { continue }
+        $sectionName = [string](_GetField -Obj $sec -Name 'name' -Default '')
+        foreach ($pending in @(_GetField -Obj $sec -Name 'pendingItems' -Default @())) {
+            $text = [string]$pending
+            if ([string]::IsNullOrWhiteSpace($text)) { continue }
+            $tags = if (-not [string]::IsNullOrWhiteSpace($nextText) -and $text -eq $nextText) { $nextTags } else { @() }
+            $items.Add([pscustomobject]@{
+                text    = $text
+                section = $sectionName
+                tags    = @($tags)
+            }) | Out-Null
+        }
+    }
+
+    if ($items.Count -eq 0 -and -not [string]::IsNullOrWhiteSpace($nextText)) {
+        $items.Add([pscustomobject]@{
+            text    = $nextText
+            section = [string](_GetField -Obj $nextPending -Name 'section' -Default '')
+            tags    = @($nextTags)
+        }) | Out-Null
+    }
+
+    return $items.ToArray()
+}
+
+function _ScorePendingRoadmapItems {
+    param(
+        [object[]]$PendingItems = @(),
+        [object]$RepoContext,
+        [object]$ValueScoringConfig
+    )
+
+    if (@($PendingItems).Count -eq 0) { return @() }
+    if (Get-Command -Name Invoke-PortfolioValueScores -ErrorAction SilentlyContinue) {
+        return @(Invoke-PortfolioValueScores -PendingItems $PendingItems -RepoContext $RepoContext -ScoringConfig $ValueScoringConfig)
+    }
+
+    $fallback = [System.Collections.Generic.List[object]]::new()
+    $i = 0
+    foreach ($item in @($PendingItems)) {
+        $fallback.Add([pscustomobject]@{
+            text           = [string](_GetField -Obj $item -Name 'text' -Default '')
+            section        = [string](_GetField -Obj $item -Name 'section' -Default '')
+            tags           = @(_GetField -Obj $item -Name 'tags' -Default @() | ForEach-Object { [string]$_ })
+            roadmapOrder   = $i + 1
+            valueScore     = 0
+            valueTier      = 'unscored'
+            valueRationale = @('value scorer module was not loaded')
+            scoringSignals = [pscustomobject]@{}
+        }) | Out-Null
+        $i++
+    }
+    return $fallback.ToArray()
+}
+
+function _SelectTopValueItem {
+    param([object[]]$ScoredItems = @())
+
+    $validItems = [System.Collections.Generic.List[object]]::new()
+    foreach ($scored in @($ScoredItems)) {
+        if ($null -eq $scored) { continue }
+        if ($scored -is [System.Array]) {
+            foreach ($nested in @($scored)) {
+                if ($null -ne $nested) { $validItems.Add($nested) | Out-Null }
+            }
+            continue
+        }
+        $validItems.Add($scored) | Out-Null
+    }
+
+    if ($validItems.Count -eq 0) { return $null }
+    $selected = @($validItems.ToArray() | Sort-Object `
+        @{ Expression = { [int](_GetField -Obj $_ -Name 'valueScore' -Default 0) }; Descending = $true },
+        @{ Expression = { [int](_GetField -Obj $_ -Name 'roadmapOrder' -Default 999999) }; Ascending = $true } |
+        Select-Object -First 1)
+    if ($selected.Count -eq 0) { return $null }
+    return $selected[0]
+}
+
 # ---------------------------------------------------------------------------
 # Main orchestrator
 # ---------------------------------------------------------------------------
@@ -411,7 +500,8 @@ function Invoke-PortfolioAssessment {
         [Parameter()][AllowEmptyCollection()][object[]]$RoadmapAuditEntries = @(),
         [Parameter()][AllowEmptyCollection()][object[]]$ExecutionEntries    = @(),
         [Parameter()][AllowEmptyCollection()][object[]]$GitHubRepos         = @(),
-        [Parameter()][object]$StructureStandards
+        [Parameter()][object]$StructureStandards,
+        [Parameter()][object]$ValueScoringConfig
     )
 
     $roadmapMap     = _IndexByRepoName -Items $RoadmapEntries     -NameField 'repoName'
@@ -497,6 +587,23 @@ function Invoke-PortfolioAssessment {
             -PendingItemCount $pendingCount `
             -StructureFindings $structFindings
 
+        $pendingItemsRaw = @(_GetPendingRoadmapItems -RoadmapEntry $roadmapEntry -MaturityEntry $maturityEntry)
+        $repoContext = [pscustomobject]@{
+            repoName          = $repoName
+            repoType          = $repoType
+            lifecycleState    = $lifecycle.state
+            maturityLevel     = $maturityLevel
+            maturityScore     = $maturityScore
+            dispatchReadiness = $dispatchReadiness
+            hasCiSignal       = if ($null -ne $structAudit) { [bool]$structAudit.hasCiSignal } else { $false }
+            hasTestSignal     = if ($null -ne $structAudit) { [bool]$structAudit.hasTestSignal } else { $false }
+            sourceCoverage    = $sourceCoverage
+            docFindingCount   = @($docFindings).Count
+            pendingItemCount  = $pendingCount
+        }
+        $scoredPendingItems = @(_ScorePendingRoadmapItems -PendingItems $pendingItemsRaw -RepoContext $repoContext -ValueScoringConfig $ValueScoringConfig)
+        $topValueItem = _SelectTopValueItem -ScoredItems $scoredPendingItems
+
         $assessments.Add([pscustomobject]@{
             repoName            = $repoName
             localPath           = $localPath
@@ -514,6 +621,8 @@ function Invoke-PortfolioAssessment {
             hasRoadmap          = [bool]$hasRoadmap
             pendingItemCount    = $pendingCount
             nextPendingItemText = $nextItemText
+            pendingItems        = @($scoredPendingItems)
+            topValueItem        = $topValueItem
             maturityLevel       = $maturityLevel
             maturityScore       = $maturityScore
             dispatchReadiness   = $dispatchReadiness
@@ -551,6 +660,8 @@ function Invoke-PortfolioAssessment {
             hasRoadmap          = $false
             pendingItemCount    = 0
             nextPendingItemText = ''
+            pendingItems        = @()
+            topValueItem        = $null
             maturityLevel       = 'L0-Absent'
             maturityScore       = 0
             dispatchReadiness   = 'missing-roadmap'

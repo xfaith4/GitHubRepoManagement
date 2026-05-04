@@ -714,8 +714,10 @@ try {
             ($first.PSObject.Properties.Name -contains 'lifecycleState') -and
             ($first.PSObject.Properties.Name -contains 'sourceCoverage') -and
             ($first.PSObject.Properties.Name -contains 'recommendedAction') -and
-            ($first.PSObject.Properties.Name -contains 'blockingReasons')
-        if (-not $portfolioEntryFieldsOk) { throw '/api/portfolio/assessment first entry missing expected fields (lifecycleState, sourceCoverage, recommendedAction, blockingReasons)' }
+            ($first.PSObject.Properties.Name -contains 'blockingReasons') -and
+            ($first.PSObject.Properties.Name -contains 'pendingItems') -and
+            ($first.PSObject.Properties.Name -contains 'topValueItem')
+        if (-not $portfolioEntryFieldsOk) { throw '/api/portfolio/assessment first entry missing expected fields (lifecycleState, sourceCoverage, recommendedAction, blockingReasons, pendingItems, topValueItem)' }
     }
 
     Write-Host ("  /api/portfolio/assessment -> count={0} ready={1} blocked={2} cacheSource={3}" -f $portfolioData.count, $portfolioData.summary.readyForWorkCount, $portfolioData.summary.blockedCount, $portfolioData.cacheSource) -ForegroundColor DarkGray

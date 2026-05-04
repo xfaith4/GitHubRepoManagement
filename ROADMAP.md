@@ -1,7 +1,7 @@
 # GitHub Repo Management — Active Execution Roadmap
 
 > **Status:** Active
-> **Active release:** **Release 1.7.5 — Portfolio Mission Alignment and Value-Ranked Work Planning** (Phase 1 shipped; Phase 2 next)
+> **Active release:** **Release 1.7.5 — Portfolio Mission Alignment and Value-Ranked Work Planning** (Phase 2 shipped; Phase 3 next)
 > **Canonical product direction:** [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md)
 > **Completed-release archive:** [`docs/history/completed-releases.md`](docs/history/completed-releases.md)
 > **Dated change log:** [`CHANGELOG.md`](CHANGELOG.md)
@@ -89,7 +89,7 @@ Render the state inline on each milestone in italics, e.g.:
 | 1.5 | Copilot-Assisted README Generation | `done` |
 | 1.6 | Roadmap-Driven Release Dispatch to GitHub Copilot | `done` |
 | 1.7 | Repo Git Status Detail | `done` |
-| **1.7.5** | **Portfolio Mission Alignment and Value-Ranked Work Planning** | **active — Phase 1 done; Phase 2 next** |
+| **1.7.5** | **Portfolio Mission Alignment and Value-Ranked Work Planning** | **active — Phase 2 done; Phase 3 next** |
 | 1.8 | API Authentication and Network Security | `planned` |
 | 1.9 | Persistent Data Layer | `planned` |
 | 2.0 | Complete the Doc Review Pipeline | `planned` |
@@ -109,8 +109,8 @@ Render the state inline on each milestone in italics, e.g.:
 
 ### Release 1.7.5 — Portfolio Mission Alignment and Value-Ranked Work Planning
 
-**Status:** active. Phase 1 shipped 2026-04-25; Phase 2 is the next
-execution target.
+**Status:** active. Phase 1 shipped 2026-04-25; Phase 2 shipped
+2026-04-26; Phase 3 is the next execution target.
 
 **Goal:** Re-center the product around its primary mission: assess the full
 local and GitHub repository collection, standardize repo readiness, create
@@ -182,9 +182,14 @@ collection status in plain language.
       include likely feature opportunities, modernization work,
       test/documentation improvements, security posture, and user-visible
       value. *(state: planned — Phase 5)*
-- [ ] Add a value scoring model for incomplete roadmap items using impact,
+- [x] Add a value scoring model for incomplete roadmap items using impact,
       unblock potential, risk reduction, repo maturity, effort estimate,
-      dependency reduction, and recency. *(state: planned — Phase 2)*
+      dependency reduction, and recency. *(state: smoke-tested)* —
+      backend module
+      [`Portfolio.ValueScorer.ps1`](backend/modules/portfolio/Portfolio.ValueScorer.ps1),
+      scoring config [`value-scoring.json`](backend/config/value-scoring.json),
+      and additive `pendingItems` / `topValueItem` fields in
+      `/api/portfolio/assessment`.
 - [ ] Show value score and rationale in Work Queue so the operator can
       understand why one repo or roadmap item is recommended before
       another. *(state: planned — Phase 4)*
@@ -224,8 +229,8 @@ collection status in plain language.
 | Phase | Scope | Status |
 |---|---|---|
 | 1. Assessment foundation | `RepoLifecycleState`, `Portfolio.Assessment.ps1`, `repo-structure-standards.json`, `GET /api/portfolio/assessment`, GitHub-vs-local coverage | **done — smoke-tested** (2026-04-25) |
-| 2. Value ranking | `Portfolio.ValueScorer.ps1`, `value-scoring.json`, value score on each pending item in the assessment response | **next active target** |
-| 3. Portfolio Mission panel | New `PortfolioMissionPanel.tsx` consuming `/api/portfolio/assessment` | planned |
+| 2. Value ranking | `Portfolio.ValueScorer.ps1`, `value-scoring.json`, value score on each pending item in the assessment response | **done — smoke-tested** (2026-04-26) |
+| 3. Portfolio Mission panel | New `PortfolioMissionPanel.tsx` consuming `/api/portfolio/assessment` | **next active target** |
 | 4. Work Queue value display | Value score column + rationale tooltip in `WorkQueueView.tsx`; rerank by value | planned |
 | 5. Expanded evaluator | Feature/modernization/security/test/doc opportunity findings beyond hardening | planned |
 | 6. Prompt refinement | Extend `RoadmapDispatchModal.tsx` with Value Rationale + Assessment Context | planned |

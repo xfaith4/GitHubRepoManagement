@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here.
 
+## 2026-04-26 — Release 1.7.5 Phase 2: Value-Ranked Work Planning
+
+### Added
+
+- **`Portfolio.ValueScorer.ps1`** — new deterministic portfolio value scorer for pending roadmap items. It scores impact, unblock potential, risk reduction, repo maturity, effort fit, dependency reduction, and recency.
+- **`backend/config/value-scoring.json`** — data-driven weights and keyword rules for the value scoring model.
+- **`/api/portfolio/assessment`** — assessment entries now include scored `pendingItems` and `topValueItem` fields while preserving existing lifecycle and roadmap fields.
+- **Frontend portfolio types** — added `PortfolioPendingItemValue` and `PortfolioValueTier` for the new assessment response fields.
+
+### Testing
+
+- **`scripts/Invoke-ModuleSmokeTest.ps1`** — added value scorer smoke coverage and assertion that ready repo assessment includes scored pending items and selects the highest-value item.
+- **`scripts/Invoke-ApiHostSmokeTest.ps1`** — expanded portfolio assessment contract checks for `pendingItems` and `topValueItem`.
+
+---
+
 ## 2026-03-18 — Production Hardening Audit
 
 ### Security

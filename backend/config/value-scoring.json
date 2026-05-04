@@ -1,0 +1,60 @@
+{
+  "version": "1.0",
+  "description": "Release 1.7.5 value-scoring model for ranking pending roadmap work in portfolio assessment responses.",
+  "maxScore": 100,
+  "dimensions": {
+    "impact": {
+      "weight": 25,
+      "description": "User-visible or operator-visible value delivered by the work item."
+    },
+    "unblockPotential": {
+      "weight": 20,
+      "description": "How much the item removes a blocker for dispatch, validation, adoption, or later work."
+    },
+    "riskReduction": {
+      "weight": 20,
+      "description": "Security, reliability, testability, auditability, and operational risk reduction."
+    },
+    "repoMaturity": {
+      "weight": 15,
+      "description": "How ready the repository is to absorb and validate the work."
+    },
+    "effortFit": {
+      "weight": 10,
+      "description": "Preference for bounded work items that are likely to complete cleanly in one task."
+    },
+    "dependencyReduction": {
+      "weight": 5,
+      "description": "How much the item reduces cross-feature, cross-repo, or sequencing dependencies."
+    },
+    "recency": {
+      "weight": 5,
+      "description": "Roadmap order signal; earlier pending items usually represent the author's intended next step."
+    }
+  },
+  "keywordRules": {
+    "impact": [
+      { "pattern": "\\b(user|workflow|dashboard|panel|view|report|export|onboarding|prompt|feature|ux|operator)\\b", "score": 5, "label": "user-visible or operator-facing outcome" },
+      { "pattern": "\\b(api|route|endpoint|integration|github|dispatch|queue)\\b", "score": 4, "label": "integration or execution workflow value" },
+      { "pattern": "\\b(document|readme|help|reference|changelog)\\b", "score": 3, "label": "documentation and usability improvement" }
+    ],
+    "unblockPotential": [
+      { "pattern": "\\b(block|unblock|missing|required|ready|dispatch|roadmap|readme|structure|ci|test|license|security\\.md|contributing)\\b", "score": 5, "label": "removes a readiness or dispatch blocker" },
+      { "pattern": "\\b(validate|contract|schema|standard|audit|repair|maturity)\\b", "score": 4, "label": "improves contract readiness" },
+      { "pattern": "\\b(cache|refresh|sync|path|lookup|key|ttl)\\b", "score": 3, "label": "reduces signal drift or stale state" }
+    ],
+    "riskReduction": [
+      { "pattern": "\\b(security|auth|token|secret|vulnerability|permission|network|ssrf)\\b", "score": 5, "label": "security risk reduction" },
+      { "pattern": "\\b(test|coverage|ci|validation|smoke|contract|regression)\\b", "score": 5, "label": "validation and regression risk reduction" },
+      { "pattern": "\\b(error|failure|retry|logging|backup|audit|monitor|guardrail)\\b", "score": 4, "label": "operational reliability risk reduction" }
+    ],
+    "dependencyReduction": [
+      { "pattern": "\\b(dependency|dependencies|unblock|prerequisite|migration|adapter|protocol|contract)\\b", "score": 5, "label": "reduces sequencing or integration dependencies" },
+      { "pattern": "\\b(cache|sync|source|normaliz|standard|schema|shared)\\b", "score": 4, "label": "normalizes shared portfolio signals" }
+    ],
+    "effortFit": [
+      { "pattern": "\\b(add|show|wire|display|create|generate|export|validate|document|configure)\\b", "score": 4, "label": "bounded implementation verb" },
+      { "pattern": "\\b(refactor|rewrite|redesign|persistent|oauth|authentication|distribution|analytics|autonomous)\\b", "score": 2, "label": "larger or broader implementation surface" }
+    ]
+  }
+}

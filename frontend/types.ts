@@ -815,6 +815,23 @@ export interface RepoStructureFinding {
   recommendedAction: string;
 }
 
+export type PortfolioValueTier = 'highest' | 'high' | 'medium' | 'low' | 'deferred' | 'unscored';
+
+export interface PortfolioPendingItemValue {
+  text: string;
+  section: string;
+  tags: string[];
+  roadmapOrder: number;
+  valueScore: number;
+  valueTier: PortfolioValueTier;
+  valueRationale: string[];
+  scoringSignals: {
+    dimensions?: Record<string, number>;
+    weights?: Record<string, number>;
+    modelVersion?: string;
+  };
+}
+
 export interface PortfolioAssessmentEntry {
   repoName: string;
   localPath: string;
@@ -832,6 +849,8 @@ export interface PortfolioAssessmentEntry {
   hasRoadmap: boolean;
   pendingItemCount: number;
   nextPendingItemText: string;
+  pendingItems: PortfolioPendingItemValue[];
+  topValueItem: PortfolioPendingItemValue | null;
   maturityLevel: RoadmapMaturityLevel;
   maturityScore: number;
   dispatchReadiness: DispatchReadiness;
