@@ -5230,6 +5230,18 @@ try {
                         $roadmapIndexEntries = @()
                         if ($null -ne $script:RoadmapCacheMemory -and $script:RoadmapCacheMemory.ContainsKey('entries')) {
                             $roadmapIndexEntries = @($script:RoadmapCacheMemory.entries)
+                        } else {
+                            $settings = Get-HostSettings
+                            $localRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
+                            $maxDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
+                            $ttlSeconds = Get-RoadmapCacheTtlSeconds -Settings $settings
+                            $cached = Get-RoadmapFromCache -TtlSeconds $ttlSeconds
+                            if ($cached.hit) {
+                                $roadmapIndexEntries = @($cached.entries)
+                            } else {
+                                $roadmapIndexEntries = @(Invoke-RoadmapScan -LocalRoots $localRoots -MaxDepth $maxDepth)
+                                Save-RoadmapCache -Entries $roadmapIndexEntries -ScannedAt ((Get-Date).ToUniversalTime().ToString('o'))
+                            }
                         }
                         $entry = $roadmapIndexEntries | Where-Object { $_.repoName -eq $repoName } | Select-Object -First 1
                         if ($null -ne $entry -and $entry.roadmapPath -and (Test-Path -LiteralPath $entry.roadmapPath)) {
@@ -5254,6 +5266,18 @@ try {
                         $roadmapIndexEntries = @()
                         if ($null -ne $script:RoadmapCacheMemory -and $script:RoadmapCacheMemory.ContainsKey('entries')) {
                             $roadmapIndexEntries = @($script:RoadmapCacheMemory.entries)
+                        } else {
+                            $settings = Get-HostSettings
+                            $localRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
+                            $maxDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
+                            $ttlSeconds = Get-RoadmapCacheTtlSeconds -Settings $settings
+                            $cached = Get-RoadmapFromCache -TtlSeconds $ttlSeconds
+                            if ($cached.hit) {
+                                $roadmapIndexEntries = @($cached.entries)
+                            } else {
+                                $roadmapIndexEntries = @(Invoke-RoadmapScan -LocalRoots $localRoots -MaxDepth $maxDepth)
+                                Save-RoadmapCache -Entries $roadmapIndexEntries -ScannedAt ((Get-Date).ToUniversalTime().ToString('o'))
+                            }
                         }
                         foreach ($entry in $roadmapIndexEntries) {
                             $rawContent = ''
