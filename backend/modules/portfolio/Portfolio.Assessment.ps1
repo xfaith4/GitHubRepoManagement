@@ -605,6 +605,12 @@ function Invoke-PortfolioAssessment {
         }
         $scoredPendingItems = @(_ScorePendingRoadmapItems -PendingItems $pendingItemsRaw -RepoContext $repoContext -ValueScoringConfig $ValueScoringConfig)
         $topValueItem = _SelectTopValueItem -ScoredItems $scoredPendingItems
+        $readmeScore = _Get-ReadmeScore -HasReadme $hasReadme -DocFindingCount @($docFindings).Count
+        $roadmapScore = _Get-RoadmapScore -HasRoadmap $hasRoadmap -RoadmapState $roadmapState -MaturityScore $maturityScore -PendingItemCount $pendingCount
+        $documentationHealthScore = _Get-DocumentationHealthScore -ReadmeScore $readmeScore -RoadmapScore $roadmapScore -DocFindingCount @($docFindings).Count -HasCiSignal (if ($null -ne $structAudit) { [bool]$structAudit.hasCiSignal } else { $false }) -HasTestSignal (if ($null -ne $structAudit) { [bool]$structAudit.hasTestSignal } else { $false })
+        $dispatchReadinessExplanation = _Get-DispatchReadinessExplanation -DispatchReadiness $dispatchReadiness
+        $openPrCount = [int](_GetField -Obj $githubRepo -Name 'openPrCount' -Default (_GetField -Obj $repo -Name 'openPrCount' -Default 0))
+        $pendingReviewPrCount = [int](_GetField -Obj $githubRepo -Name 'pendingReviewPrCount' -Default (_GetField -Obj $repo -Name 'pendingReviewPrCount' -Default 0))
 
         $assessments.Add([pscustomobject]@{
             repoName            = $repoName
@@ -622,6 +628,8 @@ function Invoke-PortfolioAssessment {
             latestWorkflowRunConclusion = _GetField -Obj $githubRepo -Name 'latestWorkflowRunConclusion' -Default (_GetField -Obj $repo -Name 'latestWorkflowRunConclusion' -Default $null)
             latestWorkflowRunName = _GetField -Obj $githubRepo -Name 'latestWorkflowRunName' -Default (_GetField -Obj $repo -Name 'latestWorkflowRunName' -Default $null)
             latestWorkflowRunTimestamp = _GetField -Obj $githubRepo -Name 'latestWorkflowRunTimestamp' -Default (_GetField -Obj $repo -Name 'latestWorkflowRunTimestamp' -Default $null)
+            openPrCount         = $openPrCount
+            pendingReviewPrCount = $pendingReviewPrCount
             repoType            = $repoType
             lifecycleState      = $lifecycle.state
             recommendedAction   = $lifecycle.recommendedAction
@@ -638,10 +646,14 @@ function Invoke-PortfolioAssessment {
             dispatchReadiness   = $dispatchReadiness
             executionState      = $execState
             hasReadme           = [bool]$hasReadme
+            readmeScore         = $readmeScore
+            roadmapScore        = $roadmapScore
+            documentationHealthScore = $documentationHealthScore
             hasCiSignal         = if ($null -ne $structAudit) { [bool]$structAudit.hasCiSignal } else { $false }
             hasTestSignal       = if ($null -ne $structAudit) { [bool]$structAudit.hasTestSignal } else { $false }
             structureFindings   = @($structFindings)
             docFindingCount     = @($docFindings).Count
+            dispatchReadinessExplanation = $dispatchReadinessExplanation
         }) | Out-Null
     }
 
@@ -669,6 +681,8 @@ function Invoke-PortfolioAssessment {
             latestWorkflowRunConclusion = _GetField -Obj $gh -Name 'latestWorkflowRunConclusion' -Default $null
             latestWorkflowRunName = _GetField -Obj $gh -Name 'latestWorkflowRunName' -Default $null
             latestWorkflowRunTimestamp = _GetField -Obj $gh -Name 'latestWorkflowRunTimestamp' -Default $null
+            openPrCount         = [int](_GetField -Obj $gh -Name 'openPrCount' -Default 0)
+            pendingReviewPrCount = [int](_GetField -Obj $gh -Name 'pendingReviewPrCount' -Default 0)
             repoType            = 'other'
             lifecycleState      = 'discovered'
             recommendedAction   = 'Clone the repo locally so it can participate in the work queue.'
@@ -685,10 +699,14 @@ function Invoke-PortfolioAssessment {
             dispatchReadiness   = 'missing-roadmap'
             executionState      = 'idle'
             hasReadme           = $false
+            readmeScore         = 0
+            roadmapScore        = 0
+            documentationHealthScore = 0
             hasCiSignal         = $false
             hasTestSignal       = $false
             structureFindings   = @()
             docFindingCount     = 0
+            dispatchReadinessExplanation = (_Get-DispatchReadinessExplanation -DispatchReadiness 'missing-roadmap')
         }) | Out-Null
     }
 
@@ -758,6 +776,96 @@ function Get-PortfolioAssessmentSummary {
         runningCount          = $running
         blockedCount          = $blocked
     }
+}
+
+function _ClampScore {
+    param([int]$Value)
+
+    if ($Value -lt 0) { return 0 }
+    if ($Value -gt 100) { return 100 }
+    return $Value
+}
+
+function _Get-DispatchReadinessExplanation {
+    param([string]$DispatchReadiness)
+
+    switch ([string]$DispatchReadiness) {
+        'ready' {
+            return 'Documentation and roadmap signals are strong enough for dispatch.'
+        }
+        'needs-doc-standardization' {
+            return 'Core docs exist, but the repo still needs documentation cleanup before dispatch.'
+        }
+        'roadmap-complete' {
+            return 'The roadmap has no pending work, so dispatch should move to a new release or maintenance task.'
+        }
+        'parse-error' {
+            return 'The roadmap exists, but it could not be parsed into the standard contract format.'
+        }
+        'blocked' {
+            return 'Blocking findings prevent reliable execution and should be resolved before dispatch.'
+        }
+        default {
+            return 'A roadmap or supporting documentation is missing, so the repo is not yet dispatch-ready.'
+        }
+    }
+}
+
+function _Get-ReadmeScore {
+    param(
+        [bool]$HasReadme,
+        [int]$DocFindingCount
+    )
+
+    if (-not $HasReadme) { return 0 }
+
+    $penalty = [Math]::Min(25, ([Math]::Max(0, $DocFindingCount) * 5))
+    return _ClampScore -Value (100 - $penalty)
+}
+
+function _Get-RoadmapScore {
+    param(
+        [bool]$HasRoadmap,
+        [string]$RoadmapState,
+        [int]$MaturityScore,
+        [int]$PendingItemCount
+    )
+
+    if (-not $HasRoadmap) { return 0 }
+
+    switch ([string]$RoadmapState) {
+        'parse-error' {
+            return 20
+        }
+        'complete' {
+            return _ClampScore -Value ([Math]::Max(90, $MaturityScore))
+        }
+        'pending' {
+            $base = [Math]::Max(55, $MaturityScore)
+            if ($PendingItemCount -le 3) { $base += 10 }
+            return _ClampScore -Value $base
+        }
+        default {
+            return _ClampScore -Value ([Math]::Max(35, $MaturityScore))
+        }
+    }
+}
+
+function _Get-DocumentationHealthScore {
+    param(
+        [int]$ReadmeScore,
+        [int]$RoadmapScore,
+        [int]$DocFindingCount,
+        [bool]$HasCiSignal,
+        [bool]$HasTestSignal
+    )
+
+    $base = [Math]::Round((([double]$ReadmeScore) + ([double]$RoadmapScore)) / 2.0)
+    $bonus = 0
+    if ($HasCiSignal) { $bonus += 5 }
+    if ($HasTestSignal) { $bonus += 5 }
+    $penalty = [Math]::Min(15, ([Math]::Max(0, $DocFindingCount) * 2))
+    return _ClampScore -Value ([int]($base + $bonus - $penalty))
 }
 
 function _Get-GitHubIdentityFromRemoteUrl {
@@ -853,6 +961,8 @@ function New-PortfolioIndexPayload {
         $latestWorkflowRunConclusion = [string](_GetField -Obj $assessment -Name 'latestWorkflowRunConclusion' -Default (_GetField -Obj $githubRepo -Name 'latestWorkflowRunConclusion' -Default ''))
         $latestWorkflowRunName = [string](_GetField -Obj $assessment -Name 'latestWorkflowRunName' -Default (_GetField -Obj $githubRepo -Name 'latestWorkflowRunName' -Default ''))
         $latestWorkflowRunTimestamp = [string](_GetField -Obj $assessment -Name 'latestWorkflowRunTimestamp' -Default (_GetField -Obj $githubRepo -Name 'latestWorkflowRunTimestamp' -Default ''))
+        $openPrCount = [int](_GetField -Obj $assessment -Name 'openPrCount' -Default (_GetField -Obj $githubRepo -Name 'openPrCount' -Default 0))
+        $pendingReviewPrCount = [int](_GetField -Obj $assessment -Name 'pendingReviewPrCount' -Default (_GetField -Obj $githubRepo -Name 'pendingReviewPrCount' -Default 0))
 
         $repos.Add([pscustomobject]@{
             ordinal             = $i + 1
@@ -874,6 +984,8 @@ function New-PortfolioIndexPayload {
             latestWorkflowRunConclusion = if ([string]::IsNullOrWhiteSpace($latestWorkflowRunConclusion)) { $null } else { $latestWorkflowRunConclusion }
             latestWorkflowRunName = if ([string]::IsNullOrWhiteSpace($latestWorkflowRunName)) { $null } else { $latestWorkflowRunName }
             latestWorkflowRunTimestamp = if ([string]::IsNullOrWhiteSpace($latestWorkflowRunTimestamp)) { $null } else { $latestWorkflowRunTimestamp }
+            openPrCount         = $openPrCount
+            pendingReviewPrCount = $pendingReviewPrCount
             repoType            = [string](_GetField -Obj $assessment -Name 'repoType' -Default 'other')
             lifecycleState      = [string](_GetField -Obj $assessment -Name 'lifecycleState' -Default 'discovered')
             recommendedAction   = [string](_GetField -Obj $assessment -Name 'recommendedAction' -Default '')
@@ -882,12 +994,16 @@ function New-PortfolioIndexPayload {
             roadmapPath         = [string](_GetField -Obj $assessment -Name 'roadmapPath' -Default '')
             hasRoadmap          = [bool](_GetField -Obj $assessment -Name 'hasRoadmap' -Default $false)
             hasReadme           = [bool](_GetField -Obj $assessment -Name 'hasReadme' -Default $false)
+            readmeScore         = [int](_GetField -Obj $assessment -Name 'readmeScore' -Default 0)
+            roadmapScore        = [int](_GetField -Obj $assessment -Name 'roadmapScore' -Default 0)
+            documentationHealthScore = [int](_GetField -Obj $assessment -Name 'documentationHealthScore' -Default 0)
             pendingItemCount    = [int](_GetField -Obj $assessment -Name 'pendingItemCount' -Default 0)
             nextPendingItemText = [string](_GetField -Obj $assessment -Name 'nextPendingItemText' -Default '')
             topValueItem        = _GetField -Obj $assessment -Name 'topValueItem' -Default $null
             maturityLevel       = [string](_GetField -Obj $assessment -Name 'maturityLevel' -Default 'L0-Absent')
             maturityScore       = [int](_GetField -Obj $assessment -Name 'maturityScore' -Default 0)
             dispatchReadiness   = [string](_GetField -Obj $assessment -Name 'dispatchReadiness' -Default 'missing-roadmap')
+            dispatchReadinessExplanation = [string](_GetField -Obj $assessment -Name 'dispatchReadinessExplanation' -Default '')
             executionState      = [string](_GetField -Obj $assessment -Name 'executionState' -Default 'idle')
             gitStatus           = [string](_GetField -Obj $assessment -Name 'gitStatus' -Default 'unknown')
             hasCiSignal         = [bool](_GetField -Obj $assessment -Name 'hasCiSignal' -Default $false)

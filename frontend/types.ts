@@ -842,6 +842,14 @@ export interface PortfolioAssessmentEntry {
   gitStatus: string;
   isArchived: boolean;
   sourceCoverage: SourceCoverage;
+  hasPages?: boolean;
+  pagesUrl?: string | null;
+  openPrCount?: number;
+  pendingReviewPrCount?: number;
+  latestWorkflowRunStatus?: string | null;
+  latestWorkflowRunConclusion?: string | null;
+  latestWorkflowRunName?: string | null;
+  latestWorkflowRunTimestamp?: string | null;
   repoType: string;
   lifecycleState: RepoLifecycleState;
   recommendedAction: string;
@@ -849,6 +857,9 @@ export interface PortfolioAssessmentEntry {
   roadmapState: 'pending' | 'complete' | 'missing' | 'parse-error';
   roadmapPath: string;
   hasRoadmap: boolean;
+  readmeScore?: number;
+  roadmapScore?: number;
+  documentationHealthScore?: number;
   pendingItemCount: number;
   nextPendingItemText: string;
   pendingItems: PortfolioPendingItemValue[];
@@ -856,6 +867,7 @@ export interface PortfolioAssessmentEntry {
   maturityLevel: RoadmapMaturityLevel;
   maturityScore: number;
   dispatchReadiness: DispatchReadiness;
+  dispatchReadinessExplanation?: string;
   executionState: ExecutionState;
   hasReadme: boolean;
   hasCiSignal: boolean;

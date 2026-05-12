@@ -1,7 +1,7 @@
 # GitHub Repo Management — Active Execution Roadmap
 
 > **Status:** Active
-> **Active release:** **Release 1.7.5 — Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning** (Phase 2 shipped; Phase 3A next)
+> **Active release:** **Release 1.7.5 — Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning** (Phase 3C shipped; Phase 4 next)
 > **Canonical product direction:** [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md)
 > **Completed-release archive:** [`docs/history/completed-releases.md`](docs/history/completed-releases.md)
 > **Dated change log:** [`CHANGELOG.md`](CHANGELOG.md)
@@ -215,17 +215,17 @@ dashboard signals needed for operator-driven execution.
       `createdAt` and `updatedAt` timestamps.
       *(state: smoke-tested — Phase 3B)* — carried into both assessment
       responses and the ordered index.
-- [ ] Add README score, ROADMAP score, Documentation Health score, and
+- [x] Add README score, ROADMAP score, Documentation Health score, and
       dispatch-readiness explanation to each indexed repo record.
-      *(state: planned — Phase 3C)*
-- [ ] Add a Portfolio Mission panel to the dashboard summarizing collection
+      *(state: smoke-tested — Phase 3C)*
+- [x] Add a Portfolio Mission panel to the dashboard summarizing collection
       state: total repos, local-only, GitHub-only, linked local+GitHub,
       missing roadmap, weak roadmap, missing README, ready, running,
       blocked, completed, dirty worktrees, open PRs, GitHub Pages enabled,
-      and failing Actions. *(state: planned — Phase 3C)*
-- [ ] Update dashboard cards and portfolio summary panels to consume the
+      and failing Actions. *(state: smoke-tested — Phase 3C)*
+- [x] Update dashboard cards and portfolio summary panels to consume the
       index-backed assessment model rather than scattered route responses.
-      *(state: planned — Phase 3C)*
+      *(state: smoke-tested — Phase 3C)*
 - [ ] Expand repo evaluation for missing roadmaps beyond hardening checks:
       include likely feature opportunities, modernization work,
       test/documentation improvements, security posture, and user-visible
@@ -279,9 +279,9 @@ dashboard signals needed for operator-driven execution.
 | Phase 1: Assessment foundation            | `RepoLifecycleState`, `Portfolio.Assessment.ps1`, `repo-structure-standards.json`, `GET /api/portfolio/assessment`, GitHub-vs-local coverage | **done — smoke-tested** (2026-04-25) |
 | Phase 2: Value ranking                    | `Portfolio.ValueScorer.ps1`, `value-scoring.json`, value score on each pending item in the assessment response                               | **done — smoke-tested** (2026-04-26) |
 | Phase 3A: Ordered portfolio index         | `output/index/repos.index.json`, normalized repo identity, scan artifacts under `output/index/scans/`                                        | **done — smoke-tested** (2026-05-11) |
-| Phase 3B: GitHub metadata enrichment      | PR detail, Pages status/link, latest Actions status, created/updated timestamps                                                              | **next active target**               |
-| Phase 3C: Dashboard signal model          | Portfolio Mission panel, Documentation Health, dashboard badges, index-backed assessment display                                             | planned                              |
-| Phase 4: Work Queue value display         | Value score column + rationale tooltip in `WorkQueueView.tsx`; rerank by value                                                               | planned                              |
+| Phase 3B: GitHub metadata enrichment      | PR detail, Pages status/link, latest Actions status, created/updated timestamps                                                              | **done — smoke-tested** (2026-05-12) |
+| Phase 3C: Dashboard signal model          | Portfolio Mission panel, Documentation Health, dashboard badges, index-backed assessment display                                             | **done — smoke-tested** (2026-05-12) |
+| Phase 4: Work Queue value display         | Value score column + rationale tooltip in `WorkQueueView.tsx`; rerank by value                                                               | **next active target**               |
 | Phase 5: Expanded evaluator               | Feature/modernization/security/test/doc opportunity findings beyond hardening                                                                 | planned                              |
 | Phase 6: Prompt context packet foundation | Backend packet that combines README, ROADMAP, assessment, value rationale, and constraints for later prompt refinement                       | planned                              |
 | Phase 7: Collection report + docs         | `Portfolio.Report.ps1` HTML/CSV; update `HelpModal.tsx` and `docs/reference/` for the north-star workflow                                   | planned                              |

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry, type DocAuditIndex, type RoadmapAuditIndex, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph } from '../types';
+import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry, type DocAuditIndex, type RoadmapAuditIndex, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioAssessmentEntry, type PortfolioAssessmentResult, type RepoLifecycleState, type PortfolioSignalSource } from '../types';
 import SummaryCard from './SummaryCard';
 import ActionBar from './ActionBar';
 import RepoGrid from './RepoGrid';
@@ -23,7 +23,7 @@ import RoadmapDispatchModal from './RoadmapDispatchModal';
 import RepoGitStatusModal from './RepoGitStatusModal';
 import ReadmeGenerateModal from './ReadmeGenerateModal';
 import HelpModal from './HelpModal';
-import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getRoadmapDependencies } from '../services/apiClient';
+import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getRoadmapDependencies, getPortfolioAssessment } from '../services/apiClient';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
 import { useHealthPing } from '../hooks/useHealthPing';
@@ -41,6 +41,47 @@ interface DashboardProps {
     | null;
   insightsMeta?: GithubInsightsMeta | null;
   dataLastUpdated?: Date | null;
+}
+
+const SIGNAL_SOURCE_STYLES: Record<PortfolioSignalSource, string> = {
+  cache: 'bg-slate-800 text-slate-200 border-slate-600',
+  'fresh-scan': 'bg-emerald-900/40 text-emerald-200 border-emerald-700/50',
+  ledger: 'bg-blue-900/40 text-blue-200 border-blue-700/50',
+  api: 'bg-indigo-900/40 text-indigo-200 border-indigo-700/50',
+  unavailable: 'bg-gray-800 text-gray-300 border-gray-600',
+  'not-evaluated': 'bg-gray-800 text-gray-300 border-gray-600',
+  'no-token': 'bg-amber-900/40 text-amber-200 border-amber-700/50',
+  'no-owner-configured': 'bg-amber-900/40 text-amber-200 border-amber-700/50',
+  error: 'bg-red-900/40 text-red-200 border-red-700/50',
+};
+
+const LIFECYCLE_STYLES: Record<RepoLifecycleState, string> = {
+  discovered: 'bg-slate-800 text-slate-200 border-slate-600',
+  'needs-readme': 'bg-amber-900/40 text-amber-200 border-amber-700/50',
+  'needs-roadmap': 'bg-amber-900/40 text-amber-200 border-amber-700/50',
+  'needs-roadmap-repair': 'bg-orange-900/40 text-orange-200 border-orange-700/50',
+  'needs-structure': 'bg-orange-900/40 text-orange-200 border-orange-700/50',
+  'ready-for-work': 'bg-emerald-900/40 text-emerald-200 border-emerald-700/50',
+  running: 'bg-blue-900/40 text-blue-200 border-blue-700/50',
+  completed: 'bg-violet-900/40 text-violet-200 border-violet-700/50',
+  monitored: 'bg-cyan-900/40 text-cyan-200 border-cyan-700/50',
+  archived: 'bg-gray-800 text-gray-300 border-gray-600',
+  'parse-error': 'bg-red-900/40 text-red-200 border-red-700/50',
+};
+
+function formatLifecycleLabel(state: RepoLifecycleState): string {
+  return state.replaceAll('-', ' ');
+}
+
+function formatSignalLabel(key: string): string {
+  switch (key) {
+    case 'docAudit':
+      return 'Docs';
+    case 'roadmapAudit':
+      return 'Roadmap';
+    default:
+      return key.charAt(0).toUpperCase() + key.slice(1);
+  }
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoStatus, dataSource, insightsMeta, dataLastUpdated }) => {
@@ -89,6 +130,8 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [dependencyGraph, setDependencyGraph] = useState<RoadmapDependencyGraph | null>(null);
   const [dependencyGraphLoading, setDependencyGraphLoading] = useState(false);
   const [hasAttemptedDepsLoad, setHasAttemptedDepsLoad] = useState(false);
+  const [portfolioAssessment, setPortfolioAssessment] = useState<PortfolioAssessmentResult | null>(null);
+  const [portfolioAssessmentLoading, setPortfolioAssessmentLoading] = useState(false);
 
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
@@ -121,6 +164,18 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   useEffect(() => {
     getRoadmapIndex().then(index => setRoadmapEntries(index.entries)).catch(() => {/* silent — badge just won't show */});
   }, []);
+
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+
+    setPortfolioAssessmentLoading(true);
+    getPortfolioAssessment()
+      .then(setPortfolioAssessment)
+      .catch(() => {/* silent */})
+      .finally(() => setPortfolioAssessmentLoading(false));
+  }, [loading, repos.length]);
 
   // Release 1.2 — fetch execution metrics and auto-scan schedule on mount (silent failures)
   useEffect(() => {
@@ -596,6 +651,83 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
     };
   }, [repos]);
 
+  const portfolioMission = useMemo(() => {
+    if (!portfolioAssessment) {
+      return null;
+    }
+
+    const entries = portfolioAssessment.entries ?? [];
+    const summaryData = portfolioAssessment.summary;
+    const localOnly = Number(summaryData.bySourceCoverage?.local ?? 0);
+    const githubOnly = Number(summaryData.bySourceCoverage?.github ?? 0);
+    const linked = Number(summaryData.bySourceCoverage?.['local+github'] ?? 0);
+    const completed = Number(summaryData.byLifecycle?.completed ?? 0);
+    const dirtyWorktrees = entries.filter(entry => {
+      const statusValue = (entry.gitStatus ?? '').toLowerCase();
+      return entry.sourceCoverage !== 'github' && statusValue !== '' && statusValue !== 'clean' && statusValue !== 'unknown';
+    }).length;
+    const openPrs = entries.reduce((sum, entry) => sum + Number(entry.openPrCount ?? 0), 0);
+    const pagesEnabled = entries.filter(entry => Boolean(entry.hasPages)).length;
+    const failingActions = entries.filter(entry => {
+      const conclusion = (entry.latestWorkflowRunConclusion ?? '').toLowerCase();
+      const statusValue = (entry.latestWorkflowRunStatus ?? '').toLowerCase();
+      if (conclusion) {
+        return !['success', 'neutral', 'skipped'].includes(conclusion);
+      }
+      return ['failure', 'cancelled', 'timed_out', 'action_required'].includes(statusValue);
+    }).length;
+
+    const withScore = (selector: (entry: PortfolioAssessmentEntry) => number | undefined) => {
+      const values = entries
+        .map(selector)
+        .filter((value): value is number => typeof value === 'number' && !Number.isNaN(value));
+      if (values.length === 0) {
+        return 0;
+      }
+      return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
+    };
+
+    const topEntries = [...entries]
+      .sort((left, right) => {
+        const leftValue = left.topValueItem?.valueScore ?? -1;
+        const rightValue = right.topValueItem?.valueScore ?? -1;
+        if (rightValue !== leftValue) {
+          return rightValue - leftValue;
+        }
+        return (right.pendingItemCount ?? 0) - (left.pendingItemCount ?? 0);
+      })
+      .slice(0, 6);
+
+    return {
+      generatedAt: portfolioAssessment.generatedAt,
+      cacheSource: portfolioAssessment.cacheSource,
+      cacheAgeSeconds: portfolioAssessment.cacheAgeSeconds,
+      signalSources: portfolioAssessment.signalSources,
+      totalRepos: summaryData.totalRepos,
+      localOnly,
+      githubOnly,
+      linked,
+      missingRoadmap: summaryData.missingRoadmapCount,
+      weakRoadmap: summaryData.weakRoadmapCount,
+      missingReadme: summaryData.missingReadmeCount,
+      ready: summaryData.readyForWorkCount,
+      running: summaryData.runningCount,
+      blocked: summaryData.blockedCount,
+      completed,
+      dirtyWorktrees,
+      openPrs,
+      pagesEnabled,
+      failingActions,
+      averageReadmeScore: withScore(entry => entry.readmeScore),
+      averageRoadmapScore: withScore(entry => entry.roadmapScore),
+      averageDocumentationHealthScore: withScore(entry => entry.documentationHealthScore),
+      ciCoverage: entries.filter(entry => entry.hasCiSignal).length,
+      testCoverage: entries.filter(entry => entry.hasTestSignal).length,
+      docsNeedingAttention: entries.filter(entry => (entry.docFindingCount ?? 0) > 0).length,
+      topEntries,
+    };
+  }, [portfolioAssessment]);
+
   if (error && repos.length === 0) {
     return <div className="text-center p-8 text-red-400">{error}</div>;
   }
@@ -739,6 +871,184 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
               </div>
               <div className="text-xs text-gray-400 mt-0.5">Avg Run</div>
             </div>
+          </div>
+        )}
+
+        {(portfolioMission || portfolioAssessmentLoading) && (
+          <div className="mt-4 space-y-4">
+            <div className="grid grid-cols-1 xl:grid-cols-[1.5fr,1fr] gap-4">
+              <section className="bg-gray-800/60 border border-gray-700 rounded-lg px-4 py-4">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div>
+                    <h2 className="text-lg font-semibold text-white">Portfolio Mission</h2>
+                    <p className="text-sm text-gray-400 mt-1">Index-backed collection state for the current portfolio scan.</p>
+                  </div>
+                  {portfolioMission && (
+                    <div className="text-xs text-gray-500 text-right">
+                      <div>Generated {new Date(portfolioMission.generatedAt).toLocaleTimeString()}</div>
+                      <div>{portfolioMission.cacheSource === 'memory' ? 'Memory cache' : 'Fresh scan'}{portfolioMission.cacheAgeSeconds > 0 ? ` · ${Math.round(portfolioMission.cacheAgeSeconds)}s old` : ''}</div>
+                    </div>
+                  )}
+                </div>
+
+                {portfolioMission ? (
+                  <>
+                    <div className="flex flex-wrap gap-2 mt-3">
+                      {Object.entries(portfolioMission.signalSources).map(([key, value]) => {
+                        if (!value) {
+                          return null;
+                        }
+
+                        const source = value as PortfolioSignalSource;
+                        return (
+                          <span key={key} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${SIGNAL_SOURCE_STYLES[source] ?? SIGNAL_SOURCE_STYLES.unavailable}`}>
+                            <span className="text-gray-300">{formatSignalLabel(key)}</span>
+                            <span>{source}</span>
+                          </span>
+                        );
+                      })}
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3 mt-4">
+                      {[
+                        { label: 'Total', value: portfolioMission.totalRepos, accent: 'text-white' },
+                        { label: 'Local Only', value: portfolioMission.localOnly, accent: 'text-slate-200' },
+                        { label: 'Linked', value: portfolioMission.linked, accent: 'text-emerald-300' },
+                        { label: 'GitHub Only', value: portfolioMission.githubOnly, accent: 'text-indigo-300' },
+                        { label: 'Missing ROADMAP', value: portfolioMission.missingRoadmap, accent: 'text-amber-300' },
+                        { label: 'Missing README', value: portfolioMission.missingReadme, accent: 'text-amber-300' },
+                        { label: 'Weak ROADMAP', value: portfolioMission.weakRoadmap, accent: 'text-orange-300' },
+                        { label: 'Ready', value: portfolioMission.ready, accent: 'text-emerald-300' },
+                        { label: 'Running', value: portfolioMission.running, accent: 'text-blue-300' },
+                        { label: 'Blocked', value: portfolioMission.blocked, accent: 'text-red-300' },
+                        { label: 'Completed', value: portfolioMission.completed, accent: 'text-violet-300' },
+                        { label: 'Dirty Worktrees', value: portfolioMission.dirtyWorktrees, accent: 'text-yellow-300' },
+                        { label: 'Open PRs', value: portfolioMission.openPrs, accent: 'text-cyan-300' },
+                        { label: 'Pages Enabled', value: portfolioMission.pagesEnabled, accent: 'text-teal-300' },
+                        { label: 'Failing Actions', value: portfolioMission.failingActions, accent: 'text-rose-300' },
+                      ].map(metric => (
+                        <div key={metric.label} className="rounded-lg border border-gray-700 bg-gray-900/50 px-3 py-3">
+                          <div className={`text-lg font-semibold ${metric.accent}`}>{metric.value}</div>
+                          <div className="mt-1 text-xs text-gray-400">{metric.label}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-3 py-8 text-gray-400 justify-center">
+                    <SpinnerIcon className="w-5 h-5 animate-spin" />
+                    <span>Loading portfolio assessment…</span>
+                  </div>
+                )}
+              </section>
+
+              <section className="bg-gray-800/60 border border-gray-700 rounded-lg px-4 py-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-white">Documentation Health</h2>
+                  <p className="text-sm text-gray-400 mt-1">README, ROADMAP, and readiness quality derived from the indexed assessment.</p>
+                </div>
+
+                {portfolioMission ? (
+                  <div className="space-y-3 mt-4">
+                    {[
+                      { label: 'README Score', value: portfolioMission.averageReadmeScore, accent: 'bg-blue-500' },
+                      { label: 'ROADMAP Score', value: portfolioMission.averageRoadmapScore, accent: 'bg-indigo-500' },
+                      { label: 'Docs Health', value: portfolioMission.averageDocumentationHealthScore, accent: 'bg-emerald-500' },
+                    ].map(metric => (
+                      <div key={metric.label}>
+                        <div className="flex items-center justify-between text-sm mb-1">
+                          <span className="text-gray-300">{metric.label}</span>
+                          <span className="text-white font-medium">{metric.value}%</span>
+                        </div>
+                        <div className="h-2 rounded-full bg-gray-900 overflow-hidden border border-gray-700">
+                          <div className={`h-full ${metric.accent}`} style={{ width: `${metric.value}%` }} />
+                        </div>
+                      </div>
+                    ))}
+
+                    <div className="grid grid-cols-3 gap-3 pt-2">
+                      <div className="rounded-lg border border-gray-700 bg-gray-900/50 px-3 py-3 text-center">
+                        <div className="text-lg font-semibold text-sky-300">{portfolioMission.ciCoverage}</div>
+                        <div className="mt-1 text-xs text-gray-400">CI Signals</div>
+                      </div>
+                      <div className="rounded-lg border border-gray-700 bg-gray-900/50 px-3 py-3 text-center">
+                        <div className="text-lg font-semibold text-fuchsia-300">{portfolioMission.testCoverage}</div>
+                        <div className="mt-1 text-xs text-gray-400">Test Signals</div>
+                      </div>
+                      <div className="rounded-lg border border-gray-700 bg-gray-900/50 px-3 py-3 text-center">
+                        <div className="text-lg font-semibold text-amber-300">{portfolioMission.docsNeedingAttention}</div>
+                        <div className="mt-1 text-xs text-gray-400">Repos With Findings</div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3 py-8 text-gray-400 justify-center">
+                    <SpinnerIcon className="w-5 h-5 animate-spin" />
+                    <span>Computing documentation health…</span>
+                  </div>
+                )}
+              </section>
+            </div>
+
+            {portfolioMission && portfolioMission.topEntries.length > 0 && (
+              <section className="bg-gray-800/60 border border-gray-700 rounded-lg px-4 py-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-white">Index-Backed Assessment</h2>
+                  <p className="text-sm text-gray-400 mt-1">Highest-value and highest-friction repos surfaced from the portfolio assessment order.</p>
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  {portfolioMission.topEntries.map(entry => (
+                    <div key={`${entry.repoName}-${entry.sourceCoverage}`} className="rounded-lg border border-gray-700 bg-gray-900/40 px-4 py-3">
+                      <div className="flex items-start justify-between gap-3 flex-wrap">
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-white font-medium">{entry.repoName}</span>
+                            <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs capitalize ${LIFECYCLE_STYLES[entry.lifecycleState] ?? LIFECYCLE_STYLES.discovered}`}>
+                              {formatLifecycleLabel(entry.lifecycleState)}
+                            </span>
+                            <span className="inline-flex rounded-full border border-gray-600 px-2 py-0.5 text-xs text-gray-300 bg-gray-800">
+                              {entry.maturityLevel}
+                            </span>
+                            <span className="inline-flex rounded-full border border-cyan-700/40 px-2 py-0.5 text-xs text-cyan-200 bg-cyan-900/20">
+                              {entry.dispatchReadiness}
+                            </span>
+                          </div>
+                          <div className="text-sm text-gray-300 mt-2">{entry.recommendedAction}</div>
+                          {(entry.topValueItem?.text || entry.nextPendingItemText) && (
+                            <div className="text-xs text-gray-400 mt-2">
+                              Next focus: <span className="text-gray-200">{entry.topValueItem?.text ?? entry.nextPendingItemText}</span>
+                            </div>
+                          )}
+                          {entry.dispatchReadinessExplanation && (
+                            <div className="text-xs text-gray-500 mt-1">{entry.dispatchReadinessExplanation}</div>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 min-w-[220px]">
+                          <div className="rounded border border-gray-700 bg-gray-800/60 px-3 py-2 text-center">
+                            <div className="text-sm font-semibold text-blue-200">{entry.readmeScore ?? 0}%</div>
+                            <div className="text-[11px] text-gray-500 mt-0.5">README</div>
+                          </div>
+                          <div className="rounded border border-gray-700 bg-gray-800/60 px-3 py-2 text-center">
+                            <div className="text-sm font-semibold text-indigo-200">{entry.roadmapScore ?? 0}%</div>
+                            <div className="text-[11px] text-gray-500 mt-0.5">ROADMAP</div>
+                          </div>
+                          <div className="rounded border border-gray-700 bg-gray-800/60 px-3 py-2 text-center">
+                            <div className="text-sm font-semibold text-emerald-200">{entry.documentationHealthScore ?? 0}%</div>
+                            <div className="text-[11px] text-gray-500 mt-0.5">Docs Health</div>
+                          </div>
+                          <div className="rounded border border-gray-700 bg-gray-800/60 px-3 py-2 text-center">
+                            <div className="text-sm font-semibold text-cyan-200">{entry.openPrCount ?? 0}</div>
+                            <div className="text-[11px] text-gray-500 mt-0.5">Open PRs</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         )}
 
