@@ -569,6 +569,8 @@ function Invoke-PortfolioAssessment {
         $structFindings = if ($null -ne $structAudit) { @($structAudit.findings) } else { @() }
         $repoType = if ($null -ne $structAudit) { [string]$structAudit.repoType } else { 'other' }
 
+        $githubRepo = if ($githubMap.ContainsKey($key)) { $githubMap[$key] } else { $null }
+
         # Source coverage
         $sourceCoverage = if ($githubMap.ContainsKey($key) -or -not [string]::IsNullOrWhiteSpace($htmlUrl)) {
             'local+github'
@@ -612,6 +614,10 @@ function Invoke-PortfolioAssessment {
             gitStatus           = $gitStatus
             isArchived          = $isArchived
             sourceCoverage      = $sourceCoverage
+            hasPages            = [bool](_GetField -Obj $githubRepo -Name 'hasPages' -Default $false)
+            pagesUrl            = _GetField -Obj $githubRepo -Name 'pagesUrl' -Default $null
+            createdAt           = _GetField -Obj $githubRepo -Name 'createdAt' -Default $null
+            updatedAt           = _GetField -Obj $githubRepo -Name 'updatedAt' -Default $null
             repoType            = $repoType
             lifecycleState      = $lifecycle.state
             recommendedAction   = $lifecycle.recommendedAction
@@ -651,6 +657,10 @@ function Invoke-PortfolioAssessment {
             gitStatus           = 'unknown'
             isArchived          = [bool](_GetField -Obj $gh -Name 'isArchived' -Default $false)
             sourceCoverage      = 'github'
+            hasPages            = [bool](_GetField -Obj $gh -Name 'hasPages' -Default $false)
+            pagesUrl            = _GetField -Obj $gh -Name 'pagesUrl' -Default $null
+            createdAt           = _GetField -Obj $gh -Name 'createdAt' -Default $null
+            updatedAt           = _GetField -Obj $gh -Name 'updatedAt' -Default $null
             repoType            = 'other'
             lifecycleState      = 'discovered'
             recommendedAction   = 'Clone the repo locally so it can participate in the work queue.'
@@ -739,5 +749,190 @@ function Get-PortfolioAssessmentSummary {
         readyForWorkCount     = $readyForWork
         runningCount          = $running
         blockedCount          = $blocked
+    }
+}
+
+function _Get-GitHubIdentityFromRemoteUrl {
+    param([string]$RemoteUrl)
+
+    if ([string]::IsNullOrWhiteSpace($RemoteUrl)) {
+        return [pscustomobject]@{
+            owner    = ''
+            repo     = ''
+            fullName = ''
+        }
+    }
+
+    $trimmed = $RemoteUrl.Trim()
+    $patterns = @(
+        'github\.com[:/](?<owner>[^/]+)/(?<repo>[^/]+?)(?:\.git)?/?$',
+        '^git@github\.com:(?<owner>[^/]+)/(?<repo>[^/]+?)(?:\.git)?/?$'
+    )
+
+    foreach ($pattern in $patterns) {
+        $match = [regex]::Match($trimmed, $pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        if ($match.Success) {
+            $owner = $match.Groups['owner'].Value
+            $repo = $match.Groups['repo'].Value
+            return [pscustomobject]@{
+                owner    = $owner
+                repo     = $repo
+                fullName = if ([string]::IsNullOrWhiteSpace($owner) -or [string]::IsNullOrWhiteSpace($repo)) { '' } else { '{0}/{1}' -f $owner, $repo }
+            }
+        }
+    }
+
+    return [pscustomobject]@{
+        owner    = ''
+        repo     = ''
+        fullName = ''
+    }
+}
+
+function New-PortfolioIndexPayload {
+    [CmdletBinding()]
+    param(
+        [Parameter()][AllowEmptyCollection()][object[]]$Assessments = @(),
+        [Parameter()][AllowEmptyCollection()][object[]]$LocalRepos = @(),
+        [Parameter()][AllowEmptyCollection()][object[]]$GitHubRepos = @(),
+        [Parameter()][object]$Summary,
+        [Parameter()][object]$SignalSources,
+        [Parameter(Mandatory = $true)][string]$GeneratedAt
+    )
+
+    $localMap = _IndexByRepoName -Items $LocalRepos -NameField 'name'
+    $githubMap = _IndexByRepoName -Items $GitHubRepos -NameField 'name'
+
+    $ordered = @($Assessments | Sort-Object `
+        @{ Expression = { [string](_GetField -Obj $_ -Name 'repoName' -Default '') }; Ascending = $true },
+        @{ Expression = { [string](_GetField -Obj $_ -Name 'sourceCoverage' -Default '') }; Ascending = $true })
+
+    $repos = [System.Collections.Generic.List[object]]::new()
+    for ($i = 0; $i -lt $ordered.Count; $i++) {
+        $assessment = $ordered[$i]
+        if ($null -eq $assessment) { continue }
+
+        $repoName = [string](_GetField -Obj $assessment -Name 'repoName' -Default '')
+        if ([string]::IsNullOrWhiteSpace($repoName)) { continue }
+
+        $key = _NormalizeKey $repoName
+        $localRepo = if ($localMap.ContainsKey($key)) { $localMap[$key] } else { $null }
+        $githubRepo = if ($githubMap.ContainsKey($key)) { $githubMap[$key] } else { $null }
+
+        $localPath = [string](_GetField -Obj $assessment -Name 'localPath' -Default (_GetField -Obj $localRepo -Name 'path' -Default ''))
+        $remoteUrl = [string](_GetField -Obj $localRepo -Name 'originUrl' -Default '')
+        $remoteIdentity = _Get-GitHubIdentityFromRemoteUrl -RemoteUrl $remoteUrl
+
+        $githubOwner = [string](_GetField -Obj $githubRepo -Name 'owner' -Default $remoteIdentity.owner)
+        $githubRepoName = if ($null -ne $githubRepo) {
+            [string](_GetField -Obj $githubRepo -Name 'name' -Default $remoteIdentity.repo)
+        } else {
+            $remoteIdentity.repo
+        }
+        $githubFullName = if (-not [string]::IsNullOrWhiteSpace($githubOwner) -and -not [string]::IsNullOrWhiteSpace($githubRepoName)) {
+            '{0}/{1}' -f $githubOwner, $githubRepoName
+        } else {
+            [string](_GetField -Obj $githubRepo -Name 'fullName' -Default $remoteIdentity.fullName)
+        }
+        $currentBranch = [string](_GetField -Obj $assessment -Name 'branch' -Default (_GetField -Obj $localRepo -Name 'branch' -Default ''))
+        $defaultBranch = [string](_GetField -Obj $githubRepo -Name 'branch' -Default $currentBranch)
+        $htmlUrl = [string](_GetField -Obj $assessment -Name 'htmlUrl' -Default (_GetField -Obj $githubRepo -Name 'htmlUrl' -Default ''))
+        $hasPages = [bool](_GetField -Obj $assessment -Name 'hasPages' -Default (_GetField -Obj $githubRepo -Name 'hasPages' -Default $false))
+        $pagesUrl = [string](_GetField -Obj $assessment -Name 'pagesUrl' -Default (_GetField -Obj $githubRepo -Name 'pagesUrl' -Default ''))
+        $createdAt = [string](_GetField -Obj $assessment -Name 'createdAt' -Default (_GetField -Obj $githubRepo -Name 'createdAt' -Default ''))
+        $updatedAt = [string](_GetField -Obj $assessment -Name 'updatedAt' -Default (_GetField -Obj $githubRepo -Name 'updatedAt' -Default ''))
+
+        $repos.Add([pscustomobject]@{
+            ordinal             = $i + 1
+            repoName            = $repoName
+            sourceCoverage      = [string](_GetField -Obj $assessment -Name 'sourceCoverage' -Default 'local')
+            localPath           = $localPath
+            remoteUrl           = $remoteUrl
+            githubOwner         = $githubOwner
+            githubRepo          = $githubRepoName
+            githubFullName      = $githubFullName
+            htmlUrl             = $htmlUrl
+            defaultBranch       = $defaultBranch
+            currentBranch       = $currentBranch
+            hasPages            = $hasPages
+            pagesUrl            = if ([string]::IsNullOrWhiteSpace($pagesUrl)) { $null } else { $pagesUrl }
+            createdAt           = if ([string]::IsNullOrWhiteSpace($createdAt)) { $null } else { $createdAt }
+            updatedAt           = if ([string]::IsNullOrWhiteSpace($updatedAt)) { $null } else { $updatedAt }
+            repoType            = [string](_GetField -Obj $assessment -Name 'repoType' -Default 'other')
+            lifecycleState      = [string](_GetField -Obj $assessment -Name 'lifecycleState' -Default 'discovered')
+            recommendedAction   = [string](_GetField -Obj $assessment -Name 'recommendedAction' -Default '')
+            blockingReasons     = @(_GetField -Obj $assessment -Name 'blockingReasons' -Default @())
+            roadmapState        = [string](_GetField -Obj $assessment -Name 'roadmapState' -Default 'missing')
+            roadmapPath         = [string](_GetField -Obj $assessment -Name 'roadmapPath' -Default '')
+            hasRoadmap          = [bool](_GetField -Obj $assessment -Name 'hasRoadmap' -Default $false)
+            hasReadme           = [bool](_GetField -Obj $assessment -Name 'hasReadme' -Default $false)
+            pendingItemCount    = [int](_GetField -Obj $assessment -Name 'pendingItemCount' -Default 0)
+            nextPendingItemText = [string](_GetField -Obj $assessment -Name 'nextPendingItemText' -Default '')
+            topValueItem        = _GetField -Obj $assessment -Name 'topValueItem' -Default $null
+            maturityLevel       = [string](_GetField -Obj $assessment -Name 'maturityLevel' -Default 'L0-Absent')
+            maturityScore       = [int](_GetField -Obj $assessment -Name 'maturityScore' -Default 0)
+            dispatchReadiness   = [string](_GetField -Obj $assessment -Name 'dispatchReadiness' -Default 'missing-roadmap')
+            executionState      = [string](_GetField -Obj $assessment -Name 'executionState' -Default 'idle')
+            gitStatus           = [string](_GetField -Obj $assessment -Name 'gitStatus' -Default 'unknown')
+            hasCiSignal         = [bool](_GetField -Obj $assessment -Name 'hasCiSignal' -Default $false)
+            hasTestSignal       = [bool](_GetField -Obj $assessment -Name 'hasTestSignal' -Default $false)
+            docFindingCount     = [int](_GetField -Obj $assessment -Name 'docFindingCount' -Default 0)
+            structureFindings   = @(_GetField -Obj $assessment -Name 'structureFindings' -Default @())
+        }) | Out-Null
+    }
+
+    return [pscustomobject]@{
+        schemaVersion = 1
+        kind          = 'portfolio-index'
+        generatedAt   = $GeneratedAt
+        repoCount     = $repos.Count
+        signalSources = $SignalSources
+        summary       = $Summary
+        repos         = @($repos)
+    }
+}
+
+function Save-PortfolioIndexArtifacts {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+        [Parameter()][AllowEmptyCollection()][object[]]$Assessments = @(),
+        [Parameter()][AllowEmptyCollection()][object[]]$LocalRepos = @(),
+        [Parameter()][AllowEmptyCollection()][object[]]$GitHubRepos = @(),
+        [Parameter()][object]$Summary,
+        [Parameter()][object]$SignalSources,
+        [Parameter(Mandatory = $true)][string]$GeneratedAt
+    )
+
+    $indexRoot = Join-Path $WorkspaceRoot 'output\index'
+    $scansRoot = Join-Path $indexRoot 'scans'
+    if (-not (Test-Path -LiteralPath $indexRoot)) {
+        $null = New-Item -ItemType Directory -Path $indexRoot -Force
+    }
+    if (-not (Test-Path -LiteralPath $scansRoot)) {
+        $null = New-Item -ItemType Directory -Path $scansRoot -Force
+    }
+
+    $payload = New-PortfolioIndexPayload `
+        -Assessments $Assessments `
+        -LocalRepos $LocalRepos `
+        -GitHubRepos $GitHubRepos `
+        -Summary $Summary `
+        -SignalSources $SignalSources `
+        -GeneratedAt $GeneratedAt
+
+    $json = $payload | ConvertTo-Json -Depth 12
+    $indexPath = Join-Path $indexRoot 'repos.index.json'
+    Set-Content -LiteralPath $indexPath -Value $json -Encoding UTF8
+
+    $artifactName = ('portfolio-scan-{0}.json' -f ((Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')))
+    $artifactPath = Join-Path $scansRoot $artifactName
+    Set-Content -LiteralPath $artifactPath -Value $json -Encoding UTF8
+
+    return [pscustomobject]@{
+        indexPath    = $indexPath
+        artifactPath = $artifactPath
+        repoCount    = [int]$payload.repoCount
+        generatedAt  = $GeneratedAt
     }
 }

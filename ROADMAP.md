@@ -190,26 +190,31 @@ dashboard signals needed for operator-driven execution.
       scoring config [`value-scoring.json`](backend/config/value-scoring.json),
       and additive `pendingItems` / `topValueItem` fields in
       `/api/portfolio/assessment`.
-- [ ] Create canonical ordered repository index at
+- [x] Create canonical ordered repository index at
       `output/index/repos.index.json` with one normalized record per repo.
-      *(state: planned — Phase 3A)*
-- [ ] Normalize repository identity using local path, remote URL,
+      *(state: smoke-tested — Phase 3A)* — emitted on fresh portfolio
+      assessment scans.
+- [x] Normalize repository identity using local path, remote URL,
       GitHub owner/repo, default branch, and current branch.
-      *(state: planned — Phase 3A)*
-- [ ] Add full scan artifact output under `output/index/scans/` so each
+      *(state: smoke-tested — Phase 3A)* — included in the ordered index
+      record for every repo.
+- [x] Add full scan artifact output under `output/index/scans/` so each
       scan can be inspected, compared, and replayed for dashboard
-      debugging. *(state: planned — Phase 3A)*
+      debugging. *(state: smoke-tested — Phase 3A)*
 - [ ] Add differential scan mode that refreshes only repos whose local git
       state, README, ROADMAP, GitHub metadata, PR status, Actions state, or
       Pages state changed since the last index write.
       *(state: planned — Phase 3B)*
-- [ ] Enrich portfolio assessment records with GitHub Pages status and
-      direct Pages URL when configured. *(state: planned — Phase 3B)*
+- [x] Enrich portfolio assessment records with GitHub Pages status and
+      direct Pages URL when configured. *(state: smoke-tested — Phase 3B)*
+      — carried into both assessment responses and the ordered index.
 - [ ] Enrich portfolio assessment records with latest GitHub Actions run
       status, conclusion, workflow name, and run timestamp.
       *(state: planned — Phase 3B)*
-- [ ] Enrich portfolio assessment records with GitHub repository
-      `createdAt` and `updatedAt` timestamps. *(state: planned — Phase 3B)*
+- [x] Enrich portfolio assessment records with GitHub repository
+      `createdAt` and `updatedAt` timestamps.
+      *(state: smoke-tested — Phase 3B)* — carried into both assessment
+      responses and the ordered index.
 - [ ] Add README score, ROADMAP score, Documentation Health score, and
       dispatch-readiness explanation to each indexed repo record.
       *(state: planned — Phase 3C)*
@@ -273,8 +278,8 @@ dashboard signals needed for operator-driven execution.
 | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
 | Phase 1: Assessment foundation            | `RepoLifecycleState`, `Portfolio.Assessment.ps1`, `repo-structure-standards.json`, `GET /api/portfolio/assessment`, GitHub-vs-local coverage | **done — smoke-tested** (2026-04-25) |
 | Phase 2: Value ranking                    | `Portfolio.ValueScorer.ps1`, `value-scoring.json`, value score on each pending item in the assessment response                               | **done — smoke-tested** (2026-04-26) |
-| Phase 3A: Ordered portfolio index         | `output/index/repos.index.json`, normalized repo identity, scan artifacts under `output/index/scans/`                                        | **next active target**               |
-| Phase 3B: GitHub metadata enrichment      | PR detail, Pages status/link, latest Actions status, created/updated timestamps                                                              | planned                              |
+| Phase 3A: Ordered portfolio index         | `output/index/repos.index.json`, normalized repo identity, scan artifacts under `output/index/scans/`                                        | **done — smoke-tested** (2026-05-11) |
+| Phase 3B: GitHub metadata enrichment      | PR detail, Pages status/link, latest Actions status, created/updated timestamps                                                              | **next active target**               |
 | Phase 3C: Dashboard signal model          | Portfolio Mission panel, Documentation Health, dashboard badges, index-backed assessment display                                             | planned                              |
 | Phase 4: Work Queue value display         | Value score column + rationale tooltip in `WorkQueueView.tsx`; rerank by value                                                               | planned                              |
 | Phase 5: Expanded evaluator               | Feature/modernization/security/test/doc opportunity findings beyond hardening                                                                 | planned                              |

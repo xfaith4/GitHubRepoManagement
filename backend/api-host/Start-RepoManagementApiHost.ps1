@@ -1948,6 +1948,8 @@ function Get-GitHubReposViaApi {
             topics = $metadata.topics
             hasPages = $metadata.hasPages
             pagesUrl = $metadata.pagesUrl
+            createdAt = if ($_.created_at) { [string]$_.created_at } else { $null }
+            updatedAt = if ($_.updated_at) { [string]$_.updated_at } else { $null }
         }
     })
 
@@ -4161,35 +4163,46 @@ try {
                         $signalSources['execution'] = 'unavailable'
                     }
 
-                    # 6) GitHub repos (only when explicitly requested or githubOwner is configured)
+                    # 6) GitHub repos for enrichment. GitHub-only repos remain opt-in.
                     $githubRepos = @()
                     $signalSources['github'] = 'not-evaluated'
                     $includeGithub = if ($q.ContainsKey('includeGithub')) { Parse-Bool -Value $q.includeGithub -Default $false } else { $false }
-                    if ($includeGithub) {
-                        $owner = if ($settings.ContainsKey('reconcile') -and $settings.reconcile.ContainsKey('gitHubOwner') -and $settings.reconcile.gitHubOwner) {
-                            [string]$settings.reconcile.gitHubOwner
-                        } else { '' }
-                        if (-not [string]::IsNullOrWhiteSpace($owner)) {
-                            try {
-                                $token = Get-ConfiguredGitHubToken -Settings $settings -RequestToken ''
-                                if (-not [string]::IsNullOrWhiteSpace($token)) {
-                                    $apiResult = Get-GitHubReposViaApi -Owner $owner -Token $token -RepoLimit 100 -IncludePrivate:$true -IncludeForks:$false -IncludeArchived:$true -FetchCommitMetrics:$false
-                                    if ($apiResult.success -and $null -ne $apiResult.data) {
-                                        $githubRepos = @($apiResult.data.repos)
-                                        $signalSources['github'] = 'api'
-                                    } else {
-                                        $signalSources['github'] = 'unavailable'
-                                    }
+                    $owner = if ($settings.ContainsKey('reconcile') -and $settings.reconcile.ContainsKey('gitHubOwner') -and $settings.reconcile.gitHubOwner) {
+                        [string]$settings.reconcile.gitHubOwner
+                    } else { '' }
+                    if (-not [string]::IsNullOrWhiteSpace($owner)) {
+                        try {
+                            $token = Get-ConfiguredGitHubToken -Settings $settings -RequestToken ''
+                            if (-not [string]::IsNullOrWhiteSpace($token)) {
+                                $apiResult = Get-GitHubReposViaApi -Owner $owner -Token $token -RepoLimit 100 -IncludePrivate:$true -IncludeForks:$false -IncludeArchived:$true -FetchCommitMetrics:$false
+                                if ($null -ne $apiResult -and $apiResult.PSObject.Properties.Name -contains 'repos') {
+                                    $githubRepos = @($apiResult.repos)
+                                    $signalSources['github'] = 'api'
                                 } else {
-                                    $signalSources['github'] = 'no-token'
+                                    $signalSources['github'] = 'unavailable'
                                 }
-                            } catch {
-                                $signalSources['github'] = 'error'
-                                Write-HostLog ("[TRACE] portfolio.assessment github fetch failed: {0}" -f $_.Exception.Message)
+                            } else {
+                                $signalSources['github'] = 'no-token'
                             }
-                        } else {
-                            $signalSources['github'] = 'no-owner-configured'
+                        } catch {
+                            $signalSources['github'] = 'error'
+                            Write-HostLog ("[TRACE] portfolio.assessment github fetch failed: {0}" -f $_.Exception.Message)
                         }
+                    } else {
+                        $signalSources['github'] = 'no-owner-configured'
+                    }
+
+                    $githubReposForAssessment = @($githubRepos)
+                    if (-not $includeGithub -and @($githubReposForAssessment).Count -gt 0) {
+                        $localRepoNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+                        foreach ($repo in @($localRepos)) {
+                            if ($null -eq $repo) { continue }
+                            $repoName = if ($repo.PSObject.Properties.Name -contains 'name') { [string]$repo.name } else { '' }
+                            if (-not [string]::IsNullOrWhiteSpace($repoName)) {
+                                [void]$localRepoNames.Add($repoName)
+                            }
+                        }
+                        $githubReposForAssessment = @($githubReposForAssessment | Where-Object { $localRepoNames.Contains([string]$_.name) })
                     }
 
                     # 7) Structure standards
@@ -4205,12 +4218,26 @@ try {
                         -DocAuditEntries     $docAuditEntries `
                         -RoadmapAuditEntries $roadmapAuditEntries `
                         -ExecutionEntries    $executionEntries `
-                        -GitHubRepos         $githubRepos `
+                        -GitHubRepos         $githubReposForAssessment `
                         -StructureStandards  $structStandards `
                         -ValueScoringConfig  $valueScoringConfig
 
                     $summary = Get-PortfolioAssessmentSummary -Assessments $assessments
                     $generatedAt = (Get-Date).ToUniversalTime().ToString('o')
+
+                    try {
+                        $indexArtifacts = Save-PortfolioIndexArtifacts `
+                            -WorkspaceRoot $WorkspaceRoot `
+                            -Assessments $assessments `
+                            -LocalRepos $localRepos `
+                            -GitHubRepos $githubReposForAssessment `
+                            -Summary $summary `
+                            -SignalSources $signalSources `
+                            -GeneratedAt $generatedAt
+                        Write-HostLog ("[TRACE] portfolio.assessment index-written path={0} artifact={1} count={2}" -f $indexArtifacts.indexPath, $indexArtifacts.artifactPath, $indexArtifacts.repoCount)
+                    } catch {
+                        Write-HostLog ("WARN portfolio.assessment index write skipped: {0}" -f $_.Exception.Message)
+                    }
 
                     if ($ttlSeconds -gt 0) {
                         Save-PortfolioAssessmentCache -Entries $assessments -Summary $summary -SignalSources $signalSources -GeneratedAt $generatedAt
