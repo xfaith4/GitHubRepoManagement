@@ -614,10 +614,14 @@ function Invoke-PortfolioAssessment {
             gitStatus           = $gitStatus
             isArchived          = $isArchived
             sourceCoverage      = $sourceCoverage
-            hasPages            = [bool](_GetField -Obj $githubRepo -Name 'hasPages' -Default $false)
-            pagesUrl            = _GetField -Obj $githubRepo -Name 'pagesUrl' -Default $null
-            createdAt           = _GetField -Obj $githubRepo -Name 'createdAt' -Default $null
-            updatedAt           = _GetField -Obj $githubRepo -Name 'updatedAt' -Default $null
+            hasPages            = [bool](_GetField -Obj $githubRepo -Name 'hasPages' -Default (_GetField -Obj $repo -Name 'hasPages' -Default $false))
+            pagesUrl            = _GetField -Obj $githubRepo -Name 'pagesUrl' -Default (_GetField -Obj $repo -Name 'pagesUrl' -Default $null)
+            createdAt           = _GetField -Obj $githubRepo -Name 'createdAt' -Default (_GetField -Obj $repo -Name 'createdAt' -Default $null)
+            updatedAt           = _GetField -Obj $githubRepo -Name 'updatedAt' -Default (_GetField -Obj $repo -Name 'updatedAt' -Default $null)
+            latestWorkflowRunStatus = _GetField -Obj $githubRepo -Name 'latestWorkflowRunStatus' -Default (_GetField -Obj $repo -Name 'latestWorkflowRunStatus' -Default $null)
+            latestWorkflowRunConclusion = _GetField -Obj $githubRepo -Name 'latestWorkflowRunConclusion' -Default (_GetField -Obj $repo -Name 'latestWorkflowRunConclusion' -Default $null)
+            latestWorkflowRunName = _GetField -Obj $githubRepo -Name 'latestWorkflowRunName' -Default (_GetField -Obj $repo -Name 'latestWorkflowRunName' -Default $null)
+            latestWorkflowRunTimestamp = _GetField -Obj $githubRepo -Name 'latestWorkflowRunTimestamp' -Default (_GetField -Obj $repo -Name 'latestWorkflowRunTimestamp' -Default $null)
             repoType            = $repoType
             lifecycleState      = $lifecycle.state
             recommendedAction   = $lifecycle.recommendedAction
@@ -661,6 +665,10 @@ function Invoke-PortfolioAssessment {
             pagesUrl            = _GetField -Obj $gh -Name 'pagesUrl' -Default $null
             createdAt           = _GetField -Obj $gh -Name 'createdAt' -Default $null
             updatedAt           = _GetField -Obj $gh -Name 'updatedAt' -Default $null
+            latestWorkflowRunStatus = _GetField -Obj $gh -Name 'latestWorkflowRunStatus' -Default $null
+            latestWorkflowRunConclusion = _GetField -Obj $gh -Name 'latestWorkflowRunConclusion' -Default $null
+            latestWorkflowRunName = _GetField -Obj $gh -Name 'latestWorkflowRunName' -Default $null
+            latestWorkflowRunTimestamp = _GetField -Obj $gh -Name 'latestWorkflowRunTimestamp' -Default $null
             repoType            = 'other'
             lifecycleState      = 'discovered'
             recommendedAction   = 'Clone the repo locally so it can participate in the work queue.'
@@ -841,6 +849,10 @@ function New-PortfolioIndexPayload {
         $pagesUrl = [string](_GetField -Obj $assessment -Name 'pagesUrl' -Default (_GetField -Obj $githubRepo -Name 'pagesUrl' -Default ''))
         $createdAt = [string](_GetField -Obj $assessment -Name 'createdAt' -Default (_GetField -Obj $githubRepo -Name 'createdAt' -Default ''))
         $updatedAt = [string](_GetField -Obj $assessment -Name 'updatedAt' -Default (_GetField -Obj $githubRepo -Name 'updatedAt' -Default ''))
+        $latestWorkflowRunStatus = [string](_GetField -Obj $assessment -Name 'latestWorkflowRunStatus' -Default (_GetField -Obj $githubRepo -Name 'latestWorkflowRunStatus' -Default ''))
+        $latestWorkflowRunConclusion = [string](_GetField -Obj $assessment -Name 'latestWorkflowRunConclusion' -Default (_GetField -Obj $githubRepo -Name 'latestWorkflowRunConclusion' -Default ''))
+        $latestWorkflowRunName = [string](_GetField -Obj $assessment -Name 'latestWorkflowRunName' -Default (_GetField -Obj $githubRepo -Name 'latestWorkflowRunName' -Default ''))
+        $latestWorkflowRunTimestamp = [string](_GetField -Obj $assessment -Name 'latestWorkflowRunTimestamp' -Default (_GetField -Obj $githubRepo -Name 'latestWorkflowRunTimestamp' -Default ''))
 
         $repos.Add([pscustomobject]@{
             ordinal             = $i + 1
@@ -858,6 +870,10 @@ function New-PortfolioIndexPayload {
             pagesUrl            = if ([string]::IsNullOrWhiteSpace($pagesUrl)) { $null } else { $pagesUrl }
             createdAt           = if ([string]::IsNullOrWhiteSpace($createdAt)) { $null } else { $createdAt }
             updatedAt           = if ([string]::IsNullOrWhiteSpace($updatedAt)) { $null } else { $updatedAt }
+            latestWorkflowRunStatus = if ([string]::IsNullOrWhiteSpace($latestWorkflowRunStatus)) { $null } else { $latestWorkflowRunStatus }
+            latestWorkflowRunConclusion = if ([string]::IsNullOrWhiteSpace($latestWorkflowRunConclusion)) { $null } else { $latestWorkflowRunConclusion }
+            latestWorkflowRunName = if ([string]::IsNullOrWhiteSpace($latestWorkflowRunName)) { $null } else { $latestWorkflowRunName }
+            latestWorkflowRunTimestamp = if ([string]::IsNullOrWhiteSpace($latestWorkflowRunTimestamp)) { $null } else { $latestWorkflowRunTimestamp }
             repoType            = [string](_GetField -Obj $assessment -Name 'repoType' -Default 'other')
             lifecycleState      = [string](_GetField -Obj $assessment -Name 'lifecycleState' -Default 'discovered')
             recommendedAction   = [string](_GetField -Obj $assessment -Name 'recommendedAction' -Default '')

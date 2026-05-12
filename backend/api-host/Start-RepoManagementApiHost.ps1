@@ -1492,6 +1492,30 @@ function Get-ConfiguredGitHubToken {
         'GITHUB_TOKEN'
     }
 
+    $ghCommand = Get-Command -Name 'gh' -ErrorAction SilentlyContinue
+    if ($ghCommand) {
+        $originalEnvToken = [Environment]::GetEnvironmentVariable($envVarName)
+        try {
+            if (-not [string]::IsNullOrWhiteSpace($originalEnvToken)) {
+                [Environment]::SetEnvironmentVariable($envVarName, $null)
+            }
+
+            $ghTokenOutput = & gh auth token 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                $ghToken = ($ghTokenOutput | Out-String).Trim()
+                if (-not [string]::IsNullOrWhiteSpace($ghToken)) {
+                    return $ghToken
+                }
+            }
+        }
+        catch { }
+        finally {
+            if (-not [string]::IsNullOrWhiteSpace($originalEnvToken)) {
+                [Environment]::SetEnvironmentVariable($envVarName, $originalEnvToken)
+            }
+        }
+    }
+
     $envToken = [Environment]::GetEnvironmentVariable($envVarName)
     if (-not [string]::IsNullOrWhiteSpace($envToken)) {
         return $envToken
@@ -1588,6 +1612,47 @@ function Get-GitHubCommitCountViaApi {
     catch {
         Write-HostLog ("[TRACE] github.commitCount failed owner={0} repo={1} sinceDays={2} error={3}" -f $Owner, $Repo, $SinceDays, $_.Exception.Message)
         return 0
+    }
+}
+
+function Get-LatestGitHubWorkflowRunViaApi {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Owner,
+        [Parameter(Mandatory = $true)]
+        [string]$Repo,
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Headers
+    )
+
+    $uri = "https://api.github.com/repos/$Owner/$Repo/actions/runs?per_page=1"
+
+    try {
+        $response = Invoke-RestMethod -Uri $uri -Headers $Headers -Method Get
+        $runs = @(Get-ObjectPropertyValue -InputObject $response -PropertyName 'workflow_runs' -Default @())
+        if ($runs.Count -eq 0) {
+            return $null
+        }
+
+        $run = $runs[0]
+        $runTimestamp = [string](Get-ObjectPropertyValue -InputObject $run -PropertyName 'run_started_at' -Default '')
+        if ([string]::IsNullOrWhiteSpace($runTimestamp)) {
+            $runTimestamp = [string](Get-ObjectPropertyValue -InputObject $run -PropertyName 'updated_at' -Default '')
+        }
+        if ([string]::IsNullOrWhiteSpace($runTimestamp)) {
+            $runTimestamp = [string](Get-ObjectPropertyValue -InputObject $run -PropertyName 'created_at' -Default '')
+        }
+
+        return [pscustomobject]@{
+            status     = [string](Get-ObjectPropertyValue -InputObject $run -PropertyName 'status' -Default '')
+            conclusion = [string](Get-ObjectPropertyValue -InputObject $run -PropertyName 'conclusion' -Default '')
+            name       = [string](Get-ObjectPropertyValue -InputObject $run -PropertyName 'name' -Default '')
+            timestamp  = if ([string]::IsNullOrWhiteSpace($runTimestamp)) { $null } else { $runTimestamp }
+        }
+    }
+    catch {
+        Write-HostLog ("[TRACE] github.workflowRun failed owner={0} repo={1} error={2}" -f $Owner, $Repo, $_.Exception.Message)
+        return $null
     }
 }
 
@@ -1714,6 +1779,12 @@ function ConvertTo-GitHubRepoMetadata {
         topics = @((Get-ObjectPropertyValue -InputObject $RepoItem -PropertyName 'topics' -Default @()))
         hasPages = $hasPages
         pagesUrl = if ([string]::IsNullOrWhiteSpace($pagesUrl)) { $null } else { $pagesUrl }
+        createdAt = Get-ObjectPropertyValue -InputObject $RepoItem -PropertyName 'created_at' -Default $null
+        updatedAt = Get-ObjectPropertyValue -InputObject $RepoItem -PropertyName 'updated_at' -Default $null
+        latestWorkflowRunStatus = $null
+        latestWorkflowRunConclusion = $null
+        latestWorkflowRunName = $null
+        latestWorkflowRunTimestamp = $null
     }
 }
 
@@ -1727,46 +1798,37 @@ function Get-GitHubRepoMetadataMapViaApi {
         [int]$MaxPages = 10
     )
 
-    $headers = Get-GitHubApiHeaders -Token $Token
-    $ownerType = Get-GitHubOwnerTypeViaApi -Owner $Owner -Headers $headers
-    $repoType = if ([string]::IsNullOrWhiteSpace($Token)) { 'public' } else { 'all' }
-    $baseUri = if ($ownerType -eq 'Organization') {
-        "https://api.github.com/orgs/$Owner/repos"
-    }
-    else {
-        "https://api.github.com/users/$Owner/repos"
-    }
-
     $repoMap = @{}
-    for ($page = 1; $page -le $MaxPages; $page++) {
-        $uri = "{0}?per_page=100&page={1}&sort=updated&type={2}" -f $baseUri, $page, $repoType
+    $repoLimit = [Math]::Max(100, $MaxPages * 100)
 
-        try {
-            $reposRaw = @(Invoke-RestMethod -Uri $uri -Headers $headers -Method Get)
-        }
-        catch {
-            Write-HostLog ("[TRACE] github.repoMetadata fetch failed owner={0} page={1} error={2}" -f $Owner, $page, $_.Exception.Message)
-            break
-        }
+    try {
+        $apiResult = Get-GitHubReposViaApi -Owner $Owner -Token $Token -RepoLimit $repoLimit -IncludePrivate:$true -IncludeForks:$false -IncludeArchived:$true -FetchCommitMetrics:$false
+        foreach ($repo in @($apiResult.repos)) {
+            if ($null -eq $repo) { continue }
 
-        if (@($reposRaw).Count -eq 0) {
-            break
-        }
+            $repoName = [string](Get-ObjectPropertyValue -InputObject $repo -PropertyName 'name' -Default '')
+            if ([string]::IsNullOrWhiteSpace($repoName)) { continue }
 
-        foreach ($repoItem in $reposRaw) {
-            $metadata = ConvertTo-GitHubRepoMetadata -RepoItem $repoItem -Headers $headers -FallbackOwner $Owner
-            if ($null -eq $metadata) { continue }
-
-            if (-not [string]::IsNullOrWhiteSpace([string]$metadata.owner) -and $metadata.owner.ToLowerInvariant() -ne $Owner.ToLowerInvariant()) {
-                continue
+            $repoMap[$repoName.ToLowerInvariant()] = [pscustomobject]@{
+                name = $repoName
+                htmlUrl = Get-ObjectPropertyValue -InputObject $repo -PropertyName 'htmlUrl' -Default $null
+                owner = Get-ObjectPropertyValue -InputObject $repo -PropertyName 'owner' -Default $Owner
+                visibility = Get-ObjectPropertyValue -InputObject $repo -PropertyName 'visibility' -Default $null
+                language = Get-ObjectPropertyValue -InputObject $repo -PropertyName 'language' -Default $null
+                topics = @((Get-ObjectPropertyValue -InputObject $repo -PropertyName 'topics' -Default @()))
+                hasPages = [bool](Get-ObjectPropertyValue -InputObject $repo -PropertyName 'hasPages' -Default $false)
+                pagesUrl = Get-ObjectPropertyValue -InputObject $repo -PropertyName 'pagesUrl' -Default $null
+                createdAt = Get-ObjectPropertyValue -InputObject $repo -PropertyName 'createdAt' -Default $null
+                updatedAt = Get-ObjectPropertyValue -InputObject $repo -PropertyName 'updatedAt' -Default $null
+                latestWorkflowRunStatus = Get-ObjectPropertyValue -InputObject $repo -PropertyName 'latestWorkflowRunStatus' -Default $null
+                latestWorkflowRunConclusion = Get-ObjectPropertyValue -InputObject $repo -PropertyName 'latestWorkflowRunConclusion' -Default $null
+                latestWorkflowRunName = Get-ObjectPropertyValue -InputObject $repo -PropertyName 'latestWorkflowRunName' -Default $null
+                latestWorkflowRunTimestamp = Get-ObjectPropertyValue -InputObject $repo -PropertyName 'latestWorkflowRunTimestamp' -Default $null
             }
-
-            $repoMap[$metadata.name.ToLowerInvariant()] = $metadata
         }
-
-        if (@($reposRaw).Count -lt 100) {
-            break
-        }
+    }
+    catch {
+        Write-HostLog ("[TRACE] github.repoMetadata fetch failed owner={0} error={1}" -f $Owner, $_.Exception.Message)
     }
 
     return $repoMap
@@ -1828,7 +1890,7 @@ function Add-GitHubMetadataToStatusResult {
             }
 
             $metadata = $metadataMap[$repoKey]
-            foreach ($propertyName in @('htmlUrl', 'owner', 'visibility', 'language', 'topics', 'hasPages', 'pagesUrl')) {
+            foreach ($propertyName in @('htmlUrl', 'owner', 'visibility', 'language', 'topics', 'hasPages', 'pagesUrl', 'createdAt', 'updatedAt', 'latestWorkflowRunStatus', 'latestWorkflowRunConclusion', 'latestWorkflowRunName', 'latestWorkflowRunTimestamp')) {
                 $propertyValue = Get-ObjectPropertyValue -InputObject $metadata -PropertyName $propertyName -Default $null
                 $entry.repo | Add-Member -NotePropertyName $propertyName -NotePropertyValue $propertyValue -Force
             }
@@ -1883,7 +1945,7 @@ function Get-GitHubReposViaApi {
     $repoMap = @{}
     foreach ($uri in $uris) {
         try {
-            $reposRaw = @(Invoke-RestMethod -Uri $uri -Headers $headers -Method Get)
+            $reposRaw = @((Invoke-RestMethod -Uri $uri -Headers $headers -Method Get) | ForEach-Object { $_ })
             foreach ($repoItem in $reposRaw) {
                 if ($null -eq $repoItem -or -not $repoItem.name) { continue }
 
@@ -1919,6 +1981,8 @@ function Get-GitHubReposViaApi {
             $commitCountMonth = Get-GitHubCommitCountViaApi -Owner $Owner -Repo ([string]$_.name) -Headers $headers -SinceDays 30
         }
 
+        $workflowRun = Get-LatestGitHubWorkflowRunViaApi -Owner $Owner -Repo ([string]$_.name) -Headers $headers
+
         $lastCommitAuthor = ''
         if ($_.owner -and $_.owner.login) {
             $lastCommitAuthor = [string]$_.owner.login
@@ -1950,6 +2014,10 @@ function Get-GitHubReposViaApi {
             pagesUrl = $metadata.pagesUrl
             createdAt = if ($_.created_at) { [string]$_.created_at } else { $null }
             updatedAt = if ($_.updated_at) { [string]$_.updated_at } else { $null }
+            latestWorkflowRunStatus = if ($null -ne $workflowRun) { $workflowRun.status } else { $null }
+            latestWorkflowRunConclusion = if ($null -ne $workflowRun) { $workflowRun.conclusion } else { $null }
+            latestWorkflowRunName = if ($null -ne $workflowRun) { $workflowRun.name } else { $null }
+            latestWorkflowRunTimestamp = if ($null -ne $workflowRun) { $workflowRun.timestamp } else { $null }
         }
     })
 
@@ -4102,6 +4170,9 @@ try {
                             $errMsg = if ($null -ne $statusResult -and $statusResult.PSObject.Properties.Name -contains 'error') { [string]$statusResult.error } else { 'unknown error' }
                             Write-HostLog ("ERROR portfolio.assessment correlationId={0} status scan failed: {1}" -f $correlationId, $errMsg)
                         }
+                    }
+                    if ($null -ne $statusResult -and $statusResult.success) {
+                        $statusResult = Add-GitHubMetadataToStatusResult -StatusResult $statusResult -Settings $settings
                     }
                     $localRepos = if ($null -ne $statusResult -and $statusResult.success -and $null -ne $statusResult.data) { @($statusResult.data.repos) } else { @() }
 

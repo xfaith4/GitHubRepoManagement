@@ -208,9 +208,9 @@ dashboard signals needed for operator-driven execution.
 - [x] Enrich portfolio assessment records with GitHub Pages status and
       direct Pages URL when configured. *(state: smoke-tested — Phase 3B)*
       — carried into both assessment responses and the ordered index.
-- [ ] Enrich portfolio assessment records with latest GitHub Actions run
+- [x] Enrich portfolio assessment records with latest GitHub Actions run
       status, conclusion, workflow name, and run timestamp.
-      *(state: planned — Phase 3B)*
+      *(state: smoke-tested — Phase 3B)*
 - [x] Enrich portfolio assessment records with GitHub repository
       `createdAt` and `updatedAt` timestamps.
       *(state: smoke-tested — Phase 3B)* — carried into both assessment
