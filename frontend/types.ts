@@ -27,6 +27,8 @@ export interface RepoStatus {
   testingWorkflowCount?: number;
   actionsEnabled?: boolean;
   htmlUrl?: string;
+  hasPages?: boolean;
+  pagesUrl?: string;
   localPath?: string;
   originUrl?: string;
   owner?: string;

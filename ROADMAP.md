@@ -1,7 +1,7 @@
 # GitHub Repo Management — Active Execution Roadmap
 
 > **Status:** Active
-> **Active release:** **Release 1.7.5 — Portfolio Mission Alignment and Value-Ranked Work Planning** (Phase 2 shipped; Phase 3 next)
+> **Active release:** **Release 1.7.5 — Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning** (Phase 2 shipped; Phase 3A next)
 > **Canonical product direction:** [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md)
 > **Completed-release archive:** [`docs/history/completed-releases.md`](docs/history/completed-releases.md)
 > **Dated change log:** [`CHANGELOG.md`](CHANGELOG.md)
@@ -31,15 +31,16 @@ this document references them by version + status only.
 GitHub Repo Management is a **portfolio intelligence and execution console**
 that assesses an entire local and GitHub repository collection, standardizes
 repo readiness, creates or repairs roadmap contracts, ranks the
-highest-value incomplete roadmap work, and prepares reviewed GitHub Copilot
-Agent prompts.
+highest-value incomplete roadmap work, prepares reviewed GitHub Copilot
+Agent prompts, monitors agent execution, and reports whether work is safe
+to merge.
 
 The **north-star operator workflow** every release should serve is:
 
-> scan portfolio → classify every repo → show lifecycle state → identify
-> blockers → repair README/roadmap/structure → rank highest-value next
-> work → refine Copilot prompt → dispatch → validate result → update
-> roadmap / report progress
+> scan portfolio → index repos → classify every repo → show lifecycle state →
+> identify blockers → repair README/roadmap/structure → rank highest-value
+> next work → refine Copilot prompt → dispatch → monitor agent run → validate
+> Actions → evaluate merge readiness → update roadmap / report progress
 
 For the full thesis, ten core questions, principles, risks, and guardrails,
 see
@@ -53,15 +54,15 @@ Every milestone in this roadmap should carry one of these states. A `[x]`
 checkbox alone is not enough — it does not distinguish "backend exists" from
 "end-to-end working."
 
-| State | Meaning |
-|---|---|
-| `planned` | Proposed; no code yet |
-| `scaffolded` | Files / route / UI exist but stubbed or returns mock data |
-| `backend-complete` | Server-side logic implemented; no UI consumer yet |
-| `ui-connected` | Frontend wires through to live backend; manual smoke ok |
-| `smoke-tested` | Automated module / api-host smoke covers it |
-| `operator-verified` | Confirmed working end-to-end against the live workspace |
-| `done` | All four of: backend-complete, ui-connected, smoke-tested, operator-verified |
+| State               | Meaning                                                                      |
+| ------------------- | ---------------------------------------------------------------------------- |
+| `planned`           | Proposed; no code yet                                                        |
+| `scaffolded`        | Files / route / UI exist but stubbed or returns mock data                    |
+| `backend-complete`  | Server-side logic implemented; no UI consumer yet                            |
+| `ui-connected`      | Frontend wires through to live backend; manual smoke ok                      |
+| `smoke-tested`      | Automated module / api-host smoke covers it                                  |
+| `operator-verified` | Confirmed working end-to-end against the live workspace                      |
+| `done`              | All four of: backend-complete, ui-connected, smoke-tested, operator-verified |
 
 Render the state inline on each milestone in italics, e.g.:
 
@@ -73,33 +74,34 @@ Render the state inline on each milestone in italics, e.g.:
 
 ## 4. Release Index
 
-| Version | Title | Status |
-|---|---|---|
-| 0.4 | Roadmap Intelligence Foundation | `done` — see [completed-releases.md](docs/history/completed-releases.md#release-04--roadmap-intelligence-foundation) |
-| 0.5 | Documentation Audit & Dispatch Readiness | `done` — see archive |
-| 0.6 | Copilot Task Packaging & Preview Workflow | `done` — see archive |
-| 0.7 | Roadmap Contract Standard Foundation | `done` — see archive |
-| 0.8 | Roadmap Contract Audit & Maturity Scoring | `done` — see archive |
-| 0.9 | Roadmap Repair Preview & Standardization Workflow | `done` — see archive |
-| 1.0 | Two-Lane Execution Queue | `done` — see archive |
-| 1.1 | Standardization, Guardrails, and Continuous Improvement | `done` — see archive |
-| **1.2** | **Enhanced Portfolio Intelligence** | **mixed** — backend `smoke-tested`; UI `planned` |
-| 1.3 | Production Frontend Build | `done` |
-| 1.4 | Repo Evaluation and Cross-Platform Deployment *(formerly: Cross-Platform and Containerized Deployment)* | `done` |
-| 1.5 | Copilot-Assisted README Generation | `done` |
-| 1.6 | Roadmap-Driven Release Dispatch to GitHub Copilot | `done` |
-| 1.7 | Repo Git Status Detail | `done` |
-| **1.7.5** | **Portfolio Mission Alignment and Value-Ranked Work Planning** | **active — Phase 2 done; Phase 3 next** |
-| 1.8 | API Authentication and Network Security | `planned` |
-| 1.9 | Persistent Data Layer | `planned` |
-| 2.0 | Complete the Doc Review Pipeline | `planned` |
-| 2.1 | Guided Onboarding and GitHub App Integration | `planned` |
-| 2.2 | Portfolio Analytics, Trend Visualization, and Distribution | `planned` |
-| 2.3 | Agent Integration Protocol and AI Repair Loop | `planned` |
+| Version   | Title                                                                                                   | Status                                                                                                               |
+| --------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| 0.4       | Roadmap Intelligence Foundation                                                                         | `done` — see [completed-releases.md](docs/history/completed-releases.md#release-04--roadmap-intelligence-foundation) |
+| 0.5       | Documentation Audit & Dispatch Readiness                                                                | `done` — see archive                                                                                                 |
+| 0.6       | Copilot Task Packaging & Preview Workflow                                                               | `done` — see archive                                                                                                 |
+| 0.7       | Roadmap Contract Standard Foundation                                                                    | `done` — see archive                                                                                                 |
+| 0.8       | Roadmap Contract Audit & Maturity Scoring                                                               | `done` — see archive                                                                                                 |
+| 0.9       | Roadmap Repair Preview & Standardization Workflow                                                       | `done` — see archive                                                                                                 |
+| 1.0       | Two-Lane Execution Queue                                                                                | `done` — see archive                                                                                                 |
+| 1.1       | Standardization, Guardrails, and Continuous Improvement                                                 | `done` — see archive                                                                                                 |
+| **1.2**   | **Enhanced Portfolio Intelligence**                                                                     | **mixed** — backend `smoke-tested`; UI `planned`                                                                     |
+| 1.3       | Production Frontend Build                                                                               | `done`                                                                                                               |
+| 1.4       | Repo Evaluation and Cross-Platform Deployment *(formerly: Cross-Platform and Containerized Deployment)* | `done`                                                                                                               |
+| 1.5       | Copilot-Assisted README Generation                                                                      | `done`                                                                                                               |
+| 1.6       | Roadmap-Driven Release Dispatch to GitHub Copilot                                                       | `done`                                                                                                               |
+| 1.7       | Repo Git Status Detail                                                                                  | `done`                                                                                                               |
+| **1.7.5** | **Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning**                       | **active — Phase 2 done; Phase 3A next**                                                                             |
+| **1.8**   | **Operations Workspace and Prompt Refinement**                                                          | `planned`                                                                                                            |
+| **1.9**   | **AI Documentation Improvement Cycles**                                                                 | `planned`                                                                                                            |
+| **2.0**   | **Agent Run Monitoring and Actions-Gated Merge Readiness**                                              | `planned`                                                                                                            |
+| **2.1**   | **Persistent Data Layer**                                                                               | `planned`                                                                                                            |
+| **2.2**   | **API Authentication, Network Security, Guided Onboarding, and GitHub App Integration**                | `planned`                                                                                                            |
+| **2.3**   | **Portfolio Analytics, Trend Visualization, and Distribution**                                          | `planned`                                                                                                            |
+| **2.4**   | **Agent Integration Protocol and AI Repair Loop**                                                       | `planned`                                                                                                            |
 
 > **Note on `.5` numbering.** Release 1.7.5 is a deliberate course-correction
 > release between 1.7 and 1.8 to re-center the product on its primary
-> mission before adding network/security or persistence work. The `.5`
+> mission before adding broader workflow and infrastructure layers. The `.5`
 > pattern should be reserved for similar course corrections; default new
 > work to integer minor releases.
 
@@ -107,29 +109,35 @@ Render the state inline on each milestone in italics, e.g.:
 
 ## 5. Active Release
 
-### Release 1.7.5 — Portfolio Mission Alignment and Value-Ranked Work Planning
+### Active release detail — 1.7.5 Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning
 
 **Status:** active. Phase 1 shipped 2026-04-25; Phase 2 shipped
-2026-04-26; Phase 3 is the next execution target.
+2026-04-26; Phase 3A is the next execution target.
 
 **Goal:** Re-center the product around its primary mission: assess the full
-local and GitHub repository collection, standardize repo readiness, create
-or repair missing roadmap contracts, rank the highest-value incomplete
-roadmap work, and prepare clear Copilot Agent prompts while reporting
-collection status in plain language.
+local and GitHub repository collection, store a stable ordered portfolio
+index, standardize repo readiness, create or repair missing roadmap
+contracts, rank the highest-value incomplete roadmap work, and prepare the
+dashboard signals needed for operator-driven execution.
 
 #### Product outcomes
 
 - Operators can see the overall state of the full repository collection
   without opening individual repos.
+- The app stores a canonical ordered local index of discovered repositories.
+- First scans produce a full portfolio baseline; later scans can operate as
+  differential scans against the local index.
 - Every repo has a visible lifecycle state: discovered, needs structure,
   needs README, needs roadmap, needs roadmap repair, ready for work queue,
-  running, completed, or monitored.
+  running, completed, monitored, archived, or parse-error.
+- Dashboard signals include README score, ROADMAP score, dirty worktree,
+  open PR count, GitHub Pages status, latest Actions state, created date,
+  updated date, and recommended next action.
+- Each repo has a clear documentation health signal that can be used later
+  by the Operations workspace and AI improvement cycle.
 - Repos without a roadmap have a guided path to create one from actual repo
   structure, documentation gaps, test coverage, and likely high-value work.
 - Incomplete roadmap items are ranked by value, not just by file order.
-- A Copilot Agent prompt can be reviewed and refined with clear context,
-  constraints, value rationale, and acceptance criteria before dispatch.
 - The app reports progress to the user as a collection-level operating
   picture, not only as individual modal results.
 
@@ -174,14 +182,6 @@ collection status in plain language.
       package/project manifest, and expected docs directory.
       *(state: smoke-tested)* — data-driven via
       [`backend/config/repo-structure-standards.json`](backend/config/repo-structure-standards.json).
-- [ ] Add a Portfolio Mission panel to the dashboard summarizing collection
-      state: total repos, local-only, GitHub-only, linked local+GitHub,
-      missing roadmap, weak roadmap, missing README, ready, running,
-      blocked, and completed. *(state: planned — Phase 3)*
-- [ ] Expand repo evaluation for missing roadmaps beyond hardening checks:
-      include likely feature opportunities, modernization work,
-      test/documentation improvements, security posture, and user-visible
-      value. *(state: planned — Phase 5)*
 - [x] Add a value scoring model for incomplete roadmap items using impact,
       unblock potential, risk reduction, repo maturity, effort estimate,
       dependency reduction, and recency. *(state: smoke-tested)* —
@@ -190,51 +190,96 @@ collection status in plain language.
       scoring config [`value-scoring.json`](backend/config/value-scoring.json),
       and additive `pendingItems` / `topValueItem` fields in
       `/api/portfolio/assessment`.
+- [ ] Create canonical ordered repository index at
+      `output/index/repos.index.json` with one normalized record per repo.
+      *(state: planned — Phase 3A)*
+- [ ] Normalize repository identity using local path, remote URL,
+      GitHub owner/repo, default branch, and current branch.
+      *(state: planned — Phase 3A)*
+- [ ] Add full scan artifact output under `output/index/scans/` so each
+      scan can be inspected, compared, and replayed for dashboard
+      debugging. *(state: planned — Phase 3A)*
+- [ ] Add differential scan mode that refreshes only repos whose local git
+      state, README, ROADMAP, GitHub metadata, PR status, Actions state, or
+      Pages state changed since the last index write.
+      *(state: planned — Phase 3B)*
+- [ ] Enrich portfolio assessment records with GitHub Pages status and
+      direct Pages URL when configured. *(state: planned — Phase 3B)*
+- [ ] Enrich portfolio assessment records with latest GitHub Actions run
+      status, conclusion, workflow name, and run timestamp.
+      *(state: planned — Phase 3B)*
+- [ ] Enrich portfolio assessment records with GitHub repository
+      `createdAt` and `updatedAt` timestamps. *(state: planned — Phase 3B)*
+- [ ] Add README score, ROADMAP score, Documentation Health score, and
+      dispatch-readiness explanation to each indexed repo record.
+      *(state: planned — Phase 3C)*
+- [ ] Add a Portfolio Mission panel to the dashboard summarizing collection
+      state: total repos, local-only, GitHub-only, linked local+GitHub,
+      missing roadmap, weak roadmap, missing README, ready, running,
+      blocked, completed, dirty worktrees, open PRs, GitHub Pages enabled,
+      and failing Actions. *(state: planned — Phase 3C)*
+- [ ] Update dashboard cards and portfolio summary panels to consume the
+      index-backed assessment model rather than scattered route responses.
+      *(state: planned — Phase 3C)*
+- [ ] Expand repo evaluation for missing roadmaps beyond hardening checks:
+      include likely feature opportunities, modernization work,
+      test/documentation improvements, security posture, and user-visible
+      value. *(state: planned — Phase 5)*
 - [ ] Show value score and rationale in Work Queue so the operator can
       understand why one repo or roadmap item is recommended before
       another. *(state: planned — Phase 4)*
-- [ ] Add a Prompt Refinement view that composes the Copilot Agent prompt
-      from repo assessment, selected roadmap item, acceptance criteria,
-      constraints, relevant docs, and value rationale; allow final operator
-      edits before dispatch. *(state: planned — Phase 6)*
+- [ ] Add prompt context packet foundation that combines README, ROADMAP,
+      repo assessment, selected roadmap item, acceptance criteria,
+      constraints, and value rationale for later prompt refinement.
+      *(state: planned — Phase 6)*
 - [ ] Add Collection Status Report export: a plain-language HTML/CSV report
       showing repo lifecycle states, blockers, next actions, and top
       recommended work. *(state: planned — Phase 7)*
 - [ ] Update Help and reference documentation so the north-star workflow is
       explicit: assess collection, standardize repos, create or repair
-      roadmap, rank work, refine prompt, dispatch, report progress.
-      *(state: planned — Phase 7)*
+      roadmap, rank work, refine prompt, dispatch, monitor, validate, and
+      report progress. *(state: planned — Phase 7)*
 
 #### Acceptance criteria
 
 - Every repo shown in the dashboard has one lifecycle state and one
   recommended next action.
+- A full scan creates `output/index/repos.index.json`.
+- A full scan writes an inspectable scan artifact under `output/index/scans/`.
+- A differential scan updates only repos whose relevant local or GitHub
+  state changed.
+- Dashboard records expose README score, ROADMAP score, Documentation
+  Health score, PR count, dirty state, Actions status, Pages status,
+  created date, updated date, lifecycle state, and recommended next action.
 - A repo with no roadmap can be evaluated into a roadmap draft that
   includes both hardening work and value-oriented feature/work suggestions.
 - Work Queue ranking explains why the top recommended item is valuable.
-- The prompt refinement screen shows the selected work item, repo context,
-  constraints, acceptance criteria, and value rationale before dispatch.
 - The collection report can answer: "What is the state of my repo
   collection, and what should I work on next?"
 
 #### Out of scope
 
-- API authentication and network hardening (Release 1.8).
-- SQLite persistence and historical trend storage (Release 1.9).
-- GitHub App OAuth setup (Release 2.1).
+- Full Operations workspace and prompt refinement UI (Release 1.8).
+- AI README/ROADMAP improvement cycles (Release 1.9).
+- Agent run monitoring and Actions-gated merge readiness (Release 2.0).
+- SQLite persistence and historical trend storage (Release 2.1).
+- API authentication, network hardening, onboarding, and GitHub App OAuth
+  (Release 2.2).
 - Fully autonomous work dispatch without operator review.
 
 #### Phase plan (within this release)
 
-| Phase | Scope | Status |
-|---|---|---|
-| 1. Assessment foundation | `RepoLifecycleState`, `Portfolio.Assessment.ps1`, `repo-structure-standards.json`, `GET /api/portfolio/assessment`, GitHub-vs-local coverage | **done — smoke-tested** (2026-04-25) |
-| 2. Value ranking | `Portfolio.ValueScorer.ps1`, `value-scoring.json`, value score on each pending item in the assessment response | **done — smoke-tested** (2026-04-26) |
-| 3. Portfolio Mission panel | New `PortfolioMissionPanel.tsx` consuming `/api/portfolio/assessment` | **next active target** |
-| 4. Work Queue value display | Value score column + rationale tooltip in `WorkQueueView.tsx`; rerank by value | planned |
-| 5. Expanded evaluator | Feature/modernization/security/test/doc opportunity findings beyond hardening | planned |
-| 6. Prompt refinement | Extend `RoadmapDispatchModal.tsx` with Value Rationale + Assessment Context | planned |
-| 7. Collection report + docs | `Portfolio.Report.ps1` HTML/CSV; update `HelpModal.tsx` and `docs/reference/` for the north-star workflow | planned |
+| Phase                               | Scope                                                                                                                                        | Status                               |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| Phase 1: Assessment foundation            | `RepoLifecycleState`, `Portfolio.Assessment.ps1`, `repo-structure-standards.json`, `GET /api/portfolio/assessment`, GitHub-vs-local coverage | **done — smoke-tested** (2026-04-25) |
+| Phase 2: Value ranking                    | `Portfolio.ValueScorer.ps1`, `value-scoring.json`, value score on each pending item in the assessment response                               | **done — smoke-tested** (2026-04-26) |
+| Phase 3A: Ordered portfolio index         | `output/index/repos.index.json`, normalized repo identity, scan artifacts under `output/index/scans/`                                        | **next active target**               |
+| Phase 3B: GitHub metadata enrichment      | PR detail, Pages status/link, latest Actions status, created/updated timestamps                                                              | planned                              |
+| Phase 3C: Dashboard signal model          | Portfolio Mission panel, Documentation Health, dashboard badges, index-backed assessment display                                             | planned                              |
+| Phase 4: Work Queue value display         | Value score column + rationale tooltip in `WorkQueueView.tsx`; rerank by value                                                               | planned                              |
+| Phase 5: Expanded evaluator               | Feature/modernization/security/test/doc opportunity findings beyond hardening                                                                 | planned                              |
+| Phase 6: Prompt context packet foundation | Backend packet that combines README, ROADMAP, assessment, value rationale, and constraints for later prompt refinement                       | planned                              |
+| Phase 7: Collection report + docs         | `Portfolio.Report.ps1` HTML/CSV; update `HelpModal.tsx` and `docs/reference/` for the north-star workflow                                   | planned                              |
 
 ---
 
@@ -292,85 +337,207 @@ routes.
 
 #### Out of scope
 
-- Historical trend visualization (deferred to Release 2.2).
+- Historical trend visualization (deferred to Release 2.3).
 - Charting library integration beyond a single SVG sparkline.
 
 ---
 
-### Release 1.8 — API Authentication and Network Security
+### Release 1.8 — Operations Workspace and Prompt Refinement
 
-**Goal:** Harden the API host so it can be safely exposed beyond
-`127.0.0.1` without risk of unauthenticated access or information
-disclosure.
+**Goal:** Add a repo-specific Operations workspace that turns portfolio
+signals into actionable execution context. Operators can select a repo,
+inspect its dashboard signals, review README and ROADMAP context, compose a
+coding-agent prompt, refine it, and prepare it for dispatch.
 
 #### Product outcomes
 
-- The API requires a valid token for all non-health routes.
-- The application can be run on a local network and shared with teammates
-  without exposing an open, unauthenticated API.
-- Security-conscious operators can configure HTTPS for local or network
-  deployment.
+- Operators can move from portfolio overview to repo-specific detail
+  without leaving the app.
+- Every selected repo shows documentation health, roadmap maturity, dirty
+  worktree state, open PRs, Actions state, GitHub Pages status, and
+  recommended next action.
+- Operators can generate a structured coding-agent prompt from repo
+  context instead of hand-writing prompts from scratch.
+- Prompt refinement remains operator-reviewed and preview-first.
 
 #### Engineering milestones
 
-- [ ] Add `auth.apiKey` field to `settings.json` schema; on startup, if
-      set, all routes except `/health/live` and `/health/ready` require
-      `Authorization: Bearer <key>` or `X-Api-Key: <key>`; return 401 on
-      mismatch. *(state: planned)*
-- [ ] Add `auth.apiKeyEnvVar` alternative so the key can be injected via
-      environment variable without storing it in `settings.json`.
+- [ ] Add Operations tab with repo selection table for indexed portfolio
+      records. *(state: planned)*
+- [ ] Add repo detail workspace showing local path, GitHub URL, default branch,
+      current branch, dirty state, last commit, created date, updated date,
+      README score, ROADMAP score, lifecycle state, and recommended next
+      action. *(state: planned)*
+- [ ] Add README and ROADMAP viewers inside the repo detail workspace.
       *(state: planned)*
-- [ ] Generate a random API key on first startup if `auth.apiKey` and
-      `auth.apiKeyEnvVar` are both unset; write the generated key to
-      `backend/modules/output/runtime/api-key.txt` with a startup log
-      message pointing to it. *(state: planned)*
-- [ ] Add CORS configuration to `settings.json`: `cors.allowedOrigins`
-      array (default `["http://localhost:7000", "http://127.0.0.1:7000"]`);
-      replace the current `Access-Control-Allow-Origin: *` with the
-      configured origins. *(state: planned)*
-- [ ] Implement per-IP request rate limiting: track request counts in a
-      script-scoped hashtable; return 429 with `Retry-After` header when
-      any single IP exceeds `security.maxRequestsPerMinute` (default 300).
+- [ ] Add GitHub panel showing open PRs, latest Actions status, and
+      GitHub Pages status/link. *(state: planned)*
+- [ ] Add audit findings panel showing README findings, ROADMAP findings,
+      structure findings, and dispatch blockers. *(state: planned)*
+- [ ] Add Prompt Builder panel that composes a coding-agent prompt from
+      selected roadmap item, README summary, ROADMAP context, audit
+      findings, repo constraints, acceptance criteria, and value rationale.
       *(state: planned)*
-- [ ] Add `network.bindAddress` to `settings.json` (default `127.0.0.1`);
-      validate that non-loopback bind requires `auth.apiKey` or
-      `auth.apiKeyEnvVar` to be set, and refuse to start without it.
-      *(state: planned)*
-- [ ] Implement TLS option: if `tls.certPath` and `tls.keyPath` are set in
-      `settings.json`, wrap the `TcpListener` with `SslStream` using the
-      provided certificate; serve HTTPS on the configured port.
-      *(state: planned)*
-- [ ] Add `GET /api/auth/verify` route that returns 200 `{ valid: true }`
-      for authenticated requests; used by frontend to confirm auth state on
-      load. *(state: planned)*
-- [ ] Frontend: read `VITE_API_KEY` from build env or prompt on first load
-      if `/api/auth/verify` returns 401; store in `sessionStorage`; include
-      in all API requests as `X-Api-Key` header. *(state: planned)*
-- [ ] Smoke test: unauthenticated `GET /api/status` returns 401 when
-      `auth.apiKey` is configured; authenticated request returns 200.
+- [ ] Add editable prompt preview before dispatch. *(state: planned)*
+- [ ] Add custom operator instruction field that appends additional
+      constraints or direction to the generated prompt. *(state: planned)*
+- [ ] Store prompt history per repo, including generated previews, edits,
+      and dispatch records. *(state: planned)*
+- [ ] Add `GET /api/operations/repos` route that returns the indexed repo
+      list optimized for the Operations tab. *(state: planned)*
+- [ ] Add `GET /api/operations/repos/{repoId}` route that returns full
+      repo detail, documentation context, GitHub metadata, audit findings,
+      and dispatch context. *(state: planned)*
+- [ ] Add `POST /api/operations/prompt/preview` route that returns the
+      generated prompt, source context summary, and warnings.
       *(state: planned)*
 
 #### Acceptance criteria
 
-- An operator who sets `auth.apiKey` and `network.bindAddress: 0.0.0.0`
-  can share the dashboard URL with a teammate on the same network and
-  require authentication.
-- The application refuses to bind to a non-loopback address without auth
-  configured.
-- All existing smoke tests pass with a configured API key.
+- Selecting a repo in Operations opens a complete repo-specific detail
+  workspace.
+- The repo detail view shows the same core metrics as the main dashboard,
+  but scoped to one repo.
+- The prompt builder produces a complete coding-agent prompt from README,
+  ROADMAP, audit findings, and selected work item.
+- The operator can edit the generated prompt before dispatch.
+- No prompt is sent to any agent without explicit operator action.
 
 #### Out of scope
 
-- OAuth / GitHub App authentication (deferred to Release 2.1).
-- Role-based access control.
+- AI-generated README/ROADMAP improvement cycles; handled in Release 1.9.
+- Agent-run monitoring and merge readiness; handled in Release 2.0.
 
 ---
 
-### Release 1.9 — Persistent Data Layer
+### Release 1.9 — AI Documentation Improvement Cycles
+
+**Goal:** Add provider-backed, preview-first AI improvement cycles for
+README.md and ROADMAP.md so operators can repair weak documentation,
+standardize repos, and improve dispatch readiness without direct
+unreviewed file mutation.
+
+#### Product outcomes
+
+- Operators can compare current README/ROADMAP content against a proposed
+  improved version.
+- The app explains what changed and why.
+- Operators can run multiple improvement cycles using built-in templates or
+  a custom improvement prompt.
+- OpenAI and Anthropic can be supported through provider adapters.
+
+#### Engineering milestones
+
+- [ ] Define AI provider adapter contract for documentation improvement.
+      *(state: planned)*
+- [ ] Add OpenAI provider adapter using configured environment variable or
+      settings path. *(state: planned)*
+- [ ] Add Anthropic provider adapter using configured environment variable
+      or settings path. *(state: planned)*
+- [ ] Add built-in README improvement templates: product README,
+      developer/operator README, open-source README, and portfolio showcase
+      README. *(state: planned)*
+- [ ] Add built-in ROADMAP improvement templates: release-oriented roadmap,
+      roadmap contract format, agent-dispatch-ready roadmap, and
+      recovery/repair roadmap. *(state: planned)*
+- [ ] Add `POST /api/ai/docs/improve/preview` route that returns current
+      content, proposed content, change summary, estimated score movement,
+      and warnings. *(state: planned)*
+- [ ] Add side-by-side diff viewer for current vs proposed README/ROADMAP.
+      *(state: planned)*
+- [ ] Add improvement cycle history per repo. *(state: planned)*
+- [ ] Add custom improvement prompt field for additional refinement cycles.
+      *(state: planned)*
+- [ ] Add explicit apply action for accepted changes with backup creation
+      and restore metadata. *(state: planned)*
+- [ ] Add `POST /api/ai/docs/improve/apply` route that writes accepted
+      changes only after explicit operator approval. *(state: planned)*
+- [ ] Add `GET /api/ai/docs/improve/history` route for repo-specific
+      improvement history. *(state: planned)*
+
+#### Acceptance criteria
+
+- A README improvement preview shows current content, proposed content,
+  and change summary side by side.
+- A ROADMAP improvement preview shows current content, proposed content,
+  and change summary side by side.
+- The operator can run an additional cycle using a custom improvement
+  prompt.
+- No README.md or ROADMAP.md file is modified without explicit apply.
+- AI-provider failures degrade to clear operator-facing errors.
+
+#### Out of scope
+
+- Automatic PR creation for documentation repairs; deferred to Release 2.4.
+- Autonomous documentation rewriting without human approval.
+
+---
+
+### Release 2.0 — Agent Run Monitoring and Actions-Gated Merge Readiness
+
+**Goal:** Monitor coding-agent execution after dispatch, associate agent
+work with branches and pull requests, track GitHub Actions, and present a
+merge-readiness signal that requires successful validation before merge.
+
+#### Product outcomes
+
+- Operators can see whether an agent task is active, completed, failed, or
+  blocked.
+- Agent-created PRs are associated with the original repo, roadmap item,
+  prompt, and dispatch record.
+- GitHub Actions status is part of the execution workflow.
+- The app blocks merge-readiness when validation evidence is missing.
+
+#### Engineering milestones
+
+- [ ] Add agent-run ledger model with runId, repoId, promptId, selected
+      roadmap item, provider/tool, branch, PR URL, status, createdAt,
+      updatedAt, and outcome. *(state: planned)*
+- [ ] Add `GET /api/agent-runs` route for active, completed, failed, and
+      blocked runs. *(state: planned)*
+- [ ] Add `GET /api/agent-runs/{runId}` route with full run detail.
+      *(state: planned)*
+- [ ] Add `POST /api/agent-runs/{runId}/refresh` route that refreshes
+      branch, PR, and Actions state. *(state: planned)*
+- [ ] Add operator-visible Actions refresh control in the Operations
+      workspace and run detail views. *(state: planned)*
+- [ ] Associate Copilot/agent-created branches and PRs with dispatch
+      records using branch naming, PR metadata, or stored task fingerprints.
+      *(state: planned)*
+- [ ] Add merge-readiness evaluator. *(state: planned)*
+- [ ] Block merge readiness when the repo has a dirty worktree, no PR,
+      failing or pending Actions, merge conflicts, missing validation
+      evidence, or unresolved audit blockers. *(state: planned)*
+- [ ] Add Actions-gated status panel to Operations tab. *(state: planned)*
+- [ ] Add operator-controlled merge action only after merge readiness is
+      satisfied. *(state: planned)*
+- [ ] Add `GET /api/merge-readiness/{repoId}` route. *(state: planned)*
+- [ ] Add `POST /api/merge-readiness/{repoId}/evaluate` route.
+      *(state: planned)*
+
+#### Acceptance criteria
+
+- The app shows active, completed, failed, and blocked agent runs.
+- A dispatched task can be traced to its prompt, repo, branch, PR, and
+  Actions result.
+- Merge readiness is false while Actions are failing or pending.
+- Merge readiness is false when the PR has conflicts or no validation
+  evidence.
+- The app never auto-merges without explicit operator action.
+
+#### Out of scope
+
+- Fully autonomous agent execution.
+- Multi-agent scheduling and distributed work claiming; deferred to 2.4.
+
+---
+
+### Release 2.1 — Persistent Data Layer
 
 **Goal:** Replace JSON file storage with a SQLite database for the
-execution ledger, maturity history, and operations log so the application
-is reliable at scale and supports time-series queries.
+execution ledger, maturity history, operations log, portfolio index history,
+and merge-readiness snapshots so the application is reliable at scale and
+supports time-series queries.
 
 #### Product outcomes
 
@@ -380,47 +547,29 @@ is reliable at scale and supports time-series queries.
   dashboard.
 - The operations log is queryable by time range, level, and keyword
   without reading the entire file.
+- Portfolio index and differential scan history can be queried over time.
 - The application handles portfolios of 200+ repos without file I/O
   degradation.
 
 #### Engineering milestones
 
-- [ ] Add `System.Data.SQLite` via the `PSSQLite` PowerShell module or
-      direct .NET assembly; add dependency check to startup with a clear
-      error message if unavailable. *(state: planned)*
-- [ ] Create `Initialize-AppDatabase` function that creates `output/app.db`
-      with schema: `execution_entries` table, `execution_history` table,
-      `maturity_snapshots` table (repoName, score, level, capturedAt),
-      `ops_log` table (ts, level, msg). *(state: planned)*
-- [ ] Migrate `Execution.Ledger.ps1` to read/write `execution_entries` and
-      `execution_history` via parameterized SQL queries; remove
-      `execution-ledger.json` write path. *(state: planned)*
-- [ ] Add daily maturity snapshot write: after every roadmap audit scan,
-      insert a row into `maturity_snapshots` for each repo with its
-      current score and level. *(state: planned)*
-- [ ] Migrate `Write-HostLog` JSONL append to an INSERT into `ops_log`;
-      keep `Invoke-TrimOpsLog` as a fallback for non-database mode;
-      `GET /api/log/tail` queries `ops_log` with `ORDER BY ts DESC LIMIT ?`.
+- [ ] Add SQLite dependency detection and initialize `output/app.db` with
+      execution, maturity, ops-log, portfolio-index, repo-signal,
+      differential-scan, and merge-readiness tables. *(state: planned)*
+- [ ] Migrate execution ledger and ops log reads/writes from JSON files to
+      parameterized SQL queries, keeping JSON export only as a debugging
+      artifact. *(state: planned)*
+- [ ] Persist maturity snapshots, portfolio index history, README score,
+      ROADMAP score, Documentation Health, GitHub metadata, and
+      merge-readiness snapshots over time. *(state: planned)*
+- [ ] Add differential scan history storage so the dashboard can explain
+      what changed between scans. *(state: planned)*
+- [ ] Add history and trend routes for roadmap maturity and aggregate
+      portfolio state, plus a repo-row sparkline consumer. *(state: planned)*
+- [ ] Add first-run database migration from existing JSON ledger data.
       *(state: planned)*
-- [ ] Add `GET /api/roadmap/maturity-history` route: accepts
-      `?repoName=&days=30` query params; queries `maturity_snapshots`;
-      returns array of `{ capturedAt, score, level }` for charting.
-      *(state: planned)*
-- [ ] Add maturity trend sparkline to the repository grid row: fetch last
-      14 days of snapshots and render a 14-point SVG sparkline.
-      *(state: planned)*
-- [ ] Add `GET /api/portfolio/trend` route: returns aggregate portfolio
-      stats by day — count of repos at each maturity level — for the last
-      90 days. *(state: planned)*
-- [ ] Write `Invoke-DatabaseMigration.ps1` that detects the existing JSON
-      ledger file and imports its entries into the SQLite database on
-      first run; skips if DB already populated. *(state: planned)*
-- [ ] Keep JSON file output as an optional export: `POST /api/export`
-      still writes JSON/CSV artifacts; the source of truth is SQLite.
-      *(state: planned)*
-- [ ] Smoke test: write 100 execution history records via the ledger API,
-      read them back via `GET /api/execution/metrics`; assert counts are
-      correct. *(state: planned)*
+- [ ] Smoke test the SQLite-backed ledger and metrics read path under
+      repeated writes. *(state: planned)*
 
 #### Acceptance criteria
 
@@ -430,6 +579,8 @@ is reliable at scale and supports time-series queries.
   ordered array of score snapshots.
 - The ops log is queryable by time range via
   `GET /api/log/tail?since=<ISO>&level=ERROR`.
+- Differential scan history can explain which repo signals changed since
+  the previous scan.
 - All existing smoke tests pass against the SQLite backend.
 
 #### Out of scope
@@ -439,153 +590,65 @@ is reliable at scale and supports time-series queries.
 
 ---
 
-### Release 2.0 — Complete the Doc Review Pipeline
+### Release 2.2 — API Authentication, Network Security, Guided Onboarding, and GitHub App Integration
 
-**Goal:** Deliver the Validate and Complete modes of the documentation
-review pipeline that are currently scaffolded but not implemented, and
-implement the Clone and Archive UI actions.
-
-#### Product outcomes
-
-- Operators can validate whether a documentation improvement was actually
-  applied correctly.
-- Operators can mark a documentation review cycle as complete and record
-  the outcome.
-- Repositories can be cloned from GitHub into a configured local workspace
-  from the UI.
-- Stale or archived repositories can be marked as inactive so they exit
-  the work queue.
-
-#### Engineering milestones
-
-- [ ] Implement `Validate` mode in `Invoke-DocReviewExecution.ps1`: re-run
-      the doc standards audit against the repo after a Copilot task has
-      run; compare findings before and after; return a structured diff of
-      resolved vs remaining findings. *(state: scaffolded)*
-- [ ] Implement `Complete` mode in `Invoke-DocReviewExecution.ps1`: accept
-      a `--Outcome` parameter (`improved`, `skipped`, `deferred`); write a
-      completion record to `output/docreview/history.jsonl` with repoName,
-      outcome, completedAt, and finding summary. *(state: scaffolded)*
-- [ ] Add `POST /api/docreview/validate` route that calls Validate mode
-      for a given repo and returns before/after finding comparison.
-      *(state: planned)*
-- [ ] Add `POST /api/docreview/complete` route that calls Complete mode
-      and returns the written history record. *(state: planned)*
-- [ ] Add `GET /api/docreview/history` route that reads
-      `output/docreview/history.jsonl` and returns the last 100 completion
-      records. *(state: planned)*
-- [ ] Implement Clone action: `POST /api/clone` accepts
-      `{ repoFullName, targetRoot }`, validates `targetRoot` is in
-      `inventory.localRoots`, runs `gh repo clone {repoFullName}
-      {targetPath}`, returns the local path; enable Clone button in
-      `ActionBar.tsx` and set `cloneImplemented = true`.
-      *(state: scaffolded)*
-- [ ] Implement Archive action: `POST /api/archive` accepts
-      `{ repoName }`, writes an `archived: true` flag to the repo's
-      status cache entry, excludes it from the work queue and dispatch
-      queue; enable Archive button in `ActionBar.tsx` and set
-      `archiveImplemented = true`. *(state: scaffolded)*
-- [ ] Add `GET /api/status?includeArchived=true` filter support so
-      archived repos remain visible in a dedicated "Archived" view but
-      are excluded from default scans. *(state: planned)*
-- [ ] Add DocReview history tab to `DocReviewModal` showing completion
-      records from `GET /api/docreview/history`. *(state: planned)*
-- [ ] Smoke test: call Validate mode on a repo that has had a doc
-      standardization applied; assert the before/after diff contains at
-      least one resolved finding. *(state: planned)*
-
-#### Acceptance criteria
-
-- Validate mode returns a structured before/after finding comparison with
-  `resolvedCount` and `remainingCount`.
-- Complete mode writes a history record that is retrievable via
-  `GET /api/docreview/history`.
-- Clone button clones a repo and triggers a status cache refresh.
-- Archive button removes the repo from the active work queue without
-  deleting it from disk.
-
-#### Out of scope
-
-- Bulk archive of multiple repos in one action.
-- Restoring archived repos from the UI (use `settings.json` edit for now).
-
----
-
-### Release 2.1 — Guided Onboarding and GitHub App Integration
-
-**Goal:** Replace the manual PAT + settings.json setup with a guided
-first-run experience and a proper GitHub App OAuth flow so any engineer
-can go from zero to running in under five minutes.
+**Goal:** Harden the API host and replace manual PAT + settings.json setup
+with a guided first-run experience and a proper GitHub App OAuth path so an
+engineer can safely go from zero to running in under five minutes.
 
 #### Product outcomes
 
+- The API requires a valid token for all non-health routes when configured.
+- The application can be run on a local network and shared with teammates
+  without exposing an open, unauthenticated API.
 - A first-time user can complete setup without reading any documentation.
-- The application authenticates with GitHub via OAuth rather than a
-  Personal Access Token.
-- The setup flow validates each prerequisite before proceeding and
-  surfaces a clear error for any failure.
+- The application can authenticate with GitHub via OAuth or configured PAT.
+- The setup flow validates each prerequisite before proceeding and surfaces
+  clear errors for failures.
 
 #### Engineering milestones
 
-- [ ] Add startup detection: if `backend/config/settings.json` is missing
-      or has `schemaVersion` absent, redirect all non-health API routes to
-      `GET /setup/status` which returns the list of incomplete setup
-      steps. *(state: planned)*
-- [ ] Implement `GET /setup/status` route: checks prerequisites in order —
-      `pwsh` version ≥ 7.0, Node.js version ≥ 18, `gh` CLI present,
-      `GITHUB_TOKEN` or GitHub App token set, at least one
-      `inventory.localRoots` path exists and is readable; returns array of
-      `{ step, status, message }`. *(state: planned)*
-- [ ] Implement `POST /setup/config` route: accepts partial settings
-      object, merges with defaults, validates, and writes
-      `backend/config/settings.json`; returns validation errors for each
-      invalid field. *(state: planned)*
-- [ ] Build `SetupWizard` React component: four-step flow —
-      (1) prerequisites check with per-item status badges,
-      (2) local repo roots picker with directory browser,
-      (3) GitHub authentication method selection,
-      (4) first scan confirmation; shown when `GET /setup/status` reports
-      incomplete steps. *(state: planned)*
-- [ ] Implement `GET /setup/prerequisites` route: returns per-tool version
-      check results for `pwsh`, `node`, `npm`, `git`, `gh`; includes
-      download URL for each missing tool. *(state: planned)*
-- [ ] Register a GitHub App (owner: application developer); add
-      `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_PATH`, and
-      `GITHUB_APP_INSTALLATION_ID` to `settings.json` schema as
-      alternatives to `secrets.gitHubTokenEnvVar`. *(state: planned)*
-- [ ] Add `GET /auth/github/callback` route: receives OAuth code from
-      GitHub, exchanges for installation token via GitHub App API, stores
-      token in `backend/modules/output/runtime/github-token.json` with
-      expiry; refresh automatically when expired. *(state: planned)*
-- [ ] Add `GET /auth/status` route: returns
-      `{ method: "pat" | "app" | "none", authenticated: bool, scopes: [],
-      rateLimitRemaining: int }`. *(state: planned)*
-- [ ] Update all GitHub API calls in the API host to read the token from
-      the App token file first, falling back to the PAT env var, then to
-      unauthenticated. *(state: planned)*
-- [ ] Smoke test: run `GET /setup/status` against a fresh
-      `settings.json`-less environment; assert all steps return
-      `incomplete`; post a valid config; assert all steps return
-      `complete`. *(state: planned)*
+- [ ] Add settings-driven API auth and security controls: explicit API key
+      or env-var key, first-run key generation, scoped CORS, rate limiting,
+      non-loopback bind checks, and optional TLS. *(state: planned)*
+- [ ] Add frontend and API auth verification flow so the dashboard can
+      confirm auth state and send authenticated requests consistently.
+      *(state: planned)*
+- [ ] Add guided setup detection plus `GET /setup/status`,
+      `GET /setup/prerequisites`, and `POST /setup/config` for a
+      first-run configuration workflow. *(state: planned)*
+- [ ] Add a four-step Setup Wizard for prerequisites, local roots,
+      GitHub auth choice, and first-scan confirmation. *(state: planned)*
+- [ ] Add GitHub App integration settings, callback flow, token refresh,
+      auth status route, and token selection precedence over PATs.
+      *(state: planned)*
+- [ ] Smoke test authenticated API access and first-run setup completion.
+      *(state: planned)*
 
 #### Acceptance criteria
 
+- An operator who sets `auth.apiKey` and `network.bindAddress: 0.0.0.0`
+  can share the dashboard URL with a teammate on the same network and
+  require authentication.
+- The application refuses to bind to a non-loopback address without auth
+  configured.
 - A fresh install with no `settings.json` redirects the user to the setup
   wizard on first browser open.
 - Completing the wizard writes a valid `settings.json` and triggers the
   first repo scan without manual steps.
 - GitHub App authentication produces a working token that is refreshed
   automatically before expiry.
+- All existing smoke tests pass with a configured API key.
 
 #### Out of scope
 
-- GitHub Marketplace listing (deferred to Release 2.2).
-- Multi-installation GitHub App support (one installation per running
-  instance).
+- Role-based access control.
+- GitHub Marketplace listing.
+- Multi-installation GitHub App support.
 
 ---
 
-### Release 2.2 — Portfolio Analytics, Trend Visualization, and Distribution
+### Release 2.3 — Portfolio Analytics, Trend Visualization, and Distribution
 
 **Goal:** Add historical trend charts, a portfolio health digest, and
 distribution artifacts that make the application shareable and
@@ -604,40 +667,17 @@ self-promoting.
 
 #### Engineering milestones
 
-- [ ] Add `PortfolioTrendChart` React component that fetches
-      `GET /api/portfolio/trend` and renders a stacked area chart (L0–L4
-      counts per day for last 90 days) using a lightweight charting
-      library (e.g., Recharts). *(state: planned)*
-- [ ] Add `MaturitySparkline` component in the repo grid row: fetches
-      `GET /api/roadmap/maturity-history?repoName=X&days=14` and renders a
-      14-point SVG path showing score trend. *(state: planned)*
-- [ ] Add `POST /api/digest/send` route: computes portfolio KPIs (total
-      repos, count per maturity level, repos that improved this week,
-      repos that regressed, top 3 dispatch-ready repos) and fires
-      `Send-NotificationEvent` with `event: digest.weekly` and the
-      computed payload. *(state: planned)*
-- [ ] Add `scanning.weeklyDigestWebhook` to `settings.json` schema; when
-      set, `Register-ScheduledTasks.Template.ps1` registers a weekly Task
-      Scheduler job that calls `POST /api/digest/send`. *(state: planned)*
-- [ ] Write `action.yml` for a GitHub Action named
-      `roadmap-audit-action`: accepts inputs `roadmap-path`,
-      `min-maturity-level`; calls the roadmap contract auditor PowerShell
-      module; outputs `maturity-score`, `maturity-level`,
-      `findings-count`; posts a check run to the PR with the audit
-      result. *(state: planned)*
-- [ ] Extract `standards/roadmap/` into a standalone
-      `roadmap-contract-spec` directory with its own `README.md`,
-      `SPEC.md`, version file (`spec-version: 1.0`), and MIT license;
-      structure it so it can be published as a separate GitHub
-      repository. *(state: planned)*
-- [ ] Add `GET /api/portfolio/badge` route: returns an SVG badge showing
-      the portfolio's average maturity score (e.g.,
-      `roadmap maturity | L2.8`) suitable for embedding in a README.
+- [ ] Add portfolio trend and repo-row sparkline visualizations backed by
+      maturity history and `GET /api/portfolio/trend`. *(state: planned)*
+- [ ] Add weekly digest generation plus scheduled webhook delivery for
+      portfolio KPIs and top candidate repos. *(state: planned)*
+- [ ] Package a `roadmap-audit-action` GitHub Action that runs the
+      roadmap auditor and posts PR check results. *(state: planned)*
+- [ ] Extract the roadmap contract standard into a standalone,
+      publishable spec directory. *(state: planned)*
+- [ ] Add portfolio and per-repo SVG badge routes for maturity display.
       *(state: planned)*
-- [ ] Add `GET /api/roadmap/badge/{repoName}` route: returns per-repo SVG
-      badge showing current maturity level and score. *(state: planned)*
-- [ ] Smoke test: `GET /api/portfolio/trend?days=7` returns an array of 7
-      daily entries each with `{ date, l0, l1, l2, l3, l4 }`.
+- [ ] Smoke test the trend route response shape for daily rollups.
       *(state: planned)*
 
 #### Acceptance criteria
@@ -646,10 +686,10 @@ self-promoting.
   days of history after 7 days of operation.
 - `POST /api/digest/send` fires a webhook payload that includes
   `totalRepos`, `byLevel`, `improvedThisWeek`, and `topCandidates`.
-- The GitHub Action runs in a GitHub-hosted runner, audits a roadmap
-  file, and posts a passing or failing check run.
-- The roadmap contract spec directory is self-contained and can be
-  copied to a new repository without modification.
+- The GitHub Action runs in a GitHub-hosted runner, audits a roadmap file,
+  and posts a passing or failing check run.
+- The roadmap contract spec directory is self-contained and can be copied
+  to a new repository without modification.
 
 #### Out of scope
 
@@ -659,7 +699,7 @@ self-promoting.
 
 ---
 
-### Release 2.3 — Agent Integration Protocol and AI Repair Loop
+### Release 2.4 — Agent Integration Protocol and AI Repair Loop
 
 **Goal:** Publish a formal machine-readable API contract that AI coding
 agents can query before starting work, and implement an AI-driven repair
@@ -673,50 +713,23 @@ for human review.
   the next task is.
 - Operators can trigger an AI-generated roadmap or README repair that
   opens a GitHub PR for review — no direct file mutation.
-- The application becomes infrastructure that AI tools depend on, not
-  just a dashboard humans look at.
+- The application becomes infrastructure that AI tools depend on, not just
+  a dashboard humans look at.
 
 #### Engineering milestones
 
-- [ ] Define and publish `GET /api/v1/agent/readiness/{repoName}` route
-      with stable contract: returns
-      `{ schemaVersion: "1.0", repoName, dispatchSafe: bool, maturityLevel,
-      maturityScore, selectedTask: { text, section, tags }, constraints:
-      [], auditFindings: [], nextSteps: [] }`; version the contract with a
-      `schemaVersion` field; treat as a stable public API.
+- [ ] Publish stable `/api/v1/agent/*` readiness, queue, claim, and
+      complete routes with schema-versioned task packets for agent use.
       *(state: planned)*
-- [ ] Add `GET /api/v1/agent/queue` route: returns the top 5
-      dispatch-ready repos as an ordered list with per-repo readiness
-      packets; designed for agents that self-assign rather than being
-      told which repo to work on. *(state: planned)*
-- [ ] Add `POST /api/v1/agent/claim/{repoName}` route: atomically marks a
-      repo as `running` in the execution ledger and returns the full task
-      packet; rejects if already claimed. *(state: planned)*
-- [ ] Add `POST /api/v1/agent/complete/{repoName}` route: accepts
-      `{ runId, outcome, summary }`; marks the task complete; triggers a
-      completion-preview diff for the roadmap. *(state: planned)*
-- [ ] Implement `Invoke-AiRepairSubmission` function: takes a roadmap
-      repair preview, creates a feature branch in the repo via `gh`,
-      commits the proposed content, and opens a PR with the diff and
-      audit finding context as the PR body; never pushes to the default
-      branch directly. *(state: planned)*
-- [ ] Add `POST /api/roadmap/repair/submit-pr` route: calls
-      `Invoke-AiRepairSubmission` with the current repair preview for the
-      given repo; returns the PR URL. *(state: planned)*
-- [ ] Implement `Invoke-AiReadmeSubmission` function: equivalent to
-      `Invoke-AiRepairSubmission` but for README standardization
-      previews. *(state: planned)*
-- [ ] Add `POST /api/readme/standardize/submit-pr` route: calls
-      `Invoke-AiReadmeSubmission`; returns the PR URL. *(state: planned)*
-- [ ] Add `SubmitPR` button to `RoadmapRepairModal` and
-      `ReadmeStandardizationModal` that calls the respective submit-pr
-      routes. *(state: planned)*
-- [ ] Publish OpenAPI 3.1 spec for all `/api/v1/agent/*` routes as
-      `docs/reference/agent-api.yaml`. *(state: planned)*
-- [ ] Smoke test: call `GET /api/v1/agent/readiness/{repoName}` for a
-      repo with a known maturity level; assert `schemaVersion`,
-      `dispatchSafe`, `maturityLevel`, and `selectedTask.text` are all
-      present. *(state: planned)*
+- [ ] Add AI repair and README-standardization PR submission functions and
+      matching submit-pr routes that always work through review branches.
+      *(state: planned)*
+- [ ] Add submit-PR actions to the roadmap and README repair modals.
+      *(state: planned)*
+- [ ] Publish OpenAPI 3.1 documentation for the agent API contract.
+      *(state: planned)*
+- [ ] Smoke test the readiness contract shape and concurrent claim
+      behavior. *(state: planned)*
 
 #### Acceptance criteria
 
@@ -743,17 +756,34 @@ Continuous, not release-scoped:
 
 - [x] Strengthen API contract tests for all routes and error categories.
 - [x] Cap or roll `operations.jsonl` with configurable retention.
-- [ ] Expand smoke coverage around launcher, health, roadmap parsing,
-      contract audit, repair preview, docs-audit, and task history flows.
+- [ ] Maintain a stable repository identity model across local path,
+      GitHub remote URL, owner/repo, branch, and display name.
       *(state: planned)*
+- [ ] Keep all write operations preview-first unless the operator performs
+      an explicit apply, dispatch, submit-PR, or merge action.
+      *(state: planned)*
+- [ ] Ensure every dashboard signal can explain its source: local git,
+      GitHub API, roadmap audit, README audit, structure audit, AI preview,
+      or agent-run ledger. *(state: planned)*
+- [ ] Add stale-cache diagnostics for mismatches between docs-audit,
+      roadmap-audit, portfolio-assessment, and index-backed records.
+      *(state: planned)*
+- [ ] Add scan performance budget logging for large repo roots: discovery
+      time, git status time, GitHub API time, audit time, and index write
+      time. *(state: planned)*
+- [ ] Expand smoke coverage around launcher, health, roadmap parsing,
+      contract audit, repair preview, docs-audit, task history,
+      Operations workspace, AI improvement preview, agent-run monitoring,
+      and merge-readiness flows. *(state: planned)*
 - [ ] Add incremental scan mode for large repo roots (skip unchanged
       directories where safe). *(state: planned)*
 - [ ] Improve cache invalidation and scan performance for large local
       inventories. *(state: planned)*
 - [ ] Keep structured logs rich enough to diagnose scan, parse, normalize,
-      audit, preview, apply, and start failures. *(state: planned)*
-- [ ] Continue improving operator-facing documentation as workflows
-      evolve. *(state: planned)*
+      audit, preview, apply, start, monitor, refresh, and merge-readiness
+      failures. *(state: planned)*
+- [ ] Continue improving operator-facing documentation as workflows evolve.
+      *(state: planned)*
 - [ ] Keep rule packs and schemas data-driven where practical so standards
       can evolve without broad code rewrites. *(state: planned)*
 
@@ -763,13 +793,21 @@ Continuous, not release-scoped:
 
 The full list lives in
 [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md).
-Headline guardrails for the active release:
+Headline guardrails for the active release and near-term roadmap:
 
 - Do not auto-dispatch tasks without a visible readiness model.
 - Do not silently mark roadmap items complete based only on code churn.
 - Prefer preview-first workflows before write-back or autonomous mutation.
 - Preserve genuine completion history when rewriting roadmaps.
 - Enforce L3+ roadmap maturity before any Copilot dispatch.
+- Do not treat an AI-improved README or ROADMAP as accepted until the
+  operator reviews the side-by-side diff and explicitly applies it.
+- Do not show merge readiness unless the app can identify the PR, latest
+  Actions result, validation evidence, and unresolved blockers.
+- Do not let dashboard badges become decorative; every badge must drill
+  into the source data or explanation that produced it.
+- Do not merge automatically; merge must remain an explicit operator action
+  after readiness passes.
 
 ---
 
@@ -788,13 +826,16 @@ release-oriented format described there.
 
 A release should not be marked complete unless:
 
-- all checklist items for that release are truly implemented or
-  explicitly blocked
+- all checklist items for that release are truly implemented or explicitly
+  blocked
 - UI elements are connected to real behavior rather than placeholders
 - affected docs are updated where workflow or product behavior changed
 - logging and error handling are sufficient to diagnose failures
-- later releases were not partially started just to create the illusion
-  of momentum
+- later releases were not partially started just to create the illusion of
+  momentum
+- dashboard signals can be traced back to their source data
+- preview-first flows have explicit apply/dispatch/submit/merge actions
+- validation and smoke coverage exist for new routes or workflows
 
 This roadmap intentionally treats each release as a bounded,
 agent-usable execution contract.
@@ -811,9 +852,11 @@ pwsh ./tools/Test-RoadmapStructure.ps1 -Path ./ROADMAP.md
 ```
 
 The check is read-only. It reports release-order warnings, missing release
-sections, duplicate headings, missing Release 1.2 coverage, stale
-"Immediate Next Focus" references, completed-history dominance, and other
-obvious execution-roadmap issues. Optional outputs:
+sections, active-release pointer/detail mismatches, duplicate headings,
+missing Release 1.2 coverage, stale "Immediate Next Focus" references,
+completed-release detail that belongs in the archive, oversized future
+release sections, file-length drift, and other obvious execution-roadmap
+issues. Optional outputs:
 
 ```powershell
 pwsh ./tools/Test-RoadmapStructure.ps1 -Path ./ROADMAP.md `

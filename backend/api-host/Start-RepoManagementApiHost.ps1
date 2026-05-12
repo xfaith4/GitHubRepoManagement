@@ -50,7 +50,7 @@ $portfolioModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\portfolio'
 
 $script:StatusCacheMemory = @{}
 $script:StatusCacheDefaultTtlSeconds = 120
-$script:StatusCacheSchemaVersion = 3
+$script:StatusCacheSchemaVersion = 4
 
 $script:RoadmapCacheMemory = @{}
 $script:RoadmapCacheDefaultTtlSeconds = 300
@@ -1504,6 +1504,24 @@ function Get-ConfiguredGitHubToken {
     return ''
 }
 
+function Get-GitHubApiHeaders {
+    param(
+        [Parameter()]
+        [string]$Token
+    )
+
+    $headers = @{
+        'User-Agent' = 'GitHubRepoManagement'
+        Accept = 'application/vnd.github+json'
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($Token)) {
+        $headers.Authorization = "Bearer $Token"
+    }
+
+    return $headers
+}
+
 function Get-GitHubOwnerTypeViaApi {
     param(
         [Parameter(Mandatory = $true)]
@@ -1573,6 +1591,253 @@ function Get-GitHubCommitCountViaApi {
     }
 }
 
+function Get-GitHubRepoIdentityFromOriginUrl {
+    param(
+        [Parameter()]
+        [string]$OriginUrl
+    )
+
+    if ([string]::IsNullOrWhiteSpace($OriginUrl)) {
+        return $null
+    }
+
+    $patterns = @(
+        '^(?:https://|git@)github\.com[:/](?<owner>[^/]+)/(?<repo>[^/]+?)(?:\.git)?/?$',
+        '^ssh://git@github\.com/(?<owner>[^/]+)/(?<repo>[^/]+?)(?:\.git)?/?$'
+    )
+
+    foreach ($pattern in $patterns) {
+        if ($OriginUrl -match $pattern) {
+            return [pscustomobject]@{
+                owner = [string]$matches.owner
+                repo = [string]$matches.repo
+            }
+        }
+    }
+
+    return $null
+}
+
+function Get-GitHubPagesDefaultUrl {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Owner,
+        [Parameter(Mandatory = $true)]
+        [string]$Repo
+    )
+
+    if ($Repo.Equals("$Owner.github.io", [System.StringComparison]::OrdinalIgnoreCase)) {
+        return "https://$Owner.github.io/"
+    }
+
+    return "https://$Owner.github.io/$Repo/"
+}
+
+function Get-GitHubPagesSiteUrlViaApi {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Owner,
+        [Parameter(Mandatory = $true)]
+        [string]$Repo,
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Headers,
+        [Parameter()]
+        [string]$FallbackUrl = ''
+    )
+
+    $uri = "https://api.github.com/repos/$Owner/$Repo/pages"
+
+    try {
+        $response = Invoke-RestMethod -Uri $uri -Headers $Headers -Method Get
+        $htmlUrl = Get-ObjectPropertyValue -InputObject $response -PropertyName 'html_url' -Default ''
+        if (-not [string]::IsNullOrWhiteSpace([string]$htmlUrl)) {
+            return [string]$htmlUrl
+        }
+    }
+    catch {
+        Write-HostLog ("[TRACE] github.pages lookup failed owner={0} repo={1} error={2}" -f $Owner, $Repo, $_.Exception.Message)
+    }
+
+    return $FallbackUrl
+}
+
+function ConvertTo-GitHubRepoMetadata {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$RepoItem,
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Headers,
+        [Parameter()]
+        [string]$FallbackOwner = ''
+    )
+
+    $repoName = [string](Get-ObjectPropertyValue -InputObject $RepoItem -PropertyName 'name' -Default '')
+    if ([string]::IsNullOrWhiteSpace($repoName)) {
+        return $null
+    }
+
+    $repoOwner = $FallbackOwner
+    $ownerObject = Get-ObjectPropertyValue -InputObject $RepoItem -PropertyName 'owner' -Default $null
+    $ownerLogin = Get-ObjectPropertyValue -InputObject $ownerObject -PropertyName 'login' -Default ''
+    if (-not [string]::IsNullOrWhiteSpace([string]$ownerLogin)) {
+        $repoOwner = [string]$ownerLogin
+    }
+
+    $hasPages = [bool](Get-ObjectPropertyValue -InputObject $RepoItem -PropertyName 'has_pages' -Default $false)
+    $homepage = [string](Get-ObjectPropertyValue -InputObject $RepoItem -PropertyName 'homepage' -Default '')
+    $pagesUrl = ''
+    if ($hasPages) {
+        $fallbackPagesUrl = if (-not [string]::IsNullOrWhiteSpace($homepage)) {
+            $homepage
+        }
+        elseif (-not [string]::IsNullOrWhiteSpace($repoOwner)) {
+            Get-GitHubPagesDefaultUrl -Owner $repoOwner -Repo $repoName
+        }
+        else {
+            ''
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($repoOwner)) {
+            $pagesUrl = Get-GitHubPagesSiteUrlViaApi -Owner $repoOwner -Repo $repoName -Headers $Headers -FallbackUrl $fallbackPagesUrl
+        }
+        else {
+            $pagesUrl = $fallbackPagesUrl
+        }
+    }
+
+    return [pscustomobject]@{
+        name = $repoName
+        htmlUrl = Get-ObjectPropertyValue -InputObject $RepoItem -PropertyName 'html_url' -Default $null
+        owner = $repoOwner
+        visibility = if ([bool](Get-ObjectPropertyValue -InputObject $RepoItem -PropertyName 'private' -Default $false)) { 'private' } else { 'public' }
+        language = Get-ObjectPropertyValue -InputObject $RepoItem -PropertyName 'language' -Default $null
+        topics = @((Get-ObjectPropertyValue -InputObject $RepoItem -PropertyName 'topics' -Default @()))
+        hasPages = $hasPages
+        pagesUrl = if ([string]::IsNullOrWhiteSpace($pagesUrl)) { $null } else { $pagesUrl }
+    }
+}
+
+function Get-GitHubRepoMetadataMapViaApi {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Owner,
+        [Parameter()]
+        [string]$Token,
+        [Parameter()]
+        [int]$MaxPages = 10
+    )
+
+    $headers = Get-GitHubApiHeaders -Token $Token
+    $ownerType = Get-GitHubOwnerTypeViaApi -Owner $Owner -Headers $headers
+    $repoType = if ([string]::IsNullOrWhiteSpace($Token)) { 'public' } else { 'all' }
+    $baseUri = if ($ownerType -eq 'Organization') {
+        "https://api.github.com/orgs/$Owner/repos"
+    }
+    else {
+        "https://api.github.com/users/$Owner/repos"
+    }
+
+    $repoMap = @{}
+    for ($page = 1; $page -le $MaxPages; $page++) {
+        $uri = "{0}?per_page=100&page={1}&sort=updated&type={2}" -f $baseUri, $page, $repoType
+
+        try {
+            $reposRaw = @(Invoke-RestMethod -Uri $uri -Headers $headers -Method Get)
+        }
+        catch {
+            Write-HostLog ("[TRACE] github.repoMetadata fetch failed owner={0} page={1} error={2}" -f $Owner, $page, $_.Exception.Message)
+            break
+        }
+
+        if (@($reposRaw).Count -eq 0) {
+            break
+        }
+
+        foreach ($repoItem in $reposRaw) {
+            $metadata = ConvertTo-GitHubRepoMetadata -RepoItem $repoItem -Headers $headers -FallbackOwner $Owner
+            if ($null -eq $metadata) { continue }
+
+            if (-not [string]::IsNullOrWhiteSpace([string]$metadata.owner) -and $metadata.owner.ToLowerInvariant() -ne $Owner.ToLowerInvariant()) {
+                continue
+            }
+
+            $repoMap[$metadata.name.ToLowerInvariant()] = $metadata
+        }
+
+        if (@($reposRaw).Count -lt 100) {
+            break
+        }
+    }
+
+    return $repoMap
+}
+
+function Add-GitHubMetadataToStatusResult {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$StatusResult,
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Settings
+    )
+
+    if ($null -eq $StatusResult -or -not $StatusResult.success -or $null -eq $StatusResult.data) {
+        return $StatusResult
+    }
+
+    $repos = @($StatusResult.data.repos)
+    if ($repos.Count -eq 0) {
+        return $StatusResult
+    }
+
+    $reposByOwner = @{}
+    foreach ($repo in $repos) {
+        $identity = Get-GitHubRepoIdentityFromOriginUrl -OriginUrl ([string](Get-ObjectPropertyValue -InputObject $repo -PropertyName 'originUrl' -Default ''))
+        if ($null -eq $identity -or [string]::IsNullOrWhiteSpace($identity.owner) -or [string]::IsNullOrWhiteSpace($identity.repo)) {
+            continue
+        }
+
+        $ownerKey = $identity.owner.ToLowerInvariant()
+        if (-not $reposByOwner.ContainsKey($ownerKey)) {
+            $reposByOwner[$ownerKey] = [pscustomobject]@{
+                owner = $identity.owner
+                repos = New-Object System.Collections.ArrayList
+            }
+        }
+
+        $null = $reposByOwner[$ownerKey].repos.Add([pscustomobject]@{
+            repo = $repo
+            repoName = $identity.repo
+        })
+    }
+
+    if ($reposByOwner.Count -eq 0) {
+        return $StatusResult
+    }
+
+    $token = Get-ConfiguredGitHubToken -Settings $Settings -RequestToken ''
+    foreach ($ownerEntry in $reposByOwner.Values) {
+        $metadataMap = Get-GitHubRepoMetadataMapViaApi -Owner $ownerEntry.owner -Token $token
+        if ($metadataMap.Count -eq 0) {
+            continue
+        }
+
+        foreach ($entry in @($ownerEntry.repos)) {
+            $repoKey = $entry.repoName.ToLowerInvariant()
+            if (-not $metadataMap.ContainsKey($repoKey)) {
+                continue
+            }
+
+            $metadata = $metadataMap[$repoKey]
+            foreach ($propertyName in @('htmlUrl', 'owner', 'visibility', 'language', 'topics', 'hasPages', 'pagesUrl')) {
+                $propertyValue = Get-ObjectPropertyValue -InputObject $metadata -PropertyName $propertyName -Default $null
+                $entry.repo | Add-Member -NotePropertyName $propertyName -NotePropertyValue $propertyValue -Force
+            }
+        }
+    }
+
+    return $StatusResult
+}
+
 function Get-GitHubReposViaApi {
     param(
         [Parameter(Mandatory = $true)]
@@ -1591,11 +1856,7 @@ function Get-GitHubReposViaApi {
         [int]$RepoLimit = 50
     )
 
-    $headers = @{
-        Authorization = "Bearer $Token"
-        'User-Agent' = 'GitHubRepoManagement'
-        Accept = 'application/vnd.github+json'
-    }
+    $headers = Get-GitHubApiHeaders -Token $Token
 
     $openPrCounts = @{}
     try {
@@ -1663,6 +1924,8 @@ function Get-GitHubReposViaApi {
             $lastCommitAuthor = [string]$_.owner.login
         }
 
+        $metadata = ConvertTo-GitHubRepoMetadata -RepoItem $_ -Headers $headers -FallbackOwner $Owner
+
         [pscustomobject]@{
             name = $_.name
             branch = if ($_.default_branch) { $_.default_branch } else { 'main' }
@@ -1678,11 +1941,13 @@ function Get-GitHubReposViaApi {
             localAhead = 0
             remoteAhead = 0
             openPrCount = $repoOpenPrCount
-            htmlUrl = $_.html_url
-            owner = $Owner
-            visibility = if ([bool]$_.private) { 'private' } else { 'public' }
-            language = $_.language
-            topics = if ($_.topics) { @($_.topics) } else { @() }
+            htmlUrl = $metadata.htmlUrl
+            owner = $metadata.owner
+            visibility = $metadata.visibility
+            language = $metadata.language
+            topics = $metadata.topics
+            hasPages = $metadata.hasPages
+            pagesUrl = $metadata.pagesUrl
         }
     })
 
@@ -3130,6 +3395,9 @@ try {
                     if ($null -eq $result) {
                         $scanCachedAt = (Get-Date).ToUniversalTime().ToString('o')
                         $result = Get-StatusAdapterResult -LocalRoots $localRoots -MaxDepth $maxDepth -IncludeNonGitFolders:$includeNonGit -LogPath $LogPath
+                        if ($result.success) {
+                            $result = Add-GitHubMetadataToStatusResult -StatusResult $result -Settings $settings
+                        }
                         $result = Add-StatusCacheMeta -Result $result -CacheMeta (Get-StatusCacheMeta -Hit $false -Source 'fresh-scan' -TtlSeconds $ttlSeconds -AgeSeconds 0 -BypassRequested:$refresh -CachedAt $scanCachedAt)
                         if ($result.success -and ($ttlSeconds -gt 0)) {
                             Save-StatusCache -Key $cacheKey -Response $result

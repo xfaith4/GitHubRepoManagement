@@ -93,6 +93,8 @@ function normalizeRepo(repo: any): RepoStatus {
     commitsLastMonth: Number(repo?.commitsLastMonth ?? 0),
     pendingReviewPrCount: Number(repo?.pendingReviewPrCount ?? 0),
     htmlUrl: repo?.htmlUrl,
+    hasPages: Boolean(repo?.hasPages ?? false),
+    pagesUrl: repo?.pagesUrl ? String(repo.pagesUrl) : undefined,
     localPath: repo?.path ? String(repo.path) : undefined,
     originUrl: repo?.originUrl ? String(repo.originUrl) : undefined,
     owner: repo?.owner,

@@ -9,10 +9,13 @@
       - Missing release sections referenced by an "Immediate Next Focus"
       - Releases missing required sub-sections (Goal / Product outcomes /
         Engineering milestones / Acceptance criteria)
+            - Active release pointer/detail mismatches
       - Title vs goal mismatches via simple keyword heuristics
       - Completed-section dominance (active roadmap drowned in history)
+            - Completed release detail that should live in the archive
       - Duplicate release headings
       - Unchecked future releases with no acceptance criteria
+            - Overgrown future release sections that should be summarized
       - Missing Release 1.2 when later 1.x releases exist
 
     The script does not modify the roadmap. Findings are emitted to the
@@ -71,6 +74,9 @@ $script:RequiredReleaseSections = @(
     'Engineering milestones',
     'Acceptance criteria'
 )
+
+$script:MaxActiveRoadmapLines = 900
+$script:MaxFutureReleaseLines = 120
 
 # Heuristic title-vs-goal keyword pairs. Hit if the title contains the LHS
 # but the goal text does NOT contain any RHS keyword (or vice versa).
@@ -193,6 +199,39 @@ function Get-ReleaseGoalText {
     return ''
 }
 
+function Get-LineCountForText {
+    param([Parameter(Mandatory=$true)][string]$Text)
+
+    if ([string]::IsNullOrEmpty($Text)) { return 0 }
+    return ([regex]::Matches($Text, "`n")).Count + 1
+}
+
+function Get-ActiveReleaseVersion {
+    param([Parameter(Mandatory=$true)][string]$RoadmapText)
+
+    $m = [regex]::Match($RoadmapText, '(?im)^>\s*\*\*Active release:\*\*\s*\*\*Release\s+(\d+(?:\.\d+){1,2})\b')
+    if ($m.Success) { return $m.Groups[1].Value }
+    return ''
+}
+
+function Get-ActiveReleaseDetailVersion {
+    param([Parameter(Mandatory=$true)][AllowEmptyString()][string[]]$Lines)
+
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        if ($Lines[$i] -match '^###\s+Active release detail\s+[—–-]\s+(\d+(?:\.\d+){1,2})\b') {
+            return [pscustomobject]@{
+                version = $matches[1]
+                line    = $i + 1
+            }
+        }
+    }
+
+    return [pscustomobject]@{
+        version = ''
+        line    = 0
+    }
+}
+
 # Test whether a release section contains a given heading or bold label.
 # We accept both '### Heading' and '**Heading**' framings.
 function Test-ReleaseHasSection {
@@ -219,7 +258,7 @@ function Get-ReleaseCheckboxStats {
 
 # Print findings to console with color, grouped by severity.
 function Write-FindingsToConsole {
-    param([Parameter(Mandatory=$true)][object[]]$Findings)
+    param([Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Findings)
 
     # Make grouping safe even when zero findings of a severity exist.
     $errs  = @($Findings | Where-Object { $_.severity -eq 'error' })
@@ -255,7 +294,7 @@ function Write-FindingsToConsole {
 # .NET method).
 function Export-FindingsJson {
     param(
-        [Parameter(Mandatory=$true)][object[]]$Findings,
+        [Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Findings,
         [Parameter(Mandatory=$true)][string]$OutPath
     )
     $parent = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($OutPath))
@@ -269,7 +308,7 @@ function Export-FindingsJson {
 # Export findings to CSV (flat one-row-per-finding format).
 function Export-FindingsCsv {
     param(
-        [Parameter(Mandatory=$true)][object[]]$Findings,
+        [Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Findings,
         [Parameter(Mandatory=$true)][string]$OutPath
     )
     $parent = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($OutPath))
@@ -469,10 +508,74 @@ function Invoke-RuleStateVocabulary {
 # Threshold is intentionally generous; warning only.
 function Invoke-RuleFileLength {
     param([Parameter(Mandatory=$true)][int]$LineCount)
-    if ($LineCount -gt 900) {
+    if ($LineCount -gt $script:MaxActiveRoadmapLines) {
         Add-Finding -Severity 'warning' -Code 'R010-FILE-LENGTH' `
             -Message ('ROADMAP.md is ' + $LineCount + ' lines long. Active roadmaps should be scannable.') `
             -RecommendedAction 'Move completed-release detail to docs/history/completed-releases.md.'
+    }
+}
+
+# Rule R011: the top active-release pointer and the section 5 active-release
+# detail heading must exist and agree.
+function Invoke-RuleActiveReleasePointer {
+    param(
+        [Parameter(Mandatory=$true)][string]$RoadmapText,
+        [Parameter(Mandatory=$true)][AllowEmptyString()][string[]]$Lines
+    )
+
+    $pointerVersion = Get-ActiveReleaseVersion -RoadmapText $RoadmapText
+    $detail = Get-ActiveReleaseDetailVersion -Lines $Lines
+
+    if ([string]::IsNullOrWhiteSpace($pointerVersion)) {
+        Add-Finding -Severity 'warning' -Code 'R011-MISSING-ACTIVE-POINTER' `
+            -Message 'ROADMAP.md is missing the top-level "Active release" pointer.' `
+            -RecommendedAction 'Add a top summary line that names the active release version and title.'
+    }
+
+    if ([string]::IsNullOrWhiteSpace($detail.version)) {
+        Add-Finding -Severity 'warning' -Code 'R011-MISSING-ACTIVE-DETAIL' `
+            -Message 'ROADMAP.md is missing the section 5 "Active release detail" heading.' `
+            -RecommendedAction 'Add an "Active release detail — X.Y Title" heading for the active release execution contract.'
+    }
+
+    if ((-not [string]::IsNullOrWhiteSpace($pointerVersion)) -and
+        (-not [string]::IsNullOrWhiteSpace($detail.version)) -and
+        $pointerVersion -ne $detail.version) {
+        Add-Finding -Severity 'error' -Code 'R011-ACTIVE-MISMATCH' `
+            -Message ('Top-level active release pointer (' + $pointerVersion + ') does not match the active release detail heading (' + $detail.version + ').') `
+            -Release $detail.version -Line $detail.line `
+            -RecommendedAction 'Make the top active-release pointer and the active release detail heading refer to the same version.'
+    }
+}
+
+# Rule R012: completed release detail should not live in the active roadmap.
+function Invoke-RuleCompletedReleaseSections {
+    param([Parameter(Mandatory=$true)][object[]]$Releases)
+
+    foreach ($r in $Releases) {
+        $stats = Get-ReleaseCheckboxStats -RawText $r.rawText
+        if ($stats.checked -gt 0 -and $stats.unchecked -eq 0) {
+            Add-Finding -Severity 'warning' -Code 'R012-COMPLETED-IN-ACTIVE' `
+                -Message ('Completed release detail for ' + $r.version + ' is still in the active roadmap.') `
+                -Release $r.version -Line ($r.startLine + 1) `
+                -RecommendedAction 'Move completed release detail to docs/history/completed-releases.md and leave only an index/archive reference here.'
+        }
+    }
+}
+
+# Rule R013: future release sections should stay summarized enough to keep
+# the active roadmap scannable.
+function Invoke-RuleFutureReleaseSize {
+    param([Parameter(Mandatory=$true)][object[]]$Releases)
+
+    foreach ($r in $Releases) {
+        $lineCount = Get-LineCountForText -Text $r.rawText
+        if ($lineCount -gt $script:MaxFutureReleaseLines) {
+            Add-Finding -Severity 'warning' -Code 'R013-FUTURE-RELEASE-SIZE' `
+                -Message ('Release ' + $r.version + ' spans ' + $lineCount + ' lines. Future releases should stay summarized in the active roadmap.') `
+                -Release $r.version -Line ($r.startLine + 1) `
+                -RecommendedAction 'Compress milestone detail or move deeper implementation planning to a supporting doc.'
+        }
     }
 }
 
@@ -511,6 +614,9 @@ Invoke-RuleUncheckedNoAcceptance -Releases $releases
 Invoke-RuleCompletedDominance    -RoadmapText $text -Releases $releases
 Invoke-RuleStateVocabulary       -RoadmapText $text
 Invoke-RuleFileLength            -LineCount $lines.Count
+Invoke-RuleActiveReleasePointer  -RoadmapText $text -Lines $lines
+Invoke-RuleCompletedReleaseSections -Releases $releases
+Invoke-RuleFutureReleaseSize     -Releases $releases
 
 # Pretty-print release sequence summary so the operator sees what was parsed.
 Write-Host ''

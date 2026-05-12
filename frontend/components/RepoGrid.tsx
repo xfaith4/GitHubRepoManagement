@@ -93,7 +93,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
       const bValue = b[sortKey];
 
       if (aValue === undefined || bValue === undefined) return 0;
-      
+
       if (sortKey === 'lastCommitDate') {
           const aDate = new Date(aValue as string).getTime();
           const bDate = new Date(bValue as string).getTime();
@@ -108,7 +108,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
       if (typeof aValue === 'boolean' && typeof bValue === 'boolean') {
         return sortOrder === 'asc' ? (aValue === bValue ? 0 : aValue ? -1 : 1) : (aValue === bValue ? 0 : aValue ? 1 : -1);
       }
-      
+
       return 0;
     });
   }, [repos, sortKey, sortOrder, filter, readinessFilter]);
@@ -143,7 +143,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
         return acc;
     }, {} as Record<string, RepoStatus[]>);
   }, [sortedAndFilteredRepos, groupBy]);
-  
+
   useEffect(() => {
     if (selectAllCheckboxRef.current) {
         const visibleRepoIds = new Set(sortedAndFilteredRepos.map((r: RepoStatus) => getRepoSelectionId(r)));
@@ -171,7 +171,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
       setSortOrder('asc');
     }
   };
-  
+
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     const isChecked = e.target.checked;
     setSelectedRepos(prevSelected => {
@@ -261,7 +261,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
     const badge = <div className={`flex items-center gap-2 ${color}`}>{icon}<span className="hidden sm:inline">{text}</span></div>;
     return repo.lastBuildUrl ? <a href={repo.lastBuildUrl} target="_blank" rel="noopener noreferrer" title="View last build on GitHub" className="hover:opacity-80 transition-opacity">{badge}</a> : badge;
   };
-  
+
   const groupByOptions: { value: keyof RepoStatus | 'none'; label: string }[] = [
       { value: 'none', label: 'None' },
       { value: 'status', label: 'Status' },
@@ -376,6 +376,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
                           repo.owner ??
                           (dataSource?.source === 'github' ? dataSource.username : dataSource?.configuredGithubUser ?? undefined);
                         const repoUrl = repo.htmlUrl ?? (owner ? `https://github.com/${owner}/${repo.name}` : undefined);
+                        const pagesUrl = repo.pagesUrl;
                         const pullsUrl = repoUrl ? `${repoUrl}/pulls` : undefined;
                         const artifactDetails = typeof repo.artifactCount === 'number' ? repo.artifactCount : null;
                         const repoSizeMb = typeof repo.repoSizeKb === 'number' ? (repo.repoSizeKb / 1024) : null;
@@ -402,6 +403,19 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
                                 {repo.localPath && (
                                   <div className="text-xs text-gray-400 break-all max-w-md" title={repo.localPath}>
                                     {repo.localPath}
+                                  </div>
+                                )}
+                                {pagesUrl && (
+                                  <div className="text-xs break-all max-w-md">
+                                    <a
+                                      href={pagesUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-emerald-300 hover:text-emerald-200 hover:underline"
+                                      title="Open GitHub Pages site"
+                                    >
+                                      {pagesUrl}
+                                    </a>
                                   </div>
                                 )}
                                 {repo.hasRoadmap && onViewRoadmap && (() => {
@@ -469,7 +483,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
                                   </div>
                                 ) : null}
                             </td>
-                            
+
                             {repos.some((r: RepoStatus) => r.extended) && (
                               <>
                                 {/* Issues */}
@@ -489,7 +503,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
                                     <span className="text-sm text-gray-500">-</span>
                                   )}
                                 </td>
-                                
+
                                 {/* Projects */}
                                 <td className="px-6 py-4 whitespace-nowrap">
                                   {repo.extended?.projectsCount !== undefined ? (
@@ -500,7 +514,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
                                     <span className="text-sm text-gray-500">-</span>
                                   )}
                                 </td>
-                                
+
                                 {/* Branches */}
                                 <td className="px-6 py-4 whitespace-nowrap">
                                   {repo.extended?.totalBranches !== undefined ? (
@@ -516,13 +530,13 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
                                     <span className="text-sm text-gray-500">-</span>
                                   )}
                                 </td>
-                                
+
                                 {/* Health Score */}
                                 <td className="px-6 py-4 whitespace-nowrap">
                                   {repo.extended?.healthScore !== undefined ? (
                                     <div className="flex items-center gap-2">
                                       <div className="w-16 h-2 bg-gray-700 rounded-full overflow-hidden">
-                                        <div 
+                                        <div
                                           className={`h-full ${
                                             repo.extended.healthScore >= 80 ? 'bg-green-500' :
                                             repo.extended.healthScore >= 60 ? 'bg-yellow-500' :
@@ -539,7 +553,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
                                 </td>
                               </>
                             )}
-                            
+
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">{repo.branch}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400" title={repo.lastCommitMessage}>
                             {repo.lastCommitDate ? new Date(repo.lastCommitDate).toLocaleDateString() : 'N/A'}{repo.lastCommitAuthor && ` by ${repo.lastCommitAuthor}`}
