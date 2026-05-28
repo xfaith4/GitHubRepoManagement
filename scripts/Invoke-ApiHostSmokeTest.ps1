@@ -736,6 +736,35 @@ try {
 
     Write-Host ("  /api/portfolio/assessment -> count={0} ready={1} blocked={2} cacheSource={3}" -f $portfolioData.count, $portfolioData.summary.readyForWorkCount, $portfolioData.summary.blockedCount, $portfolioData.cacheSource) -ForegroundColor DarkGray
 
+    Write-Host '[STEP] Portfolio assessment differential mode (Release 1.7.5 Phase 7A)' -ForegroundColor Cyan
+    $portfolioDiffResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment?scanMode=differential"
+    Assert-Not503 -Name '/api/portfolio/assessment?scanMode=differential' -Response $portfolioDiffResponse
+    $portfolioDiffJson = $portfolioDiffResponse.Json
+    if ($null -eq $portfolioDiffJson -or -not $portfolioDiffJson.success) {
+        throw '/api/portfolio/assessment?scanMode=differential returned invalid success payload'
+    }
+    if (-not ($portfolioDiffJson.PSObject.Properties.Name -contains 'data') -or $null -eq $portfolioDiffJson.data) {
+        throw '/api/portfolio/assessment?scanMode=differential response missing data payload'
+    }
+    $portfolioDiffData = $portfolioDiffJson.data
+    $portfolioDiffFieldsOk = $null -ne $portfolioDiffData -and
+        ($portfolioDiffData.PSObject.Properties.Name -contains 'entries') -and
+        ($portfolioDiffData.PSObject.Properties.Name -contains 'summary') -and
+        ($portfolioDiffData.PSObject.Properties.Name -contains 'signalSources') -and
+        ($portfolioDiffData.PSObject.Properties.Name -contains 'generatedAt')
+    if (-not $portfolioDiffFieldsOk) { throw '/api/portfolio/assessment?scanMode=differential response missing expected fields (entries, summary, signalSources, generatedAt)' }
+
+    $portfolioDiffSignalSources = $portfolioDiffData.signalSources
+    $portfolioDiffModeObserved = $false
+    if ($null -ne $portfolioDiffSignalSources -and ($portfolioDiffSignalSources.PSObject.Properties.Name -contains 'scanMode')) {
+        $mode = [string]$portfolioDiffSignalSources.scanMode
+        $portfolioDiffModeObserved = ($mode -in @('differential', 'differential-fallback-full'))
+    }
+    if (-not $portfolioDiffModeObserved) {
+        throw '/api/portfolio/assessment?scanMode=differential did not report differential scan mode in signalSources.scanMode'
+    }
+    Write-Host ("  /api/portfolio/assessment?scanMode=differential -> count={0} mode={1}" -f $portfolioDiffData.count, [string]$portfolioDiffSignalSources.scanMode) -ForegroundColor DarkGray
+
     # ------------------------------------------------------------------
     # Release 1.3 — Production static frontend bundle
     # ------------------------------------------------------------------
@@ -847,6 +876,8 @@ try {
         portfolioSummaryFieldsOk = $portfolioSummaryFieldsOk
         portfolioEntryFieldsOk   = $portfolioEntryFieldsOk
         portfolioRepoCount    = [int]$portfolioData.count
+        portfolioDiffFieldsOk = $portfolioDiffFieldsOk
+        portfolioDiffModeObserved = $portfolioDiffModeObserved
         staticIndexOk         = $staticIndexOk
         staticAssetsOk        = $staticAssetsOk
         staticSkipped         = $staticSkipped

@@ -905,6 +905,126 @@ function _Get-GitHubIdentityFromRemoteUrl {
     }
 }
 
+function _Get-FileLastWriteUtcIso {
+    param([string]$FilePath)
+
+    if ([string]::IsNullOrWhiteSpace($FilePath) -or -not (Test-Path -LiteralPath $FilePath -PathType Leaf -ErrorAction SilentlyContinue)) {
+        return ''
+    }
+
+    try {
+        return ([System.IO.File]::GetLastWriteTimeUtc($FilePath)).ToString('o')
+    } catch {
+        return ''
+    }
+}
+
+function _Get-PortfolioStableHash {
+    param([string]$InputText)
+
+    if ([string]::IsNullOrEmpty($InputText)) { return '' }
+
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($InputText)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $digest = $sha.ComputeHash($bytes)
+    } finally {
+        $sha.Dispose()
+    }
+    return ([BitConverter]::ToString($digest)).Replace('-', '').ToLowerInvariant()
+}
+
+function Get-PortfolioScanFingerprintFromSignals {
+    [CmdletBinding()]
+    param(
+        [Parameter()][object]$LocalRepo,
+        [Parameter()][object]$GitHubRepo,
+        [Parameter()][string]$LocalPath = '',
+        [Parameter()][string]$SourceCoverage = 'local'
+    )
+
+    $effectiveLocalPath = if ([string]::IsNullOrWhiteSpace($LocalPath)) {
+        [string](_GetField -Obj $LocalRepo -Name 'path' -Default '')
+    } else {
+        [string]$LocalPath
+    }
+
+    $readmePath = if ([string]::IsNullOrWhiteSpace($effectiveLocalPath)) { '' } else { Join-Path $effectiveLocalPath 'README.md' }
+    $roadmapPath = if ([string]::IsNullOrWhiteSpace($effectiveLocalPath)) { '' } else { Join-Path $effectiveLocalPath 'ROADMAP.md' }
+
+    $tokens = [ordered]@{
+        sourceCoverage             = [string]$SourceCoverage
+        localPath                  = $effectiveLocalPath
+        localBranch                = [string](_GetField -Obj $LocalRepo -Name 'branch' -Default '')
+        localStatus                = [string](_GetField -Obj $LocalRepo -Name 'status' -Default '')
+        localOriginUrl             = [string](_GetField -Obj $LocalRepo -Name 'originUrl' -Default '')
+        localLastCommitDate        = [string](_GetField -Obj $LocalRepo -Name 'lastCommitDate' -Default '')
+        localCommitsLastWeek       = [int](_GetField -Obj $LocalRepo -Name 'commitsLastWeek' -Default 0)
+        localCommitsLastMonth      = [int](_GetField -Obj $LocalRepo -Name 'commitsLastMonth' -Default 0)
+        localModifiedCount         = [int](_GetField -Obj $LocalRepo -Name 'modifiedCount' -Default 0)
+        localUntrackedCount        = [int](_GetField -Obj $LocalRepo -Name 'untrackedCount' -Default 0)
+        localDirtyCount            = [int](_GetField -Obj $LocalRepo -Name 'dirtyCount' -Default 0)
+        readmeLastWriteUtc         = (_Get-FileLastWriteUtcIso -FilePath $readmePath)
+        roadmapLastWriteUtc        = (_Get-FileLastWriteUtcIso -FilePath $roadmapPath)
+        githubUpdatedAt            = [string](_GetField -Obj $GitHubRepo -Name 'updatedAt' -Default '')
+        githubOpenPrCount          = [int](_GetField -Obj $GitHubRepo -Name 'openPrCount' -Default 0)
+        githubPendingReviewPrCount = [int](_GetField -Obj $GitHubRepo -Name 'pendingReviewPrCount' -Default 0)
+        githubLatestRunStatus      = [string](_GetField -Obj $GitHubRepo -Name 'latestWorkflowRunStatus' -Default '')
+        githubLatestRunConclusion  = [string](_GetField -Obj $GitHubRepo -Name 'latestWorkflowRunConclusion' -Default '')
+        githubLatestRunName        = [string](_GetField -Obj $GitHubRepo -Name 'latestWorkflowRunName' -Default '')
+        githubLatestRunTimestamp   = [string](_GetField -Obj $GitHubRepo -Name 'latestWorkflowRunTimestamp' -Default '')
+        githubHasPages             = [string]([bool](_GetField -Obj $GitHubRepo -Name 'hasPages' -Default $false))
+        githubPagesUrl             = [string](_GetField -Obj $GitHubRepo -Name 'pagesUrl' -Default '')
+    }
+
+    $parts = [System.Collections.Generic.List[string]]::new()
+    foreach ($k in $tokens.Keys) {
+        $parts.Add(('{0}={1}' -f $k, [string]$tokens[$k])) | Out-Null
+    }
+    return _Get-PortfolioStableHash -InputText ($parts -join '|')
+}
+
+function Get-PortfolioScanFingerprintFromIndexedRepo {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][object]$IndexedRepo)
+
+    $existing = [string](_GetField -Obj $IndexedRepo -Name 'scanFingerprint' -Default '')
+    if (-not [string]::IsNullOrWhiteSpace($existing)) {
+        return $existing
+    }
+
+    $tokens = [ordered]@{
+        sourceCoverage             = [string](_GetField -Obj $IndexedRepo -Name 'sourceCoverage' -Default '')
+        localPath                  = [string](_GetField -Obj $IndexedRepo -Name 'localPath' -Default '')
+        localBranch                = [string](_GetField -Obj $IndexedRepo -Name 'currentBranch' -Default '')
+        localStatus                = [string](_GetField -Obj $IndexedRepo -Name 'gitStatus' -Default '')
+        localOriginUrl             = [string](_GetField -Obj $IndexedRepo -Name 'remoteUrl' -Default '')
+        localLastCommitDate        = [string](_GetField -Obj $IndexedRepo -Name 'localLastCommitDate' -Default '')
+        localCommitsLastWeek       = [int](_GetField -Obj $IndexedRepo -Name 'localCommitsLastWeek' -Default 0)
+        localCommitsLastMonth      = [int](_GetField -Obj $IndexedRepo -Name 'localCommitsLastMonth' -Default 0)
+        localModifiedCount         = [int](_GetField -Obj $IndexedRepo -Name 'localModifiedCount' -Default 0)
+        localUntrackedCount        = [int](_GetField -Obj $IndexedRepo -Name 'localUntrackedCount' -Default 0)
+        localDirtyCount            = [int](_GetField -Obj $IndexedRepo -Name 'localDirtyCount' -Default 0)
+        readmeLastWriteUtc         = [string](_GetField -Obj $IndexedRepo -Name 'readmeLastWriteUtc' -Default '')
+        roadmapLastWriteUtc        = [string](_GetField -Obj $IndexedRepo -Name 'roadmapLastWriteUtc' -Default '')
+        githubUpdatedAt            = [string](_GetField -Obj $IndexedRepo -Name 'updatedAt' -Default '')
+        githubOpenPrCount          = [int](_GetField -Obj $IndexedRepo -Name 'openPrCount' -Default 0)
+        githubPendingReviewPrCount = [int](_GetField -Obj $IndexedRepo -Name 'pendingReviewPrCount' -Default 0)
+        githubLatestRunStatus      = [string](_GetField -Obj $IndexedRepo -Name 'latestWorkflowRunStatus' -Default '')
+        githubLatestRunConclusion  = [string](_GetField -Obj $IndexedRepo -Name 'latestWorkflowRunConclusion' -Default '')
+        githubLatestRunName        = [string](_GetField -Obj $IndexedRepo -Name 'latestWorkflowRunName' -Default '')
+        githubLatestRunTimestamp   = [string](_GetField -Obj $IndexedRepo -Name 'latestWorkflowRunTimestamp' -Default '')
+        githubHasPages             = [string]([bool](_GetField -Obj $IndexedRepo -Name 'hasPages' -Default $false))
+        githubPagesUrl             = [string](_GetField -Obj $IndexedRepo -Name 'pagesUrl' -Default '')
+    }
+
+    $parts = [System.Collections.Generic.List[string]]::new()
+    foreach ($k in $tokens.Keys) {
+        $parts.Add(('{0}={1}' -f $k, [string]$tokens[$k])) | Out-Null
+    }
+    return _Get-PortfolioStableHash -InputText ($parts -join '|')
+}
+
 function New-PortfolioIndexPayload {
     [CmdletBinding()]
     param(
@@ -963,6 +1083,15 @@ function New-PortfolioIndexPayload {
         $latestWorkflowRunTimestamp = [string](_GetField -Obj $assessment -Name 'latestWorkflowRunTimestamp' -Default (_GetField -Obj $githubRepo -Name 'latestWorkflowRunTimestamp' -Default ''))
         $openPrCount = [int](_GetField -Obj $assessment -Name 'openPrCount' -Default (_GetField -Obj $githubRepo -Name 'openPrCount' -Default 0))
         $pendingReviewPrCount = [int](_GetField -Obj $assessment -Name 'pendingReviewPrCount' -Default (_GetField -Obj $githubRepo -Name 'pendingReviewPrCount' -Default 0))
+        $localLastCommitDate = [string](_GetField -Obj $localRepo -Name 'lastCommitDate' -Default '')
+        $localCommitsLastWeek = [int](_GetField -Obj $localRepo -Name 'commitsLastWeek' -Default 0)
+        $localCommitsLastMonth = [int](_GetField -Obj $localRepo -Name 'commitsLastMonth' -Default 0)
+        $localModifiedCount = [int](_GetField -Obj $localRepo -Name 'modifiedCount' -Default 0)
+        $localUntrackedCount = [int](_GetField -Obj $localRepo -Name 'untrackedCount' -Default 0)
+        $localDirtyCount = [int](_GetField -Obj $localRepo -Name 'dirtyCount' -Default 0)
+        $readmeLastWriteUtc = if ([string]::IsNullOrWhiteSpace($localPath)) { '' } else { _Get-FileLastWriteUtcIso -FilePath (Join-Path $localPath 'README.md') }
+        $roadmapLastWriteUtc = if ([string]::IsNullOrWhiteSpace($localPath)) { '' } else { _Get-FileLastWriteUtcIso -FilePath (Join-Path $localPath 'ROADMAP.md') }
+        $scanFingerprint = Get-PortfolioScanFingerprintFromSignals -LocalRepo $localRepo -GitHubRepo $githubRepo -LocalPath $localPath -SourceCoverage ([string](_GetField -Obj $assessment -Name 'sourceCoverage' -Default 'local'))
 
         $repos.Add([pscustomobject]@{
             ordinal             = $i + 1
@@ -986,6 +1115,15 @@ function New-PortfolioIndexPayload {
             latestWorkflowRunTimestamp = if ([string]::IsNullOrWhiteSpace($latestWorkflowRunTimestamp)) { $null } else { $latestWorkflowRunTimestamp }
             openPrCount         = $openPrCount
             pendingReviewPrCount = $pendingReviewPrCount
+            localLastCommitDate = if ([string]::IsNullOrWhiteSpace($localLastCommitDate)) { $null } else { $localLastCommitDate }
+            localCommitsLastWeek = $localCommitsLastWeek
+            localCommitsLastMonth = $localCommitsLastMonth
+            localModifiedCount = $localModifiedCount
+            localUntrackedCount = $localUntrackedCount
+            localDirtyCount = $localDirtyCount
+            readmeLastWriteUtc = if ([string]::IsNullOrWhiteSpace($readmeLastWriteUtc)) { $null } else { $readmeLastWriteUtc }
+            roadmapLastWriteUtc = if ([string]::IsNullOrWhiteSpace($roadmapLastWriteUtc)) { $null } else { $roadmapLastWriteUtc }
+            scanFingerprint     = $scanFingerprint
             repoType            = [string](_GetField -Obj $assessment -Name 'repoType' -Default 'other')
             lifecycleState      = [string](_GetField -Obj $assessment -Name 'lifecycleState' -Default 'discovered')
             recommendedAction   = [string](_GetField -Obj $assessment -Name 'recommendedAction' -Default '')
@@ -1067,4 +1205,78 @@ function Save-PortfolioIndexArtifacts {
         repoCount    = [int]$payload.repoCount
         generatedAt  = $GeneratedAt
     }
+}
+
+function Get-PortfolioIndexPayload {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$WorkspaceRoot)
+
+    $indexPath = Join-Path (Join-Path $WorkspaceRoot 'output\index') 'repos.index.json'
+    if (-not (Test-Path -LiteralPath $indexPath -PathType Leaf -ErrorAction SilentlyContinue)) {
+        return $null
+    }
+
+    try {
+        $raw = Get-Content -LiteralPath $indexPath -Raw -Encoding UTF8 -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
+        return ConvertFrom-Json -InputObject $raw
+    } catch {
+        return $null
+    }
+}
+
+function Convert-PortfolioIndexReposToAssessments {
+    [CmdletBinding()]
+    param([Parameter()][AllowEmptyCollection()][object[]]$IndexRepos = @())
+
+    $out = [System.Collections.Generic.List[object]]::new()
+    foreach ($repo in @($IndexRepos)) {
+        if ($null -eq $repo) { continue }
+
+        $out.Add([pscustomobject]@{
+            repoName            = [string](_GetField -Obj $repo -Name 'repoName' -Default '')
+            localPath           = [string](_GetField -Obj $repo -Name 'localPath' -Default '')
+            htmlUrl             = [string](_GetField -Obj $repo -Name 'htmlUrl' -Default '')
+            branch              = [string](_GetField -Obj $repo -Name 'currentBranch' -Default '')
+            gitStatus           = [string](_GetField -Obj $repo -Name 'gitStatus' -Default 'unknown')
+            isArchived          = [bool](_GetField -Obj $repo -Name 'isArchived' -Default $false)
+            sourceCoverage      = [string](_GetField -Obj $repo -Name 'sourceCoverage' -Default 'local')
+            hasPages            = [bool](_GetField -Obj $repo -Name 'hasPages' -Default $false)
+            pagesUrl            = _GetField -Obj $repo -Name 'pagesUrl' -Default $null
+            createdAt           = _GetField -Obj $repo -Name 'createdAt' -Default $null
+            updatedAt           = _GetField -Obj $repo -Name 'updatedAt' -Default $null
+            latestWorkflowRunStatus = _GetField -Obj $repo -Name 'latestWorkflowRunStatus' -Default $null
+            latestWorkflowRunConclusion = _GetField -Obj $repo -Name 'latestWorkflowRunConclusion' -Default $null
+            latestWorkflowRunName = _GetField -Obj $repo -Name 'latestWorkflowRunName' -Default $null
+            latestWorkflowRunTimestamp = _GetField -Obj $repo -Name 'latestWorkflowRunTimestamp' -Default $null
+            openPrCount         = [int](_GetField -Obj $repo -Name 'openPrCount' -Default 0)
+            pendingReviewPrCount = [int](_GetField -Obj $repo -Name 'pendingReviewPrCount' -Default 0)
+            repoType            = [string](_GetField -Obj $repo -Name 'repoType' -Default 'other')
+            lifecycleState      = [string](_GetField -Obj $repo -Name 'lifecycleState' -Default 'discovered')
+            recommendedAction   = [string](_GetField -Obj $repo -Name 'recommendedAction' -Default '')
+            blockingReasons     = @(_GetField -Obj $repo -Name 'blockingReasons' -Default @())
+            roadmapState        = [string](_GetField -Obj $repo -Name 'roadmapState' -Default 'missing')
+            roadmapPath         = [string](_GetField -Obj $repo -Name 'roadmapPath' -Default '')
+            hasRoadmap          = [bool](_GetField -Obj $repo -Name 'hasRoadmap' -Default $false)
+            pendingItemCount    = [int](_GetField -Obj $repo -Name 'pendingItemCount' -Default 0)
+            nextPendingItemText = [string](_GetField -Obj $repo -Name 'nextPendingItemText' -Default '')
+            pendingItems        = @()
+            topValueItem        = _GetField -Obj $repo -Name 'topValueItem' -Default $null
+            maturityLevel       = [string](_GetField -Obj $repo -Name 'maturityLevel' -Default 'L0-Absent')
+            maturityScore       = [int](_GetField -Obj $repo -Name 'maturityScore' -Default 0)
+            dispatchReadiness   = [string](_GetField -Obj $repo -Name 'dispatchReadiness' -Default 'missing-roadmap')
+            executionState      = [string](_GetField -Obj $repo -Name 'executionState' -Default 'idle')
+            hasReadme           = [bool](_GetField -Obj $repo -Name 'hasReadme' -Default $false)
+            readmeScore         = [int](_GetField -Obj $repo -Name 'readmeScore' -Default 0)
+            roadmapScore        = [int](_GetField -Obj $repo -Name 'roadmapScore' -Default 0)
+            documentationHealthScore = [int](_GetField -Obj $repo -Name 'documentationHealthScore' -Default 0)
+            hasCiSignal         = [bool](_GetField -Obj $repo -Name 'hasCiSignal' -Default $false)
+            hasTestSignal       = [bool](_GetField -Obj $repo -Name 'hasTestSignal' -Default $false)
+            structureFindings   = @(_GetField -Obj $repo -Name 'structureFindings' -Default @())
+            docFindingCount     = [int](_GetField -Obj $repo -Name 'docFindingCount' -Default 0)
+            dispatchReadinessExplanation = [string](_GetField -Obj $repo -Name 'dispatchReadinessExplanation' -Default '')
+        }) | Out-Null
+    }
+
+    return ,@($out)
 }

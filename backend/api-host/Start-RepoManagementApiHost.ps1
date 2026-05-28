@@ -4526,6 +4526,10 @@ try {
                     Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} start" -f $correlationId)
                     $q = Parse-QueryString -Query $req.Query
                     $refresh = if ($q.ContainsKey('refresh')) { Parse-Bool -Value $q.refresh -Default $false } else { $false }
+                    $scanModeRaw = if ($q.ContainsKey('scanMode')) { [string]$q.scanMode } else { 'full' }
+                    $scanMode = if ([string]::IsNullOrWhiteSpace($scanModeRaw)) { 'full' } else { $scanModeRaw.Trim().ToLowerInvariant() }
+                    if ($scanMode -notin @('full', 'differential')) { $scanMode = 'full' }
+                    $useDifferentialScan = (-not $refresh) -and ($scanMode -eq 'differential')
 
                     $settings   = Get-HostSettings
                     $ttlSeconds = Get-PortfolioAssessmentCacheTtlSeconds -Settings $settings
@@ -4591,49 +4595,61 @@ try {
                     # 2) Roadmap entries
                     $roadmapTtl     = Get-RoadmapCacheTtlSeconds -Settings $settings
                     $roadmapEntries = @()
-                    if (-not $refresh) {
-                        $rmCached = Get-RoadmapFromCache -TtlSeconds $roadmapTtl
-                        if ($rmCached.hit) {
-                            $roadmapEntries = @($rmCached.entries)
-                            $signalSources['roadmap'] = 'cache'
+                    if (-not $useDifferentialScan) {
+                        if (-not $refresh) {
+                            $rmCached = Get-RoadmapFromCache -TtlSeconds $roadmapTtl
+                            if ($rmCached.hit) {
+                                $roadmapEntries = @($rmCached.entries)
+                                $signalSources['roadmap'] = 'cache'
+                            }
                         }
-                    }
-                    if (@($roadmapEntries).Count -eq 0) {
-                        Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} cold-roadmap-scan" -f $correlationId)
-                        $roadmapEntries = @(Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth)
-                        $signalSources['roadmap'] = 'fresh-scan'
+                        if (@($roadmapEntries).Count -eq 0) {
+                            Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} cold-roadmap-scan" -f $correlationId)
+                            $roadmapEntries = @(Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth)
+                            $signalSources['roadmap'] = 'fresh-scan'
+                        }
+                    } else {
+                        $signalSources['roadmap'] = 'deferred-differential'
                     }
 
                     # 3) Doc audit entries
                     $docAuditTtl     = Get-DocAuditCacheTtlSeconds -Settings $settings
                     $docAuditEntries = @()
-                    if (-not $refresh) {
-                        $daCached = Get-DocAuditFromCache -TtlSeconds $docAuditTtl
-                        if ($daCached.hit) {
-                            $docAuditEntries = @($daCached.entries)
-                            $signalSources['docAudit'] = 'cache'
+                    if (-not $useDifferentialScan) {
+                        if (-not $refresh) {
+                            $daCached = Get-DocAuditFromCache -TtlSeconds $docAuditTtl
+                            if ($daCached.hit) {
+                                $docAuditEntries = @($daCached.entries)
+                                $signalSources['docAudit'] = 'cache'
+                            }
                         }
-                    }
-                    if (@($docAuditEntries).Count -eq 0) {
-                        Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} cold-doc-audit-scan" -f $correlationId)
-                        $docAuditEntries = @(Invoke-DocAuditScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth)
-                        $signalSources['docAudit'] = 'fresh-scan'
-                        $auditedAt = (Get-Date).ToUniversalTime().ToString('o')
-                        if ($docAuditTtl -gt 0) { Save-DocAuditCache -Entries $docAuditEntries -AuditedAt $auditedAt }
+                        if (@($docAuditEntries).Count -eq 0) {
+                            Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} cold-doc-audit-scan" -f $correlationId)
+                            $docAuditEntries = @(Invoke-DocAuditScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth)
+                            $signalSources['docAudit'] = 'fresh-scan'
+                            $auditedAt = (Get-Date).ToUniversalTime().ToString('o')
+                            if ($docAuditTtl -gt 0) { Save-DocAuditCache -Entries $docAuditEntries -AuditedAt $auditedAt }
+                        }
+                    } else {
+                        $signalSources['docAudit'] = 'deferred-differential'
                     }
 
                     # 4) Roadmap audit entries (maturity) — opportunistic; absent cache => empty signal.
                     $roadmapAuditEntries = @()
                     $rmAuditTtl = Get-RoadmapAuditCacheTtlSeconds -Settings $settings
-                    if (-not $refresh) {
-                        $raCached = Get-RoadmapAuditFromCache -TtlSeconds $rmAuditTtl
-                        if ($raCached.hit) {
-                            $roadmapAuditEntries = @($raCached.entries)
-                            $signalSources['roadmapAudit'] = 'cache'
+                    if (-not $useDifferentialScan) {
+                        if (-not $refresh) {
+                            $raCached = Get-RoadmapAuditFromCache -TtlSeconds $rmAuditTtl
+                            if ($raCached.hit) {
+                                $roadmapAuditEntries = @($raCached.entries)
+                                $signalSources['roadmapAudit'] = 'cache'
+                            }
                         }
-                    }
-                    if (@($roadmapAuditEntries).Count -eq 0) {
-                        $signalSources['roadmapAudit'] = 'unavailable'
+                        if (@($roadmapAuditEntries).Count -eq 0) {
+                            $signalSources['roadmapAudit'] = 'unavailable'
+                        }
+                    } else {
+                        $signalSources['roadmapAudit'] = 'deferred-differential'
                     }
 
                     # 5) Execution ledger entries
@@ -4688,6 +4704,148 @@ try {
                         $githubReposForAssessment = @($githubReposForAssessment | Where-Object { $localRepoNames.Contains([string]$_.name) })
                     }
 
+                    $previousIndexPayload = $null
+                    $previousRepos = @()
+                    $previousRepoMap = @{}
+                    $previousAssessments = @()
+                    $unchangedAssessments = @()
+                    $localReposForAssessment = @($localRepos)
+                    $githubReposForAssessmentSubset = @($githubReposForAssessment)
+                    $differentialChangedSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+                    if ($useDifferentialScan) {
+                        $previousIndexPayload = Get-PortfolioIndexPayload -WorkspaceRoot $WorkspaceRoot
+                        $previousRepos = if ($null -ne $previousIndexPayload -and $previousIndexPayload.PSObject.Properties.Name -contains 'repos') { @($previousIndexPayload.repos) } else { @() }
+                        if (@($previousRepos).Count -gt 0) {
+                            foreach ($prev in @($previousRepos)) {
+                                if ($null -eq $prev) { continue }
+                                $prevName = [string](Get-ObjectPropertyValue -InputObject $prev -PropertyName 'repoName' -Default '')
+                                if ([string]::IsNullOrWhiteSpace($prevName)) { continue }
+                                $previousRepoMap[$prevName.ToLowerInvariant()] = $prev
+                            }
+
+                            $currentLocalMap = @{}
+                            foreach ($repo in @($localRepos)) {
+                                if ($null -eq $repo) { continue }
+                                $name = [string](Get-ObjectPropertyValue -InputObject $repo -PropertyName 'name' -Default '')
+                                if ([string]::IsNullOrWhiteSpace($name)) { continue }
+                                $currentLocalMap[$name.ToLowerInvariant()] = $repo
+                            }
+                            $currentGithubMap = @{}
+                            foreach ($repo in @($githubReposForAssessment)) {
+                                if ($null -eq $repo) { continue }
+                                $name = [string](Get-ObjectPropertyValue -InputObject $repo -PropertyName 'name' -Default '')
+                                if ([string]::IsNullOrWhiteSpace($name)) { continue }
+                                $currentGithubMap[$name.ToLowerInvariant()] = $repo
+                            }
+
+                            $allNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+                            foreach ($name in $previousRepoMap.Keys) { [void]$allNames.Add($name) }
+                            foreach ($name in $currentLocalMap.Keys) { [void]$allNames.Add($name) }
+                            foreach ($name in $currentGithubMap.Keys) { [void]$allNames.Add($name) }
+
+                            foreach ($nameKey in $allNames) {
+                                $currentLocal = if ($currentLocalMap.ContainsKey($nameKey)) { $currentLocalMap[$nameKey] } else { $null }
+                                $currentGithub = if ($currentGithubMap.ContainsKey($nameKey)) { $currentGithubMap[$nameKey] } else { $null }
+                                $currentSourceCoverage = if ($null -ne $currentLocal -and $null -ne $currentGithub) { 'local+github' } elseif ($null -ne $currentLocal) { 'local' } elseif ($null -ne $currentGithub) { 'github' } else { 'none' }
+                                $currentLocalPath = if ($null -ne $currentLocal) { [string](Get-ObjectPropertyValue -InputObject $currentLocal -PropertyName 'path' -Default '') } else { '' }
+                                $currentFingerprint = if ($currentSourceCoverage -eq 'none') { '' } else { Get-PortfolioScanFingerprintFromSignals -LocalRepo $currentLocal -GitHubRepo $currentGithub -LocalPath $currentLocalPath -SourceCoverage $currentSourceCoverage }
+
+                                $previousRepo = if ($previousRepoMap.ContainsKey($nameKey)) { $previousRepoMap[$nameKey] } else { $null }
+                                $previousFingerprint = if ($null -ne $previousRepo) { Get-PortfolioScanFingerprintFromIndexedRepo -IndexedRepo $previousRepo } else { '' }
+
+                                if ([string]::IsNullOrWhiteSpace($previousFingerprint) -or [string]::IsNullOrWhiteSpace($currentFingerprint) -or $currentFingerprint -ne $previousFingerprint) {
+                                    [void]$differentialChangedSet.Add($nameKey)
+                                }
+                            }
+
+                            $localReposForAssessment = @($localRepos | Where-Object {
+                                $repoName = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'name' -Default '')
+                                -not [string]::IsNullOrWhiteSpace($repoName) -and $differentialChangedSet.Contains($repoName)
+                            })
+
+                            $githubReposForAssessmentSubset = @($githubReposForAssessment | Where-Object {
+                                $repoName = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'name' -Default '')
+                                -not [string]::IsNullOrWhiteSpace($repoName) -and $differentialChangedSet.Contains($repoName)
+                            })
+
+                            $previousAssessments = Convert-PortfolioIndexReposToAssessments -IndexRepos $previousRepos
+                            $currentNameSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+                            foreach ($repo in @($localRepos)) {
+                                $repoName = [string](Get-ObjectPropertyValue -InputObject $repo -PropertyName 'name' -Default '')
+                                if (-not [string]::IsNullOrWhiteSpace($repoName)) { [void]$currentNameSet.Add($repoName) }
+                            }
+                            foreach ($repo in @($githubReposForAssessment)) {
+                                $repoName = [string](Get-ObjectPropertyValue -InputObject $repo -PropertyName 'name' -Default '')
+                                if (-not [string]::IsNullOrWhiteSpace($repoName)) { [void]$currentNameSet.Add($repoName) }
+                            }
+                            $unchangedAssessments = @($previousAssessments | Where-Object {
+                                $repoName = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '')
+                                -not [string]::IsNullOrWhiteSpace($repoName) -and $currentNameSet.Contains($repoName) -and (-not $differentialChangedSet.Contains($repoName))
+                            })
+
+                            Write-HostLog ("[TRACE] portfolio.assessment differential selection changed={0} unchanged={1} totalCurrent={2}" -f $differentialChangedSet.Count, @($unchangedAssessments).Count, $currentNameSet.Count)
+                            $signalSources['scanMode'] = 'differential'
+                            $signalSources['differentialChangedCount'] = $differentialChangedSet.Count
+                            $signalSources['differentialUnchangedCount'] = @($unchangedAssessments).Count
+                        } else {
+                            $signalSources['scanMode'] = 'differential-fallback-full'
+                        }
+                    }
+
+                    if ($useDifferentialScan) {
+                        if (@($previousRepos).Count -eq 0) {
+                            $roadmapEntries = @(Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth)
+                            $signalSources['roadmap'] = 'fresh-scan'
+                            $docAuditEntries = @(Invoke-DocAuditScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth)
+                            $signalSources['docAudit'] = 'fresh-scan'
+                            $auditedAt = (Get-Date).ToUniversalTime().ToString('o')
+                            if ($docAuditTtl -gt 0) { Save-DocAuditCache -Entries $docAuditEntries -AuditedAt $auditedAt }
+
+                            $roadmapAuditEntries = @()
+                            $raCached = Get-RoadmapAuditFromCache -TtlSeconds $rmAuditTtl
+                            if ($raCached.hit) {
+                                $roadmapAuditEntries = @($raCached.entries)
+                                $signalSources['roadmapAudit'] = 'cache'
+                            } else {
+                                $signalSources['roadmapAudit'] = 'unavailable'
+                            }
+                        } elseif (@($localReposForAssessment).Count -gt 0) {
+                            $changedLocalRoots = @($localReposForAssessment | ForEach-Object { [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'path' -Default '') } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+                            if (@($changedLocalRoots).Count -gt 0) {
+                                $roadmapEntries = @(Invoke-RoadmapScan -LocalRoots $changedLocalRoots -MaxDepth 3)
+                                $signalSources['roadmap'] = 'differential-scan'
+
+                                Clear-DocAuditCache
+                                Clear-RoadmapCache
+                                $docAuditEntries = @(Invoke-DocAuditScan -LocalRoots $changedLocalRoots -MaxDepth 3)
+                                $signalSources['docAudit'] = 'differential-scan'
+
+                                $auditedAt = (Get-Date).ToUniversalTime().ToString('o')
+                                if ($docAuditTtl -gt 0) { Save-DocAuditCache -Entries $docAuditEntries -AuditedAt $auditedAt }
+                            }
+
+                            $raCached = Get-RoadmapAuditFromCache -TtlSeconds $rmAuditTtl
+                            if ($raCached.hit) {
+                                $roadmapAuditEntries = @($raCached.entries | Where-Object {
+                                    $repoName = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '')
+                                    -not [string]::IsNullOrWhiteSpace($repoName) -and $differentialChangedSet.Contains($repoName)
+                                })
+                                $signalSources['roadmapAudit'] = 'cache-filtered'
+                            } else {
+                                $roadmapAuditEntries = @()
+                                $signalSources['roadmapAudit'] = 'unavailable'
+                            }
+                        } else {
+                            $roadmapEntries = @()
+                            $docAuditEntries = @()
+                            $roadmapAuditEntries = @()
+                            $signalSources['roadmap'] = 'differential-noop'
+                            $signalSources['docAudit'] = 'differential-noop'
+                            $signalSources['roadmapAudit'] = 'differential-noop'
+                        }
+                    }
+
                     # 7) Structure standards
                     $standardsPath = Join-Path $WorkspaceRoot 'backend\config\repo-structure-standards.json'
                     $structStandards = Get-RepoStructureStandards -StandardsPath $standardsPath
@@ -4695,15 +4853,28 @@ try {
                     $valueScoringConfig = Get-PortfolioValueScoringConfig -ConfigPath $valueScoringPath
 
                     # Run the assessment
-                    $assessments = Invoke-PortfolioAssessment `
-                        -LocalRepos          $localRepos `
+                    $assessmentLocalRepos = if ($useDifferentialScan) { @($localReposForAssessment) } else { @($localRepos) }
+                    $assessmentGithubRepos = if ($useDifferentialScan) { @($githubReposForAssessmentSubset) } else { @($githubReposForAssessment) }
+
+                    $assessedChanged = Invoke-PortfolioAssessment `
+                        -LocalRepos          $assessmentLocalRepos `
                         -RoadmapEntries      $roadmapEntries `
                         -DocAuditEntries     $docAuditEntries `
                         -RoadmapAuditEntries $roadmapAuditEntries `
                         -ExecutionEntries    $executionEntries `
-                        -GitHubRepos         $githubReposForAssessment `
+                        -GitHubRepos         $assessmentGithubRepos `
                         -StructureStandards  $structStandards `
                         -ValueScoringConfig  $valueScoringConfig
+
+                    $assessments = if ($useDifferentialScan -and @($previousRepos).Count -gt 0) {
+                        @(@($assessedChanged) + @($unchangedAssessments))
+                    } else {
+                        @($assessedChanged)
+                    }
+
+                    $assessments = @($assessments | Sort-Object `
+                        @{ Expression = { [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '') }; Ascending = $true },
+                        @{ Expression = { [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'sourceCoverage' -Default '') }; Ascending = $true })
 
                     $summary = Get-PortfolioAssessmentSummary -Assessments $assessments
                     $generatedAt = (Get-Date).ToUniversalTime().ToString('o')
