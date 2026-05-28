@@ -1,5 +1,16 @@
 import React, { useState, useMemo } from 'react';
-import { type DocAuditEntry, type DocAuditIndex, type DispatchReadiness, type RoadmapAuditIndex, type RoadmapMaturityLevel, type RoadmapMaturityFilter } from '../types';
+import {
+  type DocAuditEntry,
+  type DocAuditIndex,
+  type DispatchReadiness,
+  type PortfolioAssessmentEntry,
+  type PortfolioAssessmentResult,
+  type PortfolioPendingItemValue,
+  type PortfolioValueTier,
+  type RoadmapAuditIndex,
+  type RoadmapMaturityFilter,
+  type RoadmapMaturityLevel,
+} from '../types';
 import { SpinnerIcon } from './icons';
 
 interface WorkQueueViewProps {
@@ -19,6 +30,7 @@ interface WorkQueueViewProps {
   onDispatchRelease?: (repoName: string) => void;
   isScanning: boolean;
   roadmapAuditIndex?: RoadmapAuditIndex | null;
+  portfolioAssessment?: PortfolioAssessmentResult | null;
 }
 
 type ReadinessFilter = DispatchReadiness | 'all';
@@ -115,6 +127,39 @@ const SEVERITY_BG: Record<string, string> = {
   info: 'bg-blue-900/20 border-blue-700/30',
 };
 
+const VALUE_TIER_CONFIG: Record<PortfolioValueTier, { label: string; chipClass: string; scoreClass: string }> = {
+  highest: {
+    label: 'Highest',
+    chipClass: 'bg-emerald-900/40 text-emerald-200 border-emerald-700/50',
+    scoreClass: 'text-emerald-200',
+  },
+  high: {
+    label: 'High',
+    chipClass: 'bg-cyan-900/40 text-cyan-200 border-cyan-700/50',
+    scoreClass: 'text-cyan-200',
+  },
+  medium: {
+    label: 'Medium',
+    chipClass: 'bg-indigo-900/40 text-indigo-200 border-indigo-700/50',
+    scoreClass: 'text-indigo-200',
+  },
+  low: {
+    label: 'Low',
+    chipClass: 'bg-slate-800 text-slate-200 border-slate-600',
+    scoreClass: 'text-slate-200',
+  },
+  deferred: {
+    label: 'Deferred',
+    chipClass: 'bg-amber-900/40 text-amber-200 border-amber-700/50',
+    scoreClass: 'text-amber-200',
+  },
+  unscored: {
+    label: 'Unscored',
+    chipClass: 'bg-gray-800 text-gray-300 border-gray-600',
+    scoreClass: 'text-gray-300',
+  },
+};
+
 function ReadinessBadge({ readiness }: { readiness: DispatchReadiness }) {
   const config = READINESS_CONFIG[readiness] ?? READINESS_CONFIG['missing-roadmap'];
   return (
@@ -131,6 +176,28 @@ function getDefaultRoadmapPath(repoPath?: string | null): string | undefined {
   if (!repoPath) return undefined;
   const trimmed = repoPath.replace(/[\\/]+$/, '');
   return trimmed ? `${trimmed}\\ROADMAP.md` : undefined;
+}
+
+function buildValueRationaleTooltip(item: PortfolioPendingItemValue, assessment?: PortfolioAssessmentEntry | null): string {
+  const lines = [
+    `Highest-value roadmap item: ${item.text}`,
+    `Score: ${item.valueScore} (${VALUE_TIER_CONFIG[item.valueTier]?.label ?? item.valueTier})`,
+  ];
+
+  if (assessment?.pendingItemCount) {
+    lines.push(`Pending roadmap items in repo: ${assessment.pendingItemCount}`);
+  }
+
+  if (item.tags.length > 0) {
+    lines.push(`Tags: ${item.tags.join(', ')}`);
+  }
+
+  if (item.valueRationale.length > 0) {
+    lines.push('Why it ranks highly:');
+    item.valueRationale.forEach(reason => lines.push(`- ${reason}`));
+  }
+
+  return lines.join('\n');
 }
 
 const SAVED_FILTERS_KEY = 'work-queue-saved-filters';
@@ -160,6 +227,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
   onDispatchRelease,
   isScanning,
   roadmapAuditIndex,
+  portfolioAssessment,
 }) => {
   const [readinessFilter, setReadinessFilter] = useState<ReadinessFilter>('all');
   const [maturityFilter, setMaturityFilter] = useState<RoadmapMaturityFilter>('all');
@@ -181,10 +249,18 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
   const auditByRepo = useMemo(() => {
     const map = new Map<string, import('../types').RoadmapAuditEntry>();
     for (const e of (roadmapAuditIndex?.entries ?? [])) {
-      map.set(e.repoName, e);
+      map.set(e.repoName.toLowerCase(), e);
     }
     return map;
   }, [roadmapAuditIndex]);
+
+  const assessmentByRepo = useMemo(() => {
+    const map = new Map<string, PortfolioAssessmentEntry>();
+    for (const e of (portfolioAssessment?.entries ?? [])) {
+      map.set(e.repoName.toLowerCase(), e);
+    }
+    return map;
+  }, [portfolioAssessment]);
 
   const readinessCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -201,29 +277,53 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
     }
     if (maturityFilter !== 'all') {
       result = result.filter(e => {
-        const audit = auditByRepo.get(e.repoName);
+        const audit = auditByRepo.get(e.repoName.toLowerCase());
         return audit?.maturityLevel === maturityFilter;
       });
     }
     if (tagFilter !== 'all') {
       result = result.filter(e => {
-        const audit = auditByRepo.get(e.repoName);
+        const audit = auditByRepo.get(e.repoName.toLowerCase());
         return (audit?.nextPendingItem?.tags ?? []).includes(tagFilter);
       });
     }
     if (filterText.trim()) {
       const lower = filterText.toLowerCase();
-      result = result.filter(e =>
-        e.repoName.toLowerCase().includes(lower) ||
-        (e.nextPendingRoadmapItem ?? '').toLowerCase().includes(lower)
-      );
+      result = result.filter(e => {
+        const assessment = assessmentByRepo.get(e.repoName.toLowerCase());
+        return (
+          e.repoName.toLowerCase().includes(lower) ||
+          (e.nextPendingRoadmapItem ?? '').toLowerCase().includes(lower) ||
+          (assessment?.topValueItem?.text ?? '').toLowerCase().includes(lower) ||
+          (assessment?.recommendedAction ?? '').toLowerCase().includes(lower)
+        );
+      });
     }
-    return result.sort(
-      (a, b) =>
-        (READINESS_CONFIG[a.dispatchReadiness]?.priority ?? 99) -
-        (READINESS_CONFIG[b.dispatchReadiness]?.priority ?? 99)
-    );
-  }, [entries, readinessFilter, maturityFilter, tagFilter, filterText, auditByRepo]);
+    return result.sort((left, right) => {
+      const priorityDiff =
+        (READINESS_CONFIG[left.dispatchReadiness]?.priority ?? 99) -
+        (READINESS_CONFIG[right.dispatchReadiness]?.priority ?? 99);
+      if (priorityDiff !== 0) {
+        return priorityDiff;
+      }
+
+      const leftAssessment = assessmentByRepo.get(left.repoName.toLowerCase());
+      const rightAssessment = assessmentByRepo.get(right.repoName.toLowerCase());
+      const leftValue = leftAssessment?.topValueItem?.valueScore ?? -1;
+      const rightValue = rightAssessment?.topValueItem?.valueScore ?? -1;
+      if (rightValue !== leftValue) {
+        return rightValue - leftValue;
+      }
+
+      const leftPending = leftAssessment?.pendingItemCount ?? 0;
+      const rightPending = rightAssessment?.pendingItemCount ?? 0;
+      if (rightPending !== leftPending) {
+        return rightPending - leftPending;
+      }
+
+      return left.repoName.localeCompare(right.repoName);
+    });
+  }, [entries, readinessFilter, maturityFilter, tagFilter, filterText, auditByRepo, assessmentByRepo]);
 
   const toggleExpand = (repoName: string) => {
     setExpandedRepos(prev => {
@@ -269,6 +369,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
           <h2 className="text-lg font-semibold text-white">Documentation Audit &amp; Work Queue</h2>
           <p className="text-sm text-gray-400 mt-0.5">
             Per-repo dispatch readiness based on roadmap state and documentation standards.
+            {(portfolioAssessment?.entries?.length ?? 0) > 0 && ' Ready repos are ranked by highest-value pending roadmap item.'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -533,11 +634,17 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
       {filteredEntries.length > 0 && (
         <div className="space-y-2">
           {filteredEntries.map(entry => {
+            const repoKey = entry.repoName.toLowerCase();
             const isExpanded = expandedRepos.has(entry.repoName);
             const hasFindings = entry.docFindings.length > 0;
             const hasMissingReadme = (entry.docFindings ?? []).some(
               f => /readme/i.test(f.file ?? '') && f.severity === 'critical'
             );
+            const roadmapAudit = auditByRepo.get(repoKey);
+            const assessment = assessmentByRepo.get(repoKey);
+            const topValueItem = assessment?.topValueItem ?? null;
+            const valueTier = topValueItem ? (VALUE_TIER_CONFIG[topValueItem.valueTier] ?? VALUE_TIER_CONFIG.unscored) : null;
+            const valueTooltip = topValueItem ? buildValueRationaleTooltip(topValueItem, assessment) : '';
             return (
               <div
                 key={entry.repoPath || entry.repoName}
@@ -545,7 +652,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
               >
                 {/* Repo row header */}
                 <div
-                  className={`flex items-start gap-3 px-4 py-3 ${hasFindings ? 'cursor-pointer hover:bg-gray-700/40' : ''}`}
+                  className={`flex flex-wrap items-start gap-3 px-4 py-3 ${hasFindings ? 'cursor-pointer hover:bg-gray-700/40' : ''}`}
                   onClick={() => hasFindings && toggleExpand(entry.repoName)}
                 >
                   {/* Expand toggle */}
@@ -558,13 +665,13 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                   </div>
 
                   {/* Repo info */}
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-[220px]">
                     <div className="flex flex-wrap items-center gap-2 mb-1">
                       <span className="text-sm font-semibold text-white truncate">{entry.repoName}</span>
                       <ReadinessBadge readiness={entry.dispatchReadiness} />
                       {/* Roadmap maturity badge from contract audit */}
-                      {auditByRepo.get(entry.repoName) && (
-                        <MaturityMiniBadge level={auditByRepo.get(entry.repoName)!.maturityLevel} />
+                      {roadmapAudit && (
+                        <MaturityMiniBadge level={roadmapAudit.maturityLevel} />
                       )}
                       {entry.criticalCount > 0 && (
                         <span className="text-xs px-1.5 py-0.5 rounded bg-red-900/40 text-red-300 border border-red-700/40">
@@ -593,6 +700,12 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                         </div>
                       )}
 
+                    {assessment?.recommendedAction && entry.dispatchReadiness === 'ready' && (
+                      <div className="text-xs text-gray-400 truncate">
+                        {assessment.recommendedAction}
+                      </div>
+                    )}
+
                     {/* Local path */}
                     {entry.repoPath && (
                       <div className="text-xs text-gray-500 truncate mt-0.5" title={entry.repoPath}>
@@ -601,14 +714,56 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                     )}
                   </div>
 
+                  <div className="w-full sm:w-auto sm:min-w-[188px]">
+                    <div className="rounded-lg border border-gray-700 bg-gray-900/60 px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] uppercase tracking-wide text-gray-500">Value</span>
+                        {valueTier ? (
+                          <span className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium ${valueTier.chipClass}`}>
+                            {valueTier.label}
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-gray-600">Not ranked</span>
+                        )}
+                      </div>
+                      {topValueItem ? (
+                        <>
+                          <div className="mt-2 flex items-center justify-between gap-3">
+                            <div className={`text-xl font-semibold ${valueTier?.scoreClass ?? 'text-white'}`}>
+                              {topValueItem.valueScore}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={event => event.stopPropagation()}
+                              title={valueTooltip}
+                              className="text-xs text-indigo-300 underline decoration-dotted underline-offset-2 hover:text-indigo-200"
+                            >
+                              Why?
+                            </button>
+                          </div>
+                          <div className="mt-1 text-xs text-gray-400 truncate" title={topValueItem.text}>
+                            {topValueItem.text}
+                          </div>
+                          <div className="mt-1 text-[11px] text-gray-500">
+                            {assessment?.pendingItemCount ?? 0} pending roadmap item{assessment?.pendingItemCount === 1 ? '' : 's'}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="mt-2 text-xs text-gray-500">
+                          No ranked roadmap work available yet.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   {/* Action buttons */}
-                  <div className="flex-shrink-0 flex items-center gap-1.5">
+                  <div className="flex-shrink-0 flex flex-wrap items-center gap-1.5 sm:ml-auto">
                     {onPreviewTask && entry.dispatchReadiness === 'ready' && (
                       <button
                         onClick={e => {
                           e.stopPropagation();
                           const entryRoadmapPath = (entry as DocAuditEntry & { roadmapPath?: string | null }).roadmapPath;
-                          onPreviewTask(entry.repoName, entryRoadmapPath ?? auditByRepo.get(entry.repoName)?.roadmapPath ?? getDefaultRoadmapPath(entry.repoPath));
+                          onPreviewTask(entry.repoName, entryRoadmapPath ?? roadmapAudit?.roadmapPath ?? assessment?.roadmapPath ?? getDefaultRoadmapPath(entry.repoPath));
                         }}
                         className="text-xs px-2 py-1 rounded border border-green-700/50 bg-green-900/40 text-green-300 hover:bg-green-800/60 transition-colors"
                         title="Preview Copilot Task Packet"
@@ -616,7 +771,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                         Preview Task
                       </button>
                     )}
-                    {onViewRoadmapAudit && auditByRepo.has(entry.repoName) && (
+                    {onViewRoadmapAudit && roadmapAudit && (
                       <button
                         onClick={e => { e.stopPropagation(); onViewRoadmapAudit(entry.repoName); }}
                         className="text-xs px-2 py-1 rounded border border-purple-700/50 bg-purple-900/40 text-purple-300 hover:bg-purple-800/60 transition-colors"
@@ -625,7 +780,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                         Audit
                       </button>
                     )}
-                    {onRepairRoadmap && auditByRepo.has(entry.repoName) && ['L0-Absent', 'L1-Informal', 'L2-Structured'].includes(auditByRepo.get(entry.repoName)?.maturityLevel ?? '') && (
+                    {onRepairRoadmap && roadmapAudit && ['L0-Absent', 'L1-Informal', 'L2-Structured'].includes(roadmapAudit.maturityLevel) && (
                       <button
                         onClick={e => { e.stopPropagation(); onRepairRoadmap(entry.repoName); }}
                         className="text-xs px-2 py-1 rounded border border-orange-700/50 bg-orange-900/40 text-orange-300 hover:bg-orange-800/60 transition-colors"

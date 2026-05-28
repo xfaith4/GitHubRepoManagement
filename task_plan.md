@@ -1,31 +1,27 @@
 # Task Plan
 
 ## Goal
-Execute the next logical roadmap phase for Release 1.7.5: Phase 2 value ranking.
+Execute the next logical roadmap phase for Release 1.7.5: Phase 4 Work Queue value display.
 
 ## Scope
-- Add a value scoring configuration and backend scorer module.
-- Attach value score and rationale to pending roadmap work in portfolio assessment responses.
-- Cover the scorer and assessment response with focused smoke tests.
-- Update roadmap/changelog only for completed scoped work.
+- Feed `WorkQueueView` from the existing portfolio assessment model.
+- Show the highest-value pending roadmap item, value score, and rationale in the Work Queue UI.
+- Re-rank Work Queue rows by value within each readiness bucket.
+- Keep refresh and scan flows from serving stale value-ranking data.
+- Update roadmap/progress/changelog artifacts only after verification passes.
 
 ## Phases
 
 | Phase | Status | Notes |
 |---|---|---|
-| 1. Repo orientation | complete | ROADMAP shows Release 1.7.5 Phase 2 is next active target. |
-| 2. Inspect assessment/contracts | complete | Read current portfolio module, tests, API host response checks, frontend types. |
-| 3. Implement value scorer | complete | New config + PowerShell module following local patterns. |
-| 4. Wire assessment response | complete | Add value-scored pending work without breaking existing fields. |
-| 5. Verification | complete | Module smoke, frontend build, and PowerShell parse checks passed. |
-| 6. Roadmap/changelog update | complete | Marked Phase 2 smoke-tested and Phase 3 next. |
+| 1. Repo orientation | complete | ROADMAP and live code confirm Release 1.7.5 Phase 4 is the next unfinished slice. |
+| 2. Inspect Work Queue data flow | complete | Verified backend already exposes `pendingItems` and `topValueItem`; UI still ranked only by readiness. |
+| 3. Implement value-ranked Work Queue | complete | Wired `Dashboard.tsx` and `WorkQueueView.tsx` to assessment data, added score card and rationale tooltip, and updated ordering. |
+| 4. Verification | complete | Repaired missing Rollup optional dependency, then ran the frontend production build successfully. |
+| 5. Roadmap/docs sync | complete | Updated `ROADMAP.md`, `CHANGELOG.md`, `progress.md`, and assessment reference docs for Phase 4 completion. |
 
 ## Errors Encountered
 
 | Error | Attempt | Resolution |
 |---|---|---|
-| `Invoke-ModuleSmokeTest.ps1` defaulted to `G:\Development\GitHubRepoManagement`, which is not a mounted PowerShell drive in this shell. | Ran smoke without parameters. | Reran with `-WorkspaceRoot "$(pwd)"`. |
-| Bash rejected PowerShell-style `(pwd)` argument syntax. | Tried `-WorkspaceRoot (pwd)` from bash. | Used shell substitution: `-WorkspaceRoot "$(pwd)"`. |
-| Empty scored item list produced an index-out-of-range in `_SelectTopValueItem`. | First portfolio smoke run after scoring integration. | Added explicit valid-item flattening and null return for empty lists. |
-| Scored pending items were nested as one array element. | Second portfolio smoke run. | Returned helper arrays normally and wrapped call sites with `@(...)`. |
-| API host smoke printed `[PASS]` but the PowerShell process did not exit after summary output. | Full API host smoke verification. | Confirmed pass output and terminated the lingering smoke/child process; verified no API smoke or host process remains. |
+| `npm run build` failed with `Cannot find module @rollup/rollup-linux-x64-gnu`. | Ran the frontend build immediately after the UI patch. | Ran `npm run install:frontend` to restore the missing optional Rollup package, then reran the build successfully. |

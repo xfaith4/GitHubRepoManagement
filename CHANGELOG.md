@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here.
 
+## 2026-05-27 — Release 1.7.5 Phase 4: Work Queue Value Display
+
+### Changed
+
+- **`WorkQueueView.tsx`** — ready repos now surface the highest-value pending roadmap item from `topValueItem`, show a value score card with rationale tooltip, and rerank within readiness buckets by value score before falling back to pending-count and name ordering.
+- **`Dashboard.tsx`** — Work Queue now receives the live portfolio assessment model, and docs-audit refresh/scan flows also refresh portfolio assessment data so value ranking does not lag behind refreshed readiness data.
+- **`docs/reference/portfolio-assessment.md`** — documented the `pendingItems` and `topValueItem` contract fields and how Work Queue ranking consumes them.
+
+### Testing
+
+- **`npm run install:frontend`** — repaired missing Rollup optional dependencies required by the repo's Vite build on this machine.
+- **`npm run build`** — verified the frontend compiles with the new Work Queue value-ranking UI.
+
 ## 2026-04-26 — Release 1.7.5 Phase 2: Value-Ranked Work Planning
 
 ### Added

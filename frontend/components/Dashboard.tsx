@@ -139,6 +139,16 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [logMessages, setLogMessages] = useState<string[]>([]);
   const [logStatus, setLogStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
 
+  const refreshPortfolioAssessment = (refresh = false) => {
+    setPortfolioAssessmentLoading(true);
+    return getPortfolioAssessment(refresh ? { refresh: true } : {})
+      .then(result => {
+        setPortfolioAssessment(result);
+        return result;
+      })
+      .finally(() => setPortfolioAssessmentLoading(false));
+  };
+
   // Backend health indicator — polls /health/live every 15 s
   const backendHealth = useHealthPing(15_000);
 
@@ -170,11 +180,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
       return;
     }
 
-    setPortfolioAssessmentLoading(true);
-    getPortfolioAssessment()
-      .then(setPortfolioAssessment)
-      .catch(() => {/* silent */})
-      .finally(() => setPortfolioAssessmentLoading(false));
+    refreshPortfolioAssessment(false).catch(() => {/* silent */});
   }, [loading, repos.length]);
 
   // Release 1.2 — fetch execution metrics and auto-scan schedule on mount (silent failures)
@@ -394,6 +400,11 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                     const auditResult = await triggerDocsAuditScan();
                     setDocsAuditIndex(auditResult);
                     setDocsAuditError(null);
+                    try {
+                      await refreshPortfolioAssessment(true);
+                    } catch (assessmentErr) {
+                      setLogMessages(prev => [...prev, `Portfolio value refresh failed: ${assessmentErr instanceof Error ? assessmentErr.message : String(assessmentErr)}`]);
+                    }
                     const readyCount = auditResult.entries.filter(e => e.dispatchReadiness === 'ready').length;
                     setLogMessages(prev => [...prev, `Audit complete. ${auditResult.count} repos audited. ${readyCount} ready for dispatch.`]);
                     setLogStatus('success');
@@ -561,15 +572,41 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
 
   const handleDocsAuditRefresh = () => {
     setDocsAuditLoading(true);
-    getDocsAudit(true)
-      .then(index => {
-        setDocsAuditIndex(index);
-        setDocsAuditError(null);
+    setPortfolioAssessmentLoading(true);
+    const roadmapAuditRefresh = hasAttemptedRoadmapAuditLoad
+      ? getRoadmapAudit({ refresh: true })
+      : Promise.resolve(null);
+
+    Promise.allSettled([
+      getDocsAudit(true),
+      getPortfolioAssessment({ refresh: true }),
+      roadmapAuditRefresh,
+    ])
+      .then(([docsResult, portfolioResult, roadmapResult]) => {
+        if (docsResult.status === 'fulfilled') {
+          setDocsAuditIndex(docsResult.value);
+          setDocsAuditError(null);
+        } else {
+          const err = docsResult.reason;
+          setDocsAuditError(err instanceof Error ? err.message : 'Docs audit refresh failed.');
+        }
+
+        if (portfolioResult.status === 'fulfilled') {
+          setPortfolioAssessment(portfolioResult.value);
+        } else {
+          console.warn('Portfolio assessment refresh failed.', portfolioResult.reason);
+        }
+
+        if (roadmapResult.status === 'fulfilled' && roadmapResult.value) {
+          setRoadmapAuditIndex(roadmapResult.value);
+        } else if (roadmapResult.status === 'rejected') {
+          console.warn('Roadmap audit refresh failed.', roadmapResult.reason);
+        }
       })
-      .catch(err => {
-        setDocsAuditError(err instanceof Error ? err.message : 'Docs audit refresh failed.');
-      })
-      .finally(() => setDocsAuditLoading(false));
+      .finally(() => {
+        setDocsAuditLoading(false);
+        setPortfolioAssessmentLoading(false);
+      });
   };
 
   const handlePreviewCopilotTask = (repoName: string, roadmapPath?: string) => {
@@ -1192,6 +1229,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                 onDispatchRelease={handleDispatchRelease}
                 isScanning={currentOperation === 'docs-audit-scan'}
                 roadmapAuditIndex={roadmapAuditIndex}
+                portfolioAssessment={portfolioAssessment}
               />
             ) : activeView === 'execution-queue' ? (
               <ExecutionQueuePanel

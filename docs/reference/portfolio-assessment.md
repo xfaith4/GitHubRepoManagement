@@ -78,6 +78,20 @@ in `settings.json`.
 
 ---
 
+## Value Ranking
+
+The assessment carries both the full scored pending-work list and the highest-value recommendation for
+each repo:
+
+- `pendingItems` — all pending roadmap items with tags, per-item score, value tier, and rationale.
+- `topValueItem` — the single highest-value pending roadmap item for the repo, or `null` when the repo
+  has no rankable roadmap work.
+
+The Work Queue consumes `topValueItem` to rank ready repos by value within each readiness bucket and to
+show operators *why* a repo rose to the top before they preview or dispatch work.
+
+---
+
 ## Repo Structure Audit
 
 The structure audit (`Invoke-RepoStructureAudit`) checks each repo against the data-driven standard at
