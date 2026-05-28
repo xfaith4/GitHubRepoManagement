@@ -288,17 +288,64 @@ export interface CopilotTaskPacketContext {
   repoPath?: string;
   roadmapPath: string;
   dispatchReadiness?: DispatchReadiness;
+  lifecycleState?: RepoLifecycleState | null;
+  recommendedAction?: string | null;
+  blockingReasons?: string[];
+  maturityLevel?: RoadmapMaturityLevel | null;
+  maturityScore?: number | null;
+  sourceCoverage?: SourceCoverage | null;
+  dispatchReadinessExplanation?: string | null;
+  readmeScore?: number | null;
+  roadmapScore?: number | null;
+  documentationHealthScore?: number | null;
+  pendingItemCount?: number | null;
+}
+
+export interface CopilotTaskPacketReadmeContext {
+  readmePath?: string | null;
+  summary: string;
+  headings: string[];
+  hasSetupGuidance: boolean;
+  hasUsageGuidance: boolean;
+  hasArchitectureGuidance: boolean;
+}
+
+export interface CopilotTaskPacketRoadmapContext {
+  releaseName?: string | null;
+  releaseVersion?: string | null;
+  releaseTitle?: string | null;
+  releaseGoal: string;
+  pendingMilestones: string[];
+  completedMilestones: string[];
+  acceptanceCriteria: string[];
+  outOfScope: string[];
 }
 
 export interface CopilotTaskPacketRoadmapItem {
   text: string;
   section: string;
+  tags?: string[];
   previousItem?: string | null;
   nextItem?: string | null;
+  selectionSource?: 'value-ranked' | 'roadmap-order';
 }
 
 export interface CopilotTaskPacketGuardrail {
   rule: string;
+}
+
+export interface CopilotTaskPacketValueContext {
+  selectedBy: 'value-ranked' | 'roadmap-order';
+  selectedIsTopValueItem: boolean;
+  topValueItemText?: string | null;
+  valueScore?: number | null;
+  valueTier?: PortfolioValueTier | null;
+  rationale: string[];
+}
+
+export interface CopilotTaskPacketConstraint {
+  source: string;
+  text: string;
 }
 
 export interface CopilotTaskPacket {
@@ -306,9 +353,13 @@ export interface CopilotTaskPacket {
   runId: string;
   createdAt: string;
   repoContext: CopilotTaskPacketContext;
+  readmeContext: CopilotTaskPacketReadmeContext;
+  roadmapContext: CopilotTaskPacketRoadmapContext;
   selectedRoadmapItem: CopilotTaskPacketRoadmapItem;
   followUpCandidates: Array<{ text: string; section: string }>;
   docFindings: DocFinding[];
+  valueContext: CopilotTaskPacketValueContext;
+  constraints: CopilotTaskPacketConstraint[];
   acceptanceCriteria: string[];
   guardrails: CopilotTaskPacketGuardrail[];
   generatedPrompt: string;

@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here.
 
+## 2026-05-28 — Release 1.7.5 Phase 6: Prompt Context Packet Foundation
+
+### Changed
+
+- **`Start-RepoManagementApiHost.ps1`** — enriched `/api/copilot-task/preview` packets with README context, selected-release roadmap context, portfolio lifecycle and score context, explicit constraints, and value rationale for the selected task.
+- **`Start-RepoManagementApiHost.ps1`** — when portfolio assessment context is available, task preview now prefers the assessment-ranked top-value roadmap item instead of always defaulting to raw roadmap order.
+- **`frontend/types.ts`** and **`CopilotTaskPreviewModal.tsx`** — extended the task-packet contract and preview UI so operators can review README summary, release goal/out-of-scope, lifecycle context, value rationale, and constraints before copying the prompt.
+- **`scripts/Invoke-ApiHostSmokeTest.ps1`** — warmed portfolio assessment ahead of task preview and expanded the route contract check for the new prompt-context packet fields.
+
+### Testing
+
+- **`pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "$(pwd)"`** — passed and validated the enriched `/api/copilot-task/preview` contract.
+- **`npm run build`** — verified the frontend compiles with the prompt-context packet UI changes.
+- **PowerShell parser check** — passed for `backend/api-host/Start-RepoManagementApiHost.ps1` and `scripts/Invoke-ApiHostSmokeTest.ps1`.
+
 ## 2026-05-28 — Release 1.7.5 Phase 5: Expanded Evaluator
 
 ### Changed

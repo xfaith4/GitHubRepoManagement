@@ -38,6 +38,30 @@ const STATUS_COLORS: Record<string, string> = {
   failed: 'text-red-400',
 };
 
+const VALUE_TIER_LABELS: Record<string, string> = {
+  highest: 'Highest',
+  high: 'High',
+  medium: 'Medium',
+  low: 'Low',
+  deferred: 'Deferred',
+  unscored: 'Unscored',
+};
+
+const VALUE_TIER_BADGES: Record<string, string> = {
+  highest: 'bg-emerald-900/40 border-emerald-700/50 text-emerald-300',
+  high: 'bg-green-900/40 border-green-700/50 text-green-300',
+  medium: 'bg-yellow-900/40 border-yellow-700/50 text-yellow-300',
+  low: 'bg-slate-800 border-slate-700 text-slate-300',
+  deferred: 'bg-gray-800 border-gray-700 text-gray-400',
+  unscored: 'bg-gray-800 border-gray-700 text-gray-400',
+};
+
+const CONSTRAINT_SOURCE_LABELS: Record<string, string> = {
+  'roadmap-out-of-scope': 'Out of Scope',
+  'portfolio-blocker': 'Portfolio',
+  'docs-critical': 'Docs',
+};
+
 function SectionHeader({ title }: { title: string }) {
   return (
     <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 mt-4 first:mt-0">
@@ -181,17 +205,138 @@ const CopilotTaskPreviewModal: React.FC<CopilotTaskPreviewModalProps> = ({
                     <span className="text-green-300 font-medium">{packet.repoContext.dispatchReadiness}</span>
                   </div>
                 )}
+                {packet.repoContext.lifecycleState && (
+                  <div className="flex gap-2">
+                    <span className="text-gray-400 w-28 flex-shrink-0">Lifecycle</span>
+                    <span className="text-gray-200">{packet.repoContext.lifecycleState}</span>
+                  </div>
+                )}
+                {packet.repoContext.maturityLevel && (
+                  <div className="flex gap-2">
+                    <span className="text-gray-400 w-28 flex-shrink-0">Maturity</span>
+                    <span className="text-gray-200">
+                      {packet.repoContext.maturityLevel}
+                      {typeof packet.repoContext.maturityScore === 'number' ? ` (${packet.repoContext.maturityScore}/100)` : ''}
+                    </span>
+                  </div>
+                )}
+                {packet.repoContext.recommendedAction && (
+                  <div className="flex gap-2">
+                    <span className="text-gray-400 w-28 flex-shrink-0">Next action</span>
+                    <span className="text-gray-300">{packet.repoContext.recommendedAction}</span>
+                  </div>
+                )}
+                {packet.repoContext.dispatchReadinessExplanation && (
+                  <div className="flex gap-2">
+                    <span className="text-gray-400 w-28 flex-shrink-0">Why ready</span>
+                    <span className="text-gray-300">{packet.repoContext.dispatchReadinessExplanation}</span>
+                  </div>
+                )}
+                {(typeof packet.repoContext.readmeScore === 'number' ||
+                  typeof packet.repoContext.roadmapScore === 'number' ||
+                  typeof packet.repoContext.documentationHealthScore === 'number') && (
+                  <div className="flex gap-2">
+                    <span className="text-gray-400 w-28 flex-shrink-0">Scores</span>
+                    <span className="text-gray-300">
+                      README {packet.repoContext.readmeScore ?? 'n/a'} · ROADMAP {packet.repoContext.roadmapScore ?? 'n/a'} · Docs {packet.repoContext.documentationHealthScore ?? 'n/a'}
+                    </span>
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <span className="text-gray-400 w-28 flex-shrink-0">Packet ID</span>
                   <span className="text-gray-500 font-mono text-xs">{packet.runId}</span>
                 </div>
               </div>
 
+              {(packet.readmeContext.summary || packet.readmeContext.headings.length > 0) && (
+                <>
+                  <SectionHeader title="README Context" />
+                  <div className="bg-gray-800/40 border border-gray-700/60 rounded-lg p-3 space-y-2">
+                    {packet.readmeContext.summary && (
+                      <p className="text-sm text-gray-300 leading-relaxed">{packet.readmeContext.summary}</p>
+                    )}
+                    {packet.readmeContext.headings.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {packet.readmeContext.headings.map(heading => (
+                          <span
+                            key={heading}
+                            className="px-2 py-0.5 rounded border border-gray-700 bg-gray-900/70 text-xs text-gray-300"
+                          >
+                            {heading}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <span className={`px-2 py-0.5 rounded border ${packet.readmeContext.hasSetupGuidance ? 'border-green-700/50 bg-green-900/30 text-green-300' : 'border-gray-700 bg-gray-900/60 text-gray-500'}`}>
+                        Setup guidance
+                      </span>
+                      <span className={`px-2 py-0.5 rounded border ${packet.readmeContext.hasUsageGuidance ? 'border-green-700/50 bg-green-900/30 text-green-300' : 'border-gray-700 bg-gray-900/60 text-gray-500'}`}>
+                        Usage guidance
+                      </span>
+                      <span className={`px-2 py-0.5 rounded border ${packet.readmeContext.hasArchitectureGuidance ? 'border-green-700/50 bg-green-900/30 text-green-300' : 'border-gray-700 bg-gray-900/60 text-gray-500'}`}>
+                        Architecture context
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {(packet.roadmapContext.releaseName || packet.roadmapContext.pendingMilestones.length > 0) && (
+                <>
+                  <SectionHeader title="Release Context" />
+                  <div className="bg-gray-800/40 border border-gray-700/60 rounded-lg p-3 space-y-2">
+                    {packet.roadmapContext.releaseName && (
+                      <div className="text-sm text-white font-medium">{packet.roadmapContext.releaseName}</div>
+                    )}
+                    {packet.roadmapContext.releaseGoal && (
+                      <p className="text-sm text-gray-300">{packet.roadmapContext.releaseGoal}</p>
+                    )}
+                    {packet.roadmapContext.pendingMilestones.length > 0 && (
+                      <div>
+                        <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Release milestones</div>
+                        <div className="space-y-1">
+                          {packet.roadmapContext.pendingMilestones.slice(0, 5).map(item => (
+                            <div key={item} className="text-sm text-gray-300">- {item}</div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {packet.roadmapContext.outOfScope.length > 0 && (
+                      <div>
+                        <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Out of scope</div>
+                        <div className="space-y-1">
+                          {packet.roadmapContext.outOfScope.map(item => (
+                            <div key={item} className="text-sm text-gray-400">- {item}</div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
               {/* Selected roadmap item */}
               <SectionHeader title="Selected Roadmap Item" />
               <div className="bg-indigo-900/20 border border-indigo-700/40 rounded-lg p-3 space-y-2">
-                <div className="text-white font-medium text-sm">{packet.selectedRoadmapItem.text}</div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="text-white font-medium text-sm">{packet.selectedRoadmapItem.text}</div>
+                  {packet.selectedRoadmapItem.selectionSource && (
+                    <span className="px-2 py-0.5 rounded border border-indigo-700/50 bg-indigo-950/50 text-[11px] text-indigo-300 uppercase tracking-wide">
+                      {packet.selectedRoadmapItem.selectionSource === 'value-ranked' ? 'Value-ranked' : 'Roadmap-order'}
+                    </span>
+                  )}
+                </div>
                 <div className="text-xs text-indigo-400/80">Section: {packet.selectedRoadmapItem.section}</div>
+                {(packet.selectedRoadmapItem.tags?.length ?? 0) > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {packet.selectedRoadmapItem.tags?.map(tag => (
+                      <span key={tag} className="px-2 py-0.5 rounded border border-indigo-700/30 bg-indigo-900/20 text-[11px] text-indigo-200">
+                        [{tag}]
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {packet.selectedRoadmapItem.previousItem && (
                   <div className="text-xs text-gray-500">
                     ← Previous item: <span className="text-gray-400">{packet.selectedRoadmapItem.previousItem}</span>
@@ -203,6 +348,62 @@ const CopilotTaskPreviewModal: React.FC<CopilotTaskPreviewModalProps> = ({
                   </div>
                 )}
               </div>
+
+              {(typeof packet.valueContext.valueScore === 'number' ||
+                packet.valueContext.rationale.length > 0 ||
+                packet.valueContext.topValueItemText) && (
+                <>
+                  <SectionHeader title="Value Context" />
+                  <div className="bg-emerald-900/10 border border-emerald-700/30 rounded-lg p-3 space-y-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm text-gray-300">Selected by {packet.valueContext.selectedBy === 'value-ranked' ? 'value ranking' : 'roadmap order'}</span>
+                      {typeof packet.valueContext.valueScore === 'number' && (
+                        <span className="px-2.5 py-0.5 rounded border border-emerald-700/40 bg-emerald-900/30 text-sm text-emerald-300 font-semibold">
+                          {packet.valueContext.valueScore}
+                        </span>
+                      )}
+                      {packet.valueContext.valueTier && (
+                        <span className={`px-2 py-0.5 rounded border text-xs ${VALUE_TIER_BADGES[packet.valueContext.valueTier] ?? VALUE_TIER_BADGES.unscored}`}>
+                          {VALUE_TIER_LABELS[packet.valueContext.valueTier] ?? packet.valueContext.valueTier}
+                        </span>
+                      )}
+                    </div>
+                    {!packet.valueContext.selectedIsTopValueItem && packet.valueContext.topValueItemText && (
+                      <div className="text-xs text-gray-400">
+                        Highest-ranked item in assessment: <span className="text-gray-300">{packet.valueContext.topValueItemText}</span>
+                      </div>
+                    )}
+                    {packet.valueContext.rationale.length > 0 && (
+                      <ul className="space-y-1">
+                        {packet.valueContext.rationale.map(reason => (
+                          <li key={reason} className="flex items-start gap-2 text-sm text-gray-300">
+                            <span className="text-emerald-400 flex-shrink-0 mt-0.5">•</span>
+                            <span>{reason}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {packet.constraints.length > 0 && (
+                <>
+                  <SectionHeader title="Constraints" />
+                  <div className="space-y-1.5">
+                    {packet.constraints.map((constraint, i) => (
+                      <div key={`${constraint.source}-${i}`} className="rounded border border-gray-700/60 bg-gray-800/40 px-3 py-2">
+                        <div className="flex items-start gap-2">
+                          <span className="px-2 py-0.5 rounded border border-gray-700 bg-gray-900/70 text-[11px] text-gray-300 uppercase tracking-wide flex-shrink-0">
+                            {CONSTRAINT_SOURCE_LABELS[constraint.source] ?? constraint.source}
+                          </span>
+                          <span className="text-sm text-gray-300">{constraint.text}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
 
               {/* Follow-up candidates */}
               {packet.followUpCandidates.length > 0 && (
@@ -277,7 +478,7 @@ const CopilotTaskPreviewModal: React.FC<CopilotTaskPreviewModalProps> = ({
             <div>
               <div className="flex items-center justify-between mb-3">
                 <p className="text-sm text-gray-400">
-                  Structured prompt ready for Copilot. Review before dispatch.
+                  Structured prompt with README, roadmap, assessment, and value context. Review before dispatch.
                 </p>
                 <button
                   onClick={handleCopyPrompt}

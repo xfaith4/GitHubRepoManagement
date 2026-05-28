@@ -391,6 +391,10 @@ try {
     Assert-Not503 -Name '/api/copilot-task/preview (no repoName)' -Response $copilotPreviewMissingBody
     Write-Host ("  /api/copilot-task/preview (no repoName) -> HTTP {0}" -f $copilotPreviewMissingBody.StatusCode) -ForegroundColor DarkGray
 
+    # Warm portfolio assessment first so the prompt-context packet can include live value and lifecycle context.
+    $copilotPreviewPortfolioWarm = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment"
+    Assert-Not503 -Name '/api/portfolio/assessment (warm for copilot packet)' -Response $copilotPreviewPortfolioWarm
+
     # Preview with workspace repo name — may succeed if roadmap index is warm, or fail gracefully
     $workspaceRepoName = Split-Path $WorkspaceRoot -Leaf
     $copilotPreviewResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/copilot-task/preview" -Body @{ repoName = $workspaceRepoName }
@@ -399,9 +403,19 @@ try {
     $copilotPreviewPacketOk = $false
     if ($copilotPreviewJson -and $copilotPreviewJson.success -eq $true) {
         $packet = $copilotPreviewJson.data
-        if ($packet -and $packet.packetVersion -and $packet.runId -and $packet.repoContext -and $packet.selectedRoadmapItem -and $packet.generatedPrompt) {
+        $copilotPacketFieldsPresent = $packet -and
+            $packet.packetVersion -and
+            $packet.runId -and
+            ($packet.PSObject.Properties.Name -contains 'repoContext') -and
+            ($packet.PSObject.Properties.Name -contains 'readmeContext') -and
+            ($packet.PSObject.Properties.Name -contains 'roadmapContext') -and
+            ($packet.PSObject.Properties.Name -contains 'selectedRoadmapItem') -and
+            ($packet.PSObject.Properties.Name -contains 'valueContext') -and
+            ($packet.PSObject.Properties.Name -contains 'constraints') -and
+            $packet.generatedPrompt
+        if ($copilotPacketFieldsPresent) {
             $copilotPreviewPacketOk = $true
-            Write-Host ("  /api/copilot-task/preview -> packet runId={0} section='{1}'" -f $packet.runId, $packet.selectedRoadmapItem.section) -ForegroundColor DarkGray
+            Write-Host ("  /api/copilot-task/preview -> packet runId={0} section='{1}' selection='{2}'" -f $packet.runId, $packet.selectedRoadmapItem.section, $packet.selectedRoadmapItem.selectionSource) -ForegroundColor DarkGray
         } else {
             Write-Host '  /api/copilot-task/preview returned success=true but packet fields missing' -ForegroundColor Yellow
         }

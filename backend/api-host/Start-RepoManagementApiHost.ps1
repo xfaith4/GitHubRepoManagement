@@ -2975,6 +2975,246 @@ function Get-RoadmapTaskHistory {
     return @($items)
 }
 
+function Get-CopilotTaskDisplayText {
+    param([string]$Text)
+
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return ''
+    }
+
+    return ([regex]::Replace($Text, '\s*\[[a-zA-Z0-9_-]+\]', '')).Trim()
+}
+
+function Get-CopilotTaskComparisonKey {
+    param([string]$Text)
+
+    $displayText = Get-CopilotTaskDisplayText -Text $Text
+    if ([string]::IsNullOrWhiteSpace($displayText)) {
+        return ''
+    }
+
+    return (($displayText -replace '\s+', ' ').Trim().ToLowerInvariant())
+}
+
+function Get-CopilotTaskReadmeContext {
+    param([string]$RepoPath)
+
+    if ([string]::IsNullOrWhiteSpace($RepoPath) -or -not (Test-Path -LiteralPath $RepoPath -PathType Container)) {
+        return @{
+            readmePath               = $null
+            summary                  = ''
+            headings                 = @()
+            hasSetupGuidance         = $false
+            hasUsageGuidance         = $false
+            hasArchitectureGuidance  = $false
+        }
+    }
+
+    $analysis = _GetReadmeAnalysis -LocalPath $RepoPath
+    $content = [string](Get-ObjectPropertyValue -InputObject $analysis -PropertyName 'content' -Default '')
+    $headings = @(
+        [regex]::Matches($content, '(?im)^#{1,6}\s+(.+?)\s*$') |
+            ForEach-Object { $_.Groups[1].Value.Trim() } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+            Select-Object -First 8
+    )
+
+    $paragraphs = [System.Collections.Generic.List[string]]::new()
+    $buffer = [System.Collections.Generic.List[string]]::new()
+    foreach ($rawLine in ($content -split '\r?\n')) {
+        $line = $rawLine.Trim()
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            if ($buffer.Count -gt 0) {
+                $paragraphs.Add(($buffer -join ' ').Trim())
+                $buffer.Clear()
+            }
+            continue
+        }
+
+        if ($line -match '^#{1,6}\s+' -or
+            $line -match '^\s*[-*]\s+' -or
+            $line -match '^\s*```' -or
+            $line -match '^\s*>\s*') {
+            continue
+        }
+
+        $buffer.Add($line)
+    }
+    if ($buffer.Count -gt 0) {
+        $paragraphs.Add(($buffer -join ' ').Trim())
+    }
+
+    $summary = (@($paragraphs | Select-Object -First 2) -join ' ').Trim()
+    if ($summary.Length -gt 420) {
+        $summary = $summary.Substring(0, 417).TrimEnd() + '...'
+    }
+
+    return @{
+        readmePath              = Get-ObjectPropertyValue -InputObject $analysis -PropertyName 'readmePath' -Default $null
+        summary                 = $summary
+        headings                = @($headings)
+        hasSetupGuidance        = [bool](Get-ObjectPropertyValue -InputObject $analysis -PropertyName 'hasSetupSection' -Default $false)
+        hasUsageGuidance        = [bool](Get-ObjectPropertyValue -InputObject $analysis -PropertyName 'hasUsageSection' -Default $false)
+        hasArchitectureGuidance = [bool](Get-ObjectPropertyValue -InputObject $analysis -PropertyName 'hasArchitectureSection' -Default $false)
+    }
+}
+
+function Get-CopilotTaskReleaseContext {
+    param(
+        [string]$RoadmapContent,
+        [string]$SelectedTask
+    )
+
+    $empty = @{
+        releaseName         = $null
+        releaseVersion      = $null
+        releaseTitle        = $null
+        releaseGoal         = ''
+        pendingMilestones   = @()
+        completedMilestones = @()
+        acceptanceCriteria  = @()
+        outOfScope          = @()
+    }
+
+    if ([string]::IsNullOrWhiteSpace($RoadmapContent)) {
+        return $empty
+    }
+
+    $selectedKey = Get-CopilotTaskComparisonKey -Text $SelectedTask
+    $releaseHeadingRx = [regex]'(?im)^## Release (\d+[\d\.]*)\s*[—–-]+\s*(.+?)$'
+    $headingMatches = $releaseHeadingRx.Matches($RoadmapContent)
+    if ($headingMatches.Count -eq 0) {
+        return $empty
+    }
+
+    $blocks = [System.Collections.Generic.List[hashtable]]::new()
+    foreach ($m in $headingMatches) {
+        $blocks.Add(@{
+            version    = $m.Groups[1].Value.Trim()
+            title      = $m.Groups[2].Value.Trim()
+            startIndex = $m.Index
+        })
+    }
+
+    foreach ($i in 0..($blocks.Count - 1)) {
+        $block = $blocks[$i]
+        $blockStart = $block.startIndex
+        $blockEnd = if ($i + 1 -lt $blocks.Count) { $blocks[$i + 1].startIndex } else { $RoadmapContent.Length }
+        $blockText = $RoadmapContent.Substring($blockStart, $blockEnd - $blockStart)
+        $blockLines = $blockText -split "`r?`n"
+
+        $pendingMilestones = [System.Collections.Generic.List[string]]::new()
+        $completedMilestones = [System.Collections.Generic.List[string]]::new()
+        $containsSelectedTask = $false
+
+        foreach ($line in $blockLines) {
+            if ($line -match '^\s*-\s*\[\s\]\s+(.+)$') {
+                $itemText = Get-CopilotTaskDisplayText -Text $matches[1].Trim()
+                if (-not [string]::IsNullOrWhiteSpace($itemText)) {
+                    $pendingMilestones.Add($itemText)
+                    if (-not [string]::IsNullOrWhiteSpace($selectedKey) -and (Get-CopilotTaskComparisonKey -Text $itemText) -eq $selectedKey) {
+                        $containsSelectedTask = $true
+                    }
+                }
+            } elseif ($line -match '^\s*-\s*\[[xX]\]\s+(.+)$') {
+                $itemText = Get-CopilotTaskDisplayText -Text $matches[1].Trim()
+                if (-not [string]::IsNullOrWhiteSpace($itemText)) {
+                    $completedMilestones.Add($itemText)
+                    if (-not [string]::IsNullOrWhiteSpace($selectedKey) -and (Get-CopilotTaskComparisonKey -Text $itemText) -eq $selectedKey) {
+                        $containsSelectedTask = $true
+                    }
+                }
+            }
+        }
+
+        if (-not $containsSelectedTask) {
+            continue
+        }
+
+        return @{
+            releaseName         = "Release $($block.version) — $($block.title)"
+            releaseVersion      = $block.version
+            releaseTitle        = $block.title
+            releaseGoal         = (_ExtractGoal -Lines $blockLines)
+            pendingMilestones   = @($pendingMilestones)
+            completedMilestones = @($completedMilestones)
+            acceptanceCriteria  = @(_ExtractSubsectionLines -Lines $blockLines -HeadingPattern 'Acceptance\s+criteria')
+            outOfScope          = @(_ExtractSubsectionLines -Lines $blockLines -HeadingPattern 'Out\s+of\s+scope')
+        }
+    }
+
+    $fallbackRelease = Get-NextPendingRelease -RoadmapContent $RoadmapContent
+    if ($fallbackRelease.found) {
+        return @{
+            releaseName         = [string]$fallbackRelease.releaseName
+            releaseVersion      = [string]$fallbackRelease.releaseVersion
+            releaseTitle        = [string]$fallbackRelease.releaseTitle
+            releaseGoal         = [string]$fallbackRelease.goal
+            pendingMilestones   = @($fallbackRelease.pendingMilestones)
+            completedMilestones = @($fallbackRelease.completedMilestones)
+            acceptanceCriteria  = @($fallbackRelease.acceptanceCriteria)
+            outOfScope          = @($fallbackRelease.outOfScope)
+        }
+    }
+
+    return $empty
+}
+
+function Get-CopilotTaskConstraints {
+    param(
+        [object]$ReleaseContext,
+        [object]$AssessmentEntry,
+        [array]$DocFindings = @()
+    )
+
+    $constraints = [System.Collections.Generic.List[hashtable]]::new()
+
+    foreach ($item in @(Get-ObjectPropertyValue -InputObject $ReleaseContext -PropertyName 'outOfScope' -Default @())) {
+        $text = [string]$item
+        if (-not [string]::IsNullOrWhiteSpace($text)) {
+            $constraints.Add(@{ source = 'roadmap-out-of-scope'; text = $text })
+        }
+    }
+
+    foreach ($reason in @(Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'blockingReasons' -Default @())) {
+        $text = [string]$reason
+        if (-not [string]::IsNullOrWhiteSpace($text)) {
+            $constraints.Add(@{ source = 'portfolio-blocker'; text = $text })
+        }
+    }
+
+    $criticalDocFindings = @($DocFindings | Where-Object {
+        [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'severity' -Default '') -eq 'critical'
+    })
+    foreach ($finding in $criticalDocFindings) {
+        $message = [string](Get-ObjectPropertyValue -InputObject $finding -PropertyName 'message' -Default '')
+        $action = [string](Get-ObjectPropertyValue -InputObject $finding -PropertyName 'recommendedAction' -Default '')
+        $parts = @($message, $action) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        if ($parts.Count -gt 0) {
+            $constraints.Add(@{ source = 'docs-critical'; text = ($parts -join ' -> ') })
+        }
+    }
+
+    return @($constraints)
+}
+
+function Find-PortfolioAssessmentEntry {
+    param(
+        [string]$RepoName,
+        [object]$Settings
+    )
+
+    $portfolioTtl = Get-PortfolioAssessmentCacheTtlSeconds -Settings $Settings
+    $portfolioCache = Get-PortfolioAssessmentFromCache -TtlSeconds $portfolioTtl
+    if (-not $portfolioCache.hit -or $null -eq $portfolioCache.entries) {
+        return $null
+    }
+
+    return @($portfolioCache.entries) | Where-Object {
+        [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '') -eq $RepoName
+    } | Select-Object -First 1
+}
+
 function Build-CopilotTaskPacket {
     param(
         [Parameter(Mandatory = $true)]
@@ -2984,7 +3224,10 @@ function Build-CopilotTaskPacket {
         [string]$RoadmapPath = '',
 
         [Parameter()]
-        [object]$AuditEntry = $null
+        [object]$AuditEntry = $null,
+
+        [Parameter()]
+        [object]$AssessmentEntry = $null
     )
 
     # Step 1: Resolve roadmap path from cache or parameter
@@ -3044,7 +3287,35 @@ function Build-CopilotTaskPacket {
     foreach ($sec in @($parseResult.sections)) {
         $secName = [string]$sec.name
         foreach ($item in @($sec.pendingItems)) {
-            $allPendingInOrder.Add([pscustomobject]@{ text = [string]$item; section = $secName })
+            $allPendingInOrder.Add([pscustomobject]@{
+                text    = [string]$item
+                section = $secName
+                tags    = @()
+            })
+        }
+    }
+
+    $selectionSource = 'roadmap-order'
+    $topValueItem = if ($null -ne $AssessmentEntry) {
+        Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'topValueItem' -Default $null
+    } else {
+        $null
+    }
+    if ($null -ne $topValueItem) {
+        $preferredText = [string](Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'text' -Default '')
+        $preferredSection = [string](Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'section' -Default '')
+        $preferredMatch = @($allPendingInOrder | Where-Object {
+            $_.text -eq $preferredText -and (
+                [string]::IsNullOrWhiteSpace($preferredSection) -or $_.section -eq $preferredSection
+            )
+        } | Select-Object -First 1)
+        if ($preferredMatch.Count -gt 0 -and $null -ne $preferredMatch[0]) {
+            $selected = [pscustomobject]@{
+                text    = [string]$preferredMatch[0].text
+                section = [string]$preferredMatch[0].section
+                tags    = @($preferredMatch[0].tags)
+            }
+            $selectionSource = 'value-ranked'
         }
     }
 
@@ -3083,8 +3354,23 @@ function Build-CopilotTaskPacket {
         $repoPath = if ($roadmapEntry -is [System.Collections.IDictionary]) { [string](Get-ValueOrDefault $roadmapEntry['repoPath'] '') } else { [string](Get-ValueOrDefault $roadmapEntry.repoPath '') }
     }
 
+    if ([string]::IsNullOrWhiteSpace($repoPath) -and $null -ne $AssessmentEntry) {
+        $repoPath = [string](Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'localPath' -Default '')
+    }
+    if (($dispatchReadiness -eq 'ready' -or [string]::IsNullOrWhiteSpace($dispatchReadiness)) -and $null -ne $AssessmentEntry) {
+        $dispatchReadiness = [string](Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'dispatchReadiness' -Default $dispatchReadiness)
+    }
+
+    $readmeContext = Get-CopilotTaskReadmeContext -RepoPath $repoPath
+    $releaseContext = Get-CopilotTaskReleaseContext -RoadmapContent $rawContent -SelectedTask ([string]$selected.text)
+    $constraints = @(Get-CopilotTaskConstraints -ReleaseContext $releaseContext -AssessmentEntry $AssessmentEntry -DocFindings @($docFindings))
+
     # Step 5: Build acceptance criteria
     $acceptanceCriteria = @(
+        @(Get-ObjectPropertyValue -InputObject $releaseContext -PropertyName 'acceptanceCriteria' -Default @()) |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+    )
+    $acceptanceCriteria += @(
         "The selected roadmap item is implemented end-to-end with production-safe changes.",
         "All affected tests pass and no new test failures are introduced.",
         "Documentation updated to reflect the change (README, CHANGELOG, relevant docs).",
@@ -3098,6 +3384,7 @@ function Build-CopilotTaskPacket {
     if ($criticalFindings.Count -gt 0) {
         $acceptanceCriteria += "Resolve the $($criticalFindings.Count) critical documentation finding(s) listed in this packet."
     }
+    $acceptanceCriteria = @($acceptanceCriteria | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)
 
     # Step 6: Guardrails
     $guardrails = @(
@@ -3174,6 +3461,34 @@ function Build-CopilotTaskPacket {
         $neighboringLines += "`n  Follow-up candidates after this item:`n" + ($followUpLines -join "`n")
     }
 
+    $releaseSummarySection = ''
+    $releaseName = [string](Get-ObjectPropertyValue -InputObject $releaseContext -PropertyName 'releaseName' -Default '')
+    $releaseGoal = [string](Get-ObjectPropertyValue -InputObject $releaseContext -PropertyName 'releaseGoal' -Default '')
+    if (-not [string]::IsNullOrWhiteSpace($releaseName)) {
+        $releaseSummarySection = "`nRelease context: $releaseName"
+        if (-not [string]::IsNullOrWhiteSpace($releaseGoal)) {
+            $releaseSummarySection += "`nRelease goal: $releaseGoal"
+        }
+        $releaseOutOfScope = @(
+            Get-ObjectPropertyValue -InputObject $releaseContext -PropertyName 'outOfScope' -Default @()
+        )
+        if ($releaseOutOfScope.Count -gt 0) {
+            $releaseSummarySection += "`nDo not drift into out-of-scope work:`n" + (@($releaseOutOfScope | ForEach-Object { "  - $_" }) -join "`n")
+        }
+    }
+
+    $readmeSummarySection = ''
+    $readmeSummary = [string](Get-ObjectPropertyValue -InputObject $readmeContext -PropertyName 'summary' -Default '')
+    $readmeHeadings = @(
+        Get-ObjectPropertyValue -InputObject $readmeContext -PropertyName 'headings' -Default @()
+    )
+    if (-not [string]::IsNullOrWhiteSpace($readmeSummary)) {
+        $readmeSummarySection = "`n`nREADME summary:`n  $readmeSummary"
+        if ($readmeHeadings.Count -gt 0) {
+            $readmeSummarySection += "`nKey README headings: " + (@($readmeHeadings | Select-Object -First 6) -join ', ')
+        }
+    }
+
     # Doc findings block for prompt
     $docFindingsSummary = ''
     if ($docFindings.Count -gt 0) {
@@ -3187,6 +3502,79 @@ function Build-CopilotTaskPacket {
         $docFindingsSummary = "`n`nDocumentation findings for this repository:`n" + ($lines -join "`n")
     }
 
+    $portfolioSummarySection = ''
+    if ($null -ne $AssessmentEntry) {
+        $lifecycleState = [string](Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'lifecycleState' -Default '')
+        $recommendedAction = [string](Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'recommendedAction' -Default '')
+        $maturityLevel = [string](Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'maturityLevel' -Default '')
+        $maturityScore = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'maturityScore' -Default $null
+        $readmeScore = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'readmeScore' -Default $null
+        $roadmapScore = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'roadmapScore' -Default $null
+        $documentationHealthScore = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'documentationHealthScore' -Default $null
+
+        $portfolioSummarySection = "`n`nPortfolio assessment context:"
+        if (-not [string]::IsNullOrWhiteSpace($lifecycleState)) {
+            $portfolioSummarySection += "`n  Lifecycle state: $lifecycleState"
+        }
+        if (-not [string]::IsNullOrWhiteSpace($recommendedAction)) {
+            $portfolioSummarySection += "`n  Recommended action: $recommendedAction"
+        }
+        if (-not [string]::IsNullOrWhiteSpace($maturityLevel)) {
+            $portfolioSummarySection += "`n  Maturity: $maturityLevel"
+            if ($null -ne $maturityScore) {
+                $portfolioSummarySection += " (score $maturityScore/100)"
+            }
+        }
+        if ($null -ne $readmeScore -or $null -ne $roadmapScore -or $null -ne $documentationHealthScore) {
+            $portfolioSummarySection += "`n  Scores: README=$readmeScore, ROADMAP=$roadmapScore, Docs health=$documentationHealthScore"
+        }
+    }
+
+    $selectedValueItem = $null
+    if ($null -ne $AssessmentEntry) {
+        $pendingItems = @(Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'pendingItems' -Default @())
+        $selectedValueItem = @($pendingItems | Where-Object {
+            [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'text' -Default '') -eq [string]$selected.text -and
+            [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'section' -Default '') -eq [string]$selected.section
+        } | Select-Object -First 1)
+        if ($selectedValueItem.Count -gt 0) {
+            $selectedValueItem = $selectedValueItem[0]
+        } else {
+            $selectedValueItem = $null
+        }
+    }
+
+    $valueSummarySection = ''
+    if ($null -ne $selectedValueItem -or $null -ne $topValueItem) {
+        $effectiveValueItem = if ($null -ne $selectedValueItem) { $selectedValueItem } else { $topValueItem }
+        $valueScore = Get-ObjectPropertyValue -InputObject $effectiveValueItem -PropertyName 'valueScore' -Default $null
+        $valueTier = [string](Get-ObjectPropertyValue -InputObject $effectiveValueItem -PropertyName 'valueTier' -Default '')
+        $valueRationale = @(
+            Get-ObjectPropertyValue -InputObject $effectiveValueItem -PropertyName 'valueRationale' -Default @()
+        )
+        $valueSummarySection = "`n`nValue rationale:"
+        $valueSummarySection += "`n  Selected by: $selectionSource"
+        if ($null -ne $valueScore) {
+            $valueSummarySection += "`n  Score: $valueScore"
+        }
+        if (-not [string]::IsNullOrWhiteSpace($valueTier)) {
+            $valueSummarySection += "`n  Tier: $valueTier"
+        }
+        if ($valueRationale.Count -gt 0) {
+            $valueSummarySection += "`n  Why this item matters:`n" + (@($valueRationale | ForEach-Object { "  - $_" }) -join "`n")
+        }
+    }
+
+    $constraintSummarySection = ''
+    if ($constraints.Count -gt 0) {
+        $constraintSummarySection = "`n`nExplicit constraints:"
+        $constraintSummarySection += "`n" + (@($constraints | ForEach-Object {
+            $source = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'source' -Default 'context')
+            $text = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'text' -Default '')
+            "  - [$source] $text"
+        }) -join "`n")
+    }
+
     $guardrailLines = @($guardrails | ForEach-Object { "- $($_['rule'])" })
     $criteriLines   = @($acceptanceCriteria | ForEach-Object { "- $_" })
 
@@ -3197,7 +3585,7 @@ Roadmap file: $effectiveRoadmapPath
 Selected section: $([string]$selected.section)
 Selected task: $([string]$selected.text)$neighboringLines
 
-Dispatch readiness: $dispatchReadiness$auditQualitySection$tagSection$docFindingsSummary$executionHistorySection
+Dispatch readiness: $dispatchReadiness$releaseSummarySection$portfolioSummarySection$valueSummarySection$readmeSummarySection$auditQualitySection$tagSection$docFindingsSummary$constraintSummarySection$executionHistorySection
 
 Acceptance criteria:
 $($criteriLines -join "`n")
@@ -3220,23 +3608,47 @@ Execution requirements:
     $null = New-Item -ItemType Directory -Path $runsPath -Force -ErrorAction SilentlyContinue
 
     return @{
-        packetVersion      = '1.0'
+        packetVersion      = '1.1'
         runId              = $runId
         createdAt          = (Get-Date).ToUniversalTime().ToString('o')
         repoContext        = @{
-            repoName          = $RepoName
-            repoPath          = $repoPath
-            roadmapPath       = $effectiveRoadmapPath
-            dispatchReadiness = $dispatchReadiness
+            repoName                     = $RepoName
+            repoPath                     = $repoPath
+            roadmapPath                  = $effectiveRoadmapPath
+            dispatchReadiness            = $dispatchReadiness
+            lifecycleState               = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'lifecycleState' -Default $null
+            recommendedAction            = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'recommendedAction' -Default $null
+            blockingReasons              = @(Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'blockingReasons' -Default @())
+            maturityLevel                = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'maturityLevel' -Default $null
+            maturityScore                = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'maturityScore' -Default $null
+            sourceCoverage               = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'sourceCoverage' -Default $null
+            dispatchReadinessExplanation = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'dispatchReadinessExplanation' -Default $null
+            readmeScore                  = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'readmeScore' -Default $null
+            roadmapScore                 = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'roadmapScore' -Default $null
+            documentationHealthScore     = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'documentationHealthScore' -Default $null
+            pendingItemCount             = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'pendingItemCount' -Default $null
         }
+        readmeContext       = $readmeContext
+        roadmapContext      = $releaseContext
         selectedRoadmapItem = @{
-            text         = [string]$selected.text
-            section      = [string]$selected.section
-            previousItem = $previousItem
-            nextItem     = if ($followUpCandidates.Count -gt 0) { [string]$followUpCandidates[0]['text'] } else { $null }
+            text            = [string]$selected.text
+            section         = [string]$selected.section
+            tags            = @($selected.tags)
+            previousItem    = $previousItem
+            nextItem        = if ($followUpCandidates.Count -gt 0) { [string]$followUpCandidates[0]['text'] } else { $null }
+            selectionSource = $selectionSource
         }
         followUpCandidates = @($followUpCandidates)
         docFindings        = @($docFindings)
+        valueContext       = @{
+            selectedBy            = $selectionSource
+            selectedIsTopValueItem = [bool]($null -ne $topValueItem -and [string](Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'text' -Default '') -eq [string]$selected.text -and [string](Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'section' -Default '') -eq [string]$selected.section)
+            topValueItemText      = if ($null -ne $topValueItem) { [string](Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'text' -Default '') } else { $null }
+            valueScore            = if ($null -ne $selectedValueItem) { Get-ObjectPropertyValue -InputObject $selectedValueItem -PropertyName 'valueScore' -Default $null } else { Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'valueScore' -Default $null }
+            valueTier             = if ($null -ne $selectedValueItem) { Get-ObjectPropertyValue -InputObject $selectedValueItem -PropertyName 'valueTier' -Default $null } else { Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'valueTier' -Default $null }
+            rationale             = if ($null -ne $selectedValueItem) { @(Get-ObjectPropertyValue -InputObject $selectedValueItem -PropertyName 'valueRationale' -Default @()) } else { @(Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'valueRationale' -Default @()) }
+        }
+        constraints        = @($constraints)
         acceptanceCriteria = @($acceptanceCriteria)
         guardrails         = @($guardrails)
         generatedPrompt    = $generatedPrompt
@@ -4351,7 +4763,9 @@ try {
                         } | Select-Object -First 1
                     }
 
-                    $packet = Build-CopilotTaskPacket -RepoName $repoName -RoadmapPath $roadmapPath -AuditEntry $auditEntry
+                    $assessmentEntry = Find-PortfolioAssessmentEntry -RepoName $repoName -Settings $settings
+
+                    $packet = Build-CopilotTaskPacket -RepoName $repoName -RoadmapPath $roadmapPath -AuditEntry $auditEntry -AssessmentEntry $assessmentEntry
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
                     Write-HostLog ("[TRACE] copilot-task.preview correlationId={0} done repoName={1} runId={2}" -f $correlationId, $repoName, $packet.runId)
