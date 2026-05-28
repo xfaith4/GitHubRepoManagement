@@ -1,7 +1,7 @@
 # GitHub Repo Management — Active Execution Roadmap
 
 > **Status:** Active
-> **Active release:** **Release 1.7.5 — Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning** (Phase 6 shipped; Phase 7 next)
+> **Active release:** **Release 1.7.5 — Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning** (Phases 1-6 shipped; differential scan next)
 > **Canonical product direction:** [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md)
 > **Completed-release archive:** [`docs/history/completed-releases.md`](docs/history/completed-releases.md)
 > **Dated change log:** [`CHANGELOG.md`](CHANGELOG.md)
@@ -84,13 +84,13 @@ Render the state inline on each milestone in italics, e.g.:
 | 0.9       | Roadmap Repair Preview & Standardization Workflow                                                       | `done` — see archive                                                                                                 |
 | 1.0       | Two-Lane Execution Queue                                                                                | `done` — see archive                                                                                                 |
 | 1.1       | Standardization, Guardrails, and Continuous Improvement                                                 | `done` — see archive                                                                                                 |
-| **1.2**   | **Enhanced Portfolio Intelligence**                                                                     | **mixed** — backend `smoke-tested`; UI `planned`                                                                     |
+| **1.2**   | **Enhanced Portfolio Intelligence**                                                                     | **deferred catch-up** — backend `smoke-tested`; UI visibility intentionally deferred behind `1.7.5` / `1.8`        |
 | 1.3       | Production Frontend Build                                                                               | `done`                                                                                                               |
 | 1.4       | Repo Evaluation and Cross-Platform Deployment *(formerly: Cross-Platform and Containerized Deployment)* | `done`                                                                                                               |
 | 1.5       | Copilot-Assisted README Generation                                                                      | `done`                                                                                                               |
 | 1.6       | Roadmap-Driven Release Dispatch to GitHub Copilot                                                       | `done`                                                                                                               |
 | 1.7       | Repo Git Status Detail                                                                                  | `done`                                                                                                               |
-| **1.7.5** | **Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning**                       | **active — Phase 6 done; Phase 7 next**                                                                              |
+| **1.7.5** | **Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning**                       | **active — Phases 1-6 done; differential scan next; report/docs follow**                                             |
 | **1.8**   | **Operations Workspace and Prompt Refinement**                                                          | `planned`                                                                                                            |
 | **1.9**   | **AI Documentation Improvement Cycles**                                                                 | `planned`                                                                                                            |
 | **2.0**   | **Agent Run Monitoring and Actions-Gated Merge Readiness**                                              | `planned`                                                                                                            |
@@ -113,14 +113,22 @@ Render the state inline on each milestone in italics, e.g.:
 
 **Status:** active. Phase 1 shipped 2026-04-25; Phase 2 shipped
 2026-04-26; Phases 3A-3C shipped 2026-05-11 through 2026-05-12; Phase 4
-shipped 2026-05-27; Phases 5 and 6 shipped 2026-05-28; Phase 7 is the
-next execution target.
+shipped 2026-05-27; Phases 5 and 6 shipped 2026-05-28. Remaining active
+work is differential scan completion followed by the collection report and
+workflow-documentation pass.
 
 **Goal:** Re-center the product around its primary mission: assess the full
 local and GitHub repository collection, store a stable ordered portfolio
 index, standardize repo readiness, create or repair missing roadmap
 contracts, rank the highest-value incomplete roadmap work, and prepare the
 dashboard signals needed for operator-driven execution.
+
+**Remaining execution order:**
+
+1. Finish differential scan so the indexed portfolio can refresh
+   incrementally rather than paying full-scan cost on every update.
+2. Ship the collection report export and workflow-documentation pass on top
+   of that stable scan/index model.
 
 #### Product outcomes
 
@@ -206,7 +214,7 @@ dashboard signals needed for operator-driven execution.
 - [ ] Add differential scan mode that refreshes only repos whose local git
       state, README, ROADMAP, GitHub metadata, PR status, Actions state, or
       Pages state changed since the last index write.
-      *(state: planned — Phase 3B)*
+      *(state: planned — promoted back into the active execution queue)*
 - [x] Enrich portfolio assessment records with GitHub Pages status and
       direct Pages URL when configured. *(state: smoke-tested — Phase 3B)*
       — carried into both assessment responses and the ordered index.
@@ -251,11 +259,11 @@ dashboard signals needed for operator-driven execution.
       before dispatch.
 - [ ] Add Collection Status Report export: a plain-language HTML/CSV report
       showing repo lifecycle states, blockers, next actions, and top
-      recommended work. *(state: planned — Phase 7)*
+      recommended work. *(state: planned — follows differential scan)*
 - [ ] Update Help and reference documentation so the north-star workflow is
       explicit: assess collection, standardize repos, create or repair
       roadmap, rank work, refine prompt, dispatch, monitor, validate, and
-      report progress. *(state: planned — Phase 7)*
+      report progress. *(state: planned — follows differential scan)*
 
 #### Acceptance criteria
 
@@ -296,7 +304,8 @@ dashboard signals needed for operator-driven execution.
 | Phase 4: Work Queue value display         | Value score column + rationale tooltip in `WorkQueueView.tsx`; rerank by value                                                               | **done — smoke-tested** (2026-05-27) |
 | Phase 5: Expanded evaluator               | Feature/modernization/security/test/doc opportunity findings beyond hardening                                                                 | **done — smoke-tested** (2026-05-28) |
 | Phase 6: Prompt context packet foundation | Backend packet that combines README, ROADMAP, assessment, value rationale, and constraints for later prompt refinement                       | **done — smoke-tested** (2026-05-28) |
-| Phase 7: Collection report + docs         | `Portfolio.Report.ps1` HTML/CSV; update `HelpModal.tsx` and `docs/reference/` for the north-star workflow                                   | **next active target**               |
+| Phase 7A: Differential scan completion    | Refresh only repos whose local/git/GitHub signals changed since the last indexed snapshot                                                     | **next active target**               |
+| Phase 7B: Collection report + docs        | `Portfolio.Report.ps1` HTML/CSV; update `HelpModal.tsx` and `docs/reference/` for the north-star workflow                                    | planned — follows 7A                 |
 
 ---
 
@@ -307,12 +316,19 @@ dashboard signals needed for operator-driven execution.
 > **Note.** This release was previously tracked only under "Immediate Next
 > Focus" at the bottom of the document; it has been promoted to its proper
 > position. Backend features were shipped during the Release 1.1 cycle;
-> the remaining work is frontend + smoke coverage.
+> the remaining work is frontend visibility + smoke cleanup.
+>
+> **Priority note.** This release is intentionally deferred. Its remaining
+> work improves visibility of secondary signals that already exist, but it
+> does not unblock the product's primary scan → classify → rank → refine
+> prompt workflow. Release `1.7.5` and Release `1.8` are higher priority
+> because they complete that main operating loop first.
 
 **Goal:** Surface the execution-throughput, dependency-graph, and tag
 signals already produced by the backend so operators can see them in the
-dashboard, and close the smoke-coverage gap for the Release 1.2 API
-routes.
+dashboard once the core portfolio-assessment and prompt-refinement path is
+stable, and close the remaining smoke/contract gaps for those backend
+capabilities.
 
 #### Product outcomes
 
@@ -361,10 +377,12 @@ routes.
 
 ### Release 1.8 — Operations Workspace and Prompt Refinement
 
-**Goal:** Add a repo-specific Operations workspace that turns portfolio
-signals into actionable execution context. Operators can select a repo,
-inspect its dashboard signals, review README and ROADMAP context, compose a
-coding-agent prompt, refine it, and prepare it for dispatch.
+**Goal:** Add a repo-specific Operations workspace that turns the indexed
+portfolio assessment and the Phase 6 prompt-context packet into an
+operator-driven execution surface. Operators can select a repo, inspect its
+state, review README and ROADMAP context, refine a generated task packet
+into a dispatch-ready prompt, and prepare it for execution without rebuilding
+the packet foundation from scratch.
 
 #### Product outcomes
 
@@ -373,8 +391,8 @@ coding-agent prompt, refine it, and prepare it for dispatch.
 - Every selected repo shows documentation health, roadmap maturity, dirty
   worktree state, open PRs, Actions state, GitHub Pages status, and
   recommended next action.
-- Operators can generate a structured coding-agent prompt from repo
-  context instead of hand-writing prompts from scratch.
+- Operators can start from the generated packet/context assembled in Release
+  `1.7.5` Phase 6 instead of hand-writing prompts from scratch.
 - Prompt refinement remains operator-reviewed and preview-first.
 
 #### Engineering milestones
@@ -391,11 +409,13 @@ coding-agent prompt, refine it, and prepare it for dispatch.
       GitHub Pages status/link. *(state: planned)*
 - [ ] Add audit findings panel showing README findings, ROADMAP findings,
       structure findings, and dispatch blockers. *(state: planned)*
-- [ ] Add Prompt Builder panel that composes a coding-agent prompt from
-      selected roadmap item, README summary, ROADMAP context, audit
-      findings, repo constraints, acceptance criteria, and value rationale.
+- [ ] Add Prompt Refinement panel that starts from the existing
+      `/api/copilot-task/preview` packet, lets the operator adjust selected
+      work item, constraints, and emphasis, and produces a dispatch-ready
+      coding-agent prompt without duplicating packet assembly logic.
       *(state: planned)*
-- [ ] Add editable prompt preview before dispatch. *(state: planned)*
+- [ ] Add editable prompt preview before dispatch, including the generated
+      packet sections, operator changes, and warnings. *(state: planned)*
 - [ ] Add custom operator instruction field that appends additional
       constraints or direction to the generated prompt. *(state: planned)*
 - [ ] Store prompt history per repo, including generated previews, edits,
@@ -405,8 +425,9 @@ coding-agent prompt, refine it, and prepare it for dispatch.
 - [ ] Add `GET /api/operations/repos/{repoId}` route that returns full
       repo detail, documentation context, GitHub metadata, audit findings,
       and dispatch context. *(state: planned)*
-- [ ] Add `POST /api/operations/prompt/preview` route that returns the
-      generated prompt, source context summary, and warnings.
+- [ ] Add `POST /api/operations/prompt/refine` route that layers
+      operator-directed edits and warnings on top of the Phase 6 prompt
+      packet / preview contract rather than replacing it.
       *(state: planned)*
 
 #### Acceptance criteria
@@ -415,8 +436,9 @@ coding-agent prompt, refine it, and prepare it for dispatch.
   workspace.
 - The repo detail view shows the same core metrics as the main dashboard,
   but scoped to one repo.
-- The prompt builder produces a complete coding-agent prompt from README,
-  ROADMAP, audit findings, and selected work item.
+- Prompt refinement starts from the Phase 6 packet foundation and produces a
+  complete coding-agent prompt from README, ROADMAP, audit findings, and the
+  selected work item.
 - The operator can edit the generated prompt before dispatch.
 - No prompt is sent to any agent without explicit operator action.
 
