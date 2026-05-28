@@ -26,6 +26,9 @@ const CATEGORY_LABEL: Record<EvaluationFindingCategory, string> = {
   testing:       'Testing',
   security:      'Security',
   compliance:    'Compliance',
+  modernization: 'Modernization',
+  feature:       'Feature',
+  'user-value':  'User Value',
 };
 
 const CATEGORY_COLOR: Record<EvaluationFindingCategory, string> = {
@@ -35,6 +38,9 @@ const CATEGORY_COLOR: Record<EvaluationFindingCategory, string> = {
   testing:       'text-green-300',
   security:      'text-red-300',
   compliance:    'text-yellow-300',
+  modernization: 'text-cyan-300',
+  feature:       'text-fuchsia-300',
+  'user-value':  'text-emerald-300',
 };
 
 function FindingRow({ finding }: { finding: EvaluationFinding }) {
@@ -107,6 +113,20 @@ export const RepoEvaluationModal: React.FC<Props> = ({ repoName, localPath, onCl
   const sortedFindings = result
     ? [...result.findings].sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity))
     : [];
+  const categoryCounts = sortedFindings.reduce<Record<EvaluationFindingCategory, number>>((acc, finding) => {
+    acc[finding.category] = (acc[finding.category] ?? 0) + 1;
+    return acc;
+  }, {
+    hardening: 0,
+    documentation: 0,
+    ci: 0,
+    testing: 0,
+    security: 0,
+    compliance: 0,
+    modernization: 0,
+    feature: 0,
+    'user-value': 0,
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -126,8 +146,8 @@ export const RepoEvaluationModal: React.FC<Props> = ({ repoName, localPath, onCl
           {phase === 'idle' && (
             <div className="text-center py-10 space-y-3">
               <p className="text-gray-300 text-sm">
-                Analyse <span className="font-semibold text-white">{repoName}</span>'s structure and receive targeted
-                hardening suggestions and a ready-to-use ROADMAP.md draft.
+                Analyse <span className="font-semibold text-white">{repoName}</span>'s current structure, tooling,
+                security posture, and likely value-delivery gaps to produce roadmap-ready hardening and opportunity suggestions.
               </p>
               <button
                 onClick={runEvaluation}
@@ -141,7 +161,7 @@ export const RepoEvaluationModal: React.FC<Props> = ({ repoName, localPath, onCl
           {phase === 'evaluating' && (
             <div className="flex flex-col items-center justify-center py-12 gap-3">
               <SpinnerIcon className="w-7 h-7 text-indigo-400 animate-spin" />
-              <p className="text-gray-400 text-sm">Evaluating repository structure…</p>
+              <p className="text-gray-400 text-sm">Evaluating repository structure, modernization, and value opportunities…</p>
             </div>
           )}
 
@@ -177,6 +197,21 @@ export const RepoEvaluationModal: React.FC<Props> = ({ repoName, localPath, onCl
                 </span>
               </div>
 
+              {sortedFindings.length > 0 && (
+                <div className="flex gap-2 flex-wrap">
+                  {(Object.entries(categoryCounts) as Array<[EvaluationFindingCategory, number]>)
+                    .filter(([, count]) => count > 0)
+                    .map(([category, count]) => (
+                      <span
+                        key={category}
+                        className="bg-gray-800/80 border border-gray-700 rounded px-2.5 py-1 text-[11px] text-gray-300"
+                      >
+                        <span className={`font-medium ${CATEGORY_COLOR[category]}`}>{CATEGORY_LABEL[category]}</span> {count}
+                      </span>
+                    ))}
+                </div>
+              )}
+
               {createError && (
                 <div className="bg-red-950 border border-red-700 rounded px-3 py-2 text-xs text-red-300">{createError}</div>
               )}
@@ -188,7 +223,7 @@ export const RepoEvaluationModal: React.FC<Props> = ({ repoName, localPath, onCl
                   {sortedFindings.map(f => <FindingRow key={f.findingId} finding={f} />)}
                 </div>
               ) : (
-                <p className="text-sm text-green-400">No issues found — this repository looks well-structured.</p>
+                <p className="text-sm text-green-400">No significant structural or roadmap opportunity gaps were detected.</p>
               )}
 
               {/* No existing roadmap: editable draft */}

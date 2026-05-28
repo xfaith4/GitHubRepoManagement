@@ -662,7 +662,16 @@ export interface RoadmapDependencyGraph {
 // Release 1.4 — Repo Evaluation Pipeline
 
 export type EvaluationFindingSeverity = 'critical' | 'high' | 'medium' | 'low';
-export type EvaluationFindingCategory = 'hardening' | 'documentation' | 'ci' | 'testing' | 'security' | 'compliance';
+export type EvaluationFindingCategory =
+  | 'hardening'
+  | 'documentation'
+  | 'ci'
+  | 'testing'
+  | 'security'
+  | 'compliance'
+  | 'modernization'
+  | 'feature'
+  | 'user-value';
 export type RepoType = 'node' | 'dotnet' | 'python' | 'rust' | 'powershell' | 'other';
 
 export interface EvaluationFinding {

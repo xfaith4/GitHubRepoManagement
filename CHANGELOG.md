@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here.
 
+## 2026-05-28 — Release 1.7.5 Phase 5: Expanded Evaluator
+
+### Changed
+
+- **`Roadmap.Evaluator.ps1`** — expanded repo evaluation beyond hardening-only checks so missing-roadmap repos now emit broader opportunity findings across documentation, testing, security, modernization, feature surface, and user-value gaps.
+- **`Roadmap.Evaluator.ps1`** — roadmap draft generation now groups findings into staged release suggestions instead of collapsing everything into one foundational hardening release.
+- **`RepoEvaluationModal.tsx`**, **`WorkQueueView.tsx`**, **`HelpModal.tsx`**, and **`frontend/types.ts`** — frontend copy and category handling now reflect the broader evaluator contract, including new finding categories and summary chips in the repo-evaluation modal.
+- **`scripts/Invoke-ModuleSmokeTest.ps1`** — added direct repo-evaluator smoke coverage that asserts the expanded finding categories and the staged roadmap-draft structure.
+
+### Testing
+
+- **Targeted `Invoke-RepoEvaluation` verification** — passed on a temporary repo and confirmed `documentation`, `testing`, `security`, `modernization`, `feature`, and `user-value` findings plus staged draft-release output.
+- **`pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ModuleSmokeTest.ps1 -WorkspaceRoot \"$(pwd)\"`** — reached and passed the new repo-evaluator smoke step, then later failed in an unrelated pre-existing portfolio-assessment smoke path with `The term 'if' is not recognized...`.
+- **`npm run build`** — verified the frontend compiles with the expanded evaluator UI/category changes.
+
 ## 2026-05-27 — Release 1.7.5 Phase 4: Work Queue Value Display
 
 ### Changed

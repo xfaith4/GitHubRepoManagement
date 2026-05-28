@@ -19,6 +19,7 @@ $reconcileModular = Join-Path $WorkspaceRoot 'backend\modules\reconcile\Invoke-R
 $reconcileTests = Join-Path $WorkspaceRoot 'backend\modules\reconcile\repo_reconciliation.Tests.ps1'
 $roadmapParser = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Parser.ps1'
 $roadmapAuditor = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Auditor.ps1'
+$roadmapEvaluatorPath = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Evaluator.ps1'
 $roadmapRepairerPath = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Repairer.ps1'
 $docAuditScanner = Join-Path $WorkspaceRoot 'backend\modules\docaudit\DocAudit.Scanner.ps1'
 $docStandards = Join-Path $WorkspaceRoot 'backend\config\doc-standards.json'
@@ -28,7 +29,7 @@ Write-Step 'Loading reconciliation module functions only'
 Write-Host 'Loaded reconciliation module successfully' -ForegroundColor Green
 
 Write-Step 'Validating copied module files exist'
-@($docInventory, $docQueue, $docBatch, $reconcile, $reconcileModular, $reconcileTests, $roadmapParser, $roadmapAuditor, $roadmapRepairerPath, $docAuditScanner, $docStandards) | ForEach-Object {
+@($docInventory, $docQueue, $docBatch, $reconcile, $reconcileModular, $reconcileTests, $roadmapParser, $roadmapAuditor, $roadmapEvaluatorPath, $roadmapRepairerPath, $docAuditScanner, $docStandards) | ForEach-Object {
     if (-not (Test-Path -LiteralPath $_)) {
         throw "Missing module file: $_"
     }
@@ -368,6 +369,65 @@ if ($null -ne $blockedPreview.proposedContent -and -not [string]::IsNullOrWhiteS
     throw "Expected proposedContent to be null/empty for repair-blocked state"
 }
 Write-Host '  blocked preview correctly returns null proposedContent' -ForegroundColor DarkGray
+
+Write-Step 'Loading repo evaluator module (Release 1.4 / Phase 5 expanded evaluator)'
+if (-not (Test-Path -LiteralPath $roadmapEvaluatorPath)) { throw "Roadmap.Evaluator.ps1 not found at: $roadmapEvaluatorPath" }
+. $roadmapEvaluatorPath
+Write-Host 'Repo evaluator module loaded successfully' -ForegroundColor Green
+
+Write-Step 'Repo evaluator — smoke: no-roadmap repo includes modernization and value opportunities'
+$tmpEvalRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('repoeval-smoke-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
+$null = New-Item -ItemType Directory -Path (Join-Path $tmpEvalRoot 'backend') -Force
+Set-Content -LiteralPath (Join-Path $tmpEvalRoot 'package.json') -Encoding UTF8 -Value @'
+{
+  "name": "smoke-eval",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "node backend/server.js"
+  }
+}
+'@
+Set-Content -LiteralPath (Join-Path $tmpEvalRoot 'README.md') -Encoding UTF8 -Value @'
+# Smoke Eval
+
+Short overview only.
+'@
+Set-Content -LiteralPath (Join-Path $tmpEvalRoot 'backend\server.js') -Encoding UTF8 -Value 'console.log("hello");'
+
+try {
+    $evalResult = Invoke-RepoEvaluation -RepoName 'smoke-eval' -LocalPath $tmpEvalRoot
+    if ($evalResult.repoType -ne 'node') { throw "Expected repoType=node, got $($evalResult.repoType)" }
+    if ($evalResult.hasExistingRoadmap) { throw 'Expected hasExistingRoadmap=false for no-roadmap smoke repo' }
+    if ([string]::IsNullOrWhiteSpace($evalResult.suggestedRoadmapContent)) { throw 'Expected suggestedRoadmapContent for repo without roadmap' }
+    $evalCategories = @($evalResult.findings | ForEach-Object { [string]$_.category } | Select-Object -Unique)
+    foreach ($expectedCategory in @('documentation', 'testing', 'security', 'modernization', 'feature', 'user-value')) {
+        if ($evalCategories -notcontains $expectedCategory) {
+            throw "Expected expanded evaluator category '$expectedCategory' in smoke result, got: $($evalCategories -join ', ')"
+        }
+    }
+    if ($evalResult.suggestedRoadmapContent -notmatch '## Release 1\.0') { throw 'Expected suggestedRoadmapContent to contain Release 1.0 section' }
+    if ($evalResult.suggestedRoadmapContent -notmatch 'Workflow Clarity and User Value') { throw 'Expected suggested roadmap to contain Workflow Clarity and User Value release' }
+    if ($evalResult.suggestedRoadmapContent -notmatch 'Modernization and Operability') { throw 'Expected suggested roadmap to contain Modernization and Operability release' }
+    Write-Host ("  expanded evaluator categories: {0}" -f ($evalCategories -join ', ')) -ForegroundColor DarkGray
+
+    Set-Content -LiteralPath (Join-Path $tmpEvalRoot 'ROADMAP.md') -Encoding UTF8 -Value @'
+# Existing Roadmap
+
+## Release 1.0 — Initial
+
+### Engineering milestones
+- [ ] Keep this roadmap alive
+'@
+    $evalExistingRoadmap = Invoke-RepoEvaluation -RepoName 'smoke-eval' -LocalPath $tmpEvalRoot
+    if (-not $evalExistingRoadmap.hasExistingRoadmap) { throw 'Expected hasExistingRoadmap=true after creating roadmap file' }
+    if ($null -ne $evalExistingRoadmap.suggestedRoadmapContent -and -not [string]::IsNullOrWhiteSpace($evalExistingRoadmap.suggestedRoadmapContent)) {
+        throw 'Expected suggestedRoadmapContent to be null/empty when roadmap already exists'
+    }
+    if (@($evalExistingRoadmap.suggestedAdditions).Count -eq 0) { throw 'Expected suggestedAdditions for repo with existing roadmap' }
+    Write-Host ("  existing-roadmap suggestions: {0}" -f @($evalExistingRoadmap.suggestedAdditions).Count) -ForegroundColor DarkGray
+} finally {
+    Remove-Item -LiteralPath $tmpEvalRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 Write-Step 'Running reconciliation preflight check'
 & (Join-Path $WorkspaceRoot 'backend\modules\reconcile\preflight-check.ps1')

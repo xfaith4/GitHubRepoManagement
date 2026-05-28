@@ -1,7 +1,7 @@
 # GitHub Repo Management — Active Execution Roadmap
 
 > **Status:** Active
-> **Active release:** **Release 1.7.5 — Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning** (Phase 4 shipped; Phase 5 next)
+> **Active release:** **Release 1.7.5 — Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning** (Phase 5 shipped; Phase 6 next)
 > **Canonical product direction:** [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md)
 > **Completed-release archive:** [`docs/history/completed-releases.md`](docs/history/completed-releases.md)
 > **Dated change log:** [`CHANGELOG.md`](CHANGELOG.md)
@@ -90,7 +90,7 @@ Render the state inline on each milestone in italics, e.g.:
 | 1.5       | Copilot-Assisted README Generation                                                                      | `done`                                                                                                               |
 | 1.6       | Roadmap-Driven Release Dispatch to GitHub Copilot                                                       | `done`                                                                                                               |
 | 1.7       | Repo Git Status Detail                                                                                  | `done`                                                                                                               |
-| **1.7.5** | **Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning**                       | **active — Phase 4 done; Phase 5 next**                                                                              |
+| **1.7.5** | **Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning**                       | **active — Phase 5 done; Phase 6 next**                                                                              |
 | **1.8**   | **Operations Workspace and Prompt Refinement**                                                          | `planned`                                                                                                            |
 | **1.9**   | **AI Documentation Improvement Cycles**                                                                 | `planned`                                                                                                            |
 | **2.0**   | **Agent Run Monitoring and Actions-Gated Merge Readiness**                                              | `planned`                                                                                                            |
@@ -113,7 +113,8 @@ Render the state inline on each milestone in italics, e.g.:
 
 **Status:** active. Phase 1 shipped 2026-04-25; Phase 2 shipped
 2026-04-26; Phases 3A-3C shipped 2026-05-11 through 2026-05-12; Phase 4
-shipped 2026-05-27; Phase 5 is the next execution target.
+shipped 2026-05-27; Phase 5 shipped 2026-05-28; Phase 6 is the next
+execution target.
 
 **Goal:** Re-center the product around its primary mission: assess the full
 local and GitHub repository collection, store a stable ordered portfolio
@@ -227,10 +228,13 @@ dashboard signals needed for operator-driven execution.
 - [x] Update dashboard cards and portfolio summary panels to consume the
       index-backed assessment model rather than scattered route responses.
       *(state: smoke-tested — Phase 3C)*
-- [ ] Expand repo evaluation for missing roadmaps beyond hardening checks:
+- [x] Expand repo evaluation for missing roadmaps beyond hardening checks:
       include likely feature opportunities, modernization work,
       test/documentation improvements, security posture, and user-visible
-      value. *(state: planned — Phase 5)*
+      value. *(state: smoke-tested — Phase 5)* — evaluator findings now
+      span documentation, testing, security, modernization, feature, and
+      user-value categories, and draft generation groups those findings
+      into staged roadmap releases instead of a single hardening dump.
 - [x] Show value score and rationale in Work Queue so the operator can
       understand why one repo or roadmap item is recommended before
       another. *(state: smoke-tested — Phase 4)* — Work Queue rows now
@@ -286,8 +290,8 @@ dashboard signals needed for operator-driven execution.
 | Phase 3B: GitHub metadata enrichment      | PR detail, Pages status/link, latest Actions status, created/updated timestamps                                                              | **done — smoke-tested** (2026-05-12) |
 | Phase 3C: Dashboard signal model          | Portfolio Mission panel, Documentation Health, dashboard badges, index-backed assessment display                                             | **done — smoke-tested** (2026-05-12) |
 | Phase 4: Work Queue value display         | Value score column + rationale tooltip in `WorkQueueView.tsx`; rerank by value                                                               | **done — smoke-tested** (2026-05-27) |
-| Phase 5: Expanded evaluator               | Feature/modernization/security/test/doc opportunity findings beyond hardening                                                                 | **next active target**               |
-| Phase 6: Prompt context packet foundation | Backend packet that combines README, ROADMAP, assessment, value rationale, and constraints for later prompt refinement                       | planned                              |
+| Phase 5: Expanded evaluator               | Feature/modernization/security/test/doc opportunity findings beyond hardening                                                                 | **done — smoke-tested** (2026-05-28) |
+| Phase 6: Prompt context packet foundation | Backend packet that combines README, ROADMAP, assessment, value rationale, and constraints for later prompt refinement                       | **next active target**               |
 | Phase 7: Collection report + docs         | `Portfolio.Report.ps1` HTML/CSV; update `HelpModal.tsx` and `docs/reference/` for the north-star workflow                                   | planned                              |
 
 ---

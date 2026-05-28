@@ -820,7 +820,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                       <button
                         onClick={e => { e.stopPropagation(); onEvaluateRepo(entry.repoName); }}
                         className="text-xs px-2 py-1 rounded border border-violet-700/50 bg-violet-900/40 text-violet-300 hover:bg-violet-800/60 transition-colors"
-                        title="Evaluate repo structure and get hardening suggestions"
+                        title="Evaluate roadmap gaps, modernization opportunities, and hardening priorities"
                       >
                         Evaluate
                       </button>

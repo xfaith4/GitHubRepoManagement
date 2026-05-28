@@ -112,7 +112,7 @@ const popupSections = [
   },
   {
     title: 'Repo Evaluation',
-    body: 'Use this when a repo has no roadmap. Run evaluation, review the generated draft, then choose Create ROADMAP.md.',
+    body: 'Use this when a repo has no roadmap or needs a stronger one. Evaluation highlights hardening, modernization, security, and user-value opportunities, then proposes roadmap-ready tasks.',
   },
   {
     title: 'Roadmap Audit',
