@@ -158,6 +158,23 @@ const CATEGORIES: CategoryDef[] = [
         ],
         notes: 'Operations prefers the persisted index written by /api/portfolio/assessment. If that index is not available yet, the host falls back to the warm assessment cache when possible.',
       },
+      {
+        method: 'GET',
+        path: '/api/readme/content',
+        summary: 'Returns README.md content for a repository (by repo name) or for an explicit path, used by the Operations repo-detail viewers.',
+        queryParams: [
+          { name: 'repo', type: 'string', description: 'Repository name to resolve README content from indexed/status context' },
+          { name: 'path', type: 'string', description: 'Optional explicit absolute README file path override' },
+        ],
+        responseFields: [
+          { name: 'success', type: 'bool', description: 'Operation result flag' },
+          { name: 'data.repoName', type: 'string', description: 'Resolved repository name for the returned README payload' },
+          { name: 'data.content', type: 'string', description: 'Raw UTF-8 README markdown content' },
+          { name: 'data.path', type: 'string', description: 'Resolved README path on disk' },
+          { name: 'data.sizeBytes', type: 'number', description: 'README file size in bytes' },
+          { name: 'data.lastModified', type: 'ISO 8601', description: 'Last write timestamp for the README file' },
+        ],
+      },
     ],
   },
   {

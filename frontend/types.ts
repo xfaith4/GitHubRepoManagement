@@ -205,6 +205,14 @@ export interface RoadmapContent {
   lastModified: string;
 }
 
+export interface ReadmeContent {
+  repoName: string;
+  content: string;
+  path: string;
+  sizeBytes: number;
+  lastModified: string;
+}
+
 export interface RoadmapTaskCandidate {
   heading: string;
   lineNumber: number;

@@ -438,8 +438,10 @@ the packet foundation from scratch.
       README score, ROADMAP score, lifecycle state, and recommended next
       action. *(state: ui-connected)* — the right-hand Operations detail pane
       now opens against live indexed repo records served by the host.
-- [ ] Add README and ROADMAP viewers inside the repo detail workspace.
-      *(state: planned)*
+- [x] Add README and ROADMAP viewers inside the repo detail workspace.
+      *(state: ui-connected)* — Operations repo detail now renders inline
+      README/ROADMAP content panes backed by
+      `/api/readme/content` and `/api/roadmap/content`.
 - [x] Add GitHub panel showing open PRs, latest Actions status, and
       GitHub Pages status/link. *(state: ui-connected)* — the Operations
       workspace now renders those live fields from the indexed repo payload.

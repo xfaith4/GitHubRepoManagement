@@ -3,8 +3,11 @@ import {
   type OperationsRepoEntry,
   type OperationsReposResult,
   type PortfolioValueTier,
+  type ReadmeContent,
   type RepoLifecycleState,
+  type RoadmapContent,
 } from '../types';
+import { getReadmeContent, getRoadmapContent } from '../services/apiClient';
 import { BranchIcon, DatabaseIcon, HealthIcon, PullRequestIcon, RefreshIcon, RoadmapIcon, SpinnerIcon } from './icons';
 
 interface OperationsWorkspaceViewProps {
@@ -50,6 +53,13 @@ function formatDate(value?: string | null): string {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleString();
+}
+
+function formatBytes(value?: number): string {
+  if (!value || value <= 0) return '0 B';
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function getLifecyclePriority(state: RepoLifecycleState): number {
@@ -104,6 +114,11 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
 }) => {
   const [filterText, setFilterText] = useState('');
   const [selectedRepoId, setSelectedRepoId] = useState<string | null>(null);
+  const [docTab, setDocTab] = useState<'readme' | 'roadmap'>('readme');
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [docsError, setDocsError] = useState<string | null>(null);
+  const [readmeContent, setReadmeContent] = useState<ReadmeContent | null>(null);
+  const [roadmapContent, setRoadmapContent] = useState<RoadmapContent | null>(null);
 
   const filteredEntries = useMemo(() => {
     const lower = filterText.trim().toLowerCase();
@@ -145,6 +160,49 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
     () => filteredEntries.find(entry => entry.repoId === selectedRepoId) ?? filteredEntries[0] ?? null,
     [filteredEntries, selectedRepoId],
   );
+
+  useEffect(() => {
+    if (!selectedEntry) {
+      setReadmeContent(null);
+      setRoadmapContent(null);
+      setDocsError(null);
+      setDocsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setDocsLoading(true);
+    setDocsError(null);
+
+    Promise.allSettled([
+      selectedEntry.hasReadme ? getReadmeContent(selectedEntry.repoName) : Promise.resolve<ReadmeContent | null>(null),
+      selectedEntry.hasRoadmap ? getRoadmapContent(selectedEntry.repoName) : Promise.resolve<RoadmapContent | null>(null),
+    ])
+      .then(([readmeResult, roadmapResult]) => {
+        if (cancelled) return;
+
+        setReadmeContent(readmeResult.status === 'fulfilled' ? readmeResult.value : null);
+        setRoadmapContent(roadmapResult.status === 'fulfilled' ? roadmapResult.value : null);
+
+        const messages: string[] = [];
+        if (readmeResult.status === 'rejected' && selectedEntry.hasReadme) {
+          messages.push(`README: ${readmeResult.reason instanceof Error ? readmeResult.reason.message : 'failed to load'}`);
+        }
+        if (roadmapResult.status === 'rejected' && selectedEntry.hasRoadmap) {
+          messages.push(`ROADMAP: ${roadmapResult.reason instanceof Error ? roadmapResult.reason.message : 'failed to load'}`);
+        }
+        setDocsError(messages.length > 0 ? messages.join(' • ') : null);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setDocsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedEntry]);
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-4">
@@ -424,6 +482,72 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="rounded-lg border border-gray-700 bg-gray-950/40 p-4 lg:col-span-2">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div className="text-sm font-semibold text-white">README and ROADMAP Viewers</div>
+                      <div className="inline-flex rounded-md border border-gray-700 bg-gray-900/60 p-1 text-xs">
+                        <button
+                          onClick={() => setDocTab('readme')}
+                          className={`rounded px-2 py-1 transition-colors ${docTab === 'readme' ? 'bg-blue-900/50 text-blue-100' : 'text-gray-300 hover:bg-gray-800'}`}
+                        >
+                          README
+                        </button>
+                        <button
+                          onClick={() => setDocTab('roadmap')}
+                          className={`rounded px-2 py-1 transition-colors ${docTab === 'roadmap' ? 'bg-blue-900/50 text-blue-100' : 'text-gray-300 hover:bg-gray-800'}`}
+                        >
+                          ROADMAP
+                        </button>
+                      </div>
+                    </div>
+
+                    {docsLoading ? (
+                      <div className="mt-3 flex items-center gap-2 text-sm text-gray-400">
+                        <SpinnerIcon className="w-4 h-4" />
+                        Loading repository documents…
+                      </div>
+                    ) : (
+                      <>
+                        {docsError && (
+                          <div className="mt-3 rounded-md border border-amber-700/40 bg-amber-950/20 px-3 py-2 text-xs text-amber-200">
+                            {docsError}
+                          </div>
+                        )}
+                        {docTab === 'readme' ? (
+                          selectedEntry.hasReadme && readmeContent ? (
+                            <div className="mt-3">
+                              <div className="mb-2 text-xs text-gray-500">
+                                {readmeContent.path || 'README path unavailable'} • {formatBytes(readmeContent.sizeBytes)} • updated {formatDate(readmeContent.lastModified)}
+                              </div>
+                              <pre className="max-h-72 overflow-auto rounded-md border border-gray-800 bg-gray-900/60 p-3 text-xs text-gray-200 whitespace-pre-wrap break-words">
+                                {readmeContent.content}
+                              </pre>
+                            </div>
+                          ) : (
+                            <div className="mt-3 rounded-md border border-gray-800 bg-gray-900/40 px-3 py-2 text-sm text-gray-400">
+                              README is not available for this repository.
+                            </div>
+                          )
+                        ) : (
+                          selectedEntry.hasRoadmap && roadmapContent ? (
+                            <div className="mt-3">
+                              <div className="mb-2 text-xs text-gray-500">
+                                {roadmapContent.path || 'ROADMAP path unavailable'} • {formatBytes(roadmapContent.sizeBytes)} • updated {formatDate(roadmapContent.lastModified)}
+                              </div>
+                              <pre className="max-h-72 overflow-auto rounded-md border border-gray-800 bg-gray-900/60 p-3 text-xs text-gray-200 whitespace-pre-wrap break-words">
+                                {roadmapContent.content}
+                              </pre>
+                            </div>
+                          ) : (
+                            <div className="mt-3 rounded-md border border-gray-800 bg-gray-900/40 px-3 py-2 text-sm text-gray-400">
+                              ROADMAP is not available for this repository.
+                            </div>
+                          )
+                        )}
+                      </>
+                    )}
+                  </div>
+
                   <div className="rounded-lg border border-gray-700 bg-gray-950/40 p-4">
                     <div className="flex items-center gap-2 text-sm font-semibold text-white">
                       <PullRequestIcon className="w-4 h-4 text-cyan-300" />
