@@ -334,6 +334,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
     if (currentOperation === 'scan') {
       const repoLineMatches = lines
         .map(line => {
+          // Matches backend scan lines like: "Found repo #12: MyRepo (Branch: main, ...)"
           const match = line.match(/Found repo #(\d+):\s*([^(]+?)(?:\s*\(|$)/i);
           if (!match) return null;
           return { scannedCount: Number(match[1]), latestRepo: match[2].trim() };

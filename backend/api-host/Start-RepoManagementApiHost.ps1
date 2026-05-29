@@ -6434,6 +6434,7 @@ try {
                                 $parsed = $false
                                 try {
                                     $obj = $rawLine | ConvertFrom-Json
+                                    # Support both API-host JSONL ({ts,msg}) and structured module logs ({timestamp,message}).
                                     $entryTs = if ($obj.ts) { [string]$obj.ts } elseif ($obj.timestamp) { [string]$obj.timestamp } else { (Get-Date).ToUniversalTime().ToString('o') }
                                     if ($sinceMs -gt 0 -and $entryTs) {
                                         $lineMs = [long](([datetime]$entryTs).ToUniversalTime() - [datetime]::UnixEpoch).TotalMilliseconds
