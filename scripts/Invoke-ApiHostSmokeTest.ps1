@@ -832,6 +832,22 @@ try {
     }
     Write-Host ("  /api/operations/repos -> count={0} source={1}" -f $operationsReposData.count, [string]$operationsReposData.cacheSource) -ForegroundColor DarkGray
 
+    Write-Host '[STEP] README content route (Release 1.8)' -ForegroundColor Cyan
+    $readmeContentOk = $true
+    if (@($operationsReposData.entries).Count -gt 0) {
+        $firstOperationsRepo = @($operationsReposData.entries)[0]
+        $encodedOperationsRepo = [uri]::EscapeDataString([string]$firstOperationsRepo.repoName)
+        $readmeContentResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/readme/content?repo=$encodedOperationsRepo"
+        Assert-Not503 -Name '/api/readme/content?repo=' -Response $readmeContentResponse
+        if ($firstOperationsRepo.hasReadme) {
+            $readmeContentOk = ($readmeContentResponse.StatusCode -eq 200)
+        } else {
+            $readmeContentOk = ($readmeContentResponse.StatusCode -eq 404)
+        }
+    } else {
+        Write-Host '  (no operations entries found — README content route skipped)' -ForegroundColor Yellow
+    }
+
     Write-Host '[STEP] Portfolio assessment differential mode (Release 1.7.5 Phase 7A)' -ForegroundColor Cyan
     $portfolioDiffResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment?scanMode=differential"
     Assert-Not503 -Name '/api/portfolio/assessment?scanMode=differential' -Response $portfolioDiffResponse
@@ -939,6 +955,7 @@ try {
         roadmapScanCount = $roadmapScan.data.count
         roadmapStateFieldsOk = $roadmapStateFieldsOk
         roadmapContentOk = $roadmapContentOk
+        readmeContentOk = $readmeContentOk
         roadmapFullContentOk = $fullRoadmapReturnedAll
         roadmapCacheStatusCode = $roadmapCache.StatusCode
         githubStatusCode = $githubStatusResponse.StatusCode

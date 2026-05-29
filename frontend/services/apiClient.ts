@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type OperationsRepoEntry, type OperationsReposResult } from '../types';
+import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type OperationsRepoEntry, type OperationsReposResult, type ReadmeContent } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -569,6 +569,21 @@ export async function getRoadmapContent(repoName: string): Promise<RoadmapConten
     return { repoName, content: '# ROADMAP\n\nNo content available in mock mode.', path: '', sizeBytes: 0, lastModified: new Date().toISOString() };
   }
   const data = await fetchJson<any>(`${API_BASE_URL}/roadmap/content?repo=${encodeURIComponent(repoName)}`);
+  const d = data?.data ?? {};
+  return {
+    repoName: d.repoName ?? repoName,
+    content: d.content ?? '',
+    path: d.path ?? '',
+    sizeBytes: Number(d.sizeBytes ?? 0),
+    lastModified: d.lastModified ?? new Date().toISOString(),
+  };
+}
+
+export async function getReadmeContent(repoName: string): Promise<ReadmeContent> {
+  if (USE_MOCK_API) {
+    return { repoName, content: '# README\n\nNo content available in mock mode.', path: '', sizeBytes: 0, lastModified: new Date().toISOString() };
+  }
+  const data = await fetchJson<any>(`${API_BASE_URL}/readme/content?repo=${encodeURIComponent(repoName)}`);
   const d = data?.data ?? {};
   return {
     repoName: d.repoName ?? repoName,

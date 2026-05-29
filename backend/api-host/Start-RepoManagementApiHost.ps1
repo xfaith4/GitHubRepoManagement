@@ -4391,6 +4391,69 @@ try {
                         }
                     }
                 }
+                'GET /api/readme/content' {
+                    Write-HostLog ("[TRACE] readme.content correlationId={0} start" -f $correlationId)
+                    $q = Parse-QueryString -Query $req.Query
+                    $repoName = if ($q.ContainsKey('repo') -and $q.repo) { [System.Uri]::UnescapeDataString([string]$q.repo) } else { '' }
+                    $requestedPath = if ($q.ContainsKey('path') -and $q.path) { [System.Uri]::UnescapeDataString([string]$q.path) } else { '' }
+
+                    $targetPath = $requestedPath
+                    if ([string]::IsNullOrWhiteSpace($targetPath) -and -not [string]::IsNullOrWhiteSpace($repoName)) {
+                        $indexPayload = Get-PortfolioIndexPayload -WorkspaceRoot $WorkspaceRoot
+                        if ($null -ne $indexPayload -and ($indexPayload.PSObject.Properties.Name -contains 'repos')) {
+                            $indexMatch = @($indexPayload.repos | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1)
+                            if ($indexMatch.Count -gt 0) {
+                                $localPath = [string](Get-ObjectPropertyValue -InputObject $indexMatch[0] -PropertyName 'localPath' -Default '')
+                                if (-not [string]::IsNullOrWhiteSpace($localPath)) {
+                                    $candidatePath = Join-Path $localPath 'README.md'
+                                    if (Test-Path -LiteralPath $candidatePath) {
+                                        $targetPath = $candidatePath
+                                    }
+                                }
+                            }
+                        }
+
+                        if ([string]::IsNullOrWhiteSpace($targetPath)) {
+                            foreach ($cacheKey in @($script:StatusCacheMemory.Keys)) {
+                                $entry = $script:StatusCacheMemory[$cacheKey]
+                                if ($null -eq $entry -or $null -eq $entry.Response) { continue }
+                                $cachedRepos = if ($entry.Response.PSObject.Properties['repos']) { @($entry.Response.repos) } else { @() }
+                                $match = $cachedRepos | Where-Object { $_.name -eq $repoName } | Select-Object -First 1
+                                if ($null -eq $match -or [string]::IsNullOrWhiteSpace([string]$match.localPath)) { continue }
+                                $candidatePath = Join-Path ([string]$match.localPath) 'README.md'
+                                if (Test-Path -LiteralPath $candidatePath) {
+                                    $targetPath = $candidatePath
+                                    break
+                                }
+                            }
+                        }
+                    }
+
+                    if ([string]::IsNullOrWhiteSpace($targetPath) -or -not (Test-Path -LiteralPath $targetPath)) {
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error = @{ category = 'validation'; message = 'README file not found for the specified repo or path.' }
+                        }
+                    } else {
+                        $fileInfo = Get-Item -LiteralPath $targetPath
+                        $content = Get-Content -LiteralPath $targetPath -Raw -Encoding UTF8 -ErrorAction Stop
+                        $inferredRepoName = if (-not [string]::IsNullOrWhiteSpace($repoName)) { $repoName } else { $fileInfo.Directory.Name }
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                        Write-HostLog ("[TRACE] readme.content correlationId={0} done repo={1} sizeBytes={2} durationMs={3}" -f $correlationId, $inferredRepoName, $fileInfo.Length, [int]((Get-Date) - $requestStart).TotalMilliseconds)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data = @{
+                                repoName = $inferredRepoName
+                                content = $content
+                                path = $targetPath
+                                sizeBytes = [long]$fileInfo.Length
+                                lastModified = $fileInfo.LastWriteTime.ToString('o')
+                            }
+                        }
+                    }
+                }
                 'POST /api/roadmap/scan' {
                     Write-HostLog ("[TRACE] roadmap.scan correlationId={0} start" -f $correlationId)
                     $body = Parse-JsonBody -Body $req.Body
