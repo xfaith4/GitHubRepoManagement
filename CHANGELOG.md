@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here.
 
+## 2026-05-29 — Release 1.8: Operations Audit Findings Panel
+
+### Changes
+
+- **`OperationsWorkspaceView.tsx`** — added a new audit findings panel in Operations that shows README findings, ROADMAP findings, structure findings, and dispatch blockers for the selected repo.
+- **`Dashboard.tsx`** — Operations view now primes docs-audit and roadmap-audit data on first open and passes those models into the Operations workspace.
+- **`ROADMAP.md`** — marked the Release 1.8 audit findings panel milestone complete as `ui-connected`.
+
+### Testing
+
+- **`npm run build`** — passed.
+- **`pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "$(pwd)"`** — passed.
+
 ## 2026-05-28 — Roadmap Viewer Task-Source Mismatch Fix
 
 ### Changes
