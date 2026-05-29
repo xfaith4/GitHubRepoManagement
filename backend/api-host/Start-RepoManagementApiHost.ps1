@@ -4534,7 +4534,7 @@ try {
                     $settings   = Get-HostSettings
                     $ttlSeconds = Get-PortfolioAssessmentCacheTtlSeconds -Settings $settings
 
-                    if (-not $refresh -and $ttlSeconds -gt 0) {
+                    if (-not $refresh -and -not $useDifferentialScan -and $ttlSeconds -gt 0) {
                         $cacheHit = Get-PortfolioAssessmentFromCache -TtlSeconds $ttlSeconds
                         if ($cacheHit.hit) {
                             Add-MetricCounter -Name 'api_requests_total'

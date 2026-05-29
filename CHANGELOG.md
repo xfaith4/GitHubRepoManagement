@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here.
 
+## 2026-05-28 — Release 1.7.5 Phase 7A: Differential Scan Completion
+
+### Phase 7A Changes
+
+- **`Start-RepoManagementApiHost.ps1`** — `/api/portfolio/assessment` now supports `scanMode=differential` and re-assesses only changed repos by comparing current signal fingerprints against the persisted index snapshot.
+- **`Start-RepoManagementApiHost.ps1`** — differential mode now merges unchanged repos from the prior index payload and recalculates summary metrics on the combined result.
+- **`Start-RepoManagementApiHost.ps1`** — fixed cache behavior so `scanMode=differential` requests bypass the route-level memory cache and surface differential signal metadata (`signalSources.scanMode`, changed/unchanged counters) correctly.
+- **`Portfolio.Assessment.ps1`** — added scan fingerprint helpers, persisted fingerprint fields in index payload records, and index-to-assessment conversion helpers used by differential merge logic.
+- **`scripts/Invoke-ApiHostSmokeTest.ps1`** — added differential-route contract checks for `GET /api/portfolio/assessment?scanMode=differential`, including scan mode marker validation.
+
+### Phase 7A Testing
+
+- **PowerShell parser checks** — passed for `backend/api-host/Start-RepoManagementApiHost.ps1`, `backend/modules/portfolio/Portfolio.Assessment.ps1`, and `scripts/Invoke-ApiHostSmokeTest.ps1`.
+- **Focused API host validation** — confirmed `GET /api/portfolio/assessment?scanMode=differential` returns `success=true` with `signalSources.scanMode=differential-fallback-full` under scoped local-root settings.
+
 ## 2026-05-28 — Release 1.7.5 Phase 6: Prompt Context Packet Foundation
 
 ### Changed

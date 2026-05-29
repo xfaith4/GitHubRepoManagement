@@ -129,6 +129,7 @@ Returns one assessment record per repo plus a portfolio-level summary.
 | --- | --- | --- |
 | `refresh` | `false` | When `true`, invalidates the assessment cache and re-runs all underlying scans |
 | `includeGithub` | `false` | When `true`, enumerates GitHub-only repos via the configured `gitHubOwner` |
+| `scanMode` | `full` | `full` runs normal assessment; `differential` re-assesses only repos whose tracked local/GitHub signals changed since the last persisted index snapshot |
 
 **Response shape:**
 
@@ -140,11 +141,14 @@ Returns one assessment record per repo plus a portfolio-level summary.
     "summary": { /* PortfolioAssessmentSummary */ },
     "signalSources": {
       "status": "cache" | "fresh-scan" | "error",
-      "roadmap": "cache" | "fresh-scan",
-      "docAudit": "cache" | "fresh-scan",
-      "roadmapAudit": "cache" | "unavailable",
+      "roadmap": "cache" | "fresh-scan" | "deferred-differential" | "differential-scan" | "differential-noop",
+      "docAudit": "cache" | "fresh-scan" | "deferred-differential" | "differential-scan" | "differential-noop",
+      "roadmapAudit": "cache" | "cache-filtered" | "unavailable" | "deferred-differential" | "differential-noop",
       "execution": "ledger" | "unavailable",
-      "github": "api" | "not-evaluated" | "no-owner-configured" | "no-token" | "error"
+      "github": "api" | "not-evaluated" | "no-owner-configured" | "no-token" | "error",
+      "scanMode": "differential" | "differential-fallback-full",
+      "differentialChangedCount": 0,
+      "differentialUnchangedCount": 0
     },
     "generatedAt": "ISO-8601",
     "count": 0,
@@ -160,6 +164,8 @@ Returns one assessment record per repo plus a portfolio-level summary.
   `portfolio.assessmentCacheTtlSeconds`).
 - It opportunistically reuses the existing `status`, `roadmap`, `docAudit`, and `roadmapAudit` caches
   when warm. It does *not* re-run those scans on its own when their caches are populated.
+- `scanMode=differential` bypasses the route-level in-memory assessment cache to ensure the response
+  reflects the requested differential mode and emits differential signal markers.
 - When the route's own cache misses **and** any underlying signal cache is cold, it triggers a
   cascading fresh-scan. On a portfolio of 50+ repos this can take several minutes on first call.
   Subsequent calls within the TTL window return in well under a second.
