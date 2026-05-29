@@ -21,8 +21,8 @@ const tabs: HelpTab[] = [
     id: 'start',
     label: 'Start Here',
     kicker: 'Purpose',
-    title: 'GitHub Repo Manager helps you see and move work across many repositories.',
-    intro: 'Use it to scan your local workspace, spot repositories that need attention, review roadmap readiness, and launch follow-up work from one place.',
+    title: 'GitHub Repo Manager helps you assess, rank, dispatch, and report work across many repositories.',
+    intro: 'Use it to scan your workspace, classify every repository, fix blockers, rank pending roadmap work, refine dispatch packets, and report portfolio progress from one place.',
   },
   {
     id: 'main-window',
@@ -73,7 +73,7 @@ const mainWindowSections = [
   },
   {
     title: 'Action Bar',
-    body: 'Run common actions: Pull, Fetch, Report, Doc Review, Roadmap Scan, Help, API Docs, Refresh, and Settings.',
+    body: 'Run common actions: Pull, Fetch, Report, Doc Review, Roadmap Scan, Help, API Docs, Refresh, and Settings. Report writes a plain-language Collection Status Report for the current portfolio slice.',
   },
   {
     title: 'Repository Grid',
@@ -146,8 +146,19 @@ const workflows = [
     steps: [
       'Open the app and confirm Backend is Online.',
       'Check the workspace notice to confirm the app is scanning the right folder.',
-      'Review the summary numbers for dirty, stale, or out-of-sync repos.',
+      'Review the Portfolio Mission summary for lifecycle and blocker counts.',
       'Use Repository Grid for general repo review or Work Queue for roadmap and documentation work.',
+    ],
+  },
+  {
+    title: 'Run the portfolio workflow',
+    steps: [
+      'Refresh or scan so the portfolio assessment reflects the latest repo state.',
+      'Use Portfolio Mission and Work Queue to see which repos are blocked, ready, or already running.',
+      'Fix missing README, roadmap, or structure issues before dispatching work.',
+      'Use Evaluate, Audit, Repair, and README tools to standardize the repo contract.',
+      'Pick the highest-value pending roadmap item and preview the Copilot task packet.',
+      'Dispatch work, monitor Execution Queue, then re-run audits and export a Collection Status Report.',
     ],
   },
   {
@@ -193,10 +204,10 @@ const workflows = [
   {
     title: 'Create a report',
     steps: [
-      'Select repos if you only want a subset.',
+      'Select repos if you only want a subset of the portfolio.',
       'Click Report.',
       'Wait for the Operation Log to show the saved HTML and CSV paths.',
-      'Use the opened HTML report for review or sharing.',
+      'Use the opened Collection Status Report to review lifecycle states, blockers, next actions, and top recommended work.',
     ],
   },
 ];
@@ -205,6 +216,7 @@ const tips = [
   'Use Refresh when the screen feels stale after file changes outside the app.',
   'Use Roadmap Scan after adding or moving ROADMAP files.',
   'Use Work Queue when you want next actions, not just repository status.',
+  'Use Report after scans, repairs, or dispatch to capture lifecycle states, blockers, and the highest-value next work in one artifact.',
   'A ROADMAP button means a roadmap exists. Missing roadmap work starts from Evaluate.',
   'Preview screens are intentionally separate from apply buttons so you can review changes first.',
   'If a popup reports that a path cannot be resolved, check Settings and scan depth.',
@@ -296,12 +308,12 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                   <h4 className="text-sm font-semibold text-white">What you can do here</h4>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     {[
-                      'Scan local repositories and see current status.',
+                      'Scan local repositories and classify their current state.',
                       'Pull or fetch updates across many repos.',
-                      'Generate reports for the current repo list.',
+                      'Generate Collection Status Reports for the full portfolio or a selected slice.',
                       'Find missing README and roadmap work.',
                       'Create or improve ROADMAP.md files.',
-                      'Prepare roadmap work for Copilot dispatch.',
+                      'Prepare roadmap work for Copilot dispatch and progress reporting.',
                     ].map(item => (
                       <div key={item} className="rounded-md border border-gray-800 bg-gray-900/50 px-3 py-2 text-sm text-gray-300">
                         {item}
@@ -316,9 +328,23 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                       steps={[
                         'Confirm Backend is Online.',
                         'Confirm the workspace path is correct.',
-                        'Review the summary numbers.',
-                        'Open Work Queue to see what needs action.',
-                        'Use Evaluate for repos without roadmaps.',
+                        'Review Portfolio Mission and Work Queue first.',
+                        'Use Evaluate, Audit, Repair, or README tools to clear blockers.',
+                        'Use Report after major changes to capture the latest collection snapshot.',
+                      ]}
+                    />
+                  </div>
+                </section>
+                <section>
+                  <h4 className="text-sm font-semibold text-white">North-star workflow</h4>
+                  <div className="mt-3">
+                    <NumberedSteps
+                      steps={[
+                        'Assess the full collection.',
+                        'Fix README, roadmap, and structure blockers.',
+                        'Rank the highest-value pending work.',
+                        'Preview and refine the Copilot task packet.',
+                        'Dispatch, monitor, validate, and report progress.',
                       ]}
                     />
                   </div>

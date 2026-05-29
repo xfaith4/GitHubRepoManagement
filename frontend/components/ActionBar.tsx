@@ -76,7 +76,7 @@ const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, on
                 <ActionButton onClick={handleSync} disabled={isActionRunning} isLoading={currentOperation === 'sync'} title={`Run 'git fetch --all --prune' on ${selectionCount > 0 ? selectionCount + ' selected' : 'all'} repositories.`} icon={<SyncIcon className="w-4 h-4" />}>
                     {getButtonText('Fetch')}
                 </ActionButton>
-                <ActionButton onClick={onExport} disabled={isActionRunning} isLoading={currentOperation === 'export'} title={`Generate timestamped report files in the repo-local reports folder and open the HTML report in a new tab for ${selectionCount > 0 ? selectionCount + ' selected' : 'all'} repositories.`} icon={<ExportIcon className="w-4 h-4" />}>
+                <ActionButton onClick={onExport} disabled={isActionRunning} isLoading={currentOperation === 'export'} title={`Generate a timestamped collection status report in the repo-local reports folder and open the HTML report in a new tab for ${selectionCount > 0 ? selectionCount + ' selected' : 'all'} repositories.`} icon={<ExportIcon className="w-4 h-4" />}>
                     {getButtonText('Report')}
                 </ActionButton>
                 <ActionButton onClick={onDocReviewClick} disabled={isActionRunning} isLoading={currentOperation === 'docreview'} title="Run Doc Review Inventory, queue planning, and optional repo batch plan generation." icon={<DocReviewIcon className="w-4 h-4" />}>

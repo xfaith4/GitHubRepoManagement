@@ -226,7 +226,44 @@ function buildMockReportHtml(repos: RepoStatus[], sourceLabel: string, generated
 </html>`;
 }
 
-export async function startExport(repos: RepoStatus[], sourceLabel: string): Promise<ReportExportResult> {
+function buildMockCollectionReportHtml(entries: PortfolioAssessmentEntry[], sourceLabel: string, generatedAt: string): string {
+  const rows = entries.map((entry) => `
+    <tr>
+      <td>${entry.repoName}</td>
+      <td>${entry.lifecycleState}</td>
+      <td>${entry.recommendedAction}</td>
+      <td>${entry.topValueItem?.text ?? entry.nextPendingItemText ?? ''}</td>
+      <td>${(entry.blockingReasons ?? []).join(' | ')}</td>
+    </tr>
+  `).join('');
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mock Collection Status Report</title>
+</head>
+<body style="font-family: Segoe UI, sans-serif; margin: 0; padding: 32px; background: #0f172a; color: #e2e8f0;">
+  <h1 style="margin-top: 0;">Collection Status Report</h1>
+  <p style="color: #94a3b8; margin-bottom: 24px;">Source: ${sourceLabel} | Generated: ${generatedAt}</p>
+  <table style="width: 100%; border-collapse: collapse; background: #111827;">
+    <thead>
+      <tr><th style="padding: 12px; border-bottom: 1px solid #1f2937; text-align: left; color: #93c5fd;">Repository</th><th style="padding: 12px; border-bottom: 1px solid #1f2937; text-align: left; color: #93c5fd;">Lifecycle</th><th style="padding: 12px; border-bottom: 1px solid #1f2937; text-align: left; color: #93c5fd;">Recommended Action</th><th style="padding: 12px; border-bottom: 1px solid #1f2937; text-align: left; color: #93c5fd;">Top Work</th><th style="padding: 12px; border-bottom: 1px solid #1f2937; text-align: left; color: #93c5fd;">Blockers</th></tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+</body>
+</html>`;
+}
+
+interface ReportExportRequest {
+  repos?: RepoStatus[];
+  portfolioEntries?: PortfolioAssessmentEntry[];
+  sourceLabel: string;
+}
+
+export async function startExport(request: ReportExportRequest): Promise<ReportExportResult> {
   if (USE_MOCK_API) {
     const generatedAt = new Date().toISOString();
     const timestamp = generatedAt
@@ -236,19 +273,25 @@ export async function startExport(repos: RepoStatus[], sourceLabel: string): Pro
       .replaceAll('Z', '')
       .replaceAll('.', '')
       .slice(0, 17);
+    const usingPortfolioEntries = (request.portfolioEntries?.length ?? 0) > 0;
+    const reportBaseName = usingPortfolioEntries ? 'collection-status-report' : 'repo-status-report';
     return {
       generatedAt,
-      repoCount: repos.length,
-      sourceLabel,
-      reportFileName: `repo-status-report_${timestamp}.html`,
-      reportPath: `reports/repo-status-report_${timestamp}.html`,
-      reportUrl: `data:text/html;charset=utf-8,${encodeURIComponent(buildMockReportHtml(repos, sourceLabel, generatedAt))}`,
-      csvFileName: `repo-status-report_${timestamp}.csv`,
-      csvPath: `reports/repo-status-report_${timestamp}.csv`,
+      repoCount: usingPortfolioEntries ? request.portfolioEntries!.length : (request.repos ?? []).length,
+      sourceLabel: request.sourceLabel,
+      reportFileName: `${reportBaseName}_${timestamp}.html`,
+      reportPath: `reports/${reportBaseName}_${timestamp}.html`,
+      reportUrl: `data:text/html;charset=utf-8,${encodeURIComponent(
+        usingPortfolioEntries
+          ? buildMockCollectionReportHtml(request.portfolioEntries ?? [], request.sourceLabel, generatedAt)
+          : buildMockReportHtml(request.repos ?? [], request.sourceLabel, generatedAt)
+      )}`,
+      csvFileName: `${reportBaseName}_${timestamp}.csv`,
+      csvPath: `reports/${reportBaseName}_${timestamp}.csv`,
     };
   }
 
-  const data = await postJson<any>('/export', { repos, sourceLabel });
+  const data = await postJson<any>('/export', request);
   if (!data?.success) {
     throw new Error(data?.error?.message ?? data?.error ?? 'Report export failed.');
   }

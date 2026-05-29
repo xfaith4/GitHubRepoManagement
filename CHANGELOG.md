@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here.
 
+## 2026-05-28 — Release 1.7.5 Phase 7B: Collection Report and Workflow Documentation
+
+### Phase 7B Changes
+
+- **`Portfolio.Report.ps1`** — added a new portfolio reporting module that generates timestamped HTML and CSV Collection Status Reports from portfolio assessment entries, including lifecycle counts, blockers, recommended actions, and top-ranked work.
+- **`Start-RepoManagementApiHost.ps1`** — `/api/export` now accepts `portfolioEntries` and emits the collection-status report path while preserving the older repo-status export path as a compatibility fallback.
+- **`Dashboard.tsx`** and **`apiClient.ts`** — the Report action now prefers portfolio assessment data for local collection exports, falling back to legacy repo-status export only when the richer model is unavailable.
+- **`HelpModal.tsx`**, **`ApiDocsModal.tsx`**, **`backend/api-host/README.md`**, and **`docs/reference/portfolio-assessment.md`** — updated end-user and reference documentation so the scan → classify → rank → refine prompt → dispatch → report workflow is explicit and the report contract is documented.
+- **`scripts/Invoke-ApiHostSmokeTest.ps1`** — export smoke coverage now exercises the collection-report payload and asserts the saved HTML report serves Collection Status Report content.
+
+### Phase 7B Testing
+
+- **PowerShell parser checks** — passed for `backend/api-host/Start-RepoManagementApiHost.ps1`, `backend/modules/portfolio/Portfolio.Report.ps1`, and `scripts/Invoke-ApiHostSmokeTest.ps1`.
+- **`npm run build`** — verified the frontend compiles with the updated export flow, Help modal copy, and API docs.
+- **`pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "$(pwd)"`** — passed and validated `/api/export`, `/api/reports/:reportName`, `/api/portfolio/assessment`, and the static frontend bundle against the new collection-report path.
+
 ## 2026-05-28 — Release 1.7.5 Phase 7A: Differential Scan Completion
 
 ### Phase 7A Changes
@@ -15,7 +31,7 @@ All notable changes to this project are documented here.
 ### Phase 7A Testing
 
 - **PowerShell parser checks** — passed for `backend/api-host/Start-RepoManagementApiHost.ps1`, `backend/modules/portfolio/Portfolio.Assessment.ps1`, and `scripts/Invoke-ApiHostSmokeTest.ps1`.
-- **Focused API host validation** — confirmed `GET /api/portfolio/assessment?scanMode=differential` returns `success=true` with `signalSources.scanMode=differential-fallback-full` under scoped local-root settings.
+- **`pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "$(pwd)"`** — passed and confirmed `GET /api/portfolio/assessment?scanMode=differential` returns `success=true` with `signalSources.scanMode=differential-fallback-full`.
 
 ## 2026-05-28 — Release 1.7.5 Phase 6: Prompt Context Packet Foundation
 

@@ -1,5 +1,19 @@
 # Progress
 
+## 2026-05-28 (Phase 7B)
+
+- Reconciled the active roadmap and confirmed Phase 7B collection report + workflow documentation was the next unfinished milestone after Phase 7A differential scan completion.
+- Added `backend/modules/portfolio/Portfolio.Report.ps1` to generate Collection Status Report HTML and CSV artifacts from portfolio assessment entries, including lifecycle counts, blockers, recommended actions, and top-ranked work.
+- Extended `/api/export` so the backend accepts `portfolioEntries` for the new collection-report path while preserving the older repo-status export behavior as a compatibility fallback.
+- Updated the dashboard export flow to prefer portfolio assessment data for local collection reports and to fall back cleanly when that richer model is unavailable.
+- Refreshed Help, API docs, backend host README, and the portfolio assessment reference doc so the scan → classify → rank → refine prompt → dispatch → report workflow is explicit and aligned across product surfaces.
+- Updated `scripts/Invoke-ApiHostSmokeTest.ps1` so export smoke coverage now exercises the collection-report payload and verifies the served HTML contains Collection Status Report content.
+- Verification passed:
+  - PowerShell parser diagnostics for `backend/api-host/Start-RepoManagementApiHost.ps1`, `backend/modules/portfolio/Portfolio.Report.ps1`, and `scripts/Invoke-ApiHostSmokeTest.ps1`.
+  - `npm run build`
+  - `git diff --check -- backend/modules/portfolio/Portfolio.Report.ps1 backend/api-host/Start-RepoManagementApiHost.ps1 frontend/services/apiClient.ts frontend/components/Dashboard.tsx frontend/components/ActionBar.tsx frontend/components/HelpModal.tsx frontend/components/ApiDocsModal.tsx backend/api-host/README.md docs/reference/portfolio-assessment.md scripts/Invoke-ApiHostSmokeTest.ps1`
+  - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "$(pwd)"`
+
 ## 2026-05-28 (Phase 7A)
 
 - Reconciled the active roadmap and confirmed Phase 7A differential scan completion was the next active milestone after the Phase 6 packet foundation.
@@ -9,7 +23,7 @@
 - Fixed a differential-mode cache bypass defect in `Start-RepoManagementApiHost.ps1` so `scanMode=differential` requests no longer short-circuit through the global memory cache.
 - Verification passed:
   - PowerShell parser diagnostics for `backend/api-host/Start-RepoManagementApiHost.ps1`, `backend/modules/portfolio/Portfolio.Assessment.ps1`, and `scripts/Invoke-ApiHostSmokeTest.ps1`.
-  - Focused API host validation with scoped inventory settings confirmed `GET /api/portfolio/assessment?scanMode=differential` returns `success=true` and `signalSources.scanMode=differential-fallback-full`.
+  - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "$(pwd)"` confirmed `GET /api/portfolio/assessment?scanMode=differential` returns `success=true` with `signalSources.scanMode=differential-fallback-full`.
 
 ## 2026-05-28 (Phase 6)
 

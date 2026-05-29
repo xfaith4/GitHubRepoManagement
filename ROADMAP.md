@@ -1,7 +1,8 @@
 # GitHub Repo Management — Active Execution Roadmap
 
 > **Status:** Active
-> **Active release:** **Release 1.7.5 — Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning** (Phases 1-7A shipped; report/docs next)
+> **Active release:** **Release 1.7.5 — Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning** (completed 2026-05-28)
+> **Next active release:** **Release 1.8 — Operations Workspace and Prompt Refinement**
 > **Canonical product direction:** [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md)
 > **Completed-release archive:** [`docs/history/completed-releases.md`](docs/history/completed-releases.md)
 > **Dated change log:** [`CHANGELOG.md`](CHANGELOG.md)
@@ -90,8 +91,8 @@ Render the state inline on each milestone in italics, e.g.:
 | 1.5       | Copilot-Assisted README Generation                                                                      | `done`                                                                                                               |
 | 1.6       | Roadmap-Driven Release Dispatch to GitHub Copilot                                                       | `done`                                                                                                               |
 | 1.7       | Repo Git Status Detail                                                                                  | `done`                                                                                                               |
-| **1.7.5** | **Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning**                       | **active — Phases 1-7A done; report/docs next**                                                                       |
-| **1.8**   | **Operations Workspace and Prompt Refinement**                                                          | `planned`                                                                                                            |
+| **1.7.5** | **Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning**                       | `done` — shipped 2026-05-28; portfolio scan/classify/rank/report loop now end-to-end                                 |
+| **1.8**   | **Operations Workspace and Prompt Refinement**                                                          | **next active release**                                                                                               |
 | **1.9**   | **AI Documentation Improvement Cycles**                                                                 | `planned`                                                                                                            |
 | **2.0**   | **Agent Run Monitoring and Actions-Gated Merge Readiness**                                              | `planned`                                                                                                            |
 | **2.1**   | **Persistent Data Layer**                                                                               | `planned`                                                                                                            |
@@ -107,15 +108,14 @@ Render the state inline on each milestone in italics, e.g.:
 
 ---
 
-## 5. Active Release
+## 5. Release 1.7.5 Completion Snapshot
 
 ### Active release detail — 1.7.5 Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning
 
-**Status:** active. Phase 1 shipped 2026-04-25; Phase 2 shipped
+**Status:** complete. Phase 1 shipped 2026-04-25; Phase 2 shipped
 2026-04-26; Phases 3A-3C shipped 2026-05-11 through 2026-05-12; Phase 4
-shipped 2026-05-27; Phases 5 and 6 shipped 2026-05-28. Remaining active
-work is differential scan completion followed by the collection report and
-workflow-documentation pass.
+shipped 2026-05-27; Phases 5, 6, 7A, and 7B shipped 2026-05-28. Release
+1.7.5 now closes the scan → classify → rank → refine prompt → report loop.
 
 **Goal:** Re-center the product around its primary mission: assess the full
 local and GitHub repository collection, store a stable ordered portfolio
@@ -123,12 +123,10 @@ index, standardize repo readiness, create or repair missing roadmap
 contracts, rank the highest-value incomplete roadmap work, and prepare the
 dashboard signals needed for operator-driven execution.
 
-**Remaining execution order:**
-
-1. Finish differential scan so the indexed portfolio can refresh
-   incrementally rather than paying full-scan cost on every update.
-2. Ship the collection report export and workflow-documentation pass on top
-   of that stable scan/index model.
+**Roadmap handoff:** Release 1.8 is now the next active promotion. Release
+1.2 remains intentionally deferred catch-up because it improves visibility
+of secondary signals but does not outrank the Operations workspace and
+prompt-refinement flow.
 
 #### Product outcomes
 
@@ -211,10 +209,12 @@ dashboard signals needed for operator-driven execution.
 - [x] Add full scan artifact output under `output/index/scans/` so each
       scan can be inspected, compared, and replayed for dashboard
       debugging. *(state: smoke-tested — Phase 3A)*
-- [ ] Add differential scan mode that refreshes only repos whose local git
+- [x] Add differential scan mode that refreshes only repos whose local git
       state, README, ROADMAP, GitHub metadata, PR status, Actions state, or
       Pages state changed since the last index write.
-      *(state: planned — promoted back into the active execution queue)*
+      *(state: smoke-tested — Phase 7A)* — `/api/portfolio/assessment`
+      now supports `scanMode=differential`, changed-only reassessment, and
+      persisted-index merge behavior for unchanged repos.
 - [x] Enrich portfolio assessment records with GitHub Pages status and
       direct Pages URL when configured. *(state: smoke-tested — Phase 3B)*
       — carried into both assessment responses and the ordered index.
@@ -257,13 +257,19 @@ dashboard signals needed for operator-driven execution.
       portfolio lifecycle/value context, explicit constraints, and a
       richer generated prompt; the preview modal surfaces those sections
       before dispatch.
-- [ ] Add Collection Status Report export: a plain-language HTML/CSV report
+- [x] Add Collection Status Report export: a plain-language HTML/CSV report
       showing repo lifecycle states, blockers, next actions, and top
-      recommended work. *(state: planned — follows differential scan)*
-- [ ] Update Help and reference documentation so the north-star workflow is
+      recommended work. *(state: smoke-tested — Phase 7B)* — new backend
+      module [`Portfolio.Report.ps1`](backend/modules/portfolio/Portfolio.Report.ps1)
+      powers the dashboard `Report` action with portfolio-assessment-backed
+      HTML/CSV output while preserving the older repo-status export as a
+      fallback path.
+- [x] Update Help and reference documentation so the north-star workflow is
       explicit: assess collection, standardize repos, create or repair
       roadmap, rank work, refine prompt, dispatch, monitor, validate, and
-      report progress. *(state: planned — follows differential scan)*
+      report progress. *(state: smoke-tested — Phase 7B)* — Help, API docs,
+      and portfolio reference docs now describe the same operating loop and
+      collection-report contract.
 
 #### Acceptance criteria
 
@@ -305,7 +311,7 @@ dashboard signals needed for operator-driven execution.
 | Phase 5: Expanded evaluator               | Feature/modernization/security/test/doc opportunity findings beyond hardening                                                                 | **done — smoke-tested** (2026-05-28) |
 | Phase 6: Prompt context packet foundation | Backend packet that combines README, ROADMAP, assessment, value rationale, and constraints for later prompt refinement                       | **done — smoke-tested** (2026-05-28) |
 | Phase 7A: Differential scan completion    | Refresh only repos whose local/git/GitHub signals changed since the last indexed snapshot                                                     | **done — smoke-tested** (2026-05-28) |
-| Phase 7B: Collection report + docs        | `Portfolio.Report.ps1` HTML/CSV; update `HelpModal.tsx` and `docs/reference/` for the north-star workflow                                    | planned — follows 7A                 |
+| Phase 7B: Collection report + docs        | `Portfolio.Report.ps1` HTML/CSV; update `HelpModal.tsx` and `docs/reference/` for the north-star workflow                                    | **done — smoke-tested** (2026-05-28) |
 
 ---
 

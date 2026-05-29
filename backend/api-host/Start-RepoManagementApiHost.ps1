@@ -45,6 +45,7 @@ $readmeModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\readme'
 $portfolioModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\portfolio'
 . (Join-Path $portfolioModuleRoot 'Portfolio.ValueScorer.ps1')
 . (Join-Path $portfolioModuleRoot 'Portfolio.Assessment.ps1')
+. (Join-Path $portfolioModuleRoot 'Portfolio.Report.ps1')
 . (Join-Path $commonRoot 'NotificationHub.ps1')
 . (Join-Path $PSScriptRoot 'ApiHost.ErrorHandling.ps1')
 
@@ -4044,9 +4045,14 @@ try {
                 }
                 'POST /api/export' {
                     $body = Parse-JsonBody -Body $req.Body
-                    $repos = if ($body.ContainsKey('repos') -and $body.repos) { @($body.repos) } else { @() }
                     $sourceLabel = if ($body.ContainsKey('sourceLabel') -and $body.sourceLabel) { [string]$body.sourceLabel } else { 'Repository dashboard export' }
-                    $result = Export-RepoStatusReports -Repos $repos -SourceLabel $sourceLabel
+                    $portfolioEntries = if ($body.ContainsKey('portfolioEntries') -and $body.portfolioEntries) { @($body.portfolioEntries) } else { @() }
+                    if (@($portfolioEntries).Count -gt 0) {
+                        $result = Export-PortfolioCollectionStatusReport -Entries $portfolioEntries -SourceLabel $sourceLabel -ReportsRoot (Get-ReportsRootPath)
+                    } else {
+                        $repos = if ($body.ContainsKey('repos') -and $body.repos) { @($body.repos) } else { @() }
+                        $result = Export-RepoStatusReports -Repos $repos -SourceLabel $sourceLabel
+                    }
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{

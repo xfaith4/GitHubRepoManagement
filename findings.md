@@ -1,5 +1,12 @@
 # Findings
 
+## 2026-05-28 (Phase 7B)
+
+- The next real gap after differential scan completion was not another assessment tweak; the roadmap called for a collection-level reporting surface backed by the portfolio model, and the live app still exported only a generic repo-status snapshot.
+- Replacing `/api/export` outright would have been a behavioral regression for non-portfolio scenarios, so the safe slice was to extend it for `portfolioEntries` while keeping the older repo-status path as a fallback.
+- The documentation gap was real user-facing scope, not cleanup. Help, API reference, and the portfolio assessment reference all needed to describe the same scan → classify → rank → refine prompt → dispatch → report loop or the product story would remain internally inconsistent.
+- Parser and build success were not enough for this phase because the risk was runtime wiring. The important proof point was the API smoke path opening the saved HTML report and confirming it served Collection Status Report content.
+
 ## 2026-05-28 (Phase 6)
 
 - The next real gap after the expanded evaluator was not a new route. The repo already had a `CopilotTaskPacket` preview path, but it only carried roadmap-item, doc-finding, acceptance-criteria, and guardrail basics.

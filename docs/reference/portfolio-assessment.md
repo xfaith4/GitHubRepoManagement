@@ -5,7 +5,7 @@ combines git status, documentation audit, roadmap state, roadmap maturity, repo 
 execution state into one operator-facing view.
 
 The assessment is the data source for the Portfolio Mission panel, the Work Queue value ranking, and the
-Collection Status Report (planned).
+Collection Status Report export.
 
 ---
 
@@ -89,6 +89,55 @@ each repo:
 
 The Work Queue consumes `topValueItem` to rank ready repos by value within each readiness bucket and to
 show operators *why* a repo rose to the top before they preview or dispatch work.
+
+---
+
+## Collection Status Report
+
+The dashboard `Report` action now exports a **Collection Status Report** backed by portfolio assessment
+entries rather than only raw repo-status rows.
+
+The HTML and CSV artifacts answer four operator questions in one place:
+
+1. What lifecycle state is each repo in right now?
+2. What is blocking it from progress or dispatch?
+3. What is the recommended next action?
+4. What is the highest-value pending roadmap work when the repo is ready?
+
+The HTML report includes:
+
+- lifecycle counts for the exported portfolio slice
+- a top recommended work list based on `topValueItem`
+- the north-star operator workflow summary
+- one row per repo with lifecycle, action, blockers, and documentation signals
+
+The CSV companion file carries the same operational fields in spreadsheet-friendly form.
+
+### Export route
+
+- `POST /api/export` with `portfolioEntries` and `sourceLabel`
+- `GET /api/reports/:reportName` to open the saved HTML or CSV artifact
+
+If the dashboard cannot obtain portfolio assessment entries, it can still fall back to the older repo-status
+export input (`repos`) so reporting never hard-fails solely because the richer portfolio model is unavailable.
+
+---
+
+## North-Star Workflow
+
+The product direction is intentionally ordered. The normal operator loop is:
+
+1. Assess the collection.
+2. Classify each repo into one lifecycle state.
+3. Surface blockers and recommended next actions.
+4. Repair README, roadmap, or structure gaps.
+5. Rank the highest-value pending roadmap work.
+6. Refine the Copilot task packet.
+7. Dispatch and monitor execution.
+8. Re-run validation and export a Collection Status Report.
+
+This workflow is mirrored in the Help modal and in the report itself so the UI, report output, and product
+direction all describe the same operating loop.
 
 ---
 

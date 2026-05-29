@@ -226,25 +226,51 @@ try {
     Write-Host '  /api/artifacts/:repoName complete' -ForegroundColor DarkGray
 
     $exportBody = @{
-        repos = @(
+        portfolioEntries = @(
             @{
-                name = 'smoke-export'
-                branch = 'main'
-                status = 'clean'
-                lastCommitDate = (Get-Date).ToString('o')
-                lastCommitAuthor = 'smoke-test'
-                openPrCount = 0
-                commitsLastWeek = 1
-                commitsLastMonth = 2
-                uncommittedChanges = 0
-                isArchived = $false
-                isStale = $false
-                owner = 'local'
-                visibility = 'private'
-                language = 'PowerShell'
-                topics = @('smoke', 'export')
+                repoName = 'smoke-export'
                 localPath = $WorkspaceRoot
                 htmlUrl = 'https://example.invalid/smoke-export'
+                branch = 'main'
+                sourceCoverage = 'local+github'
+                gitStatus = 'clean'
+                isArchived = $false
+                repoType = 'powershell'
+                lifecycleState = 'ready-for-work'
+                recommendedAction = 'Dispatch the top-ranked roadmap item.'
+                blockingReasons = @()
+                roadmapState = 'pending'
+                roadmapPath = (Join-Path $WorkspaceRoot 'ROADMAP.md')
+                hasRoadmap = $true
+                readmeScore = 92
+                roadmapScore = 88
+                documentationHealthScore = 90
+                pendingItemCount = 3
+                nextPendingItemText = 'Ship the collection status report.'
+                pendingItems = @()
+                topValueItem = @{
+                    text = 'Ship the collection status report.'
+                    section = 'Release 1.7.5'
+                    tags = @('reporting')
+                    roadmapOrder = 1
+                    valueScore = 96
+                    valueTier = 'highest'
+                    valueRationale = @('Unblocks operator-visible progress reporting.')
+                    scoringSignals = @{
+                        dimensions = @{ impact = 10 }
+                        weights = @{ impact = 1 }
+                        modelVersion = 'smoke'
+                    }
+                }
+                maturityLevel = 'L4-Orchestration-Ready'
+                maturityScore = 92
+                dispatchReadiness = 'ready'
+                executionState = 'idle'
+                hasReadme = $true
+                hasCiSignal = $true
+                hasTestSignal = $true
+                structureFindings = @()
+                docFindingCount = 0
             }
         )
         sourceLabel = 'Smoke Test'
@@ -258,6 +284,9 @@ try {
     }
     $reportOpenResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl$($export.data.reportUrl)"
     Assert-Not503 -Name '/api/reports/:reportName' -Response $reportOpenResponse
+    if ([string]$reportOpenResponse.Content -notmatch 'Collection Status Report') {
+        throw '/api/reports/:reportName did not return the collection status report content'
+    }
     Write-Host '  /api/reports/:reportName complete' -ForegroundColor DarkGray
 
     Write-Host '[STEP] Metrics route' -ForegroundColor Cyan

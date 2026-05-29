@@ -375,7 +375,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                 setLogStatus('success');
                 break;
             case 'export':
-                await startExport();
+                await handleExport();
                 setLogMessages(prev => [...prev, 'Export requested.']);
                 setLogStatus('success');
                 break;
@@ -471,14 +471,15 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
 
   const handleExport = async () => {
     const reposToExport = selectedRepoIds.size > 0
-        ? repos.filter(r => selectedRepoIds.has(getRepoSelectionId(r)))
-        : repos;
+      ? repos.filter(r => selectedRepoIds.has(getRepoSelectionId(r)))
+      : repos;
     const targetCount = reposToExport.length;
     const sourceLabel = dataSource?.source === 'github'
       ? `GitHub API: ${dataSource.username}`
       : dataSource?.source === 'local'
         ? `Local Scan${dataSource.workspacePath ? ` (${dataSource.workspacePath})` : ''}`
         : 'Sample Data';
+    const getAssessmentSelectionId = (entry: PortfolioAssessmentEntry) => entry.localPath || `${entry.repoName}::${entry.branch}`;
 
     const reportWindow = window.open('', '_blank');
     if (reportWindow && !reportWindow.closed) {
@@ -491,12 +492,32 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
     setLogStatus('running');
     setLogMessages([
       'Starting: export...',
-      targetCount > 0 ? `Generating report for ${targetCount} repositories.` : 'Generating report for the current view.',
+      targetCount > 0 ? `Generating collection report for ${targetCount} repositories.` : 'Generating collection report for the current view.',
       `Source: ${sourceLabel}`
     ]);
 
     try {
-      const result = await startExport(reposToExport, sourceLabel);
+      let result;
+      if (dataSource?.source === 'github') {
+        result = await startExport({ repos: reposToExport, sourceLabel });
+      } else {
+        let assessment = portfolioAssessment;
+        if (!assessment || (assessment.entries?.length ?? 0) === 0) {
+          assessment = await refreshPortfolioAssessment(false);
+        }
+
+        const entriesToExport = selectedRepoIds.size > 0
+          ? (assessment?.entries ?? []).filter(entry => selectedRepoIds.has(getAssessmentSelectionId(entry)))
+          : (assessment?.entries ?? []);
+
+        if (entriesToExport.length > 0) {
+          result = await startExport({ portfolioEntries: entriesToExport, sourceLabel });
+        } else {
+          setLogMessages(prev => [...prev, 'Portfolio assessment export data was unavailable; falling back to repository status export.']);
+          result = await startExport({ repos: reposToExport, sourceLabel });
+        }
+      }
+
       setLogMessages(prev => [
         ...prev,
         `HTML report saved: ${result.reportPath}`,

@@ -124,6 +124,29 @@ const CATEGORIES: CategoryDef[] = [
     ],
   },
   {
+    label: 'Portfolio Intelligence',
+    color: 'text-cyan-400',
+    endpoints: [
+      {
+        method: 'GET',
+        path: '/api/portfolio/assessment',
+        summary: 'Returns the normalized portfolio assessment model used by Portfolio Mission, Work Queue ranking, and the collection status report.',
+        queryParams: [
+          { name: 'refresh', type: 'bool', description: 'Bypass the route cache and rebuild the assessment from the latest warm/cold signals' },
+          { name: 'includeGithub', type: 'bool', description: 'Include GitHub-only repos when a GitHub owner and token are configured' },
+          { name: 'scanMode', type: '"full" | "differential"', description: 'Use differential reassessment against the persisted portfolio index when supported' },
+        ],
+        responseFields: [
+          { name: 'success', type: 'bool', description: 'Operation result flag' },
+          { name: 'data.entries', type: 'PortfolioAssessmentEntry[]', description: 'Normalized lifecycle/readiness record per repository' },
+          { name: 'data.summary', type: 'PortfolioAssessmentSummary', description: 'Portfolio-level lifecycle and blocker counts' },
+          { name: 'data.signalSources', type: 'object', description: 'Per-signal cache/freshness metadata including differential markers when requested' },
+          { name: 'data.generatedAt', type: 'ISO 8601', description: 'Assessment generation time' },
+        ],
+      },
+    ],
+  },
+  {
     label: 'Settings',
     color: 'text-violet-400',
     endpoints: [
@@ -283,9 +306,10 @@ const CATEGORIES: CategoryDef[] = [
       {
         method: 'POST',
         path: '/api/export',
-        summary: 'Generates timestamped HTML and CSV repository reports in the repo-local reports folder and returns the saved file metadata.',
+        summary: 'Generates timestamped HTML and CSV reports in the repo-local reports folder. When portfolio entries are supplied, the export becomes a plain-language Collection Status Report.',
         bodyParams: [
-          { name: 'repos', type: 'RepoStatus[]', description: 'Repositories included in the current export' },
+          { name: 'portfolioEntries', type: 'PortfolioAssessmentEntry[]', description: 'Optional normalized portfolio entries to export as a Collection Status Report' },
+          { name: 'repos', type: 'RepoStatus[]', description: 'Legacy repository snapshot export input when portfolio entries are not supplied' },
           { name: 'sourceLabel', type: 'string', description: 'Display label for the current dashboard data source' },
         ],
         responseFields: [
@@ -293,6 +317,7 @@ const CATEGORIES: CategoryDef[] = [
           { name: 'reportUrl', type: 'string', description: 'Browser-openable route for the saved HTML report' },
           { name: 'csvPath', type: 'string', description: 'Absolute path to the saved CSV companion file' },
         ],
+        notes: 'The dashboard uses the portfolio-assessment path for local collection reports so the export includes lifecycle state, blockers, recommended action, and top-ranked work.',
       },
       {
         method: 'GET',
