@@ -175,8 +175,8 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
     setDocsError(null);
 
     Promise.allSettled([
-      selectedEntry.hasReadme ? getReadmeContent(selectedEntry.repoName) : Promise.resolve<ReadmeContent | null>(null),
-      selectedEntry.hasRoadmap ? getRoadmapContent(selectedEntry.repoName) : Promise.resolve<RoadmapContent | null>(null),
+      selectedEntry.hasReadme ? getReadmeContent(selectedEntry.repoName) : Promise.resolve(null),
+      selectedEntry.hasRoadmap ? getRoadmapContent(selectedEntry.repoName) : Promise.resolve(null),
     ])
       .then(([readmeResult, roadmapResult]) => {
         if (cancelled) return;
