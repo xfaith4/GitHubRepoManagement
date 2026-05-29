@@ -1,5 +1,32 @@
 # Progress
 
+## 2026-05-28 (Roadmap Viewer Task-Source Mismatch)
+
+- Investigated a real modal contract bug where the ROADMAP viewer displayed local file content successfully but the Preview Task / Start Task flow still reported "No roadmap markdown file found" for the GitHub repository field.
+- Updated `frontend/components/RoadmapViewerModal.tsx` so the loaded local roadmap path is passed through to roadmap-agent preview/start requests.
+- Updated `scripts/Start-RoadmapCopilotTask.ps1` so an explicit local `-RoadmapPath` is resolved from disk before any GitHub contents lookup, eliminating the contradictory local-viewer/remote-preview split.
+- Extended `scripts/Invoke-ApiHostSmokeTest.ps1` with a regression check for `/api/roadmap-agent/preview` using a local roadmap path.
+- Verification passed:
+  - PowerShell parser diagnostics for `scripts/Start-RoadmapCopilotTask.ps1` and `scripts/Invoke-ApiHostSmokeTest.ps1`
+  - Direct script validation: `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Start-RoadmapCopilotTask.ps1 -Repository 'smoke-owner/smoke-repo' -RoadmapPath "$(pwd)/ROADMAP.md" -PreviewOnly`
+  - `npm run build`
+  - `git diff --check -- frontend/components/RoadmapViewerModal.tsx scripts/Start-RoadmapCopilotTask.ps1 scripts/Invoke-ApiHostSmokeTest.ps1`
+  - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "$(pwd)"`
+
+## 2026-05-28 (Release 1.8 Phase 1: Operations Workspace Foundation)
+
+- Reconciled the active roadmap and confirmed Release 1.8 was the next logical slice after Release 1.7.5 closeout.
+- Verified the Operations tab, repo workspace component, frontend types, and API client path already existed in the live codebase, so the real missing seam was the backend contract rather than new UI scaffolding.
+- Added `GET /api/operations/repos` to `backend/api-host/Start-RepoManagementApiHost.ps1`, serving persisted portfolio-index records with a warm portfolio-assessment-cache fallback and stable `repoId` values for future repo-specific operations routes.
+- Updated `scripts/Invoke-ApiHostSmokeTest.ps1` so the host smoke now validates the Operations repo-index contract after warming `/api/portfolio/assessment`.
+- Refreshed `frontend/components/HelpModal.tsx`, `frontend/components/ApiDocsModal.tsx`, and `backend/api-host/README.md` so the Operations workspace is described as a first-class part of the app surface and API contract.
+- Promoted Release 1.8 to the active release in `ROADMAP.md` and marked the shipped foundation milestones truthfully: Operations tab, repo detail workspace, GitHub panel, and `GET /api/operations/repos`.
+- Verification passed:
+  - PowerShell parser diagnostics for `backend/api-host/Start-RepoManagementApiHost.ps1` and `scripts/Invoke-ApiHostSmokeTest.ps1`.
+  - `npm run build`
+  - `git diff --check -- backend/api-host/Start-RepoManagementApiHost.ps1 scripts/Invoke-ApiHostSmokeTest.ps1 frontend/components/ApiDocsModal.tsx frontend/components/HelpModal.tsx backend/api-host/README.md ROADMAP.md CHANGELOG.md progress.md task_plan.md findings.md`
+  - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "$(pwd)"`
+
 ## 2026-05-28 (Phase 7B)
 
 - Reconciled the active roadmap and confirmed Phase 7B collection report + workflow documentation was the next unfinished milestone after Phase 7A differential scan completion.

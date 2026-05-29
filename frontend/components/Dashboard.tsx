@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry, type DocAuditIndex, type RoadmapAuditIndex, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioAssessmentEntry, type PortfolioAssessmentResult, type RepoLifecycleState, type PortfolioSignalSource } from '../types';
+import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry, type DocAuditIndex, type RoadmapAuditIndex, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioAssessmentEntry, type PortfolioAssessmentResult, type RepoLifecycleState, type PortfolioSignalSource, type OperationsReposResult } from '../types';
 import SummaryCard from './SummaryCard';
 import ActionBar from './ActionBar';
 import RepoGrid from './RepoGrid';
@@ -23,7 +23,8 @@ import RoadmapDispatchModal from './RoadmapDispatchModal';
 import RepoGitStatusModal from './RepoGitStatusModal';
 import ReadmeGenerateModal from './ReadmeGenerateModal';
 import HelpModal from './HelpModal';
-import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getRoadmapDependencies, getPortfolioAssessment } from '../services/apiClient';
+import OperationsWorkspaceView from './OperationsWorkspaceView';
+import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getRoadmapDependencies, getPortfolioAssessment, getOperationsRepos } from '../services/apiClient';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
 import { useHealthPing } from '../hooks/useHealthPing';
@@ -102,7 +103,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [roadmapEntries, setRoadmapEntries] = useState<RoadmapEntry[]>([]);
   const [selectedRepoIds, setSelectedRepoIds] = useState<Set<string>>(new Set());
   const [groupBy, setGroupBy] = useState<keyof RepoStatus | 'none'>('none');
-  const [activeView, setActiveView] = useState<'repos' | 'work-queue' | 'execution-queue' | 'dependencies'>('repos');
+  const [activeView, setActiveView] = useState<'repos' | 'operations' | 'work-queue' | 'execution-queue' | 'dependencies'>('repos');
   const [docsAuditIndex, setDocsAuditIndex] = useState<DocAuditIndex | null>(null);
   const [docsAuditLoading, setDocsAuditLoading] = useState(false);
   const [docsAuditError, setDocsAuditError] = useState<string | null>(null);
@@ -132,6 +133,10 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [hasAttemptedDepsLoad, setHasAttemptedDepsLoad] = useState(false);
   const [portfolioAssessment, setPortfolioAssessment] = useState<PortfolioAssessmentResult | null>(null);
   const [portfolioAssessmentLoading, setPortfolioAssessmentLoading] = useState(false);
+  const [operationsRepos, setOperationsRepos] = useState<OperationsReposResult | null>(null);
+  const [operationsReposLoading, setOperationsReposLoading] = useState(false);
+  const [operationsReposError, setOperationsReposError] = useState<string | null>(null);
+  const [hasAttemptedOperationsLoad, setHasAttemptedOperationsLoad] = useState(false);
 
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
@@ -147,6 +152,28 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
         return result;
       })
       .finally(() => setPortfolioAssessmentLoading(false));
+  };
+
+  const refreshOperationsRepos = (refreshPortfolio = false) => {
+    setOperationsReposLoading(true);
+    setOperationsReposError(null);
+
+    const load = async () => {
+      if (refreshPortfolio) {
+        await refreshPortfolioAssessment(true);
+      }
+
+      const result = await getOperationsRepos();
+      setOperationsRepos(result);
+      return result;
+    };
+
+    return load()
+      .catch(err => {
+        setOperationsReposError(err instanceof Error ? err.message : 'Operations workspace is unavailable.');
+        throw err;
+      })
+      .finally(() => setOperationsReposLoading(false));
   };
 
   // Backend health indicator — polls /health/live every 15 s
@@ -199,6 +226,15 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
       .catch(() => {/* silent — panel shows empty state */})
       .finally(() => setDependencyGraphLoading(false));
   }, [activeView, hasAttemptedDepsLoad]);
+
+  useEffect(() => {
+    if (activeView !== 'operations' || hasAttemptedOperationsLoad) {
+      return;
+    }
+
+    setHasAttemptedOperationsLoad(true);
+    refreshOperationsRepos(false).catch(() => {/* surfaced in-panel */});
+  }, [activeView, hasAttemptedOperationsLoad]);
 
   // Load docs audit when the Work Queue view is first opened.
   useEffect(() => {
@@ -1163,6 +1199,21 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                 Repository Grid
               </button>
               <button
+                onClick={() => setActiveView('operations')}
+                className={`px-4 py-2 text-sm font-medium rounded-t border-b-2 transition-colors flex items-center gap-1.5 ${
+                  activeView === 'operations'
+                    ? 'border-sky-500 text-sky-300 bg-gray-700/40'
+                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-700/20'
+                }`}
+              >
+                Operations
+                {portfolioAssessment?.summary.readyForWorkCount ? (
+                  <span className="inline-flex items-center justify-center w-5 h-5 text-xs rounded-full bg-sky-700 text-sky-100 font-semibold">
+                    {portfolioAssessment.summary.readyForWorkCount}
+                  </span>
+                ) : null}
+              </button>
+              <button
                 onClick={() => setActiveView('work-queue')}
                 className={`px-4 py-2 text-sm font-medium rounded-t border-b-2 transition-colors flex items-center gap-1.5 ${
                   activeView === 'work-queue'
@@ -1232,6 +1283,17 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                   setGroupBy={setGroupBy}
                 />
               </>
+            ) : activeView === 'operations' ? (
+              <OperationsWorkspaceView
+                operationsRepos={operationsRepos}
+                loading={operationsReposLoading}
+                error={operationsReposError}
+                onRefresh={() => { refreshOperationsRepos(true).catch(() => {/* surfaced in-panel */}); }}
+                onViewRoadmap={handleViewRoadmap}
+                onPreviewTask={handlePreviewCopilotTask}
+                onViewGitStatus={handleViewGitStatus}
+                showIndexedPortfolioNote={dataSource?.source === 'github'}
+              />
             ) : activeView === 'work-queue' ? (
               <WorkQueueView
                 auditIndex={docsAuditIndex}

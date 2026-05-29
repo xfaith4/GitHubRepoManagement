@@ -414,6 +414,25 @@ try {
     Assert-Not503 -Name '/api/roadmap-agent/start' -Response $roadmapStartResponse
     Assert-Not503 -Name '/api/roadmap-agent/history' -Response $roadmapHistoryResponse
 
+    $workspaceRoadmapPath = Join-Path $WorkspaceRoot 'ROADMAP.md'
+    if (Test-Path -LiteralPath $workspaceRoadmapPath -PathType Leaf) {
+        $roadmapPreviewLocalResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap-agent/preview" -Body @{
+            repository = 'smoke-owner/smoke-repo'
+            roadmapPath = $workspaceRoadmapPath
+        }
+        Assert-Not503 -Name '/api/roadmap-agent/preview (local roadmap path)' -Response $roadmapPreviewLocalResponse
+        $roadmapPreviewLocalJson = $roadmapPreviewLocalResponse.Json
+        if ($null -eq $roadmapPreviewLocalJson -or -not $roadmapPreviewLocalJson.success) {
+            throw '/api/roadmap-agent/preview with local roadmapPath did not return success=true'
+        }
+        if (-not ($roadmapPreviewLocalJson.data.PSObject.Properties.Name -contains 'roadmapPath') -or [string]::IsNullOrWhiteSpace([string]$roadmapPreviewLocalJson.data.roadmapPath)) {
+            throw '/api/roadmap-agent/preview with local roadmapPath did not return a resolved roadmapPath'
+        }
+        Write-Host ("  /api/roadmap-agent/preview (local roadmap path) -> {0}" -f [string]$roadmapPreviewLocalJson.data.roadmapPath) -ForegroundColor DarkGray
+    } else {
+        Write-Host '  workspace ROADMAP.md not found — local-roadmap preview check skipped' -ForegroundColor Yellow
+    }
+
     Write-Host '[STEP] Copilot task packet routes (Release 0.6)' -ForegroundColor Cyan
     # Preview with a missing repoName should return non-503 (400/500 is acceptable)
     $copilotPreviewMissingBody = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/copilot-task/preview" -Body @{}
@@ -764,6 +783,54 @@ try {
     }
 
     Write-Host ("  /api/portfolio/assessment -> count={0} ready={1} blocked={2} cacheSource={3}" -f $portfolioData.count, $portfolioData.summary.readyForWorkCount, $portfolioData.summary.blockedCount, $portfolioData.cacheSource) -ForegroundColor DarkGray
+
+    Write-Host '[STEP] Operations repo index route (Release 1.8)' -ForegroundColor Cyan
+    $operationsReposResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/operations/repos"
+    Assert-Not503 -Name '/api/operations/repos' -Response $operationsReposResponse
+    $operationsReposJson = $operationsReposResponse.Json
+    if ($null -eq $operationsReposJson) {
+        throw "/api/operations/repos did not return JSON. HTTP $($operationsReposResponse.StatusCode). Content-Type=$($operationsReposResponse.ContentType). Body=$($operationsReposResponse.Content)"
+    }
+    if (-not ($operationsReposJson.PSObject.Properties.Name -contains 'success')) {
+        throw "/api/operations/repos response missing 'success'. Body=$($operationsReposResponse.Content)"
+    }
+    if (-not $operationsReposJson.success) {
+        $err = if ($operationsReposJson.PSObject.Properties.Name -contains 'error') { $operationsReposJson.error } else { $operationsReposResponse.Content }
+        throw "/api/operations/repos returned success=false. HTTP $($operationsReposResponse.StatusCode). Error=$err"
+    }
+    if (-not ($operationsReposJson.PSObject.Properties.Name -contains 'data') -or $null -eq $operationsReposJson.data) {
+        throw "/api/operations/repos returned success=true but missing 'data'. Body=$($operationsReposResponse.Content)"
+    }
+    $operationsReposData = $operationsReposJson.data
+    $operationsRepoFieldsOk = $null -ne $operationsReposData -and
+        ($operationsReposData.PSObject.Properties.Name -contains 'entries') -and
+        ($operationsReposData.PSObject.Properties.Name -contains 'generatedAt') -and
+        ($operationsReposData.PSObject.Properties.Name -contains 'count') -and
+        ($operationsReposData.PSObject.Properties.Name -contains 'cacheSource')
+    if (-not $operationsRepoFieldsOk) { throw '/api/operations/repos response missing expected fields (entries, generatedAt, count, cacheSource)' }
+    if ([int]$operationsReposData.count -ne @($operationsReposData.entries).Count) {
+        throw '/api/operations/repos count did not match the number of entries returned'
+    }
+    if ([string]$operationsReposData.cacheSource -notin @('portfolio-index', 'assessment-cache')) {
+        throw '/api/operations/repos returned an unexpected cacheSource value'
+    }
+    if (@($portfolioData.entries).Count -ne @($operationsReposData.entries).Count) {
+        throw '/api/operations/repos count did not align with /api/portfolio/assessment for the default workspace scope'
+    }
+
+    if (@($operationsReposData.entries).Count -gt 0) {
+        $firstOperationsRepo = @($operationsReposData.entries)[0]
+        $operationsEntryFieldsOk = $null -ne $firstOperationsRepo -and
+            ($firstOperationsRepo.PSObject.Properties.Name -contains 'repoId') -and
+            ($firstOperationsRepo.PSObject.Properties.Name -contains 'repoName') -and
+            ($firstOperationsRepo.PSObject.Properties.Name -contains 'localPath') -and
+            ($firstOperationsRepo.PSObject.Properties.Name -contains 'defaultBranch') -and
+            ($firstOperationsRepo.PSObject.Properties.Name -contains 'currentBranch') -and
+            ($firstOperationsRepo.PSObject.Properties.Name -contains 'lifecycleState') -and
+            ($firstOperationsRepo.PSObject.Properties.Name -contains 'recommendedAction')
+        if (-not $operationsEntryFieldsOk) { throw '/api/operations/repos first entry missing expected fields (repoId, repoName, localPath, defaultBranch, currentBranch, lifecycleState, recommendedAction)' }
+    }
+    Write-Host ("  /api/operations/repos -> count={0} source={1}" -f $operationsReposData.count, [string]$operationsReposData.cacheSource) -ForegroundColor DarkGray
 
     Write-Host '[STEP] Portfolio assessment differential mode (Release 1.7.5 Phase 7A)' -ForegroundColor Cyan
     $portfolioDiffResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment?scanMode=differential"

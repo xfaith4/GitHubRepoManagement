@@ -88,10 +88,12 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
     setTaskPreview(null);
     setTaskRunning(true);
     try {
+      const roadmapPath = content?.path?.trim() ? content.path : undefined;
       const preview = await previewRoadmapTask({
         repository: repositoryInput.trim(),
         baseBranch: baseBranch.trim() || undefined,
-        customAgent: customAgent.trim() || undefined
+        customAgent: customAgent.trim() || undefined,
+        roadmapPath,
       });
       setTaskPreview(preview);
       setTaskMessage(`Preview ready for ${preview.selectedTask.text}`);
@@ -107,10 +109,12 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
     setTaskMessage(null);
     setTaskRunning(true);
     try {
+      const roadmapPath = content?.path?.trim() ? content.path : undefined;
       const result = await startRoadmapTask({
         repository: repositoryInput.trim(),
         baseBranch: baseBranch.trim() || undefined,
         customAgent: customAgent.trim() || undefined,
+        roadmapPath,
         follow: false
       });
       const runId = result.latestHistory?.runId ? ` (run ${result.latestHistory.runId})` : '';
@@ -192,7 +196,7 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
         <div className="px-5 py-3 border-b border-gray-700 bg-gray-950/40 flex-shrink-0 space-y-2">
           <div className="text-xs font-semibold text-gray-300">Roadmap Copilot Task</div>
           <div className="text-xs text-gray-500">
-            This section checks the GitHub repository for dispatch. The local roadmap viewer below can still show a file even when GitHub task preview cannot find one remotely.
+            This section prepares GitHub dispatch for the repository field above. When a local roadmap is loaded below, Preview Task and Start Task pass that local roadmap path through as the source for task selection.
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
             <input
@@ -217,14 +221,14 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
           <div className="flex items-center gap-2">
             <button
               onClick={handlePreviewTask}
-              disabled={taskRunning || !repositoryInput.trim()}
+              disabled={taskRunning || loading || !repositoryInput.trim()}
               className="text-xs px-3 py-1.5 rounded bg-indigo-700 hover:bg-indigo-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {taskRunning ? 'Working...' : 'Preview Task'}
             </button>
             <button
               onClick={handleStartTask}
-              disabled={taskRunning || !repositoryInput.trim()}
+              disabled={taskRunning || loading || !repositoryInput.trim()}
               className="text-xs px-3 py-1.5 rounded bg-green-700 hover:bg-green-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Start Task
@@ -246,7 +250,7 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
               <div>{taskMessage}</div>
               {isTaskError && hasLocalRoadmap && (
                 <div className="mt-1 text-red-200/80">
-                  The local roadmap is loaded below from {content?.path}. This warning only means the task preview could not resolve a roadmap through GitHub for the repository field above.
+                  The local roadmap is loaded below from {content?.path} and is passed into the task-preview flow. If this warning persists, the failure is elsewhere in the roadmap-agent or dispatch path, not in local roadmap loading.
                 </div>
               )}
             </div>

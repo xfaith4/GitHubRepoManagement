@@ -1,5 +1,19 @@
 # Findings
 
+## 2026-05-28 (Roadmap Viewer Task-Source Mismatch)
+
+- The ROADMAP modal had a real contract bug: the lower pane could load a local roadmap file successfully while the upper Preview Task / Start Task actions still attempted to rediscover roadmap content through the GitHub repository field.
+- The failure was not in roadmap parsing. `RoadmapViewerModal.tsx` never passed the already-loaded local `content.path`, and `Start-RoadmapCopilotTask.ps1` treated every `-RoadmapPath` candidate as a GitHub contents path instead of honoring an explicit local file first.
+- That mismatch produced the contradictory operator experience shown in the bug report: a visible roadmap in the modal plus a "No roadmap markdown file found in repository ..." error in the task-preview area.
+- The fix path is now explicit and regression-covered: the modal passes the loaded local roadmap path, and the roadmap-agent script prefers a real local file before any GitHub lookup.
+
+## 2026-05-28 (Release 1.8 Phase 1: Operations Workspace Foundation)
+
+- Release 1.8 did not need a fresh UI buildout first. The live repo already had an Operations tab, an `OperationsWorkspaceView`, frontend types, and client wiring, so the real product gap was the missing backend route and proof that the view consumed a stable indexed model.
+- The safest backend implementation was to reuse the persisted portfolio index instead of recomputing another repo-detail model in parallel. That kept the Operations workspace aligned with the same lifecycle, ranking, and GitHub signals already used by Portfolio Mission and Work Queue.
+- A hard failure when the index was absent would have made the Operations tab fragile during startup or cache warmup. The route therefore needed an assessment-cache fallback so a recent portfolio warm path could still power the workspace.
+- The most important validation point for this slice was not just PowerShell parse success. It was expanding `Invoke-ApiHostSmokeTest.ps1` so `/api/operations/repos` is exercised after `/api/portfolio/assessment`, proving the persisted-index handoff is live.
+
 ## 2026-05-28 (Phase 7B)
 
 - The next real gap after differential scan completion was not another assessment tweak; the roadmap called for a collection-level reporting surface backed by the portfolio model, and the live app still exported only a generic repo-status snapshot.

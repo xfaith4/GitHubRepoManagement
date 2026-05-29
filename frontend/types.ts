@@ -959,3 +959,70 @@ export interface PortfolioAssessmentResult {
   cacheSource: 'memory' | 'fresh-scan';
   cacheAgeSeconds: number;
 }
+
+// Release 1.8 — Operations Workspace and Prompt Refinement
+
+export interface OperationsRepoEntry {
+  repoId: string;
+  ordinal: number;
+  repoName: string;
+  sourceCoverage: SourceCoverage;
+  localPath: string;
+  remoteUrl: string;
+  githubOwner: string;
+  githubRepo: string;
+  githubFullName: string;
+  htmlUrl: string;
+  defaultBranch: string;
+  currentBranch: string;
+  hasPages: boolean;
+  pagesUrl?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  latestWorkflowRunStatus?: string | null;
+  latestWorkflowRunConclusion?: string | null;
+  latestWorkflowRunName?: string | null;
+  latestWorkflowRunTimestamp?: string | null;
+  openPrCount: number;
+  pendingReviewPrCount: number;
+  localLastCommitDate?: string | null;
+  localCommitsLastWeek: number;
+  localCommitsLastMonth: number;
+  localModifiedCount: number;
+  localUntrackedCount: number;
+  localDirtyCount: number;
+  readmeLastWriteUtc?: string | null;
+  roadmapLastWriteUtc?: string | null;
+  repoType: string;
+  lifecycleState: RepoLifecycleState;
+  recommendedAction: string;
+  blockingReasons: string[];
+  roadmapState: 'pending' | 'complete' | 'missing' | 'parse-error';
+  roadmapPath: string;
+  hasRoadmap: boolean;
+  hasReadme: boolean;
+  readmeScore: number;
+  roadmapScore: number;
+  documentationHealthScore: number;
+  pendingItemCount: number;
+  nextPendingItemText: string;
+  topValueItem: PortfolioPendingItemValue | null;
+  maturityLevel: RoadmapMaturityLevel;
+  maturityScore: number;
+  dispatchReadiness: DispatchReadiness;
+  dispatchReadinessExplanation?: string | null;
+  executionState: ExecutionState;
+  gitStatus: string;
+  hasCiSignal: boolean;
+  hasTestSignal: boolean;
+  docFindingCount: number;
+  structureFindings: RepoStructureFinding[];
+}
+
+export interface OperationsReposResult {
+  entries: OperationsRepoEntry[];
+  generatedAt: string;
+  count: number;
+  cacheSource: 'portfolio-index' | 'assessment-cache';
+  summary: PortfolioAssessmentSummary | null;
+}

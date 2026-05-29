@@ -80,6 +80,10 @@ const mainWindowSections = [
     body: 'Lists scanned repositories. Select repos for targeted actions, inspect dirty status, open artifacts, and view existing roadmaps.',
   },
   {
+    title: 'Operations',
+    body: 'Shows one repo at a time with indexed lifecycle, GitHub, dirty-worktree, and recommended-action detail. Use it when you want to inspect a specific repo before previewing task work.',
+  },
+  {
     title: 'Work Queue',
     body: 'Shows which repos are ready, blocked, missing docs, or missing roadmaps. This is the best place to decide what to fix next.',
   },
@@ -147,7 +151,7 @@ const workflows = [
       'Open the app and confirm Backend is Online.',
       'Check the workspace notice to confirm the app is scanning the right folder.',
       'Review the Portfolio Mission summary for lifecycle and blocker counts.',
-      'Use Repository Grid for general repo review or Work Queue for roadmap and documentation work.',
+      'Use Repository Grid for general repo review, Operations for one-repo detail, or Work Queue for roadmap and documentation work.',
     ],
   },
   {
@@ -155,6 +159,7 @@ const workflows = [
     steps: [
       'Refresh or scan so the portfolio assessment reflects the latest repo state.',
       'Use Portfolio Mission and Work Queue to see which repos are blocked, ready, or already running.',
+      'Open Operations when you need repo-specific context before acting on a selected repo.',
       'Fix missing README, roadmap, or structure issues before dispatching work.',
       'Use Evaluate, Audit, Repair, and README tools to standardize the repo contract.',
       'Pick the highest-value pending roadmap item and preview the Copilot task packet.',
@@ -216,6 +221,7 @@ const tips = [
   'Use Refresh when the screen feels stale after file changes outside the app.',
   'Use Roadmap Scan after adding or moving ROADMAP files.',
   'Use Work Queue when you want next actions, not just repository status.',
+  "Use Operations when you need one repo's local path, GitHub state, dirty summary, and next recommended action in one place.",
   'Use Report after scans, repairs, or dispatch to capture lifecycle states, blockers, and the highest-value next work in one artifact.',
   'A ROADMAP button means a roadmap exists. Missing roadmap work starts from Evaluate.',
   'Preview screens are intentionally separate from apply buttons so you can review changes first.',

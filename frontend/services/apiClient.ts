@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary } from '../types';
+import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type OperationsRepoEntry, type OperationsReposResult } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -257,6 +257,65 @@ function buildMockCollectionReportHtml(entries: PortfolioAssessmentEntry[], sour
 </html>`;
 }
 
+function normalizeOperationsRepoEntry(entry: any): OperationsRepoEntry {
+  return {
+    repoId: String(entry?.repoId ?? entry?.localPath ?? entry?.githubFullName ?? entry?.repoName ?? 'unknown'),
+    ordinal: Number(entry?.ordinal ?? 0),
+    repoName: String(entry?.repoName ?? ''),
+    sourceCoverage: (entry?.sourceCoverage ?? 'local') as OperationsRepoEntry['sourceCoverage'],
+    localPath: String(entry?.localPath ?? ''),
+    remoteUrl: String(entry?.remoteUrl ?? ''),
+    githubOwner: String(entry?.githubOwner ?? ''),
+    githubRepo: String(entry?.githubRepo ?? ''),
+    githubFullName: String(entry?.githubFullName ?? ''),
+    htmlUrl: String(entry?.htmlUrl ?? ''),
+    defaultBranch: String(entry?.defaultBranch ?? ''),
+    currentBranch: String(entry?.currentBranch ?? ''),
+    hasPages: Boolean(entry?.hasPages ?? false),
+    pagesUrl: entry?.pagesUrl ? String(entry.pagesUrl) : null,
+    createdAt: entry?.createdAt ? String(entry.createdAt) : null,
+    updatedAt: entry?.updatedAt ? String(entry.updatedAt) : null,
+    latestWorkflowRunStatus: entry?.latestWorkflowRunStatus ? String(entry.latestWorkflowRunStatus) : null,
+    latestWorkflowRunConclusion: entry?.latestWorkflowRunConclusion ? String(entry.latestWorkflowRunConclusion) : null,
+    latestWorkflowRunName: entry?.latestWorkflowRunName ? String(entry.latestWorkflowRunName) : null,
+    latestWorkflowRunTimestamp: entry?.latestWorkflowRunTimestamp ? String(entry.latestWorkflowRunTimestamp) : null,
+    openPrCount: Number(entry?.openPrCount ?? 0),
+    pendingReviewPrCount: Number(entry?.pendingReviewPrCount ?? 0),
+    localLastCommitDate: entry?.localLastCommitDate ? String(entry.localLastCommitDate) : null,
+    localCommitsLastWeek: Number(entry?.localCommitsLastWeek ?? 0),
+    localCommitsLastMonth: Number(entry?.localCommitsLastMonth ?? 0),
+    localModifiedCount: Number(entry?.localModifiedCount ?? 0),
+    localUntrackedCount: Number(entry?.localUntrackedCount ?? 0),
+    localDirtyCount: Number(entry?.localDirtyCount ?? 0),
+    readmeLastWriteUtc: entry?.readmeLastWriteUtc ? String(entry.readmeLastWriteUtc) : null,
+    roadmapLastWriteUtc: entry?.roadmapLastWriteUtc ? String(entry.roadmapLastWriteUtc) : null,
+    repoType: String(entry?.repoType ?? 'other'),
+    lifecycleState: (entry?.lifecycleState ?? 'discovered') as OperationsRepoEntry['lifecycleState'],
+    recommendedAction: String(entry?.recommendedAction ?? ''),
+    blockingReasons: Array.isArray(entry?.blockingReasons) ? entry.blockingReasons.map((value: unknown) => String(value)) : [],
+    roadmapState: (entry?.roadmapState ?? 'missing') as OperationsRepoEntry['roadmapState'],
+    roadmapPath: String(entry?.roadmapPath ?? ''),
+    hasRoadmap: Boolean(entry?.hasRoadmap ?? false),
+    hasReadme: Boolean(entry?.hasReadme ?? false),
+    readmeScore: Number(entry?.readmeScore ?? 0),
+    roadmapScore: Number(entry?.roadmapScore ?? 0),
+    documentationHealthScore: Number(entry?.documentationHealthScore ?? 0),
+    pendingItemCount: Number(entry?.pendingItemCount ?? 0),
+    nextPendingItemText: String(entry?.nextPendingItemText ?? ''),
+    topValueItem: entry?.topValueItem ?? null,
+    maturityLevel: (entry?.maturityLevel ?? 'L0-Absent') as OperationsRepoEntry['maturityLevel'],
+    maturityScore: Number(entry?.maturityScore ?? 0),
+    dispatchReadiness: (entry?.dispatchReadiness ?? 'missing-roadmap') as OperationsRepoEntry['dispatchReadiness'],
+    dispatchReadinessExplanation: entry?.dispatchReadinessExplanation ? String(entry.dispatchReadinessExplanation) : null,
+    executionState: (entry?.executionState ?? 'idle') as OperationsRepoEntry['executionState'],
+    gitStatus: String(entry?.gitStatus ?? 'unknown'),
+    hasCiSignal: Boolean(entry?.hasCiSignal ?? false),
+    hasTestSignal: Boolean(entry?.hasTestSignal ?? false),
+    docFindingCount: Number(entry?.docFindingCount ?? 0),
+    structureFindings: Array.isArray(entry?.structureFindings) ? entry.structureFindings : [],
+  };
+}
+
 interface ReportExportRequest {
   repos?: RepoStatus[];
   portfolioEntries?: PortfolioAssessmentEntry[];
@@ -306,6 +365,74 @@ export async function startExport(request: ReportExportRequest): Promise<ReportE
     return { ...result, reportUrl: `${backendOrigin}${result.reportUrl}` };
   }
   return result;
+}
+
+function getMockOperationsRepos(): OperationsReposResult {
+  const generatedAt = new Date().toISOString();
+  const entries = getMockRepos().map((repo, index): OperationsRepoEntry => ({
+    repoId: repo.localPath || `mock:${repo.name.toLowerCase()}`,
+    ordinal: index + 1,
+    repoName: repo.name,
+    sourceCoverage: repo.htmlUrl ? 'local+github' : 'local',
+    localPath: repo.localPath ?? '',
+    remoteUrl: repo.originUrl ?? '',
+    githubOwner: repo.owner ?? '',
+    githubRepo: repo.name,
+    githubFullName: repo.owner ? `${repo.owner}/${repo.name}` : repo.name,
+    htmlUrl: repo.htmlUrl ?? '',
+    defaultBranch: 'main',
+    currentBranch: repo.branch,
+    hasPages: Boolean(repo.hasPages ?? false),
+    pagesUrl: repo.pagesUrl ?? null,
+    createdAt: null,
+    updatedAt: null,
+    latestWorkflowRunStatus: null,
+    latestWorkflowRunConclusion: null,
+    latestWorkflowRunName: null,
+    latestWorkflowRunTimestamp: null,
+    openPrCount: Number(repo.openPrCount ?? 0),
+    pendingReviewPrCount: Number(repo.pendingReviewPrCount ?? 0),
+    localLastCommitDate: repo.lastCommitDate || null,
+    localCommitsLastWeek: Number(repo.commitsLastWeek ?? 0),
+    localCommitsLastMonth: Number(repo.commitsLastMonth ?? 0),
+    localModifiedCount: repo.uncommittedChanges,
+    localUntrackedCount: 0,
+    localDirtyCount: repo.uncommittedChanges,
+    readmeLastWriteUtc: null,
+    roadmapLastWriteUtc: null,
+    repoType: 'other',
+    lifecycleState: 'discovered',
+    recommendedAction: 'Mock operations data does not include roadmap readiness.',
+    blockingReasons: [],
+    roadmapState: 'missing',
+    roadmapPath: '',
+    hasRoadmap: false,
+    hasReadme: true,
+    readmeScore: 0,
+    roadmapScore: 0,
+    documentationHealthScore: 0,
+    pendingItemCount: 0,
+    nextPendingItemText: '',
+    topValueItem: null,
+    maturityLevel: 'L0-Absent',
+    maturityScore: 0,
+    dispatchReadiness: 'missing-roadmap',
+    dispatchReadinessExplanation: null,
+    executionState: 'idle',
+    gitStatus: repo.status,
+    hasCiSignal: false,
+    hasTestSignal: false,
+    docFindingCount: 0,
+    structureFindings: [],
+  }));
+
+  return {
+    entries,
+    generatedAt,
+    count: entries.length,
+    cacheSource: 'assessment-cache',
+    summary: null,
+  };
 }
 
 export async function startArchive(daysInactive: number, zipArchive: boolean, repoNames?: string[]): Promise<void> {
@@ -1207,5 +1334,21 @@ export async function getPortfolioAssessment(options: { refresh?: boolean; inclu
     count: Number(d.count ?? entries.length),
     cacheSource: d.cacheSource === 'memory' ? 'memory' : 'fresh-scan',
     cacheAgeSeconds: Number(d.cacheAgeSeconds ?? 0),
+  };
+}
+
+export async function getOperationsRepos(): Promise<OperationsReposResult> {
+  if (USE_MOCK_API) {
+    return getMockOperationsRepos();
+  }
+
+  const data = await fetchJson<any>(`${API_BASE_URL}/operations/repos`);
+  const d = data?.data ?? data ?? {};
+  return {
+    entries: Array.isArray(d.entries) ? d.entries.map(normalizeOperationsRepoEntry) : [],
+    generatedAt: String(d.generatedAt ?? new Date().toISOString()),
+    count: Number(d.count ?? 0),
+    cacheSource: d.cacheSource === 'assessment-cache' ? 'assessment-cache' : 'portfolio-index',
+    summary: d.summary ?? null,
   };
 }

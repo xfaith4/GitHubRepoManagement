@@ -287,6 +287,35 @@ function Get-ObjectPropertyValue {
     return $Default
 }
 
+function Get-OperationsRepoId {
+    param(
+        [Parameter()]
+        [object]$Repo
+    )
+
+    $scanFingerprint = [string](Get-ObjectPropertyValue -InputObject $Repo -PropertyName 'scanFingerprint' -Default '')
+    if (-not [string]::IsNullOrWhiteSpace($scanFingerprint)) {
+        return $scanFingerprint
+    }
+
+    $localPath = [string](Get-ObjectPropertyValue -InputObject $Repo -PropertyName 'localPath' -Default '')
+    if (-not [string]::IsNullOrWhiteSpace($localPath)) {
+        return ('path:{0}' -f $localPath.ToLowerInvariant())
+    }
+
+    $githubFullName = [string](Get-ObjectPropertyValue -InputObject $Repo -PropertyName 'githubFullName' -Default '')
+    if (-not [string]::IsNullOrWhiteSpace($githubFullName)) {
+        return ('gh:{0}' -f $githubFullName.ToLowerInvariant())
+    }
+
+    $repoName = [string](Get-ObjectPropertyValue -InputObject $Repo -PropertyName 'repoName' -Default '')
+    if (-not [string]::IsNullOrWhiteSpace($repoName)) {
+        return ('repo:{0}' -f $repoName.ToLowerInvariant())
+    }
+
+    return [guid]::NewGuid().Guid
+}
+
 function Send-HttpJson {
     param(
         [Parameter(Mandatory = $true)]
@@ -4916,6 +4945,70 @@ try {
                             count           = @($assessments).Count
                             cacheSource     = 'fresh-scan'
                             cacheAgeSeconds = 0
+                        }
+                    }
+                }
+                'GET /api/operations/repos' {
+                    Write-HostLog ("[TRACE] operations.repos correlationId={0} start" -f $correlationId)
+
+                    $indexPayload = Get-PortfolioIndexPayload -WorkspaceRoot $WorkspaceRoot
+                    $entries = @()
+                    $generatedAt = ''
+                    $summary = $null
+                    $count = 0
+                    $cacheSource = ''
+
+                    if ($null -ne $indexPayload -and ($indexPayload.PSObject.Properties.Name -contains 'repos')) {
+                        $entries = @($indexPayload.repos | Select-Object *, @{ Name = 'repoId'; Expression = { Get-OperationsRepoId -Repo $_ } })
+                        $generatedAt = [string](Get-ObjectPropertyValue -InputObject $indexPayload -PropertyName 'generatedAt' -Default '')
+                        $summary = Get-ObjectPropertyValue -InputObject $indexPayload -PropertyName 'summary' -Default $null
+                        $count = [int](Get-ObjectPropertyValue -InputObject $indexPayload -PropertyName 'repoCount' -Default @($entries).Count)
+                        $cacheSource = 'portfolio-index'
+                    } else {
+                        $settings = Get-HostSettings
+                        $ttlSeconds = Get-PortfolioAssessmentCacheTtlSeconds -Settings $settings
+                        $assessmentCache = if ($ttlSeconds -gt 0) {
+                            Get-PortfolioAssessmentFromCache -TtlSeconds $ttlSeconds
+                        } else {
+                            $null
+                        }
+
+                        if ($null -ne $assessmentCache -and $assessmentCache.hit) {
+                            $fallbackPayload = New-PortfolioIndexPayload `
+                                -Assessments $assessmentCache.entries `
+                                -Summary $assessmentCache.summary `
+                                -SignalSources $assessmentCache.signalSources `
+                                -GeneratedAt $assessmentCache.generatedAt
+                            $entries = @($fallbackPayload.repos | Select-Object *, @{ Name = 'repoId'; Expression = { Get-OperationsRepoId -Repo $_ } })
+                            $generatedAt = [string](Get-ObjectPropertyValue -InputObject $fallbackPayload -PropertyName 'generatedAt' -Default '')
+                            $summary = Get-ObjectPropertyValue -InputObject $fallbackPayload -PropertyName 'summary' -Default $null
+                            $count = [int](Get-ObjectPropertyValue -InputObject $fallbackPayload -PropertyName 'repoCount' -Default @($entries).Count)
+                            $cacheSource = 'assessment-cache'
+                        } else {
+                            Write-HostLog ("WARN operations.repos correlationId={0} index unavailable and no cached assessment was found" -f $correlationId)
+                            Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                                success = $false
+                                error = 'Operations workspace is not ready yet. Run /api/portfolio/assessment first to build the indexed portfolio.'
+                            }
+                            break
+                        }
+                    }
+
+                    if ([string]::IsNullOrWhiteSpace($generatedAt)) {
+                        $generatedAt = (Get-Date).ToUniversalTime().ToString('o')
+                    }
+
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Write-HostLog ("[TRACE] operations.repos correlationId={0} done source={1} count={2} durationMs={3}" -f $correlationId, $cacheSource, @($entries).Count, [int]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = @{
+                            entries = $entries
+                            generatedAt = $generatedAt
+                            count = $count
+                            cacheSource = $cacheSource
+                            summary = $summary
                         }
                     }
                 }

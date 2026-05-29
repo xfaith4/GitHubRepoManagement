@@ -1,29 +1,29 @@
 # Task Plan
 
 ## Goal
-Execute the next logical roadmap phase for Release 1.7.5: Phase 7B collection report + workflow documentation.
+Execute the next logical roadmap phase for Release 1.8: Operations workspace foundation.
 
 ## Scope
-- Add a portfolio-assessment-backed Collection Status Report export path that writes HTML and CSV artifacts.
-- Keep the older repo-status export behavior available as a fallback so GitHub-only/report compatibility is not broken.
-- Update Help and reference documentation so the north-star workflow is explicit and matches the live product behavior.
-- Expand API host smoke coverage for the collection-report contract.
+- Back the existing Operations tab and repo workspace UI with a live `GET /api/operations/repos` backend route sourced from the portfolio index.
+- Return an actionable fallback when the persisted index is missing but a warm portfolio assessment is available.
+- Extend API/docs/help surfaces so the Operations workspace is part of the documented product contract.
+- Expand API host smoke coverage for the operations repo-index route.
 - Update roadmap/progress/changelog artifacts only after verification passes.
 
 ## Phases
 
 | Phase | Status | Notes |
 |---|---|---|
-| 1. Repo orientation | complete | ROADMAP, progress notes, and live code confirmed Phase 7B was the next unfinished slice after differential scan completion. |
-| 2. Inspect report/docs surfaces | complete | Verified the app still exported only a generic repo-status report and the Help/reference docs did not yet describe the full workflow loop. |
-| 3. Implement collection report path | complete | Added `Portfolio.Report.ps1`, extended `/api/export` for portfolio entries, and updated the dashboard export flow to prefer portfolio assessment data. |
-| 4. Update workflow documentation | complete | Refreshed Help, API docs, backend README, and portfolio reference docs so the scan → classify → rank → refine prompt → dispatch → report loop is explicit. |
-| 5. Verification | complete | PowerShell parser checks, frontend build, `git diff --check`, and API host smoke all passed after the Phase 7B changes. |
-| 6. Roadmap/docs sync | complete | Updated `ROADMAP.md`, `CHANGELOG.md`, `progress.md`, `task_plan.md`, and `findings.md` for Phase 7B completion and Release 1.7.5 closeout. |
+| 1. Repo orientation | complete | ROADMAP and live code confirmed Release 1.8 was the next active slice, and the existing Operations UI already existed but had no backend route. |
+| 2. Verify current foundations | complete | Confirmed `Dashboard.tsx`, `OperationsWorkspaceView.tsx`, frontend types, and API client wiring were already present and only needed the host contract plus doc/smoke coverage. |
+| 3. Implement operations route | complete | Added `/api/operations/repos` to the PowerShell host, serving persisted portfolio-index records with an assessment-cache fallback and stable `repoId` values. |
+| 4. Update docs/help/smoke | complete | Extended API docs, Help copy, backend host README, and `Invoke-ApiHostSmokeTest.ps1` for the Operations workspace contract. |
+| 5. Verification | complete | PowerShell parser checks, `npm run build`, `git diff --check`, and API host smoke all passed after the Operations foundation changes. |
+| 6. Roadmap/docs sync | complete | Updated `ROADMAP.md`, `CHANGELOG.md`, `progress.md`, `task_plan.md`, and `findings.md` to promote Release 1.8 and mark the shipped foundation milestones truthfully. |
 
 ## Errors Encountered
 
 | Error | Attempt | Resolution |
 |---|---|---|
-| The dashboard still had to support non-portfolio export scenarios such as GitHub-only views. | Replaced the existing export path in a first draft. | Kept `/api/export` backward-compatible and taught the dashboard to fall back to the older repo-status export only when portfolio assessment entries are unavailable. |
-| The new report contract needed runtime proof, not just parser/build success. | Added the report generator and frontend wiring first. | Expanded `scripts/Invoke-ApiHostSmokeTest.ps1` so it posts `portfolioEntries` to `/api/export` and asserts the served HTML contains Collection Status Report content. |
+| The frontend build initially failed after the Help copy update. | Ran `npm run build` immediately after wiring the route/docs changes. | Fixed the apostrophe in the new Operations tip string and reran the build successfully. |
+| The Operations UI already existed, so the risk was duplicating state or inventing another data model. | Considered adding a new backend-specific model path. | Reused `Get-PortfolioIndexPayload` and the existing indexed repo shape, adding only a stable `repoId` and an assessment-cache fallback at the route boundary. |

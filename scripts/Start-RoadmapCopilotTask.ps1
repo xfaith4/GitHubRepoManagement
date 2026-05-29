@@ -131,7 +131,42 @@ function Resolve-GitHubToken {
     throw "GitHub token not found. Set either GitHub_Token or GITHUB_TOKEN in your environment."
 }
 
-function Get-RoadmapContent {
+function Get-LocalRoadmapContent {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $null
+    }
+
+    if ($script:HistoryStore) {
+        Write-HistoryEvent -Store $script:HistoryStore -Type 'local_roadmap_read_started' -Data @{
+            path = $Path
+        }
+    }
+
+    $resolvedPath = [string](Resolve-Path -LiteralPath $Path -ErrorAction Stop)
+    $text = Get-Content -LiteralPath $resolvedPath -Raw -Encoding UTF8 -ErrorAction Stop
+    if ([string]::IsNullOrWhiteSpace($text)) {
+        throw "Local roadmap file '$resolvedPath' is empty."
+    }
+
+    if ($script:HistoryStore) {
+        Write-HistoryEvent -Store $script:HistoryStore -Type 'local_roadmap_read_completed' -Data @{
+            path = $resolvedPath
+            contentLength = $text.Length
+        }
+    }
+
+    return [pscustomobject]@{
+        Path = $resolvedPath
+        Content = $text
+    }
+}
+
+function Get-GitHubRoadmapContent {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Repo,
@@ -300,11 +335,6 @@ $script:HistoryStore = $historyStore
 $startedAt = Get-Date
 
 try {
-    $script:GhCommandPath = Resolve-GhCommandPath
-    if ([string]::IsNullOrWhiteSpace($script:GhCommandPath)) {
-        throw "GitHub CLI 'gh' was not found. Install GitHub CLI or set GH_CLI_PATH to gh.exe."
-    }
-
     Write-HistoryEvent -Store $historyStore -Type 'run_started' -Data @{
         repository = $Repository
         baseBranch = $BaseBranch
@@ -315,15 +345,28 @@ try {
         roadmapPathCandidates = @($RoadmapPathCandidates)
     }
 
-    $env:GH_TOKEN = Resolve-GitHubToken
+    $resolvedRoadmap = $null
+    if (-not [string]::IsNullOrWhiteSpace($RoadmapPath)) {
+        $resolvedRoadmap = Get-LocalRoadmapContent -Path $RoadmapPath
+    }
 
-$candidatePaths = @()
-if (-not [string]::IsNullOrWhiteSpace($RoadmapPath)) {
-    $candidatePaths += $RoadmapPath
-}
-$candidatePaths += $RoadmapPathCandidates
+    if ($null -eq $resolvedRoadmap) {
+        $script:GhCommandPath = Resolve-GhCommandPath
+        if ([string]::IsNullOrWhiteSpace($script:GhCommandPath)) {
+            throw "GitHub CLI 'gh' was not found. Install GitHub CLI or set GH_CLI_PATH to gh.exe."
+        }
 
-    $resolvedRoadmap = Get-RoadmapContent -Repo $Repository -CandidatePaths $candidatePaths
+        $env:GH_TOKEN = Resolve-GitHubToken
+
+        $candidatePaths = @()
+        if (-not [string]::IsNullOrWhiteSpace($RoadmapPath)) {
+            $candidatePaths += $RoadmapPath
+        }
+        $candidatePaths += $RoadmapPathCandidates
+
+        $resolvedRoadmap = Get-GitHubRoadmapContent -Repo $Repository -CandidatePaths $candidatePaths
+    }
+
     $taskSelection = Get-NextRoadmapTask -RoadmapContent $resolvedRoadmap.Content
 
     $nextTask = $taskSelection.Next

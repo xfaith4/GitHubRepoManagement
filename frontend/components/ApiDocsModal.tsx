@@ -144,6 +144,20 @@ const CATEGORIES: CategoryDef[] = [
           { name: 'data.generatedAt', type: 'ISO 8601', description: 'Assessment generation time' },
         ],
       },
+      {
+        method: 'GET',
+        path: '/api/operations/repos',
+        summary: 'Returns the indexed repository list used by the Operations workspace, including repo-level lifecycle, GitHub, and work-readiness context.',
+        responseFields: [
+          { name: 'success', type: 'bool', description: 'Operation result flag' },
+          { name: 'data.entries', type: 'OperationsRepoEntry[]', description: 'Repo-specific operations records built from the indexed portfolio payload' },
+          { name: 'data.generatedAt', type: 'ISO 8601', description: 'Timestamp from the portfolio index or cached assessment fallback' },
+          { name: 'data.count', type: 'number', description: 'Number of operations records returned' },
+          { name: 'data.cacheSource', type: '"portfolio-index" | "assessment-cache"', description: 'Whether the route served the persisted index or a warm assessment fallback' },
+          { name: 'data.summary', type: 'PortfolioAssessmentSummary | null', description: 'Portfolio-level lifecycle counts for the current index snapshot' },
+        ],
+        notes: 'Operations prefers the persisted index written by /api/portfolio/assessment. If that index is not available yet, the host falls back to the warm assessment cache when possible.',
+      },
     ],
   },
   {

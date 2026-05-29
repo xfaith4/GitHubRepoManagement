@@ -14,6 +14,7 @@ Minimal local PowerShell API host for adapter contracts.
 - `GET /metrics`
 - `GET /api/status`
 - `GET /api/portfolio/assessment`
+- `GET /api/operations/repos`
 - `POST /api/reconcile`
 - `POST /api/docreview/run`
 - `GET /api/report/artifacts`
@@ -46,6 +47,7 @@ Notes:
 - CORS headers are enabled for local frontend integration.
 - `GET /health/ready` and `GET /health/dependencies` always return HTTP 200 and surface degraded state in the response payload.
 - `GET /api/portfolio/assessment` returns the normalized portfolio lifecycle/readiness model used by Portfolio Mission, Work Queue ranking, and collection reporting.
+- `GET /api/operations/repos` returns the repo-specific indexed portfolio records consumed by the Operations tab, with a warm assessment-cache fallback when the persisted index is not available yet.
 - `POST /api/export` writes timestamped HTML and CSV reports into the repo-local `reports/` folder. When `portfolioEntries` are provided, it produces a Collection Status Report with lifecycle, blocker, recommended-action, and top-work fields.
 - `GET /api/reports/:reportName` serves a saved report file back to the browser so the HTML report can open in a new tab.
 - `POST /api/github/status` resolves auth in this order: request token, `GITHUB_TOKEN`, saved fallback token.

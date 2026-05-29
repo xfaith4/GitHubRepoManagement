@@ -1,8 +1,8 @@
 # GitHub Repo Management — Active Execution Roadmap
 
 > **Status:** Active
-> **Active release:** **Release 1.7.5 — Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning** (completed 2026-05-28)
-> **Next active release:** **Release 1.8 — Operations Workspace and Prompt Refinement**
+> **Active release:** **Release 1.8 — Operations Workspace and Prompt Refinement**
+> **Next active release:** **Release 1.9 — AI Documentation Improvement Cycles**
 > **Canonical product direction:** [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md)
 > **Completed-release archive:** [`docs/history/completed-releases.md`](docs/history/completed-releases.md)
 > **Dated change log:** [`CHANGELOG.md`](CHANGELOG.md)
@@ -92,7 +92,7 @@ Render the state inline on each milestone in italics, e.g.:
 | 1.6       | Roadmap-Driven Release Dispatch to GitHub Copilot                                                       | `done`                                                                                                               |
 | 1.7       | Repo Git Status Detail                                                                                  | `done`                                                                                                               |
 | **1.7.5** | **Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning**                       | `done` — shipped 2026-05-28; portfolio scan/classify/rank/report loop now end-to-end                                 |
-| **1.8**   | **Operations Workspace and Prompt Refinement**                                                          | **next active release**                                                                                               |
+| **1.8**   | **Operations Workspace and Prompt Refinement**                                                          | **active** — foundation slice live; Operations workspace now consumes indexed repo records via `/api/operations/repos` |
 | **1.9**   | **AI Documentation Improvement Cycles**                                                                 | `planned`                                                                                                            |
 | **2.0**   | **Agent Run Monitoring and Actions-Gated Merge Readiness**                                              | `planned`                                                                                                            |
 | **2.1**   | **Persistent Data Layer**                                                                               | `planned`                                                                                                            |
@@ -108,9 +108,34 @@ Render the state inline on each milestone in italics, e.g.:
 
 ---
 
-## 5. Release 1.7.5 Completion Snapshot
+## 5. Active Release Snapshot
 
-### Active release detail — 1.7.5 Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning
+### Active release detail — 1.8 Operations Workspace and Prompt Refinement
+
+**Status:** active. The first `1.8` foundation slice shipped 2026-05-28:
+the existing Operations tab and repo workspace UI are now backed by a live
+`GET /api/operations/repos` route sourced from the indexed portfolio model.
+Prompt refinement, repo-specific viewers, and prompt history remain the next
+unfinished parts of the release.
+
+**Goal:** Add a repo-specific Operations workspace that turns the indexed
+portfolio assessment and the Phase 6 prompt-context packet into an
+operator-driven execution surface. Operators can select a repo, inspect its
+state, review README and ROADMAP context, refine a generated task packet
+into a dispatch-ready prompt, and prepare it for execution without rebuilding
+the packet foundation from scratch.
+
+**Current focus:** Complete the repo-specific workflow inside Operations by
+adding in-panel README / ROADMAP context, audit-finding detail, repo-detail
+API coverage, and prompt-refinement preview/edit history on top of the
+existing Phase 6 packet contract.
+
+**Why now:** Release 1.7.5 closed the portfolio-level scan → classify →
+rank → refine prompt → dispatch → report loop. Release 1.8 turns that
+collection picture into a repo-specific execution surface without duplicating
+the portfolio/index foundations that already shipped.
+
+### Release 1.7.5 completion snapshot
 
 **Status:** complete. Phase 1 shipped 2026-04-25; Phase 2 shipped
 2026-04-26; Phases 3A-3C shipped 2026-05-11 through 2026-05-12; Phase 4
@@ -123,7 +148,7 @@ index, standardize repo readiness, create or repair missing roadmap
 contracts, rank the highest-value incomplete roadmap work, and prepare the
 dashboard signals needed for operator-driven execution.
 
-**Roadmap handoff:** Release 1.8 is now the next active promotion. Release
+**Roadmap handoff:** Release 1.8 is now the active execution release. Release
 1.2 remains intentionally deferred catch-up because it improves visibility
 of secondary signals but does not outrank the Operations workspace and
 prompt-refinement flow.
@@ -403,16 +428,21 @@ the packet foundation from scratch.
 
 #### Engineering milestones
 
-- [ ] Add Operations tab with repo selection table for indexed portfolio
-      records. *(state: planned)*
-- [ ] Add repo detail workspace showing local path, GitHub URL, default branch,
+- [x] Add Operations tab with repo selection table for indexed portfolio
+      records. *(state: ui-connected)* — the existing
+      [`OperationsWorkspaceView.tsx`](frontend/components/OperationsWorkspaceView.tsx)
+      is now fed by a live `/api/operations/repos` contract instead of a
+      missing backend route.
+- [x] Add repo detail workspace showing local path, GitHub URL, default branch,
       current branch, dirty state, last commit, created date, updated date,
       README score, ROADMAP score, lifecycle state, and recommended next
-      action. *(state: planned)*
+      action. *(state: ui-connected)* — the right-hand Operations detail pane
+      now opens against live indexed repo records served by the host.
 - [ ] Add README and ROADMAP viewers inside the repo detail workspace.
       *(state: planned)*
-- [ ] Add GitHub panel showing open PRs, latest Actions status, and
-      GitHub Pages status/link. *(state: planned)*
+- [x] Add GitHub panel showing open PRs, latest Actions status, and
+      GitHub Pages status/link. *(state: ui-connected)* — the Operations
+      workspace now renders those live fields from the indexed repo payload.
 - [ ] Add audit findings panel showing README findings, ROADMAP findings,
       structure findings, and dispatch blockers. *(state: planned)*
 - [ ] Add Prompt Refinement panel that starts from the existing
@@ -426,8 +456,11 @@ the packet foundation from scratch.
       constraints or direction to the generated prompt. *(state: planned)*
 - [ ] Store prompt history per repo, including generated previews, edits,
       and dispatch records. *(state: planned)*
-- [ ] Add `GET /api/operations/repos` route that returns the indexed repo
-      list optimized for the Operations tab. *(state: planned)*
+- [x] Add `GET /api/operations/repos` route that returns the indexed repo
+      list optimized for the Operations tab. *(state: smoke-tested)* — the
+      host now serves indexed repo records with a warm assessment-cache
+      fallback, and `scripts/Invoke-ApiHostSmokeTest.ps1` validates the
+      contract.
 - [ ] Add `GET /api/operations/repos/{repoId}` route that returns full
       repo detail, documentation context, GitHub metadata, audit findings,
       and dispatch context. *(state: planned)*
