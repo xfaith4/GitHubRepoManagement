@@ -590,6 +590,8 @@ function Invoke-PortfolioAssessment {
             -StructureFindings $structFindings
 
         $pendingItemsRaw = @(_GetPendingRoadmapItems -RoadmapEntry $roadmapEntry -MaturityEntry $maturityEntry)
+        $hasCiSignal = if ($null -ne $structAudit) { [bool]$structAudit.hasCiSignal } else { $false }
+        $hasTestSignal = if ($null -ne $structAudit) { [bool]$structAudit.hasTestSignal } else { $false }
         $repoContext = [pscustomobject]@{
             repoName          = $repoName
             repoType          = $repoType
@@ -597,8 +599,8 @@ function Invoke-PortfolioAssessment {
             maturityLevel     = $maturityLevel
             maturityScore     = $maturityScore
             dispatchReadiness = $dispatchReadiness
-            hasCiSignal       = if ($null -ne $structAudit) { [bool]$structAudit.hasCiSignal } else { $false }
-            hasTestSignal     = if ($null -ne $structAudit) { [bool]$structAudit.hasTestSignal } else { $false }
+            hasCiSignal       = $hasCiSignal
+            hasTestSignal     = $hasTestSignal
             sourceCoverage    = $sourceCoverage
             docFindingCount   = @($docFindings).Count
             pendingItemCount  = $pendingCount
@@ -607,7 +609,7 @@ function Invoke-PortfolioAssessment {
         $topValueItem = _SelectTopValueItem -ScoredItems $scoredPendingItems
         $readmeScore = _Get-ReadmeScore -HasReadme $hasReadme -DocFindingCount @($docFindings).Count
         $roadmapScore = _Get-RoadmapScore -HasRoadmap $hasRoadmap -RoadmapState $roadmapState -MaturityScore $maturityScore -PendingItemCount $pendingCount
-        $documentationHealthScore = _Get-DocumentationHealthScore -ReadmeScore $readmeScore -RoadmapScore $roadmapScore -DocFindingCount @($docFindings).Count -HasCiSignal (if ($null -ne $structAudit) { [bool]$structAudit.hasCiSignal } else { $false }) -HasTestSignal (if ($null -ne $structAudit) { [bool]$structAudit.hasTestSignal } else { $false })
+        $documentationHealthScore = _Get-DocumentationHealthScore -ReadmeScore $readmeScore -RoadmapScore $roadmapScore -DocFindingCount @($docFindings).Count -HasCiSignal $hasCiSignal -HasTestSignal $hasTestSignal
         $dispatchReadinessExplanation = _Get-DispatchReadinessExplanation -DispatchReadiness $dispatchReadiness
         $openPrCount = [int](_GetField -Obj $githubRepo -Name 'openPrCount' -Default (_GetField -Obj $repo -Name 'openPrCount' -Default 0))
         $pendingReviewPrCount = [int](_GetField -Obj $githubRepo -Name 'pendingReviewPrCount' -Default (_GetField -Obj $repo -Name 'pendingReviewPrCount' -Default 0))
