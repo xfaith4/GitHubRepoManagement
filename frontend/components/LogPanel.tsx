@@ -7,10 +7,11 @@ interface LogPanelProps {
   operation: OperationType | null;
   messages: string[];
   status: 'idle' | 'running' | 'success' | 'error';
+  progressSummary?: string;
   onClose: () => void;
 }
 
-const LogPanel: React.FC<LogPanelProps> = ({ isOpen, operation, messages, status, onClose }) => {
+const LogPanel: React.FC<LogPanelProps> = ({ isOpen, operation, messages, status, progressSummary, onClose }) => {
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   const operationTitle = operation === 'scan' ? 'Scan Progress' : (operation ? operation.charAt(0).toUpperCase() + operation.slice(1) : 'Operation');
@@ -32,7 +33,10 @@ const LogPanel: React.FC<LogPanelProps> = ({ isOpen, operation, messages, status
       >
         <div className="flex flex-col h-full">
           <header className="flex items-center justify-between p-4 border-b border-gray-700 bg-gray-800">
-            <h2 className="text-lg font-semibold">{operationTitle} Log</h2>
+            <div>
+              <h2 className="text-lg font-semibold">{operationTitle} Log</h2>
+              {progressSummary && <p className="text-xs text-gray-400 mt-1">{progressSummary}</p>}
+            </div>
             <button onClick={onClose} className="p-1 rounded-full text-gray-400 hover:bg-gray-700 hover:text-white transition-colors">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
