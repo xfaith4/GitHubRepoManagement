@@ -143,6 +143,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   const [loadingElapsedSec, setLoadingElapsedSec] = useState(0);
   const [logMessages, setLogMessages] = useState<string[]>([]);
   const [logStatus, setLogStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
+  const [scanProgress, setScanProgress] = useState<{ scannedCount: number; latestRepo: string | null }>({ scannedCount: 0, latestRepo: null });
 
   const refreshPortfolioAssessment = (refresh = false) => {
     setPortfolioAssessmentLoading(true);
@@ -299,6 +300,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
       setCurrentOperation('scan');
       setLogMessages(['Starting repository scan...']);
       setLogStatus('running');
+      setScanProgress({ scannedCount: 0, latestRepo: null });
       setIsLogPanelOpen(true);
       prevBackendLogCountRef.current = 0;
     } else if (!loading && wasLoading) {
@@ -329,8 +331,25 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
         const prefix = e.level === 'ERROR' ? 'ERROR: ' : e.level === 'WARN' ? 'WARN: ' : '';
         return `${prefix}${e.msg}`;
       });
+    if (currentOperation === 'scan') {
+      const repoLineMatches = lines
+        .map(line => {
+          // Matches backend scan lines like: "Found repo #12: MyRepo (Branch: main, ...)"
+          const match = line.match(/Found repo #(\d+):\s*([^(]+?)(?:\s*\(|$)/i);
+          if (!match) return null;
+          return { scannedCount: Number(match[1]), latestRepo: match[2].trim() };
+        })
+        .filter((match): match is { scannedCount: number; latestRepo: string } => match !== null);
+      if (repoLineMatches.length > 0) {
+        const latest = repoLineMatches[repoLineMatches.length - 1];
+        setScanProgress(prev => ({
+          scannedCount: Math.max(prev.scannedCount, latest.scannedCount),
+          latestRepo: latest.latestRepo || prev.latestRepo
+        }));
+      }
+    }
     if (lines.length > 0) setLogMessages(prev => [...prev, ...lines]);
-  }, [backendLogEntries]);
+  }, [backendLogEntries, currentOperation]);
 
   const getRepoSelectionId = (repo: RepoStatus) => repo.localPath ?? `${repo.name}::${repo.branch}`;
   const resolveSelectionTargets = (repoIds?: string[]) => {
@@ -827,6 +846,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   }
 
   const isScanning = loading || settingsLoading;
+  const scanProgressSummary = currentOperation === 'scan'
+    ? `${scanProgress.scannedCount} repositories scanned${scanProgress.latestRepo ? ` · latest: ${scanProgress.latestRepo}` : ''}`
+    : undefined;
 
   const healthDot = backendHealth === 'online'
     ? 'bg-green-400'
@@ -1392,6 +1414,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
         operation={currentOperation}
         messages={logMessages}
         status={logStatus}
+        progressSummary={scanProgressSummary}
         onClose={handleLogPanelClose}
       />
 

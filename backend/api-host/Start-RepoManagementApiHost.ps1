@@ -3906,7 +3906,8 @@ try {
 
                     if ($null -eq $result) {
                         $scanCachedAt = (Get-Date).ToUniversalTime().ToString('o')
-                        $result = Get-StatusAdapterResult -LocalRoots $localRoots -MaxDepth $maxDepth -IncludeNonGitFolders:$includeNonGit -LogPath $LogPath
+                        $statusLogPath = if ($script:OpsLogPath) { $script:OpsLogPath } else { $LogPath }
+                        $result = Get-StatusAdapterResult -LocalRoots $localRoots -MaxDepth $maxDepth -IncludeNonGitFolders:$includeNonGit -LogPath $statusLogPath
                         if ($result.success) {
                             $result = Add-GitHubMetadataToStatusResult -StatusResult $result -Settings $settings
                         }
@@ -6430,15 +6431,38 @@ try {
                                 Select-Object -Last $maxLines
                             foreach ($rawLine in $rawLines) {
                                 if ([string]::IsNullOrWhiteSpace($rawLine)) { continue }
+                                $parsed = $false
                                 try {
                                     $obj = $rawLine | ConvertFrom-Json
-                                    if ($sinceMs -gt 0 -and $obj.ts) {
-                                        $lineMs = [long](([datetime]$obj.ts).ToUniversalTime() -
-                                            [datetime]::UnixEpoch).TotalMilliseconds
+                                    # Support both API-host JSONL ({ts,msg}) and structured module logs ({timestamp,message}).
+                                    $entryTs = if ($obj.ts) { [string]$obj.ts } elseif ($obj.timestamp) { [string]$obj.timestamp } else { (Get-Date).ToUniversalTime().ToString('o') }
+                                    if ($sinceMs -gt 0 -and $entryTs) {
+                                        $lineMs = [long](([datetime]$entryTs).ToUniversalTime() - [datetime]::UnixEpoch).TotalMilliseconds
                                         if ($lineMs -le $sinceMs) { continue }
                                     }
-                                    $entries.Add($obj)
+                                    $entries.Add([pscustomobject]@{
+                                        ts = $entryTs
+                                        level = ([string]$obj.level).ToUpperInvariant()
+                                        msg = if ($obj.msg) { [string]$obj.msg } elseif ($obj.message) { [string]$obj.message } else { [string]$rawLine }
+                                    })
+                                    $parsed = $true
                                 } catch { }
+                                if (-not $parsed -and $rawLine -match '^\[(?<ts>[^\]]+)\]\s+\[(?<level>[^\]]+)\]\s+(?<msg>.*)$') {
+                                    try {
+                                        $entryTs = ([datetime]$matches['ts']).ToUniversalTime().ToString('o')
+                                    } catch {
+                                        $entryTs = (Get-Date).ToUniversalTime().ToString('o')
+                                    }
+                                    if ($sinceMs -gt 0) {
+                                        $lineMs = [long](([datetime]$entryTs).ToUniversalTime() - [datetime]::UnixEpoch).TotalMilliseconds
+                                        if ($lineMs -le $sinceMs) { continue }
+                                    }
+                                    $entries.Add([pscustomobject]@{
+                                        ts = $entryTs
+                                        level = ([string]$matches['level']).ToUpperInvariant()
+                                        msg = [string]$matches['msg']
+                                    })
+                                }
                             }
                         } catch { }
                     }
