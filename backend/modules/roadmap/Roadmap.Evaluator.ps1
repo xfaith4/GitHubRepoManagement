@@ -119,8 +119,8 @@ function _GetReadmeAnalysis {
     param([string]$LocalPath)
 
     $candidatePaths = @(
-        Join-Path $LocalPath 'README.md',
-        Join-Path $LocalPath 'readme.md'
+        (Join-Path $LocalPath 'README.md')
+        (Join-Path $LocalPath 'readme.md')
     )
 
     $readmePath = $null
