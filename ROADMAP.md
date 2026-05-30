@@ -445,8 +445,8 @@ the packet foundation from scratch.
 - [x] Add GitHub panel showing open PRs, latest Actions status, and
       GitHub Pages status/link. *(state: ui-connected)* — the Operations
       workspace now renders those live fields from the indexed repo payload.
-- [ ] Add audit findings panel showing README findings, ROADMAP findings,
-      structure findings, and dispatch blockers. *(state: planned)*
+- [x] Add audit findings panel showing README findings, ROADMAP findings,
+      structure findings, and dispatch blockers. *(state: ui-connected)*
 - [ ] Add Prompt Refinement panel that starts from the existing
       `/api/copilot-task/preview` packet, lets the operator adjust selected
       work item, constraints, and emphasis, and produces a dispatch-ready

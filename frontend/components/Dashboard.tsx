@@ -237,9 +237,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
     refreshOperationsRepos(false).catch(() => {/* surfaced in-panel */});
   }, [activeView, hasAttemptedOperationsLoad]);
 
-  // Load docs audit when the Work Queue view is first opened.
+  // Load docs audit when Work Queue or Operations is first opened.
   useEffect(() => {
-    if (activeView !== 'work-queue' || hasAttemptedDocsAuditLoad) {
+    if ((activeView !== 'work-queue' && activeView !== 'operations') || hasAttemptedDocsAuditLoad) {
       return;
     }
     setHasAttemptedDocsAuditLoad(true);
@@ -260,9 +260,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
       .finally(() => setDocsAuditLoading(false));
   }, [activeView, hasAttemptedDocsAuditLoad]);
 
-  // Load roadmap audit when the Work Queue view is first opened.
+  // Load roadmap audit when Work Queue or Operations is first opened.
   useEffect(() => {
-    if (activeView !== 'work-queue' || hasAttemptedRoadmapAuditLoad) {
+    if ((activeView !== 'work-queue' && activeView !== 'operations') || hasAttemptedRoadmapAuditLoad) {
       return;
     }
     setHasAttemptedRoadmapAuditLoad(true);
@@ -1310,6 +1310,8 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
                 operationsRepos={operationsRepos}
                 loading={operationsReposLoading}
                 error={operationsReposError}
+                docsAuditIndex={docsAuditIndex}
+                roadmapAuditIndex={roadmapAuditIndex}
                 onRefresh={() => { refreshOperationsRepos(true).catch(() => {/* surfaced in-panel */}); }}
                 onViewRoadmap={handleViewRoadmap}
                 onPreviewTask={handlePreviewCopilotTask}

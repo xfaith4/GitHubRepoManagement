@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  type DocAuditIndex,
+  type RoadmapAuditIndex,
   type OperationsRepoEntry,
   type OperationsReposResult,
   type PortfolioValueTier,
@@ -14,6 +16,8 @@ interface OperationsWorkspaceViewProps {
   operationsRepos: OperationsReposResult | null;
   loading: boolean;
   error?: string | null;
+  docsAuditIndex?: DocAuditIndex | null;
+  roadmapAuditIndex?: RoadmapAuditIndex | null;
   onRefresh: () => void;
   onViewRoadmap?: (repoName: string) => void;
   onPreviewTask?: (repoName: string, roadmapPath?: string) => void;
@@ -42,6 +46,18 @@ const VALUE_TIER_STYLES: Record<PortfolioValueTier, string> = {
   low: 'bg-slate-800 text-slate-200 border-slate-600',
   deferred: 'bg-amber-900/40 text-amber-200 border-amber-700/50',
   unscored: 'bg-gray-800 text-gray-300 border-gray-600',
+};
+
+const SEVERITY_COLORS: Record<string, string> = {
+  critical: 'text-red-400',
+  warning: 'text-yellow-400',
+  info: 'text-blue-400',
+};
+
+const SEVERITY_BG: Record<string, string> = {
+  critical: 'bg-red-900/30 border-red-700/40',
+  warning: 'bg-yellow-900/30 border-yellow-700/40',
+  info: 'bg-blue-900/20 border-blue-700/30',
 };
 
 function formatLifecycleLabel(state: RepoLifecycleState): string {
@@ -106,6 +122,8 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
   operationsRepos,
   loading,
   error,
+  docsAuditIndex,
+  roadmapAuditIndex,
   onRefresh,
   onViewRoadmap,
   onPreviewTask,
@@ -159,6 +177,38 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
   const selectedEntry = useMemo(
     () => filteredEntries.find(entry => entry.repoId === selectedRepoId) ?? filteredEntries[0] ?? null,
     [filteredEntries, selectedRepoId],
+  );
+
+  const selectedDocsAuditEntry = useMemo(() => {
+    if (!selectedEntry || !docsAuditIndex) return null;
+    const repoName = selectedEntry.repoName.toLowerCase();
+    const localPath = selectedEntry.localPath.toLowerCase();
+    return docsAuditIndex.entries.find(entry => (
+      entry.repoName.toLowerCase() === repoName ||
+      entry.repoPath.toLowerCase() === localPath
+    )) ?? null;
+  }, [docsAuditIndex, selectedEntry]);
+
+  const selectedRoadmapAuditEntry = useMemo(() => {
+    if (!selectedEntry || !roadmapAuditIndex) return null;
+    const repoName = selectedEntry.repoName.toLowerCase();
+    const localPath = selectedEntry.localPath.toLowerCase();
+    return roadmapAuditIndex.entries.find(entry => (
+      entry.repoName.toLowerCase() === repoName ||
+      (entry.repoPath ?? '').toLowerCase() === localPath
+    )) ?? null;
+  }, [roadmapAuditIndex, selectedEntry]);
+
+  const readmeFindings = useMemo(() => {
+    if (!selectedDocsAuditEntry) return [];
+    return selectedDocsAuditEntry.docFindings.filter(finding =>
+      /readme/i.test(finding.file ?? '') || /readme/i.test(finding.message ?? ''),
+    );
+  }, [selectedDocsAuditEntry]);
+
+  const roadmapFindings = useMemo(
+    () => selectedRoadmapAuditEntry?.auditFindings ?? [],
+    [selectedRoadmapAuditEntry],
   );
 
   useEffect(() => {
@@ -593,21 +643,101 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                   <div className="rounded-lg border border-gray-700 bg-gray-950/40 p-4">
                     <div className="flex items-center gap-2 text-sm font-semibold text-white">
                       <HealthIcon className="w-4 h-4 text-amber-300" />
-                      Blockers and Rationale
+                      Audit Findings and Blockers
                     </div>
-                    {selectedEntry.blockingReasons.length > 0 ? (
-                      <ul className="mt-3 space-y-2 text-sm text-gray-200">
-                        {selectedEntry.blockingReasons.map(reason => (
-                          <li key={reason} className="rounded-md border border-gray-800 bg-gray-900/60 px-3 py-2">
-                            {reason}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <div className="mt-3 rounded-md border border-emerald-800/40 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-100">
-                        No dispatch blockers recorded for this repo in the current indexed assessment.
+                    <div className="mt-3 grid gap-4 lg:grid-cols-2">
+                      <div>
+                        <div className="text-xs uppercase tracking-wide text-gray-500">
+                          README Findings {selectedDocsAuditEntry ? `(${readmeFindings.length})` : '(unavailable)'}
+                        </div>
+                        {readmeFindings.length > 0 ? (
+                          <ul className="mt-2 space-y-2 text-sm text-gray-200">
+                            {readmeFindings.map((finding, index) => (
+                              <li key={`${finding.file}-${finding.message}-${index}`} className={`rounded-md border px-3 py-2 ${SEVERITY_BG[finding.severity] ?? SEVERITY_BG.info}`}>
+                                <div className={`text-xs font-semibold uppercase ${SEVERITY_COLORS[finding.severity] ?? 'text-gray-400'}`}>
+                                  {finding.severity}
+                                </div>
+                                <div className="mt-1">{finding.message}</div>
+                                <div className="mt-1 text-xs text-gray-400">→ {finding.recommendedAction}</div>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <div className="mt-2 rounded-md border border-gray-800 bg-gray-900/40 px-3 py-2 text-sm text-gray-400">
+                            {selectedDocsAuditEntry ? 'No README findings recorded for this repo.' : 'Docs audit data has not been loaded yet.'}
+                          </div>
+                        )}
                       </div>
-                    )}
+
+                      <div>
+                        <div className="text-xs uppercase tracking-wide text-gray-500">
+                          ROADMAP Findings {selectedRoadmapAuditEntry ? `(${roadmapFindings.length})` : '(unavailable)'}
+                        </div>
+                        {roadmapFindings.length > 0 ? (
+                          <ul className="mt-2 space-y-2 text-sm text-gray-200">
+                            {roadmapFindings.map((finding, index) => (
+                              <li key={`${finding.ruleId}-${finding.message}-${index}`} className={`rounded-md border px-3 py-2 ${SEVERITY_BG[finding.severity] ?? SEVERITY_BG.info}`}>
+                                <div className={`text-xs font-semibold uppercase ${SEVERITY_COLORS[finding.severity] ?? 'text-gray-400'}`}>
+                                  {finding.severity}
+                                </div>
+                                <div className="mt-1">{finding.message}</div>
+                                {finding.recommendedAction && (
+                                  <div className="mt-1 text-xs text-gray-400">→ {finding.recommendedAction}</div>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <div className="mt-2 rounded-md border border-gray-800 bg-gray-900/40 px-3 py-2 text-sm text-gray-400">
+                            {selectedRoadmapAuditEntry ? 'No roadmap audit findings recorded for this repo.' : 'Roadmap audit data has not been loaded yet.'}
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="text-xs uppercase tracking-wide text-gray-500">
+                          Structure Findings ({selectedEntry.structureFindings.length})
+                        </div>
+                        {selectedEntry.structureFindings.length > 0 ? (
+                          <ul className="mt-2 space-y-2 text-sm text-gray-200">
+                            {selectedEntry.structureFindings.map((finding, index) => (
+                              <li key={`${finding.kind}-${finding.target}-${index}`} className={`rounded-md border px-3 py-2 ${SEVERITY_BG[finding.severity] ?? SEVERITY_BG.info}`}>
+                                <div className={`text-xs font-semibold uppercase ${SEVERITY_COLORS[finding.severity] ?? 'text-gray-400'}`}>
+                                  {finding.severity}
+                                </div>
+                                <div className="mt-1">
+                                  {finding.kind.replaceAll('-', ' ')} • {finding.target}
+                                </div>
+                                <div className="mt-1 text-xs text-gray-400">→ {finding.recommendedAction}</div>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <div className="mt-2 rounded-md border border-emerald-800/40 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-100">
+                            No structure findings recorded for this repo.
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="text-xs uppercase tracking-wide text-gray-500">
+                          Dispatch Blockers ({selectedEntry.blockingReasons.length})
+                        </div>
+                        {selectedEntry.blockingReasons.length > 0 ? (
+                          <ul className="mt-2 space-y-2 text-sm text-gray-200">
+                            {selectedEntry.blockingReasons.map(reason => (
+                              <li key={reason} className="rounded-md border border-gray-800 bg-gray-900/60 px-3 py-2">
+                                {reason}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <div className="mt-2 rounded-md border border-emerald-800/40 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-100">
+                            No dispatch blockers recorded for this repo in the current indexed assessment.
+                          </div>
+                        )}
+                      </div>
+                    </div>
                     {selectedEntry.topValueItem?.valueRationale && selectedEntry.topValueItem.valueRationale.length > 0 && (
                       <div className="mt-4">
                         <div className="text-xs uppercase tracking-wide text-gray-500">Why this work ranks highly</div>
