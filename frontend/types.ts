@@ -1034,3 +1034,43 @@ export interface OperationsReposResult {
   cacheSource: 'portfolio-index' | 'assessment-cache';
   summary: PortfolioAssessmentSummary | null;
 }
+
+export interface OperationsRepoDetail {
+  repoId: string;
+  repo: OperationsRepoEntry;
+  documentationContext: {
+    hasReadme: boolean;
+    readmeLastWriteUtc?: string | null;
+    hasRoadmap: boolean;
+    roadmapPath?: string | null;
+    roadmapLastWriteUtc?: string | null;
+    docFindingCount: number;
+    structureFindings: RepoStructureFinding[];
+  };
+  docAudit: {
+    auditedAt?: string | null;
+    dispatchReadiness: DispatchReadiness;
+    criticalCount: number;
+    warningCount: number;
+    infoCount: number;
+    findings: DocFinding[];
+  };
+  roadmapAudit: {
+    auditedAt?: string | null;
+    roadmapState: 'pending' | 'complete' | 'missing' | 'parse-error';
+    maturityLevel: RoadmapMaturityLevel;
+    maturityScore: number;
+    pendingCount: number;
+    nextPendingItem?: { text: string; section: string; tags?: string[] } | null;
+    auditFindings: RoadmapAuditFinding[];
+  };
+  dispatchContext: {
+    dispatchReadiness: DispatchReadiness;
+    dispatchReadinessExplanation?: string | null;
+    recommendedAction: string;
+    blockingReasons: string[];
+    pendingItemCount: number;
+    nextPendingItemText?: string | null;
+    topValueItem: PortfolioPendingItemValue | null;
+  };
+}

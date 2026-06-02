@@ -316,6 +316,74 @@ function Get-OperationsRepoId {
     return [guid]::NewGuid().Guid
 }
 
+function Get-OperationsReposPayload {
+    param(
+        [Parameter()]
+        [hashtable]$Settings = $null
+    )
+
+    if ($null -eq $Settings) {
+        $Settings = Get-HostSettings
+    }
+
+    $indexPayload = Get-PortfolioIndexPayload -WorkspaceRoot $WorkspaceRoot
+    $entries = @()
+    $generatedAt = ''
+    $summary = $null
+    $count = 0
+    $cacheSource = ''
+
+    if ($null -ne $indexPayload -and ($indexPayload.PSObject.Properties.Name -contains 'repos')) {
+        $entries = @($indexPayload.repos | Select-Object *, @{ Name = 'repoId'; Expression = { Get-OperationsRepoId -Repo $_ } })
+        $generatedAt = [string](Get-ObjectPropertyValue -InputObject $indexPayload -PropertyName 'generatedAt' -Default '')
+        $summary = Get-ObjectPropertyValue -InputObject $indexPayload -PropertyName 'summary' -Default $null
+        $count = [int](Get-ObjectPropertyValue -InputObject $indexPayload -PropertyName 'repoCount' -Default @($entries).Count)
+        $cacheSource = 'portfolio-index'
+    }
+    else {
+        $ttlSeconds = Get-PortfolioAssessmentCacheTtlSeconds -Settings $Settings
+        $assessmentCache = if ($ttlSeconds -gt 0) {
+            Get-PortfolioAssessmentFromCache -TtlSeconds $ttlSeconds
+        }
+        else {
+            $null
+        }
+
+        if ($null -ne $assessmentCache -and $assessmentCache.hit) {
+            $fallbackPayload = New-PortfolioIndexPayload `
+                -Assessments $assessmentCache.entries `
+                -Summary $assessmentCache.summary `
+                -SignalSources $assessmentCache.signalSources `
+                -GeneratedAt $assessmentCache.generatedAt
+            $entries = @($fallbackPayload.repos | Select-Object *, @{ Name = 'repoId'; Expression = { Get-OperationsRepoId -Repo $_ } })
+            $generatedAt = [string](Get-ObjectPropertyValue -InputObject $fallbackPayload -PropertyName 'generatedAt' -Default '')
+            $summary = Get-ObjectPropertyValue -InputObject $fallbackPayload -PropertyName 'summary' -Default $null
+            $count = [int](Get-ObjectPropertyValue -InputObject $fallbackPayload -PropertyName 'repoCount' -Default @($entries).Count)
+            $cacheSource = 'assessment-cache'
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($cacheSource)) {
+        return [pscustomobject]@{
+            available = $false
+            error = 'Operations workspace is not ready yet. Run /api/portfolio/assessment first to build the indexed portfolio.'
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($generatedAt)) {
+        $generatedAt = (Get-Date).ToUniversalTime().ToString('o')
+    }
+
+    return [pscustomobject]@{
+        available = $true
+        entries = @($entries)
+        generatedAt = $generatedAt
+        summary = $summary
+        count = $count
+        cacheSource = $cacheSource
+    }
+}
+
 function Send-HttpJson {
     param(
         [Parameter(Mandatory = $true)]
@@ -3829,6 +3897,144 @@ try {
                 continue
             }
 
+            if ($req.Method -eq 'GET' -and $path -like '/api/operations/repos/*' -and $path -ne '/api/operations/repos') {
+                $repoId = [System.Uri]::UnescapeDataString($path.Substring('/api/operations/repos/'.Length))
+                if ([string]::IsNullOrWhiteSpace($repoId)) {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        error = 'repoId is required in /api/operations/repos/{repoId}.'
+                    }
+                    $client.Close()
+                    continue
+                }
+
+                Write-HostLog ("[TRACE] operations.repoDetail correlationId={0} repoId={1} start" -f $correlationId, $repoId)
+                $settings = Get-HostSettings
+                $opsPayload = Get-OperationsReposPayload -Settings $settings
+                if (-not $opsPayload.available) {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        error = $opsPayload.error
+                    }
+                    $client.Close()
+                    continue
+                }
+
+                $repoEntry = @($opsPayload.entries | Where-Object {
+                    $candidateRepoId = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoId' -Default '')
+                    $candidateRepoName = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '')
+                    $candidateLocalPath = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'localPath' -Default '')
+                    $candidateGithubFullName = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'githubFullName' -Default '')
+                    $candidateRepoId -eq $repoId -or
+                    $candidateRepoName -eq $repoId -or
+                    $candidateLocalPath -eq $repoId -or
+                    $candidateGithubFullName -eq $repoId
+                } | Select-Object -First 1)
+
+                if ($repoEntry.Count -eq 0 -or $null -eq $repoEntry[0]) {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        error = "No operations repo record found for repoId '$repoId'."
+                    }
+                    $client.Close()
+                    continue
+                }
+
+                $repoRecord = $repoEntry[0]
+                $repoName = [string](Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'repoName' -Default '')
+
+                $docAuditTtl = Get-DocAuditCacheTtlSeconds -Settings $settings
+                $docAuditCache = Get-DocAuditFromCache -TtlSeconds $docAuditTtl
+                $docAuditEntry = $null
+                if ($docAuditCache.hit -and $docAuditCache.entries) {
+                    $docAuditEntry = @($docAuditCache.entries | Where-Object {
+                        [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '') -eq $repoName
+                    } | Select-Object -First 1)
+                    if ($docAuditEntry.Count -gt 0) {
+                        $docAuditEntry = $docAuditEntry[0]
+                    }
+                    else {
+                        $docAuditEntry = $null
+                    }
+                }
+
+                $roadmapAuditTtl = Get-RoadmapAuditCacheTtlSeconds -Settings $settings
+                $roadmapAuditCache = Get-RoadmapAuditFromCache -TtlSeconds $roadmapAuditTtl
+                $roadmapAuditEntry = $null
+                if ($roadmapAuditCache.hit -and $roadmapAuditCache.entries) {
+                    $roadmapAuditEntry = @($roadmapAuditCache.entries | Where-Object {
+                        [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '') -eq $repoName
+                    } | Select-Object -First 1)
+                    if ($roadmapAuditEntry.Count -gt 0) {
+                        $roadmapAuditEntry = $roadmapAuditEntry[0]
+                    }
+                    else {
+                        $roadmapAuditEntry = $null
+                    }
+                }
+
+                $docFindings = @()
+                if ($null -ne $docAuditEntry) {
+                    $docFindings = @(Get-ObjectPropertyValue -InputObject $docAuditEntry -PropertyName 'docFindings' -Default @())
+                }
+
+                $roadmapFindings = @()
+                if ($null -ne $roadmapAuditEntry) {
+                    $roadmapFindings = @(Get-ObjectPropertyValue -InputObject $roadmapAuditEntry -PropertyName 'auditFindings' -Default @())
+                }
+
+                Add-MetricCounter -Name 'api_requests_total'
+                Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                Write-HostLog ("[TRACE] operations.repoDetail correlationId={0} repoId={1} done docFindings={2} roadmapFindings={3} durationMs={4}" -f $correlationId, $repoId, @($docFindings).Count, @($roadmapFindings).Count, [int]((Get-Date) - $requestStart).TotalMilliseconds)
+                Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                    success = $true
+                    data = @{
+                        repoId = [string](Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'repoId' -Default $repoId)
+                        repo = $repoRecord
+                        documentationContext = @{
+                            hasReadme = [bool](Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'hasReadme' -Default $false)
+                            readmeLastWriteUtc = [string](Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'readmeLastWriteUtc' -Default '')
+                            hasRoadmap = [bool](Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'hasRoadmap' -Default $false)
+                            roadmapPath = [string](Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'roadmapPath' -Default '')
+                            roadmapLastWriteUtc = [string](Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'roadmapLastWriteUtc' -Default '')
+                            docFindingCount = [int](Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'docFindingCount' -Default @($docFindings).Count)
+                            structureFindings = @(Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'structureFindings' -Default @())
+                        }
+                        docAudit = @{
+                            auditedAt = [string](Get-ObjectPropertyValue -InputObject $docAuditCache -PropertyName 'auditedAt' -Default '')
+                            dispatchReadiness = [string](Get-ObjectPropertyValue -InputObject $docAuditEntry -PropertyName 'dispatchReadiness' -Default (Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'dispatchReadiness' -Default 'missing-roadmap'))
+                            criticalCount = [int](Get-ObjectPropertyValue -InputObject $docAuditEntry -PropertyName 'criticalCount' -Default 0)
+                            warningCount = [int](Get-ObjectPropertyValue -InputObject $docAuditEntry -PropertyName 'warningCount' -Default 0)
+                            infoCount = [int](Get-ObjectPropertyValue -InputObject $docAuditEntry -PropertyName 'infoCount' -Default 0)
+                            findings = @($docFindings)
+                        }
+                        roadmapAudit = @{
+                            auditedAt = [string](Get-ObjectPropertyValue -InputObject $roadmapAuditCache -PropertyName 'auditedAt' -Default '')
+                            roadmapState = [string](Get-ObjectPropertyValue -InputObject $roadmapAuditEntry -PropertyName 'roadmapState' -Default (Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'roadmapState' -Default 'missing'))
+                            maturityLevel = [string](Get-ObjectPropertyValue -InputObject $roadmapAuditEntry -PropertyName 'maturityLevel' -Default (Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'maturityLevel' -Default 'L0-Absent'))
+                            maturityScore = [double](Get-ObjectPropertyValue -InputObject $roadmapAuditEntry -PropertyName 'maturityScore' -Default (Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'maturityScore' -Default 0))
+                            pendingCount = [int](Get-ObjectPropertyValue -InputObject $roadmapAuditEntry -PropertyName 'pendingCount' -Default (Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'pendingItemCount' -Default 0))
+                            nextPendingItem = (Get-ObjectPropertyValue -InputObject $roadmapAuditEntry -PropertyName 'nextPendingItem' -Default $null)
+                            auditFindings = @($roadmapFindings)
+                        }
+                        dispatchContext = @{
+                            dispatchReadiness = [string](Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'dispatchReadiness' -Default 'missing-roadmap')
+                            dispatchReadinessExplanation = [string](Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'dispatchReadinessExplanation' -Default '')
+                            recommendedAction = [string](Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'recommendedAction' -Default '')
+                            blockingReasons = @(Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'blockingReasons' -Default @())
+                            pendingItemCount = [int](Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'pendingItemCount' -Default 0)
+                            nextPendingItemText = [string](Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'nextPendingItemText' -Default '')
+                            topValueItem = (Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'topValueItem' -Default $null)
+                        }
+                    }
+                }
+                $client.Close()
+                continue
+            }
+
             switch ("$($req.Method) $path") {
                 'GET /health/live' {
                     Add-MetricCounter -Name 'api_requests_total'
@@ -5015,64 +5221,28 @@ try {
                 'GET /api/operations/repos' {
                     Write-HostLog ("[TRACE] operations.repos correlationId={0} start" -f $correlationId)
 
-                    $indexPayload = Get-PortfolioIndexPayload -WorkspaceRoot $WorkspaceRoot
-                    $entries = @()
-                    $generatedAt = ''
-                    $summary = $null
-                    $count = 0
-                    $cacheSource = ''
-
-                    if ($null -ne $indexPayload -and ($indexPayload.PSObject.Properties.Name -contains 'repos')) {
-                        $entries = @($indexPayload.repos | Select-Object *, @{ Name = 'repoId'; Expression = { Get-OperationsRepoId -Repo $_ } })
-                        $generatedAt = [string](Get-ObjectPropertyValue -InputObject $indexPayload -PropertyName 'generatedAt' -Default '')
-                        $summary = Get-ObjectPropertyValue -InputObject $indexPayload -PropertyName 'summary' -Default $null
-                        $count = [int](Get-ObjectPropertyValue -InputObject $indexPayload -PropertyName 'repoCount' -Default @($entries).Count)
-                        $cacheSource = 'portfolio-index'
-                    } else {
-                        $settings = Get-HostSettings
-                        $ttlSeconds = Get-PortfolioAssessmentCacheTtlSeconds -Settings $settings
-                        $assessmentCache = if ($ttlSeconds -gt 0) {
-                            Get-PortfolioAssessmentFromCache -TtlSeconds $ttlSeconds
-                        } else {
-                            $null
+                    $settings = Get-HostSettings
+                    $opsPayload = Get-OperationsReposPayload -Settings $settings
+                    if (-not $opsPayload.available) {
+                        Write-HostLog ("WARN operations.repos correlationId={0} index unavailable and no cached assessment was found" -f $correlationId)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error = $opsPayload.error
                         }
-
-                        if ($null -ne $assessmentCache -and $assessmentCache.hit) {
-                            $fallbackPayload = New-PortfolioIndexPayload `
-                                -Assessments $assessmentCache.entries `
-                                -Summary $assessmentCache.summary `
-                                -SignalSources $assessmentCache.signalSources `
-                                -GeneratedAt $assessmentCache.generatedAt
-                            $entries = @($fallbackPayload.repos | Select-Object *, @{ Name = 'repoId'; Expression = { Get-OperationsRepoId -Repo $_ } })
-                            $generatedAt = [string](Get-ObjectPropertyValue -InputObject $fallbackPayload -PropertyName 'generatedAt' -Default '')
-                            $summary = Get-ObjectPropertyValue -InputObject $fallbackPayload -PropertyName 'summary' -Default $null
-                            $count = [int](Get-ObjectPropertyValue -InputObject $fallbackPayload -PropertyName 'repoCount' -Default @($entries).Count)
-                            $cacheSource = 'assessment-cache'
-                        } else {
-                            Write-HostLog ("WARN operations.repos correlationId={0} index unavailable and no cached assessment was found" -f $correlationId)
-                            Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
-                                success = $false
-                                error = 'Operations workspace is not ready yet. Run /api/portfolio/assessment first to build the indexed portfolio.'
-                            }
-                            break
-                        }
-                    }
-
-                    if ([string]::IsNullOrWhiteSpace($generatedAt)) {
-                        $generatedAt = (Get-Date).ToUniversalTime().ToString('o')
+                        break
                     }
 
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
-                    Write-HostLog ("[TRACE] operations.repos correlationId={0} done source={1} count={2} durationMs={3}" -f $correlationId, $cacheSource, @($entries).Count, [int]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Write-HostLog ("[TRACE] operations.repos correlationId={0} done source={1} count={2} durationMs={3}" -f $correlationId, $opsPayload.cacheSource, @($opsPayload.entries).Count, [int]((Get-Date) - $requestStart).TotalMilliseconds)
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data = @{
-                            entries = $entries
-                            generatedAt = $generatedAt
-                            count = $count
-                            cacheSource = $cacheSource
-                            summary = $summary
+                            entries = @($opsPayload.entries)
+                            generatedAt = $opsPayload.generatedAt
+                            count = $opsPayload.count
+                            cacheSource = $opsPayload.cacheSource
+                            summary = $opsPayload.summary
                         }
                     }
                 }

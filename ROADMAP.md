@@ -445,8 +445,8 @@ the packet foundation from scratch.
 - [x] Add GitHub panel showing open PRs, latest Actions status, and
       GitHub Pages status/link. *(state: ui-connected)* — the Operations
       workspace now renders those live fields from the indexed repo payload.
-- [ ] Add audit findings panel showing README findings, ROADMAP findings,
-      structure findings, and dispatch blockers. *(state: planned)*
+- [x] Add audit findings panel showing README findings, ROADMAP findings,
+      structure findings, and dispatch blockers. *(state: ui-connected)*
 - [ ] Add Prompt Refinement panel that starts from the existing
       `/api/copilot-task/preview` packet, lets the operator adjust selected
       work item, constraints, and emphasis, and produces a dispatch-ready
@@ -463,9 +463,9 @@ the packet foundation from scratch.
       host now serves indexed repo records with a warm assessment-cache
       fallback, and `scripts/Invoke-ApiHostSmokeTest.ps1` validates the
       contract.
-- [ ] Add `GET /api/operations/repos/{repoId}` route that returns full
+- [x] Add `GET /api/operations/repos/{repoId}` route that returns full
       repo detail, documentation context, GitHub metadata, audit findings,
-      and dispatch context. *(state: planned)*
+      and dispatch context. *(state: backend-complete)*
 - [ ] Add `POST /api/operations/prompt/refine` route that layers
       operator-directed edits and warnings on top of the Phase 6 prompt
       packet / preview contract rather than replacing it.

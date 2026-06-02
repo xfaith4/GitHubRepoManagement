@@ -829,6 +829,33 @@ try {
             ($firstOperationsRepo.PSObject.Properties.Name -contains 'lifecycleState') -and
             ($firstOperationsRepo.PSObject.Properties.Name -contains 'recommendedAction')
         if (-not $operationsEntryFieldsOk) { throw '/api/operations/repos first entry missing expected fields (repoId, repoName, localPath, defaultBranch, currentBranch, lifecycleState, recommendedAction)' }
+
+        $encodedOperationsRepoId = [uri]::EscapeDataString([string]$firstOperationsRepo.repoId)
+        $operationsRepoDetailResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/operations/repos/$encodedOperationsRepoId"
+        Assert-Not503 -Name '/api/operations/repos/{repoId}' -Response $operationsRepoDetailResponse
+        if ($operationsRepoDetailResponse.StatusCode -ne 200) {
+            throw "/api/operations/repos/{repoId} expected HTTP 200, got $($operationsRepoDetailResponse.StatusCode)"
+        }
+        $operationsRepoDetailJson = $operationsRepoDetailResponse.Json
+        if ($null -eq $operationsRepoDetailJson -or -not $operationsRepoDetailJson.success) {
+            throw '/api/operations/repos/{repoId} returned invalid success payload'
+        }
+        if (-not ($operationsRepoDetailJson.PSObject.Properties.Name -contains 'data') -or $null -eq $operationsRepoDetailJson.data) {
+            throw '/api/operations/repos/{repoId} response missing data payload'
+        }
+        $operationsRepoDetailData = $operationsRepoDetailJson.data
+        $operationsRepoDetailFieldsOk = $null -ne $operationsRepoDetailData -and
+            ($operationsRepoDetailData.PSObject.Properties.Name -contains 'repoId') -and
+            ($operationsRepoDetailData.PSObject.Properties.Name -contains 'repo') -and
+            ($operationsRepoDetailData.PSObject.Properties.Name -contains 'documentationContext') -and
+            ($operationsRepoDetailData.PSObject.Properties.Name -contains 'docAudit') -and
+            ($operationsRepoDetailData.PSObject.Properties.Name -contains 'roadmapAudit') -and
+            ($operationsRepoDetailData.PSObject.Properties.Name -contains 'dispatchContext')
+        if (-not $operationsRepoDetailFieldsOk) { throw '/api/operations/repos/{repoId} response missing expected fields (repoId, repo, documentationContext, docAudit, roadmapAudit, dispatchContext)' }
+        if ([string]$operationsRepoDetailData.repoId -ne [string]$firstOperationsRepo.repoId) {
+            throw '/api/operations/repos/{repoId} returned a mismatched repoId'
+        }
+        Write-Host ("  /api/operations/repos/{repoId} -> repo=$($operationsRepoDetailData.repo.repoName) docFindings=$(@($operationsRepoDetailData.docAudit.findings).Count)") -ForegroundColor DarkGray
     }
     Write-Host ("  /api/operations/repos -> count={0} source={1}" -f $operationsReposData.count, [string]$operationsReposData.cacheSource) -ForegroundColor DarkGray
 

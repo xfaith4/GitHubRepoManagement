@@ -726,7 +726,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
       : new Map<string, typeof roadmapEntries[0]>();
     const auditMap = docsAuditIndex && docsAuditIndex.entries.length > 0
       ? new Map(docsAuditIndex.entries.map(e => [e.repoName.toLowerCase(), e]))
-      : new Map<string, typeof docsAuditIndex.entries[0]>();
+      : new Map<string, DocAuditIndex['entries'][number]>();
 
     return repos.map(r => {
       const roadmapEntry = roadmapMap.get(r.name.toLowerCase());
@@ -1515,7 +1515,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
           onClose={() => setEvaluationModalRepo(null)}
           onRoadmapCreated={() => {
             // Refresh roadmap index so the new file is detected
-            getRoadmapIndex({ refresh: true }).then(idx => setRoadmapEntries(idx.entries ?? [])).catch(() => {});
+            getRoadmapIndex(true).then(idx => setRoadmapEntries(idx.entries ?? [])).catch(() => {});
           }}
         />
       )}

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  type OperationsRepoDetail,
   type OperationsRepoEntry,
   type OperationsReposResult,
   type PortfolioValueTier,
@@ -7,7 +8,7 @@ import {
   type RepoLifecycleState,
   type RoadmapContent,
 } from '../types';
-import { getReadmeContent, getRoadmapContent } from '../services/apiClient';
+import { getOperationsRepoDetail, getReadmeContent, getRoadmapContent } from '../services/apiClient';
 import { BranchIcon, DatabaseIcon, HealthIcon, PullRequestIcon, RefreshIcon, RoadmapIcon, SpinnerIcon } from './icons';
 
 interface OperationsWorkspaceViewProps {
@@ -117,14 +118,17 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
   const [docTab, setDocTab] = useState<'readme' | 'roadmap'>('readme');
   const [docsLoading, setDocsLoading] = useState(false);
   const [docsError, setDocsError] = useState<string | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [selectedDetail, setSelectedDetail] = useState<OperationsRepoDetail | null>(null);
   const [readmeContent, setReadmeContent] = useState<ReadmeContent | null>(null);
   const [roadmapContent, setRoadmapContent] = useState<RoadmapContent | null>(null);
 
   const filteredEntries = useMemo(() => {
     const lower = filterText.trim().toLowerCase();
-    const base = operationsRepos?.entries ?? [];
+    const base: OperationsRepoEntry[] = operationsRepos?.entries ?? [];
     const filtered = lower
-      ? base.filter(entry =>
+      ? base.filter((entry: OperationsRepoEntry) =>
           entry.repoName.toLowerCase().includes(lower) ||
           entry.githubFullName.toLowerCase().includes(lower) ||
           entry.recommendedAction.toLowerCase().includes(lower) ||
@@ -163,6 +167,9 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
 
   useEffect(() => {
     if (!selectedEntry) {
+      setSelectedDetail(null);
+      setDetailError(null);
+      setDetailLoading(false);
       setReadmeContent(null);
       setRoadmapContent(null);
       setDocsError(null);
@@ -173,13 +180,21 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
     let cancelled = false;
     setDocsLoading(true);
     setDocsError(null);
+    setDetailLoading(true);
+    setDetailError(null);
 
     Promise.allSettled([
+      getOperationsRepoDetail(selectedEntry.repoId),
       selectedEntry.hasReadme ? getReadmeContent(selectedEntry.repoName) : Promise.resolve(null),
       selectedEntry.hasRoadmap ? getRoadmapContent(selectedEntry.repoName) : Promise.resolve(null),
     ])
-      .then(([readmeResult, roadmapResult]) => {
+      .then(([detailResult, readmeResult, roadmapResult]) => {
         if (cancelled) return;
+
+        setSelectedDetail(detailResult.status === 'fulfilled' ? detailResult.value : null);
+        if (detailResult.status === 'rejected') {
+          setDetailError(detailResult.reason instanceof Error ? detailResult.reason.message : 'Failed to load operations detail.');
+        }
 
         setReadmeContent(readmeResult.status === 'fulfilled' ? readmeResult.value : null);
         setRoadmapContent(roadmapResult.status === 'fulfilled' ? roadmapResult.value : null);
@@ -196,6 +211,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
       .finally(() => {
         if (!cancelled) {
           setDocsLoading(false);
+          setDetailLoading(false);
         }
       });
 
@@ -241,7 +257,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
           type="text"
           placeholder="Filter operations repos..."
           value={filterText}
-          onChange={(event) => setFilterText(event.target.value)}
+          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFilterText(event.target.value)}
           className="block w-full max-w-sm rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
         />
         <div className="inline-flex items-center rounded-md border border-gray-700 bg-gray-900/50 px-3 py-2 text-sm text-gray-400">
@@ -282,9 +298,10 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-800 bg-gray-950/30">
-                  {filteredEntries.map(entry => {
+                  {filteredEntries.map((entry: OperationsRepoEntry) => {
                     const isSelected = selectedEntry?.repoId === entry.repoId;
-                    const valueTierClass = entry.topValueItem ? (VALUE_TIER_STYLES[entry.topValueItem.valueTier] ?? VALUE_TIER_STYLES.unscored) : VALUE_TIER_STYLES.unscored;
+                    const valueTier = entry.topValueItem?.valueTier ?? 'unscored';
+                    const valueTierClass = VALUE_TIER_STYLES[valueTier];
                     return (
                       <tr
                         key={entry.repoId}
@@ -409,13 +426,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                       <div>
                         <dt className="text-gray-500">GitHub</dt>
                         <dd className="mt-0.5 text-gray-200">
-                          {selectedEntry.htmlUrl ? (
-                            <a href={selectedEntry.htmlUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 hover:underline break-all">
-                              {selectedEntry.githubFullName || selectedEntry.htmlUrl}
-                            </a>
-                          ) : (
-                            'n/a'
-                          )}
+                          {selectedEntry.htmlUrl ? (selectedEntry.githubFullName || selectedEntry.htmlUrl) : 'n/a'}
                         </dd>
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2">
@@ -453,9 +464,9 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                     <dl className="mt-3 space-y-2 text-sm">
                       <div>
                         <dt className="text-gray-500">Dispatch Readiness</dt>
-                        <dd className="mt-0.5 text-gray-200">{selectedEntry.dispatchReadiness}</dd>
-                        {selectedEntry.dispatchReadinessExplanation && (
-                          <div className="mt-1 text-xs text-gray-500">{selectedEntry.dispatchReadinessExplanation}</div>
+                        <dd className="mt-0.5 text-gray-200">{selectedDetail?.dispatchContext.dispatchReadiness ?? selectedEntry.dispatchReadiness}</dd>
+                        {(selectedDetail?.dispatchContext.dispatchReadinessExplanation || selectedEntry.dispatchReadinessExplanation) && (
+                          <div className="mt-1 text-xs text-gray-500">{selectedDetail?.dispatchContext.dispatchReadinessExplanation ?? selectedEntry.dispatchReadinessExplanation}</div>
                         )}
                       </div>
                       <div>
@@ -465,17 +476,17 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                       <div>
                         <dt className="text-gray-500">Pending Roadmap Work</dt>
                         <dd className="mt-0.5 text-gray-200">
-                          {selectedEntry.topValueItem?.text ?? selectedEntry.nextPendingItemText ?? 'No pending roadmap item'}
+                          {selectedDetail?.dispatchContext.topValueItem?.text ?? selectedDetail?.dispatchContext.nextPendingItemText ?? selectedEntry.topValueItem?.text ?? selectedEntry.nextPendingItemText ?? 'No pending roadmap item'}
                         </dd>
-                        {selectedEntry.topValueItem && (
+                        {(selectedDetail?.dispatchContext.topValueItem ?? selectedEntry.topValueItem) && (
                           <div className="mt-1 text-xs text-gray-500">
-                            Value score {selectedEntry.topValueItem.valueScore} • {selectedEntry.topValueItem.valueTier}
+                            Value score {(selectedDetail?.dispatchContext.topValueItem ?? selectedEntry.topValueItem)?.valueScore} • {(selectedDetail?.dispatchContext.topValueItem ?? selectedEntry.topValueItem)?.valueTier}
                           </div>
                         )}
                       </div>
                       <div>
                         <dt className="text-gray-500">Pending Item Count</dt>
-                        <dd className="mt-0.5 text-gray-200">{selectedEntry.pendingItemCount}</dd>
+                        <dd className="mt-0.5 text-gray-200">{selectedDetail?.dispatchContext.pendingItemCount ?? selectedEntry.pendingItemCount}</dd>
                       </div>
                     </dl>
                   </div>
@@ -578,13 +589,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                       <div>
                         <dt className="text-gray-500">GitHub Pages</dt>
                         <dd className="mt-0.5 text-gray-200">
-                          {selectedEntry.hasPages && selectedEntry.pagesUrl ? (
-                            <a href={selectedEntry.pagesUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-300 hover:text-emerald-200 hover:underline break-all">
-                              {selectedEntry.pagesUrl}
-                            </a>
-                          ) : (
-                            'Not configured'
-                          )}
+                          {selectedEntry.hasPages && selectedEntry.pagesUrl ? selectedEntry.pagesUrl : 'Not configured'}
                         </dd>
                       </div>
                     </dl>
@@ -593,26 +598,102 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                   <div className="rounded-lg border border-gray-700 bg-gray-950/40 p-4">
                     <div className="flex items-center gap-2 text-sm font-semibold text-white">
                       <HealthIcon className="w-4 h-4 text-amber-300" />
-                      Blockers and Rationale
+                      Audit Findings and Blockers
                     </div>
-                    {selectedEntry.blockingReasons.length > 0 ? (
-                      <ul className="mt-3 space-y-2 text-sm text-gray-200">
-                        {selectedEntry.blockingReasons.map(reason => (
-                          <li key={reason} className="rounded-md border border-gray-800 bg-gray-900/60 px-3 py-2">
-                            {reason}
-                          </li>
-                        ))}
-                      </ul>
+
+                    {detailLoading ? (
+                      <div className="mt-3 flex items-center gap-2 text-sm text-gray-400">
+                        <SpinnerIcon className="w-4 h-4" />
+                        Loading audit findings...
+                      </div>
                     ) : (
-                      <div className="mt-3 rounded-md border border-emerald-800/40 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-100">
-                        No dispatch blockers recorded for this repo in the current indexed assessment.
+                      <div className="mt-3 space-y-3 text-sm">
+                        {detailError && (
+                          <div className="rounded-md border border-amber-700/40 bg-amber-950/20 px-3 py-2 text-xs text-amber-200">
+                            {detailError}
+                          </div>
+                        )}
+
+                        <div>
+                          <div className="mb-2 text-xs uppercase tracking-wide text-gray-500">README Findings</div>
+                          {(() => {
+                            const readmeFindings = (selectedDetail?.docAudit.findings ?? []).filter(finding => /readme/i.test(finding.file));
+                            if (readmeFindings.length === 0) {
+                              return <div className="rounded-md border border-gray-800 bg-gray-900/40 px-3 py-2 text-gray-400">No README-specific findings from the latest docs audit.</div>;
+                            }
+
+                            return (
+                              <ul className="space-y-2 text-gray-200">
+                                {readmeFindings.map((finding, index) => (
+                                  <li key={`${finding.file}:${finding.message}:${index}`} className="rounded-md border border-gray-800 bg-gray-900/60 px-3 py-2">
+                                    <div className="text-xs text-gray-400">{finding.severity} • {finding.file}</div>
+                                    <div className="mt-1">{finding.message}</div>
+                                    {finding.recommendedAction && <div className="mt-1 text-xs text-gray-400">{finding.recommendedAction}</div>}
+                                  </li>
+                                ))}
+                              </ul>
+                            );
+                          })()}
+                        </div>
+
+                        <div>
+                          <div className="mb-2 text-xs uppercase tracking-wide text-gray-500">ROADMAP Findings</div>
+                          {selectedDetail?.roadmapAudit.auditFindings && selectedDetail.roadmapAudit.auditFindings.length > 0 ? (
+                            <ul className="space-y-2 text-gray-200">
+                              {selectedDetail.roadmapAudit.auditFindings.map((finding, index) => (
+                                <li key={`${finding.ruleId}:${finding.message}:${index}`} className="rounded-md border border-gray-800 bg-gray-900/60 px-3 py-2">
+                                  <div className="text-xs text-gray-400">{finding.severity} • {finding.ruleId}</div>
+                                  <div className="mt-1">{finding.message}</div>
+                                  {finding.recommendedAction && <div className="mt-1 text-xs text-gray-400">{finding.recommendedAction}</div>}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <div className="rounded-md border border-gray-800 bg-gray-900/40 px-3 py-2 text-gray-400">No ROADMAP audit findings are available.</div>
+                          )}
+                        </div>
+
+                        <div>
+                          <div className="mb-2 text-xs uppercase tracking-wide text-gray-500">Structure Findings</div>
+                          {(selectedDetail?.documentationContext.structureFindings ?? selectedEntry.structureFindings).length > 0 ? (
+                            <ul className="space-y-2 text-gray-200">
+                              {(selectedDetail?.documentationContext.structureFindings ?? selectedEntry.structureFindings).map((finding, index) => (
+                                <li key={`${finding.kind}:${finding.target}:${index}`} className="rounded-md border border-gray-800 bg-gray-900/60 px-3 py-2">
+                                  <div className="text-xs text-gray-400">{finding.severity} • {finding.category}</div>
+                                  <div className="mt-1">{finding.target}</div>
+                                  <div className="mt-1 text-xs text-gray-400">{finding.recommendedAction}</div>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <div className="rounded-md border border-gray-800 bg-gray-900/40 px-3 py-2 text-gray-400">No structure findings are currently recorded.</div>
+                          )}
+                        </div>
+
+                        <div>
+                          <div className="mb-2 text-xs uppercase tracking-wide text-gray-500">Dispatch Blockers</div>
+                          {(selectedDetail?.dispatchContext.blockingReasons ?? selectedEntry.blockingReasons).length > 0 ? (
+                            <ul className="space-y-2 text-gray-200">
+                              {(selectedDetail?.dispatchContext.blockingReasons ?? selectedEntry.blockingReasons).map((reason: string) => (
+                                <li key={reason} className="rounded-md border border-gray-800 bg-gray-900/60 px-3 py-2">
+                                  {reason}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <div className="rounded-md border border-emerald-800/40 bg-emerald-950/20 px-3 py-2 text-emerald-100">
+                              No dispatch blockers recorded for this repo in the current assessment context.
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
-                    {selectedEntry.topValueItem?.valueRationale && selectedEntry.topValueItem.valueRationale.length > 0 && (
+
+                    {(selectedDetail?.dispatchContext.topValueItem ?? selectedEntry.topValueItem)?.valueRationale && (selectedDetail?.dispatchContext.topValueItem ?? selectedEntry.topValueItem)!.valueRationale.length > 0 && (
                       <div className="mt-4">
                         <div className="text-xs uppercase tracking-wide text-gray-500">Why this work ranks highly</div>
                         <ul className="mt-2 space-y-2 text-sm text-gray-300">
-                          {selectedEntry.topValueItem.valueRationale.map(reason => (
+                          {(selectedDetail?.dispatchContext.topValueItem ?? selectedEntry.topValueItem)!.valueRationale.map((reason: string) => (
                             <li key={reason} className="rounded-md border border-gray-800 bg-gray-900/40 px-3 py-2">
                               {reason}
                             </li>

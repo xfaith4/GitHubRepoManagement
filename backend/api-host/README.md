@@ -15,6 +15,7 @@ Minimal local PowerShell API host for adapter contracts.
 - `GET /api/status`
 - `GET /api/portfolio/assessment`
 - `GET /api/operations/repos`
+- `GET /api/operations/repos/:repoId`
 - `GET /api/readme/content`
 - `POST /api/reconcile`
 - `POST /api/docreview/run`
@@ -49,6 +50,7 @@ Notes:
 - `GET /health/ready` and `GET /health/dependencies` always return HTTP 200 and surface degraded state in the response payload.
 - `GET /api/portfolio/assessment` returns the normalized portfolio lifecycle/readiness model used by Portfolio Mission, Work Queue ranking, and collection reporting.
 - `GET /api/operations/repos` returns the repo-specific indexed portfolio records consumed by the Operations tab, with a warm assessment-cache fallback when the persisted index is not available yet.
+- `GET /api/operations/repos/:repoId` returns full Operations detail for one repo, including docs/roadmap audit findings, structure findings, and dispatch context used by the audit findings panel.
 - `GET /api/readme/content` returns README markdown for a repo (or explicit path), used by the Operations repo-detail document viewer.
 - `POST /api/export` writes timestamped HTML and CSV reports into the repo-local `reports/` folder. When `portfolioEntries` are provided, it produces a Collection Status Report with lifecycle, blocker, recommended-action, and top-work fields.
 - `GET /api/reports/:reportName` serves a saved report file back to the browser so the HTML report can open in a new tab.

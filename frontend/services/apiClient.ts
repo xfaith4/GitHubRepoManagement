@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type OperationsRepoEntry, type OperationsReposResult, type ReadmeContent } from '../types';
+import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type ReadmeContent } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -313,6 +313,58 @@ function normalizeOperationsRepoEntry(entry: any): OperationsRepoEntry {
     hasTestSignal: Boolean(entry?.hasTestSignal ?? false),
     docFindingCount: Number(entry?.docFindingCount ?? 0),
     structureFindings: Array.isArray(entry?.structureFindings) ? entry.structureFindings : [],
+  };
+}
+
+function normalizeOperationsRepoDetail(raw: any): OperationsRepoDetail {
+  const repo = normalizeOperationsRepoEntry(raw?.repo ?? raw ?? {});
+  const documentationContext = raw?.documentationContext ?? {};
+  const docAudit = raw?.docAudit ?? {};
+  const roadmapAudit = raw?.roadmapAudit ?? {};
+  const dispatchContext = raw?.dispatchContext ?? {};
+
+  return {
+    repoId: String(raw?.repoId ?? repo.repoId),
+    repo,
+    documentationContext: {
+      hasReadme: Boolean(documentationContext?.hasReadme ?? repo.hasReadme),
+      readmeLastWriteUtc: documentationContext?.readmeLastWriteUtc ? String(documentationContext.readmeLastWriteUtc) : null,
+      hasRoadmap: Boolean(documentationContext?.hasRoadmap ?? repo.hasRoadmap),
+      roadmapPath: documentationContext?.roadmapPath ? String(documentationContext.roadmapPath) : (repo.roadmapPath || null),
+      roadmapLastWriteUtc: documentationContext?.roadmapLastWriteUtc ? String(documentationContext.roadmapLastWriteUtc) : null,
+      docFindingCount: Number(documentationContext?.docFindingCount ?? repo.docFindingCount ?? 0),
+      structureFindings: Array.isArray(documentationContext?.structureFindings)
+        ? documentationContext.structureFindings
+        : repo.structureFindings,
+    },
+    docAudit: {
+      auditedAt: docAudit?.auditedAt ? String(docAudit.auditedAt) : null,
+      dispatchReadiness: docAudit?.dispatchReadiness ?? repo.dispatchReadiness,
+      criticalCount: Number(docAudit?.criticalCount ?? 0),
+      warningCount: Number(docAudit?.warningCount ?? 0),
+      infoCount: Number(docAudit?.infoCount ?? 0),
+      findings: Array.isArray(docAudit?.findings) ? docAudit.findings : [],
+    },
+    roadmapAudit: {
+      auditedAt: roadmapAudit?.auditedAt ? String(roadmapAudit.auditedAt) : null,
+      roadmapState: roadmapAudit?.roadmapState ?? repo.roadmapState,
+      maturityLevel: roadmapAudit?.maturityLevel ?? repo.maturityLevel,
+      maturityScore: Number(roadmapAudit?.maturityScore ?? repo.maturityScore ?? 0),
+      pendingCount: Number(roadmapAudit?.pendingCount ?? repo.pendingItemCount ?? 0),
+      nextPendingItem: roadmapAudit?.nextPendingItem ?? null,
+      auditFindings: Array.isArray(roadmapAudit?.auditFindings) ? roadmapAudit.auditFindings : [],
+    },
+    dispatchContext: {
+      dispatchReadiness: dispatchContext?.dispatchReadiness ?? repo.dispatchReadiness,
+      dispatchReadinessExplanation: dispatchContext?.dispatchReadinessExplanation
+        ? String(dispatchContext.dispatchReadinessExplanation)
+        : (repo.dispatchReadinessExplanation ?? null),
+      recommendedAction: String(dispatchContext?.recommendedAction ?? repo.recommendedAction ?? ''),
+      blockingReasons: Array.isArray(dispatchContext?.blockingReasons) ? dispatchContext.blockingReasons.map((value: unknown) => String(value)) : repo.blockingReasons,
+      pendingItemCount: Number(dispatchContext?.pendingItemCount ?? repo.pendingItemCount ?? 0),
+      nextPendingItemText: dispatchContext?.nextPendingItemText ? String(dispatchContext.nextPendingItemText) : (repo.nextPendingItemText || null),
+      topValueItem: dispatchContext?.topValueItem ?? repo.topValueItem ?? null,
+    },
   };
 }
 
@@ -1366,4 +1418,68 @@ export async function getOperationsRepos(): Promise<OperationsReposResult> {
     cacheSource: d.cacheSource === 'assessment-cache' ? 'assessment-cache' : 'portfolio-index',
     summary: d.summary ?? null,
   };
+}
+
+export async function getOperationsRepoDetail(repoId: string): Promise<OperationsRepoDetail> {
+  const trimmedRepoId = repoId.trim();
+  if (!trimmedRepoId) {
+    throw new Error('repoId is required for operations repo detail.');
+  }
+
+  if (USE_MOCK_API) {
+    const repos = getMockOperationsRepos();
+    const matched = repos.entries.find(entry => entry.repoId === trimmedRepoId) ?? repos.entries[0];
+    if (!matched) {
+      throw new Error('No mock operations repo entries are available.');
+    }
+
+    return normalizeOperationsRepoDetail({
+      repoId: matched.repoId,
+      repo: matched,
+      documentationContext: {
+        hasReadme: matched.hasReadme,
+        readmeLastWriteUtc: matched.readmeLastWriteUtc,
+        hasRoadmap: matched.hasRoadmap,
+        roadmapPath: matched.roadmapPath,
+        roadmapLastWriteUtc: matched.roadmapLastWriteUtc,
+        docFindingCount: matched.docFindingCount,
+        structureFindings: matched.structureFindings,
+      },
+      docAudit: {
+        auditedAt: null,
+        dispatchReadiness: matched.dispatchReadiness,
+        criticalCount: 0,
+        warningCount: 0,
+        infoCount: 0,
+        findings: [],
+      },
+      roadmapAudit: {
+        auditedAt: null,
+        roadmapState: matched.roadmapState,
+        maturityLevel: matched.maturityLevel,
+        maturityScore: matched.maturityScore,
+        pendingCount: matched.pendingItemCount,
+        nextPendingItem: null,
+        auditFindings: [],
+      },
+      dispatchContext: {
+        dispatchReadiness: matched.dispatchReadiness,
+        dispatchReadinessExplanation: matched.dispatchReadinessExplanation,
+        recommendedAction: matched.recommendedAction,
+        blockingReasons: matched.blockingReasons,
+        pendingItemCount: matched.pendingItemCount,
+        nextPendingItemText: matched.nextPendingItemText,
+        topValueItem: matched.topValueItem,
+      },
+    });
+  }
+
+  const encodedRepoId = encodeURIComponent(trimmedRepoId);
+  const data = await fetchJson<any>(`${API_BASE_URL}/operations/repos/${encodedRepoId}`);
+  const d = data?.data ?? data;
+  if (!d) {
+    throw new Error('Operations repo detail response is empty.');
+  }
+
+  return normalizeOperationsRepoDetail(d);
 }
