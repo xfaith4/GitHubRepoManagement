@@ -1,5 +1,15 @@
 # Progress
 
+## 2026-05-29 (Release 1.8: Operations Audit Findings Panel)
+
+- Reconciled the active roadmap and implemented the next unfinished Release 1.8 UI milestone: audit findings visibility inside the Operations workspace.
+- Extended `frontend/components/OperationsWorkspaceView.tsx` to render README findings, ROADMAP audit findings, structure findings, and dispatch blockers for the selected repository.
+- Updated `frontend/components/Dashboard.tsx` so docs-audit and roadmap-audit data are loaded when the Operations tab opens and wired through to the Operations workspace component.
+- Marked the corresponding Release 1.8 roadmap milestone complete in `ROADMAP.md` and documented the change in `CHANGELOG.md`.
+- Verification passed:
+  - `npm run build`
+  - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "$(pwd)"`
+
 ## 2026-05-28 (Roadmap Viewer Task-Source Mismatch)
 
 - Investigated a real modal contract bug where the ROADMAP viewer displayed local file content successfully but the Preview Task / Start Task flow still reported "No roadmap markdown file found" for the GitHub repository field.
