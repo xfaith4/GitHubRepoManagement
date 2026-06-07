@@ -3325,7 +3325,12 @@ function Build-CopilotTaskPacket {
         [object]$AuditEntry = $null,
 
         [Parameter()]
-        [object]$AssessmentEntry = $null
+        [object]$AssessmentEntry = $null,
+
+        # When provided, overrides value-ranking and roadmap-order selection so the
+        # packet is built around this specific roadmap item text.
+        [Parameter()]
+        [string]$ForcedItemText = ''
     )
 
     # Step 1: Resolve roadmap path from cache or parameter
@@ -3394,12 +3399,27 @@ function Build-CopilotTaskPacket {
     }
 
     $selectionSource = 'roadmap-order'
+
+    # Operator-forced item takes precedence over value ranking.
+    if (-not [string]::IsNullOrWhiteSpace($ForcedItemText)) {
+        $forcedMatch = @($allPendingInOrder | Where-Object { $_.text -eq $ForcedItemText } | Select-Object -First 1)
+        if ($forcedMatch.Count -gt 0 -and $null -ne $forcedMatch[0]) {
+            $selected = [pscustomobject]@{
+                text    = [string]$forcedMatch[0].text
+                section = [string]$forcedMatch[0].section
+                tags    = @($forcedMatch[0].tags)
+            }
+            $selectionSource = 'operator-selected'
+        }
+        # If the forced text is not found in pending items, fall through to value-ranking below.
+    }
+
     $topValueItem = if ($null -ne $AssessmentEntry) {
         Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'topValueItem' -Default $null
     } else {
         $null
     }
-    if ($null -ne $topValueItem) {
+    if ($selectionSource -eq 'roadmap-order' -and $null -ne $topValueItem) {
         $preferredText = [string](Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'text' -Default '')
         $preferredSection = [string](Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'section' -Default '')
         $preferredMatch = @($allPendingInOrder | Where-Object {
@@ -5303,6 +5323,151 @@ try {
                         data    = @{
                             items = $items
                             count = @($items).Count
+                        }
+                    }
+                }
+                'POST /api/operations/prompt/refine' {
+                    Write-HostLog ("[TRACE] operations.prompt.refine correlationId={0} start" -f $correlationId)
+                    $body = Parse-JsonBody -Body $req.Body
+                    $repoName           = if ($body.ContainsKey('repoName')           -and $body.repoName)           { [string]$body.repoName }           else { '' }
+                    $roadmapPath        = if ($body.ContainsKey('roadmapPath')        -and $body.roadmapPath)        { [string]$body.roadmapPath }        else { '' }
+                    $selectedItemText   = if ($body.ContainsKey('selectedItemText')   -and $body.selectedItemText)   { [string]$body.selectedItemText }   else { '' }
+                    $customInstructions = if ($body.ContainsKey('customInstructions') -and $body.customInstructions) { [string]$body.customInstructions } else { '' }
+
+                    if ([string]::IsNullOrWhiteSpace($repoName)) {
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error   = 'repoName is required for /api/operations/prompt/refine'
+                        }
+                        break
+                    }
+
+                    $settings        = Get-HostSettings
+                    $auditTtl        = Get-DocAuditCacheTtlSeconds -Settings $settings
+                    $auditCache      = Get-DocAuditFromCache -TtlSeconds $auditTtl
+                    $auditEntry      = $null
+                    if ($auditCache.hit -and $auditCache.entries) {
+                        $auditEntry = @($auditCache.entries | Where-Object {
+                            $n = if ($_ -is [System.Collections.IDictionary]) { [string]$_['repoName'] } else { [string]$_.repoName }
+                            $n -eq $repoName
+                        } | Select-Object -First 1)
+                        if (@($auditEntry).Count -gt 0) { $auditEntry = $auditEntry[0] } else { $auditEntry = $null }
+                    }
+                    $assessmentEntry = Find-PortfolioAssessmentEntry -RepoName $repoName -Settings $settings
+
+                    $warnings = [System.Collections.Generic.List[string]]::new()
+
+                    # Build base packet (optionally with operator-selected item)
+                    $packet = Build-CopilotTaskPacket `
+                        -RepoName $repoName `
+                        -RoadmapPath $roadmapPath `
+                        -AuditEntry $auditEntry `
+                        -AssessmentEntry $assessmentEntry `
+                        -ForcedItemText $selectedItemText
+
+                    # If operator requested a specific item but it was not found in pending items,
+                    # emit a warning — packet will use value-ranked / roadmap-order selection instead.
+                    if (-not [string]::IsNullOrWhiteSpace($selectedItemText) -and
+                        [string]$packet.selectedRoadmapItem.text -ne $selectedItemText) {
+                        $warnings.Add("Requested item not found in pending roadmap items; using auto-selected item instead: $([string]$packet.selectedRoadmapItem.text)")
+                    }
+
+                    $basePrompt = [string]$packet.generatedPrompt
+
+                    # Compose refined prompt: base + operator custom instructions appended
+                    $refinedPrompt = $basePrompt
+                    if (-not [string]::IsNullOrWhiteSpace($customInstructions)) {
+                        $refinedPrompt = $basePrompt + "`n`nAdditional operator instructions:`n" + $customInstructions.Trim()
+                    }
+
+                    # Store refinement record in per-repo JSONL history file
+                    $refinementRunId = "{0}-{1}" -f (Get-Date -Format 'yyyyMMdd-HHmmss'), ([guid]::NewGuid().ToString('N').Substring(0, 8))
+                    $safeRepoName    = $repoName -replace '[\\/:*?"<>|]', '_'
+                    $refineRoot      = Join-Path $WorkspaceRoot 'output\roadmap-task-history\prompt-refinements'
+                    $null = New-Item -ItemType Directory -Path $refineRoot -Force -ErrorAction SilentlyContinue
+                    $refineFile      = Join-Path $refineRoot "$safeRepoName.refinements.jsonl"
+                    $refineRecord    = @{
+                        runId               = $refinementRunId
+                        createdAt           = (Get-Date).ToUniversalTime().ToString('o')
+                        repoName            = $repoName
+                        selectedItemText    = [string]$packet.selectedRoadmapItem.text
+                        selectedItemSection = [string]$packet.selectedRoadmapItem.section
+                        selectionSource     = [string]$packet.selectedRoadmapItem.selectionSource
+                        customInstructions  = $customInstructions
+                        basePromptLength    = $basePrompt.Length
+                        refinedPromptLength = $refinedPrompt.Length
+                        warningCount        = $warnings.Count
+                    }
+                    try {
+                        $refineJson = ConvertTo-Json -InputObject $refineRecord -Compress -Depth 3
+                        Add-Content -LiteralPath $refineFile -Value $refineJson -Encoding UTF8 -ErrorAction SilentlyContinue
+                    } catch {
+                        Write-HostLog ("WARN operations.prompt.refine correlationId={0} could not write refinement history: {1}" -f $correlationId, $_.Exception.Message)
+                    }
+
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Write-HostLog ("[TRACE] operations.prompt.refine correlationId={0} done repoName={1} runId={2} item={3}" -f $correlationId, $repoName, $refinementRunId, [string]$packet.selectedRoadmapItem.text)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = @{
+                            runId               = $refinementRunId
+                            createdAt           = $refineRecord.createdAt
+                            repoName            = $repoName
+                            selectedItemText    = [string]$packet.selectedRoadmapItem.text
+                            selectedItemSection = [string]$packet.selectedRoadmapItem.section
+                            selectionSource     = [string]$packet.selectedRoadmapItem.selectionSource
+                            customInstructions  = $customInstructions
+                            basePrompt          = $basePrompt
+                            refinedPrompt       = $refinedPrompt
+                            warnings            = @($warnings)
+                            packet              = $packet
+                        }
+                    }
+                }
+                'GET /api/operations/prompt/history' {
+                    Write-HostLog ("[TRACE] operations.prompt.history correlationId={0} start" -f $correlationId)
+                    $q        = Parse-QueryString -Query $req.Query
+                    $repoName = if ($q.ContainsKey('repoName') -and $q.repoName) { [string]$q.repoName } else { '' }
+                    $limit    = if ($q.ContainsKey('limit') -and $q.limit) { [int]$q.limit } else { 20 }
+
+                    if ([string]::IsNullOrWhiteSpace($repoName)) {
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error   = 'repoName query parameter is required for /api/operations/prompt/history'
+                        }
+                        break
+                    }
+
+                    $safeRepoName = $repoName -replace '[\\/:*?"<>|]', '_'
+                    $refineRoot   = Join-Path $WorkspaceRoot 'output\roadmap-task-history\prompt-refinements'
+                    $refineFile   = Join-Path $refineRoot "$safeRepoName.refinements.jsonl"
+
+                    $items = @()
+                    if (Test-Path -LiteralPath $refineFile -PathType Leaf) {
+                        try {
+                            $lines = @(Get-Content -LiteralPath $refineFile -Encoding UTF8 -ErrorAction Stop | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+                            # Return most-recent entries first, up to limit
+                            $items = @($lines |
+                                Select-Object -Last ([Math]::Min($limit, $lines.Count)) |
+                                ForEach-Object {
+                                    try { ConvertFrom-Json -InputObject $_ } catch { $null }
+                                } |
+                                Where-Object { $null -ne $_ } |
+                                Sort-Object { [string]$_.createdAt } -Descending)
+                        } catch {
+                            Write-HostLog ("WARN operations.prompt.history correlationId={0} could not read history file: {1}" -f $correlationId, $_.Exception.Message)
+                        }
+                    }
+
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Write-HostLog ("[TRACE] operations.prompt.history correlationId={0} done repoName={1} count={2}" -f $correlationId, $repoName, @($items).Count)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = @{
+                            repoName = $repoName
+                            items    = @($items)
+                            count    = @($items).Count
                         }
                     }
                 }

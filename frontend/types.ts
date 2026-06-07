@@ -343,7 +343,7 @@ export interface CopilotTaskPacketGuardrail {
 }
 
 export interface CopilotTaskPacketValueContext {
-  selectedBy: 'value-ranked' | 'roadmap-order';
+  selectedBy: 'value-ranked' | 'roadmap-order' | 'operator-selected';
   selectedIsTopValueItem: boolean;
   topValueItemText?: string | null;
   valueScore?: number | null;
@@ -386,6 +386,35 @@ export interface CopilotTaskHistoryItem {
   completedAt?: string;
   error?: string;
   summaryPath?: string;
+}
+
+// Release 1.8 — Prompt Refinement
+
+export interface OperationsPromptRefineResult {
+  runId: string;
+  createdAt: string;
+  repoName: string;
+  selectedItemText: string;
+  selectedItemSection: string;
+  selectionSource: 'value-ranked' | 'roadmap-order' | 'operator-selected';
+  customInstructions: string;
+  basePrompt: string;
+  refinedPrompt: string;
+  warnings: string[];
+  packet: CopilotTaskPacket;
+}
+
+export interface OperationsPromptHistoryItem {
+  runId: string;
+  createdAt: string;
+  repoName: string;
+  selectedItemText: string;
+  selectedItemSection: string;
+  selectionSource: string;
+  customInstructions: string;
+  basePromptLength: number;
+  refinedPromptLength: number;
+  warningCount: number;
 }
 
 // Release 0.8 — Roadmap Contract Audit & Maturity Scoring

@@ -9,8 +9,10 @@ import {
   type ReadmeContent,
   type RepoLifecycleState,
   type RoadmapContent,
+  type OperationsPromptRefineResult,
+  type OperationsPromptHistoryItem,
 } from '../types';
-import { getOperationsRepoDetail, getReadmeContent, getRoadmapContent } from '../services/apiClient';
+import { getOperationsRepoDetail, getReadmeContent, getRoadmapContent, refineOperationsPrompt, getOperationsPromptHistory } from '../services/apiClient';
 import { BranchIcon, DatabaseIcon, HealthIcon, PullRequestIcon, RefreshIcon, RoadmapIcon, SpinnerIcon } from './icons';
 
 interface OperationsWorkspaceViewProps {
@@ -142,6 +144,18 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
   const [readmeContent, setReadmeContent] = useState<ReadmeContent | null>(null);
   const [roadmapContent, setRoadmapContent] = useState<RoadmapContent | null>(null);
 
+  // Prompt Refinement panel state
+  const [promptRefineResult, setPromptRefineResult] = useState<OperationsPromptRefineResult | null>(null);
+  const [promptRefineLoading, setPromptRefineLoading] = useState(false);
+  const [promptRefineError, setPromptRefineError] = useState<string | null>(null);
+  const [customInstructions, setCustomInstructions] = useState('');
+  const [editedPrompt, setEditedPrompt] = useState('');
+  const [promptCopied, setPromptCopied] = useState(false);
+  const [promptHistory, setPromptHistory] = useState<OperationsPromptHistoryItem[]>([]);
+  const [promptHistoryLoading, setPromptHistoryLoading] = useState(false);
+  const [promptTab, setPromptTab] = useState<'refine' | 'history'>('refine');
+
+
   const filteredEntries = useMemo(() => {
     const lower = filterText.trim().toLowerCase();
     const base: OperationsRepoEntry[] = operationsRepos?.entries ?? [];
@@ -224,6 +238,12 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
       setRoadmapContent(null);
       setDocsError(null);
       setDocsLoading(false);
+      setPromptRefineResult(null);
+      setPromptRefineError(null);
+      setCustomInstructions('');
+      setEditedPrompt('');
+      setPromptHistory([]);
+      setPromptTab('refine');
       return;
     }
 
@@ -269,6 +289,59 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
       cancelled = true;
     };
   }, [selectedEntry]);
+
+  // Prompt Refinement handlers
+
+  const handleRefinePrompt = async () => {
+    if (!selectedEntry) return;
+    setPromptRefineLoading(true);
+    setPromptRefineError(null);
+    try {
+      const result = await refineOperationsPrompt({
+        repoName: selectedEntry.repoName,
+        roadmapPath: selectedEntry.roadmapPath || undefined,
+        customInstructions: customInstructions.trim() || undefined,
+      });
+      setPromptRefineResult(result);
+      setEditedPrompt(result.refinedPrompt);
+    } catch (err) {
+      setPromptRefineError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPromptRefineLoading(false);
+    }
+  };
+
+  const handleLoadPromptHistory = async () => {
+    if (!selectedEntry) return;
+    setPromptHistoryLoading(true);
+    try {
+      const items = await getOperationsPromptHistory(selectedEntry.repoName);
+      setPromptHistory(items);
+    } catch {
+      setPromptHistory([]);
+    } finally {
+      setPromptHistoryLoading(false);
+    }
+  };
+
+  const handleCopyPrompt = async () => {
+    const text = editedPrompt || promptRefineResult?.refinedPrompt || '';
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setPromptCopied(true);
+      setTimeout(() => setPromptCopied(false), 2000);
+    } catch {
+      // clipboard may not be available in all contexts
+    }
+  };
+
+  const handlePromptTabChange = (tab: 'refine' | 'history') => {
+    setPromptTab(tab);
+    if (tab === 'history' && selectedEntry && promptHistory.length === 0 && !promptHistoryLoading) {
+      void handleLoadPromptHistory();
+    }
+  };
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-4">
@@ -768,6 +841,138 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                       </div>
                     )}
                   </div>
+                </div>
+
+                {/* Prompt Refinement Panel */}
+                <div className="rounded-lg border border-gray-700 bg-gray-950/40 p-4">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="text-sm font-semibold text-white">Prompt Refinement</div>
+                    <div className="inline-flex rounded-md border border-gray-700 bg-gray-900/60 p-1 text-xs">
+                      {(['refine', 'history'] as const).map(tab => (
+                        <button
+                          key={tab}
+                          onClick={() => handlePromptTabChange(tab)}
+                          className={`rounded px-2 py-1 transition-colors capitalize ${promptTab === tab ? 'bg-indigo-900/50 text-indigo-100' : 'text-gray-300 hover:bg-gray-800'}`}
+                        >
+                          {tab === 'refine' ? 'Refine Prompt' : 'History'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {promptTab === 'refine' && (
+                    <div className="mt-3 space-y-3">
+                      {!selectedEntry.hasRoadmap && (
+                        <div className="rounded-md border border-amber-700/40 bg-amber-950/20 px-3 py-2 text-sm text-amber-200">
+                          This repo does not have a roadmap. Prompt refinement requires a ROADMAP.md with at least one pending item.
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1" htmlFor="ops-custom-instructions">
+                          Custom operator instructions <span className="text-gray-600">(optional — appended after the generated prompt)</span>
+                        </label>
+                        <textarea
+                          id="ops-custom-instructions"
+                          value={customInstructions}
+                          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setCustomInstructions(e.target.value)}
+                          rows={3}
+                          placeholder="Add extra constraints, context, or direction for the coding agent..."
+                          className="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 resize-none"
+                        />
+                      </div>
+
+                      <button
+                        onClick={() => { void handleRefinePrompt(); }}
+                        disabled={promptRefineLoading || !selectedEntry.hasRoadmap}
+                        className="inline-flex items-center gap-2 rounded-md border border-indigo-700/50 bg-indigo-950/40 px-4 py-2 text-sm text-indigo-100 hover:bg-indigo-900/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {promptRefineLoading ? <SpinnerIcon className="w-4 h-4" /> : null}
+                        {promptRefineLoading ? 'Building prompt…' : promptRefineResult ? 'Regenerate Prompt' : 'Build Refined Prompt'}
+                      </button>
+
+                      {promptRefineError && (
+                        <div className="rounded-md border border-red-700/40 bg-red-950/30 px-3 py-2 text-sm text-red-300">
+                          <div className="font-semibold text-xs mb-1">Failed to build prompt</div>
+                          {promptRefineError}
+                        </div>
+                      )}
+
+                      {promptRefineResult && !promptRefineLoading && (
+                        <div className="space-y-3">
+                          {promptRefineResult.warnings.length > 0 && (
+                            <div className="rounded-md border border-amber-700/40 bg-amber-950/20 px-3 py-2 text-xs text-amber-200 space-y-1">
+                              {promptRefineResult.warnings.map(w => (
+                                <div key={w}>⚠ {w}</div>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="rounded-md border border-gray-700 bg-gray-900/60 px-3 py-2 text-xs text-gray-400 space-y-1">
+                            <div>
+                              Selected item: <span className="text-gray-200">{promptRefineResult.selectedItemText}</span>
+                            </div>
+                            <div>
+                              Selection: <span className="text-gray-300 capitalize">{promptRefineResult.selectionSource.replace(/-/g, ' ')}</span>
+                              {' '}• Section: <span className="text-gray-300">{promptRefineResult.selectedItemSection}</span>
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-xs text-gray-400">
+                                Refined prompt <span className="text-gray-600">(editable before copy)</span>
+                              </span>
+                              <button
+                                onClick={() => { void handleCopyPrompt(); }}
+                                className="text-xs rounded border border-gray-600 bg-gray-800 px-2 py-0.5 text-gray-300 hover:bg-gray-700 transition-colors"
+                              >
+                                {promptCopied ? '✓ Copied' : 'Copy'}
+                              </button>
+                            </div>
+                            <textarea
+                              value={editedPrompt}
+                              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditedPrompt(e.target.value)}
+                              rows={16}
+                              className="w-full rounded-md border border-gray-700 bg-gray-900/60 px-3 py-2 font-mono text-xs text-gray-200 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 resize-y"
+                              spellCheck={false}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {promptTab === 'history' && (
+                    <div className="mt-3">
+                      {promptHistoryLoading ? (
+                        <div className="flex items-center gap-2 text-sm text-gray-400">
+                          <SpinnerIcon className="w-4 h-4" />
+                          Loading refinement history…
+                        </div>
+                      ) : promptHistory.length === 0 ? (
+                        <div className="rounded-md border border-gray-800 bg-gray-900/40 px-3 py-2 text-sm text-gray-400">
+                          No prompt refinements recorded for this repo yet. Use the Refine Prompt tab to build a refined prompt.
+                        </div>
+                      ) : (
+                        <ul className="space-y-2">
+                          {promptHistory.map(item => (
+                            <li key={item.runId} className="rounded-md border border-gray-700 bg-gray-900/40 px-3 py-2 text-xs text-gray-300 space-y-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-mono text-gray-500">{item.runId}</span>
+                                <span className="text-gray-500">{new Date(item.createdAt).toLocaleString()}</span>
+                              </div>
+                              <div className="text-gray-200">{item.selectedItemText}</div>
+                              {item.customInstructions && (
+                                <div className="text-gray-400 italic truncate">+ {item.customInstructions}</div>
+                              )}
+                              <div className="text-gray-600 capitalize">{item.selectionSource.replace(/-/g, ' ')}</div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (

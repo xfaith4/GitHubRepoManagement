@@ -92,7 +92,7 @@ Render the state inline on each milestone in italics, e.g.:
 | 1.6       | Roadmap-Driven Release Dispatch to GitHub Copilot                                                       | `done`                                                                                                               |
 | 1.7       | Repo Git Status Detail                                                                                  | `done`                                                                                                               |
 | **1.7.5** | **Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning**                       | `done` — shipped 2026-05-28; portfolio scan/classify/rank/report loop now end-to-end                                 |
-| **1.8**   | **Operations Workspace and Prompt Refinement**                                                          | **active** — foundation slice live; Operations workspace now consumes indexed repo records via `/api/operations/repos` |
+| **1.8**   | **Operations Workspace and Prompt Refinement**                                                          | **active** — prompt refinement shipped 2026-06-07; Operations workspace now includes inline Prompt Refinement panel backed by `POST /api/operations/prompt/refine` |
 | **1.9**   | **AI Documentation Improvement Cycles**                                                                 | `planned`                                                                                                            |
 | **2.0**   | **Agent Run Monitoring and Actions-Gated Merge Readiness**                                              | `planned`                                                                                                            |
 | **2.1**   | **Persistent Data Layer**                                                                               | `planned`                                                                                                            |
@@ -115,8 +115,9 @@ Render the state inline on each milestone in italics, e.g.:
 **Status:** active. The first `1.8` foundation slice shipped 2026-05-28:
 the existing Operations tab and repo workspace UI are now backed by a live
 `GET /api/operations/repos` route sourced from the indexed portfolio model.
-Prompt refinement, repo-specific viewers, and prompt history remain the next
-unfinished parts of the release.
+Prompt refinement shipped 2026-06-07: the Operations workspace now includes
+an inline Prompt Refinement panel backed by `POST /api/operations/prompt/refine`
+and `GET /api/operations/prompt/history`.
 
 **Goal:** Add a repo-specific Operations workspace that turns the indexed
 portfolio assessment and the Phase 6 prompt-context packet into an
@@ -125,10 +126,9 @@ state, review README and ROADMAP context, refine a generated task packet
 into a dispatch-ready prompt, and prepare it for execution without rebuilding
 the packet foundation from scratch.
 
-**Current focus:** Complete the repo-specific workflow inside Operations by
-adding in-panel README / ROADMAP context, audit-finding detail, repo-detail
-API coverage, and prompt-refinement preview/edit history on top of the
-existing Phase 6 packet contract.
+**Current focus:** Prompt history and dispatch are now wired. The remaining
+planned items (prompt history per-dispatch dispatch-record tracking) are
+deferred to the next task.
 
 **Why now:** Release 1.7.5 closed the portfolio-level scan → classify →
 rank → refine prompt → dispatch → report loop. Release 1.8 turns that
@@ -447,17 +447,24 @@ the packet foundation from scratch.
       workspace now renders those live fields from the indexed repo payload.
 - [x] Add audit findings panel showing README findings, ROADMAP findings,
       structure findings, and dispatch blockers. *(state: ui-connected)*
-- [ ] Add Prompt Refinement panel that starts from the existing
+- [x] Add Prompt Refinement panel that starts from the existing
       `/api/copilot-task/preview` packet, lets the operator adjust selected
       work item, constraints, and emphasis, and produces a dispatch-ready
       coding-agent prompt without duplicating packet assembly logic.
-      *(state: planned)*
-- [ ] Add editable prompt preview before dispatch, including the generated
-      packet sections, operator changes, and warnings. *(state: planned)*
-- [ ] Add custom operator instruction field that appends additional
-      constraints or direction to the generated prompt. *(state: planned)*
-- [ ] Store prompt history per repo, including generated previews, edits,
-      and dispatch records. *(state: planned)*
+      *(state: ui-connected)* — inline panel in `OperationsWorkspaceView.tsx`
+      backed by `POST /api/operations/prompt/refine`; supports custom
+      operator instructions appended before copy/dispatch.
+- [x] Add editable prompt preview before dispatch, including the generated
+      packet sections, operator changes, and warnings. *(state: ui-connected)*
+      — the Prompt Refinement panel renders an editable textarea pre-filled
+      with the refined prompt so the operator can review and adjust before copy.
+- [x] Add custom operator instruction field that appends additional
+      constraints or direction to the generated prompt. *(state: ui-connected)*
+      — `customInstructions` textarea in the Prompt Refinement panel.
+- [x] Store prompt history per repo, including generated previews, edits,
+      and dispatch records. *(state: ui-connected)* — per-repo JSONL under
+      `output/roadmap-task-history/prompt-refinements/`; retrieved via
+      `GET /api/operations/prompt/history` and surfaced in the History tab.
 - [x] Add `GET /api/operations/repos` route that returns the indexed repo
       list optimized for the Operations tab. *(state: smoke-tested)* — the
       host now serves indexed repo records with a warm assessment-cache
@@ -466,10 +473,14 @@ the packet foundation from scratch.
 - [x] Add `GET /api/operations/repos/{repoId}` route that returns full
       repo detail, documentation context, GitHub metadata, audit findings,
       and dispatch context. *(state: backend-complete)*
-- [ ] Add `POST /api/operations/prompt/refine` route that layers
+- [x] Add `POST /api/operations/prompt/refine` route that layers
       operator-directed edits and warnings on top of the Phase 6 prompt
       packet / preview contract rather than replacing it.
-      *(state: planned)*
+      *(state: ui-connected)* — `ForcedItemText` param added to
+      `Build-CopilotTaskPacket`; route accepts `repoName`, `roadmapPath`,
+      `selectedItemText`, `customInstructions`; persists to per-repo JSONL.
+- [x] Add `GET /api/operations/prompt/history` route for per-repo prompt
+      refinement history. *(state: ui-connected)*
 
 #### Acceptance criteria
 
