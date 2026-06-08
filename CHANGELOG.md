@@ -2,7 +2,23 @@
 
 All notable changes to this project are documented here.
 
-## 2026-05-29 — Release 1.8: Operations Audit Findings Panel
+## 2026-06-07 — Release 1.8: Prompt Refinement Panel
+
+### Changes
+
+- **`Start-RepoManagementApiHost.ps1`** — added `POST /api/operations/prompt/refine` route that builds a refined dispatch prompt by calling `Build-CopilotTaskPacket` (which gained a new `ForcedItemText` parameter for operator item override) and appending custom operator instructions. Refinement records are persisted per-repo to `output/roadmap-task-history/prompt-refinements/`. Added `GET /api/operations/prompt/history` route to retrieve per-repo refinement history.
+- **`OperationsWorkspaceView.tsx`** — added inline Prompt Refinement panel to the Operations workspace repo detail pane. The panel lets the operator add custom instructions, build a refined prompt via `POST /api/operations/prompt/refine`, edit the result in an editable textarea, copy it, and browse refinement history in a History tab.
+- **`frontend/types.ts`** — added `OperationsPromptRefineResult`, `OperationsPromptHistoryItem` types; extended `CopilotTaskPacketValueContext.selectedBy` to include `'operator-selected'`.
+- **`frontend/services/apiClient.ts`** — added `refineOperationsPrompt()` and `getOperationsPromptHistory()` client functions.
+- **`ApiDocsModal.tsx`** — documented `POST /api/operations/prompt/refine` and `GET /api/operations/prompt/history` in the API reference.
+- **`ROADMAP.md`** — marked Release 1.8 prompt-refinement milestones complete.
+
+### Testing
+
+- **`npm run build`** — passed.
+- **PowerShell parser diagnostics** — `Start-RepoManagementApiHost.ps1` passed with no parse errors.
+
+
 
 ### Changes
 

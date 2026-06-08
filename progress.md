@@ -1,6 +1,21 @@
 # Progress
 
-## 2026-05-29 (Release 1.8: Operations Audit Findings Panel)
+## 2026-06-07 (Release 1.8: Prompt Refinement Panel)
+
+- Reconciled the active roadmap and confirmed the next unfinished Release 1.8 milestone was the Prompt Refinement panel.
+- Added `ForcedItemText` parameter to `Build-CopilotTaskPacket` in `Start-RepoManagementApiHost.ps1` so operator-selected items can override value-ranked selection without duplicating packet assembly logic.
+- Added `POST /api/operations/prompt/refine` route: calls `Build-CopilotTaskPacket` with optional forced-item text, appends operator custom instructions, persists a refinement record to `output/roadmap-task-history/prompt-refinements/{repoName}.refinements.jsonl`, and returns `basePrompt`, `refinedPrompt`, `warnings`, and the full underlying packet.
+- Added `GET /api/operations/prompt/history` route for per-repo refinement history retrieval.
+- Extended `frontend/types.ts` with `OperationsPromptRefineResult` and `OperationsPromptHistoryItem` types; expanded `CopilotTaskPacketValueContext.selectedBy` to include `'operator-selected'`.
+- Added `refineOperationsPrompt()` and `getOperationsPromptHistory()` to `frontend/services/apiClient.ts`.
+- Added inline Prompt Refinement panel to `OperationsWorkspaceView.tsx`: custom-instructions textarea, Build Refined Prompt / Regenerate button, editable refined-prompt textarea with Copy button, warnings display, and History tab showing per-repo refinement records.
+- Updated `ApiDocsModal.tsx` with documentation for both new routes.
+- Marked the Release 1.8 prompt-refinement milestones complete in `ROADMAP.md` and documented the change in `CHANGELOG.md`.
+- Verification passed:
+  - `npm run build`
+  - PowerShell parser diagnostics for `backend/api-host/Start-RepoManagementApiHost.ps1`
+
+
 
 - Reconciled the active roadmap and implemented the next unfinished Release 1.8 UI milestone: audit findings visibility inside the Operations workspace.
 - Extended `frontend/components/OperationsWorkspaceView.tsx` to render README findings, ROADMAP audit findings, structure findings, and dispatch blockers for the selected repository.
