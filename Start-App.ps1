@@ -108,10 +108,126 @@ $frontendLog     = Join-Path $logDir 'frontend.log'
 $backendScript   = Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1'
 $frontendDir     = Join-Path $WorkspaceRoot 'frontend'
 $distIndexHtml   = Join-Path $frontendDir 'dist\index.html'
+$supportsWindowStyle = ($PSVersionTable.PSEdition -eq 'Desktop') -or (
+    (Get-Variable -Name 'IsWindows' -ErrorAction SilentlyContinue) -and [bool](Get-Variable -Name 'IsWindows' -ValueOnly)
+)
 
 function Write-Step { param([string]$Msg) Write-Host "  $Msg" -ForegroundColor Cyan }
 function Write-Ok   { param([string]$Msg) Write-Host "  [OK] $Msg" -ForegroundColor Green }
 function Write-Fail { param([string]$Msg) Write-Host "  [!!] $Msg" -ForegroundColor Red }
+
+function Convert-ToShellLiteral {
+    param([Parameter(Mandatory = $true)][string]$Value)
+    $singleQuote = [string][char]39
+    $doubleQuote = [string][char]34
+    $escapedSingleQuote = $singleQuote + $doubleQuote + $singleQuote + $doubleQuote + $singleQuote
+    return $singleQuote + ($Value -replace [regex]::Escape($singleQuote), $escapedSingleQuote) + $singleQuote
+}
+
+function Start-DetachedProcess {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+        [Parameter(Mandatory = $true)]
+        [string[]]$ArgumentList,
+        [string]$RedirectStandardOutput,
+        [string]$RedirectStandardError
+    )
+
+    $commandParts = @($FilePath) + $ArgumentList
+    $escapedCommand = ($commandParts | ForEach-Object { Convert-ToShellLiteral -Value $_ }) -join ' '
+    $stdoutTarget = if ($RedirectStandardOutput) { Convert-ToShellLiteral -Value $RedirectStandardOutput } else { '/dev/null' }
+    $stderrClause = if ($RedirectStandardError) {
+        "2>> $(Convert-ToShellLiteral -Value $RedirectStandardError)"
+    } else {
+        '2>&1'
+    }
+    $launcherPrefix = if (Get-Command -Name 'setsid' -ErrorAction SilentlyContinue) { 'setsid nohup' } else { 'nohup' }
+    $launchCommand = "$launcherPrefix $escapedCommand >> $stdoutTarget $stderrClause < /dev/null & echo `$!"
+    $pidText = & bash -lc $launchCommand
+    $detachedPid = 0
+    $parsedPid = [int]::TryParse(([string]$pidText).Trim(), [ref]$detachedPid)
+    if (-not $parsedPid -or $detachedPid -le 0) {
+        throw "Detached launch did not return a valid PID for $FilePath."
+    }
+
+    return [pscustomobject]@{ Id = $detachedPid }
+}
+
+function Start-ManagedProcess {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+        [Parameter(Mandatory = $true)]
+        [string[]]$ArgumentList,
+        [ValidateSet('Hidden', 'Normal')]
+        [string]$WindowStyle = 'Normal',
+        [string]$RedirectStandardOutput,
+        [string]$RedirectStandardError,
+        [switch]$PassThru
+    )
+
+    if (-not $supportsWindowStyle) {
+        return Start-DetachedProcess `
+            -FilePath $FilePath `
+            -ArgumentList $ArgumentList `
+            -RedirectStandardOutput $RedirectStandardOutput `
+            -RedirectStandardError $RedirectStandardError
+    }
+
+    $params = @{
+        FilePath = $FilePath
+        ArgumentList = $ArgumentList
+    }
+
+    if ($PassThru) {
+        $params.PassThru = $true
+    }
+
+    if ($RedirectStandardOutput) {
+        $params.RedirectStandardOutput = $RedirectStandardOutput
+    }
+
+    if ($RedirectStandardError) {
+        $params.RedirectStandardError = $RedirectStandardError
+    }
+
+    if ($supportsWindowStyle) {
+        $params.WindowStyle = $WindowStyle
+    }
+
+    return Start-Process @params
+}
+
+function New-FrontendWrapperScript {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WrapperPath,
+        [Parameter(Mandatory = $true)]
+        [string]$ApiUrl,
+        [Parameter(Mandatory = $true)]
+        [string]$FrontendDir,
+        [Parameter(Mandatory = $true)]
+        [int]$FrontendPort,
+        [string]$FrontendLogPath
+    )
+
+    $npmCommand = if ($FrontendLogPath) {
+@"
+`$env:VITE_API_PROXY_TARGET = '$ApiUrl'
+Set-Location '$FrontendDir'
+npm run dev -- --port $FrontendPort *>&1 | Out-File -FilePath '$FrontendLogPath' -Encoding UTF8 -Append
+"@
+    } else {
+@"
+`$env:VITE_API_PROXY_TARGET = '$ApiUrl'
+Set-Location '$FrontendDir'
+npm run dev -- --port $FrontendPort
+"@
+    }
+
+    $npmCommand | Set-Content -LiteralPath $WrapperPath -Encoding UTF8
+}
 
 function Get-ListeningProcessIds {
     param(
@@ -225,6 +341,10 @@ Write-Host " Mode: $Mode$(if ($Dev) { ' [Dev/Vite]' } elseif ($Rebuild) { ' [Reb
 Write-Host '====================================' -ForegroundColor White
 Write-Host ''
 
+if (-not $supportsWindowStyle -and $Mode -eq 'debug') {
+    Write-Step 'Debug terminal windows are not available on this PowerShell edition; starting detached child processes instead.'
+}
+
 # ------------------------------------------------------------------
 # 1. Install frontend dependencies if needed
 # ------------------------------------------------------------------
@@ -279,29 +399,34 @@ $backendPid = $null
 
 if ($Mode -eq 'debug') {
     # Open a visible terminal — developer workflow
-    Start-Process -FilePath 'pwsh' `
-        -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass',
-                      '-File', $backendScript,
-                      '-WorkspaceRoot', $WorkspaceRoot,
-                      '-BindAddress', $ApiHost,
-                      '-Port', $ApiPort,
-                      '-LogPath', $backendLog `
-        -WindowStyle Normal
-    # In debug mode we can't easily capture the PID of the inner pwsh started
-    # by that process, so we note 0 as a sentinel.
-    $backendPid = 0
+    $proc = Start-ManagedProcess `
+        -FilePath 'pwsh' `
+        -ArgumentList @(
+            '-NoProfile', '-ExecutionPolicy', 'Bypass',
+            '-File', $backendScript,
+            '-WorkspaceRoot', $WorkspaceRoot,
+            '-BindAddress', $ApiHost,
+            '-Port', $ApiPort,
+            '-LogPath', $backendLog
+        ) `
+        -WindowStyle Normal `
+        -PassThru
+    $backendPid = if ($supportsWindowStyle) { 0 } else { $proc.Id }
 } else {
     # Silent: hidden window, output redirected to log file
-    $proc = Start-Process -FilePath 'pwsh' `
-        -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass',
-                      '-File', $backendScript,
-                      '-WorkspaceRoot', $WorkspaceRoot,
-                      '-BindAddress', $ApiHost,
-                      '-Port', $ApiPort,
-                      '-LogPath', $backendLog `
+    $proc = Start-ManagedProcess `
+        -FilePath 'pwsh' `
+        -ArgumentList @(
+            '-NoProfile', '-ExecutionPolicy', 'Bypass',
+            '-File', $backendScript,
+            '-WorkspaceRoot', $WorkspaceRoot,
+            '-BindAddress', $ApiHost,
+            '-Port', $ApiPort,
+            '-LogPath', $backendLog
+        ) `
         -WindowStyle Hidden `
         -RedirectStandardOutput $backendLog `
-        -RedirectStandardError  (Join-Path $logDir 'backend-err.log') `
+        -RedirectStandardError (Join-Path $logDir 'backend-err.log') `
         -PassThru
     $backendPid = $proc.Id
     Write-Ok "API host started (PID $backendPid). Log: $backendLog"
@@ -349,21 +474,31 @@ if ($servingFromDist) {
     $env:VITE_API_PROXY_TARGET = $apiUrl
 
     if ($Mode -eq 'debug') {
-        Start-Process -FilePath 'cmd.exe' `
-            -ArgumentList '/k', "cd /d `"$frontendDir`" && npm run dev -- --port $FrontendPort" `
-            -WindowStyle Normal
-        $frontendPid = 0
+        if ($supportsWindowStyle) {
+            $proc = Start-ManagedProcess `
+                -FilePath 'cmd.exe' `
+                -ArgumentList @('/k', "cd /d `"$frontendDir`" && npm run dev -- --port $FrontendPort") `
+                -WindowStyle Normal `
+                -PassThru
+            $frontendPid = 0
+        } else {
+            $wrapperPath = Join-Path $runtimeDir 'start-frontend.ps1'
+            New-FrontendWrapperScript -WrapperPath $wrapperPath -ApiUrl $apiUrl -FrontendDir $frontendDir -FrontendPort $FrontendPort
+            $proc = Start-ManagedProcess `
+                -FilePath 'pwsh' `
+                -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $wrapperPath) `
+                -PassThru
+            $frontendPid = $proc.Id
+            Write-Ok "Frontend started (PID $frontendPid)."
+        }
     } else {
         # Write a tiny wrapper so we can set env vars before npm run dev in the hidden window
         $wrapperPath = Join-Path $runtimeDir 'start-frontend.ps1'
-        @"
-`$env:VITE_API_PROXY_TARGET = '$apiUrl'
-Set-Location '$frontendDir'
-npm run dev -- --port $FrontendPort *>&1 | Out-File -FilePath '$frontendLog' -Encoding UTF8 -Append
-"@ | Set-Content -LiteralPath $wrapperPath -Encoding UTF8
+        New-FrontendWrapperScript -WrapperPath $wrapperPath -ApiUrl $apiUrl -FrontendDir $frontendDir -FrontendPort $FrontendPort -FrontendLogPath $frontendLog
 
-        $proc = Start-Process -FilePath 'pwsh' `
-            -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $wrapperPath `
+        $proc = Start-ManagedProcess `
+            -FilePath 'pwsh' `
+            -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $wrapperPath) `
             -WindowStyle Hidden `
             -PassThru
         $frontendPid = $proc.Id
@@ -413,8 +548,13 @@ npm run dev -- --port $FrontendPort *>&1 | Out-File -FilePath '$frontendLog' -En
 # 8. Open browser
 # ------------------------------------------------------------------
 if (-not $NoBrowser) {
-    Start-Process $frontendUrl
-    Write-Ok "Browser opened at $frontendUrl"
+    try {
+        Start-Process $frontendUrl
+        Write-Ok "Browser opened at $frontendUrl"
+    } catch {
+        Write-Step "App is ready, but automatic browser launch failed: $($_.Exception.Message)"
+        Write-Host "  Open manually: $frontendUrl" -ForegroundColor Yellow
+    }
 }
 
 Write-Host ''
