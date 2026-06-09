@@ -698,7 +698,7 @@ function Parse-JsonBody {
 }
 
 function ConvertTo-HashtableRecursive {
-    param([Parameter(Mandatory = $true)][object]$InputObject)
+    param([Parameter(Mandatory = $true)][AllowNull()][object]$InputObject)
 
     if ($null -eq $InputObject) { return $null }
 
@@ -1493,7 +1493,12 @@ function Get-StatusFromCache {
         if ($null -eq $diskEntry -or -not $diskEntry.ContainsKey('key') -or -not $diskEntry.ContainsKey('createdAtUtc') -or -not $diskEntry.ContainsKey('response')) {
             return [pscustomobject]@{ hit = $false }
         }
-        if (-not $diskEntry.ContainsKey('schemaVersion') -or [int]$diskEntry.schemaVersion -ne $script:StatusCacheSchemaVersion) {
+        $schemaVersion = if ($diskEntry.ContainsKey('schemaVersion') -and $null -ne $diskEntry.schemaVersion) {
+            [int]$diskEntry.schemaVersion
+        } else {
+            0
+        }
+        if ($schemaVersion -ne 0 -and $schemaVersion -ne $script:StatusCacheSchemaVersion) {
             return [pscustomobject]@{ hit = $false }
         }
         if ([string]$diskEntry.key -ne $Key) {

@@ -7,20 +7,20 @@
 
     Two modes are supported:
 
-      silent  (default) — both processes run with no visible terminal windows.
-                          All output is captured to log files under
-                          backend/modules/output/logs/. The browser opens
-                          automatically when both services are ready.
+    silent  (default) - both processes run with no visible terminal windows.
+    All output is captured to log files under
+    backend/modules/output/logs/. The browser opens
+    automatically when both services are ready.
 
-      debug   — backend (and frontend when using Vite) each open in a visible
+    debug   - backend (and frontend when using Vite) each open in a visible
                 terminal window. Useful for interactive development.
 
     Production frontend bundle (Release 1.3):
-      If frontend/dist/index.html exists and -Dev is not passed, the compiled
-      bundle is served directly by the API host. No Vite process is started.
+    If frontend/dist/index.html exists and -Dev is not passed, the compiled
+    bundle is served directly by the API host. No Vite process is started.
 
-      Pass -Rebuild to force a fresh 'npm run build' even if dist/ already exists.
-      Pass -Dev to always use the Vite dev server regardless of dist/ state.
+    Pass -Rebuild to force a fresh 'npm run build' even if dist/ already exists.
+    Pass -Dev to always use the Vite dev server regardless of dist/ state.
 
     Process IDs are written to backend/modules/output/runtime/app.pid so that
     Stop-App.ps1 can terminate them cleanly without hunting for them.
@@ -52,7 +52,7 @@
     Force 'npm run build' before starting, even if frontend/dist/index.html exists.
 
 .EXAMPLE
-    # Normal daily use — no terminal clutter, static bundle served by API host:
+    # Normal daily use - no terminal clutter, static bundle served by API host:
     .\Start-App.ps1
 
     # Force a fresh frontend build then start:
@@ -72,7 +72,7 @@ param(
     [ValidateSet('silent', 'debug')]
     [string]$Mode = 'silent',
 
-    [string]$WorkspaceRoot = $PSScriptRoot,
+    [string]$WorkspaceRoot = '',
 
     [string]$ApiHost = '127.0.0.1',
 
@@ -89,6 +89,18 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
+    if ($PSCommandPath) {
+        $WorkspaceRoot = Split-Path -Parent $PSCommandPath
+    } elseif ($MyInvocation.MyCommand.Path) {
+        $WorkspaceRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+    } else {
+        $WorkspaceRoot = (Get-Location).Path
+    }
+}
+
+$WorkspaceRoot = [System.IO.Path]::GetFullPath($WorkspaceRoot)
 
 $apiUrl      = "http://${ApiHost}:${ApiPort}"
 $frontendUrl = "http://localhost:${FrontendPort}"
@@ -361,7 +373,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $frontendDir 'node_modules'))) {
 }
 
 # ------------------------------------------------------------------
-# 2. Build frontend (Release 1.3) — skip when -Dev forces Vite
+# 2. Build frontend (Release 1.3) - skip when -Dev forces Vite
 # ------------------------------------------------------------------
 $servingFromDist = $false
 
@@ -384,9 +396,9 @@ if ($Dev) {
 
     if (Test-Path -LiteralPath $distIndexHtml) {
         $servingFromDist = $true
-        Write-Ok 'Production build found — API host will serve the static frontend bundle.'
+        Write-Ok 'Production build found - API host will serve the static frontend bundle.'
     } else {
-        Write-Step 'No production build available — falling back to Vite dev server.'
+        Write-Step 'No production build available - falling back to Vite dev server.'
     }
 }
 
@@ -398,7 +410,7 @@ Write-Step "Starting API host ($apiUrl) in $Mode mode..."
 $backendPid = $null
 
 if ($Mode -eq 'debug') {
-    # Open a visible terminal — developer workflow
+    # Open a visible terminal - developer workflow
     $proc = Start-ManagedProcess `
         -FilePath 'pwsh' `
         -ArgumentList @(
@@ -458,12 +470,12 @@ if (-not $ready) {
 Write-Ok "API host ready at $apiUrl"
 
 # ------------------------------------------------------------------
-# 5. Start Vite dev server — only when not serving from built dist/
+# 5. Start Vite dev server - only when not serving from built dist/
 # ------------------------------------------------------------------
 $frontendPid = $null
 
 if ($servingFromDist) {
-    # No Vite process needed — API host serves the static bundle at the API URL
+    # No Vite process needed - API host serves the static bundle at the API URL
     $frontendPid = 0
     $frontendUrl = $apiUrl
     Write-Ok "Static frontend available at $frontendUrl"
@@ -567,6 +579,6 @@ if ($Mode -eq 'silent') {
     Write-Host '  Close the terminal windows to stop.' -ForegroundColor Gray
 }
 if ($servingFromDist) {
-    Write-Host "  Serving built frontend — run '.\Start-App.ps1 -Dev' to use Vite hot-reload." -ForegroundColor Gray
+    Write-Host "  Serving built frontend - run '.\Start-App.ps1 -Dev' to use Vite hot-reload." -ForegroundColor Gray
 }
 Write-Host ''

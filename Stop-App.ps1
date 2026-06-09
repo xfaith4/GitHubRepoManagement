@@ -9,40 +9,52 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$WorkspaceRoot = $PSScriptRoot
+    [string]$WorkspaceRoot = ''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'SilentlyContinue'
 
+if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
+    if ($PSCommandPath) {
+        $WorkspaceRoot = Split-Path -Parent $PSCommandPath
+    } elseif ($MyInvocation.MyCommand.Path) {
+        $WorkspaceRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+    } else {
+        $WorkspaceRoot = (Get-Location).Path
+    }
+}
+
+$WorkspaceRoot = [System.IO.Path]::GetFullPath($WorkspaceRoot)
+
 $pidFile = Join-Path $WorkspaceRoot 'backend\modules\output\runtime\app.pid'
 
 if (-not (Test-Path -LiteralPath $pidFile)) {
-    Write-Host 'No app.pid found — nothing to stop.' -ForegroundColor Yellow
+    Write-Host 'No app.pid found - nothing to stop.' -ForegroundColor Yellow
     exit 0
 }
 
 $info = Get-Content -LiteralPath $pidFile -Raw | ConvertFrom-Json
 
 function Stop-TrackedProcess {
-    param([int]$Pid, [string]$Name)
-    if ($Pid -le 0) {
-        Write-Host "  $Name : PID not tracked (debug mode — close its window manually)." -ForegroundColor Gray
+    param([int]$TrackedPid, [string]$Name)
+    if ($TrackedPid -le 0) {
+        Write-Host "  $Name : PID not tracked (debug mode - close its window manually)." -ForegroundColor Gray
         return
     }
     try {
-        $proc = Get-Process -Id $Pid -ErrorAction Stop
+        $proc = Get-Process -Id $TrackedPid -ErrorAction Stop
         $proc | Stop-Process -Force
-        Write-Host "  $Name : stopped (PID $Pid)." -ForegroundColor Green
+        Write-Host "  $Name : stopped (PID $TrackedPid)." -ForegroundColor Green
     } catch {
-        Write-Host "  $Name : process $Pid not found (already exited)." -ForegroundColor Gray
+        Write-Host "  $Name : process $TrackedPid not found (already exited)." -ForegroundColor Gray
     }
 }
 
 Write-Host ''
 Write-Host 'Stopping GitHub Repo Management...' -ForegroundColor White
-Stop-TrackedProcess -Pid ([int]$info.frontendPid) -Name 'Frontend'
-Stop-TrackedProcess -Pid ([int]$info.backendPid)  -Name 'Backend '
+Stop-TrackedProcess -TrackedPid ([int]$info.frontendPid) -Name 'Frontend'
+Stop-TrackedProcess -TrackedPid ([int]$info.backendPid)  -Name 'Backend '
 
 # Also clean up the wrapper script generated for silent frontend launch
 $wrapperPath = Join-Path $WorkspaceRoot 'backend\modules\output\runtime\start-frontend.ps1'
