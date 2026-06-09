@@ -10,10 +10,12 @@
     "dev": "npm run dev --workspace frontend",
     "build": "npm run build --workspace frontend",
     "preview": "npm run preview --workspace frontend",
-    "install:frontend": "npm install --workspace frontend --include=optional"
+    "install:frontend": "npm install --workspace frontend --include=optional",
+    "smoke:frontend": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/Invoke-FrontendSmokeTest.ps1"
   },
   "devDependencies": {
     "@types/react": "^19.2.16",
-    "@types/react-dom": "^19.2.3"
+    "@types/react-dom": "^19.2.3",
+    "playwright": "^1.60.0"
   }
 }
