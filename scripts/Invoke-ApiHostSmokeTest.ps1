@@ -472,6 +472,54 @@ try {
         $copilotPreviewPacketOk = $true  # graceful error is OK in smoke context
     }
 
+    $opsPromptRefineMissingBody = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/operations/prompt/refine" -Body @{}
+    Assert-Not503 -Name '/api/operations/prompt/refine (no repoName)' -Response $opsPromptRefineMissingBody
+    Write-Host ("  /api/operations/prompt/refine (no repoName) -> HTTP {0}" -f $opsPromptRefineMissingBody.StatusCode) -ForegroundColor DarkGray
+
+    $opsPromptRefineResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/operations/prompt/refine" -Body @{
+        repoName = $workspaceRepoName
+        selectedTaskText = ''
+        selectedTaskSection = ''
+        additionalConstraints = @('Prefer small focused commits')
+        emphasisAreas = @('tests', 'documentation')
+        operatorInstructions = 'Keep behavior backwards compatible.'
+    }
+    Assert-Not503 -Name '/api/operations/prompt/refine' -Response $opsPromptRefineResponse
+    $opsPromptRefineJson = $opsPromptRefineResponse.Json
+    $opsPromptRefineOk = $false
+    if ($opsPromptRefineJson -and $opsPromptRefineJson.success -eq $true) {
+        $opsPromptRefineData = $opsPromptRefineJson.data
+        $opsPromptRefineFieldsOk = $null -ne $opsPromptRefineData -and
+            ($opsPromptRefineData.PSObject.Properties.Name -contains 'packet') -and
+            ($opsPromptRefineData.PSObject.Properties.Name -contains 'refinedPrompt') -and
+            ($opsPromptRefineData.PSObject.Properties.Name -contains 'warnings') -and
+            ($opsPromptRefineData.PSObject.Properties.Name -contains 'applied')
+        if ($opsPromptRefineFieldsOk) {
+            $opsPromptRefineOk = $true
+            Write-Host ("  /api/operations/prompt/refine -> warnings={0} selected='{1}'" -f @($opsPromptRefineData.warnings).Count, [string]$opsPromptRefineData.applied.selectedTaskText) -ForegroundColor DarkGray
+        } else {
+            Write-Host '  /api/operations/prompt/refine returned success=true but expected fields were missing' -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host ("  /api/operations/prompt/refine -> HTTP {0} (missing roadmap/index for selected repo is acceptable in smoke context)" -f $opsPromptRefineResponse.StatusCode) -ForegroundColor DarkGray
+        $opsPromptRefineOk = $true
+    }
+
+    $opsPromptHistoryResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/operations/prompt/history?repoName=$([uri]::EscapeDataString($workspaceRepoName))&limit=5"
+    Assert-Not503 -Name '/api/operations/prompt/history' -Response $opsPromptHistoryResponse
+    $opsPromptHistoryJson = $opsPromptHistoryResponse.Json
+    $opsPromptHistoryOk = $false
+    if ($opsPromptHistoryJson -and $opsPromptHistoryJson.success -eq $true) {
+        $opsPromptHistoryData = $opsPromptHistoryJson.data
+        $opsPromptHistoryOk = $null -ne $opsPromptHistoryData -and ($opsPromptHistoryData.PSObject.Properties.Name -contains 'items')
+        if ($opsPromptHistoryOk) {
+            Write-Host ("  /api/operations/prompt/history -> {0} item(s)" -f @($opsPromptHistoryData.items).Count) -ForegroundColor DarkGray
+        }
+    }
+    if (-not $opsPromptHistoryOk) {
+        throw '/api/operations/prompt/history returned an unexpected payload shape'
+    }
+
     $copilotHistoryResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/copilot-task/history?limit=5"
     Assert-Not503 -Name '/api/copilot-task/history' -Response $copilotHistoryResponse
     $copilotHistoryJson = $copilotHistoryResponse.Json
@@ -995,6 +1043,8 @@ try {
         docsAuditRepoCount = $docsAuditData.data.count
         copilotPreviewStatusCode = $copilotPreviewResponse.StatusCode
         copilotPreviewPacketOk = $copilotPreviewPacketOk
+        opsPromptRefineStatusCode = $opsPromptRefineResponse.StatusCode
+        opsPromptRefineOk = $opsPromptRefineOk
         copilotHistorySuccess = $copilotHistoryJson.success
         copilotHistoryItemsOk = $copilotHistoryItemsOk
         roadmapAuditGetSuccess  = $roadmapAuditData.success

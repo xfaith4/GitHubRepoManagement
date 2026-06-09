@@ -388,35 +388,6 @@ export interface CopilotTaskHistoryItem {
   summaryPath?: string;
 }
 
-// Release 1.8 — Prompt Refinement
-
-export interface OperationsPromptRefineResult {
-  runId: string;
-  createdAt: string;
-  repoName: string;
-  selectedItemText: string;
-  selectedItemSection: string;
-  selectionSource: 'value-ranked' | 'roadmap-order' | 'operator-selected';
-  customInstructions: string;
-  basePrompt: string;
-  refinedPrompt: string;
-  warnings: string[];
-  packet: CopilotTaskPacket;
-}
-
-export interface OperationsPromptHistoryItem {
-  runId: string;
-  createdAt: string;
-  repoName: string;
-  selectedItemText: string;
-  selectedItemSection: string;
-  selectionSource: string;
-  customInstructions: string;
-  basePromptLength: number;
-  refinedPromptLength: number;
-  warningCount: number;
-}
-
 // Release 0.8 — Roadmap Contract Audit & Maturity Scoring
 
 export type RoadmapMaturityLevel =
@@ -1102,4 +1073,48 @@ export interface OperationsRepoDetail {
     nextPendingItemText?: string | null;
     topValueItem: PortfolioPendingItemValue | null;
   };
+}
+
+export interface OperationsPromptRefineRequest {
+  repoName: string;
+  roadmapPath?: string;
+  selectedTaskText?: string;
+  selectedTaskSection?: string;
+  additionalConstraints?: string[];
+  emphasisAreas?: string[];
+  operatorInstructions?: string;
+}
+
+export interface OperationsPromptRefineWarning {
+  severity: 'critical' | 'warning' | 'info';
+  code: string;
+  message: string;
+}
+
+export interface OperationsPromptRefineResult {
+  runId?: string;
+  createdAt?: string;
+  packet: CopilotTaskPacket;
+  refinedPrompt: string;
+  warnings: OperationsPromptRefineWarning[];
+  applied: {
+    selectedTaskText: string;
+    selectedTaskSection: string;
+    additionalConstraints: string[];
+    emphasisAreas: string[];
+    operatorInstructions?: string;
+  };
+}
+
+export interface OperationsPromptHistoryItem {
+  runId: string;
+  createdAt: string;
+  repoName: string;
+  selectedItemText: string;
+  selectedItemSection: string;
+  selectionSource: 'value-ranked' | 'roadmap-order' | 'operator-selected';
+  operatorInstructions?: string;
+  additionalConstraints: string[];
+  emphasisAreas: string[];
+  warningCount: number;
 }

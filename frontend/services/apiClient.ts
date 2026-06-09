@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type ReadmeContent, type OperationsPromptRefineResult, type OperationsPromptHistoryItem } from '../types';
+import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -1484,27 +1484,71 @@ export async function getOperationsRepoDetail(repoId: string): Promise<Operation
   return normalizeOperationsRepoDetail(d);
 }
 
-// Release 1.8 — Prompt Refinement
+export async function refineOperationsPrompt(request: OperationsPromptRefineRequest): Promise<OperationsPromptRefineResult> {
+  const repoName = request.repoName.trim();
+  if (!repoName) {
+    throw new Error('repoName is required for prompt refinement.');
+  }
 
-export async function refineOperationsPrompt(params: {
-  repoName: string;
-  roadmapPath?: string;
-  selectedItemText?: string;
-  customInstructions?: string;
-}): Promise<OperationsPromptRefineResult> {
-  const data = await postJson<any>('/operations/prompt/refine', {
-    repoName: params.repoName,
-    roadmapPath: params.roadmapPath ?? '',
-    selectedItemText: params.selectedItemText ?? '',
-    customInstructions: params.customInstructions ?? '',
-  });
-  const d = data?.data ?? data;
-  return d as OperationsPromptRefineResult;
+  const body = {
+    repoName,
+    roadmapPath: request.roadmapPath ?? '',
+    selectedTaskText: request.selectedTaskText ?? '',
+    selectedTaskSection: request.selectedTaskSection ?? '',
+    additionalConstraints: Array.isArray(request.additionalConstraints) ? request.additionalConstraints : [],
+    emphasisAreas: Array.isArray(request.emphasisAreas) ? request.emphasisAreas : [],
+    operatorInstructions: request.operatorInstructions ?? '',
+  };
+
+  const data = await postJson<any>('/operations/prompt/refine', body);
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? data?.error ?? 'Operations prompt refinement failed.');
+  }
+
+  const d = data.data ?? {};
+  if (!d.packet || !d.refinedPrompt) {
+    throw new Error('Operations prompt refinement response is missing required fields.');
+  }
+
+  return {
+    runId: d.runId ? String(d.runId) : undefined,
+    createdAt: d.createdAt ? String(d.createdAt) : undefined,
+    packet: d.packet as CopilotTaskPacket,
+    refinedPrompt: String(d.refinedPrompt),
+    warnings: Array.isArray(d.warnings) ? d.warnings : [],
+    applied: {
+      selectedTaskText: String(d.applied?.selectedTaskText ?? ''),
+      selectedTaskSection: String(d.applied?.selectedTaskSection ?? ''),
+      additionalConstraints: Array.isArray(d.applied?.additionalConstraints) ? d.applied.additionalConstraints.map((value: unknown) => String(value)) : [],
+      emphasisAreas: Array.isArray(d.applied?.emphasisAreas) ? d.applied.emphasisAreas.map((value: unknown) => String(value)) : [],
+      operatorInstructions: d.applied?.operatorInstructions ? String(d.applied.operatorInstructions) : undefined,
+    },
+  };
 }
 
 export async function getOperationsPromptHistory(repoName: string, limit = 20): Promise<OperationsPromptHistoryItem[]> {
-  const url = `${API_BASE_URL}/operations/prompt/history?repoName=${encodeURIComponent(repoName)}&limit=${limit}`;
+  const trimmedRepoName = repoName.trim();
+  if (!trimmedRepoName) {
+    return [];
+  }
+
+  const url = `${API_BASE_URL}/operations/prompt/history?repoName=${encodeURIComponent(trimmedRepoName)}&limit=${limit}`;
   const data = await fetchJson<any>(url);
-  const d = data?.data ?? data ?? {};
-  return Array.isArray(d.items) ? (d.items as OperationsPromptHistoryItem[]) : [];
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? data?.error ?? 'Operations prompt history request failed.');
+  }
+
+  const items = Array.isArray(data?.data?.items) ? data.data.items : [];
+  return items.map((item: any) => ({
+    runId: String(item?.runId ?? ''),
+    createdAt: String(item?.createdAt ?? ''),
+    repoName: String(item?.repoName ?? trimmedRepoName),
+    selectedItemText: String(item?.selectedItemText ?? ''),
+    selectedItemSection: String(item?.selectedItemSection ?? ''),
+    selectionSource: String(item?.selectionSource ?? 'roadmap-order') as OperationsPromptHistoryItem['selectionSource'],
+    operatorInstructions: item?.operatorInstructions ? String(item.operatorInstructions) : undefined,
+    additionalConstraints: Array.isArray(item?.additionalConstraints) ? item.additionalConstraints.map((value: unknown) => String(value)) : [],
+    emphasisAreas: Array.isArray(item?.emphasisAreas) ? item.emphasisAreas.map((value: unknown) => String(value)) : [],
+    warningCount: Number(item?.warningCount ?? 0),
+  }));
 }

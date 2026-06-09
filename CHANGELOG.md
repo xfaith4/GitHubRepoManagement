@@ -6,19 +6,35 @@ All notable changes to this project are documented here.
 
 ### Changes
 
-- **`Start-RepoManagementApiHost.ps1`** — added `POST /api/operations/prompt/refine` route that builds a refined dispatch prompt by calling `Build-CopilotTaskPacket` (which gained a new `ForcedItemText` parameter for operator item override) and appending custom operator instructions. Refinement records are persisted per-repo to `output/roadmap-task-history/prompt-refinements/`. Added `GET /api/operations/prompt/history` route to retrieve per-repo refinement history.
-- **`OperationsWorkspaceView.tsx`** — added inline Prompt Refinement panel to the Operations workspace repo detail pane. The panel lets the operator add custom instructions, build a refined prompt via `POST /api/operations/prompt/refine`, edit the result in an editable textarea, copy it, and browse refinement history in a History tab.
-- **`frontend/types.ts`** — added `OperationsPromptRefineResult`, `OperationsPromptHistoryItem` types; extended `CopilotTaskPacketValueContext.selectedBy` to include `'operator-selected'`.
-- **`frontend/services/apiClient.ts`** — added `refineOperationsPrompt()` and `getOperationsPromptHistory()` client functions.
-- **`ApiDocsModal.tsx`** — documented `POST /api/operations/prompt/refine` and `GET /api/operations/prompt/history` in the API reference.
-- **`ROADMAP.md`** — marked Release 1.8 prompt-refinement milestones complete.
+- **`backend/api-host/Start-RepoManagementApiHost.ps1`** — finalized `POST /api/operations/prompt/refine` around the existing packet flow, including operator-selected task overrides, emphasis areas, additional constraints, operator instructions, and per-repo refinement history persisted under `output/roadmap-task-history/prompt-refinements/`. Added `GET /api/operations/prompt/history` for history retrieval.
+- **`frontend/components/OperationsWorkspaceView.tsx`** — extended the inline Prompt Refinement panel with editable selected-task controls, operator refinement inputs, editable refined-prompt review, copy action, and a History tab for prior refinements.
+- **`frontend/types.ts`** and **`frontend/services/apiClient.ts`** — unified the prompt refinement request/response contracts, added history-item types, and added client helpers for both refine and history routes.
+- **`frontend/components/ApiDocsModal.tsx`** — documented the final `POST /api/operations/prompt/refine` contract and `GET /api/operations/prompt/history`.
+- **`ROADMAP.md`** — marked the Release 1.8 prompt-refinement milestones complete with the merged route and UI behavior.
 
 ### Testing
 
 - **`npm run build`** — passed.
 - **PowerShell parser diagnostics** — `Start-RepoManagementApiHost.ps1` passed with no parse errors.
 
+## 2026-06-02 — Release 1.8: Operations Prompt Refinement Foundation
 
+### Changes
+
+- **`backend/api-host/Start-RepoManagementApiHost.ps1`** — added `POST /api/operations/prompt/refine`, which reuses the existing packet assembly path, applies operator-directed task/constraint/emphasis instructions, and returns a refined prompt with warning metadata.
+- **`frontend/types.ts`** and **`frontend/services/apiClient.ts`** — added typed request/response contracts and client integration for Operations prompt refinement.
+- **`frontend/components/OperationsWorkspaceView.tsx`** — added an in-panel Prompt Refinement workflow with selected-task overrides, emphasis and constraint inputs, custom operator instruction field, warning display, refined prompt preview, and copy action.
+- **`scripts/Invoke-ApiHostSmokeTest.ps1`** — added route coverage for `/api/operations/prompt/refine` (missing-body validation and success-payload field checks).
+- **`frontend/components/ApiDocsModal.tsx`** and **`backend/api-host/README.md`** — documented the new Operations prompt refinement endpoint and contract.
+- **`ROADMAP.md`** — marked the corresponding Release 1.8 prompt-refinement milestones as completed (`ui-connected` for panel/preview/operator field, `backend-complete` for refine API route).
+
+### Testing
+
+- **`npm run build`** — passed.
+- **Targeted API validation** — `POST /api/operations/prompt/refine` verified with long-timeout requests against a live host: expected missing-repo validation failure path plus successful response contract path.
+- **`pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "$(pwd)"`** — this run timed out during portfolio warmup under the script's existing 30-second request cap before reaching final summary.
+
+## 2026-05-29 — Release 1.8: Operations Audit Findings Panel
 
 ### Changes
 

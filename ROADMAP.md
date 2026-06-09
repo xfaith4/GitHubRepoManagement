@@ -452,15 +452,16 @@ the packet foundation from scratch.
       work item, constraints, and emphasis, and produces a dispatch-ready
       coding-agent prompt without duplicating packet assembly logic.
       *(state: ui-connected)* — inline panel in `OperationsWorkspaceView.tsx`
-      backed by `POST /api/operations/prompt/refine`; supports custom
-      operator instructions appended before copy/dispatch.
+      backed by `POST /api/operations/prompt/refine`; supports selected-task
+      overrides, emphasis areas, additional constraints, and operator
+      instructions before copy/dispatch.
 - [x] Add editable prompt preview before dispatch, including the generated
       packet sections, operator changes, and warnings. *(state: ui-connected)*
       — the Prompt Refinement panel renders an editable textarea pre-filled
       with the refined prompt so the operator can review and adjust before copy.
 - [x] Add custom operator instruction field that appends additional
       constraints or direction to the generated prompt. *(state: ui-connected)*
-      — `customInstructions` textarea in the Prompt Refinement panel.
+      — `operatorInstructions` textarea in the Prompt Refinement panel.
 - [x] Store prompt history per repo, including generated previews, edits,
       and dispatch records. *(state: ui-connected)* — per-repo JSONL under
       `output/roadmap-task-history/prompt-refinements/`; retrieved via
@@ -476,9 +477,10 @@ the packet foundation from scratch.
 - [x] Add `POST /api/operations/prompt/refine` route that layers
       operator-directed edits and warnings on top of the Phase 6 prompt
       packet / preview contract rather than replacing it.
-      *(state: ui-connected)* — `ForcedItemText` param added to
-      `Build-CopilotTaskPacket`; route accepts `repoName`, `roadmapPath`,
-      `selectedItemText`, `customInstructions`; persists to per-repo JSONL.
+      *(state: ui-connected)* — `Build-CopilotTaskPacket` accepts forced
+      item text/section overrides; route accepts `repoName`, `roadmapPath`,
+      `selectedTaskText`, `selectedTaskSection`, `additionalConstraints`,
+      `emphasisAreas`, and `operatorInstructions`; persists to per-repo JSONL.
 - [x] Add `GET /api/operations/prompt/history` route for per-repo prompt
       refinement history. *(state: ui-connected)*
 

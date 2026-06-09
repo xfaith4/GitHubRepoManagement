@@ -2,20 +2,35 @@
 
 ## 2026-06-07 (Release 1.8: Prompt Refinement Panel)
 
-- Reconciled the active roadmap and confirmed the next unfinished Release 1.8 milestone was the Prompt Refinement panel.
-- Added `ForcedItemText` parameter to `Build-CopilotTaskPacket` in `Start-RepoManagementApiHost.ps1` so operator-selected items can override value-ranked selection without duplicating packet assembly logic.
-- Added `POST /api/operations/prompt/refine` route: calls `Build-CopilotTaskPacket` with optional forced-item text, appends operator custom instructions, persists a refinement record to `output/roadmap-task-history/prompt-refinements/{repoName}.refinements.jsonl`, and returns `basePrompt`, `refinedPrompt`, `warnings`, and the full underlying packet.
-- Added `GET /api/operations/prompt/history` route for per-repo refinement history retrieval.
-- Extended `frontend/types.ts` with `OperationsPromptRefineResult` and `OperationsPromptHistoryItem` types; expanded `CopilotTaskPacketValueContext.selectedBy` to include `'operator-selected'`.
-- Added `refineOperationsPrompt()` and `getOperationsPromptHistory()` to `frontend/services/apiClient.ts`.
-- Added inline Prompt Refinement panel to `OperationsWorkspaceView.tsx`: custom-instructions textarea, Build Refined Prompt / Regenerate button, editable refined-prompt textarea with Copy button, warnings display, and History tab showing per-repo refinement records.
-- Updated `ApiDocsModal.tsx` with documentation for both new routes.
-- Marked the Release 1.8 prompt-refinement milestones complete in `ROADMAP.md` and documented the change in `CHANGELOG.md`.
-- Verification passed:
-  - `npm run build`
-  - PowerShell parser diagnostics for `backend/api-host/Start-RepoManagementApiHost.ps1`
+- Reconciled the active Release 1.8 prompt-refinement work and carried the feature from foundation-level route wiring to the full operator review workflow.
+- Finalized `POST /api/operations/prompt/refine` so prompt generation stays aligned with operator-selected task overrides, emphasis areas, additional constraints, and operator instructions while persisting per-repo refinement history.
+- Added `GET /api/operations/prompt/history` for the Operations workspace history tab and wired the frontend to load and display prior prompt refinements by repo.
+- Updated the Operations prompt panel to support editable prompt review before copy/dispatch, while preserving the richer task/constraint/emphasis controls from the earlier foundation work.
+- Updated API docs and roadmap/progress artifacts so the documented contract matches the merged implementation.
 
+### Verification
 
+- `npm run build`
+- PowerShell parser diagnostics for `backend/api-host/Start-RepoManagementApiHost.ps1`
+
+## 2026-06-02 (Release 1.8: Operations Prompt Refinement Foundation)
+
+- Implemented the next unfinished active Release 1.8 slice by adding prompt refinement in the Operations workspace on top of the existing packet flow.
+- Added `POST /api/operations/prompt/refine` in `backend/api-host/Start-RepoManagementApiHost.ps1`; the route reuses `Build-CopilotTaskPacket`, applies operator-directed selected-task overrides when possible, appends emphasis/constraints/instructions, and returns warnings plus an applied-input summary.
+- Extended frontend contracts and API client (`frontend/types.ts`, `frontend/services/apiClient.ts`) with typed prompt refinement request/response models and route integration.
+- Extended `frontend/components/OperationsWorkspaceView.tsx` with a Prompt Refinement panel: selected task fields, emphasis/constraint inputs, operator instruction input, warning display, refined prompt preview, and clipboard copy action.
+- Added smoke coverage for `/api/operations/prompt/refine` in `scripts/Invoke-ApiHostSmokeTest.ps1` (missing-body and contract-shape checks).
+
+### Verification
+
+- `npm run build` (frontend) passed.
+- `get_errors` checks for edited frontend/backend files returned no diagnostics.
+- Full `Invoke-ApiHostSmokeTest.ps1` timed out on the existing 30s request cap during portfolio warmup in this run.
+- Targeted route validation passed with longer request timeouts against a live local API host:
+  - `/api/operations/prompt/refine` returned HTTP 500 for missing `repoName` (expected validation failure path).
+  - `/api/operations/prompt/refine` returned HTTP 200 with `success=true`, `packet`, `refinedPrompt`, `warnings`, and `applied` fields for a valid repo/roadmap request.
+
+## 2026-05-29 (Release 1.8: Operations Audit Findings Panel)
 
 - Reconciled the active roadmap and implemented the next unfinished Release 1.8 UI milestone: audit findings visibility inside the Operations workspace.
 - Extended `frontend/components/OperationsWorkspaceView.tsx` to render README findings, ROADMAP audit findings, structure findings, and dispatch blockers for the selected repository.
