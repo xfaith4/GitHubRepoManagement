@@ -48,7 +48,7 @@ jobs:
 
       - name: Setup Node
         if: ${{ inputs.node }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.node-version }}
           cache: npm
