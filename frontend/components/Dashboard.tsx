@@ -33,6 +33,8 @@ import { SpinnerIcon, IssuesIcon, ProjectsIcon, BranchIcon, HealthIcon } from '.
 interface DashboardProps {
   repos: RepoStatus[];
   loading: boolean;
+  /** True while the startup differential re-scan runs in the background. */
+  isBackgroundRefreshing?: boolean;
   error: string | null;
   fetchRepoStatus: () => void;
   dataSource:
@@ -85,7 +87,7 @@ function formatSignalLabel(key: string): string {
   }
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoStatus, dataSource, insightsMeta, dataLastUpdated }) => {
+const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefreshing = false, error, fetchRepoStatus, dataSource, insightsMeta, dataLastUpdated }) => {
   const [currentOperation, setCurrentOperation] = useState<OperationType | null>(null);
   const [isLogPanelOpen, setIsLogPanelOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -180,14 +182,17 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
   // Backend health indicator — polls /health/live every 15 s
   const backendHealth = useHealthPing(15_000);
 
-  // Backend log polling — active whenever a scan or operation is running
-  const logPollActive = loading || (!!currentOperation && currentOperation !== 'scan');
+  // Backend log polling — active whenever a scan, background re-scan, or
+  // operation is running. Polling during the background re-scan lets the inline
+  // front-page indicator show live progress without opening the drawer.
+  const logPollActive = loading || isBackgroundRefreshing || (!!currentOperation && currentOperation !== 'scan');
   const { entries: backendLogEntries } = useBackendLog(logPollActive, { includeHistory: false });
 
   // SSE hook kept for future streaming endpoints (pass null = idle/no-op)
   useSse(null);
 
-  // Initialise to false so the first load transition (false→true is implied by mount state) opens the panel
+  // Tracks the previous `loading` value so we can detect scan start/finish
+  // transitions and update the inline progress indicator (not the drawer).
   const prevLoadingRef = useRef<boolean>(false);
   const prevBackendLogCountRef = useRef(0);
 
@@ -290,18 +295,21 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
     setSelectedRepoIds(new Set());
   }, [repos]);
 
-  // Open scan progress sidecar when loading begins; close/summarise when loading ends
+  // Track scan progress for the inline, non-blocking front-page indicator.
+  // The slide-out drawer is intentionally NOT auto-opened here: the cached repo
+  // list is already on screen, and the re-scan is surfaced by the inline banner
+  // below. The user can open the detailed log on demand via "View progress".
   useEffect(() => {
     const wasLoading = prevLoadingRef.current;
     prevLoadingRef.current = loading;
 
     if (loading && !wasLoading) {
-      // Scan is starting — open the sidecar terminal
+      // Scan is starting — prime the log buffer (shown only if the user opens
+      // the drawer) and reset progress for the inline indicator.
       setCurrentOperation('scan');
       setLogMessages(['Starting repository scan...']);
       setLogStatus('running');
       setScanProgress({ scannedCount: 0, latestRepo: null });
-      setIsLogPanelOpen(true);
       prevBackendLogCountRef.current = 0;
     } else if (!loading && wasLoading) {
       // Scan finished
@@ -845,7 +853,18 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
     return <div className="text-center p-8 text-red-400">{error}</div>;
   }
 
-  const isScanning = loading || settingsLoading;
+  const isScanning = loading || isBackgroundRefreshing || settingsLoading;
+  // The background differential re-scan (repos already on screen from cache) is
+  // a softer state than a blocking foreground scan.
+  const isDifferentialRescan = isBackgroundRefreshing && !loading;
+  const scanProgressDetail = scanProgress.scannedCount > 0
+    ? `${scanProgress.scannedCount} scanned${scanProgress.latestRepo ? ` · latest: ${scanProgress.latestRepo}` : ''}`
+    : null;
+  const scanIndicatorLabel = isDifferentialRescan
+    ? 'Checking for repository changes…'
+    : settingsLoading && !loading
+    ? 'Loading…'
+    : `Scanning repositories… ${loadingElapsedSec}s`;
   const scanProgressSummary = currentOperation === 'scan'
     ? `${scanProgress.scannedCount} repositories scanned${scanProgress.latestRepo ? ` · latest: ${scanProgress.latestRepo}` : ''}`
     : undefined;
@@ -880,12 +899,17 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, error, fetchRepoS
           {healthLabel}
         </span>
       </div>
-      {/* Inline scan progress indicator (non-blocking) */}
+      {/* Inline scan/refresh progress indicator (non-blocking — the cached repo
+          list stays interactive; the differential re-scan is shown here rather
+          than in the slide-out drawer). */}
       {isScanning && (
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-4">
           <div className="flex items-center gap-3 bg-blue-900/20 border border-blue-700/50 rounded-lg px-4 py-2 text-sm text-blue-200">
             <SpinnerIcon className="w-4 h-4 text-blue-400 flex-shrink-0" />
-            <span>Scanning repositories... {loadingElapsedSec}s</span>
+            <span className="flex-shrink-0">{scanIndicatorLabel}</span>
+            {scanProgressDetail && (
+              <span className="text-blue-300/80 text-xs flex-shrink-0">· {scanProgressDetail}</span>
+            )}
             <div className="flex-1 h-1.5 rounded-full bg-blue-900 overflow-hidden">
               <div className="h-full bg-blue-500 animate-pulse rounded-full" style={{ width: '40%' }} />
             </div>

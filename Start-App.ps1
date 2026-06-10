@@ -130,6 +130,79 @@ function Write-Step { param([string]$Msg) Write-Host "  $Msg" -ForegroundColor C
 function Write-Ok { param([string]$Msg) Write-Host "  [OK] $Msg" -ForegroundColor Green }
 function Write-Fail { param([string]$Msg) Write-Host "  [!!] $Msg" -ForegroundColor Red }
 
+# Track processes this launcher starts so a partial/failed startup can be
+# cleaned up instead of leaving orphaned backend/frontend processes behind.
+$script:StartedPids = [System.Collections.Generic.List[int]]::new()
+
+function Register-StartedPid {
+    param([int]$ProcessId)
+    if ($ProcessId -gt 0) { [void]$script:StartedPids.Add($ProcessId) }
+}
+
+function Stop-StartedProcesses {
+    foreach ($startedPid in $script:StartedPids) {
+        try {
+            $proc = Get-Process -Id $startedPid -ErrorAction Stop
+            Stop-Process -Id $startedPid -Force -ErrorAction Stop
+            Write-Step "Cleaned up $($proc.ProcessName) (PID $startedPid) after a failed startup."
+        }
+        catch { }
+    }
+}
+
+# Write the PID file as soon as we know any process IDs, so Stop-App.ps1 can
+# always reclaim what was started — even if startup fails partway through.
+function Write-PidFile {
+    param(
+        [int]$BackendPid = 0,
+        [Nullable[int]]$FrontendPid = $null,
+        [bool]$ServingFromDist = $false,
+        [string]$ResolvedFrontendUrl = ''
+    )
+    @{
+        backendPid      = $BackendPid
+        frontendPid     = $FrontendPid
+        mode            = $Mode
+        servingFromDist = $ServingFromDist
+        apiUrl          = $apiUrl
+        frontendUrl     = $ResolvedFrontendUrl
+        startedAt       = (Get-Date).ToString('o')
+    } | ConvertTo-Json | Set-Content -LiteralPath $pidFile -Encoding UTF8
+}
+
+# Stale-bundle guard: returns $true when any frontend source file is newer than
+# the built dist/index.html, meaning the served bundle would be out of date.
+# Serving a stale bundle silently is the #1 "my fix isn't showing up" foot-gun.
+function Test-FrontendBuildStale {
+    param(
+        [Parameter(Mandatory = $true)][string]$FrontendDir,
+        [Parameter(Mandatory = $true)][string]$DistIndexHtml
+    )
+
+    if (-not (Test-Path -LiteralPath $DistIndexHtml)) { return $true }
+    $distTime = (Get-Item -LiteralPath $DistIndexHtml).LastWriteTimeUtc
+
+    # Top-level source/config files plus the known source subdirectories.
+    $sourceFiles = [System.Collections.Generic.List[object]]::new()
+    foreach ($f in (Get-ChildItem -LiteralPath $FrontendDir -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -in '.ts', '.tsx', '.html', '.css', '.json', '.js', '.cjs', '.mjs' -and $_.Name -ne 'package-lock.json' })) {
+        [void]$sourceFiles.Add($f)
+    }
+    foreach ($sub in @('components', 'services', 'hooks', 'src', 'styles', 'lib')) {
+        $subPath = Join-Path $FrontendDir $sub
+        if (Test-Path -LiteralPath $subPath) {
+            foreach ($f in (Get-ChildItem -LiteralPath $subPath -Recurse -File -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Extension -in '.ts', '.tsx', '.css', '.js', '.json' })) {
+                [void]$sourceFiles.Add($f)
+            }
+        }
+    }
+
+    if ($sourceFiles.Count -eq 0) { return $false }
+    $newest = ($sourceFiles | Measure-Object -Property LastWriteTimeUtc -Maximum).Maximum
+    return ($newest -gt $distTime)
+}
+
 function Convert-ToShellLiteral {
     param([Parameter(Mandatory = $true)][string]$Value)
     $singleQuote = [string][char]39
@@ -389,9 +462,21 @@ if ($Dev) {
     Write-Step 'Dev mode: Vite dev server will be used (skipping production build).'
 }
 else {
-    $needsBuild = $Rebuild -or -not (Test-Path -LiteralPath $distIndexHtml)
+    $buildReason = ''
+    if ($Rebuild) {
+        $buildReason = 'forced by -Rebuild'
+    }
+    elseif (-not (Test-Path -LiteralPath $distIndexHtml)) {
+        $buildReason = 'frontend/dist/ not found'
+    }
+    elseif (Test-FrontendBuildStale -FrontendDir $frontendDir -DistIndexHtml $distIndexHtml) {
+        # The served bundle is older than the source — rebuild so the running
+        # app actually reflects the current code instead of a stale dist.
+        $buildReason = 'frontend source changed since last build'
+    }
+    $needsBuild = -not [string]::IsNullOrEmpty($buildReason)
+
     if ($needsBuild) {
-        $buildReason = if ($Rebuild) { 'forced by -Rebuild' } else { 'frontend/dist/ not found' }
         Write-Step "Building frontend ($buildReason)..."
         Push-Location $frontendDir
         try {
@@ -456,6 +541,13 @@ else {
     Write-Ok "API host started (PID $backendPid). Log: $backendLog"
 }
 
+# Record the backend PID now so a hung backend can still be stopped by
+# Stop-App.ps1, even if readiness below never succeeds.
+if ($backendPid -gt 0) {
+    Register-StartedPid -ProcessId $backendPid
+    Write-PidFile -BackendPid $backendPid -FrontendPid $null -ServingFromDist $servingFromDist -ResolvedFrontendUrl $frontendUrl
+}
+
 # ------------------------------------------------------------------
 # 4. Wait for API host to become ready
 # ------------------------------------------------------------------
@@ -478,6 +570,7 @@ if (-not $ready) {
     if ($Mode -eq 'silent') {
         Write-Host "  Check: $backendLog" -ForegroundColor Yellow
     }
+    Stop-StartedProcesses
     exit 1
 }
 Write-Ok "API host ready at $apiUrl"
@@ -555,23 +648,21 @@ else {
         if ($Mode -eq 'silent') {
             Write-Host "  Check: $frontendLog" -ForegroundColor Yellow
         }
+        Stop-StartedProcesses
         exit 1
     }
     Write-Ok "Vite dev server ready at $frontendUrl"
 }
 
+# Record the frontend PID alongside the backend so Stop-App.ps1 can reclaim both.
+if ($frontendPid -gt 0) {
+    Register-StartedPid -ProcessId $frontendPid
+}
+
 # ------------------------------------------------------------------
-# 7. Write PID file for Stop-App.ps1
+# 7. Write PID file for Stop-App.ps1 (final, with both PIDs + resolved URL)
 # ------------------------------------------------------------------
-@{
-    backendPid      = $backendPid
-    frontendPid     = $frontendPid
-    mode            = $Mode
-    servingFromDist = $servingFromDist
-    apiUrl          = $apiUrl
-    frontendUrl     = $frontendUrl
-    startedAt       = (Get-Date).ToString('o')
-} | ConvertTo-Json | Set-Content -LiteralPath $pidFile -Encoding UTF8
+Write-PidFile -BackendPid $backendPid -FrontendPid $frontendPid -ServingFromDist $servingFromDist -ResolvedFrontendUrl $frontendUrl
 
 # ------------------------------------------------------------------
 # 8. Open browser

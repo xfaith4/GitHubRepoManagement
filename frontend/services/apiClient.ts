@@ -118,7 +118,7 @@ function settingsFromApi(data: any): AppSettings {
   };
 }
 
-export async function getStatus(options?: { stale?: boolean; refresh?: boolean }): Promise<{ repos: RepoStatus[]; source: 'sample' | 'local'; workspacePath?: string; configuredGithubUser?: string | null; repoCount?: number; scanDurationMs?: number; dataLastUpdated?: string; cacheSource?: string; cacheAgeSeconds?: number; fromCache: boolean; }> {
+export async function getStatus(options?: { stale?: boolean; refresh?: boolean; timeoutMs?: number }): Promise<{ repos: RepoStatus[]; source: 'sample' | 'local'; workspacePath?: string; configuredGithubUser?: string | null; repoCount?: number; scanDurationMs?: number; dataLastUpdated?: string; cacheSource?: string; cacheAgeSeconds?: number; fromCache: boolean; }> {
   if (USE_MOCK_API) {
     const sample = getMockRepos();
     return { repos: sample, source: 'sample', configuredGithubUser: null, workspacePath: undefined, repoCount: sample.length, dataLastUpdated: new Date().toISOString(), cacheSource: 'fresh-scan', cacheAgeSeconds: 0, fromCache: false };
@@ -129,8 +129,29 @@ export async function getStatus(options?: { stale?: boolean; refresh?: boolean }
   if (options?.refresh) params.set('refresh', 'true');
   const qs = params.size > 0 ? `?${params.toString()}` : '';
 
+  // Optional client-side timeout so a hung/long-running backend scan cannot
+  // leave the UI spinning indefinitely. The caller decides what to do with the
+  // resulting AbortError (e.g. fall back to the cached list already on screen).
+  let init: RequestInit | undefined;
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  if (options?.timeoutMs && options.timeoutMs > 0 && typeof AbortController !== 'undefined') {
+    const controller = new AbortController();
+    timeoutHandle = setTimeout(() => controller.abort(), options.timeoutMs);
+    init = { signal: controller.signal };
+  }
+
   const requestStartedAt = Date.now();
-  const data = await fetchJson<any>(`${API_BASE_URL}/status${qs}`);
+  let data: any;
+  try {
+    data = await fetchJson<any>(`${API_BASE_URL}/status${qs}`, init);
+  } catch (err) {
+    if (init?.signal?.aborted) {
+      throw new Error(`Repository scan timed out after ${Math.round((options?.timeoutMs ?? 0) / 1000)}s.`);
+    }
+    throw err;
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  }
   const rawRepos = Array.isArray(data?.data?.repos) ? data.data.repos.map(normalizeRepo) : [];
   const dedupedByPath = new Map<string, RepoStatus>();
   for (const repo of rawRepos) {

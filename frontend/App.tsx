@@ -132,14 +132,18 @@ function App() {
 
       if (cancelled) return;
 
-      // Phase 2: silently refresh in the background so we always end up with current data
+      // Phase 2: silently refresh in the background so we always end up with
+      // current data. This is the differential re-scan — it is indicated on the
+      // front page (header badge + Dashboard banner), never in a blocking
+      // drawer. A timeout keeps a hung backend scan from spinning forever; on
+      // timeout we simply keep showing the cached list already on screen.
       setIsBackgroundRefreshing(true);
       try {
-        const freshData = await getStatus({ refresh: true });
+        const freshData = await getStatus({ refresh: true, timeoutMs: 90_000 });
         if (cancelled) return;
         applyLocalData(freshData);
       } catch (refreshErr) {
-        console.warn('Background cache refresh failed.', refreshErr);
+        console.warn('Background differential re-scan did not complete; showing cached data.', refreshErr);
       } finally {
         if (!cancelled) setIsBackgroundRefreshing(false);
       }
@@ -306,9 +310,10 @@ function App() {
         </div>
       </header>
       <main>
-        <Dashboard 
+        <Dashboard
             repos={viewMode === 'github' && githubSource ? githubRepos : localRepos}
             loading={loading}
+            isBackgroundRefreshing={isBackgroundRefreshing}
             error={error}
             fetchRepoStatus={fetchRepoStatus}
             dataSource={viewMode === 'github' && githubSource ? githubSource : localSource}
