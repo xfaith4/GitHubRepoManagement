@@ -3991,6 +3991,101 @@ function Write-OperationsPromptRefinementHistory {
     return $record
 }
 
+function Write-OperationsPromptDispatchRecord {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PromptRefinementRunId,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DispatchRunId,
+
+        [Parameter()]
+        [string]$GitHubRepo = '',
+
+        [Parameter()]
+        [string]$Status = 'started',
+
+        [Parameter()]
+        [string]$StartedAt = '',
+
+        [Parameter()]
+        [string]$LocalPath = '',
+
+        [Parameter()]
+        [string]$BaseBranch = ''
+    )
+
+    if ([string]::IsNullOrWhiteSpace($PromptRefinementRunId) -or [string]::IsNullOrWhiteSpace($DispatchRunId)) {
+        return $null
+    }
+
+    $safeRepoName = $RepoName -replace '[\\/:*?"<>|]', '_'
+    $refineRoot = Join-Path $WorkspaceRoot 'output\roadmap-task-history\prompt-refinements'
+    $null = New-Item -ItemType Directory -Path $refineRoot -Force -ErrorAction SilentlyContinue
+    $dispatchFile = Join-Path $refineRoot "$safeRepoName.dispatches.jsonl"
+    $recordedAt = (Get-Date).ToUniversalTime().ToString('o')
+    if ([string]::IsNullOrWhiteSpace($StartedAt)) {
+        $StartedAt = $recordedAt
+    }
+
+    $record = @{
+        promptRefinementRunId = $PromptRefinementRunId
+        dispatchRunId         = $DispatchRunId
+        repoName              = $RepoName
+        githubRepo            = $GitHubRepo
+        status                = $Status
+        startedAt             = $StartedAt
+        recordedAt            = $recordedAt
+        localPath             = if (-not [string]::IsNullOrWhiteSpace($LocalPath)) { $LocalPath } else { $null }
+        baseBranch            = if (-not [string]::IsNullOrWhiteSpace($BaseBranch)) { $BaseBranch } else { $null }
+    }
+
+    try {
+        $dispatchJson = ConvertTo-Json -InputObject $record -Compress -Depth 5
+        Add-Content -LiteralPath $dispatchFile -Value $dispatchJson -Encoding UTF8 -ErrorAction Stop
+    }
+    catch {
+        Write-HostLog ("WARN operations.prompt.dispatch could not write dispatch history for repoName={0} promptRunId={1}: {2}" -f $RepoName, $PromptRefinementRunId, $_.Exception.Message)
+    }
+
+    return $record
+}
+
+function Get-OperationsPromptDispatchRecords {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoName
+    )
+
+    $safeRepoName = $RepoName -replace '[\\/:*?"<>|]', '_'
+    $refineRoot = Join-Path $WorkspaceRoot 'output\roadmap-task-history\prompt-refinements'
+    $dispatchFile = Join-Path $refineRoot "$safeRepoName.dispatches.jsonl"
+    if (-not (Test-Path -LiteralPath $dispatchFile -PathType Leaf)) {
+        return @()
+    }
+
+    try {
+        return @(
+            Get-Content -LiteralPath $dispatchFile -Encoding UTF8 -ErrorAction Stop |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+                ForEach-Object {
+                    try { ConvertFrom-JsonCompat -Json $_ } catch { $null }
+                } |
+                Where-Object { $null -ne $_ } |
+                Sort-Object {
+                    [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'startedAt' -Default '')
+                } -Descending
+        )
+    }
+    catch {
+        Write-HostLog ("WARN operations.prompt.dispatch could not read dispatch history for repoName={0}: {1}" -f $RepoName, $_.Exception.Message)
+        return @()
+    }
+}
+
 function Get-OperationsPromptRefinementHistory {
     param(
         [Parameter(Mandatory = $true)]
@@ -4009,13 +4104,61 @@ function Get-OperationsPromptRefinementHistory {
 
     try {
         $lines = @(Get-Content -LiteralPath $refineFile -Encoding UTF8 -ErrorAction Stop | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        $dispatchRecords = @(Get-OperationsPromptDispatchRecords -RepoName $RepoName)
+        $dispatchRecordsByPromptRunId = @{}
+        foreach ($dispatchRecord in $dispatchRecords) {
+            $promptRunId = [string](Get-ObjectPropertyValue -InputObject $dispatchRecord -PropertyName 'promptRefinementRunId' -Default '')
+            if ([string]::IsNullOrWhiteSpace($promptRunId)) {
+                continue
+            }
+
+            if (-not $dispatchRecordsByPromptRunId.ContainsKey($promptRunId)) {
+                $dispatchRecordsByPromptRunId[$promptRunId] = @()
+            }
+
+            $dispatchRecordsByPromptRunId[$promptRunId] = @($dispatchRecordsByPromptRunId[$promptRunId]) + @($dispatchRecord)
+        }
+
         return @($lines |
             Select-Object -Last ([Math]::Min($Limit, $lines.Count)) |
             ForEach-Object {
-                try { ConvertFrom-Json -InputObject $_ } catch { $null }
+                try { ConvertFrom-JsonCompat -Json $_ } catch { $null }
             } |
             Where-Object { $null -ne $_ } |
-            Sort-Object { [string]$_.createdAt } -Descending)
+            ForEach-Object {
+                $historyItem = $_
+                $historyRunId = [string](Get-ObjectPropertyValue -InputObject $historyItem -PropertyName 'runId' -Default '')
+                $linkedDispatchRecords = if (-not [string]::IsNullOrWhiteSpace($historyRunId) -and $dispatchRecordsByPromptRunId.ContainsKey($historyRunId)) {
+                    @($dispatchRecordsByPromptRunId[$historyRunId] | Sort-Object {
+                        [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'startedAt' -Default '')
+                    } -Descending)
+                }
+                else {
+                    @()
+                }
+
+                [pscustomobject]@{
+                    runId                 = $historyRunId
+                    createdAt             = [string](Get-ObjectPropertyValue -InputObject $historyItem -PropertyName 'createdAt' -Default '')
+                    repoName              = [string](Get-ObjectPropertyValue -InputObject $historyItem -PropertyName 'repoName' -Default $RepoName)
+                    selectedItemText      = [string](Get-ObjectPropertyValue -InputObject $historyItem -PropertyName 'selectedItemText' -Default '')
+                    selectedItemSection   = [string](Get-ObjectPropertyValue -InputObject $historyItem -PropertyName 'selectedItemSection' -Default '')
+                    selectionSource       = [string](Get-ObjectPropertyValue -InputObject $historyItem -PropertyName 'selectionSource' -Default 'roadmap-order')
+                    operatorInstructions  = Get-ObjectPropertyValue -InputObject $historyItem -PropertyName 'operatorInstructions' -Default $null
+                    additionalConstraints = @(Get-ObjectPropertyValue -InputObject $historyItem -PropertyName 'additionalConstraints' -Default @())
+                    emphasisAreas         = @(Get-ObjectPropertyValue -InputObject $historyItem -PropertyName 'emphasisAreas' -Default @())
+                    warningCount          = [int](Get-ObjectPropertyValue -InputObject $historyItem -PropertyName 'warningCount' -Default 0)
+                    dispatchCount         = @($linkedDispatchRecords).Count
+                    latestDispatchAt      = if (@($linkedDispatchRecords).Count -gt 0) {
+                        [string](Get-ObjectPropertyValue -InputObject $linkedDispatchRecords[0] -PropertyName 'startedAt' -Default '')
+                    }
+                    else {
+                        $null
+                    }
+                    dispatchRecords       = @($linkedDispatchRecords)
+                }
+            } |
+            Sort-Object { [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'createdAt' -Default '') } -Descending)
     }
     catch {
         Write-HostLog ("WARN operations.prompt.history could not read history for repoName={0}: {1}" -f $RepoName, $_.Exception.Message)
@@ -5751,6 +5894,7 @@ try {
                     $prompt     = if ($body.ContainsKey('prompt')     -and $body.prompt)     { [string]$body.prompt }     else { '' }
                     $localPath  = if ($body.ContainsKey('localPath')  -and $body.localPath)  { [string]$body.localPath }  else { '' }
                     $baseBranch = if ($body.ContainsKey('baseBranch') -and $body.baseBranch) { [string]$body.baseBranch } else { '' }
+                    $promptRefinementRunId = if ($body.ContainsKey('promptRefinementRunId') -and $body.promptRefinementRunId) { [string]$body.promptRefinementRunId } else { '' }
                     $follow     = if ($body.ContainsKey('follow'))  { [bool]$body.follow }  else { $false }
 
                     if ([string]::IsNullOrWhiteSpace($repoName)) {
@@ -5820,6 +5964,19 @@ try {
                     $historyItems = Get-RoadmapTaskHistory -Limit 1
                     $latest = if (@($historyItems).Count -gt 0) { $historyItems[0] } else { $null }
                     $runId = if ($null -ne $latest) { [string]$latest.runId } else { '' }
+                    $startedAt = (Get-Date).ToUniversalTime().ToString('o')
+
+                    if (-not [string]::IsNullOrWhiteSpace($promptRefinementRunId) -and -not [string]::IsNullOrWhiteSpace($runId)) {
+                        $null = Write-OperationsPromptDispatchRecord `
+                            -RepoName $repoName `
+                            -PromptRefinementRunId $promptRefinementRunId `
+                            -DispatchRunId $runId `
+                            -GitHubRepo $githubRepo `
+                            -Status 'started' `
+                            -StartedAt $startedAt `
+                            -LocalPath $localPath `
+                            -BaseBranch $baseBranch
+                    }
 
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
@@ -5830,7 +5987,7 @@ try {
                             runId      = $runId
                             status     = 'started'
                             githubRepo = $githubRepo
-                            startedAt  = (Get-Date).ToUniversalTime().ToString('o')
+                            startedAt  = $startedAt
                             message    = "Copilot task dispatched for $githubRepo"
                         }
                     }

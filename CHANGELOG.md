@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here.
 
+## 2026-06-09 — Release 1.8: Operations Prompt Dispatch Tracking
+
+### Changes
+
+- **`backend/api-host/Start-RepoManagementApiHost.ps1`** — added per-refinement dispatch-record persistence for Operations prompt history, merged those records into `GET /api/operations/prompt/history`, and taught `POST /api/roadmap/dispatch/execute` to accept an optional refinement run ID so Operations dispatches can be linked back to their originating prompt.
+- **`frontend/components/OperationsWorkspaceView.tsx`** — added direct dispatch from the Prompt Refinement panel, surfaced dispatch success/error state inline, and expanded the History tab to show linked dispatch runs per refinement entry.
+- **`frontend/types.ts`** and **`frontend/services/apiClient.ts`** — extended the Operations prompt history contract with dispatch metadata and allowed dispatch execution requests to carry an originating refinement run ID.
+- **`scripts/Invoke-ApiHostSmokeTest.ps1`** — added a regression check that synthesizes a linked dispatch record for a fresh refinement run and verifies `GET /api/operations/prompt/history` returns the merged dispatch metadata.
+- **`frontend/components/ApiDocsModal.tsx`**, **`backend/api-host/README.md`**, and **`ROADMAP.md`** — documented the linked dispatch-history contract and marked the Release 1.8 closeout slice truthfully.
+
+### Testing
+
+- **`npm run build`** — passed.
+- **PowerShell parser checks** — passed for `backend/api-host/Start-RepoManagementApiHost.ps1` and `scripts/Invoke-ApiHostSmokeTest.ps1`.
+- **`pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "$(pwd)"`** — passed, including the new Operations prompt-history dispatch-link regression.
+
 ## 2026-06-07 — Release 1.8: Prompt Refinement Panel
 
 ### Changes

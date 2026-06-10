@@ -1117,4 +1117,19 @@ export interface OperationsPromptHistoryItem {
   additionalConstraints: string[];
   emphasisAreas: string[];
   warningCount: number;
+  dispatchCount: number;
+  latestDispatchAt?: string | null;
+  dispatchRecords: OperationsPromptDispatchRecord[];
+}
+
+export interface OperationsPromptDispatchRecord {
+  promptRefinementRunId: string;
+  dispatchRunId: string;
+  repoName: string;
+  githubRepo: string;
+  status: 'started' | 'failed';
+  startedAt: string;
+  recordedAt: string;
+  localPath?: string | null;
+  baseBranch?: string | null;
 }

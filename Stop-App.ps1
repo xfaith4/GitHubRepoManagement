@@ -18,9 +18,11 @@ $ErrorActionPreference = 'SilentlyContinue'
 if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
     if ($PSCommandPath) {
         $WorkspaceRoot = Split-Path -Parent $PSCommandPath
-    } elseif ($MyInvocation.MyCommand.Path) {
+    }
+    elseif ($MyInvocation.MyCommand.Path) {
         $WorkspaceRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-    } else {
+    }
+    else {
         $WorkspaceRoot = (Get-Location).Path
     }
 }
@@ -46,7 +48,8 @@ function Stop-TrackedProcess {
         $proc = Get-Process -Id $TrackedPid -ErrorAction Stop
         $proc | Stop-Process -Force
         Write-Host "  $Name : stopped (PID $TrackedPid)." -ForegroundColor Green
-    } catch {
+    }
+    catch {
         Write-Host "  $Name : process $TrackedPid not found (already exited)." -ForegroundColor Gray
     }
 }
@@ -54,7 +57,7 @@ function Stop-TrackedProcess {
 Write-Host ''
 Write-Host 'Stopping GitHub Repo Management...' -ForegroundColor White
 Stop-TrackedProcess -TrackedPid ([int]$info.frontendPid) -Name 'Frontend'
-Stop-TrackedProcess -TrackedPid ([int]$info.backendPid)  -Name 'Backend '
+Stop-TrackedProcess -TrackedPid ([int]$info.backendPid) -Name 'Backend '
 
 # Also clean up the wrapper script generated for silent frontend launch
 $wrapperPath = Join-Path $WorkspaceRoot 'backend\modules\output\runtime\start-frontend.ps1'

@@ -487,16 +487,46 @@ try {
     Assert-Not503 -Name '/api/operations/prompt/refine' -Response $opsPromptRefineResponse
     $opsPromptRefineJson = $opsPromptRefineResponse.Json
     $opsPromptRefineOk = $false
+    $opsPromptHistoryDispatchFile = $null
+    $opsPromptHistoryDispatchBackup = $null
+    $opsPromptHistorySyntheticRunId = ''
+    $opsPromptHistoryLinkedRefineRunId = ''
     if ($opsPromptRefineJson -and $opsPromptRefineJson.success -eq $true) {
         $opsPromptRefineData = $opsPromptRefineJson.data
         $opsPromptRefineFieldsOk = $null -ne $opsPromptRefineData -and
+            ($opsPromptRefineData.PSObject.Properties.Name -contains 'runId') -and
             ($opsPromptRefineData.PSObject.Properties.Name -contains 'packet') -and
             ($opsPromptRefineData.PSObject.Properties.Name -contains 'refinedPrompt') -and
             ($opsPromptRefineData.PSObject.Properties.Name -contains 'warnings') -and
             ($opsPromptRefineData.PSObject.Properties.Name -contains 'applied')
         if ($opsPromptRefineFieldsOk) {
             $opsPromptRefineOk = $true
+            $opsPromptHistoryLinkedRefineRunId = [string]$opsPromptRefineData.runId
             Write-Host ("  /api/operations/prompt/refine -> warnings={0} selected='{1}'" -f @($opsPromptRefineData.warnings).Count, [string]$opsPromptRefineData.applied.selectedTaskText) -ForegroundColor DarkGray
+
+            if (-not [string]::IsNullOrWhiteSpace($opsPromptHistoryLinkedRefineRunId)) {
+                $safeRepoName = $workspaceRepoName -replace '[\\/:*?"<>|]', '_'
+                $opsPromptHistoryDispatchFile = Join-Path $WorkspaceRoot "output\roadmap-task-history\prompt-refinements\$safeRepoName.dispatches.jsonl"
+                if (Test-Path -LiteralPath $opsPromptHistoryDispatchFile) {
+                    $opsPromptHistoryDispatchBackup = Get-Content -LiteralPath $opsPromptHistoryDispatchFile -Raw -Encoding UTF8
+                }
+
+                $opsPromptHistorySyntheticRunId = "smoke-dispatch-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
+                $syntheticTimestamp = (Get-Date).ToUniversalTime().ToString('o')
+                $syntheticDispatchRecord = [ordered]@{
+                    promptRefinementRunId = $opsPromptHistoryLinkedRefineRunId
+                    dispatchRunId         = $opsPromptHistorySyntheticRunId
+                    repoName              = $workspaceRepoName
+                    githubRepo            = 'smoke-owner/smoke-repo'
+                    status                = 'started'
+                    startedAt             = $syntheticTimestamp
+                    recordedAt            = $syntheticTimestamp
+                    localPath             = $WorkspaceRoot
+                    baseBranch            = 'main'
+                }
+                $null = New-Item -ItemType Directory -Path (Split-Path -Path $opsPromptHistoryDispatchFile -Parent) -Force -ErrorAction SilentlyContinue
+                Add-Content -LiteralPath $opsPromptHistoryDispatchFile -Value ($syntheticDispatchRecord | ConvertTo-Json -Compress -Depth 5) -Encoding UTF8
+            }
         } else {
             Write-Host '  /api/operations/prompt/refine returned success=true but expected fields were missing' -ForegroundColor Yellow
         }
@@ -505,19 +535,43 @@ try {
         $opsPromptRefineOk = $true
     }
 
-    $opsPromptHistoryResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/operations/prompt/history?repoName=$([uri]::EscapeDataString($workspaceRepoName))&limit=5"
-    Assert-Not503 -Name '/api/operations/prompt/history' -Response $opsPromptHistoryResponse
-    $opsPromptHistoryJson = $opsPromptHistoryResponse.Json
-    $opsPromptHistoryOk = $false
-    if ($opsPromptHistoryJson -and $opsPromptHistoryJson.success -eq $true) {
-        $opsPromptHistoryData = $opsPromptHistoryJson.data
-        $opsPromptHistoryOk = $null -ne $opsPromptHistoryData -and ($opsPromptHistoryData.PSObject.Properties.Name -contains 'items')
-        if ($opsPromptHistoryOk) {
-            Write-Host ("  /api/operations/prompt/history -> {0} item(s)" -f @($opsPromptHistoryData.items).Count) -ForegroundColor DarkGray
+    try {
+        $opsPromptHistoryResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/operations/prompt/history?repoName=$([uri]::EscapeDataString($workspaceRepoName))&limit=5"
+        Assert-Not503 -Name '/api/operations/prompt/history' -Response $opsPromptHistoryResponse
+        $opsPromptHistoryJson = $opsPromptHistoryResponse.Json
+        $opsPromptHistoryOk = $false
+        if ($opsPromptHistoryJson -and $opsPromptHistoryJson.success -eq $true) {
+            $opsPromptHistoryData = $opsPromptHistoryJson.data
+            $opsPromptHistoryOk = $null -ne $opsPromptHistoryData -and ($opsPromptHistoryData.PSObject.Properties.Name -contains 'items')
+            if ($opsPromptHistoryOk) {
+                if (-not [string]::IsNullOrWhiteSpace($opsPromptHistoryLinkedRefineRunId) -and -not [string]::IsNullOrWhiteSpace($opsPromptHistorySyntheticRunId)) {
+                    $matchingPromptHistory = @($opsPromptHistoryData.items | Where-Object { [string]$_.runId -eq $opsPromptHistoryLinkedRefineRunId } | Select-Object -First 1)
+                    if (@($matchingPromptHistory).Count -eq 0) {
+                        throw '/api/operations/prompt/history did not return the newly created refinement run.'
+                    }
+
+                    $historyDispatchCount = [int]($matchingPromptHistory[0].dispatchCount)
+                    $historyDispatchRecords = @($matchingPromptHistory[0].dispatchRecords)
+                    $historySyntheticMatch = @($historyDispatchRecords | Where-Object { [string]$_.dispatchRunId -eq $opsPromptHistorySyntheticRunId })
+                    if ($historyDispatchCount -lt 1 -or @($historySyntheticMatch).Count -eq 0) {
+                        throw '/api/operations/prompt/history did not surface linked dispatch records for the refinement run.'
+                    }
+                }
+                Write-Host ("  /api/operations/prompt/history -> {0} item(s)" -f @($opsPromptHistoryData.items).Count) -ForegroundColor DarkGray
+            }
+        }
+        if (-not $opsPromptHistoryOk) {
+            throw '/api/operations/prompt/history returned an unexpected payload shape'
         }
     }
-    if (-not $opsPromptHistoryOk) {
-        throw '/api/operations/prompt/history returned an unexpected payload shape'
+    finally {
+        if ($opsPromptHistoryDispatchFile) {
+            if ($null -eq $opsPromptHistoryDispatchBackup) {
+                Remove-Item -LiteralPath $opsPromptHistoryDispatchFile -Force -ErrorAction SilentlyContinue
+            } else {
+                Set-Content -LiteralPath $opsPromptHistoryDispatchFile -Value $opsPromptHistoryDispatchBackup -Encoding UTF8
+            }
+        }
     }
 
     $copilotHistoryResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/copilot-task/history?limit=5"

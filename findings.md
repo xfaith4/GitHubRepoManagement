@@ -1,5 +1,12 @@
 # Findings
 
+## 2026-06-09 (Release 1.8: Operations Prompt Dispatch Tracking)
+
+- The next unfinished Release 1.8 seam was not a new 1.9 capability. The live repo already had prompt refinement history and an older dispatch path, but there was no durable link between a refined Operations prompt and the Copilot run it launched.
+- Adding a second history store inside the route body would have made the feature brittle. The safer approach was to append dispatch records alongside the existing per-repo refinement JSONL and merge them in `GET /api/operations/prompt/history` by refinement `runId`.
+- The Operations UI did not need a brand-new dispatch modal to close this gap. The refined prompt was already editable in-panel, so the smallest viable slice was to add an explicit Dispatch action there while still requiring operator intent and honoring readiness/maturity gating in the UI.
+- The first verification failure was not in the product code. The new smoke regression harness used `Split-Path -LiteralPath ... -Parent`, which PowerShell rejects as an invalid parameter combination; changing that to `-Path` fixed the harness and the full host smoke passed.
+
 ## 2026-05-28 (Roadmap Viewer Task-Source Mismatch)
 
 - The ROADMAP modal had a real contract bug: the lower pane could load a local roadmap file successfully while the upper Preview Task / Start Task actions still attempted to rediscover roadmap content through the GitHub repository field.

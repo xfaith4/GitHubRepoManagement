@@ -4,6 +4,7 @@ import {
   type DocAuditIndex,
   type RoadmapAuditIndex,
   type OperationsRepoEntry,
+  type DispatchExecuteResult,
   type OperationsReposResult,
   type OperationsPromptHistoryItem,
   type OperationsPromptRefineResult,
@@ -12,7 +13,7 @@ import {
   type RepoLifecycleState,
   type RoadmapContent,
 } from '../types';
-import { getOperationsPromptHistory, getOperationsRepoDetail, getReadmeContent, getRoadmapContent, refineOperationsPrompt } from '../services/apiClient';
+import { executeRoadmapDispatch, getOperationsPromptHistory, getOperationsRepoDetail, getReadmeContent, getRoadmapContent, refineOperationsPrompt } from '../services/apiClient';
 import { BranchIcon, DatabaseIcon, HealthIcon, PullRequestIcon, RefreshIcon, RoadmapIcon, SpinnerIcon } from './icons';
 
 interface OperationsWorkspaceViewProps {
@@ -158,6 +159,9 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
   const [promptHistory, setPromptHistory] = useState<OperationsPromptHistoryItem[]>([]);
   const [promptHistoryLoading, setPromptHistoryLoading] = useState(false);
   const [promptTab, setPromptTab] = useState<'refine' | 'history'>('refine');
+  const [dispatchLoading, setDispatchLoading] = useState(false);
+  const [dispatchError, setDispatchError] = useState<string | null>(null);
+  const [dispatchResult, setDispatchResult] = useState<DispatchExecuteResult | null>(null);
 
   const filteredEntries = useMemo(() => {
     const lower = filterText.trim().toLowerCase();
@@ -302,7 +306,29 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
     setRefinedPromptCopied(false);
     setPromptHistory([]);
     setPromptTab('refine');
+    setDispatchLoading(false);
+    setDispatchError(null);
+    setDispatchResult(null);
   }, [selectedEntry?.repoId]);
+
+  const dispatchReady = selectedEntry?.dispatchReadiness === 'ready';
+  const maturityReady = selectedEntry?.maturityLevel === 'L3-Contract-Ready' || selectedEntry?.maturityLevel === 'L4-Orchestration-Ready';
+  const canDispatchRefinedPrompt = Boolean(
+    selectedEntry &&
+    promptRefineResult?.runId &&
+    (editedPrompt || refinedPrompt).trim() &&
+    dispatchReady &&
+    maturityReady,
+  );
+  const dispatchBlockedReason = !selectedEntry
+    ? 'Select a repo to dispatch.'
+    : !promptRefineResult?.runId
+      ? 'Generate a refined prompt first so dispatch can be linked to its history entry.'
+      : !dispatchReady
+        ? 'Dispatch is blocked until this repo is marked ready in the current assessment.'
+        : !maturityReady
+          ? 'Dispatch requires roadmap maturity L3-Contract-Ready or higher.'
+          : null;
 
   const parseMultilineList = (value: string): string[] => (
     value
@@ -322,6 +348,8 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
     setRefineWarnings([]);
     setPromptHistory([]);
     setRefinedPromptCopied(false);
+    setDispatchError(null);
+    setDispatchResult(null);
 
     try {
       const result = await refineOperationsPrompt({
@@ -377,6 +405,30 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
       window.setTimeout(() => setRefinedPromptCopied(false), 1500);
     } catch {
       setRefinedPromptCopied(false);
+    }
+  };
+
+  const handleDispatchRefinedPrompt = async () => {
+    if (!selectedEntry || !promptRefineResult?.runId || !canDispatchRefinedPrompt) {
+      return;
+    }
+
+    setDispatchLoading(true);
+    setDispatchError(null);
+    setDispatchResult(null);
+    try {
+      const result = await executeRoadmapDispatch(selectedEntry.repoName, editedPrompt || refinedPrompt, {
+        localPath: selectedEntry.localPath || undefined,
+        promptRefinementRunId: promptRefineResult.runId,
+      });
+      setDispatchResult(result);
+      setPromptTab('history');
+      await handleLoadPromptHistory();
+      onRefresh();
+    } catch (err) {
+      setDispatchError(err instanceof Error ? err.message : 'Failed to dispatch refined prompt.');
+    } finally {
+      setDispatchLoading(false);
     }
   };
 
@@ -983,11 +1035,37 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                         >
                           {refinedPromptCopied ? 'Copied' : 'Copy Prompt'}
                         </button>
+                        <button
+                          onClick={handleDispatchRefinedPrompt}
+                          disabled={dispatchLoading || !canDispatchRefinedPrompt}
+                          className="inline-flex items-center gap-2 rounded-md border border-emerald-700/50 bg-emerald-950/40 px-3 py-1.5 text-sm text-emerald-100 hover:bg-emerald-900/50 disabled:opacity-50 transition-colors"
+                        >
+                          {dispatchLoading ? <SpinnerIcon className="w-4 h-4" /> : null}
+                          {dispatchLoading ? 'Dispatching...' : 'Dispatch to Copilot'}
+                        </button>
                       </div>
+
+                      {dispatchBlockedReason && refinedPrompt && (
+                        <div className="rounded-md border border-amber-700/40 bg-amber-950/20 px-3 py-2 text-xs text-amber-200">
+                          {dispatchBlockedReason}
+                        </div>
+                      )}
 
                       {refineError && (
                         <div className="rounded-md border border-red-700/40 bg-red-950/20 px-3 py-2 text-xs text-red-200">
                           {refineError}
+                        </div>
+                      )}
+
+                      {dispatchError && (
+                        <div className="rounded-md border border-red-700/40 bg-red-950/20 px-3 py-2 text-xs text-red-200">
+                          {dispatchError}
+                        </div>
+                      )}
+
+                      {dispatchResult && (
+                        <div className="rounded-md border border-emerald-700/40 bg-emerald-950/20 px-3 py-2 text-xs text-emerald-200">
+                          Dispatched run <span className="font-mono">{dispatchResult.runId}</span> for <span className="font-mono">{dispatchResult.githubRepo}</span> at {new Date(dispatchResult.startedAt).toLocaleString()}.
                         </div>
                       )}
 
@@ -1058,8 +1136,22 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                                 <div className="italic text-gray-400">+ {item.operatorInstructions}</div>
                               )}
                               <div className="text-gray-500">
-                                Constraints: {item.additionalConstraints.length} • Emphasis: {item.emphasisAreas.length} • Warnings: {item.warningCount}
+                                Constraints: {item.additionalConstraints.length} • Emphasis: {item.emphasisAreas.length} • Warnings: {item.warningCount} • Dispatches: {item.dispatchCount}
                               </div>
+                              {item.dispatchRecords.length > 0 && (
+                                <div className="space-y-1 pt-1">
+                                  {item.dispatchRecords.map(record => (
+                                    <div key={`${item.runId}-${record.dispatchRunId}`} className="rounded border border-emerald-900/30 bg-emerald-950/10 px-2 py-1 text-[11px] text-gray-300">
+                                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                                        <span className="font-mono text-gray-500">{record.dispatchRunId}</span>
+                                        <span className="text-emerald-300">{record.status}</span>
+                                      </div>
+                                      <div className="text-gray-400">{record.githubRepo}</div>
+                                      <div className="text-gray-500">{new Date(record.startedAt).toLocaleString()}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </li>
                           ))}
                         </ul>

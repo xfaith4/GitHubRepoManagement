@@ -1,5 +1,19 @@
 # Progress
 
+## 2026-06-09 (Release 1.8: Operations Prompt Dispatch Tracking)
+
+- Reconciled the active roadmap and confirmed the remaining Release 1.8 seam was not a new 1.9 feature but the missing linkage between Operations prompt refinement history and actual dispatch runs.
+- Extended `POST /api/roadmap/dispatch/execute` so Operations dispatches can carry an originating prompt-refinement `runId`, and persisted linked dispatch records per repo under `output/roadmap-task-history/prompt-refinements/`.
+- Updated `GET /api/operations/prompt/history` to merge those dispatch records back into each refinement entry, exposing dispatch counts, timestamps, and per-run metadata.
+- Added direct dispatch to the Operations Prompt Refinement panel and expanded the History tab so operators can see which refined prompt launches actually went to Copilot.
+- Updated smoke coverage and docs so the linked-history contract is regression-covered and described in the roadmap/API surfaces.
+
+### Verification
+
+- `npm run build`
+- PowerShell parser diagnostics for `backend/api-host/Start-RepoManagementApiHost.ps1` and `scripts/Invoke-ApiHostSmokeTest.ps1`
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "$(pwd)"`
+
 ## 2026-06-07 (Release 1.8: Prompt Refinement Panel)
 
 - Reconciled the active Release 1.8 prompt-refinement work and carried the feature from foundation-level route wiring to the full operator review workflow.

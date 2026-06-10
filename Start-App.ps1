@@ -93,39 +93,41 @@ $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
     if ($PSCommandPath) {
         $WorkspaceRoot = Split-Path -Parent $PSCommandPath
-    } elseif ($MyInvocation.MyCommand.Path) {
+    }
+    elseif ($MyInvocation.MyCommand.Path) {
         $WorkspaceRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-    } else {
+    }
+    else {
         $WorkspaceRoot = (Get-Location).Path
     }
 }
 
 $WorkspaceRoot = [System.IO.Path]::GetFullPath($WorkspaceRoot)
 
-$apiUrl      = "http://${ApiHost}:${ApiPort}"
+$apiUrl = "http://${ApiHost}:${ApiPort}"
 $frontendUrl = "http://localhost:${FrontendPort}"
 
 # Runtime / log directories
-$runtimeDir  = Join-Path $WorkspaceRoot 'backend\modules\output\runtime'
-$logDir      = Join-Path $WorkspaceRoot 'backend\modules\output\logs'
+$runtimeDir = Join-Path $WorkspaceRoot 'backend\modules\output\runtime'
+$logDir = Join-Path $WorkspaceRoot 'backend\modules\output\logs'
 foreach ($d in @($runtimeDir, $logDir)) {
     if (-not (Test-Path -LiteralPath $d)) {
         $null = New-Item -ItemType Directory -Path $d -Force
     }
 }
 
-$pidFile         = Join-Path $runtimeDir 'app.pid'
-$backendLog      = Join-Path $logDir 'backend.log'
-$frontendLog     = Join-Path $logDir 'frontend.log'
-$backendScript   = Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1'
-$frontendDir     = Join-Path $WorkspaceRoot 'frontend'
-$distIndexHtml   = Join-Path $frontendDir 'dist\index.html'
+$pidFile = Join-Path $runtimeDir 'app.pid'
+$backendLog = Join-Path $logDir 'backend.log'
+$frontendLog = Join-Path $logDir 'frontend.log'
+$backendScript = Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1'
+$frontendDir = Join-Path $WorkspaceRoot 'frontend'
+$distIndexHtml = Join-Path $frontendDir 'dist\index.html'
 $supportsWindowStyle = ($PSVersionTable.PSEdition -eq 'Desktop') -or (
     (Get-Variable -Name 'IsWindows' -ErrorAction SilentlyContinue) -and [bool](Get-Variable -Name 'IsWindows' -ValueOnly)
 )
 
 function Write-Step { param([string]$Msg) Write-Host "  $Msg" -ForegroundColor Cyan }
-function Write-Ok   { param([string]$Msg) Write-Host "  [OK] $Msg" -ForegroundColor Green }
+function Write-Ok { param([string]$Msg) Write-Host "  [OK] $Msg" -ForegroundColor Green }
 function Write-Fail { param([string]$Msg) Write-Host "  [!!] $Msg" -ForegroundColor Red }
 
 function Convert-ToShellLiteral {
@@ -151,7 +153,8 @@ function Start-DetachedProcess {
     $stdoutTarget = if ($RedirectStandardOutput) { Convert-ToShellLiteral -Value $RedirectStandardOutput } else { '/dev/null' }
     $stderrClause = if ($RedirectStandardError) {
         "2>> $(Convert-ToShellLiteral -Value $RedirectStandardError)"
-    } else {
+    }
+    else {
         '2>&1'
     }
     $launcherPrefix = if (Get-Command -Name 'setsid' -ErrorAction SilentlyContinue) { 'setsid nohup' } else { 'nohup' }
@@ -188,7 +191,7 @@ function Start-ManagedProcess {
     }
 
     $params = @{
-        FilePath = $FilePath
+        FilePath     = $FilePath
         ArgumentList = $ArgumentList
     }
 
@@ -225,13 +228,14 @@ function New-FrontendWrapperScript {
     )
 
     $npmCommand = if ($FrontendLogPath) {
-@"
+        @"
 `$env:VITE_API_PROXY_TARGET = '$ApiUrl'
 Set-Location '$FrontendDir'
 npm run dev -- --port $FrontendPort *>&1 | Out-File -FilePath '$FrontendLogPath' -Encoding UTF8 -Append
 "@
-    } else {
-@"
+    }
+    else {
+        @"
 `$env:VITE_API_PROXY_TARGET = '$ApiUrl'
 Set-Location '$FrontendDir'
 npm run dev -- --port $FrontendPort
@@ -256,7 +260,8 @@ function Get-ListeningProcessIds {
             if ($connections.Count -gt 0) {
                 return @($connections | Select-Object -ExpandProperty OwningProcess -Unique)
             }
-        } catch { }
+        }
+        catch { }
     }
 
     $ssCommand = Get-Command -Name 'ss' -ErrorAction SilentlyContinue
@@ -318,13 +323,15 @@ function Stop-PortListeners {
         try {
             $process = Get-Process -Id $listenerPid -ErrorAction Stop
             $processLabel = "$($process.ProcessName) (PID $listenerPid)"
-        } catch { }
+        }
+        catch { }
 
         Write-Step "$ServiceName needs port $LocalPort. Terminating $processLabel."
 
         try {
             Stop-Process -Id $listenerPid -Force -ErrorAction Stop
-        } catch {
+        }
+        catch {
             throw "$ServiceName needs port $LocalPort, but $processLabel could not be terminated. $($_.Exception.Message)"
         }
 
@@ -366,7 +373,8 @@ if (-not (Test-Path -LiteralPath (Join-Path $frontendDir 'node_modules'))) {
     try {
         npm install --silent
         if ($LASTEXITCODE -ne 0) { throw 'npm install failed.' }
-    } finally {
+    }
+    finally {
         Pop-Location
     }
     Write-Ok 'Frontend dependencies installed.'
@@ -379,7 +387,8 @@ $servingFromDist = $false
 
 if ($Dev) {
     Write-Step 'Dev mode: Vite dev server will be used (skipping production build).'
-} else {
+}
+else {
     $needsBuild = $Rebuild -or -not (Test-Path -LiteralPath $distIndexHtml)
     if ($needsBuild) {
         $buildReason = if ($Rebuild) { 'forced by -Rebuild' } else { 'frontend/dist/ not found' }
@@ -388,7 +397,8 @@ if ($Dev) {
         try {
             npm run build
             if ($LASTEXITCODE -ne 0) { throw 'npm run build failed. Check frontend build errors above.' }
-        } finally {
+        }
+        finally {
             Pop-Location
         }
         Write-Ok 'Frontend built to frontend/dist/.'
@@ -397,7 +407,8 @@ if ($Dev) {
     if (Test-Path -LiteralPath $distIndexHtml) {
         $servingFromDist = $true
         Write-Ok 'Production build found - API host will serve the static frontend bundle.'
-    } else {
+    }
+    else {
         Write-Step 'No production build available - falling back to Vite dev server.'
     }
 }
@@ -414,28 +425,29 @@ if ($Mode -eq 'debug') {
     $proc = Start-ManagedProcess `
         -FilePath 'pwsh' `
         -ArgumentList @(
-            '-NoProfile', '-ExecutionPolicy', 'Bypass',
-            '-File', $backendScript,
-            '-WorkspaceRoot', $WorkspaceRoot,
-            '-BindAddress', $ApiHost,
-            '-Port', $ApiPort,
-            '-LogPath', $backendLog
-        ) `
+        '-NoProfile', '-ExecutionPolicy', 'Bypass',
+        '-File', $backendScript,
+        '-WorkspaceRoot', $WorkspaceRoot,
+        '-BindAddress', $ApiHost,
+        '-Port', $ApiPort,
+        '-LogPath', $backendLog
+    ) `
         -WindowStyle Normal `
         -PassThru
     $backendPid = if ($supportsWindowStyle) { 0 } else { $proc.Id }
-} else {
+}
+else {
     # Silent: hidden window, output redirected to log file
     $proc = Start-ManagedProcess `
         -FilePath 'pwsh' `
         -ArgumentList @(
-            '-NoProfile', '-ExecutionPolicy', 'Bypass',
-            '-File', $backendScript,
-            '-WorkspaceRoot', $WorkspaceRoot,
-            '-BindAddress', $ApiHost,
-            '-Port', $ApiPort,
-            '-LogPath', $backendLog
-        ) `
+        '-NoProfile', '-ExecutionPolicy', 'Bypass',
+        '-File', $backendScript,
+        '-WorkspaceRoot', $WorkspaceRoot,
+        '-BindAddress', $ApiHost,
+        '-Port', $ApiPort,
+        '-LogPath', $backendLog
+    ) `
         -WindowStyle Hidden `
         -RedirectStandardOutput $backendLog `
         -RedirectStandardError (Join-Path $logDir 'backend-err.log') `
@@ -455,7 +467,8 @@ for ($i = 0; $i -lt 30; $i++) {
         $null = Invoke-RestMethod -Uri "$apiUrl/health/live" -Method Get -TimeoutSec 2
         $ready = $true
         break
-    } catch {
+    }
+    catch {
         Start-Sleep -Milliseconds 500
     }
 }
@@ -479,7 +492,8 @@ if ($servingFromDist) {
     $frontendPid = 0
     $frontendUrl = $apiUrl
     Write-Ok "Static frontend available at $frontendUrl"
-} else {
+}
+else {
     Write-Step "Starting Vite dev server ($frontendUrl) in $Mode mode..."
     Stop-PortListeners -LocalPort $FrontendPort -ServiceName 'Frontend'
 
@@ -493,7 +507,8 @@ if ($servingFromDist) {
                 -WindowStyle Normal `
                 -PassThru
             $frontendPid = 0
-        } else {
+        }
+        else {
             $wrapperPath = Join-Path $runtimeDir 'start-frontend.ps1'
             New-FrontendWrapperScript -WrapperPath $wrapperPath -ApiUrl $apiUrl -FrontendDir $frontendDir -FrontendPort $FrontendPort
             $proc = Start-ManagedProcess `
@@ -503,7 +518,8 @@ if ($servingFromDist) {
             $frontendPid = $proc.Id
             Write-Ok "Frontend started (PID $frontendPid)."
         }
-    } else {
+    }
+    else {
         # Write a tiny wrapper so we can set env vars before npm run dev in the hidden window
         $wrapperPath = Join-Path $runtimeDir 'start-frontend.ps1'
         New-FrontendWrapperScript -WrapperPath $wrapperPath -ApiUrl $apiUrl -FrontendDir $frontendDir -FrontendPort $FrontendPort -FrontendLogPath $frontendLog
@@ -528,7 +544,8 @@ if ($servingFromDist) {
             $null = Invoke-WebRequest -Uri $frontendUrl -Method Get -TimeoutSec 2 -UseBasicParsing
             $feReady = $true
             break
-        } catch {
+        }
+        catch {
             Start-Sleep -Milliseconds 500
         }
     }
@@ -547,13 +564,13 @@ if ($servingFromDist) {
 # 7. Write PID file for Stop-App.ps1
 # ------------------------------------------------------------------
 @{
-    backendPid     = $backendPid
-    frontendPid    = $frontendPid
-    mode           = $Mode
+    backendPid      = $backendPid
+    frontendPid     = $frontendPid
+    mode            = $Mode
     servingFromDist = $servingFromDist
-    apiUrl         = $apiUrl
-    frontendUrl    = $frontendUrl
-    startedAt      = (Get-Date).ToString('o')
+    apiUrl          = $apiUrl
+    frontendUrl     = $frontendUrl
+    startedAt       = (Get-Date).ToString('o')
 } | ConvertTo-Json | Set-Content -LiteralPath $pidFile -Encoding UTF8
 
 # ------------------------------------------------------------------
@@ -563,7 +580,8 @@ if (-not $NoBrowser) {
     try {
         Start-Process $frontendUrl
         Write-Ok "Browser opened at $frontendUrl"
-    } catch {
+    }
+    catch {
         Write-Step "App is ready, but automatic browser launch failed: $($_.Exception.Message)"
         Write-Host "  Open manually: $frontendUrl" -ForegroundColor Yellow
     }
@@ -575,7 +593,8 @@ Write-Host '  App is running.' -ForegroundColor Green
 if ($Mode -eq 'silent') {
     Write-Host "  Logs : $logDir" -ForegroundColor Gray
     Write-Host '  Stop : .\Stop-App.ps1' -ForegroundColor Gray
-} else {
+}
+else {
     Write-Host '  Close the terminal windows to stop.' -ForegroundColor Gray
 }
 if ($servingFromDist) {

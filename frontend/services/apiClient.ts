@@ -921,12 +921,13 @@ export async function checkRoadmapDispatch(
 export async function executeRoadmapDispatch(
   repoName: string,
   prompt: string,
-  options?: { localPath?: string; baseBranch?: string; follow?: boolean }
+  options?: { localPath?: string; baseBranch?: string; follow?: boolean; promptRefinementRunId?: string }
 ): Promise<DispatchExecuteResult> {
   const body: Record<string, unknown> = { repoName, prompt };
   if (options?.localPath) body.localPath = options.localPath;
   if (options?.baseBranch) body.baseBranch = options.baseBranch;
   if (options?.follow !== undefined) body.follow = options.follow;
+  if (options?.promptRefinementRunId) body.promptRefinementRunId = options.promptRefinementRunId;
   const data = await postJson<any>('/roadmap/dispatch/execute', body);
   return (data?.data ?? data ?? {}) as DispatchExecuteResult;
 }
@@ -1550,5 +1551,18 @@ export async function getOperationsPromptHistory(repoName: string, limit = 20): 
     additionalConstraints: Array.isArray(item?.additionalConstraints) ? item.additionalConstraints.map((value: unknown) => String(value)) : [],
     emphasisAreas: Array.isArray(item?.emphasisAreas) ? item.emphasisAreas.map((value: unknown) => String(value)) : [],
     warningCount: Number(item?.warningCount ?? 0),
+    dispatchCount: Number(item?.dispatchCount ?? 0),
+    latestDispatchAt: item?.latestDispatchAt ? String(item.latestDispatchAt) : null,
+    dispatchRecords: Array.isArray(item?.dispatchRecords) ? item.dispatchRecords.map((record: any) => ({
+      promptRefinementRunId: String(record?.promptRefinementRunId ?? ''),
+      dispatchRunId: String(record?.dispatchRunId ?? ''),
+      repoName: String(record?.repoName ?? trimmedRepoName),
+      githubRepo: String(record?.githubRepo ?? ''),
+      status: String(record?.status ?? 'started') as OperationsPromptHistoryItem['dispatchRecords'][number]['status'],
+      startedAt: String(record?.startedAt ?? ''),
+      recordedAt: String(record?.recordedAt ?? ''),
+      localPath: record?.localPath ? String(record.localPath) : null,
+      baseBranch: record?.baseBranch ? String(record.baseBranch) : null,
+    })) : [],
   }));
 }
