@@ -1,0 +1,68 @@
+{
+  "_comment": "Example configuration for tools/Test-RoadmapStructure.ps1. Copy this file to 'roadmap-validation.config.json' (same folder, or tools/) to activate it, or pass it explicitly with -Config. Every key is optional; omitted keys fall back to the built-in defaults shown here. Unknown keys are ignored. See docs/operations/roadmap-validation.md.",
+
+  "requiredSections": [
+    "Goal",
+    "Product outcomes",
+    "Engineering milestones",
+    "Acceptance criteria"
+  ],
+
+  "activeReleaseRequiredSections": [
+    "Validation plan",
+    "Risks and blockers",
+    "Dependencies",
+    "Known issues",
+    "Traceability"
+  ],
+
+  "allowedStatuses": [
+    "planned",
+    "active",
+    "blocked",
+    "validation",
+    "done",
+    "archived"
+  ],
+
+  "statusAliases": {
+    "pending": "planned",
+    "in progress": "active",
+    "in-progress": "active",
+    "wip": "active",
+    "complete": "done",
+    "completed": "done",
+    "shipped": "done",
+    "released": "done"
+  },
+
+  "requiredReleases": ["1.2"],
+
+  "maxActiveRoadmapLines": 900,
+  "maxFutureReleaseLines": 120,
+
+  "allowImmediateNextFocus": false,
+  "requireImplementationStateVocabulary": false,
+  "treatDoneWithUncheckedCriteriaAsError": false,
+  "flagMissingStatusOnFutureReleases": false,
+  "flagFutureReleaseRecommendations": false,
+
+  "validationSignals": [
+    "npm test", "npm run test", "npm run build", "npm run lint", "dotnet test",
+    "pytest", "invoke-pester", "pester", "psscriptanalyzer", "manual smoke test",
+    "smoke test", "ci", "github actions", "deployment verification",
+    "api smoke", "frontend smoke", "backend health check", "playwright"
+  ],
+
+  "weakAcceptanceTerms": [
+    "works", "work", "done", "complete", "completed", "good enough", "polish",
+    "improve", "improved", "finalize", "finalized", "cleanup", "clean up",
+    "misc", "tbd", "etc", "various"
+  ],
+
+  "pipelineKeywords": [
+    "bug", "regression", "failed", "failure", "ci", "build", "test", "lint",
+    "security", "audit", "vulnerability", "dependency", "blocked", "rollback",
+    "deployment", "smoke"
+  ]
+}

@@ -37,6 +37,28 @@
     finding is reported. Default is exit 0 regardless (warnings are
     informational).
 
+.PARAMETER Config
+    Optional path to a roadmap-validation.config.json file. When omitted, the
+    script auto-discovers config at standards/roadmap/roadmap-validation.config.json
+    or tools/roadmap-validation.config.json (relative to the roadmap or the
+    script). When supplied explicitly and the file is missing or malformed, an
+    RQ000-CONFIG-ERROR finding is raised (which only fails the build under
+    -FailOnError). When no config is present anywhere, built-in defaults apply
+    and behavior is identical to the original structure linter plus the new
+    quality layer's default rules.
+
+.DESCRIPTION ADDENDUM — Roadmap-quality layer (RQ rules)
+    On top of the structural R-rules above, this script evaluates roadmap
+    *execution quality* against the canonical release contract documented in
+    docs/reference/roadmap-contracts.md:
+      - explicit release Status parsing (planned/active/blocked/validation/
+        done/archived, with pending/in-progress/complete aliases)
+      - validation-plan presence and concreteness
+      - acceptance-criteria quality (vague-term heuristics)
+      - risks/blockers, dependencies, known-issues/pipeline-feedback sections
+      - traceability to issues, PRs, tests, ADRs, workflows, or docs
+    These RQ rules are additive and never remove or rename existing fields.
+
 .EXAMPLE
     pwsh ./tools/Test-RoadmapStructure.ps1 -Path ./ROADMAP.md
 
@@ -47,9 +69,14 @@
     # CI gate (will fail the build only on error-severity findings)
     pwsh ./tools/Test-RoadmapStructure.ps1 -FailOnError
 
+.EXAMPLE
+    # Use a repo-specific config to override required sections / thresholds
+    pwsh ./tools/Test-RoadmapStructure.ps1 -Config ./standards/roadmap/roadmap-validation.config.json
+
 .NOTES
     No external modules required. Uses only built-in .NET types and core
-    cmdlets so it runs anywhere PowerShell does.
+    cmdlets so it runs anywhere PowerShell does (Windows PowerShell 5.1 and
+    PowerShell 7+).
 #>
 
 [CmdletBinding()]
@@ -57,7 +84,12 @@ param(
     [Parameter()][string]$Path = './ROADMAP.md',
     [Parameter()][string]$JsonOut = '',
     [Parameter()][string]$CsvOut = '',
-    [Parameter()][switch]$FailOnError
+    [Parameter()][switch]$FailOnError,
+    [Parameter()][string]$Config = '',
+    # Dot-source the script with this switch to load its functions without
+    # running the validation pass (used by the Pester suite). Mirrors the
+    # convention used elsewhere in this repo.
+    [Parameter()][switch]$LoadFunctionsOnly
 )
 
 # StrictMode Latest catches typos and missing properties — keep it on.
@@ -65,18 +97,92 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # ---------------------------------------------------------------------------
-# Constants — each finding carries a stable code so consumers can suppress.
+# Defaults — each finding carries a stable code so consumers can suppress.
+# These are the built-in defaults. A roadmap-validation.config.json file (when
+# present) is merged over them by Get-RoadmapValidationConfig so repo-specific
+# opinions can be expressed as data rather than code edits.
 # ---------------------------------------------------------------------------
 
-$script:RequiredReleaseSections = @(
-    'Goal',
-    'Product outcomes',
-    'Engineering milestones',
-    'Acceptance criteria'
-)
+# Canonical default config. Merge-RoadmapValidationConfig overlays file values.
+# A plain hashtable (not [ordered]) so dot-access works under StrictMode Latest
+# and the alias map exposes .Contains()/indexing.
+$script:DefaultConfig = @{
+    # Sub-sections every release block must carry (existing R004 behavior).
+    requiredSections = @(
+        'Goal',
+        'Product outcomes',
+        'Engineering milestones',
+        'Acceptance criteria'
+    )
+    # Sections strongly expected on active/blocked/validation execution blocks.
+    activeReleaseRequiredSections = @(
+        'Validation plan',
+        'Risks and blockers',
+        'Dependencies',
+        'Known issues',
+        'Traceability'
+    )
+    # Canonical statuses plus the aliases used by the legacy template
+    # (pending / in progress / complete) so older roadmaps do not error.
+    allowedStatuses = @('planned','active','blocked','validation','done','archived')
+    statusAliases = @{
+        'pending'      = 'planned'
+        'in progress'  = 'active'
+        'in-progress'  = 'active'
+        'inprogress'   = 'active'
+        'wip'          = 'active'
+        'complete'     = 'done'
+        'completed'    = 'done'
+        'shipped'      = 'done'
+        'released'     = 'done'
+    }
+    # Releases that must exist. '1.2' keeps its special "only required when a
+    # later 1.x release exists" semantics (R003); any other listed version is
+    # treated as a hard requirement (R003-MISSING-RELEASE).
+    requiredReleases = @('1.2')
+    maxActiveRoadmapLines = 900
+    maxFutureReleaseLines = 120
+    allowImmediateNextFocus = $false
+    # When true, a missing Implementation-State Vocabulary section is a warning
+    # rather than the default info (R009).
+    requireImplementationStateVocabulary = $false
+    # When true, a done release with unchecked items is an error (RQ008).
+    treatDoneWithUncheckedCriteriaAsError = $false
+    # When true, planned/future releases missing a Status line emit an info
+    # finding (RQ001). Off by default to keep routine output quiet.
+    flagMissingStatusOnFutureReleases = $false
+    # When true, planned/future releases missing recommended sections
+    # (Dependencies -> RQ011, Non-goals -> RQ012) emit info findings. Off by
+    # default; "Out of scope" counts as a Non-goals alias.
+    flagFutureReleaseRecommendations = $false
+    # Concrete validation signals that make a Validation plan meaningful.
+    validationSignals = @(
+        'npm test','npm run test','npm run build','npm run lint','dotnet test',
+        'pytest','invoke-pester','pester','psscriptanalyzer','manual smoke test',
+        'smoke test','smoke-test','ci','github actions','deployment verification',
+        'api smoke','frontend smoke','backend health check','playwright','curl '
+    )
+    # Vague acceptance-criteria terms (whole-item, not substrings of real work).
+    weakAcceptanceTerms = @(
+        'works','work','done','complete','completed','good enough','polish',
+        'improve','improved','finalize','finalized','cleanup','clean up','misc',
+        'tbd','etc','various'
+    )
+    # Pipeline / discovered-issue keywords for the known-issues feedback rule.
+    pipelineKeywords = @(
+        'bug','regression','failed','failure','ci','build','test','lint',
+        'security','audit','vulnerability','dependency','blocked','rollback',
+        'deployment','smoke'
+    )
+}
 
-$script:MaxActiveRoadmapLines = 900
-$script:MaxFutureReleaseLines = 120
+# Active-config holder; populated in main from defaults + file overrides.
+$script:ActiveConfig = $script:DefaultConfig
+
+# Back-compat script vars used by the original R-rules; routed through config.
+$script:RequiredReleaseSections = $script:DefaultConfig.requiredSections
+$script:MaxActiveRoadmapLines   = $script:DefaultConfig.maxActiveRoadmapLines
+$script:MaxFutureReleaseLines   = $script:DefaultConfig.maxFutureReleaseLines
 
 # Heuristic title-vs-goal keyword pairs. Hit if the title contains the LHS
 # but the goal text does NOT contain any RHS keyword (or vice versa).
@@ -105,7 +211,12 @@ function Add-Finding {
         [Parameter(Mandatory=$true)][string]$Message,
         [Parameter()][string]$Release = '',
         [Parameter()][int]$Line = 0,
-        [Parameter()][string]$RecommendedAction = ''
+        [Parameter()][string]$RecommendedAction = '',
+        # Additive metadata fields. Existing consumers ignore these; the six
+        # original fields keep their names, order, and meaning.
+        [Parameter()][string]$Category = 'structure',
+        [Parameter()][string]$Section = '',
+        [Parameter()][string]$Rule = ''
     )
     [void]$script:Findings.Add([pscustomobject]@{
         severity          = $Severity
@@ -114,6 +225,9 @@ function Add-Finding {
         release           = $Release
         line              = $Line
         recommendedAction = $RecommendedAction
+        category          = $Category
+        section           = $Section
+        rule              = $Rule
     })
 }
 
@@ -301,7 +415,11 @@ function Export-FindingsJson {
     if (-not [string]::IsNullOrWhiteSpace($parent) -and -not (Test-Path -LiteralPath $parent)) {
         $null = New-Item -ItemType Directory -Path $parent -Force
     }
-    ($Findings | ConvertTo-Json -Depth 6) | Set-Content -LiteralPath $OutPath -Encoding UTF8
+    # Always emit a valid JSON document. With zero findings, a piped empty
+    # array yields no output (and thus no file), so fall back to '[]'.
+    $json = ($Findings | ConvertTo-Json -Depth 6)
+    if ([string]::IsNullOrWhiteSpace($json)) { $json = '[]' }
+    Set-Content -LiteralPath $OutPath -Value $json -Encoding UTF8
     Write-Host ('JSON findings written: {0}' -f $OutPath) -ForegroundColor Cyan
 }
 
@@ -315,7 +433,10 @@ function Export-FindingsCsv {
     if (-not [string]::IsNullOrWhiteSpace($parent) -and -not (Test-Path -LiteralPath $parent)) {
         $null = New-Item -ItemType Directory -Path $parent -Force
     }
-    $Findings | Select-Object severity, code, message, release, line, recommendedAction |
+    # Existing six columns keep their names and order; category/section/rule
+    # are appended so header-keyed and fixed-6-column consumers both keep working.
+    $Findings |
+        Select-Object severity, code, message, release, line, recommendedAction, category, section, rule |
         Export-Csv -LiteralPath $OutPath -NoTypeInformation -Encoding UTF8
     Write-Host ('CSV findings written: {0}' -f $OutPath) -ForegroundColor Cyan
 }
@@ -357,25 +478,41 @@ function Invoke-RuleReleaseOrder {
     }
 }
 
-# Rule R003: detect missing 1.2 when later 1.x exist.
+# Rule R003: detect missing required releases. '1.2' keeps its special
+# "only required when a later 1.x release exists" semantics; any other version
+# in config.requiredReleases is treated as a hard requirement.
 function Invoke-RuleMissing12 {
-    param([Parameter(Mandatory=$true)][object[]]$Releases)
+    param(
+        [Parameter(Mandatory=$true)][object[]]$Releases,
+        [Parameter()][object]$Cfg = $script:ActiveConfig
+    )
 
-    $has12 = @($Releases | Where-Object { $_.version -eq '1.2' }).Count -gt 0
-    $hasLater1x = @($Releases | Where-Object {
-        $parts = $_.version -split '\.'
-        if ($parts.Count -ge 2) {
-            $maj = 0; $min = 0
-            [void][int]::TryParse($parts[0], [ref]$maj)
-            [void][int]::TryParse($parts[1], [ref]$min)
-            ($maj -eq 1 -and $min -gt 2)
-        } else { $false }
-    }).Count -gt 0
+    $required = @($Cfg.requiredReleases)
+    foreach ($req in $required) {
+        $present = @($Releases | Where-Object { $_.version -eq $req }).Count -gt 0
+        if ($present) { continue }
 
-    if ((-not $has12) -and $hasLater1x) {
-        Add-Finding -Severity 'error' -Code 'R003-MISSING-1.2' `
-            -Message 'Release 1.2 is missing from the main release list, but later 1.x releases exist.' `
-            -RecommendedAction 'Add a Release 1.2 section in its proper position, or document why it was skipped.'
+        if ($req -eq '1.2') {
+            $hasLater1x = @($Releases | Where-Object {
+                $parts = $_.version -split '\.'
+                if ($parts.Count -ge 2) {
+                    $maj = 0; $min = 0
+                    [void][int]::TryParse($parts[0], [ref]$maj)
+                    [void][int]::TryParse($parts[1], [ref]$min)
+                    ($maj -eq 1 -and $min -gt 2)
+                } else { $false }
+            }).Count -gt 0
+
+            if ($hasLater1x) {
+                Add-Finding -Severity 'error' -Code 'R003-MISSING-1.2' `
+                    -Message 'Release 1.2 is missing from the main release list, but later 1.x releases exist.' `
+                    -RecommendedAction 'Add a Release 1.2 section in its proper position, or document why it was skipped.'
+            }
+        } else {
+            Add-Finding -Severity 'error' -Code 'R003-MISSING-RELEASE' `
+                -Message ("Required release " + $req + " is missing from the release list (declared in roadmap-validation.config.json).") `
+                -RecommendedAction ('Add a Release ' + $req + ' section, or remove it from requiredReleases in the config.')
+        }
     }
 }
 
@@ -433,9 +570,12 @@ function Invoke-RuleImmediateNextFocus {
     $section = [regex]::Match($RoadmapText, '(?ims)^##\s+\d*\.?\s*Immediate\s+Next\s+Focus.*?(?=^##\s+|\Z)')
     if (-not $section.Success) { return }
 
-    Add-Finding -Severity 'warning' -Code 'R006-IMMEDIATE-NEXT-FOCUS-PRESENT' `
-        -Message '"Immediate Next Focus" section is present. Prefer a "Current Active Release" pointer in the release roadmap.' `
-        -RecommendedAction 'Remove the "Immediate Next Focus" section once the active release is identified at the top of section 5.'
+    # The bare presence is only flagged when config disallows it (default).
+    if (-not $script:ActiveConfig.allowImmediateNextFocus) {
+        Add-Finding -Severity 'warning' -Code 'R006-IMMEDIATE-NEXT-FOCUS-PRESENT' `
+            -Message '"Immediate Next Focus" section is present. Prefer a "Current Active Release" pointer in the release roadmap.' `
+            -RecommendedAction 'Remove the "Immediate Next Focus" section once the active release is identified at the top of section 5.'
+    }
 
     foreach ($refMatch in [regex]::Matches($section.Value, 'Release\s+(\d+(?:\.\d+){1,2})')) {
         $refVersion = $refMatch.Groups[1].Value
@@ -498,7 +638,9 @@ function Invoke-RuleStateVocabulary {
 
     $hasVocab = $RoadmapText -match '(?im)^##\s+\d*\.?\s*Implementation[- ]State Vocabulary'
     if (-not $hasVocab) {
-        Add-Finding -Severity 'info' -Code 'R009-MISSING-STATE-VOCAB' `
+        # Default info; escalate to warning when config requires the vocabulary.
+        $sev = if ($script:ActiveConfig.requireImplementationStateVocabulary) { 'warning' } else { 'info' }
+        Add-Finding -Severity $sev -Code 'R009-MISSING-STATE-VOCAB' `
             -Message 'Roadmap does not declare an Implementation-State Vocabulary section.' `
             -RecommendedAction 'Add a vocabulary section so [x] checkboxes carry consistent meaning (planned / scaffolded / backend-complete / ui-connected / smoke-tested / operator-verified / done).'
     }
@@ -580,8 +722,658 @@ function Invoke-RuleFutureReleaseSize {
 }
 
 # ---------------------------------------------------------------------------
+# Config loading + merge (RQ layer)
+# ---------------------------------------------------------------------------
+
+# Locate a config file. Explicit -Config wins. Otherwise probe the standard
+# locations relative to the roadmap directory and the script directory.
+function Resolve-RoadmapValidationConfigPath {
+    param(
+        [Parameter()][string]$ExplicitPath = '',
+        [Parameter()][string]$RoadmapPath  = ''
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($ExplicitPath)) {
+        return [pscustomobject]@{ path = $ExplicitPath; explicit = $true }
+    }
+
+    $roots = [System.Collections.Generic.List[string]]::new()
+    if (-not [string]::IsNullOrWhiteSpace($RoadmapPath)) {
+        $rp = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($RoadmapPath))
+        if (-not [string]::IsNullOrWhiteSpace($rp)) { [void]$roots.Add($rp) }
+    }
+    if ($PSScriptRoot) {
+        # tools/ -> repo root is the parent of the script directory.
+        [void]$roots.Add((Split-Path -Parent $PSScriptRoot))
+        [void]$roots.Add($PSScriptRoot)
+    }
+    [void]$roots.Add((Get-Location).Path)
+
+    $relatives = @(
+        (Join-Path 'standards' (Join-Path 'roadmap' 'roadmap-validation.config.json')),
+        (Join-Path 'tools' 'roadmap-validation.config.json')
+    )
+
+    foreach ($root in $roots) {
+        foreach ($rel in $relatives) {
+            $candidate = Join-Path $root $rel
+            if (Test-Path -LiteralPath $candidate) {
+                return [pscustomobject]@{ path = $candidate; explicit = $false }
+            }
+        }
+    }
+    return [pscustomobject]@{ path = ''; explicit = $false }
+}
+
+# Overlay a parsed-JSON config object onto the default config hashtable.
+# Only known keys are honored; unknown keys are ignored (forward-compatible).
+function Merge-RoadmapValidationConfig {
+    param(
+        [Parameter(Mandatory=$true)][object]$Defaults,
+        [Parameter()][object]$Override
+    )
+
+    # Clone defaults into a fresh hashtable so we never mutate $script:DefaultConfig.
+    $merged = @{}
+    foreach ($key in $Defaults.Keys) { $merged[$key] = $Defaults[$key] }
+    if ($null -eq $Override) { return $merged }
+
+    foreach ($prop in $Override.PSObject.Properties) {
+        $name = $prop.Name
+        if (-not $merged.Contains($name)) { continue }  # ignore unknown keys
+        $value = $prop.Value
+        if ($null -eq $value) { continue }
+
+        # statusAliases is an object map; convert to an ordered hashtable.
+        if ($name -eq 'statusAliases' -and $value -is [psobject]) {
+            $map = @{}
+            foreach ($p in $value.PSObject.Properties) { $map[[string]$p.Name] = [string]$p.Value }
+            $merged[$name] = $map
+            continue
+        }
+        $merged[$name] = $value
+    }
+    return $merged
+}
+
+# Load + merge config. On explicit-but-broken config, record a finding and
+# fall back to defaults. Returns the merged config hashtable.
+function Get-RoadmapValidationConfig {
+    param(
+        [Parameter()][string]$ExplicitPath = '',
+        [Parameter()][string]$RoadmapPath  = ''
+    )
+
+    $resolved = Resolve-RoadmapValidationConfigPath -ExplicitPath $ExplicitPath -RoadmapPath $RoadmapPath
+    if ([string]::IsNullOrWhiteSpace($resolved.path)) {
+        return $script:DefaultConfig
+    }
+
+    if (-not (Test-Path -LiteralPath $resolved.path)) {
+        if ($resolved.explicit) {
+            Add-Finding -Severity 'error' -Code 'RQ000-CONFIG-ERROR' -Category 'config' -Rule 'config-load' `
+                -Message ("Config file not found at: " + $resolved.path) `
+                -RecommendedAction 'Correct the -Config path or omit it to use built-in defaults.'
+        }
+        return $script:DefaultConfig
+    }
+
+    try {
+        $raw    = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $resolved.path).Path)
+        $parsed = ConvertFrom-Json -InputObject $raw
+        $merged = Merge-RoadmapValidationConfig -Defaults $script:DefaultConfig -Override $parsed
+        Write-Host ('Roadmap validation config loaded: {0}' -f $resolved.path) -ForegroundColor DarkCyan
+        return $merged
+    } catch {
+        $sev = if ($resolved.explicit) { 'error' } else { 'warning' }
+        Add-Finding -Severity $sev -Code 'RQ000-CONFIG-ERROR' -Category 'config' -Rule 'config-load' `
+            -Message ("Roadmap validation config could not be parsed (" + $resolved.path + "): " + $_.Exception.Message) `
+            -RecommendedAction 'Fix the JSON syntax, or omit -Config to use built-in defaults.'
+        return $script:DefaultConfig
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Quality helpers (RQ layer)
+# ---------------------------------------------------------------------------
+
+# Capture every '##'/'###' heading block with its body so status-bearing
+# blocks (e.g. "Active release detail", "completion snapshot") can be
+# evaluated, not just '### Release X.Y' headings. Returns blocks in order.
+function Get-RoadmapBlocks {
+    param([Parameter(Mandatory=$true)][AllowEmptyString()][string[]]$Lines)
+
+    $blocks = [System.Collections.Generic.List[object]]::new()
+    $headingRegex = '^#{2,3}\s+(.+?)\s*$'
+    $current = $null
+
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        $line = $Lines[$i]
+        if ($line -match $headingRegex) {
+            if ($null -ne $current) {
+                $current.endLine = $i - 1
+                $current.rawText = ($Lines[$current.startLine..($i - 1)] -join "`n")
+                [void]$blocks.Add([pscustomobject]$current)
+            }
+            $heading = $matches[1].Trim()
+            $ver = ''
+            $vm = [regex]::Match($heading, '(\d+(?:\.\d+){1,2})')
+            if ($vm.Success) { $ver = $vm.Groups[1].Value }
+            $current = [ordered]@{
+                heading        = $heading
+                version        = $ver
+                startLine      = $i
+                endLine        = $Lines.Count - 1
+                rawText        = ''
+                isActiveDetail = ($heading -match '(?i)^Active release detail\b')
+            }
+            continue
+        }
+    }
+    if ($null -ne $current) {
+        $current.rawText = ($Lines[$current.startLine..$current.endLine] -join "`n")
+        [void]$blocks.Add([pscustomobject]$current)
+    }
+    return $blocks
+}
+
+# Parse and normalize a release Status from a block's raw text.
+# Accepts "**Status:** active", "Status: active", "> **Status:** active",
+# trailing prose ("active. Foo bar"). Returns an object describing the result.
+function Get-ReleaseStatus {
+    param(
+        [Parameter(Mandatory=$true)][AllowEmptyString()][string]$RawText,
+        [Parameter(Mandatory=$true)][object]$Cfg
+    )
+
+    $m = [regex]::Match($RawText, '(?im)^\s*>?\s*\*{0,2}Status\*{0,2}\s*:\s*\*{0,2}\s*([A-Za-z][A-Za-z \-]*)')
+    if (-not $m.Success) {
+        return [pscustomobject]@{ found = $false; raw = ''; normalized = ''; valid = $false }
+    }
+
+    # Take the first word/phrase token before punctuation/sentence break.
+    $rawVal = $m.Groups[1].Value.Trim()
+    $token  = ($rawVal -split '[\.\,;:\(\)]')[0].Trim().ToLowerInvariant()
+
+    $normalized = $token
+    if ($Cfg.statusAliases -and $Cfg.statusAliases.Contains($token)) {
+        $normalized = [string]$Cfg.statusAliases[$token]
+    }
+
+    $valid = @($Cfg.allowedStatuses) -contains $normalized
+    return [pscustomobject]@{
+        found      = $true
+        raw        = $rawVal
+        token      = $token
+        normalized = $normalized
+        valid      = $valid
+    }
+}
+
+# Return the text body of a named section inside a release block, whether the
+# section is framed as '#### Name', '### Name', or '**Name:**'. Captures up to
+# the next heading or bold-label line. Returns '' when absent.
+function Get-ReleaseSectionText {
+    param(
+        [Parameter(Mandatory=$true)][string]$RawText,
+        [Parameter(Mandatory=$true)][string]$SectionName
+    )
+
+    $escaped = [regex]::Escape($SectionName)
+    # Heading-framed section: '#### Validation plan' ... until next heading.
+    $hm = [regex]::Match($RawText, "(?ims)^#{2,6}\s+$escaped\b.*?\n(.*?)(?=^#{2,6}\s+|\Z)")
+    if ($hm.Success) { return $hm.Groups[1].Value.Trim() }
+    # Bold-label section: '**Validation plan:**' ... until blank line / next label / heading.
+    $bm = [regex]::Match($RawText, "(?ims)^\*\*$escaped[^*]*\*\*\s*:?\s*(.*?)(?=\r?\n\r?\n|^\*\*[A-Z]|^#{2,6}\s+|\Z)")
+    if ($bm.Success) { return $bm.Groups[1].Value.Trim() }
+    return ''
+}
+
+# True when a section exists AND has non-whitespace, non-placeholder content.
+function Test-ReleaseSectionHasMeaningfulContent {
+    param(
+        [Parameter(Mandatory=$true)][string]$RawText,
+        [Parameter(Mandatory=$true)][string[]]$SectionAliases
+    )
+    foreach ($name in $SectionAliases) {
+        if (Test-ReleaseHasSection -RawText $RawText -SectionName $name) {
+            $body = Get-ReleaseSectionText -RawText $RawText -SectionName $name
+            $stripped = ($body -replace '(?m)^\s*[-*]\s*', '').Trim()
+            if (-not [string]::IsNullOrWhiteSpace($stripped)) { return $true }
+        }
+    }
+    return $false
+}
+
+# A validation plan is concrete when it references at least one real validation
+# mechanism (test/build/lint/smoke/CI/etc.) from the configured signal list.
+function Test-ValidationPlanIsConcrete {
+    param(
+        [Parameter(Mandatory=$true)][string]$PlanText,
+        [Parameter(Mandatory=$true)][object]$Cfg
+    )
+    if ([string]::IsNullOrWhiteSpace($PlanText)) { return $false }
+    $lower = $PlanText.ToLowerInvariant()
+    foreach ($signal in @($Cfg.validationSignals)) {
+        if ($lower.Contains([string]$signal.ToLowerInvariant())) { return $true }
+    }
+    return $false
+}
+
+# Flag acceptance-criteria items that are vague (e.g. "- [ ] works"). Returns
+# the list of weak item texts. Only short items dominated by a vague term hit.
+function Test-AcceptanceCriteriaAreWeak {
+    param(
+        [Parameter(Mandatory=$true)][string]$RawText,
+        [Parameter(Mandatory=$true)][object]$Cfg
+    )
+
+    $weak = [System.Collections.Generic.List[string]]::new()
+    $body = Get-ReleaseSectionText -RawText $RawText -SectionName 'Acceptance criteria'
+    if ([string]::IsNullOrWhiteSpace($body)) { return $weak }
+
+    $terms = @($Cfg.weakAcceptanceTerms)
+    foreach ($itemMatch in [regex]::Matches($body, '(?im)^\s*-\s+(?:\[[ xX]\]\s*)?(.+?)\s*$')) {
+        $item = $itemMatch.Groups[1].Value.Trim()
+        if ([string]::IsNullOrWhiteSpace($item)) { continue }
+        $clean = ($item -replace '[*_`]', '').Trim().ToLowerInvariant()
+        $wordCount = @($clean -split '\s+' | Where-Object { $_ -ne '' }).Count
+        # Only treat short items as suspect — long, specific criteria are fine.
+        if ($wordCount -gt 4) { continue }
+        foreach ($t in $terms) {
+            $tl = ([string]$t).ToLowerInvariant()
+            if ($clean -eq $tl -or $clean -match ('(?i)^' + [regex]::Escape($tl) + '\b') -or $clean -match ('(?i)\b' + [regex]::Escape($tl) + '$')) {
+                [void]$weak.Add($item)
+                break
+            }
+        }
+    }
+    return $weak
+}
+
+# True when the block contains any traceability signal (issue/PR/test/doc/ADR/workflow).
+function Test-ReleaseHasTraceability {
+    param([Parameter(Mandatory=$true)][string]$RawText)
+
+    $patterns = @(
+        '(?im)(?:^|\s)#\d{1,6}\b',                 # #123
+        '(?i)\bGH-\d+\b',                          # GH-123
+        '(?i)\bIssue\s*:?\s*#?\d+',                # Issue: #123
+        '(?i)\bPR\s*:?\s*#?\d+',                   # PR: #456
+        '(?i)\bpull request\b',
+        '(?i)\btests?/[\w\.\-/]+',                 # tests/...
+        '(?i)\b[\w\.\-/]+\.Tests\.ps1\b',
+        '(?i)\b[\w\.\-/]+\.(?:test|spec)\.(?:ts|tsx|js|jsx)\b',
+        '(?i)\bdocs/[\w\.\-/]+',                   # docs/...
+        '(?i)\.github/workflows/[\w\.\-/]+'        # workflow paths
+    )
+    foreach ($p in $patterns) {
+        if ([regex]::IsMatch($RawText, $p)) { return $true }
+    }
+    return $false
+}
+
+# Locate a known-issues / pipeline-feedback section under any accepted alias.
+function Get-PipelineFeedbackBody {
+    param([Parameter(Mandatory=$true)][string]$RawText)
+
+    $aliases = @(
+        'Known issues / discovered during development',
+        'Known issues',
+        'Discovered issues / follow-up',
+        'Discovered issues',
+        'Pipeline findings',
+        'Validation findings'
+    )
+    foreach ($a in $aliases) {
+        if (Test-ReleaseHasSection -RawText $RawText -SectionName $a) {
+            return [pscustomobject]@{ found = $true; alias = $a; body = (Get-ReleaseSectionText -RawText $RawText -SectionName $a) }
+        }
+    }
+    return [pscustomobject]@{ found = $false; alias = ''; body = '' }
+}
+
+# True when a block explicitly declares no known issues ("None currently known").
+function Test-KnownIssuesExplicitlyEmpty {
+    param([Parameter(Mandatory=$true)][string]$Body)
+    if ([string]::IsNullOrWhiteSpace($Body)) { return $false }
+    return [regex]::IsMatch($Body, '(?i)\b(none(?:\s+currently)?\s+known|no\s+known\s+issues|none\s+at\s+this\s+time|n/?a)\b')
+}
+
+# ---------------------------------------------------------------------------
+# Quality rules (RQ layer) — each adds findings to $script:Findings.
+# ---------------------------------------------------------------------------
+
+# Build the list of status-bearing blocks once and share across RQ rules.
+function Get-StatusBearingBlocks {
+    param(
+        [Parameter(Mandatory=$true)][object[]]$Blocks,
+        [Parameter(Mandatory=$true)][object]$Cfg
+    )
+    $result = [System.Collections.Generic.List[object]]::new()
+    foreach ($b in $Blocks) {
+        $status = Get-ReleaseStatus -RawText $b.rawText -Cfg $Cfg
+        if ($status.found) {
+            [void]$result.Add([pscustomobject]@{ block = $b; status = $status })
+        }
+    }
+    return $result
+}
+
+# RQ001/RQ002/RQ003: status presence, validity, single-active, pointer match.
+function Invoke-RuleReleaseStatus {
+    param(
+        [Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$StatusBlocks,
+        [Parameter()][AllowEmptyString()][string]$PointerVersion = '',
+        [Parameter(Mandatory=$true)][object]$Cfg
+    )
+
+    # RQ002 — invalid status value (error).
+    foreach ($sb in $StatusBlocks) {
+        if (-not $sb.status.valid) {
+            Add-Finding -Severity 'error' -Code 'RQ002-INVALID-STATUS' -Category 'quality' -Rule 'release-status' `
+                -Message ("Block '" + $sb.block.heading + "' declares an unrecognized status '" + $sb.status.raw + "'.") `
+                -Release $sb.block.version -Line ($sb.block.startLine + 1) -Section 'Status' `
+                -RecommendedAction ('Use one of: ' + (@($Cfg.allowedStatuses) -join ', ') + ' (aliases: pending, in progress, complete).')
+        }
+    }
+
+    # RQ003 — more than one block marked active (error).
+    $activeBlocks = @($StatusBlocks | Where-Object { $_.status.normalized -eq 'active' })
+    if ($activeBlocks.Count -gt 1) {
+        foreach ($ab in $activeBlocks) {
+            Add-Finding -Severity 'error' -Code 'RQ003-MULTIPLE-ACTIVE-RELEASES' -Category 'quality' -Rule 'release-status' `
+                -Message ("More than one release is marked active (block '" + $ab.block.heading + "'). Exactly one release may be active.") `
+                -Release $ab.block.version -Line ($ab.block.startLine + 1) -Section 'Status' `
+                -RecommendedAction 'Keep a single active release; move the others to validation, done, or planned.'
+        }
+    }
+
+    # RQ003 — active pointer/status mismatch (error), when both are known.
+    if ($activeBlocks.Count -eq 1 -and -not [string]::IsNullOrWhiteSpace($PointerVersion)) {
+        $av = $activeBlocks[0].block.version
+        if (-not [string]::IsNullOrWhiteSpace($av) -and $av -ne $PointerVersion) {
+            Add-Finding -Severity 'error' -Code 'RQ003-ACTIVE-POINTER-MISMATCH' -Category 'quality' -Rule 'release-status' `
+                -Message ("Top active-release pointer (" + $PointerVersion + ") does not match the release marked active (" + $av + ").") `
+                -Release $av -Line ($activeBlocks[0].block.startLine + 1) -Section 'Status' `
+                -RecommendedAction 'Align the active-release pointer with the release whose Status is active.'
+        }
+    }
+}
+
+# RQ001 — missing status, evaluated over all blocks (active-detail = warning,
+# future/planned = optional info gated by config).
+function Invoke-RuleMissingStatus {
+    param(
+        [Parameter(Mandatory=$true)][object[]]$Blocks,
+        [Parameter(Mandatory=$true)][object[]]$Releases,
+        [Parameter(Mandatory=$true)][object]$Cfg
+    )
+
+    foreach ($b in $Blocks) {
+        if (-not $b.isActiveDetail) { continue }
+        $status = Get-ReleaseStatus -RawText $b.rawText -Cfg $Cfg
+        if (-not $status.found) {
+            Add-Finding -Severity 'warning' -Code 'RQ001-MISSING-STATUS' -Category 'quality' -Rule 'release-status' `
+                -Message ("Active release detail '" + $b.heading + "' has no explicit Status line.") `
+                -Release $b.version -Line ($b.startLine + 1) -Section 'Status' `
+                -RecommendedAction 'Add a "**Status:** active" line so the execution contract declares its state.'
+        }
+    }
+
+    if ($Cfg.flagMissingStatusOnFutureReleases) {
+        foreach ($r in $Releases) {
+            $status = Get-ReleaseStatus -RawText $r.rawText -Cfg $Cfg
+            if (-not $status.found) {
+                Add-Finding -Severity 'info' -Code 'RQ001-MISSING-STATUS' -Category 'quality' -Rule 'release-status' `
+                    -Message ("Release " + $r.version + " has no explicit Status line.") `
+                    -Release $r.version -Line ($r.startLine + 1) -Section 'Status' `
+                    -RecommendedAction 'Add a "**Status:** planned" line to make the release lifecycle explicit.'
+            }
+        }
+    }
+}
+
+# RQ-required-sections — active/blocked/validation blocks should carry the
+# execution-contract sections (validation plan, risks, deps, known issues,
+# traceability). Emits per-section warnings via specific codes.
+function Invoke-RuleActiveReleaseSections {
+    param(
+        [Parameter(Mandatory=$true)][object[]]$StatusBlocks,
+        [Parameter(Mandatory=$true)][object]$Cfg
+    )
+
+    $sectionCodes = @{
+        'Validation plan'    = @{ aliases = @('Validation plan','Validation','Test plan'); code = 'RQ004-MISSING-VALIDATION-PLAN'; section = 'Validation plan' }
+        'Risks and blockers' = @{ aliases = @('Risks and blockers','Risks','Blockers','Risks/blockers'); code = 'R004-MISSING-SECTION'; section = 'Risks and blockers' }
+        'Dependencies'       = @{ aliases = @('Dependencies'); code = 'RQ011-MISSING-DEPENDENCIES-SECTION'; section = 'Dependencies' }
+        'Known issues'       = @{ aliases = @('Known issues / discovered during development','Known issues','Discovered issues / follow-up','Pipeline findings','Validation findings'); code = 'RQ009-MISSING-PIPELINE-FEEDBACK'; section = 'Known issues' }
+        'Traceability'       = @{ aliases = @('Traceability'); code = 'RQ006-MISSING-TRACEABILITY'; section = 'Traceability' }
+    }
+
+    foreach ($sb in $StatusBlocks) {
+        $st = $sb.status.normalized
+        if ($st -ne 'active' -and $st -ne 'blocked' -and $st -ne 'validation') { continue }
+
+        foreach ($wanted in @($Cfg.activeReleaseRequiredSections)) {
+            # Traceability is owned by the signal-based Invoke-RuleTraceability
+            # rule (a literal heading is not required), so skip it here to
+            # avoid a duplicate RQ006 finding.
+            if ($wanted -ieq 'Traceability') { continue }
+
+            # Map the configured section name to the alias/code descriptor.
+            $descriptor = $null
+            foreach ($key in $sectionCodes.Keys) {
+                if ($key -ieq $wanted -or (@($sectionCodes[$key].aliases) -contains $wanted)) { $descriptor = $sectionCodes[$key]; break }
+            }
+            if ($null -eq $descriptor) {
+                $descriptor = @{ aliases = @($wanted); code = 'R004-MISSING-SECTION'; section = $wanted }
+            }
+
+            if (-not (Test-ReleaseSectionHasMeaningfulContent -RawText $sb.block.rawText -SectionAliases $descriptor.aliases)) {
+                Add-Finding -Severity 'warning' -Code $descriptor.code -Category 'quality' -Rule 'active-contract' `
+                    -Message ("The " + $st + " release '" + $sb.block.heading + "' is missing a meaningful '" + $descriptor.section + "' section.") `
+                    -Release $sb.block.version -Line ($sb.block.startLine + 1) -Section $descriptor.section `
+                    -RecommendedAction ('Add a "' + $descriptor.section + '" section to the active execution contract so its state can be verified.')
+            }
+        }
+    }
+}
+
+# RQ004 — validation plan exists but is not concrete (weak).
+function Invoke-RuleValidationPlanQuality {
+    param(
+        [Parameter(Mandatory=$true)][object[]]$StatusBlocks,
+        [Parameter(Mandatory=$true)][object]$Cfg
+    )
+
+    foreach ($sb in $StatusBlocks) {
+        $st = $sb.status.normalized
+        if ($st -ne 'active' -and $st -ne 'blocked' -and $st -ne 'validation') { continue }
+
+        $hasSection = (Test-ReleaseHasSection -RawText $sb.block.rawText -SectionName 'Validation plan') -or
+                      (Test-ReleaseHasSection -RawText $sb.block.rawText -SectionName 'Validation')
+        if (-not $hasSection) { continue }  # absence handled by Invoke-RuleActiveReleaseSections
+
+        $plan = Get-ReleaseSectionText -RawText $sb.block.rawText -SectionName 'Validation plan'
+        if ([string]::IsNullOrWhiteSpace($plan)) { $plan = Get-ReleaseSectionText -RawText $sb.block.rawText -SectionName 'Validation' }
+
+        # RQ for validation-status releases: a meaningful plan is required.
+        if (-not (Test-ValidationPlanIsConcrete -PlanText $plan -Cfg $Cfg)) {
+            Add-Finding -Severity 'warning' -Code 'RQ004-WEAK-VALIDATION-PLAN' -Category 'quality' -Rule 'validation-plan' `
+                -Message ("Release '" + $sb.block.heading + "' has a validation plan with no concrete validation signal.") `
+                -Release $sb.block.version -Line ($sb.block.startLine + 1) -Section 'Validation plan' `
+                -RecommendedAction 'Add concrete validation commands or smoke checks such as npm test, npm run build, Invoke-Pester, CI, or manual smoke-test steps.'
+        }
+    }
+}
+
+# RQ005 — weak / vague acceptance criteria (warning). Applies to all blocks
+# that declare an acceptance-criteria section, regardless of status.
+function Invoke-RuleAcceptanceCriteriaQuality {
+    param(
+        [Parameter(Mandatory=$true)][object[]]$Blocks,
+        [Parameter(Mandatory=$true)][object]$Cfg
+    )
+
+    foreach ($b in $Blocks) {
+        if (-not (Test-ReleaseHasSection -RawText $b.rawText -SectionName 'Acceptance criteria')) { continue }
+        $weak = @(Test-AcceptanceCriteriaAreWeak -RawText $b.rawText -Cfg $Cfg)
+        if ($weak.Count -gt 0) {
+            $sample = ($weak | Select-Object -First 3) -join '; '
+            Add-Finding -Severity 'warning' -Code 'RQ005-WEAK-ACCEPTANCE-CRITERIA' -Category 'quality' -Rule 'acceptance-criteria' `
+                -Message ("Release '" + $b.heading + "' has " + $weak.Count + " vague acceptance criterion/criteria: " + $sample) `
+                -Release $b.version -Line ($b.startLine + 1) -Section 'Acceptance criteria' `
+                -RecommendedAction 'Rewrite acceptance criteria so each item describes an observable result, test command, UI behavior, API behavior, artifact, or operator-verifiable outcome.'
+        }
+    }
+}
+
+# RQ006 — active/validation blocks should carry traceability signals.
+function Invoke-RuleTraceability {
+    param([Parameter(Mandatory=$true)][object[]]$StatusBlocks)
+
+    foreach ($sb in $StatusBlocks) {
+        $st = $sb.status.normalized
+        if ($st -ne 'active' -and $st -ne 'validation') { continue }
+        if (-not (Test-ReleaseHasTraceability -RawText $sb.block.rawText)) {
+            Add-Finding -Severity 'warning' -Code 'RQ006-MISSING-TRACEABILITY' -Category 'quality' -Rule 'traceability' `
+                -Message ("Release '" + $sb.block.heading + "' (" + $st + ") has no traceability signals (issues, PRs, tests, workflows, ADRs, or docs).") `
+                -Release $sb.block.version -Line ($sb.block.startLine + 1) -Section 'Traceability' `
+                -RecommendedAction 'Link the release to issues, PRs, tests, workflows, ADRs, or supporting docs so roadmap status can be verified against repo activity.'
+        }
+    }
+}
+
+# RQ009/RQ010 — pipeline / known-issues feedback for in-flight releases.
+function Invoke-RulePipelineFeedback {
+    param(
+        [Parameter(Mandatory=$true)][object[]]$StatusBlocks,
+        [Parameter(Mandatory=$true)][object]$Cfg
+    )
+
+    foreach ($sb in $StatusBlocks) {
+        $st = $sb.status.normalized
+        if ($st -ne 'active' -and $st -ne 'blocked' -and $st -ne 'validation') { continue }
+
+        $fb = Get-PipelineFeedbackBody -RawText $sb.block.rawText
+        if (-not $fb.found) {
+            # Missing section is handled by Invoke-RuleActiveReleaseSections
+            # (RQ009) when 'Known issues' is in activeReleaseRequiredSections.
+            if (@($Cfg.activeReleaseRequiredSections) -notcontains 'Known issues') {
+                Add-Finding -Severity 'warning' -Code 'RQ009-MISSING-PIPELINE-FEEDBACK' -Category 'quality' -Rule 'pipeline-feedback' `
+                    -Message ("Release '" + $sb.block.heading + "' (" + $st + ") has no known-issues / pipeline-feedback section.") `
+                    -Release $sb.block.version -Line ($sb.block.startLine + 1) -Section 'Known issues' `
+                    -RecommendedAction 'Add a "Known issues / discovered during development" section to capture bugs, failed tests, CI/build failures, and follow-ups found during execution.'
+            }
+            continue
+        }
+
+        if ([string]::IsNullOrWhiteSpace(($fb.body -replace '(?m)^\s*[-*]\s*', '').Trim())) {
+            Add-Finding -Severity 'info' -Code 'RQ010-EMPTY-KNOWN-ISSUES' -Category 'quality' -Rule 'pipeline-feedback' `
+                -Message ("Release '" + $sb.block.heading + "' has an empty '" + $fb.alias + "' section.") `
+                -Release $sb.block.version -Line ($sb.block.startLine + 1) -Section 'Known issues' `
+                -RecommendedAction 'List discovered issues, or state "None currently known" so the empty section is intentional.'
+            continue
+        }
+
+        # If the section reports pipeline trouble, expect a follow-up signal.
+        if (-not (Test-KnownIssuesExplicitlyEmpty -Body $fb.body)) {
+            $lower = $fb.body.ToLowerInvariant()
+            $mentionsTrouble = $false
+            foreach ($kw in @($Cfg.pipelineKeywords)) {
+                if ($lower -match ('(?i)\b' + [regex]::Escape([string]$kw) + '\b')) { $mentionsTrouble = $true; break }
+            }
+            if ($mentionsTrouble) {
+                $hasFollowUp = ($fb.body -match '(?m)^\s*-\s+\[[ xX]\]') -or
+                               (Test-ReleaseHasTraceability -RawText $fb.body) -or
+                               ($fb.body -match '(?i)\b(owner|follow[- ]?up|tracked|assigned|TODO)\b')
+                if (-not $hasFollowUp) {
+                    Add-Finding -Severity 'info' -Code 'RQ010-EMPTY-KNOWN-ISSUES' -Category 'quality' -Rule 'pipeline-feedback' `
+                        -Message ("Release '" + $sb.block.heading + "' lists pipeline/discovered issues without a checkbox, owner, follow-up, or traceability signal.") `
+                        -Release $sb.block.version -Line ($sb.block.startLine + 1) -Section 'Known issues' `
+                        -RecommendedAction 'Attach a checkbox, owner, follow-up note, or issue/PR link to each discovered problem so it stays tracked.'
+                }
+            }
+        }
+    }
+}
+
+# RQ007 — a blocked release must list at least one blocker.
+function Invoke-RuleBlockedReleaseHasBlocker {
+    param([Parameter(Mandatory=$true)][object[]]$StatusBlocks)
+
+    foreach ($sb in $StatusBlocks) {
+        if ($sb.status.normalized -ne 'blocked') { continue }
+        $hasBlocker = (Test-ReleaseSectionHasMeaningfulContent -RawText $sb.block.rawText -SectionAliases @('Risks and blockers','Blockers','Risks')) -or
+                      [regex]::IsMatch($sb.block.rawText, '(?im)^\s*[-*]\s+.*\bblock(?:ed|er|ing)?\b')
+        if (-not $hasBlocker) {
+            Add-Finding -Severity 'warning' -Code 'RQ007-BLOCKED-WITHOUT-BLOCKER' -Category 'quality' -Rule 'blocked-release' `
+                -Message ("Release '" + $sb.block.heading + "' is marked blocked but lists no blocker.") `
+                -Release $sb.block.version -Line ($sb.block.startLine + 1) -Section 'Risks and blockers' `
+                -RecommendedAction 'List the specific blocker(s) under "Risks and blockers" so the block reason is auditable.'
+        }
+    }
+}
+
+# RQ011/RQ012 — recommended sections for planned/future releases (info only,
+# gated by config). A release is "planned/future" when it has no in-flight or
+# done status. "Out of scope" satisfies the Non-goals recommendation.
+function Invoke-RulePlannedReleaseRecommendations {
+    param(
+        [Parameter(Mandatory=$true)][object[]]$Releases,
+        [Parameter(Mandatory=$true)][object]$Cfg
+    )
+
+    if (-not $Cfg.flagFutureReleaseRecommendations) { return }
+
+    foreach ($r in $Releases) {
+        $status = Get-ReleaseStatus -RawText $r.rawText -Cfg $Cfg
+        $st = if ($status.found) { $status.normalized } else { 'planned' }
+        if ($st -ne 'planned') { continue }
+
+        if (-not (Test-ReleaseSectionHasMeaningfulContent -RawText $r.rawText -SectionAliases @('Dependencies'))) {
+            Add-Finding -Severity 'info' -Code 'RQ011-MISSING-DEPENDENCIES-SECTION' -Category 'quality' -Rule 'planned-release' `
+                -Message ("Planned release " + $r.version + " has no Dependencies section.") `
+                -Release $r.version -Line ($r.startLine + 1) -Section 'Dependencies' `
+                -RecommendedAction 'List upstream releases, services, or external work this release depends on.'
+        }
+        if (-not (Test-ReleaseSectionHasMeaningfulContent -RawText $r.rawText -SectionAliases @('Non-goals','Non goals','Out of scope'))) {
+            Add-Finding -Severity 'info' -Code 'RQ012-MISSING-NON-GOALS' -Category 'quality' -Rule 'planned-release' `
+                -Message ("Planned release " + $r.version + " has no Non-goals / Out-of-scope section.") `
+                -Release $r.version -Line ($r.startLine + 1) -Section 'Non-goals' `
+                -RecommendedAction 'Add a Non-goals or Out-of-scope section to bound the release and prevent scope creep.'
+        }
+    }
+}
+
+# RQ008 — a done release should not retain unchecked items.
+function Invoke-RuleDoneReleaseCompletion {
+    param(
+        [Parameter(Mandatory=$true)][object[]]$StatusBlocks,
+        [Parameter(Mandatory=$true)][object]$Cfg
+    )
+
+    $severity = if ($Cfg.treatDoneWithUncheckedCriteriaAsError) { 'error' } else { 'warning' }
+
+    foreach ($sb in $StatusBlocks) {
+        if ($sb.status.normalized -ne 'done') { continue }
+        $stats = Get-ReleaseCheckboxStats -RawText $sb.block.rawText
+        if ($stats.unchecked -gt 0) {
+            Add-Finding -Severity $severity -Code 'RQ008-DONE-WITH-UNCHECKED-CRITERIA' -Category 'quality' -Rule 'done-release' `
+                -Message ("Release '" + $sb.block.heading + "' is marked done but has " + $stats.unchecked + " unchecked item(s).") `
+                -Release $sb.block.version -Line ($sb.block.startLine + 1) -Section 'Acceptance criteria' `
+                -RecommendedAction 'Check off completed items, move the release detail to docs/history/completed-releases.md, or re-open the release status if work remains.'
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
+# When dot-sourced for unit testing, stop here — all functions are defined.
+if ($LoadFunctionsOnly) { return }
 
 # Initialize accumulator. Use a script-scoped list so rule functions can
 # append without passing the list around.
@@ -592,11 +1384,26 @@ if (-not (Test-Path -LiteralPath $Path)) {
     exit 2
 }
 
+# Load + merge config (writes RQ000-CONFIG-ERROR on explicit-but-broken file),
+# then route the back-compat script vars through the resolved config so the
+# original R-rules honor config overrides too.
+$script:ActiveConfig = Get-RoadmapValidationConfig -ExplicitPath $Config -RoadmapPath $Path
+$script:RequiredReleaseSections = @($script:ActiveConfig.requiredSections)
+$script:MaxActiveRoadmapLines   = [int]$script:ActiveConfig.maxActiveRoadmapLines
+$script:MaxFutureReleaseLines   = [int]$script:ActiveConfig.maxFutureReleaseLines
+
 # Read once. Lines for line-number reporting; full text for whole-file rules.
 $lines = [System.IO.File]::ReadAllLines((Resolve-Path -LiteralPath $Path).Path)
 $text  = ($lines -join "`n")
 
 $releases = Get-ReleaseSections -Lines $lines
+
+# Richer block model for the RQ layer: every '##'/'###' heading block, so
+# status-bearing blocks (Active release detail, completion snapshots) are
+# evaluated, not just '### Release X.Y' headings.
+$blocks         = Get-RoadmapBlocks -Lines $lines
+$statusBlocks   = @(Get-StatusBearingBlocks -Blocks $blocks -Cfg $script:ActiveConfig)
+$pointerVersion = Get-ActiveReleaseVersion -RoadmapText $text
 
 if ($releases.Count -eq 0) {
     Add-Finding -Severity 'error' -Code 'R000-NO-RELEASES' `
@@ -604,9 +1411,10 @@ if ($releases.Count -eq 0) {
         -RecommendedAction 'Confirm this is the correct ROADMAP.md and that release headings follow the canonical format.'
 }
 
+# --- Structural rules (R-codes) ---
 Invoke-RuleDuplicateReleases     -Releases $releases
 Invoke-RuleReleaseOrder          -Releases $releases
-Invoke-RuleMissing12             -Releases $releases
+Invoke-RuleMissing12             -Releases $releases -Cfg $script:ActiveConfig
 Invoke-RuleRequiredSections      -Releases $releases
 Invoke-RuleTitleGoalMismatch     -Releases $releases
 Invoke-RuleImmediateNextFocus    -RoadmapText $text -Releases $releases
@@ -617,6 +1425,18 @@ Invoke-RuleFileLength            -LineCount $lines.Count
 Invoke-RuleActiveReleasePointer  -RoadmapText $text -Lines $lines
 Invoke-RuleCompletedReleaseSections -Releases $releases
 Invoke-RuleFutureReleaseSize     -Releases $releases
+
+# --- Roadmap-quality rules (RQ-codes) ---
+Invoke-RuleReleaseStatus           -StatusBlocks $statusBlocks -PointerVersion $pointerVersion -Cfg $script:ActiveConfig
+Invoke-RuleMissingStatus           -Blocks $blocks -Releases $releases -Cfg $script:ActiveConfig
+Invoke-RuleActiveReleaseSections   -StatusBlocks $statusBlocks -Cfg $script:ActiveConfig
+Invoke-RuleValidationPlanQuality   -StatusBlocks $statusBlocks -Cfg $script:ActiveConfig
+Invoke-RuleAcceptanceCriteriaQuality -Blocks $blocks -Cfg $script:ActiveConfig
+Invoke-RuleTraceability            -StatusBlocks $statusBlocks
+Invoke-RulePipelineFeedback        -StatusBlocks $statusBlocks -Cfg $script:ActiveConfig
+Invoke-RuleBlockedReleaseHasBlocker -StatusBlocks $statusBlocks
+Invoke-RuleDoneReleaseCompletion   -StatusBlocks $statusBlocks -Cfg $script:ActiveConfig
+Invoke-RulePlannedReleaseRecommendations -Releases $releases -Cfg $script:ActiveConfig
 
 # Pretty-print release sequence summary so the operator sees what was parsed.
 Write-Host ''

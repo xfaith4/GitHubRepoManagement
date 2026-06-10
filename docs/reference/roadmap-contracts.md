@@ -122,6 +122,132 @@ Bad items (vague — will trigger `ROADMAP-010`):
 
 ---
 
+## The Release Execution Contract
+
+Beyond document shape, a roadmap is an **execution contract**. The
+`tools/Test-RoadmapStructure.ps1` validator checks whether each release — and
+especially the *active* one — carries enough information to be dispatched,
+validated, and merged against. See
+[docs/operations/roadmap-validation.md](../operations/roadmap-validation.md)
+for how to run it, the full finding-code table, and configuration.
+
+### Canonical release block
+
+```markdown
+## Release X.Y — Title
+
+**Status:** planned | active | blocked | validation | done | archived
+
+**Goal:** One sentence describing what the product can do after this release.
+
+**Problem / motivation:** Why this release exists.
+
+**Product outcomes:**
+- Observable outcome for an operator or user.
+
+**Engineering milestones:**
+- [ ] Concrete, testable implementation step.
+
+**Acceptance criteria:**
+- [ ] Observable, verifiable condition for "done".
+
+**Validation plan:**
+- [ ] Run `npm test`, `npm run build`, and `Invoke-Pester`; CI must be green.
+
+**Risks and blockers:**
+- What could go wrong, or what is currently blocking the work.
+
+**Dependencies:**
+- Upstream releases, services, or external work this release needs.
+
+**Known issues / discovered during development:**
+- Bugs, failed tests, CI/build failures, and follow-ups found during execution.
+
+**Non-goals:**
+- Work explicitly out of scope for this release.
+
+**Traceability:**
+- Issue: #123
+- PR: #456
+- Tests: `tests/...`
+- ADR: `docs/adr/...`
+```
+
+### Allowed statuses
+
+| Status | Meaning |
+| ------ | ------- |
+| `planned` | Proposed; not yet started. |
+| `active` | The single release currently being executed. |
+| `blocked` | Started but stopped by a named blocker. |
+| `validation` | Implementation complete; under test / verification. |
+| `done` | Complete; should move to `docs/history/completed-releases.md`. |
+| `archived` | Historical; full detail should not dominate the active roadmap. |
+
+Legacy wording is normalized automatically: `pending` → `planned`,
+`in progress` → `active`, `complete` / `completed` → `done`.
+
+### Required vs recommended sections
+
+- **Always required (every release):** Goal, Product outcomes, Engineering
+  milestones, Acceptance criteria.
+- **Required/strongly recommended for `active` / `blocked` / `validation`:**
+  Status, Validation plan, Risks and blockers, Dependencies,
+  Known issues / discovered during development, Traceability.
+- **Recommended for `planned` / future:** Problem / motivation, Dependencies,
+  Non-goals.
+- **`blocked`** must list at least one blocker. **`validation`** must have a
+  meaningful validation plan. **`done`** should have its criteria checked and
+  should not remain as full active detail in `ROADMAP.md`.
+
+### Good vs weak release blocks
+
+**Good** — observable, traceable, validatable:
+
+```markdown
+## Release 2.0 — Agent Run Monitoring
+
+**Status:** active
+
+**Goal:** Operators can watch a dispatched agent run and gate merge on CI.
+
+**Acceptance criteria:**
+- [ ] `GET /api/agent/run/:id` returns live status, verified by `npm test`.
+
+**Validation plan:**
+- [ ] `npm run build`, `Invoke-Pester ./backend`, and the CI smoke workflow pass.
+
+**Risks and blockers:**
+- GitHub Actions rate limits may throttle status polling.
+
+**Dependencies:**
+- Release 1.9 prompt-dispatch records.
+
+**Known issues / discovered during development:**
+- None currently known.
+
+**Traceability:**
+- Issue: #142  ·  PR: #150  ·  Tests: `tests/agent-run.Tests.ps1`
+```
+
+**Weak** — vague, unverifiable, untraceable (flags `RQ004`, `RQ005`, `RQ006`,
+`RQ009`):
+
+```markdown
+## Release 2.0 — Monitoring
+
+**Status:** active
+
+**Acceptance criteria:**
+- [ ] works
+- [ ] polish
+
+**Validation plan:**
+- [ ] make sure it's good
+```
+
+---
+
 ## Roadmap Repair
 
 If a repo's roadmap is at L1 or L2, the **Roadmap Repair** preview workflow can propose a
