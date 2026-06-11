@@ -559,12 +559,44 @@ merge-readiness signal that requires successful validation before merge.
   prompt, and dispatch record.
 - GitHub Actions status is part of the execution workflow.
 - The app blocks merge-readiness when validation evidence is missing.
+- Each run records when agent work started and finished, its time to
+  deliver, and a reasonable token-usage estimate, so completed roadmap
+  phases carry measured `completed` / token annotations and future phases
+  can be sized to fit agent context budgets.
 
 #### Engineering milestones
 
 - [ ] Add agent-run ledger model with runId, repoId, promptId, selected
       roadmap item, provider/tool, branch, PR URL, status, createdAt,
       updatedAt, and outcome. *(state: planned)*
+- [ ] Record tier-1 run observations automatically in the ledger:
+      dispatchedAt, agentStartedAt, agentCompletedAt, derived
+      time-to-deliver, prompt count, retries, reported token usage, direct
+      API spend, and normalized AI work units (raw counts × config
+      weights), per `standards/roadmap/ROADMAP_BUDGET_MODEL.md`. Optional
+      tier-2 operator observations (provider-reported remaining units,
+      credit-prompt-seen, human review minutes) attach to a run without
+      ever blocking it. Derived valuations (subscription allocation,
+      human-time USD, overage risk) are never stored in events.
+      *(state: planned)*
+- [ ] Add budget ledger configuration (per-project monthly USD and
+      quota-unit budgets, per-phase and per-session unit caps, unit
+      weights, valuation rates, credit policy) and a pre-dispatch quota
+      guard that runs on own-ledger unit counts, warns or refuses when an
+      estimated session exceeds its cap, stops on credit prompts, and
+      records `quota.exhausted` events that capture which queued work was
+      pending at that moment so starvation is countable. *(state: planned)*
+- [ ] Parse phase-plan work-unit and budget-guardrail annotations from
+      managed repos' roadmaps during assessment scans so pre-dispatch
+      session estimates and estimated-vs-actual accuracy come from the
+      roadmap itself. *(state: planned)*
+- [ ] Append run lifecycle events (dispatched, started, validation passed
+      or failed, completed, blocked) to an append-only, schema-versioned
+      `output/agent-runs/events.jsonl` telemetry stream, kept separate from
+      editable ledger state. *(state: planned)*
+- [ ] Surface time-to-deliver and token usage in run detail so completed
+      roadmap phases record measured completion-date and token-usage
+      annotations instead of after-the-fact estimates. *(state: planned)*
 - [ ] Add `GET /api/agent-runs` route for active, completed, failed, and
       blocked runs. *(state: planned)*
 - [ ] Add `GET /api/agent-runs/{runId}` route with full run detail.
@@ -627,13 +659,16 @@ supports time-series queries.
 
 - [ ] Add SQLite dependency detection and initialize `output/app.db` with
       execution, maturity, ops-log, portfolio-index, repo-signal,
-      differential-scan, and merge-readiness tables. *(state: planned)*
+      differential-scan, merge-readiness, agent-run, and agent-run-event
+      tables. *(state: planned)*
 - [ ] Migrate execution ledger and ops log reads/writes from JSON files to
       parameterized SQL queries, keeping JSON export only as a debugging
       artifact. *(state: planned)*
 - [ ] Persist maturity snapshots, portfolio index history, README score,
-      ROADMAP score, Documentation Health, GitHub metadata, and
-      merge-readiness snapshots over time. *(state: planned)*
+      ROADMAP score, Documentation Health, GitHub metadata, merge-readiness
+      snapshots, and agent-run timing, token-usage, and cost / quota-burn
+      metrics over time so time-to-deliver and cost-per-phase trends are
+      queryable. *(state: planned)*
 - [ ] Add differential scan history storage so the dashboard can explain
       what changed between scans. *(state: planned)*
 - [ ] Add history and trend routes for roadmap maturity and aggregate
@@ -749,6 +784,12 @@ self-promoting.
       publishable spec directory. *(state: planned)*
 - [ ] Add portfolio and per-repo SVG badge routes for maturity display.
       *(state: planned)*
+- [ ] Add cost and quota-burn analytics computed at report time from raw
+      run observations plus valuation config: cash cost per phase, quota
+      burn per repo, starvation-event counts, estimated-vs-actual work
+      units (forecast accuracy), and a credit-prompt / overage event
+      trail — derived values are never written back into the append-only
+      event log. *(state: planned)*
 - [ ] Smoke test the trend route response shape for daily rollups.
       *(state: planned)*
 
@@ -800,6 +841,12 @@ for human review.
       *(state: planned)*
 - [ ] Publish OpenAPI 3.1 documentation for the agent API contract.
       *(state: planned)*
+- [ ] Define an optional per-repo roadmap event-log convention in the
+      Roadmap Contract Standard: an append-only, schema-versioned
+      `roadmap-events.jsonl` with a constrained event vocabulary (phase and
+      task lifecycle, validation results, errors, decisions, commits,
+      metrics) so managed repos accumulate machine-readable execution
+      history this app and external agents can read. *(state: planned)*
 - [ ] Smoke test the readiness contract shape and concurrent claim
       behavior. *(state: planned)*
 

@@ -120,6 +120,34 @@ Bad items (vague — will trigger `ROADMAP-010`):
 - `- [ ] Fix stuff`
 - `- [ ] Update docs`
 
+### Completion dates and token usage
+
+Completed work should carry an absolute completion date so the roadmap doubles
+as a referencable, reportable project timeline:
+
+- **Completed checklist items:** append an italic annotation —
+  `- [x] Add structured roadmap parser *(completed: 2026-06-11)*`
+- **Completed releases:** add a `> Completed: YYYY-MM-DD` line under the
+  release status, and optionally `> Token usage: ~N tokens`.
+- **Multi-phase releases:** use the optional phase plan table from the
+  template, which carries `Completed` and `Token usage` columns per phase.
+
+Conventions:
+
+- Always use absolute ISO dates (`YYYY-MM-DD`), never relative wording
+  ("last week", "recently").
+- Token usage is optional and approximate (e.g. `~1.2M tokens`). Record it
+  when the work was executed by a metered AI/coding agent and the usage is
+  known from dispatch or run records; omit it rather than estimating after
+  the fact.
+- For full per-phase cost accounting — cash cost, quota/session-window
+  burn, and opportunity cost tracked separately, plus budget guardrails
+  for agent sessions — see
+  `standards/roadmap/ROADMAP_BUDGET_MODEL.md`.
+- Dates and token annotations are additive metadata. They must not alter the
+  checklist syntax (`- [x]`, `- [ ]`) that the roadmap parser depends on,
+  and roadmap repairs must preserve them exactly like completion history.
+
 ---
 
 ## The Release Execution Contract
@@ -273,6 +301,7 @@ The following files make up the Roadmap Contract Standard package:
 | `standards/roadmap/roadmap-audit-rules.json` | Weighted scoring rules and maturity thresholds |
 | `standards/roadmap/ROADMAP_MATURITY_MODEL.md` | Human-readable maturity level definitions |
 | `standards/roadmap/roadmap-repair-prompt.md` | Prompt template for preview-based roadmap repair |
+| `standards/roadmap/ROADMAP_BUDGET_MODEL.md` | Cost/quota accounting model and budget guardrails for agent-driven phases |
 
 These files are loaded by the backend at runtime via `GET /api/roadmap/standard`. This means
 audit rules and thresholds can be updated without code changes — only the JSON data files

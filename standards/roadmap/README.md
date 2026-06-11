@@ -11,6 +11,7 @@ changes.
 | `roadmap-contract.schema.json` | JSON Schema for the normalized contract model (backend audit). |
 | `roadmap-audit-rules.json` | Weighted scoring rules + maturity thresholds (backend audit). |
 | `roadmap-repair-prompt.md` | Prompt template for preview-based roadmap repair. |
+| `ROADMAP_BUDGET_MODEL.md` | Cost/quota accounting model for agent-driven phases (cash, quota, opportunity). |
 | `roadmap-validation.config.example.json` | Example config for the structure/quality validator. |
 
 ## Two related systems

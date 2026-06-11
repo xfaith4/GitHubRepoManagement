@@ -49,7 +49,8 @@ Audit findings that triggered this repair:
 
 Your task is to produce a PREVIEW of a repaired ROADMAP.md that:
 
-1. Preserves all checked items (- [x]) exactly as they appear — do not delete or reword them.
+1. Preserves all checked items (- [x]) exactly as they appear — do not delete or reword them,
+   including any *(completed: YYYY-MM-DD)* or token-usage annotations attached to them.
 2. Reorganizes unchecked items into bounded release sections using the heading format:
    ## Release {X.Y} — {Title}
 3. Adds a product intent section at the top if one does not already exist.
@@ -78,6 +79,7 @@ Current ROADMAP.md content:
 Before applying the repaired roadmap, verify:
 
 - [ ] All checked items (`- [x]`) from the original are present and unchanged.
+- [ ] Completion dates and token-usage annotations from the original are preserved exactly.
 - [ ] No new milestones were invented that do not reflect the original intent.
 - [ ] Every release section has a goal statement, checklist, and acceptance criteria.
 - [ ] Out-of-scope sections are accurate (not used to quietly defer real requirements).
