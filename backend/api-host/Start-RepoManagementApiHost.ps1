@@ -5910,6 +5910,96 @@ try {
                         }
                     }
                 }
+                'POST /api/ai/docs/improve/apply' {
+                    Write-HostLog ("[TRACE] ai.docs.improve.apply correlationId={0} start" -f $correlationId)
+                    $body = Parse-JsonBody -Body $req.Body
+                    $repoName        = if ($body.ContainsKey('repoName') -and $body.repoName) { [string]$body.repoName } else { '' }
+                    $docTypeRaw      = if ($body.ContainsKey('docType') -and $body.docType) { ([string]$body.docType).ToLowerInvariant() } else { 'readme' }
+                    $docType         = if ($docTypeRaw -eq 'roadmap') { 'roadmap' } else { 'readme' }
+                    $previewId       = if ($body.ContainsKey('previewId') -and $body.previewId) { [string]$body.previewId } else { '' }
+                    $proposedContent = if ($body.ContainsKey('proposedContent') -and $null -ne $body.proposedContent) { [string]$body.proposedContent } else { '' }
+                    $requestedPath   = if ($body.ContainsKey('path') -and $body.path) { [string]$body.path } else { '' }
+
+                    if ([string]::IsNullOrWhiteSpace($repoName)) {
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error   = 'repoName is required for /api/ai/docs/improve/apply'
+                        }
+                        break
+                    }
+                    if ([string]::IsNullOrWhiteSpace($proposedContent)) {
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error   = 'proposedContent is required for /api/ai/docs/improve/apply — apply writes only operator-approved content'
+                        }
+                        break
+                    }
+
+                    $settings = Get-HostSettings
+
+                    # Resolve the target file the same way the preview route resolves
+                    # current content: explicit path, then roadmap cache, then index.
+                    $targetPath = $requestedPath
+                    $docFileName = if ($docType -eq 'roadmap') { 'ROADMAP.md' } else { 'README.md' }
+
+                    if ([string]::IsNullOrWhiteSpace($targetPath) -and $docType -eq 'roadmap') {
+                        $roadmapTtl   = Get-RoadmapCacheTtlSeconds -Settings $settings
+                        $roadmapCache = Get-RoadmapFromCache -TtlSeconds $roadmapTtl
+                        if ($roadmapCache.hit -and $roadmapCache.entries) {
+                            $rEntry = @($roadmapCache.entries) | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1
+                            if ($null -ne $rEntry) {
+                                $rp = if ($rEntry -is [System.Collections.IDictionary]) { [string]$rEntry['roadmapPath'] } else { [string]$rEntry.roadmapPath }
+                                if (-not [string]::IsNullOrWhiteSpace($rp)) { $targetPath = $rp }
+                            }
+                        }
+                    }
+
+                    if ([string]::IsNullOrWhiteSpace($targetPath)) {
+                        $indexPayload = Get-PortfolioIndexPayload -WorkspaceRoot $WorkspaceRoot
+                        if ($null -ne $indexPayload -and ($indexPayload.PSObject.Properties.Name -contains 'repos')) {
+                            $indexMatch = @($indexPayload.repos | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1)
+                            if ($indexMatch.Count -gt 0) {
+                                $localPath = [string](Get-ObjectPropertyValue -InputObject $indexMatch[0] -PropertyName 'localPath' -Default '')
+                                if (-not [string]::IsNullOrWhiteSpace($localPath) -and (Test-Path -LiteralPath $localPath -PathType Container)) {
+                                    $targetPath = Join-Path $localPath $docFileName
+                                }
+                            }
+                        }
+                    }
+
+                    if ([string]::IsNullOrWhiteSpace($targetPath)) {
+                        Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error   = "Could not resolve a $docFileName target path for repo '$repoName'. Supply an explicit 'path' or run a portfolio scan first."
+                        }
+                        break
+                    }
+
+                    try {
+                        $applyResult = Invoke-AiDocImproveApply `
+                            -WorkspaceRoot $WorkspaceRoot `
+                            -RepoName $repoName `
+                            -TargetPath $targetPath `
+                            -ProposedContent $proposedContent `
+                            -DocType $docType `
+                            -PreviewId $previewId
+                    } catch {
+                        Write-HostLog ("[WARN ] ai.docs.improve.apply correlationId={0} failed repoName={1} docType={2} error={3}" -f $correlationId, $repoName, $docType, $_.Exception.Message)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error   = "Apply failed: $($_.Exception.Message)"
+                        }
+                        break
+                    }
+
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Write-HostLog ("[TRACE] ai.docs.improve.apply correlationId={0} done repoName={1} docType={2} target={3} backup={4}" -f $correlationId, $repoName, $docType, $applyResult.targetPath, $applyResult.backupPath)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = $applyResult
+                    }
+                }
                 'GET /api/ai/docs/templates' {
                     $templates = Get-AiDocTemplates -WorkspaceRoot $WorkspaceRoot
                     Add-MetricCounter -Name 'api_requests_total'

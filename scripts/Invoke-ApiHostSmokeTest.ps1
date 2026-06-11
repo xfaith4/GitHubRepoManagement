@@ -632,6 +632,67 @@ try {
     if (@($aiHistoryMatch).Count -eq 0) { throw '/api/ai/docs/improve/history did not include the previewId from the preview call' }
     Write-Host ("  /api/ai/docs/improve/history -> {0} item(s), latest previewId matched" -f $aiHistoryItems.Count) -ForegroundColor DarkGray
 
+    Write-Host '[STEP] AI documentation improvement apply (Release 1.9 Phase 3)' -ForegroundColor Cyan
+    # Missing proposedContent -> validation failure path (must not 503).
+    $aiApplyMissingBody = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/ai/docs/improve/apply" -Body @{ repoName = 'smoke-ai-apply' }
+    Assert-Not503 -Name '/api/ai/docs/improve/apply (no proposedContent)' -Response $aiApplyMissingBody
+    if ([int]$aiApplyMissingBody.StatusCode -ne 400) { throw "/api/ai/docs/improve/apply without proposedContent expected HTTP 400, got $($aiApplyMissingBody.StatusCode)" }
+    Write-Host ("  /api/ai/docs/improve/apply (no proposedContent) -> HTTP {0}" -f $aiApplyMissingBody.StatusCode) -ForegroundColor DarkGray
+
+    # Real apply against an isolated temp target so the smoke never mutates a real repo document.
+    $aiApplyRepoName = 'smoke-ai-apply'
+    $aiApplyDir = Join-Path ([System.IO.Path]::GetTempPath()) ("ai-apply-smoke-" + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    $aiApplyBackupDir = Join-Path $WorkspaceRoot "output\ai-doc-improvements\backups\$aiApplyRepoName"
+    $aiApplyHistoryFile = Join-Path $WorkspaceRoot "output\ai-doc-improvements\$aiApplyRepoName.improvements.jsonl"
+    try {
+        New-Item -ItemType Directory -Path $aiApplyDir -Force | Out-Null
+        $aiApplyTarget = Join-Path $aiApplyDir 'README.md'
+        Set-Content -LiteralPath $aiApplyTarget -Value "# Smoke Apply`n`nOriginal content." -Encoding UTF8 -NoNewline
+
+        $aiApplyResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/ai/docs/improve/apply" -Body @{
+            repoName        = $aiApplyRepoName
+            docType         = 'readme'
+            path            = $aiApplyTarget
+            proposedContent = "# Smoke Apply`n`nImproved content."
+            previewId       = 'smoke-apply-preview'
+        }
+        Assert-Not503 -Name '/api/ai/docs/improve/apply' -Response $aiApplyResponse
+        $aiApplyJson = $aiApplyResponse.Json
+        if (-not $aiApplyJson.success) { throw '/api/ai/docs/improve/apply returned success=false' }
+        $aiApplyData = $aiApplyJson.data
+        if ([string]::IsNullOrWhiteSpace([string]$aiApplyData.applyId)) { throw '/api/ai/docs/improve/apply returned no applyId' }
+        if (-not [bool]$aiApplyData.originalExisted) { throw '/api/ai/docs/improve/apply did not report the pre-existing original file' }
+
+        $aiAppliedContent = Get-Content -LiteralPath $aiApplyTarget -Raw -Encoding UTF8
+        if ($aiAppliedContent -notmatch 'Improved content\.') { throw '/api/ai/docs/improve/apply did not write the proposed content to the target file' }
+
+        $aiBackupPath = [string]$aiApplyData.backupPath
+        if ([string]::IsNullOrWhiteSpace($aiBackupPath) -or -not (Test-Path -LiteralPath $aiBackupPath)) { throw '/api/ai/docs/improve/apply did not create a backup file' }
+        $aiBackupContent = Get-Content -LiteralPath $aiBackupPath -Raw -Encoding UTF8
+        if ($aiBackupContent -notmatch 'Original content\.') { throw '/api/ai/docs/improve/apply backup does not contain the original content' }
+
+        $aiRestorePath = [string]$aiApplyData.restoreMetadataPath
+        if ([string]::IsNullOrWhiteSpace($aiRestorePath) -or -not (Test-Path -LiteralPath $aiRestorePath)) { throw '/api/ai/docs/improve/apply did not write restore metadata' }
+        $aiRestoreMeta = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $aiRestorePath -Raw -Encoding UTF8)
+        if ([string]$aiRestoreMeta.applyId -ne [string]$aiApplyData.applyId) { throw 'restore metadata applyId does not match the apply response' }
+        if ([string]::IsNullOrWhiteSpace([string]$aiRestoreMeta.restoreCommand)) { throw 'restore metadata is missing the restoreCommand' }
+
+        # The apply must append an append-only history record marked applied=true.
+        $aiApplyHistoryResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/ai/docs/improve/history?repoName=$([uri]::EscapeDataString($aiApplyRepoName))&limit=5"
+        Assert-Not503 -Name '/api/ai/docs/improve/history (apply record)' -Response $aiApplyHistoryResponse
+        $aiApplyHistoryJson = $aiApplyHistoryResponse.Json
+        if (-not $aiApplyHistoryJson.success) { throw '/api/ai/docs/improve/history (apply record) returned success=false' }
+        $aiApplyHistoryMatch = @(@($aiApplyHistoryJson.data.items) | Where-Object { [string]$_.recordType -eq 'apply' -and [bool]$_.applied })
+        if (@($aiApplyHistoryMatch).Count -eq 0) { throw '/api/ai/docs/improve/history did not return the applied=true record written by the apply' }
+
+        Write-Host ("  /api/ai/docs/improve/apply -> applyId={0} backup+restore metadata verified, history applied record present" -f $aiApplyData.applyId) -ForegroundColor DarkGray
+    }
+    finally {
+        Remove-Item -LiteralPath $aiApplyDir -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $aiApplyBackupDir -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $aiApplyHistoryFile -Force -ErrorAction SilentlyContinue
+    }
+
     $copilotHistoryResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/copilot-task/history?limit=5"
     Assert-Not503 -Name '/api/copilot-task/history' -Response $copilotHistoryResponse
     $copilotHistoryJson = $copilotHistoryResponse.Json

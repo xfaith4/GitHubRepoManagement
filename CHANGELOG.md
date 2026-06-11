@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented here.
 
+## 2026-06-11 — Release 1.9 Phase 3: AI Documentation Improvement — Explicit Apply with Backup & Restore (Release 1.9 closed; Release 2.0 active)
+
+### Changes
+
+- **`backend/modules/ai/AiDocImprovement.ps1`** — added `Invoke-AiDocImproveApply`, the only function in the module that mutates a managed document. It refuses targets whose file name does not match the doc type (README.md / ROADMAP.md), backs up the current file to `output/ai-doc-improvements/backups/<repo>/` with a timestamped name, writes a restore-metadata JSON beside the backup (SHA-256 hashes of original and applied content plus a ready-to-run restore command), writes the operator-approved content, and appends an append-only `recordType=apply` / `applied=true` record to the per-repo improvement-history JSONL.
+- **`backend/api-host/Start-RepoManagementApiHost.ps1`** — added `POST /api/ai/docs/improve/apply`: 400 without `repoName` or `proposedContent`; resolves the target path exactly like the preview route (explicit `path` → roadmap cache → portfolio index) and 404s when unresolvable; apply failures return 400 with the reason.
+- **`frontend/components/OperationsWorkspaceView.tsx`** — "Apply Proposed to Repo" action in the AI Documentation Improvement panel with an explicit confirmation dialog, success banner showing target/backup/restore-metadata paths, error surface, viewer-pane refresh after apply, and an "Applied" badge plus apply-record rendering in the History tab.
+- **`frontend/types.ts`** and **`frontend/services/apiClient.ts`** — `AiDocImproveApplyRequest` / `AiDocImproveApplyResult` contracts, `applyAiDocImprovement` client, and `recordType` / `backupPath` on history items.
+- **`frontend/components/ApiDocsModal.tsx`** and **`backend/api-host/README.md`** — documented the apply route.
+- **`scripts/Invoke-ApiHostSmokeTest.ps1`** — added a Release 1.9 Phase 3 smoke step: missing-`proposedContent` → 400, then a real apply against an isolated temp target asserting the written content, backup content, restore metadata (applyId match + restoreCommand), and the `applied=true` history record; cleans up all artifacts in a `finally` block so the smoke never mutates a real repo document.
+- **`ROADMAP.md`** — Release 1.9 closed out and datetime-stamped (Phase 1 2026-06-10; Phases 2-3 2026-06-11); full release detail moved to the archive with per-milestone completion dates; Release 2.0 promoted to active with a full execution contract (current focus: agent-run ledger foundation with tier-1 budget-model metrics).
+- **`docs/history/completed-releases.md`** — archived Release 1.9 with completion dates on every milestone and a dated phase plan, per the new roadmap-standard timeline convention.
+
+### Testing
+
+- **PowerShell parser checks** — passed for the AI module, API host, and smoke script.
+- **`npm run build`** — passed.
+- **`tools/Test-RoadmapStructure.ps1`** — 0 errors.
+- **Live host checks** of `POST /api/ai/docs/improve/apply` — missing `proposedContent` → HTTP 400; real apply against a temp README target → HTTP 200 with the proposed content written, backup containing the original content, restore-metadata JSON with matching `applyId`, hashes, and working restore command; history returns the `applied=true` record with `backupPath`; docType/file-name mismatch guard (roadmap docType against a README.md path) → HTTP 400. (The full `Invoke-ApiHostSmokeTest.ps1` run still times out at the pre-existing 30s copilot-task/portfolio warmup cap on this large local inventory — before the AI steps are reached; tracked separately.)
+
 ## 2026-06-11 — Release 1.9 Phase 2: AI Documentation Improvement — Diff Viewer & History
 
 ### Changes

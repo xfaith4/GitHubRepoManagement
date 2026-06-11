@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   type OperationsRepoDetail,
+  type AiDocImproveApplyResult,
   type AiDocImprovementHistoryItem,
   type AiDocImprovePreviewResult,
   type AiDocProvider,
@@ -18,7 +19,7 @@ import {
   type RepoLifecycleState,
   type RoadmapContent,
 } from '../types';
-import { executeRoadmapDispatch, getAiDocImprovementHistory, getAiDocTemplates, getOperationsPromptHistory, getOperationsRepoDetail, getReadmeContent, getRoadmapContent, previewAiDocImprovement, refineOperationsPrompt } from '../services/apiClient';
+import { applyAiDocImprovement, executeRoadmapDispatch, getAiDocImprovementHistory, getAiDocTemplates, getOperationsPromptHistory, getOperationsRepoDetail, getReadmeContent, getRoadmapContent, previewAiDocImprovement, refineOperationsPrompt } from '../services/apiClient';
 import { BranchIcon, DatabaseIcon, HealthIcon, PullRequestIcon, RefreshIcon, RoadmapIcon, SpinnerIcon } from './icons';
 
 interface OperationsWorkspaceViewProps {
@@ -179,6 +180,9 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
   const [aiProposedCopied, setAiProposedCopied] = useState(false);
   const [aiHistory, setAiHistory] = useState<AiDocImprovementHistoryItem[]>([]);
   const [aiHistoryLoading, setAiHistoryLoading] = useState(false);
+  const [aiApplyLoading, setAiApplyLoading] = useState(false);
+  const [aiApplyError, setAiApplyError] = useState<string | null>(null);
+  const [aiApplyResult, setAiApplyResult] = useState<AiDocImproveApplyResult | null>(null);
 
   const filteredEntries = useMemo(() => {
     const lower = filterText.trim().toLowerCase();
@@ -522,6 +526,8 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
     setAiLoading(true);
     setAiError(null);
     setAiProposedCopied(false);
+    setAiApplyError(null);
+    setAiApplyResult(null);
 
     try {
       const loadedContent = aiDocType === 'roadmap' ? roadmapContent?.content : readmeContent?.content;
@@ -553,6 +559,49 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
       window.setTimeout(() => setAiProposedCopied(false), 1500);
     } catch {
       setAiProposedCopied(false);
+    }
+  };
+
+  const handleApplyAiProposed = async () => {
+    if (!selectedEntry || !aiPreview?.proposedContent) {
+      return;
+    }
+
+    const docFileName = aiPreview.docType === 'roadmap' ? 'ROADMAP.md' : 'README.md';
+    const confirmed = window.confirm(
+      `Apply the proposed ${docFileName} to "${selectedEntry.repoName}"?\n\nThe current file will be backed up first, and a restore command will be recorded. This writes to disk.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setAiApplyLoading(true);
+    setAiApplyError(null);
+
+    try {
+      const result = await applyAiDocImprovement({
+        repoName: selectedEntry.repoName,
+        docType: aiPreview.docType,
+        proposedContent: aiPreview.proposedContent,
+        previewId: aiPreview.previewId,
+      });
+      setAiApplyResult(result);
+      setAiHistory([]); // force a refresh next time the history tab opens
+
+      // Refresh the viewer panes so the workspace shows the applied content.
+      try {
+        if (aiPreview.docType === 'roadmap') {
+          setRoadmapContent(await getRoadmapContent(selectedEntry.repoName));
+        } else {
+          setReadmeContent(await getReadmeContent(selectedEntry.repoName));
+        }
+      } catch {
+        // Viewer refresh is best-effort; the apply itself already succeeded.
+      }
+    } catch (err) {
+      setAiApplyError(err instanceof Error ? err.message : 'Failed to apply the proposed documentation improvement.');
+    } finally {
+      setAiApplyLoading(false);
     }
   };
 
@@ -1296,7 +1345,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                   {aiTab === 'improve' && (
                     <div className="mt-3 space-y-3">
                       <div className="text-xs text-gray-500">
-                        Preview-first README/ROADMAP improvement cycles. Nothing is written to disk — copy the proposed content to apply it manually until the explicit apply workflow ships.
+                        Preview-first README/ROADMAP improvement cycles. Nothing is written to disk until you explicitly apply a proposed version — apply backs up the current file and records restore metadata first.
                       </div>
 
                       <div className="grid gap-3 lg:grid-cols-3">
@@ -1306,7 +1355,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                             {(['readme', 'roadmap'] as const).map(docType => (
                               <button
                                 key={docType}
-                                onClick={() => { setAiDocType(docType); setAiPreview(null); setAiError(null); }}
+                                onClick={() => { setAiDocType(docType); setAiPreview(null); setAiError(null); setAiApplyError(null); setAiApplyResult(null); }}
                                 className={`flex-1 rounded px-2 py-1.5 uppercase transition-colors ${aiDocType === docType ? 'bg-violet-900/50 text-violet-100' : 'text-gray-300 hover:bg-gray-800'}`}
                               >
                                 {docType}
@@ -1381,11 +1430,49 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                         >
                           {aiProposedCopied ? 'Copied' : 'Copy Proposed'}
                         </button>
+                        {aiPreview && (
+                          <button
+                            onClick={() => void handleApplyAiProposed()}
+                            disabled={aiLoading || aiApplyLoading || !aiPreview.proposedContent}
+                            className="inline-flex items-center gap-2 rounded-md border border-emerald-700/50 bg-emerald-950/40 px-3 py-1.5 text-sm text-emerald-100 hover:bg-emerald-900/50 disabled:opacity-50 transition-colors"
+                            title="Write the proposed content to the repo after backing up the current file (explicit operator approval)"
+                          >
+                            {aiApplyLoading ? <SpinnerIcon className="w-4 h-4" /> : null}
+                            {aiApplyLoading ? 'Applying...' : 'Apply Proposed to Repo'}
+                          </button>
+                        )}
                       </div>
 
                       {aiError && (
                         <div className="rounded-md border border-red-700/40 bg-red-950/20 px-3 py-2 text-xs text-red-200">
                           {aiError}
+                        </div>
+                      )}
+
+                      {aiApplyError && (
+                        <div className="rounded-md border border-red-700/40 bg-red-950/20 px-3 py-2 text-xs text-red-200">
+                          {aiApplyError}
+                        </div>
+                      )}
+
+                      {aiApplyResult && !aiApplyLoading && (
+                        <div className="rounded-md border border-emerald-700/40 bg-emerald-950/20 px-3 py-2 text-xs text-emerald-200 space-y-1">
+                          <div>
+                            Applied to <span className="text-emerald-100 break-all">{aiApplyResult.targetPath}</span>
+                            {' '}at {new Date(aiApplyResult.appliedAt).toLocaleString()}.
+                          </div>
+                          {aiApplyResult.backupPath ? (
+                            <div className="text-emerald-300/80">
+                              Backup: <span className="break-all">{aiApplyResult.backupPath}</span>
+                            </div>
+                          ) : (
+                            <div className="text-emerald-300/80">No backup was needed — the file did not exist before this apply.</div>
+                          )}
+                          {aiApplyResult.restoreMetadataPath && (
+                            <div className="text-emerald-300/80">
+                              Restore metadata: <span className="break-all">{aiApplyResult.restoreMetadataPath}</span>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -1467,22 +1554,40 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                       ) : (
                         <ul className="space-y-2">
                           {aiHistory.map(item => (
-                            <li key={item.previewId} className="rounded-md border border-gray-700 bg-gray-900/40 px-3 py-2 text-xs text-gray-300 space-y-1">
+                            <li key={`${item.recordType ?? 'preview'}-${item.previewId}-${item.createdAt}`} className="rounded-md border border-gray-700 bg-gray-900/40 px-3 py-2 text-xs text-gray-300 space-y-1">
                               <div className="flex items-center justify-between gap-2 flex-wrap">
-                                <span className="uppercase text-violet-300">{item.docType}</span>
+                                <span className="uppercase text-violet-300">
+                                  {item.docType}
+                                  {item.applied && (
+                                    <span className="ml-2 rounded border border-emerald-700/50 bg-emerald-950/40 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-emerald-300">
+                                      Applied
+                                    </span>
+                                  )}
+                                </span>
                                 <span className="text-gray-500">{new Date(item.createdAt).toLocaleString()}</span>
                               </div>
-                              <div className="text-gray-400">
-                                Provider: <span className="text-gray-200">{item.providerId}</span>
-                                {' '}• Template: <span className="text-gray-200">{item.templateId || 'default'}</span>
-                              </div>
-                              <div className="text-gray-400">
-                                Score {item.scoreBefore} → {item.scoreAfter}{' '}
-                                <span className={item.scoreDelta >= 0 ? 'text-emerald-300' : 'text-red-300'}>
-                                  ({item.scoreDelta >= 0 ? '+' : ''}{item.scoreDelta})
-                                </span>
-                                {' '}• Changes: {item.changeSummary.length} • Warnings: {item.warningCount}
-                              </div>
+                              {item.recordType === 'apply' ? (
+                                <div className="text-gray-400">
+                                  Written to disk after operator approval.
+                                  {item.backupPath && (
+                                    <span className="block text-gray-500 break-all">Backup: {item.backupPath}</span>
+                                  )}
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="text-gray-400">
+                                    Provider: <span className="text-gray-200">{item.providerId}</span>
+                                    {' '}• Template: <span className="text-gray-200">{item.templateId || 'default'}</span>
+                                  </div>
+                                  <div className="text-gray-400">
+                                    Score {item.scoreBefore} → {item.scoreAfter}{' '}
+                                    <span className={item.scoreDelta >= 0 ? 'text-emerald-300' : 'text-red-300'}>
+                                      ({item.scoreDelta >= 0 ? '+' : ''}{item.scoreDelta})
+                                    </span>
+                                    {' '}• Changes: {item.changeSummary.length} • Warnings: {item.warningCount}
+                                  </div>
+                                </>
+                              )}
                               {item.customPrompt && (
                                 <div className="italic text-gray-400">+ {item.customPrompt}</div>
                               )}

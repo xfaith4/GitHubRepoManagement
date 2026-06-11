@@ -19,6 +19,7 @@ Minimal local PowerShell API host for adapter contracts.
 - `POST /api/operations/prompt/refine`
 - `GET /api/operations/prompt/history`
 - `POST /api/ai/docs/improve/preview`
+- `POST /api/ai/docs/improve/apply`
 - `GET /api/ai/docs/improve/history`
 - `GET /api/ai/docs/templates`
 - `GET /api/readme/content`
@@ -59,6 +60,7 @@ Notes:
 - `POST /api/operations/prompt/refine` builds on the existing `/api/copilot-task/preview` packet, applies operator-directed task/constraint/emphasis refinements, and returns a refined prompt plus warnings for dispatch review while persisting a per-repo refinement record.
 - `GET /api/operations/prompt/history` returns the most recent per-repo refinement records written by the prompt-refine route and merges any linked dispatch records written when `/api/roadmap/dispatch/execute` is called with a refinement run ID.
 - `POST /api/ai/docs/improve/preview` generates a preview-only AI README/ROADMAP improvement (current vs proposed content, change summary, estimated score movement, warnings). Provider selection prefers a configured Anthropic/OpenAI key and degrades to a deterministic offline heuristic provider; no file is ever written by this route. Each preview appends a metadata record to `output/ai-doc-improvements/`.
+- `POST /api/ai/docs/improve/apply` writes operator-approved proposed content to the repo's README.md or ROADMAP.md — the only AI documentation route that mutates a file. It backs up the current file to `output/ai-doc-improvements/backups/<repo>/`, writes a restore-metadata JSON (content hashes + ready-to-run restore command), appends an append-only `applied=true` history record, and refuses targets whose file name does not match the doc type.
 - `GET /api/ai/docs/improve/history` returns per-repo improvement-cycle metadata records, newest first, with an optional `docType` filter.
 - `GET /api/ai/docs/templates` serves the built-in README/ROADMAP improvement templates from `backend/config/ai-doc-templates.json`.
 - `GET /api/readme/content` returns README markdown for a repo (or explicit path), used by the Operations repo-detail document viewer.

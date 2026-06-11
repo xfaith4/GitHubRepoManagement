@@ -1198,4 +1198,29 @@ export interface AiDocImprovementHistoryItem {
   changeSummary: string[];
   warningCount: number;
   applied: boolean;
+  /** 'apply' records are written by the explicit apply action; preview records have no recordType. */
+  recordType?: 'preview' | 'apply';
+  backupPath?: string | null;
+}
+
+export interface AiDocImproveApplyRequest {
+  repoName: string;
+  docType: AiDocType;
+  /** The operator-approved content to write. Apply never generates content itself. */
+  proposedContent: string;
+  previewId?: string;
+  /** Optional explicit target file path; when omitted the backend resolves it from the roadmap cache or portfolio index. */
+  path?: string;
+}
+
+export interface AiDocImproveApplyResult {
+  applyId: string;
+  repoName: string;
+  docType: AiDocType;
+  targetPath: string;
+  backupPath: string | null;
+  restoreMetadataPath: string | null;
+  originalExisted: boolean;
+  previewId: string | null;
+  appliedAt: string;
 }

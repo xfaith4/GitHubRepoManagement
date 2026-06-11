@@ -38,6 +38,7 @@ $ErrorActionPreference = 'Stop'
 
 $script:AiDocTemplatesRelPath = 'backend\config\ai-doc-templates.json'
 $script:AiDocHistoryRelDir    = 'output\ai-doc-improvements'
+$script:AiDocBackupRelDir     = 'output\ai-doc-improvements\backups'
 $script:AiDocDefaultAnthropicModel = 'claude-opus-4-8'
 $script:AiDocDefaultOpenAiModel    = 'gpt-4o'
 $script:AiDocDefaultMaxTokens      = 8000
@@ -684,5 +685,165 @@ function Get-AiDocImprovementHistory {
         )
     } catch {
         return @()
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Apply (explicit operator approval — Release 1.9 Phase 3)
+# ---------------------------------------------------------------------------
+
+function _AiSha256Hex {
+    param([AllowEmptyString()][string]$Text)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes([string]$Text))
+        return ([BitConverter]::ToString($bytes)).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $sha.Dispose()
+    }
+}
+
+<#
+.SYNOPSIS
+    Write operator-approved proposed content to a README.md or ROADMAP.md,
+    creating a backup of the current file and restore metadata first.
+.DESCRIPTION
+    This is the only function in this module that mutates a managed document,
+    and it must only ever be invoked from the explicit apply route after
+    operator approval. Before writing it:
+
+      1. Refuses targets whose file name does not match the doc type
+         (README.md / ROADMAP.md), so the apply surface cannot write
+         arbitrary files.
+      2. Copies the current content (when the file exists) to a timestamped
+         backup under output/ai-doc-improvements/backups/<repo>/.
+      3. Writes a restore-metadata JSON beside the backup with content
+         hashes and a ready-to-run restore command.
+      4. Appends an `apply` record to the same per-repo improvement-history
+         JSONL the preview path uses (append-only; prior records are never
+         rewritten).
+.OUTPUTS
+    [pscustomobject] apply receipt with backup and restore metadata paths.
+#>
+function Invoke-AiDocImproveApply {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+        [Parameter(Mandatory = $true)][string]$RepoName,
+        [Parameter(Mandatory = $true)][string]$TargetPath,
+        [Parameter(Mandatory = $true)][string]$ProposedContent,
+        [Parameter()][string]$DocType = 'readme',
+        [Parameter()][string]$PreviewId = ''
+    )
+
+    $docType = if ($DocType -eq 'roadmap') { 'roadmap' } else { 'readme' }
+    $expectedLeaf = if ($docType -eq 'roadmap') { 'ROADMAP.md' } else { 'README.md' }
+
+    if ([string]::IsNullOrWhiteSpace($ProposedContent)) {
+        throw 'proposedContent is empty; refusing to overwrite the target document with nothing.'
+    }
+    $leaf = Split-Path -Path $TargetPath -Leaf
+    if (-not [string]::Equals($leaf, $expectedLeaf, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Apply target file name '$leaf' does not match the expected $docType file name '$expectedLeaf'."
+    }
+    $targetDir = Split-Path -Path $TargetPath -Parent
+    if ([string]::IsNullOrWhiteSpace($targetDir) -or -not (Test-Path -LiteralPath $targetDir -PathType Container)) {
+        throw "Apply target directory does not exist: $targetDir"
+    }
+
+    $applyId = [guid]::NewGuid().ToString('n')
+    $now = (Get-Date).ToUniversalTime()
+    $nowIso = $now.ToString('o')
+    $stamp = $now.ToString('yyyyMMddTHHmmssfff') + 'Z'
+
+    $safeRepoName = $RepoName -replace '[\\/:*?"<>|]', '_'
+    $backupDir = Join-Path (Join-Path $WorkspaceRoot $script:AiDocBackupRelDir) $safeRepoName
+    $null = New-Item -ItemType Directory -Path $backupDir -Force
+
+    $originalExisted = Test-Path -LiteralPath $TargetPath -PathType Leaf
+    $originalContent = ''
+    $originalSha256 = $null
+    $backupPath = $null
+
+    if ($originalExisted) {
+        $originalContent = Get-Content -LiteralPath $TargetPath -Raw -Encoding UTF8 -ErrorAction Stop
+        $originalSha256 = _AiSha256Hex -Text $originalContent
+        $backupPath = Join-Path $backupDir ("{0}.{1}.{2}.bak.md" -f $docType, $stamp, $applyId.Substring(0, 8))
+        Set-Content -LiteralPath $backupPath -Value $originalContent -Encoding UTF8 -NoNewline -ErrorAction Stop
+    }
+
+    $appliedSha256 = _AiSha256Hex -Text $ProposedContent
+    Set-Content -LiteralPath $TargetPath -Value $ProposedContent -Encoding UTF8 -NoNewline -ErrorAction Stop
+
+    # Restore metadata: everything needed to undo this apply without the app.
+    $restoreMetadataPath = Join-Path $backupDir ("{0}.{1}.{2}.restore.json" -f $docType, $stamp, $applyId.Substring(0, 8))
+    $restoreMetadata = [ordered]@{
+        applyId         = $applyId
+        appliedAt       = $nowIso
+        repoName        = $RepoName
+        docType         = $docType
+        targetPath      = [string]$TargetPath
+        backupPath      = $backupPath
+        originalExisted = [bool]$originalExisted
+        originalSha256  = $originalSha256
+        appliedSha256   = $appliedSha256
+        previewId       = if ([string]::IsNullOrWhiteSpace($PreviewId)) { $null } else { $PreviewId }
+        restoreCommand  = if ($null -ne $backupPath) {
+            "Copy-Item -LiteralPath '$backupPath' -Destination '$TargetPath' -Force"
+        } else {
+            "Remove-Item -LiteralPath '$TargetPath' -Force  # file did not exist before this apply"
+        }
+    }
+    try {
+        ConvertTo-Json -InputObject $restoreMetadata -Depth 4 |
+            Set-Content -LiteralPath $restoreMetadataPath -Encoding UTF8 -ErrorAction Stop
+    } catch {
+        $restoreMetadataPath = $null
+    }
+
+    # Append-only history record; never rewrite earlier preview records.
+    $historyRecord = [ordered]@{
+        previewId     = if ([string]::IsNullOrWhiteSpace($PreviewId)) { '' } else { $PreviewId }
+        applyId       = $applyId
+        recordType    = 'apply'
+        createdAt     = $nowIso
+        repoName      = $RepoName
+        docType       = $docType
+        providerId    = 'operator'
+        modelId       = $null
+        templateId    = ''
+        customPrompt  = $null
+        scoreBefore   = 0
+        scoreAfter    = 0
+        scoreDelta    = 0
+        changeSummary = @(
+            "Applied proposed $expectedLeaf to $TargetPath after explicit operator approval.",
+            $(if ($null -ne $backupPath) { "Backup created at $backupPath" } else { "No backup created — target file did not exist before apply." })
+        )
+        warningCount  = 0
+        applied       = $true
+        backupPath    = $backupPath
+        targetPath    = [string]$TargetPath
+    }
+    try {
+        $json = ConvertTo-Json -InputObject $historyRecord -Compress -Depth 5
+        Add-Content -LiteralPath (_AiHistoryFilePath -WorkspaceRoot $WorkspaceRoot -RepoName $RepoName) -Value $json -Encoding UTF8 -ErrorAction Stop
+    } catch {
+        # Non-fatal — the apply itself succeeded; history must not undo that fact.
+    }
+
+    return [pscustomobject]@{
+        applyId             = $applyId
+        repoName            = $RepoName
+        docType             = $docType
+        targetPath          = [string]$TargetPath
+        backupPath          = $backupPath
+        restoreMetadataPath = $restoreMetadataPath
+        originalExisted     = [bool]$originalExisted
+        originalSha256      = $originalSha256
+        appliedSha256       = $appliedSha256
+        previewId           = if ([string]::IsNullOrWhiteSpace($PreviewId)) { $null } else { $PreviewId }
+        appliedAt           = $nowIso
     }
 }

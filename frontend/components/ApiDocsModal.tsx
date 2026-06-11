@@ -249,6 +249,27 @@ const CATEGORIES: CategoryDef[] = [
         notes: 'Preview-first: no README.md or ROADMAP.md is modified. Each preview appends a compact metadata record to output/ai-doc-improvements/<repo>.improvements.jsonl for the history route. When no AI provider key is configured, the deterministic offline heuristic provider keeps the workflow available.',
       },
       {
+        method: 'POST',
+        path: '/api/ai/docs/improve/apply',
+        summary: 'Writes operator-approved proposed content to the repository README.md or ROADMAP.md after creating a backup and restore metadata. The only AI documentation route that mutates a file.',
+        bodyParams: [
+          { name: 'repoName', type: 'string', description: 'Repository name (required)' },
+          { name: 'docType', type: '"readme" | "roadmap"', description: 'Document to write (default: readme)' },
+          { name: 'proposedContent', type: 'string', description: 'The operator-approved content to write (required — apply never generates content itself)' },
+          { name: 'previewId', type: 'string', description: 'Optional preview id linking the apply to the improvement cycle that produced it' },
+          { name: 'path', type: 'string', description: 'Optional explicit target path; when omitted the host resolves it from the roadmap cache or portfolio index' },
+        ],
+        responseFields: [
+          { name: 'success', type: 'bool', description: 'Operation result flag' },
+          { name: 'data.applyId', type: 'string', description: 'Unique identifier for this apply action' },
+          { name: 'data.targetPath', type: 'string', description: 'File the content was written to' },
+          { name: 'data.backupPath', type: 'string | null', description: 'Timestamped backup of the previous content (null when the file did not exist)' },
+          { name: 'data.restoreMetadataPath', type: 'string | null', description: 'JSON sidecar with content hashes and a ready-to-run restore command' },
+          { name: 'data.appliedAt', type: 'string', description: 'UTC timestamp of the write' },
+        ],
+        notes: 'Backups and restore metadata live under output/ai-doc-improvements/backups/<repo>/. The apply is appended to the per-repo improvement history JSONL as an append-only record; the target file name must match the doc type (README.md / ROADMAP.md).',
+      },
+      {
         method: 'GET',
         path: '/api/ai/docs/improve/history',
         summary: 'Returns the most recent AI documentation improvement cycles for a repository, newest first.',

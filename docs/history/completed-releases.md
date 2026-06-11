@@ -440,3 +440,115 @@ the packet foundation from scratch.
 
 - AI-generated README/ROADMAP improvement cycles; handled in Release 1.9.
 - Agent-run monitoring and merge readiness; handled in Release 2.0.
+
+---
+
+## Release 1.9 — AI Documentation Improvement Cycles
+
+> Completed: 2026-06-11
+
+**Goal:** Add provider-backed, preview-first AI improvement cycles for
+README.md and ROADMAP.md so operators can repair weak documentation,
+standardize repos, and improve dispatch readiness without direct
+unreviewed file mutation.
+
+### Product outcomes
+
+- Operators can compare current README/ROADMAP content against a proposed
+  improved version.
+- The app explains what changed and why.
+- Operators can run multiple improvement cycles using built-in templates or
+  a custom improvement prompt.
+- OpenAI and Anthropic are supported through provider adapters.
+- Accepted changes are written only through an explicit apply action that
+  backs up the current file and records restore metadata first.
+
+### Engineering milestones
+
+- [x] Define AI provider adapter contract for documentation improvement.
+      *(state: smoke-tested — Phase 1; completed: 2026-06-10)* —
+      provider-agnostic contract in
+      `backend/modules/ai/AiDocImprovement.ps1`: each adapter returns
+      `providerId`, `modelId`, `proposedContent`, `changeSummary`,
+      `warnings`, and `error`.
+- [x] Add OpenAI provider adapter using configured environment variable or
+      settings path. *(state: backend-complete — Phase 1; completed: 2026-06-10)*
+      — raw-HTTP `Invoke-OpenAiDocProvider`, used only when
+      `ai.openai.apiKeyEnvVar` is set.
+- [x] Add Anthropic provider adapter using configured environment variable
+      or settings path. *(state: smoke-tested — Phase 1; completed: 2026-06-10)*
+      — raw-HTTP `Invoke-AnthropicDocProvider` (Messages API, model
+      `claude-opus-4-8`), used only when `ai.anthropic.apiKeyEnvVar` is set;
+      verified live.
+- [x] Add built-in README improvement templates: product README,
+      developer/operator README, open-source README, and portfolio showcase
+      README. *(state: smoke-tested — Phase 1; completed: 2026-06-10)* —
+      data-driven via `backend/config/ai-doc-templates.json`.
+- [x] Add built-in ROADMAP improvement templates: release-oriented roadmap,
+      roadmap contract format, agent-dispatch-ready roadmap, and
+      recovery/repair roadmap. *(state: smoke-tested — Phase 1; completed:
+      2026-06-10)* — same template config.
+- [x] Add `POST /api/ai/docs/improve/preview` route that returns current
+      content, proposed content, change summary, estimated score movement,
+      and warnings. *(state: smoke-tested — Phase 1; completed: 2026-06-10)*
+      — preview-only; resolves current content from inline body, roadmap
+      cache, or the portfolio index; degrades to the offline heuristic
+      provider when no AI key is configured.
+- [x] Add side-by-side diff viewer for current vs proposed README/ROADMAP.
+      *(state: ui-connected — Phase 2; completed: 2026-06-11)* — AI
+      Documentation Improvement panel in
+      `frontend/components/OperationsWorkspaceView.tsx` renders Current and
+      Proposed panes side by side with change summary, score movement,
+      warnings, and a copy-proposed action.
+- [x] Add improvement cycle history per repo. *(state: smoke-tested —
+      Phase 2; completed: 2026-06-11)* — each preview appends a compact
+      metadata record (provider, template, score movement, change summary)
+      to per-repo JSONL under `output/ai-doc-improvements/`; surfaced in
+      the panel's History tab.
+- [x] Add custom improvement prompt field for additional refinement cycles.
+      *(state: ui-connected — Phase 2; completed: 2026-06-11)* —
+      `customPrompt` textarea plus a "Run Another Cycle on Proposed" action
+      that feeds the proposed content back in as the next cycle's starting
+      point.
+- [x] Add explicit apply action for accepted changes with backup creation
+      and restore metadata. *(state: smoke-tested — Phase 3; completed:
+      2026-06-11)* — `Invoke-AiDocImproveApply` backs up the current file
+      to `output/ai-doc-improvements/backups/<repo>/`, writes a
+      restore-metadata JSON (content hashes + ready-to-run restore
+      command), appends an append-only `applied=true` history record, and
+      refuses targets whose file name does not match the doc type; "Apply
+      Proposed to Repo" action with confirmation in the Operations panel.
+- [x] Add `POST /api/ai/docs/improve/apply` route that writes accepted
+      changes only after explicit operator approval. *(state: smoke-tested
+      — Phase 3; completed: 2026-06-11)* — 400 without `repoName` /
+      `proposedContent`; resolves the target path exactly like the preview
+      route (explicit path → roadmap cache → portfolio index).
+- [x] Add `GET /api/ai/docs/improve/history` route for repo-specific
+      improvement history. *(state: smoke-tested — Phase 2; completed:
+      2026-06-11)* — supports `docType` filter and limit; smoke asserts
+      the preview-written record is returned. A `GET /api/ai/docs/templates`
+      companion route serves the built-in templates to the UI.
+
+### Acceptance criteria
+
+- A README improvement preview shows current content, proposed content,
+  and change summary side by side. ✔
+- A ROADMAP improvement preview shows current content, proposed content,
+  and change summary side by side. ✔
+- The operator can run an additional cycle using a custom improvement
+  prompt. ✔
+- No README.md or ROADMAP.md file is modified without explicit apply. ✔
+- AI-provider failures degrade to clear operator-facing errors. ✔
+
+### Out of scope
+
+- Automatic PR creation for documentation repairs; deferred to Release 2.4.
+- Autonomous documentation rewriting without human approval.
+
+### Phase plan
+
+| Phase                                    | Scope                                                                                                                                         | Status              | Completed  |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ---------- |
+| Phase 1: Provider foundation + preview   | Provider adapter contract, heuristic/OpenAI/Anthropic adapters, `ai-doc-templates.json`, `POST /api/ai/docs/improve/preview`, smoke coverage  | done — smoke-tested | 2026-06-10 |
+| Phase 2: Diff viewer + history           | Side-by-side current/proposed diff viewer, custom-prompt UI field, improvement cycle history, `GET /api/ai/docs/improve/history`              | done — smoke-tested | 2026-06-11 |
+| Phase 3: Explicit apply + backup/restore | Apply action with backup + restore metadata, `POST /api/ai/docs/improve/apply` (write only after explicit operator approval)                  | done — smoke-tested | 2026-06-11 |

@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate } from '../types';
+import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -1687,5 +1687,43 @@ export async function getAiDocImprovementHistory(repoName: string, options?: { d
     changeSummary: Array.isArray(item?.changeSummary) ? item.changeSummary.map((value: unknown) => String(value)) : [],
     warningCount: Number(item?.warningCount ?? 0),
     applied: Boolean(item?.applied ?? false),
+    recordType: String(item?.recordType ?? '') === 'apply' ? 'apply' : 'preview',
+    backupPath: item?.backupPath ? String(item.backupPath) : null,
   }));
+}
+
+export async function applyAiDocImprovement(request: AiDocImproveApplyRequest): Promise<AiDocImproveApplyResult> {
+  const repoName = request.repoName.trim();
+  if (!repoName) {
+    throw new Error('repoName is required to apply a documentation improvement.');
+  }
+  if (!request.proposedContent || !request.proposedContent.trim()) {
+    throw new Error('proposedContent is required — apply writes only operator-approved content.');
+  }
+
+  const body = {
+    repoName,
+    docType: request.docType,
+    proposedContent: request.proposedContent,
+    previewId: request.previewId ?? '',
+    path: request.path ?? '',
+  };
+
+  const data = await postJson<any>('/ai/docs/improve/apply', body);
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? data?.error ?? 'AI documentation improvement apply failed.');
+  }
+
+  const result = data.data ?? {};
+  return {
+    applyId: String(result?.applyId ?? ''),
+    repoName: String(result?.repoName ?? repoName),
+    docType: (String(result?.docType ?? request.docType) === 'roadmap' ? 'roadmap' : 'readme'),
+    targetPath: String(result?.targetPath ?? ''),
+    backupPath: result?.backupPath ? String(result.backupPath) : null,
+    restoreMetadataPath: result?.restoreMetadataPath ? String(result.restoreMetadataPath) : null,
+    originalExisted: Boolean(result?.originalExisted ?? false),
+    previewId: result?.previewId ? String(result.previewId) : null,
+    appliedAt: String(result?.appliedAt ?? ''),
+  };
 }
