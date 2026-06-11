@@ -574,6 +574,39 @@ try {
         }
     }
 
+    Write-Host '[STEP] AI documentation improvement preview (Release 1.9)' -ForegroundColor Cyan
+    # Missing repoName -> validation failure path (must not 503).
+    $aiImproveMissingBody = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/ai/docs/improve/preview" -Body @{}
+    Assert-Not503 -Name '/api/ai/docs/improve/preview (no repoName)' -Response $aiImproveMissingBody
+    Write-Host ("  /api/ai/docs/improve/preview (no repoName) -> HTTP {0}" -f $aiImproveMissingBody.StatusCode) -ForegroundColor DarkGray
+
+    # Inline content + heuristic provider keeps the smoke offline, deterministic, and free.
+    $aiImproveSampleReadme = "# Sample`n`nA short description without the standard sections."
+    $aiImproveResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/ai/docs/improve/preview" -Body @{
+        repoName       = $workspaceRepoName
+        docType        = 'readme'
+        templateId     = 'readme-product'
+        provider       = 'heuristic'
+        currentContent = $aiImproveSampleReadme
+        customPrompt   = 'Keep it concise.'
+    }
+    Assert-Not503 -Name '/api/ai/docs/improve/preview' -Response $aiImproveResponse
+    $aiImproveJson = $aiImproveResponse.Json
+    if (-not $aiImproveJson.success) { throw '/api/ai/docs/improve/preview returned success=false' }
+    $aiImproveData = $aiImproveJson.data
+    $aiImproveFieldsOk = $null -ne $aiImproveData -and
+        ($aiImproveData.PSObject.Properties.Name -contains 'previewId') -and
+        ($aiImproveData.PSObject.Properties.Name -contains 'providerId') -and
+        ($aiImproveData.PSObject.Properties.Name -contains 'currentContent') -and
+        ($aiImproveData.PSObject.Properties.Name -contains 'proposedContent') -and
+        ($aiImproveData.PSObject.Properties.Name -contains 'changeSummary') -and
+        ($aiImproveData.PSObject.Properties.Name -contains 'estimatedScore') -and
+        ($aiImproveData.PSObject.Properties.Name -contains 'warnings')
+    if (-not $aiImproveFieldsOk) { throw '/api/ai/docs/improve/preview returned an unexpected payload shape' }
+    if ([string]$aiImproveData.providerId -ne 'heuristic') { throw "/api/ai/docs/improve/preview expected heuristic provider, got '$($aiImproveData.providerId)'" }
+    if ([string]::IsNullOrWhiteSpace([string]$aiImproveData.proposedContent)) { throw '/api/ai/docs/improve/preview returned empty proposedContent' }
+    Write-Host ("  /api/ai/docs/improve/preview -> provider={0} scoreDelta={1} changes={2}" -f $aiImproveData.providerId, $aiImproveData.estimatedScore.delta, @($aiImproveData.changeSummary).Count) -ForegroundColor DarkGray
+
     $copilotHistoryResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/copilot-task/history?limit=5"
     Assert-Not503 -Name '/api/copilot-task/history' -Response $copilotHistoryResponse
     $copilotHistoryJson = $copilotHistoryResponse.Json

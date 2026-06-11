@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented here.
 
+## 2026-06-10 — Release 1.9 Phase 1: AI Documentation Improvement — Provider Foundation & Preview
+
+### Changes
+
+- **`backend/modules/ai/AiDocImprovement.ps1`** (new) — provider-agnostic AI documentation-improvement adapter contract plus three adapters: a deterministic offline **heuristic** provider (always available; scaffolds missing template sections and normalizes the title), an **OpenAI** raw-HTTP adapter (Chat Completions), and an **Anthropic** raw-HTTP adapter (Messages API, model `claude-opus-4-8`). `Invoke-AiDocImprovePreview` resolves a template, selects an available provider (explicit → settings → heuristic fallback), computes estimated section-coverage score movement, and returns a preview-only record. No file is written.
+- **`backend/config/ai-doc-templates.json`** (new) — data-driven built-in README templates (product, developer/operator, open-source, portfolio) and ROADMAP templates (release-oriented, contract, agent-dispatch-ready, recovery/repair), each with improvement guidance and expected sections.
+- **`backend/api-host/Start-RepoManagementApiHost.ps1`** — dot-sources the new AI module and adds `POST /api/ai/docs/improve/preview`. The route resolves current README/ROADMAP content from an inline body, the roadmap cache, or the portfolio index, then returns current vs proposed content, a change summary, estimated score movement, and warnings. Preview-only — no README/ROADMAP mutation.
+- **`scripts/Invoke-ApiHostSmokeTest.ps1`** — added an AI-preview smoke step (missing-`repoName` 400 path plus a heuristic-provider contract check with inline content) that stays offline, deterministic, and free.
+- **`ROADMAP.md`** — promoted Release 1.9 to the active release (Release 1.8 → `done`), marked the Phase 1 milestones complete, added a Release 1.9 phase plan, and gave the active-release detail a full execution contract (validation plan, risks, dependencies, known issues, traceability). Moved the completed Release 1.8 detail to the archive.
+- **`docs/history/completed-releases.md`** — archived the full Release 1.8 detail.
+
+### Testing
+
+- **PowerShell parser checks** — passed for `backend/modules/ai/AiDocImprovement.ps1`, `backend/api-host/Start-RepoManagementApiHost.ps1`, and `scripts/Invoke-ApiHostSmokeTest.ps1`.
+- **`npm run build`** — passed.
+- **`tools/Test-RoadmapStructure.ps1`** — 0 errors (2 pre-existing advisory warnings).
+- **Live host check** of `POST /api/ai/docs/improve/preview` — missing-`repoName` → HTTP 400; heuristic README → HTTP 200 with full preview contract (score delta, change summary); ROADMAP docType → HTTP 200 with auto-selected template. The Anthropic adapter was additionally exercised against the live Messages API. (The full `Invoke-ApiHostSmokeTest.ps1` run still times out earlier at the pre-existing 30s docs-audit/portfolio warmup cap on this large local inventory; the AI step passes when reached.)
+
 ## 2026-06-09 — Release 1.8: Operations Prompt Dispatch Tracking
 
 ### Changes

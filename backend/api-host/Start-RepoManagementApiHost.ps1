@@ -46,6 +46,8 @@ $portfolioModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\portfolio'
 . (Join-Path $portfolioModuleRoot 'Portfolio.ValueScorer.ps1')
 . (Join-Path $portfolioModuleRoot 'Portfolio.Assessment.ps1')
 . (Join-Path $portfolioModuleRoot 'Portfolio.Report.ps1')
+$aiModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\ai'
+. (Join-Path $aiModuleRoot 'AiDocImprovement.ps1')
 . (Join-Path $commonRoot 'NotificationHub.ps1')
 . (Join-Path $PSScriptRoot 'ApiHost.ErrorHandling.ps1')
 
@@ -5796,6 +5798,86 @@ try {
                             items    = @($items)
                             count    = @($items).Count
                         }
+                    }
+                }
+                'POST /api/ai/docs/improve/preview' {
+                    Write-HostLog ("[TRACE] ai.docs.improve.preview correlationId={0} start" -f $correlationId)
+                    $body = Parse-JsonBody -Body $req.Body
+                    $repoName     = if ($body.ContainsKey('repoName') -and $body.repoName) { [string]$body.repoName } else { '' }
+                    $docTypeRaw   = if ($body.ContainsKey('docType') -and $body.docType) { ([string]$body.docType).ToLowerInvariant() } else { 'readme' }
+                    $docType      = if ($docTypeRaw -eq 'roadmap') { 'roadmap' } else { 'readme' }
+                    $templateId   = if ($body.ContainsKey('templateId') -and $body.templateId) { [string]$body.templateId } else { '' }
+                    $customPrompt = if ($body.ContainsKey('customPrompt') -and $body.customPrompt) { [string]$body.customPrompt } else { '' }
+                    $provider     = if ($body.ContainsKey('provider') -and $body.provider) { [string]$body.provider } else { '' }
+                    $currentContent = if ($body.ContainsKey('currentContent') -and $null -ne $body.currentContent) { [string]$body.currentContent } else { '' }
+                    $requestedPath  = if ($body.ContainsKey('path') -and $body.path) { [string]$body.path } else { '' }
+
+                    if ([string]::IsNullOrWhiteSpace($repoName)) {
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error   = 'repoName is required for /api/ai/docs/improve/preview'
+                        }
+                        break
+                    }
+
+                    $settings = Get-HostSettings
+
+                    # Resolve current content when the caller did not supply it inline.
+                    if ([string]::IsNullOrWhiteSpace($currentContent)) {
+                        $targetPath = $requestedPath
+                        $docFileName = if ($docType -eq 'roadmap') { 'ROADMAP.md' } else { 'README.md' }
+
+                        if ([string]::IsNullOrWhiteSpace($targetPath) -and $docType -eq 'roadmap') {
+                            $roadmapTtl   = Get-RoadmapCacheTtlSeconds -Settings $settings
+                            $roadmapCache = Get-RoadmapFromCache -TtlSeconds $roadmapTtl
+                            if ($roadmapCache.hit -and $roadmapCache.entries) {
+                                $rEntry = @($roadmapCache.entries) | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1
+                                if ($null -ne $rEntry) {
+                                    $rp = if ($rEntry -is [System.Collections.IDictionary]) { [string]$rEntry['roadmapPath'] } else { [string]$rEntry.roadmapPath }
+                                    if (-not [string]::IsNullOrWhiteSpace($rp)) { $targetPath = $rp }
+                                }
+                            }
+                        }
+
+                        if ([string]::IsNullOrWhiteSpace($targetPath)) {
+                            $indexPayload = Get-PortfolioIndexPayload -WorkspaceRoot $WorkspaceRoot
+                            if ($null -ne $indexPayload -and ($indexPayload.PSObject.Properties.Name -contains 'repos')) {
+                                $indexMatch = @($indexPayload.repos | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1)
+                                if ($indexMatch.Count -gt 0) {
+                                    $localPath = [string](Get-ObjectPropertyValue -InputObject $indexMatch[0] -PropertyName 'localPath' -Default '')
+                                    if (-not [string]::IsNullOrWhiteSpace($localPath)) {
+                                        $candidatePath = Join-Path $localPath $docFileName
+                                        if (Test-Path -LiteralPath $candidatePath) { $targetPath = $candidatePath }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (-not [string]::IsNullOrWhiteSpace($targetPath) -and (Test-Path -LiteralPath $targetPath)) {
+                            try {
+                                $currentContent = Get-Content -LiteralPath $targetPath -Raw -Encoding UTF8 -ErrorAction Stop
+                            } catch {
+                                $currentContent = ''
+                            }
+                        }
+                    }
+
+                    $preview = Invoke-AiDocImprovePreview `
+                        -WorkspaceRoot $WorkspaceRoot `
+                        -RepoName $repoName `
+                        -DocType $docType `
+                        -CurrentContent $currentContent `
+                        -TemplateId $templateId `
+                        -CustomPrompt $customPrompt `
+                        -Provider $provider `
+                        -Settings $settings
+
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Write-HostLog ("[TRACE] ai.docs.improve.preview correlationId={0} done repoName={1} docType={2} provider={3} scoreDelta={4}" -f $correlationId, $repoName, $docType, $preview.providerId, $preview.estimatedScore.delta)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = $preview
                     }
                 }
                 'POST /api/roadmap/dispatch/check' {

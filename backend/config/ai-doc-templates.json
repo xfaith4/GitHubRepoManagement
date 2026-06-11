@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "v1",
+  "description": "Built-in AI documentation improvement templates for Release 1.9. Each template provides docType, an operator-facing label, the improvement intent injected into the provider prompt, and the headings the improved document should converge toward. The heuristic provider uses requiredSections to compute estimated score movement and to scaffold missing sections offline; the OpenAI/Anthropic providers fold guidance + requiredSections into the model instruction.",
+  "readmeTemplates": [
+    {
+      "id": "readme-product",
+      "label": "Product README",
+      "summary": "Outcome-first README aimed at end users evaluating or adopting the project.",
+      "guidance": "Rewrite this README so a prospective user understands what the product does, who it is for, and why it is valuable within the first few lines. Lead with a one-paragraph value statement, then quick-start installation and usage. Keep prose tight and benefit-oriented. Preserve any accurate existing badges, links, and license references.",
+      "requiredSections": ["Overview", "Features", "Installation", "Usage", "Configuration", "License"]
+    },
+    {
+      "id": "readme-developer",
+      "label": "Developer / Operator README",
+      "summary": "Contributor-facing README emphasizing local setup, architecture, and operations.",
+      "guidance": "Rewrite this README for a developer or operator who will run, extend, or maintain the project. Emphasize prerequisites, local setup, build/test commands, architecture overview, and troubleshooting. Keep instructions copy-pasteable and explicit about commands.",
+      "requiredSections": ["Overview", "Prerequisites", "Installation", "Usage", "Architecture", "Testing", "Contributing", "License"]
+    },
+    {
+      "id": "readme-open-source",
+      "label": "Open-Source README",
+      "summary": "Community-ready README with contribution, support, and conduct signals.",
+      "guidance": "Rewrite this README to meet open-source community expectations. Make the project's purpose obvious, document installation and usage, and surface contribution guidelines, support channels, code of conduct, security policy, and license. Encourage external contributors without being verbose.",
+      "requiredSections": ["Overview", "Installation", "Usage", "Contributing", "Support", "Security", "License"]
+    },
+    {
+      "id": "readme-portfolio",
+      "label": "Portfolio Showcase README",
+      "summary": "Polished README that frames the repo as portfolio evidence of skills.",
+      "guidance": "Rewrite this README to showcase the project as portfolio evidence. Highlight the problem it solves, the technical approach, notable engineering decisions, and the skills demonstrated. Keep it skimmable with a strong opening and clear screenshots/links placeholders where relevant.",
+      "requiredSections": ["Overview", "Highlights", "Tech Stack", "Installation", "Usage", "License"]
+    }
+  ],
+  "roadmapTemplates": [
+    {
+      "id": "roadmap-release-oriented",
+      "label": "Release-Oriented Roadmap",
+      "summary": "Roadmap organized into bounded, shippable releases with status.",
+      "guidance": "Rewrite this ROADMAP so work is organized into bounded, numbered releases. Each release should have a clear goal, a small set of checkbox milestones, acceptance criteria, and an explicit status. Group related work; avoid an undifferentiated backlog dump. Preserve genuinely completed work as completed.",
+      "requiredSections": ["Status", "Release Index", "Active Release", "Acceptance Criteria"]
+    },
+    {
+      "id": "roadmap-contract",
+      "label": "Roadmap Contract Format",
+      "summary": "Standards-compliant roadmap contract suitable for agent dispatch.",
+      "guidance": "Rewrite this ROADMAP to follow the Roadmap Contract Standard: an explicit status header, a release index, an active-release snapshot, per-release goals, checkbox milestones with implementation-state vocabulary, acceptance criteria, and out-of-scope notes. The result should be unambiguous enough for a coding agent to select the next concrete work item.",
+      "requiredSections": ["Status", "Release Index", "Active Release", "Milestones", "Acceptance Criteria", "Out of Scope"]
+    },
+    {
+      "id": "roadmap-agent-dispatch",
+      "label": "Agent-Dispatch-Ready Roadmap",
+      "summary": "Roadmap tuned for autonomous selection of high-value next work.",
+      "guidance": "Rewrite this ROADMAP so an autonomous agent can identify the single highest-value next task. Ensure each pending item is concrete, independently actionable, and carries enough acceptance detail to verify completion. Add explicit value or priority signals where missing, and keep token footprint per release modest.",
+      "requiredSections": ["Status", "Active Release", "Milestones", "Acceptance Criteria"]
+    },
+    {
+      "id": "roadmap-recovery",
+      "label": "Recovery / Repair Roadmap",
+      "summary": "Roadmap that reconstructs structure for a weak or missing plan.",
+      "guidance": "Rewrite this ROADMAP to repair a weak, stale, or missing plan. Infer reasonable releases from the project's apparent state, separate already-done work from pending work, and establish a forward path with bounded releases and acceptance criteria. Do not invent completed history; mark uncertain items as proposed.",
+      "requiredSections": ["Status", "Release Index", "Active Release", "Acceptance Criteria"]
+    }
+  ]
+}

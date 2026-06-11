@@ -335,3 +335,108 @@ foundational to the product:
 
 - Silent autonomous mutation of docs and roadmaps.
 - Removing the operator from review loops.
+
+## Release 1.8 — Operations Workspace and Prompt Refinement
+
+**Goal:** Add a repo-specific Operations workspace that turns the indexed
+portfolio assessment and the Phase 6 prompt-context packet into an
+operator-driven execution surface. Operators can select a repo, inspect its
+state, review README and ROADMAP context, refine a generated task packet
+into a dispatch-ready prompt, and prepare it for execution without rebuilding
+the packet foundation from scratch.
+
+### Product outcomes
+
+- Operators can move from portfolio overview to repo-specific detail
+  without leaving the app.
+- Every selected repo shows documentation health, roadmap maturity, dirty
+  worktree state, open PRs, Actions state, GitHub Pages status, and
+  recommended next action.
+- Operators can start from the generated packet/context assembled in Release
+  `1.7.5` Phase 6 instead of hand-writing prompts from scratch.
+- Prompt refinement remains operator-reviewed and preview-first.
+- Operators can trace a dispatched refined prompt back to the refinement
+  run that launched it.
+
+### Engineering milestones
+
+- [x] Add Operations tab with repo selection table for indexed portfolio
+      records. *(state: ui-connected)* — the existing
+      [`OperationsWorkspaceView.tsx`](frontend/components/OperationsWorkspaceView.tsx)
+      is now fed by a live `/api/operations/repos` contract instead of a
+      missing backend route.
+- [x] Add repo detail workspace showing local path, GitHub URL, default branch,
+      current branch, dirty state, last commit, created date, updated date,
+      README score, ROADMAP score, lifecycle state, and recommended next
+      action. *(state: ui-connected)* — the right-hand Operations detail pane
+      now opens against live indexed repo records served by the host.
+- [x] Add README and ROADMAP viewers inside the repo detail workspace.
+      *(state: ui-connected)* — Operations repo detail now renders inline
+      README/ROADMAP content panes backed by
+      `/api/readme/content` and `/api/roadmap/content`.
+- [x] Add GitHub panel showing open PRs, latest Actions status, and
+      GitHub Pages status/link. *(state: ui-connected)* — the Operations
+      workspace now renders those live fields from the indexed repo payload.
+- [x] Add audit findings panel showing README findings, ROADMAP findings,
+      structure findings, and dispatch blockers. *(state: ui-connected)*
+- [x] Add Prompt Refinement panel that starts from the existing
+      `/api/copilot-task/preview` packet, lets the operator adjust selected
+      work item, constraints, and emphasis, and produces a dispatch-ready
+      coding-agent prompt without duplicating packet assembly logic.
+      *(state: ui-connected)* — inline panel in `OperationsWorkspaceView.tsx`
+      backed by `POST /api/operations/prompt/refine`; supports selected-task
+      overrides, emphasis areas, additional constraints, and operator
+      instructions before copy/dispatch.
+- [x] Add editable prompt preview before dispatch, including the generated
+      packet sections, operator changes, and warnings. *(state: ui-connected)*
+      — the Prompt Refinement panel renders an editable textarea pre-filled
+      with the refined prompt so the operator can review and adjust before copy.
+- [x] Add custom operator instruction field that appends additional
+      constraints or direction to the generated prompt. *(state: ui-connected)*
+      — `operatorInstructions` textarea in the Prompt Refinement panel.
+- [x] Store prompt history per repo, including generated previews, edits,
+      and dispatch records. *(state: ui-connected)* — per-repo JSONL under
+      `output/roadmap-task-history/prompt-refinements/`; retrieved via
+      `GET /api/operations/prompt/history` and surfaced in the History tab.
+- [x] Link Operations prompt history to actual dispatch runs so each
+      refinement record can show the downstream Copilot launch metadata.
+      *(state: smoke-tested)* — the Prompt Refinement panel can dispatch
+      directly via `POST /api/roadmap/dispatch/execute` using the recorded
+      refinement `runId`, and `GET /api/operations/prompt/history` now
+      merges linked dispatch records per refinement run.
+- [x] Add `GET /api/operations/repos` route that returns the indexed repo
+      list optimized for the Operations tab. *(state: smoke-tested)* — the
+      host now serves indexed repo records with a warm assessment-cache
+      fallback, and `scripts/Invoke-ApiHostSmokeTest.ps1` validates the
+      contract.
+- [x] Add `GET /api/operations/repos/{repoId}` route that returns full
+      repo detail, documentation context, GitHub metadata, audit findings,
+      and dispatch context. *(state: backend-complete)*
+- [x] Add `POST /api/operations/prompt/refine` route that layers
+      operator-directed edits and warnings on top of the Phase 6 prompt
+      packet / preview contract rather than replacing it.
+      *(state: ui-connected)* — `Build-CopilotTaskPacket` accepts forced
+      item text/section overrides; route accepts `repoName`, `roadmapPath`,
+      `selectedTaskText`, `selectedTaskSection`, `additionalConstraints`,
+      `emphasisAreas`, and `operatorInstructions`; persists to per-repo JSONL.
+- [x] Add `GET /api/operations/prompt/history` route for per-repo prompt
+      refinement history. *(state: ui-connected)*
+
+### Acceptance criteria
+
+- Selecting a repo in Operations opens a complete repo-specific detail
+  workspace.
+- The repo detail view shows the same core metrics as the main dashboard,
+  but scoped to one repo.
+- Prompt refinement starts from the Phase 6 packet foundation and produces a
+  complete coding-agent prompt from README, ROADMAP, audit findings, and the
+  selected work item.
+- The operator can edit the generated prompt before dispatch.
+- Prompt history shows linked dispatch runs when a refined prompt is
+  launched from the Operations workspace.
+- No prompt is sent to any agent without explicit operator action.
+
+### Out of scope
+
+- AI-generated README/ROADMAP improvement cycles; handled in Release 1.9.
+- Agent-run monitoring and merge readiness; handled in Release 2.0.

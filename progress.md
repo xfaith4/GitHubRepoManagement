@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-06-10 (Release 1.9 Phase 1: AI Documentation Improvement — Provider Foundation & Preview)
+
+- Read the full ROADMAP and progress history; confirmed Release 1.8 had no remaining milestones, so the next logical phase was Release 1.9 (AI Documentation Improvement Cycles). Scoped a bounded Phase 1 — provider foundation + preview route — respecting token/context limits rather than attempting the whole release.
+- Added a provider-agnostic documentation-improvement adapter contract in `backend/modules/ai/AiDocImprovement.ps1` with three adapters: a deterministic offline heuristic provider (the no-hard-roadblock fallback), an OpenAI raw-HTTP adapter, and an Anthropic raw-HTTP adapter (Messages API, `claude-opus-4-8`). Consulted the `claude-api` skill before writing the Anthropic integration (raw HTTP is the correct surface for PowerShell; no `temperature`/`top_p`, which current Opus rejects).
+- Added data-driven built-in README/ROADMAP improvement templates in `backend/config/ai-doc-templates.json`.
+- Wired `POST /api/ai/docs/improve/preview` into the API host. It resolves current README/ROADMAP content (inline body → roadmap cache → portfolio index), selects an available provider with graceful fallback to the heuristic provider, and returns current/proposed content, change summary, estimated score movement, and warnings — preview-only, no file mutation.
+- Added an offline, deterministic AI-preview smoke step (heuristic provider) to `scripts/Invoke-ApiHostSmokeTest.ps1`.
+- Promoted Release 1.9 to the active release in `ROADMAP.md`, marked Phase 1 milestones complete, added a phase plan, gave the active-release detail a full execution contract, and archived the completed Release 1.8 detail to `docs/history/completed-releases.md`.
+
+### Verification
+
+- PowerShell parser diagnostics for `backend/modules/ai/AiDocImprovement.ps1`, `backend/api-host/Start-RepoManagementApiHost.ps1`, and `scripts/Invoke-ApiHostSmokeTest.ps1` — clean.
+- `npm run build` — passed.
+- `pwsh ./tools/Test-RoadmapStructure.ps1 -Path ./ROADMAP.md` — 0 errors, 2 pre-existing advisory warnings.
+- Direct live-host validation of `POST /api/ai/docs/improve/preview`: missing-`repoName` → 400; heuristic README → 200 (score delta + change summary); ROADMAP docType → 200 (auto-selected template). Anthropic adapter additionally verified against the live Messages API.
+- Note: the full `Invoke-ApiHostSmokeTest.ps1` run still times out at the pre-existing 30s docs-audit/portfolio warmup cap on this large local inventory (documented in earlier entries); the new AI-preview step passes when reached and was validated directly.
+- Observation (surfaced, not acted on beyond cleanup): running the host/smoke during this session caused an IDE markdown/PowerShell formatter and the settings POST to incidentally rewrite `README.md`, `settings.json`, `Start-App.ps1`, `Portfolio.Assessment.ps1`, and `Portfolio.ValueScorer.ps1` (EOL/brace/table-alignment churn). These were unrelated to the task and were restored to HEAD so the change set contains only Phase 1 work.
+
 ## 2026-06-09 (Release 1.8: Operations Prompt Dispatch Tracking)
 
 - Reconciled the active roadmap and confirmed the remaining Release 1.8 seam was not a new 1.9 feature but the missing linkage between Operations prompt refinement history and actual dispatch runs.

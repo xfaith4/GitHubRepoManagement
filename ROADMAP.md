@@ -1,8 +1,8 @@
 # GitHub Repo Management — Active Execution Roadmap
 
 > **Status:** Active
-> **Active release:** **Release 1.8 — Operations Workspace and Prompt Refinement**
-> **Next active release:** **Release 1.9 — AI Documentation Improvement Cycles**
+> **Active release:** **Release 1.9 — AI Documentation Improvement Cycles**
+> **Next active release:** **Release 2.0 — Agent Run Monitoring and Actions-Gated Merge Readiness**
 > **Canonical product direction:** [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md)
 > **Completed-release archive:** [`docs/history/completed-releases.md`](docs/history/completed-releases.md)
 > **Dated change log:** [`CHANGELOG.md`](CHANGELOG.md)
@@ -75,30 +75,30 @@ Render the state inline on each milestone in italics, e.g.:
 
 ## 4. Release Index
 
-| Version   | Title                                                                                                   | Status                                                                                                                                                             |
-| --------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 0.4       | Roadmap Intelligence Foundation                                                                         | `done` — see [completed-releases.md](docs/history/completed-releases.md#release-04--roadmap-intelligence-foundation)                                               |
-| 0.5       | Documentation Audit & Dispatch Readiness                                                                | `done` — see archive                                                                                                                                               |
-| 0.6       | Copilot Task Packaging & Preview Workflow                                                               | `done` — see archive                                                                                                                                               |
-| 0.7       | Roadmap Contract Standard Foundation                                                                    | `done` — see archive                                                                                                                                               |
-| 0.8       | Roadmap Contract Audit & Maturity Scoring                                                               | `done` — see archive                                                                                                                                               |
-| 0.9       | Roadmap Repair Preview & Standardization Workflow                                                       | `done` — see archive                                                                                                                                               |
-| 1.0       | Two-Lane Execution Queue                                                                                | `done` — see archive                                                                                                                                               |
-| 1.1       | Standardization, Guardrails, and Continuous Improvement                                                 | `done` — see archive                                                                                                                                               |
-| **1.2**   | **Enhanced Portfolio Intelligence**                                                                     | **deferred catch-up** — backend `smoke-tested`; UI visibility intentionally deferred behind `1.7.5` / `1.8`                                                        |
-| 1.3       | Production Frontend Build                                                                               | `done`                                                                                                                                                             |
-| 1.4       | Repo Evaluation and Cross-Platform Deployment *(formerly: Cross-Platform and Containerized Deployment)* | `done`                                                                                                                                                             |
-| 1.5       | Copilot-Assisted README Generation                                                                      | `done`                                                                                                                                                             |
-| 1.6       | Roadmap-Driven Release Dispatch to GitHub Copilot                                                       | `done`                                                                                                                                                             |
-| 1.7       | Repo Git Status Detail                                                                                  | `done`                                                                                                                                                             |
-| **1.7.5** | **Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning**                       | `done` — shipped 2026-05-28; portfolio scan/classify/rank/report loop now end-to-end                                                                               |
-| **1.8**   | **Operations Workspace and Prompt Refinement**                                                          | **active** — prompt refinement shipped 2026-06-07; Operations prompt dispatch tracking shipped 2026-06-09 and no Release 1.8 milestones remain                      |
-| **1.9**   | **AI Documentation Improvement Cycles**                                                                 | `planned`                                                                                                                                                          |
-| **2.0**   | **Agent Run Monitoring and Actions-Gated Merge Readiness**                                              | `planned`                                                                                                                                                          |
-| **2.1**   | **Persistent Data Layer**                                                                               | `planned`                                                                                                                                                          |
-| **2.2**   | **API Authentication, Network Security, Guided Onboarding, and GitHub App Integration**                 | `planned`                                                                                                                                                          |
-| **2.3**   | **Portfolio Analytics, Trend Visualization, and Distribution**                                          | `planned`                                                                                                                                                          |
-| **2.4**   | **Agent Integration Protocol and AI Repair Loop**                                                       | `planned`                                                                                                                                                          |
+| Version   | Title                                                                                                   | Status                                                                                                                                         |
+| --------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0.4       | Roadmap Intelligence Foundation                                                                         | `done` — see [completed-releases.md](docs/history/completed-releases.md#release-04--roadmap-intelligence-foundation)                           |
+| 0.5       | Documentation Audit & Dispatch Readiness                                                                | `done` — see archive                                                                                                                           |
+| 0.6       | Copilot Task Packaging & Preview Workflow                                                               | `done` — see archive                                                                                                                           |
+| 0.7       | Roadmap Contract Standard Foundation                                                                    | `done` — see archive                                                                                                                           |
+| 0.8       | Roadmap Contract Audit & Maturity Scoring                                                               | `done` — see archive                                                                                                                           |
+| 0.9       | Roadmap Repair Preview & Standardization Workflow                                                       | `done` — see archive                                                                                                                           |
+| 1.0       | Two-Lane Execution Queue                                                                                | `done` — see archive                                                                                                                           |
+| 1.1       | Standardization, Guardrails, and Continuous Improvement                                                 | `done` — see archive                                                                                                                           |
+| **1.2**   | **Enhanced Portfolio Intelligence**                                                                     | **deferred catch-up** — backend `smoke-tested`; UI visibility intentionally deferred behind `1.7.5` / `1.8`                                    |
+| 1.3       | Production Frontend Build                                                                               | `done`                                                                                                                                         |
+| 1.4       | Repo Evaluation and Cross-Platform Deployment *(formerly: Cross-Platform and Containerized Deployment)* | `done`                                                                                                                                         |
+| 1.5       | Copilot-Assisted README Generation                                                                      | `done`                                                                                                                                         |
+| 1.6       | Roadmap-Driven Release Dispatch to GitHub Copilot                                                       | `done`                                                                                                                                         |
+| 1.7       | Repo Git Status Detail                                                                                  | `done`                                                                                                                                         |
+| **1.7.5** | **Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning**                       | `done` — shipped 2026-05-28; portfolio scan/classify/rank/report loop now end-to-end                                                           |
+| **1.8**   | **Operations Workspace and Prompt Refinement**                                                          | `done` — shipped 2026-06-09; see archive (Operations workspace, prompt refinement, history, dispatch linkage)                                  |
+| **1.9**   | **AI Documentation Improvement Cycles**                                                                 | **active** — Phase 1 (AI provider adapters + `/api/ai/docs/improve/preview`) shipped 2026-06-10; diff/history/apply remain                     |
+| **2.0**   | **Agent Run Monitoring and Actions-Gated Merge Readiness**                                              | `planned`                                                                                                                                      |
+| **2.1**   | **Persistent Data Layer**                                                                               | `planned`                                                                                                                                      |
+| **2.2**   | **API Authentication, Network Security, Guided Onboarding, and GitHub App Integration**                 | `planned`                                                                                                                                      |
+| **2.3**   | **Portfolio Analytics, Trend Visualization, and Distribution**                                          | `planned`                                                                                                                                      |
+| **2.4**   | **Agent Integration Protocol and AI Repair Loop**                                                       | `planned`                                                                                                                                      |
 
 > **Note on `.5` numbering.** Release 1.7.5 is a deliberate course-correction
 > release between 1.7 and 1.8 to re-center the product on its primary
@@ -110,30 +110,69 @@ Render the state inline on each milestone in italics, e.g.:
 
 ## 5. Active Release Snapshot
 
-### Active release detail — 1.8 Operations Workspace and Prompt Refinement
+### Active release detail — 1.9 AI Documentation Improvement Cycles
 
-**Status:** active. The first `1.8` foundation slice shipped 2026-05-28:
-the existing Operations tab and repo workspace UI are now backed by a live
-`GET /api/operations/repos` route sourced from the indexed portfolio model.
-Prompt refinement shipped 2026-06-07: the Operations workspace now includes
-an inline Prompt Refinement panel backed by `POST /api/operations/prompt/refine`
-and `GET /api/operations/prompt/history`.
+**Status:** active. Phase 1 (AI provider adapter foundation + preview route)
+shipped 2026-06-10: a provider-agnostic documentation-improvement adapter
+contract with heuristic (offline), OpenAI, and Anthropic adapters, built-in
+README/ROADMAP improvement templates, and a preview-only
+`POST /api/ai/docs/improve/preview` route. No README or ROADMAP file is
+mutated — apply is a later phase.
 
-**Goal:** Add a repo-specific Operations workspace that turns the indexed
-portfolio assessment and the Phase 6 prompt-context packet into an
-operator-driven execution surface. Operators can select a repo, inspect its
-state, review README and ROADMAP context, refine a generated task packet
-into a dispatch-ready prompt, and prepare it for execution without rebuilding
-the packet foundation from scratch.
+**Goal:** Add provider-backed, preview-first AI improvement cycles for
+README.md and ROADMAP.md so operators can repair weak documentation,
+standardize repos, and improve dispatch readiness without direct unreviewed
+file mutation.
 
-**Current focus:** Prompt history, in-panel dispatch, and per-dispatch
-dispatch-record tracking are now wired. No additional Release 1.8
-milestones remain; Release 1.9 is now the next implementation target.
+**Current focus:** Backend foundation is in place and smoke-tested. The next
+slices are the side-by-side diff viewer and improvement history (Phase 2),
+then the explicit apply path with backup/restore (Phase 3).
 
-**Why now:** Release 1.7.5 closed the portfolio-level scan → classify →
-rank → refine prompt → dispatch → report loop. Release 1.8 turns that
-collection picture into a repo-specific execution surface without duplicating
-the portfolio/index foundations that already shipped.
+**Why now:** Release 1.8 closed the repo-specific Operations workspace and
+prompt-refinement loop. The Documentation Health signal that loop surfaces is
+only actionable once operators can preview and apply concrete README/ROADMAP
+improvements — which is exactly what Release 1.9 delivers. No hard roadblock:
+when no AI provider key is configured, the preview degrades to a deterministic
+offline heuristic improvement rather than failing.
+
+**Validation plan:** PowerShell parser diagnostics for
+`backend/modules/ai/AiDocImprovement.ps1` and the API host; `npm run build`;
+the `scripts/Invoke-ApiHostSmokeTest.ps1` AI-preview step (heuristic provider,
+inline content) asserting the preview contract; and a live host check of
+`POST /api/ai/docs/improve/preview` covering the missing-`repoName` 400 path,
+the heuristic README path, and the ROADMAP path. The Anthropic adapter was
+additionally exercised against the live Messages API.
+
+**Risks and blockers:** AI provider calls cost tokens and can fail or rate-limit;
+mitigated by key-gated provider selection and a deterministic offline heuristic
+fallback so a preview is always available. Apply-time file mutation is out of
+scope until Phase 3, keeping the surface preview-only and reversible.
+
+**Dependencies:** Reuses the roadmap cache and portfolio index
+(`Get-PortfolioIndexPayload`) to resolve current README/ROADMAP content, and
+the host settings (`ai.*`) for provider/model/key configuration. No new
+third-party runtime dependency is required for the heuristic path.
+
+**Known issues:** The full `Invoke-ApiHostSmokeTest.ps1` run can time out at the
+pre-existing 30s request cap during docs-audit/portfolio warmup on large local
+inventories (tracked separately); the AI-preview step itself passes when reached
+and was validated directly against a live host.
+
+**Traceability:** Milestones map to `backend/modules/ai/AiDocImprovement.ps1`,
+`backend/config/ai-doc-templates.json`, the `POST /api/ai/docs/improve/preview`
+route in `backend/api-host/Start-RepoManagementApiHost.ps1`, and the AI-preview
+smoke step in `scripts/Invoke-ApiHostSmokeTest.ps1`.
+
+### Release 1.8 completion snapshot
+
+**Status:** complete — shipped 2026-06-09. The repo-specific Operations
+workspace turns the indexed portfolio assessment and the Phase 6
+prompt-context packet into an operator-driven execution surface: live
+`GET /api/operations/repos`, repo detail with README/ROADMAP viewers and
+GitHub/audit panels, an inline Prompt Refinement panel backed by
+`POST /api/operations/prompt/refine`, per-repo prompt history via
+`GET /api/operations/prompt/history`, and linkage from refinement records to
+actual Copilot dispatch runs. No Release 1.8 milestones remain.
 
 ### Release 1.7.5 completion snapshot
 
@@ -406,113 +445,6 @@ capabilities.
 
 ---
 
-### Release 1.8 — Operations Workspace and Prompt Refinement
-
-**Goal:** Add a repo-specific Operations workspace that turns the indexed
-portfolio assessment and the Phase 6 prompt-context packet into an
-operator-driven execution surface. Operators can select a repo, inspect its
-state, review README and ROADMAP context, refine a generated task packet
-into a dispatch-ready prompt, and prepare it for execution without rebuilding
-the packet foundation from scratch.
-
-#### Product outcomes
-
-- Operators can move from portfolio overview to repo-specific detail
-  without leaving the app.
-- Every selected repo shows documentation health, roadmap maturity, dirty
-  worktree state, open PRs, Actions state, GitHub Pages status, and
-  recommended next action.
-- Operators can start from the generated packet/context assembled in Release
-  `1.7.5` Phase 6 instead of hand-writing prompts from scratch.
-- Prompt refinement remains operator-reviewed and preview-first.
-- Operators can trace a dispatched refined prompt back to the refinement
-  run that launched it.
-
-#### Engineering milestones
-
-- [x] Add Operations tab with repo selection table for indexed portfolio
-      records. *(state: ui-connected)* — the existing
-      [`OperationsWorkspaceView.tsx`](frontend/components/OperationsWorkspaceView.tsx)
-      is now fed by a live `/api/operations/repos` contract instead of a
-      missing backend route.
-- [x] Add repo detail workspace showing local path, GitHub URL, default branch,
-      current branch, dirty state, last commit, created date, updated date,
-      README score, ROADMAP score, lifecycle state, and recommended next
-      action. *(state: ui-connected)* — the right-hand Operations detail pane
-      now opens against live indexed repo records served by the host.
-- [x] Add README and ROADMAP viewers inside the repo detail workspace.
-      *(state: ui-connected)* — Operations repo detail now renders inline
-      README/ROADMAP content panes backed by
-      `/api/readme/content` and `/api/roadmap/content`.
-- [x] Add GitHub panel showing open PRs, latest Actions status, and
-      GitHub Pages status/link. *(state: ui-connected)* — the Operations
-      workspace now renders those live fields from the indexed repo payload.
-- [x] Add audit findings panel showing README findings, ROADMAP findings,
-      structure findings, and dispatch blockers. *(state: ui-connected)*
-- [x] Add Prompt Refinement panel that starts from the existing
-      `/api/copilot-task/preview` packet, lets the operator adjust selected
-      work item, constraints, and emphasis, and produces a dispatch-ready
-      coding-agent prompt without duplicating packet assembly logic.
-      *(state: ui-connected)* — inline panel in `OperationsWorkspaceView.tsx`
-      backed by `POST /api/operations/prompt/refine`; supports selected-task
-      overrides, emphasis areas, additional constraints, and operator
-      instructions before copy/dispatch.
-- [x] Add editable prompt preview before dispatch, including the generated
-      packet sections, operator changes, and warnings. *(state: ui-connected)*
-      — the Prompt Refinement panel renders an editable textarea pre-filled
-      with the refined prompt so the operator can review and adjust before copy.
-- [x] Add custom operator instruction field that appends additional
-      constraints or direction to the generated prompt. *(state: ui-connected)*
-      — `operatorInstructions` textarea in the Prompt Refinement panel.
-- [x] Store prompt history per repo, including generated previews, edits,
-      and dispatch records. *(state: ui-connected)* — per-repo JSONL under
-      `output/roadmap-task-history/prompt-refinements/`; retrieved via
-      `GET /api/operations/prompt/history` and surfaced in the History tab.
-- [x] Link Operations prompt history to actual dispatch runs so each
-      refinement record can show the downstream Copilot launch metadata.
-      *(state: smoke-tested)* — the Prompt Refinement panel can dispatch
-      directly via `POST /api/roadmap/dispatch/execute` using the recorded
-      refinement `runId`, and `GET /api/operations/prompt/history` now
-      merges linked dispatch records per refinement run.
-- [x] Add `GET /api/operations/repos` route that returns the indexed repo
-      list optimized for the Operations tab. *(state: smoke-tested)* — the
-      host now serves indexed repo records with a warm assessment-cache
-      fallback, and `scripts/Invoke-ApiHostSmokeTest.ps1` validates the
-      contract.
-- [x] Add `GET /api/operations/repos/{repoId}` route that returns full
-      repo detail, documentation context, GitHub metadata, audit findings,
-      and dispatch context. *(state: backend-complete)*
-- [x] Add `POST /api/operations/prompt/refine` route that layers
-      operator-directed edits and warnings on top of the Phase 6 prompt
-      packet / preview contract rather than replacing it.
-      *(state: ui-connected)* — `Build-CopilotTaskPacket` accepts forced
-      item text/section overrides; route accepts `repoName`, `roadmapPath`,
-      `selectedTaskText`, `selectedTaskSection`, `additionalConstraints`,
-      `emphasisAreas`, and `operatorInstructions`; persists to per-repo JSONL.
-- [x] Add `GET /api/operations/prompt/history` route for per-repo prompt
-      refinement history. *(state: ui-connected)*
-
-#### Acceptance criteria
-
-- Selecting a repo in Operations opens a complete repo-specific detail
-  workspace.
-- The repo detail view shows the same core metrics as the main dashboard,
-  but scoped to one repo.
-- Prompt refinement starts from the Phase 6 packet foundation and produces a
-  complete coding-agent prompt from README, ROADMAP, audit findings, and the
-  selected work item.
-- The operator can edit the generated prompt before dispatch.
-- Prompt history shows linked dispatch runs when a refined prompt is
-  launched from the Operations workspace.
-- No prompt is sent to any agent without explicit operator action.
-
-#### Out of scope
-
-- AI-generated README/ROADMAP improvement cycles; handled in Release 1.9.
-- Agent-run monitoring and merge readiness; handled in Release 2.0.
-
----
-
 ### Release 1.9 — AI Documentation Improvement Cycles
 
 **Goal:** Add provider-backed, preview-first AI improvement cycles for
@@ -531,32 +463,43 @@ unreviewed file mutation.
 
 #### Engineering milestones
 
-- [ ] Define AI provider adapter contract for documentation improvement.
-      *(state: planned)*
-- [ ] Add OpenAI provider adapter using configured environment variable or
-      settings path. *(state: planned)*
-- [ ] Add Anthropic provider adapter using configured environment variable
-      or settings path. *(state: planned)*
-- [ ] Add built-in README improvement templates: product README,
+- [x] Define AI provider adapter contract for documentation improvement.
+      *(state: smoke-tested — Phase 1)* — provider-agnostic contract in
+      [`backend/modules/ai/AiDocImprovement.ps1`](backend/modules/ai/AiDocImprovement.ps1):
+      each adapter returns `providerId`, `modelId`, `proposedContent`,
+      `changeSummary`, `warnings`, and `error`.
+- [x] Add OpenAI provider adapter using configured environment variable or
+      settings path. *(state: backend-complete — Phase 1)* — raw-HTTP
+      `Invoke-OpenAiDocProvider`, used only when `ai.openai.apiKeyEnvVar` is set.
+- [x] Add Anthropic provider adapter using configured environment variable
+      or settings path. *(state: smoke-tested — Phase 1)* — raw-HTTP
+      `Invoke-AnthropicDocProvider` (Messages API, model `claude-opus-4-8`),
+      used only when `ai.anthropic.apiKeyEnvVar` is set; verified live.
+- [x] Add built-in README improvement templates: product README,
       developer/operator README, open-source README, and portfolio showcase
-      README. *(state: planned)*
-- [ ] Add built-in ROADMAP improvement templates: release-oriented roadmap,
+      README. *(state: smoke-tested — Phase 1)* — data-driven via
+      [`backend/config/ai-doc-templates.json`](backend/config/ai-doc-templates.json).
+- [x] Add built-in ROADMAP improvement templates: release-oriented roadmap,
       roadmap contract format, agent-dispatch-ready roadmap, and
-      recovery/repair roadmap. *(state: planned)*
-- [ ] Add `POST /api/ai/docs/improve/preview` route that returns current
+      recovery/repair roadmap. *(state: smoke-tested — Phase 1)* — same
+      template config.
+- [x] Add `POST /api/ai/docs/improve/preview` route that returns current
       content, proposed content, change summary, estimated score movement,
-      and warnings. *(state: planned)*
+      and warnings. *(state: smoke-tested — Phase 1)* — preview-only; resolves
+      current content from inline body, roadmap cache, or the portfolio index;
+      degrades to the offline heuristic provider when no AI key is configured.
 - [ ] Add side-by-side diff viewer for current vs proposed README/ROADMAP.
-      *(state: planned)*
-- [ ] Add improvement cycle history per repo. *(state: planned)*
+      *(state: planned — Phase 2)*
+- [ ] Add improvement cycle history per repo. *(state: planned — Phase 2)*
 - [ ] Add custom improvement prompt field for additional refinement cycles.
-      *(state: planned)*
+      *(state: planned — Phase 2)* — backend already accepts `customPrompt`;
+      the UI field is Phase 2.
 - [ ] Add explicit apply action for accepted changes with backup creation
-      and restore metadata. *(state: planned)*
+      and restore metadata. *(state: planned — Phase 3)*
 - [ ] Add `POST /api/ai/docs/improve/apply` route that writes accepted
-      changes only after explicit operator approval. *(state: planned)*
+      changes only after explicit operator approval. *(state: planned — Phase 3)*
 - [ ] Add `GET /api/ai/docs/improve/history` route for repo-specific
-      improvement history. *(state: planned)*
+      improvement history. *(state: planned — Phase 2)*
 
 #### Acceptance criteria
 
@@ -573,6 +516,14 @@ unreviewed file mutation.
 
 - Automatic PR creation for documentation repairs; deferred to Release 2.4.
 - Autonomous documentation rewriting without human approval.
+
+#### Phase plan (within this release)
+
+| Phase                                       | Scope                                                                                                                                            | Status                               |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| Phase 1: Provider foundation + preview      | Provider adapter contract, heuristic/OpenAI/Anthropic adapters, `ai-doc-templates.json`, `POST /api/ai/docs/improve/preview`, smoke coverage     | **done — smoke-tested** (2026-06-10) |
+| Phase 2: Diff viewer + history              | Side-by-side current/proposed diff viewer, custom-prompt UI field, improvement cycle history, `GET /api/ai/docs/improve/history`                 | **planned**                          |
+| Phase 3: Explicit apply + backup/restore    | Apply action with backup + restore metadata, `POST /api/ai/docs/improve/apply` (write only after explicit operator approval)                     | **planned**                          |
 
 ---
 
