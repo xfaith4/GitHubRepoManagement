@@ -297,6 +297,39 @@ const CATEGORIES: CategoryDef[] = [
     ],
   },
   {
+    label: 'Agent Run Monitoring',
+    color: 'text-orange-400',
+    endpoints: [
+      {
+        method: 'GET',
+        path: '/api/agent-runs',
+        summary: 'Lists agent-run ledger records (newest first). Runs are created automatically when a task is dispatched via /api/roadmap/dispatch/execute.',
+        queryParams: [
+          { name: 'status', type: '"dispatched" | "active" | "completed" | "failed" | "blocked"', description: 'Optional status filter' },
+          { name: 'repoName', type: 'string', description: 'Optional repository filter' },
+          { name: 'limit', type: 'int', description: 'Maximum records to return (default: 50)' },
+        ],
+        responseFields: [
+          { name: 'success', type: 'bool', description: 'Operation result flag' },
+          { name: 'data.items', type: 'AgentRun[]', description: 'Ledger records: runId, repo identity, dispatch/refinement linkage, branch/PR association, status, outcome, and tier-1 metrics (timing, prompt count, retries, token usage, work units)' },
+          { name: 'data.count', type: 'number', description: 'Number of records returned' },
+          { name: 'data.byStatus', type: 'Record<string, number>', description: 'Run counts grouped by status' },
+        ],
+        notes: 'Editable run state lives in output/agent-runs/runs/<runId>.json; lifecycle history is the append-only output/agent-runs/events.jsonl stream. Derived valuations (USD allocation, overage risk) are never stored — see standards/roadmap/ROADMAP_BUDGET_MODEL.md.',
+      },
+      {
+        method: 'GET',
+        path: '/api/agent-runs/{runId}',
+        summary: 'Returns one agent run with its full lifecycle event history from the append-only telemetry stream.',
+        responseFields: [
+          { name: 'success', type: 'bool', description: 'Operation result flag' },
+          { name: 'data.run', type: 'AgentRun', description: 'The current ledger record for the run' },
+          { name: 'data.events', type: 'AgentRunEvent[]', description: 'Schema-versioned lifecycle events for this run (run.dispatched, run.started, run.completed, run.failed, run.blocked, run.updated)' },
+        ],
+      },
+    ],
+  },
+  {
     label: 'Settings',
     color: 'text-violet-400',
     endpoints: [

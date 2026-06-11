@@ -693,6 +693,23 @@ try {
         Remove-Item -LiteralPath $aiApplyHistoryFile -Force -ErrorAction SilentlyContinue
     }
 
+    Write-Host '[STEP] Agent-run ledger routes (Release 2.0 Phase 1)' -ForegroundColor Cyan
+    $agentRunsResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/agent-runs?limit=10"
+    Assert-Not503 -Name '/api/agent-runs' -Response $agentRunsResponse
+    $agentRunsJson = $agentRunsResponse.Json
+    if (-not $agentRunsJson.success) { throw '/api/agent-runs returned success=false' }
+    $agentRunsShapeOk = ($null -ne $agentRunsJson.data) -and
+        ($agentRunsJson.data.PSObject.Properties.Name -contains 'items') -and
+        ($agentRunsJson.data.PSObject.Properties.Name -contains 'count') -and
+        ($agentRunsJson.data.PSObject.Properties.Name -contains 'byStatus')
+    if (-not $agentRunsShapeOk) { throw '/api/agent-runs returned an unexpected payload shape' }
+    Write-Host ("  /api/agent-runs -> {0} run(s)" -f @($agentRunsJson.data.items).Count) -ForegroundColor DarkGray
+
+    $agentRunMissing = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/agent-runs/does-not-exist"
+    Assert-Not503 -Name '/api/agent-runs/{runId} (unknown)' -Response $agentRunMissing
+    if ([int]$agentRunMissing.StatusCode -ne 404) { throw "/api/agent-runs/{runId} for unknown runId expected HTTP 404, got $($agentRunMissing.StatusCode)" }
+    Write-Host ("  /api/agent-runs/does-not-exist -> HTTP {0}" -f $agentRunMissing.StatusCode) -ForegroundColor DarkGray
+
     $copilotHistoryResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/copilot-task/history?limit=5"
     Assert-Not503 -Name '/api/copilot-task/history' -Response $copilotHistoryResponse
     $copilotHistoryJson = $copilotHistoryResponse.Json

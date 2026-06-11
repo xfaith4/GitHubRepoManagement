@@ -22,6 +22,8 @@ Minimal local PowerShell API host for adapter contracts.
 - `POST /api/ai/docs/improve/apply`
 - `GET /api/ai/docs/improve/history`
 - `GET /api/ai/docs/templates`
+- `GET /api/agent-runs`
+- `GET /api/agent-runs/:runId`
 - `GET /api/readme/content`
 - `POST /api/reconcile`
 - `POST /api/docreview/run`
@@ -63,6 +65,8 @@ Notes:
 - `POST /api/ai/docs/improve/apply` writes operator-approved proposed content to the repo's README.md or ROADMAP.md — the only AI documentation route that mutates a file. It backs up the current file to `output/ai-doc-improvements/backups/<repo>/`, writes a restore-metadata JSON (content hashes + ready-to-run restore command), appends an append-only `applied=true` history record, and refuses targets whose file name does not match the doc type.
 - `GET /api/ai/docs/improve/history` returns per-repo improvement-cycle metadata records, newest first, with an optional `docType` filter.
 - `GET /api/ai/docs/templates` serves the built-in README/ROADMAP improvement templates from `backend/config/ai-doc-templates.json`.
+- `GET /api/agent-runs` lists agent-run ledger records (status/repoName filters, newest first, status rollup). Runs are created automatically by `POST /api/roadmap/dispatch/execute`; editable state lives in `output/agent-runs/runs/<runId>.json` and lifecycle history in the append-only `output/agent-runs/events.jsonl` stream with tier-1 metrics per `standards/roadmap/ROADMAP_BUDGET_MODEL.md`.
+- `GET /api/agent-runs/:runId` returns one run plus its lifecycle events; 404 for unknown run IDs.
 - `GET /api/readme/content` returns README markdown for a repo (or explicit path), used by the Operations repo-detail document viewer.
 - `POST /api/export` writes timestamped HTML and CSV reports into the repo-local `reports/` folder. When `portfolioEntries` are provided, it produces a Collection Status Report with lifecycle, blocker, recommended-action, and top-work fields.
 - `GET /api/reports/:reportName` serves a saved report file back to the browser so the HTML report can open in a new tab.

@@ -786,4 +786,63 @@ if ($summary.bySourceCoverage['github'] -ne 1)  { throw "Expected bySourceCovera
 if ($summary.bySourceCoverage['local+github'] -lt 1) { throw "Expected bySourceCoverage[local+github] >= 1, got $($summary.bySourceCoverage['local+github'])" }
 Write-Host ("  summary aggregation correct: total={0} ready={1} running={2} blocked={3}" -f $summary.totalRepos, $summary.readyForWorkCount, $summary.runningCount, $summary.blockedCount) -ForegroundColor DarkGray
 
+Write-Step 'Loading agent-runs ledger module (Release 2.0)'
+$agentRunsModule = Join-Path $WorkspaceRoot 'backend\modules\agent-runs\AgentRuns.ps1'
+if (-not (Test-Path -LiteralPath $agentRunsModule)) { throw "AgentRuns.ps1 not found at: $agentRunsModule" }
+. $agentRunsModule
+Write-Host 'Agent-runs module loaded successfully' -ForegroundColor Green
+
+Write-Step 'Agent-run ledger — smoke: create, list, detail, update (Release 2.0 Phase 1)'
+$agentRunsWorkspace = Join-Path ([System.IO.Path]::GetTempPath()) ("agent-runs-smoke-" + [guid]::NewGuid().ToString('n').Substring(0, 8))
+New-Item -ItemType Directory -Path $agentRunsWorkspace -Force | Out-Null
+try {
+    $smokeRun = New-AgentRunRecord -WorkspaceRoot $agentRunsWorkspace -RepoName 'smoke-agent-repo' `
+        -GitHubRepo 'owner/smoke-agent-repo' -DispatchRunId 'dispatch-123' -PromptRefinementRunId 'refine-456' -BaseBranch 'main'
+    if ([string]::IsNullOrWhiteSpace([string]$smokeRun.runId)) { throw 'New-AgentRunRecord returned no runId' }
+    if ([string]$smokeRun.status -ne 'dispatched') { throw "Expected status=dispatched, got '$($smokeRun.status)'" }
+    if ($null -eq $smokeRun.metrics.dispatchedAt) { throw 'New run is missing metrics.dispatchedAt' }
+    if ([int]$smokeRun.metrics.workUnitsEstimated -lt 1) { throw 'New run is missing workUnitsEstimated' }
+
+    $runFile = Join-Path $agentRunsWorkspace "output\agent-runs\runs\$($smokeRun.runId).json"
+    if (-not (Test-Path -LiteralPath $runFile)) { throw 'Run ledger JSON was not written' }
+    $eventsFile = Join-Path $agentRunsWorkspace 'output\agent-runs\events.jsonl'
+    if (-not (Test-Path -LiteralPath $eventsFile)) { throw 'events.jsonl was not written' }
+
+    $listed = @(Get-AgentRuns -WorkspaceRoot $agentRunsWorkspace -Status 'dispatched')
+    if ($listed.Count -ne 1) { throw "Expected 1 dispatched run in list, got $($listed.Count)" }
+    if (@(Get-AgentRuns -WorkspaceRoot $agentRunsWorkspace -Status 'completed').Count -ne 0) { throw 'Status filter returned a non-matching run' }
+
+    $startedIso = (Get-Date).ToUniversalTime().AddMinutes(-10).ToString('o')
+    $completedIso = (Get-Date).ToUniversalTime().ToString('o')
+    $updated = Update-AgentRunRecord -WorkspaceRoot $agentRunsWorkspace -RunId $smokeRun.runId -Patch @{
+        status           = 'completed'
+        outcome          = 'pr-opened'
+        branch           = 'copilot/smoke-fix'
+        prUrl            = 'https://github.com/owner/smoke-agent-repo/pull/1'
+        agentStartedAt   = $startedIso
+        agentCompletedAt = $completedIso
+        workUnitsActual  = 3
+    }
+    if ([string]$updated.status -ne 'completed') { throw "Expected status=completed after update, got '$($updated.status)'" }
+    if ($null -eq $updated.metrics.timeToDeliverSeconds -or [int]$updated.metrics.timeToDeliverSeconds -lt 1) { throw 'timeToDeliverSeconds was not derived from start/completion timestamps' }
+
+    $detail = Get-AgentRunDetail -WorkspaceRoot $agentRunsWorkspace -RunId $smokeRun.runId
+    if ($null -eq $detail) { throw 'Get-AgentRunDetail returned null for an existing run' }
+    if ([string]$detail.run.prUrl -ne 'https://github.com/owner/smoke-agent-repo/pull/1') { throw 'Run detail did not persist the PR URL' }
+    $detailEventTypes = @($detail.events | ForEach-Object { [string]$_.eventType })
+    if ('run.dispatched' -notin $detailEventTypes) { throw 'events stream is missing run.dispatched' }
+    if ('run.completed' -notin $detailEventTypes) { throw 'events stream is missing run.completed' }
+
+    if ($null -ne (Get-AgentRunDetail -WorkspaceRoot $agentRunsWorkspace -RunId 'does-not-exist')) { throw 'Get-AgentRunDetail should return null for an unknown runId' }
+
+    $invalidStatusRejected = $false
+    try { $null = Update-AgentRunRecord -WorkspaceRoot $agentRunsWorkspace -RunId $smokeRun.runId -Patch @{ status = 'bogus' } } catch { $invalidStatusRejected = $true }
+    if (-not $invalidStatusRejected) { throw 'Update-AgentRunRecord accepted an invalid status' }
+
+    Write-Host ("  agent-run ledger correct: runId={0} events={1} timeToDeliver={2}s" -f $smokeRun.runId, @($detail.events).Count, $updated.metrics.timeToDeliverSeconds) -ForegroundColor DarkGray
+}
+finally {
+    Remove-Item -LiteralPath $agentRunsWorkspace -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 Write-Step 'Smoke test completed'

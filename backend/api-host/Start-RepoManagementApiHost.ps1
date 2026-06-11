@@ -48,6 +48,8 @@ $portfolioModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\portfolio'
 . (Join-Path $portfolioModuleRoot 'Portfolio.Report.ps1')
 $aiModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\ai'
 . (Join-Path $aiModuleRoot 'AiDocImprovement.ps1')
+$agentRunsModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\agent-runs'
+. (Join-Path $agentRunsModuleRoot 'AgentRuns.ps1')
 . (Join-Path $commonRoot 'NotificationHub.ps1')
 . (Join-Path $PSScriptRoot 'ApiHost.ErrorHandling.ps1')
 
@@ -4309,6 +4311,41 @@ try {
                 continue
             }
 
+            if ($req.Method -eq 'GET' -and $path -like '/api/agent-runs/*' -and $path -ne '/api/agent-runs') {
+                $agentRunIdParam = [System.Uri]::UnescapeDataString($path.Substring('/api/agent-runs/'.Length))
+                if ([string]::IsNullOrWhiteSpace($agentRunIdParam)) {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        error = 'runId is required in /api/agent-runs/{runId}.'
+                    }
+                    $client.Close()
+                    continue
+                }
+
+                Write-HostLog ("[TRACE] agent-runs.detail correlationId={0} runId={1} start" -f $correlationId, $agentRunIdParam)
+                $runDetail = Get-AgentRunDetail -WorkspaceRoot $WorkspaceRoot -RunId $agentRunIdParam
+                if ($null -eq $runDetail) {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        error = "No agent run found for runId '$agentRunIdParam'."
+                    }
+                    $client.Close()
+                    continue
+                }
+
+                Add-MetricCounter -Name 'api_requests_total'
+                Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                Write-HostLog ("[TRACE] agent-runs.detail correlationId={0} done runId={1} events={2}" -f $correlationId, $agentRunIdParam, @($runDetail.events).Count)
+                Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                    success = $true
+                    data    = $runDetail
+                }
+                $client.Close()
+                continue
+            }
+
             if ($req.Method -eq 'GET' -and $path -like '/api/operations/repos/*' -and $path -ne '/api/operations/repos') {
                 $repoId = [System.Uri]::UnescapeDataString($path.Substring('/api/operations/repos/'.Length))
                 if ([string]::IsNullOrWhiteSpace($repoId)) {
@@ -6000,6 +6037,33 @@ try {
                         data    = $applyResult
                     }
                 }
+                'GET /api/agent-runs' {
+                    Write-HostLog ("[TRACE] agent-runs.list correlationId={0} start" -f $correlationId)
+                    $q        = Parse-QueryString -Query $req.Query
+                    $statusFilter = if ($q.ContainsKey('status') -and $q.status) { [string]$q.status } else { '' }
+                    $repoFilter   = if ($q.ContainsKey('repoName') -and $q.repoName) { [System.Uri]::UnescapeDataString([string]$q.repoName) } else { '' }
+                    $limit        = if ($q.ContainsKey('limit') -and $q.limit) { [int]$q.limit } else { 50 }
+
+                    $runs = @(Get-AgentRuns -WorkspaceRoot $WorkspaceRoot -Status $statusFilter -RepoName $repoFilter -Limit $limit)
+
+                    $byStatus = @{}
+                    foreach ($run in $runs) {
+                        $s = [string](Get-ObjectPropertyValue -InputObject $run -PropertyName 'status' -Default 'unknown')
+                        if (-not $byStatus.ContainsKey($s)) { $byStatus[$s] = 0 }
+                        $byStatus[$s] = [int]$byStatus[$s] + 1
+                    }
+
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Write-HostLog ("[TRACE] agent-runs.list correlationId={0} done count={1}" -f $correlationId, @($runs).Count)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = @{
+                            items    = @($runs)
+                            count    = @($runs).Count
+                            byStatus = $byStatus
+                        }
+                    }
+                }
                 'GET /api/ai/docs/templates' {
                     $templates = Get-AiDocTemplates -WorkspaceRoot $WorkspaceRoot
                     Add-MetricCounter -Name 'api_requests_total'
@@ -6191,13 +6255,31 @@ try {
                             -BaseBranch $baseBranch
                     }
 
+                    # Release 2.0: record the dispatch in the agent-run ledger
+                    # (non-fatal — a ledger failure must not undo the dispatch).
+                    $agentRunId = ''
+                    try {
+                        $agentRun = New-AgentRunRecord `
+                            -WorkspaceRoot $WorkspaceRoot `
+                            -RepoName $repoName `
+                            -GitHubRepo $githubRepo `
+                            -LocalPath $localPath `
+                            -DispatchRunId $runId `
+                            -PromptRefinementRunId $promptRefinementRunId `
+                            -BaseBranch $baseBranch
+                        $agentRunId = [string]$agentRun.runId
+                    } catch {
+                        Write-HostLog ("[WARN ] roadmap.dispatch.execute correlationId={0} agent-run ledger write failed: {1}" -f $correlationId, $_.Exception.Message)
+                    }
+
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
-                    Write-HostLog ("[TRACE] roadmap.dispatch.execute correlationId={0} done repoName={1} runId={2}" -f $correlationId, $repoName, $runId)
+                    Write-HostLog ("[TRACE] roadmap.dispatch.execute correlationId={0} done repoName={1} runId={2} agentRunId={3}" -f $correlationId, $repoName, $runId, $agentRunId)
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data    = @{
                             runId      = $runId
+                            agentRunId = $agentRunId
                             status     = 'started'
                             githubRepo = $githubRepo
                             startedAt  = $startedAt

@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented here.
 
+## 2026-06-11 — Release 2.0 Phase 1: Agent-Run Ledger Foundation
+
+### Changes
+
+- **`backend/modules/agent-runs/AgentRuns.ps1`** (new) — agent-run ledger and append-only run-event telemetry. Editable current state lives as one JSON per run under `output/agent-runs/runs/`; lifecycle history is the schema-versioned, append-only `output/agent-runs/events.jsonl` stream (`run.dispatched` / `run.started` / `run.completed` / `run.failed` / `run.blocked` / `run.updated`). Run records carry the tier-1 metric fields from `standards/roadmap/ROADMAP_BUDGET_MODEL.md` (dispatch/start/completion timestamps, derived time-to-deliver, prompt count, retries, token usage, API spend, normalized work units) plus optional tier-2 operator observations; derived valuations are never stored. Functions: `New-AgentRunRecord`, `Get-AgentRuns`, `Get-AgentRunDetail`, `Update-AgentRunRecord` (validates status transitions, derives `timeToDeliverSeconds`), `Write-AgentRunEvent`.
+- **`backend/api-host/Start-RepoManagementApiHost.ps1`** — dot-sources the new module; `POST /api/roadmap/dispatch/execute` now records every dispatch in the agent-run ledger (non-fatal on ledger failure) and returns `agentRunId` alongside the existing `runId`; added `GET /api/agent-runs` (status/repoName filters, newest first, per-status rollup) and `GET /api/agent-runs/{runId}` (run + lifecycle events; 404 for unknown runs).
+- **`scripts/Invoke-ModuleSmokeTest.ps1`** — new agent-run ledger step against an isolated temp workspace: create → list (with status-filter negative check) → update (status transition, branch/PR association, time-to-deliver derivation) → detail (both lifecycle events present) → unknown-run null → invalid-status rejection; cleans up in `finally`.
+- **`scripts/Invoke-ApiHostSmokeTest.ps1`** — new step asserting the `GET /api/agent-runs` payload shape (`items`/`count`/`byStatus`) and the 404 contract for unknown run IDs.
+- **`frontend/components/ApiDocsModal.tsx`** and **`backend/api-host/README.md`** — documented the new Agent Run Monitoring routes and storage model.
+- **`ROADMAP.md`** — marked the Phase 1 milestones complete with completion dates, annotated the partially-delivered tier-1-metrics and event-stream milestones with what remains (Phase 2 refresh path), added the Release 2.0 phase plan (Phases 1-4), and updated the active-release current focus and traceability to the shipped surfaces.
+
+### Testing
+
+- **PowerShell parser checks** — passed for the new module, API host, and both smoke scripts.
+- **`npm run build`** — passed.
+- **`scripts/Invoke-ModuleSmokeTest.ps1`** — full run passed, including the new agent-run ledger step (time-to-deliver derived correctly; both lifecycle events present; invalid status rejected).
+- **Live host checks** — `GET /api/agent-runs` empty contract → `count=0`; after creating a run: filtered list returns it with `byStatus.dispatched=1`; `GET /api/agent-runs/{runId}` returns the record (status `dispatched`, `workUnitsEstimated=3`) plus its `run.dispatched` event; unknown runId → HTTP 404. Test ledger data removed afterward.
+- **`tools/Test-RoadmapStructure.ps1`** — 0 errors.
+
 ## 2026-06-11 — Release 1.9 Phase 3: AI Documentation Improvement — Explicit Apply with Backup & Restore (Release 1.9 closed; Release 2.0 active)
 
 ### Changes
