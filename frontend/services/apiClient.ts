@@ -1,4 +1,4 @@
-import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent } from '../types';
+import { type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -1585,5 +1585,107 @@ export async function getOperationsPromptHistory(repoName: string, limit = 20): 
       localPath: record?.localPath ? String(record.localPath) : null,
       baseBranch: record?.baseBranch ? String(record.baseBranch) : null,
     })) : [],
+  }));
+}
+
+// --- Release 1.9: AI documentation improvement cycles ---
+
+function normalizeAiDocTemplate(raw: any): AiDocTemplate {
+  return {
+    id: String(raw?.id ?? ''),
+    label: String(raw?.label ?? ''),
+    summary: String(raw?.summary ?? ''),
+    guidance: String(raw?.guidance ?? ''),
+    requiredSections: Array.isArray(raw?.requiredSections) ? raw.requiredSections.map((value: unknown) => String(value)) : [],
+  };
+}
+
+export async function getAiDocTemplates(): Promise<AiDocTemplatesResult> {
+  const data = await fetchJson<any>(`${API_BASE_URL}/ai/docs/templates`);
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? data?.error ?? 'AI doc templates request failed.');
+  }
+
+  return {
+    readmeTemplates: Array.isArray(data?.data?.readmeTemplates) ? data.data.readmeTemplates.map(normalizeAiDocTemplate) : [],
+    roadmapTemplates: Array.isArray(data?.data?.roadmapTemplates) ? data.data.roadmapTemplates.map(normalizeAiDocTemplate) : [],
+  };
+}
+
+export async function previewAiDocImprovement(request: AiDocImprovePreviewRequest): Promise<AiDocImprovePreviewResult> {
+  const repoName = request.repoName.trim();
+  if (!repoName) {
+    throw new Error('repoName is required for AI documentation improvement.');
+  }
+
+  const body = {
+    repoName,
+    docType: request.docType,
+    templateId: request.templateId ?? '',
+    customPrompt: request.customPrompt ?? '',
+    provider: request.provider ?? '',
+    currentContent: request.currentContent ?? '',
+    path: request.path ?? '',
+  };
+
+  const data = await postJson<any>('/ai/docs/improve/preview', body);
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? data?.error ?? 'AI documentation improvement preview failed.');
+  }
+
+  const preview = data.data ?? {};
+  return {
+    previewId: String(preview?.previewId ?? ''),
+    repoName: String(preview?.repoName ?? repoName),
+    docType: (String(preview?.docType ?? request.docType) === 'roadmap' ? 'roadmap' : 'readme'),
+    providerId: String(preview?.providerId ?? ''),
+    modelId: preview?.modelId ? String(preview.modelId) : null,
+    templateId: String(preview?.templateId ?? ''),
+    customPrompt: preview?.customPrompt ? String(preview.customPrompt) : null,
+    currentContent: String(preview?.currentContent ?? ''),
+    proposedContent: String(preview?.proposedContent ?? ''),
+    changeSummary: Array.isArray(preview?.changeSummary) ? preview.changeSummary.map((value: unknown) => String(value)) : [],
+    estimatedScore: {
+      before: Number(preview?.estimatedScore?.before ?? 0),
+      after: Number(preview?.estimatedScore?.after ?? 0),
+      delta: Number(preview?.estimatedScore?.delta ?? 0),
+    },
+    warnings: Array.isArray(preview?.warnings) ? preview.warnings.map((value: unknown) => String(value)) : [],
+    generatedAt: String(preview?.generatedAt ?? ''),
+  };
+}
+
+export async function getAiDocImprovementHistory(repoName: string, options?: { docType?: 'readme' | 'roadmap'; limit?: number }): Promise<AiDocImprovementHistoryItem[]> {
+  const trimmedRepoName = repoName.trim();
+  if (!trimmedRepoName) {
+    return [];
+  }
+
+  const params = new URLSearchParams({ repoName: trimmedRepoName, limit: String(options?.limit ?? 20) });
+  if (options?.docType) {
+    params.set('docType', options.docType);
+  }
+
+  const data = await fetchJson<any>(`${API_BASE_URL}/ai/docs/improve/history?${params.toString()}`);
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? data?.error ?? 'AI documentation improvement history request failed.');
+  }
+
+  const items = Array.isArray(data?.data?.items) ? data.data.items : [];
+  return items.map((item: any): AiDocImprovementHistoryItem => ({
+    previewId: String(item?.previewId ?? ''),
+    createdAt: String(item?.createdAt ?? ''),
+    repoName: String(item?.repoName ?? trimmedRepoName),
+    docType: (String(item?.docType ?? 'readme') === 'roadmap' ? 'roadmap' : 'readme'),
+    providerId: String(item?.providerId ?? ''),
+    modelId: item?.modelId ? String(item.modelId) : null,
+    templateId: String(item?.templateId ?? ''),
+    customPrompt: item?.customPrompt ? String(item.customPrompt) : null,
+    scoreBefore: Number(item?.scoreBefore ?? 0),
+    scoreAfter: Number(item?.scoreAfter ?? 0),
+    scoreDelta: Number(item?.scoreDelta ?? 0),
+    changeSummary: Array.isArray(item?.changeSummary) ? item.changeSummary.map((value: unknown) => String(value)) : [],
+    warningCount: Number(item?.warningCount ?? 0),
+    applied: Boolean(item?.applied ?? false),
   }));
 }

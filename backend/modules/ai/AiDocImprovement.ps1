@@ -37,6 +37,7 @@ $ErrorActionPreference = 'Stop'
 # ---------------------------------------------------------------------------
 
 $script:AiDocTemplatesRelPath = 'backend\config\ai-doc-templates.json'
+$script:AiDocHistoryRelDir    = 'output\ai-doc-improvements'
 $script:AiDocDefaultAnthropicModel = 'claude-opus-4-8'
 $script:AiDocDefaultOpenAiModel    = 'gpt-4o'
 $script:AiDocDefaultMaxTokens      = 8000
@@ -569,6 +570,7 @@ function Invoke-AiDocImprovePreview {
         providerId       = [string]$result.providerId
         modelId          = $result.modelId
         templateId       = $effectiveTemplateId
+        customPrompt     = if (-not [string]::IsNullOrWhiteSpace($CustomPrompt)) { $CustomPrompt } else { $null }
         currentContent   = $currentContent
         proposedContent  = $proposedContent
         changeSummary    = @($result.changeSummary)
@@ -579,5 +581,108 @@ function Invoke-AiDocImprovePreview {
         }
         warnings         = @($warnings)
         generatedAt      = $now
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Improvement cycle history (per repo, JSONL — compact metadata, no full docs)
+# ---------------------------------------------------------------------------
+
+function _AiHistoryFilePath {
+    param([string]$WorkspaceRoot, [string]$RepoName)
+    $safeRepoName = $RepoName -replace '[\\/:*?"<>|]', '_'
+    $historyRoot = Join-Path $WorkspaceRoot $script:AiDocHistoryRelDir
+    $null = New-Item -ItemType Directory -Path $historyRoot -Force -ErrorAction SilentlyContinue
+    return Join-Path $historyRoot "$safeRepoName.improvements.jsonl"
+}
+
+<#
+.SYNOPSIS
+    Append a compact improvement-cycle history record for a generated preview.
+.DESCRIPTION
+    Stores metadata only (scores, provider, template, change summary) — not the
+    full current/proposed document bodies, which can be regenerated and would
+    bloat the per-repo JSONL. Failures are non-fatal: history must never block
+    a preview.
+#>
+function Write-AiDocImprovementHistory {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+        [Parameter(Mandatory = $true)][object]$Preview
+    )
+
+    $repoName = [string](_AiGetField -Obj $Preview -Name 'repoName' -Default '')
+    if ([string]::IsNullOrWhiteSpace($repoName)) { return $null }
+
+    $score = _AiGetField -Obj $Preview -Name 'estimatedScore' -Default $null
+    $record = [ordered]@{
+        previewId    = [string](_AiGetField -Obj $Preview -Name 'previewId' -Default '')
+        createdAt    = [string](_AiGetField -Obj $Preview -Name 'generatedAt' -Default ((Get-Date).ToUniversalTime().ToString('o')))
+        repoName     = $repoName
+        docType      = [string](_AiGetField -Obj $Preview -Name 'docType' -Default 'readme')
+        providerId   = [string](_AiGetField -Obj $Preview -Name 'providerId' -Default '')
+        modelId      = _AiGetField -Obj $Preview -Name 'modelId' -Default $null
+        templateId   = [string](_AiGetField -Obj $Preview -Name 'templateId' -Default '')
+        customPrompt = _AiGetField -Obj $Preview -Name 'customPrompt' -Default $null
+        scoreBefore  = [int](_AiGetField -Obj $score -Name 'before' -Default 0)
+        scoreAfter   = [int](_AiGetField -Obj $score -Name 'after' -Default 0)
+        scoreDelta   = [int](_AiGetField -Obj $score -Name 'delta' -Default 0)
+        changeSummary = @(_AiGetField -Obj $Preview -Name 'changeSummary' -Default @() | ForEach-Object { [string]$_ })
+        warningCount = @(_AiGetField -Obj $Preview -Name 'warnings' -Default @()).Count
+        applied      = $false
+    }
+
+    try {
+        $json = ConvertTo-Json -InputObject $record -Compress -Depth 5
+        Add-Content -LiteralPath (_AiHistoryFilePath -WorkspaceRoot $WorkspaceRoot -RepoName $repoName) -Value $json -Encoding UTF8 -ErrorAction Stop
+    } catch {
+        # Non-fatal — preview must succeed even when history cannot be written.
+    }
+
+    return [pscustomobject]$record
+}
+
+<#
+.SYNOPSIS
+    Read per-repo improvement-cycle history, newest first.
+#>
+function Get-AiDocImprovementHistory {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+        [Parameter(Mandatory = $true)][string]$RepoName,
+        [Parameter()][string]$DocType = '',
+        [Parameter()][int]$Limit = 20
+    )
+
+    $file = _AiHistoryFilePath -WorkspaceRoot $WorkspaceRoot -RepoName $RepoName
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return @() }
+
+    try {
+        $items = @(
+            Get-Content -LiteralPath $file -Encoding UTF8 -ErrorAction Stop |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+                ForEach-Object {
+                    try { ConvertFrom-Json -InputObject $_ } catch { $null }
+                } |
+                Where-Object { $null -ne $_ }
+        )
+
+        if (-not [string]::IsNullOrWhiteSpace($DocType)) {
+            $wanted = $DocType.ToLowerInvariant()
+            $items = @($items | Where-Object { [string](_AiGetField -Obj $_ -Name 'docType' -Default '') -eq $wanted })
+        }
+
+        # Sort on the raw value: ConvertFrom-Json (PS7) parses ISO timestamps into
+        # [datetime], and casting those to [string] loses sub-second precision —
+        # same-second records would tie and keep file (oldest-first) order.
+        return @(
+            $items |
+                Sort-Object { _AiGetField -Obj $_ -Name 'createdAt' -Default ([datetime]::MinValue) } -Descending |
+                Select-Object -First $Limit
+        )
+    } catch {
+        return @()
     }
 }

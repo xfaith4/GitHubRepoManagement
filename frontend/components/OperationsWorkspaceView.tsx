@@ -1,6 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   type OperationsRepoDetail,
+  type AiDocImprovementHistoryItem,
+  type AiDocImprovePreviewResult,
+  type AiDocProvider,
+  type AiDocTemplatesResult,
+  type AiDocType,
   type DocAuditIndex,
   type RoadmapAuditIndex,
   type OperationsRepoEntry,
@@ -13,7 +18,7 @@ import {
   type RepoLifecycleState,
   type RoadmapContent,
 } from '../types';
-import { executeRoadmapDispatch, getOperationsPromptHistory, getOperationsRepoDetail, getReadmeContent, getRoadmapContent, refineOperationsPrompt } from '../services/apiClient';
+import { executeRoadmapDispatch, getAiDocImprovementHistory, getAiDocTemplates, getOperationsPromptHistory, getOperationsRepoDetail, getReadmeContent, getRoadmapContent, previewAiDocImprovement, refineOperationsPrompt } from '../services/apiClient';
 import { BranchIcon, DatabaseIcon, HealthIcon, PullRequestIcon, RefreshIcon, RoadmapIcon, SpinnerIcon } from './icons';
 
 interface OperationsWorkspaceViewProps {
@@ -162,6 +167,18 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
   const [dispatchLoading, setDispatchLoading] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
   const [dispatchResult, setDispatchResult] = useState<DispatchExecuteResult | null>(null);
+  const [aiTab, setAiTab] = useState<'improve' | 'history'>('improve');
+  const [aiDocType, setAiDocType] = useState<AiDocType>('readme');
+  const [aiTemplates, setAiTemplates] = useState<AiDocTemplatesResult | null>(null);
+  const [aiTemplateId, setAiTemplateId] = useState('');
+  const [aiProvider, setAiProvider] = useState<AiDocProvider>('auto');
+  const [aiCustomPrompt, setAiCustomPrompt] = useState('');
+  const [aiPreview, setAiPreview] = useState<AiDocImprovePreviewResult | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiProposedCopied, setAiProposedCopied] = useState(false);
+  const [aiHistory, setAiHistory] = useState<AiDocImprovementHistoryItem[]>([]);
+  const [aiHistoryLoading, setAiHistoryLoading] = useState(false);
 
   const filteredEntries = useMemo(() => {
     const lower = filterText.trim().toLowerCase();
@@ -309,7 +326,42 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
     setDispatchLoading(false);
     setDispatchError(null);
     setDispatchResult(null);
+    setAiTab('improve');
+    setAiCustomPrompt('');
+    setAiPreview(null);
+    setAiError(null);
+    setAiProposedCopied(false);
+    setAiHistory([]);
   }, [selectedEntry?.repoId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getAiDocTemplates()
+      .then(result => {
+        if (!cancelled) setAiTemplates(result);
+      })
+      .catch(() => {
+        if (!cancelled) setAiTemplates(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const aiTemplateOptions = useMemo(
+    () => (aiDocType === 'roadmap' ? aiTemplates?.roadmapTemplates : aiTemplates?.readmeTemplates) ?? [],
+    [aiDocType, aiTemplates],
+  );
+
+  useEffect(() => {
+    if (aiTemplateOptions.length === 0) {
+      setAiTemplateId('');
+      return;
+    }
+    if (!aiTemplateOptions.some(template => template.id === aiTemplateId)) {
+      setAiTemplateId(aiTemplateOptions[0].id);
+    }
+  }, [aiTemplateOptions, aiTemplateId]);
 
   const dispatchReady = selectedEntry?.dispatchReadiness === 'ready';
   const maturityReady = selectedEntry?.maturityLevel === 'L3-Contract-Ready' || selectedEntry?.maturityLevel === 'L4-Orchestration-Ready';
@@ -436,6 +488,71 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
     setPromptTab(tab);
     if (tab === 'history' && selectedEntry && promptHistory.length === 0 && !promptHistoryLoading) {
       void handleLoadPromptHistory();
+    }
+  };
+
+  const handleLoadAiHistory = async () => {
+    if (!selectedEntry) {
+      return;
+    }
+
+    setAiHistoryLoading(true);
+    try {
+      const items = await getAiDocImprovementHistory(selectedEntry.repoName);
+      setAiHistory(items);
+    } catch {
+      setAiHistory([]);
+    } finally {
+      setAiHistoryLoading(false);
+    }
+  };
+
+  const handleAiTabChange = (tab: 'improve' | 'history') => {
+    setAiTab(tab);
+    if (tab === 'history' && selectedEntry && aiHistory.length === 0 && !aiHistoryLoading) {
+      void handleLoadAiHistory();
+    }
+  };
+
+  const runAiImprovement = async (sourceContent?: string) => {
+    if (!selectedEntry) {
+      return;
+    }
+
+    setAiLoading(true);
+    setAiError(null);
+    setAiProposedCopied(false);
+
+    try {
+      const loadedContent = aiDocType === 'roadmap' ? roadmapContent?.content : readmeContent?.content;
+      const preview = await previewAiDocImprovement({
+        repoName: selectedEntry.repoName,
+        docType: aiDocType,
+        templateId: aiTemplateId || undefined,
+        customPrompt: aiCustomPrompt || undefined,
+        provider: aiProvider,
+        currentContent: sourceContent ?? loadedContent ?? undefined,
+      });
+      setAiPreview(preview);
+      setAiHistory([]); // force a refresh next time the history tab opens
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'Failed to generate documentation improvement preview.');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleCopyAiProposed = async () => {
+    if (!aiPreview?.proposedContent) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(aiPreview.proposedContent);
+      setAiProposedCopied(true);
+      window.setTimeout(() => setAiProposedCopied(false), 1500);
+    } catch {
+      setAiProposedCopied(false);
     }
   };
 
@@ -1151,6 +1268,223 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                                     </div>
                                   ))}
                                 </div>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-lg border border-gray-700 bg-gray-950/40 p-4">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="text-sm font-semibold text-white">AI Documentation Improvement</div>
+                    <div className="inline-flex rounded-md border border-gray-700 bg-gray-900/60 p-1 text-xs">
+                      {(['improve', 'history'] as const).map(tab => (
+                        <button
+                          key={tab}
+                          onClick={() => handleAiTabChange(tab)}
+                          className={`rounded px-2 py-1 transition-colors capitalize ${aiTab === tab ? 'bg-violet-900/50 text-violet-100' : 'text-gray-300 hover:bg-gray-800'}`}
+                        >
+                          {tab === 'improve' ? 'Improve' : 'History'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {aiTab === 'improve' && (
+                    <div className="mt-3 space-y-3">
+                      <div className="text-xs text-gray-500">
+                        Preview-first README/ROADMAP improvement cycles. Nothing is written to disk — copy the proposed content to apply it manually until the explicit apply workflow ships.
+                      </div>
+
+                      <div className="grid gap-3 lg:grid-cols-3">
+                        <label className="text-xs text-gray-400">
+                          Document
+                          <div className="mt-1 inline-flex w-full rounded-md border border-gray-700 bg-gray-900/60 p-1 text-xs">
+                            {(['readme', 'roadmap'] as const).map(docType => (
+                              <button
+                                key={docType}
+                                onClick={() => { setAiDocType(docType); setAiPreview(null); setAiError(null); }}
+                                className={`flex-1 rounded px-2 py-1.5 uppercase transition-colors ${aiDocType === docType ? 'bg-violet-900/50 text-violet-100' : 'text-gray-300 hover:bg-gray-800'}`}
+                              >
+                                {docType}
+                              </button>
+                            ))}
+                          </div>
+                        </label>
+                        <label className="text-xs text-gray-400">
+                          Improvement template
+                          <select
+                            value={aiTemplateId}
+                            onChange={(event: React.ChangeEvent<HTMLSelectElement>) => setAiTemplateId(event.target.value)}
+                            className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100"
+                          >
+                            {aiTemplateOptions.length === 0 && <option value="">Default improvement</option>}
+                            {aiTemplateOptions.map(template => (
+                              <option key={template.id} value={template.id} title={template.summary}>
+                                {template.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="text-xs text-gray-400">
+                          Provider
+                          <select
+                            value={aiProvider}
+                            onChange={(event: React.ChangeEvent<HTMLSelectElement>) => setAiProvider(event.target.value as AiDocProvider)}
+                            className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100"
+                          >
+                            <option value="auto">Auto (AI when configured)</option>
+                            <option value="heuristic">Heuristic (offline)</option>
+                            <option value="anthropic">Anthropic</option>
+                            <option value="openai">OpenAI</option>
+                          </select>
+                        </label>
+                      </div>
+
+                      <label className="block text-xs text-gray-400">
+                        Custom improvement prompt (optional — applies to this cycle)
+                        <textarea
+                          value={aiCustomPrompt}
+                          onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => setAiCustomPrompt(event.target.value)}
+                          rows={2}
+                          className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100"
+                          placeholder="e.g. Tighten the introduction and add a troubleshooting section..."
+                        />
+                      </label>
+
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          onClick={() => void runAiImprovement()}
+                          disabled={aiLoading}
+                          className="inline-flex items-center gap-2 rounded-md border border-violet-700/50 bg-violet-950/40 px-3 py-1.5 text-sm text-violet-100 hover:bg-violet-900/50 disabled:opacity-50 transition-colors"
+                        >
+                          {aiLoading ? <SpinnerIcon className="w-4 h-4" /> : null}
+                          {aiLoading ? 'Generating preview...' : aiPreview ? 'Regenerate Preview' : 'Generate Improvement Preview'}
+                        </button>
+                        {aiPreview && (
+                          <button
+                            onClick={() => void runAiImprovement(aiPreview.proposedContent)}
+                            disabled={aiLoading}
+                            className="rounded-md border border-indigo-700/50 bg-indigo-950/40 px-3 py-1.5 text-sm text-indigo-100 hover:bg-indigo-900/50 disabled:opacity-50 transition-colors"
+                            title="Feed the proposed content back in as the starting point for another improvement cycle"
+                          >
+                            Run Another Cycle on Proposed
+                          </button>
+                        )}
+                        <button
+                          onClick={handleCopyAiProposed}
+                          disabled={!aiPreview?.proposedContent}
+                          className="rounded-md border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm text-gray-200 hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                        >
+                          {aiProposedCopied ? 'Copied' : 'Copy Proposed'}
+                        </button>
+                      </div>
+
+                      {aiError && (
+                        <div className="rounded-md border border-red-700/40 bg-red-950/20 px-3 py-2 text-xs text-red-200">
+                          {aiError}
+                        </div>
+                      )}
+
+                      {aiPreview && !aiLoading && (
+                        <>
+                          <div className="rounded-md border border-gray-700 bg-gray-900/60 px-3 py-2 text-xs text-gray-400 space-y-1">
+                            <div>
+                              Provider: <span className="text-gray-200">{aiPreview.providerId}</span>
+                              {aiPreview.modelId && <span className="text-gray-500"> ({aiPreview.modelId})</span>}
+                              {' '}• Template: <span className="text-gray-200">{aiPreview.templateId || 'default'}</span>
+                            </div>
+                            <div>
+                              Estimated score: <span className="text-gray-200">{aiPreview.estimatedScore.before}</span>
+                              {' → '}
+                              <span className="text-gray-200">{aiPreview.estimatedScore.after}</span>
+                              {' '}
+                              <span className={aiPreview.estimatedScore.delta >= 0 ? 'text-emerald-300' : 'text-red-300'}>
+                                ({aiPreview.estimatedScore.delta >= 0 ? '+' : ''}{aiPreview.estimatedScore.delta})
+                              </span>
+                            </div>
+                          </div>
+
+                          {aiPreview.warnings.length > 0 && (
+                            <div className="space-y-2">
+                              {aiPreview.warnings.map((warning, index) => (
+                                <div key={`ai-warning-${index}`} className="rounded-md border border-amber-700/40 bg-amber-950/20 px-3 py-2 text-xs text-amber-200">
+                                  {warning}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {aiPreview.changeSummary.length > 0 && (
+                            <div>
+                              <div className="text-xs uppercase tracking-wide text-gray-500">What changed and why</div>
+                              <ul className="mt-2 space-y-1 text-xs text-gray-300">
+                                {aiPreview.changeSummary.map((change, index) => (
+                                  <li key={`ai-change-${index}`} className="rounded-md border border-gray-800 bg-gray-900/40 px-3 py-1.5">
+                                    {change}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          <div>
+                            <div className="mb-2 text-xs uppercase tracking-wide text-gray-500">Side-by-side comparison</div>
+                            <div className="grid gap-3 lg:grid-cols-2">
+                              <div>
+                                <div className="mb-1 text-xs text-gray-500">Current</div>
+                                <pre className="max-h-80 overflow-auto rounded-md border border-gray-800 bg-gray-900/60 p-3 text-xs text-gray-300 whitespace-pre-wrap break-words">
+                                  {aiPreview.currentContent || '(empty document)'}
+                                </pre>
+                              </div>
+                              <div>
+                                <div className="mb-1 text-xs text-gray-500">Proposed</div>
+                                <pre className="max-h-80 overflow-auto rounded-md border border-violet-800/40 bg-violet-950/10 p-3 text-xs text-gray-200 whitespace-pre-wrap break-words">
+                                  {aiPreview.proposedContent}
+                                </pre>
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {aiTab === 'history' && (
+                    <div className="mt-3">
+                      {aiHistoryLoading ? (
+                        <div className="flex items-center gap-2 text-sm text-gray-400">
+                          <SpinnerIcon className="w-4 h-4" />
+                          Loading improvement history…
+                        </div>
+                      ) : aiHistory.length === 0 ? (
+                        <div className="rounded-md border border-gray-800 bg-gray-900/40 px-3 py-2 text-sm text-gray-400">
+                          No improvement cycles recorded for this repo yet. Generate an improvement preview first.
+                        </div>
+                      ) : (
+                        <ul className="space-y-2">
+                          {aiHistory.map(item => (
+                            <li key={item.previewId} className="rounded-md border border-gray-700 bg-gray-900/40 px-3 py-2 text-xs text-gray-300 space-y-1">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <span className="uppercase text-violet-300">{item.docType}</span>
+                                <span className="text-gray-500">{new Date(item.createdAt).toLocaleString()}</span>
+                              </div>
+                              <div className="text-gray-400">
+                                Provider: <span className="text-gray-200">{item.providerId}</span>
+                                {' '}• Template: <span className="text-gray-200">{item.templateId || 'default'}</span>
+                              </div>
+                              <div className="text-gray-400">
+                                Score {item.scoreBefore} → {item.scoreAfter}{' '}
+                                <span className={item.scoreDelta >= 0 ? 'text-emerald-300' : 'text-red-300'}>
+                                  ({item.scoreDelta >= 0 ? '+' : ''}{item.scoreDelta})
+                                </span>
+                                {' '}• Changes: {item.changeSummary.length} • Warnings: {item.warningCount}
+                              </div>
+                              {item.customPrompt && (
+                                <div className="italic text-gray-400">+ {item.customPrompt}</div>
                               )}
                             </li>
                           ))}

@@ -5872,12 +5872,53 @@ try {
                         -Provider $provider `
                         -Settings $settings
 
+                    $null = Write-AiDocImprovementHistory -WorkspaceRoot $WorkspaceRoot -Preview $preview
+
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
                     Write-HostLog ("[TRACE] ai.docs.improve.preview correlationId={0} done repoName={1} docType={2} provider={3} scoreDelta={4}" -f $correlationId, $repoName, $docType, $preview.providerId, $preview.estimatedScore.delta)
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data    = $preview
+                    }
+                }
+                'GET /api/ai/docs/improve/history' {
+                    Write-HostLog ("[TRACE] ai.docs.improve.history correlationId={0} start" -f $correlationId)
+                    $q        = Parse-QueryString -Query $req.Query
+                    $repoName = if ($q.ContainsKey('repoName') -and $q.repoName) { [System.Uri]::UnescapeDataString([string]$q.repoName) } else { '' }
+                    $docType  = if ($q.ContainsKey('docType') -and $q.docType) { ([string]$q.docType).ToLowerInvariant() } else { '' }
+                    $limit    = if ($q.ContainsKey('limit') -and $q.limit) { [int]$q.limit } else { 20 }
+
+                    if ([string]::IsNullOrWhiteSpace($repoName)) {
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error   = 'repoName query parameter is required for /api/ai/docs/improve/history'
+                        }
+                        break
+                    }
+
+                    $items = @(Get-AiDocImprovementHistory -WorkspaceRoot $WorkspaceRoot -RepoName $repoName -DocType $docType -Limit $limit)
+
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Write-HostLog ("[TRACE] ai.docs.improve.history correlationId={0} done repoName={1} count={2}" -f $correlationId, $repoName, @($items).Count)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = @{
+                            repoName = $repoName
+                            items    = @($items)
+                            count    = @($items).Count
+                        }
+                    }
+                }
+                'GET /api/ai/docs/templates' {
+                    $templates = Get-AiDocTemplates -WorkspaceRoot $WorkspaceRoot
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = @{
+                            readmeTemplates  = @(Get-ObjectPropertyValue -InputObject $templates -PropertyName 'readmeTemplates' -Default @())
+                            roadmapTemplates = @(Get-ObjectPropertyValue -InputObject $templates -PropertyName 'roadmapTemplates' -Default @())
+                        }
                     }
                 }
                 'POST /api/roadmap/dispatch/check' {

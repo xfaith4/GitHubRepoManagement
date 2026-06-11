@@ -93,7 +93,7 @@ Render the state inline on each milestone in italics, e.g.:
 | 1.7       | Repo Git Status Detail                                                                                  | `done`                                                                                                                                         |
 | **1.7.5** | **Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning**                       | `done` — shipped 2026-05-28; portfolio scan/classify/rank/report loop now end-to-end                                                           |
 | **1.8**   | **Operations Workspace and Prompt Refinement**                                                          | `done` — shipped 2026-06-09; see archive (Operations workspace, prompt refinement, history, dispatch linkage)                                  |
-| **1.9**   | **AI Documentation Improvement Cycles**                                                                 | **active** — Phase 1 (AI provider adapters + `/api/ai/docs/improve/preview`) shipped 2026-06-10; diff/history/apply remain                     |
+| **1.9**   | **AI Documentation Improvement Cycles**                                                                 | **active** — Phases 1-2 shipped 2026-06-10/11 (providers, preview, diff viewer, history); Phase 3 apply path remains                           |
 | **2.0**   | **Agent Run Monitoring and Actions-Gated Merge Readiness**                                              | `planned`                                                                                                                                      |
 | **2.1**   | **Persistent Data Layer**                                                                               | `planned`                                                                                                                                      |
 | **2.2**   | **API Authentication, Network Security, Guided Onboarding, and GitHub App Integration**                 | `planned`                                                                                                                                      |
@@ -113,20 +113,22 @@ Render the state inline on each milestone in italics, e.g.:
 ### Active release detail — 1.9 AI Documentation Improvement Cycles
 
 **Status:** active. Phase 1 (AI provider adapter foundation + preview route)
-shipped 2026-06-10: a provider-agnostic documentation-improvement adapter
-contract with heuristic (offline), OpenAI, and Anthropic adapters, built-in
-README/ROADMAP improvement templates, and a preview-only
-`POST /api/ai/docs/improve/preview` route. No README or ROADMAP file is
-mutated — apply is a later phase.
+shipped 2026-06-10. Phase 2 (diff viewer + improvement history) shipped
+2026-06-11: the Operations workspace now has an AI Documentation Improvement
+panel with side-by-side current/proposed comparison, custom improvement
+prompts, run-another-cycle support, per-repo improvement history backed by
+`GET /api/ai/docs/improve/history`, and a `GET /api/ai/docs/templates`
+template feed. No README or ROADMAP file is mutated — apply is Phase 3.
 
 **Goal:** Add provider-backed, preview-first AI improvement cycles for
 README.md and ROADMAP.md so operators can repair weak documentation,
 standardize repos, and improve dispatch readiness without direct unreviewed
 file mutation.
 
-**Current focus:** Backend foundation is in place and smoke-tested. The next
-slices are the side-by-side diff viewer and improvement history (Phase 2),
-then the explicit apply path with backup/restore (Phase 3).
+**Current focus:** Phases 1 and 2 are complete. The remaining slice is
+Phase 3: the explicit apply action with backup creation and restore metadata
+(`POST /api/ai/docs/improve/apply`), which writes accepted changes only after
+explicit operator approval.
 
 **Why now:** Release 1.8 closed the repo-specific Operations workspace and
 prompt-refinement loop. The Documentation Health signal that loop surfaces is
@@ -137,11 +139,13 @@ offline heuristic improvement rather than failing.
 
 **Validation plan:** PowerShell parser diagnostics for
 `backend/modules/ai/AiDocImprovement.ps1` and the API host; `npm run build`;
-the `scripts/Invoke-ApiHostSmokeTest.ps1` AI-preview step (heuristic provider,
-inline content) asserting the preview contract; and a live host check of
-`POST /api/ai/docs/improve/preview` covering the missing-`repoName` 400 path,
-the heuristic README path, and the ROADMAP path. The Anthropic adapter was
-additionally exercised against the live Messages API.
+the `scripts/Invoke-ApiHostSmokeTest.ps1` AI steps (heuristic preview
+contract, templates route, history missing-`repoName` 400, and
+preview-written history record assertion); and live host checks of
+`POST /api/ai/docs/improve/preview`, `GET /api/ai/docs/improve/history`
+(including the `docType` filter and same-second ordering), and
+`GET /api/ai/docs/templates`. The Anthropic adapter was additionally
+exercised against the live Messages API.
 
 **Risks and blockers:** AI provider calls cost tokens and can fail or rate-limit;
 mitigated by key-gated provider selection and a deterministic offline heuristic
@@ -158,10 +162,14 @@ pre-existing 30s request cap during docs-audit/portfolio warmup on large local
 inventories (tracked separately); the AI-preview step itself passes when reached
 and was validated directly against a live host.
 
-**Traceability:** Milestones map to `backend/modules/ai/AiDocImprovement.ps1`,
+**Traceability:** Milestones map to `backend/modules/ai/AiDocImprovement.ps1`
+(adapters, preview orchestrator, improvement history),
 `backend/config/ai-doc-templates.json`, the `POST /api/ai/docs/improve/preview`
-route in `backend/api-host/Start-RepoManagementApiHost.ps1`, and the AI-preview
-smoke step in `scripts/Invoke-ApiHostSmokeTest.ps1`.
+/ `GET /api/ai/docs/improve/history` / `GET /api/ai/docs/templates` routes in
+`backend/api-host/Start-RepoManagementApiHost.ps1`, the AI Documentation
+Improvement panel in `frontend/components/OperationsWorkspaceView.tsx` (with
+contracts in `frontend/types.ts` and `frontend/services/apiClient.ts`), and the
+AI smoke steps in `scripts/Invoke-ApiHostSmokeTest.ps1`.
 
 ### Release 1.8 completion snapshot
 
@@ -488,18 +496,28 @@ unreviewed file mutation.
       and warnings. *(state: smoke-tested — Phase 1)* — preview-only; resolves
       current content from inline body, roadmap cache, or the portfolio index;
       degrades to the offline heuristic provider when no AI key is configured.
-- [ ] Add side-by-side diff viewer for current vs proposed README/ROADMAP.
-      *(state: planned — Phase 2)*
-- [ ] Add improvement cycle history per repo. *(state: planned — Phase 2)*
-- [ ] Add custom improvement prompt field for additional refinement cycles.
-      *(state: planned — Phase 2)* — backend already accepts `customPrompt`;
-      the UI field is Phase 2.
+- [x] Add side-by-side diff viewer for current vs proposed README/ROADMAP.
+      *(state: ui-connected — Phase 2)* — AI Documentation Improvement panel
+      in [`OperationsWorkspaceView.tsx`](frontend/components/OperationsWorkspaceView.tsx)
+      renders Current and Proposed panes side by side with change summary,
+      score movement, warnings, and a copy-proposed action.
+- [x] Add improvement cycle history per repo. *(state: smoke-tested — Phase 2)*
+      — each preview appends a compact metadata record (provider, template,
+      score movement, change summary) to per-repo JSONL under
+      `output/ai-doc-improvements/`; surfaced in the panel's History tab.
+- [x] Add custom improvement prompt field for additional refinement cycles.
+      *(state: ui-connected — Phase 2)* — `customPrompt` textarea plus a
+      "Run Another Cycle on Proposed" action that feeds the proposed content
+      back in as the next cycle's starting point.
 - [ ] Add explicit apply action for accepted changes with backup creation
       and restore metadata. *(state: planned — Phase 3)*
 - [ ] Add `POST /api/ai/docs/improve/apply` route that writes accepted
       changes only after explicit operator approval. *(state: planned — Phase 3)*
-- [ ] Add `GET /api/ai/docs/improve/history` route for repo-specific
-      improvement history. *(state: planned — Phase 2)*
+- [x] Add `GET /api/ai/docs/improve/history` route for repo-specific
+      improvement history. *(state: smoke-tested — Phase 2)* — supports
+      `docType` filter and limit; smoke asserts the preview-written record is
+      returned. A `GET /api/ai/docs/templates` companion route serves the
+      built-in templates to the UI.
 
 #### Acceptance criteria
 
@@ -522,7 +540,7 @@ unreviewed file mutation.
 | Phase                                       | Scope                                                                                                                                            | Status                               |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
 | Phase 1: Provider foundation + preview      | Provider adapter contract, heuristic/OpenAI/Anthropic adapters, `ai-doc-templates.json`, `POST /api/ai/docs/improve/preview`, smoke coverage     | **done — smoke-tested** (2026-06-10) |
-| Phase 2: Diff viewer + history              | Side-by-side current/proposed diff viewer, custom-prompt UI field, improvement cycle history, `GET /api/ai/docs/improve/history`                 | **planned**                          |
+| Phase 2: Diff viewer + history              | Side-by-side current/proposed diff viewer, custom-prompt UI field, improvement cycle history, `GET /api/ai/docs/improve/history`                 | **done — smoke-tested** (2026-06-11) |
 | Phase 3: Explicit apply + backup/restore    | Apply action with backup + restore metadata, `POST /api/ai/docs/improve/apply` (write only after explicit operator approval)                     | **planned**                          |
 
 ---

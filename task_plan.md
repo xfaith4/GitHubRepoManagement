@@ -1,33 +1,30 @@
 # Task Plan
 
 ## Goal
-Execute the next logical roadmap phase. Release 1.8 had no remaining milestones, so the next phase is Release 1.9 (AI Documentation Improvement Cycles). Deliver a bounded Phase 1 — AI provider adapter foundation + a preview-only improvement route — respecting token/context limits rather than the whole release.
+Continue Release 1.9 (AI Documentation Improvement Cycles) with Phase 2: the side-by-side diff viewer, custom improvement prompt UI, per-repo improvement-cycle history, and `GET /api/ai/docs/improve/history`. Phase 1 (provider foundation + preview route) shipped 2026-06-10 as commit `7b30f8c`.
 
 ## Scope
 
-- Define a provider-agnostic documentation-improvement adapter contract.
-- Implement a deterministic offline heuristic provider (no hard roadblock when no AI key is configured), plus OpenAI and Anthropic raw-HTTP adapters.
-- Provide data-driven built-in README/ROADMAP improvement templates.
-- Add `POST /api/ai/docs/improve/preview` (preview-only; no file mutation).
-- Add offline, deterministic smoke coverage for the preview route.
-- Promote Release 1.9 to active and update roadmap/changelog/progress artifacts after verification.
-- Defer diff viewer + history (Phase 2) and explicit apply + backup/restore (Phase 3).
+- Persist a compact improvement-cycle metadata record per preview (provider, template, score movement, change summary) to per-repo JSONL.
+- Add `GET /api/ai/docs/improve/history` (per-repo, `docType` filter, limit) and `GET /api/ai/docs/templates`.
+- Build the AI Documentation Improvement panel in the Operations workspace: docType/template/provider selection, custom prompt field, side-by-side Current vs Proposed comparison, run-another-cycle action, history tab.
+- Extend smoke coverage to the templates and history routes.
+- Update roadmap/changelog/progress artifacts after verification.
+- Defer the explicit apply path with backup/restore (Phase 3).
 
 ## Phases
 
-| Phase                                  | Status   | Notes                                                                                                                                                              |
-| -------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1. Repo orientation                    | complete | ROADMAP + progress confirmed Release 1.8 complete; Release 1.9 is the next implementation target. Consulted the `claude-api` skill before the Anthropic adapter.   |
-| 2. Templates config                    | complete | `backend/config/ai-doc-templates.json` with README + ROADMAP improvement templates.                                                                                |
-| 3. Provider module                     | complete | `backend/modules/ai/AiDocImprovement.ps1`: adapter contract + heuristic/OpenAI/Anthropic adapters + `Invoke-AiDocImprovePreview` orchestrator.                      |
-| 4. Route wiring                        | complete | `POST /api/ai/docs/improve/preview` in the API host with current-content resolution and provider fallback.                                                          |
-| 5. Smoke coverage                      | complete | Offline heuristic-provider smoke step in `Invoke-ApiHostSmokeTest.ps1`.                                                                                             |
-| 6. Verification                        | complete | Parser checks, `npm run build`, roadmap validator (0 errors), and direct live-host validation of the route (incl. the Anthropic adapter against the live API).      |
-| 7. Roadmap and session-file updates    | complete | Promoted Release 1.9 to active, added a phase plan + full active-release execution contract, archived Release 1.8, and updated CHANGELOG/progress/task_plan.         |
+| Phase | Status | Notes |
+| --- | --- | --- |
+| 1. Commit Phase 1 | complete | `7b30f8c` on `main`. |
+| 2. Backend history + routes | complete | `Write/Get-AiDocImprovementHistory` in the AI module; preview route persists per cycle; history + templates GET routes added to the host. |
+| 3. Frontend contracts + panel | complete | Types, API client functions, and the AI Documentation Improvement panel with side-by-side diff, custom prompt, cycle re-run, and history tab. |
+| 4. Smoke + docs surfaces | complete | Smoke asserts templates lists and the preview→history round trip; routes documented in `ApiDocsModal.tsx` and the api-host README. |
+| 5. Verification | complete | Parser checks, `npm run build`, roadmap validator (0 errors), and live host checks of all three AI routes including the two-cycle flow. |
+| 6. Roadmap and session-file updates | complete | Phase 2 milestones marked, phase plan + execution contract refreshed, CHANGELOG/progress/task_plan updated. |
 
 ## Errors Encountered
 
-| Error                                                                                              | Attempt                                                       | Resolution                                                                                                                                              |
-| -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Full `Invoke-ApiHostSmokeTest.ps1` timed out at the 30s request cap during docs-audit warmup.       | Ran the full smoke; it failed before reaching the new AI step. | Pre-existing environmental slowness on a large local inventory (documented in prior entries). Validated the new route directly against a live host instead. |
-| Unrelated files (`README.md`, `settings.json`, three `.ps1`) showed up as modified mid-session.     | Inspected diffs.                                             | Caused by the IDE markdown/PowerShell formatter and the smoke test's settings POST — not part of this task. Restored them to HEAD; change set now contains only Phase 1 work. |
+| Error | Attempt | Resolution |
+| --- | --- | --- |
+| History returned oldest-first for two previews within the same second. | Live route validation showed `newestMatchesCycle2=False`. | PowerShell 7 `ConvertFrom-Json` parses ISO timestamps into `[datetime]`; the `[string]` cast in the sort key dropped sub-second precision so same-second records tied and kept file order. Fixed by sorting on the raw value; regression-checked at module level. |

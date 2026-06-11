@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-11 (Release 1.9 Phase 2: AI Documentation Improvement — Diff Viewer & History)
+
+- Committed Phase 1 (`7b30f8c`) and proceeded to the next roadmap slice: Release 1.9 Phase 2 — side-by-side diff viewer, custom improvement prompt UI, improvement-cycle history, and `GET /api/ai/docs/improve/history`.
+- Extended `backend/modules/ai/AiDocImprovement.ps1` with per-repo improvement-cycle history (compact metadata JSONL under `output/ai-doc-improvements/`, gitignored) written on every preview and read newest-first with an optional `docType` filter.
+- Added `GET /api/ai/docs/improve/history` and `GET /api/ai/docs/templates` to the API host; the preview route now persists a history record per cycle.
+- Built the AI Documentation Improvement panel in `frontend/components/OperationsWorkspaceView.tsx`: README/ROADMAP selector, template + provider selects, custom improvement prompt, side-by-side Current vs Proposed comparison with change summary / score movement / warnings, copy-proposed action, "Run Another Cycle on Proposed", and a History tab. Typed contracts and client functions added in `frontend/types.ts` / `frontend/services/apiClient.ts`; routes documented in `ApiDocsModal.tsx` and the api-host README.
+- Extended the API host smoke with templates-route and history-route assertions (missing-`repoName` 400, preview-written record matched by `previewId`).
+- Found and fixed a real ordering bug during live validation: PowerShell 7's `ConvertFrom-Json` parses ISO timestamps into `[datetime]`, and the `[string]` cast in the history sort key dropped sub-second precision, so two previews within the same second returned oldest-first. Sorting on the raw value fixes it; regression-checked at module level.
+
+### Verification
+
+- PowerShell parser diagnostics for the AI module, API host, and smoke script — clean.
+- `npm run build` — passed.
+- `pwsh ./tools/Test-RoadmapStructure.ps1 -Path ./ROADMAP.md` — 0 errors, 2 pre-existing advisory warnings.
+- Live host validation on a scratch port: templates → 4 README + 4 ROADMAP entries; preview → history round trip (matching `previewId`); two-cycle proposed-content flow idempotent at full coverage; history missing-`repoName` → 400; `docType` filter returns 0 for non-matching type.
+
 ## 2026-06-10 (Release 1.9 Phase 1: AI Documentation Improvement — Provider Foundation & Preview)
 
 - Read the full ROADMAP and progress history; confirmed Release 1.8 had no remaining milestones, so the next logical phase was Release 1.9 (AI Documentation Improvement Cycles). Scoped a bounded Phase 1 — provider foundation + preview route — respecting token/context limits rather than attempting the whole release.

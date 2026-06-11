@@ -607,6 +607,31 @@ try {
     if ([string]::IsNullOrWhiteSpace([string]$aiImproveData.proposedContent)) { throw '/api/ai/docs/improve/preview returned empty proposedContent' }
     Write-Host ("  /api/ai/docs/improve/preview -> provider={0} scoreDelta={1} changes={2}" -f $aiImproveData.providerId, $aiImproveData.estimatedScore.delta, @($aiImproveData.changeSummary).Count) -ForegroundColor DarkGray
 
+    # Templates route serves the data-driven built-in improvement templates.
+    $aiTemplatesResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/ai/docs/templates"
+    Assert-Not503 -Name '/api/ai/docs/templates' -Response $aiTemplatesResponse
+    $aiTemplatesJson = $aiTemplatesResponse.Json
+    if (-not $aiTemplatesJson.success) { throw '/api/ai/docs/templates returned success=false' }
+    $aiReadmeTemplateCount = @($aiTemplatesJson.data.readmeTemplates).Count
+    $aiRoadmapTemplateCount = @($aiTemplatesJson.data.roadmapTemplates).Count
+    if ($aiReadmeTemplateCount -lt 1 -or $aiRoadmapTemplateCount -lt 1) { throw '/api/ai/docs/templates returned empty template lists' }
+    Write-Host ("  /api/ai/docs/templates -> readme={0} roadmap={1}" -f $aiReadmeTemplateCount, $aiRoadmapTemplateCount) -ForegroundColor DarkGray
+
+    # History route: missing repoName -> 400; the earlier preview must have written a history record.
+    $aiHistoryMissing = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/ai/docs/improve/history"
+    Assert-Not503 -Name '/api/ai/docs/improve/history (no repoName)' -Response $aiHistoryMissing
+    Write-Host ("  /api/ai/docs/improve/history (no repoName) -> HTTP {0}" -f $aiHistoryMissing.StatusCode) -ForegroundColor DarkGray
+
+    $aiHistoryResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/ai/docs/improve/history?repoName=$([uri]::EscapeDataString($workspaceRepoName))&limit=5"
+    Assert-Not503 -Name '/api/ai/docs/improve/history' -Response $aiHistoryResponse
+    $aiHistoryJson = $aiHistoryResponse.Json
+    if (-not $aiHistoryJson.success) { throw '/api/ai/docs/improve/history returned success=false' }
+    $aiHistoryItems = @($aiHistoryJson.data.items)
+    if ($aiHistoryItems.Count -lt 1) { throw '/api/ai/docs/improve/history did not return the record persisted by the preview call' }
+    $aiHistoryMatch = @($aiHistoryItems | Where-Object { [string]$_.previewId -eq [string]$aiImproveData.previewId })
+    if (@($aiHistoryMatch).Count -eq 0) { throw '/api/ai/docs/improve/history did not include the previewId from the preview call' }
+    Write-Host ("  /api/ai/docs/improve/history -> {0} item(s), latest previewId matched" -f $aiHistoryItems.Count) -ForegroundColor DarkGray
+
     $copilotHistoryResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/copilot-task/history?limit=5"
     Assert-Not503 -Name '/api/copilot-task/history' -Response $copilotHistoryResponse
     $copilotHistoryJson = $copilotHistoryResponse.Json

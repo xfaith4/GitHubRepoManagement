@@ -220,6 +220,62 @@ const CATEGORIES: CategoryDef[] = [
     ],
   },
   {
+    label: 'AI Documentation Improvement',
+    color: 'text-fuchsia-400',
+    endpoints: [
+      {
+        method: 'POST',
+        path: '/api/ai/docs/improve/preview',
+        summary: 'Generates a preview-only AI improvement of a README or ROADMAP: current vs proposed content, change summary, estimated score movement, and warnings. Never writes to disk.',
+        bodyParams: [
+          { name: 'repoName', type: 'string', description: 'Repository name (required)' },
+          { name: 'docType', type: '"readme" | "roadmap"', description: 'Document to improve (default: readme)' },
+          { name: 'templateId', type: 'string', description: 'Built-in improvement template id from /api/ai/docs/templates (optional; defaults to the first template for the doc type)' },
+          { name: 'customPrompt', type: 'string', description: 'Optional operator improvement instruction applied to this cycle' },
+          { name: 'provider', type: '"auto" | "heuristic" | "openai" | "anthropic"', description: 'Provider selection; auto prefers a configured AI key and falls back to the offline heuristic provider' },
+          { name: 'currentContent', type: 'string', description: 'Optional inline document content; when omitted the host resolves it from the roadmap cache or portfolio index' },
+          { name: 'path', type: 'string', description: 'Optional explicit document path override' },
+        ],
+        responseFields: [
+          { name: 'success', type: 'bool', description: 'Operation result flag' },
+          { name: 'data.previewId', type: 'string', description: 'Unique identifier recorded for this improvement cycle' },
+          { name: 'data.providerId', type: 'string', description: 'Provider that produced the proposal (heuristic, openai, or anthropic)' },
+          { name: 'data.currentContent', type: 'string', description: 'Document content the proposal was generated from' },
+          { name: 'data.proposedContent', type: 'string', description: 'Proposed improved document content' },
+          { name: 'data.changeSummary', type: 'string[]', description: 'Plain-language description of what changed and why' },
+          { name: 'data.estimatedScore', type: '{ before, after, delta }', description: 'Estimated section-coverage score movement' },
+          { name: 'data.warnings', type: 'string[]', description: 'Provider fallbacks and other operator-facing warnings' },
+        ],
+        notes: 'Preview-first: no README.md or ROADMAP.md is modified. Each preview appends a compact metadata record to output/ai-doc-improvements/<repo>.improvements.jsonl for the history route. When no AI provider key is configured, the deterministic offline heuristic provider keeps the workflow available.',
+      },
+      {
+        method: 'GET',
+        path: '/api/ai/docs/improve/history',
+        summary: 'Returns the most recent AI documentation improvement cycles for a repository, newest first.',
+        queryParams: [
+          { name: 'repoName', type: 'string', description: 'Repository name to retrieve improvement history for (required)' },
+          { name: 'docType', type: '"readme" | "roadmap"', description: 'Optional filter by document type' },
+          { name: 'limit', type: 'int', description: 'Maximum records to return (default: 20)' },
+        ],
+        responseFields: [
+          { name: 'success', type: 'bool', description: 'Operation result flag' },
+          { name: 'data.items', type: 'AiDocImprovementHistoryItem[]', description: 'Improvement cycle records (provider, template, score movement, change summary) — metadata only, not full documents' },
+          { name: 'data.count', type: 'number', description: 'Number of records returned' },
+        ],
+      },
+      {
+        method: 'GET',
+        path: '/api/ai/docs/templates',
+        summary: 'Returns the built-in README and ROADMAP improvement templates defined in backend/config/ai-doc-templates.json.',
+        responseFields: [
+          { name: 'success', type: 'bool', description: 'Operation result flag' },
+          { name: 'data.readmeTemplates', type: 'AiDocTemplate[]', description: 'README improvement templates (product, developer/operator, open-source, portfolio showcase)' },
+          { name: 'data.roadmapTemplates', type: 'AiDocTemplate[]', description: 'ROADMAP improvement templates (release-oriented, contract, agent-dispatch-ready, recovery/repair)' },
+        ],
+      },
+    ],
+  },
+  {
     label: 'Settings',
     color: 'text-violet-400',
     endpoints: [

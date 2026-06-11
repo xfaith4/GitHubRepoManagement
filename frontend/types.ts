@@ -1133,3 +1133,69 @@ export interface OperationsPromptDispatchRecord {
   localPath?: string | null;
   baseBranch?: string | null;
 }
+
+// --- Release 1.9: AI documentation improvement cycles ---
+
+export type AiDocType = 'readme' | 'roadmap';
+export type AiDocProvider = 'auto' | 'heuristic' | 'openai' | 'anthropic';
+
+export interface AiDocTemplate {
+  id: string;
+  label: string;
+  summary: string;
+  guidance: string;
+  requiredSections: string[];
+}
+
+export interface AiDocTemplatesResult {
+  readmeTemplates: AiDocTemplate[];
+  roadmapTemplates: AiDocTemplate[];
+}
+
+export interface AiDocImprovePreviewRequest {
+  repoName: string;
+  docType: AiDocType;
+  templateId?: string;
+  customPrompt?: string;
+  provider?: AiDocProvider;
+  /** Optional inline content; when omitted the backend resolves it from the roadmap cache or portfolio index. */
+  currentContent?: string;
+  path?: string;
+}
+
+export interface AiDocImprovePreviewResult {
+  previewId: string;
+  repoName: string;
+  docType: AiDocType;
+  providerId: string;
+  modelId?: string | null;
+  templateId: string;
+  customPrompt?: string | null;
+  currentContent: string;
+  proposedContent: string;
+  changeSummary: string[];
+  estimatedScore: {
+    before: number;
+    after: number;
+    delta: number;
+  };
+  warnings: string[];
+  generatedAt: string;
+}
+
+export interface AiDocImprovementHistoryItem {
+  previewId: string;
+  createdAt: string;
+  repoName: string;
+  docType: AiDocType;
+  providerId: string;
+  modelId?: string | null;
+  templateId: string;
+  customPrompt?: string | null;
+  scoreBefore: number;
+  scoreAfter: number;
+  scoreDelta: number;
+  changeSummary: string[];
+  warningCount: number;
+  applied: boolean;
+}

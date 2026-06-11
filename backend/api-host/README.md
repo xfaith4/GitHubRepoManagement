@@ -18,6 +18,9 @@ Minimal local PowerShell API host for adapter contracts.
 - `GET /api/operations/repos/:repoId`
 - `POST /api/operations/prompt/refine`
 - `GET /api/operations/prompt/history`
+- `POST /api/ai/docs/improve/preview`
+- `GET /api/ai/docs/improve/history`
+- `GET /api/ai/docs/templates`
 - `GET /api/readme/content`
 - `POST /api/reconcile`
 - `POST /api/docreview/run`
@@ -55,6 +58,9 @@ Notes:
 - `GET /api/operations/repos/:repoId` returns full Operations detail for one repo, including docs/roadmap audit findings, structure findings, and dispatch context used by the audit findings panel.
 - `POST /api/operations/prompt/refine` builds on the existing `/api/copilot-task/preview` packet, applies operator-directed task/constraint/emphasis refinements, and returns a refined prompt plus warnings for dispatch review while persisting a per-repo refinement record.
 - `GET /api/operations/prompt/history` returns the most recent per-repo refinement records written by the prompt-refine route and merges any linked dispatch records written when `/api/roadmap/dispatch/execute` is called with a refinement run ID.
+- `POST /api/ai/docs/improve/preview` generates a preview-only AI README/ROADMAP improvement (current vs proposed content, change summary, estimated score movement, warnings). Provider selection prefers a configured Anthropic/OpenAI key and degrades to a deterministic offline heuristic provider; no file is ever written by this route. Each preview appends a metadata record to `output/ai-doc-improvements/`.
+- `GET /api/ai/docs/improve/history` returns per-repo improvement-cycle metadata records, newest first, with an optional `docType` filter.
+- `GET /api/ai/docs/templates` serves the built-in README/ROADMAP improvement templates from `backend/config/ai-doc-templates.json`.
 - `GET /api/readme/content` returns README markdown for a repo (or explicit path), used by the Operations repo-detail document viewer.
 - `POST /api/export` writes timestamped HTML and CSV reports into the repo-local `reports/` folder. When `portfolioEntries` are provided, it produces a Collection Status Report with lifecycle, blocker, recommended-action, and top-work fields.
 - `GET /api/reports/:reportName` serves a saved report file back to the browser so the HTML report can open in a new tab.

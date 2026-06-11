@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented here.
 
+## 2026-06-11 — Release 1.9 Phase 2: AI Documentation Improvement — Diff Viewer & History
+
+### Changes
+
+- **`backend/modules/ai/AiDocImprovement.ps1`** — added per-repo improvement-cycle history: `Write-AiDocImprovementHistory` appends a compact metadata record (provider, template, score movement, change summary — not full document bodies) to `output/ai-doc-improvements/<repo>.improvements.jsonl` on every preview, and `Get-AiDocImprovementHistory` reads it newest-first with an optional `docType` filter. Fixed a same-second ordering bug by sorting on the raw `[datetime]` value instead of a locale string cast.
+- **`backend/api-host/Start-RepoManagementApiHost.ps1`** — the preview route now persists a history record per cycle; added `GET /api/ai/docs/improve/history` (per-repo, `docType` filter, limit) and `GET /api/ai/docs/templates` (serves the data-driven built-in templates to the UI).
+- **`frontend/components/OperationsWorkspaceView.tsx`** — new AI Documentation Improvement panel in the Operations repo detail: README/ROADMAP selector, template and provider selects, custom improvement prompt field, side-by-side Current vs Proposed comparison with change summary / score movement / warnings, copy-proposed action, "Run Another Cycle on Proposed" (feeds the proposal back in as the next cycle's input), and a History tab.
+- **`frontend/types.ts`** and **`frontend/services/apiClient.ts`** — typed contracts and client functions for AI doc improvement preview, history, and templates.
+- **`frontend/components/ApiDocsModal.tsx`** and **`backend/api-host/README.md`** — documented the three AI documentation routes.
+- **`scripts/Invoke-ApiHostSmokeTest.ps1`** — extended the AI smoke step: templates route returns non-empty README/ROADMAP template lists; history route 400s without `repoName` and returns the record written by the preceding preview call (matched by `previewId`).
+- **`ROADMAP.md`** — marked the Release 1.9 Phase 2 milestones complete and updated the active-release execution contract; Phase 3 (explicit apply with backup/restore) is the remaining slice.
+
+### Testing
+
+- **PowerShell parser checks** — passed for the AI module, API host, and smoke script.
+- **`npm run build`** — passed.
+- **`tools/Test-RoadmapStructure.ps1`** — 0 errors (2 pre-existing advisory warnings).
+- **Live host checks** — `GET /api/ai/docs/templates` → 4 README + 4 ROADMAP templates; preview → history round trip returns the matching `previewId`; two-cycle flow (proposed content fed back in) works and is idempotent at full section coverage; history missing-`repoName` → 400; `docType` filter excludes non-matching records; same-second ordering regression verified at module level.
+
 ## 2026-06-10 — Release 1.9 Phase 1: AI Documentation Improvement — Provider Foundation & Preview
 
 ### Changes
