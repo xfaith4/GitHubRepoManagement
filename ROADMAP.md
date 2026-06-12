@@ -119,19 +119,23 @@ Phase 3 apply path.
 work with branches and pull requests, track GitHub Actions, and present a
 merge-readiness signal that requires successful validation before merge.
 
-**Current focus:** Phases 1 and 2 shipped 2026-06-11. Phase 1 delivered the
+**Current focus:** Phases 1-3 shipped 2026-06-11. Phase 1 delivered the
 agent-run ledger (`backend/modules/agent-runs/AgentRuns.ps1`, append-only
 `output/agent-runs/events.jsonl`, dispatch-time run creation, list/detail
 routes). Phase 2 delivered `POST /api/agent-runs/{runId}/refresh` (branch,
 PR, and Actions state via GitHub), evidence-backed branch/PR association
 (`copilot/*` branch naming + dispatch-time window + task fingerprint),
 `validation.passed` / `validation.failed` telemetry events, observed
-status transitions (draft PR → active; ready PR → completed/awaiting-merge;
-merged → completed/merged; closed-unmerged → failed), and the Agent Runs
-panel with per-run "Refresh from GitHub" control in the Operations
-workspace. Next slice is Phase 3: the merge-readiness evaluator, blocking
-rules, `GET`/`POST /api/merge-readiness/*` routes, and the Actions-gated
-status panel.
+status transitions, and the Agent Runs panel with per-run "Refresh from
+GitHub" control. Phase 3 delivered the merge-readiness evaluator with
+eleven blocking rules (`backend/modules/agent-runs/MergeReadiness.ps1`),
+`GET /api/merge-readiness/{repoId}` +
+`POST /api/merge-readiness/{repoId}/evaluate`, the Actions-gated Merge
+Readiness panel in the Operations workspace, and the server-gated operator
+merge action (`POST /api/merge-readiness/{repoId}/merge` re-evaluates and
+refuses with 409 unless every blocker is resolved). Next slice is Phase 4:
+budget ledger config, the pre-dispatch quota guard with `quota.*` events,
+and phase-plan work-unit annotation parsing in assessment scans.
 
 **Why now:** Release 1.9 closed the documentation improvement loop
 (preview → diff → history → explicit apply). The north-star workflow's
@@ -176,10 +180,16 @@ creation in `POST /api/roadmap/dispatch/execute`, module smoke step in
 `refreshAgentRun` in `frontend/services/apiClient.ts` and agent-run types
 in `frontend/types.ts`, the Phase 2 module smoke step (association,
 status transitions, exactly-once validation events), and the refresh-route
-404 contract in the api-host smoke. Planned —
-`GET /api/merge-readiness/{repoId}`,
-`POST /api/merge-readiness/{repoId}/evaluate`, and the Actions-gated status
-panel in the Operations tab. Docs:
+404 contract in the api-host smoke. Shipped (Phase 3) —
+`backend/modules/agent-runs/MergeReadiness.ps1` (evaluator + snapshot
+store), `GET /api/merge-readiness/{repoId}`,
+`POST /api/merge-readiness/{repoId}/evaluate`, and the server-gated
+`POST /api/merge-readiness/{repoId}/merge` in the API host, the Merge
+Readiness panel in `frontend/components/OperationsWorkspaceView.tsx`, the
+Phase 3 module smoke step (blocking rules, fresh-Actions override,
+snapshot round-trip), and the merge-readiness route contracts in the
+api-host smoke. Planned — Phase 4 budget ledger config, pre-dispatch quota
+guard, and `quota.*` events. Docs:
 `standards/roadmap/ROADMAP_BUDGET_MODEL.md` defines the metric fields the
 ledger records.
 
@@ -575,16 +585,39 @@ merge-readiness signal that requires successful validation before merge.
       recorded branch, then the `copilot/*` branch-prefix +
       created-after-dispatch window + selected-task fingerprint heuristic,
       and stores operator-visible `matchedBy` evidence on the run.
-- [ ] Add merge-readiness evaluator. *(state: planned)*
-- [ ] Block merge readiness when the repo has a dirty worktree, no PR,
+- [x] Add merge-readiness evaluator. *(state: smoke-tested — Phase 3;
+      completed: 2026-06-11)* —
+      [`backend/modules/agent-runs/MergeReadiness.ps1`](backend/modules/agent-runs/MergeReadiness.ps1):
+      pure `Get-MergeReadinessEvaluation` over the latest agent run, live
+      PR mergeability, fresh Actions state, local dirty count, and audit
+      blockers; per-repo snapshots under `output/merge-readiness/`.
+- [x] Block merge readiness when the repo has a dirty worktree, no PR,
       failing or pending Actions, merge conflicts, missing validation
-      evidence, or unresolved audit blockers. *(state: planned)*
-- [ ] Add Actions-gated status panel to Operations tab. *(state: planned)*
-- [ ] Add operator-controlled merge action only after merge readiness is
-      satisfied. *(state: planned)*
-- [ ] Add `GET /api/merge-readiness/{repoId}` route. *(state: planned)*
-- [ ] Add `POST /api/merge-readiness/{repoId}/evaluate` route.
-      *(state: planned)*
+      evidence, or unresolved audit blockers. *(state: smoke-tested —
+      Phase 3; completed: 2026-06-11)* — blocker codes: `no-agent-run`,
+      `no-pr`, `pr-draft`, `pr-closed-without-merge`, `pr-already-merged`,
+      `merge-conflicts`, `missing-validation-evidence`, `actions-pending`,
+      `actions-failing`, `dirty-worktree`, `audit-blocker`; each carries an
+      operator-readable message and its evidence source.
+- [x] Add Actions-gated status panel to Operations tab.
+      *(state: ui-connected — Phase 3; completed: 2026-06-11)* — Merge
+      Readiness panel in the Operations workspace with ready/blocked badge,
+      evidence summary (PR state, mergeability, Actions, dirty count, audit
+      blockers), per-blocker list, and Evaluate control.
+- [x] Add operator-controlled merge action only after merge readiness is
+      satisfied. *(state: ui-connected — Phase 3; completed: 2026-06-11)*
+      — Merge PR button appears only when ready; the server re-evaluates
+      before merging and refuses with 409 if any blocker remains, then
+      records the merged outcome on the agent run; live-host check
+      confirmed the 409 refusal path, operator verification of a real
+      merge pending.
+- [x] Add `GET /api/merge-readiness/{repoId}` route. *(state: smoke-tested
+      — Phase 3; completed: 2026-06-11)* — returns the stored snapshot;
+      404 until first evaluation.
+- [x] Add `POST /api/merge-readiness/{repoId}/evaluate` route.
+      *(state: smoke-tested — Phase 3; completed: 2026-06-11)* — resolves
+      repoId like `/api/operations/repos/{repoId}`, computes and persists
+      a fresh evaluation; verified live against the indexed portfolio.
 
 #### Acceptance criteria
 
@@ -607,7 +640,7 @@ merge-readiness signal that requires successful validation before merge.
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
 | Phase 1: Agent-run ledger foundation     | `AgentRuns.ps1` ledger model + tier-1/tier-2 metric fields, append-only `events.jsonl`, dispatch-time run creation, `GET /api/agent-runs` + detail  | **done — smoke-tested** (2026-06-11) |
 | Phase 2: Run refresh + association       | `POST /api/agent-runs/{runId}/refresh` (branch/PR/Actions state), dispatch-record association via fingerprints, Actions refresh control in UI       | **done — smoke-tested** (2026-06-11) |
-| Phase 3: Merge readiness                 | Merge-readiness evaluator + blocking rules, `GET`/`POST /api/merge-readiness/*`, Actions-gated panel, operator-controlled merge action              | **planned**                          |
+| Phase 3: Merge readiness                 | Merge-readiness evaluator + blocking rules, `GET`/`POST /api/merge-readiness/*`, Actions-gated panel, operator-controlled merge action              | **done — smoke-tested** (2026-06-11) |
 | Phase 4: Budget guard + scan annotations | Budget ledger config, pre-dispatch quota guard + `quota.*` events, phase-plan work-unit annotation parsing in assessment scans                      | **planned**                          |
 
 ---

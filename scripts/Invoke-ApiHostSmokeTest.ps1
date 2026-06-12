@@ -717,6 +717,25 @@ try {
     if ([int]$agentRunRefreshMissing.StatusCode -ne 404) { throw "/api/agent-runs/{runId}/refresh for unknown runId expected HTTP 404, got $($agentRunRefreshMissing.StatusCode)" }
     Write-Host ("  /api/agent-runs/does-not-exist/refresh -> HTTP {0}" -f $agentRunRefreshMissing.StatusCode) -ForegroundColor DarkGray
 
+    # Release 2.0 Phase 3: merge-readiness route contracts (offline-safe).
+    $mergeReadinessMissing = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/merge-readiness/does-not-exist"
+    Assert-Not503 -Name '/api/merge-readiness/{repoId} (unknown)' -Response $mergeReadinessMissing
+    if ([int]$mergeReadinessMissing.StatusCode -ne 404) { throw "/api/merge-readiness/{repoId} for unevaluated repoId expected HTTP 404, got $($mergeReadinessMissing.StatusCode)" }
+    Write-Host ("  /api/merge-readiness/does-not-exist -> HTTP {0}" -f $mergeReadinessMissing.StatusCode) -ForegroundColor DarkGray
+
+    # Evaluate for an unknown repo: 404 when the portfolio index exists, 409
+    # when it has not been built yet — both prove the route is wired without
+    # requiring GitHub access.
+    $mergeEvaluateMissing = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/merge-readiness/does-not-exist/evaluate" -Body @{}
+    Assert-Not503 -Name '/api/merge-readiness/{repoId}/evaluate (unknown)' -Response $mergeEvaluateMissing
+    if ([int]$mergeEvaluateMissing.StatusCode -notin @(404, 409)) { throw "/api/merge-readiness/{repoId}/evaluate for unknown repoId expected HTTP 404 or 409, got $($mergeEvaluateMissing.StatusCode)" }
+    Write-Host ("  /api/merge-readiness/does-not-exist/evaluate -> HTTP {0}" -f $mergeEvaluateMissing.StatusCode) -ForegroundColor DarkGray
+
+    $mergeActionMissing = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/merge-readiness/does-not-exist/merge" -Body @{}
+    Assert-Not503 -Name '/api/merge-readiness/{repoId}/merge (unknown)' -Response $mergeActionMissing
+    if ([int]$mergeActionMissing.StatusCode -notin @(404, 409)) { throw "/api/merge-readiness/{repoId}/merge for unknown repoId expected HTTP 404 or 409, got $($mergeActionMissing.StatusCode)" }
+    Write-Host ("  /api/merge-readiness/does-not-exist/merge -> HTTP {0}" -f $mergeActionMissing.StatusCode) -ForegroundColor DarkGray
+
     $copilotHistoryResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/copilot-task/history?limit=5"
     Assert-Not503 -Name '/api/copilot-task/history' -Response $copilotHistoryResponse
     $copilotHistoryJson = $copilotHistoryResponse.Json

@@ -16,12 +16,13 @@ import {
   type OperationsReposResult,
   type OperationsPromptHistoryItem,
   type OperationsPromptRefineResult,
+  type MergeReadinessResult,
   type PortfolioValueTier,
   type ReadmeContent,
   type RepoLifecycleState,
   type RoadmapContent,
 } from '../types';
-import { applyAiDocImprovement, executeRoadmapDispatch, getAgentRuns, getAiDocImprovementHistory, getAiDocTemplates, getOperationsPromptHistory, getOperationsRepoDetail, getReadmeContent, getRoadmapContent, previewAiDocImprovement, refineOperationsPrompt, refreshAgentRun } from '../services/apiClient';
+import { applyAiDocImprovement, evaluateMergeReadiness, executeMergeReadinessMerge, executeRoadmapDispatch, getAgentRuns, getAiDocImprovementHistory, getAiDocTemplates, getMergeReadiness, getOperationsPromptHistory, getOperationsRepoDetail, getReadmeContent, getRoadmapContent, previewAiDocImprovement, refineOperationsPrompt, refreshAgentRun } from '../services/apiClient';
 import { BranchIcon, DatabaseIcon, HealthIcon, PullRequestIcon, RefreshIcon, RoadmapIcon, SpinnerIcon } from './icons';
 
 interface OperationsWorkspaceViewProps {
@@ -198,6 +199,11 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
   const [agentRunsError, setAgentRunsError] = useState<string | null>(null);
   const [agentRunRefreshingId, setAgentRunRefreshingId] = useState<string | null>(null);
   const [agentRunNotice, setAgentRunNotice] = useState<string | null>(null);
+  const [mergeReadiness, setMergeReadiness] = useState<MergeReadinessResult | null>(null);
+  const [mergeReadinessLoading, setMergeReadinessLoading] = useState(false);
+  const [mergeReadinessError, setMergeReadinessError] = useState<string | null>(null);
+  const [mergeActionLoading, setMergeActionLoading] = useState(false);
+  const [mergeActionNotice, setMergeActionNotice] = useState<string | null>(null);
 
   const filteredEntries = useMemo(() => {
     const lower = filterText.trim().toLowerCase();
@@ -355,6 +361,30 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
     setAgentRunsError(null);
     setAgentRunNotice(null);
     setAgentRunRefreshingId(null);
+    setMergeReadiness(null);
+    setMergeReadinessError(null);
+    setMergeActionNotice(null);
+  }, [selectedEntry?.repoId]);
+
+  useEffect(() => {
+    const repoId = selectedEntry?.repoId;
+    if (!repoId) {
+      return;
+    }
+
+    let cancelled = false;
+    getMergeReadiness(repoId)
+      .then(result => {
+        if (!cancelled) setMergeReadiness(result);
+      })
+      .catch(() => {
+        // A missing snapshot is normal before the first evaluation.
+        if (!cancelled) setMergeReadiness(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedEntry?.repoId]);
 
   useEffect(() => {
@@ -586,6 +616,52 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
       setAgentRunsError(err instanceof Error ? err.message : 'Agent run refresh failed.');
     } finally {
       setAgentRunRefreshingId(null);
+    }
+  };
+
+  const handleEvaluateMergeReadiness = async () => {
+    if (!selectedEntry) {
+      return;
+    }
+
+    setMergeReadinessLoading(true);
+    setMergeReadinessError(null);
+    setMergeActionNotice(null);
+    try {
+      const result = await evaluateMergeReadiness(selectedEntry.repoId);
+      setMergeReadiness(result);
+    } catch (err) {
+      setMergeReadinessError(err instanceof Error ? err.message : 'Merge-readiness evaluation failed.');
+    } finally {
+      setMergeReadinessLoading(false);
+    }
+  };
+
+  const handleMergeAction = async () => {
+    if (!selectedEntry || !mergeReadiness?.ready) {
+      return;
+    }
+
+    const prLabel = mergeReadiness.prNumber ? `PR #${mergeReadiness.prNumber}` : mergeReadiness.prUrl ?? 'the agent PR';
+    const confirmed = window.confirm(
+      `Merge ${prLabel} into "${selectedEntry.repoName}"?\n\nThe server re-evaluates readiness first and refuses if any blocker appeared since this evaluation. This merges on GitHub.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setMergeActionLoading(true);
+    setMergeReadinessError(null);
+    setMergeActionNotice(null);
+    try {
+      const result = await executeMergeReadinessMerge(selectedEntry.repoId);
+      setMergeReadiness(result.evaluation);
+      setMergeActionNotice(`Merged ${prLabel} (${result.sha.substring(0, 7)}).`);
+      void handleLoadAgentRuns();
+    } catch (err) {
+      setMergeReadinessError(err instanceof Error ? err.message : 'Merge was refused or failed.');
+    } finally {
+      setMergeActionLoading(false);
     }
   };
 
@@ -1817,6 +1893,117 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                         </li>
                       ))}
                     </ul>
+                  )}
+                </div>
+
+                <div className="rounded-lg border border-gray-700 bg-gray-950/40 p-4">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                      <BranchIcon className="w-4 h-4 text-emerald-300" />
+                      Merge Readiness
+                      {mergeReadiness && (
+                        <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs ${mergeReadiness.ready ? 'bg-emerald-900/40 text-emerald-200 border-emerald-700/50' : 'bg-red-900/40 text-red-200 border-red-700/50'}`}>
+                          {mergeReadiness.ready ? 'Ready to merge' : `Blocked (${mergeReadiness.blockers.length})`}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={() => void handleEvaluateMergeReadiness()}
+                        disabled={mergeReadinessLoading || mergeActionLoading}
+                        className="inline-flex items-center gap-2 rounded-md border border-blue-700/50 bg-blue-950/40 px-3 py-1.5 text-xs text-blue-100 hover:bg-blue-900/50 disabled:opacity-50 transition-colors"
+                        title="Re-check the latest agent run, PR mergeability, Actions state, worktree, and audit blockers"
+                      >
+                        {mergeReadinessLoading ? <SpinnerIcon className="w-3.5 h-3.5" /> : <RefreshIcon className="w-3.5 h-3.5" />}
+                        Evaluate
+                      </button>
+                      {mergeReadiness?.ready && (
+                        <button
+                          onClick={() => void handleMergeAction()}
+                          disabled={mergeActionLoading || mergeReadinessLoading}
+                          className="inline-flex items-center gap-2 rounded-md border border-emerald-700/50 bg-emerald-950/40 px-3 py-1.5 text-xs text-emerald-100 hover:bg-emerald-900/50 disabled:opacity-50 transition-colors"
+                          title="Explicit operator merge — the server re-evaluates readiness and refuses if any blocker remains"
+                        >
+                          {mergeActionLoading ? <SpinnerIcon className="w-3.5 h-3.5" /> : null}
+                          Merge PR
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-gray-500">
+                    Actions-gated merge signal for the latest agent run: merge stays blocked while the PR is missing, draft, conflicted, or unvalidated, while Actions are failing or pending, while the worktree is dirty, or while audit blockers remain. Merging is always an explicit operator action.
+                  </div>
+
+                  {mergeReadinessError && (
+                    <div className="mt-3 rounded-md border border-red-700/40 bg-red-950/20 px-3 py-2 text-xs text-red-200">
+                      {mergeReadinessError}
+                    </div>
+                  )}
+
+                  {mergeActionNotice && (
+                    <div className="mt-3 rounded-md border border-emerald-700/40 bg-emerald-950/20 px-3 py-2 text-xs text-emerald-200">
+                      {mergeActionNotice}
+                    </div>
+                  )}
+
+                  {!mergeReadiness && !mergeReadinessLoading && (
+                    <div className="mt-3 rounded-md border border-gray-800 bg-gray-900/40 px-3 py-2 text-sm text-gray-400">
+                      This repo has not been evaluated yet. Evaluate to compute an Actions-gated merge-readiness signal for its latest agent run.
+                    </div>
+                  )}
+
+                  {mergeReadiness && (
+                    <div className="mt-3 space-y-3">
+                      <div className="rounded-md border border-gray-700 bg-gray-900/60 px-3 py-2 text-xs text-gray-400 space-y-1">
+                        <div>
+                          PR:{' '}
+                          {mergeReadiness.prUrl ? (
+                            <a href={mergeReadiness.prUrl} target="_blank" rel="noreferrer" className="text-blue-300 hover:underline">
+                              {mergeReadiness.prNumber ? `#${mergeReadiness.prNumber}` : mergeReadiness.prUrl}
+                            </a>
+                          ) : (
+                            <span className="text-gray-300">none</span>
+                          )}
+                          {mergeReadiness.evidence.prState && <span> • State: <span className="text-gray-200">{mergeReadiness.evidence.prState}{mergeReadiness.evidence.prDraft ? ' (draft)' : ''}</span></span>}
+                          {typeof mergeReadiness.evidence.mergeable === 'boolean' && (
+                            <span> • Mergeable: <span className={mergeReadiness.evidence.mergeable ? 'text-emerald-300' : 'text-red-300'}>{String(mergeReadiness.evidence.mergeable)}</span></span>
+                          )}
+                        </div>
+                        <div>
+                          Actions:{' '}
+                          {mergeReadiness.evidence.actionsStatus ? (
+                            <span className={mergeReadiness.evidence.actionsConclusion === 'success' ? 'text-emerald-300' : mergeReadiness.evidence.actionsConclusion ? 'text-red-300' : 'text-amber-300'}>
+                              {mergeReadiness.evidence.actionsWorkflowName ? `${mergeReadiness.evidence.actionsWorkflowName} • ` : ''}
+                              {mergeReadiness.evidence.actionsStatus}
+                              {mergeReadiness.evidence.actionsConclusion ? ` / ${mergeReadiness.evidence.actionsConclusion}` : ''}
+                            </span>
+                          ) : (
+                            <span className="text-gray-300">not observed</span>
+                          )}
+                          {' '}• Dirty files: <span className="text-gray-200">{mergeReadiness.evidence.localDirtyCount ?? 0}</span>
+                          {' '}• Audit blockers: <span className="text-gray-200">{mergeReadiness.evidence.auditBlockerCount ?? 0}</span>
+                        </div>
+                        <div className="text-gray-600">Evaluated {formatDate(mergeReadiness.evaluatedAt)}</div>
+                      </div>
+
+                      {mergeReadiness.blockers.length > 0 ? (
+                        <ul className="space-y-2">
+                          {mergeReadiness.blockers.map((blocker, index) => (
+                            <li key={`${blocker.code}-${index}`} className="rounded-md border border-red-900/40 bg-red-950/20 px-3 py-2 text-xs text-gray-200">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <span className="font-mono text-red-300">{blocker.code}</span>
+                                <span className="text-gray-500">{blocker.source}</span>
+                              </div>
+                              <div className="mt-1">{blocker.message}</div>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <div className="rounded-md border border-emerald-800/40 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-100">
+                          All merge-readiness checks pass: the agent PR is open and mergeable, validation succeeded, the worktree is clean, and no audit blockers remain.
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

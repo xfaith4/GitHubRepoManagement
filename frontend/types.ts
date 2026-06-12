@@ -1315,3 +1315,41 @@ export interface AgentRunRefreshResult {
   validationEvent?: string | null;
   refreshedAt: string;
 }
+
+export interface MergeReadinessBlocker {
+  code: string;
+  message: string;
+  source: 'agent-run-ledger' | 'github' | 'local-git' | 'assessment' | string;
+}
+
+export interface MergeReadinessEvidence {
+  prState?: string | null;
+  prDraft?: boolean;
+  mergeable?: boolean | null;
+  mergeableState?: string | null;
+  actionsStatus?: string;
+  actionsConclusion?: string;
+  actionsWorkflowName?: string;
+  localDirtyCount?: number;
+  auditBlockerCount?: number;
+}
+
+export interface MergeReadinessResult {
+  repoId: string;
+  repoName: string;
+  runId?: string | null;
+  prUrl?: string | null;
+  prNumber?: number | null;
+  ready: boolean;
+  blockers: MergeReadinessBlocker[];
+  evidence: MergeReadinessEvidence;
+  evaluatedAt: string;
+}
+
+export interface MergeReadinessMergeResult {
+  merged: boolean;
+  sha: string;
+  message: string;
+  runId: string;
+  evaluation: MergeReadinessResult;
+}

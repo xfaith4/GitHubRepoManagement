@@ -340,6 +340,37 @@ const CATEGORIES: CategoryDef[] = [
         ],
         notes: 'Status transitions observed from PR state: draft PR found → active; PR ready for review → completed (awaiting-merge); PR merged → completed (merged); PR closed without merge → failed. Returns 404 for unknown runs, 409 when the run has no GitHub owner/repo identity, and 502 when the GitHub lookup fails.',
       },
+      {
+        method: 'GET',
+        path: '/api/merge-readiness/{repoId}',
+        summary: 'Returns the stored merge-readiness snapshot for a repo (404 until the repo has been evaluated at least once).',
+        responseFields: [
+          { name: 'success', type: 'bool', description: 'Operation result flag' },
+          { name: 'data', type: 'MergeReadinessResult', description: 'ready flag, blockers (code/message/source), evidence (PR state, mergeability, Actions state, dirty count, audit blockers), evaluatedAt' },
+        ],
+      },
+      {
+        method: 'POST',
+        path: '/api/merge-readiness/{repoId}/evaluate',
+        summary: 'Computes a fresh merge-readiness evaluation: latest agent run, live PR mergeability and head-branch Actions state from GitHub, local dirty count, and unresolved audit blockers. Persists the snapshot.',
+        responseFields: [
+          { name: 'success', type: 'bool', description: 'Operation result flag' },
+          { name: 'data', type: 'MergeReadinessResult', description: 'Blocking rules: no-agent-run, no-pr, pr-draft, pr-closed-without-merge, pr-already-merged, merge-conflicts, missing-validation-evidence, actions-pending, actions-failing, dirty-worktree, audit-blocker' },
+        ],
+        notes: 'repoId accepts the operations repoId, repoName, localPath, or owner/repo full name (same resolution as /api/operations/repos/{repoId}). Returns 404 for unknown repos, 409 when the portfolio index is not built yet, 502 when the GitHub lookup fails.',
+      },
+      {
+        method: 'POST',
+        path: '/api/merge-readiness/{repoId}/merge',
+        summary: 'Explicit operator merge action. The server re-evaluates readiness first and refuses with 409 (returning the evaluation) unless every blocker is resolved; on success it merges the PR via GitHub, records the merged outcome on the agent run, and refreshes the snapshot.',
+        responseFields: [
+          { name: 'success', type: 'bool', description: 'Operation result flag' },
+          { name: 'data.merged', type: 'bool', description: 'Whether GitHub accepted the merge' },
+          { name: 'data.sha', type: 'string', description: 'Merge commit SHA' },
+          { name: 'data.evaluation', type: 'MergeReadinessResult', description: 'Post-merge evaluation snapshot' },
+        ],
+        notes: 'The app never auto-merges: this route only runs on explicit operator action and is gated server-side on a fresh evaluation, not the cached snapshot.',
+      },
     ],
   },
   {

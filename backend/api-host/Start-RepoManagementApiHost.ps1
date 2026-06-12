@@ -50,6 +50,7 @@ $aiModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\ai'
 . (Join-Path $aiModuleRoot 'AiDocImprovement.ps1')
 $agentRunsModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\agent-runs'
 . (Join-Path $agentRunsModuleRoot 'AgentRuns.ps1')
+. (Join-Path $agentRunsModuleRoot 'MergeReadiness.ps1')
 . (Join-Path $commonRoot 'NotificationHub.ps1')
 . (Join-Path $PSScriptRoot 'ApiHost.ErrorHandling.ps1')
 
@@ -386,6 +387,104 @@ function Get-OperationsReposPayload {
         count = $count
         cacheSource = $cacheSource
     }
+}
+
+function Resolve-OperationsRepoRecord {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoId
+    )
+
+    $settings = Get-HostSettings
+    $opsPayload = Get-OperationsReposPayload -Settings $settings
+    if (-not $opsPayload.available) {
+        return [pscustomobject]@{ found = $false; statusCode = 409; error = $opsPayload.error; record = $null }
+    }
+
+    $matchedRecords = @($opsPayload.entries | Where-Object {
+        $candidateRepoId = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoId' -Default '')
+        $candidateRepoName = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '')
+        $candidateLocalPath = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'localPath' -Default '')
+        $candidateGithubFullName = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'githubFullName' -Default '')
+        $candidateRepoId -eq $RepoId -or
+        $candidateRepoName -eq $RepoId -or
+        $candidateLocalPath -eq $RepoId -or
+        $candidateGithubFullName -eq $RepoId
+    } | Select-Object -First 1)
+
+    if ($matchedRecords.Count -eq 0 -or $null -eq $matchedRecords[0]) {
+        return [pscustomobject]@{ found = $false; statusCode = 404; error = "No operations repo record found for repoId '$RepoId'."; record = $null }
+    }
+
+    return [pscustomobject]@{ found = $true; statusCode = 200; error = $null; record = $matchedRecords[0] }
+}
+
+# Release 2.0 Phase 3: build a fresh merge-readiness evaluation for one
+# operations repo record — latest agent run, live PR mergeability and
+# Actions state from GitHub when the run has a PR, local dirty count, and
+# unresolved assessment blockers — and persist it as the repo's snapshot.
+function Invoke-MergeReadinessForRepo {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$RepoRecord,
+        [Parameter(Mandatory = $true)]
+        [string]$RepoId,
+        [Parameter()]
+        [string]$CorrelationId = ''
+    )
+
+    $repoName = [string](Get-ObjectPropertyValue -InputObject $RepoRecord -PropertyName 'repoName' -Default '')
+    $latestRun = $null
+    $runs = @(Get-AgentRuns -WorkspaceRoot $WorkspaceRoot -RepoName $repoName -Limit 1)
+    if ($runs.Count -gt 0) { $latestRun = $runs[0] }
+
+    $prDetail = $null
+    $freshActions = $null
+    if ($null -ne $latestRun) {
+        $githubRepo = [string](Get-ObjectPropertyValue -InputObject $latestRun -PropertyName 'githubRepo' -Default '')
+        $prNumber = Get-ObjectPropertyValue -InputObject $latestRun -PropertyName 'prNumber' -Default $null
+        $runBranch = [string](Get-ObjectPropertyValue -InputObject $latestRun -PropertyName 'branch' -Default '')
+        $repoParts = $githubRepo -split '/'
+        if ($repoParts.Count -eq 2 -and $null -ne $prNumber) {
+            $settings = Get-HostSettings
+            $token = Get-ConfiguredGitHubToken -Settings $settings
+            $headers = Get-GitHubApiHeaders -Token $token
+            try {
+                $prUri = "https://api.github.com/repos/$($repoParts[0])/$($repoParts[1])/pulls/$([int]$prNumber)"
+                $prDetail = Invoke-RestMethod -Uri $prUri -Headers $headers -Method Get
+            } catch {
+                Write-HostLog ("[WARN ] merge-readiness correlationId={0} repoId={1} PR detail lookup failed: {2}" -f $CorrelationId, $RepoId, $_.Exception.Message)
+                return [pscustomobject]@{ success = $false; statusCode = 502; error = "GitHub PR lookup failed for ${githubRepo}: $($_.Exception.Message)"; evaluation = $null }
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace($runBranch)) {
+                $workflowRun = Get-LatestGitHubWorkflowRunViaApi -Owner $repoParts[0] -Repo $repoParts[1] -Headers $headers -Branch $runBranch
+                if ($null -ne $workflowRun) {
+                    $freshActions = [pscustomobject]@{
+                        status       = [string]$workflowRun.status
+                        conclusion   = [string]$workflowRun.conclusion
+                        workflowName = [string]$workflowRun.name
+                        runUrl       = [string]$workflowRun.runUrl
+                        observedAt   = (Get-Date).ToUniversalTime().ToString('o')
+                    }
+                }
+            }
+        }
+    }
+
+    $dirtyCount = [int](Get-ObjectPropertyValue -InputObject $RepoRecord -PropertyName 'localDirtyCount' -Default 0)
+    if ($dirtyCount -le 0) {
+        $dirtyCount = [int](Get-ObjectPropertyValue -InputObject $RepoRecord -PropertyName 'localModifiedCount' -Default 0) +
+            [int](Get-ObjectPropertyValue -InputObject $RepoRecord -PropertyName 'localUntrackedCount' -Default 0)
+    }
+    $auditBlockers = @(Get-ObjectPropertyValue -InputObject $RepoRecord -PropertyName 'blockingReasons' -Default @() | ForEach-Object { [string]$_ })
+
+    $evaluation = Get-MergeReadinessEvaluation -RepoId $RepoId -RepoName $repoName `
+        -AgentRun $latestRun -PrDetail $prDetail -ActionsState $freshActions `
+        -LocalDirtyCount $dirtyCount -AuditBlockers $auditBlockers
+    $null = Save-MergeReadinessSnapshot -WorkspaceRoot $WorkspaceRoot -Evaluation $evaluation
+
+    return [pscustomobject]@{ success = $true; statusCode = 200; error = $null; evaluation = $evaluation }
 }
 
 function Send-HttpJson {
@@ -4315,6 +4414,171 @@ try {
                 Send-HttpContent -Stream $req.Stream -StatusCode 200 -ContentType $contentType -CorrelationId $correlationId -BodyBytes ([System.IO.File]::ReadAllBytes($reportPath))
                 $client.Close()
                 continue
+            }
+
+            if ($path -like '/api/merge-readiness/*') {
+                $mrIsEvaluate = $req.Method -eq 'POST' -and $path -like '/api/merge-readiness/*/evaluate'
+                $mrIsMerge = $req.Method -eq 'POST' -and $path -like '/api/merge-readiness/*/merge'
+                $mrIsGet = $req.Method -eq 'GET' -and -not $mrIsEvaluate -and -not $mrIsMerge
+
+                if ($mrIsEvaluate -or $mrIsMerge -or $mrIsGet) {
+                    $mrRepoId = if ($mrIsEvaluate) {
+                        [System.Uri]::UnescapeDataString($path.Substring('/api/merge-readiness/'.Length, $path.Length - '/api/merge-readiness/'.Length - '/evaluate'.Length))
+                    } elseif ($mrIsMerge) {
+                        [System.Uri]::UnescapeDataString($path.Substring('/api/merge-readiness/'.Length, $path.Length - '/api/merge-readiness/'.Length - '/merge'.Length))
+                    } else {
+                        [System.Uri]::UnescapeDataString($path.Substring('/api/merge-readiness/'.Length))
+                    }
+
+                    if ([string]::IsNullOrWhiteSpace($mrRepoId)) {
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error = 'repoId is required in /api/merge-readiness/{repoId}.'
+                        }
+                        $client.Close()
+                        continue
+                    }
+
+                    if ($mrIsGet) {
+                        Write-HostLog ("[TRACE] merge-readiness.get correlationId={0} repoId={1}" -f $correlationId, $mrRepoId)
+                        $snapshot = Get-MergeReadinessSnapshot -WorkspaceRoot $WorkspaceRoot -RepoId $mrRepoId
+                        Add-MetricCounter -Name 'api_requests_total'
+                        if ($null -eq $snapshot) {
+                            Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{
+                                success = $false
+                                error = "No merge-readiness evaluation exists for repoId '$mrRepoId'. Run POST /api/merge-readiness/{repoId}/evaluate first."
+                            }
+                        } else {
+                            Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                            Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                                success = $true
+                                data    = $snapshot
+                            }
+                        }
+                        $client.Close()
+                        continue
+                    }
+
+                    # evaluate and merge both need the resolved repo record and a
+                    # fresh evaluation.
+                    Write-HostLog ("[TRACE] merge-readiness.{0} correlationId={1} repoId={2} start" -f $(if ($mrIsMerge) { 'merge' } else { 'evaluate' }), $correlationId, $mrRepoId)
+                    $mrResolved = Resolve-OperationsRepoRecord -RepoId $mrRepoId
+                    if (-not $mrResolved.found) {
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode $mrResolved.statusCode -StatusText $(if ($mrResolved.statusCode -eq 404) { 'Not Found' } else { 'Conflict' }) -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error = $mrResolved.error
+                        }
+                        $client.Close()
+                        continue
+                    }
+
+                    $mrOutcome = Invoke-MergeReadinessForRepo -RepoRecord $mrResolved.record -RepoId $mrRepoId -CorrelationId $correlationId
+                    if (-not $mrOutcome.success) {
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode $mrOutcome.statusCode -StatusText 'Bad Gateway' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error = $mrOutcome.error
+                        }
+                        $client.Close()
+                        continue
+                    }
+
+                    if ($mrIsEvaluate) {
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                        Write-HostLog ("[TRACE] merge-readiness.evaluate correlationId={0} repoId={1} ready={2} blockers={3}" -f $correlationId, $mrRepoId, $mrOutcome.evaluation.ready, @($mrOutcome.evaluation.blockers).Count)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = $mrOutcome.evaluation
+                        }
+                        $client.Close()
+                        continue
+                    }
+
+                    # Operator merge action — server-side gate: refuse unless the
+                    # fresh evaluation is ready (guardrail: merge stays an explicit
+                    # operator action and is never offered while blockers exist).
+                    if (-not $mrOutcome.evaluation.ready) {
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Write-HostLog ("[TRACE] merge-readiness.merge correlationId={0} repoId={1} refused blockers={2}" -f $correlationId, $mrRepoId, @($mrOutcome.evaluation.blockers).Count)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error = 'Merge refused: the repo is not merge-ready. Resolve the blockers and evaluate again.'
+                            data = $mrOutcome.evaluation
+                        }
+                        $client.Close()
+                        continue
+                    }
+
+                    $mergeRunId = [string]$mrOutcome.evaluation.runId
+                    $mergeRun = $null
+                    if (-not [string]::IsNullOrWhiteSpace($mergeRunId)) {
+                        $mergeRunDetail = Get-AgentRunDetail -WorkspaceRoot $WorkspaceRoot -RunId $mergeRunId
+                        if ($null -ne $mergeRunDetail) { $mergeRun = $mergeRunDetail.run }
+                    }
+                    $mergeGithubRepo = [string](Get-ObjectPropertyValue -InputObject $mergeRun -PropertyName 'githubRepo' -Default '')
+                    $mergeRepoParts = $mergeGithubRepo -split '/'
+                    $mergePrNumber = Get-ObjectPropertyValue -InputObject $mergeRun -PropertyName 'prNumber' -Default $null
+                    if ($mergeRepoParts.Count -ne 2 -or $null -eq $mergePrNumber) {
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error = 'Merge refused: the agent run has no usable GitHub repo/PR identity.'
+                        }
+                        $client.Close()
+                        continue
+                    }
+
+                    $mergeSettings = Get-HostSettings
+                    $mergeToken = Get-ConfiguredGitHubToken -Settings $mergeSettings
+                    $mergeHeaders = Get-GitHubApiHeaders -Token $mergeToken
+                    $mergeResponse = $null
+                    try {
+                        $mergeUri = "https://api.github.com/repos/$($mergeRepoParts[0])/$($mergeRepoParts[1])/pulls/$([int]$mergePrNumber)/merge"
+                        $mergeBody = @{ merge_method = 'merge' } | ConvertTo-Json -Compress
+                        $mergeResponse = Invoke-RestMethod -Uri $mergeUri -Headers $mergeHeaders -Method Put -Body $mergeBody -ContentType 'application/json'
+                    } catch {
+                        Write-HostLog ("[WARN ] merge-readiness.merge correlationId={0} repoId={1} GitHub merge failed: {2}" -f $correlationId, $mrRepoId, $_.Exception.Message)
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 502 -StatusText 'Bad Gateway' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error = "GitHub merge failed for ${mergeGithubRepo} PR #${mergePrNumber}: $($_.Exception.Message)"
+                        }
+                        $client.Close()
+                        continue
+                    }
+
+                    # Record the merged outcome on the agent run (non-fatal) and
+                    # refresh the stored snapshot to reflect the merged PR.
+                    try {
+                        $null = Update-AgentRunRecord -WorkspaceRoot $WorkspaceRoot -RunId $mergeRunId -Patch @{
+                            status  = 'completed'
+                            outcome = 'merged'
+                            prState = 'merged'
+                        } -Actor 'operator' -Summary "PR #$mergePrNumber merged via operator merge action."
+                    } catch {
+                        Write-HostLog ("[WARN ] merge-readiness.merge correlationId={0} ledger update failed: {1}" -f $correlationId, $_.Exception.Message)
+                    }
+                    $postMerge = Invoke-MergeReadinessForRepo -RepoRecord $mrResolved.record -RepoId $mrRepoId -CorrelationId $correlationId
+
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Write-HostLog ("[TRACE] merge-readiness.merge correlationId={0} repoId={1} merged sha={2}" -f $correlationId, $mrRepoId, [string](Get-ObjectPropertyValue -InputObject $mergeResponse -PropertyName 'sha' -Default ''))
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = @{
+                            merged     = $true
+                            sha        = [string](Get-ObjectPropertyValue -InputObject $mergeResponse -PropertyName 'sha' -Default '')
+                            message    = [string](Get-ObjectPropertyValue -InputObject $mergeResponse -PropertyName 'message' -Default '')
+                            runId      = $mergeRunId
+                            evaluation = $(if ($postMerge.success) { $postMerge.evaluation } else { $mrOutcome.evaluation })
+                        }
+                    }
+                    $client.Close()
+                    continue
+                }
             }
 
             if ($req.Method -eq 'POST' -and $path -like '/api/agent-runs/*/refresh') {

@@ -1,4 +1,4 @@
-import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult } from '../types';
+import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -1765,6 +1765,50 @@ export async function getAgentRunDetail(runId: string): Promise<AgentRunDetailRe
     run: payload?.run as AgentRun,
     events: Array.isArray(payload?.events) ? payload.events : [],
   };
+}
+
+/** Returns the stored merge-readiness snapshot, or null when the repo has never been evaluated. */
+export async function getMergeReadiness(repoId: string): Promise<MergeReadinessResult | null> {
+  if (!repoId.trim()) {
+    throw new Error('repoId is required to load merge readiness.');
+  }
+
+  const response = await fetch(`${API_BASE_URL}/merge-readiness/${encodeURIComponent(repoId)}`);
+  if (response.status === 404) {
+    return null;
+  }
+  const text = await response.text();
+  let payload: any = null;
+  try { payload = text ? JSON.parse(text) : null; } catch { payload = null; }
+  if (!response.ok || !payload?.success) {
+    throw new Error(payload?.error?.message ?? payload?.error ?? `Failed to load merge readiness (HTTP ${response.status}).`);
+  }
+  return payload.data as MergeReadinessResult;
+}
+
+export async function evaluateMergeReadiness(repoId: string): Promise<MergeReadinessResult> {
+  if (!repoId.trim()) {
+    throw new Error('repoId is required to evaluate merge readiness.');
+  }
+
+  const data = await postJson<any>(`/merge-readiness/${encodeURIComponent(repoId)}/evaluate`, {});
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? data?.error ?? 'Merge-readiness evaluation failed.');
+  }
+  return data.data as MergeReadinessResult;
+}
+
+/** Operator merge action. The server re-evaluates readiness and refuses (409) unless every blocker is resolved. */
+export async function executeMergeReadinessMerge(repoId: string): Promise<MergeReadinessMergeResult> {
+  if (!repoId.trim()) {
+    throw new Error('repoId is required to merge.');
+  }
+
+  const data = await postJson<any>(`/merge-readiness/${encodeURIComponent(repoId)}/merge`, {});
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? data?.error ?? 'Merge was refused or failed.');
+  }
+  return data.data as MergeReadinessMergeResult;
 }
 
 export async function refreshAgentRun(runId: string): Promise<AgentRunRefreshResult> {
