@@ -312,6 +312,8 @@ const CATEGORIES: CategoryDef[] = [
         responseFields: [
           { name: 'success', type: 'bool', description: 'Operation result flag' },
           { name: 'data.items', type: 'AgentRun[]', description: 'Ledger records: runId, repo identity, dispatch/refinement linkage, branch/PR association, status, outcome, and tier-1 metrics (timing, prompt count, retries, token usage, work units)' },
+          { name: 'data.items[].plannedPhaseName', type: 'string | null', description: 'Planned roadmap phase recorded at dispatch time when phase-plan annotations are available' },
+          { name: 'data.items[].workUnitsEstimateSource', type: 'string | null', description: 'Where the estimated work units came from (for example roadmap-phase-plan)' },
           { name: 'data.count', type: 'number', description: 'Number of records returned' },
           { name: 'data.byStatus', type: 'Record<string, number>', description: 'Run counts grouped by status' },
         ],
@@ -623,7 +625,7 @@ const CATEGORIES: CategoryDef[] = [
       {
         method: 'POST',
         path: '/api/roadmap/scan',
-        summary: 'Triggers a fresh roadmap scan and updates the shared cache when default scan settings are used.',
+        summary: 'Triggers a fresh roadmap scan and updates the shared cache when default scan settings are used, including active-release phase-plan and budget annotations when present.',
         bodyParams: [
           { name: 'localRoots', type: 'string[]', description: 'Optional workspace root paths to scan' },
           { name: 'maxDepth', type: 'int', description: 'Optional scan depth override' },
@@ -631,9 +633,33 @@ const CATEGORIES: CategoryDef[] = [
         responseFields: [
           { name: 'success', type: 'bool', description: 'Operation result flag' },
           { name: 'data.entries', type: 'RoadmapEntry[]', description: 'Freshly scanned roadmap entries' },
+          { name: 'data.entries[].activePhasePlan', type: 'RoadmapPhasePlan | null', description: 'Active phase-plan row parsed from the roadmap when a release uses a phase-plan table' },
+          { name: 'data.entries[].budgetGuardrail', type: 'RoadmapBudgetGuardrail | null', description: 'Release-level budget guardrail annotations parsed from the roadmap' },
+          { name: 'data.entries[].estimatedSessionWorkUnits', type: 'number | null', description: 'Convenience estimate derived from the active phase-plan row for dispatch planning' },
           { name: 'data.count', type: 'number', description: 'Total entries found' },
           { name: 'data.scannedAt', type: 'ISO 8601', description: 'Scan completion timestamp' },
         ],
+      },
+      {
+        method: 'POST',
+        path: '/api/roadmap/dispatch/execute',
+        summary: 'Dispatches a reviewed Copilot task prompt after enforcing the pre-dispatch quota guard and writing an agent-run ledger record.',
+        bodyParams: [
+          { name: 'repoName', type: 'string', required: true, description: 'Repository name to dispatch against' },
+          { name: 'prompt', type: 'string', required: true, description: 'Final reviewed prompt text sent to the dispatch script' },
+          { name: 'localPath', type: 'string', description: 'Optional explicit local repo path; otherwise resolved from roadmap/status context' },
+          { name: 'baseBranch', type: 'string', description: 'Optional base branch override for the agent-created branch' },
+          { name: 'follow', type: 'bool', description: 'Whether to stream the dispatch script output' },
+          { name: 'promptRefinementRunId', type: 'string', description: 'Optional Operations prompt-refinement run to link back into history' },
+        ],
+        responseFields: [
+          { name: 'success', type: 'bool', description: 'Operation result flag' },
+          { name: 'data.runId', type: 'string', description: 'Dispatch run id from the Copilot-task history stream' },
+          { name: 'data.agentRunId', type: 'string', description: 'Agent-run ledger id created for monitoring and merge readiness' },
+          { name: 'data.message', type: 'string', description: 'Operator-visible dispatch status, including quota warnings when applicable' },
+          { name: 'data.quota', type: 'DispatchQuotaSummary', description: 'Estimated work-unit cost, estimate source, remaining project budget, and planned release/phase metadata' },
+        ],
+        notes: 'The quota guard runs before any GitHub-token or dispatch dependency is required. Budget refusal returns HTTP 409 with error.code=quota-exhausted and records a quota.exhausted event instead of launching the agent.',
       },
       {
         method: 'POST',

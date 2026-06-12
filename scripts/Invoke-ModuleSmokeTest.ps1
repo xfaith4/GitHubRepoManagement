@@ -23,13 +23,14 @@ $roadmapEvaluatorPath = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadma
 $roadmapRepairerPath = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Repairer.ps1'
 $docAuditScanner = Join-Path $WorkspaceRoot 'backend\modules\docaudit\DocAudit.Scanner.ps1'
 $docStandards = Join-Path $WorkspaceRoot 'backend\config\doc-standards.json'
+$agentBudgetModule = Join-Path $WorkspaceRoot 'backend\modules\agent-runs\BudgetLedger.ps1'
 
 Write-Step 'Loading reconciliation module functions only'
 & $reconcile -LoadFunctionsOnly
 Write-Host 'Loaded reconciliation module successfully' -ForegroundColor Green
 
 Write-Step 'Validating copied module files exist'
-@($docInventory, $docQueue, $docBatch, $reconcile, $reconcileModular, $reconcileTests, $roadmapParser, $roadmapAuditor, $roadmapEvaluatorPath, $roadmapRepairerPath, $docAuditScanner, $docStandards) | ForEach-Object {
+@($docInventory, $docQueue, $docBatch, $reconcile, $reconcileModular, $reconcileTests, $roadmapParser, $roadmapAuditor, $roadmapEvaluatorPath, $roadmapRepairerPath, $docAuditScanner, $docStandards, $agentBudgetModule) | ForEach-Object {
     if (-not (Test-Path -LiteralPath $_)) {
         throw "Missing module file: $_"
     }
@@ -78,6 +79,41 @@ if (Test-Path -LiteralPath $liveRoadmap) {
 } else {
     Write-Host '  (ROADMAP.md not found at workspace root — live parse skipped)' -ForegroundColor Yellow
 }
+
+Write-Step 'Roadmap parser — smoke: phase-plan and budget-guardrail annotations'
+$annotatedRoadmap = @"
+## Release 2.0 - Dispatch Budgets
+
+**Goal:** Ship bounded dispatch slices with roadmap-derived estimates.
+
+### Engineering milestones
+
+- [ ] Add quota guard
+- [x] Add agent-run ledger
+
+### Phase plan
+
+| Phase | Scope | Status | Completed | Token usage | Work units (est -> actual) |
+| ----- | ----- | ------ | --------- | ----------- | -------------------------- |
+| Phase 1: Ledger | Land the ledger model | done | 2026-06-11 | ~2k | 4 -> 5 |
+| Phase 2: Quota guard | Enforce pre-dispatch quota checks | in progress | - | - | est. 8 |
+
+### Budget guardrail
+
+- Estimated AI work units for this release: 18 - Max per phase: 10
+- Before dispatch: check the budget ledger; do not start a session whose estimate exceeds the per-session cap.
+- At each phase closure record the raw observations only.
+"@
+$annotatedResult = Invoke-ParseRoadmapContent -Content $annotatedRoadmap
+if ($annotatedResult.roadmapState -ne 'pending') { throw "Expected annotated roadmap state=pending, got '$($annotatedResult.roadmapState)'" }
+if ($null -eq $annotatedResult.activeRelease) { throw 'Expected activeRelease for annotated roadmap' }
+if ($null -eq $annotatedResult.activePhasePlan) { throw 'Expected activePhasePlan for annotated roadmap' }
+if ([string]$annotatedResult.activePhasePlan.phaseName -ne 'Phase 2: Quota guard') { throw "Expected activePhasePlan='Phase 2: Quota guard', got '$($annotatedResult.activePhasePlan.phaseName)'" }
+if ([double]$annotatedResult.activePhasePlan.workUnitsEstimated -ne 8) { throw "Expected activePhasePlan.workUnitsEstimated=8, got '$($annotatedResult.activePhasePlan.workUnitsEstimated)'" }
+if ($null -eq $annotatedResult.budgetGuardrail) { throw 'Expected budgetGuardrail metadata for annotated roadmap' }
+if ([double]$annotatedResult.budgetGuardrail.estimatedReleaseWorkUnits -ne 18) { throw "Expected estimatedReleaseWorkUnits=18, got '$($annotatedResult.budgetGuardrail.estimatedReleaseWorkUnits)'" }
+if ([double]$annotatedResult.budgetGuardrail.maxUnitsPerPhase -ne 10) { throw "Expected maxUnitsPerPhase=10, got '$($annotatedResult.budgetGuardrail.maxUnitsPerPhase)'" }
+Write-Host '  phase-plan and budget-guardrail annotations parsed correctly' -ForegroundColor DarkGray
 
 Write-Step 'Loading doc audit scanner module'
 . $docAuditScanner
@@ -757,7 +793,17 @@ Write-Host ("  value scorer ranked high={0} low={1}" -f $highValue.valueScore, $
 
 Write-Step 'Portfolio assessment — smoke: ready-for-work fires on L4 + pending items'
 $readyRepo = [pscustomobject]@{ name = 'ready-repo'; localPath = $WorkspaceRoot; isArchived = $false; htmlUrl = ''; branch = 'main'; status = 'clean' }
-$readyRoadmap = @([pscustomobject]@{ repoName = 'ready-repo'; roadmapPath = (Join-Path $WorkspaceRoot 'ROADMAP.md'); roadmapState = 'pending'; pendingCount = 5; nextPendingItem = [pscustomobject]@{ text = 'next thing' } })
+$readyRoadmap = @([pscustomobject]@{
+    repoName = 'ready-repo'
+    roadmapPath = (Join-Path $WorkspaceRoot 'ROADMAP.md')
+    roadmapState = 'pending'
+    pendingCount = 5
+    nextPendingItem = [pscustomobject]@{ text = 'next thing' }
+    activeRelease = [pscustomobject]@{ releaseName = 'Release 2.0 — Dispatch Budgets'; releaseVersion = '2.0'; releaseTitle = 'Dispatch Budgets' }
+    activePhasePlan = [pscustomobject]@{ phaseName = 'Phase 2: Quota guard'; workUnitsEstimated = 8 }
+    budgetGuardrail = [pscustomobject]@{ estimatedReleaseWorkUnits = 18; maxUnitsPerPhase = 10; present = $true }
+    estimatedSessionWorkUnits = 8
+})
 $readyMaturity = @([pscustomobject]@{
     repoName = 'ready-repo'
     maturityLevel = 'L4-Orchestration-Ready'
@@ -772,6 +818,8 @@ if ($readyAssess[0].pendingItemCount -ne 5)              { throw "Expected pendi
 if (@($readyAssess[0].pendingItems).Count -ne 2)         { throw "Expected 2 scored pendingItems, got $(@($readyAssess[0].pendingItems).Count)" }
 if ($null -eq $readyAssess[0].topValueItem)              { throw 'Expected topValueItem to be populated for ready repo with pending items' }
 if ($readyAssess[0].topValueItem.text -notmatch 'authentication') { throw "Expected topValueItem to select authentication/test work, got '$($readyAssess[0].topValueItem.text)'" }
+if ([double]$readyAssess[0].estimatedSessionWorkUnits -ne 8) { throw "Expected estimatedSessionWorkUnits=8, got '$($readyAssess[0].estimatedSessionWorkUnits)'" }
+if ([string]$readyAssess[0].activePhasePlan.phaseName -ne 'Phase 2: Quota guard') { throw "Expected activePhasePlan.phaseName='Phase 2: Quota guard', got '$($readyAssess[0].activePhasePlan.phaseName)'" }
 Write-Host '  ready-for-work classification correct' -ForegroundColor DarkGray
 
 Write-Step 'Portfolio assessment — smoke: summary aggregator counts lifecycle states'
@@ -789,6 +837,7 @@ Write-Host ("  summary aggregation correct: total={0} ready={1} running={2} bloc
 Write-Step 'Loading agent-runs ledger module (Release 2.0)'
 $agentRunsModule = Join-Path $WorkspaceRoot 'backend\modules\agent-runs\AgentRuns.ps1'
 if (-not (Test-Path -LiteralPath $agentRunsModule)) { throw "AgentRuns.ps1 not found at: $agentRunsModule" }
+. $agentBudgetModule
 . $agentRunsModule
 Write-Host 'Agent-runs module loaded successfully' -ForegroundColor Green
 
@@ -797,11 +846,17 @@ $agentRunsWorkspace = Join-Path ([System.IO.Path]::GetTempPath()) ("agent-runs-s
 New-Item -ItemType Directory -Path $agentRunsWorkspace -Force | Out-Null
 try {
     $smokeRun = New-AgentRunRecord -WorkspaceRoot $agentRunsWorkspace -RepoName 'smoke-agent-repo' `
-        -GitHubRepo 'owner/smoke-agent-repo' -DispatchRunId 'dispatch-123' -PromptRefinementRunId 'refine-456' -BaseBranch 'main'
+        -GitHubRepo 'owner/smoke-agent-repo' -DispatchRunId 'dispatch-123' -PromptRefinementRunId 'refine-456' `
+        -SelectedTaskText 'Add quota guard' -SelectedTaskSection 'Engineering milestones' `
+        -PlannedReleaseName 'Release 2.0 — Agent Run Monitoring and Actions-Gated Merge Readiness' `
+        -PlannedPhaseName 'Phase 4: Budget guard + scan annotations' `
+        -BaseBranch 'main' -WorkUnitsEstimated 8 -WorkUnitsEstimateSource 'roadmap-phase-plan'
     if ([string]::IsNullOrWhiteSpace([string]$smokeRun.runId)) { throw 'New-AgentRunRecord returned no runId' }
     if ([string]$smokeRun.status -ne 'dispatched') { throw "Expected status=dispatched, got '$($smokeRun.status)'" }
     if ($null -eq $smokeRun.metrics.dispatchedAt) { throw 'New run is missing metrics.dispatchedAt' }
-    if ([int]$smokeRun.metrics.workUnitsEstimated -lt 1) { throw 'New run is missing workUnitsEstimated' }
+    if ([double]$smokeRun.metrics.workUnitsEstimated -ne 8) { throw "Expected workUnitsEstimated=8, got '$($smokeRun.metrics.workUnitsEstimated)'" }
+    if ([string]$smokeRun.workUnitsEstimateSource -ne 'roadmap-phase-plan') { throw "Expected workUnitsEstimateSource='roadmap-phase-plan', got '$($smokeRun.workUnitsEstimateSource)'" }
+    if ([string]$smokeRun.plannedPhaseName -ne 'Phase 4: Budget guard + scan annotations') { throw "Expected plannedPhaseName to be recorded, got '$($smokeRun.plannedPhaseName)'" }
 
     $runFile = Join-Path $agentRunsWorkspace "output\agent-runs\runs\$($smokeRun.runId).json"
     if (-not (Test-Path -LiteralPath $runFile)) { throw 'Run ledger JSON was not written' }
@@ -838,6 +893,42 @@ try {
     $invalidStatusRejected = $false
     try { $null = Update-AgentRunRecord -WorkspaceRoot $agentRunsWorkspace -RunId $smokeRun.runId -Patch @{ status = 'bogus' } } catch { $invalidStatusRejected = $true }
     if (-not $invalidStatusRejected) { throw 'Update-AgentRunRecord accepted an invalid status' }
+
+    Write-Step 'Budget ledger — smoke: defaults, usage snapshot, soft warning, hard refusal (Release 2.0 Phase 4)'
+    $budgetConfig = Get-AgentBudgetLedgerConfig -WorkspaceRoot $agentRunsWorkspace -Settings @{
+        budgetLedger = @{
+            period = (Get-Date).ToUniversalTime().ToString('yyyy-MM')
+            quotaGuard = @{
+                softStopRemainingUnits = 10
+                hardStopRemainingUnits = 5
+                maxUnitsPerPhase = 25
+                maxUnitsPerSession = 12
+            }
+            defaultProject = @{
+                monthlyQuotaBudgetUnits = 20
+                monthlyBudgetUsd = 6
+                priority = 1
+            }
+        }
+    }
+    $usageSnapshot = Get-AgentBudgetUsageSnapshot -WorkspaceRoot $agentRunsWorkspace -BudgetConfig $budgetConfig
+    if (-not $usageSnapshot.byRepo.ContainsKey('smoke-agent-repo')) { throw 'Expected usage snapshot to include smoke-agent-repo' }
+    if ([double]$usageSnapshot.byRepo['smoke-agent-repo'].unitsConsumed -lt 3) { throw 'Usage snapshot did not count the existing run units' }
+
+    $softWarning = Test-AgentDispatchQuota -WorkspaceRoot $agentRunsWorkspace -RepoName 'smoke-agent-repo' -EstimatedWorkUnits 7 -BudgetConfig $budgetConfig -PlannedPhaseName 'Phase 4'
+    if (-not $softWarning.allowed) { throw "Expected soft-warning dispatch to remain allowed, got blocked: $($softWarning.message)" }
+    if (@($softWarning.warnings).Count -eq 0) { throw 'Expected soft-warning dispatch to emit a warning' }
+
+    $hardRefusal = Test-AgentDispatchQuota -WorkspaceRoot $agentRunsWorkspace -RepoName 'smoke-agent-repo' -EstimatedWorkUnits 13 -BudgetConfig $budgetConfig -PlannedPhaseName 'Phase 4'
+    if ($hardRefusal.allowed) { throw 'Expected dispatch above the per-session cap to be refused' }
+    if ([string]$hardRefusal.blockedCode -ne 'session-cap-exceeded') { throw "Expected blockedCode=session-cap-exceeded, got '$($hardRefusal.blockedCode)'" }
+
+    $creditFlagged = Update-AgentRunRecord -WorkspaceRoot $agentRunsWorkspace -RunId $smokeRun.runId -Patch @{ creditPromptSeen = $true }
+    if ($creditFlagged.metrics.creditPromptSeen -ne $true) { throw 'Expected Update-AgentRunRecord to persist creditPromptSeen=true' }
+    $creditBlocked = Test-AgentDispatchQuota -WorkspaceRoot $agentRunsWorkspace -RepoName 'smoke-agent-repo' -EstimatedWorkUnits 2 -BudgetConfig $budgetConfig -PlannedPhaseName 'Phase 4'
+    if ($creditBlocked.allowed) { throw 'Expected credit-prompt policy to block additional dispatches' }
+    if ([string]$creditBlocked.blockedCode -ne 'credit-prompt-seen') { throw "Expected blockedCode=credit-prompt-seen, got '$($creditBlocked.blockedCode)'" }
+    Write-Host '  budget ledger quota guard behaves correctly' -ForegroundColor DarkGray
 
     Write-Host ("  agent-run ledger correct: runId={0} events={1} timeToDeliver={2}s" -f $smokeRun.runId, @($detail.events).Count, $updated.metrics.timeToDeliverSeconds) -ForegroundColor DarkGray
 }

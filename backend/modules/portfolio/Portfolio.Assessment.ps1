@@ -534,6 +534,14 @@ function Invoke-PortfolioAssessment {
         $pendingCount = [int](_GetField -Obj $roadmapEntry -Name 'pendingCount' -Default 0)
         $nextItemRaw  = _GetField -Obj $roadmapEntry -Name 'nextPendingItem' -Default $null
         $nextItemText = if ($null -ne $nextItemRaw) { [string](_GetField -Obj $nextItemRaw -Name 'text' -Default '') } else { '' }
+        $activeRelease = _GetField -Obj $roadmapEntry -Name 'activeRelease' -Default $null
+        $activePhasePlan = _GetField -Obj $roadmapEntry -Name 'activePhasePlan' -Default $null
+        $budgetGuardrail = _GetField -Obj $roadmapEntry -Name 'budgetGuardrail' -Default $null
+        $estimatedSessionWorkUnits = if ($null -ne $activePhasePlan) {
+            _GetField -Obj $activePhasePlan -Name 'workUnitsEstimated' -Default (_GetField -Obj $roadmapEntry -Name 'estimatedSessionWorkUnits' -Default $null)
+        } else {
+            _GetField -Obj $roadmapEntry -Name 'estimatedSessionWorkUnits' -Default $null
+        }
 
         # Doc audit
         $docEntry = if ($docAuditMap.ContainsKey($key)) { $docAuditMap[$key] } else { $null }
@@ -655,6 +663,10 @@ function Invoke-PortfolioAssessment {
             nextPendingItemText = $nextItemText
             pendingItems        = @($scoredPendingItems)
             topValueItem        = $topValueItem
+            activeRelease       = $activeRelease
+            activePhasePlan     = $activePhasePlan
+            budgetGuardrail     = $budgetGuardrail
+            estimatedSessionWorkUnits = $estimatedSessionWorkUnits
             maturityLevel       = $maturityLevel
             maturityScore       = $maturityScore
             dispatchReadiness   = $dispatchReadiness
@@ -708,6 +720,10 @@ function Invoke-PortfolioAssessment {
             nextPendingItemText = ''
             pendingItems        = @()
             topValueItem        = $null
+            activeRelease       = $null
+            activePhasePlan     = $null
+            budgetGuardrail     = $null
+            estimatedSessionWorkUnits = $null
             maturityLevel       = 'L0-Absent'
             maturityScore       = 0
             dispatchReadiness   = 'missing-roadmap'
@@ -1199,6 +1215,10 @@ function New-PortfolioIndexPayload {
             pendingItemCount    = [int](_GetField -Obj $assessment -Name 'pendingItemCount' -Default 0)
             nextPendingItemText = [string](_GetField -Obj $assessment -Name 'nextPendingItemText' -Default '')
             topValueItem        = _GetField -Obj $assessment -Name 'topValueItem' -Default $null
+            activeRelease       = _GetField -Obj $assessment -Name 'activeRelease' -Default $null
+            activePhasePlan     = _GetField -Obj $assessment -Name 'activePhasePlan' -Default $null
+            budgetGuardrail     = _GetField -Obj $assessment -Name 'budgetGuardrail' -Default $null
+            estimatedSessionWorkUnits = _GetField -Obj $assessment -Name 'estimatedSessionWorkUnits' -Default $null
             maturityLevel       = [string](_GetField -Obj $assessment -Name 'maturityLevel' -Default 'L0-Absent')
             maturityScore       = [int](_GetField -Obj $assessment -Name 'maturityScore' -Default 0)
             dispatchReadiness   = [string](_GetField -Obj $assessment -Name 'dispatchReadiness' -Default 'missing-roadmap')
@@ -1323,6 +1343,10 @@ function Convert-PortfolioIndexReposToAssessments {
             nextPendingItemText = [string](_GetField -Obj $repo -Name 'nextPendingItemText' -Default '')
             pendingItems        = @()
             topValueItem        = _GetField -Obj $repo -Name 'topValueItem' -Default $null
+            activeRelease       = _GetField -Obj $repo -Name 'activeRelease' -Default $null
+            activePhasePlan     = _GetField -Obj $repo -Name 'activePhasePlan' -Default $null
+            budgetGuardrail     = _GetField -Obj $repo -Name 'budgetGuardrail' -Default $null
+            estimatedSessionWorkUnits = _GetField -Obj $repo -Name 'estimatedSessionWorkUnits' -Default $null
             maturityLevel       = [string](_GetField -Obj $repo -Name 'maturityLevel' -Default 'L0-Absent')
             maturityScore       = [int](_GetField -Obj $repo -Name 'maturityScore' -Default 0)
             dispatchReadiness   = [string](_GetField -Obj $repo -Name 'dispatchReadiness' -Default 'missing-roadmap')

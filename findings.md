@@ -1,5 +1,15 @@
 # Findings
 
+## 2026-06-12 (Release 2.0 Phase 4: Budget Guard + Scan Annotations)
+
+- The live roadmap and planning files diverged again: `ROADMAP.md` already had Release 2.0 active with Phases 1-3 shipped, while `task_plan.md` was still tracking a completed Release 1.9 slice. The next logical work therefore has to start from the active Release 2.0 Phase 4 seam, not by extending the stale 1.9 plan.
+- The smallest truthful remaining seam is backend-first. The repo already has the agent-run ledger, refresh flow, merge-readiness routes, and Operations UI; the missing Phase 4 behavior is budget/quota enforcement before dispatch plus roadmap-derived estimation metadata.
+- `Invoke-ParseRoadmapContent` currently only returns checkbox sections, counts, and tags. It does not surface the roadmap template's `Phase plan` table or `Budget guardrail` annotations yet, so dispatch estimates still cannot come from managed-roadmap metadata.
+- `New-AgentRunRecord` still hardcodes `workUnitsEstimated = 3`, and `POST /api/roadmap/dispatch/execute` launches Copilot before any budget/quota check. Phase 4 therefore needs to connect roadmap metadata, settings-backed budget config, and the dispatch route in one coherent path.
+- The worktree is already dirty with unrelated line-ending churn and other edits (`README.md`, `ROADMAP.md`, `.github/*`, `Start-App.ps1`, `Portfolio.ValueScorer.ps1`, archive docs). Future validation and artifact updates need to stay scoped to touched files instead of assuming a clean tree.
+- The first Phase 4 regression after implementation was real: ASCII `-` placeholders in phase-plan `Completed` cells were being treated as completion markers, which erased the active phase from annotated roadmaps. Normalizing placeholder cells fixed the parser and the module smoke.
+- The new quota-refusal route works in isolated scratch-port validation, but the broad `Invoke-ApiHostSmokeTest.ps1` harness still does not return after entering that route. That points to an end-to-end harness/runtime interaction, not to missing core Phase 4 logic, so the verification notes need to distinguish those two facts.
+
 ## 2026-06-09 (Release 1.8: Operations Prompt Dispatch Tracking)
 
 - The next unfinished Release 1.8 seam was not a new 1.9 capability. The live repo already had prompt refinement history and an older dispatch path, but there was no durable link between a refined Operations prompt and the Copilot run it launched.

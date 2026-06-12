@@ -155,9 +155,14 @@ function New-AgentRunRecord {
         [Parameter()][string]$DispatchRunId = '',
         [Parameter()][string]$PromptRefinementRunId = '',
         [Parameter()][string]$SelectedTaskText = '',
+        [Parameter()][string]$SelectedTaskSection = '',
+        [Parameter()][string]$PlannedReleaseName = '',
+        [Parameter()][string]$PlannedPhaseName = '',
         [Parameter()][string]$BaseBranch = '',
         [Parameter()][string]$ProviderTool = 'github-copilot-agent',
-        [Parameter()][int]$PromptCount = 1
+        [Parameter()][int]$PromptCount = 1,
+        [Parameter()][double]$WorkUnitsEstimated = $script:AgentRunDefaultWorkUnits,
+        [Parameter()][string]$WorkUnitsEstimateSource = ''
     )
 
     $runId = [guid]::NewGuid().ToString('n')
@@ -172,6 +177,10 @@ function New-AgentRunRecord {
         dispatchRunId         = if ([string]::IsNullOrWhiteSpace($DispatchRunId)) { $null } else { $DispatchRunId }
         promptRefinementRunId = if ([string]::IsNullOrWhiteSpace($PromptRefinementRunId)) { $null } else { $PromptRefinementRunId }
         selectedTaskText      = if ([string]::IsNullOrWhiteSpace($SelectedTaskText)) { $null } else { $SelectedTaskText }
+        selectedTaskSection   = if ([string]::IsNullOrWhiteSpace($SelectedTaskSection)) { $null } else { $SelectedTaskSection }
+        plannedReleaseName    = if ([string]::IsNullOrWhiteSpace($PlannedReleaseName)) { $null } else { $PlannedReleaseName }
+        plannedPhaseName      = if ([string]::IsNullOrWhiteSpace($PlannedPhaseName)) { $null } else { $PlannedPhaseName }
+        workUnitsEstimateSource = if ([string]::IsNullOrWhiteSpace($WorkUnitsEstimateSource)) { $null } else { $WorkUnitsEstimateSource }
         providerTool          = $ProviderTool
         branch                = $null
         baseBranch            = if ([string]::IsNullOrWhiteSpace($BaseBranch)) { $null } else { $BaseBranch }
@@ -190,7 +199,7 @@ function New-AgentRunRecord {
             retries              = 0
             tokenUsage           = $null
             apiSpendUsd          = $null
-            workUnitsEstimated   = $script:AgentRunDefaultWorkUnits
+            workUnitsEstimated   = if ($WorkUnitsEstimated -gt 0) { [double]$WorkUnitsEstimated } else { [double]$script:AgentRunDefaultWorkUnits }
             workUnitsActual      = $null
             # Tier 2 — optional operator observations (never blocking)
             unitsRemainingObserved = $null
@@ -208,7 +217,12 @@ function New-AgentRunRecord {
             githubRepo            = $record['githubRepo']
             dispatchRunId         = $record['dispatchRunId']
             promptRefinementRunId = $record['promptRefinementRunId']
-            workUnitsEstimated    = $script:AgentRunDefaultWorkUnits
+            selectedTaskText      = $record['selectedTaskText']
+            selectedTaskSection   = $record['selectedTaskSection']
+            plannedReleaseName    = $record['plannedReleaseName']
+            plannedPhaseName      = $record['plannedPhaseName']
+            workUnitsEstimated    = $record['metrics']['workUnitsEstimated']
+            workUnitsEstimateSource = $record['workUnitsEstimateSource']
         })
 
     return [pscustomobject]$record

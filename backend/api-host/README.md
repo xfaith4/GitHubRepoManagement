@@ -18,12 +18,21 @@ Minimal local PowerShell API host for adapter contracts.
 - `GET /api/operations/repos/:repoId`
 - `POST /api/operations/prompt/refine`
 - `GET /api/operations/prompt/history`
+- `GET /api/roadmap/index`
+- `GET /api/roadmap/content`
+- `POST /api/roadmap/scan`
+- `POST /api/roadmap/dispatch/check`
+- `POST /api/roadmap/dispatch/execute`
 - `POST /api/ai/docs/improve/preview`
 - `POST /api/ai/docs/improve/apply`
 - `GET /api/ai/docs/improve/history`
 - `GET /api/ai/docs/templates`
 - `GET /api/agent-runs`
 - `GET /api/agent-runs/:runId`
+- `POST /api/agent-runs/:runId/refresh`
+- `GET /api/merge-readiness/:repoId`
+- `POST /api/merge-readiness/:repoId/evaluate`
+- `POST /api/merge-readiness/:repoId/merge`
 - `GET /api/readme/content`
 - `POST /api/reconcile`
 - `POST /api/docreview/run`
@@ -61,12 +70,16 @@ Notes:
 - `GET /api/operations/repos/:repoId` returns full Operations detail for one repo, including docs/roadmap audit findings, structure findings, and dispatch context used by the audit findings panel.
 - `POST /api/operations/prompt/refine` builds on the existing `/api/copilot-task/preview` packet, applies operator-directed task/constraint/emphasis refinements, and returns a refined prompt plus warnings for dispatch review while persisting a per-repo refinement record.
 - `GET /api/operations/prompt/history` returns the most recent per-repo refinement records written by the prompt-refine route and merges any linked dispatch records written when `/api/roadmap/dispatch/execute` is called with a refinement run ID.
+- `POST /api/roadmap/scan` now carries active-release phase-plan rows, release budget-guardrail annotations, and `estimatedSessionWorkUnits` into each roadmap entry when those sections are present in the roadmap template.
+- `POST /api/roadmap/dispatch/execute` enforces the Release 2.0 quota guard before any GitHub dependency is required, writes `quota.warning` / `quota.exhausted` telemetry when applicable, records a monitored agent-run ledger entry on successful dispatch, and returns the planning/estimate metadata used for that decision.
 - `POST /api/ai/docs/improve/preview` generates a preview-only AI README/ROADMAP improvement (current vs proposed content, change summary, estimated score movement, warnings). Provider selection prefers a configured Anthropic/OpenAI key and degrades to a deterministic offline heuristic provider; no file is ever written by this route. Each preview appends a metadata record to `output/ai-doc-improvements/`.
 - `POST /api/ai/docs/improve/apply` writes operator-approved proposed content to the repo's README.md or ROADMAP.md — the only AI documentation route that mutates a file. It backs up the current file to `output/ai-doc-improvements/backups/<repo>/`, writes a restore-metadata JSON (content hashes + ready-to-run restore command), appends an append-only `applied=true` history record, and refuses targets whose file name does not match the doc type.
 - `GET /api/ai/docs/improve/history` returns per-repo improvement-cycle metadata records, newest first, with an optional `docType` filter.
 - `GET /api/ai/docs/templates` serves the built-in README/ROADMAP improvement templates from `backend/config/ai-doc-templates.json`.
 - `GET /api/agent-runs` lists agent-run ledger records (status/repoName filters, newest first, status rollup). Runs are created automatically by `POST /api/roadmap/dispatch/execute`; editable state lives in `output/agent-runs/runs/<runId>.json` and lifecycle history in the append-only `output/agent-runs/events.jsonl` stream with tier-1 metrics per `standards/roadmap/ROADMAP_BUDGET_MODEL.md`.
 - `GET /api/agent-runs/:runId` returns one run plus its lifecycle events; 404 for unknown run IDs.
+- `POST /api/agent-runs/:runId/refresh` re-queries GitHub for the associated branch, PR, and head-branch Actions state, updates the ledger, and records validation events when the observed Actions conclusion changes.
+- `GET /api/merge-readiness/:repoId` returns the stored merge-readiness snapshot for a repo, and the `POST /api/merge-readiness/:repoId/evaluate` / `POST /api/merge-readiness/:repoId/merge` routes keep merge decisions server-gated on a fresh evaluation.
 - `GET /api/readme/content` returns README markdown for a repo (or explicit path), used by the Operations repo-detail document viewer.
 - `POST /api/export` writes timestamped HTML and CSV reports into the repo-local `reports/` folder. When `portfolioEntries` are provided, it produces a Collection Status Report with lifecycle, blocker, recommended-action, and top-work fields.
 - `GET /api/reports/:reportName` serves a saved report file back to the browser so the HTML report can open in a new tab.

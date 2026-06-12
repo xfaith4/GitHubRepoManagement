@@ -119,23 +119,17 @@ Phase 3 apply path.
 work with branches and pull requests, track GitHub Actions, and present a
 merge-readiness signal that requires successful validation before merge.
 
-**Current focus:** Phases 1-3 shipped 2026-06-11. Phase 1 delivered the
-agent-run ledger (`backend/modules/agent-runs/AgentRuns.ps1`, append-only
-`output/agent-runs/events.jsonl`, dispatch-time run creation, list/detail
-routes). Phase 2 delivered `POST /api/agent-runs/{runId}/refresh` (branch,
-PR, and Actions state via GitHub), evidence-backed branch/PR association
-(`copilot/*` branch naming + dispatch-time window + task fingerprint),
-`validation.passed` / `validation.failed` telemetry events, observed
-status transitions, and the Agent Runs panel with per-run "Refresh from
-GitHub" control. Phase 3 delivered the merge-readiness evaluator with
-eleven blocking rules (`backend/modules/agent-runs/MergeReadiness.ps1`),
-`GET /api/merge-readiness/{repoId}` +
-`POST /api/merge-readiness/{repoId}/evaluate`, the Actions-gated Merge
-Readiness panel in the Operations workspace, and the server-gated operator
-merge action (`POST /api/merge-readiness/{repoId}/merge` re-evaluates and
-refuses with 409 unless every blocker is resolved). Next slice is Phase 4:
-budget ledger config, the pre-dispatch quota guard with `quota.*` events,
-and phase-plan work-unit annotation parsing in assessment scans.
+**Current focus:** Phase 4 landed 2026-06-12 on top of the Phases 1-3
+work shipped 2026-06-11. The release now has host-side budget ledger
+configuration (`backend/modules/agent-runs/BudgetLedger.ps1`), roadmap
+phase-plan and budget-guardrail annotation parsing surfaced through
+roadmap scans and portfolio assessments, truthful estimated-unit recording
+on new agent runs, and a pre-dispatch quota guard in
+`POST /api/roadmap/dispatch/execute` that emits `quota.warning` /
+`quota.exhausted` telemetry before any GitHub dependency is required.
+Operations now surfaces the returned estimate / phase metadata in dispatch
+feedback and in the Agent Runs panel. The remaining seam for Release 2.0
+is release-closeout documentation and archive promotion.
 
 **Why now:** Release 1.9 closed the documentation improvement loop
 (preview → diff → history → explicit apply). The north-star workflow's
@@ -159,10 +153,12 @@ blocker.
 (`standards/roadmap/ROADMAP_BUDGET_MODEL.md`) for the tier-1/tier-2 metric
 fields the ledger records.
 
-**Known issues:** None yet for this release. Carried context: the full
-`Invoke-ApiHostSmokeTest.ps1` run can time out at the pre-existing 30s
-request cap during docs-audit/portfolio warmup on large local inventories
-(tracked separately).
+**Known issues:** The new quota-refusal contract is validated through
+targeted scratch-port route checks, but the full
+`Invoke-ApiHostSmokeTest.ps1` harness still does not return after entering
+that route under the broad end-to-end run. Carried context: earlier
+versions of the same smoke script can also time out during docs-audit or
+portfolio warmup on large local inventories.
 
 **Traceability:** Shipped (Phase 1) —
 `backend/modules/agent-runs/AgentRuns.ps1`, `GET /api/agent-runs` and
@@ -188,8 +184,17 @@ store), `GET /api/merge-readiness/{repoId}`,
 Readiness panel in `frontend/components/OperationsWorkspaceView.tsx`, the
 Phase 3 module smoke step (blocking rules, fresh-Actions override,
 snapshot round-trip), and the merge-readiness route contracts in the
-api-host smoke. Planned — Phase 4 budget ledger config, pre-dispatch quota
-guard, and `quota.*` events. Docs:
+api-host smoke. Shipped (Phase 4) —
+`backend/modules/agent-runs/BudgetLedger.ps1`, phase-plan /
+budget-guardrail parsing in
+`backend/modules/roadmap/Roadmap.Parser.ps1`, assessment pass-through in
+`backend/modules/portfolio/Portfolio.Assessment.ps1`, quota enforcement +
+estimate metadata in `POST /api/roadmap/dispatch/execute`, and
+dispatch/ledger surfacing in
+`frontend/components/OperationsWorkspaceView.tsx` +
+`frontend/types.ts`. Module smoke covers the parser and budget helper
+paths; targeted scratch-port route checks verified roadmap scan
+annotations and the `quota-exhausted` refusal contract. Docs:
 `standards/roadmap/ROADMAP_BUDGET_MODEL.md` defines the metric fields the
 ledger records.
 
@@ -533,17 +538,28 @@ merge-readiness signal that requires successful validation before merge.
       GitHub state; module smoke asserts the time-to-deliver derivation.
       Reported token usage and API spend remain operator/tier-2 inputs
       until a provider reports them.
-- [ ] Add budget ledger configuration (per-project monthly USD and
+- [x] Add budget ledger configuration (per-project monthly USD and
       quota-unit budgets, per-phase and per-session unit caps, unit
       weights, valuation rates, credit policy) and a pre-dispatch quota
       guard that runs on own-ledger unit counts, warns or refuses when an
       estimated session exceeds its cap, stops on credit prompts, and
       records `quota.exhausted` events that capture which queued work was
-      pending at that moment so starvation is countable. *(state: planned)*
-- [ ] Parse phase-plan work-unit and budget-guardrail annotations from
+      pending at that moment so starvation is countable. *(state:
+      ui-connected — Phase 4; completed: 2026-06-12)* — budget config now
+      resolves from `settings.json` with safe defaults via
+      `BudgetLedger.ps1`; `POST /api/roadmap/dispatch/execute` enforces the
+      guard before GitHub-token resolution, writes `quota.warning` /
+      `quota.exhausted` events, and records the selected task / phase /
+      release estimate onto new agent-run ledger entries.
+- [x] Parse phase-plan work-unit and budget-guardrail annotations from
       managed repos' roadmaps during assessment scans so pre-dispatch
       session estimates and estimated-vs-actual accuracy come from the
-      roadmap itself. *(state: planned)*
+      roadmap itself. *(state: smoke-tested — Phase 4; completed:
+      2026-06-12)* — `Roadmap.Parser.ps1` now returns `releaseContexts`,
+      `activeRelease`, `activePhasePlan`, `budgetGuardrail`, and
+      `estimatedSessionWorkUnits`; roadmap-scan entries and portfolio
+      assessment rows carry those fields forward for dispatch planning and
+      UI display.
 - [x] Append run lifecycle events (dispatched, started, validation passed
       or failed, completed, blocked) to an append-only, schema-versioned
       `output/agent-runs/events.jsonl` telemetry stream, kept separate from
@@ -641,7 +657,7 @@ merge-readiness signal that requires successful validation before merge.
 | Phase 1: Agent-run ledger foundation     | `AgentRuns.ps1` ledger model + tier-1/tier-2 metric fields, append-only `events.jsonl`, dispatch-time run creation, `GET /api/agent-runs` + detail  | **done — smoke-tested** (2026-06-11) |
 | Phase 2: Run refresh + association       | `POST /api/agent-runs/{runId}/refresh` (branch/PR/Actions state), dispatch-record association via fingerprints, Actions refresh control in UI       | **done — smoke-tested** (2026-06-11) |
 | Phase 3: Merge readiness                 | Merge-readiness evaluator + blocking rules, `GET`/`POST /api/merge-readiness/*`, Actions-gated panel, operator-controlled merge action              | **done — smoke-tested** (2026-06-11) |
-| Phase 4: Budget guard + scan annotations | Budget ledger config, pre-dispatch quota guard + `quota.*` events, phase-plan work-unit annotation parsing in assessment scans                      | **planned**                          |
+| Phase 4: Budget guard + scan annotations | Budget ledger config, pre-dispatch quota guard + `quota.*` events, phase-plan work-unit annotation parsing in assessment scans                      | **ui-connected** (2026-06-12)        |
 
 ---
 

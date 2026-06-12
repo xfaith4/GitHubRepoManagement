@@ -1,30 +1,29 @@
 # Task Plan
 
 ## Goal
-Continue Release 1.9 (AI Documentation Improvement Cycles) with Phase 2: the side-by-side diff viewer, custom improvement prompt UI, per-repo improvement-cycle history, and `GET /api/ai/docs/improve/history`. Phase 1 (provider foundation + preview route) shipped 2026-06-10 as commit `7b30f8c`.
+Continue Release 2.0 with Phase 4: add budget ledger configuration, enforce the pre-dispatch quota guard on the route that launches coding-agent work, and parse roadmap budget/work-unit annotations so dispatch estimates come from managed-roadmap metadata instead of a hardcoded default.
 
 ## Scope
 
-- Persist a compact improvement-cycle metadata record per preview (provider, template, score movement, change summary) to per-repo JSONL.
-- Add `GET /api/ai/docs/improve/history` (per-repo, `docType` filter, limit) and `GET /api/ai/docs/templates`.
-- Build the AI Documentation Improvement panel in the Operations workspace: docType/template/provider selection, custom prompt field, side-by-side Current vs Proposed comparison, run-another-cycle action, history tab.
-- Extend smoke coverage to the templates and history routes.
-- Update roadmap/changelog/progress artifacts after verification.
-- Defer the explicit apply path with backup/restore (Phase 3).
+- Extend roadmap parsing so assessment and dispatch can see phase-plan work-unit annotations and budget-guardrail metadata from `ROADMAP.md`.
+- Add a host-side budget ledger config surface that reads from `backend/config/settings.json` with safe defaults.
+- Enforce quota checks in `POST /api/roadmap/dispatch/execute`, record `quota.*` telemetry, and carry truthful estimate metadata into new agent-run records.
+- Update smoke/module coverage plus roadmap/progress/docs artifacts after verification.
+- Keep changes narrowly scoped because the repo already has unrelated dirty files.
 
 ## Phases
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| 1. Commit Phase 1 | complete | `7b30f8c` on `main`. |
-| 2. Backend history + routes | complete | `Write/Get-AiDocImprovementHistory` in the AI module; preview route persists per cycle; history + templates GET routes added to the host. |
-| 3. Frontend contracts + panel | complete | Types, API client functions, and the AI Documentation Improvement panel with side-by-side diff, custom prompt, cycle re-run, and history tab. |
-| 4. Smoke + docs surfaces | complete | Smoke asserts templates lists and the preview→history round trip; routes documented in `ApiDocsModal.tsx` and the api-host README. |
-| 5. Verification | complete | Parser checks, `npm run build`, roadmap validator (0 errors), and live host checks of all three AI routes including the two-cycle flow. |
-| 6. Roadmap and session-file updates | complete | Phase 2 milestones marked, phase plan + execution contract refreshed, CHANGELOG/progress/task_plan updated. |
+| 1. Reconcile active roadmap slice | complete | Live `ROADMAP.md` already advanced to Release 2.0; stale Release 1.9 planning files replaced. |
+| 2. Roadmap parser + assessment annotation flow | complete | Parser now returns release contexts, active phase-plan rows, budget guardrails, and estimated session units; assessment + roadmap-scan payloads carry them forward. |
+| 3. Budget ledger + dispatch guard | complete | `BudgetLedger.ps1` landed, dispatch now enforces quota checks before GitHub dependencies, and new agent runs persist truthful estimate metadata. |
+| 4. Smoke/docs/artifact updates | complete | Module/api smoke were extended, frontend/docs updated, and roadmap/session artifacts now reflect the Phase 4 implementation truthfully. |
+| 5. Verification | complete | Build, parser checks, module smoke, roadmap structure, and targeted scratch-port route checks passed; the full api-host smoke harness still hangs after entering the quota-refusal step. |
 
 ## Errors Encountered
 
 | Error | Attempt | Resolution |
 | --- | --- | --- |
-| History returned oldest-first for two previews within the same second. | Live route validation showed `newestMatchesCycle2=False`. | PowerShell 7 `ConvertFrom-Json` parses ISO timestamps into `[datetime]`; the `[string]` cast in the sort key dropped sub-second precision so same-second records tied and kept file order. Fixed by sorting on the raw value; regression-checked at module level. |
+| Planning files still targeted Release 1.9 even though `ROADMAP.md` had already promoted Release 2.0. | 1 | Reconciled roadmap, progress, and live code first; replaced the active `task_plan.md` with the current release slice. |
+| The full `Invoke-ApiHostSmokeTest.ps1` harness did not return after entering the new quota-refusal route step. | 1 | Verified the same Phase 4 contracts with targeted scratch-port route checks instead, and left the broader harness stall called out explicitly in roadmap/changelog notes. |

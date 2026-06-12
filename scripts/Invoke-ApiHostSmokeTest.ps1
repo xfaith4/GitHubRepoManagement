@@ -348,6 +348,55 @@ try {
         Write-Host '  (no roadmap entries found — state field check skipped)' -ForegroundColor Yellow
     }
 
+    Write-Host '[STEP] Roadmap scan annotation fields (Release 2.0 Phase 4)' -ForegroundColor Cyan
+    $annotatedRoadmapRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("roadmap-scan-annotations-" + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    $annotatedRoadmapRepo = Join-Path $annotatedRoadmapRoot 'quota-annotation-smoke'
+    $null = New-Item -ItemType Directory -Path (Join-Path $annotatedRoadmapRepo '.git') -Force
+    $annotatedRoadmapPath = Join-Path $annotatedRoadmapRepo 'ROADMAP.md'
+    $annotatedRoadmapContent = @"
+## Release 2.0 - Dispatch Budgets
+
+**Goal:** Ship bounded dispatch slices with roadmap-derived estimates.
+
+### Engineering milestones
+
+- [ ] Add quota guard
+- [x] Add agent-run ledger
+
+### Phase plan
+
+| Phase | Scope | Status | Completed | Token usage | Work units (est -> actual) |
+| ----- | ----- | ------ | --------- | ----------- | -------------------------- |
+| Phase 1: Ledger | Land the ledger model | done | 2026-06-11 | ~2k | 4 -> 5 |
+| Phase 2: Quota guard | Enforce pre-dispatch quota checks | in progress | - | - | est. 8 |
+
+### Budget guardrail
+
+- Estimated AI work units for this release: 18 - Max per phase: 10
+- Before dispatch: check the budget ledger; do not start a session whose estimate exceeds the per-session cap.
+"@
+    Set-Content -LiteralPath $annotatedRoadmapPath -Value $annotatedRoadmapContent -Encoding UTF8
+    try {
+        $annotatedScanResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/scan" -Body @{
+            localRoots = @($annotatedRoadmapRoot)
+            maxDepth = 2
+        }
+        Assert-Not503 -Name '/api/roadmap/scan (annotation fixture)' -Response $annotatedScanResponse
+        $annotatedScanJson = $annotatedScanResponse.Json
+        if (-not $annotatedScanJson.success) { throw '/api/roadmap/scan (annotation fixture) returned success=false' }
+        $annotatedEntry = @($annotatedScanJson.data.entries | Where-Object { [string]$_.repoName -eq 'quota-annotation-smoke' } | Select-Object -First 1)
+        if (@($annotatedEntry).Count -eq 0) { throw 'Annotated roadmap scan did not return the fixture repo.' }
+        $annotatedEntry = $annotatedEntry[0]
+        if ([string]$annotatedEntry.activeRelease.releaseName -notmatch '^Release 2\.0\b.*Dispatch Budgets$') { throw "Expected activeRelease.releaseName to include 'Release 2.0' and 'Dispatch Budgets', got '$($annotatedEntry.activeRelease.releaseName)'" }
+        if ([string]$annotatedEntry.activePhasePlan.phaseName -ne 'Phase 2: Quota guard') { throw "Expected activePhasePlan.phaseName='Phase 2: Quota guard', got '$($annotatedEntry.activePhasePlan.phaseName)'" }
+        if ([double]$annotatedEntry.estimatedSessionWorkUnits -ne 8) { throw "Expected estimatedSessionWorkUnits=8, got '$($annotatedEntry.estimatedSessionWorkUnits)'" }
+        if ([double]$annotatedEntry.budgetGuardrail.maxUnitsPerPhase -ne 10) { throw "Expected budgetGuardrail.maxUnitsPerPhase=10, got '$($annotatedEntry.budgetGuardrail.maxUnitsPerPhase)'" }
+        Write-Host ("  annotated roadmap entry -> phase='{0}' est={1} maxPhase={2}" -f $annotatedEntry.activePhasePlan.phaseName, $annotatedEntry.estimatedSessionWorkUnits, $annotatedEntry.budgetGuardrail.maxUnitsPerPhase) -ForegroundColor DarkGray
+    }
+    finally {
+        Remove-Item -LiteralPath $annotatedRoadmapRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
     Write-Host '[STEP] Roadmap content route' -ForegroundColor Cyan
     $roadmapContentOk = $false
     if ($firstEntry) {
@@ -716,6 +765,84 @@ try {
     Assert-Not503 -Name '/api/agent-runs/{runId}/refresh (unknown)' -Response $agentRunRefreshMissing
     if ([int]$agentRunRefreshMissing.StatusCode -ne 404) { throw "/api/agent-runs/{runId}/refresh for unknown runId expected HTTP 404, got $($agentRunRefreshMissing.StatusCode)" }
     Write-Host ("  /api/agent-runs/does-not-exist/refresh -> HTTP {0}" -f $agentRunRefreshMissing.StatusCode) -ForegroundColor DarkGray
+
+    Write-Host '[STEP] Dispatch quota guard contract (Release 2.0 Phase 4)' -ForegroundColor Cyan
+    $settingsPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
+    $settingsBackup = if (Test-Path -LiteralPath $settingsPath) { Get-Content -LiteralPath $settingsPath -Raw -Encoding UTF8 } else { $null }
+    $agentEventsPath = Join-Path $WorkspaceRoot 'output\agent-runs\events.jsonl'
+    $agentEventsBackup = if (Test-Path -LiteralPath $agentEventsPath) { Get-Content -LiteralPath $agentEventsPath -Raw -Encoding UTF8 } else { $null }
+    $quotaRepoRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("dispatch-quota-smoke-" + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    $quotaRepoPath = Join-Path $quotaRepoRoot 'quota-dispatch-smoke'
+    try {
+        $null = New-Item -ItemType Directory -Path (Join-Path $quotaRepoPath '.git') -Force
+        Set-Content -LiteralPath (Join-Path $quotaRepoPath 'ROADMAP.md') -Encoding UTF8 -Value @"
+## Release 2.0 - Dispatch Budgets
+
+**Goal:** Refuse over-budget dispatches before any GitHub dependency is required.
+
+### Engineering milestones
+
+- [ ] Add quota guard
+
+### Phase plan
+
+| Phase | Scope | Status | Completed | Token usage | Work units (est -> actual) |
+| ----- | ----- | ------ | --------- | ----------- | -------------------------- |
+| Phase 1: Quota guard | Enforce the pre-dispatch guard | in progress | - | - | est. 8 |
+"@
+
+        $settingsObject = if ($null -ne $settingsBackup -and -not [string]::IsNullOrWhiteSpace($settingsBackup)) {
+            $settingsBackup | ConvertFrom-Json -Depth 20
+        } else {
+            [pscustomobject]@{}
+        }
+        $settingsObject | Add-Member -NotePropertyName budgetLedger -NotePropertyValue ([pscustomobject]@{}) -Force
+        $settingsObject.budgetLedger = [pscustomobject]@{
+            period = (Get-Date).ToUniversalTime().ToString('yyyy-MM')
+            quotaGuard = [pscustomobject]@{
+                softStopRemainingUnits = 10
+                hardStopRemainingUnits = 5
+                maxUnitsPerPhase = 1
+                maxUnitsPerSession = 1
+            }
+            defaultProject = [pscustomobject]@{
+                monthlyQuotaBudgetUnits = 20
+                monthlyBudgetUsd = 6
+                priority = 1
+            }
+        }
+        $null = New-Item -ItemType Directory -Path (Split-Path -Path $settingsPath -Parent) -Force -ErrorAction SilentlyContinue
+        Set-Content -LiteralPath $settingsPath -Value ($settingsObject | ConvertTo-Json -Depth 20) -Encoding UTF8
+
+        $dispatchQuotaResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/dispatch/execute" -Body @{
+            repoName = 'quota-dispatch-smoke'
+            localPath = $quotaRepoPath
+            prompt = 'Smoke-test quota refusal before GitHub dispatch.'
+        }
+        Assert-Not503 -Name '/api/roadmap/dispatch/execute (quota refusal)' -Response $dispatchQuotaResponse
+        if ([int]$dispatchQuotaResponse.StatusCode -ne 409) { throw "/api/roadmap/dispatch/execute quota refusal expected HTTP 409, got $($dispatchQuotaResponse.StatusCode)" }
+        $dispatchQuotaJson = $dispatchQuotaResponse.Json
+        if ($dispatchQuotaJson.success -ne $false) { throw '/api/roadmap/dispatch/execute quota refusal expected success=false' }
+        if ([string]$dispatchQuotaJson.error.code -ne 'quota-exhausted') { throw "Expected error.code='quota-exhausted', got '$($dispatchQuotaJson.error.code)'" }
+        if ([string]$dispatchQuotaJson.error.data.reasonCode -ne 'session-cap-exceeded') { throw "Expected reasonCode='session-cap-exceeded', got '$($dispatchQuotaJson.error.data.reasonCode)'" }
+        if ([double]$dispatchQuotaJson.error.data.estimatedWorkUnits -lt 1) { throw 'Expected quota refusal to report an estimatedWorkUnits value.' }
+        Write-Host ("  /api/roadmap/dispatch/execute quota refusal -> reason={0} est={1}" -f $dispatchQuotaJson.error.data.reasonCode, $dispatchQuotaJson.error.data.estimatedWorkUnits) -ForegroundColor DarkGray
+    }
+    finally {
+        if ($null -eq $settingsBackup) {
+            Remove-Item -LiteralPath $settingsPath -Force -ErrorAction SilentlyContinue
+        } else {
+            Set-Content -LiteralPath $settingsPath -Value $settingsBackup -Encoding UTF8
+        }
+
+        if ($null -eq $agentEventsBackup) {
+            Remove-Item -LiteralPath $agentEventsPath -Force -ErrorAction SilentlyContinue
+        } else {
+            Set-Content -LiteralPath $agentEventsPath -Value $agentEventsBackup -Encoding UTF8
+        }
+
+        Remove-Item -LiteralPath $quotaRepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
 
     # Release 2.0 Phase 3: merge-readiness route contracts (offline-safe).
     $mergeReadinessMissing = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/merge-readiness/does-not-exist"

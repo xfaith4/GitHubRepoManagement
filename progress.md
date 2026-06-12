@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-06-12 (Release 2.0 Phase 4: Budget Guard + Scan Annotations)
+
+- Reconciled the active roadmap against live code and found the planning files were stale: `ROADMAP.md` has Release 2.0 active with Phase 4 next, while `task_plan.md` was still describing a completed Release 1.9 slice.
+- Read the Release 2.0 roadmap detail, `standards/roadmap/ROADMAP_BUDGET_MODEL.md`, the dispatch route, `AgentRuns.ps1`, `Roadmap.Parser.ps1`, and `Portfolio.Assessment.ps1` together to size the smallest remaining seam.
+- Confirmed the actual missing contract is backend-first Phase 4 work: roadmap annotation parsing is absent, the dispatch route has no quota guard, and new agent runs still use a hardcoded estimated work-unit value.
+- Updated `task_plan.md` and session findings so the active working notes now point at Release 2.0 Phase 4 instead of the already-shipped Release 1.9 work.
+- Implemented the Phase 4 backend seam: `BudgetLedger.ps1`, roadmap release/phase/budget annotation parsing, portfolio-assessment pass-through, truthful estimated-unit capture on agent runs, and pre-dispatch quota enforcement with `quota.warning` / `quota.exhausted` telemetry in `POST /api/roadmap/dispatch/execute`.
+- Extended the Operations-facing contracts so the UI and docs expose the new estimate metadata: dispatch success now reports quota/phase details, the Agent Runs panel shows section/phase/release and work-unit estimates, and the API reference documents the roadmap-scan annotation and quota-refusal payloads.
+
+### Verification
+
+- `npm run build` passed.
+- PowerShell parser checks passed for `backend/modules/roadmap/Roadmap.Parser.ps1` and `scripts/Invoke-ApiHostSmokeTest.ps1`.
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ModuleSmokeTest.ps1 -WorkspaceRoot "$(pwd)"` passed, including the new annotated-roadmap and budget-ledger steps.
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/Test-RoadmapStructure.ps1 -Path ./ROADMAP.md` returned 0 errors and 3 advisory warnings.
+- Targeted scratch-port host checks passed for the new Phase 4 route contracts: annotated roadmap scans returned the expected active phase and work-unit estimate, and dispatch execution refused with HTTP 409 `quota-exhausted` / `session-cap-exceeded` before any GitHub dependency was required.
+- The full `Invoke-ApiHostSmokeTest.ps1` harness now reaches the new Phase 4 steps but still did not return past the quota-refusal route in this session, so the end-to-end harness issue is called out separately instead of being hidden.
+
 ## 2026-06-11 (Release 1.9 Phase 2: AI Documentation Improvement — Diff Viewer & History)
 
 - Committed Phase 1 (`7b30f8c`) and proceeded to the next roadmap slice: Release 1.9 Phase 2 — side-by-side diff viewer, custom improvement prompt UI, improvement-cycle history, and `GET /api/ai/docs/improve/history`.

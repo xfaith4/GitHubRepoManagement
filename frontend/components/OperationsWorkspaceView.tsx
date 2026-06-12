@@ -100,6 +100,11 @@ function formatBytes(value?: number): string {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function formatUnitValue(value?: number | null): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return 'n/a';
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
 function getLifecyclePriority(state: RepoLifecycleState): number {
   switch (state) {
     case 'ready-for-work':
@@ -1438,7 +1443,24 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
 
                       {dispatchResult && (
                         <div className="rounded-md border border-emerald-700/40 bg-emerald-950/20 px-3 py-2 text-xs text-emerald-200">
-                          Dispatched run <span className="font-mono">{dispatchResult.runId}</span> for <span className="font-mono">{dispatchResult.githubRepo}</span> at {new Date(dispatchResult.startedAt).toLocaleString()}.
+                          <div>{dispatchResult.message}</div>
+                          <div className="mt-1 text-emerald-300/80">
+                            Copilot run <span className="font-mono">{dispatchResult.runId}</span>
+                            {' '}• Ledger run <span className="font-mono">{dispatchResult.agentRunId ?? 'pending'}</span>
+                            {' '}• Repo <span className="font-mono">{dispatchResult.githubRepo}</span>
+                            {' '}• Started {new Date(dispatchResult.startedAt).toLocaleString()}
+                          </div>
+                          {dispatchResult.quota && (
+                            <div className="mt-1 text-emerald-300/80">
+                              Estimate {formatUnitValue(dispatchResult.quota.estimatedWorkUnits)} unit(s)
+                              {dispatchResult.quota.estimateSource ? ` from ${dispatchResult.quota.estimateSource}` : ''}
+                              {dispatchResult.quota.plannedPhaseName ? ` • Phase ${dispatchResult.quota.plannedPhaseName}` : ''}
+                              {dispatchResult.quota.projectBudgetUnitsRemaining !== null && dispatchResult.quota.projectBudgetUnitsRemaining !== undefined
+                                ? ` • Remaining budget ${formatUnitValue(dispatchResult.quota.projectBudgetUnitsRemaining)}`
+                                : ''}
+                              {dispatchResult.quota.warning ? ` • Warning: ${dispatchResult.quota.warning}` : ''}
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -1876,6 +1898,13 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                           {run.selectedTaskText && (
                             <div className="text-gray-200">{run.selectedTaskText}</div>
                           )}
+                          {(run.selectedTaskSection || run.plannedPhaseName || run.plannedReleaseName) && (
+                            <div className="text-gray-400">
+                              {run.selectedTaskSection ? `Section: ${run.selectedTaskSection}` : 'Section: n/a'}
+                              {run.plannedPhaseName ? ` • Phase: ${run.plannedPhaseName}` : ''}
+                              {run.plannedReleaseName ? ` • Release: ${run.plannedReleaseName}` : ''}
+                            </div>
+                          )}
                           <div className="grid gap-1 sm:grid-cols-2">
                             <div>
                               Branch:{' '}
@@ -1891,6 +1920,22 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                               ) : (
                                 <span className="text-gray-400">none yet</span>
                               )}
+                            </div>
+                            <div>
+                              Work units:{' '}
+                              <span className="text-gray-300">
+                                est {formatUnitValue(run.metrics?.workUnitsEstimated)}
+                                {' '}→ act {formatUnitValue(run.metrics?.workUnitsActual)}
+                                {run.workUnitsEstimateSource ? ` (${run.workUnitsEstimateSource})` : ''}
+                              </span>
+                            </div>
+                            <div>
+                              Tokens:{' '}
+                              <span className="text-gray-300">
+                                {run.metrics?.tokenUsage !== null && run.metrics?.tokenUsage !== undefined
+                                  ? Number(run.metrics.tokenUsage).toLocaleString()
+                                  : 'n/a'}
+                              </span>
                             </div>
                             <div>
                               Actions:{' '}

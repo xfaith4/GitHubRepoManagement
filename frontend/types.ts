@@ -187,6 +187,10 @@ export interface RoadmapEntry {
   pendingCount?: number;
   completedCount?: number;
   nextPendingItem?: { text: string; section: string } | null;
+  activeRelease?: RoadmapReleaseSummary | null;
+  activePhasePlan?: RoadmapPhasePlan | null;
+  budgetGuardrail?: RoadmapBudgetGuardrail | null;
+  estimatedSessionWorkUnits?: number | null;
 }
 
 export interface RoadmapIndex {
@@ -809,12 +813,45 @@ export interface ReleaseDispatchCheck {
   releasePacket?: ReleaseDispatchPacket | null;
 }
 
+export interface RoadmapReleaseSummary {
+  releaseName?: string | null;
+  releaseVersion?: string | null;
+  releaseTitle?: string | null;
+}
+
+export interface RoadmapPhasePlan {
+  phaseName: string;
+  scope?: string | null;
+  status?: string | null;
+  completed?: string | null;
+  tokenUsage?: string | null;
+  workUnitsEstimated?: number | null;
+  workUnitsActual?: number | null;
+}
+
+export interface RoadmapBudgetGuardrail {
+  estimatedReleaseWorkUnits?: number | null;
+  maxUnitsPerPhase?: number | null;
+  notes?: string[];
+}
+
+export interface DispatchQuotaSummary {
+  estimatedWorkUnits: number;
+  estimateSource?: string | null;
+  warning?: string | null;
+  projectBudgetUnitsRemaining?: number | null;
+  plannedReleaseName?: string | null;
+  plannedPhaseName?: string | null;
+}
+
 export interface DispatchExecuteResult {
   runId: string;
+  agentRunId?: string | null;
   status: 'started' | 'failed';
   githubRepo: string;
   startedAt: string;
   message: string;
+  quota?: DispatchQuotaSummary | null;
   error?: string | null;
 }
 
@@ -942,6 +979,10 @@ export interface PortfolioAssessmentEntry {
   hasTestSignal: boolean;
   structureFindings: RepoStructureFinding[];
   docFindingCount: number;
+  activeRelease?: RoadmapReleaseSummary | null;
+  activePhasePlan?: RoadmapPhasePlan | null;
+  budgetGuardrail?: RoadmapBudgetGuardrail | null;
+  estimatedSessionWorkUnits?: number | null;
 }
 
 export interface PortfolioAssessmentSummary {
@@ -1268,6 +1309,10 @@ export interface AgentRun {
   dispatchRunId?: string | null;
   promptRefinementRunId?: string | null;
   selectedTaskText?: string | null;
+  selectedTaskSection?: string | null;
+  plannedReleaseName?: string | null;
+  plannedPhaseName?: string | null;
+  workUnitsEstimateSource?: string | null;
   providerTool: string;
   branch?: string | null;
   baseBranch?: string | null;

@@ -49,6 +49,7 @@ $portfolioModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\portfolio'
 $aiModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\ai'
 . (Join-Path $aiModuleRoot 'AiDocImprovement.ps1')
 $agentRunsModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\agent-runs'
+. (Join-Path $agentRunsModuleRoot 'BudgetLedger.ps1')
 . (Join-Path $agentRunsModuleRoot 'AgentRuns.ps1')
 . (Join-Path $agentRunsModuleRoot 'MergeReadiness.ps1')
 . (Join-Path $commonRoot 'NotificationHub.ps1')
@@ -3126,6 +3127,22 @@ function Invoke-RoadmapScan {
                     }
                 }
 
+                $activeRelease = if ($null -ne $parseResult) {
+                    Get-ObjectPropertyValue -InputObject $parseResult -PropertyName 'activeRelease' -Default $null
+                } else {
+                    $null
+                }
+                $activePhasePlan = if ($null -ne $parseResult) {
+                    Get-ObjectPropertyValue -InputObject $parseResult -PropertyName 'activePhasePlan' -Default $null
+                } else {
+                    $null
+                }
+                $budgetGuardrail = if ($null -ne $parseResult) {
+                    Get-ObjectPropertyValue -InputObject $parseResult -PropertyName 'budgetGuardrail' -Default $null
+                } else {
+                    $null
+                }
+
                 $entries.Add([pscustomobject]@{
                     repoName        = $repoName
                     repoPath        = $repoPath
@@ -3136,6 +3153,14 @@ function Invoke-RoadmapScan {
                     pendingCount    = if ($null -ne $parseResult) { [int]$parseResult.pendingCount    } else { 0 }
                     completedCount  = if ($null -ne $parseResult) { [int]$parseResult.completedCount  } else { 0 }
                     nextPendingItem = $nextItem
+                    activeRelease   = $activeRelease
+                    activePhasePlan = $activePhasePlan
+                    budgetGuardrail = $budgetGuardrail
+                    estimatedSessionWorkUnits = if ($null -ne $activePhasePlan) {
+                        Get-ObjectPropertyValue -InputObject $activePhasePlan -PropertyName 'workUnitsEstimated' -Default $null
+                    } else {
+                        $null
+                    }
                 })
             }
         }
@@ -3292,84 +3317,25 @@ function Get-CopilotTaskReleaseContext {
         return $empty
     }
 
-    $selectedKey = Get-CopilotTaskComparisonKey -Text $SelectedTask
-    $releaseHeadingRx = [regex]'(?im)^## Release (\d+[\d\.]*)\s*[—–-]+\s*(.+?)$'
-    $headingMatches = $releaseHeadingRx.Matches($RoadmapContent)
-    if ($headingMatches.Count -eq 0) {
+    $selectedRelease = Get-RoadmapSelectedReleaseContext -RoadmapContent $RoadmapContent -SelectedTask $SelectedTask
+    if ($null -eq $selectedRelease -or [string]::IsNullOrWhiteSpace([string](Get-ObjectPropertyValue -InputObject $selectedRelease -PropertyName 'releaseName' -Default ''))) {
         return $empty
     }
 
-    $blocks = [System.Collections.Generic.List[hashtable]]::new()
-    foreach ($m in $headingMatches) {
-        $blocks.Add(@{
-            version    = $m.Groups[1].Value.Trim()
-            title      = $m.Groups[2].Value.Trim()
-            startIndex = $m.Index
-        })
+    return @{
+        releaseName               = [string](Get-ObjectPropertyValue -InputObject $selectedRelease -PropertyName 'releaseName' -Default $null)
+        releaseVersion            = [string](Get-ObjectPropertyValue -InputObject $selectedRelease -PropertyName 'releaseVersion' -Default $null)
+        releaseTitle              = [string](Get-ObjectPropertyValue -InputObject $selectedRelease -PropertyName 'releaseTitle' -Default $null)
+        releaseGoal               = [string](Get-ObjectPropertyValue -InputObject $selectedRelease -PropertyName 'releaseGoal' -Default '')
+        pendingMilestones         = @(Get-ObjectPropertyValue -InputObject $selectedRelease -PropertyName 'pendingMilestones' -Default @())
+        completedMilestones       = @(Get-ObjectPropertyValue -InputObject $selectedRelease -PropertyName 'completedMilestones' -Default @())
+        acceptanceCriteria        = @(Get-ObjectPropertyValue -InputObject $selectedRelease -PropertyName 'acceptanceCriteria' -Default @())
+        outOfScope                = @(Get-ObjectPropertyValue -InputObject $selectedRelease -PropertyName 'outOfScope' -Default @())
+        phasePlan                 = @(Get-ObjectPropertyValue -InputObject $selectedRelease -PropertyName 'phasePlan' -Default @())
+        activePhasePlan           = Get-ObjectPropertyValue -InputObject $selectedRelease -PropertyName 'activePhasePlan' -Default $null
+        budgetGuardrail           = Get-ObjectPropertyValue -InputObject $selectedRelease -PropertyName 'budgetGuardrail' -Default $null
+        estimatedSessionWorkUnits = Get-ObjectPropertyValue -InputObject $selectedRelease -PropertyName 'estimatedSessionWorkUnits' -Default $null
     }
-
-    foreach ($i in 0..($blocks.Count - 1)) {
-        $block = $blocks[$i]
-        $blockStart = $block.startIndex
-        $blockEnd = if ($i + 1 -lt $blocks.Count) { $blocks[$i + 1].startIndex } else { $RoadmapContent.Length }
-        $blockText = $RoadmapContent.Substring($blockStart, $blockEnd - $blockStart)
-        $blockLines = $blockText -split "`r?`n"
-
-        $pendingMilestones = [System.Collections.Generic.List[string]]::new()
-        $completedMilestones = [System.Collections.Generic.List[string]]::new()
-        $containsSelectedTask = $false
-
-        foreach ($line in $blockLines) {
-            if ($line -match '^\s*-\s*\[\s\]\s+(.+)$') {
-                $itemText = Get-CopilotTaskDisplayText -Text $matches[1].Trim()
-                if (-not [string]::IsNullOrWhiteSpace($itemText)) {
-                    $pendingMilestones.Add($itemText)
-                    if (-not [string]::IsNullOrWhiteSpace($selectedKey) -and (Get-CopilotTaskComparisonKey -Text $itemText) -eq $selectedKey) {
-                        $containsSelectedTask = $true
-                    }
-                }
-            } elseif ($line -match '^\s*-\s*\[[xX]\]\s+(.+)$') {
-                $itemText = Get-CopilotTaskDisplayText -Text $matches[1].Trim()
-                if (-not [string]::IsNullOrWhiteSpace($itemText)) {
-                    $completedMilestones.Add($itemText)
-                    if (-not [string]::IsNullOrWhiteSpace($selectedKey) -and (Get-CopilotTaskComparisonKey -Text $itemText) -eq $selectedKey) {
-                        $containsSelectedTask = $true
-                    }
-                }
-            }
-        }
-
-        if (-not $containsSelectedTask) {
-            continue
-        }
-
-        return @{
-            releaseName         = "Release $($block.version) — $($block.title)"
-            releaseVersion      = $block.version
-            releaseTitle        = $block.title
-            releaseGoal         = (_ExtractGoal -Lines $blockLines)
-            pendingMilestones   = @($pendingMilestones)
-            completedMilestones = @($completedMilestones)
-            acceptanceCriteria  = @(_ExtractSubsectionLines -Lines $blockLines -HeadingPattern 'Acceptance\s+criteria')
-            outOfScope          = @(_ExtractSubsectionLines -Lines $blockLines -HeadingPattern 'Out\s+of\s+scope')
-        }
-    }
-
-    $fallbackRelease = Get-NextPendingRelease -RoadmapContent $RoadmapContent
-    if ($fallbackRelease.found) {
-        return @{
-            releaseName         = [string]$fallbackRelease.releaseName
-            releaseVersion      = [string]$fallbackRelease.releaseVersion
-            releaseTitle        = [string]$fallbackRelease.releaseTitle
-            releaseGoal         = [string]$fallbackRelease.goal
-            pendingMilestones   = @($fallbackRelease.pendingMilestones)
-            completedMilestones = @($fallbackRelease.completedMilestones)
-            acceptanceCriteria  = @($fallbackRelease.acceptanceCriteria)
-            outOfScope          = @($fallbackRelease.outOfScope)
-        }
-    }
-
-    return $empty
 }
 
 function Get-CopilotTaskConstraints {
@@ -3425,6 +3391,205 @@ function Find-PortfolioAssessmentEntry {
     return @($portfolioCache.entries) | Where-Object {
         [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '') -eq $RepoName
     } | Select-Object -First 1
+}
+
+function Get-OperationsPromptRefinementRecord {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$RunId
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RepoName) -or [string]::IsNullOrWhiteSpace($RunId)) {
+        return $null
+    }
+
+    $safeRepoName = $RepoName -replace '[\\/:*?"<>|]', '_'
+    $refineRoot = Join-Path $WorkspaceRoot 'output\roadmap-task-history\prompt-refinements'
+    $refineFile = Join-Path $refineRoot "$safeRepoName.refinements.jsonl"
+    if (-not (Test-Path -LiteralPath $refineFile -PathType Leaf)) {
+        return $null
+    }
+
+    try {
+        return @(
+            Get-Content -LiteralPath $refineFile -Encoding UTF8 -ErrorAction Stop |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+                ForEach-Object {
+                    try { ConvertFrom-JsonCompat -Json $_ } catch { $null }
+                } |
+                Where-Object {
+                    $null -ne $_ -and [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'runId' -Default '') -eq $RunId
+                } |
+                Select-Object -First 1
+        )[0]
+    } catch {
+        Write-HostLog ("WARN operations.prompt.refine could not read refinement record for repoName={0} runId={1}: {2}" -f $RepoName, $RunId, $_.Exception.Message)
+        return $null
+    }
+}
+
+function Resolve-RoadmapPathForRepo {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoName,
+
+        [Parameter()]
+        [string]$LocalPath = '',
+
+        [Parameter()]
+        [object]$RoadmapEntry = $null
+    )
+
+    $candidateFromEntry = [string](Get-ObjectPropertyValue -InputObject $RoadmapEntry -PropertyName 'roadmapPath' -Default '')
+    if (-not [string]::IsNullOrWhiteSpace($candidateFromEntry) -and (Test-Path -LiteralPath $candidateFromEntry -PathType Leaf)) {
+        return $candidateFromEntry
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($LocalPath) -and (Test-Path -LiteralPath $LocalPath -PathType Container)) {
+        foreach ($candidateName in @('ROADMAP.md', 'Roadmap.md', 'docs\planning\roadmap.md', 'docs\ROADMAP.md', 'roadmap.md')) {
+            $candidatePath = Join-Path $LocalPath $candidateName
+            if (Test-Path -LiteralPath $candidatePath -PathType Leaf) {
+                return $candidatePath
+            }
+        }
+    }
+
+    return ''
+}
+
+function Get-DispatchPlanningContext {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoName,
+
+        [Parameter()]
+        [string]$RoadmapPath = '',
+
+        [Parameter()]
+        [string]$PromptRefinementRunId = '',
+
+        [Parameter()]
+        [object]$AssessmentEntry = $null
+    )
+
+    $defaultEstimatedUnits = [double](Get-AgentBudgetLedgerConfig -WorkspaceRoot $WorkspaceRoot -Settings (Get-HostSettings)).unitWeights.agentRun
+    $planning = @{
+        roadmapPath             = if (-not [string]::IsNullOrWhiteSpace($RoadmapPath)) { $RoadmapPath } else { '' }
+        selectedTaskText        = ''
+        selectedTaskSection     = ''
+        releaseName             = $null
+        releaseVersion          = $null
+        releaseTitle            = $null
+        plannedPhaseName        = $null
+        workUnitsEstimated      = $defaultEstimatedUnits
+        workUnitsEstimateSource = 'budget-default-agent-run'
+        budgetGuardrail         = $null
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($PromptRefinementRunId)) {
+        $refineRecord = Get-OperationsPromptRefinementRecord -RepoName $RepoName -RunId $PromptRefinementRunId
+        if ($null -ne $refineRecord) {
+            $planning.selectedTaskText = [string](Get-ObjectPropertyValue -InputObject $refineRecord -PropertyName 'selectedItemText' -Default '')
+            $planning.selectedTaskSection = [string](Get-ObjectPropertyValue -InputObject $refineRecord -PropertyName 'selectedItemSection' -Default '')
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($planning.selectedTaskText) -and $null -ne $AssessmentEntry) {
+        $topValueItem = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'topValueItem' -Default $null
+        $planning.selectedTaskText = [string](Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'text' -Default (Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'nextPendingItemText' -Default ''))
+        $planning.selectedTaskSection = [string](Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'section' -Default '')
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($planning.roadmapPath) -and (Test-Path -LiteralPath $planning.roadmapPath -PathType Leaf)) {
+        try {
+            $roadmapContent = Get-Content -LiteralPath $planning.roadmapPath -Raw -Encoding UTF8 -ErrorAction Stop
+            $releaseContext = Get-CopilotTaskReleaseContext -RoadmapContent $roadmapContent -SelectedTask $planning.selectedTaskText
+
+            $planning.releaseName = Get-ObjectPropertyValue -InputObject $releaseContext -PropertyName 'releaseName' -Default $null
+            $planning.releaseVersion = Get-ObjectPropertyValue -InputObject $releaseContext -PropertyName 'releaseVersion' -Default $null
+            $planning.releaseTitle = Get-ObjectPropertyValue -InputObject $releaseContext -PropertyName 'releaseTitle' -Default $null
+            $planning.budgetGuardrail = Get-ObjectPropertyValue -InputObject $releaseContext -PropertyName 'budgetGuardrail' -Default $null
+
+            $activePhasePlan = Get-ObjectPropertyValue -InputObject $releaseContext -PropertyName 'activePhasePlan' -Default $null
+            if ($null -ne $activePhasePlan) {
+                $planning.plannedPhaseName = [string](Get-ObjectPropertyValue -InputObject $activePhasePlan -PropertyName 'phaseName' -Default '')
+                $phaseEstimate = Get-ObjectPropertyValue -InputObject $activePhasePlan -PropertyName 'workUnitsEstimated' -Default $null
+                if ($null -ne $phaseEstimate) {
+                    $planning.workUnitsEstimated = [double]$phaseEstimate
+                    $planning.workUnitsEstimateSource = 'roadmap-phase-plan'
+                }
+            }
+        } catch {
+            Write-HostLog ("WARN roadmap.dispatch planning-context could not parse roadmap for repoName={0}: {1}" -f $RepoName, $_.Exception.Message)
+        }
+    }
+
+    if ($planning.workUnitsEstimateSource -eq 'budget-default-agent-run' -and $null -ne $AssessmentEntry) {
+        $assessmentEstimate = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'estimatedSessionWorkUnits' -Default $null
+        if ($null -ne $assessmentEstimate) {
+            $planning.workUnitsEstimated = [double]$assessmentEstimate
+            $planning.workUnitsEstimateSource = 'assessment-cache'
+        }
+
+        if ($null -eq $planning.budgetGuardrail) {
+            $planning.budgetGuardrail = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'budgetGuardrail' -Default $null
+        }
+
+        if ([string]::IsNullOrWhiteSpace([string]$planning.plannedPhaseName)) {
+            $assessmentPhase = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'activePhasePlan' -Default $null
+            $planning.plannedPhaseName = [string](Get-ObjectPropertyValue -InputObject $assessmentPhase -PropertyName 'phaseName' -Default '')
+        }
+
+        if ($null -eq $planning.releaseName) {
+            $assessmentRelease = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'activeRelease' -Default $null
+            $planning.releaseName = Get-ObjectPropertyValue -InputObject $assessmentRelease -PropertyName 'releaseName' -Default $null
+            $planning.releaseVersion = Get-ObjectPropertyValue -InputObject $assessmentRelease -PropertyName 'releaseVersion' -Default $null
+            $planning.releaseTitle = Get-ObjectPropertyValue -InputObject $assessmentRelease -PropertyName 'releaseTitle' -Default $null
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$planning.plannedPhaseName)) {
+        $planning.plannedPhaseName = $null
+    }
+
+    return $planning
+}
+
+function Get-QuotaPendingWorkSnapshot {
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Settings,
+
+        [Parameter()]
+        [string]$ExcludeRepoName = ''
+    )
+
+    $portfolioTtl = Get-PortfolioAssessmentCacheTtlSeconds -Settings $Settings
+    $portfolioCache = Get-PortfolioAssessmentFromCache -TtlSeconds $portfolioTtl
+    if (-not $portfolioCache.hit -or $null -eq $portfolioCache.entries) {
+        return @()
+    }
+
+    return @(
+        @($portfolioCache.entries) |
+            Where-Object {
+                [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'dispatchReadiness' -Default '') -eq 'ready' -and
+                [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '') -ne $ExcludeRepoName
+            } |
+            Select-Object -First 10 |
+            ForEach-Object {
+                [ordered]@{
+                    repoName             = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '')
+                    nextPendingItemText  = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'nextPendingItemText' -Default '')
+                    lifecycleState       = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'lifecycleState' -Default '')
+                    recommendedAction    = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'recommendedAction' -Default '')
+                    estimatedSessionWorkUnits = Get-ObjectPropertyValue -InputObject $_ -PropertyName 'estimatedSessionWorkUnits' -Default $null
+                }
+            }
+    )
 }
 
 function Normalize-TaskSelectionMatchValue {
@@ -3829,6 +3994,32 @@ function Build-CopilotTaskPacket {
         }
     }
 
+    $budgetSummarySection = ''
+    $releaseActivePhase = Get-ObjectPropertyValue -InputObject $releaseContext -PropertyName 'activePhasePlan' -Default $null
+    $releaseBudgetGuardrail = Get-ObjectPropertyValue -InputObject $releaseContext -PropertyName 'budgetGuardrail' -Default $null
+    $plannedPhaseName = [string](Get-ObjectPropertyValue -InputObject $releaseActivePhase -PropertyName 'phaseName' -Default '')
+    $estimatedSessionWorkUnits = Get-ObjectPropertyValue -InputObject $releaseActivePhase -PropertyName 'workUnitsEstimated' -Default (Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'estimatedSessionWorkUnits' -Default $null)
+    if ($null -ne $estimatedSessionWorkUnits -or $null -ne $releaseBudgetGuardrail) {
+        $budgetSummarySection = "`n`nBudget / quota planning context:"
+        if (-not [string]::IsNullOrWhiteSpace($plannedPhaseName)) {
+            $budgetSummarySection += "`n  Active phase: $plannedPhaseName"
+        }
+        if ($null -ne $estimatedSessionWorkUnits) {
+            $budgetSummarySection += "`n  Estimated session work units: $estimatedSessionWorkUnits"
+        }
+        $releaseEstimatedUnits = Get-ObjectPropertyValue -InputObject $releaseBudgetGuardrail -PropertyName 'estimatedReleaseWorkUnits' -Default $null
+        $releaseMaxPerPhase = Get-ObjectPropertyValue -InputObject $releaseBudgetGuardrail -PropertyName 'maxUnitsPerPhase' -Default $null
+        if ($null -ne $releaseEstimatedUnits -or $null -ne $releaseMaxPerPhase) {
+            $budgetSummarySection += "`n  Release guardrail:"
+            if ($null -ne $releaseEstimatedUnits) {
+                $budgetSummarySection += " estimated release units=$releaseEstimatedUnits"
+            }
+            if ($null -ne $releaseMaxPerPhase) {
+                $budgetSummarySection += ", max per phase=$releaseMaxPerPhase"
+            }
+        }
+    }
+
     $constraintSummarySection = ''
     if ($constraints.Count -gt 0) {
         $constraintSummarySection = "`n`nExplicit constraints:"
@@ -3849,7 +4040,7 @@ Roadmap file: $effectiveRoadmapPath
 Selected section: $([string]$selected.section)
 Selected task: $([string]$selected.text)$neighboringLines
 
-Dispatch readiness: $dispatchReadiness$releaseSummarySection$portfolioSummarySection$valueSummarySection$readmeSummarySection$auditQualitySection$tagSection$docFindingsSummary$constraintSummarySection$executionHistorySection
+Dispatch readiness: $dispatchReadiness$releaseSummarySection$budgetSummarySection$portfolioSummarySection$valueSummarySection$readmeSummarySection$auditQualitySection$tagSection$docFindingsSummary$constraintSummarySection$executionHistorySection
 
 Acceptance criteria:
 $($criteriLines -join "`n")
@@ -3891,6 +4082,8 @@ Execution requirements:
             roadmapScore                 = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'roadmapScore' -Default $null
             documentationHealthScore     = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'documentationHealthScore' -Default $null
             pendingItemCount             = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'pendingItemCount' -Default $null
+            estimatedSessionWorkUnits    = $estimatedSessionWorkUnits
+            plannedPhaseName             = if (-not [string]::IsNullOrWhiteSpace($plannedPhaseName)) { $plannedPhaseName } else { $null }
         }
         readmeContext       = $readmeContext
         roadmapContext      = $releaseContext
@@ -6492,14 +6685,14 @@ try {
                         $rpp = if ($roadmapEntry -is [System.Collections.IDictionary]) { [string]$roadmapEntry['repoPath'] } else { [string]$roadmapEntry.repoPath }
                         if (-not [string]::IsNullOrWhiteSpace($rpp)) { $localPath = $rpp }
                         elseif (-not [string]::IsNullOrWhiteSpace($effectiveRoadmapPath)) {
-                            $localPath = Split-Path -LiteralPath $effectiveRoadmapPath -Parent
+                            $localPath = Split-Path -Path $effectiveRoadmapPath -Parent
                         }
                     }
 
                     # Parse, normalize, audit
                     $rawContent   = Get-Content -LiteralPath $effectiveRoadmapPath -Raw -Encoding UTF8 -ErrorAction Stop
                     $parsedResult = Invoke-ParseRoadmapContent -Content $rawContent -SourcePath $effectiveRoadmapPath
-                    $repoPath     = if (-not [string]::IsNullOrWhiteSpace($localPath)) { $localPath } else { Split-Path -LiteralPath $effectiveRoadmapPath -Parent }
+                    $repoPath     = if (-not [string]::IsNullOrWhiteSpace($localPath)) { $localPath } else { Split-Path -Path $effectiveRoadmapPath -Parent }
                     $contract     = Invoke-NormalizeRoadmapContract `
                                         -ParsedResult $parsedResult `
                                         -RawContent   $rawContent `
@@ -6565,27 +6758,22 @@ try {
                         throw 'prompt is required for /api/roadmap/dispatch/execute'
                     }
 
-                    # Check for GitHub token before attempting dispatch
-                    $ghToken = $env:GitHub_Token
-                    if ([string]::IsNullOrWhiteSpace($ghToken)) { $ghToken = $env:GITHUB_TOKEN }
-                    if ([string]::IsNullOrWhiteSpace($ghToken)) {
-                        throw 'GitHub token not found. Set GitHub_Token or GITHUB_TOKEN in your environment before dispatching.'
+                    $settingsForFallback = Get-HostSettings
+                    $roadmapTtl   = Get-RoadmapCacheTtlSeconds -Settings $settingsForFallback
+                    $roadmapCache = Get-RoadmapFromCache -TtlSeconds $roadmapTtl
+                    $roadmapEntry = $null
+                    if ($roadmapCache.hit -and $roadmapCache.entries) {
+                        $roadmapEntry = @($roadmapCache.entries) | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1
                     }
 
                     # Resolve localPath from body or roadmap cache
                     if ([string]::IsNullOrWhiteSpace($localPath)) {
-                        $settings     = Get-HostSettings
-                        $roadmapTtl   = Get-RoadmapCacheTtlSeconds -Settings $settings
-                        $roadmapCache = Get-RoadmapFromCache -TtlSeconds $roadmapTtl
-                        if ($roadmapCache.hit -and $roadmapCache.entries) {
-                            $roadmapEntry = @($roadmapCache.entries) | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1
-                            if ($null -ne $roadmapEntry) {
-                                $rpp = if ($roadmapEntry -is [System.Collections.IDictionary]) { [string]$roadmapEntry['repoPath'] } else { [string]$roadmapEntry.repoPath }
-                                if (-not [string]::IsNullOrWhiteSpace($rpp)) { $localPath = $rpp }
-                                else {
-                                    $rp = if ($roadmapEntry -is [System.Collections.IDictionary]) { [string]$roadmapEntry['roadmapPath'] } else { [string]$roadmapEntry.roadmapPath }
-                                    if (-not [string]::IsNullOrWhiteSpace($rp)) { $localPath = Split-Path -LiteralPath $rp -Parent }
-                                }
+                        if ($null -ne $roadmapEntry) {
+                            $rpp = if ($roadmapEntry -is [System.Collections.IDictionary]) { [string]$roadmapEntry['repoPath'] } else { [string]$roadmapEntry.repoPath }
+                            if (-not [string]::IsNullOrWhiteSpace($rpp)) { $localPath = $rpp }
+                            else {
+                                $rp = if ($roadmapEntry -is [System.Collections.IDictionary]) { [string]$roadmapEntry['roadmapPath'] } else { [string]$roadmapEntry.roadmapPath }
+                                if (-not [string]::IsNullOrWhiteSpace($rp)) { $localPath = Split-Path -Path $rp -Parent }
                             }
                         }
                     }
@@ -6593,9 +6781,76 @@ try {
                     if ([string]::IsNullOrWhiteSpace($localPath)) {
                         throw "localPath could not be resolved for repo '$repoName'. Provide localPath in the request or run a roadmap scan first."
                     }
+                    if (-not (Test-Path -LiteralPath $localPath -PathType Container)) {
+                        throw "localPath '$localPath' was not found for repo '$repoName'."
+                    }
+
+                    $effectiveRoadmapPath = Resolve-RoadmapPathForRepo -RepoName $repoName -LocalPath $localPath -RoadmapEntry $roadmapEntry
+                    $assessmentEntry = Find-PortfolioAssessmentEntry -RepoName $repoName -Settings $settingsForFallback
+                    $planningContext = Get-DispatchPlanningContext `
+                        -RepoName $repoName `
+                        -RoadmapPath $effectiveRoadmapPath `
+                        -PromptRefinementRunId $promptRefinementRunId `
+                        -AssessmentEntry $assessmentEntry
+
+                    $budgetConfig = Get-AgentBudgetLedgerConfig -WorkspaceRoot $WorkspaceRoot -Settings $settingsForFallback
+                    $quotaResult = Test-AgentDispatchQuota `
+                        -WorkspaceRoot $WorkspaceRoot `
+                        -RepoName $repoName `
+                        -EstimatedWorkUnits ([double]$planningContext.workUnitsEstimated) `
+                        -BudgetConfig $budgetConfig `
+                        -PlannedReleaseName ([string](Get-ValueOrDefault $planningContext.releaseName '')) `
+                        -PlannedPhaseName ([string](Get-ValueOrDefault $planningContext.plannedPhaseName ''))
+
+                    $quotaEventBase = [ordered]@{
+                        budgetPeriod            = [string]$quotaResult.period
+                        estimatedWorkUnits      = [double]$quotaResult.estimatedWorkUnits
+                        estimateSource          = [string](Get-ValueOrDefault $planningContext.workUnitsEstimateSource '')
+                        selectedTaskText        = if (-not [string]::IsNullOrWhiteSpace([string]$planningContext.selectedTaskText)) { [string]$planningContext.selectedTaskText } else { $null }
+                        selectedTaskSection     = if (-not [string]::IsNullOrWhiteSpace([string]$planningContext.selectedTaskSection)) { [string]$planningContext.selectedTaskSection } else { $null }
+                        plannedReleaseName      = if ($null -ne $planningContext.releaseName) { [string]$planningContext.releaseName } else { $null }
+                        plannedPhaseName        = if ($null -ne $planningContext.plannedPhaseName) { [string]$planningContext.plannedPhaseName } else { $null }
+                        projectQuotaBudgetUnits = [double]$quotaResult.project.monthlyQuotaBudgetUnits
+                        projectUnitsConsumed    = [double]$quotaResult.usage.unitsConsumed
+                        remainingBefore         = [double]$quotaResult.usage.remainingBefore
+                        remainingAfter          = [double]$quotaResult.usage.remainingAfter
+                    }
+
+                    if (-not $quotaResult.allowed) {
+                        $pendingWorkSnapshot = @(Get-QuotaPendingWorkSnapshot -Settings $settingsForFallback -ExcludeRepoName $repoName)
+                        $quotaEventData = [ordered]@{}
+                        foreach ($keyName in $quotaEventBase.Keys) { $quotaEventData[$keyName] = $quotaEventBase[$keyName] }
+                        $quotaEventData['reasonCode'] = [string](Get-ValueOrDefault $quotaResult.blockedCode '')
+                        $quotaEventData['pendingReadyRepos'] = @($pendingWorkSnapshot)
+                        $quotaEventData['creditPromptRepos'] = @($quotaResult.usage.creditPromptRepos)
+                        $null = Write-AgentRunEvent `
+                            -WorkspaceRoot $WorkspaceRoot `
+                            -EventType 'quota.exhausted' `
+                            -RunId '' `
+                            -RepoName $repoName `
+                            -Summary ([string]$quotaResult.message) `
+                            -Data $quotaEventData
+
+                        Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error = @{
+                                category = 'conflict'
+                                code = 'quota-exhausted'
+                                message = [string]$quotaResult.message
+                                data = $quotaEventData
+                            }
+                        }
+                        break
+                    }
+
+                    # Check for GitHub token only after the budget/quota guard passes.
+                    $ghToken = $env:GitHub_Token
+                    if ([string]::IsNullOrWhiteSpace($ghToken)) { $ghToken = $env:GITHUB_TOKEN }
+                    if ([string]::IsNullOrWhiteSpace($ghToken)) {
+                        throw 'GitHub token not found. Set GitHub_Token or GITHUB_TOKEN in your environment before dispatching.'
+                    }
 
                     # Resolve GitHub owner/repo from git remote, falling back to settings owner
-                    $settingsForFallback = Get-HostSettings
                     $fallbackOwner = ''
                     if ($settingsForFallback.ContainsKey('reconcile') -and $settingsForFallback.reconcile.ContainsKey('gitHubOwner')) {
                         $fallbackOwner = [string]$settingsForFallback.reconcile.gitHubOwner
@@ -6618,6 +6873,19 @@ try {
                     )
                     if (-not [string]::IsNullOrWhiteSpace($baseBranch)) { $scriptArgs += @('-BaseBranch', $baseBranch) }
                     if ($follow) { $scriptArgs += '-Follow' }
+
+                    if (@($quotaResult.warnings).Count -gt 0) {
+                        $quotaWarningData = [ordered]@{}
+                        foreach ($keyName in $quotaEventBase.Keys) { $quotaWarningData[$keyName] = $quotaEventBase[$keyName] }
+                        $quotaWarningData['warningMessages'] = @($quotaResult.warnings)
+                        $null = Write-AgentRunEvent `
+                            -WorkspaceRoot $WorkspaceRoot `
+                            -EventType 'quota.warning' `
+                            -RunId '' `
+                            -RepoName $repoName `
+                            -Summary ([string]$quotaResult.warnings[0]) `
+                            -Data $quotaWarningData
+                    }
 
                     $runResult = Invoke-PowerShellScriptFile -ScriptPath $startScriptPath -Arguments $scriptArgs
 
@@ -6650,10 +6918,21 @@ try {
                             -LocalPath $localPath `
                             -DispatchRunId $runId `
                             -PromptRefinementRunId $promptRefinementRunId `
+                            -SelectedTaskText ([string](Get-ValueOrDefault $planningContext.selectedTaskText '')) `
+                            -SelectedTaskSection ([string](Get-ValueOrDefault $planningContext.selectedTaskSection '')) `
+                            -PlannedReleaseName ([string](Get-ValueOrDefault $planningContext.releaseName '')) `
+                            -PlannedPhaseName ([string](Get-ValueOrDefault $planningContext.plannedPhaseName '')) `
                             -BaseBranch $baseBranch
+                            -WorkUnitsEstimated ([double]$planningContext.workUnitsEstimated) `
+                            -WorkUnitsEstimateSource ([string](Get-ValueOrDefault $planningContext.workUnitsEstimateSource ''))
                         $agentRunId = [string]$agentRun.runId
                     } catch {
                         Write-HostLog ("[WARN ] roadmap.dispatch.execute correlationId={0} agent-run ledger write failed: {1}" -f $correlationId, $_.Exception.Message)
+                    }
+
+                    $dispatchMessage = "Copilot task dispatched for $githubRepo"
+                    if (@($quotaResult.warnings).Count -gt 0) {
+                        $dispatchMessage += ". Quota warning: $([string]$quotaResult.warnings[0])"
                     }
 
                     Add-MetricCounter -Name 'api_requests_total'
@@ -6667,7 +6946,15 @@ try {
                             status     = 'started'
                             githubRepo = $githubRepo
                             startedAt  = $startedAt
-                            message    = "Copilot task dispatched for $githubRepo"
+                            message    = $dispatchMessage
+                            quota      = @{
+                                estimatedWorkUnits = [double]$quotaResult.estimatedWorkUnits
+                                estimateSource = [string](Get-ValueOrDefault $planningContext.workUnitsEstimateSource '')
+                                warning = if (@($quotaResult.warnings).Count -gt 0) { [string]$quotaResult.warnings[0] } else { $null }
+                                projectBudgetUnitsRemaining = [double]$quotaResult.usage.remainingAfter
+                                plannedReleaseName = if ($null -ne $planningContext.releaseName) { [string]$planningContext.releaseName } else { $null }
+                                plannedPhaseName = if ($null -ne $planningContext.plannedPhaseName) { [string]$planningContext.plannedPhaseName } else { $null }
+                            }
                         }
                     }
                 }

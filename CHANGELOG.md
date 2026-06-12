@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented here.
 
+## 2026-06-12 — Release 2.0 Phase 4: Budget Guard + Scan Annotations
+
+### Changes
+
+- **`backend/modules/agent-runs/BudgetLedger.ps1`** (new) — added the Release 2.0 budget-ledger helper module: settings-backed quota configuration with safe defaults, per-repo monthly budget resolution, current-period usage snapshots from the agent-run ledger, and `Test-AgentDispatchQuota` evaluation (credit-prompt stop, per-session cap, per-phase cap, monthly budget exhaustion, soft/hard remaining-unit thresholds).
+- **`backend/modules/roadmap/Roadmap.Parser.ps1`** — roadmap parsing now returns structured release contexts, active phase-plan rows, budget-guardrail annotations, and `estimatedSessionWorkUnits`. Fixed a real Phase 4 parser defect where ASCII `-` placeholder cells in the phase-plan table were being misread as completion markers, which incorrectly erased the active phase.
+- **`backend/modules/portfolio/Portfolio.Assessment.ps1`** and **`backend/modules/agent-runs/AgentRuns.ps1`** — portfolio assessment rows now carry active-release/phase/budget metadata through to the indexed model, and new agent-run records persist selected task section, planned release/phase, and estimate source instead of always hardcoding the default 3-unit estimate.
+- **`backend/api-host/Start-RepoManagementApiHost.ps1`** — `POST /api/roadmap/dispatch/execute` now resolves roadmap planning context before dispatch, enforces quota checks before any GitHub dependency is required, records `quota.warning` / `quota.exhausted` events, and returns a structured quota payload (`estimatedWorkUnits`, estimate source, remaining budget, planned release/phase). `POST /api/roadmap/scan` and the dispatch packet path now surface the new roadmap annotation fields.
+- **`frontend/types.ts`**, **`frontend/components/OperationsWorkspaceView.tsx`**, **`frontend/components/ApiDocsModal.tsx`**, and **`backend/api-host/README.md`** — typed and documented the new roadmap-annotation / quota contracts; the Operations workspace now shows dispatch estimate metadata and richer agent-run planning details (section, phase, release, work-unit estimate, token count).
+- **`scripts/Invoke-ModuleSmokeTest.ps1`** and **`scripts/Invoke-ApiHostSmokeTest.ps1`** — module smoke now covers annotated roadmap parsing and budget-ledger quota behavior; api-host smoke now checks roadmap-scan annotation fields and exercises the quota-refusal contract against an isolated temp repo fixture.
+
+### Testing
+
+- **PowerShell parser checks** — passed for `backend/modules/roadmap/Roadmap.Parser.ps1` and `scripts/Invoke-ApiHostSmokeTest.ps1`.
+- **`npm run build`** — passed.
+- **`pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ModuleSmokeTest.ps1 -WorkspaceRoot \"$(pwd)\"`** — passed, including the new annotated-roadmap and budget-ledger steps.
+- **`pwsh -NoProfile -ExecutionPolicy Bypass -File tools/Test-RoadmapStructure.ps1 -Path ./ROADMAP.md`** — 0 errors, 3 advisory warnings.
+- **Targeted host checks on a scratch port** — roadmap-scan fixture returned `activePhasePlan='Phase 2: Quota guard'`, `estimatedSessionWorkUnits=8`, and `budgetGuardrail.maxUnitsPerPhase=10`; `POST /api/roadmap/dispatch/execute` returned HTTP 409 with `error.code=quota-exhausted` and `reasonCode=session-cap-exceeded` before any GitHub dependency was required.
+- **Full `Invoke-ApiHostSmokeTest.ps1`** — the run now reaches the new Phase 4 roadmap-scan annotation step and enters the quota-refusal step, but in this session the broad end-to-end harness still did not return past that route; the isolated scratch-port route checks above passed.
+
 ## 2026-06-11 — Release 2.0 Phase 1: Agent-Run Ledger Foundation
 
 ### Changes

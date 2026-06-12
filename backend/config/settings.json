@@ -3,28 +3,29 @@
   "secrets": {
     "gitHubTokenEnvVar": "GITHUB_TOKEN"
   },
+  "reconcile": {
+    "gitHubOwner": "xfaith4",
+    "retry": {
+      "baseDelayMs": 300,
+      "maxAttempts": 3,
+      "maxDelayMs": 2000
+    },
+    "ownerType": "Auto"
+  },
   "docReview": {
-    "maxDepth": 3,
     "generateQueue": true,
-    "generateBatchPlan": true
+    "generateBatchPlan": true,
+    "maxDepth": 3
+  },
+  "retention": {
+    "days": 30
   },
   "inventory": {
     "localRoots": [
       "G:\\Development\\20_Staging"
     ],
-    "maxDepth": 3,
-    "includeNonGitFolders": false
-  },
-  "retention": {
-    "days": 30
-  },
-  "reconcile": {
-    "gitHubOwner": "xfaith4",
-    "retry": {
-      "baseDelayMs": 300,
-      "maxDelayMs": 2000,
-      "maxAttempts": 3
-    },
-    "ownerType": "Auto"
+    "includeNonGitFolders": false,
+    "maxDepth": 3
   }
 }
+
