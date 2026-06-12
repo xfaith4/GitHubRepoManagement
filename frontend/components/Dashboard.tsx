@@ -239,7 +239,12 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     }
 
     setHasAttemptedOperationsLoad(true);
-    refreshOperationsRepos(false).catch(() => {/* surfaced in-panel */});
+    refreshOperationsRepos(false).catch(err => {
+      const message = err instanceof Error ? err.message : '';
+      if (/indexed portfolio|operations workspace is not ready/i.test(message)) {
+        refreshOperationsRepos(true).catch(() => {/* surfaced in-panel */});
+      }
+    });
   }, [activeView, hasAttemptedOperationsLoad]);
 
   // Load docs audit when Work Queue or Operations is first opened.
@@ -645,8 +650,12 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   };
 
   const handleRoadmapScanComplete = (count: number) => {
-    // Re-fetch the index so badges update
-    getRoadmapIndex(true).then(index => setRoadmapEntries(index.entries)).catch(() => {});
+    // Re-fetch roadmap and operations signals so maturity-dependent views stay in sync.
+    Promise.allSettled([
+      getRoadmapIndex(true).then(index => setRoadmapEntries(index.entries)),
+      getRoadmapAudit({ refresh: true }).then(setRoadmapAuditIndex),
+      refreshOperationsRepos(true),
+    ]).catch(() => {});
     setLogMessages(prev => [...prev, `Roadmap scan complete. Found ${count} ROADMAP ${count === 1 ? 'file' : 'files'}.`]);
   };
 
@@ -1337,6 +1346,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                 docsAuditIndex={docsAuditIndex}
                 roadmapAuditIndex={roadmapAuditIndex}
                 onRefresh={() => { refreshOperationsRepos(true).catch(() => {/* surfaced in-panel */}); }}
+                onRepairRoadmap={handleRepairRoadmap}
                 onViewRoadmap={handleViewRoadmap}
                 onPreviewTask={handlePreviewCopilotTask}
                 onViewGitStatus={handleViewGitStatus}
@@ -1513,8 +1523,10 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
         onClose={() => setIsRoadmapRepairModalOpen(false)}
         onRepairApplied={() => {
           setIsRoadmapRepairModalOpen(false);
-          // Refresh roadmap audit data after a repair is applied
-          getRoadmapAudit({ refresh: true }).then(setRoadmapAuditIndex).catch(() => {});
+          Promise.allSettled([
+            getRoadmapAudit({ refresh: true }).then(setRoadmapAuditIndex),
+            refreshOperationsRepos(true),
+          ]).catch(() => {});
         }}
       />
 

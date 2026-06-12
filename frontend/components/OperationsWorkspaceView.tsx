@@ -32,6 +32,7 @@ interface OperationsWorkspaceViewProps {
   docsAuditIndex?: DocAuditIndex | null;
   roadmapAuditIndex?: RoadmapAuditIndex | null;
   onRefresh: () => void;
+  onRepairRoadmap?: (repoName: string) => void;
   onViewRoadmap?: (repoName: string) => void;
   onPreviewTask?: (repoName: string, roadmapPath?: string) => void;
   onViewGitStatus?: (repoName: string, localPath?: string) => void;
@@ -146,6 +147,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
   docsAuditIndex,
   roadmapAuditIndex,
   onRefresh,
+  onRepairRoadmap,
   onViewRoadmap,
   onPreviewTask,
   onViewGitStatus,
@@ -443,7 +445,12 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
     }
   }, [aiTemplateOptions, aiTemplateId]);
 
-  const dispatchReady = selectedEntry?.dispatchReadiness === 'ready';
+  const selectedDispatchReadiness = selectedDetail?.dispatchContext.dispatchReadiness ?? selectedEntry?.dispatchReadiness ?? 'missing-roadmap';
+  const selectedDispatchReadinessExplanation =
+    selectedDetail?.dispatchContext.dispatchReadinessExplanation ??
+    selectedEntry?.dispatchReadinessExplanation ??
+    null;
+  const dispatchReady = selectedDispatchReadiness === 'ready';
   const maturityReady = selectedEntry?.maturityLevel === 'L3-Contract-Ready' || selectedEntry?.maturityLevel === 'L4-Orchestration-Ready';
   const canDispatchRefinedPrompt = Boolean(
     selectedEntry &&
@@ -457,7 +464,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
     : !promptRefineResult?.runId
       ? 'Generate a refined prompt first so dispatch can be linked to its history entry.'
       : !dispatchReady
-        ? 'Dispatch is blocked until this repo is marked ready in the current assessment.'
+        ? (selectedDispatchReadinessExplanation || 'Dispatch is blocked until this repo is marked ready in the current assessment.')
         : !maturityReady
           ? 'Dispatch requires roadmap maturity L3-Contract-Ready or higher.'
           : null;
@@ -835,7 +842,21 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
 
       {!loading && filteredEntries.length === 0 && (
         <div className="mt-6 rounded-lg border border-gray-700 bg-gray-900/40 px-4 py-10 text-center text-sm text-gray-500">
-          No operations-ready portfolio records matched the current filter.
+          {operationsRepos && operationsRepos.count === 0 ? (
+            <>
+              <div className="text-gray-300">No indexed portfolio records are available for the Operations workspace yet.</div>
+              <div className="mt-2">Build or refresh the indexed portfolio so maturity, readiness, and dispatch context are populated here.</div>
+              <button
+                type="button"
+                onClick={onRefresh}
+                className="mt-4 inline-flex items-center rounded-md border border-blue-700/60 bg-blue-900/30 px-3 py-1.5 text-xs font-medium text-blue-100 transition-colors hover:bg-blue-900/50"
+              >
+                Refresh Operations Data
+              </button>
+            </>
+          ) : (
+            'No operations-ready portfolio records matched the current filter.'
+          )}
         </div>
       )}
 
@@ -1012,17 +1033,33 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                   </div>
 
                   <div className="rounded-lg border border-gray-700 bg-gray-950/40 p-4">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-white">
-                      <BranchIcon className="w-4 h-4 text-emerald-300" />
-                      Work Readiness
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                        <BranchIcon className="w-4 h-4 text-emerald-300" />
+                        Work Readiness
+                      </div>
+                      {onRepairRoadmap && selectedEntry.hasRoadmap && !maturityReady && (
+                        <button
+                          type="button"
+                          onClick={() => onRepairRoadmap(selectedEntry.repoName)}
+                          className="inline-flex items-center gap-2 rounded-md border border-orange-700/60 bg-orange-900/25 px-3 py-1.5 text-xs font-medium text-orange-100 transition-colors hover:bg-orange-900/45"
+                        >
+                          <RoadmapIcon className="w-4 h-4" />
+                          Open Roadmap Repair
+                        </button>
+                      )}
                     </div>
                     <dl className="mt-3 space-y-2 text-sm">
                       <div>
                         <dt className="text-gray-500">Dispatch Readiness</dt>
-                        <dd className="mt-0.5 text-gray-200">{selectedDetail?.dispatchContext.dispatchReadiness ?? selectedEntry.dispatchReadiness}</dd>
-                        {(selectedDetail?.dispatchContext.dispatchReadinessExplanation || selectedEntry.dispatchReadinessExplanation) && (
-                          <div className="mt-1 text-xs text-gray-500">{selectedDetail?.dispatchContext.dispatchReadinessExplanation ?? selectedEntry.dispatchReadinessExplanation}</div>
+                        <dd className="mt-0.5 text-gray-200">{selectedDispatchReadiness}</dd>
+                        {selectedDispatchReadinessExplanation && (
+                          <div className="mt-1 text-xs text-gray-500">{selectedDispatchReadinessExplanation}</div>
                         )}
+                      </div>
+                      <div>
+                        <dt className="text-gray-500">Roadmap Maturity</dt>
+                        <dd className="mt-0.5 text-gray-200">{selectedEntry.maturityLevel}</dd>
                       </div>
                       <div>
                         <dt className="text-gray-500">Dirty State</dt>

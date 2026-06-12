@@ -537,7 +537,7 @@ function Invoke-PortfolioAssessment {
 
         # Doc audit
         $docEntry = if ($docAuditMap.ContainsKey($key)) { $docAuditMap[$key] } else { $null }
-        $dispatchReadiness = [string](_GetField -Obj $docEntry -Name 'dispatchReadiness' -Default 'missing-roadmap')
+        $rawDispatchReadiness = [string](_GetField -Obj $docEntry -Name 'dispatchReadiness' -Default 'missing-roadmap')
         $docFindings = @()
         $rawDocFindings = _GetField -Obj $docEntry -Name 'docFindings' -Default @()
         if ($null -ne $rawDocFindings) { $docFindings = @($rawDocFindings | Where-Object { $null -ne $_ }) }
@@ -581,13 +581,21 @@ function Invoke-PortfolioAssessment {
         $lifecycle = _ResolveLifecycleState `
             -IsArchived $isArchived `
             -RoadmapState $roadmapState `
-            -DispatchReadiness $dispatchReadiness `
+            -DispatchReadiness $rawDispatchReadiness `
             -MaturityLevel $maturityLevel `
             -ExecutionState $execState `
             -HasReadme $hasReadme `
             -HasRoadmap $hasRoadmap `
             -PendingItemCount $pendingCount `
             -StructureFindings $structFindings
+
+        $dispatchReadiness = _Get-EffectiveDispatchReadiness `
+            -RawDispatchReadiness $rawDispatchReadiness `
+            -LifecycleState $lifecycle.state `
+            -HasReadme $hasReadme `
+            -HasRoadmap $hasRoadmap `
+            -RoadmapState $roadmapState `
+            -PendingItemCount $pendingCount
 
         $pendingItemsRaw = @(_GetPendingRoadmapItems -RoadmapEntry $roadmapEntry -MaturityEntry $maturityEntry)
         $hasCiSignal = if ($null -ne $structAudit) { [bool]$structAudit.hasCiSignal } else { $false }
@@ -610,7 +618,11 @@ function Invoke-PortfolioAssessment {
         $readmeScore = _Get-ReadmeScore -HasReadme $hasReadme -DocFindingCount @($docFindings).Count
         $roadmapScore = _Get-RoadmapScore -HasRoadmap $hasRoadmap -RoadmapState $roadmapState -MaturityScore $maturityScore -PendingItemCount $pendingCount
         $documentationHealthScore = _Get-DocumentationHealthScore -ReadmeScore $readmeScore -RoadmapScore $roadmapScore -DocFindingCount @($docFindings).Count -HasCiSignal $hasCiSignal -HasTestSignal $hasTestSignal
-        $dispatchReadinessExplanation = _Get-DispatchReadinessExplanation -DispatchReadiness $dispatchReadiness
+        $dispatchReadinessExplanation = if ($dispatchReadiness -ne 'ready' -and @($lifecycle.blockingReasons).Count -gt 0) {
+            [string]$lifecycle.blockingReasons[0]
+        } else {
+            _Get-DispatchReadinessExplanation -DispatchReadiness $dispatchReadiness
+        }
         $openPrCount = [int](_GetField -Obj $githubRepo -Name 'openPrCount' -Default (_GetField -Obj $repo -Name 'openPrCount' -Default 0))
         $pendingReviewPrCount = [int](_GetField -Obj $githubRepo -Name 'pendingReviewPrCount' -Default (_GetField -Obj $repo -Name 'pendingReviewPrCount' -Default 0))
 
@@ -811,6 +823,53 @@ function _Get-DispatchReadinessExplanation {
             return 'A roadmap or supporting documentation is missing, so the repo is not yet dispatch-ready.'
         }
     }
+}
+
+function _Get-EffectiveDispatchReadiness {
+    param(
+        [string]$RawDispatchReadiness,
+        [string]$LifecycleState,
+        [bool]$HasReadme,
+        [bool]$HasRoadmap,
+        [string]$RoadmapState,
+        [int]$PendingItemCount
+    )
+
+    if (-not $HasReadme) { return 'blocked' }
+    if (-not $HasRoadmap) { return 'missing-roadmap' }
+
+    switch ([string]$RoadmapState) {
+        'parse-error' { return 'parse-error' }
+        'complete' { return 'roadmap-complete' }
+    }
+
+    if ($PendingItemCount -le 0) {
+        return 'roadmap-complete'
+    }
+
+    switch ([string]$LifecycleState) {
+        'ready-for-work' { return 'ready' }
+        'needs-roadmap-repair' { return 'blocked' }
+        'running' { return 'blocked' }
+        'archived' { return 'blocked' }
+        'parse-error' { return 'parse-error' }
+        'needs-roadmap' { return 'missing-roadmap' }
+        'needs-readme' { return 'blocked' }
+        'needs-structure' {
+            if ($RawDispatchReadiness -in @('needs-doc-standardization', 'blocked')) {
+                return [string]$RawDispatchReadiness
+            }
+            return 'blocked'
+        }
+        'completed' { return 'roadmap-complete' }
+        'monitored' { return 'roadmap-complete' }
+    }
+
+    if ($RawDispatchReadiness -in @('ready', 'needs-doc-standardization', 'missing-roadmap', 'roadmap-complete', 'parse-error', 'blocked')) {
+        return [string]$RawDispatchReadiness
+    }
+
+    return 'blocked'
 }
 
 function _Get-ReadmeScore {

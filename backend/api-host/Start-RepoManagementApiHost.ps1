@@ -3427,6 +3427,27 @@ function Find-PortfolioAssessmentEntry {
     } | Select-Object -First 1
 }
 
+function Normalize-TaskSelectionMatchValue {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return ''
+    }
+
+    $normalized = [string]$Value
+    try {
+        $normalized = $normalized.Normalize([Text.NormalizationForm]::FormKC)
+    } catch {
+        # Fall back to the original value when Unicode normalization is unavailable.
+    }
+
+    $normalized = $normalized `
+        -replace '[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]', '-' `
+        -replace '\s+', ' '
+
+    return $normalized.Trim().ToLowerInvariant()
+}
+
 function Build-CopilotTaskPacket {
     param(
         [Parameter(Mandatory = $true)]
@@ -3519,9 +3540,11 @@ function Build-CopilotTaskPacket {
 
     # Operator-forced item takes precedence over value ranking.
     if (-not [string]::IsNullOrWhiteSpace($ForcedItemText)) {
+        $normalizedForcedText = Normalize-TaskSelectionMatchValue -Value $ForcedItemText
+        $normalizedForcedSection = Normalize-TaskSelectionMatchValue -Value $ForcedItemSection
         $forcedMatch = @($allPendingInOrder | Where-Object {
-            $_.text -eq $ForcedItemText -and (
-                [string]::IsNullOrWhiteSpace($ForcedItemSection) -or $_.section -eq $ForcedItemSection
+            (Normalize-TaskSelectionMatchValue -Value ([string]$_.text)) -eq $normalizedForcedText -and (
+                [string]::IsNullOrWhiteSpace($normalizedForcedSection) -or (Normalize-TaskSelectionMatchValue -Value ([string]$_.section)) -eq $normalizedForcedSection
             )
         } | Select-Object -First 1)
         if ($forcedMatch.Count -gt 0 -and $null -ne $forcedMatch[0]) {
@@ -3543,9 +3566,11 @@ function Build-CopilotTaskPacket {
     if ($selectionSource -eq 'roadmap-order' -and $null -ne $topValueItem) {
         $preferredText = [string](Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'text' -Default '')
         $preferredSection = [string](Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'section' -Default '')
+        $normalizedPreferredText = Normalize-TaskSelectionMatchValue -Value $preferredText
+        $normalizedPreferredSection = Normalize-TaskSelectionMatchValue -Value $preferredSection
         $preferredMatch = @($allPendingInOrder | Where-Object {
-            $_.text -eq $preferredText -and (
-                [string]::IsNullOrWhiteSpace($preferredSection) -or $_.section -eq $preferredSection
+            (Normalize-TaskSelectionMatchValue -Value ([string]$_.text)) -eq $normalizedPreferredText -and (
+                [string]::IsNullOrWhiteSpace($normalizedPreferredSection) -or (Normalize-TaskSelectionMatchValue -Value ([string]$_.section)) -eq $normalizedPreferredSection
             )
         } | Select-Object -First 1)
         if ($preferredMatch.Count -gt 0 -and $null -ne $preferredMatch[0]) {
@@ -5743,7 +5768,7 @@ try {
                         $signalSources['docAudit'] = 'deferred-differential'
                     }
 
-                    # 4) Roadmap audit entries (maturity) — opportunistic; absent cache => empty signal.
+                    # 4) Roadmap audit entries (maturity).
                     $roadmapAuditEntries = @()
                     $rmAuditTtl = Get-RoadmapAuditCacheTtlSeconds -Settings $settings
                     if (-not $useDifferentialScan) {
@@ -5755,7 +5780,11 @@ try {
                             }
                         }
                         if (@($roadmapAuditEntries).Count -eq 0) {
-                            $signalSources['roadmapAudit'] = 'unavailable'
+                            Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} cold-roadmap-audit-scan" -f $correlationId)
+                            $roadmapAuditEntries = @(Invoke-RoadmapAuditScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth)
+                            $signalSources['roadmapAudit'] = 'fresh-scan'
+                            $auditedAt = (Get-Date).ToUniversalTime().ToString('o')
+                            if ($rmAuditTtl -gt 0) { Save-RoadmapAuditCache -Entries $roadmapAuditEntries -AuditedAt $auditedAt }
                         }
                     } else {
                         $signalSources['roadmapAudit'] = 'deferred-differential'
