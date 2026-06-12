@@ -324,8 +324,21 @@ const CATEGORIES: CategoryDef[] = [
         responseFields: [
           { name: 'success', type: 'bool', description: 'Operation result flag' },
           { name: 'data.run', type: 'AgentRun', description: 'The current ledger record for the run' },
-          { name: 'data.events', type: 'AgentRunEvent[]', description: 'Schema-versioned lifecycle events for this run (run.dispatched, run.started, run.completed, run.failed, run.blocked, run.updated)' },
+          { name: 'data.events', type: 'AgentRunEvent[]', description: 'Schema-versioned lifecycle events for this run (run.dispatched, run.started, run.completed, run.failed, run.blocked, run.updated, validation.passed, validation.failed)' },
         ],
+      },
+      {
+        method: 'POST',
+        path: '/api/agent-runs/{runId}/refresh',
+        summary: 'Refreshes one run from GitHub: associates the agent-created branch and PR (copilot/* branch naming, dispatch-time window, task fingerprint), records the head branch’s latest Actions state, and advances run status from observed PR state.',
+        responseFields: [
+          { name: 'success', type: 'bool', description: 'Operation result flag' },
+          { name: 'data.run', type: 'AgentRun', description: 'The updated ledger record including branch, prUrl, prState, actions state, and association evidence' },
+          { name: 'data.association', type: 'AgentRunAssociation', description: 'Operator-visible evidence: matchedBy reasons, candidateCount, associatedAt' },
+          { name: 'data.pullRequestFound', type: 'bool', description: 'Whether a matching agent PR was found on GitHub' },
+          { name: 'data.validationEvent', type: 'string | null', description: 'validation.passed / validation.failed when the observed Actions conclusion changed since the previous refresh' },
+        ],
+        notes: 'Status transitions observed from PR state: draft PR found → active; PR ready for review → completed (awaiting-merge); PR merged → completed (merged); PR closed without merge → failed. Returns 404 for unknown runs, 409 when the run has no GitHub owner/repo identity, and 502 when the GitHub lookup fails.',
       },
     ],
   },

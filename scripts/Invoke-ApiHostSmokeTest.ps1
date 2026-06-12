@@ -710,6 +710,13 @@ try {
     if ([int]$agentRunMissing.StatusCode -ne 404) { throw "/api/agent-runs/{runId} for unknown runId expected HTTP 404, got $($agentRunMissing.StatusCode)" }
     Write-Host ("  /api/agent-runs/does-not-exist -> HTTP {0}" -f $agentRunMissing.StatusCode) -ForegroundColor DarkGray
 
+    # Release 2.0 Phase 2: refresh route contract. Unknown runs must 404
+    # before any GitHub lookup happens, so this stays offline-safe.
+    $agentRunRefreshMissing = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/agent-runs/does-not-exist/refresh" -Body @{}
+    Assert-Not503 -Name '/api/agent-runs/{runId}/refresh (unknown)' -Response $agentRunRefreshMissing
+    if ([int]$agentRunRefreshMissing.StatusCode -ne 404) { throw "/api/agent-runs/{runId}/refresh for unknown runId expected HTTP 404, got $($agentRunRefreshMissing.StatusCode)" }
+    Write-Host ("  /api/agent-runs/does-not-exist/refresh -> HTTP {0}" -f $agentRunRefreshMissing.StatusCode) -ForegroundColor DarkGray
+
     $copilotHistoryResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/copilot-task/history?limit=5"
     Assert-Not503 -Name '/api/copilot-task/history' -Response $copilotHistoryResponse
     $copilotHistoryJson = $copilotHistoryResponse.Json

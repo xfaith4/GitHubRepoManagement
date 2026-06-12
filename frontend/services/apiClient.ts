@@ -1,4 +1,4 @@
-import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate } from '../types';
+import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -1725,5 +1725,64 @@ export async function applyAiDocImprovement(request: AiDocImproveApplyRequest): 
     originalExisted: Boolean(result?.originalExisted ?? false),
     previewId: result?.previewId ? String(result.previewId) : null,
     appliedAt: String(result?.appliedAt ?? ''),
+  };
+}
+
+// --- Release 2.0: Agent run monitoring ---
+
+export async function getAgentRuns(options?: { status?: string; repoName?: string; limit?: number }): Promise<AgentRunsResult> {
+  const params = new URLSearchParams();
+  if (options?.status) params.set('status', options.status);
+  if (options?.repoName) params.set('repoName', options.repoName);
+  if (options?.limit) params.set('limit', String(options.limit));
+  const qs = params.toString() ? `?${params.toString()}` : '';
+
+  const data = await fetchJson<any>(`${API_BASE_URL}/agent-runs${qs}`);
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? data?.error ?? 'Failed to load agent runs.');
+  }
+
+  const payload = data.data ?? {};
+  return {
+    items: Array.isArray(payload?.items) ? (payload.items as AgentRun[]) : [],
+    count: Number(payload?.count ?? 0),
+    byStatus: (payload?.byStatus ?? {}) as Record<string, number>,
+  };
+}
+
+export async function getAgentRunDetail(runId: string): Promise<AgentRunDetailResult> {
+  if (!runId.trim()) {
+    throw new Error('runId is required to load agent run detail.');
+  }
+
+  const data = await fetchJson<any>(`${API_BASE_URL}/agent-runs/${encodeURIComponent(runId)}`);
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? data?.error ?? 'Failed to load agent run detail.');
+  }
+
+  const payload = data.data ?? {};
+  return {
+    run: payload?.run as AgentRun,
+    events: Array.isArray(payload?.events) ? payload.events : [],
+  };
+}
+
+export async function refreshAgentRun(runId: string): Promise<AgentRunRefreshResult> {
+  if (!runId.trim()) {
+    throw new Error('runId is required to refresh an agent run.');
+  }
+
+  const data = await postJson<any>(`/agent-runs/${encodeURIComponent(runId)}/refresh`, {});
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? data?.error ?? 'Agent run refresh failed.');
+  }
+
+  const payload = data.data ?? {};
+  return {
+    run: payload?.run as AgentRun,
+    association: payload?.association ?? { matchedBy: [], candidateCount: 0, associatedAt: '' },
+    pullRequestFound: Boolean(payload?.pullRequestFound ?? false),
+    validationEvent: payload?.validationEvent ? String(payload.validationEvent) : null,
+    refreshedAt: String(payload?.refreshedAt ?? ''),
   };
 }

@@ -344,14 +344,12 @@ function Update-AgentRunRecord {
     }
 
     # Derive time-to-deliver onto the ledger when both timestamps are known.
-    $startedAt = _AgentRunsField -Obj $run['metrics'] -Name 'agentStartedAt' -Default $null
-    $completedAt = _AgentRunsField -Obj $run['metrics'] -Name 'agentCompletedAt' -Default $null
-    if ($null -ne $startedAt -and $null -ne $completedAt) {
-        try {
-            $run['metrics']['timeToDeliverSeconds'] = [int]([datetime]$completedAt - [datetime]$startedAt).TotalSeconds
-        } catch {
-            # Leave timeToDeliverSeconds untouched when timestamps cannot parse.
-        }
+    # Normalize both sides to UTC: values may be ISO strings (fresh patches)
+    # or [datetime] objects (records re-read via ConvertFrom-Json).
+    $startedUtc = _AgentRunsAsUtc -Value (_AgentRunsField -Obj $run['metrics'] -Name 'agentStartedAt' -Default $null)
+    $completedUtc = _AgentRunsAsUtc -Value (_AgentRunsField -Obj $run['metrics'] -Name 'agentCompletedAt' -Default $null)
+    if ($null -ne $startedUtc -and $null -ne $completedUtc) {
+        $run['metrics']['timeToDeliverSeconds'] = [int]($completedUtc - $startedUtc).TotalSeconds
     }
 
     $run['updatedAt'] = (Get-Date).ToUniversalTime().ToString('o')
@@ -382,4 +380,343 @@ function Update-AgentRunRecord {
         -Summary $eventSummary -Data ([ordered]@{ patchedFields = @($Patch.Keys) })
 
     return [pscustomobject]$run
+}
+
+# ---------------------------------------------------------------------------
+# Phase 2 — branch/PR association and GitHub-state refresh
+# ---------------------------------------------------------------------------
+
+# Branch-name prefix the GitHub Copilot coding agent uses for the head branch
+# of the pull requests it opens.
+$script:AgentRunCopilotBranchPrefix = 'copilot/'
+
+# Clock-skew allowance when comparing PR creation time against dispatch time.
+$script:AgentRunDispatchSkewMinutes = 10
+
+<#
+.SYNOPSIS
+    Normalize a timestamp to a UTC [datetime], or $null when unusable.
+.DESCRIPTION
+    Timestamps arrive either as ISO 8601 strings (ledger files, GitHub API
+    JSON) or as [datetime] objects (ConvertFrom-Json / Invoke-RestMethod
+    eagerly convert ISO strings). Casting a [datetime] to [string] and
+    re-parsing double-applies the timezone offset, so this helper handles
+    both shapes explicitly.
+#>
+function _AgentRunsAsUtc {
+    param([object]$Value)
+
+    if ($null -eq $Value) { return $null }
+    if ($Value -is [datetime]) {
+        switch ($Value.Kind) {
+            ([System.DateTimeKind]::Utc)   { return $Value }
+            ([System.DateTimeKind]::Local) { return $Value.ToUniversalTime() }
+            # Unspecified: the ledger and GitHub only ever serialize UTC.
+            default { return [datetime]::SpecifyKind($Value, [System.DateTimeKind]::Utc) }
+        }
+    }
+
+    $text = [string]$Value
+    if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+    try {
+        return ([System.DateTimeOffset]::Parse($text, [System.Globalization.CultureInfo]::InvariantCulture)).UtcDateTime
+    } catch {
+        return $null
+    }
+}
+
+# ISO 8601 UTC string for ledger storage, or $null when unusable.
+function _AgentRunsIsoString {
+    param([object]$Value)
+    $utc = _AgentRunsAsUtc -Value $Value
+    if ($null -eq $utc) { return $null }
+    return $utc.ToString('o')
+}
+
+<#
+.SYNOPSIS
+    Pick the pull request that belongs to an agent run from a list of the
+    repo's pull requests, with operator-visible association evidence.
+.DESCRIPTION
+    Pure selection logic (no network, no ledger writes) so association
+    heuristics are testable offline. Pull-request objects use the GitHub REST
+    shape: number, html_url, state, draft, title, body, created_at,
+    updated_at, merged_at, closed_at, head.ref.
+
+    Match order:
+      1. existing-pr-url      — the run already stores this PR's html_url
+      2. recorded-branch-name — the run already stores the PR's head branch
+      3. heuristic            — copilot/* head branch created at/after the
+                                run's dispatch time (minus a small clock-skew
+                                allowance); a selectedTaskText fingerprint in
+                                the PR title or body breaks ties, then the
+                                earliest-created candidate wins.
+#>
+function Select-AgentRunPullRequestCandidate {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory = $true)][object]$Run,
+        [Parameter()][object[]]$PullRequests = @()
+    )
+
+    $prs = @($PullRequests | Where-Object { $null -ne $_ })
+    $evidence = [ordered]@{
+        matchedBy      = @()
+        candidateCount = 0
+        evaluatedAt    = (Get-Date).ToUniversalTime().ToString('o')
+    }
+
+    if ($prs.Count -eq 0) {
+        return [pscustomobject]@{ pullRequest = $null; evidence = [pscustomobject]$evidence }
+    }
+
+    $getHeadRef = {
+        param($pr)
+        $head = _AgentRunsField -Obj $pr -Name 'head'
+        return [string](_AgentRunsField -Obj $head -Name 'ref' -Default '')
+    }
+
+    # 1. The run already knows its PR URL.
+    $existingPrUrl = [string](_AgentRunsField -Obj $Run -Name 'prUrl' -Default '')
+    if (-not [string]::IsNullOrWhiteSpace($existingPrUrl)) {
+        $match = $prs | Where-Object { [string](_AgentRunsField -Obj $_ -Name 'html_url' -Default '') -eq $existingPrUrl } | Select-Object -First 1
+        if ($null -ne $match) {
+            $evidence['matchedBy'] = @('existing-pr-url')
+            $evidence['candidateCount'] = 1
+            return [pscustomobject]@{ pullRequest = $match; evidence = [pscustomobject]$evidence }
+        }
+    }
+
+    # 2. The run already knows its head branch.
+    $existingBranch = [string](_AgentRunsField -Obj $Run -Name 'branch' -Default '')
+    if (-not [string]::IsNullOrWhiteSpace($existingBranch)) {
+        $match = $prs | Where-Object { (& $getHeadRef $_) -eq $existingBranch } | Select-Object -First 1
+        if ($null -ne $match) {
+            $evidence['matchedBy'] = @('recorded-branch-name')
+            $evidence['candidateCount'] = 1
+            return [pscustomobject]@{ pullRequest = $match; evidence = [pscustomobject]$evidence }
+        }
+    }
+
+    # 3. Heuristic association: copilot/* branches created after dispatch.
+    $metrics = _AgentRunsField -Obj $Run -Name 'metrics'
+    $dispatchedAt = _AgentRunsAsUtc -Value (_AgentRunsField -Obj $metrics -Name 'dispatchedAt')
+    if ($null -eq $dispatchedAt) {
+        $dispatchedAt = _AgentRunsAsUtc -Value (_AgentRunsField -Obj $Run -Name 'createdAt')
+    }
+
+    $candidates = @(
+        $prs | Where-Object {
+            $headRef = & $getHeadRef $_
+            if (-not $headRef.StartsWith($script:AgentRunCopilotBranchPrefix, [System.StringComparison]::OrdinalIgnoreCase)) { return $false }
+            if ($null -eq $dispatchedAt) { return $true }
+            $created = _AgentRunsAsUtc -Value (_AgentRunsField -Obj $_ -Name 'created_at')
+            if ($null -eq $created) { return $false }
+            return $created -ge $dispatchedAt.AddMinutes(-1 * $script:AgentRunDispatchSkewMinutes)
+        }
+    )
+    $evidence['candidateCount'] = $candidates.Count
+    if ($candidates.Count -eq 0) {
+        return [pscustomobject]@{ pullRequest = $null; evidence = [pscustomobject]$evidence }
+    }
+
+    $matchedBy = @('copilot-branch-prefix')
+    if ($null -ne $dispatchedAt) { $matchedBy += 'created-after-dispatch' }
+
+    # Task fingerprint: a normalized leading slice of the selected roadmap
+    # task appearing in the PR title or body.
+    $fingerprintMatches = @()
+    $taskText = [string](_AgentRunsField -Obj $Run -Name 'selectedTaskText' -Default '')
+    $fingerprint = ($taskText -replace '\s+', ' ').Trim()
+    if ($fingerprint.Length -gt 60) { $fingerprint = $fingerprint.Substring(0, 60) }
+    if ($fingerprint.Length -ge 12) {
+        $fingerprintMatches = @(
+            $candidates | Where-Object {
+                $title = ([string](_AgentRunsField -Obj $_ -Name 'title' -Default '') -replace '\s+', ' ')
+                $body  = ([string](_AgentRunsField -Obj $_ -Name 'body'  -Default '') -replace '\s+', ' ')
+                ($title.IndexOf($fingerprint, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -or
+                ($body.IndexOf($fingerprint, [System.StringComparison]::OrdinalIgnoreCase) -ge 0)
+            }
+        )
+    }
+    if ($fingerprintMatches.Count -gt 0) {
+        $candidates = $fingerprintMatches
+        $matchedBy += 'task-fingerprint'
+    }
+
+    $selected = @(
+        $candidates | Sort-Object {
+            $created = _AgentRunsAsUtc -Value (_AgentRunsField -Obj $_ -Name 'created_at')
+            if ($null -eq $created) { [datetime]::MaxValue } else { $created }
+        }
+    )[0]
+
+    $evidence['matchedBy'] = $matchedBy
+    return [pscustomobject]@{ pullRequest = $selected; evidence = [pscustomobject]$evidence }
+}
+
+<#
+.SYNOPSIS
+    Refresh one agent run from observed GitHub state: associate its branch
+    and PR, record Actions status, advance the run status, and append the
+    matching lifecycle / validation events.
+.DESCRIPTION
+    Takes pre-fetched GitHub state (the repo's pull requests and the latest
+    Actions run for the associated branch) so the decision logic stays
+    network-free and testable offline. Status transitions observed from PR
+    state:
+
+      draft PR found            dispatched -> active
+      PR ready for review       active     -> completed (outcome awaiting-merge)
+      PR merged                 *          -> completed (outcome merged)
+      PR closed without merge   *          -> failed    (outcome pr-closed-without-merge)
+
+    A validation.passed / validation.failed event is appended when the
+    observed Actions conclusion changed since the previous refresh; derived
+    values are never written into events.
+#>
+function Invoke-AgentRunRefresh {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+        [Parameter(Mandatory = $true)][string]$RunId,
+        [Parameter()][object[]]$PullRequests = @(),
+        [Parameter()][object]$ActionsRun = $null,
+        [Parameter()][string]$Actor = 'operator'
+    )
+
+    $path = _AgentRunFilePath -WorkspaceRoot $WorkspaceRoot -RunId $RunId
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw "Agent run '$RunId' was not found."
+    }
+    $run = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $path -Raw -Encoding UTF8)
+
+    $nowIso = (Get-Date).ToUniversalTime().ToString('o')
+    $candidate = Select-AgentRunPullRequestCandidate -Run $run -PullRequests $PullRequests
+    $currentStatus = [string](_AgentRunsField -Obj $run -Name 'status' -Default '')
+    $metrics = _AgentRunsField -Obj $run -Name 'metrics'
+
+    $patch = @{ lastRefreshAt = $nowIso }
+    $summaryParts = @()
+
+    if ($null -ne $candidate.pullRequest) {
+        $pr = $candidate.pullRequest
+        $head = _AgentRunsField -Obj $pr -Name 'head'
+        $headRef = [string](_AgentRunsField -Obj $head -Name 'ref' -Default '')
+        $prDraft = [bool](_AgentRunsField -Obj $pr -Name 'draft' -Default $false)
+        $mergedAt = _AgentRunsIsoString -Value (_AgentRunsField -Obj $pr -Name 'merged_at')
+        $closedAt = _AgentRunsIsoString -Value (_AgentRunsField -Obj $pr -Name 'closed_at')
+        $prState = if ($null -ne $mergedAt) {
+            'merged'
+        } elseif ([string](_AgentRunsField -Obj $pr -Name 'state' -Default '') -eq 'closed') {
+            'closed'
+        } else {
+            'open'
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($headRef)) { $patch['branch'] = $headRef }
+        $prUrl = [string](_AgentRunsField -Obj $pr -Name 'html_url' -Default '')
+        if (-not [string]::IsNullOrWhiteSpace($prUrl)) { $patch['prUrl'] = $prUrl }
+        $patch['prNumber'] = _AgentRunsField -Obj $pr -Name 'number'
+        $patch['prState'] = $prState
+        $patch['prDraft'] = $prDraft
+
+        $existingAssociation = _AgentRunsField -Obj $run -Name 'association'
+        $associatedAt = [string](_AgentRunsField -Obj $existingAssociation -Name 'associatedAt' -Default $nowIso)
+        $patch['association'] = [ordered]@{
+            matchedBy      = @($candidate.evidence.matchedBy)
+            candidateCount = [int]$candidate.evidence.candidateCount
+            associatedAt   = $associatedAt
+        }
+
+        # Observed tier-1 timing: PR creation is the closest observable proxy
+        # for when the agent started producing work.
+        if ($null -eq (_AgentRunsField -Obj $metrics -Name 'agentStartedAt')) {
+            $prCreatedAt = _AgentRunsIsoString -Value (_AgentRunsField -Obj $pr -Name 'created_at')
+            if ($null -ne $prCreatedAt) { $patch['agentStartedAt'] = $prCreatedAt }
+        }
+
+        $agentCompletedAt = _AgentRunsField -Obj $metrics -Name 'agentCompletedAt'
+        switch ($prState) {
+            'merged' {
+                $patch['status'] = 'completed'
+                $patch['outcome'] = 'merged'
+                if ($null -eq $agentCompletedAt) { $patch['agentCompletedAt'] = $mergedAt }
+                $summaryParts += "PR #$($patch['prNumber']) merged"
+            }
+            'closed' {
+                $patch['status'] = 'failed'
+                $patch['outcome'] = 'pr-closed-without-merge'
+                if ($null -eq $agentCompletedAt -and $null -ne $closedAt) { $patch['agentCompletedAt'] = $closedAt }
+                $summaryParts += "PR #$($patch['prNumber']) closed without merge"
+            }
+            default {
+                if (-not $prDraft -and $currentStatus -in @('dispatched', 'active')) {
+                    $patch['status'] = 'completed'
+                    $patch['outcome'] = 'awaiting-merge'
+                    if ($null -eq $agentCompletedAt) {
+                        $prUpdatedAt = _AgentRunsIsoString -Value (_AgentRunsField -Obj $pr -Name 'updated_at')
+                        $patch['agentCompletedAt'] = if ($null -eq $prUpdatedAt) { $nowIso } else { $prUpdatedAt }
+                    }
+                    $summaryParts += "PR #$($patch['prNumber']) ready for review"
+                } elseif ($prDraft -and $currentStatus -eq 'dispatched') {
+                    $patch['status'] = 'active'
+                    $summaryParts += "agent working on draft PR #$($patch['prNumber'])"
+                } else {
+                    $summaryParts += "PR #$($patch['prNumber']) $prState"
+                }
+            }
+        }
+    } else {
+        $summaryParts += 'no matching agent pull request found yet'
+    }
+
+    # Actions state for the associated branch, plus validation events when
+    # the observed conclusion changed since the previous refresh.
+    $validationEventType = $null
+    if ($null -ne $ActionsRun) {
+        $actionsStatus = [string](_AgentRunsField -Obj $ActionsRun -Name 'status' -Default '')
+        $actionsConclusion = [string](_AgentRunsField -Obj $ActionsRun -Name 'conclusion' -Default '')
+        $actionsName = [string](_AgentRunsField -Obj $ActionsRun -Name 'name' -Default '')
+        $actionsUrl = [string](_AgentRunsField -Obj $ActionsRun -Name 'runUrl' -Default '')
+        $patch['actions'] = [ordered]@{
+            status       = $actionsStatus
+            conclusion   = if ([string]::IsNullOrWhiteSpace($actionsConclusion)) { $null } else { $actionsConclusion }
+            workflowName = $actionsName
+            runUrl       = if ([string]::IsNullOrWhiteSpace($actionsUrl)) { $null } else { $actionsUrl }
+            observedAt   = $nowIso
+        }
+        $summaryParts += "Actions $actionsStatus$(if ($actionsConclusion) { "/$actionsConclusion" })"
+
+        $previousActions = _AgentRunsField -Obj $run -Name 'actions'
+        $previousConclusion = [string](_AgentRunsField -Obj $previousActions -Name 'conclusion' -Default '')
+        if (-not [string]::IsNullOrWhiteSpace($actionsConclusion) -and $actionsConclusion -ne $previousConclusion) {
+            $validationEventType = if ($actionsConclusion -eq 'success') { 'validation.passed' } else { 'validation.failed' }
+        }
+    }
+
+    $summary = 'Refreshed from GitHub: ' + ($summaryParts -join '; ') + '.'
+    $updated = Update-AgentRunRecord -WorkspaceRoot $WorkspaceRoot -RunId $RunId -Patch $patch -Actor $Actor -Summary $summary
+
+    if ($null -ne $validationEventType) {
+        $null = Write-AgentRunEvent -WorkspaceRoot $WorkspaceRoot -EventType $validationEventType -RunId $RunId `
+            -RepoName ([string](_AgentRunsField -Obj $updated -Name 'repoName' -Default '')) -Actor $Actor `
+            -Summary ("GitHub Actions conclusion observed: {0}." -f [string](_AgentRunsField -Obj $ActionsRun -Name 'conclusion' -Default '')) `
+            -Data ([ordered]@{
+                status       = [string](_AgentRunsField -Obj $ActionsRun -Name 'status' -Default '')
+                conclusion   = [string](_AgentRunsField -Obj $ActionsRun -Name 'conclusion' -Default '')
+                workflowName = [string](_AgentRunsField -Obj $ActionsRun -Name 'name' -Default '')
+                runUrl       = [string](_AgentRunsField -Obj $ActionsRun -Name 'runUrl' -Default '')
+            })
+    }
+
+    return [pscustomobject]@{
+        run             = $updated
+        association     = $candidate.evidence
+        pullRequestFound = ($null -ne $candidate.pullRequest)
+        validationEvent = $validationEventType
+        refreshedAt     = $nowIso
+    }
 }

@@ -845,4 +845,89 @@ finally {
     Remove-Item -LiteralPath $agentRunsWorkspace -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+Write-Step 'Agent-run refresh — smoke: PR association, status transitions, validation events (Release 2.0 Phase 2)'
+$refreshWorkspace = Join-Path ([System.IO.Path]::GetTempPath()) ("agent-runs-refresh-smoke-" + [guid]::NewGuid().ToString('n').Substring(0, 8))
+New-Item -ItemType Directory -Path $refreshWorkspace -Force | Out-Null
+try {
+    $refreshRun = New-AgentRunRecord -WorkspaceRoot $refreshWorkspace -RepoName 'smoke-refresh-repo' `
+        -GitHubRepo 'owner/smoke-refresh-repo' -SelectedTaskText 'Implement the smoke-test refresh association feature'
+
+    $nowUtc = (Get-Date).ToUniversalTime()
+    $agentPr = [pscustomobject]@{
+        number     = 42
+        html_url   = 'https://github.com/owner/smoke-refresh-repo/pull/42'
+        state      = 'open'
+        draft      = $true
+        title      = 'Implement the smoke-test refresh association feature'
+        body       = 'Agent-generated work'
+        created_at = $nowUtc.AddMinutes(2).ToString('o')
+        updated_at = $nowUtc.AddMinutes(3).ToString('o')
+        merged_at  = $null
+        closed_at  = $null
+        head       = [pscustomobject]@{ ref = 'copilot/smoke-refresh-feature' }
+    }
+    $unrelatedPr = [pscustomobject]@{
+        number     = 41
+        html_url   = 'https://github.com/owner/smoke-refresh-repo/pull/41'
+        state      = 'open'
+        draft      = $false
+        title      = 'Unrelated human PR'
+        body       = ''
+        created_at = $nowUtc.AddDays(-2).ToString('o')
+        updated_at = $null
+        merged_at  = $null
+        closed_at  = $null
+        head       = [pscustomobject]@{ ref = 'feature/manual-work' }
+    }
+
+    # Candidate selection: only the copilot/* branch created after dispatch matches.
+    $candidate = Select-AgentRunPullRequestCandidate -Run $refreshRun -PullRequests @($unrelatedPr, $agentPr)
+    if ($null -eq $candidate.pullRequest) { throw 'Select-AgentRunPullRequestCandidate found no candidate' }
+    if ([int]$candidate.pullRequest.number -ne 42) { throw "Expected PR #42 selected, got #$($candidate.pullRequest.number)" }
+    if ('copilot-branch-prefix' -notin @($candidate.evidence.matchedBy)) { throw 'Association evidence is missing copilot-branch-prefix' }
+    if ('task-fingerprint' -notin @($candidate.evidence.matchedBy)) { throw 'Association evidence is missing task-fingerprint' }
+
+    # Refresh 1: draft PR + in-progress Actions -> active, no validation event.
+    $refresh1 = Invoke-AgentRunRefresh -WorkspaceRoot $refreshWorkspace -RunId $refreshRun.runId `
+        -PullRequests @($unrelatedPr, $agentPr) `
+        -ActionsRun ([pscustomobject]@{ status = 'in_progress'; conclusion = ''; name = 'CI Smoke'; runUrl = 'https://github.com/owner/smoke-refresh-repo/actions/runs/1' })
+    if ([string]$refresh1.run.status -ne 'active') { throw "Expected status=active after draft-PR refresh, got '$($refresh1.run.status)'" }
+    if ([string]$refresh1.run.branch -ne 'copilot/smoke-refresh-feature') { throw 'Refresh did not associate the agent branch' }
+    if ($null -ne $refresh1.validationEvent) { throw 'In-progress Actions must not emit a validation event' }
+
+    # Refresh 2: PR ready for review + successful Actions -> completed + validation.passed.
+    $agentPr.draft = $false
+    $refresh2 = Invoke-AgentRunRefresh -WorkspaceRoot $refreshWorkspace -RunId $refreshRun.runId `
+        -PullRequests @($unrelatedPr, $agentPr) `
+        -ActionsRun ([pscustomobject]@{ status = 'completed'; conclusion = 'success'; name = 'CI Smoke'; runUrl = 'https://github.com/owner/smoke-refresh-repo/actions/runs/2' })
+    if ([string]$refresh2.run.status -ne 'completed') { throw "Expected status=completed after ready-PR refresh, got '$($refresh2.run.status)'" }
+    if ([string]$refresh2.run.outcome -ne 'awaiting-merge') { throw "Expected outcome=awaiting-merge, got '$($refresh2.run.outcome)'" }
+    if ([string]$refresh2.validationEvent -ne 'validation.passed') { throw "Expected validation.passed, got '$($refresh2.validationEvent)'" }
+    if ('existing-pr-url' -notin @($refresh2.association.matchedBy)) { throw 'Second refresh should re-associate via existing-pr-url' }
+    if ($null -eq $refresh2.run.metrics.timeToDeliverSeconds) { throw 'Refresh did not derive timeToDeliverSeconds from observed PR timing' }
+
+    # Refresh 3: unchanged Actions conclusion must not emit a duplicate validation event.
+    $refresh3 = Invoke-AgentRunRefresh -WorkspaceRoot $refreshWorkspace -RunId $refreshRun.runId `
+        -PullRequests @($unrelatedPr, $agentPr) `
+        -ActionsRun ([pscustomobject]@{ status = 'completed'; conclusion = 'success'; name = 'CI Smoke'; runUrl = 'https://github.com/owner/smoke-refresh-repo/actions/runs/2' })
+    if ($null -ne $refresh3.validationEvent) { throw 'Unchanged Actions conclusion emitted a duplicate validation event' }
+
+    # Refresh 4: merged PR -> outcome merged.
+    $agentPr.merged_at = $nowUtc.AddMinutes(30).ToString('o')
+    $refresh4 = Invoke-AgentRunRefresh -WorkspaceRoot $refreshWorkspace -RunId $refreshRun.runId -PullRequests @($agentPr)
+    if ([string]$refresh4.run.status -ne 'completed') { throw "Expected status=completed after merge, got '$($refresh4.run.status)'" }
+    if ([string]$refresh4.run.outcome -ne 'merged') { throw "Expected outcome=merged, got '$($refresh4.run.outcome)'" }
+
+    $refreshDetail = Get-AgentRunDetail -WorkspaceRoot $refreshWorkspace -RunId $refreshRun.runId
+    $refreshEventTypes = @($refreshDetail.events | ForEach-Object { [string]$_.eventType })
+    if ('run.started' -notin $refreshEventTypes) { throw 'Refresh events stream is missing run.started' }
+    if ('run.completed' -notin $refreshEventTypes) { throw 'Refresh events stream is missing run.completed' }
+    if (@($refreshEventTypes | Where-Object { $_ -eq 'validation.passed' }).Count -ne 1) { throw 'Expected exactly one validation.passed event' }
+
+    Write-Host ("  agent-run refresh correct: runId={0} events={1} finalOutcome={2}" -f $refreshRun.runId, @($refreshDetail.events).Count, $refresh4.run.outcome) -ForegroundColor DarkGray
+}
+finally {
+    Remove-Item -LiteralPath $refreshWorkspace -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 Write-Step 'Smoke test completed'

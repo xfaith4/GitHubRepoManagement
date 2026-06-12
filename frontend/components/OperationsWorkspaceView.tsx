@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   type OperationsRepoDetail,
+  type AgentRun,
+  type AgentRunStatus,
   type AiDocImproveApplyResult,
   type AiDocImprovementHistoryItem,
   type AiDocImprovePreviewResult,
@@ -19,7 +21,7 @@ import {
   type RepoLifecycleState,
   type RoadmapContent,
 } from '../types';
-import { applyAiDocImprovement, executeRoadmapDispatch, getAiDocImprovementHistory, getAiDocTemplates, getOperationsPromptHistory, getOperationsRepoDetail, getReadmeContent, getRoadmapContent, previewAiDocImprovement, refineOperationsPrompt } from '../services/apiClient';
+import { applyAiDocImprovement, executeRoadmapDispatch, getAgentRuns, getAiDocImprovementHistory, getAiDocTemplates, getOperationsPromptHistory, getOperationsRepoDetail, getReadmeContent, getRoadmapContent, previewAiDocImprovement, refineOperationsPrompt, refreshAgentRun } from '../services/apiClient';
 import { BranchIcon, DatabaseIcon, HealthIcon, PullRequestIcon, RefreshIcon, RoadmapIcon, SpinnerIcon } from './icons';
 
 interface OperationsWorkspaceViewProps {
@@ -56,6 +58,14 @@ const VALUE_TIER_STYLES: Record<PortfolioValueTier, string> = {
   low: 'bg-slate-800 text-slate-200 border-slate-600',
   deferred: 'bg-amber-900/40 text-amber-200 border-amber-700/50',
   unscored: 'bg-gray-800 text-gray-300 border-gray-600',
+};
+
+const AGENT_RUN_STATUS_STYLES: Record<AgentRunStatus, string> = {
+  dispatched: 'bg-slate-800 text-slate-200 border-slate-600',
+  active: 'bg-blue-900/40 text-blue-200 border-blue-700/50',
+  completed: 'bg-emerald-900/40 text-emerald-200 border-emerald-700/50',
+  failed: 'bg-red-900/40 text-red-200 border-red-700/50',
+  blocked: 'bg-amber-900/40 text-amber-200 border-amber-700/50',
 };
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -183,6 +193,11 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
   const [aiApplyLoading, setAiApplyLoading] = useState(false);
   const [aiApplyError, setAiApplyError] = useState<string | null>(null);
   const [aiApplyResult, setAiApplyResult] = useState<AiDocImproveApplyResult | null>(null);
+  const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
+  const [agentRunsLoading, setAgentRunsLoading] = useState(false);
+  const [agentRunsError, setAgentRunsError] = useState<string | null>(null);
+  const [agentRunRefreshingId, setAgentRunRefreshingId] = useState<string | null>(null);
+  const [agentRunNotice, setAgentRunNotice] = useState<string | null>(null);
 
   const filteredEntries = useMemo(() => {
     const lower = filterText.trim().toLowerCase();
@@ -336,7 +351,38 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
     setAiError(null);
     setAiProposedCopied(false);
     setAiHistory([]);
+    setAgentRuns([]);
+    setAgentRunsError(null);
+    setAgentRunNotice(null);
+    setAgentRunRefreshingId(null);
   }, [selectedEntry?.repoId]);
+
+  useEffect(() => {
+    const repoName = selectedEntry?.repoName;
+    if (!repoName) {
+      return;
+    }
+
+    let cancelled = false;
+    setAgentRunsLoading(true);
+    getAgentRuns({ repoName, limit: 10 })
+      .then(result => {
+        if (!cancelled) setAgentRuns(result.items);
+      })
+      .catch(err => {
+        if (!cancelled) {
+          setAgentRuns([]);
+          setAgentRunsError(err instanceof Error ? err.message : 'Failed to load agent runs.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setAgentRunsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedEntry?.repoName]);
 
   useEffect(() => {
     let cancelled = false;
@@ -480,6 +526,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
       setDispatchResult(result);
       setPromptTab('history');
       await handleLoadPromptHistory();
+      void handleLoadAgentRuns();
       onRefresh();
     } catch (err) {
       setDispatchError(err instanceof Error ? err.message : 'Failed to dispatch refined prompt.');
@@ -492,6 +539,53 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
     setPromptTab(tab);
     if (tab === 'history' && selectedEntry && promptHistory.length === 0 && !promptHistoryLoading) {
       void handleLoadPromptHistory();
+    }
+  };
+
+  const handleLoadAgentRuns = async () => {
+    if (!selectedEntry) {
+      return;
+    }
+
+    setAgentRunsLoading(true);
+    setAgentRunsError(null);
+    setAgentRunNotice(null);
+    try {
+      const result = await getAgentRuns({ repoName: selectedEntry.repoName, limit: 10 });
+      setAgentRuns(result.items);
+    } catch (err) {
+      setAgentRuns([]);
+      setAgentRunsError(err instanceof Error ? err.message : 'Failed to load agent runs.');
+    } finally {
+      setAgentRunsLoading(false);
+    }
+  };
+
+  const handleRefreshAgentRun = async (runId: string) => {
+    setAgentRunRefreshingId(runId);
+    setAgentRunsError(null);
+    setAgentRunNotice(null);
+    try {
+      const result = await refreshAgentRun(runId);
+      setAgentRuns(previous => previous.map(run => (run.runId === runId ? result.run : run)));
+
+      const noticeParts: string[] = [];
+      if (result.pullRequestFound) {
+        noticeParts.push(`PR ${result.run.prNumber ? `#${result.run.prNumber} ` : ''}${result.run.prState ?? 'found'}`);
+      } else {
+        noticeParts.push('no matching agent PR on GitHub yet');
+      }
+      if (result.run.actions?.status) {
+        noticeParts.push(`Actions ${result.run.actions.status}${result.run.actions.conclusion ? ` / ${result.run.actions.conclusion}` : ''}`);
+      }
+      if (result.validationEvent) {
+        noticeParts.push(`recorded ${result.validationEvent}`);
+      }
+      setAgentRunNotice(`Refreshed from GitHub: ${noticeParts.join(' • ')}.`);
+    } catch (err) {
+      setAgentRunsError(err instanceof Error ? err.message : 'Agent run refresh failed.');
+    } finally {
+      setAgentRunRefreshingId(null);
     }
   };
 
@@ -1596,6 +1690,133 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                         </ul>
                       )}
                     </div>
+                  )}
+                </div>
+
+                <div className="rounded-lg border border-gray-700 bg-gray-950/40 p-4">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                      <PullRequestIcon className="w-4 h-4 text-blue-300" />
+                      Agent Runs
+                    </div>
+                    <button
+                      onClick={() => void handleLoadAgentRuns()}
+                      disabled={agentRunsLoading}
+                      className="inline-flex items-center gap-2 rounded-md border border-gray-600 bg-gray-800 px-3 py-1.5 text-xs text-gray-200 hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                    >
+                      {agentRunsLoading ? <SpinnerIcon className="w-3.5 h-3.5" /> : <RefreshIcon className="w-3.5 h-3.5" />}
+                      Reload List
+                    </button>
+                  </div>
+                  <div className="mt-2 text-xs text-gray-500">
+                    Dispatched coding-agent runs for this repo from the agent-run ledger. Refresh a run to pull its branch, PR, and GitHub Actions state from GitHub and record validation evidence.
+                  </div>
+
+                  {agentRunsError && (
+                    <div className="mt-3 rounded-md border border-red-700/40 bg-red-950/20 px-3 py-2 text-xs text-red-200">
+                      {agentRunsError}
+                    </div>
+                  )}
+
+                  {agentRunNotice && (
+                    <div className="mt-3 rounded-md border border-blue-700/40 bg-blue-950/20 px-3 py-2 text-xs text-blue-200">
+                      {agentRunNotice}
+                    </div>
+                  )}
+
+                  {agentRunsLoading && agentRuns.length === 0 ? (
+                    <div className="mt-3 flex items-center gap-2 text-sm text-gray-400">
+                      <SpinnerIcon className="w-4 h-4" />
+                      Loading agent runs…
+                    </div>
+                  ) : agentRuns.length === 0 ? (
+                    <div className="mt-3 rounded-md border border-gray-800 bg-gray-900/40 px-3 py-2 text-sm text-gray-400">
+                      No agent runs recorded for this repo yet. Dispatching a refined prompt creates a run in the ledger.
+                    </div>
+                  ) : (
+                    <ul className="mt-3 space-y-2">
+                      {agentRuns.map(run => (
+                        <li key={run.runId} className="rounded-md border border-gray-700 bg-gray-900/40 px-3 py-2 text-xs text-gray-300 space-y-1">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`inline-flex rounded-full border px-2 py-0.5 capitalize ${AGENT_RUN_STATUS_STYLES[run.status] ?? AGENT_RUN_STATUS_STYLES.dispatched}`}>
+                                {run.status}
+                              </span>
+                              {run.outcome && (
+                                <span className="text-gray-400 capitalize">{run.outcome.replaceAll('-', ' ')}</span>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => void handleRefreshAgentRun(run.runId)}
+                              disabled={agentRunRefreshingId !== null}
+                              className="inline-flex items-center gap-2 rounded-md border border-blue-700/50 bg-blue-950/40 px-2.5 py-1 text-[11px] text-blue-100 hover:bg-blue-900/50 disabled:opacity-50 transition-colors"
+                              title="Query GitHub for this run's branch, PR, and Actions state and update the ledger"
+                            >
+                              {agentRunRefreshingId === run.runId ? <SpinnerIcon className="w-3 h-3" /> : <RefreshIcon className="w-3 h-3" />}
+                              Refresh from GitHub
+                            </button>
+                          </div>
+                          <div className="flex items-center justify-between gap-2 flex-wrap text-gray-500">
+                            <span className="font-mono">{run.runId}</span>
+                            <span>dispatched {formatDate(run.metrics?.dispatchedAt ?? run.createdAt)}</span>
+                          </div>
+                          {run.selectedTaskText && (
+                            <div className="text-gray-200">{run.selectedTaskText}</div>
+                          )}
+                          <div className="grid gap-1 sm:grid-cols-2">
+                            <div>
+                              Branch:{' '}
+                              <span className="font-mono text-gray-300">{run.branch ?? 'not associated yet'}</span>
+                            </div>
+                            <div>
+                              PR:{' '}
+                              {run.prUrl ? (
+                                <a href={run.prUrl} target="_blank" rel="noreferrer" className="text-blue-300 hover:underline">
+                                  {run.prNumber ? `#${run.prNumber}` : run.prUrl}
+                                  {run.prState ? ` (${run.prState}${run.prDraft ? ', draft' : ''})` : ''}
+                                </a>
+                              ) : (
+                                <span className="text-gray-400">none yet</span>
+                              )}
+                            </div>
+                            <div>
+                              Actions:{' '}
+                              {run.actions ? (
+                                <span className={
+                                  run.actions.conclusion === 'success'
+                                    ? 'text-emerald-300'
+                                    : run.actions.conclusion
+                                      ? 'text-red-300'
+                                      : 'text-amber-300'
+                                }>
+                                  {run.actions.workflowName ? `${run.actions.workflowName} • ` : ''}
+                                  {run.actions.status}
+                                  {run.actions.conclusion ? ` / ${run.actions.conclusion}` : ''}
+                                </span>
+                              ) : (
+                                <span className="text-gray-400">not observed yet</span>
+                              )}
+                            </div>
+                            <div>
+                              Time to deliver:{' '}
+                              <span className="text-gray-300">
+                                {typeof run.metrics?.timeToDeliverSeconds === 'number'
+                                  ? `${Math.round(run.metrics.timeToDeliverSeconds / 60)} min`
+                                  : 'n/a'}
+                              </span>
+                            </div>
+                          </div>
+                          {run.association && run.association.matchedBy.length > 0 && (
+                            <div className="text-gray-500">
+                              Association evidence: {run.association.matchedBy.join(', ')} ({run.association.candidateCount} candidate{run.association.candidateCount === 1 ? '' : 's'})
+                            </div>
+                          )}
+                          {run.lastRefreshAt && (
+                            <div className="text-gray-600">Last refreshed {formatDate(run.lastRefreshAt)}</div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </div>
               </div>

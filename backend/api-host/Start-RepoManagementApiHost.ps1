@@ -1729,10 +1729,15 @@ function Get-LatestGitHubWorkflowRunViaApi {
         [Parameter(Mandatory = $true)]
         [string]$Repo,
         [Parameter(Mandatory = $true)]
-        [hashtable]$Headers
+        [hashtable]$Headers,
+        [Parameter()]
+        [string]$Branch = ''
     )
 
     $uri = "https://api.github.com/repos/$Owner/$Repo/actions/runs?per_page=1"
+    if (-not [string]::IsNullOrWhiteSpace($Branch)) {
+        $uri += "&branch=$([System.Uri]::EscapeDataString($Branch))"
+    }
 
     try {
         $response = Invoke-RestMethod -Uri $uri -Headers $Headers -Method Get
@@ -1754,6 +1759,7 @@ function Get-LatestGitHubWorkflowRunViaApi {
             status     = [string](Get-ObjectPropertyValue -InputObject $run -PropertyName 'status' -Default '')
             conclusion = [string](Get-ObjectPropertyValue -InputObject $run -PropertyName 'conclusion' -Default '')
             name       = [string](Get-ObjectPropertyValue -InputObject $run -PropertyName 'name' -Default '')
+            runUrl     = [string](Get-ObjectPropertyValue -InputObject $run -PropertyName 'html_url' -Default '')
             timestamp  = if ([string]::IsNullOrWhiteSpace($runTimestamp)) { $null } else { $runTimestamp }
         }
     }
@@ -4307,6 +4313,91 @@ try {
                 Add-MetricCounter -Name 'api_requests_total'
                 Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
                 Send-HttpContent -Stream $req.Stream -StatusCode 200 -ContentType $contentType -CorrelationId $correlationId -BodyBytes ([System.IO.File]::ReadAllBytes($reportPath))
+                $client.Close()
+                continue
+            }
+
+            if ($req.Method -eq 'POST' -and $path -like '/api/agent-runs/*/refresh') {
+                $refreshRunId = [System.Uri]::UnescapeDataString($path.Substring('/api/agent-runs/'.Length, $path.Length - '/api/agent-runs/'.Length - '/refresh'.Length))
+                if ([string]::IsNullOrWhiteSpace($refreshRunId)) {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        error = 'runId is required in /api/agent-runs/{runId}/refresh.'
+                    }
+                    $client.Close()
+                    continue
+                }
+
+                Write-HostLog ("[TRACE] agent-runs.refresh correlationId={0} runId={1} start" -f $correlationId, $refreshRunId)
+                $refreshDetail = Get-AgentRunDetail -WorkspaceRoot $WorkspaceRoot -RunId $refreshRunId
+                if ($null -eq $refreshDetail) {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        error = "No agent run found for runId '$refreshRunId'."
+                    }
+                    $client.Close()
+                    continue
+                }
+
+                $refreshGithubRepo = [string](Get-ObjectPropertyValue -InputObject $refreshDetail.run -PropertyName 'githubRepo' -Default '')
+                $refreshRepoParts = $refreshGithubRepo -split '/'
+                if ([string]::IsNullOrWhiteSpace($refreshGithubRepo) -or $refreshRepoParts.Count -ne 2) {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        error = "Agent run '$refreshRunId' has no usable GitHub owner/repo identity; cannot refresh branch, PR, or Actions state."
+                    }
+                    $client.Close()
+                    continue
+                }
+
+                $refreshOwner = $refreshRepoParts[0]
+                $refreshRepoName = $refreshRepoParts[1]
+                $refreshSettings = Get-HostSettings
+                $refreshToken = Get-ConfiguredGitHubToken -Settings $refreshSettings
+                $refreshHeaders = Get-GitHubApiHeaders -Token $refreshToken
+
+                $refreshPulls = $null
+                try {
+                    $pullsUri = "https://api.github.com/repos/$refreshOwner/$refreshRepoName/pulls?state=all&sort=created&direction=desc&per_page=30"
+                    $refreshPulls = @(Invoke-RestMethod -Uri $pullsUri -Headers $refreshHeaders -Method Get)
+                } catch {
+                    Write-HostLog ("[WARN ] agent-runs.refresh correlationId={0} runId={1} GitHub PR lookup failed: {2}" -f $correlationId, $refreshRunId, $_.Exception.Message)
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 502 -StatusText 'Bad Gateway' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        error = "GitHub pull-request lookup failed for ${refreshGithubRepo}: $($_.Exception.Message)"
+                    }
+                    $client.Close()
+                    continue
+                }
+
+                # Resolve the branch first so the Actions lookup targets the
+                # agent's head branch rather than the default branch.
+                $refreshCandidate = Select-AgentRunPullRequestCandidate -Run $refreshDetail.run -PullRequests $refreshPulls
+                $refreshBranch = [string](Get-ObjectPropertyValue -InputObject $refreshDetail.run -PropertyName 'branch' -Default '')
+                if ($null -ne $refreshCandidate.pullRequest) {
+                    $candidateHead = Get-ObjectPropertyValue -InputObject $refreshCandidate.pullRequest -PropertyName 'head' -Default $null
+                    $candidateRef = [string](Get-ObjectPropertyValue -InputObject $candidateHead -PropertyName 'ref' -Default '')
+                    if (-not [string]::IsNullOrWhiteSpace($candidateRef)) { $refreshBranch = $candidateRef }
+                }
+
+                $refreshActionsRun = $null
+                if (-not [string]::IsNullOrWhiteSpace($refreshBranch)) {
+                    $refreshActionsRun = Get-LatestGitHubWorkflowRunViaApi -Owner $refreshOwner -Repo $refreshRepoName -Headers $refreshHeaders -Branch $refreshBranch
+                }
+
+                $refreshResult = Invoke-AgentRunRefresh -WorkspaceRoot $WorkspaceRoot -RunId $refreshRunId -PullRequests $refreshPulls -ActionsRun $refreshActionsRun
+
+                Add-MetricCounter -Name 'api_requests_total'
+                Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                Write-HostLog ("[TRACE] agent-runs.refresh correlationId={0} done runId={1} prFound={2} validation={3}" -f $correlationId, $refreshRunId, $refreshResult.pullRequestFound, $(if ($null -ne $refreshResult.validationEvent) { $refreshResult.validationEvent } else { 'none' }))
+                Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                    success = $true
+                    data    = $refreshResult
+                }
                 $client.Close()
                 continue
             }

@@ -1224,3 +1224,94 @@ export interface AiDocImproveApplyResult {
   previewId: string | null;
   appliedAt: string;
 }
+
+// --- Release 2.0: Agent run monitoring and Actions-gated merge readiness ---
+
+export type AgentRunStatus = 'dispatched' | 'active' | 'completed' | 'failed' | 'blocked';
+
+export interface AgentRunMetrics {
+  dispatchedAt?: string | null;
+  agentStartedAt?: string | null;
+  agentCompletedAt?: string | null;
+  timeToDeliverSeconds?: number | null;
+  promptCount?: number | null;
+  retries?: number | null;
+  tokenUsage?: number | null;
+  apiSpendUsd?: number | null;
+  workUnitsEstimated?: number | null;
+  workUnitsActual?: number | null;
+  unitsRemainingObserved?: number | null;
+  creditPromptSeen?: boolean | null;
+  humanReviewMinutes?: number | null;
+}
+
+export interface AgentRunActionsState {
+  status: string;
+  conclusion?: string | null;
+  workflowName?: string | null;
+  runUrl?: string | null;
+  observedAt: string;
+}
+
+export interface AgentRunAssociation {
+  matchedBy: string[];
+  candidateCount: number;
+  associatedAt: string;
+}
+
+export interface AgentRun {
+  runId: string;
+  repoName: string;
+  repoId?: string | null;
+  githubRepo?: string | null;
+  localPath?: string | null;
+  dispatchRunId?: string | null;
+  promptRefinementRunId?: string | null;
+  selectedTaskText?: string | null;
+  providerTool: string;
+  branch?: string | null;
+  baseBranch?: string | null;
+  prUrl?: string | null;
+  prNumber?: number | null;
+  prState?: 'open' | 'closed' | 'merged' | null;
+  prDraft?: boolean | null;
+  status: AgentRunStatus;
+  outcome?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lastRefreshAt?: string | null;
+  metrics?: AgentRunMetrics | null;
+  actions?: AgentRunActionsState | null;
+  association?: AgentRunAssociation | null;
+}
+
+export interface AgentRunEvent {
+  schemaVersion: string;
+  eventId: string;
+  timestamp: string;
+  eventType: string;
+  runId: string;
+  repoName: string;
+  actor: string;
+  summary: string;
+  data?: Record<string, unknown> | null;
+}
+
+export interface AgentRunsResult {
+  items: AgentRun[];
+  count: number;
+  byStatus: Record<string, number>;
+}
+
+export interface AgentRunDetailResult {
+  run: AgentRun;
+  events: AgentRunEvent[];
+}
+
+export interface AgentRunRefreshResult {
+  run: AgentRun;
+  association: AgentRunAssociation;
+  pullRequestFound: boolean;
+  validationEvent?: string | null;
+  refreshedAt: string;
+}
