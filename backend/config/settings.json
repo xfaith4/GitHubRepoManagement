@@ -22,7 +22,7 @@
   },
   "inventory": {
     "localRoots": [
-      "G:\\Development\\20_Staging"
+      "F:\\Development\\20_Staging"
     ],
     "includeNonGitFolders": false,
     "maxDepth": 3

@@ -1,6 +1,12 @@
 {
-  "version": "1.0",
-  "description": "Machine-readable documentation standards for managed repositories.",
+  "schemaVersion": "v1",
+  "description": "Machine-readable documentation QUALITY standards (thresholds + severities) for managed repositories. README section contracts are NOT defined here; they live in ai-doc-templates.json (readmeTemplates[].requiredSections), which is canonical. This file references the canonical universal baseline and applies severity/threshold policy on top of it.",
+  "sectionAuthority": {
+    "source": "ai-doc-templates.json",
+    "universalSectionsRef": "readmeContract.universalSections",
+    "profileSectionsRef": "readmeTemplates[].requiredSections",
+    "note": "Validators resolve required sections by (a) selecting a profile, then using that profile's requiredSections, or (b) falling back to universalSections when no profile is known. Do not hardcode section lists here."
+  },
   "requiredRootFiles": [
     {
       "name": "README.md",
@@ -31,23 +37,12 @@
     "minLengthChars": 300,
     "minLengthSeverity": "warning",
     "minLengthRecommendedAction": "Expand README.md to at least 300 characters with meaningful project information.",
-    "recommendedSections": [
-      {
-        "heading": "## Installation",
-        "severity": "warning",
-        "recommendedAction": "Add an Installation section describing how to set up the project."
-      },
-      {
-        "heading": "## Usage",
-        "severity": "warning",
-        "recommendedAction": "Add a Usage section showing how to run or use the project."
-      },
-      {
-        "heading": "## Contributing",
-        "severity": "info",
-        "recommendedAction": "Add a Contributing section or reference CONTRIBUTING.md."
-      }
-    ]
+    "sectionPolicy": {
+      "description": "Severity applied per missing section. Which sections are 'expected' comes from the canonical templates, not from a list here. A missing universal section is a warning; a missing profile-specific (non-universal) section is info.",
+      "missingUniversalSectionSeverity": "warning",
+      "missingProfileSectionSeverity": "info",
+      "recommendedActionTemplate": "Add a {section} section as required by the {profile} README profile."
+    }
   },
   "dispatchReadinessRules": {
     "readyRequires": [

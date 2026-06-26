@@ -1,12 +1,13 @@
 {
-  "version": "1.0",
-  "description": "Machine-readable repository structure standard. Defines the root files, folders, and CI signals expected of a managed repository, with per-repo-type overlays. Consumed by Portfolio.Assessment.ps1 to compute structural readiness as one input to the lifecycle state.",
+  "schemaVersion": "v1",
+  "description": "Machine-readable repository structure standard. Defines the PRESENCE of root files, folders, and CI signals expected of a managed repository, with per-repo-type overlays. This file is concerned only with whether files exist, not their content: README content/section contracts live in ai-doc-templates.json (canonical) and README quality thresholds live in doc-standards.json. Consumed by Portfolio.Assessment.ps1 to compute structural readiness as one input to the lifecycle state.",
   "common": {
     "requiredRootFiles": [
       {
         "name": "README.md",
         "severity": "critical",
         "category": "documentation",
+        "checks": "presence-only; content validated by doc-standards.json + ai-doc-templates.json",
         "recommendedAction": "Create README.md with project description, install steps, and usage."
       },
       {

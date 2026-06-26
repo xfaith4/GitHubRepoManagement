@@ -1,6 +1,11 @@
 {
   "schemaVersion": "v1",
-  "description": "Built-in AI documentation improvement templates for Release 1.9. Each template provides docType, an operator-facing label, the improvement intent injected into the provider prompt, and the headings the improved document should converge toward. The heuristic provider uses requiredSections to compute estimated score movement and to scaffold missing sections offline; the OpenAI/Anthropic providers fold guidance + requiredSections into the model instruction.",
+  "description": "Built-in AI documentation improvement templates. CANONICAL SOURCE OF TRUTH for README section contracts: each readmeTemplate's requiredSections is authoritative, and other configs (doc-standards.json, repo-structure-standards.json) reference these rather than redefining sections. The heuristic provider uses requiredSections to compute estimated score movement and to scaffold missing sections offline; the OpenAI/Anthropic providers fold guidance + requiredSections into the model instruction.",
+  "readmeContract": {
+    "description": "Sections required of EVERY README regardless of profile. Computed as the intersection of all readmeTemplate.requiredSections. Consumers that do not know a repo's profile should validate against these.",
+    "universalSections": ["Overview", "Installation", "Usage", "License"],
+    "defaultProfile": "readme-product"
+  },
   "readmeTemplates": [
     {
       "id": "readme-product",
