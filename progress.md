@@ -1,5 +1,96 @@
 # Progress
 
+## 2026-07-03 (Release 2.1 Phase 1: SQLite Persistence Foundation)
+
+- Reconciled the active roadmap and confirmed the next logical slice was
+  Release 2.1 Phase 1: SQLite capability detection, `output/app.db`
+  bootstrap with the schema-v1 tables, and a thin persistence boundary that
+  leaves the JSON stores authoritative.
+- Probed provider availability first: no `sqlite3` CLI and no
+  `Microsoft.Data.Sqlite`, but the OS-shipped `winsqlite3.dll` (3.51.1) is
+  present, so the new module uses a compiled zero-dependency native bridge
+  (`NativeLibrary` + delegates) that also probes `libsqlite3` for WSL/Linux
+  /macOS and degrades gracefully when no provider exists.
+- Added `backend/modules/persistence/Persistence.Store.ps1`
+  (`Get-SqliteCapability`, `Initialize-AppDatabase` with 11 idempotent
+  schema-v1 tables in WAL mode, parameterized-only `Invoke-AppDbQuery` /
+  `Invoke-AppDbNonQuery`, `Write-AppDbAgentRunEvent`), the dual-write seam
+  in `Write-AgentRunEvent`, API-host startup bootstrap, and
+  `GET /api/persistence/status`.
+- Fixed two pre-existing module-smoke blockers introduced by the 2026-06-26
+  standards-schema commit `db62f0b` (strict `recommendedSections` access in
+  `DocAudit.Scanner.ps1`; `version` → `schemaVersion` rename in the
+  structure-standards smoke) so the full module chain validates again; the
+  section-authority audit wiring is recorded as deliberate follow-up work.
+- Updated ApiDocsModal, api-host README, ROADMAP (milestone smoke-tested,
+  Release 2.1 phase plan, Phase 2 current focus), CHANGELOG, and planning
+  artifacts.
+
+### Verification
+
+- PowerShell parser diagnostics — clean for the persistence module, `AgentRuns.ps1`, `DocAudit.Scanner.ps1`, the API host, and both smoke scripts.
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ModuleSmokeTest.ps1 -WorkspaceRoot "$(pwd)"` — passed end-to-end, including the new Release 2.1 sections (capability detection, bootstrap + idempotent re-init, 25 repeated writes, unicode/quote/NULL binding round-trip, dual-write seam).
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "$(pwd)"` — passed end-to-end including the new persistence-status step (`provider=winsqlite3.dll`, 11 tables).
+- Targeted scratch-port host check — `GET /api/persistence/status` returned `success=true` with `database.enabled=true` and all 11 tables; startup logged `Persistence: app database ready`.
+- `npm run build` — passed.
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/Test-RoadmapStructure.ps1 -Path ./ROADMAP.md` — 0 errors, 0 warnings.
+
+## 2026-06-27 (Test-harness fix: api-host smoke quota-refusal route)
+
+- Cleared the carried-forward defect that blocked the broad
+  `Invoke-ApiHostSmokeTest.ps1` harness from running end-to-end, so
+  merge-readiness confidence no longer depends on isolated route checks.
+- **Root cause:** the quota-refusal path in `POST /api/roadmap/dispatch/execute`
+  logs pre-dispatch telemetry via `Write-AgentRunEvent ... -RunId ''` (no run
+  exists yet because the dispatch is refused), but `Write-AgentRunEvent`
+  declared `-RunId` as `[Parameter(Mandatory = $true)][string]`. PowerShell
+  rejects an empty string for a mandatory string parameter, so the call threw
+  *before* `Send-HttpJson -StatusCode 409`. The host's outer request handler
+  caught it and returned HTTP 500 instead, so the harness's `expected HTTP 409`
+  assertion failed at the quota step and the run never proceeded past it. The
+  same empty `-RunId` is used by the `quota.warning` event, so both pre-dispatch
+  telemetry paths were affected. The route was *not* leaking a stream or
+  deadlocking — it failed fast (~0.2s) with a caught 500.
+- **Fix:** made `-RunId` optional (`[Parameter()][string]$RunId = ''`) in
+  `backend/modules/agent-runs/AgentRuns.ps1`, which is correct for pre-dispatch
+  events that legitimately have no run id. The quota route now returns the
+  intended HTTP 409 `quota-exhausted` / `session-cap-exceeded` payload. Change
+  is backward compatible: all existing callers pass a real `RunId`.
+- **Harness robustness (secondary):** `Invoke-ApiRequest` hard-coded
+  `TimeoutSec = 30`, but the cold-cache `GET /api/portfolio/assessment` scan
+  legitimately takes ~42s on a full workspace, which tripped a false timeout at
+  an earlier step and prevented the harness from ever reaching the quota route.
+  Added a `-RequestTimeoutSec` param (default 180) and a teardown sweep that
+  force-stops any process still listening on the host port, so the harness
+  always exits clean and a stopped job can't leave the listener holding the port
+  (the "host did not exit after `[PASS]`" symptom).
+
+### Verification
+
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "$(pwd)"` ran start-to-finish, printed `[PASS] API host smoke completed`, and exited 0. The quota step logged `quota refusal -> reason=session-cap-exceeded est=8` (HTTP 409). No listener remained on the port and no background job lingered after teardown.
+- `npm run build` passed.
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/Test-RoadmapStructure.ps1 -Path ./ROADMAP.md` returned 0 errors and 0 warnings.
+
+## 2026-06-26 (Release 2.0 Closeout / Release 2.1 Promotion)
+
+- Reconciled the roadmap, planning files, and live Operations UI and found
+  the remaining work was release-closeout documentation rather than another
+  code seam.
+- Confirmed the only contradictory Release 2.0 milestone was the Agent Runs
+  time/token visibility item: the UI already renders both fields, with token
+  usage falling back to `n/a` when no provider/operator value exists.
+- Updated `ROADMAP.md` to close Release 2.0, add a completion snapshot,
+  promote Release 2.1 active, and point the new active-release current focus
+  at Phase 1 SQLite/bootstrap work.
+- Archived the full Release 2.0 detail in
+  `docs/history/completed-releases.md` and added a closeout entry to
+  `CHANGELOG.md`.
+
+### Verification
+
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/Test-RoadmapStructure.ps1 -Path ./ROADMAP.md` passed with 0 errors.
+- `git diff --check -- ROADMAP.md docs/history/completed-releases.md CHANGELOG.md task_plan.md progress.md findings.md` passed.
+
 ## 2026-06-12 (Release 2.0 Phase 4: Budget Guard + Scan Annotations)
 
 - Reconciled the active roadmap against live code and found the planning files were stale: `ROADMAP.md` has Release 2.0 active with Phase 4 next, while `task_plan.md` was still describing a completed Release 1.9 slice.

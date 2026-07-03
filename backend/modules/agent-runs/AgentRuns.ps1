@@ -104,7 +104,11 @@ function Write-AgentRunEvent {
     param(
         [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
         [Parameter(Mandatory = $true)][string]$EventType,
-        [Parameter(Mandatory = $true)][string]$RunId,
+        # Pre-dispatch telemetry (e.g. 'quota.exhausted' / 'quota.warning') is emitted
+        # before any run exists, so RunId is optional and defaults to empty. A mandatory
+        # binding here rejected the empty string and turned the quota-refusal route's
+        # intended HTTP 409 into a caught 500.
+        [Parameter()][string]$RunId = '',
         [Parameter()][string]$RepoName = '',
         [Parameter()][string]$Actor = 'system',
         [Parameter()][string]$Summary = '',
@@ -131,6 +135,20 @@ function Write-AgentRunEvent {
         $record['written'] = $false
         $record['writeError'] = $_.Exception.Message
     }
+
+    # Release 2.1 Phase 1 persistence seam: best-effort mirror into the SQLite
+    # agent_run_events table when the persistence module is loaded and the app
+    # database is initialized. The JSONL stream above remains authoritative
+    # during rollout; a mirror failure must never break the run it describes.
+    if (Get-Command -Name 'Write-AppDbAgentRunEvent' -ErrorAction SilentlyContinue) {
+        try {
+            $mirror = Write-AppDbAgentRunEvent -EventRecord $record
+            $record['dbMirrored'] = [bool]$mirror.success
+        } catch {
+            $record['dbMirrored'] = $false
+        }
+    }
+
     return [pscustomobject]$record
 }
 

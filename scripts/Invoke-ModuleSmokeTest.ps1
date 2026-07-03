@@ -719,7 +719,10 @@ $valueScoringConfig = Get-PortfolioValueScoringConfig -ConfigPath $portfolioValu
 if ($null -eq $structStds) { throw 'Get-RepoStructureStandards returned null for an existing standards file' }
 if ($null -eq $structStds.common) { throw 'Standards file is missing the common section' }
 if ($null -eq $valueScoringConfig) { throw 'Get-PortfolioValueScoringConfig returned null for an existing config file' }
-Write-Host ("  standards loaded version={0} commonRequired={1}" -f $structStds.version, @($structStds.common.requiredRootFiles).Count) -ForegroundColor DarkGray
+# repo-structure-standards.json renamed 'version' to 'schemaVersion' in the v1 schema;
+# accept either so the smoke works against old and new standards files.
+$structStdsVersion = if ($structStds.PSObject.Properties.Name -contains 'schemaVersion') { [string]$structStds.schemaVersion } elseif ($structStds.PSObject.Properties.Name -contains 'version') { [string]$structStds.version } else { '(none)' }
+Write-Host ("  standards loaded version={0} commonRequired={1}" -f $structStdsVersion, @($structStds.common.requiredRootFiles).Count) -ForegroundColor DarkGray
 
 Write-Step 'Portfolio assessment — smoke: structure audit on workspace itself'
 $selfAudit = Invoke-RepoStructureAudit -RepoPath $WorkspaceRoot -Standards $structStds
@@ -1074,6 +1077,89 @@ try {
 }
 finally {
     Remove-Item -LiteralPath $mrWorkspace -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# ---------------------------------------------------------------------------
+# Release 2.1 — Persistent Data Layer (Phase 1)
+# ---------------------------------------------------------------------------
+
+Write-Step 'Loading persistence store module (Release 2.1)'
+$persistenceModule = Join-Path $WorkspaceRoot 'backend\modules\persistence\Persistence.Store.ps1'
+if (-not (Test-Path -LiteralPath $persistenceModule)) { throw "Persistence.Store.ps1 not found at: $persistenceModule" }
+. $persistenceModule
+Write-Host 'Persistence store module loaded successfully' -ForegroundColor Green
+
+Write-Step 'SQLite capability detection (Release 2.1 Phase 1)'
+$sqliteCap = Get-SqliteCapability
+if ($null -eq $sqliteCap) { throw 'Get-SqliteCapability returned null' }
+Write-Host ("  capability: available={0} provider={1} detail={2} version={3}" -f $sqliteCap.available, $sqliteCap.provider, $sqliteCap.providerDetail, $sqliteCap.sqliteVersion) -ForegroundColor DarkGray
+
+if (-not $sqliteCap.available) {
+    # Graceful-degradation contract: no provider means a soft failure with a
+    # reason, never an exception — the JSON stores stay authoritative.
+    $degradedInit = Initialize-AppDatabase -WorkspaceRoot ([System.IO.Path]::GetTempPath())
+    if ($degradedInit.success) { throw 'Initialize-AppDatabase must not report success without a SQLite provider' }
+    if ([string]::IsNullOrWhiteSpace([string]$degradedInit.error)) { throw 'Degraded init must explain why SQLite is unavailable' }
+    Write-Host '  no SQLite provider on this machine — degraded-path contract verified; DB smoke skipped' -ForegroundColor Yellow
+} else {
+    $appDbWorkspace = Join-Path ([System.IO.Path]::GetTempPath()) ("app-db-smoke-" + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    New-Item -ItemType Directory -Path $appDbWorkspace -Force | Out-Null
+    try {
+        Write-Step 'App database bootstrap — schema init, idempotent re-init (Release 2.1 Phase 1)'
+        $appDbInit = Initialize-AppDatabase -WorkspaceRoot $appDbWorkspace
+        if (-not $appDbInit.success) { throw "Initialize-AppDatabase failed: $($appDbInit.error)" }
+        if (-not (Test-Path -LiteralPath $appDbInit.databasePath)) { throw "app.db not created at $($appDbInit.databasePath)" }
+        $expectedAppDbTables = @(
+            'schema_migrations', 'execution_ledger', 'execution_history', 'maturity_history',
+            'ops_log', 'portfolio_index_history', 'repo_signals', 'differential_scans',
+            'merge_readiness_snapshots', 'agent_runs', 'agent_run_events'
+        )
+        foreach ($tableName in $expectedAppDbTables) {
+            if ($tableName -notin @($appDbInit.tables)) { throw "Missing expected table '$tableName' (got: $(@($appDbInit.tables) -join ', '))" }
+        }
+        $appDbReinit = Initialize-AppDatabase -WorkspaceRoot $appDbWorkspace
+        if (-not $appDbReinit.success) { throw "Re-init must be idempotent: $($appDbReinit.error)" }
+        $migrationRows = Invoke-AppDbQuery -DatabasePath $appDbInit.databasePath -Sql 'SELECT COUNT(*) AS n FROM schema_migrations'
+        if ([long]$migrationRows[0].n -ne 1) { throw "Expected exactly 1 schema migration row after re-init, got $($migrationRows[0].n)" }
+        Write-Host ("  app.db created with {0} tables; re-init idempotent" -f @($appDbInit.tables).Count) -ForegroundColor DarkGray
+
+        Write-Step 'App database repeated writes + parameter binding (Release 2.1 Phase 1)'
+        for ($writeIndex = 0; $writeIndex -lt 25; $writeIndex++) {
+            $null = Invoke-AppDbNonQuery -DatabasePath $appDbInit.databasePath `
+                -Sql 'INSERT INTO ops_log (timestamp, level, source, message, data_json) VALUES (@ts, @level, @source, @message, @data)' `
+                -Parameters @{
+                    ts      = (Get-Date).ToUniversalTime().ToString('o')
+                    level   = 'INFO'
+                    source  = 'module-smoke'
+                    message = "repeated write $writeIndex"
+                    data    = $null
+                }
+        }
+        $opsCount = Invoke-AppDbQuery -DatabasePath $appDbInit.databasePath -Sql 'SELECT COUNT(*) AS n FROM ops_log WHERE level = @level' -Parameters @{ level = 'INFO' }
+        if ([long]$opsCount[0].n -ne 25) { throw "Expected 25 ops_log rows after repeated writes, got $($opsCount[0].n)" }
+
+        $trickyText = "quote'd — ünicode ✓"
+        $null = Invoke-AppDbNonQuery -DatabasePath $appDbInit.databasePath `
+            -Sql 'INSERT INTO ops_log (timestamp, level, source, message, data_json) VALUES (@ts, @level, @source, @message, @data)' `
+            -Parameters @{ ts = (Get-Date).ToUniversalTime().ToString('o'); level = 'WARN'; source = 'module-smoke'; message = $trickyText; data = $null }
+        $trickyRow = Invoke-AppDbQuery -DatabasePath $appDbInit.databasePath -Sql 'SELECT message, data_json FROM ops_log WHERE level = @level' -Parameters @{ level = 'WARN' }
+        if ([string]$trickyRow[0].message -ne $trickyText) { throw "Unicode/quote parameter round-trip failed: got '$($trickyRow[0].message)'" }
+        if ($null -ne $trickyRow[0].data_json) { throw 'NULL parameter should round-trip as $null' }
+        Write-Host '  25 repeated writes + unicode/quote/null binding round-trip correct' -ForegroundColor DarkGray
+
+        Write-Step 'Agent-run event dual-write seam (Release 2.1 Phase 1)'
+        $dualWriteEvent = Write-AgentRunEvent -WorkspaceRoot $appDbWorkspace -EventType 'smoke.dualwrite' -RunId 'run-dw-1' -RepoName 'app-db-smoke' -Summary 'dual write seam check' -Data @{ source = 'module-smoke' }
+        if (-not $dualWriteEvent.written) { throw 'Authoritative JSONL event write failed' }
+        if (-not (Test-Path -LiteralPath (Join-Path $appDbWorkspace 'output\agent-runs\events.jsonl'))) { throw 'events.jsonl was not written alongside the DB mirror' }
+        if (-not [bool]$dualWriteEvent.dbMirrored) { throw 'Agent-run event was not mirrored into app.db' }
+        $mirroredRows = Invoke-AppDbQuery -DatabasePath $appDbInit.databasePath -Sql 'SELECT event_type, repo_name FROM agent_run_events WHERE run_id = @runId' -Parameters @{ runId = 'run-dw-1' }
+        if (@($mirroredRows).Count -ne 1) { throw "Expected 1 mirrored agent-run event, got $(@($mirroredRows).Count)" }
+        if ([string]$mirroredRows[0].event_type -ne 'smoke.dualwrite') { throw "Mirrored event type mismatch: $($mirroredRows[0].event_type)" }
+        Write-Host '  dual-write seam correct: JSONL authoritative + app.db mirror row present' -ForegroundColor DarkGray
+    }
+    finally {
+        Remove-Item -LiteralPath $appDbWorkspace -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 Write-Step 'Smoke test completed'

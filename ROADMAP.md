@@ -1,8 +1,8 @@
 # GitHub Repo Management — Active Execution Roadmap
 
 > **Status:** Active
-> **Active release:** **Release 2.0 — Agent Run Monitoring and Actions-Gated Merge Readiness**
-> **Next active release:** **Release 2.1 — Persistent Data Layer**
+> **Active release:** **Release 2.1 — Persistent Data Layer**
+> **Next active release:** **Release 2.2 — API Authentication, Network Security, Guided Onboarding, and GitHub App Integration**
 > **Canonical product direction:** [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md)
 > **Completed-release archive:** [`docs/history/completed-releases.md`](docs/history/completed-releases.md)
 > **Dated change log:** [`CHANGELOG.md`](CHANGELOG.md)
@@ -94,8 +94,8 @@ Render the state inline on each milestone in italics, e.g.:
 | **1.7.5** | **Portfolio Mission Alignment, Indexed Scanning, and Value-Ranked Work Planning**                       | `done` — shipped 2026-05-28; portfolio scan/classify/rank/report loop now end-to-end                                                           |
 | **1.8**   | **Operations Workspace and Prompt Refinement**                                                          | `done` — shipped 2026-06-09; see archive (Operations workspace, prompt refinement, history, dispatch linkage)                                  |
 | **1.9**   | **AI Documentation Improvement Cycles**                                                                 | `done` — shipped 2026-06-11 (Phase 1 2026-06-10; Phases 2-3 2026-06-11); see archive                                                           |
-| **2.0**   | **Agent Run Monitoring and Actions-Gated Merge Readiness**                                              | **active** — promoted 2026-06-11                                                                                                               |
-| **2.1**   | **Persistent Data Layer**                                                                               | `planned`                                                                                                                                      |
+| **2.0**   | **Agent Run Monitoring and Actions-Gated Merge Readiness**                                              | `done` — shipped 2026-06-12; see archive (agent-run ledger, merge readiness, quota guard, roadmap budget annotations)                         |
+| **2.1**   | **Persistent Data Layer**                                                                               | **active** — promoted 2026-06-26                                                                                                               |
 | **2.2**   | **API Authentication, Network Security, Guided Onboarding, and GitHub App Integration**                 | `planned`                                                                                                                                      |
 | **2.3**   | **Portfolio Analytics, Trend Visualization, and Distribution**                                          | `planned`                                                                                                                                      |
 | **2.4**   | **Agent Integration Protocol and AI Repair Loop**                                                       | `planned`                                                                                                                                      |
@@ -110,93 +110,82 @@ Render the state inline on each milestone in italics, e.g.:
 
 ## 5. Active Release Snapshot
 
-### Active release detail — 2.0 Agent Run Monitoring and Actions-Gated Merge Readiness
+### Active release detail — 2.1 Persistent Data Layer
 
-**Status:** active — promoted 2026-06-11 after Release 1.9 shipped its
-Phase 3 apply path.
+**Status:** active — promoted 2026-06-26 after Release 2.0 closeout.
 
-**Goal:** Monitor coding-agent execution after dispatch, associate agent
-work with branches and pull requests, track GitHub Actions, and present a
-merge-readiness signal that requires successful validation before merge.
+**Goal:** Replace JSON file storage with a SQLite database for the
+execution ledger, maturity history, operations log, portfolio index
+history, and merge-readiness snapshots so the application is reliable at
+scale and supports time-series queries.
 
-**Current focus:** Phase 4 landed 2026-06-12 on top of the Phases 1-3
-work shipped 2026-06-11. The release now has host-side budget ledger
-configuration (`backend/modules/agent-runs/BudgetLedger.ps1`), roadmap
-phase-plan and budget-guardrail annotation parsing surfaced through
-roadmap scans and portfolio assessments, truthful estimated-unit recording
-on new agent runs, and a pre-dispatch quota guard in
-`POST /api/roadmap/dispatch/execute` that emits `quota.warning` /
-`quota.exhausted` telemetry before any GitHub dependency is required.
-Operations now surfaces the returned estimate / phase metadata in dispatch
-feedback and in the Agent Runs panel. The remaining seam for Release 2.0
-is release-closeout documentation and archive promotion.
+**Current focus:** Phase 2 — migrate execution-ledger and ops-log
+reads/writes behind the persistence boundary with parameterized SQL,
+keeping JSON exports as debugging artifacts. The Phase 1 foundation
+(capability detection, `output/app.db` bootstrap, schema-v1 tables,
+`GET /api/persistence/status`, and the agent-run-event dual-write seam)
+shipped 2026-07-03.
 
-**Why now:** Release 1.9 closed the documentation improvement loop
-(preview → diff → history → explicit apply). The north-star workflow's
-remaining unserved segment is monitor agent run → validate Actions →
-evaluate merge readiness — exactly this release.
+**Why now:** The north-star workflow is now end-to-end through dispatch,
+agent-run monitoring, Actions validation, and merge readiness. The next
+highest-value bottleneck is storage reliability and queryability: the app
+still spreads critical state across JSON files, which limits concurrent
+writes, history lookups, and trend reporting.
 
-**Validation plan:** PowerShell parser diagnostics for the new agent-run
-module(s) and the API host; `npm run build`;
-`scripts/Invoke-ApiHostSmokeTest.ps1` coverage for `GET /api/agent-runs`,
-run detail, refresh, and merge-readiness routes; live host checks against
-real dispatch records before each phase closes.
+**Validation plan:** temp-workspace schema/init smoke for the SQLite
+bootstrap, repeated-write coverage for the first migrated persistence
+helpers, `npm run build`, and targeted API-host regression checks as each
+JSON-backed path moves behind the persistence boundary.
 
-**Risks and blockers:** GitHub API rate limits for Actions/PR polling
-(mitigate with TTL caches and operator-triggered refresh); branch/PR
-association heuristics can mismatch dispatch records (mitigate with stored
-task fingerprints and operator-visible association evidence). No current
-blocker.
+**Risks and blockers:** SQLite provider availability must stay reliable on
+Windows and WSL; JSON-to-SQL migration can drift if legacy files and the DB
+fall out of sync; write-lock contention can surface when long-running scans
+and execution updates overlap. No current blocker.
 
-**Dependencies:** Dispatch records and refinement linkage from Releases
-1.6/1.8; the portfolio index for repo identity; the budget model
-(`standards/roadmap/ROADMAP_BUDGET_MODEL.md`) for the tier-1/tier-2 metric
-fields the ledger records.
+**Dependencies:** Existing JSON stores under `output/`, the ordered
+portfolio index, the agent-run ledger/event schema, and merge-readiness
+snapshots.
 
-**Known issues:** The new quota-refusal contract is validated through
-targeted scratch-port route checks, but the full
-`Invoke-ApiHostSmokeTest.ps1` harness still does not return after entering
-that route under the broad end-to-end run. Carried context: earlier
-versions of the same smoke script can also time out during docs-audit or
-portfolio warmup on large local inventories.
+**Known issues:** None specific to Release 2.1 at promotion time.
 
-**Traceability:** Shipped (Phase 1) —
-`backend/modules/agent-runs/AgentRuns.ps1`, `GET /api/agent-runs` and
-`GET /api/agent-runs/{runId}` in
-`backend/api-host/Start-RepoManagementApiHost.ps1`, dispatch-hook run
-creation in `POST /api/roadmap/dispatch/execute`, module smoke step in
-`scripts/Invoke-ModuleSmokeTest.ps1`, api-host smoke step in
-`scripts/Invoke-ApiHostSmokeTest.ps1` (CI:
-`.github/workflows/ci-smoke.yml`). Shipped (Phase 2) —
-`Select-AgentRunPullRequestCandidate` / `Invoke-AgentRunRefresh` in
-`AgentRuns.ps1`, `POST /api/agent-runs/{runId}/refresh` in the API host,
-`validation.passed` / `validation.failed` events in
-`output/agent-runs/events.jsonl`, the Agent Runs panel in
-`frontend/components/OperationsWorkspaceView.tsx` with `getAgentRuns` /
-`refreshAgentRun` in `frontend/services/apiClient.ts` and agent-run types
-in `frontend/types.ts`, the Phase 2 module smoke step (association,
-status transitions, exactly-once validation events), and the refresh-route
-404 contract in the api-host smoke. Shipped (Phase 3) —
-`backend/modules/agent-runs/MergeReadiness.ps1` (evaluator + snapshot
-store), `GET /api/merge-readiness/{repoId}`,
-`POST /api/merge-readiness/{repoId}/evaluate`, and the server-gated
-`POST /api/merge-readiness/{repoId}/merge` in the API host, the Merge
-Readiness panel in `frontend/components/OperationsWorkspaceView.tsx`, the
-Phase 3 module smoke step (blocking rules, fresh-Actions override,
-snapshot round-trip), and the merge-readiness route contracts in the
-api-host smoke. Shipped (Phase 4) —
-`backend/modules/agent-runs/BudgetLedger.ps1`, phase-plan /
-budget-guardrail parsing in
-`backend/modules/roadmap/Roadmap.Parser.ps1`, assessment pass-through in
-`backend/modules/portfolio/Portfolio.Assessment.ps1`, quota enforcement +
-estimate metadata in `POST /api/roadmap/dispatch/execute`, and
-dispatch/ledger surfacing in
-`frontend/components/OperationsWorkspaceView.tsx` +
-`frontend/types.ts`. Module smoke covers the parser and budget helper
-paths; targeted scratch-port route checks verified roadmap scan
-annotations and the `quota-exhausted` refusal contract. Docs:
-`standards/roadmap/ROADMAP_BUDGET_MODEL.md` defines the metric fields the
-ledger records.
+**Traceability:** Phase 1 shipped surfaces:
+[`backend/modules/persistence/Persistence.Store.ps1`](backend/modules/persistence/Persistence.Store.ps1)
+(capability detection, zero-dependency native SQLite bridge, schema-v1
+bootstrap, parameterized query helpers, agent-run-event mirror),
+`output/app.db`, `GET /api/persistence/status` in the API host, the
+dual-write seam in
+[`AgentRuns.ps1`](backend/modules/agent-runs/AgentRuns.ps1), and Release
+2.1 smoke sections in `scripts/Invoke-ModuleSmokeTest.ps1` plus a
+persistence-status step in `scripts/Invoke-ApiHostSmokeTest.ps1`. The
+release direction remains anchored to
+[`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md).
+
+#### Phase plan (within this release)
+
+| Phase                                        | Scope                                                                                                                                    | Status                               |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| Phase 1: SQLite foundation                   | Capability detection, `output/app.db` bootstrap, schema-v1 tables, `GET /api/persistence/status`, agent-run-event dual-write seam        | **done — smoke-tested** (2026-07-03) |
+| Phase 2: Execution ledger + ops log          | Migrate execution-ledger and ops-log reads/writes to parameterized SQL; JSON export kept as debugging artifact                            | planned                              |
+| Phase 3: History snapshots                   | Persist maturity, portfolio-index, repo-signal, merge-readiness, and agent-run timing/token/cost metrics over time                        | planned                              |
+| Phase 4: Trend routes + first-run migration  | Maturity/portfolio history and trend routes, repo-row sparkline consumer, first-run JSON-to-SQL migration, differential-scan history      | planned                              |
+
+### Release 2.0 completion snapshot
+
+**Status:** complete — shipped 2026-06-12 (Phases 1-3 on 2026-06-11; Phase 4
+on 2026-06-12). The product now closes the monitor → validate → merge
+readiness part of the north-star loop: dispatches create agent-run ledger
+records, refresh links runs to branches/PRs/Actions evidence, merge
+readiness gates operator merge, roadmap phase-plan / budget annotations feed
+dispatch estimates, and the quota guard refuses over-budget work before any
+GitHub dependency is required.
+
+The Agent Runs panel now surfaces time-to-deliver, token-usage, and work
+unit fields from the ledger; token usage remains `n/a` until a provider or
+operator supplies an actual value. The broad `Invoke-ApiHostSmokeTest.ps1`
+harness now runs clean end-to-end through the quota-refusal route, alongside
+the Phase 4 route checks and module smoke, so no Release 2.0 product
+milestones remain. Full detail is now in
+[the archive](docs/history/completed-releases.md#release-20--agent-run-monitoring-and-actions-gated-merge-readiness).
 
 ### Release 1.9 completion snapshot
 
@@ -276,19 +265,17 @@ prompt-refinement flow.
       States: `discovered`, `needs-readme`, `needs-roadmap`,
       `needs-roadmap-repair`, `needs-structure`, `ready-for-work`, `running`,
       `completed`, `monitored`, `archived`, `parse-error`.
-  - [ ] **Phase 2 investigation:** doc-audit reports
+  - Carry-forward note: doc-audit has historically reported
         `dispatchReadiness=missing-roadmap` for some repos that the roadmap
         audit clearly found at L4. Phase 1 worked around it by treating
         roadmap-audit + `pendingItemCount` as authoritative for
-        `ready-for-work` classification. Hypothesis: the doc-audit cache is
-        drifting from the roadmap-audit cache (path-key vs name-key
-        mismatch in `Invoke-AuditRepoScan`'s `roadmapMap` lookup, or a TTL
-        skew where one cache regenerates without the other). Reproduce by
-        warming both caches against the live workspace and diffing the
-        per-repo roadmap-state field between `/api/docs-audit` and
-        `/api/roadmap/audit` responses. Fix should make doc-audit converge
-        with the roadmap audit's view rather than re-derive its own.
-        *(state: planned)*
+        `ready-for-work` classification. The likely fault line is
+        doc-audit / roadmap-audit cache drift (path-key vs name-key lookup,
+        or TTL skew). Any future fix should reproduce that mismatch against
+        `/api/docs-audit` and `/api/roadmap/audit`, then make doc-audit
+        converge with the roadmap audit's view rather than re-derive its
+        own. This is follow-up context, not an open Release 1.7.5
+        milestone.
 - [x] Add `GET /api/portfolio/assessment` route that returns one normalized
       assessment record per repo with lifecycle state, blocking reasons,
       recommended next action, and source coverage (`local`, `github`, or
@@ -495,172 +482,6 @@ capabilities.
 
 ---
 
-### Release 2.0 — Agent Run Monitoring and Actions-Gated Merge Readiness
-
-**Goal:** Monitor coding-agent execution after dispatch, associate agent
-work with branches and pull requests, track GitHub Actions, and present a
-merge-readiness signal that requires successful validation before merge.
-
-#### Product outcomes
-
-- Operators can see whether an agent task is active, completed, failed, or
-  blocked.
-- Agent-created PRs are associated with the original repo, roadmap item,
-  prompt, and dispatch record.
-- GitHub Actions status is part of the execution workflow.
-- The app blocks merge-readiness when validation evidence is missing.
-- Each run records when agent work started and finished, its time to
-  deliver, and a reasonable token-usage estimate, so completed roadmap
-  phases carry measured `completed` / token annotations and future phases
-  can be sized to fit agent context budgets.
-
-#### Engineering milestones
-
-- [x] Add agent-run ledger model with runId, repoId, promptId, selected
-      roadmap item, provider/tool, branch, PR URL, status, createdAt,
-      updatedAt, and outcome. *(state: smoke-tested — Phase 1; completed:
-      2026-06-11)* — [`backend/modules/agent-runs/AgentRuns.ps1`](backend/modules/agent-runs/AgentRuns.ps1);
-      editable state as one JSON per run under `output/agent-runs/runs/`,
-      created automatically by `POST /api/roadmap/dispatch/execute`
-      (non-fatal on ledger failure) with dispatch/refinement linkage.
-- [x] Record tier-1 run observations automatically in the ledger:
-      dispatchedAt, agentStartedAt, agentCompletedAt, derived
-      time-to-deliver, prompt count, retries, reported token usage, direct
-      API spend, and normalized AI work units (raw counts × config
-      weights), per `standards/roadmap/ROADMAP_BUDGET_MODEL.md`. Optional
-      tier-2 operator observations (provider-reported remaining units,
-      credit-prompt-seen, human review minutes) attach to a run without
-      ever blocking it. Derived valuations (subscription allocation,
-      human-time USD, overage risk) are never stored in events.
-      *(state: smoke-tested — Phases 1-2; completed: 2026-06-11)* — Phase 2
-      refresh now populates agentStartedAt (PR creation) and
-      agentCompletedAt (PR ready/merged/closed) automatically from observed
-      GitHub state; module smoke asserts the time-to-deliver derivation.
-      Reported token usage and API spend remain operator/tier-2 inputs
-      until a provider reports them.
-- [x] Add budget ledger configuration (per-project monthly USD and
-      quota-unit budgets, per-phase and per-session unit caps, unit
-      weights, valuation rates, credit policy) and a pre-dispatch quota
-      guard that runs on own-ledger unit counts, warns or refuses when an
-      estimated session exceeds its cap, stops on credit prompts, and
-      records `quota.exhausted` events that capture which queued work was
-      pending at that moment so starvation is countable. *(state:
-      ui-connected — Phase 4; completed: 2026-06-12)* — budget config now
-      resolves from `settings.json` with safe defaults via
-      `BudgetLedger.ps1`; `POST /api/roadmap/dispatch/execute` enforces the
-      guard before GitHub-token resolution, writes `quota.warning` /
-      `quota.exhausted` events, and records the selected task / phase /
-      release estimate onto new agent-run ledger entries.
-- [x] Parse phase-plan work-unit and budget-guardrail annotations from
-      managed repos' roadmaps during assessment scans so pre-dispatch
-      session estimates and estimated-vs-actual accuracy come from the
-      roadmap itself. *(state: smoke-tested — Phase 4; completed:
-      2026-06-12)* — `Roadmap.Parser.ps1` now returns `releaseContexts`,
-      `activeRelease`, `activePhasePlan`, `budgetGuardrail`, and
-      `estimatedSessionWorkUnits`; roadmap-scan entries and portfolio
-      assessment rows carry those fields forward for dispatch planning and
-      UI display.
-- [x] Append run lifecycle events (dispatched, started, validation passed
-      or failed, completed, blocked) to an append-only, schema-versioned
-      `output/agent-runs/events.jsonl` telemetry stream, kept separate from
-      editable ledger state. *(state: smoke-tested — Phases 1-2; completed:
-      2026-06-11)* — Phase 2 adds `validation.passed` / `validation.failed`
-      events, emitted only when the observed Actions conclusion changes so
-      repeated refreshes never duplicate validation history; module smoke
-      asserts exactly-once emission.
-- [ ] Surface time-to-deliver and token usage in run detail so completed
-      roadmap phases record measured completion-date and token-usage
-      annotations instead of after-the-fact estimates.
-      *(state: ui-connected — Phase 2; the Operations Agent Runs panel
-      shows per-run time-to-deliver from observed PR timing; token-usage
-      display stays pending until a provider reports usage)*
-- [x] Add `GET /api/agent-runs` route for active, completed, failed, and
-      blocked runs. *(state: smoke-tested — Phase 1; completed: 2026-06-11)*
-      — status/repoName filters, newest first, per-status rollup.
-- [x] Add `GET /api/agent-runs/{runId}` route with full run detail.
-      *(state: smoke-tested — Phase 1; completed: 2026-06-11)* — returns
-      the ledger record plus its lifecycle events; 404 for unknown runs.
-- [x] Add `POST /api/agent-runs/{runId}/refresh` route that refreshes
-      branch, PR, and Actions state. *(state: smoke-tested — Phase 2;
-      completed: 2026-06-11)* — fetches the repo's PRs and the head
-      branch's latest Actions run from GitHub, applies them through
-      `Invoke-AgentRunRefresh`, and returns the updated record plus
-      association evidence; 404 unknown run, 409 no GitHub identity,
-      502 GitHub lookup failure.
-- [x] Add operator-visible Actions refresh control in the Operations
-      workspace and run detail views. *(state: ui-connected — Phase 2;
-      completed: 2026-06-11)* — Agent Runs panel in the Operations
-      workspace lists the selected repo's ledger runs with status, branch,
-      PR link, Actions state, time-to-deliver, association evidence, and a
-      per-run "Refresh from GitHub" action; operator verification against
-      a real dispatched run pending.
-- [x] Associate Copilot/agent-created branches and PRs with dispatch
-      records using branch naming, PR metadata, or stored task fingerprints.
-      *(state: smoke-tested — Phase 2; completed: 2026-06-11)* —
-      `Select-AgentRunPullRequestCandidate` matches stored PR URL, then
-      recorded branch, then the `copilot/*` branch-prefix +
-      created-after-dispatch window + selected-task fingerprint heuristic,
-      and stores operator-visible `matchedBy` evidence on the run.
-- [x] Add merge-readiness evaluator. *(state: smoke-tested — Phase 3;
-      completed: 2026-06-11)* —
-      [`backend/modules/agent-runs/MergeReadiness.ps1`](backend/modules/agent-runs/MergeReadiness.ps1):
-      pure `Get-MergeReadinessEvaluation` over the latest agent run, live
-      PR mergeability, fresh Actions state, local dirty count, and audit
-      blockers; per-repo snapshots under `output/merge-readiness/`.
-- [x] Block merge readiness when the repo has a dirty worktree, no PR,
-      failing or pending Actions, merge conflicts, missing validation
-      evidence, or unresolved audit blockers. *(state: smoke-tested —
-      Phase 3; completed: 2026-06-11)* — blocker codes: `no-agent-run`,
-      `no-pr`, `pr-draft`, `pr-closed-without-merge`, `pr-already-merged`,
-      `merge-conflicts`, `missing-validation-evidence`, `actions-pending`,
-      `actions-failing`, `dirty-worktree`, `audit-blocker`; each carries an
-      operator-readable message and its evidence source.
-- [x] Add Actions-gated status panel to Operations tab.
-      *(state: ui-connected — Phase 3; completed: 2026-06-11)* — Merge
-      Readiness panel in the Operations workspace with ready/blocked badge,
-      evidence summary (PR state, mergeability, Actions, dirty count, audit
-      blockers), per-blocker list, and Evaluate control.
-- [x] Add operator-controlled merge action only after merge readiness is
-      satisfied. *(state: ui-connected — Phase 3; completed: 2026-06-11)*
-      — Merge PR button appears only when ready; the server re-evaluates
-      before merging and refuses with 409 if any blocker remains, then
-      records the merged outcome on the agent run; live-host check
-      confirmed the 409 refusal path, operator verification of a real
-      merge pending.
-- [x] Add `GET /api/merge-readiness/{repoId}` route. *(state: smoke-tested
-      — Phase 3; completed: 2026-06-11)* — returns the stored snapshot;
-      404 until first evaluation.
-- [x] Add `POST /api/merge-readiness/{repoId}/evaluate` route.
-      *(state: smoke-tested — Phase 3; completed: 2026-06-11)* — resolves
-      repoId like `/api/operations/repos/{repoId}`, computes and persists
-      a fresh evaluation; verified live against the indexed portfolio.
-
-#### Acceptance criteria
-
-- The app shows active, completed, failed, and blocked agent runs.
-- A dispatched task can be traced to its prompt, repo, branch, PR, and
-  Actions result.
-- Merge readiness is false while Actions are failing or pending.
-- Merge readiness is false when the PR has conflicts or no validation
-  evidence.
-- The app never auto-merges without explicit operator action.
-
-#### Out of scope
-
-- Fully autonomous agent execution.
-- Multi-agent scheduling and distributed work claiming; deferred to 2.4.
-
-#### Phase plan (within this release)
-
-| Phase                                    | Scope                                                                                                                                               | Status                               |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| Phase 1: Agent-run ledger foundation     | `AgentRuns.ps1` ledger model + tier-1/tier-2 metric fields, append-only `events.jsonl`, dispatch-time run creation, `GET /api/agent-runs` + detail  | **done — smoke-tested** (2026-06-11) |
-| Phase 2: Run refresh + association       | `POST /api/agent-runs/{runId}/refresh` (branch/PR/Actions state), dispatch-record association via fingerprints, Actions refresh control in UI       | **done — smoke-tested** (2026-06-11) |
-| Phase 3: Merge readiness                 | Merge-readiness evaluator + blocking rules, `GET`/`POST /api/merge-readiness/*`, Actions-gated panel, operator-controlled merge action              | **done — smoke-tested** (2026-06-11) |
-| Phase 4: Budget guard + scan annotations | Budget ledger config, pre-dispatch quota guard + `quota.*` events, phase-plan work-unit annotation parsing in assessment scans                      | **ui-connected** (2026-06-12)        |
-
----
-
 ### Release 2.1 — Persistent Data Layer
 
 **Goal:** Replace JSON file storage with a SQLite database for the
@@ -682,10 +503,18 @@ supports time-series queries.
 
 #### Engineering milestones
 
-- [ ] Add SQLite dependency detection and initialize `output/app.db` with
+- [x] Add SQLite dependency detection and initialize `output/app.db` with
       execution, maturity, ops-log, portfolio-index, repo-signal,
       differential-scan, merge-readiness, agent-run, and agent-run-event
-      tables. *(state: planned)*
+      tables. *(state: smoke-tested — Phase 1, 2026-07-03)* — new module
+      [`Persistence.Store.ps1`](backend/modules/persistence/Persistence.Store.ps1)
+      with a zero-dependency native SQLite bridge (OS-shipped
+      `winsqlite3.dll` on Windows, `libsqlite3` on WSL/Linux/macOS,
+      graceful degradation when no provider exists), schema-v1 tables plus
+      `schema_migrations`, parameterized query helpers,
+      `GET /api/persistence/status`, and the first migration seam:
+      agent-run events dual-write into `agent_run_events` while the JSONL
+      stream stays authoritative.
 - [ ] Migrate execution ledger and ops log reads/writes from JSON files to
       parameterized SQL queries, keeping JSON export only as a debugging
       artifact. *(state: planned)*

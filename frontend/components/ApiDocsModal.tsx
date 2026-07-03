@@ -376,6 +376,25 @@ const CATEGORIES: CategoryDef[] = [
     ],
   },
   {
+    label: 'Persistence',
+    color: 'text-teal-400',
+    endpoints: [
+      {
+        method: 'GET',
+        path: '/api/persistence/status',
+        summary: 'Reports the SQLite persistence-layer state: provider capability detection, app database (output/app.db) bootstrap status, and the schema tables created for execution, maturity, ops-log, portfolio-index, repo-signal, differential-scan, merge-readiness, and agent-run history.',
+        responseFields: [
+          { name: 'success', type: 'bool', description: 'Operation result flag' },
+          { name: 'capability', type: 'object', description: 'SQLite provider detection: available, provider (native-pinvoke), providerDetail (e.g. winsqlite3.dll), sqliteVersion, cliPath, reasons when unavailable' },
+          { name: 'database', type: 'object', description: 'App database state: enabled, databasePath, provider, schemaVersion, initializedAt' },
+          { name: 'tables', type: 'string[]', description: 'Schema tables present in app.db (empty when the database is not enabled)' },
+          { name: 'agentRunEventCount', type: 'number | null', description: 'Rows mirrored into agent_run_events by the Release 2.1 dual-write seam (null when the database is not enabled)' },
+        ],
+        notes: 'Release 2.1 rollout contract: JSON/JSONL stores remain authoritative; a missing SQLite provider degrades gracefully and only disables the additive database mirror. No external dependency is required — the host uses the OS-shipped SQLite library (winsqlite3.dll on Windows, libsqlite3 on WSL/Linux/macOS).',
+      },
+    ],
+  },
+  {
     label: 'Settings',
     color: 'text-violet-400',
     endpoints: [

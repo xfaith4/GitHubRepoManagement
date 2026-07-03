@@ -202,12 +202,18 @@ function Invoke-AuditRepoDocumentation {
             })
         }
 
-        if ($null -ne $rs.recommendedSections -and $readmeLength -gt 0) {
+        # doc-standards schemaVersion v1 removed readmeStandards.recommendedSections:
+        # section contracts now live in ai-doc-templates.json (see sectionAuthority).
+        # Older configs that still carry recommendedSections keep working; with the
+        # v1 schema this check is skipped until audit-time resolution of the
+        # canonical template sections is wired up as its own work item.
+        $recommendedSections = Get-DocAuditObjectValue -InputObject $rs -PropertyName 'recommendedSections' -Default $null
+        if ($null -ne $recommendedSections -and $readmeLength -gt 0) {
             try {
                 $readmePath = Join-Path $RepoPath 'README.md'
                 $readmeContent = Get-Content -LiteralPath $readmePath -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
                 if ($readmeContent) {
-                    foreach ($section in $rs.recommendedSections) {
+                    foreach ($section in $recommendedSections) {
                         $heading = [string]$section.heading
                         # Match case-insensitively on the heading text after ##
                         $headingText = $heading -replace '^#+\s*', ''

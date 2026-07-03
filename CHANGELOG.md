@@ -2,6 +2,53 @@
 
 All notable changes to this project are documented here.
 
+## 2026-07-03 — Release 2.1 Phase 1: SQLite Persistence Foundation
+
+### Changes
+
+- **`backend/modules/persistence/Persistence.Store.ps1`** (new) — SQLite persistence foundation. `Get-SqliteCapability` detects a provider with zero external dependencies via a compiled native bridge that probes the OS-shipped SQLite library (`winsqlite3.dll` on Windows; `libsqlite3` on WSL/Linux/macOS) and degrades gracefully — no provider means a truthful capability report, never an exception. `Initialize-AppDatabase` bootstraps `output/app.db` (WAL mode, 5s busy timeout) with the schema-v1 tables named in the Release 2.1 milestone: `execution_ledger`, `execution_history`, `maturity_history`, `ops_log`, `portfolio_index_history`, `repo_signals`, `differential_scans`, `merge_readiness_snapshots`, `agent_runs`, `agent_run_events`, plus `schema_migrations`; re-init is idempotent. `Invoke-AppDbQuery` / `Invoke-AppDbNonQuery` expose parameterized-SQL-only helpers (typed round-trip for INTEGER/REAL/TEXT/NULL, UTF-8 safe). `Write-AppDbAgentRunEvent` is the first migration seam.
+- **`backend/modules/agent-runs/AgentRuns.ps1`** — `Write-AgentRunEvent` now best-effort mirrors each lifecycle event into the `agent_run_events` table after its authoritative JSONL append (dual-write seam, `INSERT OR IGNORE` on `event_id` for idempotent replays). The mirror only activates when the persistence module is loaded and the database is initialized; failures are non-fatal and reported via a `dbMirrored` flag.
+- **`backend/api-host/Start-RepoManagementApiHost.ps1`** — dot-sources the persistence module, initializes `output/app.db` at startup (non-fatal, logged), and adds `GET /api/persistence/status` reporting capability detection, database state, schema tables, and the mirrored agent-run-event count.
+- **`backend/modules/docaudit/DocAudit.Scanner.ps1`** (fix) — the doc-standards `schemaVersion: v1` config (commit `db62f0b`, 2026-06-26) removed `readmeStandards.recommendedSections` in favor of section contracts in `ai-doc-templates.json`, and the scanner's strict property access then threw `The property 'recommendedSections' cannot be found`, breaking every doc audit and the module smoke chain. The scanner now resolves the property StrictMode-safely: old-style configs keep their section checks; v1 configs skip them until audit-time resolution of the canonical template sections is wired up as its own work item.
+- **`scripts/Invoke-ModuleSmokeTest.ps1`** — new Release 2.1 Phase 1 sections: capability detection, temp-workspace `app.db` bootstrap with expected-table assertions, idempotent re-init, 25 repeated writes, unicode/quote/NULL parameter-binding round-trip, and the agent-run-event dual-write seam (JSONL authoritative + mirror row present). Also fixed the portfolio-assessment section to accept the `schemaVersion` key that replaced `version` in `repo-structure-standards.json` (same `db62f0b` schema change).
+- **`scripts/Invoke-ApiHostSmokeTest.ps1`** — new persistence-status step asserting the `GET /api/persistence/status` contract, the full expected table set when a provider is available, and the degraded contract when not.
+- **`frontend/components/ApiDocsModal.tsx`** and **`backend/api-host/README.md`** — documented the new Persistence route group and rollout contract (JSON/JSONL stores remain authoritative during Release 2.1).
+- **`ROADMAP.md`** — marked the Release 2.1 schema-bootstrap milestone smoke-tested, added the Release 2.1 phase plan (Phases 1-4), and pointed the active-release current focus at Phase 2 (execution ledger + ops log migration).
+
+### Testing
+
+- **PowerShell parser checks** — clean for the persistence module, `AgentRuns.ps1`, the API host, and both smoke scripts.
+- **`pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ModuleSmokeTest.ps1 -WorkspaceRoot "$(pwd)"`** — passed end-to-end including all pre-existing sections and the new Release 2.1 Phase 1 steps.
+- **`pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "$(pwd)"`** — passed end-to-end including the new persistence-status step (`provider=winsqlite3.dll`, 11 tables).
+- **Targeted scratch-port host check** — `GET /api/persistence/status` returned `success=true`, `capability.available=true`, `database.enabled=true`, and all 11 schema tables; host startup logged `Persistence: app database ready`.
+- **`npm run build`** — passed.
+- **`pwsh -NoProfile -ExecutionPolicy Bypass -File tools/Test-RoadmapStructure.ps1 -Path ./ROADMAP.md`** — passed.
+
+## 2026-06-27 — Fix: api-host smoke harness quota-refusal route
+
+### Changes
+
+- **`backend/modules/agent-runs/AgentRuns.ps1`** — made `Write-AgentRunEvent -RunId` optional (`[Parameter()][string]$RunId = ''`) instead of mandatory. Pre-dispatch telemetry (`quota.exhausted` / `quota.warning`) is emitted before any run exists, so it passes an empty `RunId`; the mandatory binding rejected the empty string and threw, which turned the quota-refusal route's intended HTTP 409 into a caught HTTP 500. This was the carried-forward defect that stopped `Invoke-ApiHostSmokeTest.ps1` from getting past the Release 2.0 quota-refusal step. Backward compatible — all existing callers pass a real `RunId`.
+- **`scripts/Invoke-ApiHostSmokeTest.ps1`** — added a `-RequestTimeoutSec` parameter (default 180) and used it for every request, so legitimately slow cold-cache routes (e.g. the `/api/portfolio/assessment` full-workspace scan, ~42s) no longer trip a false 30s timeout before later steps run. Hardened teardown to force-stop any process still listening on the host port after `Stop-Job`/`Remove-Job`, guaranteeing a clean exit and preventing a stopped job from leaving the listener holding the port (the "host did not exit after `[PASS]`" symptom). All existing smoke assertions, including the quota-refusal checks, are unchanged.
+
+### Testing
+
+- **`pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "$(pwd)"`** — ran start-to-finish, reached the quota-refusal route (`reason=session-cap-exceeded est=8`, HTTP 409), printed `[PASS] API host smoke completed`, and exited 0 with no lingering listener or background job.
+- **`npm run build`** — passed.
+- **`pwsh -NoProfile -ExecutionPolicy Bypass -File tools/Test-RoadmapStructure.ps1 -Path ./ROADMAP.md`** — 0 errors, 0 warnings.
+
+## 2026-06-26 — Release 2.0 Closeout and Release 2.1 Promotion
+
+### Changes
+
+- **`ROADMAP.md`** — closed Release 2.0, added a completion snapshot, corrected the stale Agent Runs time/token milestone to match the live Operations UI, promoted Release 2.1 to the active release, and set its current focus to Phase 1 SQLite/bootstrap work.
+- **`docs/history/completed-releases.md`** — archived the full Release 2.0 detail with completion dates and the settled milestone/phase-plan status.
+
+### Testing
+
+- **`pwsh -NoProfile -ExecutionPolicy Bypass -File tools/Test-RoadmapStructure.ps1 -Path ./ROADMAP.md`** — passed with 0 errors.
+- **`git diff --check -- ROADMAP.md docs/history/completed-releases.md CHANGELOG.md task_plan.md progress.md findings.md`** — passed.
+
 ## 2026-06-12 — Release 2.0 Phase 4: Budget Guard + Scan Annotations
 
 ### Changes

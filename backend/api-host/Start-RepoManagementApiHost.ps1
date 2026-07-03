@@ -52,6 +52,8 @@ $agentRunsModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\agent-runs'
 . (Join-Path $agentRunsModuleRoot 'BudgetLedger.ps1')
 . (Join-Path $agentRunsModuleRoot 'AgentRuns.ps1')
 . (Join-Path $agentRunsModuleRoot 'MergeReadiness.ps1')
+$persistenceModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\persistence'
+. (Join-Path $persistenceModuleRoot 'Persistence.Store.ps1')
 . (Join-Path $commonRoot 'NotificationHub.ps1')
 . (Join-Path $PSScriptRoot 'ApiHost.ErrorHandling.ps1')
 
@@ -4500,6 +4502,20 @@ $listener.Start()
 Write-HostLog ("Repo Management API host started on http://{0}:{1}" -f $BindAddress, $Port)
 Write-HostLog ("Ops log: {0}" -f (Get-ValueOrDefault $script:OpsLogPath '(none)'))
 
+# Release 2.1 Phase 1 — SQLite persistence boundary bootstrap (non-fatal).
+# JSON stores remain authoritative during rollout; a missing SQLite provider
+# only disables the additive mirror writes.
+try {
+    $persistenceInit = Initialize-AppDatabase -WorkspaceRoot $WorkspaceRoot
+    if ($persistenceInit.success) {
+        Write-HostLog ("Persistence: app database ready at {0} (provider={1}, sqlite={2})" -f $persistenceInit.databasePath, $persistenceInit.providerDetail, $persistenceInit.sqliteVersion)
+    } else {
+        Write-HostLog ("WARN persistence: app database unavailable - {0}" -f $persistenceInit.error)
+    }
+} catch {
+    Write-HostLog ("WARN persistence: bootstrap failed - {0}" -f $_.Exception.Message)
+}
+
 # Apply startup settings: ops log cap and auto-scan interval
 try {
     $startupSettings = Get-HostSettings
@@ -5103,6 +5119,30 @@ try {
                     Add-MetricCounter -Name 'api_requests_total'
                     $snapshot = Get-MetricsSnapshot
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload $snapshot
+                }
+                'GET /api/persistence/status' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $persistenceCapability = Get-SqliteCapability
+                    $persistenceState = Get-AppDatabaseState
+                    $persistenceTables = @()
+                    $agentRunEventCount = $null
+                    if ($persistenceState.enabled) {
+                        try {
+                            $tableRows = Invoke-AppDbQuery -DatabasePath $persistenceState.databasePath -Sql "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+                            $persistenceTables = @($tableRows | ForEach-Object { [string]$_.name })
+                            $countRows = Invoke-AppDbQuery -DatabasePath $persistenceState.databasePath -Sql 'SELECT COUNT(*) AS n FROM agent_run_events'
+                            $agentRunEventCount = [long]$countRows[0].n
+                        } catch {
+                            Write-HostLog ("WARN persistence.status table inspection failed: {0}" -f $_.Exception.Message)
+                        }
+                    }
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success            = $true
+                        capability         = $persistenceCapability
+                        database           = $persistenceState
+                        tables             = $persistenceTables
+                        agentRunEventCount = $agentRunEventCount
+                    }
                 }
                 'GET /api/status' {
                     $q = Parse-QueryString -Query $req.Query

@@ -2,7 +2,12 @@
 param(
     [string]$WorkspaceRoot = 'G:\Development\GitHubRepoManagement',
     [string]$BaseUrl = 'http://localhost:7071',
-    [int]$Port = 7071
+    [int]$Port = 7071,
+    # Per-request timeout. Cold cache routes that scan a full workspace
+    # (e.g. /api/portfolio/assessment) can legitimately take well over 30s on a
+    # large real workspace, so the default is generous enough to let them finish
+    # rather than tripping a false "hang" before later steps run.
+    [int]$RequestTimeoutSec = 180
 )
 
 Set-StrictMode -Version Latest
@@ -27,7 +32,7 @@ function Invoke-ApiRequest {
         Uri = $Uri
         Method = $Method
         SkipHttpErrorCheck = $true
-        TimeoutSec = 30
+        TimeoutSec = $RequestTimeoutSec
     }
 
     if ($null -ne $Body) {
@@ -118,6 +123,39 @@ try {
     $live = $liveResponse.Json
     $ready = $readyResponse.Json
     $deps = $depsResponse.Json
+
+    Write-Host '[STEP] Persistence status route (Release 2.1 Phase 1)' -ForegroundColor Cyan
+    $persistenceStatusResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/persistence/status"
+    Assert-Not503 -Name '/api/persistence/status' -Response $persistenceStatusResponse
+    $persistenceStatus = $persistenceStatusResponse.Json
+    if ($null -eq $persistenceStatus -or $persistenceStatus.success -ne $true) {
+        throw "/api/persistence/status did not return success=true. HTTP $($persistenceStatusResponse.StatusCode). Body=$($persistenceStatusResponse.Content)"
+    }
+    foreach ($persistenceField in @('capability', 'database', 'tables', 'agentRunEventCount')) {
+        if (-not ($persistenceStatus.PSObject.Properties.Name -contains $persistenceField)) {
+            throw "/api/persistence/status response missing '$persistenceField'. Body=$($persistenceStatusResponse.Content)"
+        }
+    }
+    if (-not ($persistenceStatus.capability.PSObject.Properties.Name -contains 'available')) {
+        throw "/api/persistence/status capability missing 'available' field"
+    }
+    if ($persistenceStatus.capability.available -eq $true) {
+        if ($persistenceStatus.database.enabled -ne $true) {
+            throw "/api/persistence/status: SQLite capability is available but the app database is not enabled"
+        }
+        $persistenceTables = @($persistenceStatus.tables)
+        foreach ($expectedTable in @('schema_migrations', 'execution_ledger', 'execution_history', 'maturity_history', 'ops_log', 'portfolio_index_history', 'repo_signals', 'differential_scans', 'merge_readiness_snapshots', 'agent_runs', 'agent_run_events')) {
+            if ($expectedTable -notin $persistenceTables) {
+                throw "/api/persistence/status missing expected table '$expectedTable' (got: $($persistenceTables -join ', '))"
+            }
+        }
+        if ($null -eq $persistenceStatus.agentRunEventCount -or [long]$persistenceStatus.agentRunEventCount -lt 0) {
+            throw "/api/persistence/status agentRunEventCount must be a non-negative count when the database is enabled"
+        }
+        Write-Host ("  persistence: provider={0} db enabled, {1} tables, agentRunEventCount={2}" -f $persistenceStatus.capability.providerDetail, @($persistenceTables).Count, $persistenceStatus.agentRunEventCount) -ForegroundColor DarkGray
+    } else {
+        Write-Host '  persistence: no SQLite provider on this machine — degraded contract accepted' -ForegroundColor Yellow
+    }
 
     Write-Host '[STEP] Status route' -ForegroundColor Cyan
     $statusResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/status?localRoots=$([uri]::EscapeDataString($WorkspaceRoot))&maxDepth=2&includeNonGitFolders=false"
@@ -1419,4 +1457,21 @@ try {
 finally {
     Stop-Job -Job $job -ErrorAction SilentlyContinue | Out-Null
     Remove-Job -Job $job -Force -ErrorAction SilentlyContinue | Out-Null
+
+    # The host's accept loop blocks in a synchronous AcceptTcpClient() call, so a
+    # stopped job can leave the listener process holding the port. Sweep any process
+    # still listening on $Port so the harness always exits clean and the next run can
+    # bind without colliding (mirrors the host's own Stop-PortListeners startup guard).
+    try {
+        $lingering = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty OwningProcess -Unique)
+        foreach ($lingeringPid in $lingering) {
+            if ($lingeringPid -and $lingeringPid -ne 0) {
+                Stop-Process -Id $lingeringPid -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    catch {
+        # Best-effort cleanup only; never let teardown mask the smoke result.
+    }
 }

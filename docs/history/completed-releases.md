@@ -552,3 +552,172 @@ unreviewed file mutation.
 | Phase 1: Provider foundation + preview   | Provider adapter contract, heuristic/OpenAI/Anthropic adapters, `ai-doc-templates.json`, `POST /api/ai/docs/improve/preview`, smoke coverage  | done — smoke-tested | 2026-06-10 |
 | Phase 2: Diff viewer + history           | Side-by-side current/proposed diff viewer, custom-prompt UI field, improvement cycle history, `GET /api/ai/docs/improve/history`              | done — smoke-tested | 2026-06-11 |
 | Phase 3: Explicit apply + backup/restore | Apply action with backup + restore metadata, `POST /api/ai/docs/improve/apply` (write only after explicit operator approval)                  | done — smoke-tested | 2026-06-11 |
+
+---
+
+## Release 2.0 — Agent Run Monitoring and Actions-Gated Merge Readiness
+
+> Completed: 2026-06-12
+
+**Goal:** Monitor coding-agent execution after dispatch, associate agent
+work with branches and pull requests, track GitHub Actions, and present a
+merge-readiness signal that requires successful validation before merge.
+
+### Product outcomes
+
+- Operators can see whether an agent task is active, completed, failed, or
+  blocked.
+- Agent-created PRs are associated with the original repo, roadmap item,
+  prompt, and dispatch record.
+- GitHub Actions status is part of the execution workflow.
+- The app blocks merge-readiness when validation evidence is missing.
+- Each run records when agent work started and finished, its time to
+  deliver, and a reasonable token-usage estimate, so completed roadmap
+  phases carry measured `completed` / token annotations and future phases
+  can be sized to fit agent context budgets.
+
+### Engineering milestones
+
+- [x] Add agent-run ledger model with runId, repoId, promptId, selected
+      roadmap item, provider/tool, branch, PR URL, status, createdAt,
+      updatedAt, and outcome. *(state: smoke-tested — Phase 1; completed:
+      2026-06-11)* — [`backend/modules/agent-runs/AgentRuns.ps1`](../../backend/modules/agent-runs/AgentRuns.ps1);
+      editable state as one JSON per run under `output/agent-runs/runs/`,
+      created automatically by `POST /api/roadmap/dispatch/execute`
+      (non-fatal on ledger failure) with dispatch/refinement linkage.
+- [x] Record tier-1 run observations automatically in the ledger:
+      dispatchedAt, agentStartedAt, agentCompletedAt, derived
+      time-to-deliver, prompt count, retries, reported token usage, direct
+      API spend, and normalized AI work units (raw counts × config
+      weights), per `standards/roadmap/ROADMAP_BUDGET_MODEL.md`. Optional
+      tier-2 operator observations (provider-reported remaining units,
+      credit-prompt-seen, human review minutes) attach to a run without
+      ever blocking it. Derived valuations (subscription allocation,
+      human-time USD, overage risk) are never stored in events.
+      *(state: smoke-tested — Phases 1-2; completed: 2026-06-11)* — Phase 2
+      refresh now populates agentStartedAt (PR creation) and
+      agentCompletedAt (PR ready/merged/closed) automatically from observed
+      GitHub state; module smoke asserts the time-to-deliver derivation.
+      Reported token usage and API spend remain operator/tier-2 inputs
+      until a provider reports them.
+- [x] Add budget ledger configuration (per-project monthly USD and
+      quota-unit budgets, per-phase and per-session unit caps, unit
+      weights, valuation rates, credit policy) and a pre-dispatch quota
+      guard that runs on own-ledger unit counts, warns or refuses when an
+      estimated session exceeds its cap, stops on credit prompts, and
+      records `quota.exhausted` events that capture which queued work was
+      pending at that moment so starvation is countable. *(state:
+      ui-connected — Phase 4; completed: 2026-06-12)* — budget config now
+      resolves from `settings.json` with safe defaults via
+      `BudgetLedger.ps1`; `POST /api/roadmap/dispatch/execute` enforces the
+      guard before GitHub-token resolution, writes `quota.warning` /
+      `quota.exhausted` events, and records the selected task / phase /
+      release estimate onto new agent-run ledger entries.
+- [x] Parse phase-plan work-unit and budget-guardrail annotations from
+      managed repos' roadmaps during assessment scans so pre-dispatch
+      session estimates and estimated-vs-actual accuracy come from the
+      roadmap itself. *(state: smoke-tested — Phase 4; completed:
+      2026-06-12)* — `Roadmap.Parser.ps1` now returns `releaseContexts`,
+      `activeRelease`, `activePhasePlan`, `budgetGuardrail`, and
+      `estimatedSessionWorkUnits`; roadmap-scan entries and portfolio
+      assessment rows carry those fields forward for dispatch planning and
+      UI display.
+- [x] Append run lifecycle events (dispatched, started, validation passed
+      or failed, completed, blocked) to an append-only, schema-versioned
+      `output/agent-runs/events.jsonl` telemetry stream, kept separate from
+      editable ledger state. *(state: smoke-tested — Phases 1-2; completed:
+      2026-06-11)* — Phase 2 adds `validation.passed` / `validation.failed`
+      events, emitted only when the observed Actions conclusion changes so
+      repeated refreshes never duplicate validation history; module smoke
+      asserts exactly-once emission.
+- [x] Surface time-to-deliver and token usage in run detail so completed
+      roadmap phases record measured completion-date and token-usage
+      annotations instead of after-the-fact estimates. *(state:
+      ui-connected — Phases 2-4; completed: 2026-06-12)* — the Operations
+      Agent Runs panel renders per-run time-to-deliver, estimated/actual
+      work units, and the stored token-usage field with `n/a` fallback when
+      providers or operators have not supplied a token count yet.
+- [x] Add `GET /api/agent-runs` route for active, completed, failed, and
+      blocked runs. *(state: smoke-tested — Phase 1; completed: 2026-06-11)*
+      — status/repoName filters, newest first, per-status rollup.
+- [x] Add `GET /api/agent-runs/{runId}` route with full run detail.
+      *(state: smoke-tested — Phase 1; completed: 2026-06-11)* — returns
+      the ledger record plus its lifecycle events; 404 for unknown runs.
+- [x] Add `POST /api/agent-runs/{runId}/refresh` route that refreshes
+      branch, PR, and Actions state. *(state: smoke-tested — Phase 2;
+      completed: 2026-06-11)* — fetches the repo's PRs and the head
+      branch's latest Actions run from GitHub, applies them through
+      `Invoke-AgentRunRefresh`, and returns the updated record plus
+      association evidence; 404 unknown run, 409 no GitHub identity,
+      502 GitHub lookup failure.
+- [x] Add operator-visible Actions refresh control in the Operations
+      workspace and run detail views. *(state: ui-connected — Phase 2;
+      completed: 2026-06-11)* — Agent Runs panel in the Operations
+      workspace lists the selected repo's ledger runs with status, branch,
+      PR link, Actions state, time-to-deliver, association evidence, and a
+      per-run "Refresh from GitHub" action; operator verification against
+      a real dispatched run pending.
+- [x] Associate Copilot/agent-created branches and PRs with dispatch
+      records using branch naming, PR metadata, or stored task fingerprints.
+      *(state: smoke-tested — Phase 2; completed: 2026-06-11)* —
+      `Select-AgentRunPullRequestCandidate` matches stored PR URL, then
+      recorded branch, then the `copilot/*` branch-prefix +
+      created-after-dispatch window + selected-task fingerprint heuristic,
+      and stores operator-visible `matchedBy` evidence on the run.
+- [x] Add merge-readiness evaluator. *(state: smoke-tested — Phase 3;
+      completed: 2026-06-11)* —
+      [`backend/modules/agent-runs/MergeReadiness.ps1`](../../backend/modules/agent-runs/MergeReadiness.ps1):
+      pure `Get-MergeReadinessEvaluation` over the latest agent run, live
+      PR mergeability, fresh Actions state, local dirty count, and audit
+      blockers; per-repo snapshots under `output/merge-readiness/`.
+- [x] Block merge readiness when the repo has a dirty worktree, no PR,
+      failing or pending Actions, merge conflicts, missing validation
+      evidence, or unresolved audit blockers. *(state: smoke-tested —
+      Phase 3; completed: 2026-06-11)* — blocker codes: `no-agent-run`,
+      `no-pr`, `pr-draft`, `pr-closed-without-merge`, `pr-already-merged`,
+      `merge-conflicts`, `missing-validation-evidence`, `actions-pending`,
+      `actions-failing`, `dirty-worktree`, `audit-blocker`; each carries an
+      operator-readable message and its evidence source.
+- [x] Add Actions-gated status panel to Operations tab.
+      *(state: ui-connected — Phase 3; completed: 2026-06-11)* — Merge
+      Readiness panel in the Operations workspace with ready/blocked badge,
+      evidence summary (PR state, mergeability, Actions, dirty count, audit
+      blockers), per-blocker list, and Evaluate control.
+- [x] Add operator-controlled merge action only after merge readiness is
+      satisfied. *(state: ui-connected — Phase 3; completed: 2026-06-11)*
+      — Merge PR button appears only when ready; the server re-evaluates
+      before merging and refuses with 409 if any blocker remains, then
+      records the merged outcome on the agent run; live-host check
+      confirmed the 409 refusal path, operator verification of a real
+      merge pending.
+- [x] Add `GET /api/merge-readiness/{repoId}` route. *(state: smoke-tested
+      — Phase 3; completed: 2026-06-11)* — returns the stored snapshot;
+      404 until first evaluation.
+- [x] Add `POST /api/merge-readiness/{repoId}/evaluate` route.
+      *(state: smoke-tested — Phase 3; completed: 2026-06-11)* — resolves
+      repoId like `/api/operations/repos/{repoId}`, computes and persists
+      a fresh evaluation; verified live against the indexed portfolio.
+
+### Acceptance criteria
+
+- The app shows active, completed, failed, and blocked agent runs.
+- A dispatched task can be traced to its prompt, repo, branch, PR, and
+  Actions result.
+- Merge readiness is false while Actions are failing or pending.
+- Merge readiness is false when the PR has conflicts or no validation
+  evidence.
+- The app never auto-merges without explicit operator action.
+
+### Out of scope
+
+- Fully autonomous agent execution.
+- Multi-agent scheduling and distributed work claiming; deferred to 2.4.
+
+### Phase plan
+
+| Phase                                    | Scope                                                                                                                                               | Status                    | Completed  |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ---------- |
+| Phase 1: Agent-run ledger foundation     | `AgentRuns.ps1` ledger model + tier-1/tier-2 metric fields, append-only `events.jsonl`, dispatch-time run creation, `GET /api/agent-runs` + detail  | done — smoke-tested       | 2026-06-11 |
+| Phase 2: Run refresh + association       | `POST /api/agent-runs/{runId}/refresh` (branch/PR/Actions state), dispatch-record association via fingerprints, Actions refresh control in UI       | done — smoke-tested       | 2026-06-11 |
+| Phase 3: Merge readiness                 | Merge-readiness evaluator + blocking rules, `GET`/`POST /api/merge-readiness/*`, Actions-gated panel, operator-controlled merge action              | done — smoke-tested       | 2026-06-11 |
+| Phase 4: Budget guard + scan annotations | Budget ledger config, pre-dispatch quota guard + `quota.*` events, phase-plan work-unit annotation parsing in assessment scans                      | done — ui-connected       | 2026-06-12 |

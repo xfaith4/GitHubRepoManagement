@@ -12,6 +12,7 @@ Minimal local PowerShell API host for adapter contracts.
 - `GET /health/ready`
 - `GET /health/dependencies`
 - `GET /metrics`
+- `GET /api/persistence/status`
 - `GET /api/status`
 - `GET /api/portfolio/assessment`
 - `GET /api/operations/repos`
@@ -65,6 +66,7 @@ Notes:
 - Host uses `TcpListener` loopback binding.
 - CORS headers are enabled for local frontend integration.
 - `GET /health/ready` and `GET /health/dependencies` always return HTTP 200 and surface degraded state in the response payload.
+- `GET /api/persistence/status` reports the Release 2.1 SQLite persistence layer: provider capability detection (OS-shipped `winsqlite3.dll` on Windows, `libsqlite3` on WSL/Linux/macOS — no external dependency), `output/app.db` bootstrap state, schema tables, and the count of agent-run events mirrored by the dual-write seam. JSON/JSONL stores remain authoritative during the rollout; a missing SQLite provider degrades gracefully.
 - `GET /api/portfolio/assessment` returns the normalized portfolio lifecycle/readiness model used by Portfolio Mission, Work Queue ranking, and collection reporting.
 - `GET /api/operations/repos` returns the repo-specific indexed portfolio records consumed by the Operations tab, with a warm assessment-cache fallback when the persisted index is not available yet.
 - `GET /api/operations/repos/:repoId` returns full Operations detail for one repo, including docs/roadmap audit findings, structure findings, and dispatch context used by the audit findings panel.
