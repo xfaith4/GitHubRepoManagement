@@ -146,6 +146,25 @@ const CATEGORIES: CategoryDef[] = [
       },
       {
         method: 'GET',
+        path: '/api/portfolio/trend',
+        summary: 'Returns the Release 2.3 analytics scaffold: current portfolio KPI summary, trend series, and repo sparkline seed data backed by SQLite history when available.',
+        queryParams: [
+          { name: 'days', type: 'int', description: 'Requested trailing trend window in days (default: 90, clamped to 7-180)' },
+        ],
+        responseFields: [
+          { name: 'success', type: 'bool', description: 'Operation result flag' },
+          { name: 'data.trendStatus', type: '"history-backed" | "current-snapshot-only"', description: 'Whether the route used real maturity history or fell back to the current portfolio snapshot' },
+          { name: 'data.seedSource', type: '"portfolio-index" | "assessment-cache"', description: 'Whether the route used the persisted portfolio index or a warm in-memory assessment snapshot as its seed' },
+          { name: 'data.summary', type: 'PortfolioTrendSummary', description: 'Current portfolio KPI rollup for the analytics panel' },
+          { name: 'data.series', type: 'PortfolioTrendSeries[]', description: 'Named daily series for chart rendering (currently average maturity and ready-repo counts)' },
+          { name: 'data.repoSparklines', type: 'PortfolioTrendRepoSparkline[]', description: 'Per-repo maturity sparkline data for top candidate repos' },
+          { name: 'data.topCandidates', type: 'PortfolioTrendTopCandidate[]', description: 'Current highest-value repos for the analytics digest/sidebar' },
+          { name: 'data.availableDays', type: 'number', description: 'Number of distinct days of trend data currently available' },
+        ],
+        notes: 'This scaffold intentionally returns useful current-snapshot analytics even before Release 2.1 history capture is fully writing maturity snapshots into SQLite. Call /api/portfolio/assessment first if neither a persisted index nor a warm assessment cache exists yet.',
+      },
+      {
+        method: 'GET',
         path: '/api/operations/repos',
         summary: 'Returns the indexed repository list used by the Operations workspace, including repo-level lifecycle, GitHub, and work-readiness context.',
         responseFields: [

@@ -1,5 +1,33 @@
 # Findings
 
+## 2026-07-03 (Release 2.3 analytics scaffold)
+
+- Release 2.3 currently has roadmap goals and milestone bullets but no
+  phase plan. That makes it hard to start the work without either over-
+  claiming broad analytics scope or drifting into unrelated distribution
+  work.
+- The real dependency chain matters: Release 2.3's promised 90-day trend
+  charts depend on Release 2.1 history capture (`maturity_history`,
+  `portfolio_index_history`, `merge_readiness_snapshots`) becoming real,
+  queryable data rather than empty schema tables.
+- A truthful first scaffold is still possible now because the dashboard
+  already has a rich `Portfolio Mission` surface and the persistence module
+  already defines the future history tables. That supports a forward-
+  compatible `GET /api/portfolio/trend` contract with current-snapshot
+  fallback instead of a fake 90-day history.
+- The scaffold still provides operator value even when the indexed
+  portfolio is empty. In that state the route returns a truthful
+  `current-snapshot-only` payload with a 1-day window and zeroed summary
+  cards, which keeps the dashboard contract stable without inventing data.
+- Release 2.3 also overlaps existing report/export surfaces rather than
+  replacing them. `Portfolio.Report.ps1` already generates collection-level
+  HTML/CSV reports, so trend analytics should layer on top of the current
+  portfolio model instead of creating a parallel reporting pipeline.
+- Frontend smoke for dashboard analytics needs panel-scoped locators.
+  `Portfolio Analytics` intentionally repeats labels like `Avg Maturity`
+  across summary and chart cards, so global text probes create strict-mode
+  false negatives even when the section has rendered correctly.
+
 ## 2026-07-03 (Release 1.2 execution-throughput dashboard card)
 
 - The roadmap item is still truthfully incomplete on this checkout even

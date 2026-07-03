@@ -1,5 +1,33 @@
 # Progress
 
+## 2026-07-03 (Release 2.3 analytics scaffold)
+
+- Reconciled the Release 2.3 roadmap text with the live repo and confirmed
+  the release has intent but no execution-order phase plan yet.
+- Read the persistence schema, portfolio assessment model, report/export
+  module, and current dashboard portfolio surface together to size a
+  truthful first slice.
+- Chose a bounded scaffold instead of a fake analytics completion: add a
+  forward-compatible `GET /api/portfolio/trend` contract plus a dashboard
+  analytics panel that can render current-snapshot data now and expand to
+  history-backed trends once Release 2.1 snapshot capture is implemented.
+- Implemented the scaffold end to end: new
+  `backend/modules/portfolio/Portfolio.Analytics.ps1`, API-host route and
+  seed helper, typed frontend trend models/client, API docs entry, and a
+  visible `Portfolio Analytics` dashboard panel with trend cards, repo
+  momentum sparklines, and honest "current snapshot" status badges.
+- Extended both smoke layers for the new surface. The first frontend smoke
+  run failed as a false negative because the probe used global text
+  locators against repeated `Avg Maturity` labels; scoping those assertions
+  to the analytics section fixed the probe and the rerun passed.
+
+### Verification
+
+- `npm run build` — passed.
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "$(pwd)"` — passed, including the new `/api/portfolio/trend` step (`status=current-snapshot-only`, `availableDays=1`, `seed=portfolio-index` in the current empty-workspace smoke state).
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-FrontendSmokeTest.ps1 -WorkspaceRoot "$(pwd)"` — passed end to end after scoping the analytics-panel probe.
+- Updated `ROADMAP.md` with a Release 2.3 phase plan, marked the trend-route smoke milestone complete, and recorded the trend/dashboard milestone as `scaffolded` rather than over-claiming full history-backed completion.
+
 ## 2026-07-03 (Release 1.2 execution-throughput dashboard card)
 
 - Re-read the active roadmap plus the dashboard, typed client, and API-host

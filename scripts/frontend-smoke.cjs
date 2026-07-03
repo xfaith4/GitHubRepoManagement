@@ -19,6 +19,7 @@ async function main() {
     headingFound: false,
     backendOnline: false,
     portfolioAssessmentLoaded: false,
+    portfolioAnalyticsLoaded: false,
     documentationHealthLoaded: false,
     executionThroughputLoaded: false,
     consoleMessages: [],
@@ -99,6 +100,19 @@ async function main() {
     }
 
     try {
+      const portfolioAnalyticsSection = page.locator('section').filter({
+        has: page.getByRole('heading', { name: 'Portfolio Analytics' }),
+      }).first();
+      await portfolioAnalyticsSection.waitFor({ state: 'visible', timeout: timeoutMs });
+      await portfolioAnalyticsSection.getByText('Loading portfolio analytics…', { exact: true }).waitFor({ state: 'hidden', timeout: timeoutMs });
+      await portfolioAnalyticsSection.getByText('Avg Maturity', { exact: true }).first().waitFor({ timeout: timeoutMs });
+      await portfolioAnalyticsSection.getByText('Visible Window', { exact: true }).first().waitFor({ timeout: timeoutMs });
+      report.portfolioAnalyticsLoaded = true;
+    } catch {
+      report.portfolioAnalyticsLoaded = false;
+    }
+
+    try {
       await page.getByRole('heading', { name: 'Execution Throughput' }).waitFor({ timeout: timeoutMs });
       await page.getByText('Loading execution metrics…', { exact: true }).waitFor({ state: 'hidden', timeout: timeoutMs });
       await page.getByText('Done Today', { exact: true }).waitFor({ timeout: timeoutMs });
@@ -115,6 +129,7 @@ async function main() {
       report.headingFound &&
       report.backendOnline &&
       report.portfolioAssessmentLoaded &&
+      report.portfolioAnalyticsLoaded &&
       report.documentationHealthLoaded &&
       report.executionThroughputLoaded &&
       report.failedRequests.length === 0 &&
@@ -127,6 +142,7 @@ async function main() {
       const problems = [];
       if (!report.backendOnline) problems.push('backend health badge did not report online');
       if (!report.portfolioAssessmentLoaded) problems.push('portfolio assessment panel did not finish loading');
+      if (!report.portfolioAnalyticsLoaded) problems.push('portfolio analytics panel did not finish loading');
       if (!report.documentationHealthLoaded) problems.push('documentation health panel did not finish loading');
       if (!report.executionThroughputLoaded) problems.push('execution throughput card did not finish loading');
       if (report.failedRequests.length > 0) problems.push(`${report.failedRequests.length} request(s) failed`);

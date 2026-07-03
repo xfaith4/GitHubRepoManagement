@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry, type DocAuditIndex, type RoadmapAuditIndex, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioAssessmentEntry, type PortfolioAssessmentResult, type RepoLifecycleState, type PortfolioSignalSource, type OperationsReposResult } from '../types';
+import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry, type DocAuditIndex, type RoadmapAuditIndex, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioAssessmentEntry, type PortfolioAssessmentResult, type PortfolioTrendPoint, type PortfolioTrendResult, type RepoLifecycleState, type PortfolioSignalSource, type OperationsReposResult } from '../types';
 import SummaryCard from './SummaryCard';
 import ActionBar from './ActionBar';
 import RepoGrid from './RepoGrid';
@@ -24,7 +24,7 @@ import RepoGitStatusModal from './RepoGitStatusModal';
 import ReadmeGenerateModal from './ReadmeGenerateModal';
 import HelpModal from './HelpModal';
 import OperationsWorkspaceView from './OperationsWorkspaceView';
-import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getRoadmapDependencies, getPortfolioAssessment, getOperationsRepos } from '../services/apiClient';
+import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getRoadmapDependencies, getPortfolioAssessment, getPortfolioTrend, getOperationsRepos } from '../services/apiClient';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
 import { useHealthPing } from '../hooks/useHealthPing';
@@ -90,6 +90,33 @@ const EMPTY_EXECUTION_METRICS: ExecutionMetrics = {
 
 const EXECUTION_METRICS_REFRESH_MS = 15_000;
 
+const TREND_SERIES_COLORS: Record<string, { stroke: string; fill: string; textClass: string; badgeClass: string }> = {
+  emerald: {
+    stroke: '#34d399',
+    fill: 'rgba(16, 185, 129, 0.18)',
+    textClass: 'text-emerald-200',
+    badgeClass: 'border-emerald-700/50 bg-emerald-900/30 text-emerald-100',
+  },
+  sky: {
+    stroke: '#38bdf8',
+    fill: 'rgba(14, 165, 233, 0.16)',
+    textClass: 'text-sky-200',
+    badgeClass: 'border-sky-700/50 bg-sky-900/30 text-sky-100',
+  },
+  amber: {
+    stroke: '#fbbf24',
+    fill: 'rgba(245, 158, 11, 0.16)',
+    textClass: 'text-amber-200',
+    badgeClass: 'border-amber-700/50 bg-amber-900/30 text-amber-100',
+  },
+  slate: {
+    stroke: '#94a3b8',
+    fill: 'rgba(148, 163, 184, 0.14)',
+    textClass: 'text-slate-200',
+    badgeClass: 'border-slate-700/50 bg-slate-900/30 text-slate-100',
+  },
+};
+
 function formatLifecycleLabel(state: RepoLifecycleState): string {
   return state.replaceAll('-', ' ');
 }
@@ -103,6 +130,74 @@ function formatSignalLabel(key: string): string {
     default:
       return key.charAt(0).toUpperCase() + key.slice(1);
   }
+}
+
+function formatTrendStatusLabel(status: PortfolioTrendResult['trendStatus']): string {
+  return status === 'history-backed' ? 'History backed' : 'Current snapshot';
+}
+
+function formatTrendSeedSourceLabel(source: PortfolioTrendResult['seedSource']): string {
+  return source === 'portfolio-index' ? 'Portfolio index' : 'Assessment cache';
+}
+
+function formatTrendDateLabel(date: string): string {
+  const parsed = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return date;
+  }
+  return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function formatTrendSeriesValue(key: string, value: number): string {
+  if (key === 'avgMaturityScore') {
+    return `${Math.round(value)}%`;
+  }
+  return Math.round(value).toString();
+}
+
+function formatTrendSeriesDelta(key: string, delta: number): string {
+  const rounded = key === 'avgMaturityScore'
+    ? Math.round(delta * 10) / 10
+    : Math.round(delta);
+  const sign = rounded > 0 ? '+' : '';
+  return key === 'avgMaturityScore' ? `${sign}${rounded}%` : `${sign}${rounded}`;
+}
+
+function buildTrendGeometry(points: PortfolioTrendPoint[], width = 320, height = 92, padding = 10) {
+  const safePoints = points.length > 0 ? points : [{ date: new Date().toISOString().slice(0, 10), value: 0 }];
+  const values = safePoints.map(point => Number(point.value ?? 0));
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const rawRange = max - min;
+  const innerWidth = Math.max(width - padding * 2, 1);
+  const innerHeight = Math.max(height - padding * 2, 1);
+  const coordinates = safePoints.map((point, index) => {
+    const ratioX = safePoints.length === 1 ? 0.5 : index / (safePoints.length - 1);
+    const normalized = rawRange === 0 ? 0.5 : (Number(point.value ?? 0) - min) / rawRange;
+    return {
+      x: padding + ratioX * innerWidth,
+      y: padding + (1 - normalized) * innerHeight,
+      point,
+    };
+  });
+  const polyline = coordinates.map(({ x, y }) => `${x},${y}`).join(' ');
+  const baselineY = height - padding;
+  const areaPath = coordinates.length === 1
+    ? `M ${coordinates[0].x} ${baselineY} L ${coordinates[0].x} ${coordinates[0].y} L ${coordinates[0].x} ${baselineY} Z`
+    : `M ${coordinates[0].x} ${baselineY} L ${coordinates.map(({ x, y }) => `${x} ${y}`).join(' L ')} L ${coordinates[coordinates.length - 1].x} ${baselineY} Z`;
+
+  return {
+    coordinates,
+    polyline,
+    areaPath,
+    min,
+    max,
+    firstValue: values[0],
+    lastValue: values[values.length - 1],
+    pointCount: safePoints.length,
+    startDate: safePoints[0].date,
+    endDate: safePoints[safePoints.length - 1].date,
+  };
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefreshing = false, error, fetchRepoStatus, dataSource, insightsMeta, dataLastUpdated }) => {
@@ -157,6 +252,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   const [hasAttemptedDepsLoad, setHasAttemptedDepsLoad] = useState(false);
   const [portfolioAssessment, setPortfolioAssessment] = useState<PortfolioAssessmentResult | null>(null);
   const [portfolioAssessmentLoading, setPortfolioAssessmentLoading] = useState(false);
+  const [portfolioTrend, setPortfolioTrend] = useState<PortfolioTrendResult | null>(null);
+  const [portfolioTrendLoading, setPortfolioTrendLoading] = useState(false);
+  const [portfolioTrendError, setPortfolioTrendError] = useState<string | null>(null);
   const [operationsRepos, setOperationsRepos] = useState<OperationsReposResult | null>(null);
   const [operationsReposLoading, setOperationsReposLoading] = useState(false);
   const [operationsReposError, setOperationsReposError] = useState<string | null>(null);
@@ -262,6 +360,42 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
 
     refreshPortfolioAssessment(false).catch(() => {/* silent */});
   }, [loading, repos.length]);
+
+  useEffect(() => {
+    if (!portfolioAssessment) {
+      setPortfolioTrend(null);
+      setPortfolioTrendError(null);
+      setPortfolioTrendLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setPortfolioTrendLoading(true);
+
+    getPortfolioTrend({ days: 90 })
+      .then(result => {
+        if (cancelled) {
+          return;
+        }
+        setPortfolioTrend(result);
+        setPortfolioTrendError(null);
+      })
+      .catch(err => {
+        if (cancelled) {
+          return;
+        }
+        setPortfolioTrendError(err instanceof Error ? err.message : 'Portfolio analytics are unavailable.');
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setPortfolioTrendLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [portfolioAssessment?.generatedAt, portfolioAssessment?.count]);
 
   // Release 1.2 — fetch execution metrics and auto-scan schedule on mount
   useEffect(() => {
@@ -914,6 +1048,20 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     };
   }, [portfolioAssessment]);
 
+  const portfolioTrendSummaryCards = useMemo(() => {
+    if (!portfolioTrend) {
+      return [];
+    }
+
+    return [
+      { label: 'Avg Maturity', value: `${Math.round(portfolioTrend.summary.averageMaturityScore)}%`, accent: 'text-emerald-200' },
+      { label: 'Docs Health', value: `${Math.round(portfolioTrend.summary.averageDocumentationHealthScore)}%`, accent: 'text-sky-200' },
+      { label: 'Ready Now', value: portfolioTrend.summary.readyForWorkCount.toString(), accent: 'text-blue-200' },
+      { label: 'Improved This Week', value: portfolioTrend.summary.improvedThisWeek.toString(), accent: 'text-cyan-200' },
+      { label: 'Visible Window', value: `${portfolioTrend.availableDays}d`, accent: 'text-amber-200' },
+    ];
+  }, [portfolioTrend]);
+
   if (error && repos.length === 0) {
     return <div className="text-center p-8 text-red-400">{error}</div>;
   }
@@ -1272,6 +1420,257 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                 )}
               </section>
             </div>
+
+            <section className="bg-gray-800/60 border border-gray-700 rounded-lg px-4 py-4">
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                  <h2 className="text-lg font-semibold text-white">Portfolio Analytics</h2>
+                  <p className="text-sm text-gray-400 mt-1">Release 2.3 scaffold for portfolio momentum: current KPIs now, history-backed trend lines as the SQLite capture window fills in.</p>
+                </div>
+                {portfolioTrend && (
+                  <div className="flex flex-wrap items-center justify-end gap-2 text-xs">
+                    <span className={`inline-flex rounded-full border px-2.5 py-1 font-medium ${portfolioTrend.trendStatus === 'history-backed' ? 'border-emerald-700/50 bg-emerald-900/30 text-emerald-100' : 'border-amber-700/50 bg-amber-900/30 text-amber-100'}`}>
+                      {formatTrendStatusLabel(portfolioTrend.trendStatus)}
+                    </span>
+                    <span className="inline-flex rounded-full border border-gray-600 bg-gray-900/70 px-2.5 py-1 font-medium text-gray-200">
+                      {formatTrendSeedSourceLabel(portfolioTrend.seedSource)}
+                    </span>
+                    <span className="text-gray-500">
+                      Generated {new Date(portfolioTrend.generatedAt).toLocaleTimeString()}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {portfolioTrend ? (
+                <>
+                  <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mt-4">
+                    {portfolioTrendSummaryCards.map(metric => (
+                      <div key={metric.label} className="rounded-lg border border-gray-700 bg-gray-900/50 px-3 py-3">
+                        <div className={`text-lg font-semibold ${metric.accent}`}>{metric.value}</div>
+                        <div className="mt-1 text-xs text-gray-400">{metric.label}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-1 xl:grid-cols-[1.35fr,1fr] gap-4">
+                    <div className="space-y-3">
+                      {portfolioTrend.series.map(series => {
+                        const palette = TREND_SERIES_COLORS[series.color] ?? TREND_SERIES_COLORS.emerald;
+                        const geometry = buildTrendGeometry(series.points);
+                        const delta = geometry.lastValue - geometry.firstValue;
+                        const deltaLabel = geometry.pointCount > 1
+                          ? `${formatTrendSeriesDelta(series.key, delta)} vs start`
+                          : 'Snapshot seed';
+
+                        return (
+                          <div key={series.key} className="rounded-xl border border-gray-700 bg-gray-900/50 px-4 py-4">
+                            <div className="flex items-start justify-between gap-3 flex-wrap">
+                              <div>
+                                <div className="text-sm text-gray-400">{series.label}</div>
+                                <div className={`mt-1 text-2xl font-semibold ${palette.textClass}`}>
+                                  {formatTrendSeriesValue(series.key, geometry.lastValue)}
+                                </div>
+                              </div>
+                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${palette.badgeClass}`}>
+                                {deltaLabel}
+                              </span>
+                            </div>
+
+                            <div className="mt-4 rounded-lg border border-gray-800 bg-gray-950/70 px-3 py-3">
+                              <div className="flex items-center justify-between text-[11px] text-gray-500">
+                                <span>{formatTrendDateLabel(geometry.startDate)}</span>
+                                <span>{geometry.pointCount} point{geometry.pointCount === 1 ? '' : 's'} · {portfolioTrend.availableDays}d window</span>
+                                <span>{formatTrendDateLabel(geometry.endDate)}</span>
+                              </div>
+                              <svg viewBox="0 0 320 92" className="mt-3 h-24 w-full" aria-hidden="true">
+                                <line x1="10" y1="82" x2="310" y2="82" stroke="rgba(148, 163, 184, 0.18)" strokeWidth="1" />
+                                <path d={geometry.areaPath} fill={palette.fill} />
+                                {geometry.coordinates.length > 1 && (
+                                  <polyline
+                                    points={geometry.polyline}
+                                    fill="none"
+                                    stroke={palette.stroke}
+                                    strokeWidth="3"
+                                    strokeLinejoin="round"
+                                    strokeLinecap="round"
+                                  />
+                                )}
+                                {geometry.coordinates.map((coord, index) => (
+                                  <circle
+                                    key={`${series.key}-${coord.point.date}-${index}`}
+                                    cx={coord.x}
+                                    cy={coord.y}
+                                    r={index === geometry.coordinates.length - 1 ? 4 : 2.5}
+                                    fill={palette.stroke}
+                                    opacity={index === geometry.coordinates.length - 1 ? 1 : 0.6}
+                                  />
+                                ))}
+                              </svg>
+                              <div className="mt-2 flex items-center justify-between text-xs text-gray-400">
+                                <span>Low {formatTrendSeriesValue(series.key, geometry.min)}</span>
+                                <span>High {formatTrendSeriesValue(series.key, geometry.max)}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="rounded-xl border border-gray-700 bg-gray-900/50 px-4 py-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <h3 className="text-base font-semibold text-white">Repo Momentum</h3>
+                            <p className="text-sm text-gray-400 mt-1">Per-repo maturity sparkline seeds for the highest-value candidates.</p>
+                          </div>
+                          <span className="text-xs text-gray-500">{portfolioTrend.repoSparklines.length} repo{portfolioTrend.repoSparklines.length === 1 ? '' : 's'}</span>
+                        </div>
+
+                        {portfolioTrend.repoSparklines.length > 0 ? (
+                          <div className="mt-4 space-y-3">
+                            {portfolioTrend.repoSparklines.map(repoSparkline => {
+                              const sparkline = buildTrendGeometry(repoSparkline.points, 180, 46, 6);
+                              return (
+                                <div key={repoSparkline.repoName} className="rounded-lg border border-gray-700 bg-gray-950/60 px-3 py-3">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-sm font-medium text-white">{repoSparkline.repoName}</span>
+                                        <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] capitalize ${LIFECYCLE_STYLES[repoSparkline.lifecycleState] ?? LIFECYCLE_STYLES.discovered}`}>
+                                          {formatLifecycleLabel(repoSparkline.lifecycleState)}
+                                        </span>
+                                      </div>
+                                      <div className="mt-1 text-xs text-gray-500">{repoSparkline.maturityLevel}</div>
+                                    </div>
+                                    <div className="w-40 sm:w-44 flex-shrink-0">
+                                      <div className="flex items-center justify-between text-[11px] text-gray-500">
+                                        <span>{formatTrendDateLabel(sparkline.startDate)}</span>
+                                        <span className="font-medium text-emerald-200">{repoSparkline.currentScore}%</span>
+                                      </div>
+                                      <svg viewBox="0 0 180 46" className="mt-1 h-11 w-full" aria-hidden="true">
+                                        <line x1="6" y1="40" x2="174" y2="40" stroke="rgba(148, 163, 184, 0.18)" strokeWidth="1" />
+                                        <path d={sparkline.areaPath} fill="rgba(16, 185, 129, 0.16)" />
+                                        {sparkline.coordinates.length > 1 && (
+                                          <polyline
+                                            points={sparkline.polyline}
+                                            fill="none"
+                                            stroke="#34d399"
+                                            strokeWidth="2.5"
+                                            strokeLinejoin="round"
+                                            strokeLinecap="round"
+                                          />
+                                        )}
+                                        {sparkline.coordinates.map((coord, index) => (
+                                          <circle
+                                            key={`${repoSparkline.repoName}-${coord.point.date}-${index}`}
+                                            cx={coord.x}
+                                            cy={coord.y}
+                                            r={index === sparkline.coordinates.length - 1 ? 3.5 : 2.25}
+                                            fill="#34d399"
+                                            opacity={index === sparkline.coordinates.length - 1 ? 1 : 0.55}
+                                          />
+                                        ))}
+                                      </svg>
+                                    </div>
+                                  </div>
+                                  <div className="mt-2 text-xs text-gray-400 line-clamp-2">
+                                    Next focus: <span className="text-gray-200">{repoSparkline.topValueItemText || repoSparkline.recommendedAction}</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="mt-4 rounded-lg border border-dashed border-gray-700 bg-gray-950/40 px-4 py-4 text-sm text-gray-400">
+                            No repo sparkline candidates are available yet. Refresh the indexed assessment once the portfolio has value-ranked items.
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="rounded-xl border border-gray-700 bg-gray-900/50 px-4 py-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <h3 className="text-base font-semibold text-white">Top Candidates</h3>
+                            <p className="text-sm text-gray-400 mt-1">Current value-ranked queue from the assessment seed.</p>
+                          </div>
+                          <span className="text-xs text-gray-500">{portfolioTrend.topCandidates.length} repo{portfolioTrend.topCandidates.length === 1 ? '' : 's'}</span>
+                        </div>
+
+                        {portfolioTrend.topCandidates.length > 0 ? (
+                          <div className="mt-4 space-y-2">
+                            {portfolioTrend.topCandidates.map((candidate, index) => (
+                              <div key={`${candidate.repoName}-${candidate.maturityLevel}`} className="rounded-lg border border-gray-700 bg-gray-950/60 px-3 py-3">
+                                <div className="flex items-start gap-3">
+                                  <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-cyan-900/40 text-xs font-semibold text-cyan-100 border border-cyan-700/40">
+                                    {index + 1}
+                                  </span>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="min-w-0">
+                                        <div className="text-sm font-medium text-white">{candidate.repoName}</div>
+                                        <div className="mt-1 text-xs text-gray-400 line-clamp-2">{candidate.topValueItemText}</div>
+                                      </div>
+                                      <div className="text-right">
+                                        <div className="text-sm font-semibold text-cyan-200">{candidate.valueScore}</div>
+                                        <div className="text-[11px] text-gray-500">Value score</div>
+                                      </div>
+                                    </div>
+                                    <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                                      <span className={`inline-flex rounded-full border px-2 py-0.5 capitalize ${LIFECYCLE_STYLES[candidate.lifecycleState] ?? LIFECYCLE_STYLES.discovered}`}>
+                                        {formatLifecycleLabel(candidate.lifecycleState)}
+                                      </span>
+                                      <span className="inline-flex rounded-full border border-gray-600 bg-gray-900/70 px-2 py-0.5 text-gray-200">
+                                        {candidate.maturityLevel}
+                                      </span>
+                                      <span className="inline-flex rounded-full border border-emerald-700/40 bg-emerald-900/20 px-2 py-0.5 text-emerald-200">
+                                        {candidate.maturityScore}% maturity
+                                      </span>
+                                      <span className="inline-flex rounded-full border border-blue-700/40 bg-blue-900/20 px-2 py-0.5 text-blue-200">
+                                        {candidate.documentationHealthScore}% docs
+                                      </span>
+                                    </div>
+                                    <div className="mt-2 text-xs text-gray-500">{candidate.recommendedAction}</div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="mt-4 rounded-lg border border-dashed border-gray-700 bg-gray-950/40 px-4 py-4 text-sm text-gray-400">
+                            Trend scaffolding is active, but no candidate repos are ranked yet.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {(portfolioTrend.note || portfolioTrendError) && (
+                    <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-3">
+                      {portfolioTrend.note && (
+                        <div className="rounded-lg border border-blue-700/30 bg-blue-900/20 px-4 py-3 text-sm text-blue-100">
+                          {portfolioTrend.note}
+                        </div>
+                      )}
+                      {portfolioTrendError && (
+                        <div className="rounded-lg border border-amber-700/40 bg-amber-900/20 px-4 py-3 text-sm text-amber-100">
+                          Refresh failed; showing the last successful analytics snapshot. {portfolioTrendError}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : portfolioTrendLoading ? (
+                <div className="flex items-center gap-3 py-8 text-gray-400 justify-center">
+                  <SpinnerIcon className="w-5 h-5 animate-spin" />
+                  <span>Loading portfolio analytics…</span>
+                </div>
+              ) : (
+                <div className="mt-4 rounded-lg border border-amber-700/40 bg-amber-900/20 px-4 py-3 text-sm text-amber-100">
+                  Portfolio analytics are unavailable. {portfolioTrendError ?? 'Refresh the portfolio assessment to seed the Release 2.3 trend view.'}
+                </div>
+              )}
+            </section>
 
             {portfolioMission && portfolioMission.topEntries.length > 0 && (
               <section className="bg-gray-800/60 border border-gray-700 rounded-lg px-4 py-4">

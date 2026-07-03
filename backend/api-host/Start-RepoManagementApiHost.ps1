@@ -45,6 +45,7 @@ $readmeModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\readme'
 $portfolioModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\portfolio'
 . (Join-Path $portfolioModuleRoot 'Portfolio.ValueScorer.ps1')
 . (Join-Path $portfolioModuleRoot 'Portfolio.Assessment.ps1')
+. (Join-Path $portfolioModuleRoot 'Portfolio.Analytics.ps1')
 . (Join-Path $portfolioModuleRoot 'Portfolio.Report.ps1')
 $aiModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\ai'
 . (Join-Path $aiModuleRoot 'AiDocImprovement.ps1')
@@ -389,6 +390,55 @@ function Get-OperationsReposPayload {
         summary = $summary
         count = $count
         cacheSource = $cacheSource
+    }
+}
+
+function Get-PortfolioTrendSeedPayload {
+    param(
+        [Parameter()]
+        [hashtable]$Settings = $null
+    )
+
+    if ($null -eq $Settings) {
+        $Settings = Get-HostSettings
+    }
+
+    $indexPayload = Get-PortfolioIndexPayload -WorkspaceRoot $WorkspaceRoot
+    if ($null -ne $indexPayload -and ($indexPayload.PSObject.Properties.Name -contains 'repos')) {
+        $generatedAt = [string](Get-ObjectPropertyValue -InputObject $indexPayload -PropertyName 'generatedAt' -Default '')
+        if ([string]::IsNullOrWhiteSpace($generatedAt)) {
+            $generatedAt = (Get-Date).ToUniversalTime().ToString('o')
+        }
+
+        return [pscustomobject]@{
+            available   = $true
+            entries     = @(Convert-PortfolioIndexReposToAssessments -IndexRepos @($indexPayload.repos))
+            summary     = Get-ObjectPropertyValue -InputObject $indexPayload -PropertyName 'summary' -Default $null
+            generatedAt = $generatedAt
+            seedSource  = 'portfolio-index'
+        }
+    }
+
+    $ttlSeconds = Get-PortfolioAssessmentCacheTtlSeconds -Settings $Settings
+    $assessmentCache = if ($ttlSeconds -gt 0) {
+        Get-PortfolioAssessmentFromCache -TtlSeconds $ttlSeconds
+    } else {
+        $null
+    }
+
+    if ($null -ne $assessmentCache -and $assessmentCache.hit) {
+        return [pscustomobject]@{
+            available   = $true
+            entries     = @($assessmentCache.entries)
+            summary     = $assessmentCache.summary
+            generatedAt = [string]$assessmentCache.generatedAt
+            seedSource  = 'assessment-cache'
+        }
+    }
+
+    return [pscustomobject]@{
+        available = $false
+        error = 'Portfolio trend analytics are not ready yet. Run /api/portfolio/assessment first so the dashboard has a warm assessment or persisted index snapshot.'
     }
 }
 
@@ -6289,6 +6339,44 @@ try {
                             cacheSource     = 'fresh-scan'
                             cacheAgeSeconds = 0
                         }
+                    }
+                }
+                'GET /api/portfolio/trend' {
+                    Write-HostLog ("[TRACE] portfolio.trend correlationId={0} start" -f $correlationId)
+                    $q = Parse-QueryString -Query $req.Query
+                    $requestedDays = if ($q.ContainsKey('days') -and $q.days -match '^\d+$') { [int]$q.days } else { 90 }
+                    if ($requestedDays -lt 7) { $requestedDays = 7 }
+                    if ($requestedDays -gt 180) { $requestedDays = 180 }
+
+                    $settings = Get-HostSettings
+                    $trendSeed = Get-PortfolioTrendSeedPayload -Settings $settings
+                    if (-not $trendSeed.available) {
+                        Write-HostLog ("WARN portfolio.trend correlationId={0} no seed payload available" -f $correlationId)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error = $trendSeed.error
+                        }
+                        break
+                    }
+
+                    try {
+                        $trendPayload = Get-PortfolioTrendPayload `
+                            -Assessments @($trendSeed.entries) `
+                            -Summary $trendSeed.summary `
+                            -GeneratedAt ([string]$trendSeed.generatedAt) `
+                            -SeedSource ([string]$trendSeed.seedSource) `
+                            -WorkspaceRoot $WorkspaceRoot `
+                            -RequestedDays $requestedDays
+
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                        Write-HostLog ("[TRACE] portfolio.trend correlationId={0} done status={1} seed={2} availableDays={3}" -f $correlationId, $trendPayload.trendStatus, $trendPayload.seedSource, $trendPayload.availableDays)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data = $trendPayload
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'portfolio.trend'
                     }
                 }
                 'GET /api/operations/repos' {

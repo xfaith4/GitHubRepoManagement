@@ -1009,6 +1009,69 @@ export interface PortfolioAssessmentResult {
   cacheAgeSeconds: number;
 }
 
+// Release 2.3 — Portfolio Analytics, Trend Visualization, and Distribution
+
+export type PortfolioTrendStatus = 'history-backed' | 'current-snapshot-only';
+export type PortfolioTrendSeedSource = 'portfolio-index' | 'assessment-cache';
+
+export interface PortfolioTrendPoint {
+  date: string;
+  value: number;
+}
+
+export interface PortfolioTrendSeries {
+  key: 'avgMaturityScore' | 'readyRepos';
+  label: string;
+  color: string;
+  points: PortfolioTrendPoint[];
+}
+
+export interface PortfolioTrendSummary {
+  totalRepos: number;
+  readyForWorkCount: number;
+  runningCount: number;
+  blockedCount: number;
+  completedCount: number;
+  averageMaturityScore: number;
+  averageDocumentationHealthScore: number;
+  improvedThisWeek: number;
+}
+
+export interface PortfolioTrendTopCandidate {
+  repoName: string;
+  lifecycleState: RepoLifecycleState;
+  maturityLevel: RoadmapMaturityLevel;
+  maturityScore: number;
+  documentationHealthScore: number;
+  pendingItemCount: number;
+  topValueItemText: string;
+  valueScore: number;
+  recommendedAction: string;
+}
+
+export interface PortfolioTrendRepoSparkline {
+  repoName: string;
+  lifecycleState: RepoLifecycleState;
+  maturityLevel: RoadmapMaturityLevel;
+  currentScore: number;
+  points: PortfolioTrendPoint[];
+  topValueItemText: string;
+  recommendedAction: string;
+}
+
+export interface PortfolioTrendResult {
+  trendStatus: PortfolioTrendStatus;
+  seedSource: PortfolioTrendSeedSource;
+  requestedDays: number;
+  availableDays: number;
+  generatedAt: string;
+  note?: string | null;
+  summary: PortfolioTrendSummary;
+  series: PortfolioTrendSeries[];
+  topCandidates: PortfolioTrendTopCandidate[];
+  repoSparklines: PortfolioTrendRepoSparkline[];
+}
+
 // Release 1.8 — Operations Workspace and Prompt Refinement
 
 export interface OperationsRepoEntry {

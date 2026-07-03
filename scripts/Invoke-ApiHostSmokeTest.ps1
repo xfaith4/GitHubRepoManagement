@@ -1229,6 +1229,53 @@ try {
 
     Write-Host ("  /api/portfolio/assessment -> count={0} ready={1} blocked={2} cacheSource={3}" -f $portfolioData.count, $portfolioData.summary.readyForWorkCount, $portfolioData.summary.blockedCount, $portfolioData.cacheSource) -ForegroundColor DarkGray
 
+    Write-Host '[STEP] Portfolio trend route (Release 2.3 scaffold)' -ForegroundColor Cyan
+    $portfolioTrendResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/trend?days=30"
+    Assert-Not503 -Name '/api/portfolio/trend?days=30' -Response $portfolioTrendResponse
+    $portfolioTrendJson = $portfolioTrendResponse.Json
+    if ($null -eq $portfolioTrendJson) {
+        throw "/api/portfolio/trend did not return JSON. HTTP $($portfolioTrendResponse.StatusCode). Content-Type=$($portfolioTrendResponse.ContentType). Body=$($portfolioTrendResponse.Content)"
+    }
+    if (-not ($portfolioTrendJson.PSObject.Properties.Name -contains 'success')) {
+        throw "/api/portfolio/trend response missing 'success'. Body=$($portfolioTrendResponse.Content)"
+    }
+    if (-not $portfolioTrendJson.success) {
+        $err = if ($portfolioTrendJson.PSObject.Properties.Name -contains 'error') { $portfolioTrendJson.error } else { $portfolioTrendResponse.Content }
+        throw "/api/portfolio/trend returned success=false. HTTP $($portfolioTrendResponse.StatusCode). Error=$err"
+    }
+    if (-not ($portfolioTrendJson.PSObject.Properties.Name -contains 'data') -or $null -eq $portfolioTrendJson.data) {
+        throw "/api/portfolio/trend returned success=true but missing 'data'. Body=$($portfolioTrendResponse.Content)"
+    }
+    $portfolioTrendData = $portfolioTrendJson.data
+    $portfolioTrendFieldsOk = $null -ne $portfolioTrendData -and
+        ($portfolioTrendData.PSObject.Properties.Name -contains 'trendStatus') -and
+        ($portfolioTrendData.PSObject.Properties.Name -contains 'seedSource') -and
+        ($portfolioTrendData.PSObject.Properties.Name -contains 'summary') -and
+        ($portfolioTrendData.PSObject.Properties.Name -contains 'series') -and
+        ($portfolioTrendData.PSObject.Properties.Name -contains 'repoSparklines') -and
+        ($portfolioTrendData.PSObject.Properties.Name -contains 'topCandidates') -and
+        ($portfolioTrendData.PSObject.Properties.Name -contains 'availableDays') -and
+        ($portfolioTrendData.PSObject.Properties.Name -contains 'generatedAt')
+    if (-not $portfolioTrendFieldsOk) { throw '/api/portfolio/trend response missing expected fields (trendStatus, seedSource, summary, series, repoSparklines, topCandidates, availableDays, generatedAt)' }
+
+    $portfolioTrendSummaryFieldsOk = $null -ne $portfolioTrendData.summary -and
+        ($portfolioTrendData.summary.PSObject.Properties.Name -contains 'totalRepos') -and
+        ($portfolioTrendData.summary.PSObject.Properties.Name -contains 'averageMaturityScore') -and
+        ($portfolioTrendData.summary.PSObject.Properties.Name -contains 'averageDocumentationHealthScore')
+    if (-not $portfolioTrendSummaryFieldsOk) { throw '/api/portfolio/trend summary missing expected fields (totalRepos, averageMaturityScore, averageDocumentationHealthScore)' }
+
+    if ([string]$portfolioTrendData.trendStatus -notin @('history-backed', 'current-snapshot-only')) {
+        throw '/api/portfolio/trend returned an unexpected trendStatus value'
+    }
+    if ([string]$portfolioTrendData.seedSource -notin @('portfolio-index', 'assessment-cache')) {
+        throw '/api/portfolio/trend returned an unexpected seedSource value'
+    }
+    if (@($portfolioTrendData.series).Count -lt 1) {
+        throw '/api/portfolio/trend returned no series entries'
+    }
+
+    Write-Host ("  /api/portfolio/trend -> status={0} availableDays={1} seed={2}" -f [string]$portfolioTrendData.trendStatus, [int]$portfolioTrendData.availableDays, [string]$portfolioTrendData.seedSource) -ForegroundColor DarkGray
+
     Write-Host '[STEP] Operations repo index route (Release 1.8)' -ForegroundColor Cyan
     $operationsReposResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/operations/repos"
     Assert-Not503 -Name '/api/operations/repos' -Response $operationsReposResponse

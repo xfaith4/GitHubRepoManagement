@@ -1,39 +1,37 @@
 # Task Plan
 
 ## Goal
-Close the Release 1.2 execution-throughput dashboard slice truthfully:
-turn the existing partial `GET /api/execution/metrics` consumer into a real
-operator-facing dashboard card with visible zero-state/error handling,
-freshness behavior, and validation strong enough to advance the roadmap
-state beyond `planned` only if the evidence supports it.
+Start Release 2.3 (Portfolio Analytics, Trend Visualization, and
+Distribution) in a truthful way: define the release's first bounded phase
+in the roadmap and ship a forward-compatible analytics scaffold that gives
+operators a visible portfolio-trend surface now without pretending the full
+90-day history pipeline already exists.
 
 ## Scope
 
-- Dashboard frontend only unless validation exposes a real contract bug:
-  replace the hidden one-shot metrics strip in `frontend/components/Dashboard.tsx`
-  with a dedicated execution-throughput card/panel that remains visible in
-  idle states.
-- Refresh behavior: load metrics explicitly, surface loading/failure state,
-  and refresh after execution-affecting view changes or operator actions so
-  the card does not drift after mount.
-- Preserve the existing backend route and typed client contract unless
-  validation proves they are insufficient.
-- Validation and closeout: `npm run build`, targeted smoke confirmation for
-  `GET /api/execution/metrics`, and roadmap/planning updates scoped to this
-  slice only.
+- Roadmap planning: add a Release 2.3 phase plan that acknowledges the real
+  dependency on Release 2.1 history capture while still defining a useful
+  Phase 1 scaffold.
+- Backend scaffold: add a typed `GET /api/portfolio/trend` route and
+  supporting analytics helper that can serve current-snapshot rollups now
+  and transparently expand to history-backed trends later.
+- Frontend scaffold: add a dashboard analytics panel that consumes the new
+  route, renders portfolio-level trend/health data, and explains when only
+  a current snapshot is available.
+- Validation/docs: wire the route into API docs and smoke coverage; keep the
+  scaffold additive and avoid broad persistence or digest-distribution work.
 
 ## Phases
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| 1. Reconcile roadmap item against live code | complete | Found partial implementation already present: backend route + client + hidden mount-time metrics strip. |
-| 2. Update planning artifacts for the active slice | complete | Repointed the working plan at Release 1.2 execution-throughput card completion. |
-| 3. Implement durable dashboard card behavior | complete | Replaced the hidden strip with a persistent execution-throughput panel, refresh loop, manual refresh, and post-dispatch refresh wiring. |
-| 4. Validation and roadmap state update | complete | `npm run build` passed after Rollup-native recovery; frontend smoke passed with a new execution-throughput assertion; roadmap item advanced to smoke-tested. |
+| 1. Reconcile Release 2.3 with live code and dependencies | complete | 2.3 has roadmap text only; the real dependency is 2.1 history capture, but a current-snapshot analytics scaffold is still feasible now. |
+| 2. Update planning artifacts for the active slice | complete | Repointed the working plan from the finished Release 1.2 work to Release 2.3 Phase 1 scaffold. |
+| 3. Implement analytics scaffold | complete | Added the analytics helper/module, `GET /api/portfolio/trend`, typed client, API docs entry, dashboard panel, and repo sparkline rendering with current-snapshot fallback messaging. |
+| 4. Validation and roadmap state update | complete | `npm run build`, API-host smoke, and frontend smoke all passed; roadmap + planning artifacts now record the scaffold truthfully. |
 
 ## Errors Encountered
 
 | Error | Attempt | Resolution |
 | --- | --- | --- |
-| `npm run build` failed because Rollup's native Linux package was missing from the workspace root (`@rollup/rollup-linux-x64-gnu`). | 1 | Installed the exact native package with `npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu@4.60.3`; root-cause appears to be `frontend/scripts/ensure-rollup-native.mjs` checking `frontend/node_modules` while this checkout resolves Rollup from the workspace root. |
-| `npm run smoke:frontend` failed immediately under WSL because `Invoke-FrontendSmokeTest.ps1` defaulted `WorkspaceRoot` to `G:\Development\GitHubRepoManagement`. | 1 | Re-ran the script with `-WorkspaceRoot "$(pwd)"`, which let the smoke start and pass against the current checkout. |
+| Frontend smoke false-negative on the analytics panel | 1 | The panel rendered, but the probe used global text locators against repeated `Avg Maturity` labels. Scoped the Playwright assertions to the `Portfolio Analytics` section and reran smoke successfully. |

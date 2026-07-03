@@ -626,10 +626,21 @@ self-promoting.
 - The Roadmap Contract Standard is published as a standalone open
   specification.
 
+#### Phase plan (within this release)
+
+| Phase | Scope | Status |
+| --- | --- | --- |
+| Phase 1: Analytics contract scaffold | `GET /api/portfolio/trend`, typed frontend client, dashboard analytics panel, repo sparkline seed rendering, and smoke coverage with honest current-snapshot fallback messaging | **done — smoke-tested** (2026-07-03) |
+| Phase 2: History-backed rollups | Persist and aggregate daily portfolio/maturity history from Release 2.1 tables, widen `availableDays`, and compute real `improvedThisWeek` deltas | planned |
+| Phase 3: Distribution surfaces | Weekly digest webhook delivery, SVG badge routes, and `roadmap-audit-action` packaging | planned |
+| Phase 4: Standalone spec + portfolio economics | Extract the roadmap contract into a publishable spec directory and add cost/quota-burn analytics derived from raw run observations | planned |
+
 #### Engineering milestones
 
 - [ ] Add portfolio trend and repo-row sparkline visualizations backed by
-      maturity history and `GET /api/portfolio/trend`. *(state: planned)*
+      maturity history and `GET /api/portfolio/trend`. *(state: scaffolded
+      — current-snapshot route + dashboard panel shipped 2026-07-03; full
+      history window still depends on Release 2.1 capture.)*
 - [ ] Add weekly digest generation plus scheduled webhook delivery for
       portfolio KPIs and top candidate repos. *(state: planned)*
 - [ ] Package a `roadmap-audit-action` GitHub Action that runs the
@@ -644,8 +655,8 @@ self-promoting.
       units (forecast accuracy), and a credit-prompt / overage event
       trail — derived values are never written back into the append-only
       event log. *(state: planned)*
-- [ ] Smoke test the trend route response shape for daily rollups.
-      *(state: planned)*
+- [x] Smoke test the trend route response shape for daily rollups.
+      *(state: smoke-tested — 2026-07-03)*
 
 #### Acceptance criteria
 

@@ -1,4 +1,4 @@
-import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult } from '../types';
+import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -1423,6 +1423,151 @@ export async function getPortfolioAssessment(options: { refresh?: boolean; inclu
     count: Number(d.count ?? entries.length),
     cacheSource: d.cacheSource === 'memory' ? 'memory' : 'fresh-scan',
     cacheAgeSeconds: Number(d.cacheAgeSeconds ?? 0),
+  };
+}
+
+export async function getPortfolioTrend(options: { days?: number } = {}): Promise<PortfolioTrendResult> {
+  if (USE_MOCK_API) {
+    const ops = getMockOperationsRepos();
+    const entries = ops.entries;
+    const today = new Date().toISOString().slice(0, 10);
+    const averageMaturityScore = entries.length > 0
+      ? Math.round(entries.reduce((sum, entry) => sum + Number(entry.maturityScore ?? 0), 0) / entries.length)
+      : 0;
+    const readyForWorkCount = entries.filter(entry => entry.lifecycleState === 'ready-for-work').length;
+
+    const series: PortfolioTrendSeries[] = [
+      {
+        key: 'avgMaturityScore',
+        label: 'Avg Maturity',
+        color: 'emerald',
+        points: [{ date: today, value: averageMaturityScore }],
+      },
+      {
+        key: 'readyRepos',
+        label: 'Ready Repos',
+        color: 'sky',
+        points: [{ date: today, value: readyForWorkCount }],
+      },
+    ];
+
+    const topCandidates: PortfolioTrendTopCandidate[] = entries
+      .filter(entry => entry.topValueItem)
+      .sort((left, right) => (right.topValueItem?.valueScore ?? 0) - (left.topValueItem?.valueScore ?? 0))
+      .slice(0, 5)
+      .map(entry => ({
+        repoName: entry.repoName,
+        lifecycleState: entry.lifecycleState,
+        maturityLevel: entry.maturityLevel,
+        maturityScore: Number(entry.maturityScore ?? 0),
+        documentationHealthScore: Number(entry.documentationHealthScore ?? 0),
+        pendingItemCount: Number(entry.pendingItemCount ?? 0),
+        topValueItemText: String(entry.topValueItem?.text ?? entry.nextPendingItemText ?? ''),
+        valueScore: Number(entry.topValueItem?.valueScore ?? 0),
+        recommendedAction: entry.recommendedAction,
+      }));
+
+    const repoSparklines: PortfolioTrendRepoSparkline[] = topCandidates.map(candidate => ({
+      repoName: candidate.repoName,
+      lifecycleState: candidate.lifecycleState,
+      maturityLevel: candidate.maturityLevel,
+      currentScore: candidate.maturityScore,
+      points: [{ date: today, value: candidate.maturityScore }],
+      topValueItemText: candidate.topValueItemText,
+      recommendedAction: candidate.recommendedAction,
+    }));
+
+    return {
+      trendStatus: 'current-snapshot-only',
+      seedSource: 'assessment-cache',
+      requestedDays: Number(options.days ?? 90),
+      availableDays: 1,
+      generatedAt: new Date().toISOString(),
+      note: 'Mock mode exposes only the current snapshot analytics scaffold.',
+      summary: {
+        totalRepos: entries.length,
+        readyForWorkCount,
+        runningCount: entries.filter(entry => entry.lifecycleState === 'running').length,
+        blockedCount: entries.filter(entry => ['needs-readme', 'needs-roadmap', 'needs-roadmap-repair', 'needs-structure', 'parse-error'].includes(entry.lifecycleState)).length,
+        completedCount: entries.filter(entry => entry.lifecycleState === 'completed').length,
+        averageMaturityScore,
+        averageDocumentationHealthScore: entries.length > 0
+          ? Math.round(entries.reduce((sum, entry) => sum + Number(entry.documentationHealthScore ?? 0), 0) / entries.length)
+          : 0,
+        improvedThisWeek: 0,
+      },
+      series,
+      topCandidates,
+      repoSparklines,
+    };
+  }
+
+  const qs = new URLSearchParams();
+  if (options.days != null) {
+    qs.set('days', String(options.days));
+  }
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  const data = await fetchJson<any>(`${API_BASE_URL}/portfolio/trend${suffix}`);
+  const d = data?.data ?? data ?? {};
+  return {
+    trendStatus: d.trendStatus === 'history-backed' ? 'history-backed' : 'current-snapshot-only',
+    seedSource: d.seedSource === 'portfolio-index' ? 'portfolio-index' : 'assessment-cache',
+    requestedDays: Number(d.requestedDays ?? options.days ?? 90),
+    availableDays: Number(d.availableDays ?? 1),
+    generatedAt: String(d.generatedAt ?? new Date().toISOString()),
+    note: d.note ?? null,
+    summary: {
+      totalRepos: Number(d.summary?.totalRepos ?? 0),
+      readyForWorkCount: Number(d.summary?.readyForWorkCount ?? 0),
+      runningCount: Number(d.summary?.runningCount ?? 0),
+      blockedCount: Number(d.summary?.blockedCount ?? 0),
+      completedCount: Number(d.summary?.completedCount ?? 0),
+      averageMaturityScore: Number(d.summary?.averageMaturityScore ?? 0),
+      averageDocumentationHealthScore: Number(d.summary?.averageDocumentationHealthScore ?? 0),
+      improvedThisWeek: Number(d.summary?.improvedThisWeek ?? 0),
+    },
+    series: Array.isArray(d.series)
+      ? d.series.map((series: any): PortfolioTrendSeries => ({
+          key: series?.key === 'readyRepos' ? 'readyRepos' : 'avgMaturityScore',
+          label: String(series?.label ?? ''),
+          color: String(series?.color ?? 'emerald'),
+          points: Array.isArray(series?.points)
+            ? series.points.map((point: any) => ({
+                date: String(point?.date ?? new Date().toISOString().slice(0, 10)),
+                value: Number(point?.value ?? 0),
+              }))
+            : [],
+        }))
+      : [],
+    topCandidates: Array.isArray(d.topCandidates)
+      ? d.topCandidates.map((candidate: any): PortfolioTrendTopCandidate => ({
+          repoName: String(candidate?.repoName ?? ''),
+          lifecycleState: candidate?.lifecycleState ?? 'discovered',
+          maturityLevel: candidate?.maturityLevel ?? 'L0-Absent',
+          maturityScore: Number(candidate?.maturityScore ?? 0),
+          documentationHealthScore: Number(candidate?.documentationHealthScore ?? 0),
+          pendingItemCount: Number(candidate?.pendingItemCount ?? 0),
+          topValueItemText: String(candidate?.topValueItemText ?? ''),
+          valueScore: Number(candidate?.valueScore ?? 0),
+          recommendedAction: String(candidate?.recommendedAction ?? ''),
+        }))
+      : [],
+    repoSparklines: Array.isArray(d.repoSparklines)
+      ? d.repoSparklines.map((sparkline: any): PortfolioTrendRepoSparkline => ({
+          repoName: String(sparkline?.repoName ?? ''),
+          lifecycleState: sparkline?.lifecycleState ?? 'discovered',
+          maturityLevel: sparkline?.maturityLevel ?? 'L0-Absent',
+          currentScore: Number(sparkline?.currentScore ?? 0),
+          points: Array.isArray(sparkline?.points)
+            ? sparkline.points.map((point: any) => ({
+                date: String(point?.date ?? new Date().toISOString().slice(0, 10)),
+                value: Number(point?.value ?? 0),
+              }))
+            : [],
+          topValueItemText: String(sparkline?.topValueItemText ?? ''),
+          recommendedAction: String(sparkline?.recommendedAction ?? ''),
+        }))
+      : [],
   };
 }
 
