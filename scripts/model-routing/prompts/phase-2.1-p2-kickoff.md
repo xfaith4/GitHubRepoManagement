@@ -1,8 +1,11 @@
+# Planning Release 2.1
+
 You are planning Release 2.1, Phase 2 of ROADMAP.md: migrate execution-ledger
 and ops-log reads/writes behind the persistence boundary using parameterized
 SQL, keeping JSON exports as debugging artifacts only.
 
 Read only what you need, in this order:
+
 1. ROADMAP.md — section 5 (Active Release Snapshot) and the Release 2.1
    engineering milestones / acceptance criteria.
 2. backend/modules/persistence/Persistence.Store.ps1 — the Phase 1 seam
@@ -15,6 +18,7 @@ Read only what you need, in this order:
    — the Release 2.1 smoke sections you will extend.
 
 Produce an implementation plan that satisfies these acceptance criteria:
+
 - The execution ledger survives a concurrent assign + complete call without
   data loss.
 - The ops log is queryable by time range via
@@ -24,6 +28,7 @@ Produce an implementation plan that satisfies these acceptance criteria:
   migrated paths.
 
 Constraints:
+
 - Parameterized SQL only — no string-interpolated queries.
 - Dual-write first, cut reads over second (mirror the agent-run-event seam),
   so a mid-phase failure never strands state.
@@ -31,6 +36,7 @@ Constraints:
   the existing graceful-degradation path when no provider exists.
 
 Plan output format:
+
 1. Ordered file-change list with one-line intent per file.
 2. Migration sequence (dual-write -> read cutover -> JSON demotion) with the
    verification command after each stage.
