@@ -37,12 +37,12 @@ $ErrorActionPreference = 'Stop'
 # ---------------------------------------------------------------------------
 
 $script:AiDocTemplatesRelPath = 'backend\config\ai-doc-templates.json'
-$script:AiDocHistoryRelDir    = 'output\ai-doc-improvements'
-$script:AiDocBackupRelDir     = 'output\ai-doc-improvements\backups'
+$script:AiDocHistoryRelDir = 'output\ai-doc-improvements'
+$script:AiDocBackupRelDir = 'output\ai-doc-improvements\backups'
 $script:AiDocDefaultAnthropicModel = 'claude-opus-4-8'
-$script:AiDocDefaultOpenAiModel    = 'gpt-4o'
-$script:AiDocDefaultMaxTokens      = 8000
-$script:AiDocHttpTimeoutSec        = 60
+$script:AiDocDefaultOpenAiModel = 'gpt-4o'
+$script:AiDocDefaultMaxTokens = 8000
+$script:AiDocHttpTimeoutSec = 60
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -95,7 +95,8 @@ function Get-AiDocTemplates {
     }
     try {
         return ConvertFrom-Json -InputObject (Get-Content -LiteralPath $path -Raw -Encoding UTF8)
-    } catch {
+    }
+    catch {
         return [pscustomobject]@{ readmeTemplates = @(); roadmapTemplates = @() }
     }
 }
@@ -117,7 +118,8 @@ function Resolve-AiDocTemplate {
 
     $list = if ($DocType -eq 'roadmap') {
         @(_AiGetField -Obj $TemplatesConfig -Name 'roadmapTemplates' -Default @())
-    } else {
+    }
+    else {
         @(_AiGetField -Obj $TemplatesConfig -Name 'readmeTemplates' -Default @())
     }
     if (@($list).Count -eq 0) { return $null }
@@ -148,16 +150,16 @@ function Get-AiDocProviderSettings {
 
     $ai = _AiGetField -Obj $Settings -Name 'ai' -Default $null
     $anthropic = _AiGetField -Obj $ai -Name 'anthropic' -Default $null
-    $openai    = _AiGetField -Obj $ai -Name 'openai' -Default $null
+    $openai = _AiGetField -Obj $ai -Name 'openai' -Default $null
 
     return [pscustomobject]@{
-        configuredProvider   = [string](_AiGetField -Obj $ai -Name 'provider' -Default 'auto')
-        anthropicKeyEnvVar   = [string](_AiGetField -Obj $anthropic -Name 'apiKeyEnvVar' -Default 'ANTHROPIC_API_KEY')
-        anthropicModel       = [string](_AiGetField -Obj $anthropic -Name 'model' -Default $script:AiDocDefaultAnthropicModel)
-        anthropicMaxTokens   = [int](_AiGetField -Obj $anthropic -Name 'maxTokens' -Default $script:AiDocDefaultMaxTokens)
-        openAiKeyEnvVar      = [string](_AiGetField -Obj $openai -Name 'apiKeyEnvVar' -Default 'OPENAI_API_KEY')
-        openAiModel          = [string](_AiGetField -Obj $openai -Name 'model' -Default $script:AiDocDefaultOpenAiModel)
-        openAiMaxTokens      = [int](_AiGetField -Obj $openai -Name 'maxTokens' -Default $script:AiDocDefaultMaxTokens)
+        configuredProvider = [string](_AiGetField -Obj $ai -Name 'provider' -Default 'auto')
+        anthropicKeyEnvVar = [string](_AiGetField -Obj $anthropic -Name 'apiKeyEnvVar' -Default 'ANTHROPIC_API_KEY')
+        anthropicModel     = [string](_AiGetField -Obj $anthropic -Name 'model' -Default $script:AiDocDefaultAnthropicModel)
+        anthropicMaxTokens = [int](_AiGetField -Obj $anthropic -Name 'maxTokens' -Default $script:AiDocDefaultMaxTokens)
+        openAiKeyEnvVar    = [string](_AiGetField -Obj $openai -Name 'apiKeyEnvVar' -Default 'OPENAI_API_KEY')
+        openAiModel        = [string](_AiGetField -Obj $openai -Name 'model' -Default $script:AiDocDefaultOpenAiModel)
+        openAiMaxTokens    = [int](_AiGetField -Obj $openai -Name 'maxTokens' -Default $script:AiDocDefaultMaxTokens)
     }
 }
 
@@ -374,7 +376,8 @@ function Invoke-AnthropicDocProvider {
             warnings        = @()
             error           = $null
         }
-    } catch {
+    }
+    catch {
         return [pscustomobject]@{
             providerId      = 'anthropic'
             modelId         = $Model
@@ -434,7 +437,8 @@ function Invoke-OpenAiDocProvider {
             warnings        = @()
             error           = $null
         }
-    } catch {
+    }
+    catch {
         return [pscustomobject]@{
             providerId      = 'openai'
             modelId         = $Model
@@ -510,13 +514,16 @@ function Invoke-AiDocImprovePreview {
     $selected = 'heuristic'
     if ($requested -eq 'heuristic') {
         $selected = 'heuristic'
-    } elseif ($requested -eq 'anthropic') {
+    }
+    elseif ($requested -eq 'anthropic') {
         if ($availability.anthropic) { $selected = 'anthropic' }
         else { $warnings.Add('Anthropic provider requested but no API key is configured; falling back to the offline heuristic provider.') }
-    } elseif ($requested -eq 'openai') {
+    }
+    elseif ($requested -eq 'openai') {
         if ($availability.openai) { $selected = 'openai' }
         else { $warnings.Add('OpenAI provider requested but no API key is configured; falling back to the offline heuristic provider.') }
-    } else {
+    }
+    else {
         # auto
         if ($availability.anthropic) { $selected = 'anthropic' }
         elseif ($availability.openai) { $selected = 'openai' }
@@ -536,7 +543,8 @@ function Invoke-AiDocImprovePreview {
         if ($selected -eq 'anthropic') {
             $result = Invoke-AnthropicDocProvider -ApiKey (_AiResolveApiKey -EnvVarName $providerSettings.anthropicKeyEnvVar) `
                 -Model $providerSettings.anthropicModel -SystemPrompt $systemPrompt -UserPrompt $userPrompt -MaxTokens $providerSettings.anthropicMaxTokens
-        } else {
+        }
+        else {
             $result = Invoke-OpenAiDocProvider -ApiKey (_AiResolveApiKey -EnvVarName $providerSettings.openAiKeyEnvVar) `
                 -Model $providerSettings.openAiModel -SystemPrompt $systemPrompt -UserPrompt $userPrompt -MaxTokens $providerSettings.openAiMaxTokens
         }
@@ -565,23 +573,23 @@ function Invoke-AiDocImprovePreview {
     $scoreAfter = _AiSectionScore -Content $proposedContent -RequiredSections $requiredSections
 
     return [pscustomobject]@{
-        previewId        = $previewId
-        repoName         = $RepoName
-        docType          = $docType
-        providerId       = [string]$result.providerId
-        modelId          = $result.modelId
-        templateId       = $effectiveTemplateId
-        customPrompt     = if (-not [string]::IsNullOrWhiteSpace($CustomPrompt)) { $CustomPrompt } else { $null }
-        currentContent   = $currentContent
-        proposedContent  = $proposedContent
-        changeSummary    = @($result.changeSummary)
-        estimatedScore   = [pscustomobject]@{
+        previewId       = $previewId
+        repoName        = $RepoName
+        docType         = $docType
+        providerId      = [string]$result.providerId
+        modelId         = $result.modelId
+        templateId      = $effectiveTemplateId
+        customPrompt    = if (-not [string]::IsNullOrWhiteSpace($CustomPrompt)) { $CustomPrompt } else { $null }
+        currentContent  = $currentContent
+        proposedContent = $proposedContent
+        changeSummary   = @($result.changeSummary)
+        estimatedScore  = [pscustomobject]@{
             before = $scoreBefore
             after  = $scoreAfter
             delta  = ($scoreAfter - $scoreBefore)
         }
-        warnings         = @($warnings)
-        generatedAt      = $now
+        warnings        = @($warnings)
+        generatedAt     = $now
     }
 }
 
@@ -618,26 +626,27 @@ function Write-AiDocImprovementHistory {
 
     $score = _AiGetField -Obj $Preview -Name 'estimatedScore' -Default $null
     $record = [ordered]@{
-        previewId    = [string](_AiGetField -Obj $Preview -Name 'previewId' -Default '')
-        createdAt    = [string](_AiGetField -Obj $Preview -Name 'generatedAt' -Default ((Get-Date).ToUniversalTime().ToString('o')))
-        repoName     = $repoName
-        docType      = [string](_AiGetField -Obj $Preview -Name 'docType' -Default 'readme')
-        providerId   = [string](_AiGetField -Obj $Preview -Name 'providerId' -Default '')
-        modelId      = _AiGetField -Obj $Preview -Name 'modelId' -Default $null
-        templateId   = [string](_AiGetField -Obj $Preview -Name 'templateId' -Default '')
-        customPrompt = _AiGetField -Obj $Preview -Name 'customPrompt' -Default $null
-        scoreBefore  = [int](_AiGetField -Obj $score -Name 'before' -Default 0)
-        scoreAfter   = [int](_AiGetField -Obj $score -Name 'after' -Default 0)
-        scoreDelta   = [int](_AiGetField -Obj $score -Name 'delta' -Default 0)
+        previewId     = [string](_AiGetField -Obj $Preview -Name 'previewId' -Default '')
+        createdAt     = [string](_AiGetField -Obj $Preview -Name 'generatedAt' -Default ((Get-Date).ToUniversalTime().ToString('o')))
+        repoName      = $repoName
+        docType       = [string](_AiGetField -Obj $Preview -Name 'docType' -Default 'readme')
+        providerId    = [string](_AiGetField -Obj $Preview -Name 'providerId' -Default '')
+        modelId       = _AiGetField -Obj $Preview -Name 'modelId' -Default $null
+        templateId    = [string](_AiGetField -Obj $Preview -Name 'templateId' -Default '')
+        customPrompt  = _AiGetField -Obj $Preview -Name 'customPrompt' -Default $null
+        scoreBefore   = [int](_AiGetField -Obj $score -Name 'before' -Default 0)
+        scoreAfter    = [int](_AiGetField -Obj $score -Name 'after' -Default 0)
+        scoreDelta    = [int](_AiGetField -Obj $score -Name 'delta' -Default 0)
         changeSummary = @(_AiGetField -Obj $Preview -Name 'changeSummary' -Default @() | ForEach-Object { [string]$_ })
-        warningCount = @(_AiGetField -Obj $Preview -Name 'warnings' -Default @()).Count
-        applied      = $false
+        warningCount  = @(_AiGetField -Obj $Preview -Name 'warnings' -Default @()).Count
+        applied       = $false
     }
 
     try {
         $json = ConvertTo-Json -InputObject $record -Compress -Depth 5
         Add-Content -LiteralPath (_AiHistoryFilePath -WorkspaceRoot $WorkspaceRoot -RepoName $repoName) -Value $json -Encoding UTF8 -ErrorAction Stop
-    } catch {
+    }
+    catch {
         # Non-fatal — preview must succeed even when history cannot be written.
     }
 
@@ -683,7 +692,8 @@ function Get-AiDocImprovementHistory {
                 Sort-Object { _AiGetField -Obj $_ -Name 'createdAt' -Default ([datetime]::MinValue) } -Descending |
                 Select-Object -First $Limit
         )
-    } catch {
+    }
+    catch {
         return @()
     }
 }
@@ -698,7 +708,8 @@ function _AiSha256Hex {
     try {
         $bytes = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes([string]$Text))
         return ([BitConverter]::ToString($bytes)).Replace('-', '').ToLowerInvariant()
-    } finally {
+    }
+    finally {
         $sha.Dispose()
     }
 }
@@ -791,14 +802,16 @@ function Invoke-AiDocImproveApply {
         previewId       = if ([string]::IsNullOrWhiteSpace($PreviewId)) { $null } else { $PreviewId }
         restoreCommand  = if ($null -ne $backupPath) {
             "Copy-Item -LiteralPath '$backupPath' -Destination '$TargetPath' -Force"
-        } else {
+        }
+        else {
             "Remove-Item -LiteralPath '$TargetPath' -Force  # file did not exist before this apply"
         }
     }
     try {
         ConvertTo-Json -InputObject $restoreMetadata -Depth 4 |
             Set-Content -LiteralPath $restoreMetadataPath -Encoding UTF8 -ErrorAction Stop
-    } catch {
+    }
+    catch {
         $restoreMetadataPath = $null
     }
 
@@ -829,7 +842,8 @@ function Invoke-AiDocImproveApply {
     try {
         $json = ConvertTo-Json -InputObject $historyRecord -Compress -Depth 5
         Add-Content -LiteralPath (_AiHistoryFilePath -WorkspaceRoot $WorkspaceRoot -RepoName $RepoName) -Value $json -Encoding UTF8 -ErrorAction Stop
-    } catch {
+    }
+    catch {
         # Non-fatal — the apply itself succeeded; history must not undo that fact.
     }
 
