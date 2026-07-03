@@ -121,6 +121,12 @@ function Write-HostLog {
                 (Get-Date).ToUniversalTime().ToString('o'), $lvl,
                 ($Message | ConvertTo-Json -Compress)
             Add-Content -LiteralPath $script:OpsLogPath -Value $entry -Encoding UTF8
+
+            $dbLog = Write-AppDbOpsLogEntry -Level $lvl -Source 'api-host' -Message $Message
+            if (-not $dbLog.success -and $dbLog.reason -ne 'app-db-not-initialized') {
+                Write-Verbose ("Write-HostLog: app-db ops log mirror skipped: {0}" -f $dbLog.reason)
+            }
+
             $script:OpsLogWriteCount++
             if ($script:OpsLogWriteCount % 250 -eq 0) {
                 Invoke-TrimOpsLog -MaxLines $script:OpsLogMaxLines
@@ -139,6 +145,13 @@ function Invoke-TrimOpsLog {
         if ($allLines.Count -le $MaxLines) { return }
         $kept = $allLines[($allLines.Count - $MaxLines)..($allLines.Count - 1)]
         [System.IO.File]::WriteAllLines($script:OpsLogPath, $kept, [System.Text.Encoding]::UTF8)
+    } catch { }
+
+    try {
+        $dbTrim = Invoke-AppDbOpsLogTrim -MaxRows $MaxLines
+        if (-not $dbTrim.success -and $dbTrim.reason -ne 'app-db-not-initialized') {
+            Write-Verbose ("Invoke-TrimOpsLog: app-db trim skipped: {0}" -f $dbTrim.reason)
+        }
     } catch { }
 }
 
@@ -536,6 +549,11 @@ function Invoke-MergeReadinessForRepo {
         -AgentRun $latestRun -PrDetail $prDetail -ActionsState $freshActions `
         -LocalDirtyCount $dirtyCount -AuditBlockers $auditBlockers
     $null = Save-MergeReadinessSnapshot -WorkspaceRoot $WorkspaceRoot -Evaluation $evaluation
+
+    $dbSnapshot = Write-AppDbMergeReadinessSnapshot -Evaluation $evaluation
+    if (-not $dbSnapshot.success -and $dbSnapshot.reason -ne 'app-db-not-initialized') {
+        Write-HostLog ("[WARN ] merge-readiness correlationId={0} repoId={1} sqlite snapshot skipped: {2}" -f $CorrelationId, $RepoId, $dbSnapshot.reason)
+    }
 
     return [pscustomobject]@{ success = $true; statusCode = 200; error = $null; evaluation = $evaluation }
 }
@@ -4566,6 +4584,12 @@ try {
     $persistenceInit = Initialize-AppDatabase -WorkspaceRoot $WorkspaceRoot
     if ($persistenceInit.success) {
         Write-HostLog ("Persistence: app database ready at {0} (provider={1}, sqlite={2})" -f $persistenceInit.databasePath, $persistenceInit.providerDetail, $persistenceInit.sqliteVersion)
+        $importResult = Import-AppDbOpsLogFromJsonl -JsonlPath $script:OpsLogPath
+        if ($importResult.success) {
+            Write-HostLog ("Persistence: imported {0} ops-log rows from JSONL seed" -f $importResult.imported)
+        } else {
+            Write-HostLog ("WARN persistence: ops-log import skipped - {0}" -f $importResult.reason)
+        }
     } else {
         Write-HostLog ("WARN persistence: app database unavailable - {0}" -f $persistenceInit.error)
     }
@@ -4644,7 +4668,13 @@ try {
                 continue
             }
 
-            $path = if ([string]::IsNullOrWhiteSpace($req.Path)) { '/' } else { $req.Path }
+            $path = if ([string]::IsNullOrWhiteSpace($req.Path)) { '/' } else { [string]$req.Path }
+            # Normalize API paths so //api/... and /api/.../ resolve to the
+            # same route contract instead of falling through to SPA fallback.
+            $path = '/' + (($path -replace '\\', '/') -replace '^/+', '' -replace '/+', '/')
+            if ($path.Length -gt 1 -and $path.EndsWith('/')) {
+                $path = $path.TrimEnd('/')
+            }
             $correlationId = if ($req.Headers.ContainsKey('x-correlation-id') -and $req.Headers['x-correlation-id']) { $req.Headers['x-correlation-id'] } else { [guid]::NewGuid().ToString('n') }
             $requestStart = Get-Date
 
@@ -5207,68 +5237,11 @@ try {
                     $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
                     $defaultMaxDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 2 }
                     $defaultIncludeNonGit = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('includeNonGitFolders')) { [bool]$settings.inventory.includeNonGitFolders } else { $false }
-                    $configuredGitHubUser = if ($settings.ContainsKey('reconcile') -and $settings.reconcile.ContainsKey('gitHubOwner') -and $settings.reconcile.gitHubOwner) { [string]$settings.reconcile.gitHubOwner } else { '' }
-
                     $localRoots = if ($q.ContainsKey('localRoots') -and $q.localRoots) { @($q.localRoots -split ';|,') } else { $defaultRoots }
                     $maxDepth = if ($q.ContainsKey('maxDepth') -and $q.maxDepth) { [int]$q.maxDepth } else { $defaultMaxDepth }
                     $includeNonGit = if ($q.ContainsKey('includeNonGitFolders')) { Parse-Bool -Value $q.includeNonGitFolders -Default $defaultIncludeNonGit } else { $defaultIncludeNonGit }
-                    $refresh = if ($q.ContainsKey('refresh')) { Parse-Bool -Value $q.refresh -Default $false } else { $false }
-                    # stale=true: return disk cache immediately regardless of TTL (stale-while-revalidate)
-                    $stale = if ($q.ContainsKey('stale')) { Parse-Bool -Value $q.stale -Default $false } else { $false }
-                    $ttlSeconds = Get-StatusCacheTtlSeconds -Settings $settings
-                    $cacheKey = Get-StatusCacheKey -LocalRoots $localRoots -MaxDepth $maxDepth -IncludeNonGitFolders $includeNonGit
 
-                    $result = $null
-                    if (-not $refresh) {
-                        # With stale=true we bypass TTL; otherwise only hit cache when TTL > 0
-                        if ($stale -or ($ttlSeconds -gt 0)) {
-                            $cacheHit = Get-StatusFromCache -Key $cacheKey -TtlSeconds $ttlSeconds -IgnoreTtl:$stale
-                            if ($cacheHit.hit) {
-                                $result = Add-StatusCacheMeta -Result $cacheHit.response -CacheMeta (Get-StatusCacheMeta -Hit $true -Source $cacheHit.source -TtlSeconds $ttlSeconds -AgeSeconds $cacheHit.ageSeconds -BypassRequested:$false -CachedAt $cacheHit.cachedAt)
-                            }
-                        }
-                    }
-
-                    if ($null -eq $result) {
-                        $scanCachedAt = (Get-Date).ToUniversalTime().ToString('o')
-                        $statusLogPath = if ($script:OpsLogPath) { $script:OpsLogPath } else { $LogPath }
-                        $result = Get-StatusAdapterResult -LocalRoots $localRoots -MaxDepth $maxDepth -IncludeNonGitFolders:$includeNonGit -LogPath $statusLogPath
-                        if ($result.success) {
-                            $result = Add-GitHubMetadataToStatusResult -StatusResult $result -Settings $settings
-                        }
-                        $result = Add-StatusCacheMeta -Result $result -CacheMeta (Get-StatusCacheMeta -Hit $false -Source 'fresh-scan' -TtlSeconds $ttlSeconds -AgeSeconds 0 -BypassRequested:$refresh -CachedAt $scanCachedAt)
-                        if ($result.success -and ($ttlSeconds -gt 0)) {
-                            Save-StatusCache -Key $cacheKey -Response $result
-                        }
-                    }
-
-                    if ($null -eq $result.meta) {
-                        $result | Add-Member -NotePropertyName meta -NotePropertyValue @{} -Force
-                    }
-                    $result.meta.workspacePath = if (@($localRoots).Count -gt 0) { [string]$localRoots[0] } else { '' }
-                    $result.meta.configuredGithubUser = $configuredGitHubUser
-
-                    Add-MetricCounter -Name 'api_requests_total'
-                    Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
-                    Send-HttpJson -Stream $req.Stream -StatusCode $(if ($result.success) { 200 } else { 500 }) -CorrelationId $correlationId -Payload $result
-                }
-                'POST /api/reconcile' {
-                    $body = Parse-JsonBody -Body $req.Body
-                    $settings = Get-HostSettings
-                    $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
-                    $defaultOwnerType = if ($settings.ContainsKey('reconcile') -and $settings.reconcile.ContainsKey('ownerType') -and $settings.reconcile.ownerType) { [string]$settings.reconcile.ownerType } else { 'Auto' }
-                    $defaultGitHubOwner = if ($settings.ContainsKey('reconcile') -and $settings.reconcile.ContainsKey('gitHubOwner') -and $settings.reconcile.gitHubOwner) { [string]$settings.reconcile.gitHubOwner } else { '' }
-                    $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
-                    $defaultIncludeNonGit = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('includeNonGitFolders')) { [bool]$settings.inventory.includeNonGitFolders } else { $true }
-
-                    $localRoots = if ($body.ContainsKey('localRoots') -and $body.localRoots) { @($body.localRoots) } else { $defaultRoots }
-                    $ownerType = if ($body.ContainsKey('ownerType') -and $body.ownerType) { [string]$body.ownerType } else { $defaultOwnerType }
-                    $maxDepth = if ($body.ContainsKey('maxDepth') -and $body.maxDepth) { [int]$body.maxDepth } else { $defaultDepth }
-                    $includeNonGit = if ($body.ContainsKey('includeNonGitFolders')) { [bool]$body.includeNonGitFolders } else { $defaultIncludeNonGit }
-                    $outDir = if ($body.ContainsKey('outDir')) { [string]$body.outDir } else { '' }
-                    $githubOwner = if ($body.ContainsKey('githubOwner')) { [string]$body.githubOwner } else { $defaultGitHubOwner }
-
-                    $result = Invoke-ReconcileAdapter -LocalRoots $localRoots -GitHubOwner $githubOwner -OwnerType $ownerType -OutDir $outDir -MaxDepth $maxDepth -IncludeNonGitFolders:$includeNonGit -LogPath $LogPath
+                    $result = Get-StatusAdapterResult -LocalRoots $localRoots -MaxDepth $maxDepth -IncludeNonGitFolders:$includeNonGit -LogPath $LogPath
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
                     Send-HttpJson -Stream $req.Stream -StatusCode $(if ($result.success) { 200 } else { 500 }) -CorrelationId $correlationId -Payload $result
@@ -6306,6 +6279,37 @@ try {
 
                     $summary = Get-PortfolioAssessmentSummary -Assessments $assessments
                     $generatedAt = (Get-Date).ToUniversalTime().ToString('o')
+                    $scanId = [guid]::NewGuid().ToString('n')
+
+                    try {
+                        $snapshotResult = Write-AppDbPortfolioAssessmentSnapshot -Assessments $assessments -ScanId $scanId -CapturedAt $generatedAt
+                        if (-not $snapshotResult.success) {
+                            Write-HostLog ("WARN portfolio.assessment persistence snapshot skipped: {0}" -f $snapshotResult.reason)
+                        }
+                    } catch {
+                        Write-HostLog ("WARN portfolio.assessment persistence snapshot failed: {0}" -f $_.Exception.Message)
+                    }
+
+                    try {
+                        $changedRepoNames = if ($useDifferentialScan) {
+                            @($differentialChangedSet | ForEach-Object { [string]$_ })
+                        } else {
+                            @($assessments | ForEach-Object { [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '') } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+                        }
+                        $scanSummaryResult = Write-AppDbDifferentialScanSnapshot `
+                            -ScanId $scanId `
+                            -ScanMode $(if ($useDifferentialScan) { 'differential' } else { 'full' }) `
+                            -StartedAt ($requestStart.ToUniversalTime().ToString('o')) `
+                            -CompletedAt $generatedAt `
+                            -ReposTotal @($assessments).Count `
+                            -ReposChanged $(if ($useDifferentialScan) { $differentialChangedSet.Count } else { @($assessments).Count }) `
+                            -ChangedRepoNames $changedRepoNames
+                        if (-not $scanSummaryResult.success) {
+                            Write-HostLog ("WARN portfolio.assessment differential snapshot skipped: {0}" -f $scanSummaryResult.reason)
+                        }
+                    } catch {
+                        Write-HostLog ("WARN portfolio.assessment differential snapshot failed: {0}" -f $_.Exception.Message)
+                    }
 
                     try {
                         $indexArtifacts = Save-PortfolioIndexArtifacts `
@@ -6413,7 +6417,11 @@ try {
                     $repoName = if ($body.ContainsKey('repoName') -and $body.repoName) { [string]$body.repoName } else { '' }
                     $roadmapPath = if ($body.ContainsKey('roadmapPath') -and $body.roadmapPath) { [string]$body.roadmapPath } else { '' }
                     if ([string]::IsNullOrWhiteSpace($repoName)) {
-                        throw 'repoName is required for /api/copilot-task/preview'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error   = 'repoName is required for /api/copilot-task/preview'
+                        }
+                        break
                     }
 
                     # Look up doc audit entry from cache (no-TTL miss is acceptable; null → packet built without findings)
@@ -6520,6 +6528,55 @@ try {
                             items = $items
                             count = @($items).Count
                         }
+                    }
+                }
+                'GET /api/roadmap/maturity-history' {
+                    try {
+                        $q = Parse-QueryString -Query $req.Query
+                        $repoName = if ($q.ContainsKey('repoName')) { [string]$q.repoName } else { '' }
+                        $days = if ($q.ContainsKey('days') -and $q.days) { [int]$q.days } else { 30 }
+                        if ($days -lt 1) { $days = 1 }
+                        if ($days -gt 3650) { $days = 3650 }
+
+                        $history = Get-AppDbRoadmapMaturityHistory -RepoName $repoName -Days $days
+                        if ($history.available) {
+                            Add-MetricCounter -Name 'api_requests_total'
+                            Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                                success = $true
+                                data = @($history.entries)
+                                count = @($history.entries).Count
+                                source = 'sqlite'
+                            }
+                            break
+                        }
+
+                        $auditCache = Get-RoadmapAuditFromCache -TtlSeconds 86400
+                        $fallbackEntries = @()
+                        if ($auditCache.hit) {
+                            $fallbackEntries = @($auditCache.entries | Where-Object {
+                                $name = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '')
+                                [string]::IsNullOrWhiteSpace($repoName) -or $name -eq $repoName
+                            } | ForEach-Object {
+                                [pscustomobject]@{
+                                    repoName      = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '')
+                                    roadmapPath   = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'roadmapPath' -Default '')
+                                    maturityLevel = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'maturityLevel' -Default '')
+                                    maturityScore = [double](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'maturityScore' -Default 0)
+                                    pendingCount  = [int](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'pendingCount' -Default 0)
+                                    capturedAt    = [string]$auditCache.auditedAt
+                                }
+                            })
+                        }
+
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data = @($fallbackEntries)
+                            count = @($fallbackEntries).Count
+                            source = if ($auditCache.hit) { 'roadmap-audit-cache' } else { 'none' }
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'roadmap.maturity-history'
                     }
                 }
                 'GET /api/operations/prompt/history' {
@@ -8261,11 +8318,37 @@ try {
                     $q = Parse-QueryString -Query $req.Query
                     $maxLines = if ($q.ContainsKey('lines') -and $q.lines) { [int]$q.lines } else { 100 }
                     if ($maxLines -gt 500) { $maxLines = 500 }
-                    # 'since' is epoch milliseconds from the client (Date.now())
-                    $sinceMs = if ($q.ContainsKey('since') -and $q.since -match '^\d+$') { [long]$q.since } else { 0 }
+                    $level = if ($q.ContainsKey('level')) { [string]$q.level } else { '' }
+                    $contains = if ($q.ContainsKey('contains')) { [string]$q.contains } else { '' }
+
+                    # since accepts epoch milliseconds or ISO-8601
+                    $sinceIso = ''
+                    if ($q.ContainsKey('since') -and -not [string]::IsNullOrWhiteSpace([string]$q.since)) {
+                        if ([string]$q.since -match '^\d+$') {
+                            $sinceIso = ([datetime]::UnixEpoch.AddMilliseconds([double][long]$q.since)).ToUniversalTime().ToString('o')
+                        } else {
+                            try {
+                                $sinceIso = ([datetime]::Parse([string]$q.since)).ToUniversalTime().ToString('o')
+                            } catch {
+                                $sinceIso = ''
+                            }
+                        }
+                    }
 
                     $entries = [System.Collections.Generic.List[object]]::new()
-                    if ($null -ne $script:OpsLogPath -and (Test-Path -LiteralPath $script:OpsLogPath)) {
+                    $dbEntries = Get-AppDbOpsLogEntries -Since $sinceIso -Level $level -Contains $contains -MaxLines $maxLines
+                    if ($dbEntries.available) {
+                        foreach ($row in @($dbEntries.entries)) {
+                            $entryTs = if ($row.timestamp) { [string]$row.timestamp } else { (Get-Date).ToUniversalTime().ToString('o') }
+                            $entryMsg = if ($row.message) { [string]$row.message } else { '' }
+                            $entries.Add([pscustomobject]@{
+                                ts = $entryTs
+                                level = ([string]$row.level).ToUpperInvariant()
+                                msg = $entryMsg
+                            })
+                        }
+                    } elseif ($null -ne $script:OpsLogPath -and (Test-Path -LiteralPath $script:OpsLogPath)) {
+                        $sinceMs = if ($sinceIso -ne '') { [long](([datetime]$sinceIso).ToUniversalTime() - [datetime]::UnixEpoch).TotalMilliseconds } else { 0 }
                         try {
                             $rawLines = Get-Content -LiteralPath $script:OpsLogPath -Encoding UTF8 -ErrorAction Stop |
                                 Select-Object -Last $maxLines
@@ -8280,10 +8363,14 @@ try {
                                         $lineMs = [long](([datetime]$entryTs).ToUniversalTime() - [datetime]::UnixEpoch).TotalMilliseconds
                                         if ($lineMs -le $sinceMs) { continue }
                                     }
+                                    $entryLevel = ([string]$obj.level).ToUpperInvariant()
+                                    if (-not [string]::IsNullOrWhiteSpace($level) -and $entryLevel -ne $level.ToUpperInvariant()) { continue }
+                                    $entryMsg = if ($obj.msg) { [string]$obj.msg } elseif ($obj.message) { [string]$obj.message } else { [string]$rawLine }
+                                    if (-not [string]::IsNullOrWhiteSpace($contains) -and $entryMsg.IndexOf($contains, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
                                     $entries.Add([pscustomobject]@{
                                         ts = $entryTs
-                                        level = ([string]$obj.level).ToUpperInvariant()
-                                        msg = if ($obj.msg) { [string]$obj.msg } elseif ($obj.message) { [string]$obj.message } else { [string]$rawLine }
+                                        level = $entryLevel
+                                        msg = $entryMsg
                                     })
                                     $parsed = $true
                                 } catch { }
@@ -8297,10 +8384,14 @@ try {
                                         $lineMs = [long](([datetime]$entryTs).ToUniversalTime() - [datetime]::UnixEpoch).TotalMilliseconds
                                         if ($lineMs -le $sinceMs) { continue }
                                     }
+                                    $entryLevel = ([string]$matches['level']).ToUpperInvariant()
+                                    if (-not [string]::IsNullOrWhiteSpace($level) -and $entryLevel -ne $level.ToUpperInvariant()) { continue }
+                                    $entryMsg = [string]$matches['msg']
+                                    if (-not [string]::IsNullOrWhiteSpace($contains) -and $entryMsg.IndexOf($contains, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
                                     $entries.Add([pscustomobject]@{
                                         ts = $entryTs
-                                        level = ([string]$matches['level']).ToUpperInvariant()
-                                        msg = [string]$matches['msg']
+                                        level = $entryLevel
+                                        msg = $entryMsg
                                     })
                                 }
                             }
@@ -8312,6 +8403,7 @@ try {
                         success = $true
                         entries = @($entries)
                         count = $entries.Count
+                        source = if ($dbEntries.available) { 'sqlite' } else { 'jsonl' }
                     }
                 }
                 default {

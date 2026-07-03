@@ -23,6 +23,11 @@ $ErrorActionPreference = 'Stop'
 # ---------------------------------------------------------------------------
 $script:LedgerSchemaVersion = '1.0'
 
+function Test-AppDbLedgerBridgeAvailable {
+    return ($null -ne (Get-Command -Name 'Read-AppDbExecutionLedger' -ErrorAction SilentlyContinue) -and
+        $null -ne (Get-Command -Name 'Write-AppDbExecutionLedger' -ErrorAction SilentlyContinue))
+}
+
 # ---------------------------------------------------------------------------
 # Get-ExecutionLedgerPath
 # Returns the canonical ledger file path under the workspace output directory.
@@ -57,6 +62,22 @@ function Read-ExecutionLedger {
         updatedAt     = (Get-Date).ToUniversalTime().ToString('o')
         entries       = @()
         history       = @()
+    }
+
+    if (Test-AppDbLedgerBridgeAvailable) {
+        try {
+            $dbLedger = Read-AppDbExecutionLedger -WorkspaceRoot $WorkspaceRoot -LedgerJsonPath $path
+            if ($null -ne $dbLedger -and $null -ne $dbLedger.entries) {
+                return @{
+                    schemaVersion = [string]($dbLedger.schemaVersion ?? $script:LedgerSchemaVersion)
+                    updatedAt     = [string]($dbLedger.updatedAt ?? (Get-Date).ToUniversalTime().ToString('o'))
+                    entries       = @($dbLedger.entries)
+                    history       = @($dbLedger.history ?? @())
+                }
+            }
+        } catch {
+            Write-Warning "Execution.Ledger: SQLite read failed (falling back to JSON ledger). Error: $_"
+        }
     }
 
     if (-not (Test-Path -LiteralPath $path)) {
@@ -95,6 +116,19 @@ function Write-ExecutionLedger {
 
     $path = Get-ExecutionLedgerPath -WorkspaceRoot $WorkspaceRoot
     $Ledger.updatedAt = (Get-Date).ToUniversalTime().ToString('o')
+
+    if (Test-AppDbLedgerBridgeAvailable) {
+        try {
+            $dbWrite = Write-AppDbExecutionLedger -WorkspaceRoot $WorkspaceRoot -Ledger $Ledger
+            if (-not $dbWrite.success) {
+                Write-Warning "Execution.Ledger: SQLite write skipped ($($dbWrite.reason)); JSON ledger remains available."
+            }
+        } catch {
+            Write-Warning "Execution.Ledger: SQLite write failed ($($_.Exception.Message)); JSON ledger remains available."
+        }
+    }
+
+    # Keep JSON export as a debugging artifact during the persistence rollout.
     $json = $Ledger | ConvertTo-Json -Depth 10
     Set-Content -LiteralPath $path -Value $json -Encoding UTF8
 }

@@ -119,12 +119,11 @@ execution ledger, maturity history, operations log, portfolio index
 history, and merge-readiness snapshots so the application is reliable at
 scale and supports time-series queries.
 
-**Current focus:** Phase 2 — migrate execution-ledger and ops-log
-reads/writes behind the persistence boundary with parameterized SQL,
-keeping JSON exports as debugging artifacts. The Phase 1 foundation
-(capability detection, `output/app.db` bootstrap, schema-v1 tables,
-`GET /api/persistence/status`, and the agent-run-event dual-write seam)
-shipped 2026-07-03.
+**Current focus:** Phase 3 + Phase 4 — broaden persisted history capture
+and tighten route-level validation while keeping JSON exports as debugging
+artifacts. Phase 2 (execution-ledger + ops-log SQL wiring) shipped
+2026-07-03 alongside path normalization and smoke assertions for
+`/api/log/tail` filters and `/api/roadmap/maturity-history`.
 
 **Why now:** The north-star workflow is now end-to-end through dispatch,
 agent-run monitoring, Actions validation, and merge readiness. The next
@@ -132,10 +131,11 @@ highest-value bottleneck is storage reliability and queryability: the app
 still spreads critical state across JSON files, which limits concurrent
 writes, history lookups, and trend reporting.
 
-**Validation plan:** temp-workspace schema/init smoke for the SQLite
-bootstrap, repeated-write coverage for the first migrated persistence
-helpers, `npm run build`, and targeted API-host regression checks as each
-JSON-backed path moves behind the persistence boundary.
+**Validation plan:** temp-workspace schema/init smoke for SQLite bootstrap,
+targeted repeated-write proof for execution-ledger/ops-log/history snapshot
+helpers, `npm run build`, and API-host smoke assertions for persistence
+status, log-tail filtering, maturity-history shape, and trend-route
+contract stability.
 
 **Risks and blockers:** SQLite provider availability must stay reliable on
 Windows and WSL; JSON-to-SQL migration can drift if legacy files and the DB
@@ -165,9 +165,9 @@ release direction remains anchored to
 | Phase                                        | Scope                                                                                                                                    | Status                               |
 | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
 | Phase 1: SQLite foundation                   | Capability detection, `output/app.db` bootstrap, schema-v1 tables, `GET /api/persistence/status`, agent-run-event dual-write seam        | **done — smoke-tested** (2026-07-03) |
-| Phase 2: Execution ledger + ops log          | Migrate execution-ledger and ops-log reads/writes to parameterized SQL; JSON export kept as debugging artifact                            | planned                              |
-| Phase 3: History snapshots                   | Persist maturity, portfolio-index, repo-signal, merge-readiness, and agent-run timing/token/cost metrics over time                        | planned                              |
-| Phase 4: Trend routes + first-run migration  | Maturity/portfolio history and trend routes, repo-row sparkline consumer, first-run JSON-to-SQL migration, differential-scan history      | planned                              |
+| Phase 2: Execution ledger + ops log          | Migrate execution-ledger and ops-log reads/writes to parameterized SQL; JSON export kept as debugging artifact                            | **done — smoke-tested** (2026-07-03) |
+| Phase 3: History snapshots                   | Persist maturity, portfolio-index, repo-signal, merge-readiness, and agent-run timing/token/cost metrics over time                        | in progress                          |
+| Phase 4: Trend routes + first-run migration  | Maturity/portfolio history and trend routes, repo-row sparkline consumer, first-run JSON-to-SQL migration, differential-scan history      | in progress                          |
 
 ### Release 2.0 completion snapshot
 
@@ -515,22 +515,39 @@ supports time-series queries.
       `GET /api/persistence/status`, and the first migration seam:
       agent-run events dual-write into `agent_run_events` while the JSONL
       stream stays authoritative.
-- [ ] Migrate execution ledger and ops log reads/writes from JSON files to
-      parameterized SQL queries, keeping JSON export only as a debugging
-      artifact. *(state: planned)*
-- [ ] Persist maturity snapshots, portfolio index history, README score,
-      ROADMAP score, Documentation Health, GitHub metadata, merge-readiness
-      snapshots, and agent-run timing, token-usage, and cost / quota-burn
-      metrics over time so time-to-deliver and cost-per-phase trends are
-      queryable. *(state: planned)*
-- [ ] Add differential scan history storage so the dashboard can explain
-      what changed between scans. *(state: planned)*
-- [ ] Add history and trend routes for roadmap maturity and aggregate
-      portfolio state, plus a repo-row sparkline consumer. *(state: planned)*
-- [ ] Add first-run database migration from existing JSON ledger data.
+- [x] Migrate execution ledger and ops log reads/writes from JSON files to
+      parameterized SQL queries, keeping JSON export as a debugging
+      artifact. *(state: smoke-tested — 2026-07-03)* —
+      `Execution.Ledger.ps1` now reads/writes through
+      `Read-AppDbExecutionLedger` / `Write-AppDbExecutionLedger` when the
+      persistence boundary is available; `/api/log/tail` now queries
+      `ops_log` with `since`/`level`/`contains` filters and falls back to
+      JSONL only when SQLite is unavailable.
+- [x] Persist maturity snapshots, portfolio index history, README score,
+      ROADMAP score, Documentation Health, GitHub metadata,
+      merge-readiness snapshots, and differential scan summaries over time.
+      *(state: smoke-tested — 2026-07-03)* — portfolio assessment writes
+      now append to `maturity_history`, `portfolio_index_history`,
+      `repo_signals`, `differential_scans`, and
+      `merge_readiness_snapshots`.
+- [ ] Persist agent-run timing/token/cost and quota-burn metrics over time
+      so time-to-deliver and cost-per-phase trends are queryable.
       *(state: planned)*
-- [ ] Smoke test the SQLite-backed ledger and metrics read path under
-      repeated writes. *(state: planned)*
+- [x] Add differential scan history storage so the dashboard can explain
+      what changed between scans. *(state: smoke-tested — 2026-07-03)*
+- [x] Add history and trend routes for roadmap maturity and aggregate
+      portfolio state, plus a repo-row sparkline consumer.
+      *(state: smoke-tested — 2026-07-03)* —
+      `GET /api/roadmap/maturity-history` now returns ordered snapshots;
+      `GET /api/portfolio/trend` remains the aggregate trend contract.
+- [x] Add first-run database migration from existing JSON ledger data.
+      *(state: smoke-tested — 2026-07-03)* — first SQLite read now seeds
+      from `output/execution/execution-ledger.json` when tables are empty.
+- [x] Smoke test the SQLite-backed ledger and metrics read path under
+      repeated writes. *(state: smoke-tested — 2026-07-03)* — API-host
+      smoke now asserts log-tail filtering and maturity-history contracts;
+      targeted repeated-write proof validates ledger/history snapshot
+      inserts and reads.
 
 #### Acceptance criteria
 

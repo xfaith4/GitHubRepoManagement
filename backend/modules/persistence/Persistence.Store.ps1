@@ -909,6 +909,25 @@ function _AppDbRecordValue {
     return $null
 }
 
+function _AppDbFirstRecordValue {
+    # Returns the first non-empty value from a list of candidate field names.
+    param(
+        [object]$Record,
+        [string[]]$Names,
+        [object]$Default = $null
+    )
+
+    foreach ($name in @($Names)) {
+        if ([string]::IsNullOrWhiteSpace([string]$name)) { continue }
+        $value = _AppDbRecordValue -Record $Record -Name $name
+        if ($null -eq $value) { continue }
+        if ($value -is [string] -and [string]::IsNullOrWhiteSpace($value)) { continue }
+        return $value
+    }
+
+    return $Default
+}
+
 function _AppDbMatchesWorkspace {
     # The persistence boundary is initialized for exactly one workspace per
     # process. Workspace-scoped stores (execution ledger) must refuse to
@@ -1486,4 +1505,292 @@ function Import-AppDbOpsLogFromJsonl {
     }
 
     return [pscustomobject]$out
+}
+
+# ---------------------------------------------------------------------------
+# Phase 3 migration — maturity + portfolio + differential snapshots
+# ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    Persists one portfolio-assessment capture into maturity_history,
+    portfolio_index_history, and repo_signals.
+.DESCRIPTION
+    This is append-only time-series persistence for Release 2.1 Phase 3.
+    It never throws so callers can keep in-memory and JSON paths healthy.
+#>
+function Write-AppDbPortfolioAssessmentSnapshot {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory = $true)][object[]]$Assessments,
+        [Parameter()][string]$ScanId = '',
+        [Parameter()][string]$CapturedAt = ''
+    )
+
+    $out = @{ success = $false; inserted = 0L; reason = '' }
+    if (-not $script:AppDbState.enabled) {
+        $out.reason = 'app-db-not-initialized'
+        return [pscustomobject]$out
+    }
+
+    try {
+        $capturedAtIso = if ([string]::IsNullOrWhiteSpace($CapturedAt)) { (Get-Date).ToUniversalTime().ToString('o') } else { $CapturedAt }
+        $effectiveScanId = if ([string]::IsNullOrWhiteSpace($ScanId)) { [guid]::NewGuid().ToString('n') } else { $ScanId }
+        $rows = @($Assessments)
+
+        if ($rows.Count -eq 0) {
+            $out.success = $true
+            return [pscustomobject]$out
+        }
+
+        $dbPath = [string]$script:AppDbState.databasePath
+        Invoke-AppDbTransaction -DatabasePath $dbPath -Body {
+            param($session)
+
+            foreach ($assessment in $rows) {
+                if ($null -eq $assessment) { continue }
+
+                $repoName = [string](_AppDbFirstRecordValue -Record $assessment -Names @('repoName', 'name') -Default '')
+                if ([string]::IsNullOrWhiteSpace($repoName)) { continue }
+
+                $repoPath = [string](_AppDbFirstRecordValue -Record $assessment -Names @('localPath', 'repoPath') -Default '')
+                $ownerRepo = [string](_AppDbFirstRecordValue -Record $assessment -Names @('githubFullName', 'ownerRepo') -Default '')
+                $lifecycleState = [string](_AppDbFirstRecordValue -Record $assessment -Names @('lifecycleState') -Default '')
+                $sourceCoverage = [string](_AppDbFirstRecordValue -Record $assessment -Names @('sourceCoverage') -Default '')
+
+                $recordJson = ConvertTo-Json -InputObject $assessment -Compress -Depth 16
+                $null = Invoke-AppDbSessionNonQuery -Session $session -Sql @'
+INSERT INTO portfolio_index_history
+  (scan_id, captured_at, repo_name, repo_path, owner_repo, lifecycle_state, source_coverage, record_json)
+VALUES
+  (@scan_id, @captured_at, @repo_name, @repo_path, @owner_repo, @lifecycle_state, @source_coverage, @record_json)
+'@ -Parameters @{
+                    scan_id         = $effectiveScanId
+                    captured_at     = $capturedAtIso
+                    repo_name       = $repoName
+                    repo_path       = $repoPath
+                    owner_repo      = $ownerRepo
+                    lifecycle_state = $lifecycleState
+                    source_coverage = $sourceCoverage
+                    record_json     = $recordJson
+                }
+
+                $maturityLevel = [string](_AppDbFirstRecordValue -Record $assessment -Names @('maturityLevel') -Default '')
+                $maturityScore = _AppDbFirstRecordValue -Record $assessment -Names @('maturityScore') -Default $null
+                $pendingCount = _AppDbFirstRecordValue -Record $assessment -Names @('pendingItemCount', 'pendingCount') -Default $null
+                $roadmapPath = [string](_AppDbFirstRecordValue -Record $assessment -Names @('roadmapPath') -Default '')
+
+                $null = Invoke-AppDbSessionNonQuery -Session $session -Sql @'
+INSERT INTO maturity_history
+  (repo_name, roadmap_path, maturity_level, maturity_score, pending_count, captured_at)
+VALUES
+  (@repo_name, @roadmap_path, @maturity_level, @maturity_score, @pending_count, @captured_at)
+'@ -Parameters @{
+                    repo_name      = $repoName
+                    roadmap_path   = $roadmapPath
+                    maturity_level = $maturityLevel
+                    maturity_score = if ($null -ne $maturityScore) { [double]$maturityScore } else { $null }
+                    pending_count  = if ($null -ne $pendingCount) { [long]$pendingCount } else { $null }
+                    captured_at    = $capturedAtIso
+                }
+
+                $readmeScore = _AppDbFirstRecordValue -Record $assessment -Names @('readmeScore') -Default $null
+                $roadmapScore = _AppDbFirstRecordValue -Record $assessment -Names @('roadmapScore') -Default $null
+                $docHealthScore = _AppDbFirstRecordValue -Record $assessment -Names @('documentationHealthScore', 'docHealthScore') -Default $null
+                $dirtyFileCount = _AppDbFirstRecordValue -Record $assessment -Names @('localDirtyCount', 'dirtyFileCount') -Default 0
+                $openPrCount = _AppDbFirstRecordValue -Record $assessment -Names @('openPrCount') -Default 0
+                $actionsStatus = [string](_AppDbFirstRecordValue -Record $assessment -Names @('latestActionsStatus', 'actionsStatus') -Default '')
+                $actionsConclusion = [string](_AppDbFirstRecordValue -Record $assessment -Names @('latestActionsConclusion', 'actionsConclusion') -Default '')
+                $pagesStatus = [string](_AppDbFirstRecordValue -Record $assessment -Names @('pagesStatus') -Default '')
+
+                $signal = [ordered]@{
+                    readmeScore      = $readmeScore
+                    roadmapScore     = $roadmapScore
+                    docHealthScore   = $docHealthScore
+                    dirtyFileCount   = $dirtyFileCount
+                    openPrCount      = $openPrCount
+                    actionsStatus    = $actionsStatus
+                    actionsConclusion = $actionsConclusion
+                    pagesStatus      = $pagesStatus
+                }
+
+                $null = Invoke-AppDbSessionNonQuery -Session $session -Sql @'
+INSERT INTO repo_signals
+  (repo_name, captured_at, readme_score, roadmap_score, doc_health_score,
+   dirty_file_count, open_pr_count, actions_status, actions_conclusion, pages_status, signal_json)
+VALUES
+  (@repo_name, @captured_at, @readme_score, @roadmap_score, @doc_health_score,
+   @dirty_file_count, @open_pr_count, @actions_status, @actions_conclusion, @pages_status, @signal_json)
+'@ -Parameters @{
+                    repo_name          = $repoName
+                    captured_at        = $capturedAtIso
+                    readme_score       = if ($null -ne $readmeScore) { [double]$readmeScore } else { $null }
+                    roadmap_score      = if ($null -ne $roadmapScore) { [double]$roadmapScore } else { $null }
+                    doc_health_score   = if ($null -ne $docHealthScore) { [double]$docHealthScore } else { $null }
+                    dirty_file_count   = if ($null -ne $dirtyFileCount) { [long]$dirtyFileCount } else { 0L }
+                    open_pr_count      = if ($null -ne $openPrCount) { [long]$openPrCount } else { 0L }
+                    actions_status     = $actionsStatus
+                    actions_conclusion = $actionsConclusion
+                    pages_status       = $pagesStatus
+                    signal_json        = (ConvertTo-Json -InputObject $signal -Compress -Depth 8)
+                }
+
+                $out.inserted = [long]$out.inserted + 1L
+            }
+        }
+
+        $out.success = $true
+    } catch {
+        $out.reason = $_.Exception.Message
+    }
+
+    return [pscustomobject]$out
+}
+
+<#
+.SYNOPSIS
+    Persists one scan-level differential summary record.
+#>
+function Write-AppDbDifferentialScanSnapshot {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory = $true)][string]$ScanId,
+        [Parameter(Mandatory = $true)][string]$ScanMode,
+        [Parameter()][string]$StartedAt = '',
+        [Parameter()][string]$CompletedAt = '',
+        [Parameter()][int]$ReposTotal = 0,
+        [Parameter()][int]$ReposChanged = 0,
+        [Parameter()][string[]]$ChangedRepoNames = @()
+    )
+
+    $out = @{ success = $false; reason = '' }
+    if (-not $script:AppDbState.enabled) {
+        $out.reason = 'app-db-not-initialized'
+        return [pscustomobject]$out
+    }
+
+    try {
+        $startedAtIso = if ([string]::IsNullOrWhiteSpace($StartedAt)) { (Get-Date).ToUniversalTime().ToString('o') } else { $StartedAt }
+        $completedAtIso = if ([string]::IsNullOrWhiteSpace($CompletedAt)) { (Get-Date).ToUniversalTime().ToString('o') } else { $CompletedAt }
+        $changedJson = ConvertTo-Json -InputObject @($ChangedRepoNames) -Compress -Depth 4
+        $null = Invoke-AppDbNonQuery -DatabasePath ([string]$script:AppDbState.databasePath) -Sql @'
+INSERT INTO differential_scans
+  (scan_id, scan_mode, started_at, completed_at, repos_total, repos_changed, changed_json)
+VALUES
+  (@scan_id, @scan_mode, @started_at, @completed_at, @repos_total, @repos_changed, @changed_json)
+'@ -Parameters @{
+            scan_id       = $ScanId
+            scan_mode     = $ScanMode
+            started_at    = $startedAtIso
+            completed_at  = $completedAtIso
+            repos_total   = [long]$ReposTotal
+            repos_changed = [long]$ReposChanged
+            changed_json  = $changedJson
+        }
+        $out.success = $true
+    } catch {
+        $out.reason = $_.Exception.Message
+    }
+
+    return [pscustomobject]$out
+}
+
+<#
+.SYNOPSIS
+    Persists one merge-readiness evaluation snapshot in SQLite.
+#>
+function Write-AppDbMergeReadinessSnapshot {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory = $true)][object]$Evaluation
+    )
+
+    $out = @{ success = $false; reason = '' }
+    if (-not $script:AppDbState.enabled) {
+        $out.reason = 'app-db-not-initialized'
+        return [pscustomobject]$out
+    }
+
+    try {
+        $repoId = [string](_AppDbFirstRecordValue -Record $Evaluation -Names @('repoId') -Default '')
+        if ([string]::IsNullOrWhiteSpace($repoId)) {
+            $out.reason = 'missing-repo-id'
+            return [pscustomobject]$out
+        }
+
+        $repoName = [string](_AppDbFirstRecordValue -Record $Evaluation -Names @('repoName') -Default '')
+        $runId = [string](_AppDbFirstRecordValue -Record $Evaluation -Names @('runId') -Default '')
+        $prNumber = _AppDbFirstRecordValue -Record $Evaluation -Names @('prNumber') -Default $null
+        $ready = [bool](_AppDbFirstRecordValue -Record $Evaluation -Names @('ready') -Default $false)
+        $capturedAt = [string](_AppDbFirstRecordValue -Record $Evaluation -Names @('evaluatedAt') -Default (Get-Date).ToUniversalTime().ToString('o'))
+        $blockers = _AppDbFirstRecordValue -Record $Evaluation -Names @('blockers') -Default @()
+        $evidence = _AppDbFirstRecordValue -Record $Evaluation -Names @('evidence') -Default @{}
+
+        $null = Invoke-AppDbNonQuery -DatabasePath ([string]$script:AppDbState.databasePath) -Sql @'
+INSERT INTO merge_readiness_snapshots
+  (repo_id, repo_name, run_id, pr_number, ready, captured_at, blockers_json, evidence_json)
+VALUES
+  (@repo_id, @repo_name, @run_id, @pr_number, @ready, @captured_at, @blockers_json, @evidence_json)
+'@ -Parameters @{
+            repo_id       = $repoId
+            repo_name     = $repoName
+            run_id        = if ([string]::IsNullOrWhiteSpace($runId)) { $null } else { $runId }
+            pr_number     = if ($null -ne $prNumber) { [long]$prNumber } else { $null }
+            ready         = if ($ready) { 1L } else { 0L }
+            captured_at   = $capturedAt
+            blockers_json = (ConvertTo-Json -InputObject @($blockers) -Compress -Depth 8)
+            evidence_json = (ConvertTo-Json -InputObject $evidence -Compress -Depth 8)
+        }
+        $out.success = $true
+    } catch {
+        $out.reason = $_.Exception.Message
+    }
+
+    return [pscustomobject]$out
+}
+
+<#
+.SYNOPSIS
+    Reads roadmap maturity history for one repo or all repos in a time range.
+#>
+function Get-AppDbRoadmapMaturityHistory {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter()][string]$RepoName = '',
+        [Parameter()][int]$Days = 30
+    )
+
+    if (-not $script:AppDbState.enabled) {
+        return [pscustomobject]@{ available = $false; entries = @() }
+    }
+
+    if ($Days -lt 1) { $Days = 1 }
+    $sinceIso = (Get-Date).ToUniversalTime().AddDays(-$Days).ToString('o')
+    $rows = @(Invoke-AppDbQuery -DatabasePath ([string]$script:AppDbState.databasePath) -Sql @'
+SELECT repo_name, roadmap_path, maturity_level, maturity_score, pending_count, captured_at
+FROM maturity_history
+WHERE (@repo_name = '' OR repo_name = @repo_name)
+  AND captured_at >= @since
+ORDER BY captured_at ASC, repo_name ASC
+'@ -Parameters @{
+        repo_name = [string]$RepoName
+        since     = $sinceIso
+    })
+
+    $entries = @($rows | ForEach-Object {
+        [pscustomobject]@{
+            repoName      = [string](_AppDbRecordValue -Record $_ -Name 'repo_name')
+            roadmapPath   = _AppDbRecordValue -Record $_ -Name 'roadmap_path'
+            maturityLevel = [string](_AppDbRecordValue -Record $_ -Name 'maturity_level')
+            maturityScore = _AppDbRecordValue -Record $_ -Name 'maturity_score'
+            pendingCount  = _AppDbRecordValue -Record $_ -Name 'pending_count'
+            capturedAt    = [string](_AppDbRecordValue -Record $_ -Name 'captured_at')
+        }
+    })
+
+    return [pscustomobject]@{ available = $true; entries = $entries }
 }

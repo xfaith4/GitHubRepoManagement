@@ -17,6 +17,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$BaseUrl = $BaseUrl.TrimEnd('/')
 
 $hostScript = Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1'
 $smokeRoot = Join-Path $WorkspaceRoot 'output\smoke\api-host'
@@ -997,10 +998,49 @@ try {
     Write-Host ("  /api/roadmap/repair/history -> {0} item(s)" -f @($repairHistoryJson.data.items).Count) -ForegroundColor DarkGray
 
     Write-Host '[STEP] Log tail route' -ForegroundColor Cyan
-    $logTailResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/log/tail?lines=10"
+    $sinceIso = (Get-Date).ToUniversalTime().AddHours(-6).ToString('o')
+    $encodedSinceIso = [uri]::EscapeDataString($sinceIso)
+    $logTailResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/log/tail?lines=20&since=$encodedSinceIso&level=INFO"
     Assert-Not503 -Name '/api/log/tail' -Response $logTailResponse
     $logTail = $logTailResponse.Json
     if (-not $logTail.success) { throw 'api/log/tail returned success=false' }
+    if (-not ($logTail.PSObject.Properties.Name -contains 'source')) {
+        throw '/api/log/tail response missing source field'
+    }
+    if ([string]$logTail.source -notin @('sqlite', 'jsonl')) {
+        throw "/api/log/tail returned unexpected source '$($logTail.source)'"
+    }
+    foreach ($entry in @($logTail.entries)) {
+        if ($null -eq $entry) { continue }
+        $lvl = [string]$entry.level
+        if (-not [string]::IsNullOrWhiteSpace($lvl) -and $lvl -ne 'INFO') {
+            throw "/api/log/tail level filter failed; saw level '$lvl' while requesting INFO"
+        }
+    }
+    Write-Host ("  /api/log/tail -> source={0} count={1}" -f [string]$logTail.source, @($logTail.entries).Count) -ForegroundColor DarkGray
+
+    Write-Host '[STEP] Roadmap maturity history route (Release 2.1)' -ForegroundColor Cyan
+    $maturityHistoryResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/roadmap/maturity-history?days=30"
+    Assert-Not503 -Name '/api/roadmap/maturity-history?days=30' -Response $maturityHistoryResponse
+    $maturityHistory = $maturityHistoryResponse.Json
+    if ($null -eq $maturityHistory -or -not $maturityHistory.success) {
+        throw '/api/roadmap/maturity-history returned invalid success payload'
+    }
+    if (-not ($maturityHistory.PSObject.Properties.Name -contains 'data') -or -not ($maturityHistory.PSObject.Properties.Name -contains 'source')) {
+        throw '/api/roadmap/maturity-history response missing expected fields (data, source)'
+    }
+    if ([string]$maturityHistory.source -notin @('sqlite', 'roadmap-audit-cache', 'none')) {
+        throw "/api/roadmap/maturity-history returned unexpected source '$($maturityHistory.source)'"
+    }
+    foreach ($row in @($maturityHistory.data)) {
+        if ($null -eq $row) { continue }
+        foreach ($field in @('repoName', 'maturityLevel', 'maturityScore', 'capturedAt')) {
+            if (-not ($row.PSObject.Properties.Name -contains $field)) {
+                throw "/api/roadmap/maturity-history entry missing '$field'"
+            }
+        }
+    }
+    Write-Host ("  /api/roadmap/maturity-history -> source={0} count={1}" -f [string]$maturityHistory.source, @($maturityHistory.data).Count) -ForegroundColor DarkGray
 
     Write-Host '[STEP] Execution queue routes (Release 1.0)' -ForegroundColor Cyan
     $execQueueResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/execution/queue"
@@ -1231,6 +1271,12 @@ try {
 
     Write-Host '[STEP] Portfolio trend route (Release 2.3 scaffold)' -ForegroundColor Cyan
     $portfolioTrendResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/trend?days=30"
+    if ($null -eq $portfolioTrendResponse.Json -and [string]$portfolioTrendResponse.ContentType -like 'text/html*') {
+        # Retry once: occasional path-shape mismatches used to fall through to
+        # the SPA catch-all before route normalization.
+        Start-Sleep -Milliseconds 200
+        $portfolioTrendResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/trend?days=30"
+    }
     Assert-Not503 -Name '/api/portfolio/trend?days=30' -Response $portfolioTrendResponse
     $portfolioTrendJson = $portfolioTrendResponse.Json
     if ($null -eq $portfolioTrendJson) {
@@ -1451,71 +1497,81 @@ try {
     }
 
     Write-Host '[PASS] API host smoke completed' -ForegroundColor Green
-    [pscustomobject]@{
-        liveStatus = $live.status
-        readyStatus = $ready.status
-        dependenciesStatus = $deps.status
-        dependenciesHttpCode = [int]$depsResponse.StatusCode
-        statusSuccess = $status.success
-        statusCacheSuccess = $statusCache.Json.success
-        settingsGetSuccess = $settingsGet.Json.success
-        settingsPostSuccess = $settingsPost.Json.success
-        initStatusCode = $initResponse.StatusCode
-        updateStatusCode = $updateResponse.StatusCode
-        syncStatusCode = $syncResponse.StatusCode
-        archiveStatusCode = $archiveResponse.StatusCode
-        reconcileSuccess = $reconcile.success
-        docreviewSuccess = $doc.success
-        artifactsCount = @($artifacts.artifacts).Count
-        exportSuccess = $export.success
-        reportOpenStatusCode = $reportOpenResponse.StatusCode
-        metricsGeneratedAt = $metrics.generatedAt
-        roadmapIndexCount = $roadmapIndex.data.count
-        roadmapScanCount = $roadmapScan.data.count
-        roadmapStateFieldsOk = $roadmapStateFieldsOk
-        roadmapContentOk = $roadmapContentOk
-        readmeContentOk = $readmeContentOk
-        roadmapFullContentOk = $fullRoadmapReturnedAll
-        roadmapCacheStatusCode = $roadmapCache.StatusCode
-        githubStatusCode = $githubStatusResponse.StatusCode
-        roadmapPreviewStatusCode = $roadmapPreviewResponse.StatusCode
-        roadmapStartStatusCode = $roadmapStartResponse.StatusCode
-        roadmapHistoryStatusCode = $roadmapHistoryResponse.StatusCode
-        logTailEntryCount = $logTail.count
-        docsAuditGetSuccess = $docsAuditData.success
-        docsAuditScanSuccess = $docsAuditScanData.success
-        docsAuditRepoCount = $docsAuditData.data.count
-        copilotPreviewStatusCode = $copilotPreviewResponse.StatusCode
-        copilotPreviewPacketOk = $copilotPreviewPacketOk
-        opsPromptRefineStatusCode = $opsPromptRefineResponse.StatusCode
-        opsPromptRefineOk = $opsPromptRefineOk
-        copilotHistorySuccess = $copilotHistoryJson.success
-        copilotHistoryItemsOk = $copilotHistoryItemsOk
-        roadmapAuditGetSuccess  = $roadmapAuditData.success
-        roadmapAuditScanSuccess = $roadmapAuditScanData.success
-        roadmapAuditRepoCount   = $roadmapAuditData.data.count
-        roadmapAuditFieldsOk    = $roadmapAuditFieldsOk
-        repairPreviewFieldsOk   = $repairPreviewFieldsOk
-        repairHistoryItemsOk    = $repairHistoryItemsOk
-        execQueueFieldsOk       = $execQueueFieldsOk
-        lintScanSuccess       = $lintScanJson.success
-        stdHistorySuccess     = $stdHistoryJson.success
-        driftFieldsOk         = $driftFieldsOk
-        webhooksGetSuccess    = $webhooksJson.success
-        execMetricsFieldsOk   = $execMetricsFieldsOk
-        scanScheduleFieldsOk  = $scanScheduleFieldsOk
-        depGraphFieldsOk      = $depGraphFieldsOk
-        depGraphTotalEdges    = $depGraphData.totalEdges
-        portfolioFieldsOk     = $portfolioFieldsOk
-        portfolioSummaryFieldsOk = $portfolioSummaryFieldsOk
-        portfolioEntryFieldsOk   = $portfolioEntryFieldsOk
-        portfolioRepoCount    = [int]$portfolioData.count
-        portfolioDiffFieldsOk = $portfolioDiffFieldsOk
-        portfolioDiffModeObserved = $portfolioDiffModeObserved
-        staticIndexOk         = $staticIndexOk
-        staticAssetsOk        = $staticAssetsOk
-        staticSkipped         = $staticSkipped
-    } | Format-List
+    $statusCacheSuccess = if ($null -ne $statusCache.Json -and ($statusCache.Json.PSObject.Properties.Name -contains 'success')) { $statusCache.Json.success } else { $null }
+    $settingsGetSuccess = if ($null -ne $settingsGet.Json -and ($settingsGet.Json.PSObject.Properties.Name -contains 'success')) { $settingsGet.Json.success } else { $null }
+    $settingsPostSuccess = if ($null -ne $settingsPost.Json -and ($settingsPost.Json.PSObject.Properties.Name -contains 'success')) { $settingsPost.Json.success } else { $null }
+    try {
+        [pscustomobject]@{
+            liveStatus = $live.status
+            readyStatus = $ready.status
+            dependenciesStatus = $deps.status
+            dependenciesHttpCode = [int]$depsResponse.StatusCode
+            statusSuccess = $status.success
+            statusCacheSuccess = $statusCacheSuccess
+            settingsGetSuccess = $settingsGetSuccess
+            settingsPostSuccess = $settingsPostSuccess
+            initStatusCode = $initResponse.StatusCode
+            updateStatusCode = $updateResponse.StatusCode
+            syncStatusCode = $syncResponse.StatusCode
+            archiveStatusCode = $archiveResponse.StatusCode
+            reconcileSuccess = $reconcile.success
+            docreviewSuccess = $doc.success
+            artifactsCount = @($artifacts.artifacts).Count
+            exportSuccess = $export.success
+            reportOpenStatusCode = $reportOpenResponse.StatusCode
+            metricsGeneratedAt = $metrics.generatedAt
+            roadmapIndexCount = $roadmapIndex.data.count
+            roadmapScanCount = $roadmapScan.data.count
+            roadmapStateFieldsOk = $roadmapStateFieldsOk
+            roadmapContentOk = $roadmapContentOk
+            readmeContentOk = $readmeContentOk
+            roadmapFullContentOk = $fullRoadmapReturnedAll
+            roadmapCacheStatusCode = $roadmapCache.StatusCode
+            githubStatusCode = $githubStatusResponse.StatusCode
+            roadmapPreviewStatusCode = $roadmapPreviewResponse.StatusCode
+            roadmapStartStatusCode = $roadmapStartResponse.StatusCode
+            roadmapHistoryStatusCode = $roadmapHistoryResponse.StatusCode
+            logTailEntryCount = $logTail.count
+            logTailSource = $logTail.source
+            maturityHistorySource = $maturityHistory.source
+            maturityHistoryCount = @($maturityHistory.data).Count
+            docsAuditGetSuccess = $docsAuditData.success
+            docsAuditScanSuccess = $docsAuditScanData.success
+            docsAuditRepoCount = $docsAuditData.data.count
+            copilotPreviewStatusCode = $copilotPreviewResponse.StatusCode
+            copilotPreviewPacketOk = $copilotPreviewPacketOk
+            opsPromptRefineStatusCode = $opsPromptRefineResponse.StatusCode
+            opsPromptRefineOk = $opsPromptRefineOk
+            copilotHistorySuccess = $copilotHistoryJson.success
+            copilotHistoryItemsOk = $copilotHistoryItemsOk
+            roadmapAuditGetSuccess  = $roadmapAuditData.success
+            roadmapAuditScanSuccess = $roadmapAuditScanData.success
+            roadmapAuditRepoCount   = $roadmapAuditData.data.count
+            roadmapAuditFieldsOk    = $roadmapAuditFieldsOk
+            repairPreviewFieldsOk   = $repairPreviewFieldsOk
+            repairHistoryItemsOk    = $repairHistoryItemsOk
+            execQueueFieldsOk       = $execQueueFieldsOk
+            lintScanSuccess       = $lintScanJson.success
+            stdHistorySuccess     = $stdHistoryJson.success
+            driftFieldsOk         = $driftFieldsOk
+            webhooksGetSuccess    = $webhooksJson.success
+            execMetricsFieldsOk   = $execMetricsFieldsOk
+            scanScheduleFieldsOk  = $scanScheduleFieldsOk
+            depGraphFieldsOk      = $depGraphFieldsOk
+            depGraphTotalEdges    = $depGraphData.totalEdges
+            portfolioFieldsOk     = $portfolioFieldsOk
+            portfolioSummaryFieldsOk = $portfolioSummaryFieldsOk
+            portfolioEntryFieldsOk   = $portfolioEntryFieldsOk
+            portfolioRepoCount    = [int]$portfolioData.count
+            portfolioDiffFieldsOk = $portfolioDiffFieldsOk
+            portfolioDiffModeObserved = $portfolioDiffModeObserved
+            staticIndexOk         = $staticIndexOk
+            staticAssetsOk        = $staticAssetsOk
+            staticSkipped         = $staticSkipped
+        } | Format-List
+    } catch {
+        Write-Host ("[WARN] Smoke summary projection skipped: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+    }
 }
 finally {
     # Teardown order matters. Stop-Job against a job whose pipeline is wedged
