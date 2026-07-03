@@ -1,157 +1,139 @@
 # Roadmap Maturity Model
 
-This document defines the five maturity levels used to grade roadmap quality across managed repositories.
-Each level describes what the roadmap contains and what can be safely done with it.
-
----
+This model grades whether a `ROADMAP.md` is safe for roadmap-driven coding-agent dispatch.
+The score is computed from `roadmap-audit-rules.json` against the normalized contract produced by `Test-RoadmapContract.ps1`.
 
 ## Overview
 
-| Level | Name | Score Range | Dispatch Safety |
-|-------|------|-------------|-----------------|
-| L0 | Absent | 0 | Not dispatchable — no roadmap |
-| L1 | Informal | 1–39 | Not dispatchable — too ambiguous |
-| L2 | Structured | 40–64 | Manual dispatch with caution |
-| L3 | Contract-Ready | 65–84 | Supervised dispatch permitted |
-| L4 | Orchestration-Ready | 85–100 | Autonomous dispatch permitted |
+| Level | Name | Score range | Dispatch safety |
+| --- | --- | ---: | --- |
+| L0 | Absent | 0 | Not dispatchable — no roadmap exists. |
+| L1 | Informal | 1–39 | Not dispatchable — too ambiguous or unparseable. |
+| L2 | Structured | 40–64 | Manual dispatch only. Operator must interpret scope. |
+| L3 | Contract-Ready | 65–84 | Supervised dispatch permitted. Operator reviews task package before launch. |
+| L4 | Orchestration-Ready | 85–100 | Autonomous or semi-autonomous dispatch permitted. Requires zero critical and warning findings. |
 
----
-
-## Level Definitions
+## Level definitions
 
 ### L0 — Absent
 
-**Description:** No ROADMAP.md or equivalent file exists in the repository.
+No roadmap file exists at the expected path.
 
-**What is true at this level:**
-- There is no roadmap to read, parse, or evaluate.
-- No next work item can be surfaced from this repo.
-- Dispatch readiness cannot be determined without a roadmap.
+Blocked:
 
-**What is blocked at this level:**
-- All roadmap-driven task packaging.
-- Any automated dispatch.
-- Roadmap audit scoring.
+- Roadmap parsing
+- Next-item selection
+- Agent dispatch
+- Maturity scoring beyond L0
 
-**Required to reach L1:**
-- Create a ROADMAP.md file with at least minimal content describing the project's direction.
+Required to reach L1:
 
----
+- Create `ROADMAP.md` from `standards/roadmap/ROADMAP_TEMPLATE.md`.
 
 ### L1 — Informal
 
-**Description:** A roadmap file exists but uses a flat or unstructured format. It may contain prose, a single list, or vague intentions without a clear release structure, acceptance criteria, or concrete tasks.
+A roadmap exists but is missing enough structure to be treated as a safe work contract.
+It may be prose-only, a flat list, unparseable, vague, or missing core product intent.
 
-**What is true at this level:**
-- The roadmap file is present and parseable (contains checkbox items).
-- Work items may exist but are not bounded to a specific release.
-- Items may be vague (e.g. "improve UI", "refactor backend").
-- No acceptance criteria or out-of-scope boundaries are defined.
+Blocked:
 
-**What is blocked at this level:**
-- Reliable automated dispatch — context is too ambiguous.
-- Trustworthy task packaging — scope and doneness are unclear.
+- Reliable automated dispatch
+- Trustworthy task packaging
+- Completion tracking by release
 
-**Required to reach L2:**
-- Add at least three concrete, testable checklist items.
-- Remove or rewrite vague placeholder items.
+Required to reach L2:
 
----
+- Add parseable checklist items.
+- Rewrite vague items into concrete milestones.
+- Add a product intent/scope/purpose section.
 
 ### L2 — Structured
 
-**Description:** The roadmap is organized with checklist items and some grouping, but may still lack formal release sections, acceptance criteria, or explicit out-of-scope boundaries.
+The roadmap has useful checklist structure and some grouping, but it still lacks enough release-contract detail for supervised dispatch.
 
-**What is true at this level:**
-- The roadmap has pending checkbox items that are concrete.
-- Items are grouped into recognizable sections, even if not formal releases.
-- A product intent or scope description is present.
+Typical gaps:
 
-**What is possible at this level:**
-- Manual dispatch is reasonable — an operator can read the roadmap and identify next work.
-- Automated task preview can extract a next pending item.
+- No formal `## Release X.Y — Title` sections
+- Missing acceptance criteria on one or more releases
+- Missing clear release statuses
+- Insufficient validation context
 
-**Required to reach L3:**
-- Reorganize into release-scoped sections with headings in the form `## Release X.Y — Title`.
-- Add acceptance criteria to each release section.
+Permitted:
 
----
+- Manual dispatch with operator interpretation
+- Human roadmap repair
+
+Required to reach L3:
+
+- Use formal release sections.
+- Add acceptance criteria to every non-archived release.
+- Use known release status vocabulary.
 
 ### L3 — Contract-Ready
 
-**Description:** The roadmap uses a formal release-scoped structure, includes acceptance criteria, and is fully parseable. It provides enough context for supervised Copilot dispatch.
+The roadmap is parseable, release-scoped, and suitable for supervised coding-agent dispatch.
 
-**What is true at this level:**
-- Release sections use consistent headings with stable release identifiers.
-- Each release has a goal statement, checklist milestones, and acceptance criteria.
-- The roadmap can be machine-parsed with high confidence.
-- Product intent and principles are documented.
+Required properties:
 
-**What is possible at this level:**
-- Supervised Copilot dispatch — an operator reviews the task package before launch.
-- Roadmap audit scoring and maturity tracking.
-- Task history tied to specific roadmap items and releases.
+- Product intent exists.
+- Release sections are stable and machine-detectable.
+- Every non-archived release has acceptance criteria.
+- Critical findings are absent.
+- Any remaining warnings are understood and accepted by an operator.
 
-**Required to reach L4:**
-- Add out-of-scope boundaries to each release section.
-- Ensure all checklist items are concrete and testable (no vague placeholders).
-- Ensure there are at least two release sections providing forward visibility.
+Permitted:
 
----
+- Supervised Copilot/coding-agent dispatch
+- Portfolio work queue inclusion
+- Task packaging from next pending item
+
+Required to reach L4:
+
+- Resolve all warning findings.
+- Add out-of-scope boundaries to every non-archived release.
+- Ensure checklist items are concrete and testable.
+- Keep only one active execution target.
+- Provide active-release validation and traceability.
+- Define at least two releases for forward visibility.
 
 ### L4 — Orchestration-Ready
 
-**Description:** The roadmap is a complete, machine-readable work contract that passes all critical and warning audit rules. It supports autonomous or semi-autonomous Copilot dispatch with minimal operator intervention.
+The roadmap is a complete work contract. It supports autonomous or semi-autonomous dispatch with minimal operator intervention.
 
-**What is true at this level:**
-- All L3 criteria are met.
-- Out-of-scope boundaries are defined for each release.
-- All checklist items are concrete, testable, and implementation-specific.
-- Multiple releases are defined, providing a clear forward plan.
-- The roadmap format is stable enough for reliable parsing across scan cycles.
+Required properties:
 
-**What is possible at this level:**
-- Semi-autonomous or fully automated Copilot task dispatch.
-- Portfolio-level orchestration using the execution queue.
-- Automated detection of completed items and roadmap drift.
+- Score is within the L4 range.
+- There are zero critical findings.
+- There are zero warning findings.
+- Release sections, acceptance criteria, and out-of-scope boundaries are present.
+- Multiple releases provide forward visibility.
+- Active execution has a validation plan.
+- Done releases contain no unchecked work.
 
----
+Permitted:
 
-## How the Score Is Computed
+- Autonomous or semi-autonomous task dispatch
+- Automated portfolio orchestration
+- Automated roadmap drift detection
+- Mature work-queue prioritization
 
-The maturity score (0–100) is calculated by evaluating the roadmap contract against the rules defined in
-`roadmap-audit-rules.json`. Each rule has a `scoreWeight`. The score starts at 100 and points are
-deducted for each failing rule based on its weight.
+## Score computation
 
+```text
+score = 100 - sum(scoreWeight for each failed rule)
 ```
-score = 100 - sum(scoreWeight for each failing rule)
-```
 
-The resulting score maps to a maturity level using the thresholds defined in `roadmap-audit-rules.json`.
+The score is clamped between 0 and 100.
 
----
+Then maturity caps are applied. For example:
 
-## Using the Maturity Model
+- Missing roadmap caps maturity at L0.
+- Parse error caps maturity at L1.
+- Missing release sections caps maturity at L2.
+- Missing acceptance criteria caps maturity at L2.
+- Any critical finding caps maturity at L1.
+- Any warning finding caps maturity at L3, because L4 requires no critical or warning findings.
 
-### As an operator
+## Maintenance rule
 
-- Use the Work Queue view to see each repo's maturity level and score.
-- Repos at L3 or L4 are candidates for Copilot dispatch.
-- Repos at L0–L2 should receive roadmap repair before dispatch.
-
-### As a coding agent
-
-- Do not assume a roadmap is valid; check the maturity level first.
-- Use the roadmap contract model (from `roadmap-contract.schema.json`) as the source of truth.
-- Treat L0 and L1 as insufficient context for safe task packaging.
-- Treat acceptance criteria as the definition of done for each release.
-
----
-
-## Maintenance
-
-This maturity model should be updated when:
-
-- The audit rule pack (`roadmap-audit-rules.json`) is extended with new rules.
-- The product's requirements for Copilot dispatch readiness change.
-- New evidence emerges about what makes a roadmap reliably parseable or actionable.
+When `roadmap-audit-rules.json` changes, update this document and the schema together. The rule pack is the executable source of truth; this document explains the rules in human terms.

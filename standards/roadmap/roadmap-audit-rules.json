@@ -1,96 +1,175 @@
 {
-  "version": "1.0",
-  "description": "Weighted audit rules for roadmap contract quality scoring. Each rule is evaluated against a parsed roadmap contract and contributes to a 0–100 maturity score.",
+  "version": "2.0",
+  "description": "Weighted audit rules for roadmap contract quality scoring. Rules evaluate the normalized contract produced from ROADMAP.md and contribute to a 0-100 maturity score.",
+  "scoring": {
+    "startScore": 100,
+    "deductFailedRuleWeights": true,
+    "clampMin": 0,
+    "clampMax": 100,
+    "l4RequiresNoCriticalOrWarningFindings": true
+  },
   "rules": [
     {
       "id": "ROADMAP-001",
       "name": "roadmap-file-present",
-      "description": "A ROADMAP.md (or equivalent) file exists in the repository root.",
+      "description": "A ROADMAP.md or equivalent file exists at the requested path.",
       "severity": "critical",
-      "scoreWeight": 20,
+      "scoreWeight": 100,
+      "condition": {
+        "field": "roadmapState",
+        "operator": "eq",
+        "value": "missing"
+      },
       "failCondition": "roadmapState === 'missing'",
-      "message": "No ROADMAP.md file found. The repository has no roadmap at all.",
-      "recommendedAction": "Create a ROADMAP.md using the canonical template at standards/roadmap/ROADMAP_TEMPLATE.md."
+      "message": "No ROADMAP.md file found. The repository has no roadmap contract.",
+      "recommendedAction": "Create ROADMAP.md using standards/roadmap/ROADMAP_TEMPLATE.md."
     },
     {
       "id": "ROADMAP-002",
       "name": "roadmap-parseable",
-      "description": "The roadmap file can be parsed without errors (contains at least one checkbox item).",
+      "description": "The roadmap can be parsed into at least one checklist item.",
       "severity": "critical",
-      "scoreWeight": 15,
+      "scoreWeight": 60,
+      "condition": {
+        "field": "roadmapState",
+        "operator": "eq",
+        "value": "parse-error"
+      },
       "failCondition": "roadmapState === 'parse-error'",
-      "message": "Roadmap file exists but could not be parsed. No checkbox items were found.",
-      "recommendedAction": "Add at least one release section with checklist items using '- [ ] task' and '- [x] done' syntax."
+      "message": "Roadmap exists but is not parseable. No checkbox items were found.",
+      "recommendedAction": "Add release-scoped checklist items using '- [ ]' and '- [x]' syntax."
     },
     {
       "id": "ROADMAP-003",
       "name": "roadmap-has-pending-work",
-      "description": "The roadmap contains at least one unchecked item, indicating active work.",
+      "description": "The roadmap contains at least one unchecked item unless it is intentionally archived.",
       "severity": "warning",
       "scoreWeight": 10,
+      "condition": {
+        "all": [
+          {
+            "field": "roadmapState",
+            "operator": "eq",
+            "value": "complete"
+          },
+          {
+            "field": "totalCount",
+            "operator": "gt",
+            "value": 0
+          }
+        ]
+      },
       "failCondition": "roadmapState === 'complete'",
-      "message": "All roadmap items are marked complete. No pending work is visible.",
-      "recommendedAction": "Add a new release section with future milestones, or archive this roadmap and create a new one."
+      "message": "All roadmap checklist items are complete. No pending dispatch target is visible.",
+      "recommendedAction": "Add the next planned release or archive this roadmap and create a new active roadmap."
     },
     {
       "id": "ROADMAP-004",
       "name": "has-product-intent-section",
-      "description": "The roadmap includes a product intent or scope section that describes what the product does and who it serves.",
+      "description": "The roadmap includes a Product Intent, Scope, or Purpose section describing what the product does and who it serves.",
       "severity": "warning",
       "scoreWeight": 10,
+      "condition": {
+        "field": "hasProductIntent",
+        "operator": "ne",
+        "value": true
+      },
       "failCondition": "hasProductIntent !== true",
-      "message": "No product intent or scope section detected.",
-      "recommendedAction": "Add a 'Product Intent' section near the top of ROADMAP.md describing what the product does, who it serves, and the problem it solves."
+      "message": "No Product Intent, Scope, or Purpose section was detected.",
+      "recommendedAction": "Add a Product Intent section near the top describing the product, users, and problem solved."
     },
     {
       "id": "ROADMAP-005",
       "name": "uses-release-sections",
-      "description": "Work is organized into release-scoped sections (e.g. '## Release X.Y — Title') rather than a single flat list.",
+      "description": "Work is organized into release-scoped sections using '## Release X.Y \u2014 Title'.",
       "severity": "warning",
       "scoreWeight": 15,
+      "condition": {
+        "field": "hasReleaseSections",
+        "operator": "ne",
+        "value": true
+      },
       "failCondition": "hasReleaseSections !== true",
-      "message": "Roadmap does not use release-scoped sections. Work items appear in a flat or informal structure.",
-      "recommendedAction": "Reorganize the roadmap into bounded release sections. Each release should have a heading, goal statement, and checklist."
+      "message": "Roadmap does not use release-scoped sections.",
+      "recommendedAction": "Reorganize work into bounded release sections with stable release identifiers."
     },
     {
       "id": "ROADMAP-006",
-      "name": "has-acceptance-criteria",
-      "description": "At least one release section includes acceptance criteria defining when the release can be declared done.",
+      "name": "each-release-has-acceptance-criteria",
+      "description": "Every non-archived release has explicit acceptance criteria.",
       "severity": "warning",
       "scoreWeight": 10,
-      "failCondition": "hasAcceptanceCriteria !== true",
-      "message": "No acceptance criteria found in any release section.",
-      "recommendedAction": "Add an 'Acceptance criteria' subsection to each release with observable conditions for completion."
+      "condition": {
+        "field": "releasesMissingAcceptanceCriteria",
+        "operator": "gt",
+        "value": 0
+      },
+      "failCondition": "releasesMissingAcceptanceCriteria > 0",
+      "message": "One or more non-archived releases are missing acceptance criteria.",
+      "recommendedAction": "Add observable acceptance criteria to every active, planned, blocked, validation, or done release."
     },
     {
       "id": "ROADMAP-007",
-      "name": "has-out-of-scope-boundaries",
-      "description": "At least one release section explicitly defines what is out of scope.",
-      "severity": "info",
-      "scoreWeight": 5,
-      "failCondition": "hasOutOfScope !== true",
-      "message": "No out-of-scope boundaries found in any release section.",
-      "recommendedAction": "Add an 'Out of scope' subsection to each release to prevent scope creep and reduce ambiguity for coding agents."
+      "name": "each-release-has-out-of-scope-boundaries",
+      "description": "Every non-archived release explicitly states what is out of scope.",
+      "severity": "warning",
+      "scoreWeight": 10,
+      "condition": {
+        "field": "releasesMissingOutOfScope",
+        "operator": "gt",
+        "value": 0
+      },
+      "failCondition": "releasesMissingOutOfScope > 0",
+      "message": "One or more non-archived releases are missing out-of-scope boundaries.",
+      "recommendedAction": "Add an Out of scope section to each release to prevent scope creep and agent overreach."
     },
     {
       "id": "ROADMAP-008",
       "name": "sufficient-pending-item-count",
-      "description": "The roadmap contains enough pending items to justify Copilot dispatch (minimum 3 unchecked items).",
+      "description": "A pending roadmap should contain at least three unchecked concrete items for reliable agent dispatch.",
       "severity": "info",
-      "scoreWeight": 5,
+      "scoreWeight": 0,
+      "condition": {
+        "all": [
+          {
+            "field": "roadmapState",
+            "operator": "eq",
+            "value": "pending"
+          },
+          {
+            "field": "pendingCount",
+            "operator": "lt",
+            "value": 3
+          }
+        ]
+      },
       "failCondition": "pendingCount < 3 && roadmapState === 'pending'",
-      "message": "Fewer than 3 pending roadmap items. The roadmap may not provide sufficient context for reliable dispatch.",
-      "recommendedAction": "Add more concrete, testable milestones to give Copilot enough bounded work to deliver."
+      "message": "Fewer than three pending roadmap items were found.",
+      "recommendedAction": "Add enough concrete, testable milestones to give an agent reliable execution context."
     },
     {
       "id": "ROADMAP-009",
       "name": "has-multiple-releases",
-      "description": "The roadmap defines more than one release, showing a multi-step plan rather than a single sprint.",
-      "severity": "info",
+      "description": "The roadmap defines at least two releases to provide forward visibility.",
+      "severity": "warning",
       "scoreWeight": 5,
+      "condition": {
+        "all": [
+          {
+            "field": "releaseCount",
+            "operator": "ne",
+            "value": null
+          },
+          {
+            "field": "releaseCount",
+            "operator": "lt",
+            "value": 2
+          }
+        ]
+      },
       "failCondition": "releaseCount !== null && releaseCount < 2",
-      "message": "Only one release section found. A multi-release roadmap provides better forward visibility.",
-      "recommendedAction": "Add a second release section for the next planned increment of work."
+      "message": "Fewer than two release sections were found.",
+      "recommendedAction": "Add at least one future release section for forward planning."
     },
     {
       "id": "ROADMAP-010",
@@ -98,6 +177,11 @@
       "description": "Checklist items are concrete and testable, not vague placeholders.",
       "severity": "warning",
       "scoreWeight": 5,
+      "condition": {
+        "field": "vagueItemCount",
+        "operator": "gt",
+        "value": 0
+      },
       "failCondition": "vagueItemCount > 0",
       "vaguePatterns": [
         "^improve\\b",
@@ -106,10 +190,106 @@
         "^do\\b",
         "^fix\\b",
         "^update\\s+\\w+$",
-        "^misc\\b"
+        "^misc\\b",
+        "^cleanup\\b",
+        "^polish\\b",
+        "^tbd\\b"
       ],
       "message": "One or more checklist items appear to be vague placeholders.",
-      "recommendedAction": "Replace vague items with concrete, testable, implementation-specific steps."
+      "recommendedAction": "Replace vague items with concrete, testable, implementation-specific milestones."
+    },
+    {
+      "id": "ROADMAP-011",
+      "name": "single-active-release",
+      "description": "At most one release is in active execution state at a time.",
+      "severity": "warning",
+      "scoreWeight": 5,
+      "condition": {
+        "field": "activeReleaseCount",
+        "operator": "gt",
+        "value": 1
+      },
+      "failCondition": "activeReleaseCount > 1",
+      "message": "More than one active, blocked, or validation release was detected.",
+      "recommendedAction": "Keep exactly one active execution target. Move other releases to planned, done, or archived."
+    },
+    {
+      "id": "ROADMAP-012",
+      "name": "active-release-has-validation-plan",
+      "description": "The active release includes a validation plan with concrete test or verification signals.",
+      "severity": "warning",
+      "scoreWeight": 5,
+      "condition": {
+        "all": [
+          {
+            "field": "activeReleaseCount",
+            "operator": "gt",
+            "value": 0
+          },
+          {
+            "field": "activeReleaseHasValidationPlan",
+            "operator": "ne",
+            "value": true
+          }
+        ]
+      },
+      "failCondition": "activeReleaseCount > 0 && activeReleaseHasValidationPlan !== true",
+      "message": "The active release does not include a concrete validation plan.",
+      "recommendedAction": "Add a Validation plan section with specific commands, smoke tests, or manual verification steps."
+    },
+    {
+      "id": "ROADMAP-013",
+      "name": "active-release-has-traceability",
+      "description": "The active release links work to issues, PRs, commits, ADRs, tests, docs, or workflows.",
+      "severity": "info",
+      "scoreWeight": 0,
+      "condition": {
+        "all": [
+          {
+            "field": "activeReleaseCount",
+            "operator": "gt",
+            "value": 0
+          },
+          {
+            "field": "activeReleaseHasTraceability",
+            "operator": "ne",
+            "value": true
+          }
+        ]
+      },
+      "failCondition": "activeReleaseCount > 0 && activeReleaseHasTraceability !== true",
+      "message": "The active release has no explicit traceability references.",
+      "recommendedAction": "Add links or references to issues, PRs, commits, ADRs, tests, workflows, or docs."
+    },
+    {
+      "id": "ROADMAP-014",
+      "name": "done-releases-have-no-unchecked-items",
+      "description": "A release marked done should not contain unchecked checklist items.",
+      "severity": "warning",
+      "scoreWeight": 5,
+      "condition": {
+        "field": "doneReleaseUncheckedItemCount",
+        "operator": "gt",
+        "value": 0
+      },
+      "failCondition": "doneReleaseUncheckedItemCount > 0",
+      "message": "One or more done releases still contain unchecked checklist items.",
+      "recommendedAction": "Either complete those items, move them to a future release, or change the release status."
+    },
+    {
+      "id": "ROADMAP-015",
+      "name": "known-status-vocabulary",
+      "description": "Release statuses use the canonical vocabulary or configured aliases.",
+      "severity": "warning",
+      "scoreWeight": 5,
+      "condition": {
+        "field": "unknownStatusCount",
+        "operator": "gt",
+        "value": 0
+      },
+      "failCondition": "unknownStatusCount > 0",
+      "message": "One or more releases use an unknown status value.",
+      "recommendedAction": "Use planned, active, blocked, validation, done, or archived."
     }
   ],
   "maturityThresholds": {
@@ -121,22 +301,135 @@
     "L1-Informal": {
       "minScore": 1,
       "maxScore": 39,
-      "description": "Roadmap exists but is a flat list, lacks structure, or has parse errors."
+      "description": "Roadmap exists but is flat, vague, unparseable, or structurally unsafe."
     },
     "L2-Structured": {
       "minScore": 40,
       "maxScore": 64,
-      "description": "Roadmap has checkboxes and some organization, but lacks release sections or acceptance criteria."
+      "description": "Roadmap has checklist structure and some organization, but is not yet a reliable dispatch contract."
     },
     "L3-Contract-Ready": {
       "minScore": 65,
       "maxScore": 84,
-      "description": "Roadmap uses release sections, has acceptance criteria, and is parseable. Ready for supervised dispatch."
+      "description": "Roadmap is release-scoped, parseable, and suitable for supervised agent dispatch."
     },
     "L4-Orchestration-Ready": {
       "minScore": 85,
       "maxScore": 100,
-      "description": "Roadmap passes all critical and warning rules. Suitable for autonomous or semi-autonomous Copilot orchestration."
+      "description": "Roadmap passes all critical and warning rules and is suitable for autonomous or semi-autonomous orchestration."
     }
-  }
+  },
+  "maturityCaps": [
+    {
+      "when": {
+        "field": "roadmapState",
+        "operator": "eq",
+        "value": "missing"
+      },
+      "maxLevel": "L0-Absent",
+      "reason": "A missing roadmap cannot be above L0."
+    },
+    {
+      "when": {
+        "field": "roadmapState",
+        "operator": "eq",
+        "value": "parse-error"
+      },
+      "maxLevel": "L1-Informal",
+      "reason": "An unparseable roadmap cannot be above L1."
+    },
+    {
+      "when": {
+        "field": "hasReleaseSections",
+        "operator": "ne",
+        "value": true
+      },
+      "maxLevel": "L2-Structured",
+      "reason": "A roadmap without release sections cannot be contract-ready."
+    },
+    {
+      "when": {
+        "field": "releasesMissingAcceptanceCriteria",
+        "operator": "gt",
+        "value": 0
+      },
+      "maxLevel": "L2-Structured",
+      "reason": "A roadmap with missing acceptance criteria cannot be contract-ready."
+    },
+    {
+      "when": {
+        "field": "criticalFindingCount",
+        "operator": "gt",
+        "value": 0
+      },
+      "maxLevel": "L1-Informal",
+      "reason": "Critical findings block reliable dispatch."
+    },
+    {
+      "when": {
+        "field": "warningFindingCount",
+        "operator": "gt",
+        "value": 0
+      },
+      "maxLevel": "L3-Contract-Ready",
+      "reason": "L4 requires zero critical and warning findings."
+    }
+  ],
+  "statusVocabulary": {
+    "allowedStatuses": [
+      "planned",
+      "active",
+      "blocked",
+      "validation",
+      "done",
+      "archived"
+    ],
+    "activeStatuses": [
+      "active",
+      "blocked",
+      "validation"
+    ],
+    "statusAliases": {
+      "pending": "planned",
+      "in progress": "active",
+      "in-progress": "active",
+      "wip": "active",
+      "complete": "done",
+      "completed": "done",
+      "shipped": "done",
+      "released": "done"
+    }
+  },
+  "validationSignals": [
+    "npm test",
+    "npm run test",
+    "npm run build",
+    "npm run lint",
+    "dotnet test",
+    "pytest",
+    "invoke-pester",
+    "pester",
+    "psscriptanalyzer",
+    "manual smoke test",
+    "smoke test",
+    "ci",
+    "github actions",
+    "deployment verification",
+    "api smoke",
+    "frontend smoke",
+    "backend health check",
+    "playwright",
+    "curl "
+  ],
+  "traceabilityPatterns": [
+    "#\\d+",
+    "PR\\s*#?\\d+",
+    "commit\\s+[a-f0-9]{7,40}",
+    "ADR-?\\d+",
+    "docs/",
+    "tests?/",
+    "\\.github/workflows/",
+    "JIRA-[0-9]+",
+    "GH-[0-9]+"
+  ]
 }

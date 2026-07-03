@@ -1,108 +1,86 @@
 # Roadmap Repair Prompt
 
-Use this prompt template when requesting a roadmap repair or rewrite from a coding agent (such as GitHub Copilot).
-The goal is to produce a normalized, contract-quality roadmap from an informal or incomplete one — without losing
-genuine completion history and without inventing work that was not already intended.
+Use this prompt when a repository roadmap is too informal for reliable dispatch and must be repaired into the canonical roadmap contract format.
 
+The repair process must produce a **preview**, not an immediate file mutation.
+
+## When to use
+
+Use this when:
+
+- Contract maturity is L1 or L2.
+- The roadmap is a flat checklist.
+- Release sections are missing or inconsistent.
+- Acceptance criteria or out-of-scope boundaries are missing.
+- Checklist items are vague and not testable.
+- Product intent is missing.
+
+Do not use this when:
+
+- The roadmap is already L3 or L4 and only needs minor edits.
+- Completion history cannot be verified.
+- Active in-flight work exists outside the roadmap and has not been captured.
+
+## Repair prompt template
+
+```text
+You are repairing ROADMAP.md for repository: {REPO_NAME}.
+
+Current maturity level: {L0|L1|L2}
+Current maturity score: {SCORE}
+Audit findings:
+{PASTE FINDINGS: rule ID, severity, message, recommended action}
+
+Your task is to produce a PREVIEW of a repaired ROADMAP.md following:
+standards/roadmap/ROADMAP_TEMPLATE.md
+
+Rules:
+
+1. Preserve all checked items (`- [x]`) exactly as they appear.
+   - Do not delete them.
+   - Do not reword them.
+   - Preserve completion dates and token/cost annotations exactly.
+2. Reorganize unchecked items into bounded release sections using:
+   `## Release {X.Y} — {Title}`
+3. Add a Product Intent section if missing.
+4. Add or repair a Release Index.
+5. Add acceptance criteria to every non-archived release.
+6. Add out-of-scope boundaries to every non-archived release.
+7. Add validation plan, risks/blockers, dependencies, known issues, and traceability for the active release.
+8. Rewrite vague unchecked checklist items into concrete, testable milestones.
+9. Do not invent features, requirements, or milestones not already implied by the current roadmap.
+10. Do not mark pending work complete.
+11. Do not create more than one active release.
+12. Do not use an `Immediate Next Focus` section. The active release is the execution focus.
+
+Return the FULL proposed ROADMAP.md content, clearly labeled as a PREVIEW.
+Do not modify files.
+
+Current ROADMAP.md:
 ---
-
-## When to Use This Prompt
-
-Use this prompt when:
-
-- A repo's roadmap is at maturity level L1 (Informal) or L2 (Structured) and needs to be elevated.
-- The roadmap is a flat checklist that needs to be reorganized into bounded release sections.
-- Acceptance criteria and out-of-scope boundaries are missing.
-- The roadmap has vague placeholder items that need to be rewritten as concrete milestones.
-- The roadmap needs a product intent section or principle statements.
-
-Do **not** use this prompt when:
-
-- The roadmap is already at L3 or L4 (it may only need minor augmentation, not a rewrite).
-- You cannot verify what was genuinely completed (do not guess at completion history).
-- The roadmap has active in-flight work that has not been captured yet.
-
----
-
-## Instructions for Previewing a Repair
-
-1. Read the current roadmap (`ROADMAP.md`) in full before proposing any changes.
-2. Identify all checked items (`- [x]`) and treat them as confirmed completion history — do not delete or rewrite them.
-3. Identify all unchecked items (`- [ ]`) and assess whether they are concrete and testable.
-4. Identify any missing structural elements: product intent, release sections, acceptance criteria, out-of-scope.
-5. Generate a **proposed** normalized roadmap following the canonical template (`ROADMAP_TEMPLATE.md`).
-6. Present the proposed roadmap as a diff or side-by-side preview — do not apply it until the operator approves.
-7. Log the repair action with: source roadmap state, proposed state, operator approval status, and timestamp.
-
----
-
-## Repair Prompt Template
-
-Copy this prompt and fill in the placeholders before submitting to a coding agent:
-
-```
-You are repairing the ROADMAP.md for the repository: {REPO_NAME}.
-
-Current roadmap maturity level: {L0|L1|L2}
-Audit findings that triggered this repair:
-{PASTE AUDIT FINDINGS HERE — one per line, including rule ID, severity, and message}
-
-Your task is to produce a PREVIEW of a repaired ROADMAP.md that:
-
-1. Preserves all checked items (- [x]) exactly as they appear — do not delete or reword them,
-   including any *(completed: YYYY-MM-DD)* or token-usage annotations attached to them.
-2. Reorganizes unchecked items into bounded release sections using the heading format:
-   ## Release {X.Y} — {Title}
-3. Adds a product intent section at the top if one does not already exist.
-4. Adds acceptance criteria to each release section.
-5. Adds out-of-scope boundaries to each release section where feasible.
-6. Rewrites any vague checklist items into concrete, testable, implementation-specific steps.
-   Vague examples to avoid: "improve X", "refactor Y", "fix stuff", "finish Z".
-7. Does NOT invent new features, requirements, or milestones that are not already implied by the current content.
-8. Does NOT mark any pending items as complete unless directed to do so.
-
-Use the canonical template at: standards/roadmap/ROADMAP_TEMPLATE.md
-
-Present the output as the FULL proposed ROADMAP.md content, clearly labeled as a PREVIEW.
-Do not modify the actual ROADMAP.md file without explicit operator approval.
-
-Current ROADMAP.md content:
----
-{PASTE CURRENT ROADMAP.MD CONTENT HERE}
+{PASTE CURRENT ROADMAP.MD CONTENT}
 ---
 ```
 
----
-
-## Post-Preview Checklist
+## Post-preview checklist
 
 Before applying the repaired roadmap, verify:
 
-- [ ] All checked items (`- [x]`) from the original are present and unchanged.
-- [ ] Completion dates and token-usage annotations from the original are preserved exactly.
-- [ ] No new milestones were invented that do not reflect the original intent.
-- [ ] Every release section has a goal statement, checklist, and acceptance criteria.
-- [ ] Out-of-scope sections are accurate (not used to quietly defer real requirements).
-- [ ] Release identifiers are stable and not renumbered from prior completed releases.
-- [ ] The product intent section accurately describes the repo's actual purpose.
-- [ ] The proposed file is valid markdown and parseable by the roadmap parser.
+- [ ] Every original checked item is present and unchanged.
+- [ ] Completion dates and token/cost annotations are preserved.
+- [ ] No new features were invented.
+- [ ] Every non-archived release has acceptance criteria.
+- [ ] Every non-archived release has out-of-scope boundaries.
+- [ ] Exactly one release is active, blocked, or in validation.
+- [ ] The active release has validation, risks/blockers, dependencies, known issues, and traceability.
+- [ ] Release identifiers remain stable.
+- [ ] The proposed file is valid markdown and parseable by `Test-RoadmapContract.ps1`.
 
----
+## Applying the repair
 
-## Applying the Repair
+After operator approval:
 
-Once the preview has been reviewed and approved:
-
-1. Replace the contents of `ROADMAP.md` with the approved preview content.
-2. Run a roadmap scan to verify the new file parses cleanly.
-3. Confirm the maturity level has improved (L2 or higher).
-4. Log the repair in the operations log with: repo name, original maturity level, new maturity level, and timestamp.
-
----
-
-## Constraints
-
-- Do not auto-apply roadmap rewrites. Always require explicit operator approval.
-- Do not delete genuine completion history under any circumstances.
-- Do not invent requirements. If the current roadmap is too sparse to restructure, state that and recommend adding content manually first.
-- Do not change release identifiers that are referenced in task history.
+1. Replace `ROADMAP.md` with the approved preview.
+2. Run `tools/Invoke-RoadmapValidation.ps1`.
+3. Confirm the new maturity level.
+4. Log the repair action with old level, new level, operator approval, and timestamp.

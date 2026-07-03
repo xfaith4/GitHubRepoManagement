@@ -1,13 +1,18 @@
 {
-  "_comment": "Example configuration for tools/Test-RoadmapStructure.ps1. Copy this file to 'roadmap-validation.config.json' (same folder, or tools/) to activate it, or pass it explicitly with -Config. Every key is optional; omitted keys fall back to the built-in defaults shown here. Unknown keys are ignored. See docs/operations/roadmap-validation.md.",
-
-  "requiredSections": [
-    "Goal",
+  "_comment": "Example configuration for tools/Test-RoadmapStructure.ps1. Copy to roadmap-validation.config.json next to this file or pass with -Config. Every key is optional; omitted keys use built-in defaults. Unknown keys are ignored.",
+  "requiredTopLevelSections": [
+    "Product Intent",
+    "Product Principles",
+    "Current State Summary",
+    "Release Index",
+    "Definition of Done"
+  ],
+  "requiredReleaseSections": [
     "Product outcomes",
     "Engineering milestones",
-    "Acceptance criteria"
+    "Acceptance criteria",
+    "Out of scope"
   ],
-
   "activeReleaseRequiredSections": [
     "Validation plan",
     "Risks and blockers",
@@ -15,7 +20,6 @@
     "Known issues",
     "Traceability"
   ],
-
   "allowedStatuses": [
     "planned",
     "active",
@@ -24,7 +28,6 @@
     "done",
     "archived"
   ],
-
   "statusAliases": {
     "pending": "planned",
     "in progress": "active",
@@ -35,34 +38,84 @@
     "shipped": "done",
     "released": "done"
   },
-
-  "requiredReleases": ["1.2"],
-
+  "activeStatuses": [
+    "active",
+    "blocked",
+    "validation"
+  ],
   "maxActiveRoadmapLines": 900,
   "maxFutureReleaseLines": 120,
-
   "allowImmediateNextFocus": false,
-  "requireImplementationStateVocabulary": false,
-  "treatDoneWithUncheckedCriteriaAsError": false,
-  "flagMissingStatusOnFutureReleases": false,
-  "flagFutureReleaseRecommendations": false,
-
+  "requireSingleActiveRelease": true,
+  "treatDoneWithUncheckedCriteriaAsError": true,
+  "flagFutureReleaseRecommendations": true,
   "validationSignals": [
-    "npm test", "npm run test", "npm run build", "npm run lint", "dotnet test",
-    "pytest", "invoke-pester", "pester", "psscriptanalyzer", "manual smoke test",
-    "smoke test", "ci", "github actions", "deployment verification",
-    "api smoke", "frontend smoke", "backend health check", "playwright"
+    "npm test",
+    "npm run test",
+    "npm run build",
+    "npm run lint",
+    "dotnet test",
+    "pytest",
+    "invoke-pester",
+    "pester",
+    "psscriptanalyzer",
+    "manual smoke test",
+    "smoke test",
+    "ci",
+    "github actions",
+    "deployment verification",
+    "api smoke",
+    "frontend smoke",
+    "backend health check",
+    "playwright",
+    "curl "
   ],
-
   "weakAcceptanceTerms": [
-    "works", "work", "done", "complete", "completed", "good enough", "polish",
-    "improve", "improved", "finalize", "finalized", "cleanup", "clean up",
-    "misc", "tbd", "etc", "various"
+    "works",
+    "work",
+    "done",
+    "complete",
+    "completed",
+    "good enough",
+    "polish",
+    "improve",
+    "improved",
+    "finalize",
+    "finalized",
+    "cleanup",
+    "clean up",
+    "misc",
+    "tbd",
+    "etc",
+    "various"
   ],
-
+  "traceabilityPatterns": [
+    "#\\d+",
+    "PR\\s*#?\\d+",
+    "commit\\s+[a-f0-9]{7,40}",
+    "ADR-?\\d+",
+    "docs/",
+    "tests?/",
+    "\\.github/workflows/",
+    "JIRA-[0-9]+",
+    "GH-[0-9]+"
+  ],
   "pipelineKeywords": [
-    "bug", "regression", "failed", "failure", "ci", "build", "test", "lint",
-    "security", "audit", "vulnerability", "dependency", "blocked", "rollback",
-    "deployment", "smoke"
+    "bug",
+    "regression",
+    "failed",
+    "failure",
+    "ci",
+    "build",
+    "test",
+    "lint",
+    "security",
+    "audit",
+    "vulnerability",
+    "dependency",
+    "blocked",
+    "rollback",
+    "deployment",
+    "smoke"
   ]
 }
