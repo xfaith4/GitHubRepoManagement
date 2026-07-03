@@ -1,5 +1,29 @@
 # Findings
 
+## 2026-07-03 (Release 1.2 execution-throughput dashboard card)
+
+- The roadmap item is still truthfully incomplete on this checkout even
+  though the backend route and typed client already exist. The current
+  dashboard consumer in `frontend/components/Dashboard.tsx` is a one-shot
+  mount-time fetch with silent failure handling and no refresh path.
+- The existing UI also disappears entirely when the queue is idle because
+  it only renders when `totalCompleted > 0` or there are `running` / `ready`
+  entries. That means the operator cannot see the execution-throughput
+  surface in the zero-state, which does not satisfy "card in the dashboard."
+- This repo's Release 1.2 roadmap text has drift elsewhere too: the
+  auto-scan indicator is already present in the dashboard header while the
+  roadmap still marks that milestone `planned`. That broader cleanup is out
+  of scope for this slice unless the user asks for a Release 1.2 sweep.
+- Validation environment note: `frontend/scripts/ensure-rollup-native.mjs`
+  looks for Rollup's native package under `frontend/node_modules`, but this
+  workspace resolves Rollup from the repo-root `node_modules`. That let the
+  build fail even though the repo already has a native-package recovery
+  script.
+- Validation environment note: `scripts/Invoke-FrontendSmokeTest.ps1`
+  defaults `WorkspaceRoot` to the Windows `G:\Development\GitHubRepoManagement`
+  path. From WSL or any non-`G:` checkout, the smoke must be invoked with an
+  explicit `-WorkspaceRoot` override.
+
 ## 2026-07-03 (Test-harness: api-host smoke end-to-end reliability)
 
 - The carried-forward "harness hangs at the quota-refusal route" belief was

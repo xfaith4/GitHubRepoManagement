@@ -20,6 +20,7 @@ async function main() {
     backendOnline: false,
     portfolioAssessmentLoaded: false,
     documentationHealthLoaded: false,
+    executionThroughputLoaded: false,
     consoleMessages: [],
     failedRequests: [],
     errorResponses: [],
@@ -97,6 +98,16 @@ async function main() {
       report.documentationHealthLoaded = false;
     }
 
+    try {
+      await page.getByRole('heading', { name: 'Execution Throughput' }).waitFor({ timeout: timeoutMs });
+      await page.getByText('Loading execution metrics…', { exact: true }).waitFor({ state: 'hidden', timeout: timeoutMs });
+      await page.getByText('Done Today', { exact: true }).waitFor({ timeout: timeoutMs });
+      await page.getByText('Ready Queue', { exact: true }).waitFor({ timeout: timeoutMs });
+      report.executionThroughputLoaded = true;
+    } catch {
+      report.executionThroughputLoaded = false;
+    }
+
     await page.screenshot({ path: screenshotPath, fullPage: true });
 
     report.finishedAt = new Date().toISOString();
@@ -105,6 +116,7 @@ async function main() {
       report.backendOnline &&
       report.portfolioAssessmentLoaded &&
       report.documentationHealthLoaded &&
+      report.executionThroughputLoaded &&
       report.failedRequests.length === 0 &&
       report.errorResponses.length === 0 &&
       report.consoleMessages.filter(entry => entry.type === 'error').length === 0;
@@ -116,6 +128,7 @@ async function main() {
       if (!report.backendOnline) problems.push('backend health badge did not report online');
       if (!report.portfolioAssessmentLoaded) problems.push('portfolio assessment panel did not finish loading');
       if (!report.documentationHealthLoaded) problems.push('documentation health panel did not finish loading');
+      if (!report.executionThroughputLoaded) problems.push('execution throughput card did not finish loading');
       if (report.failedRequests.length > 0) problems.push(`${report.failedRequests.length} request(s) failed`);
       if (report.errorResponses.length > 0) problems.push(`${report.errorResponses.length} API response(s) returned >= 400`);
       if (report.consoleMessages.some(entry => entry.type === 'error')) problems.push('browser console contained error messages');

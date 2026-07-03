@@ -97,6 +97,7 @@ try {
         "Backend online: $($report.backendOnline)"
         "Portfolio assessment loaded: $($report.portfolioAssessmentLoaded)"
         "Documentation health loaded: $($report.documentationHealthLoaded)"
+        "Execution throughput loaded: $($report.executionThroughputLoaded)"
     ) | Set-Content -LiteralPath $summaryPath -Encoding UTF8
 
     Write-Host '[PASS] Frontend smoke completed' -ForegroundColor Green

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry, type DocAuditIndex, type RoadmapAuditIndex, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioAssessmentEntry, type PortfolioAssessmentResult, type RepoLifecycleState, type PortfolioSignalSource, type OperationsReposResult } from '../types';
 import SummaryCard from './SummaryCard';
 import ActionBar from './ActionBar';
@@ -72,6 +72,24 @@ const LIFECYCLE_STYLES: Record<RepoLifecycleState, string> = {
   'parse-error': 'bg-red-900/40 text-red-200 border-red-700/50',
 };
 
+const EMPTY_EXECUTION_METRICS: ExecutionMetrics = {
+  completedToday: 0,
+  completedThisWeek: 0,
+  totalCompleted: 0,
+  totalCancelled: 0,
+  avgCurrentRunMins: 0,
+  errorRatePct: 0,
+  stateCounts: {
+    idle: 0,
+    ready: 0,
+    running: 0,
+    blocked: 0,
+    complete: 0,
+  },
+};
+
+const EXECUTION_METRICS_REFRESH_MS = 15_000;
+
 function formatLifecycleLabel(state: RepoLifecycleState): string {
   return state.replaceAll('-', ' ');
 }
@@ -129,6 +147,10 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
 
   // Release 1.2 — execution metrics, auto-scan schedule, dependency graph
   const [executionMetrics, setExecutionMetrics] = useState<ExecutionMetrics | null>(null);
+  const [executionMetricsLoading, setExecutionMetricsLoading] = useState(true);
+  const [executionMetricsRefreshing, setExecutionMetricsRefreshing] = useState(false);
+  const [executionMetricsError, setExecutionMetricsError] = useState<string | null>(null);
+  const [executionMetricsUpdatedAt, setExecutionMetricsUpdatedAt] = useState<string | null>(null);
   const [scanSchedule, setScanSchedule] = useState<ScanSchedule | null>(null);
   const [dependencyGraph, setDependencyGraph] = useState<RoadmapDependencyGraph | null>(null);
   const [dependencyGraphLoading, setDependencyGraphLoading] = useState(false);
@@ -179,6 +201,31 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
       .finally(() => setOperationsReposLoading(false));
   };
 
+  const refreshExecutionMetrics = useCallback(async ({ background = false }: { background?: boolean } = {}) => {
+    if (background) {
+      setExecutionMetricsRefreshing(true);
+    } else {
+      setExecutionMetricsLoading(true);
+    }
+
+    try {
+      const result = await getExecutionMetrics();
+      setExecutionMetrics(result);
+      setExecutionMetricsError(null);
+      setExecutionMetricsUpdatedAt(new Date().toISOString());
+      return result;
+    } catch (err) {
+      setExecutionMetricsError(err instanceof Error ? err.message : 'Execution metrics are unavailable.');
+      throw err;
+    } finally {
+      if (background) {
+        setExecutionMetricsRefreshing(false);
+      } else {
+        setExecutionMetricsLoading(false);
+      }
+    }
+  }, []);
+
   // Backend health indicator — polls /health/live every 15 s
   const backendHealth = useHealthPing(15_000);
 
@@ -216,11 +263,19 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     refreshPortfolioAssessment(false).catch(() => {/* silent */});
   }, [loading, repos.length]);
 
-  // Release 1.2 — fetch execution metrics and auto-scan schedule on mount (silent failures)
+  // Release 1.2 — fetch execution metrics and auto-scan schedule on mount
   useEffect(() => {
-    getExecutionMetrics().then(setExecutionMetrics).catch(() => {/* silent */});
+    refreshExecutionMetrics().catch(() => {/* surfaced in-card */});
     getScanSchedule().then(setScanSchedule).catch(() => {/* silent */});
-  }, []);
+  }, [refreshExecutionMetrics]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      refreshExecutionMetrics({ background: true }).catch(() => {/* surfaced in-card */});
+    }, EXECUTION_METRICS_REFRESH_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [refreshExecutionMetrics]);
 
   // Release 1.2 — load dependency graph when Dependencies tab is first opened
   useEffect(() => {
@@ -619,6 +674,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     // Only trigger a refresh for non-scan operations (scan was already triggered by App.tsx)
     if (!wasScan) {
       fetchRepoStatus();
+      refreshExecutionMetrics({ background: true }).catch(() => {/* surfaced in-card */});
     }
   };
 
@@ -884,6 +940,13 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     ? 'bg-red-500'
     : 'bg-yellow-400 animate-pulse';
   const healthLabel = backendHealth === 'online' ? 'Backend: Online' : backendHealth === 'offline' ? 'Backend: Offline' : 'Backend: Connecting…';
+  const metrics = executionMetrics ?? EMPTY_EXECUTION_METRICS;
+  const hasExecutionActivity = metrics.totalCompleted > 0 ||
+    metrics.totalCancelled > 0 ||
+    metrics.stateCounts.running > 0 ||
+    metrics.stateCounts.ready > 0 ||
+    metrics.stateCounts.blocked > 0 ||
+    metrics.stateCounts.complete > 0;
 
   return (
     <div>
@@ -989,39 +1052,110 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
           <SummaryCard title="Commits This Month" value={summary.commitsThisMonth} color="blue" />
         </div>
 
-        {/* Execution throughput metrics (Release 1.2) — shown when queue has activity */}
-        {executionMetrics && (executionMetrics.totalCompleted > 0 || executionMetrics.stateCounts.running > 0 || executionMetrics.stateCounts.ready > 0) && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-4">
-            <div className="px-3 py-2 bg-gray-800/60 border border-gray-700 rounded-lg text-center">
-              <div className="text-lg font-bold text-green-300">{executionMetrics.completedToday}</div>
-              <div className="text-xs text-gray-400 mt-0.5">Done Today</div>
+        <section className="mt-4 rounded-lg border border-gray-700 bg-gray-800/60 px-4 py-4">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Execution Throughput</h2>
+              <p className="text-sm text-gray-400 mt-1">
+                Live rollup from the execution ledger: completions, queue pressure, and in-flight duration.
+              </p>
             </div>
-            <div className="px-3 py-2 bg-gray-800/60 border border-gray-700 rounded-lg text-center">
-              <div className="text-lg font-bold text-blue-300">{executionMetrics.completedThisWeek}</div>
-              <div className="text-xs text-gray-400 mt-0.5">Done This Week</div>
-            </div>
-            <div className="px-3 py-2 bg-gray-800/60 border border-gray-700 rounded-lg text-center">
-              <div className="text-lg font-bold text-indigo-300">{executionMetrics.stateCounts.running}</div>
-              <div className="text-xs text-gray-400 mt-0.5">Running</div>
-            </div>
-            <div className="px-3 py-2 bg-gray-800/60 border border-gray-700 rounded-lg text-center">
-              <div className="text-lg font-bold text-yellow-300">{executionMetrics.stateCounts.ready}</div>
-              <div className="text-xs text-gray-400 mt-0.5">Ready</div>
-            </div>
-            <div className="px-3 py-2 bg-gray-800/60 border border-gray-700 rounded-lg text-center">
-              <div className={`text-lg font-bold ${executionMetrics.errorRatePct > 20 ? 'text-red-300' : 'text-gray-300'}`}>
-                {executionMetrics.errorRatePct.toFixed(0)}%
-              </div>
-              <div className="text-xs text-gray-400 mt-0.5">Error Rate</div>
-            </div>
-            <div className="px-3 py-2 bg-gray-800/60 border border-gray-700 rounded-lg text-center">
-              <div className="text-lg font-bold text-gray-300">
-                {executionMetrics.avgCurrentRunMins > 0 ? `${executionMetrics.avgCurrentRunMins.toFixed(0)}m` : '—'}
-              </div>
-              <div className="text-xs text-gray-400 mt-0.5">Avg Run</div>
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              {executionMetricsRefreshing && !executionMetricsLoading && <span>Refreshing…</span>}
+              {executionMetricsUpdatedAt && (
+                <span>
+                  Updated {new Date(executionMetricsUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+              <button
+                onClick={() => {
+                  refreshExecutionMetrics({ background: executionMetrics !== null }).catch(() => {/* surfaced in-card */});
+                }}
+                disabled={executionMetricsLoading || executionMetricsRefreshing}
+                className="px-2.5 py-1 rounded border border-gray-600 bg-gray-700/60 text-gray-200 hover:bg-gray-600/70 disabled:opacity-50 transition-colors"
+              >
+                Refresh
+              </button>
             </div>
           </div>
-        )}
+
+          {executionMetricsLoading && executionMetrics === null ? (
+            <div className="flex items-center gap-3 py-8 text-sm text-gray-400 justify-center">
+              <SpinnerIcon className="w-5 h-5 animate-spin" />
+              <span>Loading execution metrics…</span>
+            </div>
+          ) : executionMetrics === null ? (
+            <div className="mt-4 rounded-lg border border-red-700/40 bg-red-900/20 px-4 py-3 text-sm text-red-200">
+              {executionMetricsError ?? 'Execution metrics are unavailable.'}
+            </div>
+          ) : (
+            <>
+              <div className="mt-4 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+                <div className="rounded-lg border border-green-700/30 bg-green-900/10 px-3 py-3">
+                  <div className="text-xs uppercase tracking-wide text-green-200/80">Done Today</div>
+                  <div className="mt-1 text-2xl font-semibold text-green-200">{metrics.completedToday}</div>
+                </div>
+                <div className="rounded-lg border border-blue-700/30 bg-blue-900/10 px-3 py-3">
+                  <div className="text-xs uppercase tracking-wide text-blue-200/80">Done This Week</div>
+                  <div className="mt-1 text-2xl font-semibold text-blue-200">{metrics.completedThisWeek}</div>
+                </div>
+                <div className="rounded-lg border border-indigo-700/30 bg-indigo-900/10 px-3 py-3">
+                  <div className="text-xs uppercase tracking-wide text-indigo-200/80">Running Now</div>
+                  <div className="mt-1 text-2xl font-semibold text-indigo-200">{metrics.stateCounts.running}</div>
+                </div>
+                <div className="rounded-lg border border-yellow-700/30 bg-yellow-900/10 px-3 py-3">
+                  <div className="text-xs uppercase tracking-wide text-yellow-200/80">Ready Queue</div>
+                  <div className="mt-1 text-2xl font-semibold text-yellow-200">{metrics.stateCounts.ready}</div>
+                </div>
+                <div className="rounded-lg border border-red-700/30 bg-red-900/10 px-3 py-3">
+                  <div className="text-xs uppercase tracking-wide text-red-200/80">Error Rate</div>
+                  <div className={`mt-1 text-2xl font-semibold ${metrics.errorRatePct > 20 ? 'text-red-200' : 'text-gray-100'}`}>
+                    {metrics.errorRatePct.toFixed(0)}%
+                  </div>
+                </div>
+                <div className="rounded-lg border border-gray-700 bg-gray-900/50 px-3 py-3">
+                  <div className="text-xs uppercase tracking-wide text-gray-400">Avg Active Run</div>
+                  <div className="mt-1 text-2xl font-semibold text-gray-100">
+                    {metrics.avgCurrentRunMins > 0 ? `${metrics.avgCurrentRunMins.toFixed(0)}m` : '0m'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="rounded-lg border border-gray-700/60 bg-gray-900/40 px-3 py-2">
+                  <div className="text-xs text-gray-500">Completed</div>
+                  <div className="mt-1 text-lg font-semibold text-gray-100">{metrics.totalCompleted}</div>
+                </div>
+                <div className="rounded-lg border border-gray-700/60 bg-gray-900/40 px-3 py-2">
+                  <div className="text-xs text-gray-500">Cancelled / Failed</div>
+                  <div className="mt-1 text-lg font-semibold text-gray-100">{metrics.totalCancelled}</div>
+                </div>
+                <div className="rounded-lg border border-gray-700/60 bg-gray-900/40 px-3 py-2">
+                  <div className="text-xs text-gray-500">Blocked</div>
+                  <div className="mt-1 text-lg font-semibold text-gray-100">{metrics.stateCounts.blocked}</div>
+                </div>
+                <div className="rounded-lg border border-gray-700/60 bg-gray-900/40 px-3 py-2">
+                  <div className="text-xs text-gray-500">Idle / Complete</div>
+                  <div className="mt-1 text-lg font-semibold text-gray-100">
+                    {metrics.stateCounts.idle} / {metrics.stateCounts.complete}
+                  </div>
+                </div>
+              </div>
+
+              {!hasExecutionActivity && (
+                <div className="mt-4 rounded-lg border border-gray-700/60 bg-gray-900/40 px-4 py-3 text-sm text-gray-400">
+                  No execution activity has been recorded yet. The card stays visible so new queue movement is obvious as soon as the ledger changes.
+                </div>
+              )}
+
+              {executionMetricsError && (
+                <div className="mt-4 rounded-lg border border-amber-700/40 bg-amber-900/20 px-4 py-3 text-sm text-amber-100">
+                  Refresh failed; showing the last successful metrics snapshot. {executionMetricsError}
+                </div>
+              )}
+            </>
+          )}
+        </section>
 
         {(portfolioMission || portfolioAssessmentLoading) && (
           <div className="mt-4 space-y-4">
@@ -1565,6 +1699,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
         onDispatchComplete={() => {
           setDispatchModalRepo(null);
           getRoadmapAudit({ refresh: true }).then(setRoadmapAuditIndex).catch(() => {});
+          refreshExecutionMetrics({ background: true }).catch(() => {/* surfaced in-card */});
         }}
       />
 

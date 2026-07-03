@@ -456,8 +456,8 @@ capabilities.
       `GET /api/roadmap/dependencies`. *(state: smoke-tested — UI consumer planned)*
 - [x] Scheduled background scan support and `GET /api/scan/schedule`.
       *(state: smoke-tested — UI consumer planned)*
-- [ ] Execution throughput metrics card in the dashboard (consumes
-      `GET /api/execution/metrics`). *(state: planned)*
+- [x] Execution throughput metrics card in the dashboard (consumes
+      `GET /api/execution/metrics`). *(state: smoke-tested)*
 - [ ] Dependency graph panel in the dashboard (consumes
       `GET /api/roadmap/dependencies`). *(state: planned)*
 - [ ] Tag filter in Work Queue (filter by `[security]`, `[infra]`,

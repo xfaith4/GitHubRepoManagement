@@ -1,5 +1,34 @@
 # Progress
 
+## 2026-07-03 (Release 1.2 execution-throughput dashboard card)
+
+- Re-read the active roadmap plus the dashboard, typed client, and API-host
+  route for `GET /api/execution/metrics` to choose the smallest truthful
+  slice.
+- Confirmed this is not greenfield work: the backend route, `ExecutionMetrics`
+  type, smoke assertions, and a first-pass UI strip already exist.
+- Identified the real gap as operator-facing behavior, not missing backend
+  plumbing: the metrics strip is hidden in idle states, swallows failures,
+  and only fetches once on mount, so the roadmap milestone remains
+  incomplete until the dashboard card becomes durable.
+- Replaced the hidden strip in `frontend/components/Dashboard.tsx` with a
+  persistent Execution Throughput panel that keeps zero-state visibility,
+  surfaces loading/error status, supports manual refresh, polls every 15s,
+  and refreshes immediately after dispatch-related UI events.
+- Extended the repo-native frontend smoke (`scripts/frontend-smoke.cjs` and
+  `scripts/Invoke-FrontendSmokeTest.ps1`) so it now asserts the execution
+  throughput card renders and finishes loading instead of only checking the
+  broader dashboard shell.
+
+### Verification
+
+- `npm run build` — passed after installing the missing workspace-root
+  Rollup native package with `npm install --no-save --include=optional
+  @rollup/rollup-linux-x64-gnu@4.60.3`.
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/Invoke-FrontendSmokeTest.ps1 -WorkspaceRoot "$(pwd)"` — passed end-to-end, including the new execution-throughput assertion.
+- Updated `ROADMAP.md` to mark the execution-throughput dashboard card
+  milestone complete at `smoke-tested`.
+
 ## 2026-07-03 (Test-harness fix: api-host smoke end-to-end reliability)
 
 - Cleared the carried-forward harness defect that kept the broad
