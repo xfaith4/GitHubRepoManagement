@@ -17,13 +17,24 @@
         merge-readiness, agent-run, and agent-run-event history.
       - Thin query helpers (Invoke-AppDbQuery / Invoke-AppDbNonQuery) with
         parameterized SQL only — callers never string-interpolate values.
+        Invoke-AppDbTransaction runs multi-statement work over one
+        connection inside BEGIN IMMEDIATE / COMMIT.
       - The first migration seam: Write-AppDbAgentRunEvent mirrors
         agent-run lifecycle events into the database. During rollout the
         JSON/JSONL stores remain authoritative; the database is additive.
+      - Phase 2 stores: Read-AppDbExecutionLedger / Write-AppDbExecutionLedger
+        make SQLite the authoritative execution-ledger store for the
+        initialized workspace (first read seeds from the legacy
+        execution-ledger.json), and Write-AppDbOpsLogEntry /
+        Get-AppDbOpsLogEntries / Invoke-AppDbOpsLogTrim /
+        Import-AppDbOpsLogFromJsonl back the queryable operations log.
 
     Rollout contract (Release 2.1): JSON-backed artifacts keep working and
-    keep being written. Nothing in this module may throw for the mere
-    absence of SQLite; only explicit query helpers throw on real SQL errors.
+    keep being written. From Phase 2 the database is authoritative for the
+    execution ledger and ops log when a provider is available; the JSON
+    files remain the fallback store and a debugging export. Nothing in this
+    module may throw for the mere absence of SQLite; only explicit query
+    helpers throw on real SQL errors.
 
 .NOTES
     Dot-source this file to load the public functions:
@@ -258,67 +269,121 @@ namespace RepoMgmt.Persistence
             finally { _closeV2(db); }
         }
 
-        public static long ExecuteNonQuery(string dbPath, string sql, string[] names, object[] values)
+        private static long RunNonQuery(IntPtr db, string sql, string[] names, object[] values)
         {
-            IntPtr db = OpenDb(dbPath);
+            IntPtr stmt = PrepareAndBind(db, sql, names, values);
             try
             {
-                IntPtr stmt = PrepareAndBind(db, sql, names, values);
-                try
+                int rc = _step(stmt);
+                if (rc != SQLITE_DONE && rc != SQLITE_ROW)
+                {
+                    throw new InvalidOperationException("sqlite3_step failed: " + PtrToString(_errMsg(db)));
+                }
+            }
+            finally { _finalize(stmt); }
+            return _changes(db);
+        }
+
+        private static List<Dictionary<string, object>> RunQuery(IntPtr db, string sql, string[] names, object[] values)
+        {
+            List<Dictionary<string, object>> rows = new List<Dictionary<string, object>>();
+            IntPtr stmt = PrepareAndBind(db, sql, names, values);
+            try
+            {
+                int colCount = -1;
+                while (true)
                 {
                     int rc = _step(stmt);
-                    if (rc != SQLITE_DONE && rc != SQLITE_ROW)
+                    if (rc == SQLITE_DONE) { break; }
+                    if (rc != SQLITE_ROW)
                     {
                         throw new InvalidOperationException("sqlite3_step failed: " + PtrToString(_errMsg(db)));
                     }
+                    if (colCount < 0) { colCount = _columnCount(stmt); }
+                    Dictionary<string, object> row = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                    for (int i = 0; i < colCount; i++)
+                    {
+                        string name = PtrToString(_columnName(stmt, i));
+                        int type = _columnType(stmt, i);
+                        object value;
+                        switch (type)
+                        {
+                            case 1: value = _columnInt64(stmt, i); break;
+                            case 2: value = _columnDouble(stmt, i); break;
+                            case 5: value = null; break;
+                            default: value = PtrToString(_columnText(stmt, i)); break;
+                        }
+                        row[name] = value;
+                    }
+                    rows.Add(row);
                 }
-                finally { _finalize(stmt); }
-                return _changes(db);
             }
+            finally { _finalize(stmt); }
+            return rows;
+        }
+
+        public static long ExecuteNonQuery(string dbPath, string sql, string[] names, object[] values)
+        {
+            IntPtr db = OpenDb(dbPath);
+            try { return RunNonQuery(db, sql, names, values); }
             finally { _closeV2(db); }
         }
 
         public static List<Dictionary<string, object>> Query(string dbPath, string sql, string[] names, object[] values)
         {
-            List<Dictionary<string, object>> rows = new List<Dictionary<string, object>>();
             IntPtr db = OpenDb(dbPath);
-            try
-            {
-                IntPtr stmt = PrepareAndBind(db, sql, names, values);
-                try
-                {
-                    int colCount = -1;
-                    while (true)
-                    {
-                        int rc = _step(stmt);
-                        if (rc == SQLITE_DONE) { break; }
-                        if (rc != SQLITE_ROW)
-                        {
-                            throw new InvalidOperationException("sqlite3_step failed: " + PtrToString(_errMsg(db)));
-                        }
-                        if (colCount < 0) { colCount = _columnCount(stmt); }
-                        Dictionary<string, object> row = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-                        for (int i = 0; i < colCount; i++)
-                        {
-                            string name = PtrToString(_columnName(stmt, i));
-                            int type = _columnType(stmt, i);
-                            object value;
-                            switch (type)
-                            {
-                                case 1: value = _columnInt64(stmt, i); break;
-                                case 2: value = _columnDouble(stmt, i); break;
-                                case 5: value = null; break;
-                                default: value = PtrToString(_columnText(stmt, i)); break;
-                            }
-                            row[name] = value;
-                        }
-                        rows.Add(row);
-                    }
-                }
-                finally { _finalize(stmt); }
-            }
+            try { return RunQuery(db, sql, names, values); }
             finally { _closeV2(db); }
-            return rows;
+        }
+
+        // Sessions hold one connection open across statements so callers can
+        // wrap multi-statement work (e.g. replace-ledger writes) in a single
+        // BEGIN IMMEDIATE transaction.
+        private static readonly Dictionary<long, IntPtr> Sessions = new Dictionary<long, IntPtr>();
+        private static long _nextSessionId = 0;
+
+        public static long OpenSession(string dbPath)
+        {
+            IntPtr db = OpenDb(dbPath);
+            lock (Sessions)
+            {
+                _nextSessionId++;
+                Sessions[_nextSessionId] = db;
+                return _nextSessionId;
+            }
+        }
+
+        public static void CloseSession(long sessionId)
+        {
+            IntPtr db = IntPtr.Zero;
+            lock (Sessions)
+            {
+                if (Sessions.TryGetValue(sessionId, out db)) { Sessions.Remove(sessionId); }
+            }
+            if (db != IntPtr.Zero) { _closeV2(db); }
+        }
+
+        private static IntPtr GetSessionDb(long sessionId)
+        {
+            lock (Sessions)
+            {
+                IntPtr db;
+                if (!Sessions.TryGetValue(sessionId, out db))
+                {
+                    throw new InvalidOperationException("Unknown SQLite session: " + sessionId);
+                }
+                return db;
+            }
+        }
+
+        public static long SessionNonQuery(long sessionId, string sql, string[] names, object[] values)
+        {
+            return RunNonQuery(GetSessionDb(sessionId), sql, names, values);
+        }
+
+        public static List<Dictionary<string, object>> SessionQuery(long sessionId, string sql, string[] names, object[] values)
+        {
+            return RunQuery(GetSessionDb(sessionId), sql, names, values);
         }
 
         private static IntPtr PrepareAndBind(IntPtr db, string sql, string[] names, object[] values)
@@ -741,6 +806,23 @@ function Get-AppDatabaseState {
     }
 }
 
+<#
+.SYNOPSIS
+    Disables the persistence boundary for this process. Used by tests and
+    tooling that point the module at short-lived temp databases so later
+    code in the same session falls back to the JSON stores.
+#>
+function Disable-AppDatabase {
+    [CmdletBinding()]
+    param()
+
+    $script:AppDbState.enabled        = $false
+    $script:AppDbState.databasePath   = ''
+    $script:AppDbState.provider       = 'none'
+    $script:AppDbState.providerDetail = ''
+    $script:AppDbState.initializedAt  = $null
+}
+
 # ---------------------------------------------------------------------------
 # Query helpers (parameterized SQL only)
 # ---------------------------------------------------------------------------
@@ -796,8 +878,14 @@ function Invoke-AppDbQuery {
 
     $p = _AppDbParameterArrays -Parameters $Parameters
     $rows = [RepoMgmt.Persistence.SqliteBridge]::Query($DatabasePath, $Sql, $p.names, $p.values)
+    return _AppDbRowsToObjects -Rows $rows
+}
+
+function _AppDbRowsToObjects {
+    param([object]$Rows)
+
     $out = [System.Collections.Generic.List[object]]::new()
-    foreach ($row in $rows) {
+    foreach ($row in $Rows) {
         $obj = [ordered]@{}
         foreach ($kv in $row.GetEnumerator()) {
             $obj[$kv.Key] = $kv.Value
@@ -805,6 +893,105 @@ function Invoke-AppDbQuery {
         $out.Add([pscustomobject]$obj)
     }
     return $out.ToArray()
+}
+
+function _AppDbRecordValue {
+    # StrictMode-safe property access for records that may be hashtables or
+    # PSCustomObjects; returns $null when the member does not exist.
+    param([object]$Record, [string]$Name)
+
+    if ($null -eq $Record) { return $null }
+    if ($Record -is [System.Collections.IDictionary]) {
+        if ($Record.Contains($Name)) { return $Record[$Name] }
+        return $null
+    }
+    if ($Record.PSObject.Properties.Name -contains $Name) { return $Record.$Name }
+    return $null
+}
+
+function _AppDbMatchesWorkspace {
+    # The persistence boundary is initialized for exactly one workspace per
+    # process. Workspace-scoped stores (execution ledger) must refuse to
+    # serve a different workspace and let the caller fall back to JSON.
+    param([string]$WorkspaceRoot)
+
+    if (-not $script:AppDbState.enabled) { return $false }
+    try {
+        $expected = [System.IO.Path]::GetFullPath((Get-AppDatabasePath -WorkspaceRoot $WorkspaceRoot))
+        $actual   = [System.IO.Path]::GetFullPath([string]$script:AppDbState.databasePath)
+        return [string]::Equals($expected, $actual, [System.StringComparison]::OrdinalIgnoreCase)
+    } catch {
+        return $false
+    }
+}
+
+<#
+.SYNOPSIS
+    Executes a parameterized non-query inside an open session created by
+    Invoke-AppDbTransaction.
+#>
+function Invoke-AppDbSessionNonQuery {
+    [CmdletBinding()]
+    [OutputType([long])]
+    param(
+        [Parameter(Mandatory = $true)][long]$Session,
+        [Parameter(Mandatory = $true)][string]$Sql,
+        [Parameter()][hashtable]$Parameters
+    )
+
+    $p = _AppDbParameterArrays -Parameters $Parameters
+    return [long][RepoMgmt.Persistence.SqliteBridge]::SessionNonQuery($Session, $Sql, $p.names, $p.values)
+}
+
+<#
+.SYNOPSIS
+    Executes a parameterized SELECT inside an open session created by
+    Invoke-AppDbTransaction.
+#>
+function Invoke-AppDbSessionQuery {
+    [CmdletBinding()]
+    [OutputType([object[]])]
+    param(
+        [Parameter(Mandatory = $true)][long]$Session,
+        [Parameter(Mandatory = $true)][string]$Sql,
+        [Parameter()][hashtable]$Parameters
+    )
+
+    $p = _AppDbParameterArrays -Parameters $Parameters
+    $rows = [RepoMgmt.Persistence.SqliteBridge]::SessionQuery($Session, $Sql, $p.names, $p.values)
+    return _AppDbRowsToObjects -Rows $rows
+}
+
+<#
+.SYNOPSIS
+    Runs a script block inside one SQLite transaction (BEGIN IMMEDIATE /
+    COMMIT, ROLLBACK on error) over a single connection.
+.DESCRIPTION
+    The body receives the open session id and must issue its statements via
+    Invoke-AppDbSessionNonQuery / Invoke-AppDbSessionQuery. BEGIN IMMEDIATE
+    takes the write lock up front so a concurrent writer queues on the
+    5-second busy timeout instead of failing mid-transaction.
+#>
+function Invoke-AppDbTransaction {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$DatabasePath,
+        [Parameter(Mandatory = $true)][scriptblock]$Body
+    )
+
+    $session = [RepoMgmt.Persistence.SqliteBridge]::OpenSession($DatabasePath)
+    try {
+        $null = [RepoMgmt.Persistence.SqliteBridge]::SessionNonQuery($session, 'BEGIN IMMEDIATE', $null, $null)
+        try {
+            & $Body $session
+            $null = [RepoMgmt.Persistence.SqliteBridge]::SessionNonQuery($session, 'COMMIT', $null, $null)
+        } catch {
+            try { $null = [RepoMgmt.Persistence.SqliteBridge]::SessionNonQuery($session, 'ROLLBACK', $null, $null) } catch { }
+            throw
+        }
+    } finally {
+        [RepoMgmt.Persistence.SqliteBridge]::CloseSession($session)
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -864,6 +1051,435 @@ VALUES
             summary        = [string](& $get 'summary')
             data_json      = $dataJson
         }
+        $out.success = $true
+    } catch {
+        $out.reason = $_.Exception.Message
+    }
+
+    return [pscustomobject]$out
+}
+
+# ---------------------------------------------------------------------------
+# Phase 2 migration — execution ledger store
+# ---------------------------------------------------------------------------
+
+function _AppDbLedgerEntryFromRow {
+    param([object]$Row)
+
+    $laneSlot = _AppDbRecordValue -Record $Row -Name 'lane_slot'
+    return [pscustomobject]@{
+        repoName           = [string](_AppDbRecordValue -Record $Row -Name 'repo_name')
+        repoPath           = _AppDbRecordValue -Record $Row -Name 'repo_path'
+        executionState     = [string](_AppDbRecordValue -Record $Row -Name 'execution_state')
+        roadmapPath        = _AppDbRecordValue -Record $Row -Name 'roadmap_path'
+        currentTaskText    = _AppDbRecordValue -Record $Row -Name 'current_task_text'
+        currentTaskSection = _AppDbRecordValue -Record $Row -Name 'current_task_section'
+        currentRunId       = _AppDbRecordValue -Record $Row -Name 'current_run_id'
+        laneSlot           = if ($null -ne $laneSlot) { [int]$laneSlot } else { $null }
+        priorityScore      = [int](_AppDbRecordValue -Record $Row -Name 'priority_score')
+        assignedAt         = _AppDbRecordValue -Record $Row -Name 'assigned_at'
+        completedAt        = _AppDbRecordValue -Record $Row -Name 'completed_at'
+        lastOutcome        = _AppDbRecordValue -Record $Row -Name 'last_outcome'
+        retryCount         = [int](_AppDbRecordValue -Record $Row -Name 'retry_count')
+        errorMessage       = _AppDbRecordValue -Record $Row -Name 'error_message'
+        updatedAt          = _AppDbRecordValue -Record $Row -Name 'updated_at'
+    }
+}
+
+<#
+.SYNOPSIS
+    Writes the full execution ledger to the app database inside one
+    transaction: current entries are replaced, new history records are
+    appended (existing history rows are never rewritten).
+.DESCRIPTION
+    Release 2.1 Phase 2 seam for Execution.Ledger.ps1. Returns
+    success=$false with a reason (never throws) when the persistence
+    boundary is disabled or initialized for a different workspace, so the
+    caller keeps the JSON store authoritative.
+#>
+function Write-AppDbExecutionLedger {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+        [Parameter(Mandatory = $true)][object]$Ledger
+    )
+
+    $out = @{ success = $false; reason = '' }
+    if (-not (_AppDbMatchesWorkspace -WorkspaceRoot $WorkspaceRoot)) {
+        $out.reason = 'app-db-not-initialized-for-workspace'
+        return [pscustomobject]$out
+    }
+
+    try {
+        $entriesRaw = _AppDbRecordValue -Record $Ledger -Name 'entries'
+        $historyRaw = _AppDbRecordValue -Record $Ledger -Name 'history'
+        $entries = if ($null -ne $entriesRaw) { @($entriesRaw) } else { @() }
+        $history = if ($null -ne $historyRaw) { @($historyRaw) } else { @() }
+        $nowIso = (Get-Date).ToUniversalTime().ToString('o')
+
+        Invoke-AppDbTransaction -DatabasePath ([string]$script:AppDbState.databasePath) -Body {
+            param($session)
+
+            $null = Invoke-AppDbSessionNonQuery -Session $session -Sql 'DELETE FROM execution_ledger'
+            foreach ($entry in $entries) {
+                if ($null -eq $entry) { continue }
+                $laneSlot = _AppDbRecordValue -Record $entry -Name 'laneSlot'
+                $priority = _AppDbRecordValue -Record $entry -Name 'priorityScore'
+                $retries  = _AppDbRecordValue -Record $entry -Name 'retryCount'
+                $entryUpdatedAt = _AppDbRecordValue -Record $entry -Name 'updatedAt'
+                if ([string]::IsNullOrWhiteSpace([string]$entryUpdatedAt)) { $entryUpdatedAt = $nowIso }
+                $null = Invoke-AppDbSessionNonQuery -Session $session -Sql @'
+INSERT INTO execution_ledger
+  (repo_name, repo_path, execution_state, roadmap_path, current_task_text, current_task_section,
+   current_run_id, lane_slot, priority_score, assigned_at, completed_at, last_outcome,
+   retry_count, error_message, updated_at)
+VALUES
+  (@repo_name, @repo_path, @execution_state, @roadmap_path, @current_task_text, @current_task_section,
+   @current_run_id, @lane_slot, @priority_score, @assigned_at, @completed_at, @last_outcome,
+   @retry_count, @error_message, @updated_at)
+'@ -Parameters @{
+                    repo_name            = [string](_AppDbRecordValue -Record $entry -Name 'repoName')
+                    repo_path            = _AppDbRecordValue -Record $entry -Name 'repoPath'
+                    execution_state      = [string](_AppDbRecordValue -Record $entry -Name 'executionState')
+                    roadmap_path         = _AppDbRecordValue -Record $entry -Name 'roadmapPath'
+                    current_task_text    = _AppDbRecordValue -Record $entry -Name 'currentTaskText'
+                    current_task_section = _AppDbRecordValue -Record $entry -Name 'currentTaskSection'
+                    current_run_id       = _AppDbRecordValue -Record $entry -Name 'currentRunId'
+                    lane_slot            = if ($null -ne $laneSlot) { [long]$laneSlot } else { $null }
+                    priority_score       = if ($null -ne $priority) { [long]$priority } else { 0L }
+                    assigned_at          = _AppDbRecordValue -Record $entry -Name 'assignedAt'
+                    completed_at         = _AppDbRecordValue -Record $entry -Name 'completedAt'
+                    last_outcome         = _AppDbRecordValue -Record $entry -Name 'lastOutcome'
+                    retry_count          = if ($null -ne $retries) { [long]$retries } else { 0L }
+                    error_message        = _AppDbRecordValue -Record $entry -Name 'errorMessage'
+                    updated_at           = [string]$entryUpdatedAt
+                }
+            }
+
+            # History is append-only in the database. The in-memory ledger
+            # carries the full history (reads hydrate it from these rows), so
+            # anything beyond the current row count is new.
+            $existingRows = Invoke-AppDbSessionQuery -Session $session -Sql 'SELECT COUNT(*) AS n FROM execution_history'
+            $existingCount = [long]$existingRows[0].n
+            if ($history.Count -gt $existingCount) {
+                for ($i = $existingCount; $i -lt $history.Count; $i++) {
+                    $record = $history[$i]
+                    if ($null -eq $record) { continue }
+                    $recordTs = _AppDbRecordValue -Record $record -Name 'timestamp'
+                    if ([string]::IsNullOrWhiteSpace([string]$recordTs)) { $recordTs = $nowIso }
+                    $null = Invoke-AppDbSessionNonQuery -Session $session -Sql @'
+INSERT INTO execution_history (repo_name, event, run_id, task_text, outcome, error_message, timestamp)
+VALUES (@repo_name, @event, @run_id, @task_text, @outcome, @error_message, @timestamp)
+'@ -Parameters @{
+                        repo_name     = [string](_AppDbRecordValue -Record $record -Name 'repoName')
+                        event         = [string](_AppDbRecordValue -Record $record -Name 'event')
+                        run_id        = _AppDbRecordValue -Record $record -Name 'runId'
+                        task_text     = _AppDbRecordValue -Record $record -Name 'taskText'
+                        outcome       = _AppDbRecordValue -Record $record -Name 'outcome'
+                        error_message = _AppDbRecordValue -Record $record -Name 'errorMessage'
+                        timestamp     = [string]$recordTs
+                    }
+                }
+            }
+        }
+        $out.success = $true
+    } catch {
+        $out.reason = $_.Exception.Message
+    }
+
+    return [pscustomobject]$out
+}
+
+<#
+.SYNOPSIS
+    Reads the execution ledger from the app database. Returns $null when the
+    persistence boundary is disabled or initialized for a different
+    workspace, so Execution.Ledger.ps1 falls back to its JSON store.
+.DESCRIPTION
+    Release 2.1 Phase 2: the first read against empty ledger tables seeds
+    them from the legacy execution-ledger.json (one-time migration). After
+    that SQLite is authoritative and the JSON file is a debugging export.
+    If the seed itself fails, $null is returned so no legacy data is lost.
+#>
+function Read-AppDbExecutionLedger {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+        [Parameter()][string]$LedgerJsonPath = ''
+    )
+
+    if (-not (_AppDbMatchesWorkspace -WorkspaceRoot $WorkspaceRoot)) { return $null }
+    $dbPath = [string]$script:AppDbState.databasePath
+
+    $entryCount   = [long](Invoke-AppDbQuery -DatabasePath $dbPath -Sql 'SELECT COUNT(*) AS n FROM execution_ledger')[0].n
+    $historyCount = [long](Invoke-AppDbQuery -DatabasePath $dbPath -Sql 'SELECT COUNT(*) AS n FROM execution_history')[0].n
+
+    if ($entryCount -eq 0 -and $historyCount -eq 0 -and
+        -not [string]::IsNullOrWhiteSpace($LedgerJsonPath) -and
+        (Test-Path -LiteralPath $LedgerJsonPath)) {
+        $legacy = $null
+        try {
+            $legacy = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $LedgerJsonPath -Raw -Encoding UTF8)
+        } catch {
+            Write-Warning "Persistence.Store: legacy ledger at '$LedgerJsonPath' could not be parsed for seeding: $_"
+        }
+        if ($null -ne $legacy) {
+            $legacyEntries = _AppDbRecordValue -Record $legacy -Name 'entries'
+            $legacyHistory = _AppDbRecordValue -Record $legacy -Name 'history'
+            $seedLedger = @{
+                entries = if ($null -ne $legacyEntries) { @($legacyEntries) } else { @() }
+                history = if ($null -ne $legacyHistory) { @($legacyHistory) } else { @() }
+            }
+            if (@($seedLedger.entries).Count -gt 0 -or @($seedLedger.history).Count -gt 0) {
+                $seed = Write-AppDbExecutionLedger -WorkspaceRoot $WorkspaceRoot -Ledger $seedLedger
+                if (-not $seed.success) { return $null }
+            }
+        }
+    }
+
+    $entryRows = @(Invoke-AppDbQuery -DatabasePath $dbPath -Sql 'SELECT * FROM execution_ledger ORDER BY rowid')
+    $historyRows = @(Invoke-AppDbQuery -DatabasePath $dbPath -Sql 'SELECT * FROM execution_history ORDER BY id')
+
+    $entries = [System.Collections.Generic.List[object]]::new()
+    $latest = ''
+    foreach ($row in $entryRows) {
+        $entries.Add((_AppDbLedgerEntryFromRow -Row $row))
+        $rowUpdated = [string](_AppDbRecordValue -Record $row -Name 'updated_at')
+        if ([string]::CompareOrdinal($rowUpdated, $latest) -gt 0) { $latest = $rowUpdated }
+    }
+
+    $history = [System.Collections.Generic.List[object]]::new()
+    foreach ($row in $historyRows) {
+        $history.Add([pscustomobject]@{
+            repoName     = [string](_AppDbRecordValue -Record $row -Name 'repo_name')
+            event        = [string](_AppDbRecordValue -Record $row -Name 'event')
+            runId        = _AppDbRecordValue -Record $row -Name 'run_id'
+            taskText     = _AppDbRecordValue -Record $row -Name 'task_text'
+            outcome      = _AppDbRecordValue -Record $row -Name 'outcome'
+            errorMessage = _AppDbRecordValue -Record $row -Name 'error_message'
+            timestamp    = _AppDbRecordValue -Record $row -Name 'timestamp'
+        })
+        $rowTs = [string](_AppDbRecordValue -Record $row -Name 'timestamp')
+        if ([string]::CompareOrdinal($rowTs, $latest) -gt 0) { $latest = $rowTs }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($latest)) { $latest = (Get-Date).ToUniversalTime().ToString('o') }
+
+    return @{
+        schemaVersion = '1.0'
+        updatedAt     = $latest
+        entries       = $entries.ToArray()
+        history       = $history.ToArray()
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Phase 2 migration — operations log store
+# ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    Writes one operations-log entry into the ops_log table. No-ops with a
+    reason while the persistence boundary is disabled and never throws —
+    logging must not break the operation it describes.
+#>
+function Write-AppDbOpsLogEntry {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter()][string]$Timestamp = '',
+        [Parameter(Mandatory = $true)][string]$Level,
+        [Parameter()][string]$Source = '',
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Message,
+        [Parameter()][object]$Data = $null
+    )
+
+    $out = @{ success = $false; reason = '' }
+    if (-not $script:AppDbState.enabled) {
+        $out.reason = 'app-db-not-initialized'
+        return [pscustomobject]$out
+    }
+
+    try {
+        $ts = if ([string]::IsNullOrWhiteSpace($Timestamp)) { (Get-Date).ToUniversalTime().ToString('o') } else { $Timestamp }
+        $dataJson = if ($null -eq $Data) { $null } else { ConvertTo-Json -InputObject $Data -Compress -Depth 6 }
+        $null = Invoke-AppDbNonQuery -DatabasePath ([string]$script:AppDbState.databasePath) `
+            -Sql 'INSERT INTO ops_log (timestamp, level, source, message, data_json) VALUES (@timestamp, @level, @source, @message, @data_json)' `
+            -Parameters @{
+                timestamp = $ts
+                level     = $Level.ToUpperInvariant()
+                source    = $Source
+                message   = $Message
+                data_json = $dataJson
+            }
+        $out.success = $true
+    } catch {
+        $out.reason = $_.Exception.Message
+    }
+
+    return [pscustomobject]$out
+}
+
+<#
+.SYNOPSIS
+    Queries the ops_log table by time range, level, and keyword without
+    reading the whole log. Returns available=$false when the persistence
+    boundary is disabled so the caller can fall back to the JSONL tail.
+.DESCRIPTION
+    Filters combine with AND: Since keeps entries strictly newer than the
+    ISO-8601 UTC timestamp, Level is an exact (case-insensitive) match, and
+    Contains is a substring match on the message. The most recent MaxLines
+    matching entries are returned in ascending id order.
+#>
+function Get-AppDbOpsLogEntries {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter()][string]$Since = '',
+        [Parameter()][string]$Level = '',
+        [Parameter()][string]$Contains = '',
+        [Parameter()][int]$MaxLines = 100
+    )
+
+    if (-not $script:AppDbState.enabled) {
+        return [pscustomobject]@{ available = $false; entries = @() }
+    }
+
+    if ($MaxLines -lt 1) { $MaxLines = 1 }
+    $needle = [string]$Contains
+    $pattern = '%' + ($needle -replace '([\\%_])', '\$1') + '%'
+
+    $rows = @(Invoke-AppDbQuery -DatabasePath ([string]$script:AppDbState.databasePath) -Sql @'
+SELECT timestamp, level, source, message FROM (
+  SELECT id, timestamp, level, source, message
+  FROM ops_log
+  WHERE (@since = '' OR timestamp > @since)
+    AND (@level = '' OR level = @level)
+    AND (@needle = '' OR message LIKE @pattern ESCAPE '\')
+  ORDER BY id DESC
+  LIMIT @max
+) ORDER BY id ASC
+'@ -Parameters @{
+        since   = [string]$Since
+        level   = ([string]$Level).ToUpperInvariant()
+        needle  = $needle
+        pattern = $pattern
+        max     = [long]$MaxLines
+    })
+
+    return [pscustomobject]@{ available = $true; entries = $rows }
+}
+
+<#
+.SYNOPSIS
+    Trims the ops_log table to at most MaxRows, keeping the newest rows.
+    Mirrors the JSONL retention behavior; no-ops while disabled and never
+    throws.
+#>
+function Invoke-AppDbOpsLogTrim {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter()][int]$MaxRows = 5000
+    )
+
+    $out = @{ success = $false; removed = 0L; reason = '' }
+    if (-not $script:AppDbState.enabled) {
+        $out.reason = 'app-db-not-initialized'
+        return [pscustomobject]$out
+    }
+
+    try {
+        if ($MaxRows -lt 1) { $MaxRows = 1 }
+        $out.removed = Invoke-AppDbNonQuery -DatabasePath ([string]$script:AppDbState.databasePath) `
+            -Sql 'DELETE FROM ops_log WHERE id NOT IN (SELECT id FROM ops_log ORDER BY id DESC LIMIT @max)' `
+            -Parameters @{ max = [long]$MaxRows }
+        $out.success = $true
+    } catch {
+        $out.reason = $_.Exception.Message
+    }
+
+    return [pscustomobject]$out
+}
+
+<#
+.SYNOPSIS
+    Imports operations-log entries from a JSONL file into ops_log, keeping
+    only lines newer than the latest timestamp already stored.
+.DESCRIPTION
+    Gives the SQLite-backed log continuity across host restarts: startup
+    lines written to the JSONL before the database initializes (and any
+    history from before Phase 2) are pulled in once; already-imported lines
+    are skipped by ordinal ISO-timestamp comparison. Supports both the
+    api-host shape ({ts,level,msg}) and structured module logs
+    ({timestamp,level,message,component}). Never throws.
+#>
+function Import-AppDbOpsLogFromJsonl {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory = $true)][string]$JsonlPath
+    )
+
+    $out = @{ success = $false; imported = 0; reason = '' }
+    if (-not $script:AppDbState.enabled) {
+        $out.reason = 'app-db-not-initialized'
+        return [pscustomobject]$out
+    }
+    if (-not (Test-Path -LiteralPath $JsonlPath)) {
+        $out.success = $true
+        return [pscustomobject]$out
+    }
+
+    try {
+        $dbPath = [string]$script:AppDbState.databasePath
+        $maxRows = @(Invoke-AppDbQuery -DatabasePath $dbPath -Sql 'SELECT MAX(timestamp) AS m FROM ops_log')
+        $maxTs = ''
+        if ($maxRows.Count -gt 0) {
+            $maxValue = _AppDbRecordValue -Record $maxRows[0] -Name 'm'
+            if ($null -ne $maxValue) { $maxTs = [string]$maxValue }
+        }
+
+        $pending = [System.Collections.Generic.List[object]]::new()
+        foreach ($line in [System.IO.File]::ReadAllLines($JsonlPath)) {
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            $obj = $null
+            try { $obj = ConvertFrom-Json -InputObject $line } catch { continue }
+            if ($null -eq $obj) { continue }
+
+            $ts = [string](_AppDbRecordValue -Record $obj -Name 'ts')
+            if ([string]::IsNullOrWhiteSpace($ts)) { $ts = [string](_AppDbRecordValue -Record $obj -Name 'timestamp') }
+            if ([string]::IsNullOrWhiteSpace($ts)) { continue }
+            if ($maxTs -ne '' -and [string]::CompareOrdinal($ts, $maxTs) -le 0) { continue }
+
+            $lvl = [string](_AppDbRecordValue -Record $obj -Name 'level')
+            if ([string]::IsNullOrWhiteSpace($lvl)) { $lvl = 'INFO' }
+            $msg = [string](_AppDbRecordValue -Record $obj -Name 'msg')
+            if ([string]::IsNullOrWhiteSpace($msg)) { $msg = [string](_AppDbRecordValue -Record $obj -Name 'message') }
+            $src = [string](_AppDbRecordValue -Record $obj -Name 'component')
+            if ([string]::IsNullOrWhiteSpace($src)) { $src = 'jsonl-import' }
+
+            $pending.Add([pscustomobject]@{ ts = $ts; level = $lvl.ToUpperInvariant(); source = $src; message = $msg })
+        }
+
+        if ($pending.Count -gt 0) {
+            Invoke-AppDbTransaction -DatabasePath $dbPath -Body {
+                param($session)
+                foreach ($row in $pending) {
+                    $null = Invoke-AppDbSessionNonQuery -Session $session `
+                        -Sql 'INSERT INTO ops_log (timestamp, level, source, message, data_json) VALUES (@timestamp, @level, @source, @message, NULL)' `
+                        -Parameters @{
+                            timestamp = [string]$row.ts
+                            level     = [string]$row.level
+                            source    = [string]$row.source
+                            message   = [string]$row.message
+                        }
+                }
+            }
+        }
+
+        $out.imported = $pending.Count
         $out.success = $true
     } catch {
         $out.reason = $_.Exception.Message

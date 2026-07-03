@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "ledger": "output/model-routing-ledger.jsonl",
+  "phases": [
+    {
+      "id": "2.1-P2",
+      "title": "Execution ledger + ops log -> parameterized SQL",
+      "steps": {
+        "plan": {
+          "model": "claude-fable-5",
+          "effort": "high",
+          "permissionMode": "plan",
+          "promptFile": "prompts/phase-2.1-p2-kickoff.md",
+          "rationale": "Cross-module migration touching Persistence.Store.ps1 seam pattern; concurrency + schema reasoning is the leverage point."
+        },
+        "implement": {
+          "model": "claude-sonnet-4-6",
+          "effort": "high",
+          "permissionMode": "acceptEdits",
+          "rationale": "Well-specified mechanical migration once the plan exists; spec quality carries it."
+        }
+      }
+    },
+    {
+      "id": "2.1-P3",
+      "title": "History snapshots (maturity, index, signals, merge-readiness, run metrics)",
+      "steps": {
+        "plan": {
+          "model": "claude-sonnet-4-6",
+          "effort": "high",
+          "permissionMode": "plan",
+          "rationale": "Low-ambiguity schema + write-path additions following the Phase 2 pattern; flagship not warranted."
+        },
+        "implement": {
+          "model": "claude-sonnet-4-6",
+          "effort": "high",
+          "permissionMode": "acceptEdits",
+          "rationale": "Repetition of an established pattern across more tables."
+        }
+      }
+    },
+    {
+      "id": "2.1-P4",
+      "title": "Trend routes + first-run JSON-to-SQL migration",
+      "steps": {
+        "plan": {
+          "model": "claude-fable-5",
+          "effort": "high",
+          "permissionMode": "plan",
+          "rationale": "Highest-risk phase per roadmap (JSON/DB drift); migration ordering and idempotency deserve the strongest planner."
+        },
+        "implement": {
+          "model": "claude-sonnet-4-6",
+          "effort": "high",
+          "permissionMode": "acceptEdits",
+          "rationale": "Execute the reviewed migration plan; risk was retired at plan time."
+        }
+      }
+    }
+  ]
+}
