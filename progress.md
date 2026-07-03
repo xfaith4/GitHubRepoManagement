@@ -1,5 +1,66 @@
 # Progress
 
+## 2026-07-03 (Test-harness fix: api-host smoke end-to-end reliability)
+
+- Cleared the carried-forward harness defect that kept the broad
+  `Invoke-ApiHostSmokeTest.ps1` run from returning past the Release 2.0
+  steps, using live forensics instead of another isolated route check: the
+  host process from the last hung run was still alive and holding port 7071
+  eight hours later, and its log proved the quota-refusal route had already
+  returned its HTTP 409 correctly — the smoke had moved on into the
+  merge-readiness contract checks before everything stopped. The
+  "stuck at the quota-refusal route" perception was console ordering: the
+  merge-readiness checks print under the quota step's `[STEP]` banner.
+- **Root cause (compound, three independent defects):**
+  1. *Fragile connects:* the smoke's default `BaseUrl` was
+     `http://localhost:7071` while the host binds `127.0.0.1` only. On this
+     machine the firewall silently drops (rather than refuses) connections
+     to `[::1]:7071`, so every one of the ~150 smoke requests burned ~2s in
+     a dual-stack fallback (measured: 2,050 ms via `localhost` vs 2 ms via
+     `127.0.0.1` against an idle host) and every connect depended on
+     firewall/timing behavior — the window where the intermittent wedge
+     lived.
+  2. *Hang-amplifying teardown:* the `finally` block ran `Stop-Job` first.
+     When the single-threaded host wedged mid-request, the in-flight
+     request timed out (bounded at 180 s), but `Stop-Job` against a job
+     pipeline blocked inside a native socket call never returned — the
+     harness hung after its last visible step, and killing the console
+     orphaned the host on port 7071, which is exactly the state found at
+     session start. The host's supported `-ShutdownSignalPath` graceful
+     shutdown was never used.
+  3. *Deterministic late failure:* `Send-StaticFile` matched Vite asset
+     hashes with `-[A-Za-z0-9_]{8,}$`, but Vite hashes are base64url and
+     can contain `-`. The current bundle emits `index-BbNsaX-S.js`, so that
+     hashed asset was served `no-cache` instead of `immutable`, and the
+     smoke's (correct) Release 1.3 assertion failed every full run *after*
+     the Release 2.0 steps — reinforcing the "never finishes" picture even
+     when nothing hung.
+- **Fix:** default `BaseUrl` → `http://127.0.0.1:7071`; launch the host job
+  with `-ShutdownSignalPath` (the accept loop then polls `Pending()`
+  instead of parking forever inside `AcceptTcpClient()` and exits cleanly
+  on signal); re-ordered teardown to signal-file → bounded `Wait-Job` →
+  port sweep → `Stop-Job`/`Remove-Job` last (trivial once the process is
+  gone); widened the hashed-asset pattern to `-[A-Za-z0-9_-]{8,}$` scoped
+  to files in an `assets/` directory. All existing smoke assertions —
+  including the Release 2.0 quota-refusal 409 `quota-exhausted` /
+  `session-cap-exceeded` checks — are unchanged.
+- Drive-by fix in the same feature area: a missing line-continuation
+  backtick after `-BaseBranch $baseBranch` in the dispatch route's
+  `New-AgentRunRecord` call made every successful dispatch throw a silent
+  `CommandNotFoundException` (`-WorkUnitsEstimated` parsed as a command),
+  dropping the run's work-unit estimate metadata and `agentRunId` capture.
+- Side effect worth keeping: without the ~2 s-per-request tax, the full
+  harness's host-side run time dropped from ~6.5 minutes to 102 seconds.
+
+### Verification
+
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "$(pwd)"` — ran start-to-finish, printed `[PASS] API host smoke completed`, and exited 0. Quota step logged `quota refusal -> reason=session-cap-exceeded est=8` (HTTP 409); merge-readiness contract checks returned 404; `GET /assets/index-BbNsaX-S.js` now serves `Cache-Control: public, max-age=31536000, immutable`.
+- Teardown verified clean: host log ends with `Repo Management API host stopped` (graceful signal path), zero listeners left on port 7071, no lingering job process, signal file removed.
+- PowerShell parser checks — clean for `scripts/Invoke-ApiHostSmokeTest.ps1` and `backend/api-host/Start-RepoManagementApiHost.ps1`.
+- `npm run build` — passed (rebuild reproduces the same `index-BbNsaX-S.js` dash-containing hash, so the regex fix stays exercised).
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/Test-RoadmapStructure.ps1 -Path ./ROADMAP.md` — 0 errors, 0 warnings.
+- ROADMAP.md needed no edits: the active-release section and the Release 2.0 snapshot no longer carry the harness caveat (removed with the Release 2.1 Phase 1 commit), and the snapshot's "harness now runs clean end-to-end through the quota-refusal route" statement is now actually true.
+
 ## 2026-07-03 (Release 2.1 Phase 1: SQLite Persistence Foundation)
 
 - Reconciled the active roadmap and confirmed the next logical slice was

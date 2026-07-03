@@ -1,5 +1,34 @@
 # Findings
 
+## 2026-07-03 (Test-harness: api-host smoke end-to-end reliability)
+
+- The carried-forward "harness hangs at the quota-refusal route" belief was
+  wrong. The orphaned host from the last hung run was still alive on port
+  7071 eight hours later, and its log showed the 409 quota refusal had been
+  delivered and the smoke had continued into the merge-readiness checks —
+  which print under the quota step's `[STEP]` banner, creating the illusion
+  that the quota route was the blocker.
+- On this machine, `http://localhost:<port>` against an IPv4-only loopback
+  listener costs ~2,050 ms per request versus ~2 ms for
+  `http://127.0.0.1:<port>`: the firewall silently drops `[::1]` connects
+  instead of refusing them, so .NET's dual-stack fallback waits out a SYN
+  timeout on every request. Any local HTTP harness here should target
+  `127.0.0.1` explicitly.
+- On pwsh 7.6.3, `Invoke-WebRequest -TimeoutSec` is an alias of
+  `-ConnectionTimeoutSeconds` and sets `HttpClient.Timeout`, so it bounds
+  the whole request including the connect phase (verified empirically:
+  black-holed connects throw at exactly the configured value). Passing both
+  parameters fails with "specified more than once".
+- `Stop-Job` against a background job whose pipeline is blocked inside a
+  native call (e.g. a wedged synchronous socket operation) can block
+  indefinitely. Teardown for job-hosted servers must make the process exit
+  first (graceful signal, then port-sweep kill) and call
+  `Stop-Job`/`Remove-Job` only afterwards.
+- Vite emits base64url content hashes, which can contain `-`
+  (`index-BbNsaX-S.js`); any "hashed asset" filename regex must allow the
+  dash inside the hash segment or immutable caching silently degrades to
+  no-cache for a subset of builds.
+
 ## 2026-07-03 (Release 2.1 Phase 1: SQLite Persistence Foundation)
 
 - No SQLite execution path existed on this machine beyond the OS itself: no

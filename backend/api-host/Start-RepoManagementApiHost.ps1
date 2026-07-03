@@ -606,10 +606,17 @@ function Send-StaticFile {
         default  { 'application/octet-stream' }
     }
 
-    # Cache-Control: Vite emits assets with 8-char hashes in the filename (e.g. index-BxA1c2D3.js).
-    # Those are immutable — cache for 1 year.  index.html and anything else: no-cache.
+    # Cache-Control: Vite emits assets with 8-char base64url hashes in the
+    # filename (e.g. index-BxA1c2D3.js). The base64url alphabet includes '-',
+    # so the hash itself may contain dashes (e.g. index-BbNsaX-S.js) — the
+    # character class must allow them or those assets fall back to no-cache.
+    # Hashed assets are immutable — cache for 1 year. index.html and anything
+    # else: no-cache. Require the file to live in an assets/ directory so
+    # dash-heavy unhashed names (e.g. fonts copied from public/) are not
+    # mistaken for hashed output.
     $baseName = [System.IO.Path]::GetFileNameWithoutExtension($FilePath)
-    $isHashedAsset = $baseName -match '-[A-Za-z0-9_]{8,}$' -and $ext -ne '.html'
+    $inAssetsDir = (Split-Path -Path $FilePath -Parent) -match '[\\/]assets$'
+    $isHashedAsset = $inAssetsDir -and $baseName -match '-[A-Za-z0-9_-]{8,}$' -and $ext -ne '.html'
     $cacheControl = if ($isHashedAsset) { 'public, max-age=31536000, immutable' } else { 'no-cache, no-store, must-revalidate' }
 
     $bodyBytes = [System.IO.File]::ReadAllBytes($FilePath)
@@ -6962,7 +6969,7 @@ try {
                             -SelectedTaskSection ([string](Get-ValueOrDefault $planningContext.selectedTaskSection '')) `
                             -PlannedReleaseName ([string](Get-ValueOrDefault $planningContext.releaseName '')) `
                             -PlannedPhaseName ([string](Get-ValueOrDefault $planningContext.plannedPhaseName '')) `
-                            -BaseBranch $baseBranch
+                            -BaseBranch $baseBranch `
                             -WorkUnitsEstimated ([double]$planningContext.workUnitsEstimated) `
                             -WorkUnitsEstimateSource ([string](Get-ValueOrDefault $planningContext.workUnitsEstimateSource ''))
                         $agentRunId = [string]$agentRun.runId

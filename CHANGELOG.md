@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here.
 
+## 2026-07-03 — Fix: api-host smoke harness runs clean end-to-end
+
+### Changes
+
+- **`scripts/Invoke-ApiHostSmokeTest.ps1`** — three reliability fixes for the carried-forward "harness does not return past the quota-refusal route" defect. Forensics on the previous hung run showed the quota-refusal route itself was innocent (it returned its HTTP 409 and the run had moved on into the merge-readiness checks, which print under the same `[STEP]` banner); the harness was being killed by fragile connects plus hang-amplifying teardown. (1) Default `BaseUrl` is now `http://127.0.0.1:7071` instead of `http://localhost:7071`: the host binds IPv4 loopback only and the local firewall silently drops `[::1]:7071`, so every request paid a ~2 s dual-stack fallback (measured 2,050 ms vs 2 ms) and each connect depended on firewall timing. (2) The host job is launched with `-ShutdownSignalPath`, so its accept loop polls `Pending()` instead of parking forever inside a blocking `AcceptTcpClient()` call and exits cleanly when signaled. (3) Teardown is re-ordered to signal-file → bounded `Wait-Job` → force-kill of any process still listening on the port → `Stop-Job`/`Remove-Job` last — `Stop-Job` against a job blocked in native socket code could hang indefinitely, which is how the harness used to freeze after its last visible step and leave an orphaned host holding port 7071. All existing assertions, including the Release 2.0 quota-refusal checks, are unchanged. Side effect: full-harness host-side run time dropped from ~6.5 minutes to 102 seconds.
+- **`backend/api-host/Start-RepoManagementApiHost.ps1`** — `Send-StaticFile` now recognizes Vite hashes containing `-` (base64url alphabet), scoped to files in an `assets/` directory: the current bundle's `index-BbNsaX-S.js` previously fell back to `no-cache` instead of `public, max-age=31536000, immutable`, deterministically failing the smoke's Release 1.3 assertion late in every full run. Also restored a missing line-continuation backtick after `-BaseBranch $baseBranch` in the dispatch route's `New-AgentRunRecord` call — the orphaned `-WorkUnitsEstimated …` line threw a silent `CommandNotFoundException` on every successful dispatch, dropping work-unit estimate metadata and `agentRunId` capture.
+
+### Testing
+
+- **`pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "$(pwd)"`** — ran start-to-finish, printed `[PASS] API host smoke completed`, and exited 0. Quota refusal returned HTTP 409 (`reason=session-cap-exceeded est=8`); `GET /assets/index-BbNsaX-S.js` served `Cache-Control: public, max-age=31536000, immutable`; the host log ends with `Repo Management API host stopped` (graceful signal shutdown) and no listener or job process remained.
+- **`npm run build`** — passed.
+- **`pwsh -NoProfile -ExecutionPolicy Bypass -File tools/Test-RoadmapStructure.ps1 -Path ./ROADMAP.md`** — 0 errors, 0 warnings.
+
 ## 2026-07-03 — Release 2.1 Phase 1: SQLite Persistence Foundation
 
 ### Changes

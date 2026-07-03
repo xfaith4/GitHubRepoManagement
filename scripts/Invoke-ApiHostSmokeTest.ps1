@@ -1,7 +1,12 @@
 [CmdletBinding()]
 param(
     [string]$WorkspaceRoot = 'G:\Development\GitHubRepoManagement',
-    [string]$BaseUrl = 'http://localhost:7071',
+    # 127.0.0.1, NOT localhost: the host binds IPv4 loopback only, and on this
+    # machine the firewall silently drops (rather than refuses) connections to
+    # [::1]:7071, so every 'localhost' request burned ~2s in a dual-stack
+    # fallback and left each connect at the mercy of firewall timing. Direct
+    # IPv4 makes each request ~2ms and removes that fragility entirely.
+    [string]$BaseUrl = 'http://127.0.0.1:7071',
     [int]$Port = 7071,
     # Per-request timeout. Cold cache routes that scan a full workspace
     # (e.g. /api/portfolio/assessment) can legitimately take well over 30s on a
@@ -32,6 +37,9 @@ function Invoke-ApiRequest {
         Uri = $Uri
         Method = $Method
         SkipHttpErrorCheck = $true
+        # On pwsh 7.4+ TimeoutSec is an alias of ConnectionTimeoutSeconds and
+        # sets HttpClient.Timeout, so this bounds the whole request including
+        # the connect phase — a stalled connect cannot hang the harness.
         TimeoutSec = $RequestTimeoutSec
     }
 
@@ -105,10 +113,18 @@ function Wait-ApiHostReady {
     throw "API host did not become ready within $TimeoutSeconds seconds."
 }
 
+# Shutdown contract: with -ShutdownSignalPath the host polls Pending() between
+# requests instead of parking forever inside a blocking AcceptTcpClient() call,
+# and exits its accept loop cleanly when this file appears. That gives teardown
+# a graceful path that does not depend on Stop-Job being able to interrupt a
+# job pipeline that is blocked in native code.
+$shutdownSignalPath = Join-Path $smokeRoot 'api-host-shutdown.signal'
+Remove-Item -LiteralPath $shutdownSignalPath -Force -ErrorAction SilentlyContinue
+
 $job = Start-Job -ScriptBlock {
-    param($ScriptPath, $Root, $Log, $ListenPort)
-    & $ScriptPath -WorkspaceRoot $Root -BindAddress '127.0.0.1' -Port $ListenPort -LogPath $Log
-} -ArgumentList $hostScript, $WorkspaceRoot, $logPath, $Port
+    param($ScriptPath, $Root, $Log, $ListenPort, $SignalPath)
+    & $ScriptPath -WorkspaceRoot $Root -BindAddress '127.0.0.1' -Port $ListenPort -LogPath $Log -ShutdownSignalPath $SignalPath
+} -ArgumentList $hostScript, $WorkspaceRoot, $logPath, $Port, $shutdownSignalPath
 
 try {
     Wait-ApiHostReady -Uri "$BaseUrl/health/live" -Job $job
@@ -1455,18 +1471,26 @@ try {
     } | Format-List
 }
 finally {
-    Stop-Job -Job $job -ErrorAction SilentlyContinue | Out-Null
-    Remove-Job -Job $job -Force -ErrorAction SilentlyContinue | Out-Null
+    # Teardown order matters. Stop-Job against a job whose pipeline is wedged
+    # inside a native call can block forever — that is exactly how the harness
+    # used to hang after its last visible step and leave an orphaned host
+    # holding port 7071. So: (1) ask the host to exit via its shutdown-signal
+    # file and give it a bounded window, (2) force-kill anything still
+    # listening on the port, and only then (3) run Stop-Job/Remove-Job, which
+    # are trivial once the host process is gone.
+    try {
+        Set-Content -LiteralPath $shutdownSignalPath -Value 'shutdown' -Encoding ascii -Force
+        $null = Wait-Job -Job $job -Timeout 5
+    }
+    catch {
+        # Best-effort graceful shutdown only.
+    }
 
-    # The host's accept loop blocks in a synchronous AcceptTcpClient() call, so a
-    # stopped job can leave the listener process holding the port. Sweep any process
-    # still listening on $Port so the harness always exits clean and the next run can
-    # bind without colliding (mirrors the host's own Stop-PortListeners startup guard).
     try {
         $lingering = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
             Select-Object -ExpandProperty OwningProcess -Unique)
         foreach ($lingeringPid in $lingering) {
-            if ($lingeringPid -and $lingeringPid -ne 0) {
+            if ($lingeringPid -and $lingeringPid -ne 0 -and $lingeringPid -ne $PID) {
                 Stop-Process -Id $lingeringPid -Force -ErrorAction SilentlyContinue
             }
         }
@@ -1474,4 +1498,8 @@ finally {
     catch {
         # Best-effort cleanup only; never let teardown mask the smoke result.
     }
+
+    Stop-Job -Job $job -ErrorAction SilentlyContinue | Out-Null
+    Remove-Job -Job $job -Force -ErrorAction SilentlyContinue | Out-Null
+    Remove-Item -LiteralPath $shutdownSignalPath -Force -ErrorAction SilentlyContinue
 }
