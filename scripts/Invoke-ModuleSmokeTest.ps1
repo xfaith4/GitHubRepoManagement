@@ -1112,7 +1112,7 @@ if (-not $sqliteCap.available) {
         $expectedAppDbTables = @(
             'schema_migrations', 'execution_ledger', 'execution_history', 'maturity_history',
             'ops_log', 'portfolio_index_history', 'repo_signals', 'differential_scans',
-            'merge_readiness_snapshots', 'agent_runs', 'agent_run_events'
+            'merge_readiness_snapshots', 'agent_runs', 'agent_run_events', 'quota_burn_snapshots'
         )
         foreach ($tableName in $expectedAppDbTables) {
             if ($tableName -notin @($appDbInit.tables)) { throw "Missing expected table '$tableName' (got: $(@($appDbInit.tables) -join ', '))" }
@@ -1121,6 +1121,8 @@ if (-not $sqliteCap.available) {
         if (-not $appDbReinit.success) { throw "Re-init must be idempotent: $($appDbReinit.error)" }
         $migrationRows = Invoke-AppDbQuery -DatabasePath $appDbInit.databasePath -Sql 'SELECT COUNT(*) AS n FROM schema_migrations'
         if ([long]$migrationRows[0].n -ne 1) { throw "Expected exactly 1 schema migration row after re-init, got $($migrationRows[0].n)" }
+        $migrationVersion = Invoke-AppDbQuery -DatabasePath $appDbInit.databasePath -Sql 'SELECT MAX(version) AS v FROM schema_migrations'
+        if ([long]$migrationVersion[0].v -ne 2) { throw "Expected schema version 2 (Phase 3), got $($migrationVersion[0].v)" }
         Write-Host ("  app.db created with {0} tables; re-init idempotent" -f @($appDbInit.tables).Count) -ForegroundColor DarkGray
 
         Write-Step 'App database repeated writes + parameter binding (Release 2.1 Phase 1)'
@@ -1156,6 +1158,65 @@ if (-not $sqliteCap.available) {
         if (@($mirroredRows).Count -ne 1) { throw "Expected 1 mirrored agent-run event, got $(@($mirroredRows).Count)" }
         if ([string]$mirroredRows[0].event_type -ne 'smoke.dualwrite') { throw "Mirrored event type mismatch: $($mirroredRows[0].event_type)" }
         Write-Host '  dual-write seam correct: JSONL authoritative + app.db mirror row present' -ForegroundColor DarkGray
+
+        Write-Step 'Agent-run metrics persistence under repeated writes (Release 2.1 Phase 3)'
+        $metricsRun = New-AgentRunRecord -WorkspaceRoot $appDbWorkspace -RepoName 'app-db-smoke' `
+            -PlannedReleaseName 'Release 9.9' -PlannedPhaseName 'Phase Smoke' -SelectedTaskSection 'Active' `
+            -WorkUnitsEstimated 3.0
+        $metricsRunId = [string]$metricsRun.runId
+        $runRowsAfterCreate = Invoke-AppDbQuery -DatabasePath $appDbInit.databasePath -Sql 'SELECT status, release_name, phase_name, work_units_estimated FROM agent_runs WHERE run_id = @runId' -Parameters @{ runId = $metricsRunId }
+        if (@($runRowsAfterCreate).Count -ne 1) { throw "Expected 1 mirrored agent_runs row after create, got $(@($runRowsAfterCreate).Count)" }
+        if ([string]$runRowsAfterCreate[0].status -ne 'dispatched') { throw "Mirrored run status mismatch after create: $($runRowsAfterCreate[0].status)" }
+        if ([string]$runRowsAfterCreate[0].release_name -ne 'Release 9.9') { throw "Mirrored release_name mismatch: $($runRowsAfterCreate[0].release_name)" }
+
+        $startedIso = (Get-Date).ToUniversalTime().AddMinutes(-10).ToString('o')
+        $completedIso = (Get-Date).ToUniversalTime().ToString('o')
+        $null = Update-AgentRunRecord -WorkspaceRoot $appDbWorkspace -RunId $metricsRunId -Patch @{ status = 'active'; agentStartedAt = $startedIso }
+        $null = Update-AgentRunRecord -WorkspaceRoot $appDbWorkspace -RunId $metricsRunId -Patch @{
+            status = 'completed'; agentCompletedAt = $completedIso; tokenUsage = 12345; apiSpendUsd = 0.42; workUnitsActual = 2.5
+        }
+        $runRowsAfterUpdate = Invoke-AppDbQuery -DatabasePath $appDbInit.databasePath -Sql 'SELECT COUNT(*) AS n FROM agent_runs WHERE run_id = @runId' -Parameters @{ runId = $metricsRunId }
+        if ([long]$runRowsAfterUpdate[0].n -ne 1) { throw "Repeated run mirror writes must upsert one row, got $($runRowsAfterUpdate[0].n)" }
+
+        $metricsHistory = Get-AppDbAgentRunMetricsHistory -RepoName 'app-db-smoke' -Days 7
+        if (-not $metricsHistory.available) { throw 'Get-AppDbAgentRunMetricsHistory must report available=true with an initialized DB' }
+        if (@($metricsHistory.entries).Count -ne 1) { throw "Expected 1 metrics-history entry, got $(@($metricsHistory.entries).Count)" }
+        $metricsEntry = @($metricsHistory.entries)[0]
+        if ([string]$metricsEntry.status -ne 'completed') { throw "Metrics entry status mismatch: $($metricsEntry.status)" }
+        if ([long]$metricsEntry.tokensReported -ne 12345) { throw "Metrics entry tokensReported mismatch: $($metricsEntry.tokensReported)" }
+        if ([math]::Abs([double]$metricsEntry.directCostUsd - 0.42) -gt 0.0001) { throw "Metrics entry directCostUsd mismatch: $($metricsEntry.directCostUsd)" }
+        if ($null -eq $metricsEntry.timeToDeliverSeconds -or [double]$metricsEntry.timeToDeliverSeconds -le 0) { throw "Metrics entry timeToDeliverSeconds must be derived and positive, got '$($metricsEntry.timeToDeliverSeconds)'" }
+        if ([string]$metricsEntry.phaseName -ne 'Phase Smoke') { throw "Metrics entry phaseName mismatch: $($metricsEntry.phaseName)" }
+        Write-Host ("  run mirror upserts correct; metrics history returns timing/token/cost (ttd={0}s)" -f $metricsEntry.timeToDeliverSeconds) -ForegroundColor DarkGray
+
+        Write-Step 'Quota-burn snapshot persistence and ordered history (Release 2.1 Phase 3)'
+        $allowedEvaluation = @{
+            period = '2026-07'; allowed = $true; blockedCode = $null
+            estimatedWorkUnits = 3.0; plannedReleaseName = 'Release 9.9'; plannedPhaseName = 'Phase Smoke'
+            usage = @{ unitsConsumed = 3.0; remainingBefore = 57.0; remainingAfter = 54.0 }
+        }
+        $blockedEvaluation = @{
+            period = '2026-07'; allowed = $false; blockedCode = 'hard-stop-reached'
+            estimatedWorkUnits = 25.0; plannedReleaseName = 'Release 9.9'; plannedPhaseName = 'Phase Smoke'
+            usage = @{ unitsConsumed = 55.0; remainingBefore = 5.0; remainingAfter = -20.0 }
+        }
+        $snapshotWrite1 = Write-AppDbQuotaBurnSnapshot -RepoName 'app-db-smoke' -Evaluation $allowedEvaluation
+        if (-not $snapshotWrite1.success) { throw "First quota-burn snapshot write failed: $($snapshotWrite1.reason)" }
+        Start-Sleep -Milliseconds 20
+        $snapshotWrite2 = Write-AppDbQuotaBurnSnapshot -RepoName 'app-db-smoke' -Evaluation $blockedEvaluation
+        if (-not $snapshotWrite2.success) { throw "Second quota-burn snapshot write failed: $($snapshotWrite2.reason)" }
+
+        $burnHistory = Get-AppDbQuotaBurnHistory -RepoName 'app-db-smoke' -Days 7
+        if (-not $burnHistory.available) { throw 'Get-AppDbQuotaBurnHistory must report available=true with an initialized DB' }
+        if (@($burnHistory.entries).Count -ne 2) { throw "Expected 2 quota-burn entries, got $(@($burnHistory.entries).Count)" }
+        $burnFirst = @($burnHistory.entries)[0]
+        $burnSecond = @($burnHistory.entries)[1]
+        if ([string]::CompareOrdinal([string]$burnFirst.evaluatedAt, [string]$burnSecond.evaluatedAt) -gt 0) { throw 'Quota-burn history must be ordered oldest-first' }
+        if (-not [bool]$burnFirst.allowed) { throw 'First quota-burn entry should be allowed=true' }
+        if ([bool]$burnSecond.allowed) { throw 'Second quota-burn entry should be allowed=false' }
+        if ([string]$burnSecond.blockedCode -ne 'hard-stop-reached') { throw "Quota-burn blockedCode mismatch: $($burnSecond.blockedCode)" }
+        if ([math]::Abs([double]$burnSecond.remainingAfter - (-20.0)) -gt 0.0001) { throw "Quota-burn remainingAfter mismatch: $($burnSecond.remainingAfter)" }
+        Write-Host '  quota-burn snapshots persisted and readable as an ordered burn-down series' -ForegroundColor DarkGray
     }
     finally {
         Remove-Item -LiteralPath $appDbWorkspace -Recurse -Force -ErrorAction SilentlyContinue

@@ -363,6 +363,38 @@ const CATEGORIES: CategoryDef[] = [
       },
       {
         method: 'GET',
+        path: '/api/agent-runs/metrics-history',
+        summary: 'Returns agent-run timing/token/cost/work-unit metrics as an ordered time series (oldest first) so time-to-deliver and cost-per-phase trends are queryable.',
+        queryParams: [
+          { name: 'repoName', type: 'string', description: 'Optional repository filter' },
+          { name: 'days', type: 'int', description: 'Trailing window in days (default: 30, clamped to 1-3650)' },
+        ],
+        responseFields: [
+          { name: 'success', type: 'bool', description: 'Operation result flag' },
+          { name: 'data', type: 'AgentRunMetricsEntry[]', description: 'Per-run metrics: runId, repoName, status, dispatched/started/completed timestamps, timeToDeliverSeconds, promptCount, retryCount, tokensReported, directCostUsd, workUnitsEstimated/Actual, releaseName, phaseName, sectionName' },
+          { name: 'count', type: 'number', description: 'Number of entries returned' },
+          { name: 'source', type: '"sqlite" | "agent-runs-json"', description: 'Whether the series came from the SQLite agent_runs table or the JSON runs ledger fallback' },
+        ],
+        notes: 'On the first SQLite-backed read the agent_runs table is seeded from the legacy output/agent-runs/runs/*.json files, mirroring the execution-ledger first-run migration.',
+      },
+      {
+        method: 'GET',
+        path: '/api/agent-runs/quota-burn-history',
+        summary: 'Returns quota burn-down history: one entry per dispatch quota evaluation (allowed, warned, or blocked), ordered oldest first.',
+        queryParams: [
+          { name: 'repoName', type: 'string', description: 'Optional repository filter' },
+          { name: 'days', type: 'int', description: 'Trailing window in days (default: 30, clamped to 1-3650)' },
+        ],
+        responseFields: [
+          { name: 'success', type: 'bool', description: 'Operation result flag' },
+          { name: 'data', type: 'QuotaBurnEntry[]', description: 'Per-evaluation snapshot: repoName, budgetPeriod, evaluatedAt, estimatedWorkUnits, unitsConsumed, remainingBefore/After, allowed, blockedCode, plannedRelease, plannedPhase' },
+          { name: 'count', type: 'number', description: 'Number of entries returned' },
+          { name: 'source', type: '"sqlite" | "none"', description: 'Snapshots exist only in SQLite; source is "none" (with empty data) when no provider is available' },
+        ],
+        notes: 'Snapshots are captured server-side on every dispatch quota evaluation. The quota.* events in output/agent-runs/events.jsonl remain the raw debugging artifact.',
+      },
+      {
+        method: 'GET',
         path: '/api/merge-readiness/{repoId}',
         summary: 'Returns the stored merge-readiness snapshot for a repo (404 until the repo has been evaluated at least once).',
         responseFields: [

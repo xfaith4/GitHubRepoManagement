@@ -229,6 +229,14 @@ function New-AgentRunRecord {
     $path = _AgentRunFilePath -WorkspaceRoot $WorkspaceRoot -RunId $runId
     ConvertTo-Json -InputObject $record -Depth 6 | Set-Content -LiteralPath $path -Encoding UTF8 -ErrorAction Stop
 
+    # Release 2.1 Phase 3 persistence seam: best-effort mirror of the run
+    # record (metrics included) into the SQLite agent_runs table. The JSON
+    # file above remains authoritative; a mirror failure must never break
+    # the dispatch it describes.
+    if (Get-Command -Name 'Write-AppDbAgentRun' -ErrorAction SilentlyContinue) {
+        try { $null = Write-AppDbAgentRun -RunRecord $record } catch { }
+    }
+
     $null = Write-AgentRunEvent -WorkspaceRoot $WorkspaceRoot -EventType 'run.dispatched' -RunId $runId -RepoName $RepoName `
         -Summary "Agent run dispatched for $RepoName via $ProviderTool." `
         -Data ([ordered]@{
@@ -386,6 +394,13 @@ function Update-AgentRunRecord {
 
     $run['updatedAt'] = (Get-Date).ToUniversalTime().ToString('o')
     ConvertTo-Json -InputObject $run -Depth 6 | Set-Content -LiteralPath $path -Encoding UTF8 -ErrorAction Stop
+
+    # Release 2.1 Phase 3 persistence seam: keep the SQLite agent_runs mirror
+    # current after every ledger patch so timing/token/cost metrics are
+    # queryable over time. Best-effort — the JSON file stays authoritative.
+    if (Get-Command -Name 'Write-AppDbAgentRun' -ErrorAction SilentlyContinue) {
+        try { $null = Write-AppDbAgentRun -RunRecord $run } catch { }
+    }
 
     $newStatusValue = [string](_AgentRunsField -Obj $run -Name 'status' -Default '')
     $eventType = if ($newStatusValue -ne $previousStatus) {

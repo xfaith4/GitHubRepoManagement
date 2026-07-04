@@ -28,6 +28,13 @@
         execution-ledger.json), and Write-AppDbOpsLogEntry /
         Get-AppDbOpsLogEntries / Invoke-AppDbOpsLogTrim /
         Import-AppDbOpsLogFromJsonl back the queryable operations log.
+      - Phase 3 stores (schema v2): Write-AppDbAgentRun mirrors agent-run
+        ledger records (timing/token/cost/work-unit metrics) into agent_runs,
+        Write-AppDbQuotaBurnSnapshot captures each dispatch quota evaluation
+        into quota_burn_snapshots, and Get-AppDbAgentRunMetricsHistory /
+        Get-AppDbQuotaBurnHistory expose both as ordered time series (the
+        metrics read seeds agent_runs from the JSON runs directory on first
+        read, mirroring the execution-ledger pattern).
 
     Rollout contract (Release 2.1): JSON-backed artifacts keep working and
     keep being written. From Phase 2 the database is authoritative for the
@@ -48,7 +55,7 @@ $ErrorActionPreference = 'Stop'
 # Constants and module state
 # ---------------------------------------------------------------------------
 
-$script:AppDbSchemaVersion = 1
+$script:AppDbSchemaVersion = 2
 $script:AppDbRelPath       = 'output\app.db'
 
 # Current persistence-boundary state. Enabled only after a successful
@@ -697,6 +704,23 @@ CREATE TABLE IF NOT EXISTS agent_run_events (
   data_json      TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_agent_run_events_run_time ON agent_run_events(run_id, timestamp);
+
+CREATE TABLE IF NOT EXISTS quota_burn_snapshots (
+  snapshot_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_name            TEXT NOT NULL,
+  budget_period        TEXT,
+  evaluated_at         TEXT NOT NULL,
+  estimated_work_units REAL,
+  units_consumed       REAL,
+  remaining_before     REAL,
+  remaining_after      REAL,
+  allowed              INTEGER NOT NULL DEFAULT 0,
+  blocked_code         TEXT,
+  planned_release      TEXT,
+  planned_phase        TEXT,
+  snapshot_json        TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_quota_burn_repo_time ON quota_burn_snapshots(repo_name, evaluated_at);
 '@
 }
 
@@ -761,7 +785,7 @@ function Initialize-AppDatabase {
                 'INSERT INTO schema_migrations (version, description, applied_at) VALUES (@version, @description, @applied_at)',
                 @('@version', '@description', '@applied_at'),
                 @([object][long]$script:AppDbSchemaVersion,
-                  [object]'Release 2.1 Phase 1 - initial persistence schema',
+                  [object]'Release 2.1 Phase 3 - agent-run metrics and quota-burn snapshots (schema v2)',
                   [object](Get-Date).ToUniversalTime().ToString('o')))
         }
 
@@ -1789,6 +1813,321 @@ ORDER BY captured_at ASC, repo_name ASC
             maturityScore = _AppDbRecordValue -Record $_ -Name 'maturity_score'
             pendingCount  = _AppDbRecordValue -Record $_ -Name 'pending_count'
             capturedAt    = [string](_AppDbRecordValue -Record $_ -Name 'captured_at')
+        }
+    })
+
+    return [pscustomobject]@{ available = $true; entries = $entries }
+}
+
+# ---------------------------------------------------------------------------
+# Phase 3 migration — agent-run metrics and quota-burn history
+# ---------------------------------------------------------------------------
+
+function _AppDbIsoTimestamp {
+    # Normalizes a timestamp to a sortable ISO-8601 UTC string. Values arrive
+    # either as ISO strings (fresh records) or [datetime] objects (records
+    # re-read via ConvertFrom-Json); a plain [string] cast of a [datetime]
+    # yields a locale format that breaks lexicographic ordering.
+    param([object]$Value)
+
+    if ($null -eq $Value) { return $null }
+    if ($Value -is [datetime]) { return $Value.ToUniversalTime().ToString('o') }
+
+    $text = [string]$Value
+    if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+    try {
+        return ([datetime]::Parse($text, [System.Globalization.CultureInfo]::InvariantCulture,
+            [System.Globalization.DateTimeStyles]::RoundtripKind)).ToUniversalTime().ToString('o')
+    } catch {
+        return $text
+    }
+}
+
+function _AppDbNullableDouble {
+    param([object]$Value)
+
+    if ($null -eq $Value) { return $null }
+    $text = [string]$Value
+    if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+    $number = 0.0
+    if ([double]::TryParse($text, [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$number)) {
+        return [double]$number
+    }
+    return $null
+}
+
+function _AppDbNullableLong {
+    param([object]$Value)
+
+    $number = _AppDbNullableDouble -Value $Value
+    if ($null -eq $number) { return $null }
+    return [long]$number
+}
+
+function _AppDbNullableText {
+    param([object]$Value)
+
+    if ($null -eq $Value) { return $null }
+    $text = [string]$Value
+    if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+    return $text
+}
+
+<#
+.SYNOPSIS
+    Mirrors one agent-run ledger record — including its timing/token/cost
+    work-unit metrics — into the agent_runs table. No-ops with a reason while
+    the persistence boundary is disabled and never throws: a mirror failure
+    must never break the run it describes. The JSON runs directory remains
+    authoritative during the Release 2.1 rollout.
+#>
+function Write-AppDbAgentRun {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory = $true)][object]$RunRecord
+    )
+
+    $out = @{ success = $false; reason = '' }
+    if (-not $script:AppDbState.enabled) {
+        $out.reason = 'app-db-not-initialized'
+        return [pscustomobject]$out
+    }
+
+    try {
+        $runId = [string](_AppDbFirstRecordValue -Record $RunRecord -Names @('runId', 'run_id') -Default '')
+        if ([string]::IsNullOrWhiteSpace($runId)) {
+            $out.reason = 'missing-run-id'
+            return [pscustomobject]$out
+        }
+
+        $metrics = _AppDbFirstRecordValue -Record $RunRecord -Names @('metrics') -Default $null
+
+        $dispatchedAt = _AppDbIsoTimestamp -Value (_AppDbFirstRecordValue -Record $metrics -Names @('dispatchedAt', 'dispatched_at') -Default (_AppDbFirstRecordValue -Record $RunRecord -Names @('createdAt', 'created_at') -Default $null))
+        $updatedAt = _AppDbIsoTimestamp -Value (_AppDbFirstRecordValue -Record $RunRecord -Names @('updatedAt', 'updated_at') -Default $null)
+        if ($null -eq $updatedAt) { $updatedAt = (Get-Date).ToUniversalTime().ToString('o') }
+
+        $null = Invoke-AppDbNonQuery -DatabasePath ([string]$script:AppDbState.databasePath) -Sql @'
+INSERT OR REPLACE INTO agent_runs
+  (run_id, repo_name, status, dispatched_at, started_at, completed_at,
+   time_to_deliver_seconds, prompt_count, retry_count, tokens_reported,
+   direct_cost_usd, work_units_estimated, work_units_actual,
+   release_name, phase_name, section_name, record_json, updated_at)
+VALUES
+  (@run_id, @repo_name, @status, @dispatched_at, @started_at, @completed_at,
+   @time_to_deliver_seconds, @prompt_count, @retry_count, @tokens_reported,
+   @direct_cost_usd, @work_units_estimated, @work_units_actual,
+   @release_name, @phase_name, @section_name, @record_json, @updated_at)
+'@ -Parameters @{
+            run_id                  = $runId
+            repo_name               = _AppDbNullableText (_AppDbFirstRecordValue -Record $RunRecord -Names @('repoName', 'repo_name') -Default '')
+            status                  = _AppDbNullableText (_AppDbFirstRecordValue -Record $RunRecord -Names @('status') -Default '')
+            dispatched_at           = $dispatchedAt
+            started_at              = _AppDbIsoTimestamp -Value (_AppDbFirstRecordValue -Record $metrics -Names @('agentStartedAt', 'agent_started_at') -Default $null)
+            completed_at            = _AppDbIsoTimestamp -Value (_AppDbFirstRecordValue -Record $metrics -Names @('agentCompletedAt', 'agent_completed_at') -Default $null)
+            time_to_deliver_seconds = _AppDbNullableDouble (_AppDbFirstRecordValue -Record $metrics -Names @('timeToDeliverSeconds', 'time_to_deliver_seconds') -Default $null)
+            prompt_count            = _AppDbNullableLong (_AppDbFirstRecordValue -Record $metrics -Names @('promptCount', 'prompt_count') -Default $null)
+            retry_count             = _AppDbNullableLong (_AppDbFirstRecordValue -Record $metrics -Names @('retries', 'retryCount', 'retry_count') -Default $null)
+            tokens_reported         = _AppDbNullableLong (_AppDbFirstRecordValue -Record $metrics -Names @('tokenUsage', 'tokensReported', 'tokens_reported') -Default $null)
+            direct_cost_usd         = _AppDbNullableDouble (_AppDbFirstRecordValue -Record $metrics -Names @('apiSpendUsd', 'directCostUsd', 'direct_cost_usd') -Default $null)
+            work_units_estimated    = _AppDbNullableDouble (_AppDbFirstRecordValue -Record $metrics -Names @('workUnitsEstimated', 'work_units_estimated') -Default $null)
+            work_units_actual       = _AppDbNullableDouble (_AppDbFirstRecordValue -Record $metrics -Names @('workUnitsActual', 'work_units_actual') -Default $null)
+            release_name            = _AppDbNullableText (_AppDbFirstRecordValue -Record $RunRecord -Names @('plannedReleaseName', 'planned_release_name', 'releaseName') -Default $null)
+            phase_name              = _AppDbNullableText (_AppDbFirstRecordValue -Record $RunRecord -Names @('plannedPhaseName', 'planned_phase_name', 'phaseName') -Default $null)
+            section_name            = _AppDbNullableText (_AppDbFirstRecordValue -Record $RunRecord -Names @('selectedTaskSection', 'selected_task_section', 'sectionName') -Default $null)
+            record_json             = (ConvertTo-Json -InputObject $RunRecord -Compress -Depth 8)
+            updated_at              = $updatedAt
+        }
+        $out.success = $true
+    } catch {
+        $out.reason = $_.Exception.Message
+    }
+
+    return [pscustomobject]$out
+}
+
+<#
+.SYNOPSIS
+    Captures one dispatch quota evaluation (from Test-AgentDispatchQuota)
+    into the quota_burn_snapshots table so quota burn-down is queryable over
+    time. Best-effort: no-ops with a reason while the persistence boundary is
+    disabled and never throws — the JSONL quota.* events remain the raw
+    debugging artifact.
+#>
+function Write-AppDbQuotaBurnSnapshot {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoName,
+        [Parameter(Mandatory = $true)][object]$Evaluation
+    )
+
+    $out = @{ success = $false; reason = '' }
+    if (-not $script:AppDbState.enabled) {
+        $out.reason = 'app-db-not-initialized'
+        return [pscustomobject]$out
+    }
+
+    try {
+        $usage = _AppDbFirstRecordValue -Record $Evaluation -Names @('usage') -Default $null
+        $allowed = [bool](_AppDbFirstRecordValue -Record $Evaluation -Names @('allowed') -Default $false)
+
+        $null = Invoke-AppDbNonQuery -DatabasePath ([string]$script:AppDbState.databasePath) -Sql @'
+INSERT INTO quota_burn_snapshots
+  (repo_name, budget_period, evaluated_at, estimated_work_units,
+   units_consumed, remaining_before, remaining_after, allowed, blocked_code,
+   planned_release, planned_phase, snapshot_json)
+VALUES
+  (@repo_name, @budget_period, @evaluated_at, @estimated_work_units,
+   @units_consumed, @remaining_before, @remaining_after, @allowed,
+   @blocked_code, @planned_release, @planned_phase, @snapshot_json)
+'@ -Parameters @{
+            repo_name            = $RepoName
+            budget_period        = _AppDbNullableText (_AppDbFirstRecordValue -Record $Evaluation -Names @('period', 'budgetPeriod') -Default $null)
+            evaluated_at         = (Get-Date).ToUniversalTime().ToString('o')
+            estimated_work_units = _AppDbNullableDouble (_AppDbFirstRecordValue -Record $Evaluation -Names @('estimatedWorkUnits', 'estimated_work_units') -Default $null)
+            units_consumed       = _AppDbNullableDouble (_AppDbFirstRecordValue -Record $usage -Names @('unitsConsumed', 'units_consumed') -Default $null)
+            remaining_before     = _AppDbNullableDouble (_AppDbFirstRecordValue -Record $usage -Names @('remainingBefore', 'remaining_before') -Default $null)
+            remaining_after      = _AppDbNullableDouble (_AppDbFirstRecordValue -Record $usage -Names @('remainingAfter', 'remaining_after') -Default $null)
+            allowed              = if ($allowed) { 1L } else { 0L }
+            blocked_code         = _AppDbNullableText (_AppDbFirstRecordValue -Record $Evaluation -Names @('blockedCode', 'blocked_code') -Default $null)
+            planned_release      = _AppDbNullableText (_AppDbFirstRecordValue -Record $Evaluation -Names @('plannedReleaseName', 'planned_release') -Default $null)
+            planned_phase        = _AppDbNullableText (_AppDbFirstRecordValue -Record $Evaluation -Names @('plannedPhaseName', 'planned_phase') -Default $null)
+            snapshot_json        = (ConvertTo-Json -InputObject $Evaluation -Compress -Depth 8)
+        }
+        $out.success = $true
+    } catch {
+        $out.reason = $_.Exception.Message
+    }
+
+    return [pscustomobject]$out
+}
+
+<#
+.SYNOPSIS
+    Reads agent-run metrics history (timing/token/cost/work units per run)
+    for one repo or all repos in a time range, ordered oldest-first. When
+    -SeedFromRunsDirectory is provided and the agent_runs table is empty, the
+    first read seeds it from the legacy JSON runs directory — mirroring the
+    execution-ledger first-run migration.
+#>
+function Get-AppDbAgentRunMetricsHistory {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter()][string]$RepoName = '',
+        [Parameter()][int]$Days = 30,
+        [Parameter()][string]$SeedFromRunsDirectory = ''
+    )
+
+    if (-not $script:AppDbState.enabled) {
+        return [pscustomobject]@{ available = $false; entries = @() }
+    }
+
+    if ($Days -lt 1) { $Days = 1 }
+    $dbPath = [string]$script:AppDbState.databasePath
+
+    if (-not [string]::IsNullOrWhiteSpace($SeedFromRunsDirectory) -and
+        (Test-Path -LiteralPath $SeedFromRunsDirectory -PathType Container)) {
+        $runCount = [long](Invoke-AppDbQuery -DatabasePath $dbPath -Sql 'SELECT COUNT(*) AS n FROM agent_runs')[0].n
+        if ($runCount -eq 0) {
+            foreach ($runFile in @(Get-ChildItem -LiteralPath $SeedFromRunsDirectory -Filter '*.json' -File -ErrorAction SilentlyContinue)) {
+                try {
+                    $legacyRun = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $runFile.FullName -Raw -Encoding UTF8)
+                    $null = Write-AppDbAgentRun -RunRecord $legacyRun
+                } catch {
+                    Write-Warning "Persistence.Store: agent-run file '$($runFile.FullName)' could not be parsed for seeding: $_"
+                }
+            }
+        }
+    }
+
+    $sinceIso = (Get-Date).ToUniversalTime().AddDays(-$Days).ToString('o')
+    $rows = @(Invoke-AppDbQuery -DatabasePath $dbPath -Sql @'
+SELECT run_id, repo_name, status, dispatched_at, started_at, completed_at,
+       time_to_deliver_seconds, prompt_count, retry_count, tokens_reported,
+       direct_cost_usd, work_units_estimated, work_units_actual,
+       release_name, phase_name, section_name, updated_at
+FROM agent_runs
+WHERE (@repo_name = '' OR repo_name = @repo_name)
+  AND COALESCE(dispatched_at, updated_at) >= @since
+ORDER BY COALESCE(dispatched_at, updated_at) ASC, run_id ASC
+'@ -Parameters @{
+        repo_name = [string]$RepoName
+        since     = $sinceIso
+    })
+
+    $entries = @($rows | ForEach-Object {
+        [pscustomobject]@{
+            runId                = [string](_AppDbRecordValue -Record $_ -Name 'run_id')
+            repoName             = [string](_AppDbRecordValue -Record $_ -Name 'repo_name')
+            status               = [string](_AppDbRecordValue -Record $_ -Name 'status')
+            dispatchedAt         = _AppDbRecordValue -Record $_ -Name 'dispatched_at'
+            startedAt            = _AppDbRecordValue -Record $_ -Name 'started_at'
+            completedAt          = _AppDbRecordValue -Record $_ -Name 'completed_at'
+            timeToDeliverSeconds = _AppDbRecordValue -Record $_ -Name 'time_to_deliver_seconds'
+            promptCount          = _AppDbRecordValue -Record $_ -Name 'prompt_count'
+            retryCount           = _AppDbRecordValue -Record $_ -Name 'retry_count'
+            tokensReported       = _AppDbRecordValue -Record $_ -Name 'tokens_reported'
+            directCostUsd        = _AppDbRecordValue -Record $_ -Name 'direct_cost_usd'
+            workUnitsEstimated   = _AppDbRecordValue -Record $_ -Name 'work_units_estimated'
+            workUnitsActual      = _AppDbRecordValue -Record $_ -Name 'work_units_actual'
+            releaseName          = _AppDbRecordValue -Record $_ -Name 'release_name'
+            phaseName            = _AppDbRecordValue -Record $_ -Name 'phase_name'
+            sectionName          = _AppDbRecordValue -Record $_ -Name 'section_name'
+            updatedAt            = _AppDbRecordValue -Record $_ -Name 'updated_at'
+        }
+    })
+
+    return [pscustomobject]@{ available = $true; entries = $entries }
+}
+
+<#
+.SYNOPSIS
+    Reads quota burn-down history (one row per dispatch quota evaluation)
+    for one repo or all repos in a time range, ordered oldest-first.
+#>
+function Get-AppDbQuotaBurnHistory {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter()][string]$RepoName = '',
+        [Parameter()][int]$Days = 30
+    )
+
+    if (-not $script:AppDbState.enabled) {
+        return [pscustomobject]@{ available = $false; entries = @() }
+    }
+
+    if ($Days -lt 1) { $Days = 1 }
+    $sinceIso = (Get-Date).ToUniversalTime().AddDays(-$Days).ToString('o')
+    $rows = @(Invoke-AppDbQuery -DatabasePath ([string]$script:AppDbState.databasePath) -Sql @'
+SELECT snapshot_id, repo_name, budget_period, evaluated_at,
+       estimated_work_units, units_consumed, remaining_before,
+       remaining_after, allowed, blocked_code, planned_release, planned_phase
+FROM quota_burn_snapshots
+WHERE (@repo_name = '' OR repo_name = @repo_name)
+  AND evaluated_at >= @since
+ORDER BY evaluated_at ASC, snapshot_id ASC
+'@ -Parameters @{
+        repo_name = [string]$RepoName
+        since     = $sinceIso
+    })
+
+    $entries = @($rows | ForEach-Object {
+        $allowedRaw = _AppDbRecordValue -Record $_ -Name 'allowed'
+        [pscustomobject]@{
+            repoName           = [string](_AppDbRecordValue -Record $_ -Name 'repo_name')
+            budgetPeriod       = _AppDbRecordValue -Record $_ -Name 'budget_period'
+            evaluatedAt        = [string](_AppDbRecordValue -Record $_ -Name 'evaluated_at')
+            estimatedWorkUnits = _AppDbRecordValue -Record $_ -Name 'estimated_work_units'
+            unitsConsumed      = _AppDbRecordValue -Record $_ -Name 'units_consumed'
+            remainingBefore    = _AppDbRecordValue -Record $_ -Name 'remaining_before'
+            remainingAfter     = _AppDbRecordValue -Record $_ -Name 'remaining_after'
+            allowed            = ($null -ne $allowedRaw -and [long]$allowedRaw -ne 0)
+            blockedCode        = _AppDbRecordValue -Record $_ -Name 'blocked_code'
+            plannedRelease     = _AppDbRecordValue -Record $_ -Name 'planned_release'
+            plannedPhase       = _AppDbRecordValue -Record $_ -Name 'planned_phase'
         }
     })
 
