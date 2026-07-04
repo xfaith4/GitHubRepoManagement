@@ -3,6 +3,8 @@
 > **Status:** Active
 > **Active release:** **Release 2.1 — Persistent Data Layer**
 > **Next active release:** **Release 2.2 — API Authentication, Network Security, Guided Onboarding, and GitHub App Integration**
+> **Work ordering:** dependency-driven, not insertion order — see
+> [Execution Order and Dependencies](#execution-order-and-dependencies)
 > **Canonical product direction:** [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md)
 > **Completed-release archive:** [`docs/history/completed-releases.md`](docs/history/completed-releases.md)
 > **Dated change log:** [`CHANGELOG.md`](CHANGELOG.md)
@@ -99,12 +101,75 @@ Render the state inline on each milestone in italics, e.g.:
 | **2.2**   | **API Authentication, Network Security, Guided Onboarding, and GitHub App Integration**                 | `planned`                                                                                                                                      |
 | **2.3**   | **Portfolio Analytics, Trend Visualization, and Distribution**                                          | `planned`                                                                                                                                      |
 | **2.4**   | **Agent Integration Protocol and AI Repair Loop**                                                       | `planned`                                                                                                                                      |
+| **2.5**   | **Mobile-Friendly Operator Experience**                                                                 | `planned`                                                                                                                                      |
 
 > **Note on `.5` numbering.** Release 1.7.5 is a deliberate course-correction
 > release between 1.7 and 1.8 to re-center the product on its primary
 > mission before adding broader workflow and infrastructure layers. The `.5`
 > pattern should be reserved for similar course corrections; default new
 > work to integer minor releases.
+
+### Execution Order and Dependencies
+
+Release numbers identify scope — they do not dictate sequence, and
+sections are appended in the order they were conceived, not the order
+they should be executed. Work through open items in the order below,
+and update this section whenever a release closes or a new dependency
+appears.
+
+**Step 0 — unblockers (small, do first):**
+
+1. Repair `tools/Test-RoadmapStructure.ps1`. **Done 2026-07-04** — the
+   generic rewrite from commit `d2cc6cc` was reverted to the
+   repo-specific validator; it runs clean against this file again.
+2. Repair the module-smoke roadmap-repairer failure. **Done
+   2026-07-04** — root cause was the `d2cc6cc` v2.0
+   `roadmap-audit-rules.json` flooring every parseable roadmap at L3
+   (see Release 2.1 Known issues); the v1.0 pack is restored and the
+   full module suite passes end-to-end.
+3. Finish Release 2.1 operator verification and close the release.
+   Closing 2.1 also starts the clock for Release 2.3: trend rollups can
+   only aggregate history that accrues while 2.1 capture runs in
+   day-to-day use.
+
+**Then two parallel lanes (no cross-dependency between them):**
+
+- **Backend lane — Release 2.2** (auth, network security, onboarding,
+  GitHub App). Unlocks the Release 2.5 Phase 4 shared-LAN bind, safe
+  non-loopback exposure of the Release 2.4 agent API, and teammate
+  sharing.
+- **Frontend lane — Release 2.5 Phases 1-3** (responsive foundation,
+  glanceable health + agent activity, mobile refinement + dispatch).
+  Zero incomplete prerequisites: every backing route is already
+  shipped. Running this lane before new dashboard panels means the
+  remaining Release 1.2 UI lands responsive instead of needing a
+  retrofit.
+
+**After the lanes:**
+
+1. Release 2.5 Phase 4 (home-screen install + shared-LAN verification)
+   once the 2.2 auth guardrail exists.
+2. Release 1.2 remaining panels, built on the 2.5 responsive
+   foundation.
+3. Release 2.3 Phases 2-4 as captured history accrues (time-gated by
+   2.1 being in daily use, not by engineering effort).
+4. Release 2.4 last — it is the outward-facing agent contract and
+   should sit on 2.2 auth before any non-loopback exposure; its spec,
+   OpenAPI, and event-log-convention drafting can start anytime.
+
+**Dependency map (open work only):**
+
+| Open item                                                     | Depends on                                        | Type                                            |
+| ------------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------- |
+| Release 2.1 closeout ("all existing smoke tests pass")        | Audit-rules v1.0 restoration                      | hard — resolved 2026-07-04                      |
+| CI roadmap-structure check                                    | `Test-RoadmapStructure.ps1` restoration           | hard — resolved 2026-07-04                      |
+| Release 2.3 Phase 2 (rollups, `availableDays`, weekly deltas) | Release 2.1 closed + days of live history capture | hard, time-gated                                |
+| Release 2.3 Phase 3 (digest KPIs, badges)                     | Release 2.3 Phase 2 rollups                       | hard                                            |
+| Release 2.5 Phase 4 (shared LAN bind)                         | Release 2.2 non-loopback auth guardrail           | hard for shared use; single-operator interim ok |
+| Release 2.4 agent API beyond loopback                         | Release 2.2 API auth                              | soft — loopback-only use works without          |
+| Release 2.4 submit-PR flows                                   | Release 2.2 GitHub App tokens                     | soft — PAT acceptable interim                   |
+| Release 1.2 remaining dashboard panels                        | Release 2.5 Phase 1 responsive foundation         | soft — avoids mobile retrofit                   |
+| Release 2.5 Phases 1-3; repo-scoped roadmap scan endpoint     | —                                                 | none — schedulable anytime                      |
 
 ---
 
@@ -119,11 +184,12 @@ execution ledger, maturity history, operations log, portfolio index
 history, and merge-readiness snapshots so the application is reliable at
 scale and supports time-series queries.
 
-**Current focus:** Phase 3 + Phase 4 — broaden persisted history capture
-and tighten route-level validation while keeping JSON exports as debugging
-artifacts. Phase 2 (execution-ledger + ops-log SQL wiring) shipped
-2026-07-03 alongside path normalization and smoke assertions for
-`/api/log/tail` filters and `/api/roadmap/maturity-history`.
+**Current focus:** Release closeout — every engineering milestone is now
+smoke-tested (the last one, agent-run timing/token/cost and quota-burn
+metrics persistence, shipped 2026-07-04 as schema v2), and the module-smoke
+suite runs clean end-to-end again after the audit-rules restoration noted
+under Known issues. Remaining work is operator verification against the
+live workspace.
 
 **Why now:** The north-star workflow is now end-to-end through dispatch,
 agent-run monitoring, Actions validation, and merge readiness. The next
@@ -146,7 +212,16 @@ and execution updates overlap. No current blocker.
 portfolio index, the agent-run ledger/event schema, and merge-readiness
 snapshots.
 
-**Known issues:** None specific to Release 2.1 at promotion time.
+**Known issues:** none open. Resolved 2026-07-04: the module-smoke
+repairer failure was not a stale expectation — commit `d2cc6cc` replaced
+`standards/roadmap/roadmap-audit-rules.json` with a v2.0 pack whose
+inflated weights (and five added rules the auditor cannot evaluate)
+floored every parseable roadmap at ~77 → L3-Contract-Ready, so the
+repairer refused all repairs and the L3 dispatch gate stopped gating.
+The v1.0 pack is restored and the full module suite passes end-to-end.
+The same commit's rewrite of `tools/Test-RoadmapStructure.ps1` (crashed
+on blank lines, wrong heading regex, template-generic rules) was
+reverted to the repo-specific validator, which runs clean again.
 
 **Traceability:** Phase 1 shipped surfaces:
 [`backend/modules/persistence/Persistence.Store.ps1`](backend/modules/persistence/Persistence.Store.ps1)
@@ -166,8 +241,8 @@ release direction remains anchored to
 | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
 | Phase 1: SQLite foundation                   | Capability detection, `output/app.db` bootstrap, schema-v1 tables, `GET /api/persistence/status`, agent-run-event dual-write seam        | **done — smoke-tested** (2026-07-03) |
 | Phase 2: Execution ledger + ops log          | Migrate execution-ledger and ops-log reads/writes to parameterized SQL; JSON export kept as debugging artifact                            | **done — smoke-tested** (2026-07-03) |
-| Phase 3: History snapshots                   | Persist maturity, portfolio-index, repo-signal, merge-readiness, and agent-run timing/token/cost metrics over time                        | in progress                          |
-| Phase 4: Trend routes + first-run migration  | Maturity/portfolio history and trend routes, repo-row sparkline consumer, first-run JSON-to-SQL migration, differential-scan history      | in progress                          |
+| Phase 3: History snapshots                   | Persist maturity, portfolio-index, repo-signal, merge-readiness, and agent-run timing/token/cost metrics over time                        | **done — smoke-tested** (2026-07-04) |
+| Phase 4: Trend routes + first-run migration  | Maturity/portfolio history and trend routes, repo-row sparkline consumer, first-run JSON-to-SQL migration, differential-scan history      | **done — smoke-tested** (2026-07-04) |
 
 ### Release 2.0 completion snapshot
 
@@ -265,17 +340,21 @@ prompt-refinement flow.
       States: `discovered`, `needs-readme`, `needs-roadmap`,
       `needs-roadmap-repair`, `needs-structure`, `ready-for-work`, `running`,
       `completed`, `monitored`, `archived`, `parse-error`.
-  - Carry-forward note: doc-audit has historically reported
-        `dispatchReadiness=missing-roadmap` for some repos that the roadmap
-        audit clearly found at L4. Phase 1 worked around it by treating
-        roadmap-audit + `pendingItemCount` as authoritative for
-        `ready-for-work` classification. The likely fault line is
-        doc-audit / roadmap-audit cache drift (path-key vs name-key lookup,
-        or TTL skew). Any future fix should reproduce that mismatch against
-        `/api/docs-audit` and `/api/roadmap/audit`, then make doc-audit
-        converge with the roadmap audit's view rather than re-derive its
-        own. This is follow-up context, not an open Release 1.7.5
-        milestone.
+  - Carry-forward note (resolved 2026-07-04): doc-audit historically
+        reported `dispatchReadiness=missing-roadmap` for some repos the
+        roadmap audit clearly found at L4. Root causes: (1) the API
+        host's `Invoke-RoadmapScan` searched ROADMAP files one directory
+        level shallower than the doc-audit scanner's `.git`-based repo
+        discovery, so repos at the deepest discovered level were audited
+        with their roadmap invisible; (2) the shared roadmap cache
+        records no root/depth coverage, so a cache hit built from
+        different roots left uncovered repos defaulting to `missing`.
+        Fixed by matching the scan depth (+1) and adding a convergence
+        fallback in `DocAudit.Scanner.ps1` that classifies a repo's
+        roadmap directly from disk when the supplied roadmap entries do
+        not cover it. The Phase 1 workaround (roadmap-audit +
+        `pendingItemCount` authoritative for `ready-for-work`) remains
+        in place as defense in depth.
 - [x] Add `GET /api/portfolio/assessment` route that returns one normalized
       assessment record per repo with lifecycle state, blocking reasons,
       recommended next action, and source coverage (`local`, `github`, or
@@ -437,6 +516,11 @@ dashboard once the core portfolio-assessment and prompt-refinement path is
 stable, and close the remaining smoke/contract gaps for those backend
 capabilities.
 
+**Prerequisites:** none hard — the backend routes already exist.
+Ordering note: schedule the remaining panels after Release 2.5 Phase 1
+so they land on the responsive foundation instead of needing a mobile
+retrofit.
+
 #### Product outcomes
 
 - Operators can see execution throughput, dependency relationships, tags,
@@ -530,9 +614,17 @@ supports time-series queries.
       now append to `maturity_history`, `portfolio_index_history`,
       `repo_signals`, `differential_scans`, and
       `merge_readiness_snapshots`.
-- [ ] Persist agent-run timing/token/cost and quota-burn metrics over time
+- [x] Persist agent-run timing/token/cost and quota-burn metrics over time
       so time-to-deliver and cost-per-phase trends are queryable.
-      *(state: planned)*
+      *(state: smoke-tested — 2026-07-04)* — schema v2 adds
+      `quota_burn_snapshots`; agent-run ledger records now best-effort
+      mirror into `agent_runs` on create and every patch (timing, tokens,
+      cost, work units, release/phase/section); every dispatch quota
+      evaluation persists a burn-down snapshot;
+      `GET /api/agent-runs/metrics-history` (first SQLite read seeds from
+      `output/agent-runs/runs/*.json`, JSON fallback otherwise) and
+      `GET /api/agent-runs/quota-burn-history` expose both as ordered
+      time series.
 - [x] Add differential scan history storage so the dashboard can explain
       what changed between scans. *(state: smoke-tested — 2026-07-03)*
 - [x] Add history and trend routes for roadmap maturity and aggregate
@@ -573,6 +665,10 @@ supports time-series queries.
 **Goal:** Harden the API host and replace manual PAT + settings.json setup
 with a guided first-run experience and a proper GitHub App OAuth path so an
 engineer can safely go from zero to running in under five minutes.
+
+**Prerequisites:** none among open work. Completing this release unlocks
+Release 2.5 Phase 4 (shared LAN bind) and safe non-loopback exposure of
+the Release 2.4 agent API.
 
 #### Product outcomes
 
@@ -631,6 +727,11 @@ engineer can safely go from zero to running in under five minutes.
 **Goal:** Add historical trend charts, a portfolio health digest, and
 distribution artifacts that make the application shareable and
 self-promoting.
+
+**Prerequisites:** Release 2.1 running in day-to-day use. Phases 2-4
+aggregate history that only accrues over calendar time once 2.1 capture
+is live (time-gated, not effort-gated); Phase 3 digest KPIs additionally
+depend on Phase 2 rollups.
 
 #### Product outcomes
 
@@ -701,6 +802,11 @@ agents can query before starting work, and implement an AI-driven repair
 loop that submits roadmap and README improvements as GitHub pull requests
 for human review.
 
+**Prerequisites:** soft dependency on Release 2.2 — expose
+`/api/v1/agent/*` beyond loopback only after API auth exists, and GitHub
+App tokens harden the submit-PR flows (PAT acceptable interim). Spec,
+event-log convention, and OpenAPI drafting can start anytime.
+
 #### Product outcomes
 
 - AI coding agents (Claude Code, Copilot, Devin, custom agents) can query
@@ -748,6 +854,111 @@ for human review.
 - Autonomous agent execution without operator approval of PRs.
 - Billing or usage metering for agent API access.
 - Multi-tenant agent API with per-agent authentication.
+
+---
+
+### Release 2.5 — Mobile-Friendly Operator Experience
+
+**Goal:** Make the dashboard fully usable from an Android phone on the
+local network so the operator can, away from the desk: read repo health
+at a glance, see whether agents are currently working, run
+prompt-refinement tasks, and dispatch roadmap phases to an agent.
+LAN-only for now; remote access expands later alongside the GitHub /
+cloud connection work.
+
+**Prerequisites:** none for Phases 1-3 — every backing route is already
+shipped, so this lane can run in parallel with Release 2.2. Phase 4's
+shared-LAN bind depends on the Release 2.2 non-loopback auth guardrail
+(single-operator LAN bind acceptable in the interim).
+
+#### Product outcomes
+
+- The operator can open the dashboard on an Android phone over LAN and
+  read portfolio health (lifecycle-state counts, Documentation Health,
+  dirty worktrees, failing Actions, top recommended work) without
+  pinch-zooming or horizontal body scrolling.
+- Active agent work is visible at a glance: a persistent indicator shows
+  whether any agent run is in progress, with tap-through to a
+  mobile-friendly run list showing status, repo, phase, and elapsed time.
+- A prompt-refinement task can be completed end-to-end from the phone.
+- A roadmap phase can be selected, refined, and dispatched to an agent
+  from the phone with the same preview-first guardrails as desktop.
+- The app can be added to the Android home screen and launches
+  standalone like an installed app.
+
+#### Engineering milestones
+
+- [ ] Add a responsive layout foundation for the primary surfaces —
+      [`Dashboard.tsx`](frontend/components/Dashboard.tsx),
+      [`RepoGrid.tsx`](frontend/components/RepoGrid.tsx),
+      [`WorkQueueView.tsx`](frontend/components/WorkQueueView.tsx),
+      [`OperationsWorkspaceView.tsx`](frontend/components/OperationsWorkspaceView.tsx),
+      [`ActionBar.tsx`](frontend/components/ActionBar.tsx) — using
+      Tailwind breakpoints: repo tables collapse into stacked cards on
+      narrow screens and wide content scrolls inside its own container,
+      never the page body. *(state: planned)*
+- [ ] Add mobile navigation (compact header plus bottom tab bar or
+      collapsible menu) covering Repositories, Work Queue, Operations,
+      Agent Runs, and Insights, and render modal dialogs as full-screen
+      sheets on small screens. *(state: planned)*
+- [ ] Apply touch ergonomics across the app: minimum ~44px touch
+      targets and tap equivalents for every hover-only affordance
+      (tooltips, row actions, rationale popovers). *(state: planned)*
+- [ ] Add a glanceable mobile Repo Health summary backed by the
+      existing `/api/portfolio/assessment` model: lifecycle-state
+      counts, Documentation Health, dirty worktrees, failing Actions,
+      and top recommended work. *(state: planned)*
+- [ ] Add an always-visible agent-activity indicator (any run active?)
+      with tap-through to a mobile-friendly agent-run list built on the
+      agent-run ledger routes. *(state: planned)*
+- [ ] Make the prompt-refinement flow usable end-to-end on a phone:
+      readable packet sections, workable textareas, prompt history, and
+      refine actions sized for touch. *(state: planned)*
+- [ ] Make roadmap-phase dispatch usable end-to-end on a phone:
+      select repo → select roadmap release/phase → review refined
+      prompt → dispatch to agent, preserving preview-first guardrails
+      and the quota guard. *(state: planned)*
+- [ ] Add a web app manifest and icons so the dashboard can be added
+      to the Android home screen and open standalone. *(state: planned)*
+- [ ] Document LAN access setup for mobile devices (host bind address,
+      firewall rule, phone URL). Binding beyond loopback for shared use
+      depends on the Release 2.2 non-loopback auth guardrail; a
+      single-operator LAN bind is acceptable in the interim.
+      *(state: planned)*
+- [ ] Verify the four mobile workflows (health, agent activity,
+      refinement, dispatch) on a physical Android device plus
+      narrow-viewport browser checks, and confirm existing desktop
+      smoke tests still pass unchanged. *(state: planned)*
+
+#### Acceptance criteria
+
+- On a 360-412 px wide viewport, the dashboard renders portfolio health
+  with no horizontal body scrolling and no pinch-zoom required.
+- Within one screen of opening the app on a phone, the operator can
+  tell whether any agent run is currently active.
+- A prompt-refinement task completes end-to-end on an Android phone.
+- A roadmap phase can be dispatched to an agent from an Android phone,
+  passing through the same preview and quota-guard steps as desktop.
+- The app installs to the Android home screen and opens standalone.
+- Desktop layout is not regressed: existing smoke tests and
+  `npm run build` pass unchanged.
+
+#### Out of scope
+
+- Native Android/iOS apps or app-store distribution.
+- Push notifications to mobile devices.
+- Remote access beyond the local network (expands with the GitHub /
+  cloud connection releases).
+- Offline mode or on-device caching of portfolio data.
+
+#### Phase plan (within this release)
+
+| Phase                                       | Scope                                                                                                                     | Status  |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------- |
+| Phase 1: Responsive foundation              | Breakpoint audit of primary surfaces, table-to-card collapse, mobile navigation, full-screen modal sheets, touch targets  | planned |
+| Phase 2: Glanceable health + agent activity | Mobile Repo Health summary, always-visible agent-activity indicator, mobile agent-run list                                 | planned |
+| Phase 3: Mobile refinement + dispatch       | Prompt-refinement and roadmap-phase dispatch flows usable end-to-end on a phone with preview-first guardrails intact        | planned |
+| Phase 4: Home-screen install + verification | Web app manifest/icons, LAN access documentation, physical-Android verification of all four workflows, desktop regression  | planned |
 
 ---
 

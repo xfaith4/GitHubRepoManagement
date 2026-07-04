@@ -1,31 +1,31 @@
 {
-  "secrets": {
-    "gitHubTokenEnvVar": "GITHUB_TOKEN"
-  },
-  "docReview": {
-    "maxDepth": 3,
-    "generateQueue": true,
-    "generateBatchPlan": true
-  },
   "retention": {
     "days": 30
   },
-  "schemaVersion": "v1",
-  "reconcile": {
-    "retry": {
-      "baseDelayMs": 300,
-      "maxDelayMs": 2000,
-      "maxAttempts": 3
-    },
-    "ownerType": "Auto",
-    "gitHubOwner": "xfaith4"
-  },
   "inventory": {
+    "includeNonGitFolders": false,
+    "maxDepth": 3,
     "localRoots": [
       "F:\\Development\\20_Staging"
-    ],
+    ]
+  },
+  "schemaVersion": "v1",
+  "docReview": {
     "maxDepth": 3,
-    "includeNonGitFolders": false
+    "generateBatchPlan": true,
+    "generateQueue": true
+  },
+  "secrets": {
+    "gitHubTokenEnvVar": "GITHUB_TOKEN"
+  },
+  "reconcile": {
+    "gitHubOwner": "xfaith4",
+    "ownerType": "Auto",
+    "retry": {
+      "baseDelayMs": 300,
+      "maxAttempts": 3,
+      "maxDelayMs": 2000
+    }
   }
 }
 

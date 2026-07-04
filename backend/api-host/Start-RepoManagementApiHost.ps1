@@ -3161,7 +3161,13 @@ function Invoke-RoadmapScan {
     foreach ($root in $LocalRoots) {
         if (-not (Test-Path -LiteralPath $root)) { continue }
         try {
-            $files = Get-ChildItem -Path $root -Recurse -Depth $MaxDepth -File -ErrorAction SilentlyContinue |
+            # ROADMAP files sit one level below the repo directory, exactly like
+            # the .git folder the doc-audit scanner uses for repo discovery at
+            # Depth ($MaxDepth + 1). The file search must go one level deeper
+            # than the repo depth or repos at the deepest discovered level are
+            # doc-audited with their roadmap invisible (dispatchReadiness
+            # then falsely reports missing-roadmap).
+            $files = Get-ChildItem -Path $root -Recurse -Depth ($MaxDepth + 1) -File -ErrorAction SilentlyContinue |
                 Where-Object { $_.Name -imatch '^ROADMAP(\..+)?$' }
             foreach ($file in $files) {
                 $repoName = $file.Directory.Name
@@ -4987,7 +4993,8 @@ try {
                 continue
             }
 
-            if ($req.Method -eq 'GET' -and $path -like '/api/agent-runs/*' -and $path -ne '/api/agent-runs') {
+            if ($req.Method -eq 'GET' -and $path -like '/api/agent-runs/*' -and $path -ne '/api/agent-runs' -and
+                $path -ne '/api/agent-runs/metrics-history' -and $path -ne '/api/agent-runs/quota-burn-history') {
                 $agentRunIdParam = [System.Uri]::UnescapeDataString($path.Substring('/api/agent-runs/'.Length))
                 if ([string]::IsNullOrWhiteSpace($agentRunIdParam)) {
                     Add-MetricCounter -Name 'api_requests_total'
@@ -5242,6 +5249,27 @@ try {
                     $includeNonGit = if ($q.ContainsKey('includeNonGitFolders')) { Parse-Bool -Value $q.includeNonGitFolders -Default $defaultIncludeNonGit } else { $defaultIncludeNonGit }
 
                     $result = Get-StatusAdapterResult -LocalRoots $localRoots -MaxDepth $maxDepth -IncludeNonGitFolders:$includeNonGit -LogPath $LogPath
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Send-HttpJson -Stream $req.Stream -StatusCode $(if ($result.success) { 200 } else { 500 }) -CorrelationId $correlationId -Payload $result
+                }
+                'POST /api/reconcile' {
+                    $body = Parse-JsonBody -Body $req.Body
+                    $settings = Get-HostSettings
+                    $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
+                    $defaultOwnerType = if ($settings.ContainsKey('reconcile') -and $settings.reconcile.ContainsKey('ownerType') -and $settings.reconcile.ownerType) { [string]$settings.reconcile.ownerType } else { 'Auto' }
+                    $defaultGitHubOwner = if ($settings.ContainsKey('reconcile') -and $settings.reconcile.ContainsKey('gitHubOwner') -and $settings.reconcile.gitHubOwner) { [string]$settings.reconcile.gitHubOwner } else { '' }
+                    $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
+                    $defaultIncludeNonGit = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('includeNonGitFolders')) { [bool]$settings.inventory.includeNonGitFolders } else { $true }
+
+                    $localRoots = if ($body.ContainsKey('localRoots') -and $body.localRoots) { @($body.localRoots) } else { $defaultRoots }
+                    $ownerType = if ($body.ContainsKey('ownerType') -and $body.ownerType) { [string]$body.ownerType } else { $defaultOwnerType }
+                    $maxDepth = if ($body.ContainsKey('maxDepth') -and $body.maxDepth) { [int]$body.maxDepth } else { $defaultDepth }
+                    $includeNonGit = if ($body.ContainsKey('includeNonGitFolders')) { [bool]$body.includeNonGitFolders } else { $defaultIncludeNonGit }
+                    $outDir = if ($body.ContainsKey('outDir')) { [string]$body.outDir } else { '' }
+                    $githubOwner = if ($body.ContainsKey('githubOwner')) { [string]$body.githubOwner } else { $defaultGitHubOwner }
+
+                    $result = Invoke-ReconcileAdapter -LocalRoots $localRoots -GitHubOwner $githubOwner -OwnerType $ownerType -OutDir $outDir -MaxDepth $maxDepth -IncludeNonGitFolders:$includeNonGit -LogPath $LogPath
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
                     Send-HttpJson -Stream $req.Stream -StatusCode $(if ($result.success) { 200 } else { 500 }) -CorrelationId $correlationId -Payload $result
@@ -6607,6 +6635,92 @@ try {
                         Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'roadmap.maturity-history'
                     }
                 }
+                'GET /api/agent-runs/metrics-history' {
+                    try {
+                        $q = Parse-QueryString -Query $req.Query
+                        $repoName = if ($q.ContainsKey('repoName')) { [string]$q.repoName } else { '' }
+                        $days = if ($q.ContainsKey('days') -and $q.days) { [int]$q.days } else { 30 }
+                        if ($days -lt 1) { $days = 1 }
+                        if ($days -gt 3650) { $days = 3650 }
+
+                        $agentRunsJsonDir = Join-Path $WorkspaceRoot 'output\agent-runs\runs'
+                        $history = Get-AppDbAgentRunMetricsHistory -RepoName $repoName -Days $days -SeedFromRunsDirectory $agentRunsJsonDir
+                        if ($history.available) {
+                            Add-MetricCounter -Name 'api_requests_total'
+                            Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                                success = $true
+                                data = @($history.entries)
+                                count = @($history.entries).Count
+                                source = 'sqlite'
+                            }
+                            break
+                        }
+
+                        # SQLite unavailable: serve the same contract straight from the
+                        # authoritative JSON runs ledger. _AppDbIsoTimestamp keeps the
+                        # timestamps sortable regardless of string/[datetime] shape.
+                        $sinceIso = (Get-Date).ToUniversalTime().AddDays(-$days).ToString('o')
+                        $fallbackEntries = @(Get-AgentRuns -WorkspaceRoot $WorkspaceRoot -RepoName $repoName -Limit 1000 | ForEach-Object {
+                            $runMetrics = Get-ObjectPropertyValue -InputObject $_ -PropertyName 'metrics' -Default $null
+                            if ($null -eq $runMetrics) { $runMetrics = [pscustomobject]@{} }
+                            [pscustomobject]@{
+                                runId                = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'runId' -Default '')
+                                repoName             = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '')
+                                status               = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'status' -Default '')
+                                dispatchedAt         = _AppDbIsoTimestamp -Value (Get-ObjectPropertyValue -InputObject $runMetrics -PropertyName 'dispatchedAt' -Default $null)
+                                startedAt            = _AppDbIsoTimestamp -Value (Get-ObjectPropertyValue -InputObject $runMetrics -PropertyName 'agentStartedAt' -Default $null)
+                                completedAt          = _AppDbIsoTimestamp -Value (Get-ObjectPropertyValue -InputObject $runMetrics -PropertyName 'agentCompletedAt' -Default $null)
+                                timeToDeliverSeconds = Get-ObjectPropertyValue -InputObject $runMetrics -PropertyName 'timeToDeliverSeconds' -Default $null
+                                promptCount          = Get-ObjectPropertyValue -InputObject $runMetrics -PropertyName 'promptCount' -Default $null
+                                retryCount           = Get-ObjectPropertyValue -InputObject $runMetrics -PropertyName 'retries' -Default $null
+                                tokensReported       = Get-ObjectPropertyValue -InputObject $runMetrics -PropertyName 'tokenUsage' -Default $null
+                                directCostUsd        = Get-ObjectPropertyValue -InputObject $runMetrics -PropertyName 'apiSpendUsd' -Default $null
+                                workUnitsEstimated   = Get-ObjectPropertyValue -InputObject $runMetrics -PropertyName 'workUnitsEstimated' -Default $null
+                                workUnitsActual      = Get-ObjectPropertyValue -InputObject $runMetrics -PropertyName 'workUnitsActual' -Default $null
+                                releaseName          = Get-ObjectPropertyValue -InputObject $_ -PropertyName 'plannedReleaseName' -Default $null
+                                phaseName            = Get-ObjectPropertyValue -InputObject $_ -PropertyName 'plannedPhaseName' -Default $null
+                                sectionName          = Get-ObjectPropertyValue -InputObject $_ -PropertyName 'selectedTaskSection' -Default $null
+                                updatedAt            = _AppDbIsoTimestamp -Value (Get-ObjectPropertyValue -InputObject $_ -PropertyName 'updatedAt' -Default $null)
+                            }
+                        } | Where-Object {
+                            $ts = [string]$_.dispatchedAt
+                            [string]::IsNullOrWhiteSpace($ts) -or ([string]::CompareOrdinal($ts, $sinceIso) -ge 0)
+                        } | Sort-Object { [string]$_.dispatchedAt })
+
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data = @($fallbackEntries)
+                            count = @($fallbackEntries).Count
+                            source = 'agent-runs-json'
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'agent-runs.metrics-history'
+                    }
+                }
+                'GET /api/agent-runs/quota-burn-history' {
+                    try {
+                        $q = Parse-QueryString -Query $req.Query
+                        $repoName = if ($q.ContainsKey('repoName')) { [string]$q.repoName } else { '' }
+                        $days = if ($q.ContainsKey('days') -and $q.days) { [int]$q.days } else { 30 }
+                        if ($days -lt 1) { $days = 1 }
+                        if ($days -gt 3650) { $days = 3650 }
+
+                        $history = Get-AppDbQuotaBurnHistory -RepoName $repoName -Days $days
+                        # Quota-burn snapshots exist only in SQLite; without a provider the
+                        # raw quota.* JSONL events remain the debugging artifact, so the
+                        # fallback is truthfully empty rather than synthesized.
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data = @($history.entries)
+                            count = @($history.entries).Count
+                            source = if ($history.available) { 'sqlite' } else { 'none' }
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'agent-runs.quota-burn-history'
+                    }
+                }
                 'GET /api/operations/prompt/history' {
                     Write-HostLog ("[TRACE] operations.prompt.history correlationId={0} start" -f $correlationId)
                     $q        = Parse-QueryString -Query $req.Query
@@ -7021,6 +7135,12 @@ try {
                         -BudgetConfig $budgetConfig `
                         -PlannedReleaseName ([string](Get-ValueOrDefault $planningContext.releaseName '')) `
                         -PlannedPhaseName ([string](Get-ValueOrDefault $planningContext.plannedPhaseName ''))
+
+                    # Release 2.1 Phase 3: persist every dispatch quota evaluation —
+                    # allowed, warned, or blocked — as a quota-burn snapshot so burn-down
+                    # is queryable over time. Best-effort; the quota.* JSONL events remain
+                    # the raw debugging artifact and dispatch never fails on a mirror error.
+                    try { $null = Write-AppDbQuotaBurnSnapshot -RepoName $repoName -Evaluation $quotaResult } catch { }
 
                     $quotaEventBase = [ordered]@{
                         budgetPeriod            = [string]$quotaResult.period

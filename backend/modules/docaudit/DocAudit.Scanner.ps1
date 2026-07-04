@@ -364,6 +364,31 @@ function Invoke-AuditRepoScan {
                     $npi = Get-DocAuditObjectValue -InputObject $rm -PropertyName 'nextPendingItem' -Default $null
                     $nextPendingItem = [string](Get-DocAuditObjectValue -InputObject $npi -PropertyName 'text' -Default '')
                 }
+                else {
+                    # Convergence fallback: the supplied roadmap entries did not
+                    # cover this repo (root/depth/TTL drift between the roadmap
+                    # cache and this scan), but the roadmap may still exist on
+                    # disk. Classify it directly rather than reporting
+                    # missing-roadmap for a repo the roadmap audit can see.
+                    $roadmapFile = Get-ChildItem -Path $repoPath -File -ErrorAction SilentlyContinue |
+                        Where-Object { $_.Name -imatch '^ROADMAP(\..+)?$' } | Select-Object -First 1
+                    if ($null -ne $roadmapFile) {
+                        try {
+                            $rawRoadmap = Get-Content -LiteralPath $roadmapFile.FullName -Raw -Encoding UTF8 -ErrorAction Stop
+                            if (Get-Command -Name 'Invoke-ParseRoadmapContent' -ErrorAction SilentlyContinue) {
+                                $parsedRoadmap = Invoke-ParseRoadmapContent -Content $rawRoadmap -SourcePath $roadmapFile.FullName
+                                $roadmapState = [string](Get-DocAuditObjectValue -InputObject $parsedRoadmap -PropertyName 'roadmapState' -Default 'parse-error')
+                                $fallbackNpi = Get-DocAuditObjectValue -InputObject $parsedRoadmap -PropertyName 'nextPendingItem' -Default $null
+                                $nextPendingItem = [string](Get-DocAuditObjectValue -InputObject $fallbackNpi -PropertyName 'text' -Default '')
+                            }
+                            elseif ($rawRoadmap -match '(?m)^\s*[-*]\s+\[ \]') { $roadmapState = 'pending' }
+                            elseif ($rawRoadmap -match '(?m)^\s*[-*]\s+\[[xX]\]') { $roadmapState = 'complete' }
+                            else { $roadmapState = 'parse-error' }
+                        }
+                        catch { $roadmapState = 'parse-error' }
+                        Write-Verbose ("docaudit.scan roadmap-fallback repo={0} state={1}" -f $repoName, $roadmapState)
+                    }
+                }
 
                 $auditResult = Invoke-AuditRepoDocumentation `
                     -RepoPath $repoPath `

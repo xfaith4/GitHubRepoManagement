@@ -161,7 +161,7 @@ try {
             throw "/api/persistence/status: SQLite capability is available but the app database is not enabled"
         }
         $persistenceTables = @($persistenceStatus.tables)
-        foreach ($expectedTable in @('schema_migrations', 'execution_ledger', 'execution_history', 'maturity_history', 'ops_log', 'portfolio_index_history', 'repo_signals', 'differential_scans', 'merge_readiness_snapshots', 'agent_runs', 'agent_run_events')) {
+        foreach ($expectedTable in @('schema_migrations', 'execution_ledger', 'execution_history', 'maturity_history', 'ops_log', 'portfolio_index_history', 'repo_signals', 'differential_scans', 'merge_readiness_snapshots', 'agent_runs', 'agent_run_events', 'quota_burn_snapshots')) {
             if ($expectedTable -notin $persistenceTables) {
                 throw "/api/persistence/status missing expected table '$expectedTable' (got: $($persistenceTables -join ', '))"
             }
@@ -258,6 +258,11 @@ try {
     $reconcileResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/reconcile" -Body $reconcileBody
     Assert-Not503 -Name '/api/reconcile' -Response $reconcileResponse
     $reconcile = $reconcileResponse.Json
+    # The unmatched-route 404 envelope has no 'success' property; these checks
+    # keep this step from passing vacuously if the route is ever removed again
+    # (it silently vanished in bfb3724 and nothing failed).
+    if ([int]$reconcileResponse.StatusCode -eq 404) { throw 'POST /api/reconcile returned 404 - route missing from API host' }
+    if ($null -eq $reconcile -or -not ($reconcile.PSObject.Properties.Name -contains 'success')) { throw 'POST /api/reconcile response missing success envelope' }
 
     Write-Host '[STEP] DocReview route' -ForegroundColor Cyan
     $docBody = @{
@@ -1042,6 +1047,56 @@ try {
     }
     Write-Host ("  /api/roadmap/maturity-history -> source={0} count={1}" -f [string]$maturityHistory.source, @($maturityHistory.data).Count) -ForegroundColor DarkGray
 
+    Write-Host '[STEP] Agent-run metrics history route (Release 2.1 Phase 3)' -ForegroundColor Cyan
+    $runMetricsResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/agent-runs/metrics-history?days=30"
+    Assert-Not503 -Name '/api/agent-runs/metrics-history?days=30' -Response $runMetricsResponse
+    $runMetrics = $runMetricsResponse.Json
+    if ($null -eq $runMetrics -or -not $runMetrics.success) {
+        throw '/api/agent-runs/metrics-history returned invalid success payload'
+    }
+    foreach ($metricsField in @('data', 'count', 'source')) {
+        if (-not ($runMetrics.PSObject.Properties.Name -contains $metricsField)) {
+            throw "/api/agent-runs/metrics-history response missing '$metricsField'"
+        }
+    }
+    if ([string]$runMetrics.source -notin @('sqlite', 'agent-runs-json')) {
+        throw "/api/agent-runs/metrics-history returned unexpected source '$($runMetrics.source)'"
+    }
+    foreach ($row in @($runMetrics.data)) {
+        if ($null -eq $row) { continue }
+        foreach ($field in @('runId', 'repoName', 'status', 'dispatchedAt', 'timeToDeliverSeconds', 'tokensReported', 'directCostUsd', 'workUnitsEstimated', 'phaseName')) {
+            if (-not ($row.PSObject.Properties.Name -contains $field)) {
+                throw "/api/agent-runs/metrics-history entry missing '$field'"
+            }
+        }
+    }
+    Write-Host ("  /api/agent-runs/metrics-history -> source={0} count={1}" -f [string]$runMetrics.source, @($runMetrics.data).Count) -ForegroundColor DarkGray
+
+    Write-Host '[STEP] Quota burn-down history route (Release 2.1 Phase 3)' -ForegroundColor Cyan
+    $quotaBurnResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/agent-runs/quota-burn-history?days=30"
+    Assert-Not503 -Name '/api/agent-runs/quota-burn-history?days=30' -Response $quotaBurnResponse
+    $quotaBurn = $quotaBurnResponse.Json
+    if ($null -eq $quotaBurn -or -not $quotaBurn.success) {
+        throw '/api/agent-runs/quota-burn-history returned invalid success payload'
+    }
+    foreach ($quotaField in @('data', 'count', 'source')) {
+        if (-not ($quotaBurn.PSObject.Properties.Name -contains $quotaField)) {
+            throw "/api/agent-runs/quota-burn-history response missing '$quotaField'"
+        }
+    }
+    if ([string]$quotaBurn.source -notin @('sqlite', 'none')) {
+        throw "/api/agent-runs/quota-burn-history returned unexpected source '$($quotaBurn.source)'"
+    }
+    foreach ($row in @($quotaBurn.data)) {
+        if ($null -eq $row) { continue }
+        foreach ($field in @('repoName', 'budgetPeriod', 'evaluatedAt', 'unitsConsumed', 'remainingAfter', 'allowed')) {
+            if (-not ($row.PSObject.Properties.Name -contains $field)) {
+                throw "/api/agent-runs/quota-burn-history entry missing '$field'"
+            }
+        }
+    }
+    Write-Host ("  /api/agent-runs/quota-burn-history -> source={0} count={1}" -f [string]$quotaBurn.source, @($quotaBurn.data).Count) -ForegroundColor DarkGray
+
     Write-Host '[STEP] Execution queue routes (Release 1.0)' -ForegroundColor Cyan
     $execQueueResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/execution/queue"
     Assert-Not503 -Name '/api/execution/queue' -Response $execQueueResponse
@@ -1500,78 +1555,83 @@ try {
     $statusCacheSuccess = if ($null -ne $statusCache.Json -and ($statusCache.Json.PSObject.Properties.Name -contains 'success')) { $statusCache.Json.success } else { $null }
     $settingsGetSuccess = if ($null -ne $settingsGet.Json -and ($settingsGet.Json.PSObject.Properties.Name -contains 'success')) { $settingsGet.Json.success } else { $null }
     $settingsPostSuccess = if ($null -ne $settingsPost.Json -and ($settingsPost.Json.PSObject.Properties.Name -contains 'success')) { $settingsPost.Json.success } else { $null }
-    try {
-        [pscustomobject]@{
-            liveStatus = $live.status
-            readyStatus = $ready.status
-            dependenciesStatus = $deps.status
-            dependenciesHttpCode = [int]$depsResponse.StatusCode
-            statusSuccess = $status.success
-            statusCacheSuccess = $statusCacheSuccess
-            settingsGetSuccess = $settingsGetSuccess
-            settingsPostSuccess = $settingsPostSuccess
-            initStatusCode = $initResponse.StatusCode
-            updateStatusCode = $updateResponse.StatusCode
-            syncStatusCode = $syncResponse.StatusCode
-            archiveStatusCode = $archiveResponse.StatusCode
-            reconcileSuccess = $reconcile.success
-            docreviewSuccess = $doc.success
-            artifactsCount = @($artifacts.artifacts).Count
-            exportSuccess = $export.success
-            reportOpenStatusCode = $reportOpenResponse.StatusCode
-            metricsGeneratedAt = $metrics.generatedAt
-            roadmapIndexCount = $roadmapIndex.data.count
-            roadmapScanCount = $roadmapScan.data.count
-            roadmapStateFieldsOk = $roadmapStateFieldsOk
-            roadmapContentOk = $roadmapContentOk
-            readmeContentOk = $readmeContentOk
-            roadmapFullContentOk = $fullRoadmapReturnedAll
-            roadmapCacheStatusCode = $roadmapCache.StatusCode
-            githubStatusCode = $githubStatusResponse.StatusCode
-            roadmapPreviewStatusCode = $roadmapPreviewResponse.StatusCode
-            roadmapStartStatusCode = $roadmapStartResponse.StatusCode
-            roadmapHistoryStatusCode = $roadmapHistoryResponse.StatusCode
-            logTailEntryCount = $logTail.count
-            logTailSource = $logTail.source
-            maturityHistorySource = $maturityHistory.source
-            maturityHistoryCount = @($maturityHistory.data).Count
-            docsAuditGetSuccess = $docsAuditData.success
-            docsAuditScanSuccess = $docsAuditScanData.success
-            docsAuditRepoCount = $docsAuditData.data.count
-            copilotPreviewStatusCode = $copilotPreviewResponse.StatusCode
-            copilotPreviewPacketOk = $copilotPreviewPacketOk
-            opsPromptRefineStatusCode = $opsPromptRefineResponse.StatusCode
-            opsPromptRefineOk = $opsPromptRefineOk
-            copilotHistorySuccess = $copilotHistoryJson.success
-            copilotHistoryItemsOk = $copilotHistoryItemsOk
-            roadmapAuditGetSuccess  = $roadmapAuditData.success
-            roadmapAuditScanSuccess = $roadmapAuditScanData.success
-            roadmapAuditRepoCount   = $roadmapAuditData.data.count
-            roadmapAuditFieldsOk    = $roadmapAuditFieldsOk
-            repairPreviewFieldsOk   = $repairPreviewFieldsOk
-            repairHistoryItemsOk    = $repairHistoryItemsOk
-            execQueueFieldsOk       = $execQueueFieldsOk
-            lintScanSuccess       = $lintScanJson.success
-            stdHistorySuccess     = $stdHistoryJson.success
-            driftFieldsOk         = $driftFieldsOk
-            webhooksGetSuccess    = $webhooksJson.success
-            execMetricsFieldsOk   = $execMetricsFieldsOk
-            scanScheduleFieldsOk  = $scanScheduleFieldsOk
-            depGraphFieldsOk      = $depGraphFieldsOk
-            depGraphTotalEdges    = $depGraphData.totalEdges
-            portfolioFieldsOk     = $portfolioFieldsOk
-            portfolioSummaryFieldsOk = $portfolioSummaryFieldsOk
-            portfolioEntryFieldsOk   = $portfolioEntryFieldsOk
-            portfolioRepoCount    = [int]$portfolioData.count
-            portfolioDiffFieldsOk = $portfolioDiffFieldsOk
-            portfolioDiffModeObserved = $portfolioDiffModeObserved
-            staticIndexOk         = $staticIndexOk
-            staticAssetsOk        = $staticAssetsOk
-            staticSkipped         = $staticSkipped
-        } | Format-List
-    } catch {
-        Write-Host ("[WARN] Smoke summary projection skipped: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+    # Each summary entry is evaluated independently so one missing property
+    # degrades to a labelled "(unavailable: ...)" value instead of discarding
+    # the whole projection (StrictMode throws on absent properties).
+    $summarySpec = [ordered]@{
+        liveStatus = { $live.status }
+        readyStatus = { $ready.status }
+        dependenciesStatus = { $deps.status }
+        dependenciesHttpCode = { [int]$depsResponse.StatusCode }
+        statusSuccess = { $status.success }
+        statusCacheSuccess = { $statusCacheSuccess }
+        settingsGetSuccess = { $settingsGetSuccess }
+        settingsPostSuccess = { $settingsPostSuccess }
+        initStatusCode = { $initResponse.StatusCode }
+        updateStatusCode = { $updateResponse.StatusCode }
+        syncStatusCode = { $syncResponse.StatusCode }
+        archiveStatusCode = { $archiveResponse.StatusCode }
+        reconcileSuccess = { $reconcile.success }
+        docreviewSuccess = { $doc.success }
+        artifactsCount = { @($artifacts.artifacts).Count }
+        exportSuccess = { $export.success }
+        reportOpenStatusCode = { $reportOpenResponse.StatusCode }
+        metricsGeneratedAt = { $metrics.generatedAt }
+        roadmapIndexCount = { $roadmapIndex.data.count }
+        roadmapScanCount = { $roadmapScan.data.count }
+        roadmapStateFieldsOk = { $roadmapStateFieldsOk }
+        roadmapContentOk = { $roadmapContentOk }
+        readmeContentOk = { $readmeContentOk }
+        roadmapFullContentOk = { $fullRoadmapReturnedAll }
+        roadmapCacheStatusCode = { $roadmapCache.StatusCode }
+        githubStatusCode = { $githubStatusResponse.StatusCode }
+        roadmapPreviewStatusCode = { $roadmapPreviewResponse.StatusCode }
+        roadmapStartStatusCode = { $roadmapStartResponse.StatusCode }
+        roadmapHistoryStatusCode = { $roadmapHistoryResponse.StatusCode }
+        logTailEntryCount = { $logTail.count }
+        logTailSource = { $logTail.source }
+        maturityHistorySource = { $maturityHistory.source }
+        maturityHistoryCount = { @($maturityHistory.data).Count }
+        docsAuditGetSuccess = { $docsAuditData.success }
+        docsAuditScanSuccess = { $docsAuditScanData.success }
+        docsAuditRepoCount = { $docsAuditData.data.count }
+        copilotPreviewStatusCode = { $copilotPreviewResponse.StatusCode }
+        copilotPreviewPacketOk = { $copilotPreviewPacketOk }
+        opsPromptRefineStatusCode = { $opsPromptRefineResponse.StatusCode }
+        opsPromptRefineOk = { $opsPromptRefineOk }
+        copilotHistorySuccess = { $copilotHistoryJson.success }
+        copilotHistoryItemsOk = { $copilotHistoryItemsOk }
+        roadmapAuditGetSuccess = { $roadmapAuditData.success }
+        roadmapAuditScanSuccess = { $roadmapAuditScanData.success }
+        roadmapAuditRepoCount = { $roadmapAuditData.data.count }
+        roadmapAuditFieldsOk = { $roadmapAuditFieldsOk }
+        repairPreviewFieldsOk = { $repairPreviewFieldsOk }
+        repairHistoryItemsOk = { $repairHistoryItemsOk }
+        execQueueFieldsOk = { $execQueueFieldsOk }
+        lintScanSuccess = { $lintScanJson.success }
+        stdHistorySuccess = { $stdHistoryJson.success }
+        driftFieldsOk = { $driftFieldsOk }
+        webhooksGetSuccess = { $webhooksJson.success }
+        execMetricsFieldsOk = { $execMetricsFieldsOk }
+        scanScheduleFieldsOk = { $scanScheduleFieldsOk }
+        depGraphFieldsOk = { $depGraphFieldsOk }
+        depGraphTotalEdges = { $depGraphData.totalEdges }
+        portfolioFieldsOk = { $portfolioFieldsOk }
+        portfolioSummaryFieldsOk = { $portfolioSummaryFieldsOk }
+        portfolioEntryFieldsOk = { $portfolioEntryFieldsOk }
+        portfolioRepoCount = { [int]$portfolioData.count }
+        portfolioDiffFieldsOk = { $portfolioDiffFieldsOk }
+        portfolioDiffModeObserved = { $portfolioDiffModeObserved }
+        staticIndexOk = { $staticIndexOk }
+        staticAssetsOk = { $staticAssetsOk }
+        staticSkipped = { $staticSkipped }
     }
+    $summary = [ordered]@{}
+    foreach ($entryName in $summarySpec.Keys) {
+        try { $summary[$entryName] = & $summarySpec[$entryName] }
+        catch { $summary[$entryName] = "(unavailable: $($_.Exception.Message))" }
+    }
+    [pscustomobject]$summary | Format-List
 }
 finally {
     # Teardown order matters. Stop-Job against a job whose pipeline is wedged

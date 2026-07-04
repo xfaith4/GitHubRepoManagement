@@ -1,5 +1,145 @@
 # Progress
 
+## 2026-07-04 (Cleanup cycle: d2cc6cc tool repairs, doc-audit drift fix, reconcile route restored)
+
+- Audited the nine `d2cc6cc` files not covered by the morning's reverts.
+  Verdict: three had real defects (fixed in place), six accepted as-is.
+  `Test-RoadmapContract.ps1` had three defect classes — mandatory
+  string params rejecting blank roadmap lines, the pwsh 7.6.3
+  `@()`-on-`New-Object`-List[object] crash at four sites, and a hard
+  dependency on v2.0-only structured `condition` objects (now falls
+  back to a switch mirroring the product auditor's ROADMAP-001..010
+  evaluation). `Invoke-RoadmapValidation.ps1` had the same List crash
+  in its findings merge. The config example was restored from
+  `8eac9e0` to match the restored structure validator key-for-key.
+- Root-caused and fixed the Release 1.7.5 carry-forward drift
+  (doc-audit `missing-roadmap` vs roadmap-audit L4): (1) the host's
+  `Invoke-RoadmapScan` searched ROADMAP files one level shallower than
+  the doc-audit scanner's `.git`-based repo discovery — now
+  `-Depth ($MaxDepth + 1)`; (2) roadmap-cache hits built from different
+  roots left uncovered repos defaulting to `missing` —
+  `DocAudit.Scanner.ps1` now classifies a repo's roadmap directly from
+  disk when the supplied entries do not cover it.
+- Hardened the api-host smoke summary projection (per-entry evaluation
+  with labelled `(unavailable)` fallbacks). Its first run named the
+  hidden failure: `reconcileSuccess` — which exposed that commit
+  `bfb3724` had silently deleted the `POST /api/reconcile` route while
+  the adapter, API docs, and smoke step all still referenced it.
+  Restored the route verbatim and added smoke assertions (404 / missing
+  success envelope now fail) so the step can never pass vacuously again.
+
+### Verification
+
+- Module smoke: passed end-to-end. Api-host smoke: `[PASS]` exit 0,
+  summary fully resolved, `reconcileSuccess=False` reflects the
+  adapter's token-less GitHub result (tolerated as before).
+- Structure validator: 0 errors; example config loads via `-Config`.
+  Contract tool: exit 0, this repo = 60 → L2-Structured, counts match
+  `/api/roadmap/scan`. Wrapper: exit 0 with merged findings (5+3).
+- Targeted doc-audit drift repro: covered repo classifies `pending` via
+  heuristic and parser paths; bare repo still `missing-roadmap`.
+
+## 2026-07-04 (Step-0 unblockers: validator + audit-rules restoration; Release 2.5 planned)
+
+- Diagnosed both blockers recorded in the previous entry to the same
+  commit, `d2cc6cc` ("Refactor code structure for improved readability
+  and maintainability", 2026-07-03):
+  - `tools/Test-RoadmapStructure.ps1` had been replaced by a generic
+    243-line template validator that crashes on blank lines (mandatory
+    `-Line` parameter without `[AllowEmptyString()]`) and expects
+    `## Release X.Y` headings plus template sections this repo's
+    ROADMAP.md does not use. Reverted to the 8eac9e0 repo-specific
+    validator; it now reports 0 errors / 2 advisory warnings.
+  - The module-smoke roadmap-repairer failure was **not** a stale smoke
+    expectation. `d2cc6cc` also replaced
+    `standards/roadmap/roadmap-audit-rules.json` with a v2.0 pack:
+    critical-rule weights inflated to 160 of a 235-point denominator and
+    five new rules (ROADMAP-011..015) that `Roadmap.Auditor.ps1` cannot
+    evaluate (its switch handles 001-010; unknown rules never fail).
+    Net effect: every parseable pending roadmap scored ≥ 77 →
+    L3-Contract-Ready, so `Invoke-PlanRoadmapRepair` refused all repairs
+    ("already at L3") and the L3+ Copilot dispatch gate stopped gating.
+    Reverted to the 2fed134 v1.0 pack (weights sum to 100, thresholds
+    identical); the informal fixture again scores 45 → L2-Structured →
+    `repair-preview-ready` with 6 actions.
+- Added Release 2.5 (Mobile-Friendly Operator Experience) to ROADMAP.md
+  and a dependency-driven Execution Order and Dependencies section;
+  updated the Release 2.1 known-issues note with the real root cause and
+  marked both step-0 unblockers done.
+
+### Verification
+
+- `pwsh -NoProfile -File tools/Test-RoadmapStructure.ps1 -Path ./ROADMAP.md`
+  — 0 errors, 2 advisory warnings (file length; completed 2.1 detail
+  still in active roadmap), finds all 6 releases including 2.5.
+- `pwsh -NoProfile -File scripts/Invoke-ModuleSmokeTest.ps1 -WorkspaceRoot
+  "$(pwd)"` — passed end-to-end, through the previously-aborting
+  repairer steps and all Release 2.1 Phase 1/3 sections.
+- Standalone repairer repro (parser → auditor → repairer on the L1
+  informal fixture) — score 45, L2-Structured, `repair-preview-ready`,
+  6 repair actions.
+
+## 2026-07-04 (Release 2.1 Phase 3: agent-run metrics + quota-burn persistence)
+
+- Reconciled the active roadmap against live code and confirmed the last
+  unchecked Release 2.1 milestone was agent-run timing/token/cost and
+  quota-burn metrics persistence: the `agent_runs` table existed from
+  schema v1 but nothing wrote to it, and dispatch quota evaluations were
+  computed per request but only emitted as JSONL events.
+- Bumped the persistence schema to v2 with a new `quota_burn_snapshots`
+  table (idempotent DDL; migration row recorded), and added
+  `Write-AppDbAgentRun` (INSERT OR REPLACE upsert of the full run record
+  including metrics), `Write-AppDbQuotaBurnSnapshot`,
+  `Get-AppDbAgentRunMetricsHistory` (first SQLite read seeds `agent_runs`
+  from `output/agent-runs/runs/*.json`, mirroring the execution-ledger
+  first-run migration), and `Get-AppDbQuotaBurnHistory`.
+- Wired the seams: `New-AgentRunRecord` / `Update-AgentRunRecord` now
+  best-effort mirror every ledger write into `agent_runs`, and the dispatch
+  route persists a quota-burn snapshot after every `Test-AgentDispatchQuota`
+  evaluation (allowed, warned, or blocked). JSON/JSONL stores remain
+  authoritative per the Release 2.1 rollout contract.
+- Added `GET /api/agent-runs/metrics-history` and
+  `GET /api/agent-runs/quota-burn-history` following the maturity-history
+  route contract, fixed the `/api/agent-runs/*` `{runId}` prefix matcher to
+  exclude the two new literal paths (it would otherwise have swallowed them
+  as run IDs), and documented both routes in the API docs modal.
+- Extended both smoke layers: module-smoke Phase 3 sections (schema v2
+  assertion, run-mirror upserts under repeated writes, metrics-history
+  shape, ordered quota burn-down) and api-host contract assertions for both
+  routes plus `quota_burn_snapshots` in the expected persistence tables.
+
+### Verification
+
+- PowerShell parser checks — clean for the persistence module,
+  `AgentRuns.ps1`, the API host, and both smoke scripts.
+- Targeted Phase 3 persistence proof (standalone run of the new module-smoke
+  assertions) — passed on the real `winsqlite3.dll` provider: schema v2
+  bootstrap with idempotent re-init, single upserted `agent_runs` row after
+  repeated patches, derived `timeToDeliverSeconds` (600s), token/cost
+  round-trip, first-read seeding from the JSON runs directory, ordered
+  quota burn-down with allowed/blocked round-trip, and the
+  disabled-boundary contract (reads report unavailable, writes no-op with
+  reason).
+- `pwsh -NoProfile -File scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot
+  "$(pwd)"` — `[PASS]` end to end: persistence status now reports 12 tables,
+  `/api/agent-runs/metrics-history -> source=sqlite`, and
+  `/api/agent-runs/quota-burn-history -> source=sqlite count=1` (a real
+  dispatch quota evaluation captured through the new seam during the run).
+  Note: the first attempt ran against a stale pre-change host still holding
+  port 7071 and failed on the old table list; the rerun against a freshly
+  spawned host passed.
+- `npm run build` — passed.
+- Pre-existing blockers found (not caused by this slice, tracked as
+  follow-up): `scripts/Invoke-ModuleSmokeTest.ps1` aborts at the
+  roadmap-repairer "L1 informal roadmap" step
+  (`rewrite-not-recommended` instead of `repair-preview-ready`) before
+  reaching the Release 2.1 sections, and
+  `tools/Test-RoadmapStructure.ps1` fails with "Cannot bind argument to
+  parameter 'Line'" even against the unmodified HEAD `ROADMAP.md`.
+- Updated `ROADMAP.md` (milestone → `smoke-tested`, Phases 3-4 → done,
+  current focus → release closeout, known-issues note for the module-smoke
+  blocker), `task_plan.md`, and `CHANGELOG.md`.
+
 ## 2026-07-03 (Release 2.3 analytics scaffold)
 
 - Reconciled the Release 2.3 roadmap text with the live repo and confirmed
