@@ -29,7 +29,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:AuditFindings = New-Object 'System.Collections.Generic.List[object]'
+$script:AuditFindings = [System.Collections.Generic.List[object]]::new()
 $script:SchemaFindings = New-Object 'System.Collections.Generic.List[string]'
 
 $script:LevelRank = @{
@@ -42,7 +42,7 @@ $script:LevelRank = @{
 
 function Resolve-StandardsFile {
     param(
-        [Parameter(Mandatory=$true)][string]$ExplicitPath,
+        [Parameter(Mandatory=$true)][AllowEmptyString()][string]$ExplicitPath,
         [Parameter(Mandatory=$true)][string]$DefaultName
     )
 
@@ -97,7 +97,7 @@ function Normalize-Status {
 }
 
 function Get-HeadingMatch {
-    param([Parameter(Mandatory=$true)][string]$Line)
+    param([Parameter(Mandatory=$true)][AllowEmptyString()][string]$Line)
 
     $m = [regex]::Match($Line, '^(#{1,6})\s+(.+?)\s*$')
     if (-not $m.Success) { return $null }
@@ -109,7 +109,7 @@ function Get-HeadingMatch {
 }
 
 function Get-ReleaseHeadingMatch {
-    param([Parameter(Mandatory=$true)][string]$Line)
+    param([Parameter(Mandatory=$true)][AllowEmptyString()][string]$Line)
 
     $m = [regex]::Match($Line, '^##\s+Release\s+([0-9]+(?:\.[0-9]+)*)\s+[—-]\s+(.+?)\s*$')
     if (-not $m.Success) { return $null }
@@ -121,7 +121,7 @@ function Get-ReleaseHeadingMatch {
 }
 
 function Get-SectionBodiesFromBlock {
-    param([Parameter(Mandatory=$true)][string[]]$Lines)
+    param([Parameter(Mandatory=$true)][AllowEmptyString()][string[]]$Lines)
 
     $bodies = @{}
     $current = $null
@@ -189,9 +189,9 @@ function Test-TextMatchesAnyPattern {
 }
 
 function Get-ChecklistItemsFromLines {
-    param([Parameter(Mandatory=$true)][string[]]$Lines)
+    param([Parameter(Mandatory=$true)][AllowEmptyString()][string[]]$Lines)
 
-    $items = New-Object 'System.Collections.Generic.List[object]'
+    $items = [System.Collections.Generic.List[object]]::new()
     for ($i = 0; $i -lt $Lines.Count; $i++) {
         $m = [regex]::Match($Lines[$i], '^\s*[-*]\s+\[([ xX])\]\s+(.+?)\s*$')
         if ($m.Success) {
@@ -203,7 +203,7 @@ function Get-ChecklistItemsFromLines {
             })
         }
     }
-    return @($items)
+    return $items.ToArray()
 }
 
 function New-BaseContract {
@@ -275,7 +275,7 @@ function ConvertTo-RoadmapContract {
     $lines = @(Get-Content -LiteralPath $RoadmapPath)
     $allItems = @(Get-ChecklistItemsFromLines -Lines $lines)
 
-    $sectionList = New-Object 'System.Collections.Generic.List[object]'
+    $sectionList = [System.Collections.Generic.List[object]]::new()
     $currentSectionName = '(root)'
     $currentSectionLevel = 0
     $currentSectionLine = 1
@@ -294,7 +294,7 @@ function ConvertTo-RoadmapContract {
         }
     }
 
-    $releaseStarts = New-Object 'System.Collections.Generic.List[object]'
+    $releaseStarts = [System.Collections.Generic.List[object]]::new()
 
     for ($i = 0; $i -lt $lines.Count; $i++) {
         $line = $lines[$i]
@@ -335,7 +335,7 @@ function ConvertTo-RoadmapContract {
     }
     Flush-Section
 
-    $contract.sections = @($sectionList)
+    $contract.sections = $sectionList.ToArray()
     $contract.pendingCount = @($allItems | Where-Object { -not $_.Checked }).Count
     $contract.completedCount = @($allItems | Where-Object { $_.Checked }).Count
     $contract.totalCount = $allItems.Count
@@ -351,7 +351,7 @@ function ConvertTo-RoadmapContract {
         $contract.roadmapState = 'pending'
     }
 
-    $releaseList = New-Object 'System.Collections.Generic.List[object]'
+    $releaseList = [System.Collections.Generic.List[object]]::new()
     $activeStatuses = @('active','blocked','validation')
     if ($Rules.PSObject.Properties.Name -contains 'statusVocabulary' -and $Rules.statusVocabulary.PSObject.Properties.Name -contains 'activeStatuses') {
         $activeStatuses = @($Rules.statusVocabulary.activeStatuses)
@@ -413,7 +413,7 @@ function ConvertTo-RoadmapContract {
         [void]$releaseList.Add($release)
     }
 
-    $contract.releases = @($releaseList)
+    $contract.releases = $releaseList.ToArray()
     $contract.releaseCount = $releaseList.Count
     $contract.hasReleaseSections = ($contract.releaseCount -gt 0)
     $contract.hasAcceptanceCriteria = (@($releaseList | Where-Object { $_.hasAcceptanceCriteria }).Count -gt 0)
@@ -561,6 +561,31 @@ function Cap-MaturityLevel {
     return $CurrentLevel
 }
 
+function Test-KnownRuleFailure {
+    # Fallback for rule packs whose rules carry only a failCondition string
+    # (schema v1.0). Mirrors the hardcoded evaluation switch in
+    # backend/modules/roadmap/Roadmap.Auditor.ps1 so this tool and the
+    # product auditor agree on what each rule means.
+    param(
+        [Parameter(Mandatory=$true)][string]$RuleId,
+        [Parameter(Mandatory=$true)]$Contract
+    )
+
+    switch ($RuleId) {
+        'ROADMAP-001' { return ($Contract.roadmapState -eq 'missing') }
+        'ROADMAP-002' { return ($Contract.roadmapState -eq 'parse-error') }
+        'ROADMAP-003' { return ($Contract.roadmapState -eq 'complete') }
+        'ROADMAP-004' { return (-not $Contract.hasProductIntent) }
+        'ROADMAP-005' { return (-not $Contract.hasReleaseSections) }
+        'ROADMAP-006' { return (-not $Contract.hasAcceptanceCriteria) }
+        'ROADMAP-007' { return (-not $Contract.hasOutOfScope) }
+        'ROADMAP-008' { return ($Contract.pendingCount -lt 3 -and $Contract.roadmapState -eq 'pending') }
+        'ROADMAP-009' { return ($null -ne $Contract.releaseCount -and [int]$Contract.releaseCount -lt 2) }
+        'ROADMAP-010' { return ([int]$Contract.vagueItemCount -gt 0) }
+        default       { return $false }  # unknown rule — do not penalise
+    }
+}
+
 function Invoke-RoadmapAuditRules {
     param(
         [Parameter(Mandatory=$true)]$Contract,
@@ -573,7 +598,11 @@ function Invoke-RoadmapAuditRules {
     $score = 100.0
 
     foreach ($rule in @($Rules.rules)) {
-        $failed = Test-Condition -Condition $rule.condition -Contract $Contract
+        $failed = if ($rule.PSObject.Properties.Name -contains 'condition' -and $null -ne $rule.condition) {
+            Test-Condition -Condition $rule.condition -Contract $Contract
+        } else {
+            Test-KnownRuleFailure -RuleId ([string]$rule.id) -Contract $Contract
+        }
         if ($failed) {
             $impact = 0.0
             if ($rule.PSObject.Properties.Name -contains 'scoreWeight') { $impact = [double]$rule.scoreWeight }
@@ -614,7 +643,7 @@ function Invoke-RoadmapAuditRules {
     }
 
     $Contract.maturityLevel = $level
-    $Contract.auditFindings = @($script:AuditFindings)
+    $Contract.auditFindings = $script:AuditFindings.ToArray()
 
     # Remove transient cap helper fields before schema validation/output.
     if ($Contract.PSObject.Properties.Name -contains 'criticalFindingCount') {

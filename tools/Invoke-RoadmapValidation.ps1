@@ -66,7 +66,7 @@ if ($FailOnError) { $structureArgs += '-FailOnError' }
 $structureExit = $LASTEXITCODE
 
 if (-not [string]::IsNullOrWhiteSpace($FindingsOut)) {
-    $combined = New-Object 'System.Collections.Generic.List[object]'
+    $combined = [System.Collections.Generic.List[object]]::new()
     if (Test-Path -LiteralPath $contractFindings) {
         $contractJson = Get-Content -LiteralPath $contractFindings -Raw
         if (-not [string]::IsNullOrWhiteSpace($contractJson)) {
@@ -97,7 +97,7 @@ if (-not [string]::IsNullOrWhiteSpace($FindingsOut)) {
     }
     $parent = Split-Path -Parent $FindingsOut
     if (-not [string]::IsNullOrWhiteSpace($parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
-    @($combined) | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $FindingsOut -Encoding UTF8
+    $combined.ToArray() | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $FindingsOut -Encoding UTF8
 }
 
 if ($contractExit -ne 0 -or $structureExit -ne 0) { exit 1 }
