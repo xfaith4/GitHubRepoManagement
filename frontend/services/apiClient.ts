@@ -667,11 +667,11 @@ export async function getReadmeContent(repoName: string): Promise<ReadmeContent>
   };
 }
 
-export async function triggerRoadmapScan(): Promise<RoadmapIndex> {
+export async function triggerRoadmapScan(repoName?: string): Promise<RoadmapIndex> {
   if (USE_MOCK_API) {
     return { entries: [], scannedAt: new Date().toISOString(), count: 0, cacheSource: 'fresh-scan', cacheAgeSeconds: 0 };
   }
-  const data = await postJson<any>('/roadmap/scan', {});
+  const data = await postJson<any>('/roadmap/scan', repoName ? { repoName } : {});
   const d = data?.data ?? {};
   return {
     entries: Array.isArray(d.entries) ? d.entries : [],

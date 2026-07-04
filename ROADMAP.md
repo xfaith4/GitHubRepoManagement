@@ -788,6 +788,45 @@ Continuous, not release-scoped:
 - [ ] Keep rule packs and schemas data-driven where practical so standards
       can evolve without broad code rewrites. *(state: planned)*
 
+### Repository Grid UX Uplift [In Progress]
+
+Status update (2026-07-03): repository-management UX was refocused so the
+Repository Grid is now the primary workflow, with analytics moved into the
+Insights view.
+
+- [x] Make Repository Grid the default operational landing workflow and add
+      an operational header with source + last-scan context. *(state: smoke-tested)*
+- [x] Move secondary analytics modules (Execution Throughput, Portfolio
+      Mission, Documentation Health, Portfolio Analytics, Team Activity) into
+      Insights to reduce above-the-fold cognitive load. *(state: smoke-tested)*
+- [x] Add sticky repository table headers, reduce default column footprint,
+      and move lower-priority metadata to expandable row details. *(state: smoke-tested)*
+- [x] Add quick-filter chips (dirty, uncommitted, stale, needs attention,
+      open PRs, build problems, roadmap-flagged, duplicates) plus a live
+      `Showing X of Y repositories` count. *(state: smoke-tested)*
+- [x] Add sortable comparison columns with visible active sort direction for
+      repository triage. *(state: smoke-tested)*
+- [x] Enhance grouping with collapsible counted groups and default grouping by
+      Needs Attention. *(state: smoke-tested)*
+- [x] Add per-row action affordance (`Open`, `Pull`, `Fetch`, `View details`,
+      `Doc review`, roadmap actions) while retaining bulk actions. *(state: smoke-tested)*
+- [x] Clarify bulk-action selection behavior with explicit helper messaging and
+      selected-count status. *(state: smoke-tested)*
+- [x] Add uncommitted-change severity labels (Low/Medium/High/Critical) so
+      large dirty repos are visually prioritized without relying on color only.
+      *(state: smoke-tested)*
+- [x] Collapse duplicate-warning detail by default and keep concise summary
+      visible. *(state: smoke-tested)*
+- [x] Add explicit unavailable + retry behavior for Insights widgets so
+      unresolved data does not block repo-management flow. *(state: smoke-tested)*
+
+Next-agent handoff:
+
+- [ ] Add a repo-scoped roadmap scan endpoint and wire per-row "Roadmap scan"
+      to run only for the selected repository (current per-row control falls
+      back to the existing global scan route because backend supports only
+      all-repo scans). *(state: planned)*
+
 ---
 
 ## 8. Risks and Guardrails

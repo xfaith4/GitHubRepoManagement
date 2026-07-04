@@ -40,7 +40,7 @@ const ActionButton: React.FC<ActionButtonProps> = ({ onClick, disabled, isLoadin
 
 
 const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, onSettingsClick, onInitClick, onDocReviewClick, onApiDocsClick, onHelpClick, isActionRunning, currentOperation, settings, selectedRepos }) => {
-    
+
     const selection = selectedRepos.size > 0 ? Array.from(selectedRepos) : undefined;
     const selectionCount = selectedRepos.size;
     const cloneImplemented = false;
@@ -52,10 +52,10 @@ const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, on
         }
         return <span className="hidden sm:inline">{baseText}</span>;
     };
-    
+
     const handleUpdate = () => onAction('update', selection);
     const handleSync = () => onAction('sync', selection);
-    
+
     const handleArchive = () => {
         if (!archiveImplemented) return;
         const repoList = selectionCount > 0 ? `${selectionCount} selected repos` : 'all inactive repos';
@@ -66,6 +66,14 @@ const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, on
 
     return (
         <div className="p-4 border-b border-gray-700 flex flex-wrap items-center gap-3">
+            <div className="w-full text-xs text-gray-400 flex flex-wrap items-center gap-2">
+                {selectionCount > 0 ? (
+                    <span>{selectionCount} repositories selected.</span>
+                ) : (
+                    <span>Select one or more repositories to target specific bulk actions.</span>
+                )}
+                <span className="text-gray-500">When none are selected, Pull/Fetch/Report apply to the full filtered repository set.</span>
+            </div>
             <div className="flex flex-wrap gap-3 flex-grow">
                  <ActionButton onClick={onInitClick} disabled={isActionRunning || !cloneImplemented} isLoading={currentOperation === 'init'} title={cloneImplemented ? "Clone repositories from GitHub into a local workspace (git clone via local backend)." : "Planned: clone repositories from GitHub into a local workspace (not implemented in this build)."} icon={<InitIcon className="w-4 h-4" />}>
                     <span className="hidden sm:inline">{cloneImplemented ? 'Clone' : 'Clone (Planned)'}</span>

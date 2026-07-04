@@ -5758,23 +5758,51 @@ try {
                     $settings = Get-HostSettings
                     $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
                     $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
+                    $targetRepoName = if ($body.ContainsKey('repoName') -and $body.repoName) { [string]$body.repoName } elseif ($body.ContainsKey('targetRepo') -and $body.targetRepo) { [string]$body.targetRepo } else { '' }
                     $localRoots = if ($body.ContainsKey('localRoots') -and $body.localRoots) { @($body.localRoots) } else { $defaultRoots }
                     $maxDepth = if ($body.ContainsKey('maxDepth') -and $body.maxDepth) { [int]$body.maxDepth } else { $defaultDepth }
-                    $useDefaultScope = ($maxDepth -eq $defaultDepth) -and ((@($localRoots) -join '|') -eq (@($defaultRoots) -join '|'))
+                    $isScopedRepoScan = -not [string]::IsNullOrWhiteSpace($targetRepoName)
+
+                    if ($isScopedRepoScan) {
+                        $resolved = Resolve-OperationsRepoRecord -RepoId $targetRepoName
+                        if ($resolved.found) {
+                            $recordPath = [string](Get-ObjectPropertyValue -InputObject $resolved.record -PropertyName 'localPath' -Default '')
+                            if (-not [string]::IsNullOrWhiteSpace($recordPath) -and (Test-Path -LiteralPath $recordPath)) {
+                                $localRoots = @($recordPath)
+                                if (-not ($body.ContainsKey('maxDepth') -and $body.maxDepth)) {
+                                    $maxDepth = 6
+                                }
+                            }
+                        }
+                    }
+
+                    $useDefaultScope = (-not $isScopedRepoScan) -and ($maxDepth -eq $defaultDepth) -and ((@($localRoots) -join '|') -eq (@($defaultRoots) -join '|'))
                     $scannedAt = (Get-Date).ToUniversalTime().ToString('o')
                     $entries = Invoke-RoadmapScan -LocalRoots $localRoots -MaxDepth $maxDepth
+
+                    if ($isScopedRepoScan) {
+                        $targetLower = $targetRepoName.ToLowerInvariant()
+                        $entries = @($entries | Where-Object {
+                            $entryRepoName = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '')
+                            $entryPath = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoPath' -Default '')
+                            $entryRepoName.ToLowerInvariant() -eq $targetLower -or
+                            ((-not [string]::IsNullOrWhiteSpace($entryPath)) -and $entryPath.ToLowerInvariant().EndsWith("\\$targetLower"))
+                        })
+                    }
+
                     if ($useDefaultScope) {
                         Save-RoadmapCache -Entries $entries -ScannedAt $scannedAt
                     }
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
-                    Write-HostLog ("[TRACE] roadmap.scan correlationId={0} done count={1} durationMs={2}" -f $correlationId, @($entries).Count, [int]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Write-HostLog ("[TRACE] roadmap.scan correlationId={0} done count={1} scopedRepo={2} durationMs={3}" -f $correlationId, @($entries).Count, $(if ($isScopedRepoScan) { $targetRepoName } else { 'none' }), [int]((Get-Date) - $requestStart).TotalMilliseconds)
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data = @{
                             entries = $entries
                             scannedAt = $scannedAt
                             count = @($entries).Count
+                            scopedRepo = if ($isScopedRepoScan) { $targetRepoName } else { $null }
                             cacheSource = 'fresh-scan'
                             cacheAgeSeconds = 0
                         }

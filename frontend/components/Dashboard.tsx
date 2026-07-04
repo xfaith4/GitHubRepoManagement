@@ -207,6 +207,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   const [isInitModalOpen, setIsInitModalOpen] = useState(false);
   const [isArtifactsModalOpen, setIsArtifactsModalOpen] = useState(false);
   const [isDocReviewModalOpen, setIsDocReviewModalOpen] = useState(false);
+  const [docReviewTargetRepo, setDocReviewTargetRepo] = useState<string | null>(null);
   const [selectedRepoForArtifacts, setSelectedRepoForArtifacts] = useState<string | null>(null);
   const [isRoadmapViewerOpen, setIsRoadmapViewerOpen] = useState(false);
   const [isApiDocsOpen, setIsApiDocsOpen] = useState(false);
@@ -217,8 +218,8 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   const [copilotTaskPreviewRoadmapPath, setCopilotTaskPreviewRoadmapPath] = useState<string | undefined>(undefined);
   const [roadmapEntries, setRoadmapEntries] = useState<RoadmapEntry[]>([]);
   const [selectedRepoIds, setSelectedRepoIds] = useState<Set<string>>(new Set());
-  const [groupBy, setGroupBy] = useState<keyof RepoStatus | 'none'>('none');
-  const [activeView, setActiveView] = useState<'repos' | 'operations' | 'work-queue' | 'execution-queue' | 'dependencies'>('repos');
+  const [groupBy, setGroupBy] = useState<'none' | 'status' | 'needsAttention' | 'isStale' | 'lastBuildStatus' | 'roadmapStatus'>('needsAttention');
+  const [activeView, setActiveView] = useState<'repos' | 'insights' | 'operations' | 'work-queue' | 'execution-queue' | 'dependencies'>('repos');
   const [docsAuditIndex, setDocsAuditIndex] = useState<DocAuditIndex | null>(null);
   const [docsAuditLoading, setDocsAuditLoading] = useState(false);
   const [docsAuditError, setDocsAuditError] = useState<string | null>(null);
@@ -252,6 +253,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   const [hasAttemptedDepsLoad, setHasAttemptedDepsLoad] = useState(false);
   const [portfolioAssessment, setPortfolioAssessment] = useState<PortfolioAssessmentResult | null>(null);
   const [portfolioAssessmentLoading, setPortfolioAssessmentLoading] = useState(false);
+  const [portfolioAssessmentError, setPortfolioAssessmentError] = useState<string | null>(null);
   const [portfolioTrend, setPortfolioTrend] = useState<PortfolioTrendResult | null>(null);
   const [portfolioTrendLoading, setPortfolioTrendLoading] = useState(false);
   const [portfolioTrendError, setPortfolioTrendError] = useState<string | null>(null);
@@ -272,7 +274,12 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     return getPortfolioAssessment(refresh ? { refresh: true } : {})
       .then(result => {
         setPortfolioAssessment(result);
+        setPortfolioAssessmentError(null);
         return result;
+      })
+      .catch(err => {
+        setPortfolioAssessmentError(err instanceof Error ? err.message : 'Portfolio assessment is unavailable.');
+        throw err;
       })
       .finally(() => setPortfolioAssessmentLoading(false));
   };
@@ -949,27 +956,39 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   }, [repos, roadmapEntries, docsAuditIndex]);
 
   const summary = useMemo(() => {
-    const total = repos.length;
-    const dirty = repos.filter(r => r.status === 'dirty' || r.uncommittedChanges > 0).length;
-    const needsSync = repos.filter(r => r.status === 'ahead' || r.status === 'behind' || r.status === 'diverged').length;
-    const stale = repos.filter(r => r.isStale).length;
-    const commitsThisWeek = repos.reduce((sum, r) => sum + (r.commitsLastWeek ?? 0), 0);
-    const commitsThisMonth = repos.reduce((sum, r) => sum + (r.commitsLastMonth ?? 0), 0);
+    const total = reposWithRoadmap.length;
+    const dirty = reposWithRoadmap.filter(r => r.status === 'dirty' || r.uncommittedChanges > 0).length;
+    const stale = reposWithRoadmap.filter(r => r.isStale).length;
+    const commitsThisWeek = reposWithRoadmap.reduce((sum, r) => sum + (r.commitsLastWeek ?? 0), 0);
+    const commitsThisMonth = reposWithRoadmap.reduce((sum, r) => sum + (r.commitsLastMonth ?? 0), 0);
+    const needsAttention = reposWithRoadmap.filter(r =>
+      r.status !== 'clean' ||
+      r.uncommittedChanges > 0 ||
+      r.isStale ||
+      r.lastBuildStatus === 'failure' ||
+      r.lastBuildStatus === 'none' ||
+      r.dispatchReadiness === 'blocked' ||
+      r.dispatchReadiness === 'missing-roadmap' ||
+      r.dispatchReadiness === 'needs-doc-standardization' ||
+      r.dispatchReadiness === 'parse-error' ||
+      r.roadmapState === 'pending' ||
+      r.roadmapState === 'parse-error'
+    ).length;
 
     // Extended metrics
-    const totalIssues = repos.reduce((sum, r) => sum + (r.extended?.openIssuesCount || 0), 0);
-    const totalProjects = repos.reduce((sum, r) => sum + (r.extended?.projectsCount || 0), 0);
-    const totalStaleBranches = repos.reduce((sum, r) => sum + (r.extended?.staleBranches || 0), 0);
-    const reposWithVulnerabilities = repos.filter(r => (r.extended?.vulnerabilitiesCount || 0) > 0).length;
-    const avgHealthScore = repos.length > 0
-      ? Math.round(repos.reduce((sum, r) => sum + (r.extended?.healthScore || 0), 0) / repos.length)
+    const totalIssues = reposWithRoadmap.reduce((sum, r) => sum + (r.extended?.openIssuesCount || 0), 0);
+    const totalProjects = reposWithRoadmap.reduce((sum, r) => sum + (r.extended?.projectsCount || 0), 0);
+    const totalStaleBranches = reposWithRoadmap.reduce((sum, r) => sum + (r.extended?.staleBranches || 0), 0);
+    const reposWithVulnerabilities = reposWithRoadmap.filter(r => (r.extended?.vulnerabilitiesCount || 0) > 0).length;
+    const avgHealthScore = reposWithRoadmap.length > 0
+      ? Math.round(reposWithRoadmap.reduce((sum, r) => sum + (r.extended?.healthScore || 0), 0) / reposWithRoadmap.length)
       : 0;
 
     return {
-      total, dirty, needsSync, stale, commitsThisWeek, commitsThisMonth,
+      total, dirty, stale, commitsThisWeek, commitsThisMonth, needsAttention,
       totalIssues, totalProjects, totalStaleBranches, reposWithVulnerabilities, avgHealthScore
     };
-  }, [repos]);
+  }, [reposWithRoadmap]);
 
   const portfolioMission = useMemo(() => {
     if (!portfolioAssessment) {
@@ -1095,6 +1114,16 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     metrics.stateCounts.ready > 0 ||
     metrics.stateCounts.blocked > 0 ||
     metrics.stateCounts.complete > 0;
+  const sourceLabel = dataSource?.source === 'github'
+    ? `GitHub API: ${dataSource.username}`
+    : dataSource?.source === 'local'
+      ? `Workspace: ${settings?.basePath ?? dataSource.workspacePath ?? 'Unknown'}`
+      : 'Sample data source';
+  const scanMetaLabel = dataSource?.source === 'local' && typeof dataSource.repoCount === 'number'
+    ? `${dataSource.repoCount} repos${typeof dataSource.scanDurationMs === 'number' ? ` · ${(dataSource.scanDurationMs / 1000).toFixed(1)}s scan` : ''}`
+    : dataSource?.source === 'github' && insightsMeta
+      ? `Showing ${insightsMeta.fetchedRepos} of ${insightsMeta.totalRepos} GitHub repositories`
+      : null;
 
   return (
     <div>
@@ -1147,59 +1176,50 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
           <div className="bg-red-900/20 border border-red-700/50 rounded-lg px-4 py-2 text-sm text-red-300">{error}</div>
         </div>
       )}
-      {dataSource?.source === 'local' && (
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-          <div className="bg-gray-800/60 border border-gray-700 rounded-lg px-4 py-3 text-sm text-gray-200">
-            Showing repositories discovered under <strong>{settings?.basePath}</strong> (scan depth {settings?.scanDepth}).
-            {typeof dataSource.repoCount === 'number' && (
-              <span className="text-gray-300"> Last scan found <strong>{dataSource.repoCount}</strong> repos{typeof dataSource.scanDurationMs === 'number' ? ` in ${(dataSource.scanDurationMs / 1000).toFixed(1)}s` : ''}.</span>
-            )}
-            {dataLastUpdated && (
-              <span className="text-gray-400"> Data last updated: <strong>{dataLastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong>.</span>
-            )}
-            <span className="text-gray-400"> Use Settings to change workspace path. Connect GitHub API to view repositories that exist on GitHub but are not cloned locally.</span>
-          </div>
-        </div>
-      )}
-      {dataSource?.source === 'github' && (
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-          <div className="bg-gray-800/60 border border-gray-700 rounded-lg px-4 py-3 text-sm text-gray-200">
-            Showing repositories returned by the GitHub API for <strong>{dataSource.username}</strong>.
-            {dataLastUpdated && (
-              <span className="text-gray-400"> Data fetched at <strong>{dataLastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong>.</span>
-            )}
-            <span className="text-gray-400"> Local-only repositories will not appear in this view. Use the Local tab to view your workspace scan.</span>
-          </div>
-        </div>
-      )}
-      {dataSource?.source === 'github' && insightsMeta && (
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-          <div className="bg-blue-900/20 border border-blue-700/60 rounded-lg px-4 py-3 text-sm text-blue-100">
-            <div className="flex flex-wrap items-center gap-3">
-              <span>
-                Showing <strong>{insightsMeta.fetchedRepos}</strong> of <strong>{insightsMeta.totalRepos}</strong> repositories from GitHub.
-              </span>
-              {insightsMeta.rateLimit && (
-                <span className="text-blue-200/80">
-                  Rate limit: {insightsMeta.rateLimit.remaining}/{insightsMeta.rateLimit.limit} · resets at{' '}
-                  {new Date(insightsMeta.rateLimit.reset * 1000).toLocaleTimeString()}
-                </span>
-              )}
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+        <section className="rounded-lg border border-gray-700 bg-gray-800/60 px-4 py-4">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <h1 className="text-xl font-semibold text-white">Repository Management</h1>
+              <p className="text-sm text-gray-300 mt-1">{sourceLabel}</p>
+              <div className="text-xs text-gray-400 mt-2 flex flex-wrap items-center gap-3">
+                {scanMetaLabel && <span>{scanMetaLabel}</span>}
+                {dataLastUpdated && (
+                  <span>
+                    Last scan: <strong>{dataLastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong>
+                  </span>
+                )}
+                {insightsMeta?.rateLimit && dataSource?.source === 'github' && (
+                  <span>
+                    Rate limit {insightsMeta.rateLimit.remaining}/{insightsMeta.rateLimit.limit}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="text-xs text-gray-500">
+              Use the view tabs below for Repository Grid and Insights.
             </div>
           </div>
-        </div>
-      )}
+
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
+            <SummaryCard title="Total Repositories" value={summary.total} color="blue" />
+            <SummaryCard title="Needs Attention" value={summary.needsAttention} color="yellow" />
+            <SummaryCard title="Dirty Repositories" value={summary.dirty} color="red" />
+            <SummaryCard title="Stale Repositories" value={summary.stale} color="red" />
+            <SummaryCard title="Commits This Week" value={summary.commitsThisWeek} color="green" />
+          </div>
+        </section>
+      </div>
 
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
-          <SummaryCard title="Total Repositories" value={summary.total} color="blue" />
-          <SummaryCard title="Needs Attention" value={summary.dirty} color="yellow" />
-          <SummaryCard title="Ahead/Behind" value={summary.needsSync} color="red" />
-          <SummaryCard title="Stale Repositories" value={summary.stale} color="red" />
-          <SummaryCard title="Commits This Week" value={summary.commitsThisWeek} color="green" />
-          <SummaryCard title="Commits This Month" value={summary.commitsThisMonth} color="blue" />
-        </div>
+        {activeView === 'insights' && (
+          <div className="rounded-lg border border-gray-700 bg-gray-900/40 px-4 py-3 text-sm text-gray-300">
+            Insights surfaces secondary analytics widgets (throughput, mission, docs health, trends, and activity) so the repository grid stays the primary operational workflow.
+          </div>
+        )}
 
+        {activeView === 'insights' && (
+        <>
         <section className="mt-4 rounded-lg border border-gray-700 bg-gray-800/60 px-4 py-4">
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
@@ -1305,7 +1325,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
           )}
         </section>
 
-        {(portfolioMission || portfolioAssessmentLoading) && (
+        {(portfolioMission || portfolioAssessmentLoading || portfolioAssessmentError) && (
           <div className="mt-4 space-y-4">
             <div className="grid grid-cols-1 xl:grid-cols-[1.5fr,1fr] gap-4">
               <section className="bg-gray-800/60 border border-gray-700 rounded-lg px-4 py-4">
@@ -1320,6 +1340,12 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                       <div>{portfolioMission.cacheSource === 'memory' ? 'Memory cache' : 'Fresh scan'}{portfolioMission.cacheAgeSeconds > 0 ? ` · ${Math.round(portfolioMission.cacheAgeSeconds)}s old` : ''}</div>
                     </div>
                   )}
+                  <button
+                    onClick={() => { refreshPortfolioAssessment(true).catch(() => {/* surfaced in-panel */}); }}
+                    className="px-2.5 py-1 rounded border border-gray-600 bg-gray-700/60 text-xs text-gray-200 hover:bg-gray-600/70"
+                  >
+                    Retry
+                  </button>
                 </div>
 
                 {portfolioMission ? (
@@ -1365,10 +1391,14 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                       ))}
                     </div>
                   </>
-                ) : (
+                ) : portfolioAssessmentLoading ? (
                   <div className="flex items-center gap-3 py-8 text-gray-400 justify-center">
                     <SpinnerIcon className="w-5 h-5 animate-spin" />
                     <span>Loading portfolio assessment…</span>
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-lg border border-amber-700/40 bg-amber-900/20 px-4 py-3 text-sm text-amber-100">
+                    Portfolio Mission is unavailable. {portfolioAssessmentError ?? 'Assessment data was not returned.'}
                   </div>
                 )}
               </section>
@@ -1412,10 +1442,14 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                       </div>
                     </div>
                   </div>
-                ) : (
+                ) : portfolioAssessmentLoading ? (
                   <div className="flex items-center gap-3 py-8 text-gray-400 justify-center">
                     <SpinnerIcon className="w-5 h-5 animate-spin" />
                     <span>Computing documentation health…</span>
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-lg border border-amber-700/40 bg-amber-900/20 px-4 py-3 text-sm text-amber-100">
+                    Documentation Health is unavailable until a portfolio assessment succeeds.
                   </div>
                 )}
               </section>
@@ -1668,6 +1702,22 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
               ) : (
                 <div className="mt-4 rounded-lg border border-amber-700/40 bg-amber-900/20 px-4 py-3 text-sm text-amber-100">
                   Portfolio analytics are unavailable. {portfolioTrendError ?? 'Refresh the portfolio assessment to seed the Release 2.3 trend view.'}
+                  <div className="mt-2">
+                    <button
+                      onClick={() => {
+                        refreshPortfolioAssessment(true)
+                          .then(() => getPortfolioTrend({ days: 90 }))
+                          .then(result => {
+                            setPortfolioTrend(result);
+                            setPortfolioTrendError(null);
+                          })
+                          .catch(err => setPortfolioTrendError(err instanceof Error ? err.message : 'Portfolio analytics are unavailable.'));
+                      }}
+                      className="px-2.5 py-1 rounded border border-amber-600/60 bg-amber-900/30 text-xs text-amber-100 hover:bg-amber-900/50"
+                    >
+                      Retry
+                    </button>
+                  </div>
                 </div>
               )}
             </section>
@@ -1740,7 +1790,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
           </div>
         )}
 
-        {repos.some(r => r.extended) && (
+        {activeView === 'insights' && repos.some(r => r.extended) && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
             <SummaryCard
               title="Open Issues"
@@ -1768,10 +1818,12 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
             />
           </div>
         )}
+        </>
+        )}
       </div>
 
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-        <ChangeHistoryPanel repos={repos} />
+        {activeView === 'insights' && <ChangeHistoryPanel repos={repos} />}
 
         <div className="bg-gray-800/50 border border-gray-700 rounded-lg mt-4">
             {/* View tabs */}
@@ -1785,6 +1837,16 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                 }`}
               >
                 Repository Grid
+              </button>
+              <button
+                onClick={() => setActiveView('insights')}
+                className={`px-4 py-2 text-sm font-medium rounded-t border-b-2 transition-colors ${
+                  activeView === 'insights'
+                    ? 'border-sky-500 text-sky-300 bg-gray-700/40'
+                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-700/20'
+                }`}
+              >
+                Insights
               </button>
               <button
                 onClick={() => setActiveView('operations')}
@@ -1851,7 +1913,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                     onRefresh={fetchRepoStatus}
                     onSettingsClick={() => setIsSettingsModalOpen(true)}
                     onInitClick={() => setIsInitModalOpen(true)}
-                    onDocReviewClick={() => setIsDocReviewModalOpen(true)}
+                  onDocReviewClick={() => { setDocReviewTargetRepo(null); setIsDocReviewModalOpen(true); }}
                     onApiDocsClick={() => setIsApiDocsOpen(true)}
                     onHelpClick={() => setIsHelpOpen(true)}
                     isActionRunning={!!currentOperation}
@@ -1864,6 +1926,28 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                   onViewArtifacts={handleViewArtifacts}
                   onViewRoadmap={handleViewRoadmap}
                   onViewGitStatus={handleViewGitStatus}
+                  onRunRepoAction={(operation, repoId) => { handleAction(operation, [repoId]); }}
+                  onOpenDocReview={(repoName) => { setDocReviewTargetRepo(repoName); setIsDocReviewModalOpen(true); }}
+                  onRunRoadmapScan={(repoName) => {
+                    setCurrentOperation('roadmap-scan');
+                    setIsLogPanelOpen(true);
+                    setLogStatus('running');
+                    setLogMessages([`Starting: roadmap-scan for ${repoName}...`]);
+                    triggerRoadmapScan(repoName)
+                      .then(result => {
+                        setRoadmapEntries(result.entries);
+                        setLogMessages(prev => [...prev, `Scan complete for ${repoName}. Found ${result.count} ROADMAP ${result.count === 1 ? 'file' : 'files'}.`]);
+                        setLogStatus('success');
+                      })
+                      .catch(err => {
+                        const message = err instanceof Error ? err.message : 'Scoped roadmap scan failed.';
+                        setLogMessages(prev => [...prev, `ERROR: ${message}`]);
+                        setLogStatus('error');
+                      })
+                      .finally(() => {
+                        setCurrentOperation(null);
+                      });
+                  }}
                   dataSource={dataSource}
                   selectedRepos={selectedRepoIds}
                   setSelectedRepos={setSelectedRepoIds}
@@ -1871,6 +1955,12 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                   setGroupBy={setGroupBy}
                 />
               </>
+            ) : activeView === 'insights' ? (
+              <div className="px-4 sm:px-6 lg:px-8 py-6">
+                <div className="rounded-lg border border-gray-700 bg-gray-900/50 px-4 py-4 text-sm text-gray-300">
+                  Insights widgets are shown above this section. Use the Repository Grid tab for operational triage and direct repository actions.
+                </div>
+              </div>
             ) : activeView === 'operations' ? (
               <OperationsWorkspaceView
                 operationsRepos={operationsRepos}
@@ -2010,10 +2100,12 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
 
       <DocReviewModal
         isOpen={isDocReviewModalOpen}
-        onClose={() => setIsDocReviewModalOpen(false)}
+        onClose={() => { setIsDocReviewModalOpen(false); setDocReviewTargetRepo(null); }}
         onRun={handleDocReviewRun}
         defaultRootPath={settings?.basePath}
         defaultDepth={settings?.scanDepth}
+        defaultTargetRepo={docReviewTargetRepo ?? undefined}
+        lockTargetRepo={Boolean(docReviewTargetRepo)}
       />
 
       <RoadmapViewerModal

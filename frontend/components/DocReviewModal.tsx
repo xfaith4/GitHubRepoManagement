@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { type DocReviewRunRequest } from '../types';
 
 interface DocReviewModalProps {
@@ -7,9 +7,11 @@ interface DocReviewModalProps {
   onRun: (request: DocReviewRunRequest) => Promise<void>;
   defaultRootPath?: string;
   defaultDepth?: number;
+  defaultTargetRepo?: string;
+  lockTargetRepo?: boolean;
 }
 
-const DocReviewModal: React.FC<DocReviewModalProps> = ({ isOpen, onClose, onRun, defaultRootPath, defaultDepth }) => {
+const DocReviewModal: React.FC<DocReviewModalProps> = ({ isOpen, onClose, onRun, defaultRootPath, defaultDepth, defaultTargetRepo, lockTargetRepo }) => {
   const [rootPath, setRootPath] = useState(defaultRootPath ?? 'G:\\Development');
   const [maxDepth, setMaxDepth] = useState(defaultDepth ?? 2);
   const [outDir, setOutDir] = useState('');
@@ -18,6 +20,22 @@ const DocReviewModal: React.FC<DocReviewModalProps> = ({ isOpen, onClose, onRun,
   const [generateBatchPlan, setGenerateBatchPlan] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    if (defaultRootPath) {
+      setRootPath(defaultRootPath);
+    }
+    if (typeof defaultDepth === 'number') {
+      setMaxDepth(defaultDepth);
+    }
+    if (defaultTargetRepo) {
+      setTargetRepo(defaultTargetRepo);
+    }
+  }, [isOpen, defaultRootPath, defaultDepth, defaultTargetRepo]);
 
   if (!isOpen) {
     return null;
@@ -124,8 +142,9 @@ const DocReviewModal: React.FC<DocReviewModalProps> = ({ isOpen, onClose, onRun,
                   onChange={(e) => setTargetRepo(e.target.value)}
                   placeholder="e.g. UnifiedAIToolbox (path also accepted)"
                   className="w-full rounded border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-white"
-                  disabled={!generateBatchPlan}
+                  disabled={Boolean(lockTargetRepo) || !generateBatchPlan}
                 />
+                {lockTargetRepo && <p className="mt-1 text-xs text-gray-400">Target repository is locked when launched from a repository row action.</p>}
               </div>
             </div>
 

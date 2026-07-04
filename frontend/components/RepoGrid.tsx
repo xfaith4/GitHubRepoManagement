@@ -15,6 +15,9 @@ interface RepoGridProps {
   onViewArtifacts: (repoName: string) => void;
   onViewRoadmap?: (repoName: string) => void;
   onViewGitStatus?: (repoName: string, localPath?: string) => void;
+  onRunRepoAction?: (operation: 'update' | 'sync', repoId: string) => void;
+  onOpenDocReview?: (repoName: string) => void;
+  onRunRoadmapScan?: (repoName: string) => void;
   dataSource:
     | { source: 'sample' }
     | { source: 'local'; workspacePath?: string; configuredGithubUser?: string | null }
@@ -22,14 +25,16 @@ interface RepoGridProps {
     | null;
   selectedRepos: Set<string>;
   setSelectedRepos: React.Dispatch<React.SetStateAction<Set<string>>>;
-  groupBy: keyof RepoStatus | 'none';
-  setGroupBy: React.Dispatch<React.SetStateAction<keyof RepoStatus | 'none'>>;
+  groupBy: 'none' | 'status' | 'needsAttention' | 'isStale' | 'lastBuildStatus' | 'roadmapStatus';
+  setGroupBy: React.Dispatch<React.SetStateAction<'none' | 'status' | 'needsAttention' | 'isStale' | 'lastBuildStatus' | 'roadmapStatus'>>;
 }
 
-type SortKey = keyof RepoStatus;
+type SortKey = 'name' | 'status' | 'branch' | 'lastCommitDate' | 'uncommittedChanges' | 'lastBuildStatus' | 'isStale' | 'openPrCount' | 'needsAttention';
 type SortOrder = 'asc' | 'desc';
 
 type DuplicateGroup = { groupKey: string; items: RepoStatus[] };
+type QuickFilter = 'dirtyOnly' | 'hasUncommitted' | 'staleOnly' | 'needsAttention' | 'hasOpenPrs' | 'buildProblem' | 'roadmapFlagged' | 'duplicates';
+type GroupByOption = RepoGridProps['groupBy'];
 
 type RoadmapBadgeState = 'pending' | 'complete' | 'parse-error' | undefined;
 
@@ -56,19 +61,33 @@ function getRoadmapBadgeConfig(state: RoadmapBadgeState): { className: string; l
   }
 }
 
-const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, dataSource, selectedRepos, setSelectedRepos, groupBy, setGroupBy }: RepoGridProps) => {
+const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRunRepoAction, onOpenDocReview, onRunRoadmapScan, dataSource, selectedRepos, setSelectedRepos, groupBy, setGroupBy }: RepoGridProps) => {
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
-  const [filter, setFilter] = useState('');
+  const [search, setSearch] = useState('');
   const [readinessFilter, setReadinessFilter] = useState<DispatchReadiness | 'all'>('all');
+  const [quickFilters, setQuickFilters] = useState<Record<QuickFilter, boolean>>({
+    dirtyOnly: false,
+    hasUncommitted: false,
+    staleOnly: false,
+    needsAttention: false,
+    hasOpenPrs: false,
+    buildProblem: false,
+    roadmapFlagged: false,
+    duplicates: false,
+  });
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [duplicateWarningExpanded, setDuplicateWarningExpanded] = useState(false);
+  const [pageSize, setPageSize] = useState<25 | 50 | 100>(50);
+  const [pageIndex, setPageIndex] = useState(1);
   const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
   const getRepoSelectionId = useCallback(
     (repo: RepoStatus) => repo.localPath ?? `${repo.name}::${repo.branch}`,
     []
   );
 
-  const sortedAndFilteredRepos = useMemo(() => {
+  const uniqueRepos = useMemo(() => {
     const byPath = new Map<string, RepoStatus>();
     for (const repo of repos) {
       const key = repo.localPath ? repo.localPath.toLowerCase() : `${repo.name.toLowerCase()}::${repo.branch.toLowerCase()}`;
@@ -76,47 +95,15 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
         byPath.set(key, repo);
       }
     }
-
-    const uniqueRepos = Array.from(byPath.values());
-    const filterLower = filter.toLowerCase();
-    const filtered = uniqueRepos.filter(repo => {
-      const matchesText =
-        repo.name.toLowerCase().includes(filterLower) ||
-        (repo.localPath?.toLowerCase().includes(filterLower) ?? false);
-      const matchesReadiness =
-        readinessFilter === 'all' || repo.dispatchReadiness === readinessFilter;
-      return matchesText && matchesReadiness;
-    });
-
-    return filtered.sort((a, b) => {
-      const aValue = a[sortKey];
-      const bValue = b[sortKey];
-
-      if (aValue === undefined || bValue === undefined) return 0;
-
-      if (sortKey === 'lastCommitDate') {
-          const aDate = new Date(aValue as string).getTime();
-          const bDate = new Date(bValue as string).getTime();
-          return sortOrder === 'asc' ? aDate - bDate : bDate - aDate;
-      }
-      if (typeof aValue === 'string' && typeof bValue === 'string') {
-        return sortOrder === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue);
-      }
-      if (typeof aValue === 'number' && typeof bValue === 'number') {
-        return sortOrder === 'asc' ? aValue - bValue : bValue - aValue;
-      }
-      if (typeof aValue === 'boolean' && typeof bValue === 'boolean') {
-        return sortOrder === 'asc' ? (aValue === bValue ? 0 : aValue ? -1 : 1) : (aValue === bValue ? 0 : aValue ? 1 : -1);
-      }
-
-      return 0;
-    });
-  }, [repos, sortKey, sortOrder, filter, readinessFilter]);
+    return Array.from(byPath.values());
+  }, [repos]);
 
   const duplicateLocalRepoGroups = useMemo<DuplicateGroup[]>(() => {
     const groups = new Map<string, RepoStatus[]>();
-    for (const repo of repos) {
-      if (!repo.localPath) { continue; }
+    for (const repo of uniqueRepos) {
+      if (!repo.localPath) {
+        continue;
+      }
       const groupKey = repo.originUrl?.trim().toLowerCase() || repo.name.trim().toLowerCase();
       if (!groups.has(groupKey)) {
         groups.set(groupKey, []);
@@ -126,27 +113,161 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
 
     return Array.from(groups.entries())
       .map(([groupKey, items]) => ({ groupKey, items }))
-      .filter(g => g.items.length > 1)
-      .sort((a, b) => b.items.length - a.items.length);
-  }, [repos]);
+      .filter(group => group.items.length > 1)
+      .sort((left, right) => right.items.length - left.items.length);
+  }, [uniqueRepos]);
+
+  const duplicateRepoIds = useMemo(() => {
+    const ids = new Set<string>();
+    duplicateLocalRepoGroups.forEach(group => {
+      group.items.forEach(item => ids.add(getRepoSelectionId(item)));
+    });
+    return ids;
+  }, [duplicateLocalRepoGroups, getRepoSelectionId]);
+
+  const isRoadmapFlagged = (repo: RepoStatus) => {
+    const roadmapState = repo.roadmapState ?? 'missing';
+    return roadmapState === 'missing' || roadmapState === 'pending' || roadmapState === 'parse-error' ||
+      repo.dispatchReadiness === 'missing-roadmap' ||
+      repo.dispatchReadiness === 'needs-doc-standardization' ||
+      repo.dispatchReadiness === 'parse-error' ||
+      repo.dispatchReadiness === 'blocked';
+  };
+
+  const isNeedsAttention = (repo: RepoStatus) => {
+    return repo.status !== 'clean' ||
+      repo.uncommittedChanges > 0 ||
+      repo.isStale ||
+      (repo.lastBuildStatus === 'failure') ||
+      (repo.lastBuildStatus === 'none') ||
+      Boolean((repo.openPrCount ?? 0) > 0 && (repo.pendingReviewPrCount ?? 0) > 0) ||
+      isRoadmapFlagged(repo) ||
+      duplicateRepoIds.has(getRepoSelectionId(repo));
+  };
+
+  const filteredAndSortedRepos = useMemo(() => {
+    const searchLower = search.trim().toLowerCase();
+
+    const filtered = uniqueRepos.filter(repo => {
+      const repoId = getRepoSelectionId(repo);
+      const matchesSearch =
+        searchLower.length === 0 ||
+        repo.name.toLowerCase().includes(searchLower) ||
+        (repo.localPath?.toLowerCase().includes(searchLower) ?? false) ||
+        (repo.owner?.toLowerCase().includes(searchLower) ?? false) ||
+        (repo.originUrl?.toLowerCase().includes(searchLower) ?? false);
+
+      const matchesReadiness = readinessFilter === 'all' || repo.dispatchReadiness === readinessFilter;
+      const matchesDirtyOnly = !quickFilters.dirtyOnly || repo.status === 'dirty';
+      const matchesUncommitted = !quickFilters.hasUncommitted || repo.uncommittedChanges > 0;
+      const matchesStale = !quickFilters.staleOnly || repo.isStale;
+      const matchesAttention = !quickFilters.needsAttention || isNeedsAttention(repo);
+      const matchesOpenPrs = !quickFilters.hasOpenPrs || (repo.openPrCount ?? 0) > 0;
+      const matchesBuildProblem = !quickFilters.buildProblem || !repo.lastBuildStatus || repo.lastBuildStatus === 'none' || repo.lastBuildStatus === 'failure';
+      const matchesRoadmapFlag = !quickFilters.roadmapFlagged || isRoadmapFlagged(repo);
+      const matchesDuplicates = !quickFilters.duplicates || duplicateRepoIds.has(repoId);
+
+      return matchesSearch && matchesReadiness && matchesDirtyOnly && matchesUncommitted && matchesStale && matchesAttention && matchesOpenPrs && matchesBuildProblem && matchesRoadmapFlag && matchesDuplicates;
+    });
+
+    const valueForSort = (repo: RepoStatus): string | number => {
+      switch (sortKey) {
+        case 'name':
+          return repo.name;
+        case 'status':
+          return repo.status;
+        case 'branch':
+          return repo.branch;
+        case 'lastCommitDate':
+          return new Date(repo.lastCommitDate).getTime() || 0;
+        case 'uncommittedChanges':
+          return Number(repo.uncommittedChanges ?? 0);
+        case 'lastBuildStatus':
+          return repo.lastBuildStatus ?? 'none';
+        case 'isStale':
+          return repo.isStale ? 1 : 0;
+        case 'openPrCount':
+          return Number(repo.openPrCount ?? 0);
+        case 'needsAttention':
+          return isNeedsAttention(repo) ? 1 : 0;
+        default:
+          return repo.name;
+      }
+    };
+
+    return filtered.sort((left, right) => {
+      const leftValue = valueForSort(left);
+      const rightValue = valueForSort(right);
+
+      if (typeof leftValue === 'number' && typeof rightValue === 'number') {
+        return sortOrder === 'asc' ? leftValue - rightValue : rightValue - leftValue;
+      }
+
+      const leftString = String(leftValue);
+      const rightString = String(rightValue);
+      return sortOrder === 'asc' ? leftString.localeCompare(rightString) : rightString.localeCompare(leftString);
+    });
+  }, [duplicateRepoIds, getRepoSelectionId, isNeedsAttention, isRoadmapFlagged, quickFilters, readinessFilter, search, sortKey, sortOrder, uniqueRepos]);
+
+  useEffect(() => {
+    setPageIndex(1);
+  }, [search, readinessFilter, quickFilters, sortKey, sortOrder, groupBy, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredAndSortedRepos.length / pageSize));
+  const clampedPage = Math.min(pageIndex, totalPages);
+
+  const pagedRepos = useMemo(() => {
+    const start = (clampedPage - 1) * pageSize;
+    return filteredAndSortedRepos.slice(start, start + pageSize);
+  }, [clampedPage, filteredAndSortedRepos, pageSize]);
 
   const groupedRepos = useMemo((): Record<string, RepoStatus[]> => {
+    const resolveGroup = (repo: RepoStatus): string => {
+      switch (groupBy) {
+        case 'status':
+          return repo.status;
+        case 'needsAttention':
+          return isNeedsAttention(repo) ? 'Needs attention' : 'No attention needed';
+        case 'isStale':
+          return repo.isStale ? 'Stale repositories' : 'Current repositories';
+        case 'lastBuildStatus':
+          return repo.lastBuildStatus === 'failure' ? 'Failed builds' :
+            repo.lastBuildStatus === 'success' ? 'Successful builds' :
+            repo.lastBuildStatus === 'in_progress' ? 'Builds in progress' : 'No builds';
+        case 'roadmapStatus':
+          return repo.roadmapState === 'pending' ? 'ROADMAP pending' :
+            repo.roadmapState === 'parse-error' ? 'ROADMAP parse errors' :
+            repo.roadmapState === 'complete' ? 'ROADMAP complete' : 'No ROADMAP';
+        default:
+          return 'All repositories';
+      }
+    };
+
     if (groupBy === 'none') {
-        return { 'All Repositories': sortedAndFilteredRepos };
+      return { 'All repositories': pagedRepos };
     }
-    return sortedAndFilteredRepos.reduce((acc, repo) => {
-        const key = String(repo[groupBy] ?? 'N/A');
-        if (!acc[key]) {
-            acc[key] = [];
-        }
-        acc[key].push(repo);
-        return acc;
+
+    return pagedRepos.reduce((acc, repo) => {
+      const key = resolveGroup(repo);
+      if (!acc[key]) {
+        acc[key] = [];
+      }
+      acc[key].push(repo);
+      return acc;
     }, {} as Record<string, RepoStatus[]>);
-  }, [sortedAndFilteredRepos, groupBy]);
+  }, [groupBy, isNeedsAttention, pagedRepos]);
+
+  useEffect(() => {
+    if (groupBy === 'needsAttention') {
+      setCollapsedGroups(new Set(['No attention needed']));
+      return;
+    }
+    setCollapsedGroups(new Set());
+  }, [groupBy]);
 
   useEffect(() => {
     if (selectAllCheckboxRef.current) {
-        const visibleRepoIds = new Set(sortedAndFilteredRepos.map((r: RepoStatus) => getRepoSelectionId(r)));
+        const visibleRepoIds = new Set(pagedRepos.map((r: RepoStatus) => getRepoSelectionId(r)));
         const selectedVisible = Array.from(selectedRepos).filter(id => visibleRepoIds.has(id));
 
         if (selectedVisible.length === 0) {
@@ -160,7 +281,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
             selectAllCheckboxRef.current.indeterminate = true;
         }
     }
-  }, [selectedRepos, sortedAndFilteredRepos, getRepoSelectionId]);
+  }, [selectedRepos, pagedRepos, getRepoSelectionId]);
 
 
   const handleSort = (key: SortKey) => {
@@ -176,7 +297,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
     const isChecked = e.target.checked;
     setSelectedRepos(prevSelected => {
         const newSelected = new Set(prevSelected);
-        sortedAndFilteredRepos.forEach(repo => {
+        pagedRepos.forEach(repo => {
             const repoId = getRepoSelectionId(repo);
             if (isChecked) {
                 newSelected.add(repoId);
@@ -210,6 +331,42 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
         }
         return newSet;
     });
+  };
+
+  const toggleExpandedRow = (repoId: string) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(repoId)) {
+        next.delete(repoId);
+      } else {
+        next.add(repoId);
+      }
+      return next;
+    });
+  };
+
+  const toggleQuickFilter = (filterName: QuickFilter) => {
+    setQuickFilters(prev => ({ ...prev, [filterName]: !prev[filterName] }));
+  };
+
+  const sortIndicator = (key: SortKey) => {
+    if (sortKey !== key) {
+      return <span className="text-gray-500">⇅</span>;
+    }
+    return <span className="text-blue-300">{sortOrder === 'asc' ? '↑' : '↓'}</span>;
+  };
+
+  const getChangeSeverity = (uncommittedChanges: number) => {
+    if (uncommittedChanges >= 1000) {
+      return { label: 'Critical', className: 'border-red-500/70 bg-red-900/40 text-red-100' };
+    }
+    if (uncommittedChanges >= 101) {
+      return { label: 'High', className: 'border-orange-500/70 bg-orange-900/40 text-orange-100' };
+    }
+    if (uncommittedChanges >= 11) {
+      return { label: 'Medium', className: 'border-yellow-500/70 bg-yellow-900/40 text-yellow-100' };
+    }
+    return { label: 'Low', className: 'border-emerald-500/70 bg-emerald-900/40 text-emerald-100' };
   };
 
   const getStatusBadge = (status: RepoStatus['status'], repo: RepoStatus) => {
@@ -262,11 +419,13 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
     return repo.lastBuildUrl ? <a href={repo.lastBuildUrl} target="_blank" rel="noopener noreferrer" title="View last build on GitHub" className="hover:opacity-80 transition-opacity">{badge}</a> : badge;
   };
 
-  const groupByOptions: { value: keyof RepoStatus | 'none'; label: string }[] = [
+    const groupByOptions: { value: GroupByOption; label: string }[] = [
       { value: 'none', label: 'None' },
       { value: 'status', label: 'Status' },
+      { value: 'needsAttention', label: 'Needs Attention' },
       { value: 'isStale', label: 'Is Stale' },
       { value: 'lastBuildStatus', label: 'Build Status' },
+      { value: 'roadmapStatus', label: 'Roadmap Status' },
   ];
 
   const readinessFilterOptions: { value: DispatchReadiness | 'all'; label: string }[] = [
@@ -280,38 +439,55 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
   ];
 
   const hasReadinessData = repos.some(r => r.dispatchReadiness !== undefined);
+  const activeQuickFilterCount = Object.values(quickFilters).filter(Boolean).length;
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-4">
        {duplicateLocalRepoGroups.length > 0 && (
         <div className="mb-4 rounded-lg border border-yellow-700/60 bg-yellow-900/20 px-4 py-3 text-sm text-yellow-100">
-          <div className="font-semibold mb-2">Duplicate local repo copies detected (cleanup candidates)</div>
-          <ul className="space-y-2">
-            {duplicateLocalRepoGroups.slice(0, 10).map((group: DuplicateGroup) => (
-              <li key={group.groupKey}>
-                <div className="font-medium">{group.items[0].name} ({group.items.length} copies)</div>
-                <div className="text-xs text-yellow-200/90">
-                  {group.items.map((item: RepoStatus) => item.localPath).filter(Boolean).join(' | ')}
-                </div>
-              </li>
-            ))}
-          </ul>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="font-semibold">{duplicateLocalRepoGroups.length} duplicate repository set{duplicateLocalRepoGroups.length === 1 ? '' : 's'} found</div>
+            <button
+              className="text-xs underline underline-offset-2 text-yellow-200 hover:text-yellow-100"
+              onClick={() => setDuplicateWarningExpanded(prev => !prev)}
+            >
+              {duplicateWarningExpanded ? 'Hide details' : 'Show details'}
+            </button>
+          </div>
+          {duplicateWarningExpanded && (
+            <ul className="space-y-2 mt-2">
+              {duplicateLocalRepoGroups.slice(0, 10).map((group: DuplicateGroup) => (
+                <li key={group.groupKey}>
+                  <div className="font-medium">{group.items[0].name} ({group.items.length} copies)</div>
+                  <div className="text-xs text-yellow-200/90">
+                    {group.items.map((item: RepoStatus) => item.localPath).filter(Boolean).join(' | ')}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
        )}
        <div className="mb-4 flex flex-wrap gap-4">
-        <input
-            type="text"
-            placeholder="Filter repositories..."
-            value={filter}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFilter(e.target.value)}
-            className="block w-full max-w-xs bg-gray-900 border border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-        />
+        <div className="flex flex-col gap-2 min-w-[260px]">
+          <input
+              type="text"
+              placeholder="Search repositories, paths, owners..."
+              value={search}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
+              className="block w-full bg-gray-900 border border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+          />
+          <div className="text-xs text-gray-400">
+            Showing <strong>{filteredAndSortedRepos.length}</strong> of <strong>{uniqueRepos.length}</strong> repositories
+            {activeQuickFilterCount > 0 ? ` · ${activeQuickFilterCount} quick filter${activeQuickFilterCount === 1 ? '' : 's'} active` : ''}
+          </div>
+        </div>
         <div className="flex items-center gap-2">
             <label htmlFor="group-by" className="text-sm font-medium text-gray-300">Group By:</label>
             <select
                 id="group-by"
                 value={groupBy}
-              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setGroupBy(e.target.value as keyof RepoStatus | 'none')}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setGroupBy(e.target.value as GroupByOption)}
                 className="block w-full max-w-xs bg-gray-900 border border-gray-600 rounded-md shadow-sm py-2 pl-3 pr-8 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
             >
                 {groupByOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
@@ -330,32 +506,117 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
             </select>
           </div>
         )}
+
+        <div className="flex items-center gap-2">
+          <label htmlFor="page-size" className="text-sm font-medium text-gray-300">Rows:</label>
+          <select
+            id="page-size"
+            value={pageSize}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setPageSize(Number(e.target.value) as 25 | 50 | 100)}
+            className="bg-gray-900 border border-gray-600 rounded-md py-2 pl-3 pr-8 text-white text-sm"
+          >
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setPageIndex(prev => Math.max(1, prev - 1))}
+            disabled={clampedPage <= 1}
+            className="px-2.5 py-2 rounded border border-gray-600 bg-gray-900 text-xs text-gray-200 disabled:opacity-50"
+          >
+            Prev
+          </button>
+          <span className="text-xs text-gray-400">Page {clampedPage} / {totalPages}</span>
+          <button
+            onClick={() => setPageIndex(prev => Math.min(totalPages, prev + 1))}
+            disabled={clampedPage >= totalPages}
+            className="px-2.5 py-2 rounded border border-gray-600 bg-gray-900 text-xs text-gray-200 disabled:opacity-50"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        {(
+          [
+            ['dirtyOnly', 'Dirty only'],
+            ['hasUncommitted', 'Has uncommitted changes'],
+            ['staleOnly', 'Stale'],
+            ['needsAttention', 'Needs attention'],
+            ['hasOpenPrs', 'Has open PRs'],
+            ['buildProblem', 'No builds / failed builds'],
+            ['roadmapFlagged', 'ROADMAP flagged'],
+            ['duplicates', 'Duplicates'],
+          ] as Array<[QuickFilter, string]>
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => toggleQuickFilter(key)}
+            className={`px-2.5 py-1.5 text-xs rounded-full border transition-colors ${quickFilters[key]
+              ? 'border-blue-500/60 bg-blue-900/40 text-blue-100'
+              : 'border-gray-600 bg-gray-800/40 text-gray-300 hover:bg-gray-700/50'}`}
+          >
+            {label}
+          </button>
+        ))}
+        <button
+          onClick={() => setQuickFilters({
+            dirtyOnly: false,
+            hasUncommitted: false,
+            staleOnly: false,
+            needsAttention: false,
+            hasOpenPrs: false,
+            buildProblem: false,
+            roadmapFlagged: false,
+            duplicates: false,
+          })}
+          className="px-2.5 py-1.5 text-xs rounded-full border border-gray-600 bg-gray-900 text-gray-300 hover:bg-gray-800"
+        >
+          Clear filters
+        </button>
+      </div>
+
+      <div className="mb-3 text-xs text-gray-500">
+        Additional metadata is available per row via Details to keep key comparison columns visible without horizontal scrolling.
        </div>
       <div className="shadow overflow-hidden border-b border-gray-700 sm:rounded-lg">
-        <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-700">
-            <thead className="bg-gray-800">
+        <div className="max-h-[68vh] overflow-auto">
+            <table className="min-w-full divide-y divide-gray-700 table-fixed">
+            <thead className="bg-gray-800 sticky top-0 z-20">
                 <tr>
                 <th scope="col" className="px-4 py-3">
                   <span className="sr-only">Select all repositories</span>
                   <input type="checkbox" ref={selectAllCheckboxRef} onChange={handleSelectAll} className="h-4 w-4 rounded bg-gray-700 border-gray-500 text-blue-500 focus:ring-blue-500"/>
                 </th>
-                <th scope="col" onClick={() => handleSort('name')} className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">Name</th>
-                <th scope="col" onClick={() => handleSort('status')} className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">Status</th>
-                <th scope="col" onClick={() => handleSort('lastBuildStatus')} className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">Last Build</th>
-                <th scope="col" onClick={() => handleSort('openPrCount')} className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">Open PRs</th>
-                {repos.some((r: RepoStatus) => r.extended) && (
-                  <>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">Issues</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">Projects</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">Branches</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">Health</th>
-                  </>
-                )}
-                <th scope="col" onClick={() => handleSort('branch')} className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">Branch</th>
-                <th scope="col" onClick={() => handleSort('lastCommitDate')} className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">Last Commit</th>
-                <th scope="col" onClick={() => handleSort('uncommittedChanges')} className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">Changes</th>
-                <th scope="col" className="relative px-6 py-3"><span className="sr-only">Actions</span></th>
+                <th scope="col" onClick={() => handleSort('name')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer w-[24%]">
+                  <span className="inline-flex items-center gap-1">Repository {sortIndicator('name')}</span>
+                </th>
+                <th scope="col" onClick={() => handleSort('status')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer w-[11%]">
+                  <span className="inline-flex items-center gap-1">Status {sortIndicator('status')}</span>
+                </th>
+                <th scope="col" onClick={() => handleSort('isStale')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer w-[9%]">
+                  <span className="inline-flex items-center gap-1">Stale {sortIndicator('isStale')}</span>
+                </th>
+                <th scope="col" onClick={() => handleSort('branch')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer w-[12%]">
+                  <span className="inline-flex items-center gap-1">Branch {sortIndicator('branch')}</span>
+                </th>
+                <th scope="col" onClick={() => handleSort('lastCommitDate')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer w-[14%]">
+                  <span className="inline-flex items-center gap-1">Last Commit {sortIndicator('lastCommitDate')}</span>
+                </th>
+                <th scope="col" onClick={() => handleSort('uncommittedChanges')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer w-[13%]">
+                  <span className="inline-flex items-center gap-1">Changes {sortIndicator('uncommittedChanges')}</span>
+                </th>
+                <th scope="col" onClick={() => handleSort('lastBuildStatus')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer w-[9%]">
+                  <span className="inline-flex items-center gap-1">Build {sortIndicator('lastBuildStatus')}</span>
+                </th>
+                <th scope="col" onClick={() => handleSort('openPrCount')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer w-[8%]">
+                  <span className="inline-flex items-center gap-1">PRs {sortIndicator('openPrCount')}</span>
+                </th>
+                <th scope="col" className="relative px-4 py-3 w-[10%]"><span className="sr-only">Actions</span></th>
                 </tr>
             </thead>
             <tbody className="bg-gray-900 divide-y divide-gray-700">
@@ -363,7 +624,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
                     <React.Fragment key={groupKey}>
                         {groupBy !== 'none' && (
                             <tr className="bg-gray-800/70 hover:bg-gray-800/90 cursor-pointer" onClick={() => toggleGroup(groupKey)}>
-                      <td colSpan={repos.some((r: RepoStatus) => r.extended) ? 13 : 9} className="px-4 py-2 text-sm font-bold text-gray-200">
+                      <td colSpan={10} className="px-4 py-2 text-sm font-bold text-gray-200">
                                     <div className="flex items-center gap-2">
                                         {collapsedGroups.has(groupKey) ? <ChevronRightIcon className="w-4 h-4"/> : <ChevronDownIcon className="w-4 h-4"/>}
                                         {groupKey} ({groupRepos.length})
@@ -382,10 +643,13 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
                         const repoSizeMb = typeof repo.repoSizeKb === 'number' ? (repo.repoSizeKb / 1024) : null;
                         const testingWorkflowCount = repo.testingWorkflowCount ?? null;
                         const workflowCount = repo.actionsWorkflowCount ?? null;
+                        const repoId = getRepoSelectionId(repo);
+                        const changesSeverity = getChangeSeverity(repo.uncommittedChanges ?? 0);
                         return (
-                        <tr key={repo.localPath ?? repo.name} className={`hover:bg-gray-800/50 ${selectedRepos.has(getRepoSelectionId(repo)) ? 'bg-blue-900/30' : ''}`}>
-                            <td className="px-4 py-4"><input type="checkbox" checked={selectedRepos.has(getRepoSelectionId(repo))} onChange={() => handleSelectRepo(getRepoSelectionId(repo))} className="h-4 w-4 rounded bg-gray-700 border-gray-500 text-blue-500 focus:ring-blue-500" /></td>
-                            <td className="px-6 py-4 whitespace-nowrap">
+                        <React.Fragment key={repo.localPath ?? repo.name}>
+                          <tr className={`hover:bg-gray-800/50 ${selectedRepos.has(repoId) ? 'bg-blue-900/30' : ''}`}>
+                            <td className="px-4 py-3 align-top"><input type="checkbox" checked={selectedRepos.has(repoId)} onChange={() => handleSelectRepo(repoId)} className="h-4 w-4 rounded bg-gray-700 border-gray-500 text-blue-500 focus:ring-blue-500" /></td>
+                            <td className="px-4 py-3 align-top">
                                 {repoUrl ? (
                                   <a href={repoUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-400 hover:text-blue-300 hover:underline">
                                     {owner ? `${owner}/${repo.name}` : repo.name}
@@ -393,31 +657,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
                                 ) : (
                                   <span className="text-sm font-medium text-gray-200">{repo.name}</span>
                                 )}
-                                {repo.isStale && <div className="text-xs text-yellow-400">Stale</div>}
-                                {repo.isArchived && <div className="text-xs text-gray-500">Archived</div>}
-                                {repoSizeMb !== null && (
-                                  <div className="text-xs text-gray-500">
-                                    {(repoSizeMb).toFixed(1)} MB • {artifactDetails ?? 0} artifacts
-                                  </div>
-                                )}
-                                {repo.localPath && (
-                                  <div className="text-xs text-gray-400 break-all max-w-md" title={repo.localPath}>
-                                    {repo.localPath}
-                                  </div>
-                                )}
-                                {pagesUrl && (
-                                  <div className="text-xs break-all max-w-md">
-                                    <a
-                                      href={pagesUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-emerald-300 hover:text-emerald-200 hover:underline"
-                                      title="Open GitHub Pages site"
-                                    >
-                                      {pagesUrl}
-                                    </a>
-                                  </div>
-                                )}
+                                <div className="text-xs text-gray-400 mt-0.5">{repo.localPath ?? 'No local path'}</div>
                                 {repo.hasRoadmap && onViewRoadmap && (() => {
                                   const { className, label, title: titleText } = getRoadmapBadgeConfig(repo.roadmapState as RoadmapBadgeState);
                                   return (
@@ -459,15 +699,37 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
                                      </div>
                                    );
                                  })()}
-                                {workflowCount !== null && (
-                                  <div className="text-xs text-gray-500">
-                                    {workflowCount} workflows{testingWorkflowCount !== null && ` · ${testingWorkflowCount} testing`}
-                                  </div>
-                                )}
                               </td>
-                            <td className="px-6 py-4 whitespace-nowrap">{getStatusBadge(repo.status, repo)}</td>
-                            <td className="px-6 py-4 whitespace-nowrap">{getBuildStatusBadge(repo)}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
+                            <td className="px-4 py-3 whitespace-nowrap align-top">{getStatusBadge(repo.status, repo)}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-300 align-top">{repo.isStale ? 'Yes' : 'No'}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-300 align-top">{repo.branch}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-400 align-top" title={repo.lastCommitMessage}>
+                              {repo.lastCommitDate ? new Date(repo.lastCommitDate).toLocaleDateString() : 'N/A'}
+                              {repo.lastCommitAuthor && (
+                                <div className="text-xs text-gray-500 truncate max-w-[180px]">{repo.lastCommitAuthor}</div>
+                              )}
+                            </td>
+
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-300 align-top">
+                              {repo.uncommittedChanges > 0 ? (
+                                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${changesSeverity.className}`}>
+                                  {changesSeverity.label}
+                                  <span className="font-semibold">{repo.uncommittedChanges}</span>
+                                </span>
+                              ) : (
+                                <span className="text-xs text-gray-500">0 uncommitted</span>
+                              )}
+                              {(repo.localAhead > 0 || repo.remoteAhead > 0) && (
+                                <div className="text-xs text-gray-500 mt-1">
+                                  {repo.localAhead > 0 ? `${repo.localAhead} ahead` : ''}
+                                  {repo.localAhead > 0 && repo.remoteAhead > 0 ? ' · ' : ''}
+                                  {repo.remoteAhead > 0 ? `${repo.remoteAhead} behind` : ''}
+                                </div>
+                              )}
+                            </td>
+
+                            <td className="px-4 py-3 whitespace-nowrap align-top">{getBuildStatusBadge(repo)}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-400 align-top">
                                 {pullsUrl ? (
                                   <a href={pullsUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-blue-400 transition-colors">
                                     <PullRequestIcon className="w-4 h-4" /> {repo.openPrCount ?? 0}
@@ -484,99 +746,112 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, data
                                 ) : null}
                             </td>
 
-                            {repos.some((r: RepoStatus) => r.extended) && (
-                              <>
-                                {/* Issues */}
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  {repo.extended?.openIssuesCount !== undefined ? (
-                                    <div className="flex items-center gap-2">
-                                      <span className={`text-sm font-medium ${repo.extended.openIssuesCount > 10 ? 'text-yellow-400' : 'text-gray-300'}`}>
-                                        {repo.extended.openIssuesCount}
-                                      </span>
-                                      {repo.extended.oldestOpenIssueDays && repo.extended.oldestOpenIssueDays > 90 && (
-                                        <span className="text-xs text-red-400" title={`Oldest: ${repo.extended.oldestOpenIssueDays}d`}>
-                                          ⚠
-                                        </span>
+                            <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium align-top">
+                              <details className="relative inline-block text-left">
+                                <summary className="list-none cursor-pointer rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-200 hover:bg-gray-700">
+                                  ⋯
+                                </summary>
+                                <div className="absolute right-0 mt-1 w-40 rounded border border-gray-700 bg-gray-900 shadow-lg z-30 p-1">
+                                  <a
+                                    href={repoUrl ?? '#'}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className={`block rounded px-2 py-1.5 text-left text-xs ${repoUrl ? 'text-gray-200 hover:bg-gray-800' : 'text-gray-500 cursor-not-allowed pointer-events-none'}`}
+                                  >
+                                    Open
+                                  </a>
+                                  <button
+                                    onClick={() => onRunRepoAction?.('update', repoId)}
+                                    className="w-full rounded px-2 py-1.5 text-left text-xs text-gray-200 hover:bg-gray-800"
+                                  >
+                                    Pull
+                                  </button>
+                                  <button
+                                    onClick={() => onRunRepoAction?.('sync', repoId)}
+                                    className="w-full rounded px-2 py-1.5 text-left text-xs text-gray-200 hover:bg-gray-800"
+                                  >
+                                    Fetch
+                                  </button>
+                                  <button
+                                    onClick={() => toggleExpandedRow(repoId)}
+                                    className="w-full rounded px-2 py-1.5 text-left text-xs text-gray-200 hover:bg-gray-800"
+                                  >
+                                    View details
+                                  </button>
+                                  <button
+                                    onClick={() => onOpenDocReview?.(repo.name)}
+                                    className="w-full rounded px-2 py-1.5 text-left text-xs text-gray-200 hover:bg-gray-800"
+                                  >
+                                    Doc review
+                                  </button>
+                                  <button
+                                    onClick={() => onViewRoadmap?.(repo.name)}
+                                    className={`w-full rounded px-2 py-1.5 text-left text-xs ${onViewRoadmap ? 'text-gray-200 hover:bg-gray-800' : 'text-gray-500 cursor-not-allowed'}`}
+                                    disabled={!onViewRoadmap}
+                                  >
+                                    Roadmap
+                                  </button>
+                                  <button
+                                    onClick={() => onRunRoadmapScan?.(repo.name)}
+                                    className={`w-full rounded px-2 py-1.5 text-left text-xs ${onRunRoadmapScan ? 'text-gray-200 hover:bg-gray-800' : 'text-gray-500 cursor-not-allowed'}`}
+                                    disabled={!onRunRoadmapScan}
+                                  >
+                                    Roadmap scan
+                                  </button>
+                                  <button
+                                    className="w-full rounded px-2 py-1.5 text-left text-xs text-gray-500 cursor-not-allowed"
+                                    disabled
+                                    title="Archive is currently planned but not implemented in this build."
+                                  >
+                                    Archive (planned)
+                                  </button>
+                                </div>
+                              </details>
+                            </td>
+                          </tr>
+                          {expandedRows.has(repoId) && (
+                            <tr className="bg-gray-950/60">
+                              <td colSpan={10} className="px-4 py-3">
+                                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 text-xs text-gray-300">
+                                  <div className="rounded border border-gray-700 bg-gray-900/70 px-3 py-2">
+                                    <div className="text-gray-500">Local Path</div>
+                                    <div className="mt-1 break-all">{repo.localPath ?? 'N/A'}</div>
+                                  </div>
+                                  <div className="rounded border border-gray-700 bg-gray-900/70 px-3 py-2">
+                                    <div className="text-gray-500">Origin URL</div>
+                                    <div className="mt-1 break-all">{repo.originUrl ?? 'N/A'}</div>
+                                  </div>
+                                  <div className="rounded border border-gray-700 bg-gray-900/70 px-3 py-2">
+                                    <div className="text-gray-500">Artifacts / Size</div>
+                                    <div className="mt-1">{artifactDetails ?? 0} artifacts{repoSizeMb !== null ? ` · ${repoSizeMb.toFixed(1)} MB` : ''}</div>
+                                  </div>
+                                  <div className="rounded border border-gray-700 bg-gray-900/70 px-3 py-2">
+                                    <div className="text-gray-500">Pages</div>
+                                    <div className="mt-1 break-all">
+                                      {pagesUrl ? (
+                                        <a href={pagesUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-300 hover:text-emerald-200 hover:underline">{pagesUrl}</a>
+                                      ) : 'Not configured'}
+                                    </div>
+                                  </div>
+                                  <div className="rounded border border-gray-700 bg-gray-900/70 px-3 py-2">
+                                    <div className="text-gray-500">Workflows</div>
+                                    <div className="mt-1">{workflowCount ?? 0} total{testingWorkflowCount !== null ? ` · ${testingWorkflowCount} testing` : ''}</div>
+                                  </div>
+                                  <div className="rounded border border-gray-700 bg-gray-900/70 px-3 py-2">
+                                    <div className="text-gray-500">Artifacts</div>
+                                    <div className="mt-1 flex items-center gap-2">
+                                      {repo.hasArtifacts ? (
+                                        <button onClick={() => onViewArtifacts(repo.name)} className="text-blue-300 hover:text-blue-200 underline underline-offset-2">View artifacts</button>
+                                      ) : (
+                                        <span className="text-gray-500">No artifacts</span>
                                       )}
                                     </div>
-                                  ) : (
-                                    <span className="text-sm text-gray-500">-</span>
-                                  )}
-                                </td>
-
-                                {/* Projects */}
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  {repo.extended?.projectsCount !== undefined ? (
-                                    <span className="text-sm text-gray-300">
-                                      {repo.extended.activeProjects} / {repo.extended.projectsCount}
-                                    </span>
-                                  ) : (
-                                    <span className="text-sm text-gray-500">-</span>
-                                  )}
-                                </td>
-
-                                {/* Branches */}
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  {repo.extended?.totalBranches !== undefined ? (
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-sm text-gray-300">{repo.extended.totalBranches}</span>
-                                      {repo.extended.staleBranches > 0 && (
-                                        <span className="text-xs px-1.5 py-0.5 bg-orange-900/50 text-orange-300 rounded">
-                                          {repo.extended.staleBranches} stale
-                                        </span>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <span className="text-sm text-gray-500">-</span>
-                                  )}
-                                </td>
-
-                                {/* Health Score */}
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  {repo.extended?.healthScore !== undefined ? (
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-16 h-2 bg-gray-700 rounded-full overflow-hidden">
-                                        <div
-                                          className={`h-full ${
-                                            repo.extended.healthScore >= 80 ? 'bg-green-500' :
-                                            repo.extended.healthScore >= 60 ? 'bg-yellow-500' :
-                                            'bg-red-500'
-                                          }`}
-                                          style={{ width: `${repo.extended.healthScore}%` }}
-                                        />
-                                      </div>
-                                      <span className="text-xs text-gray-400">{repo.extended.healthScore}%</span>
-                                    </div>
-                                  ) : (
-                                    <span className="text-sm text-gray-500">-</span>
-                                  )}
-                                </td>
-                              </>
-                            )}
-
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">{repo.branch}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400" title={repo.lastCommitMessage}>
-                            {repo.lastCommitDate ? new Date(repo.lastCommitDate).toLocaleDateString() : 'N/A'}{repo.lastCommitAuthor && ` by ${repo.lastCommitAuthor}`}
-                            </td>
-
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
-                                {repo.uncommittedChanges > 0 && <span>{repo.uncommittedChanges} uncommitted<br/></span>}
-                                {repo.localAhead > 0 && <span>{repo.localAhead} ahead<br/></span>}
-                                {repo.remoteAhead > 0 && <span>{repo.remoteAhead} behind</span>}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                            {repo.hasArtifacts && (
-                                <button onClick={() => onViewArtifacts(repo.name)} className="text-blue-400 hover:text-blue-300">
-                                Artifacts
-                                </button>
-                            )}
-                            {artifactDetails !== null && (
-                              <div className="text-xs text-gray-400 mt-1">
-                                Total: {artifactDetails}
-                              </div>
-                            )}
-                            </td>
-                        </tr>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                         );})}
                     </React.Fragment>
                 ))}
