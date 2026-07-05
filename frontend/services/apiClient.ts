@@ -8,9 +8,10 @@ const USE_MOCK_API = (() => {
 
 const API_BASE_URL = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
-  const isDev = Boolean(env?.DEV);
   const viteUrl = (env?.VITE_API_URL as string | undefined) ?? (env?.REACT_APP_API_URL as string | undefined);
-  return viteUrl ?? (isDev ? '/api' : 'http://localhost:7071/api');
+  // Default to same-origin so the built frontend works over LAN when the API host
+  // serves the static bundle directly on its own address.
+  return viteUrl ?? '/api';
 })();
 
 type OptionalApiFeature = 'docs-audit' | 'roadmap-audit' | 'execution-queue';

@@ -9,12 +9,11 @@ const USE_MOCK_API = (() => {
 
 const HEALTH_URL = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
-  const isDev = Boolean(env?.DEV);
   const viteUrl = (env?.VITE_API_URL as string | undefined) ?? (env?.REACT_APP_API_URL as string | undefined);
   if (viteUrl) {
     return `${viteUrl.replace(/\/api\/?$/, '')}/health/live`;
   }
-  return isDev ? '/health/live' : 'http://localhost:7071/health/live';
+  return '/health/live';
 })();
 
 /**

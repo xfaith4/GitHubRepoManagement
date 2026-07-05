@@ -33,7 +33,12 @@
     this script.
 
 .PARAMETER ApiHost
-    Bind address for the API host. Default: 127.0.0.1
+    Bind address for the API host. Default: 0.0.0.0
+
+.PARAMETER AppHost
+    Hostname or IP that browsers on the LAN should use to reach the app.
+    Defaults to 192.168.50.200 when ApiHost binds all interfaces; otherwise
+    defaults to ApiHost.
 
 .PARAMETER ApiPort
     Port for the API host. Default: 7071
@@ -74,7 +79,9 @@ param(
 
     [string]$WorkspaceRoot = '',
 
-    [string]$ApiHost = '127.0.0.1',
+    [string]$ApiHost = '0.0.0.0',
+
+    [string]$AppHost = '',
 
     [int]$ApiPort = 7071,
 
@@ -104,8 +111,33 @@ if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
 
 $WorkspaceRoot = [System.IO.Path]::GetFullPath($WorkspaceRoot)
 
-$apiUrl = "http://${ApiHost}:${ApiPort}"
-$frontendUrl = "http://localhost:${FrontendPort}"
+function Resolve-LocalProbeHost {
+    param([Parameter(Mandatory = $true)][string]$BindAddress)
+
+    switch ($BindAddress) {
+        '0.0.0.0' { return '127.0.0.1' }
+        '::' { return '::1' }
+        '[::]' { return '::1' }
+        default { return $BindAddress }
+    }
+}
+
+$defaultLanHost = '192.168.50.200'
+$apiProbeHost = Resolve-LocalProbeHost -BindAddress $ApiHost
+$resolvedAppHost = if (-not [string]::IsNullOrWhiteSpace($AppHost)) {
+    $AppHost
+}
+elseif ($ApiHost -in @('0.0.0.0', '::', '[::]')) {
+    $defaultLanHost
+}
+else {
+    $ApiHost
+}
+
+$apiProbeUrl = "http://${apiProbeHost}:${ApiPort}"
+$apiPublicUrl = "http://${resolvedAppHost}:${ApiPort}"
+$frontendProbeUrl = "http://127.0.0.1:${FrontendPort}"
+$frontendUrl = "http://${resolvedAppHost}:${FrontendPort}"
 
 # Runtime / log directories
 $runtimeDir = Join-Path $WorkspaceRoot 'backend\modules\output\runtime'
@@ -164,7 +196,8 @@ function Write-PidFile {
         frontendPid     = $FrontendPid
         mode            = $Mode
         servingFromDist = $ServingFromDist
-        apiUrl          = $apiUrl
+        apiUrl          = $apiPublicUrl
+        apiProbeUrl     = $apiProbeUrl
         frontendUrl     = $ResolvedFrontendUrl
         startedAt       = (Get-Date).ToString('o')
     } | ConvertTo-Json | Set-Content -LiteralPath $pidFile -Encoding UTF8
@@ -430,6 +463,7 @@ Write-Host ''
 Write-Host '====================================' -ForegroundColor White
 Write-Host ' GitHub Repo Management' -ForegroundColor White
 Write-Host " Mode: $Mode$(if ($Dev) { ' [Dev/Vite]' } elseif ($Rebuild) { ' [Rebuild]' })" -ForegroundColor Gray
+Write-Host " Access: $apiPublicUrl" -ForegroundColor Gray
 Write-Host '====================================' -ForegroundColor White
 Write-Host ''
 
@@ -501,7 +535,7 @@ else {
 # ------------------------------------------------------------------
 # 3. Start API host
 # ------------------------------------------------------------------
-Write-Step "Starting API host ($apiUrl) in $Mode mode..."
+Write-Step "Starting API host (bind ${ApiHost}:${ApiPort}, access $apiPublicUrl) in $Mode mode..."
 
 $backendPid = $null
 
@@ -556,7 +590,7 @@ Write-Step 'Waiting for API host readiness...'
 $ready = $false
 for ($i = 0; $i -lt 30; $i++) {
     try {
-        $null = Invoke-RestMethod -Uri "$apiUrl/health/live" -Method Get -TimeoutSec 2
+        $null = Invoke-RestMethod -Uri "$apiProbeUrl/health/live" -Method Get -TimeoutSec 2
         $ready = $true
         break
     }
@@ -566,14 +600,14 @@ for ($i = 0; $i -lt 30; $i++) {
 }
 
 if (-not $ready) {
-    Write-Fail "API host did not respond at $apiUrl within 15 s."
+    Write-Fail "API host did not respond locally at $apiProbeUrl within 15 s."
     if ($Mode -eq 'silent') {
         Write-Host "  Check: $backendLog" -ForegroundColor Yellow
     }
     Stop-StartedProcesses
     exit 1
 }
-Write-Ok "API host ready at $apiUrl"
+Write-Ok "API host ready at $apiPublicUrl"
 
 # ------------------------------------------------------------------
 # 5. Start Vite dev server - only when not serving from built dist/
@@ -583,14 +617,14 @@ $frontendPid = $null
 if ($servingFromDist) {
     # No Vite process needed - API host serves the static bundle at the API URL
     $frontendPid = 0
-    $frontendUrl = $apiUrl
+    $frontendUrl = $apiPublicUrl
     Write-Ok "Static frontend available at $frontendUrl"
 }
 else {
     Write-Step "Starting Vite dev server ($frontendUrl) in $Mode mode..."
     Stop-PortListeners -LocalPort $FrontendPort -ServiceName 'Frontend'
 
-    $env:VITE_API_PROXY_TARGET = $apiUrl
+    $env:VITE_API_PROXY_TARGET = $apiProbeUrl
 
     if ($Mode -eq 'debug') {
         if ($supportsWindowStyle) {
@@ -603,7 +637,7 @@ else {
         }
         else {
             $wrapperPath = Join-Path $runtimeDir 'start-frontend.ps1'
-            New-FrontendWrapperScript -WrapperPath $wrapperPath -ApiUrl $apiUrl -FrontendDir $frontendDir -FrontendPort $FrontendPort
+            New-FrontendWrapperScript -WrapperPath $wrapperPath -ApiUrl $apiProbeUrl -FrontendDir $frontendDir -FrontendPort $FrontendPort
             $proc = Start-ManagedProcess `
                 -FilePath 'pwsh' `
                 -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $wrapperPath) `
@@ -615,7 +649,7 @@ else {
     else {
         # Write a tiny wrapper so we can set env vars before npm run dev in the hidden window
         $wrapperPath = Join-Path $runtimeDir 'start-frontend.ps1'
-        New-FrontendWrapperScript -WrapperPath $wrapperPath -ApiUrl $apiUrl -FrontendDir $frontendDir -FrontendPort $FrontendPort -FrontendLogPath $frontendLog
+        New-FrontendWrapperScript -WrapperPath $wrapperPath -ApiUrl $apiProbeUrl -FrontendDir $frontendDir -FrontendPort $FrontendPort -FrontendLogPath $frontendLog
 
         $proc = Start-ManagedProcess `
             -FilePath 'pwsh' `
@@ -634,7 +668,7 @@ else {
     $feReady = $false
     for ($i = 0; $i -lt 40; $i++) {
         try {
-            $null = Invoke-WebRequest -Uri $frontendUrl -Method Get -TimeoutSec 2 -UseBasicParsing
+            $null = Invoke-WebRequest -Uri $frontendProbeUrl -Method Get -TimeoutSec 2 -UseBasicParsing
             $feReady = $true
             break
         }
@@ -644,7 +678,7 @@ else {
     }
 
     if (-not $feReady) {
-        Write-Fail "Vite dev server did not respond at $frontendUrl within 20 s."
+        Write-Fail "Vite dev server did not respond locally at $frontendProbeUrl within 20 s."
         if ($Mode -eq 'silent') {
             Write-Host "  Check: $frontendLog" -ForegroundColor Yellow
         }
