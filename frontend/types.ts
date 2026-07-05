@@ -40,6 +40,12 @@ export interface RepoStatus {
   roadmapState?: 'missing' | 'complete' | 'pending' | 'parse-error';
   nextPendingRoadmapItem?: string;
   dispatchReadiness?: DispatchReadiness;
+  changeState?: PortfolioChangeState;
+  scanDecisionReason?: PortfolioScanDecisionReason;
+  headCommitSha?: string | null;
+  lastIndexedCommitSha?: string | null;
+  lastScanStatus?: PortfolioScanStatus;
+  lastScanError?: string | null;
 
   // Optional extended metrics
   extended?: ExtendedRepoMetrics;
@@ -1156,6 +1162,12 @@ export interface OperationsRepoEntry {
   structureFindings: RepoStructureFinding[];
   curationState: 'none' | 'favorite' | 'portfolio-candidate' | 'archived-ignore';
   curationUpdatedAt?: string | null;
+  changeState?: PortfolioChangeState;
+  scanDecisionReason?: PortfolioScanDecisionReason;
+  headCommitSha?: string | null;
+  lastIndexedCommitSha?: string | null;
+  lastScanStatus?: PortfolioScanStatus;
+  lastScanError?: string | null;
 }
 
 export interface OperationsReposResult {

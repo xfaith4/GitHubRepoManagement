@@ -62,6 +62,29 @@ const VALUE_TIER_STYLES: Record<PortfolioValueTier, string> = {
   unscored: 'bg-gray-800 text-gray-300 border-gray-600',
 };
 
+const CHANGE_STATE_STYLES: Record<NonNullable<OperationsRepoEntry['changeState']>, { label: string; className: string }> = {
+  'unchanged': {
+    label: 'Index: Reused',
+    className: 'bg-emerald-900/30 text-emerald-200 border-emerald-700/50',
+  },
+  'new-commits': {
+    label: 'Index: New Commits',
+    className: 'bg-cyan-900/30 text-cyan-200 border-cyan-700/50',
+  },
+  'metadata-changed': {
+    label: 'Index: Metadata Changed',
+    className: 'bg-amber-900/30 text-amber-200 border-amber-700/50',
+  },
+  'needs-rescan': {
+    label: 'Index: Rescanned',
+    className: 'bg-violet-900/30 text-violet-200 border-violet-700/50',
+  },
+  'scan-failed': {
+    label: 'Index: Scan Failed',
+    className: 'bg-rose-900/30 text-rose-200 border-rose-700/50',
+  },
+};
+
 const AGENT_RUN_STATUS_STYLES: Record<AgentRunStatus, string> = {
   dispatched: 'bg-slate-800 text-slate-200 border-slate-600',
   active: 'bg-blue-900/40 text-blue-200 border-blue-700/50',
@@ -143,6 +166,54 @@ function buildDirtySummary(entry: OperationsRepoEntry): string {
   }
 
   return `${dirty} changed file${dirty === 1 ? '' : 's'} (${modified} modified, ${untracked} untracked)`;
+}
+
+function formatScanDecisionReason(reason?: OperationsRepoEntry['scanDecisionReason']): string {
+  if (!reason) {
+    return 'n/a';
+  }
+
+  switch (reason) {
+    case 'reused-cache':
+      return 'reused cache';
+    case 'new-commit':
+      return 'new commit';
+    case 'metadata-changed':
+      return 'metadata changed';
+    case 'cache-miss':
+      return 'cache miss';
+    case 'cache-invalid':
+      return 'cache invalid';
+    case 'forced-refresh':
+      return 'forced refresh';
+    default:
+      return reason;
+  }
+}
+
+function shortSha(value?: string | null): string {
+  if (!value) {
+    return 'n/a';
+  }
+  return value.length > 8 ? value.slice(0, 8) : value;
+}
+
+function getScanDecisionTooltip(entry: OperationsRepoEntry): string {
+  const lines = [
+    `Decision: ${formatScanDecisionReason(entry.scanDecisionReason)}`,
+    `Head: ${shortSha(entry.headCommitSha)}`,
+    `Indexed: ${shortSha(entry.lastIndexedCommitSha)}`,
+  ];
+
+  if (entry.lastScanStatus) {
+    lines.push(`Scan status: ${entry.lastScanStatus}`);
+  }
+
+  if (entry.lastScanError) {
+    lines.push(`Error: ${entry.lastScanError}`);
+  }
+
+  return lines.join('\n');
 }
 
 const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
@@ -883,6 +954,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                     const isSelected = selectedEntry?.repoId === entry.repoId;
                     const valueTier = entry.topValueItem?.valueTier ?? 'unscored';
                     const valueTierClass = VALUE_TIER_STYLES[valueTier];
+                    const changeStateCfg = entry.changeState ? CHANGE_STATE_STYLES[entry.changeState] : null;
                     return (
                       <tr
                         key={entry.repoId}
@@ -904,6 +976,16 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                           <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs capitalize ${LIFECYCLE_STYLES[entry.lifecycleState] ?? LIFECYCLE_STYLES.discovered}`}>
                             {formatLifecycleLabel(entry.lifecycleState)}
                           </span>
+                          {changeStateCfg && (
+                            <div className="mt-1">
+                              <span
+                                className={`inline-flex rounded-full border px-2 py-0.5 text-xs ${changeStateCfg.className}`}
+                                title={getScanDecisionTooltip(entry)}
+                              >
+                                {changeStateCfg.label}
+                              </span>
+                            </div>
+                          )}
                           <div className="mt-2 text-xs text-gray-400">{entry.recommendedAction}</div>
                         </td>
                         <td className="px-4 py-3 align-top">
@@ -941,6 +1023,22 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
               <div className="space-y-4">
                 <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div>
+                    {(() => {
+                      const changeStateCfg = selectedEntry.changeState ? CHANGE_STATE_STYLES[selectedEntry.changeState] : null;
+                      if (!changeStateCfg) {
+                        return null;
+                      }
+                      return (
+                        <div className="mb-2">
+                          <span
+                            className={`inline-flex rounded-full border px-2 py-0.5 text-xs ${changeStateCfg.className}`}
+                            title={getScanDecisionTooltip(selectedEntry)}
+                          >
+                            {changeStateCfg.label}
+                          </span>
+                        </div>
+                      );
+                    })()}
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="text-xl font-semibold text-white">{selectedEntry.repoName}</h3>
                       <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs capitalize ${LIFECYCLE_STYLES[selectedEntry.lifecycleState] ?? LIFECYCLE_STYLES.discovered}`}>

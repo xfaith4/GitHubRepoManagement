@@ -933,7 +933,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     setReadmeGeneratePath(repos.find(r => r.name === repoName)?.localPath ?? null);
   };
 
-  // Enrich repos with hasRoadmap flag, roadmapState, nextPendingRoadmapItem, and dispatchReadiness
+  // Enrich repos with roadmap/doc context plus differential scan metadata when available.
   const reposWithRoadmap = useMemo(() => {
     const roadmapMap = roadmapEntries.length > 0
       ? new Map(roadmapEntries.map(e => [e.repoName.toLowerCase(), e]))
@@ -941,19 +941,42 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     const auditMap = docsAuditIndex && docsAuditIndex.entries.length > 0
       ? new Map(docsAuditIndex.entries.map(e => [e.repoName.toLowerCase(), e]))
       : new Map<string, DocAuditIndex['entries'][number]>();
+    const assessmentByPath = new Map<string, PortfolioAssessmentEntry>();
+    const assessmentByName = new Map<string, PortfolioAssessmentEntry>();
+    (portfolioAssessment?.entries ?? []).forEach(entry => {
+      const nameKey = (entry.repoName ?? '').trim().toLowerCase();
+      if (nameKey && !assessmentByName.has(nameKey)) {
+        assessmentByName.set(nameKey, entry);
+      }
+
+      const pathKey = (entry.localPath ?? '').trim().toLowerCase();
+      if (pathKey && !assessmentByPath.has(pathKey)) {
+        assessmentByPath.set(pathKey, entry);
+      }
+    });
 
     return repos.map(r => {
       const roadmapEntry = roadmapMap.get(r.name.toLowerCase());
       const auditEntry = auditMap.get(r.name.toLowerCase());
+      const assessmentEntry =
+        (r.localPath ? assessmentByPath.get(r.localPath.trim().toLowerCase()) : undefined) ??
+        assessmentByName.get(r.name.toLowerCase());
+
       return {
         ...r,
         hasRoadmap: roadmapEntry ? true : r.hasRoadmap,
         roadmapState: roadmapEntry?.roadmapState ?? r.roadmapState,
         nextPendingRoadmapItem: roadmapEntry?.nextPendingItem?.text ?? r.nextPendingRoadmapItem,
         dispatchReadiness: auditEntry?.dispatchReadiness ?? r.dispatchReadiness,
+        changeState: assessmentEntry?.changeState ?? r.changeState,
+        scanDecisionReason: assessmentEntry?.scanDecisionReason ?? r.scanDecisionReason,
+        headCommitSha: assessmentEntry?.headCommitSha ?? r.headCommitSha,
+        lastIndexedCommitSha: assessmentEntry?.lastIndexedCommitSha ?? r.lastIndexedCommitSha,
+        lastScanStatus: assessmentEntry?.lastScanStatus ?? r.lastScanStatus,
+        lastScanError: assessmentEntry?.lastScanError ?? r.lastScanError,
       };
     });
-  }, [repos, roadmapEntries, docsAuditIndex]);
+  }, [repos, roadmapEntries, docsAuditIndex, portfolioAssessment]);
 
   const summary = useMemo(() => {
     const total = reposWithRoadmap.length;

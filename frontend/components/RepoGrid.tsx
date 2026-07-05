@@ -61,6 +61,86 @@ function getRoadmapBadgeConfig(state: RoadmapBadgeState): { className: string; l
   }
 }
 
+function getChangeStateBadgeConfig(state?: RepoStatus['changeState']): { className: string; label: string } | null {
+  switch (state) {
+    case 'unchanged':
+      return {
+        className: 'bg-emerald-900/30 text-emerald-300 border-emerald-700/40',
+        label: 'Index: Reused',
+      };
+    case 'new-commits':
+      return {
+        className: 'bg-cyan-900/30 text-cyan-300 border-cyan-700/40',
+        label: 'Index: New Commits',
+      };
+    case 'metadata-changed':
+      return {
+        className: 'bg-amber-900/30 text-amber-300 border-amber-700/40',
+        label: 'Index: Metadata Changed',
+      };
+    case 'needs-rescan':
+      return {
+        className: 'bg-violet-900/30 text-violet-300 border-violet-700/40',
+        label: 'Index: Rescanned',
+      };
+    case 'scan-failed':
+      return {
+        className: 'bg-rose-900/30 text-rose-300 border-rose-700/40',
+        label: 'Index: Scan Failed',
+      };
+    default:
+      return null;
+  }
+}
+
+function formatScanDecisionReason(reason?: RepoStatus['scanDecisionReason']): string {
+  if (!reason) {
+    return 'n/a';
+  }
+
+  switch (reason) {
+    case 'reused-cache':
+      return 'reused cache';
+    case 'new-commit':
+      return 'new commit';
+    case 'metadata-changed':
+      return 'metadata changed';
+    case 'cache-miss':
+      return 'cache miss';
+    case 'cache-invalid':
+      return 'cache invalid';
+    case 'forced-refresh':
+      return 'forced refresh';
+    default:
+      return reason;
+  }
+}
+
+function toShortSha(value?: string | null): string {
+  if (!value) {
+    return 'n/a';
+  }
+  return value.length > 8 ? value.slice(0, 8) : value;
+}
+
+function buildScanDecisionTooltip(repo: RepoStatus): string {
+  const lines = [
+    `Decision: ${formatScanDecisionReason(repo.scanDecisionReason)}`,
+    `Head: ${toShortSha(repo.headCommitSha)}`,
+    `Indexed: ${toShortSha(repo.lastIndexedCommitSha)}`,
+  ];
+
+  if (repo.lastScanStatus) {
+    lines.push(`Scan status: ${repo.lastScanStatus}`);
+  }
+
+  if (repo.lastScanError) {
+    lines.push(`Error: ${repo.lastScanError}`);
+  }
+
+  return lines.join('\n');
+}
+
 const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRunRepoAction, onOpenDocReview, onRunRoadmapScan, dataSource, selectedRepos, setSelectedRepos, groupBy, setGroupBy }: RepoGridProps) => {
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
@@ -666,6 +746,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                     'parse-error': { cls: 'bg-orange-900/40 text-orange-300 border-orange-700/40', label: '! Parse Error' },
                   };
                   const readinessCfg = repo.dispatchReadiness ? readinessBadge[repo.dispatchReadiness] : undefined;
+                  const changeStateCfg = getChangeStateBadgeConfig(repo.changeState);
                   const roadmapCfg = getRoadmapBadgeConfig(repo.roadmapState as RoadmapBadgeState);
                   return (
                     <div
@@ -726,6 +807,14 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                         {readinessCfg && (
                           <span className={`inline-flex items-center text-xs px-1.5 py-0.5 rounded border ${readinessCfg.cls}`}>
                             {readinessCfg.label}
+                          </span>
+                        )}
+                        {changeStateCfg && (
+                          <span
+                            className={`inline-flex items-center text-xs px-1.5 py-0.5 rounded border ${changeStateCfg.className}`}
+                            title={buildScanDecisionTooltip(repo)}
+                          >
+                            {changeStateCfg.label}
                           </span>
                         )}
                       </div>
@@ -933,6 +1022,22 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                                      </div>
                                    );
                                  })()}
+                                {(() => {
+                                  const changeStateCfg = getChangeStateBadgeConfig(repo.changeState);
+                                  if (!changeStateCfg) {
+                                    return null;
+                                  }
+                                  return (
+                                    <div className="mt-1">
+                                      <span
+                                        className={`inline-flex items-center text-xs px-1.5 py-0.5 rounded border ${changeStateCfg.className}`}
+                                        title={buildScanDecisionTooltip(repo)}
+                                      >
+                                        {changeStateCfg.label}
+                                      </span>
+                                    </div>
+                                  );
+                                })()}
                               </td>
                             <td className="px-4 py-3 whitespace-nowrap align-top">{getStatusBadge(repo.status, repo)}</td>
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-300 align-top">{repo.isStale ? 'Yes' : 'No'}</td>

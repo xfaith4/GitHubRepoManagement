@@ -336,6 +336,12 @@ function normalizeOperationsRepoEntry(entry: any): OperationsRepoEntry {
     structureFindings: Array.isArray(entry?.structureFindings) ? entry.structureFindings : [],
     curationState: (entry?.curationState ?? 'none') as OperationsRepoEntry['curationState'],
     curationUpdatedAt: entry?.curationUpdatedAt ? String(entry.curationUpdatedAt) : null,
+    changeState: (entry?.changeState ?? undefined) as OperationsRepoEntry['changeState'],
+    scanDecisionReason: (entry?.scanDecisionReason ?? undefined) as OperationsRepoEntry['scanDecisionReason'],
+    headCommitSha: entry?.headCommitSha ? String(entry.headCommitSha) : null,
+    lastIndexedCommitSha: entry?.lastIndexedCommitSha ? String(entry.lastIndexedCommitSha) : null,
+    lastScanStatus: (entry?.lastScanStatus ?? undefined) as OperationsRepoEntry['lastScanStatus'],
+    lastScanError: entry?.lastScanError ? String(entry.lastScanError) : null,
   };
 }
 
