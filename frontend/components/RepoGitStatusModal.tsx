@@ -19,7 +19,7 @@ type DiscardMode = 'tracked' | 'all';
 
 // ── Status badge helpers ──────────────────────────────────────────────────────
 
-function statusBadge(status: string): JSX.Element {
+function statusBadge(status: string) {
   const cfg: Record<string, { cls: string; label: string }> = {
     M: { cls: 'bg-yellow-800/70 text-yellow-200', label: 'M' },
     A: { cls: 'bg-green-800/70 text-green-200',  label: 'A' },
@@ -44,7 +44,7 @@ interface FileGroupProps {
   borderColor: string;
 }
 
-function FileGroup({ title, files, borderColor }: FileGroupProps): JSX.Element | null {
+function FileGroup({ title, files, borderColor }: FileGroupProps) {
   if (files.length === 0) return null;
   return (
     <div className={`mb-3 border-l-4 ${borderColor} pl-3`}>
@@ -73,7 +73,7 @@ interface CommitListProps {
   bannerCls: string;
 }
 
-function CommitList({ commits, label, bannerCls }: CommitListProps): JSX.Element | null {
+function CommitList({ commits, label, bannerCls }: CommitListProps) {
   if (commits.length === 0) return null;
   return (
     <div className={`mb-3 rounded px-3 py-2 ${bannerCls}`}>

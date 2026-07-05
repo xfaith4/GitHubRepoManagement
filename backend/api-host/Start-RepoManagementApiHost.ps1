@@ -31,6 +31,7 @@ $executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 . (Join-Path $roadmapModuleRoot 'Roadmap.Repairer.ps1')
 . (Join-Path $docAuditModuleRoot 'DocAudit.Scanner.ps1')
 . (Join-Path $executionModuleRoot 'Execution.Ledger.ps1')
+. (Join-Path $WorkspaceRoot 'backend\modules\auth\GitHubApp.ps1')
 $docStdModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\docstandardization'
 . (Join-Path $roadmapModuleRoot 'Roadmap.Linter.ps1')
 . (Join-Path $roadmapModuleRoot 'MaturityDrift.Monitor.ps1')
@@ -662,7 +663,7 @@ function Invoke-MergeReadinessForRepo {
 function Send-HttpJson {
     param(
         [Parameter(Mandatory = $true)]
-        [System.Net.Sockets.NetworkStream]$Stream,
+        [System.IO.Stream]$Stream,
         [Parameter(Mandatory = $true)]
         [int]$StatusCode,
         [Parameter(Mandatory = $true)]
@@ -682,9 +683,9 @@ function Send-HttpJson {
         'Content-Type: application/json; charset=utf-8',
         "Content-Length: $($bodyBytes.Length)",
         'Connection: close',
-        'Access-Control-Allow-Origin: *',
+        ("Access-Control-Allow-Origin: {0}" -f $(if ($script:CorsAllowOrigin) { $script:CorsAllowOrigin } else { '*' })),
         'Access-Control-Allow-Methods: GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers: Content-Type, Authorization',
+        'Access-Control-Allow-Headers: Content-Type, Authorization, X-Api-Key',
         $(if ($CorrelationId) { "X-Correlation-Id: $CorrelationId" } else { '' }),
         '',
         ''
@@ -699,7 +700,7 @@ function Send-HttpJson {
 function Send-HttpContent {
     param(
         [Parameter(Mandatory = $true)]
-        [System.Net.Sockets.NetworkStream]$Stream,
+        [System.IO.Stream]$Stream,
         [Parameter(Mandatory = $true)]
         [int]$StatusCode,
         [Parameter(Mandatory = $true)]
@@ -717,9 +718,9 @@ function Send-HttpContent {
         "Content-Type: $ContentType",
         "Content-Length: $($BodyBytes.Length)",
         'Connection: close',
-        'Access-Control-Allow-Origin: *',
+        ("Access-Control-Allow-Origin: {0}" -f $(if ($script:CorsAllowOrigin) { $script:CorsAllowOrigin } else { '*' })),
         'Access-Control-Allow-Methods: GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers: Content-Type, Authorization',
+        'Access-Control-Allow-Headers: Content-Type, Authorization, X-Api-Key',
         $(if ($CorrelationId) { "X-Correlation-Id: $CorrelationId" } else { '' }),
         '',
         ''
@@ -741,7 +742,7 @@ function Send-HttpContent {
 function Send-StaticFile {
     param(
         [Parameter(Mandatory = $true)]
-        [System.Net.Sockets.NetworkStream]$Stream,
+        [System.IO.Stream]$Stream,
 
         [Parameter(Mandatory = $true)]
         [string]$FilePath,
@@ -772,6 +773,7 @@ function Send-StaticFile {
         '.map'   { 'application/json' }
         '.txt'   { 'text/plain; charset=utf-8' }
         '.xml'   { 'application/xml' }
+        '.webmanifest' { 'application/manifest+json; charset=utf-8' }
         default  { 'application/octet-stream' }
     }
 
@@ -835,7 +837,7 @@ function Send-StaticFile {
 function Send-ErrorJson {
     param(
         [Parameter(Mandatory = $true)]
-        [System.Net.Sockets.NetworkStream]$Stream,
+        [System.IO.Stream]$Stream,
         [Parameter(Mandatory = $true)]
         [int]$StatusCode,
         [Parameter(Mandatory = $true)]
@@ -861,9 +863,15 @@ function Send-ErrorJson {
 }
 
 function Read-HttpRequest {
-    param([System.Net.Sockets.TcpClient]$Client)
+    param(
+        [System.Net.Sockets.TcpClient]$Client,
+        # Release 2.2 TLS: when the accept loop has already wrapped the raw
+        # NetworkStream in an SslStream, it is passed here so the request is
+        # read (and the response written) over the encrypted stream.
+        [System.IO.Stream]$Stream
+    )
 
-    $stream = $Client.GetStream()
+    $stream = if ($null -ne $Stream) { $Stream } else { $Client.GetStream() }
     try {
         $stream.ReadTimeout = $script:ClientIoTimeoutMs
         $stream.WriteTimeout = $script:ClientIoTimeoutMs
@@ -1573,6 +1581,157 @@ function Get-HostSettings {
     return ConvertFrom-JsonCompat -Json (Get-Content -LiteralPath $configPath -Raw)
 }
 
+# ── Release 2.2 — API authentication + network hardening ─────────────────────
+# Backward-compatible by default: with no `auth` block (or requireApiKey=false)
+# the gate is a no-op and every existing loopback flow keeps working. Auth only
+# engages when an operator opts in, which is also what the non-loopback bind
+# guard requires before exposing the host off 127.0.0.1.
+
+function Test-IsLoopbackAddress {
+    param([string]$Address)
+    if ([string]::IsNullOrWhiteSpace($Address)) { return $true }
+    $a = $Address.Trim().ToLowerInvariant()
+    if ($a -eq 'localhost' -or $a -eq '::1' -or $a -eq '0:0:0:0:0:0:0:1') { return $true }
+    try {
+        $ip = [System.Net.IPAddress]::Parse($a)
+        return [System.Net.IPAddress]::IsLoopback($ip)
+    } catch {
+        return $false
+    }
+}
+
+function Get-AuthApiKeyEnvVarName {
+    param([hashtable]$Settings)
+    $envVarName = 'REPO_MGMT_API_KEY'
+    if ($null -ne $Settings -and $Settings.ContainsKey('auth') -and $Settings.auth -is [System.Collections.IDictionary] -and
+        $Settings.auth.ContainsKey('apiKeyEnvVar') -and $Settings.auth.apiKeyEnvVar) {
+        $envVarName = [string]$Settings.auth.apiKeyEnvVar
+    }
+    return $envVarName
+}
+
+function Get-ConfiguredApiKey {
+    param([hashtable]$Settings)
+    # Env var wins over settings.json so the key never has to live in a
+    # committed file. Returns '' when nothing is configured.
+    $envVal = [System.Environment]::GetEnvironmentVariable((Get-AuthApiKeyEnvVarName -Settings $Settings))
+    if (-not [string]::IsNullOrWhiteSpace($envVal)) { return $envVal.Trim() }
+    if ($null -ne $Settings -and $Settings.ContainsKey('auth') -and $Settings.auth -is [System.Collections.IDictionary] -and
+        $Settings.auth.ContainsKey('apiKey') -and $Settings.auth.apiKey) {
+        return ([string]$Settings.auth.apiKey).Trim()
+    }
+    return ''
+}
+
+function Test-ApiAuthRequired {
+    param([hashtable]$Settings)
+    # Env override lets an operator (or the auth smoke) enforce auth without
+    # editing the committed settings.json.
+    $envToggle = [System.Environment]::GetEnvironmentVariable('REPO_MGMT_REQUIRE_API_KEY')
+    if (-not [string]::IsNullOrWhiteSpace($envToggle) -and $envToggle.Trim() -match '^(?i)(1|true|yes|on)$') {
+        return $true
+    }
+    if ($null -eq $Settings -or -not $Settings.ContainsKey('auth') -or -not ($Settings.auth -is [System.Collections.IDictionary])) {
+        return $false
+    }
+    if ($Settings.auth.ContainsKey('requireApiKey')) { return [bool]$Settings.auth.requireApiKey }
+    return $false
+}
+
+function New-ApiKey {
+    # 32 random bytes -> 64 hex chars. RandomNumberGenerator.Create() is
+    # available on both Windows PowerShell 5.1 and PowerShell 7.
+    $bytes = New-Object byte[] 32
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+    return ([System.BitConverter]::ToString($bytes) -replace '-', '').ToLowerInvariant()
+}
+
+function Get-RequestApiKey {
+    param([object]$Request)
+    if ($Request.Headers.ContainsKey('x-api-key') -and $Request.Headers['x-api-key']) {
+        return ([string]$Request.Headers['x-api-key']).Trim()
+    }
+    if ($Request.Headers.ContainsKey('authorization') -and $Request.Headers['authorization']) {
+        $auth = [string]$Request.Headers['authorization']
+        if ($auth -match '^(?i)bearer\s+(.+)$') { return $Matches[1].Trim() }
+    }
+    return ''
+}
+
+function Test-RequestApiKeyValid {
+    param([object]$Request, [string]$ExpectedKey)
+    if ([string]::IsNullOrWhiteSpace($ExpectedKey)) { return $true }
+    $provided = Get-RequestApiKey -Request $Request
+    if ([string]::IsNullOrEmpty($provided)) { return $false }
+    # Length-checked ordinal compare — adequate for a loopback/LAN tool.
+    if ($provided.Length -ne $ExpectedKey.Length) { return $false }
+    return [System.String]::Equals($provided, $ExpectedKey, [System.StringComparison]::Ordinal)
+}
+
+# Release 2.3 Phase 3 — shields.io-style SVG badge generator (self-contained,
+# no external calls). Returns a flat two-cell badge as an SVG string.
+function New-SvgBadge {
+    param(
+        [Parameter(Mandatory = $true)][string]$Label,
+        [Parameter(Mandatory = $true)][string]$Message,
+        [string]$Color = '#4c1'
+    )
+    $esc = {
+        param($s)
+        ([string]$s).Replace('&', '&amp;').Replace('<', '&lt;').Replace('>', '&gt;').Replace('"', '&quot;')
+    }
+    $labelText = & $esc $Label
+    $msgText = & $esc $Message
+    # ~6.5px/char + padding; good enough for a flat badge.
+    $labelWidth = [int]([math]::Max(30, ($labelText.Length * 6.5) + 10))
+    $msgWidth = [int]([math]::Max(30, ($msgText.Length * 6.5) + 10))
+    $total = $labelWidth + $msgWidth
+    $labelMid = [int]($labelWidth / 2)
+    $msgMid = [int]($labelWidth + ($msgWidth / 2))
+    return @"
+<svg xmlns="http://www.w3.org/2000/svg" width="$total" height="20" role="img" aria-label="${labelText}: ${msgText}">
+  <linearGradient id="s" x2="0" y2="100%"><stop offset="0" stop-color="#bbb" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/></linearGradient>
+  <rect width="$total" height="20" rx="3" fill="#fff"/>
+  <g>
+    <rect width="$labelWidth" height="20" rx="3" fill="#555"/>
+    <rect x="$labelWidth" width="$msgWidth" height="20" rx="3" fill="$Color"/>
+    <rect width="$total" height="20" rx="3" fill="url(#s)"/>
+  </g>
+  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">
+    <text x="$labelMid" y="14">$labelText</text>
+    <text x="$msgMid" y="14">$msgText</text>
+  </g>
+</svg>
+"@
+}
+
+# Release 2.3 Phase 3 — portfolio health digest payload (totalRepos, byLevel,
+# improvedThisWeek, topCandidates). Derived from the operations/index entries;
+# delivered to a webhook by the digest route, or returned as a dry-run preview.
+function Get-DigestPayload {
+    param([array]$Entries, [int]$ImprovedThisWeek = 0)
+    $entries = @($Entries)
+    $byLevel = @{}
+    foreach ($e in $entries) {
+        $lvl = [string](Get-ObjectPropertyValue -InputObject $e -PropertyName 'dispatchReadiness' -Default 'unknown')
+        if ([string]::IsNullOrWhiteSpace($lvl)) { $lvl = 'unknown' }
+        if ($byLevel.ContainsKey($lvl)) { $byLevel[$lvl] = [int]$byLevel[$lvl] + 1 } else { $byLevel[$lvl] = 1 }
+    }
+    $topCandidates = @($entries |
+        Where-Object { ([string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'dispatchReadiness' -Default '')) -eq 'ready' } |
+        ForEach-Object { [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '') } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        Select-Object -First 5)
+    return @{
+        totalRepos       = @($entries).Count
+        byLevel          = $byLevel
+        improvedThisWeek = [int]$ImprovedThisWeek
+        topCandidates    = @($topCandidates)
+        generatedAt      = (Get-Date).ToUniversalTime().ToString('o')
+    }
+}
+
 function Get-StatusCacheTtlSeconds {
     param([hashtable]$Settings)
 
@@ -1599,6 +1758,22 @@ function Get-StatusCacheFilePath {
         $null = New-Item -ItemType Directory -Path $cacheDir -Force
     }
     return Join-Path $cacheDir 'status-cache.json'
+}
+
+# Cross-cutting — stale-cache diagnostics: age + TTL + staleness for one cache
+# file, so the dashboard/operator can see which cached view is fresh vs stale.
+function Get-CacheDiagnosticEntry {
+    param([string]$Path, [int]$TtlSeconds)
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) {
+        return @{ present = $false; ageSeconds = $null; ttlSeconds = [int]$TtlSeconds; stale = $true }
+    }
+    $ageSeconds = [math]::Round((((Get-Date).ToUniversalTime()) - ([System.IO.File]::GetLastWriteTimeUtc($Path))).TotalSeconds, 1)
+    return @{
+        present    = $true
+        ageSeconds = $ageSeconds
+        ttlSeconds = [int]$TtlSeconds
+        stale      = ([int]$TtlSeconds -gt 0 -and $ageSeconds -gt [int]$TtlSeconds)
+    }
 }
 
 function Get-StatusCacheKey {
@@ -4677,11 +4852,113 @@ function Get-OperationsPromptRefinementHistory {
     }
 }
 
+# Release 2.2 — resolve API auth once at startup, generate + persist a key on
+# first run when auth is required but none is set, then guard non-loopback binds.
+$script:AuthSettings = Get-HostSettings
+$script:AuthRequired = Test-ApiAuthRequired -Settings $script:AuthSettings
+$script:EffectiveApiKey = Get-ConfiguredApiKey -Settings $script:AuthSettings
+if ($script:AuthRequired -and [string]::IsNullOrWhiteSpace($script:EffectiveApiKey)) {
+    $generatedKey = New-ApiKey
+    try {
+        $cfgPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
+        $cfg = if (Test-Path -LiteralPath $cfgPath) { ConvertFrom-JsonCompat -Json (Get-Content -LiteralPath $cfgPath -Raw) } else { @{} }
+        if (-not $cfg.ContainsKey('auth') -or -not ($cfg.auth -is [System.Collections.IDictionary])) { $cfg.auth = @{ requireApiKey = $true } }
+        $cfg.auth.apiKey = $generatedKey
+        ($cfg | ConvertTo-Json -Depth 12) | Set-Content -LiteralPath $cfgPath -Encoding UTF8
+        Write-HostLog "Auth: generated a first-run API key and wrote it to settings.json (auth.apiKey)."
+    } catch {
+        Write-HostLog ("WARN auth: could not persist generated API key: {0}" -f $_.Exception.Message)
+    }
+    $script:EffectiveApiKey = $generatedKey
+}
+$script:AuthEnforced = $script:AuthRequired -and -not [string]::IsNullOrWhiteSpace($script:EffectiveApiKey)
+# Explicit single-operator opt-out (roadmap: "single-operator interim bind is
+# acceptable"): binding a non-loopback address without auth is refused unless
+# the operator acknowledges the risk via REPO_MGMT_ALLOW_INSECURE_BIND or
+# network.allowInsecureBind, in which case it is allowed with a loud warning.
+$allowInsecureBind = $false
+$insecureEnv = [System.Environment]::GetEnvironmentVariable('REPO_MGMT_ALLOW_INSECURE_BIND')
+if (-not [string]::IsNullOrWhiteSpace($insecureEnv) -and $insecureEnv.Trim() -match '^(?i)(1|true|yes|on)$') { $allowInsecureBind = $true }
+if ($script:AuthSettings.ContainsKey('network') -and $script:AuthSettings.network -is [System.Collections.IDictionary] -and
+    $script:AuthSettings.network.ContainsKey('allowInsecureBind') -and [bool]$script:AuthSettings.network.allowInsecureBind) { $allowInsecureBind = $true }
+if (-not (Test-IsLoopbackAddress -Address $BindAddress) -and -not $script:AuthEnforced) {
+    if ($allowInsecureBind) {
+        Write-HostLog ("WARNING: binding non-loopback '{0}' WITHOUT API auth (allowInsecureBind acknowledged). The API is exposed unauthenticated on this network — set auth.requireApiKey for shared use." -f $BindAddress)
+    }
+    else {
+        $bindRefusal = ("Refusing to bind non-loopback address '{0}' without API auth. Set auth.requireApiKey=true (and an apiKey or apiKeyEnvVar) in settings.json, acknowledge the risk with network.allowInsecureBind=true, or bind 127.0.0.1." -f $BindAddress)
+        Write-HostLog $bindRefusal
+        throw $bindRefusal
+    }
+}
+
+# Release 2.2 — scoped CORS + request rate limiting (opt-in via settings.network
+# or env overrides; both default off so loopback dev is unchanged).
+$script:CorsAllowOrigin = '*'
+$script:RateLimitEnabled = $false
+$script:RateLimitMaxRequests = 0
+$script:RateLimitWindowSeconds = 10
+$script:RateLimitHits = @{}
+# Release 2.4 — in-memory agent claim registry (repoName(lower) -> claim info).
+$script:AgentClaims = @{}
+try {
+    if ($script:AuthSettings.ContainsKey('network') -and $script:AuthSettings.network -is [System.Collections.IDictionary]) {
+        $net = $script:AuthSettings.network
+        if ($net.ContainsKey('allowedOrigins') -and @($net.allowedOrigins).Count -gt 0) {
+            $script:CorsAllowOrigin = [string]@($net.allowedOrigins)[0]
+        }
+        if ($net.ContainsKey('rateLimit') -and $net.rateLimit -is [System.Collections.IDictionary] -and $net.rateLimit.ContainsKey('maxRequests') -and [int]$net.rateLimit.maxRequests -gt 0) {
+            $script:RateLimitEnabled = $true
+            $script:RateLimitMaxRequests = [int]$net.rateLimit.maxRequests
+            if ($net.rateLimit.ContainsKey('windowSeconds') -and [int]$net.rateLimit.windowSeconds -gt 0) { $script:RateLimitWindowSeconds = [int]$net.rateLimit.windowSeconds }
+        }
+    }
+} catch { Write-HostLog ("WARN network config parse failed: {0}" -f $_.Exception.Message) }
+$corsEnv = [System.Environment]::GetEnvironmentVariable('REPO_MGMT_CORS_ORIGIN')
+if (-not [string]::IsNullOrWhiteSpace($corsEnv)) { $script:CorsAllowOrigin = $corsEnv.Trim() }
+$rlMaxEnv = [System.Environment]::GetEnvironmentVariable('REPO_MGMT_RATE_LIMIT_MAX')
+if (-not [string]::IsNullOrWhiteSpace($rlMaxEnv)) {
+    $parsedMax = 0
+    if ([int]::TryParse($rlMaxEnv.Trim(), [ref]$parsedMax) -and $parsedMax -gt 0) {
+        $script:RateLimitEnabled = $true; $script:RateLimitMaxRequests = $parsedMax
+    }
+}
+$rlWinEnv = [System.Environment]::GetEnvironmentVariable('REPO_MGMT_RATE_LIMIT_WINDOW')
+if (-not [string]::IsNullOrWhiteSpace($rlWinEnv)) {
+    $parsedWin = 0
+    if ([int]::TryParse($rlWinEnv.Trim(), [ref]$parsedWin) -and $parsedWin -gt 0) { $script:RateLimitWindowSeconds = $parsedWin }
+}
+Write-HostLog ("Network: corsOrigin='{0}' rateLimitEnabled={1} max={2}/{3}s" -f $script:CorsAllowOrigin, $script:RateLimitEnabled, $script:RateLimitMaxRequests, $script:RateLimitWindowSeconds)
+
+# Release 2.2 — optional TLS. Loads a PFX (settings.network.tls or env) so the
+# accept loop wraps each connection in an SslStream. Off by default; when no
+# certificate is configured the request path is unchanged (plain NetworkStream).
+$script:TlsCertificate = $null
+try {
+    $pfxPath = ''
+    $pfxPassword = ''
+    if ($script:AuthSettings.ContainsKey('network') -and $script:AuthSettings.network -is [System.Collections.IDictionary] -and
+        $script:AuthSettings.network.ContainsKey('tls') -and $script:AuthSettings.network.tls -is [System.Collections.IDictionary]) {
+        $tlsCfg = $script:AuthSettings.network.tls
+        if ($tlsCfg.ContainsKey('pfxPath')) { $pfxPath = [string]$tlsCfg.pfxPath }
+        if ($tlsCfg.ContainsKey('pfxPassword')) { $pfxPassword = [string]$tlsCfg.pfxPassword }
+    }
+    $envPfx = [System.Environment]::GetEnvironmentVariable('REPO_MGMT_TLS_PFX')
+    if (-not [string]::IsNullOrWhiteSpace($envPfx)) { $pfxPath = $envPfx }
+    $envPfxPw = [System.Environment]::GetEnvironmentVariable('REPO_MGMT_TLS_PFX_PASSWORD')
+    if ($null -ne $envPfxPw) { $pfxPassword = $envPfxPw }
+    if (-not [string]::IsNullOrWhiteSpace($pfxPath) -and (Test-Path -LiteralPath $pfxPath)) {
+        $script:TlsCertificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($pfxPath, $pfxPassword)
+        Write-HostLog ("TLS: enabled with certificate '{0}' (subject={1})" -f $pfxPath, $script:TlsCertificate.Subject)
+    }
+} catch { Write-HostLog ("WARN TLS: certificate load failed - {0}" -f $_.Exception.Message); $script:TlsCertificate = $null }
+
 $listenerAddress = [System.Net.IPAddress]::Parse($BindAddress)
 Stop-PortListeners -LocalPort $Port
 $listener = [System.Net.Sockets.TcpListener]::new($listenerAddress, $Port)
 $listener.Start()
 Write-HostLog ("Repo Management API host started on http://{0}:{1}" -f $BindAddress, $Port)
+Write-HostLog ("Auth: {0}" -f $(if ($script:AuthEnforced) { 'API key required on /api routes' } else { 'open (loopback; no API key required)' }))
 Write-HostLog ("Ops log: {0}" -f (Get-ValueOrDefault $script:OpsLogPath '(none)'))
 
 # Release 2.1 Phase 1 — SQLite persistence boundary bootstrap (non-fatal).
@@ -4769,7 +5046,21 @@ try {
             break
         }
         try {
-            $req = Read-HttpRequest -Client $client
+            # Release 2.2 TLS: wrap the raw stream in an SslStream when a cert is
+            # configured; otherwise the plain NetworkStream is used unchanged.
+            $activeStream = $null
+            if ($null -ne $script:TlsCertificate) {
+                try {
+                    $sslStream = [System.Net.Security.SslStream]::new($client.GetStream(), $false)
+                    $sslStream.AuthenticateAsServer($script:TlsCertificate, $false, [System.Security.Authentication.SslProtocols]::None, $false)
+                    $activeStream = $sslStream
+                } catch {
+                    Write-HostLog ("WARN TLS handshake failed: {0}" -f $_.Exception.Message)
+                    try { $client.Close() } catch { }
+                    continue
+                }
+            }
+            $req = if ($null -ne $activeStream) { Read-HttpRequest -Client $client -Stream $activeStream } else { Read-HttpRequest -Client $client }
             if ($null -eq $req) {
                 $client.Close()
                 continue
@@ -4790,6 +5081,54 @@ try {
                 Send-HttpJson -Stream $req.Stream -StatusCode 204 -StatusText 'No Content' -Payload @{} -CorrelationId $correlationId
                 $client.Close()
                 continue
+            }
+
+            # Release 2.2 — API key auth gate. Health checks, the setup/auth
+            # status routes, and the static SPA shell stay open so an
+            # unconfigured first-run browser can reach the wizard; everything
+            # else under /api/ requires a valid key when auth is enforced.
+            if ($script:AuthEnforced) {
+                $authExempt = ($path -eq '/health/live') -or ($path -eq '/health/ready') -or
+                    ($path -eq '/api/auth/status') -or ($path -eq '/setup') -or ($path -like '/setup/*') -or
+                    (-not ($path -like '/api/*'))
+                if (-not $authExempt -and -not (Test-RequestApiKeyValid -Request $req -ExpectedKey $script:EffectiveApiKey)) {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 401 -StatusText 'Unauthorized' -CorrelationId $correlationId -Payload @{
+                        success  = $false
+                        error    = 'Unauthorized: missing or invalid API key. Send it as `Authorization: Bearer <key>` or `X-Api-Key: <key>`.'
+                        category = 'auth'
+                    }
+                    $client.Close()
+                    continue
+                }
+            }
+
+            # Release 2.2 — fixed-window per-IP rate limit on /api routes (opt-in).
+            if ($script:RateLimitEnabled -and ($path -like '/api/*')) {
+                $clientIp = try { [string]$client.Client.RemoteEndPoint.Address } catch { 'unknown' }
+                $nowTs = [long][DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+                $windowStart = $nowTs - $script:RateLimitWindowSeconds
+                # Explicit typed list + ToArray(): PowerShell's `@() += x` idiom
+                # collapses to a scalar when stored back into a hashtable, so the
+                # window never accumulated. See memory: List ::new() + ToArray().
+                $kept = [System.Collections.Generic.List[long]]::new()
+                if ($script:RateLimitHits.ContainsKey($clientIp)) {
+                    foreach ($ts in @($script:RateLimitHits[$clientIp])) {
+                        if ([long]$ts -ge $windowStart) { $kept.Add([long]$ts) }
+                    }
+                }
+                $kept.Add($nowTs)
+                $script:RateLimitHits[$clientIp] = $kept.ToArray()
+                if ($kept.Count -gt $script:RateLimitMaxRequests) {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 429 -StatusText 'Too Many Requests' -CorrelationId $correlationId -Payload @{
+                        success  = $false
+                        error    = ("Rate limit exceeded: more than {0} requests per {1}s." -f $script:RateLimitMaxRequests, $script:RateLimitWindowSeconds)
+                        category = 'rate-limit'
+                    }
+                    $client.Close()
+                    continue
+                }
             }
 
             if ($req.Method -eq 'GET' -and $path -like '/api/artifacts/*') {
@@ -5130,6 +5469,147 @@ try {
                 continue
             }
 
+            # ── Release 2.3 Phase 3 — SVG maturity/health badges ───────────
+            if ($req.Method -eq 'GET' -and $path -like '/api/badges/*' -and $path.EndsWith('.svg')) {
+                $badgeName = [System.Uri]::UnescapeDataString($path.Substring('/api/badges/'.Length))
+                $badgeName = $badgeName.Substring(0, $badgeName.Length - 4)  # strip .svg
+                $settings = Get-HostSettings
+                $opsPayload = Get-OperationsReposPayload -Settings $settings
+                $entries = if ($opsPayload.available) { @($opsPayload.entries) } else { @() }
+                $svg = ''
+                if ($badgeName -ieq 'portfolio') {
+                    $total = @($entries).Count
+                    $ready = @($entries | Where-Object { ([string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'dispatchReadiness' -Default '')) -eq 'ready' }).Count
+                    $color = if ($total -gt 0 -and $ready -gt 0) { '#4c1' } else { '#9f9f9f' }
+                    $svg = New-SvgBadge -Label 'portfolio' -Message ("{0} repos / {1} ready" -f $total, $ready) -Color $color
+                }
+                else {
+                    $match = @($entries | Where-Object { ([string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '')).ToLowerInvariant() -eq $badgeName.ToLowerInvariant() } | Select-Object -First 1)
+                    if ($match.Count -gt 0 -and $null -ne $match[0]) {
+                        $dr = [string](Get-ObjectPropertyValue -InputObject $match[0] -PropertyName 'dispatchReadiness' -Default 'unknown')
+                        $color = switch ($dr) { 'ready' { '#4c1' } 'blocked' { '#e05d44' } default { '#dfb317' } }
+                        $svg = New-SvgBadge -Label 'readiness' -Message $dr -Color $color
+                    }
+                    else {
+                        $svg = New-SvgBadge -Label 'readiness' -Message 'unknown' -Color '#9f9f9f'
+                    }
+                }
+                Add-MetricCounter -Name 'api_requests_total'
+                Send-HttpContent -Stream $req.Stream -StatusCode 200 -BodyBytes ([System.Text.Encoding]::UTF8.GetBytes($svg)) -ContentType 'image/svg+xml; charset=utf-8' -CorrelationId $correlationId
+                $client.Close(); continue
+            }
+
+            # ── Release 2.4 — Agent Integration Protocol (/api/v1/agent/*) ──
+            if ($path -like '/api/v1/agent/*') {
+                $agentSub = $path.Substring('/api/v1/agent/'.Length)
+                if ($req.Method -eq 'GET' -and $agentSub -eq 'queue') {
+                    $settings = Get-HostSettings
+                    $opsPayload = Get-OperationsReposPayload -Settings $settings
+                    $queueRepos = @()
+                    if ($opsPayload.available) {
+                        $queueRepos = @($opsPayload.entries | ForEach-Object {
+                            $rn = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '')
+                            $dr = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'dispatchReadiness' -Default 'unknown')
+                            [pscustomobject]@{ repoName = $rn; readyForWork = ($dr -eq 'ready'); claimed = $script:AgentClaims.ContainsKey($rn.ToLowerInvariant()) }
+                        } | Where-Object { -not [string]::IsNullOrWhiteSpace($_.repoName) })
+                    }
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{ success = $true; data = @{ repos = $queueRepos; generatedAt = (Get-Date).ToUniversalTime().ToString('o') } }
+                    $client.Close(); continue
+                }
+                if ($req.Method -eq 'GET' -and $agentSub -like 'readiness/*') {
+                    $repoName = [System.Uri]::UnescapeDataString($agentSub.Substring('readiness/'.Length))
+                    if ([string]::IsNullOrWhiteSpace($repoName)) {
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{ success = $false; error = 'repoName is required'; category = 'validation' }
+                        $client.Close(); continue
+                    }
+                    $settings = Get-HostSettings
+                    $opsPayload = Get-OperationsReposPayload -Settings $settings
+                    $found = $false; $lifecycleState = 'unknown'; $dispatchReadiness = 'unknown'; $roadmapState = 'unknown'; $blockingReasons = @()
+                    if ($opsPayload.available) {
+                        $match = @($opsPayload.entries | Where-Object { ([string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '')).ToLowerInvariant() -eq $repoName.ToLowerInvariant() } | Select-Object -First 1)
+                        if ($match.Count -gt 0 -and $null -ne $match[0]) {
+                            $found = $true
+                            $dispatchReadiness = [string](Get-ObjectPropertyValue -InputObject $match[0] -PropertyName 'dispatchReadiness' -Default 'unknown')
+                            $lifecycleState = [string](Get-ObjectPropertyValue -InputObject $match[0] -PropertyName 'lifecycleState' -Default 'unknown')
+                            $roadmapState = [string](Get-ObjectPropertyValue -InputObject $match[0] -PropertyName 'roadmapState' -Default 'unknown')
+                            $blockingReasons = @(Get-ObjectPropertyValue -InputObject $match[0] -PropertyName 'blockingReasons' -Default @())
+                        }
+                    }
+                    $claimKey = $repoName.ToLowerInvariant()
+                    $claimInfo = if ($script:AgentClaims.ContainsKey($claimKey)) { $script:AgentClaims[$claimKey] } else { $null }
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = @{
+                            schemaVersion     = 'v1'
+                            repoName          = $repoName
+                            found             = [bool]$found
+                            lifecycleState    = $lifecycleState
+                            dispatchReadiness = $dispatchReadiness
+                            roadmapState      = $roadmapState
+                            readyForWork      = ($dispatchReadiness -eq 'ready')
+                            blockingReasons   = @($blockingReasons)
+                            claim             = @{
+                                claimed   = ($null -ne $claimInfo)
+                                claimedBy = if ($claimInfo) { $claimInfo.claimedBy } else { $null }
+                                claimId   = if ($claimInfo) { $claimInfo.claimId } else { $null }
+                                claimedAt = if ($claimInfo) { $claimInfo.claimedAt } else { $null }
+                            }
+                            generatedAt       = (Get-Date).ToUniversalTime().ToString('o')
+                        }
+                    }
+                    $client.Close(); continue
+                }
+                if ($req.Method -eq 'POST' -and $agentSub -like 'claim/*') {
+                    $repoName = [System.Uri]::UnescapeDataString($agentSub.Substring('claim/'.Length))
+                    if ([string]::IsNullOrWhiteSpace($repoName)) {
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{ success = $false; error = 'repoName is required'; category = 'validation' }
+                        $client.Close(); continue
+                    }
+                    $body = Parse-JsonBody -Body $req.Body
+                    $agentId = if ($null -ne $body -and $body.ContainsKey('agentId') -and $body.agentId) { [string]$body.agentId } else { 'unknown-agent' }
+                    $claimKey = $repoName.ToLowerInvariant()
+                    if ($script:AgentClaims.ContainsKey($claimKey)) {
+                        $existing = $script:AgentClaims[$claimKey]
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error = ("Repository '{0}' is already claimed by '{1}'." -f $repoName, $existing.claimedBy)
+                            category = 'conflict'
+                            data = @{ claim = @{ claimed = $true; claimedBy = $existing.claimedBy; claimId = $existing.claimId; claimedAt = $existing.claimedAt } }
+                        }
+                        $client.Close(); continue
+                    }
+                    $claimId = [guid]::NewGuid().ToString('n')
+                    $claimedAt = (Get-Date).ToUniversalTime().ToString('o')
+                    $script:AgentClaims[$claimKey] = @{ claimedBy = $agentId; claimId = $claimId; claimedAt = $claimedAt; repoName = $repoName }
+                    Write-HostLog ("[TRACE] agent.claim repoName={0} agentId={1} claimId={2}" -f $repoName, $agentId, $claimId)
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{ success = $true; data = @{ repoName = $repoName; claim = @{ claimed = $true; claimedBy = $agentId; claimId = $claimId; claimedAt = $claimedAt } } }
+                    $client.Close(); continue
+                }
+                if ($req.Method -eq 'POST' -and $agentSub -like 'complete/*') {
+                    $repoName = [System.Uri]::UnescapeDataString($agentSub.Substring('complete/'.Length))
+                    $claimKey = $repoName.ToLowerInvariant()
+                    if (-not $script:AgentClaims.ContainsKey($claimKey)) {
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{ success = $false; error = ("No active claim for '{0}'." -f $repoName); category = 'not-found' }
+                        $client.Close(); continue
+                    }
+                    $script:AgentClaims.Remove($claimKey)
+                    Write-HostLog ("[TRACE] agent.complete repoName={0}" -f $repoName)
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{ success = $true; data = @{ repoName = $repoName; claim = @{ claimed = $false; claimedBy = $null; claimId = $null; claimedAt = $null } } }
+                    $client.Close(); continue
+                }
+                Add-MetricCounter -Name 'api_requests_total'
+                Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{ success = $false; error = ("Unknown agent route: {0} /api/v1/agent/{1}" -f $req.Method, $agentSub); category = 'not-found' }
+                $client.Close(); continue
+            }
+
             if ($req.Method -eq 'POST' -and $path -like '/api/operations/repos/*/curation') {
                 $prefix = '/api/operations/repos/'
                 $suffix = '/curation'
@@ -5418,6 +5898,187 @@ try {
                         database           = $persistenceState
                         tables             = $persistenceTables
                         agentRunEventCount = $agentRunEventCount
+                    }
+                }
+                # ── Release 2.2 — auth status + guided first-run setup ──────────
+                'GET /api/auth/status' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = @{
+                            authRequired   = [bool]$script:AuthRequired
+                            authEnforced   = [bool]$script:AuthEnforced
+                            authenticated  = if ($script:AuthEnforced) { [bool](Test-RequestApiKeyValid -Request $req -ExpectedKey $script:EffectiveApiKey) } else { $true }
+                            keyEnvVar      = (Get-AuthApiKeyEnvVarName -Settings $script:AuthSettings)
+                            bindAddress    = $BindAddress
+                            isLoopbackBind = [bool](Test-IsLoopbackAddress -Address $BindAddress)
+                        }
+                    }
+                }
+                'GET /api/auth/github/status' {
+                    # Release 2.2 — reports the effective GitHub auth mode and
+                    # PAT-precedence. PAT/env token wins over a configured GitHub
+                    # App. Live App-token minting/refresh needs a registered app
+                    # (operator step); this route surfaces which mode is active.
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $s = Get-HostSettings
+                    $tokenEnvVar = if ($s.ContainsKey('secrets') -and $s.secrets -is [System.Collections.IDictionary] -and $s.secrets.ContainsKey('gitHubTokenEnvVar') -and $s.secrets.gitHubTokenEnvVar) { [string]$s.secrets.gitHubTokenEnvVar } else { 'GITHUB_TOKEN' }
+                    $patPresent = -not [string]::IsNullOrWhiteSpace([System.Environment]::GetEnvironmentVariable($tokenEnvVar))
+                    $ghCliPresent = [bool](Get-Command gh -ErrorAction SilentlyContinue)
+                    $githubAppConfigured = $false
+                    if ($s.ContainsKey('githubApp') -and $s.githubApp -is [System.Collections.IDictionary]) {
+                        $ga = $s.githubApp
+                        $githubAppConfigured = ($ga.ContainsKey('appId') -and $ga.appId) -and ($ga.ContainsKey('installationId') -and $ga.installationId)
+                    }
+                    $mode = if ($patPresent) { 'pat' } elseif ($ghCliPresent) { 'gh-cli' } elseif ($githubAppConfigured) { 'github-app' } else { 'none' }
+                    $appReadiness = $null
+                    try { $appReadiness = Get-GitHubAppReadiness -GitHubApp $(if ($s.ContainsKey('githubApp')) { $s.githubApp } else { $null }) } catch { $appReadiness = $null }
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = @{
+                            mode                = $mode
+                            patPresent          = [bool]$patPresent
+                            ghCliPresent        = [bool]$ghCliPresent
+                            githubAppConfigured = [bool]$githubAppConfigured
+                            githubAppReadiness  = $appReadiness
+                            tokenEnvVar         = $tokenEnvVar
+                            precedence          = @('pat', 'gh-cli', 'github-app')
+                        }
+                    }
+                }
+                'GET /api/digest/preview' {
+                    # Release 2.3 Phase 3 — build the digest payload without delivery.
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $settings = Get-HostSettings
+                    $opsPayload = Get-OperationsReposPayload -Settings $settings
+                    $entries = if ($opsPayload.available) { @($opsPayload.entries) } else { @() }
+                    $digest = Get-DigestPayload -Entries $entries
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{ success = $true; data = @{ delivered = $false; payload = $digest } }
+                }
+                'POST /api/digest/send' {
+                    # Release 2.3 Phase 3 — build + deliver the digest to a webhook.
+                    # No webhook configured/provided -> dry-run (delivered=false),
+                    # returning the payload so callers can preview it.
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $body = Parse-JsonBody -Body $req.Body
+                    $settings = Get-HostSettings
+                    $opsPayload = Get-OperationsReposPayload -Settings $settings
+                    $entries = if ($opsPayload.available) { @($opsPayload.entries) } else { @() }
+                    $digest = Get-DigestPayload -Entries $entries
+                    $webhookUrl = ''
+                    if ($null -ne $body -and $body.ContainsKey('webhookUrl') -and $body.webhookUrl) { $webhookUrl = [string]$body.webhookUrl }
+                    elseif ($settings.ContainsKey('digest') -and $settings.digest -is [System.Collections.IDictionary] -and $settings.digest.ContainsKey('webhookUrl') -and $settings.digest.webhookUrl) { $webhookUrl = [string]$settings.digest.webhookUrl }
+                    $delivered = $false
+                    $deliveryError = $null
+                    if (-not [string]::IsNullOrWhiteSpace($webhookUrl)) {
+                        try {
+                            $null = Invoke-WebRequest -Uri $webhookUrl -Method Post -ContentType 'application/json' -Body ($digest | ConvertTo-Json -Depth 8) -TimeoutSec 15 -SkipHttpErrorCheck
+                            $delivered = $true
+                        } catch { $deliveryError = $_.Exception.Message }
+                    }
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = @{ delivered = [bool]$delivered; webhookConfigured = (-not [string]::IsNullOrWhiteSpace($webhookUrl)); deliveryError = $deliveryError; payload = $digest }
+                    }
+                }
+                'GET /setup/status' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $s = Get-HostSettings
+                    $roots = @()
+                    if ($s.ContainsKey('inventory') -and $s.inventory -is [System.Collections.IDictionary] -and $s.inventory.ContainsKey('localRoots')) {
+                        $roots = @($s.inventory.localRoots | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+                    }
+                    $configExists = Test-Path -LiteralPath (Join-Path $WorkspaceRoot 'backend\config\settings.json')
+                    $firstScanComplete = Test-Path -LiteralPath (Join-Path $WorkspaceRoot 'output\index\repos.index.json')
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = @{
+                            needsSetup        = -not ($configExists -and (@($roots).Count -gt 0))
+                            settingsExists    = [bool]$configExists
+                            hasLocalRoots     = (@($roots).Count -gt 0)
+                            localRootCount    = @($roots).Count
+                            firstScanComplete = [bool]$firstScanComplete
+                            authRequired      = [bool]$script:AuthRequired
+                        }
+                    }
+                }
+                'GET /setup/prerequisites' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $s = Get-HostSettings
+                    $tokenEnvVar = if ($s.ContainsKey('secrets') -and $s.secrets -is [System.Collections.IDictionary] -and $s.secrets.ContainsKey('gitHubTokenEnvVar') -and $s.secrets.gitHubTokenEnvVar) { [string]$s.secrets.gitHubTokenEnvVar } else { 'GITHUB_TOKEN' }
+                    $tokenPresent = (-not [string]::IsNullOrWhiteSpace([System.Environment]::GetEnvironmentVariable($tokenEnvVar))) -or [bool](Get-Command gh -ErrorAction SilentlyContinue)
+                    $outputWritable = $false
+                    try {
+                        $probeDir = Join-Path $WorkspaceRoot 'output'
+                        $null = New-Item -ItemType Directory -Path $probeDir -Force -ErrorAction Stop
+                        $probe = Join-Path $probeDir '.setup-probe'
+                        Set-Content -LiteralPath $probe -Value 'ok' -Encoding UTF8
+                        Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
+                        $outputWritable = $true
+                    } catch { $outputWritable = $false }
+                    $checks = @(
+                        @{ id = 'powershell';  label = 'PowerShell 5.1+';                 required = $true;  ok = ($PSVersionTable.PSVersion.Major -ge 5); detail = $PSVersionTable.PSVersion.ToString() },
+                        @{ id = 'git';         label = 'Git available';                   required = $true;  ok = [bool](Get-Command git -ErrorAction SilentlyContinue); detail = '' },
+                        @{ id = 'outputWritable'; label = 'output/ directory writable';    required = $true;  ok = $outputWritable; detail = '' },
+                        @{ id = 'gh';          label = 'GitHub CLI (optional)';           required = $false; ok = [bool](Get-Command gh -ErrorAction SilentlyContinue); detail = '' },
+                        @{ id = 'githubToken'; label = 'GitHub token/CLI configured';     required = $false; ok = [bool]$tokenPresent; detail = "env: $tokenEnvVar" }
+                    )
+                    $requiredOk = (@($checks | Where-Object { $_.required -and -not $_.ok }).Count -eq 0)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = @{ prerequisitesMet = [bool]$requiredOk; checks = $checks }
+                    }
+                }
+                'POST /setup/config' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $body = Parse-JsonBody -Body $req.Body
+                    $newRoots = @()
+                    if ($null -ne $body -and $body.ContainsKey('localRoots') -and $body.localRoots) {
+                        $newRoots = @($body.localRoots | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+                    }
+                    if (@($newRoots).Count -eq 0) {
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{ success = $false; error = 'setup requires at least one non-empty localRoots entry'; category = 'validation' }
+                    }
+                    else {
+                        $missingRoots = @($newRoots | Where-Object { -not (Test-Path -LiteralPath $_) })
+                        if (@($missingRoots).Count -gt 0) {
+                            Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{ success = $false; error = ("localRoots not found on disk: {0}" -f ($missingRoots -join ', ')); category = 'validation' }
+                        }
+                        else {
+                            $cfgPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
+                            $cfg = if (Test-Path -LiteralPath $cfgPath) { ConvertFrom-JsonCompat -Json (Get-Content -LiteralPath $cfgPath -Raw) } else { @{} }
+                            if (-not $cfg.ContainsKey('inventory') -or -not ($cfg.inventory -is [System.Collections.IDictionary])) { $cfg.inventory = @{} }
+                            $cfg.inventory.localRoots = $newRoots
+                            if ($body.ContainsKey('maxDepth') -and $body.maxDepth) { $cfg.inventory.maxDepth = [int]$body.maxDepth }
+                            elseif (-not $cfg.inventory.ContainsKey('maxDepth')) { $cfg.inventory.maxDepth = 3 }
+                            if (-not $cfg.inventory.ContainsKey('includeNonGitFolders')) { $cfg.inventory.includeNonGitFolders = $false }
+                            if ($body.ContainsKey('gitHubOwner')) {
+                                if (-not $cfg.ContainsKey('reconcile') -or -not ($cfg.reconcile -is [System.Collections.IDictionary])) { $cfg.reconcile = @{ ownerType = 'Auto' } }
+                                $cfg.reconcile.gitHubOwner = [string]$body.gitHubOwner
+                            }
+                            $generatedApiKey = $null
+                            if ($body.ContainsKey('requireApiKey') -and [bool]$body.requireApiKey) {
+                                if (-not $cfg.ContainsKey('auth') -or -not ($cfg.auth -is [System.Collections.IDictionary])) { $cfg.auth = @{} }
+                                $cfg.auth.requireApiKey = $true
+                                if (-not ($cfg.auth.ContainsKey('apiKey') -and $cfg.auth.apiKey)) {
+                                    $generatedApiKey = New-ApiKey
+                                    $cfg.auth.apiKey = $generatedApiKey
+                                }
+                            }
+                            if (-not $cfg.ContainsKey('schemaVersion')) { $cfg.schemaVersion = 'v1' }
+                            ($cfg | ConvertTo-Json -Depth 12) | Set-Content -LiteralPath $cfgPath -Encoding UTF8
+                            Write-HostLog ("setup.config wrote settings.json with {0} local root(s); requireApiKey={1}" -f @($newRoots).Count, ($body.ContainsKey('requireApiKey') -and [bool]$body.requireApiKey))
+                            Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                                success = $true
+                                data = @{
+                                    needsSetup      = $false
+                                    settingsPath    = $cfgPath
+                                    localRootCount  = @($newRoots).Count
+                                    generatedApiKey = $generatedApiKey
+                                    restartRequired = ($null -ne $generatedApiKey)
+                                }
+                            }
+                        }
                     }
                 }
                 'GET /api/status' {
@@ -6601,6 +7262,11 @@ try {
                     $assessmentLocalRepos = if ($useDifferentialScan) { @($localReposForAssessment) } else { @($localRepos) }
                     $assessmentGithubRepos = if ($useDifferentialScan) { @($githubReposForAssessmentSubset) } else { @($githubReposForAssessment) }
 
+                    # Cross-cutting — scan performance budget: prep (discovery +
+                    # git status + GitHub API + prior scans) up to here, then the
+                    # assessment (audit + scoring) and index-write phases below.
+                    $scanBudgetPrepMs = [int]((Get-Date) - $requestStart).TotalMilliseconds
+                    $swAssess = [System.Diagnostics.Stopwatch]::StartNew()
                     $assessedChanged = Invoke-PortfolioAssessment `
                         -LocalRepos          $assessmentLocalRepos `
                         -RoadmapEntries      $roadmapEntries `
@@ -6610,6 +7276,7 @@ try {
                         -GitHubRepos         $assessmentGithubRepos `
                         -StructureStandards  $structStandards `
                         -ValueScoringConfig  $valueScoringConfig
+                    $swAssess.Stop()
 
                     $assessments = if ($useDifferentialScan -and @($previousRepos).Count -gt 0) {
                         @(@($assessedChanged) + @($unchangedAssessments))
@@ -6756,6 +7423,7 @@ try {
                         Write-HostLog ("WARN portfolio.assessment differential snapshot failed: {0}" -f $_.Exception.Message)
                     }
 
+                    $swIndex = [System.Diagnostics.Stopwatch]::StartNew()
                     try {
                         $curationMap = Get-PortfolioCurationMap -WorkspaceRoot $WorkspaceRoot
                         $indexArtifacts = Save-PortfolioIndexArtifacts `
@@ -6771,6 +7439,7 @@ try {
                     } catch {
                         Write-HostLog ("WARN portfolio.assessment index write skipped: {0}" -f $_.Exception.Message)
                     }
+                    $swIndex.Stop()
 
                     if ($ttlSeconds -gt 0) {
                         Save-PortfolioAssessmentCache -Entries $assessments -Summary $summary -SignalSources $signalSources -GeneratedAt $generatedAt
@@ -6782,6 +7451,8 @@ try {
                     # proving how many repos were reused from cache vs fully reindexed.
                     $scanSummaryMode = if ($useDifferentialScan) { 'differential' } elseif ($refresh) { $(if ($forcedRefreshAll) { 'forced-refresh-all' } else { 'forced-full' }) } else { 'full' }
                     Write-HostLog ("[TRACE] portfolio.assessment scan-summary correlationId={0} mode={1} reused={2} reindexed={3} failed={4} durationMs={5}" -f $correlationId, $scanSummaryMode, $scanSummary.reused, $scanSummary.reindexed, $scanSummary.failed, $scanSummary.durationMs)
+                    # Cross-cutting — per-phase scan performance budget log.
+                    Write-HostLog ("[TRACE] portfolio.assessment scan-budget correlationId={0} prepMs={1} assessMs={2} indexWriteMs={3} totalMs={4} reposAssessed={5}" -f $correlationId, $scanBudgetPrepMs, [int]$swAssess.ElapsedMilliseconds, [int]$swIndex.ElapsedMilliseconds, $scanSummary.durationMs, @($assessments).Count)
 
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
@@ -7032,6 +7703,72 @@ try {
                         }
                     } catch {
                         Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'roadmap.maturity-history'
+                    }
+                }
+                'GET /api/cache/diagnostics' {
+                    # Cross-cutting — stale-cache diagnostics across the index-backed
+                    # views (status / roadmap / roadmap-audit / doc-audit / index).
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $settings = Get-HostSettings
+                    $roadmapTtl = Get-RoadmapCacheTtlSeconds -Settings $settings
+                    $caches = @{
+                        status         = Get-CacheDiagnosticEntry -Path (Get-StatusCacheFilePath) -TtlSeconds (Get-StatusCacheTtlSeconds -Settings $settings)
+                        roadmap        = Get-CacheDiagnosticEntry -Path (Get-RoadmapCacheFilePath) -TtlSeconds $roadmapTtl
+                        roadmapAudit   = Get-CacheDiagnosticEntry -Path (Get-RoadmapAuditCacheFilePath) -TtlSeconds $roadmapTtl
+                        docAudit       = Get-CacheDiagnosticEntry -Path (Get-DocAuditCacheFilePath) -TtlSeconds $roadmapTtl
+                        portfolioIndex = Get-CacheDiagnosticEntry -Path (Join-Path $WorkspaceRoot 'output\index\repos.index.json') -TtlSeconds 0
+                    }
+                    $staleCount = @($caches.Values | Where-Object { $_.stale }).Count
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = @{ caches = $caches; staleCount = $staleCount; generatedAt = (Get-Date).ToUniversalTime().ToString('o') }
+                    }
+                }
+                'GET /api/analytics/cost' {
+                    # Release 2.3 Phase 4 — report-time cost/burn analytics DERIVED
+                    # from run observations. Never persisted back into the
+                    # append-only event log (derivedOnly=true).
+                    $q = Parse-QueryString -Query $req.Query
+                    $days = if ($q.ContainsKey('days') -and $q.days) { [int]$q.days } else { 30 }
+                    if ($days -lt 1) { $days = 1 }
+                    if ($days -gt 3650) { $days = 3650 }
+                    $agentRunsJsonDir = Join-Path $WorkspaceRoot 'output\agent-runs\runs'
+                    $history = Get-AppDbAgentRunMetricsHistory -RepoName '' -Days $days -SeedFromRunsDirectory $agentRunsJsonDir
+                    $entries = if ($history.available) { @($history.entries) } else { @() }
+                    $byRepo = [System.Collections.Generic.List[object]]::new()
+                    foreach ($grp in ($entries | Group-Object -Property repoName)) {
+                        $cost = 0.0; $tokens = 0
+                        foreach ($e in $grp.Group) {
+                            $cost += [double](Get-ValueOrDefault $e.directCostUsd 0)
+                            $tokens += [int](Get-ValueOrDefault $e.tokensReported 0)
+                        }
+                        $byRepo.Add([pscustomobject]@{ repoName = [string]$grp.Name; runCount = $grp.Count; totalCostUsd = [math]::Round($cost, 4); totalTokens = $tokens })
+                    }
+                    $byPhase = [System.Collections.Generic.List[object]]::new()
+                    foreach ($grp in ($entries | Group-Object -Property { ("{0} / {1}" -f [string]$_.releaseName, [string]$_.phaseName) })) {
+                        $cost = 0.0
+                        foreach ($e in $grp.Group) { $cost += [double](Get-ValueOrDefault $e.directCostUsd 0) }
+                        $byPhase.Add([pscustomobject]@{ phase = [string]$grp.Name; runCount = $grp.Count; costUsd = [math]::Round($cost, 4) })
+                    }
+                    $burn = Get-AppDbQuotaBurnHistory -RepoName '' -Days $days
+                    $starvationCount = 0
+                    if ($burn.available) { $starvationCount = @($burn.entries | Where-Object { -not [bool]$_.allowed }).Count }
+                    $totalCost = 0.0
+                    foreach ($e in $entries) { $totalCost += [double](Get-ValueOrDefault $e.directCostUsd 0) }
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = @{
+                            days            = $days
+                            totalCostUsd    = [math]::Round($totalCost, 4)
+                            runCount        = @($entries).Count
+                            starvationCount = $starvationCount
+                            byRepo          = $byRepo.ToArray()
+                            byPhase         = $byPhase.ToArray()
+                            derivedOnly     = $true
+                            generatedAt     = (Get-Date).ToUniversalTime().ToString('o')
+                        }
+                        source = if ($history.available) { 'sqlite' } else { 'unavailable' }
                     }
                 }
                 'GET /api/agent-runs/metrics-history' {
@@ -8109,6 +8846,41 @@ try {
                         data    = @{
                             items = @($historyItems)
                             count = @($historyItems).Count
+                        }
+                    }
+                }
+                'POST /api/roadmap/repair/submit-pr' {
+                    # Release 2.4 — build a PR for a roadmap repair. Dry-run by
+                    # default (returns the planned branch/title/body). A live PR
+                    # (createPr=true) is an explicit operator action needing a git
+                    # checkout + GitHub write access, so it is never pushed here.
+                    $body = Parse-JsonBody -Body $req.Body
+                    $repoName = if ($null -ne $body -and $body.ContainsKey('repoName') -and $body.repoName) { [string]$body.repoName } else { '' }
+                    if ([string]::IsNullOrWhiteSpace($repoName)) {
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{ success = $false; error = 'repoName is required'; category = 'validation' }
+                    }
+                    else {
+                        $previewId = if ($body.ContainsKey('previewId')) { [string]$body.previewId } else { '' }
+                        $createPr = ($body.ContainsKey('createPr') -and [bool]$body.createPr)
+                        $branch = "roadmap-repair/$([DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss'))"
+                        $plan = @{
+                            repoName   = $repoName
+                            previewId  = $previewId
+                            branch     = $branch
+                            baseBranch = 'main'
+                            title      = "Roadmap repair: $repoName"
+                            body       = ("Automated roadmap repair for {0}.{1}" -f $repoName, $(if ($previewId) { " Based on repair preview $previewId." } else { '' }))
+                        }
+                        $note = if ($createPr) {
+                            'live PR creation requires a git checkout + a GitHub token with write access to the target repo (operator-verified); no branch was pushed'
+                        } else {
+                            'dry-run: set createPr=true (with a git checkout + GitHub write token) to open a live PR'
+                        }
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data = @{ dryRun = (-not $createPr); created = $false; prUrl = $null; plan = $plan; note = $note }
                         }
                     }
                 }

@@ -99,6 +99,7 @@ try {
         "Portfolio analytics loaded: $($report.portfolioAnalyticsLoaded)"
         "Documentation health loaded: $($report.documentationHealthLoaded)"
         "Execution throughput loaded: $($report.executionThroughputLoaded)"
+        "Narrow viewport (390px) ok: $($report.narrowViewportOk) (bottom nav: $($report.narrowBottomNavVisible), body scrollWidth: $($report.narrowBodyScrollWidth) / viewport: $($report.narrowInnerWidth))"
     ) | Set-Content -LiteralPath $summaryPath -Encoding UTF8
 
     Write-Host '[PASS] Frontend smoke completed' -ForegroundColor Green

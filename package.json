@@ -11,7 +11,10 @@
     "build": "npm run build --workspace frontend",
     "preview": "npm run preview --workspace frontend",
     "install:frontend": "npm install --workspace frontend --include=optional",
-    "smoke:frontend": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/Invoke-FrontendSmokeTest.ps1"
+    "smoke:frontend": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/Invoke-FrontendSmokeTest.ps1",
+    "typecheck": "npm run typecheck --workspace frontend",
+    "test": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/Invoke-TestSuite.ps1",
+    "test:fast": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/Invoke-TestSuite.ps1 -SkipApiHost"
   },
   "devDependencies": {
     "@types/react": "^19.2.16",

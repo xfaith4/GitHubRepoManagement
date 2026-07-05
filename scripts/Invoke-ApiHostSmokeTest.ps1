@@ -174,6 +174,99 @@ try {
         Write-Host '  persistence: no SQLite provider on this machine — degraded contract accepted' -ForegroundColor Yellow
     }
 
+    Write-Host '[STEP] Auth + setup routes (Release 2.2)' -ForegroundColor Cyan
+    $authStatusResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/auth/status"
+    Assert-Not503 -Name '/api/auth/status' -Response $authStatusResponse
+    $authStatus = $authStatusResponse.Json
+    if ($null -eq $authStatus -or $authStatus.success -ne $true) { throw "/api/auth/status did not return success=true. Body=$($authStatusResponse.Content)" }
+    foreach ($f in @('authRequired', 'authEnforced', 'authenticated', 'bindAddress', 'isLoopbackBind')) {
+        if (-not ($authStatus.data.PSObject.Properties.Name -contains $f)) { throw "/api/auth/status missing data.$f" }
+    }
+    if ($authStatus.data.authEnforced -ne $false) { throw "/api/auth/status expected authEnforced=false on the default host, got $($authStatus.data.authEnforced)" }
+    if ($authStatus.data.isLoopbackBind -ne $true) { throw "/api/auth/status expected isLoopbackBind=true for a 127.0.0.1 bind" }
+
+    $setupStatusResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/setup/status"
+    Assert-Not503 -Name '/setup/status' -Response $setupStatusResponse
+    $setupStatus = $setupStatusResponse.Json
+    if ($null -eq $setupStatus -or $setupStatus.success -ne $true) { throw "/setup/status did not return success=true. Body=$($setupStatusResponse.Content)" }
+    foreach ($f in @('needsSetup', 'settingsExists', 'hasLocalRoots', 'localRootCount', 'firstScanComplete')) {
+        if (-not ($setupStatus.data.PSObject.Properties.Name -contains $f)) { throw "/setup/status missing data.$f" }
+    }
+    if ($setupStatus.data.settingsExists -ne $true) { throw "/setup/status expected settingsExists=true in this workspace" }
+
+    $prereqResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/setup/prerequisites"
+    Assert-Not503 -Name '/setup/prerequisites' -Response $prereqResponse
+    $prereq = $prereqResponse.Json
+    if ($null -eq $prereq -or $prereq.success -ne $true) { throw "/setup/prerequisites did not return success=true. Body=$($prereqResponse.Content)" }
+    if (-not ($prereq.data.PSObject.Properties.Name -contains 'prerequisitesMet')) { throw "/setup/prerequisites missing data.prerequisitesMet" }
+    if (@($prereq.data.checks).Count -lt 1) { throw "/setup/prerequisites returned no checks" }
+
+    $setupConfigBad = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/setup/config" -Body @{ localRoots = @() }
+    if ([int]$setupConfigBad.StatusCode -ne 400) { throw "/setup/config with empty localRoots expected HTTP 400, got $($setupConfigBad.StatusCode)" }
+    Write-Host ("  auth/setup routes ok: authEnforced={0} needsSetup={1} prerequisitesMet={2} setup/config(empty)->400" -f $authStatus.data.authEnforced, $setupStatus.data.needsSetup, $prereq.data.prerequisitesMet) -ForegroundColor DarkGray
+
+    Write-Host '[STEP] Agent integration protocol (Release 2.4)' -ForegroundColor Cyan
+    $agentReadiness1 = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/v1/agent/readiness/$([uri]::EscapeDataString('github-repo-management'))"
+    Assert-Not503 -Name '/api/v1/agent/readiness' -Response $agentReadiness1
+    if ($null -eq $agentReadiness1.Json -or $agentReadiness1.Json.success -ne $true) { throw "/api/v1/agent/readiness did not return success=true. Body=$($agentReadiness1.Content)" }
+    foreach ($f in @('schemaVersion', 'repoName', 'found', 'lifecycleState', 'dispatchReadiness', 'roadmapState', 'readyForWork', 'blockingReasons', 'claim', 'generatedAt')) {
+        if (-not ($agentReadiness1.Json.data.PSObject.Properties.Name -contains $f)) { throw "/api/v1/agent/readiness missing data.$f" }
+    }
+    $agentReadiness2 = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/v1/agent/readiness/$([uri]::EscapeDataString('github-repo-management'))"
+    $shape1 = (($agentReadiness1.Json.data.PSObject.Properties.Name) | Sort-Object) -join ','
+    $shape2 = (($agentReadiness2.Json.data.PSObject.Properties.Name) | Sort-Object) -join ','
+    if ($shape1 -ne $shape2) { throw "/api/v1/agent/readiness shape changed between calls: '$shape1' vs '$shape2'" }
+    $agentClaimRepo = 'smoke-agent-claim-repo'
+    $claim1 = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/v1/agent/claim/$agentClaimRepo" -Body @{ agentId = 'smoke-a' }
+    if ([int]$claim1.StatusCode -ne 200) { throw "first agent claim expected 200, got $($claim1.StatusCode). Body=$($claim1.Content)" }
+    $claim2 = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/v1/agent/claim/$agentClaimRepo" -Body @{ agentId = 'smoke-b' }
+    if ([int]$claim2.StatusCode -ne 409) { throw "second concurrent agent claim expected 409, got $($claim2.StatusCode). Body=$($claim2.Content)" }
+    $complete1 = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/v1/agent/complete/$agentClaimRepo"
+    if ([int]$complete1.StatusCode -ne 200) { throw "agent complete expected 200, got $($complete1.StatusCode)" }
+    $claim3 = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/v1/agent/claim/$agentClaimRepo" -Body @{ agentId = 'smoke-c' }
+    if ([int]$claim3.StatusCode -ne 200) { throw "re-claim after complete expected 200, got $($claim3.StatusCode)" }
+    $null = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/v1/agent/complete/$agentClaimRepo"
+    $agentQueue = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/v1/agent/queue"
+    if ($null -eq $agentQueue.Json -or $agentQueue.Json.success -ne $true) { throw "/api/v1/agent/queue did not return success=true" }
+    Write-Host '  agent protocol ok: readiness stable shape, concurrent-claim -> 409, complete + reclaim, queue ok' -ForegroundColor DarkGray
+
+    Write-Host '[STEP] Distribution: SVG badges + digest (Release 2.3 Phase 3)' -ForegroundColor Cyan
+    $portfolioBadge = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/badges/portfolio.svg"
+    if ([int]$portfolioBadge.StatusCode -ne 200) { throw "/api/badges/portfolio.svg expected 200, got $($portfolioBadge.StatusCode)" }
+    if ($portfolioBadge.ContentType -notlike 'image/svg+xml*') { throw "/api/badges/portfolio.svg expected image/svg+xml, got '$($portfolioBadge.ContentType)'" }
+    if ($portfolioBadge.Content -notmatch '<svg') { throw "/api/badges/portfolio.svg did not return SVG markup" }
+    $digestSend = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/digest/send" -Body @{}
+    if ([int]$digestSend.StatusCode -ne 200) { throw "/api/digest/send expected 200, got $($digestSend.StatusCode). Body=$($digestSend.Content)" }
+    if ($null -eq $digestSend.Json -or $digestSend.Json.success -ne $true) { throw "/api/digest/send did not return success=true" }
+    foreach ($f in @('totalRepos', 'byLevel', 'improvedThisWeek', 'topCandidates')) {
+        if (-not ($digestSend.Json.data.payload.PSObject.Properties.Name -contains $f)) { throw "/api/digest/send payload missing '$f'" }
+    }
+    if ($digestSend.Json.data.delivered -ne $false) { throw "/api/digest/send with no webhook should report delivered=false" }
+    Write-Host '  distribution ok: portfolio.svg is SVG, digest payload has totalRepos/byLevel/improvedThisWeek/topCandidates (dry-run)' -ForegroundColor DarkGray
+
+    Write-Host '[STEP] Cost/burn analytics (Release 2.3 Phase 4)' -ForegroundColor Cyan
+    $costResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/analytics/cost?days=90"
+    Assert-Not503 -Name '/api/analytics/cost' -Response $costResponse
+    if ($null -eq $costResponse.Json -or $costResponse.Json.success -ne $true) { throw "/api/analytics/cost did not return success=true. Body=$($costResponse.Content)" }
+    foreach ($f in @('totalCostUsd', 'runCount', 'starvationCount', 'byRepo', 'byPhase', 'derivedOnly')) {
+        if (-not ($costResponse.Json.data.PSObject.Properties.Name -contains $f)) { throw "/api/analytics/cost missing data.$f" }
+    }
+    if ($costResponse.Json.data.derivedOnly -ne $true) { throw "/api/analytics/cost must report derivedOnly=true" }
+    Write-Host ("  cost analytics ok: runCount={0} totalCostUsd={1} starvation={2} (derived-only)" -f $costResponse.Json.data.runCount, $costResponse.Json.data.totalCostUsd, $costResponse.Json.data.starvationCount) -ForegroundColor DarkGray
+
+    Write-Host '[STEP] Stale-cache diagnostics (cross-cutting)' -ForegroundColor Cyan
+    $cacheDiag = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/cache/diagnostics"
+    Assert-Not503 -Name '/api/cache/diagnostics' -Response $cacheDiag
+    if ($null -eq $cacheDiag.Json -or $cacheDiag.Json.success -ne $true) { throw "/api/cache/diagnostics did not return success=true. Body=$($cacheDiag.Content)" }
+    foreach ($c in @('status', 'roadmap', 'roadmapAudit', 'docAudit', 'portfolioIndex')) {
+        if (-not ($cacheDiag.Json.data.caches.PSObject.Properties.Name -contains $c)) { throw "/api/cache/diagnostics missing cache '$c'" }
+        foreach ($f in @('present', 'ttlSeconds', 'stale')) {
+            if (-not ($cacheDiag.Json.data.caches.$c.PSObject.Properties.Name -contains $f)) { throw "/api/cache/diagnostics cache '$c' missing field '$f'" }
+        }
+    }
+    if (-not ($cacheDiag.Json.data.PSObject.Properties.Name -contains 'staleCount')) { throw "/api/cache/diagnostics missing staleCount" }
+    Write-Host ("  cache diagnostics ok: 5 caches reported, staleCount={0}" -f $cacheDiag.Json.data.staleCount) -ForegroundColor DarkGray
+
     Write-Host '[STEP] Status route' -ForegroundColor Cyan
     $statusResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/status?localRoots=$([uri]::EscapeDataString($WorkspaceRoot))&maxDepth=2&includeNonGitFolders=false"
     Assert-Not503 -Name '/api/status' -Response $statusResponse
@@ -1002,6 +1095,18 @@ try {
     $repairHistoryItemsOk = ($repairHistoryJson.data -and $repairHistoryJson.data.PSObject.Properties.Name -contains 'items')
     Write-Host ("  /api/roadmap/repair/history -> {0} item(s)" -f @($repairHistoryJson.data.items).Count) -ForegroundColor DarkGray
 
+    Write-Host '[STEP] Roadmap repair submit-PR (Release 2.4, dry-run)' -ForegroundColor Cyan
+    $submitPrBad = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/repair/submit-pr" -Body @{}
+    if ([int]$submitPrBad.StatusCode -ne 400) { throw "/api/roadmap/repair/submit-pr without repoName expected 400, got $($submitPrBad.StatusCode)" }
+    $submitPr = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/repair/submit-pr" -Body @{ repoName = 'github-repo-management'; previewId = 'smoke-preview' }
+    if ([int]$submitPr.StatusCode -ne 200) { throw "/api/roadmap/repair/submit-pr expected 200, got $($submitPr.StatusCode). Body=$($submitPr.Content)" }
+    if ($submitPr.Json.success -ne $true) { throw '/api/roadmap/repair/submit-pr returned success=false' }
+    if ($submitPr.Json.data.dryRun -ne $true) { throw '/api/roadmap/repair/submit-pr default should be dryRun=true' }
+    foreach ($f in @('branch', 'baseBranch', 'title', 'body')) {
+        if (-not ($submitPr.Json.data.plan.PSObject.Properties.Name -contains $f)) { throw "/api/roadmap/repair/submit-pr plan missing '$f'" }
+    }
+    Write-Host ("  submit-pr ok: dry-run plan (branch={0}), no-repoName -> 400" -f $submitPr.Json.data.plan.branch) -ForegroundColor DarkGray
+
     Write-Host '[STEP] Log tail route' -ForegroundColor Cyan
     $sinceIso = (Get-Date).ToUniversalTime().AddHours(-6).ToString('o')
     $encodedSinceIso = [uri]::EscapeDataString($sinceIso)
@@ -1300,6 +1405,14 @@ try {
         ($portfolioData.PSObject.Properties.Name -contains 'signalSources') -and
         ($portfolioData.PSObject.Properties.Name -contains 'generatedAt')
     if (-not $portfolioFieldsOk) { throw '/api/portfolio/assessment response missing expected fields (entries, summary, signalSources, generatedAt)' }
+
+    Write-Host '[STEP] Scan performance budget log (cross-cutting)' -ForegroundColor Cyan
+    $null = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment?refresh=true"
+    $hostLogContent = if (Test-Path -LiteralPath $logPath) { Get-Content -LiteralPath $logPath -Raw -ErrorAction SilentlyContinue } else { '' }
+    if ($hostLogContent -notmatch 'scan-budget correlationId=\S+ prepMs=\d+ assessMs=\d+ indexWriteMs=\d+ totalMs=\d+') {
+        throw 'scan performance budget log line (scan-budget prepMs/assessMs/indexWriteMs/totalMs) not found in host log after a scan'
+    }
+    Write-Host '  scan-budget log ok: per-phase timing (prep=discovery/git/GitHub, assess=audit, indexWrite) emitted' -ForegroundColor DarkGray
 
     $portfolioSummaryFieldsOk = $null -ne $portfolioData.summary -and
         ($portfolioData.summary.PSObject.Properties.Name -contains 'totalRepos') -and

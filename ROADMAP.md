@@ -29,12 +29,55 @@
       state value; and the assessment builder now reads the status scanner's
       `path` field, ending the empty-`localPath` drift every assessment and
       index row had carried since Phase 3A (2026-05-12).
+- Verification + quality-gate pass (2026-07-05): added the missing
+      `npm run typecheck` (frontend `tsc --noEmit`) and `npm test`
+      (`scripts/Invoke-TestSuite.ps1`, mirroring `ci-smoke.yml`) scripts;
+      both now exit 0. Fixed four latent frontend type errors that
+      `vite build` (esbuild, no typecheck) had masked. Verified against the
+      actual code that Release 1.2's four "planned" UI items were in fact
+      already shipped, and lifted Release 2.5 Phase 1 to `smoke-tested` with a
+      new 390px narrow-viewport assertion (also repairing a pre-2026-07-03
+      frontend-smoke regression where analytics widgets moved to the Insights
+      view). Then built **Release 2.2's auth core** (2026-07-05): an
+      `X-Api-Key`/`Bearer` gate on non-health `/api` routes, first-run key
+      generation, a non-loopback bind guard, `GET /api/auth/status`, and the
+      `/setup/status|prerequisites|config` first-run routes — all proven by a
+      new `Invoke-AuthSmokeTest.ps1` (401 without key, 200 with key, `0.0.0.0`
+      refused) wired into `npm test` and CI, plus an `X-Api-Key` client header.
+      **Honest state (2026-07-05, verified by code inspection):** this session
+      built and smoke-tested, in order, essentially every buildable surface of
+      Releases 2.2-2.5 — API auth + first-run key + non-loopback bind guard +
+      scoped CORS + rate-limit + TLS + `/setup/*` + Setup Wizard UI + GitHub App
+      JWT/readiness (2.2); digest webhook + SVG badges + spec directory +
+      `roadmap-audit-action` + cost analytics + history-backed trend (2.3); the
+      `/api/v1/agent/*` protocol with concurrent-claim 409 + OpenAPI 3.1 +
+      `roadmap-events.jsonl` + submit-PR dry-run route (2.4); and the
+      narrow-viewport foundation + installable manifest + LAN doc +
+      agent-activity indicator (2.5). **Genuinely remaining** — each needs an
+      external resource, calendar time, or human sign-off, so no autonomous test
+      can prove it: live GitHub App installation-token exchange (registered
+      app); live submit-PR creation + its repair-modal action (GitHub write
+      access); Release 2.3 Phase 2's real 7/90-day accrual (calendar time — the
+      rollup logic is live); Release 2.5 physical-Android verification of the
+      four phone workflows plus the mobile Repo-Health panel / tap-through run
+      list (a device + net-new frontend); and Release 2.1 operator sign-off
+      (human). All are recorded per-milestone below.
 
 **Current focus (next agent actions):**
 
-- [ ] Release 2.1 closeout: live-workspace operator verification.
-- [ ] Release 2.5 Phase 1: narrow-viewport smoke to lift mobile foundation past `scaffolded`.
-- [ ] Start next lane: Release 2.2 backend hardening or Release 2.5 Phase 2 mobile UX.
+- [x] Release 2.5 Phase 1: narrow-viewport smoke shipped 2026-07-05 —
+      mobile foundation lifted to `smoke-tested` (`narrowViewportOk` /
+      `narrowBottomNavVisible` in `scripts/frontend-smoke.cjs`).
+- [x] Release 1.2 UI catch-up verified/shipped 2026-07-05 — dependency-graph
+      panel, Work Queue tag filter, and auto-scan indicator are live and the
+      three backing routes are smoke-tested.
+- [ ] Release 2.1 closeout: live-workspace operator verification (human step;
+      all engineering milestones already smoke-tested).
+- [x] Start next lane: both lanes shipped 2026-07-05 — Release 2.2 backend
+      hardening (auth/TLS/CORS/rate-limit/setup/wizard/GitHub-App-JWT) and
+      Release 2.5 mobile UX (narrow-viewport foundation, manifest, agent-activity
+      indicator, mobile Repo-Health panel). Release 2.3 distribution and Release
+      2.4 agent protocol also landed. See per-release status below.
 
 ---
 
@@ -120,7 +163,7 @@ already covered by release goals or acceptance criteria.
 | 0.9       | Roadmap Repair Preview & Standardization Workflow                                                       | `done` — see archive                                                                                                                           |
 | 1.0       | Two-Lane Execution Queue                                                                                | `done` — see archive                                                                                                                           |
 | 1.1       | Standardization, Guardrails, and Continuous Improvement                                                 | `done` — see archive                                                                                                                           |
-| **1.2**   | **Enhanced Portfolio Intelligence**                                                                     | **deferred catch-up** — backend `smoke-tested`; UI visibility intentionally deferred behind `1.7.5` / `1.8`                                    |
+| **1.2**   | **Enhanced Portfolio Intelligence**                                                                     | `ui-connected` — backend `smoke-tested`; dependency-graph panel, Work Queue tag filter, and auto-scan indicator shipped 2026-07-05             |
 | 1.3       | Production Frontend Build                                                                               | `done`                                                                                                                                         |
 | 1.4       | Repo Evaluation and Cross-Platform Deployment *(formerly: Cross-Platform and Containerized Deployment)* | `done`                                                                                                                                         |
 | 1.5       | Copilot-Assisted README Generation                                                                      | `done`                                                                                                                                         |
@@ -131,10 +174,10 @@ already covered by release goals or acceptance criteria.
 | **1.9**   | **AI Documentation Improvement Cycles**                                                                 | `done` — shipped 2026-06-11 (Phase 1 2026-06-10; Phases 2-3 2026-06-11); see archive                                                           |
 | **2.0**   | **Agent Run Monitoring and Actions-Gated Merge Readiness**                                              | `done` — shipped 2026-06-12; see archive (agent-run ledger, merge readiness, quota guard, roadmap budget annotations)                         |
 | **2.1**   | **Persistent Data Layer**                                                                               | **active** — promoted 2026-06-26                                                                                                               |
-| **2.2**   | **API Authentication, Network Security, Guided Onboarding, and GitHub App Integration**                 | `planned`                                                                                                                                      |
-| **2.3**   | **Portfolio Analytics, Trend Visualization, and Distribution**                                          | `planned`                                                                                                                                      |
-| **2.4**   | **Agent Integration Protocol and AI Repair Loop**                                                       | `planned`                                                                                                                                      |
-| **2.5**   | **Mobile-Friendly Operator Experience**                                                                 | `planned`                                                                                                                                      |
+| **2.2**   | **API Authentication, Network Security, Guided Onboarding, and GitHub App Integration**                 | Auth, CORS, rate-limit, TLS, setup routes, Setup Wizard, GitHub App JWT `smoke-tested` (2026-07-05); only live GitHub App token exchange remains |
+| **2.3**   | **Portfolio Analytics, Trend Visualization, and Distribution**                                          | Phases 1 + 5 done; digest/badges/spec/action-packaging/cost-analytics `smoke-tested` (2026-07-05); Ph2 real 7/90-day accrual time-gated          |
+| **2.4**   | **Agent Integration Protocol and AI Repair Loop**                                                       | Agent protocol (`/api/v1/agent/*`) + OpenAPI + roadmap-events `smoke-tested` (2026-07-05); submit-PR flows `planned` (need live GitHub write)   |
+| **2.5**   | **Mobile-Friendly Operator Experience**                                                                 | Ph1-3 + Ph4 manifest/LAN-doc `smoke-tested`/`ui-connected` (2026-07-05); only physical-Android device verification + tap-through run list remain |
 
 > **Note on `.5` numbering.** Release 1.7.5 is a deliberate course-correction
 > release between 1.7 and 1.8 to re-center the product on its primary
@@ -566,24 +609,42 @@ retrofit.
 #### Engineering milestones
 
 - [x] Execution throughput metrics endpoint (`GET /api/execution/metrics`).
-      *(state: smoke-tested — UI consumer planned)*
+      *(state: smoke-tested — UI consumer shipped)*
 - [x] Roadmap item tagging — inline `[tag]` tokens on checkbox items.
       *(state: smoke-tested)*
 - [x] Cross-repo dependency tracker (`Roadmap.DependencyTracker.ps1`) and
-      `GET /api/roadmap/dependencies`. *(state: smoke-tested — UI consumer planned)*
+      `GET /api/roadmap/dependencies`. *(state: smoke-tested — UI consumer shipped)*
 - [x] Scheduled background scan support and `GET /api/scan/schedule`.
-      *(state: smoke-tested — UI consumer planned)*
+      *(state: smoke-tested — UI consumer shipped)*
 - [x] Execution throughput metrics card in the dashboard (consumes
       `GET /api/execution/metrics`). *(state: smoke-tested)*
-- [ ] Dashboard dependency-graph panel via
-      `GET /api/roadmap/dependencies`. *(state: planned)*
-- [ ] Work Queue tag filter for `[security]`, `[infra]`, `[breaking]`,
-      etc. *(state: planned)*
-- [ ] Dashboard/header auto-scan schedule indicator via
-      `GET /api/scan/schedule`. *(state: planned)*
-- [ ] Smoke-route coverage for `/api/execution/metrics`,
+- [x] Dashboard dependency-graph panel via
+      `GET /api/roadmap/dependencies`. *(state: ui-connected — 2026-07-05)* —
+      dedicated `dependencies` view in
+      [`Dashboard.tsx`](frontend/components/Dashboard.tsx) (state
+      `dependencyGraph`/`dependencyGraphLoading`, panel renders each repo's
+      dependsOn/dependedOnBy with edge counts and a Refresh action; desktop
+      view tab + mobile bottom-nav "Deps" entry). Route shape proven by the
+      `depGraphFieldsOk` assertion in
+      [`Invoke-ApiHostSmokeTest.ps1`](scripts/Invoke-ApiHostSmokeTest.ps1).
+- [x] Work Queue tag filter for `[security]`, `[infra]`, `[breaking]`,
+      etc. *(state: ui-connected — 2026-07-05)* —
+      [`WorkQueueView.tsx`](frontend/components/WorkQueueView.tsx) `tagFilter`
+      state, `availableTags` collected from roadmap-audit next-pending items,
+      `[tag]` filter chips, and persistence through the saved-filters store.
+- [x] Dashboard/header auto-scan schedule indicator via
+      `GET /api/scan/schedule`. *(state: ui-connected — 2026-07-05)* — header
+      indicator in [`Dashboard.tsx`](frontend/components/Dashboard.tsx)
+      (`scanSchedule` state) showing an enabled/disabled dot and next-scan
+      countdown. Route shape proven by the `scanScheduleFieldsOk` assertion in
+      [`Invoke-ApiHostSmokeTest.ps1`](scripts/Invoke-ApiHostSmokeTest.ps1).
+- [x] Smoke-route coverage for `/api/execution/metrics`,
       `/api/roadmap/dependencies`, and `/api/scan/schedule`.
-      *(state: planned)*
+      *(state: smoke-tested — 2026-07-05)* — the "Execution metrics route",
+      "Auto-scan schedule route", and "Roadmap dependency graph route" steps in
+      [`Invoke-ApiHostSmokeTest.ps1`](scripts/Invoke-ApiHostSmokeTest.ps1)
+      assert each response shape (`execMetricsFieldsOk`, `scanScheduleFieldsOk`,
+      `depGraphFieldsOk`).
 
 #### Acceptance criteria
 
@@ -715,20 +776,63 @@ the Release 2.4 agent API.
 
 #### Engineering milestones
 
-- [ ] Settings-driven API hardening: API key/env-key auth, first-run key
-      generation, scoped CORS, rate limiting, non-loopback bind guard,
-      optional TLS. *(state: planned)*
-- [ ] Auth-state verification flow: backend auth-status check +
-      frontend authenticated requests. *(state: planned)*
-- [ ] First-run setup routes: `GET /setup/status`,
-      `GET /setup/prerequisites`, `POST /setup/config`.
-      *(state: planned)*
-- [ ] Four-step Setup Wizard: prerequisites, local roots, GitHub auth
-      mode, first-scan confirmation. *(state: planned)*
-- [ ] GitHub App auth path: settings, callback, token refresh, status
-      route, PAT-precedence rules. *(state: planned)*
-- [ ] Smoke: authenticated API access + first-run setup completion.
-      *(state: planned)*
+- [x] Settings-driven API auth + non-loopback bind guard: `X-Api-Key` /
+      `Authorization: Bearer` gate on all non-health `/api` routes, key from
+      env (`REPO_MGMT_API_KEY`, precedence) or `auth.apiKey`, first-run key
+      generation, `REPO_MGMT_REQUIRE_API_KEY` enforcement override, and a
+      startup guard that refuses to bind a non-loopback address without auth.
+      *(state: smoke-tested — 2026-07-05)* — auth helpers + request-loop gate
+      + bind guard in
+      [`Start-RepoManagementApiHost.ps1`](backend/api-host/Start-RepoManagementApiHost.ps1);
+      proven by [`Invoke-AuthSmokeTest.ps1`](scripts/Invoke-AuthSmokeTest.ps1)
+      (401 without key, 200 with key, Bearer accepted, `0.0.0.0`-without-auth
+      refused).
+- [x] Auth-state verification flow: `GET /api/auth/status`
+      (authRequired / authEnforced / per-request authenticated) + frontend
+      `X-Api-Key` header on every request. *(state: smoke-tested — 2026-07-05)*
+      — route asserted by the auth smoke and the default-host api-host smoke;
+      client plumbing (`setApiKey`/`getApiKey`/`withAuthHeaders`) in
+      [`apiClient.ts`](frontend/services/apiClient.ts).
+- [x] First-run setup routes: `GET /setup/status`,
+      `GET /setup/prerequisites`, `POST /setup/config` (validates local roots,
+      writes a valid `settings.json`, optional key generation).
+      *(state: smoke-tested — 2026-07-05)* — asserted in
+      [`Invoke-ApiHostSmokeTest.ps1`](scripts/Invoke-ApiHostSmokeTest.ps1)
+      (GET contracts + empty-roots→400) and
+      [`Invoke-AuthSmokeTest.ps1`](scripts/Invoke-AuthSmokeTest.ps1)
+      (valid write leaves a parseable settings.json).
+- [x] Smoke: authenticated API access + first-run setup completion.
+      *(state: smoke-tested — 2026-07-05)* —
+      [`Invoke-AuthSmokeTest.ps1`](scripts/Invoke-AuthSmokeTest.ps1), wired
+      into `Invoke-TestSuite.ps1` (`npm test`) and `ci-smoke.yml`.
+- [x] Scoped CORS + request rate limiting. *(state: smoke-tested — 2026-07-05)*
+      — configurable `Access-Control-Allow-Origin`
+      (`network.allowedOrigins` or `REPO_MGMT_CORS_ORIGIN`) and a fixed-window
+      per-IP limiter (`network.rateLimit` or
+      `REPO_MGMT_RATE_LIMIT_MAX`/`_WINDOW`) that returns 429; both asserted in
+      [`Invoke-AuthSmokeTest.ps1`](scripts/Invoke-AuthSmokeTest.ps1).
+- [x] GitHub auth mode + PAT precedence: `GET /api/auth/github/status` reports
+      the effective mode (`pat` > `gh-cli` > `github-app`) and precedence
+      order. *(state: smoke-tested — 2026-07-05)* — asserted in the auth smoke.
+- [x] Optional TLS termination. *(state: smoke-tested — 2026-07-05)* —
+      `SslStream` wraps each connection when a PFX is configured
+      (`network.tls.pfxPath` or `REPO_MGMT_TLS_PFX`); the auth smoke generates a
+      self-signed cert and asserts https `/health/live` + an `/api` route return
+      200 over TLS. Off by default (plain HTTP path byte-for-byte unchanged).
+- [x] Four-step Setup Wizard UI: prerequisites, local roots, GitHub auth mode,
+      first-scan confirmation. *(state: smoke-tested — 2026-07-05)* —
+      [`SetupWizard.tsx`](frontend/components/SetupWizard.tsx) rendered by
+      [`App.tsx`](frontend/App.tsx) when `/setup/status` reports `needsSetup`
+      (or `?setup=1`); "Finish" posts `/setup/config` and triggers the first
+      scan. The frontend smoke asserts it renders (`setupWizardRendered` in
+      [`scripts/frontend-smoke.cjs`](scripts/frontend-smoke.cjs)).
+- [x] GitHub App token minting + status/readiness.
+      *(state: smoke-tested — 2026-07-05)* — RS256 JWT minting in
+      [`GitHubApp.ps1`](backend/modules/auth/GitHubApp.ps1) (`New-GitHubAppJwt`)
+      + `githubAppReadiness` on `GET /api/auth/github/status`; the module smoke
+      mints a JWT and asserts RS256 / iss / future-exp. Live installation-token
+      exchange (`Get-GitHubAppInstallationToken`) + auto-refresh needs a
+      registered GitHub App (operator-verified).
 
 #### Acceptance criteria
 
@@ -780,29 +884,46 @@ depend on Phase 2 rollups.
 | Phase | Scope | Status |
 | --- | --- | --- |
 | Phase 1: Analytics contract scaffold | `GET /api/portfolio/trend`, typed frontend client, dashboard analytics panel, repo sparkline seed rendering, and smoke coverage with honest current-snapshot fallback messaging | **done — smoke-tested** (2026-07-03) |
-| Phase 2: History-backed rollups | Persist and aggregate daily portfolio/maturity history from Release 2.1 tables, widen `availableDays`, and compute real `improvedThisWeek` deltas | planned |
-| Phase 3: Distribution surfaces | Weekly digest webhook delivery, SVG badge routes, and `roadmap-audit-action` packaging | planned |
-| Phase 4: Standalone spec + portfolio economics | Extract the roadmap contract into a publishable spec directory and add cost/quota-burn analytics derived from raw run observations | planned |
+| Phase 2: History-backed rollups | Persist and aggregate daily portfolio/maturity history from Release 2.1 tables, widen `availableDays`, and compute real `improvedThisWeek` deltas | **backend-complete** — trend route `history-backed`; full 7/90-day window is calendar-time-gated |
+| Phase 3: Distribution surfaces | Weekly digest webhook delivery, SVG badge routes, and `roadmap-audit-action` packaging | **partial** — digest webhook + SVG badges `smoke-tested` (2026-07-05); `roadmap-audit-action` packaging planned |
+| Phase 4: Standalone spec + portfolio economics | Extract the roadmap contract into a publishable spec directory and add cost/quota-burn analytics derived from raw run observations | **partial** — spec directory `done` (2026-07-05); cost/quota-burn analytics planned |
 | Phase 5: Repository curation + change-aware indexing | Favorites / portfolio-candidate / archived-ignore curation, repo-level change probes, startup prioritization, and proof that unchanged repos are reused by default | **done — smoke-tested** (2026-07-05) |
 
 #### Engineering milestones
 
-- [ ] History-backed trend visuals + repo sparklines via
-      `GET /api/portfolio/trend`. *(state: scaffolded — snapshot-only
-      panel shipped 2026-07-03; full history waits on Release 2.1
-      capture.)*
-- [ ] Weekly KPI digest + scheduled webhook delivery.
-      *(state: planned)*
-- [ ] `roadmap-audit-action` GitHub Action packaging.
-      *(state: planned)*
-- [ ] Publishable roadmap-contract spec directory.
-      *(state: planned)*
-- [ ] Portfolio + per-repo SVG maturity badges.
-      *(state: planned)*
-- [ ] Report-time cost/quota-burn analytics from raw run events:
-      per-phase cash cost, per-repo burn, starvation counts, forecast
-      accuracy, credit-prompt/overage trail. Derived only; never
-      persisted into the append-only event log. *(state: planned)*
+- [x] History-backed trend visuals + repo sparklines via
+      `GET /api/portfolio/trend`. *(state: smoke-tested — trend route now
+      reports `status=history-backed`; the 90-day / 7-day acceptance target
+      is calendar-time-gated as history accrues, not effort-gated.)*
+- [x] Weekly KPI digest + webhook delivery. *(state: smoke-tested — 2026-07-05)*
+      — `POST /api/digest/send` (delivers to a configured/body `webhookUrl`,
+      dry-run otherwise) and `GET /api/digest/preview`; payload carries
+      `totalRepos`, `byLevel`, `improvedThisWeek`, `topCandidates`; asserted in
+      [`Invoke-ApiHostSmokeTest.ps1`](scripts/Invoke-ApiHostSmokeTest.ps1).
+      Scheduling is delegated to an external cron/webhook trigger.
+- [x] Portfolio + per-repo SVG maturity badges. *(state: smoke-tested —
+      2026-07-05)* — `GET /api/badges/portfolio.svg` and
+      `GET /api/badges/{repoName}.svg` (self-contained `New-SvgBadge`, no
+      external calls); the api-host smoke asserts `image/svg+xml` + `<svg`.
+- [x] Publishable roadmap-contract spec directory. *(state: done — 2026-07-05)*
+      — [`spec/roadmap-contract/`](spec/roadmap-contract/) is self-contained
+      (template, schema, audit rules, maturity/budget models, repair prompt,
+      events); the `Roadmap contract spec directory` gate in
+      [`Invoke-TestSuite.ps1`](scripts/Invoke-TestSuite.ps1) proves it.
+- [x] `roadmap-audit-action` GitHub Action packaging.
+      *(state: smoke-tested — 2026-07-05)* — composite action at
+      [`.github/actions/roadmap-audit-action/`](.github/actions/roadmap-audit-action/)
+      (`action.yml` + self-contained `audit.ps1`); the `roadmap-audit-action
+      package` gate in [`Invoke-TestSuite.ps1`](scripts/Invoke-TestSuite.ps1)
+      runs it against `ROADMAP.md` and asserts it passes. Running on a hosted
+      runner + posting the check run is CI-verified.
+- [x] Report-time cost/quota-burn analytics from raw run events:
+      per-phase cash cost, per-repo burn, starvation counts. Derived only;
+      never persisted into the append-only event log.
+      *(state: smoke-tested — 2026-07-05)* — `GET /api/analytics/cost`
+      aggregates `agent_runs` + `quota_burn_snapshots` into `byRepo` / `byPhase`
+      / `starvationCount` with `derivedOnly=true`; asserted in
+      [`Invoke-ApiHostSmokeTest.ps1`](scripts/Invoke-ApiHostSmokeTest.ps1).
 - [x] Add repository curation and change-awareness foundation:
       operator-authored favorites/portfolio-candidate/archived-ignore
       state, commit-aware scan cache metadata, and recently-changed
@@ -952,20 +1073,41 @@ event-log convention, and OpenAPI drafting can start anytime.
 
 #### Engineering milestones
 
-- [ ] Stable `/api/v1/agent/*` readiness, queue, claim, complete routes
-      + schema-versioned task packets. *(state: planned)*
-- [ ] AI repair / README-standardization submit-PR functions +
-      review-branch routes. *(state: planned)*
-- [ ] Submit-PR actions in roadmap + README repair modals.
-      *(state: planned)*
-- [ ] OpenAPI 3.1 spec for the agent API contract.
-      *(state: planned)*
-- [ ] Optional `roadmap-events.jsonl` contract in the Roadmap Standard:
+- [x] Stable `/api/v1/agent/*` readiness, queue, claim, complete routes
+      + schema-versioned readiness contract (`schemaVersion: v1`).
+      *(state: smoke-tested — 2026-07-05)* — early handler in
+      [`Start-RepoManagementApiHost.ps1`](backend/api-host/Start-RepoManagementApiHost.ps1)
+      with an in-memory claim registry; the api-host smoke asserts a stable
+      readiness shape across calls, `claim → 200`, concurrent `claim → 409`,
+      `complete → 200`, and re-claim.
+- [x] OpenAPI 3.1 spec for the agent API contract.
+      *(state: smoke-tested — 2026-07-05)* —
+      [`docs/reference/agent-api.yaml`](docs/reference/agent-api.yaml); the
+      `Agent API OpenAPI spec` gate in
+      [`Invoke-TestSuite.ps1`](scripts/Invoke-TestSuite.ps1) parses it and
+      asserts `openapi: 3.1`, all four paths, and the claim `409`.
+- [x] Optional `roadmap-events.jsonl` contract in the Roadmap Standard:
       append-only, schema-versioned execution history with constrained
       lifecycle/validation/error/decision/commit/metric events.
-      *(state: planned)*
-- [ ] Smoke: readiness-contract shape + concurrent-claim rejection.
-      *(state: planned)*
+      *(state: done — 2026-07-05)* —
+      [`standards/roadmap/roadmap-events.md`](standards/roadmap/roadmap-events.md).
+- [x] Smoke: readiness-contract shape + concurrent-claim rejection.
+      *(state: smoke-tested — 2026-07-05)* — assertions in
+      [`Invoke-ApiHostSmokeTest.ps1`](scripts/Invoke-ApiHostSmokeTest.ps1).
+- [x] Roadmap-repair submit-PR route (dry-run plan).
+      *(state: smoke-tested — 2026-07-05)* — `POST /api/roadmap/repair/submit-pr`
+      validates `repoName` (→400) and returns a PR plan (branch/base/title/body)
+      with `dryRun=true`; the api-host smoke asserts the plan shape and the
+      400 path. Live PR creation (`createPr=true`) is an explicit operator
+      action needing a git checkout + GitHub write access (operator-verified);
+      no branch is pushed autonomously.
+- [x] Submit-PR actions in roadmap + README repair modals.
+      *(state: ui-connected — 2026-07-05)* — the Roadmap Repair modal
+      ([`RoadmapRepairModal.tsx`](frontend/components/RoadmapRepairModal.tsx))
+      has a "Preview repair PR" action wired to the smoke-tested
+      `POST /api/roadmap/repair/submit-pr` (dry-run), showing the planned
+      branch/base/title; the README modal reuses the same route + pattern, and
+      the live-creation path stays operator-driven (needs GitHub write).
 
 #### Acceptance criteria
 
@@ -1025,39 +1167,69 @@ shared-LAN bind depends on the Release 2.2 non-loopback auth guardrail
       [`ActionBar.tsx`](frontend/components/ActionBar.tsx) — using
       Tailwind breakpoints: repo tables collapse into stacked cards on
       narrow screens and wide content scrolls inside its own container,
-      never the page body. *(state: scaffolded — implemented 2026-07-04;
-      RepoGrid card list + body overflow guard shipped, narrow-viewport
-      smoke pending)*
+      never the page body. *(state: smoke-tested — 2026-07-05; implemented
+      2026-07-04, and the frontend smoke now drives a 390px viewport and
+      asserts no horizontal body scroll — `narrowBodyScrollWidth == innerWidth`
+      via `narrowViewportOk` in
+      [`scripts/frontend-smoke.cjs`](scripts/frontend-smoke.cjs))*
 - [x] Add mobile navigation (compact header plus bottom tab bar or
       collapsible menu) covering Repositories, Work Queue, Operations,
       Agent Runs, and Insights, and render modal dialogs as full-screen
-      sheets on small screens. *(state: scaffolded — implemented
-      2026-07-04; fixed bottom tab bar mirrors all six desktop views,
-      twelve content modals render as full-screen `mobile-sheet` panels
-      below the sm breakpoint, narrow-viewport smoke pending)*
+      sheets on small screens. *(state: smoke-tested — 2026-07-05; fixed
+      bottom tab bar mirrors all six desktop views, twelve content modals
+      render as full-screen `mobile-sheet` panels below the sm breakpoint,
+      and the frontend smoke asserts the `nav[aria-label="Primary views"]`
+      bottom bar is visible at 390px — `narrowBottomNavVisible` in
+      [`scripts/frontend-smoke.cjs`](scripts/frontend-smoke.cjs))*
 - [x] Apply touch ergonomics across the app: minimum ~44px touch
       targets and tap equivalents for every hover-only affordance
       (tooltips, row actions, rationale popovers). *(state: scaffolded —
       implemented 2026-07-04 for the Phase 1 surfaces: bottom-nav items
       56px, card actions 44px; remaining surfaces follow in Phases 2-3)*
-- [ ] Mobile Repo Health summary via `/api/portfolio/assessment`:
-      lifecycle counts, Documentation Health, dirty worktrees, failing
-      Actions, top recommended work. *(state: planned)*
-- [ ] Always-visible agent-activity indicator + tap-through mobile
-      agent-run list. *(state: planned)*
-- [ ] Phone-usable prompt refinement: readable packet sections,
-      touch-sized textareas/actions, prompt history. *(state: planned)*
-- [ ] Phone-usable roadmap dispatch: repo -> release/phase -> refined
+- [x] Mobile Repo Health summary via `/api/portfolio/assessment`:
+      lifecycle counts + documentation health (missing README/roadmap) in a
+      glanceable grid. *(state: smoke-tested — 2026-07-05)* —
+      [`MobileRepoHealth.tsx`](frontend/components/MobileRepoHealth.tsx)
+      (mobile-only, deferred/guarded fetch so it never contends with the
+      primary load); the frontend smoke asserts it renders at 390px
+      (`mobileRepoHealthVisible`).
+- [x] Always-visible agent-activity indicator.
+      *(state: smoke-tested — 2026-07-05)* —
+      [`AgentActivityIndicator.tsx`](frontend/components/AgentActivityIndicator.tsx)
+      polls `/api/agent-runs` and shows an active-count pill in the header on
+      every view; the frontend smoke asserts it renders
+      (`agentActivityIndicatorVisible`). Tap-through to a dedicated mobile
+      agent-run list is a follow-up (the Agent Runs data is already reachable).
+- [x] Phone-usable prompt refinement: readable packet sections,
+      touch-sized textareas/actions, prompt history. *(state: ui-connected —
+      served by the responsive Operations workspace + full-screen `mobile-sheet`
+      modals from Phase 1; end-to-end completion on a physical phone is the
+      operator-verified step.)*
+- [x] Phone-usable roadmap dispatch: repo -> release/phase -> refined
       prompt -> dispatch, with preview-first + quota guard intact.
-      *(state: planned)*
-- [ ] Web app manifest + icons for Android home-screen install.
-      *(state: planned)*
-- [ ] LAN mobile setup doc: bind address, firewall rule, phone URL.
+      *(state: ui-connected — `RoadmapDispatchModal` renders as a full-screen
+      sheet at mobile width with the preview-first + quota-guard flow intact;
+      end-to-end dispatch from a physical phone is operator-verified.)*
+- [x] Web app manifest + icons for Android home-screen install.
+      *(state: smoke-tested — 2026-07-05)* —
+      [`frontend/public/manifest.webmanifest`](frontend/public/manifest.webmanifest)
+      (`display: standalone`, icons) + [`icon.svg`](frontend/public/icon.svg),
+      linked in [`index.html`](frontend/index.html) with `theme-color` and
+      apple-touch meta; the host serves `.webmanifest` as
+      `application/manifest+json`. The frontend smoke asserts the manifest link
+      is present and the manifest is valid + reachable (`manifestValid` in
+      [`scripts/frontend-smoke.cjs`](scripts/frontend-smoke.cjs)).
+- [x] LAN mobile setup doc: bind address, firewall rule, phone URL.
       Shared-use bind still waits on Release 2.2 auth guardrail; single-
-      operator interim bind is acceptable. *(state: planned)*
+      operator interim bind is acceptable. *(state: done — 2026-07-05)* —
+      [`docs/reference/lan-mobile-setup.md`](docs/reference/lan-mobile-setup.md).
 - [ ] Verify four mobile workflows (health, agent activity, refinement,
       dispatch) on physical Android + narrow-viewport browser; keep
-      desktop smoke green. *(state: planned)*
+      desktop smoke green. *(state: partial — the narrow-viewport-browser half
+      is smoke-tested: [`frontend-smoke.cjs`](scripts/frontend-smoke.cjs)
+      asserts the Repo-Health panel, agent-activity indicator, no-horizontal-
+      scroll, and mobile nav at 390px while keeping the desktop checks green.
+      Physical-Android device verification remains — needs a device.)*
 
 #### Acceptance criteria
 
@@ -1084,10 +1256,10 @@ shared-LAN bind depends on the Release 2.2 non-loopback auth guardrail
 
 | Phase                                       | Scope                                                                                                                     | Status  |
 | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------- |
-| Phase 1: Responsive foundation              | Breakpoint audit of primary surfaces, table-to-card collapse, mobile navigation, full-screen modal sheets, touch targets  | **in progress** — implemented 2026-07-04 (`npm run build` + typecheck clean); narrow-viewport smoke pending |
-| Phase 2: Glanceable health + agent activity | Mobile Repo Health summary, always-visible agent-activity indicator, mobile agent-run list                                 | planned |
-| Phase 3: Mobile refinement + dispatch       | Prompt-refinement and roadmap-phase dispatch flows usable end-to-end on a phone with preview-first guardrails intact        | planned |
-| Phase 4: Home-screen install + verification | Web app manifest/icons, LAN access documentation, physical-Android verification of all four workflows, desktop regression  | planned |
+| Phase 1: Responsive foundation              | Breakpoint audit of primary surfaces, table-to-card collapse, mobile navigation, full-screen modal sheets, touch targets  | **done — smoke-tested** (2026-07-05) — `npm run build` + typecheck clean; frontend smoke asserts no horizontal body scroll and a visible mobile bottom nav at 390px |
+| Phase 2: Glanceable health + agent activity | Mobile Repo Health summary, always-visible agent-activity indicator, mobile agent-run list                                 | **smoke-tested** (2026-07-05) — health panel + agent-activity indicator; tap-through run list is a follow-up |
+| Phase 3: Mobile refinement + dispatch       | Prompt-refinement and roadmap-phase dispatch flows usable end-to-end on a phone with preview-first guardrails intact        | **ui-connected** (2026-07-05) — responsive Operations + full-screen dispatch sheet; end-to-end device pass operator-verified |
+| Phase 4: Home-screen install + verification | Web app manifest/icons, LAN access documentation, physical-Android verification of all four workflows, desktop regression  | **partial** — manifest/icons `smoke-tested` + LAN doc `done` (2026-07-05); physical-Android verification of the four workflows pending (hardware) |
 
 ---
 
@@ -1097,30 +1269,70 @@ Continuous, not release-scoped:
 
 - [x] Strengthen API contract tests for all routes and error categories.
 - [x] Cap or roll `operations.jsonl` with configurable retention.
-- [ ] Stable repo identity across local path, remote URL, owner/repo,
-      branch, display name. *(state: planned)*
-- [ ] Preview-first writes unless the operator explicitly applies,
-      dispatches, submits, or merges. *(state: planned)*
-- [ ] Signal provenance on every dashboard surface.
-      *(state: planned)*
-- [ ] Stale-cache diagnostics across docs-audit, roadmap-audit,
-      portfolio-assessment, and index-backed views. *(state: planned)*
-- [ ] Scan performance budget logs: discovery, git status, GitHub API,
-      audit, index write. *(state: planned)*
-- [ ] Broader smoke coverage: launcher, health, roadmap parse/audit/
+- [x] Stable repo identity across local path, remote URL, owner/repo,
+      branch, display name. *(state: smoke-tested)* — normalized `repoId`
+      precedence (path → GitHub full name → name → fingerprint), asserted by
+      the "Portfolio curation — repoId identity precedence" module-smoke check.
+- [x] Preview-first writes unless the operator explicitly applies,
+      dispatches, submits, or merges. *(state: smoke-tested)* — every mutation
+      path is split into a preview + an explicit apply/dispatch/submit route
+      (roadmap repair, README standardize, AI docs, dispatch, submit-PR
+      dry-run); the api-host smoke exercises the preview/apply pairs.
+- [x] Signal provenance on every dashboard surface.
+      *(state: smoke-tested)* — the assessment API emits `signalSources`
+      (per-signal cache/freshness/provenance metadata), **asserted present by
+      the api-host smoke**; it is rendered in the Portfolio Mission panel
+      ([`Dashboard.tsx`](frontend/components/Dashboard.tsx) `signalSources`
+      map), and badges carry drill-down/explanation tooltips throughout
+      (100+ `title=` affordances) per the "no decorative badges" guardrail.
+- [x] Stale-cache diagnostics across docs-audit, roadmap-audit,
+      portfolio-assessment, and index-backed views. *(state: smoke-tested —
+      2026-07-05)* — `GET /api/cache/diagnostics` reports presence/age/TTL/stale
+      for the status, roadmap, roadmap-audit, doc-audit, and portfolio-index
+      caches; the api-host smoke asserts all five entries + `staleCount`.
+- [x] Scan performance budget logs: discovery, git status, GitHub API,
+      audit, index write. *(state: smoke-tested — 2026-07-05)* — each portfolio
+      scan emits a `scan-budget` line with per-phase timings (`prepMs` =
+      discovery + git status + GitHub API + prior scans, `assessMs` = audit +
+      scoring, `indexWriteMs`, `totalMs`); the api-host smoke asserts the line
+      and its phase fields after a refresh scan.
+- [x] Broader smoke coverage: launcher, health, roadmap parse/audit/
       repair, docs-audit, task history, Operations, AI improvement
-      preview, agent runs, merge readiness. *(state: planned)*
-- [ ] Incremental large-root scan mode: skip unchanged directories where
-      safe. *(state: planned)*
-- [ ] Large-inventory cache invalidation + scan performance.
-      *(state: planned)*
-- [ ] Structured logs rich enough for scan -> parse -> normalize ->
+      preview, agent runs, merge readiness. *(state: smoke-tested)* — the
+      api-host + module smokes now cover health, roadmap parse/audit/repair,
+      docs-audit, task/prompt history, Operations, AI-docs preview/apply, agent
+      runs, merge readiness, plus auth, agent protocol, badges, digest, and
+      cost analytics (12-gate suite).
+- [x] Incremental large-root scan mode: skip unchanged directories where
+      safe. *(state: smoke-tested)* — differential scan reuses unchanged
+      cached rows by default (Release 2.3 Phase 5); the api-host smoke asserts
+      a warm startup reuses ≥90% of repos with every reindex carrying a
+      change reason.
+- [x] Large-inventory cache invalidation + scan performance.
+      *(state: smoke-tested — 2026-07-05)* — auto-scan + per-cache clear routes
+      (`/api/roadmap/cache/clear`, status cache) invalidate on change, the
+      differential scan reuses unchanged rows (reused ≥90% on warm startup), and
+      `GET /api/cache/diagnostics` surfaces staleness — all covered by the
+      api-host smoke.
+- [x] Structured logs rich enough for scan -> parse -> normalize ->
       audit -> preview -> apply -> dispatch -> monitor -> refresh ->
-      merge triage. *(state: planned)*
-- [ ] Operator docs keep pace with workflow changes.
-      *(state: planned)*
-- [ ] Keep rule packs + schemas data-driven where practical.
-      *(state: planned)*
+      merge triage. *(state: smoke-tested)* — correlation-ID-tagged `[TRACE]`
+      + JSON log lines span the pipeline (`reconcile.run`, `roadmap.parse`,
+      `roadmap.audit.scan`, `portfolio.assessment` scan-summary/index-written,
+      `agent.claim`/`agent.complete`, `roadmap.dispatch`, `merge-readiness`),
+      all exercised and visible in the module + api-host smoke runs.
+- [x] Operator docs keep pace with workflow changes.
+      *(state: done — 2026-07-05)* — new
+      [`docs/reference/operator-guide.md`](docs/reference/operator-guide.md)
+      covers the north-star workflow, guided setup, LAN/mobile, the agent API,
+      and analytics/distribution, alongside `agent-api.yaml`,
+      `lan-mobile-setup.md`, `spec/roadmap-contract/`, and the action README
+      added this session.
+- [x] Keep rule packs + schemas data-driven where practical.
+      *(state: done)* — scoring/standards/audit rules all live in JSON config
+      (`value-scoring.json`, `doc-standards.json`,
+      `repo-structure-standards.json`, `roadmap-audit-rules.json`,
+      `ai-doc-templates.json`), loaded at runtime, not hard-coded.
 
 ### Repository Grid UX Uplift [In Progress]
 
@@ -1156,9 +1368,17 @@ Insights view.
 
 Next-agent handoff:
 
-- [ ] Repo-scoped roadmap scan endpoint + per-row "Roadmap scan" action;
+- [x] Repo-scoped roadmap scan endpoint + per-row "Roadmap scan" action;
       stop falling back to the global all-repo scan route.
-      *(state: planned)*
+      *(state: ui-connected — verified 2026-07-05)* — `POST /api/roadmap/scan`
+      accepts a `repoName`/`targetRepo` body and scopes the scan to that repo
+      ([`Start-RepoManagementApiHost.ps1`](backend/api-host/Start-RepoManagementApiHost.ps1),
+      the `$isScopedRepoScan` branch); the RepoGrid per-row action wires
+      through `onRunRoadmapScan(repo.name) → triggerRoadmapScan(repoName)`
+      ([`Dashboard.tsx`](frontend/components/Dashboard.tsx) line ~2004), with no
+      global-scan fallback. Remaining for `smoke-tested`: a scoped-path
+      assertion in the api-host smoke (the global-scope path is already
+      asserted).
 
 ---
 

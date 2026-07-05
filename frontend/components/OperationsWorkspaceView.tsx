@@ -1568,7 +1568,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                             Selected item: <span className="text-gray-200">{promptRefineResult.applied.selectedTaskText}</span>
                           </div>
                           <div>
-                            Selection: <span className="text-gray-300 capitalize">{promptRefineResult.packet.selectedRoadmapItem.selectionSource.replace(/-/g, ' ')}</span>
+                            Selection: <span className="text-gray-300 capitalize">{(promptRefineResult.packet.selectedRoadmapItem.selectionSource ?? 'roadmap-order').replace(/-/g, ' ')}</span>
                             {' '}• Section: <span className="text-gray-300">{promptRefineResult.applied.selectedTaskSection || 'n/a'}</span>
                           </div>
                         </div>

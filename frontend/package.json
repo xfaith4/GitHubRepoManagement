@@ -7,7 +7,8 @@
     "ensure:rollup": "node ./scripts/ensure-rollup-native.mjs",
     "dev": "npm run ensure:rollup && vite",
     "build": "npm run ensure:rollup && vite build",
-    "preview": "npm run ensure:rollup && vite preview"
+    "preview": "npm run ensure:rollup && vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "react": "^19.2.4",
