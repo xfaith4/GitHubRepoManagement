@@ -837,6 +837,69 @@ if ($summary.bySourceCoverage['github'] -ne 1)  { throw "Expected bySourceCovera
 if ($summary.bySourceCoverage['local+github'] -lt 1) { throw "Expected bySourceCoverage[local+github] >= 1, got $($summary.bySourceCoverage['local+github'])" }
 Write-Host ("  summary aggregation correct: total={0} ready={1} running={2} blocked={3}" -f $summary.totalRepos, $summary.readyForWorkCount, $summary.runningCount, $summary.blockedCount) -ForegroundColor DarkGray
 
+# ---------------------------------------------------------------------------
+# Release 2.3 Phase 5 — Repository curation and change-aware indexing
+# ---------------------------------------------------------------------------
+
+Write-Step 'Portfolio curation — smoke: stable repoId prefers durable identity over scan fingerprint'
+$stableId = Get-PortfolioRepoId -ScanFingerprint 'volatile-hash-abc' -LocalPath 'C:\Repos\Sample' -GitHubFullName 'owner/sample' -RepoName 'Sample'
+if ($stableId -ne 'path:c:\repos\sample') { throw "Expected repoId 'path:c:\repos\sample' (stable identity), got '$stableId'" }
+$ghId = Get-PortfolioRepoId -ScanFingerprint 'volatile-hash-abc' -GitHubFullName 'Owner/Sample'
+if ($ghId -ne 'gh:owner/sample') { throw "Expected repoId 'gh:owner/sample' for GitHub-only identity, got '$ghId'" }
+$nameId = Get-PortfolioRepoId -ScanFingerprint 'volatile-hash-abc' -RepoName 'Sample'
+if ($nameId -ne 'repo:sample') { throw "Expected repoId 'repo:sample' for name-only identity, got '$nameId'" }
+$fingerprintId = Get-PortfolioRepoId -ScanFingerprint 'volatile-hash-abc'
+if ($fingerprintId -ne 'volatile-hash-abc') { throw "Expected fingerprint fallback when no stable key exists, got '$fingerprintId'" }
+Write-Host '  repoId identity precedence correct: path > github > name > fingerprint' -ForegroundColor DarkGray
+
+Write-Step 'Portfolio curation — smoke: load module + validate state vocabulary'
+$curationModule = Join-Path $WorkspaceRoot 'backend\modules\portfolio\Portfolio.Curation.ps1'
+if (-not (Test-Path -LiteralPath $curationModule)) { throw "Missing module file: $curationModule" }
+. $curationModule
+foreach ($validState in @('none', 'favorite', 'portfolio-candidate', 'archived-ignore')) {
+    if (-not (Test-ValidCurationState -CurationState $validState)) { throw "Expected '$validState' to be a valid curation state" }
+}
+foreach ($invalidState in @('', 'starred', 'FAVOURITE-ish', 'archive')) {
+    if (Test-ValidCurationState -CurationState $invalidState) { throw "Expected '$invalidState' to be rejected as a curation state" }
+}
+Write-Host '  curation state vocabulary validation correct' -ForegroundColor DarkGray
+
+Write-Step 'Portfolio curation — smoke: persistence round-trip survives re-read (restart proxy)'
+$curationWs = Join-Path ([System.IO.Path]::GetTempPath()) ("curation-smoke-" + [guid]::NewGuid().ToString('n').Substring(0, 8))
+New-Item -ItemType Directory -Path $curationWs -Force | Out-Null
+try {
+    $writeFav = Set-PortfolioRepoCurationState -WorkspaceRoot $curationWs -RepoId 'path:c:\repos\sample' -CurationState 'favorite' -Reason 'smoke'
+    if (-not $writeFav.success) { throw "Expected favorite curation write to succeed: $($writeFav.error)" }
+    $writeBad = Set-PortfolioRepoCurationState -WorkspaceRoot $curationWs -RepoId 'path:c:\repos\sample' -CurationState 'not-a-state'
+    if ($writeBad.success) { throw 'Expected invalid curation state write to be rejected' }
+
+    $mirrorPath = Get-PortfolioCurationFilePath -WorkspaceRoot $curationWs
+    if (-not (Test-Path -LiteralPath $mirrorPath)) { throw "Curation file mirror was not written at $mirrorPath" }
+
+    # Fresh map read from disk models a process restart: no in-memory state survives.
+    $rereadMap = Get-PortfolioCurationMap -WorkspaceRoot $curationWs
+    if (-not $rereadMap.ContainsKey('path:c:\repos\sample')) { throw 'Curation entry missing after re-read from disk' }
+    if ([string]$rereadMap['path:c:\repos\sample'].curationState -ne 'favorite') { throw "Expected persisted state 'favorite', got '$($rereadMap['path:c:\repos\sample'].curationState)'" }
+
+    $curationEntries = @(
+        [pscustomobject]@{ repoId = 'path:c:\repos\sample'; repoName = 'sample' },
+        [pscustomobject]@{ repoId = 'path:c:\repos\other'; repoName = 'other' }
+    )
+    $applied = Apply-PortfolioCurationToEntries -Entries $curationEntries -CurationMap $rereadMap
+    if ([string]$applied[0].curationState -ne 'favorite') { throw "Expected merged curationState=favorite on matching entry, got '$($applied[0].curationState)'" }
+    if ([string]::IsNullOrWhiteSpace([string]$applied[0].curationUpdatedAt)) { throw 'Expected curationUpdatedAt to be populated on curated entry' }
+    if ([string]$applied[1].curationState -ne 'none') { throw "Expected curationState=none on uncurated entry, got '$($applied[1].curationState)'" }
+
+    $writeClear = Set-PortfolioRepoCurationState -WorkspaceRoot $curationWs -RepoId 'path:c:\repos\sample' -CurationState 'none'
+    if (-not $writeClear.success) { throw "Expected curation clear to succeed: $($writeClear.error)" }
+    $clearedMap = Get-PortfolioCurationMap -WorkspaceRoot $curationWs
+    if ([string]$clearedMap['path:c:\repos\sample'].curationState -ne 'none') { throw 'Expected cleared curation state to persist as none' }
+    Write-Host '  curation persistence round-trip correct (write, restart re-read, merge, clear)' -ForegroundColor DarkGray
+}
+finally {
+    Remove-Item -LiteralPath $curationWs -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 Write-Step 'Loading agent-runs ledger module (Release 2.0)'
 $agentRunsModule = Join-Path $WorkspaceRoot 'backend\modules\agent-runs\AgentRuns.ps1'
 if (-not (Test-Path -LiteralPath $agentRunsModule)) { throw "AgentRuns.ps1 not found at: $agentRunsModule" }

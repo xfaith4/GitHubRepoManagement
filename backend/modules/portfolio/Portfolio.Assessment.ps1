@@ -520,7 +520,11 @@ function Invoke-PortfolioAssessment {
         $key = _NormalizeKey $repoName
         if (-not $seenLocalKeys.Add($key)) { continue }
 
-        $localPath  = [string](_GetField -Obj $repo -Name 'localPath' -Default '')
+        # Status-scan repos expose the repo directory as 'path'; only synthetic
+        # callers (fixtures, index conversions) use 'localPath'. Accept both —
+        # reading 'localPath' alone left every real assessment and index row
+        # with an empty local path (and pushed repoId onto gh:/repo: keys).
+        $localPath  = [string](_GetField -Obj $repo -Name 'localPath' -Default (_GetField -Obj $repo -Name 'path' -Default ''))
         $isArchived = [bool](_GetField -Obj $repo -Name 'isArchived' -Default $false)
         $htmlUrl    = [string](_GetField -Obj $repo -Name 'htmlUrl' -Default '')
         $branch     = [string](_GetField -Obj $repo -Name 'branch' -Default '')
@@ -1113,9 +1117,10 @@ function Get-PortfolioRepoId {
         [Parameter()][string]$RepoName = ''
     )
 
-    if (-not [string]::IsNullOrWhiteSpace($ScanFingerprint)) {
-        return $ScanFingerprint
-    }
+    # Stable identity keys first: the scan fingerprint hashes volatile
+    # signals (head SHA, dirty counts, doc mtimes), so using it as repoId
+    # re-keys the repo on every change and orphans curation state keyed by
+    # the old id. It is only the last resort before a random id.
     if (-not [string]::IsNullOrWhiteSpace($LocalPath)) {
         return ('path:{0}' -f $LocalPath.ToLowerInvariant())
     }
@@ -1124,6 +1129,9 @@ function Get-PortfolioRepoId {
     }
     if (-not [string]::IsNullOrWhiteSpace($RepoName)) {
         return ('repo:{0}' -f $RepoName.ToLowerInvariant())
+    }
+    if (-not [string]::IsNullOrWhiteSpace($ScanFingerprint)) {
+        return $ScanFingerprint
     }
     return [guid]::NewGuid().Guid
 }

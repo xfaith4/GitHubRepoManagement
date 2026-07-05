@@ -1498,6 +1498,135 @@ try {
     Write-Host ("  /api/portfolio/assessment?scanMode=differential -> count={0} mode={1}" -f $portfolioDiffData.count, [string]$portfolioDiffSignalSources.scanMode) -ForegroundColor DarkGray
 
     # ------------------------------------------------------------------
+    # Release 2.3 Phase 5 — Repository curation and change-aware indexing
+    # ------------------------------------------------------------------
+    Write-Host '[STEP] Repository curation write round-trip (Release 2.3 Phase 5A/5C)' -ForegroundColor Cyan
+    # Curate a repo with a local path: GitHub-only rows survive differential
+    # merges via the persisted index but are legitimately absent from a forced
+    # full reassessment (refresh-all does not enumerate GitHub-only repos), so
+    # the refresh-all curation-survival assertion needs a local repo.
+    $curationRepoId = ''
+    $curationTargetRepo = @($operationsReposData.entries) |
+        Where-Object { ($_.PSObject.Properties.Name -contains 'localPath') -and -not [string]::IsNullOrWhiteSpace([string]$_.localPath) } |
+        Select-Object -First 1
+    if ($null -ne $curationTargetRepo) {
+        $curationRepoId = [string]$curationTargetRepo.repoId
+        $encodedCurationRepoId = [uri]::EscapeDataString($curationRepoId)
+
+        $curationInvalidResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/operations/repos/$encodedCurationRepoId/curation" -Body @{ curationState = 'not-a-state' }
+        if ($curationInvalidResponse.StatusCode -ne 400) {
+            throw "POST curation with invalid state expected HTTP 400, got $($curationInvalidResponse.StatusCode)"
+        }
+
+        $curationWriteResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/operations/repos/$encodedCurationRepoId/curation" -Body @{ curationState = 'favorite'; reason = 'api-host smoke' }
+        if ($curationWriteResponse.StatusCode -ne 200) {
+            throw "POST curation favorite expected HTTP 200, got $($curationWriteResponse.StatusCode). Body=$($curationWriteResponse.Content)"
+        }
+        $curationWriteJson = $curationWriteResponse.Json
+        if ($null -eq $curationWriteJson -or -not $curationWriteJson.success) { throw 'POST curation favorite returned invalid success payload' }
+        if ([string]$curationWriteJson.data.curationState -ne 'favorite') { throw "POST curation expected persisted state 'favorite', got '$($curationWriteJson.data.curationState)'" }
+        if ([string]::IsNullOrWhiteSpace([string]$curationWriteJson.data.updatedAt)) { throw 'POST curation response missing updatedAt' }
+
+        $curationReadBackResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/operations/repos"
+        $curationReadBackEntry = @($curationReadBackResponse.Json.data.entries) | Where-Object { [string]$_.repoId -eq $curationRepoId } | Select-Object -First 1
+        if ($null -eq $curationReadBackEntry) { throw 'Curated repo missing from /api/operations/repos read-back' }
+        if ([string]$curationReadBackEntry.curationState -ne 'favorite') { throw "/api/operations/repos read-back expected curationState=favorite, got '$($curationReadBackEntry.curationState)'" }
+        Write-Host ("  curation persisted and read back -> repoId={0} state=favorite" -f $curationRepoId) -ForegroundColor DarkGray
+    } else {
+        Write-Host '  (no operations entries with a local path found — curation round-trip skipped)' -ForegroundColor Yellow
+    }
+
+    Write-Host '[STEP] Differential reuse proof: warm unchanged startup must not reindex (Release 2.3 Phase 5B/5F)' -ForegroundColor Cyan
+    $reuseProofResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment?scanMode=differential&includeCuration=true"
+    Assert-Not503 -Name '/api/portfolio/assessment?scanMode=differential&includeCuration=true' -Response $reuseProofResponse
+    $reuseProofJson = $reuseProofResponse.Json
+    if ($null -eq $reuseProofJson -or -not $reuseProofJson.success) { throw 'Differential reuse-proof call returned invalid success payload' }
+    $reuseProofData = $reuseProofJson.data
+    if (-not ($reuseProofData.PSObject.Properties.Name -contains 'scanSummary') -or $null -eq $reuseProofData.scanSummary) {
+        throw 'Differential reuse-proof response missing scanSummary'
+    }
+    $reuseSummary = $reuseProofData.scanSummary
+    foreach ($scanSummaryField in @('reused', 'reindexed', 'failed', 'durationMs')) {
+        if (-not ($reuseSummary.PSObject.Properties.Name -contains $scanSummaryField)) { throw "scanSummary missing field '$scanSummaryField'" }
+    }
+    if ([int]$reuseProofData.count -lt 1) { throw 'Differential reuse-proof returned zero entries; cannot prove reuse' }
+    # The core Phase 5 guarantee: with a warm index, ordinary startup reuses
+    # every row whose signals did not change. GitHub metadata (Actions
+    # timestamps, updatedAt) is fetched live per request, so a handful of
+    # repos may legitimately drift between back-to-back calls — those must
+    # carry a detected-change reason. What must never happen is wholesale
+    # reindexing or reindexing without a stated change (cache-miss /
+    # cache-invalid would mean the reuse machinery itself broke).
+    if (([int]$reuseSummary.reused + [int]$reuseSummary.reindexed) -ne [int]$reuseProofData.count) {
+        throw "scanSummary does not reconcile: reused=$($reuseSummary.reused) + reindexed=$($reuseSummary.reindexed) != count=$($reuseProofData.count)"
+    }
+    $reuseViolations = @($reuseProofData.entries | Where-Object {
+        [string]$_.scanDecisionReason -notin @('reused-cache', 'new-commit', 'metadata-changed')
+    } | ForEach-Object { "$($_.repoName)=$($_.scanDecisionReason)" })
+    if ($reuseViolations.Count -gt 0) {
+        throw "Differential startup reindexed repos without a detected change: $($reuseViolations -join ', ')"
+    }
+    $minimumReused = [int][math]::Ceiling([int]$reuseProofData.count * 0.9)
+    if ([int]$reuseSummary.reused -lt $minimumReused) {
+        $reindexedNames = @($reuseProofData.entries | Where-Object { [string]$_.scanDecisionReason -ne 'reused-cache' } | ForEach-Object { "$($_.repoName)=$($_.scanDecisionReason)" })
+        throw "Expected at least $minimumReused of $($reuseProofData.count) repos reused on warm differential startup, got $($reuseSummary.reused). Non-reused: $($reindexedNames -join ', ')"
+    }
+    if ([int]$reuseSummary.reindexed -gt 0) {
+        $driftNames = @($reuseProofData.entries | Where-Object { [string]$_.scanDecisionReason -ne 'reused-cache' } | ForEach-Object { "$($_.repoName)=$($_.scanDecisionReason)" })
+        Write-Host ("  (live-signal drift tolerated: {0})" -f ($driftNames -join ', ')) -ForegroundColor Yellow
+    }
+    $entriesMissingDecision = @($reuseProofData.entries | Where-Object {
+        -not ($_.PSObject.Properties.Name -contains 'scanDecisionReason') -or [string]::IsNullOrWhiteSpace([string]$_.scanDecisionReason)
+    })
+    if ($entriesMissingDecision.Count -gt 0) { throw "Differential entries missing scanDecisionReason: $($entriesMissingDecision.Count)" }
+    $entriesMissingCuration = @($reuseProofData.entries | Where-Object { -not ($_.PSObject.Properties.Name -contains 'curationState') })
+    if ($entriesMissingCuration.Count -gt 0) { throw "includeCuration=true entries missing curationState: $($entriesMissingCuration.Count)" }
+    if (-not [string]::IsNullOrWhiteSpace($curationRepoId)) {
+        $reuseCuratedEntry = @($reuseProofData.entries) | Where-Object { [string]$_.repoId -eq $curationRepoId } | Select-Object -First 1
+        if ($null -eq $reuseCuratedEntry) { throw 'Curated repo missing from differential assessment entries' }
+        if ([string]$reuseCuratedEntry.curationState -ne 'favorite') { throw "Differential entry expected curationState=favorite, got '$($reuseCuratedEntry.curationState)'" }
+    }
+    Write-Host ("  reuse proof -> count={0} reused={1} reindexed={2} durationMs={3}" -f $reuseProofData.count, $reuseSummary.reused, $reuseSummary.reindexed, $reuseSummary.durationMs) -ForegroundColor DarkGray
+
+    Write-Host '[STEP] Refresh All forced full reassessment (Release 2.3 Phase 5E)' -ForegroundColor Cyan
+    $refreshAllResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/portfolio/assessment/refresh-all" -Body @{ reason = 'api-host smoke' }
+    Assert-Not503 -Name '/api/portfolio/assessment/refresh-all' -Response $refreshAllResponse
+    if ($refreshAllResponse.StatusCode -ne 200) {
+        throw "POST /api/portfolio/assessment/refresh-all expected HTTP 200, got $($refreshAllResponse.StatusCode). Body=$($refreshAllResponse.Content)"
+    }
+    $refreshAllJson = $refreshAllResponse.Json
+    if ($null -eq $refreshAllJson -or -not $refreshAllJson.success) { throw '/api/portfolio/assessment/refresh-all returned invalid success payload' }
+    $refreshAllData = $refreshAllJson.data
+    if (-not ($refreshAllData.PSObject.Properties.Name -contains 'generatedAt') -or [string]::IsNullOrWhiteSpace([string]$refreshAllData.generatedAt)) {
+        throw '/api/portfolio/assessment/refresh-all response missing generatedAt'
+    }
+    if (-not ($refreshAllData.PSObject.Properties.Name -contains 'scanSummary') -or $null -eq $refreshAllData.scanSummary) {
+        throw '/api/portfolio/assessment/refresh-all response missing scanSummary'
+    }
+    if ([int]$refreshAllData.scanSummary.reused -ne 0) { throw "Refresh All expected reused=0, got $($refreshAllData.scanSummary.reused)" }
+    if ([int]$refreshAllData.scanSummary.reindexed -lt 1) { throw "Refresh All expected reindexed >= 1, got $($refreshAllData.scanSummary.reindexed)" }
+    $nonForcedEntries = @($refreshAllData.entries | Where-Object { [string]$_.scanDecisionReason -ne 'forced-refresh' })
+    if ($nonForcedEntries.Count -gt 0) {
+        $nonForcedNames = @($nonForcedEntries | Select-Object -First 5 | ForEach-Object { "$($_.repoName)=$($_.scanDecisionReason)" })
+        throw "Refresh All expected every entry to report scanDecisionReason=forced-refresh; violations: $($nonForcedNames -join ', ')"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($curationRepoId)) {
+        $refreshAllCuratedEntry = @($refreshAllData.entries) | Where-Object { [string]$_.repoId -eq $curationRepoId } | Select-Object -First 1
+        if ($null -eq $refreshAllCuratedEntry) { throw 'Curated repo missing from refresh-all entries' }
+        if ([string]$refreshAllCuratedEntry.curationState -ne 'favorite') {
+            throw "Curation must survive a forced full refresh; expected favorite, got '$($refreshAllCuratedEntry.curationState)'"
+        }
+    }
+    Write-Host ("  refresh-all -> reindexed={0} forced-refresh on all {1} entries" -f $refreshAllData.scanSummary.reindexed, @($refreshAllData.entries).Count) -ForegroundColor DarkGray
+
+    if (-not [string]::IsNullOrWhiteSpace($curationRepoId)) {
+        # Leave no operator-visible curation state behind in the live workspace.
+        $curationResetResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/operations/repos/$([uri]::EscapeDataString($curationRepoId))/curation" -Body @{ curationState = 'none'; reason = 'api-host smoke cleanup' }
+        if ($curationResetResponse.StatusCode -ne 200) { throw "Curation cleanup expected HTTP 200, got $($curationResetResponse.StatusCode)" }
+        Write-Host '  curation state reset to none (cleanup)' -ForegroundColor DarkGray
+    }
+
+    # ------------------------------------------------------------------
     # Release 1.3 — Production static frontend bundle
     # ------------------------------------------------------------------
     Write-Host '[STEP] Static frontend bundle (Release 1.3)' -ForegroundColor Cyan

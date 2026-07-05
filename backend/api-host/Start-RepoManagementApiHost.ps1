@@ -316,11 +316,10 @@ function Get-OperationsRepoId {
         [object]$Repo
     )
 
-    $scanFingerprint = [string](Get-ObjectPropertyValue -InputObject $Repo -PropertyName 'scanFingerprint' -Default '')
-    if (-not [string]::IsNullOrWhiteSpace($scanFingerprint)) {
-        return $scanFingerprint
-    }
-
+    # Identity must stay stable across scans so operator-authored state
+    # (curation) keyed by repoId survives new commits and metadata churn.
+    # The scan fingerprint hashes volatile signals (head SHA, dirty counts,
+    # doc mtimes), so it is only the last resort before a random id.
     $localPath = [string](Get-ObjectPropertyValue -InputObject $Repo -PropertyName 'localPath' -Default '')
     if (-not [string]::IsNullOrWhiteSpace($localPath)) {
         return ('path:{0}' -f $localPath.ToLowerInvariant())
@@ -334,6 +333,11 @@ function Get-OperationsRepoId {
     $repoName = [string](Get-ObjectPropertyValue -InputObject $Repo -PropertyName 'repoName' -Default '')
     if (-not [string]::IsNullOrWhiteSpace($repoName)) {
         return ('repo:{0}' -f $repoName.ToLowerInvariant())
+    }
+
+    $scanFingerprint = [string](Get-ObjectPropertyValue -InputObject $Repo -PropertyName 'scanFingerprint' -Default '')
+    if (-not [string]::IsNullOrWhiteSpace($scanFingerprint)) {
+        return $scanFingerprint
     }
 
     return [guid]::NewGuid().Guid
@@ -428,6 +432,42 @@ function Get-OperationsReposPayload {
         count = $count
         cacheSource = $cacheSource
     }
+}
+
+function Add-PortfolioCurationToAssessments {
+    param(
+        [Parameter()][AllowEmptyCollection()][object[]]$Assessments = @()
+    )
+
+    $curationMap = Get-PortfolioCurationMap -WorkspaceRoot $WorkspaceRoot
+    foreach ($assessment in @($Assessments)) {
+        if ($null -eq $assessment) { continue }
+
+        $repoId = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'repoId' -Default '')
+        if ([string]::IsNullOrWhiteSpace($repoId)) {
+            # Assessments carry htmlUrl rather than githubFullName; derive the
+            # owner/repo pair from it so GitHub-only entries key identically to
+            # index rows (gh:owner/repo) instead of falling to repo:name.
+            $githubFullName = ''
+            $htmlUrl = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'htmlUrl' -Default '')
+            if ($htmlUrl -match '(?i)github\.com/([^/]+)/([^/?#]+)') {
+                $githubFullName = ('{0}/{1}' -f $Matches[1], ($Matches[2] -replace '\.git$', ''))
+            }
+            $repoId = Get-PortfolioRepoId `
+                -LocalPath ([string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'localPath' -Default '')) `
+                -GitHubFullName $githubFullName `
+                -RepoName ([string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'repoName' -Default ''))
+            $assessment | Add-Member -NotePropertyName repoId -NotePropertyValue $repoId -Force
+        }
+
+        $curation = if ($curationMap.ContainsKey($repoId)) { $curationMap[$repoId] } else { $null }
+        $state = if ($null -ne $curation) { [string]$curation.curationState } else { 'none' }
+        if (-not (Test-ValidCurationState -CurationState $state)) { $state = 'none' }
+        $assessment | Add-Member -NotePropertyName curationState -NotePropertyValue $state -Force
+        $assessment | Add-Member -NotePropertyName curationUpdatedAt -NotePropertyValue $(if ($null -ne $curation) { [string]$curation.updatedAt } else { $null }) -Force
+    }
+
+    return ,@($Assessments)
 }
 
 function Update-PortfolioIndexRepoCuration {
@@ -5156,7 +5196,7 @@ try {
                 }
 
                 $updatedAt = [string](Get-ObjectPropertyValue -InputObject $writeResult.data -PropertyName 'updatedAt' -Default ((Get-Date).ToUniversalTime().ToString('o')))
-                $null = Update-PortfolioIndexRepoCuration -RepoId $effectiveRepoId -CurationState [string]$writeResult.data.curationState -UpdatedAt $updatedAt
+                $null = Update-PortfolioIndexRepoCuration -RepoId $effectiveRepoId -CurationState ([string]$writeResult.data.curationState) -UpdatedAt $updatedAt
 
                 Add-MetricCounter -Name 'api_requests_total'
                 Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
@@ -5303,7 +5343,13 @@ try {
                 continue
             }
 
-            switch ("$($req.Method) $path") {
+            # Release 2.3 Phase 5E: POST /api/portfolio/assessment/refresh-all is the
+            # explicit operator-driven full reassessment. It shares the assessment
+            # handler; the flag forces refresh semantics so every repo emits a
+            # forced-refresh scan decision instead of the differential reuse path.
+            $forcedRefreshAll = ($req.Method -eq 'POST' -and $path -eq '/api/portfolio/assessment/refresh-all')
+            $routeKey = if ($forcedRefreshAll) { 'GET /api/portfolio/assessment' } else { "$($req.Method) $path" }
+            switch ($routeKey) {
                 'GET /health/live' {
                     Add-MetricCounter -Name 'api_requests_total'
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{ status = 'ok'; service = 'repo-management-api'; time = (Get-Date).ToString('o') }
@@ -6151,6 +6197,9 @@ try {
                     Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} start" -f $correlationId)
                     $q = Parse-QueryString -Query $req.Query
                     $refresh = if ($q.ContainsKey('refresh')) { Parse-Bool -Value $q.refresh -Default $false } else { $false }
+                    if ($forcedRefreshAll) { $refresh = $true }
+                    $includeCuration = if ($q.ContainsKey('includeCuration')) { Parse-Bool -Value $q.includeCuration -Default $false } else { $false }
+                    if ($forcedRefreshAll) { $includeCuration = $true }
                     $scanModeRaw = if ($q.ContainsKey('scanMode')) { [string]$q.scanMode } else { 'full' }
                     $scanMode = if ([string]::IsNullOrWhiteSpace($scanModeRaw)) { 'full' } else { $scanModeRaw.Trim().ToLowerInvariant() }
                     if ($scanMode -notin @('full', 'differential')) { $scanMode = 'full' }
@@ -6162,17 +6211,24 @@ try {
                     if (-not $refresh -and -not $useDifferentialScan -and $ttlSeconds -gt 0) {
                         $cacheHit = Get-PortfolioAssessmentFromCache -TtlSeconds $ttlSeconds
                         if ($cacheHit.hit) {
+                            $cacheHitEntries = @($cacheHit.entries)
+                            if ($includeCuration) {
+                                # Curation is operator-authored and can change between scans;
+                                # merge the current map even on cache hits so toggles are
+                                # visible without forcing a rescan.
+                                $cacheHitEntries = Add-PortfolioCurationToAssessments -Assessments $cacheHitEntries
+                            }
                             Add-MetricCounter -Name 'api_requests_total'
                             Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
                             Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} done source=cache ageSeconds={1}" -f $correlationId, [math]::Round($cacheHit.ageSeconds, 1))
                             Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                                 success = $true
                                 data = @{
-                                    entries         = $cacheHit.entries
+                                    entries         = $cacheHitEntries
                                     summary         = $cacheHit.summary
                                     signalSources   = $cacheHit.signalSources
                                     generatedAt     = $cacheHit.generatedAt
-                                    count           = @($cacheHit.entries).Count
+                                    count           = @($cacheHitEntries).Count
                                     cacheSource     = 'memory'
                                     cacheAgeSeconds = [math]::Round($cacheHit.ageSeconds, 1)
                                 }
@@ -6662,6 +6718,10 @@ try {
                         @{ Expression = { [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '') }; Ascending = $true },
                         @{ Expression = { [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'sourceCoverage' -Default '') }; Ascending = $true })
 
+                    if ($includeCuration) {
+                        $assessments = Add-PortfolioCurationToAssessments -Assessments $assessments
+                    }
+
                     $summary = Get-PortfolioAssessmentSummary -Assessments $assessments
                     $generatedAt = (Get-Date).ToUniversalTime().ToString('o')
                     $scanId = [guid]::NewGuid().ToString('n')
@@ -6717,6 +6777,11 @@ try {
                     }
 
                     $scanSummary.durationMs = [int]((Get-Date) - $requestStart).TotalMilliseconds
+
+                    # Release 2.3 Phase 5F observability: one greppable line per scan
+                    # proving how many repos were reused from cache vs fully reindexed.
+                    $scanSummaryMode = if ($useDifferentialScan) { 'differential' } elseif ($refresh) { $(if ($forcedRefreshAll) { 'forced-refresh-all' } else { 'forced-full' }) } else { 'full' }
+                    Write-HostLog ("[TRACE] portfolio.assessment scan-summary correlationId={0} mode={1} reused={2} reindexed={3} failed={4} durationMs={5}" -f $correlationId, $scanSummaryMode, $scanSummary.reused, $scanSummary.reindexed, $scanSummary.failed, $scanSummary.durationMs)
 
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)

@@ -46,6 +46,9 @@ export interface RepoStatus {
   lastIndexedCommitSha?: string | null;
   lastScanStatus?: PortfolioScanStatus;
   lastScanError?: string | null;
+  repoId?: string;
+  curationState?: RepoCurationState;
+  curationUpdatedAt?: string | null;
 
   // Optional extended metrics
   extended?: ExtendedRepoMetrics;
@@ -948,6 +951,7 @@ export interface PortfolioPendingItemValue {
 export type PortfolioChangeState = 'unchanged' | 'new-commits' | 'metadata-changed' | 'needs-rescan' | 'scan-failed';
 export type PortfolioScanDecisionReason = 'reused-cache' | 'new-commit' | 'metadata-changed' | 'cache-miss' | 'cache-invalid' | 'forced-refresh';
 export type PortfolioScanStatus = 'ok' | 'failed' | 'stale';
+export type RepoCurationState = 'none' | 'favorite' | 'portfolio-candidate' | 'archived-ignore';
 
 export interface PortfolioAssessmentEntry {
   repoName: string;
@@ -1006,6 +1010,9 @@ export interface PortfolioAssessmentEntry {
   lastScannedAt?: string | null;
   lastScanStatus?: PortfolioScanStatus;
   lastScanError?: string | null;
+  repoId?: string;
+  curationState?: RepoCurationState;
+  curationUpdatedAt?: string | null;
 }
 
 export interface PortfolioAssessmentSummary {
@@ -1160,7 +1167,7 @@ export interface OperationsRepoEntry {
   hasTestSignal: boolean;
   docFindingCount: number;
   structureFindings: RepoStructureFinding[];
-  curationState: 'none' | 'favorite' | 'portfolio-candidate' | 'archived-ignore';
+  curationState: RepoCurationState;
   curationUpdatedAt?: string | null;
   changeState?: PortfolioChangeState;
   scanDecisionReason?: PortfolioScanDecisionReason;

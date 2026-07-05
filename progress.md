@@ -1,5 +1,93 @@
 # Progress
 
+## 2026-07-05 (Release 2.3 Phase 5D-5F: curation UI, Refresh All, unchanged-repo reuse proof)
+
+- Surveyed the 5A-5C slice before building on it and found the gaps were
+  larger than the roadmap claimed: curation existed in the API client and
+  types but **no frontend component used it**, neither smoke script
+  mentioned curation at all (despite a `smoke-tested` claim on the POST
+  route), and two real defects were latent — `repoId` preferred the scan
+  fingerprint (which hashes head SHA / dirty counts / doc mtimes, so any
+  repo change re-keyed identity and orphaned curation), and the curation
+  index-mirror call passed `[string]$writeResult...` in argument mode,
+  persisting a mangled literal instead of the state.
+- Fixed both defects: `Get-PortfolioRepoId` (module) and
+  `Get-OperationsRepoId` (host) now derive identity localPath →
+  GitHub full name → repo name, with the volatile fingerprint as last
+  resort; the mirror call now parenthesizes the cast.
+- The first api-host smoke run then exposed a **third, older defect**: the
+  assessment builder read the repo directory from a `localPath` field while
+  status-scan repos expose `path`, so every real assessment entry and every
+  persisted index row since Phase 3A (2026-05-12 artifact: 0 of 55 rows)
+  carried an empty `localPath` — path-keyed joins silently degraded to name
+  matching, and repoIds derived as `gh:`/`repo:` keys, which made curation
+  ids computed on fresh assessments disagree with index-derived ids (the
+  refresh-all curation-survival assertion caught it). Fixed by accepting
+  `localPath` first and falling back to `path`; scan fingerprints are
+  unaffected (they always read the path from the status repo directly), so
+  no mass reindex; the curation-merge helper also derives `gh:owner/repo`
+  from `htmlUrl` for GitHub-only entries.
+- Implemented Phase 5E backend: `POST /api/portfolio/assessment/refresh-all`
+  maps onto the assessment handler with forced refresh semantics (every
+  entry emits `scanDecisionReason=forced-refresh`), `includeCuration=true`
+  now actually merges live curation onto entries on both the cache-hit and
+  fresh paths via a new `Add-PortfolioCurationToAssessments` helper, and a
+  per-scan `[TRACE] portfolio.assessment scan-summary` line logs
+  mode/reused/reindexed/failed/duration for 5F observability.
+- Implemented Phase 5D/5E frontend: curation actions (Favorite /
+  Candidate / Ignore / Clear) in each row's Details panel with pending and
+  error states, curation badges in card and table rows, three new quick
+  filters (Favorites, Candidates, Hide ignored — hide-ignored on by
+  default), a collapsible badge legend decoding curation/index/severity
+  badges, a visible Scan Decision detail block (tap-friendly equivalent of
+  the hover tooltip), priority-order default sort (favorites → candidates
+  → recently changed → unchanged, archived last) with a chip to restore
+  it, a "Last scan: N reused · M reindexed" line, and a confirm-gated
+  Refresh All wired to the new route. Dashboard assessment loads now run
+  `scanMode=differential&includeCuration=true` by default. Help and API
+  docs updated.
+- Implemented Phase 5F smoke: module-smoke sections for repoId identity
+  precedence, curation state vocabulary, and a temp-workspace persistence
+  round-trip modeling restart; api-host steps for the curation POST
+  contract (invalid-state 400, favorite write, ops read-back), a
+  warm-differential reuse proof (counts must reconcile, every non-reused
+  entry must carry a detected-change reason, ≥90% reuse required — live
+  GitHub Actions/updatedAt drift between back-to-back calls is tolerated
+  and printed by name, while `cache-miss`/`cache-invalid` reindexes or
+  wholesale rescans fail), and a refresh-all step asserting `reused=0`,
+  `forced-refresh` on every entry, and curation surviving the forced
+  refresh, with cleanup back to `none`.
+
+### Verification
+
+- PowerShell parser checks — clean for the host, both portfolio modules,
+  and both smoke scripts.
+- `npm run build` — passed. `npx tsc --noEmit` — only the pre-existing
+  errors in `OperationsWorkspaceView.tsx` / `RepoGitStatusModal.tsx`
+  (untouched files); one new mock-data error introduced by the required
+  `curationState` field was fixed in `apiClient.ts`.
+- `pwsh -NoProfile -File scripts/Invoke-ModuleSmokeTest.ps1` — passed
+  end-to-end including the three new curation sections (rerun clean after
+  the `localPath` fix).
+- `pwsh -NoProfile -File scripts/Invoke-ApiHostSmokeTest.ps1 -Port 7099`
+  — run on an alternate port because the operator's own dev host (started
+  05:46, pre-change build) holds 7071 and was left untouched. The first
+  run failed exactly where it should — the refresh-all curation-survival
+  assertion exposed the repoId mismatch above; a later run caught live
+  GitHub-metadata drift (two repos' Actions timestamps moved between
+  back-to-back calls), which the reuse proof now tolerates by name; the
+  final run printed `[PASS]` exit 0 with the curation round-trip actually
+  exercised (`repoId=path:...` favorite → read-back → survives
+  refresh-all → reset). Live workspace proofs from the host log:
+  `mode=differential reused=68 reindexed=0 failed=0` (~5s) and, on the
+  passing run, `reused=66 reindexed=2` with both reindexes carrying
+  `metadata-changed`; `mode=forced-refresh-all reused=0 reindexed=68`
+  (~71s).
+- Smoke-created curation residue (favorite on one repo from the failed
+  run) removed from `repo_curation` and the file mirror after the runs.
+- `pwsh -NoProfile -File tools/Test-RoadmapStructure.ps1 -Path ./ROADMAP.md`
+  — 0 errors, 3 pre-existing advisory warnings.
+
 ## 2026-07-05 (Release 2.3 Phase 5 planning: repository curation + change-aware indexing)
 
 - Audited the live startup and indexing path before drafting the roadmap

@@ -17,15 +17,24 @@
 
 - Release 2.1 remains the active release for closeout and operator verification.
 - Release 2.3 Phase 1 is complete (analytics scaffold and snapshot-backed trend contract).
-- Release 2.3 Phase 5 is now **in progress** with Phase 5A-5C implemented:
-      curation persistence + route contract, differential indexing decision telemetry,
-      and first UI consumers in Repository Grid and Operations workspace.
+- Release 2.3 Phase 5 is complete at `smoke-tested` (5A-5F, 2026-07-05): curation
+      persistence + route contract, differential decision telemetry, curation
+      controls/badge legend/priority ordering/Refresh All in the Repository Grid,
+      differential-by-default dashboard assessment loads, and module + api-host
+      smoke assertions proving unchanged repos are reused (`reindexed=0`) on
+      ordinary startup. Same slice fixed three latent defects: `repoId` now
+      prefers stable identity (localPath → GitHub full name → repo name) over
+      the volatile scan fingerprint so curation survives new commits; the
+      curation index mirror no longer persists a mangled `[string]`-literal
+      state value; and the assessment builder now reads the status scanner's
+      `path` field, ending the empty-`localPath` drift every assessment and
+      index row had carried since Phase 3A (2026-05-12).
 
 **Current focus (next agent actions):**
 
-- [ ] Complete Release 2.3 Phase 5D UI polish (badge legend, curation/decision discoverability, operator guidance copy).
-- [ ] Complete Release 2.3 Phase 5E startup prioritization + explicit Refresh All control behavior verification.
-- [ ] Complete Release 2.3 Phase 5F observability and smoke assertions proving unchanged-repo reuse by default.
+- [ ] Finish Release 2.1 operator verification against the live workspace and close the release.
+- [ ] Run the Release 2.5 Phase 1 narrow-viewport smoke so the mobile foundation milestones can move past `scaffolded`.
+- [ ] Start the Release 2.2 backend lane (API auth + network security) or Release 2.5 Phase 2, per the execution-order lanes.
 
 ---
 
@@ -770,7 +779,7 @@ depend on Phase 2 rollups.
 | Phase 2: History-backed rollups | Persist and aggregate daily portfolio/maturity history from Release 2.1 tables, widen `availableDays`, and compute real `improvedThisWeek` deltas | planned |
 | Phase 3: Distribution surfaces | Weekly digest webhook delivery, SVG badge routes, and `roadmap-audit-action` packaging | planned |
 | Phase 4: Standalone spec + portfolio economics | Extract the roadmap contract into a publishable spec directory and add cost/quota-burn analytics derived from raw run observations | planned |
-| Phase 5: Repository curation + change-aware indexing | Favorites / portfolio-candidate / archived-ignore curation, repo-level change probes, startup prioritization, and proof that unchanged repos are reused by default | in progress (5A-5C complete; 5D-5F pending) |
+| Phase 5: Repository curation + change-aware indexing | Favorites / portfolio-candidate / archived-ignore curation, repo-level change probes, startup prioritization, and proof that unchanged repos are reused by default | **done — smoke-tested** (2026-07-05) |
 
 #### Engineering milestones
 
@@ -792,15 +801,15 @@ depend on Phase 2 rollups.
       units (forecast accuracy), and a credit-prompt / overage event
       trail — derived values are never written back into the append-only
       event log. *(state: planned)*
-- [ ] Add repository curation and change-awareness foundation:
+- [x] Add repository curation and change-awareness foundation:
       operator-authored favorites/portfolio-candidate/archived-ignore
       state, commit-aware scan cache metadata, and recently-changed
       prioritization for startup ordering without default full reindex.
-      *(state: planned — Phase 5)*
+      *(state: smoke-tested — Phase 5, 2026-07-05)*
 - [x] Smoke test the trend route response shape for daily rollups.
       *(state: smoke-tested — 2026-07-03)*
 
-#### Phase 5 plan — Repository Curation and Change-Aware Indexing [In Progress]
+#### Phase 5 plan — Repository Curation and Change-Aware Indexing [Complete — smoke-tested 2026-07-05]
 
 **Goal:** Let operators maintain a curated portfolio subset (Favorites,
 Portfolio Candidates, Archived/Ignore), and make startup scan behavior
@@ -819,16 +828,28 @@ as Release 2.1 closeout is complete.
       *(state: smoke-tested — Phase 5A completed 2026-07-05)*
 - [x] Add startup change probes (HEAD SHA/date/branch + metadata hash) and
       reuse unchanged cached rows by default. *(state: smoke-tested — Phase 5B completed 2026-07-05)*
-- [ ] Add curated + recently-changed prioritization in the Repository Grid,
-      with explicit `Refresh All` to force full reassessment. *(state: ui-connected — Phase 5C in place; explicit Refresh All verification pending 5E)*
-- [ ] Add observability and smoke assertions proving unchanged repos are not
-      fully reindexed during ordinary startup. *(state: planned)*
+- [x] Add curated + recently-changed prioritization in the Repository Grid,
+      with explicit `Refresh All` to force full reassessment.
+      *(state: smoke-tested — Phases 5C-5E completed 2026-07-05: priority-order
+      default sort, curation row actions + filters + badge legend, dashboard
+      loads differential-by-default, and a confirm-gated Refresh All wired to
+      the forced-refresh route)*
+- [x] Add observability and smoke assertions proving unchanged repos are not
+      fully reindexed during ordinary startup. *(state: smoke-tested — Phase 5F
+      completed 2026-07-05: per-scan `scan-summary` host log line, module-smoke
+      curation persistence/identity sections, and api-host assertions that a
+      warm differential startup reuses at least 90% of repos with every
+      non-reused entry carrying a detected-change reason — live GitHub
+      metadata drift between back-to-back calls is tolerated by name, but a
+      `cache-miss`/`cache-invalid` reindex or wholesale rescan fails the run)*
 
 **Execution-ready API contract sketch (short form):**
 
 - [x] `GET /api/portfolio/assessment?scanMode=differential&includeCuration=true`
       returns curation + change-aware rows plus startup counters.
-      *(state: ui-connected — implemented in API/docs/client; differential decision fields consumed in Grid + Operations)*
+      *(state: smoke-tested — 2026-07-05; `includeCuration` now merges live
+      curation onto entries on both cache-hit and fresh paths, and the api-host
+      smoke asserts the reuse counters and per-entry decision fields)*
 
 ```json
 {
@@ -877,9 +898,11 @@ as Release 2.1 closeout is complete.
 }
 ```
 
-- [ ] `POST /api/portfolio/assessment/refresh-all` performs forced full
+- [x] `POST /api/portfolio/assessment/refresh-all` performs forced full
       reassessment and emits `forced-refresh` decision reasons.
-      *(state: planned)*
+      *(state: smoke-tested — 2026-07-05; api-host smoke asserts `reused=0`,
+      `reindexed>=1`, `forced-refresh` on every entry, and that curation state
+      survives the forced refresh)*
 
 **Detailed design and validation matrix:** see
 [`docs/product/repository-curation-change-aware-indexing.md`](docs/product/repository-curation-change-aware-indexing.md).

@@ -1,4 +1,4 @@
-import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioAssessmentScanSummary, type PortfolioChangeState, type PortfolioScanDecisionReason, type PortfolioScanStatus, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult } from '../types';
+import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioAssessmentScanSummary, type PortfolioChangeState, type PortfolioScanDecisionReason, type PortfolioScanStatus, type RepoCurationState, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -454,6 +454,8 @@ function getMockOperationsRepos(): OperationsReposResult {
     repoId: repo.localPath || `mock:${repo.name.toLowerCase()}`,
     ordinal: index + 1,
     repoName: repo.name,
+    curationState: 'none',
+    curationUpdatedAt: null,
     sourceCoverage: repo.htmlUrl ? 'local+github' : 'local',
     localPath: repo.localPath ?? '',
     remoteUrl: repo.originUrl ?? '',
@@ -1461,15 +1463,37 @@ function normalizePortfolioAssessmentEntry(entry: any): PortfolioAssessmentEntry
     lastScannedAt: entry?.lastScannedAt ? String(entry.lastScannedAt) : null,
     lastScanStatus: (entry?.lastScanStatus ?? undefined) as PortfolioScanStatus | undefined,
     lastScanError: entry?.lastScanError ? String(entry.lastScanError) : null,
+    repoId: entry?.repoId ? String(entry.repoId) : undefined,
+    curationState: (entry?.curationState ?? undefined) as RepoCurationState | undefined,
+    curationUpdatedAt: entry?.curationUpdatedAt ? String(entry.curationUpdatedAt) : null,
   };
 }
 
-export async function getPortfolioAssessment(options: { refresh?: boolean; includeGithub?: boolean } = {}): Promise<PortfolioAssessmentResult> {
+export async function getPortfolioAssessment(options: { refresh?: boolean; includeGithub?: boolean; scanMode?: 'full' | 'differential'; includeCuration?: boolean } = {}): Promise<PortfolioAssessmentResult> {
   const qs = new URLSearchParams();
   if (options.refresh) qs.set('refresh', 'true');
   if (options.includeGithub) qs.set('includeGithub', 'true');
+  if (options.scanMode) qs.set('scanMode', options.scanMode);
+  if (options.includeCuration) qs.set('includeCuration', 'true');
   const suffix = qs.toString() ? `?${qs.toString()}` : '';
   const data = await fetchJson<any>(`${API_BASE_URL}/portfolio/assessment${suffix}`);
+  return normalizePortfolioAssessmentResult(data);
+}
+
+/**
+ * Release 2.3 Phase 5E — explicit operator-driven full reassessment.
+ * Every repository is reindexed and reports scanDecisionReason=forced-refresh;
+ * ordinary loads should use scanMode=differential instead.
+ */
+export async function refreshAllPortfolioAssessment(): Promise<PortfolioAssessmentResult> {
+  const data = await postJson<any>('/portfolio/assessment/refresh-all', {});
+  if (data && data.success === false) {
+    throw new Error(data?.error?.message ?? data?.error ?? 'Full portfolio refresh failed.');
+  }
+  return normalizePortfolioAssessmentResult(data);
+}
+
+function normalizePortfolioAssessmentResult(data: any): PortfolioAssessmentResult {
   const d = data?.data ?? data ?? {};
   const entries: PortfolioAssessmentEntry[] = Array.isArray(d.entries) ? d.entries.map(normalizePortfolioAssessmentEntry) : [];
   const summaryRaw = d.summary ?? {};

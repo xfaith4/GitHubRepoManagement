@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { type RepoStatus, type DispatchReadiness } from '../types';
+import { type RepoStatus, type DispatchReadiness, type RepoCurationState, type PortfolioAssessmentScanSummary } from '../types';
 import { BuildSuccessIcon, BuildFailureIcon, BuildInProgressIcon, PullRequestIcon, NoBuildsIcon, ChevronDownIcon, ChevronRightIcon } from './icons';
 
 declare global {
@@ -27,13 +27,34 @@ interface RepoGridProps {
   setSelectedRepos: React.Dispatch<React.SetStateAction<Set<string>>>;
   groupBy: 'none' | 'status' | 'needsAttention' | 'isStale' | 'lastBuildStatus' | 'roadmapStatus';
   setGroupBy: React.Dispatch<React.SetStateAction<'none' | 'status' | 'needsAttention' | 'isStale' | 'lastBuildStatus' | 'roadmapStatus'>>;
+  scanSummary?: PortfolioAssessmentScanSummary | null;
+  scanGeneratedAt?: string;
+  onRefreshAll?: () => void | Promise<unknown>;
+  refreshAllInProgress?: boolean;
+  onSetCuration?: (repo: RepoStatus, state: RepoCurationState) => Promise<void>;
 }
 
-type SortKey = 'name' | 'status' | 'branch' | 'lastCommitDate' | 'uncommittedChanges' | 'lastBuildStatus' | 'isStale' | 'openPrCount' | 'needsAttention';
+type SortKey = 'priority' | 'name' | 'status' | 'branch' | 'lastCommitDate' | 'uncommittedChanges' | 'lastBuildStatus' | 'isStale' | 'openPrCount' | 'needsAttention';
 type SortOrder = 'asc' | 'desc';
 
 type DuplicateGroup = { groupKey: string; items: RepoStatus[] };
-type QuickFilter = 'dirtyOnly' | 'hasUncommitted' | 'staleOnly' | 'needsAttention' | 'hasOpenPrs' | 'buildProblem' | 'roadmapFlagged' | 'duplicates';
+type QuickFilter = 'favoritesOnly' | 'candidatesOnly' | 'hideIgnored' | 'dirtyOnly' | 'hasUncommitted' | 'staleOnly' | 'needsAttention' | 'hasOpenPrs' | 'buildProblem' | 'roadmapFlagged' | 'duplicates';
+
+const DEFAULT_QUICK_FILTERS: Record<QuickFilter, boolean> = {
+  favoritesOnly: false,
+  candidatesOnly: false,
+  // Archived/Ignore exists to suppress repos the operator has parked, so the
+  // default view honors it; the active chip keeps the suppression visible.
+  hideIgnored: true,
+  dirtyOnly: false,
+  hasUncommitted: false,
+  staleOnly: false,
+  needsAttention: false,
+  hasOpenPrs: false,
+  buildProblem: false,
+  roadmapFlagged: false,
+  duplicates: false,
+};
 type GroupByOption = RepoGridProps['groupBy'];
 
 type RoadmapBadgeState = 'pending' | 'complete' | 'parse-error' | undefined;
@@ -93,6 +114,47 @@ function getChangeStateBadgeConfig(state?: RepoStatus['changeState']): { classNa
   }
 }
 
+function getCurationBadgeConfig(state?: RepoCurationState): { className: string; label: string; title: string } | null {
+  switch (state) {
+    case 'favorite':
+      return {
+        className: 'bg-yellow-900/40 text-yellow-200 border-yellow-600/50',
+        label: '★ Favorite',
+        title: 'Operator curation: Favorite — always surfaced first in priority order',
+      };
+    case 'portfolio-candidate':
+      return {
+        className: 'bg-sky-900/40 text-sky-300 border-sky-700/50',
+        label: '◆ Candidate',
+        title: 'Operator curation: Portfolio Candidate — being evaluated for active work',
+      };
+    case 'archived-ignore':
+      return {
+        className: 'bg-gray-800/70 text-gray-400 border-gray-600/50',
+        label: '⊘ Ignored',
+        title: 'Operator curation: Archived / Ignore — suppressed by the "Hide ignored" filter',
+      };
+    default:
+      return null;
+  }
+}
+
+// Priority ordering used by the default sort: curated repos first, then
+// recently changed repos, then the unchanged long tail; archived last.
+function getPrioritySortValue(repo: RepoStatus): string {
+  const curationRank =
+    repo.curationState === 'favorite' ? 0 :
+    repo.curationState === 'portfolio-candidate' ? 1 :
+    repo.curationState === 'archived-ignore' ? 3 : 2;
+  const changed =
+    repo.changeState === 'new-commits' ||
+    repo.changeState === 'metadata-changed' ||
+    repo.changeState === 'needs-rescan' ||
+    repo.changeState === 'scan-failed';
+  const changeRank = changed ? 0 : 1;
+  return `${curationRank}${changeRank}:${repo.name.toLowerCase()}`;
+}
+
 function formatScanDecisionReason(reason?: RepoStatus['scanDecisionReason']): string {
   if (!reason) {
     return 'n/a';
@@ -141,21 +203,16 @@ function buildScanDecisionTooltip(repo: RepoStatus): string {
   return lines.join('\n');
 }
 
-const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRunRepoAction, onOpenDocReview, onRunRoadmapScan, dataSource, selectedRepos, setSelectedRepos, groupBy, setGroupBy }: RepoGridProps) => {
-  const [sortKey, setSortKey] = useState<SortKey>('name');
+const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRunRepoAction, onOpenDocReview, onRunRoadmapScan, dataSource, selectedRepos, setSelectedRepos, groupBy, setGroupBy, scanSummary, scanGeneratedAt, onRefreshAll, refreshAllInProgress, onSetCuration }: RepoGridProps) => {
+  const [sortKey, setSortKey] = useState<SortKey>('priority');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [search, setSearch] = useState('');
   const [readinessFilter, setReadinessFilter] = useState<DispatchReadiness | 'all'>('all');
-  const [quickFilters, setQuickFilters] = useState<Record<QuickFilter, boolean>>({
-    dirtyOnly: false,
-    hasUncommitted: false,
-    staleOnly: false,
-    needsAttention: false,
-    hasOpenPrs: false,
-    buildProblem: false,
-    roadmapFlagged: false,
-    duplicates: false,
-  });
+  const [quickFilters, setQuickFilters] = useState<Record<QuickFilter, boolean>>({ ...DEFAULT_QUICK_FILTERS });
+  const [legendOpen, setLegendOpen] = useState(false);
+  const [refreshAllConfirmOpen, setRefreshAllConfirmOpen] = useState(false);
+  const [curationPendingRepoId, setCurationPendingRepoId] = useState<string | null>(null);
+  const [curationError, setCurationError] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [duplicateWarningExpanded, setDuplicateWarningExpanded] = useState(false);
@@ -246,12 +303,17 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
       const matchesBuildProblem = !quickFilters.buildProblem || !repo.lastBuildStatus || repo.lastBuildStatus === 'none' || repo.lastBuildStatus === 'failure';
       const matchesRoadmapFlag = !quickFilters.roadmapFlagged || isRoadmapFlagged(repo);
       const matchesDuplicates = !quickFilters.duplicates || duplicateRepoIds.has(repoId);
+      const matchesFavorites = !quickFilters.favoritesOnly || repo.curationState === 'favorite';
+      const matchesCandidates = !quickFilters.candidatesOnly || repo.curationState === 'portfolio-candidate';
+      const matchesHideIgnored = !quickFilters.hideIgnored || repo.curationState !== 'archived-ignore';
 
-      return matchesSearch && matchesReadiness && matchesDirtyOnly && matchesUncommitted && matchesStale && matchesAttention && matchesOpenPrs && matchesBuildProblem && matchesRoadmapFlag && matchesDuplicates;
+      return matchesSearch && matchesReadiness && matchesDirtyOnly && matchesUncommitted && matchesStale && matchesAttention && matchesOpenPrs && matchesBuildProblem && matchesRoadmapFlag && matchesDuplicates && matchesFavorites && matchesCandidates && matchesHideIgnored;
     });
 
     const valueForSort = (repo: RepoStatus): string | number => {
       switch (sortKey) {
+        case 'priority':
+          return getPrioritySortValue(repo);
         case 'name':
           return repo.name;
         case 'status':
@@ -429,6 +491,20 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
     setQuickFilters(prev => ({ ...prev, [filterName]: !prev[filterName] }));
   };
 
+  const handleCurationClick = async (repo: RepoStatus, state: RepoCurationState) => {
+    if (!onSetCuration) return;
+    const selectionId = getRepoSelectionId(repo);
+    setCurationPendingRepoId(selectionId);
+    setCurationError(null);
+    try {
+      await onSetCuration(repo, state);
+    } catch (err) {
+      setCurationError(`${repo.name}: ${err instanceof Error ? err.message : 'Curation update failed.'}`);
+    } finally {
+      setCurationPendingRepoId(null);
+    }
+  };
+
   const sortIndicator = (key: SortKey) => {
     if (sortKey !== key) {
       return <span className="text-gray-500">⇅</span>;
@@ -565,6 +641,52 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
             )}
           </div>
         </div>
+        {(repo.changeState || repo.scanDecisionReason) && (
+          <div className="rounded border border-gray-700 bg-gray-900/70 px-3 py-2">
+            <div className="text-gray-500">Scan Decision</div>
+            <div className="mt-1 space-y-0.5">
+              <div>{formatScanDecisionReason(repo.scanDecisionReason)}</div>
+              <div className="text-gray-500">Head {toShortSha(repo.headCommitSha)} · Indexed {toShortSha(repo.lastIndexedCommitSha)}{repo.lastScanStatus ? ` · ${repo.lastScanStatus}` : ''}</div>
+              {repo.lastScanError && <div className="text-rose-300 break-all">{repo.lastScanError}</div>}
+            </div>
+          </div>
+        )}
+        {onSetCuration && (
+          <div className="rounded border border-gray-700 bg-gray-900/70 px-3 py-2 md:col-span-2 xl:col-span-3">
+            <div className="text-gray-500">Curation</div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+              {(
+                [
+                  ['favorite', '★ Favorite'],
+                  ['portfolio-candidate', '◆ Candidate'],
+                  ['archived-ignore', '⊘ Ignore'],
+                  ['none', 'Clear'],
+                ] as Array<[RepoCurationState, string]>
+              ).map(([state, label]) => {
+                const isActive = (repo.curationState ?? 'none') === state;
+                const isPending = curationPendingRepoId === getRepoSelectionId(repo);
+                return (
+                  <button
+                    key={state}
+                    onClick={() => { void handleCurationClick(repo, state); }}
+                    disabled={isPending || isActive}
+                    className={`min-h-9 px-2.5 py-1.5 text-xs rounded border transition-colors disabled:opacity-60 ${isActive
+                      ? 'border-blue-500/70 bg-blue-900/50 text-blue-100'
+                      : 'border-gray-600 bg-gray-800/60 text-gray-200 hover:bg-gray-700/60'}`}
+                  >
+                    {label}{isActive ? ' ✓' : ''}
+                  </button>
+                );
+              })}
+              <span className="text-gray-500">
+                Persists across restarts without rescanning. Favorites sort first; ignored repos are hidden by the "Hide ignored" filter.
+              </span>
+            </div>
+            {curationError && curationError.startsWith(`${repo.name}:`) && (
+              <div className="mt-1.5 text-xs text-rose-300">{curationError}</div>
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -608,7 +730,17 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
           <div className="text-xs text-gray-400">
             Showing <strong>{filteredAndSortedRepos.length}</strong> of <strong>{uniqueRepos.length}</strong> repositories
             {activeQuickFilterCount > 0 ? ` · ${activeQuickFilterCount} quick filter${activeQuickFilterCount === 1 ? '' : 's'} active` : ''}
+            {sortKey === 'priority' ? ' · priority order: favorites → candidates → recently changed → unchanged' : ''}
           </div>
+          {scanSummary && (
+            <div className="text-xs text-gray-500" title="Change-aware indexing: unchanged repositories are reused from the persisted index instead of being rescanned.">
+              Last scan: <span className="text-emerald-400">{scanSummary.reused} reused</span>
+              {' · '}<span className="text-cyan-400">{scanSummary.reindexed} reindexed</span>
+              {scanSummary.failed > 0 ? <>{' · '}<span className="text-rose-400">{scanSummary.failed} failed</span></> : ''}
+              {` · ${(scanSummary.durationMs / 1000).toFixed(1)}s`}
+              {scanGeneratedAt ? ` · ${new Date(scanGeneratedAt).toLocaleTimeString()}` : ''}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
             <label htmlFor="group-by" className="text-sm font-medium text-gray-300">Group By:</label>
@@ -666,11 +798,45 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
             Next
           </button>
         </div>
+
+        {onRefreshAll && (
+          <div className="flex items-center gap-2 ml-auto">
+            {refreshAllConfirmOpen && !refreshAllInProgress ? (
+              <>
+                <span className="text-xs text-amber-300">Force a full rescan of every repository? Cached rows are ignored.</span>
+                <button
+                  onClick={() => { setRefreshAllConfirmOpen(false); void onRefreshAll(); }}
+                  className="px-2.5 py-2 rounded border border-amber-600/70 bg-amber-900/40 text-xs text-amber-100 hover:bg-amber-800/50"
+                >
+                  Confirm full rescan
+                </button>
+                <button
+                  onClick={() => setRefreshAllConfirmOpen(false)}
+                  className="px-2.5 py-2 rounded border border-gray-600 bg-gray-900 text-xs text-gray-300 hover:bg-gray-800"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setRefreshAllConfirmOpen(true)}
+                disabled={Boolean(refreshAllInProgress)}
+                className="px-2.5 py-2 rounded border border-gray-600 bg-gray-900 text-xs text-gray-200 hover:bg-gray-800 disabled:opacity-50"
+                title="Ordinary loads reuse unchanged repositories from the index. Refresh All bypasses that and fully reindexes everything."
+              >
+                {refreshAllInProgress ? 'Refreshing all…' : 'Refresh All'}
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {(
           [
+            ['favoritesOnly', '★ Favorites'],
+            ['candidatesOnly', '◆ Candidates'],
+            ['hideIgnored', 'Hide ignored'],
             ['dirtyOnly', 'Dirty only'],
             ['hasUncommitted', 'Has uncommitted changes'],
             ['staleOnly', 'Stale'],
@@ -692,21 +858,65 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
           </button>
         ))}
         <button
-          onClick={() => setQuickFilters({
-            dirtyOnly: false,
-            hasUncommitted: false,
-            staleOnly: false,
-            needsAttention: false,
-            hasOpenPrs: false,
-            buildProblem: false,
-            roadmapFlagged: false,
-            duplicates: false,
-          })}
+          onClick={() => setQuickFilters({ ...DEFAULT_QUICK_FILTERS })}
           className="px-2.5 py-1.5 text-xs rounded-full border border-gray-600 bg-gray-900 text-gray-300 hover:bg-gray-800"
         >
           Clear filters
         </button>
+        {sortKey !== 'priority' && (
+          <button
+            onClick={() => { setSortKey('priority'); setSortOrder('asc'); }}
+            className="px-2.5 py-1.5 text-xs rounded-full border border-indigo-600/60 bg-indigo-900/30 text-indigo-200 hover:bg-indigo-800/40"
+            title="Restore the default ordering: favorites, then portfolio candidates, then recently changed repositories, then the unchanged long tail"
+          >
+            Priority order
+          </button>
+        )}
+        <button
+          onClick={() => setLegendOpen(prev => !prev)}
+          className={`px-2.5 py-1.5 text-xs rounded-full border transition-colors ${legendOpen
+            ? 'border-blue-500/60 bg-blue-900/40 text-blue-100'
+            : 'border-gray-600 bg-gray-800/40 text-gray-300 hover:bg-gray-700/50'}`}
+        >
+          {legendOpen ? 'Hide badge legend' : 'Badge legend'}
+        </button>
       </div>
+
+      {legendOpen && (
+        <div className="mb-4 rounded-lg border border-gray-700 bg-gray-900/60 px-4 py-3 text-xs text-gray-300" data-testid="repo-grid-badge-legend">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-6 gap-y-3">
+            <div>
+              <div className="font-semibold text-gray-200 mb-1.5">Curation (operator-set)</div>
+              <div className="space-y-1">
+                <div><span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded border bg-yellow-900/40 text-yellow-200 border-yellow-600/50">★ Favorite</span> — always surfaced first in priority order.</div>
+                <div><span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded border bg-sky-900/40 text-sky-300 border-sky-700/50">◆ Candidate</span> — being evaluated for active portfolio work.</div>
+                <div><span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded border bg-gray-800/70 text-gray-400 border-gray-600/50">⊘ Ignored</span> — parked; hidden while "Hide ignored" is on.</div>
+                <div className="text-gray-500">Set these from a repo's Details panel; they persist across restarts and never trigger a rescan.</div>
+              </div>
+            </div>
+            <div>
+              <div className="font-semibold text-gray-200 mb-1.5">Index (change-aware scanning)</div>
+              <div className="space-y-1">
+                <div><span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded border bg-emerald-900/30 text-emerald-300 border-emerald-700/40">Index: Reused</span> — unchanged since the last scan; served from the persisted index without rescanning.</div>
+                <div><span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded border bg-cyan-900/30 text-cyan-300 border-cyan-700/40">Index: New Commits</span> — HEAD moved; this repo was selectively reindexed.</div>
+                <div><span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded border bg-amber-900/30 text-amber-300 border-amber-700/40">Index: Metadata Changed</span> — docs/PR/Actions signals changed without new commits.</div>
+                <div><span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded border bg-violet-900/30 text-violet-300 border-violet-700/40">Index: Rescanned</span> — no usable cache row (new repo, first scan, or forced refresh).</div>
+                <div><span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded border bg-rose-900/30 text-rose-300 border-rose-700/40">Index: Scan Failed</span> — the last probe or scan errored; check the badge tooltip.</div>
+                <div className="text-gray-500">Hover any Index badge for the scan decision, HEAD vs indexed commit, and errors. Use Refresh All to force a full rescan.</div>
+              </div>
+            </div>
+            <div>
+              <div className="font-semibold text-gray-200 mb-1.5">Uncommitted-change severity</div>
+              <div className="space-y-1">
+                <div><span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs border-emerald-500/70 bg-emerald-900/40 text-emerald-100">Low</span> — 1-10 uncommitted files.</div>
+                <div><span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs border-yellow-500/70 bg-yellow-900/40 text-yellow-100">Medium</span> — 11-100 files.</div>
+                <div><span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs border-orange-500/70 bg-orange-900/40 text-orange-100">High</span> — 101-999 files.</div>
+                <div><span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs border-red-500/70 bg-red-900/40 text-red-100">Critical</span> — 1000+ files.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="hidden md:block mb-3 text-xs text-gray-500">
         Additional metadata is available per row via Details to keep key comparison columns visible without horizontal scrolling.
@@ -747,6 +957,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                   };
                   const readinessCfg = repo.dispatchReadiness ? readinessBadge[repo.dispatchReadiness] : undefined;
                   const changeStateCfg = getChangeStateBadgeConfig(repo.changeState);
+                  const curationCfg = getCurationBadgeConfig(repo.curationState);
                   const roadmapCfg = getRoadmapBadgeConfig(repo.roadmapState as RoadmapBadgeState);
                   return (
                     <div
@@ -774,6 +985,11 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                       </div>
 
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        {curationCfg && (
+                          <span className={`inline-flex items-center text-xs px-1.5 py-0.5 rounded border ${curationCfg.className}`} title={curationCfg.title}>
+                            {curationCfg.label}
+                          </span>
+                        )}
                         {repo.isStale && (
                           <span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded border bg-red-900/30 text-red-300 border-red-700/40">Stale</span>
                         )}
@@ -981,6 +1197,17 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                                   <span className="text-sm font-medium text-gray-200">{repo.name}</span>
                                 )}
                                 <div className="text-xs text-gray-400 mt-0.5">{repo.localPath ?? 'No local path'}</div>
+                                {(() => {
+                                  const curationCfg = getCurationBadgeConfig(repo.curationState);
+                                  if (!curationCfg) return null;
+                                  return (
+                                    <div className="mt-1">
+                                      <span className={`inline-flex items-center text-xs px-1.5 py-0.5 rounded border ${curationCfg.className}`} title={curationCfg.title}>
+                                        {curationCfg.label}
+                                      </span>
+                                    </div>
+                                  );
+                                })()}
                                 {repo.hasRoadmap && onViewRoadmap && (() => {
                                   const { className, label, title: titleText } = getRoadmapBadgeConfig(repo.roadmapState as RoadmapBadgeState);
                                   return (

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry, type DocAuditIndex, type RoadmapAuditIndex, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioAssessmentEntry, type PortfolioAssessmentResult, type PortfolioTrendPoint, type PortfolioTrendResult, type RepoLifecycleState, type PortfolioSignalSource, type OperationsReposResult } from '../types';
+import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry, type DocAuditIndex, type RoadmapAuditIndex, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioAssessmentEntry, type PortfolioAssessmentResult, type PortfolioTrendPoint, type PortfolioTrendResult, type RepoLifecycleState, type PortfolioSignalSource, type OperationsReposResult, type RepoCurationState } from '../types';
 import SummaryCard from './SummaryCard';
 import ActionBar from './ActionBar';
 import RepoGrid from './RepoGrid';
@@ -24,7 +24,7 @@ import RepoGitStatusModal from './RepoGitStatusModal';
 import ReadmeGenerateModal from './ReadmeGenerateModal';
 import HelpModal from './HelpModal';
 import OperationsWorkspaceView from './OperationsWorkspaceView';
-import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getRoadmapDependencies, getPortfolioAssessment, getPortfolioTrend, getOperationsRepos } from '../services/apiClient';
+import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getRoadmapDependencies, getPortfolioAssessment, refreshAllPortfolioAssessment, setOperationsRepoCuration, getPortfolioTrend, getOperationsRepos } from '../services/apiClient';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
 import { useHealthPing } from '../hooks/useHealthPing';
@@ -269,9 +269,12 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   const [logStatus, setLogStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
   const [scanProgress, setScanProgress] = useState<{ scannedCount: number; latestRepo: string | null }>({ scannedCount: 0, latestRepo: null });
 
+  // Release 2.3 Phase 5E: ordinary loads run change-aware differential
+  // reassessment so unchanged repos are reused from the persisted index;
+  // refresh=true keeps the full-signal rebuild for post-operation refreshes.
   const refreshPortfolioAssessment = (refresh = false) => {
     setPortfolioAssessmentLoading(true);
-    return getPortfolioAssessment(refresh ? { refresh: true } : {})
+    return getPortfolioAssessment(refresh ? { refresh: true, includeCuration: true } : { scanMode: 'differential', includeCuration: true })
       .then(result => {
         setPortfolioAssessment(result);
         setPortfolioAssessmentError(null);
@@ -282,6 +285,50 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
         throw err;
       })
       .finally(() => setPortfolioAssessmentLoading(false));
+  };
+
+  // Release 2.3 Phase 5E: explicit operator-driven full reassessment; every
+  // repo is reindexed with scanDecisionReason=forced-refresh.
+  const [refreshAllInProgress, setRefreshAllInProgress] = useState(false);
+  const handleRefreshAllAssessment = () => {
+    setRefreshAllInProgress(true);
+    setPortfolioAssessmentLoading(true);
+    return refreshAllPortfolioAssessment()
+      .then(result => {
+        setPortfolioAssessment(result);
+        setPortfolioAssessmentError(null);
+        return result;
+      })
+      .catch(err => {
+        setPortfolioAssessmentError(err instanceof Error ? err.message : 'Full portfolio refresh failed.');
+        throw err;
+      })
+      .finally(() => {
+        setRefreshAllInProgress(false);
+        setPortfolioAssessmentLoading(false);
+      });
+  };
+
+  // Release 2.3 Phase 5D: operator curation from the Repository Grid.
+  // Persists via the stable repoId when the assessment provides one, falling
+  // back to local path / repo name which the host resolves server-side.
+  const handleSetRepoCuration = async (repo: RepoStatus, curationState: RepoCurationState) => {
+    const repoKey = repo.repoId ?? repo.localPath ?? repo.name;
+    const result = await setOperationsRepoCuration(repoKey, curationState);
+    setPortfolioAssessment(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        entries: prev.entries.map(entry => {
+          const matches =
+            (repo.repoId && entry.repoId === repo.repoId) ||
+            (repo.localPath && entry.localPath && entry.localPath.trim().toLowerCase() === repo.localPath.trim().toLowerCase()) ||
+            entry.repoName.toLowerCase() === repo.name.toLowerCase();
+          if (!matches) return entry;
+          return { ...entry, curationState: result.curationState, curationUpdatedAt: result.updatedAt };
+        }),
+      };
+    });
   };
 
   const refreshOperationsRepos = (refreshPortfolio = false) => {
@@ -974,6 +1021,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
         lastIndexedCommitSha: assessmentEntry?.lastIndexedCommitSha ?? r.lastIndexedCommitSha,
         lastScanStatus: assessmentEntry?.lastScanStatus ?? r.lastScanStatus,
         lastScanError: assessmentEntry?.lastScanError ?? r.lastScanError,
+        repoId: assessmentEntry?.repoId ?? r.repoId,
+        curationState: assessmentEntry?.curationState ?? r.curationState,
+        curationUpdatedAt: assessmentEntry?.curationUpdatedAt ?? r.curationUpdatedAt,
       };
     });
   }, [repos, roadmapEntries, docsAuditIndex, portfolioAssessment]);
@@ -1976,6 +2026,11 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                   setSelectedRepos={setSelectedRepoIds}
                   groupBy={groupBy}
                   setGroupBy={setGroupBy}
+                  scanSummary={portfolioAssessment?.scanSummary ?? null}
+                  scanGeneratedAt={portfolioAssessment?.generatedAt}
+                  onRefreshAll={dataSource?.source === 'local' ? () => handleRefreshAllAssessment().catch(() => {/* surfaced via assessment error state */}) : undefined}
+                  refreshAllInProgress={refreshAllInProgress}
+                  onSetCuration={dataSource?.source === 'local' ? handleSetRepoCuration : undefined}
                 />
               </>
             ) : activeView === 'insights' ? (

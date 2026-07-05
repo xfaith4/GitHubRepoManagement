@@ -77,7 +77,11 @@ const mainWindowSections = [
   },
   {
     title: 'Repository Grid',
-    body: 'Lists scanned repositories. Select repos for targeted actions, inspect dirty status, open artifacts, and view existing roadmaps.',
+    body: 'Lists scanned repositories. Select repos for targeted actions, inspect dirty status, open artifacts, and view existing roadmaps. Default ordering is priority order: your Favorites first, then Portfolio Candidates, then recently changed repos, then the unchanged long tail.',
+  },
+  {
+    title: 'Curation & Change-Aware Scanning',
+    body: 'Mark repos as Favorite, Portfolio Candidate, or Archived/Ignore from a row\'s Details panel — these labels persist across restarts and never trigger a rescan. Ordinary loads are incremental: unchanged repos are reused from the persisted index (shown as "Index: Reused"), and only changed repos are reindexed. The "Last scan" line under the search box reports how many rows were reused vs reindexed. Use the Badge legend chip to decode every badge, and use Refresh All (with confirmation) only when you want to force a full rescan of everything.',
   },
   {
     title: 'Operations',
