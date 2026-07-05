@@ -1,0 +1,385 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "roadmap-contract.schema.json",
+  "title": "Roadmap Contract",
+  "description": "Normalized internal model produced by parsing ROADMAP.md. Used for audit, scoring, CI gating, and orchestration dispatch.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "repoName",
+    "roadmapState",
+    "maturityLevel",
+    "maturityScore",
+    "pendingCount",
+    "completedCount",
+    "totalCount",
+    "sections",
+    "releases",
+    "releaseCount",
+    "parsedAt"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "enum": [
+        "2.0"
+      ]
+    },
+    "repoName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repoPath": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "roadmapPath": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "roadmapState": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "complete",
+        "missing",
+        "parse-error"
+      ]
+    },
+    "maturityLevel": {
+      "type": "string",
+      "enum": [
+        "L0-Absent",
+        "L1-Informal",
+        "L2-Structured",
+        "L3-Contract-Ready",
+        "L4-Orchestration-Ready"
+      ]
+    },
+    "maturityScore": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 100
+    },
+    "pendingCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "completedCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "totalCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nextPendingItem": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "text",
+            "section"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1
+            },
+            "section": {
+              "type": "string",
+              "minLength": 1
+            },
+            "releaseId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "level",
+          "line",
+          "pendingItems",
+          "completedItems"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "level": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pendingItems": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "completedItems": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "releases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "line",
+          "status",
+          "normalizedStatus",
+          "goal",
+          "pendingCount",
+          "completedCount",
+          "totalCount",
+          "hasAcceptanceCriteria",
+          "hasOutOfScope",
+          "hasValidationPlan",
+          "hasTraceability"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "normalizedStatus": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "planned",
+              "active",
+              "blocked",
+              "validation",
+              "done",
+              "archived",
+              null
+            ]
+          },
+          "goal": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pendingCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "completedCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "totalCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "hasAcceptanceCriteria": {
+            "type": "boolean"
+          },
+          "hasOutOfScope": {
+            "type": "boolean"
+          },
+          "hasValidationPlan": {
+            "type": "boolean"
+          },
+          "hasConcreteValidationPlan": {
+            "type": "boolean"
+          },
+          "hasTraceability": {
+            "type": "boolean"
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "activeRelease": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "id",
+            "title",
+            "status"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "hasProductIntent": {
+      "type": "boolean"
+    },
+    "hasReleaseSections": {
+      "type": "boolean"
+    },
+    "hasAcceptanceCriteria": {
+      "type": "boolean"
+    },
+    "hasOutOfScope": {
+      "type": "boolean"
+    },
+    "releaseCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "activeReleaseCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "releasesMissingAcceptanceCriteria": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "releasesMissingOutOfScope": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "vagueItemCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "unknownStatusCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "doneReleaseUncheckedItemCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "activeReleaseHasValidationPlan": {
+      "type": "boolean"
+    },
+    "activeReleaseHasTraceability": {
+      "type": "boolean"
+    },
+    "parseError": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "schemaFindings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "auditFindings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "ruleId",
+          "severity",
+          "message"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "ruleId": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "warning",
+              "info"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "recommendedAction": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scoreImpact": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "parsedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

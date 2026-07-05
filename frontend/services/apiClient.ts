@@ -51,8 +51,39 @@ export function isOptionalApiUnavailableError(error: unknown): error is Optional
   );
 }
 
+// Release 2.2 — optional API key for authenticated requests. Stored in
+// localStorage so an operator pastes it once; sent as `X-Api-Key` on every
+// request when present. Harmless when the host runs open (no auth).
+const API_KEY_STORAGE_KEY = 'repoMgmt.apiKey';
+
+function getStoredApiKey(): string {
+  try {
+    return (typeof localStorage !== 'undefined' ? localStorage.getItem(API_KEY_STORAGE_KEY) : '') ?? '';
+  } catch { return ''; }
+}
+
+export function setApiKey(key: string): void {
+  try {
+    if (key) localStorage.setItem(API_KEY_STORAGE_KEY, key);
+    else localStorage.removeItem(API_KEY_STORAGE_KEY);
+  } catch { /* localStorage unavailable — ignore */ }
+}
+
+export function getApiKey(): string {
+  return getStoredApiKey();
+}
+
+function withAuthHeaders(init?: RequestInit): RequestInit {
+  const key = getStoredApiKey();
+  if (!key) return init ?? {};
+  return {
+    ...init,
+    headers: { ...(init?.headers as Record<string, string> | undefined), 'X-Api-Key': key },
+  };
+}
+
 async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, init);
+  const response = await fetch(input, withAuthHeaders(init));
   const text = await response.text();
   let payload: unknown = null;
   try { payload = text ? JSON.parse(text) : null; } catch { payload = text; }
@@ -938,6 +969,24 @@ export async function getRoadmapRepairHistory(limit = 25): Promise<RoadmapRepair
   return Array.isArray(data?.data?.items) ? data.data.items : [];
 }
 
+// Release 2.4 — build a PR for a roadmap repair. Dry-run by default (returns the
+// planned branch/title/body); createPr=true is the operator-driven live path.
+export interface RoadmapRepairPrResult {
+  dryRun: boolean;
+  created: boolean;
+  prUrl: string | null;
+  plan: { repoName: string; previewId: string; branch: string; baseBranch: string; title: string; body: string };
+  note: string;
+}
+
+export async function submitRoadmapRepairPr(repoName: string, previewId?: string, createPr = false): Promise<RoadmapRepairPrResult> {
+  const body: Record<string, unknown> = { repoName };
+  if (previewId) body.previewId = previewId;
+  if (createPr) body.createPr = true;
+  const data = await postJson<any>('/roadmap/repair/submit-pr', body);
+  return (data?.data ?? data) as RoadmapRepairPrResult;
+}
+
 // Release 1.6 — Roadmap-Driven Release Dispatch to GitHub Copilot
 
 export async function checkRoadmapDispatch(
@@ -1368,6 +1417,70 @@ export async function getRoadmapDependencies(refresh = false): Promise<RoadmapDe
     summary: Array.isArray(d.summary) ? d.summary : [],
     totalEdges: Number(d.totalEdges ?? 0),
     scannedAt: d.scannedAt ?? new Date().toISOString(),
+  };
+}
+
+// Release 2.2 — guided first-run setup. The /setup routes live at the host
+// root, not under /api, so derive a root base from API_BASE_URL.
+const SETUP_BASE = API_BASE_URL.replace(/\/api\/?$/, '');
+
+export interface SetupStatus {
+  needsSetup: boolean;
+  settingsExists: boolean;
+  hasLocalRoots: boolean;
+  localRootCount: number;
+  firstScanComplete: boolean;
+  authRequired: boolean;
+}
+
+export interface SetupPrerequisite {
+  id: string;
+  label: string;
+  required: boolean;
+  ok: boolean;
+  detail: string;
+}
+
+export async function getSetupStatus(): Promise<SetupStatus> {
+  const data = await fetchJson<any>(`${SETUP_BASE}/setup/status`);
+  const d = data?.data ?? data ?? {};
+  return {
+    needsSetup: Boolean(d.needsSetup),
+    settingsExists: Boolean(d.settingsExists),
+    hasLocalRoots: Boolean(d.hasLocalRoots),
+    localRootCount: Number(d.localRootCount ?? 0),
+    firstScanComplete: Boolean(d.firstScanComplete),
+    authRequired: Boolean(d.authRequired),
+  };
+}
+
+export async function getSetupPrerequisites(): Promise<{ prerequisitesMet: boolean; checks: SetupPrerequisite[] }> {
+  const data = await fetchJson<any>(`${SETUP_BASE}/setup/prerequisites`);
+  const d = data?.data ?? data ?? {};
+  return {
+    prerequisitesMet: Boolean(d.prerequisitesMet),
+    checks: Array.isArray(d.checks) ? d.checks.map((c: any) => ({
+      id: String(c.id ?? ''),
+      label: String(c.label ?? ''),
+      required: Boolean(c.required),
+      ok: Boolean(c.ok),
+      detail: String(c.detail ?? ''),
+    })) : [],
+  };
+}
+
+export async function submitSetupConfig(config: { localRoots: string[]; maxDepth?: number; gitHubOwner?: string; requireApiKey?: boolean }): Promise<{ needsSetup: boolean; settingsPath: string; localRootCount: number; generatedApiKey: string | null }> {
+  const data = await fetchJson<any>(`${SETUP_BASE}/setup/config`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  const d = data?.data ?? data ?? {};
+  return {
+    needsSetup: Boolean(d.needsSetup),
+    settingsPath: String(d.settingsPath ?? ''),
+    localRootCount: Number(d.localRootCount ?? 0),
+    generatedApiKey: d.generatedApiKey ?? null,
   };
 }
 

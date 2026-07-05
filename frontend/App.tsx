@@ -1,7 +1,10 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import Dashboard from './components/Dashboard';
 import DataSourceModal from './components/DataSourceModal';
-import { getStatus, getGithubRepoInsights } from './services/apiClient';
+import SetupWizard from './components/SetupWizard';
+import AgentActivityIndicator from './components/AgentActivityIndicator';
+import MobileRepoHealth from './components/MobileRepoHealth';
+import { getStatus, getGithubRepoInsights, getSetupStatus } from './services/apiClient';
 import { type RepoStatus, type GithubInsightsMeta } from './types';
 import { DatabaseIcon } from './components/icons';
 
@@ -19,6 +22,19 @@ function formatRelativeTime(date: Date): string {
 
 function App() {
   const [viewMode, setViewMode] = useState<'local' | 'github'>('local');
+
+  // Release 2.2 — first-run detection. null = still checking; true = show the
+  // guided Setup Wizard. `?setup=1` forces it (for preview / smoke coverage).
+  const [showSetup, setShowSetup] = useState<boolean | null>(null);
+  useEffect(() => {
+    const forced = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('setup') === '1';
+    if (forced) { setShowSetup(true); return; }
+    let cancelled = false;
+    getSetupStatus()
+      .then(s => { if (!cancelled) setShowSetup(Boolean(s.needsSetup)); })
+      .catch(() => { if (!cancelled) setShowSetup(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   const [localRepos, setLocalRepos] = useState<RepoStatus[]>([]);
   const [localSource, setLocalSource] = useState<{ source: 'sample' } | { source: 'local'; workspacePath?: string; configuredGithubUser?: string | null; repoCount?: number; scanDurationMs?: number } | null>(null);
@@ -276,6 +292,22 @@ function App() {
     );
   };
 
+  if (showSetup) {
+    return (
+      <SetupWizard
+        onComplete={() => {
+          setShowSetup(false);
+          // Trigger the first scan now that settings.json exists.
+          fetchRepoStatus();
+          // Drop the ?setup=1 preview param if present.
+          if (typeof window !== 'undefined' && window.history?.replaceState) {
+            window.history.replaceState({}, '', window.location.pathname);
+          }
+        }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-900 text-gray-200 font-sans">
       <header className="bg-gray-800/50 backdrop-blur-sm sticky top-0 z-20 border-b border-gray-700">
@@ -285,7 +317,8 @@ function App() {
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-blue-400 mr-3 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
               <h1 className="text-lg sm:text-xl font-bold text-gray-100 truncate">GitHub Repo Manager</h1>
             </div>
-            <div className="flex items-center">
+            <div className="flex items-center gap-2">
+                <AgentActivityIndicator />
                 <span className="hidden lg:inline-flex">{renderDataSourceLabel()}</span>
                 {isBackgroundRefreshing && (
                   <span className="ml-2 inline-flex items-center gap-1.5 text-xs text-blue-400" title="Refreshing repository data in the background…">
@@ -310,6 +343,7 @@ function App() {
         </div>
       </header>
       <main>
+        <MobileRepoHealth />
         <Dashboard
             repos={viewMode === 'github' && githubSource ? githubRepos : localRepos}
             loading={loading}

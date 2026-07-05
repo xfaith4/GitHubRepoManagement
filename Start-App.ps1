@@ -537,6 +537,15 @@ else {
 # ------------------------------------------------------------------
 Write-Step "Starting API host (bind ${ApiHost}:${ApiPort}, access $apiPublicUrl) in $Mode mode..."
 
+# Release 2.2 bind guard: the API host refuses a non-loopback bind without API
+# auth. For the single-operator LAN default, acknowledge the interim-insecure
+# bind so the host still starts (it logs a warning). Configure auth.requireApiKey
+# in settings.json before sharing the dashboard on a network.
+if ($ApiHost -notin @('127.0.0.1', 'localhost', '::1')) {
+    $env:REPO_MGMT_ALLOW_INSECURE_BIND = 'true'
+    Write-Host "  [warn] Binding $ApiHost without enforced API auth (single-operator interim). Set auth.requireApiKey in settings.json before sharing on a network." -ForegroundColor Yellow
+}
+
 $backendPid = $null
 
 if ($Mode -eq 'debug') {

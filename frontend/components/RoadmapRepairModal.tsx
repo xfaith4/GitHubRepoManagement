@@ -5,7 +5,7 @@ import {
   type RoadmapRepairHistoryItem,
   type RoadmapMaturityLevel,
 } from '../types';
-import { previewRoadmapRepair, applyRoadmapRepair, getRoadmapRepairHistory } from '../services/apiClient';
+import { previewRoadmapRepair, applyRoadmapRepair, getRoadmapRepairHistory, submitRoadmapRepairPr, type RoadmapRepairPrResult } from '../services/apiClient';
 import { SpinnerIcon } from './icons';
 
 interface RoadmapRepairModalProps {
@@ -194,6 +194,25 @@ const RoadmapRepairModal: React.FC<RoadmapRepairModalProps> = ({
   // Editable proposed content
   const [editedProposed, setEditedProposed] = useState('');
 
+  // Release 2.4 — submit-PR (dry-run plan) state
+  const [prResult, setPrResult] = useState<RoadmapRepairPrResult | null>(null);
+  const [prLoading, setPrLoading] = useState(false);
+  const [prError, setPrError] = useState<string | null>(null);
+
+  const handleSubmitPr = useCallback(async () => {
+    if (!repoName) return;
+    setPrLoading(true);
+    setPrError(null);
+    try {
+      const result = await submitRoadmapRepairPr(repoName, preview?.previewId);
+      setPrResult(result);
+    } catch (err) {
+      setPrError(err instanceof Error ? err.message : 'Failed to build repair PR plan.');
+    } finally {
+      setPrLoading(false);
+    }
+  }, [repoName, preview]);
+
   // Load the preview when modal opens
   useEffect(() => {
     if (!isOpen || !repoName) {
@@ -205,6 +224,8 @@ const RoadmapRepairModal: React.FC<RoadmapRepairModalProps> = ({
       setApplySuccess(false);
       setEditedProposed('');
       setActiveTab('preview');
+      setPrResult(null);
+      setPrError(null);
       return;
     }
     let cancelled = false;
@@ -347,6 +368,30 @@ const RoadmapRepairModal: React.FC<RoadmapRepairModalProps> = ({
                     </div>
                   ))}
                 </div>
+              </div>
+
+              {/* Release 2.4 — submit-PR (dry-run plan). Live PR creation is an
+                  operator action requiring a git checkout + GitHub write. */}
+              <div className="bg-gray-800/60 rounded-lg border border-gray-700/50 p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-300">Open as pull request</span>
+                  <button
+                    onClick={handleSubmitPr}
+                    disabled={prLoading}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                  >
+                    {prLoading ? 'Building plan…' : 'Preview repair PR'}
+                  </button>
+                </div>
+                {prError && <div className="mt-2 text-xs text-red-300">{prError}</div>}
+                {prResult && (
+                  <div className="mt-3 rounded border border-gray-700 bg-gray-900/60 p-3 text-xs text-gray-300 space-y-1">
+                    <div><span className="text-gray-500">Branch:</span> <span className="font-mono text-gray-200">{prResult.plan.branch}</span></div>
+                    <div><span className="text-gray-500">Base:</span> <span className="font-mono text-gray-200">{prResult.plan.baseBranch}</span></div>
+                    <div><span className="text-gray-500">Title:</span> {prResult.plan.title}</div>
+                    <div className="text-gray-500 italic">{prResult.note}</div>
+                  </div>
+                )}
               </div>
 
               {/* Repair actions */}

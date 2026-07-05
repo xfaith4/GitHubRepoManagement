@@ -1286,4 +1286,23 @@ if (-not $sqliteCap.available) {
     }
 }
 
+Write-Step 'GitHub App JWT minting (Release 2.2)'
+. (Join-Path $WorkspaceRoot 'backend\modules\auth\GitHubApp.ps1')
+if (Test-RsaPemSupported) {
+    $rsaTest = [System.Security.Cryptography.RSA]::Create(2048)
+    try { $pemTest = $rsaTest.ExportPkcs8PrivateKeyPem() } finally { $rsaTest.Dispose() }
+    $jwtTest = New-GitHubAppJwt -AppId '999999' -PrivateKeyPem $pemTest
+    if (@($jwtTest.Split('.')).Count -ne 3) { throw 'New-GitHubAppJwt must return a 3-segment JWT' }
+    $claimsTest = ConvertFrom-JwtClaims -Jwt $jwtTest
+    if ([string]$claimsTest.header.alg -ne 'RS256') { throw "JWT header alg must be RS256, got '$($claimsTest.header.alg)'" }
+    if ([string]$claimsTest.payload.iss -ne '999999') { throw 'JWT iss must be the configured app id' }
+    if ([long]$claimsTest.payload.exp -le [System.DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) { throw 'JWT exp must be in the future' }
+    $readyTest = Get-GitHubAppReadiness -GitHubApp @{ appId = '999999'; installationId = '42' }
+    if ($readyTest.configured -ne $true) { throw 'Get-GitHubAppReadiness should report configured=true when appId+installationId set' }
+    Write-Host '  GitHub App JWT minted: RS256, iss=appId, exp in future; readiness reports configured' -ForegroundColor DarkGray
+}
+else {
+    Write-Host '  RSA PEM import unavailable on this runtime — JWT test skipped (degraded contract accepted)' -ForegroundColor Yellow
+}
+
 Write-Step 'Smoke test completed'

@@ -29,6 +29,10 @@ jobs:
         shell: pwsh
         run: ./scripts/Invoke-ApiContractTest.ps1 -WorkspaceRoot "${{ github.workspace }}"
 
+      - name: Run auth smoke test (Release 2.2)
+        shell: pwsh
+        run: ./scripts/Invoke-AuthSmokeTest.ps1 -WorkspaceRoot "${{ github.workspace }}"
+
       - name: Audit repository structure
         shell: pwsh
         run: ./scripts/Invoke-RepositoryStructureAudit.ps1 -WorkspaceRoot "${{ github.workspace }}"

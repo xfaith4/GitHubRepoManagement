@@ -1,0 +1,19 @@
+{
+  "name": "GitHub Repo Manager",
+  "short_name": "RepoManager",
+  "description": "Portfolio intelligence and execution console for a repository collection.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#4f46e5",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

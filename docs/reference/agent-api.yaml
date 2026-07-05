@@ -1,0 +1,198 @@
+openapi: 3.1.0
+info:
+  title: GitHub Repo Management — Agent Integration API
+  version: "1.0.0"
+  description: >
+    Machine-readable contract (Release 2.4) that AI coding agents query before
+    acting on a repository: check readiness, claim exclusive work, and report
+    completion. All routes are served by the local API host under /api/v1/agent.
+    When API auth is enabled (Release 2.2), send the key as `X-Api-Key` or
+    `Authorization: Bearer <key>`.
+servers:
+  - url: http://127.0.0.1:7071
+    description: Local loopback host
+security:
+  - ApiKeyAuth: []
+  - {}
+paths:
+  /api/v1/agent/queue:
+    get:
+      operationId: getAgentQueue
+      summary: List claimable repositories ranked by readiness.
+      responses:
+        "200":
+          description: Ordered queue of candidate repositories.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentQueueResponse"
+  /api/v1/agent/readiness/{repoName}:
+    get:
+      operationId: getAgentReadiness
+      summary: Stable readiness contract for a repository.
+      description: >
+        Returns a fixed-shape readiness record. The response shape does not
+        change between calls for the same repository state.
+      parameters:
+        - $ref: "#/components/parameters/RepoName"
+      responses:
+        "200":
+          description: Readiness record.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentReadinessResponse"
+  /api/v1/agent/claim/{repoName}:
+    post:
+      operationId: claimAgentRepo
+      summary: Claim a repository for exclusive agent work.
+      parameters:
+        - $ref: "#/components/parameters/RepoName"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentClaimRequest"
+      responses:
+        "200":
+          description: Claim granted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentClaimResponse"
+        "409":
+          description: Repository already claimed by another agent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agent/complete/{repoName}:
+    post:
+      operationId: completeAgentRepo
+      summary: Release a repository claim.
+      parameters:
+        - $ref: "#/components/parameters/RepoName"
+      responses:
+        "200":
+          description: Claim released.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentClaimResponse"
+        "404":
+          description: No active claim for this repository.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+  parameters:
+    RepoName:
+      name: repoName
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Stable repository identity (local folder name or owner/repo).
+  schemas:
+    AgentClaim:
+      type: object
+      required: [claimed]
+      properties:
+        claimed:
+          type: boolean
+        claimedBy:
+          type: [string, "null"]
+        claimId:
+          type: [string, "null"]
+        claimedAt:
+          type: [string, "null"]
+    AgentReadinessResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          required: [schemaVersion, repoName, found, lifecycleState, dispatchReadiness, roadmapState, readyForWork, blockingReasons, claim, generatedAt]
+          properties:
+            schemaVersion:
+              type: string
+            repoName:
+              type: string
+            found:
+              type: boolean
+            lifecycleState:
+              type: string
+            dispatchReadiness:
+              type: string
+            roadmapState:
+              type: string
+            readyForWork:
+              type: boolean
+            blockingReasons:
+              type: array
+              items:
+                type: string
+            claim:
+              $ref: "#/components/schemas/AgentClaim"
+            generatedAt:
+              type: string
+    AgentClaimRequest:
+      type: object
+      properties:
+        agentId:
+          type: string
+          description: Identifier of the claiming agent.
+    AgentClaimResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            repoName:
+              type: string
+            claim:
+              $ref: "#/components/schemas/AgentClaim"
+    AgentQueueResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            repos:
+              type: array
+              items:
+                type: object
+                properties:
+                  repoName:
+                    type: string
+                  readyForWork:
+                    type: boolean
+                  claimed:
+                    type: boolean
+            generatedAt:
+              type: string
+    ErrorResponse:
+      type: object
+      required: [success, error]
+      properties:
+        success:
+          type: boolean
+        error:
+          type: string
+        category:
+          type: string

@@ -1,0 +1,23 @@
+name: "Roadmap Audit"
+description: "Audit a ROADMAP.md against the Roadmap Contract Standard and fail the check on structural errors."
+branding:
+  icon: "check-circle"
+  color: "purple"
+inputs:
+  roadmap-path:
+    description: "Path to the ROADMAP.md to audit."
+    required: false
+    default: "ROADMAP.md"
+  fail-on-error:
+    description: "Fail the check run when structural errors are found."
+    required: false
+    default: "true"
+runs:
+  using: "composite"
+  steps:
+    - name: Audit roadmap structure
+      shell: pwsh
+      run: |
+        $auditArgs = @{ Path = "${{ inputs.roadmap-path }}" }
+        if ("${{ inputs.fail-on-error }}" -eq "true") { $auditArgs['FailOnError'] = $true }
+        & "${{ github.action_path }}/audit.ps1" @auditArgs
