@@ -1129,6 +1129,8 @@ export interface OperationsRepoEntry {
   hasTestSignal: boolean;
   docFindingCount: number;
   structureFindings: RepoStructureFinding[];
+  curationState: 'none' | 'favorite' | 'portfolio-candidate' | 'archived-ignore';
+  curationUpdatedAt?: string | null;
 }
 
 export interface OperationsReposResult {

@@ -47,6 +47,7 @@ $portfolioModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\portfolio'
 . (Join-Path $portfolioModuleRoot 'Portfolio.Assessment.ps1')
 . (Join-Path $portfolioModuleRoot 'Portfolio.Analytics.ps1')
 . (Join-Path $portfolioModuleRoot 'Portfolio.Report.ps1')
+. (Join-Path $portfolioModuleRoot 'Portfolio.Curation.ps1')
 $aiModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\ai'
 . (Join-Path $aiModuleRoot 'AiDocImprovement.ps1')
 $agentRunsModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\agent-runs'
@@ -396,6 +397,9 @@ function Get-OperationsReposPayload {
         $generatedAt = (Get-Date).ToUniversalTime().ToString('o')
     }
 
+    $curationMap = Get-PortfolioCurationMap -WorkspaceRoot $WorkspaceRoot
+    $entries = Apply-PortfolioCurationToEntries -Entries @($entries) -CurationMap $curationMap
+
     return [pscustomobject]@{
         available = $true
         entries = @($entries)
@@ -403,6 +407,43 @@ function Get-OperationsReposPayload {
         summary = $summary
         count = $count
         cacheSource = $cacheSource
+    }
+}
+
+function Update-PortfolioIndexRepoCuration {
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoId,
+        [Parameter(Mandatory = $true)][string]$CurationState,
+        [Parameter(Mandatory = $true)][string]$UpdatedAt
+    )
+
+    $payload = Get-PortfolioIndexPayload -WorkspaceRoot $WorkspaceRoot
+    if ($null -eq $payload -or -not ($payload.PSObject.Properties.Name -contains 'repos')) {
+        return $false
+    }
+
+    $updated = $false
+    foreach ($repo in @($payload.repos)) {
+        if ($null -eq $repo) { continue }
+        $candidateRepoId = [string](Get-OperationsRepoId -Repo $repo)
+        if ($candidateRepoId -ne $RepoId) { continue }
+
+        $repo | Add-Member -NotePropertyName curationState -NotePropertyValue $CurationState -Force
+        $repo | Add-Member -NotePropertyName curationUpdatedAt -NotePropertyValue $UpdatedAt -Force
+        $updated = $true
+        break
+    }
+
+    if (-not $updated) { return $false }
+
+    try {
+        $indexPath = Join-Path (Join-Path $WorkspaceRoot 'output\index') 'repos.index.json'
+        $json = $payload | ConvertTo-Json -Depth 12
+        Set-Content -LiteralPath $indexPath -Value $json -Encoding UTF8
+        return $true
+    } catch {
+        Write-HostLog ("WARN operations.curation index mirror failed: {0}" -f $_.Exception.Message)
+        return $false
     }
 }
 
@@ -5029,6 +5070,81 @@ try {
                 continue
             }
 
+            if ($req.Method -eq 'POST' -and $path -like '/api/operations/repos/*/curation') {
+                $prefix = '/api/operations/repos/'
+                $suffix = '/curation'
+                if (-not $path.EndsWith($suffix)) {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{ success = $false; error = 'Invalid curation route path.' }
+                    $client.Close()
+                    continue
+                }
+
+                $encodedRepoId = $path.Substring($prefix.Length, $path.Length - $prefix.Length - $suffix.Length)
+                $repoId = [System.Uri]::UnescapeDataString($encodedRepoId)
+                if ([string]::IsNullOrWhiteSpace($repoId)) {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{ success = $false; error = 'repoId is required in /api/operations/repos/{repoId}/curation.' }
+                    $client.Close()
+                    continue
+                }
+
+                $body = Parse-JsonBody -Body $req.Body
+                $curationState = if ($body.ContainsKey('curationState') -and $body.curationState) { [string]$body.curationState } else { '' }
+                $reason = if ($body.ContainsKey('reason') -and $body.reason) { [string]$body.reason } else { '' }
+                if ([string]::IsNullOrWhiteSpace($curationState)) {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{ success = $false; error = 'curationState is required.' }
+                    $client.Close()
+                    continue
+                }
+
+                $settings = Get-HostSettings
+                $opsPayload = Get-OperationsReposPayload -Settings $settings
+                if (-not $opsPayload.available) {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{ success = $false; error = $opsPayload.error }
+                    $client.Close()
+                    continue
+                }
+
+                $repoEntry = @($opsPayload.entries | Where-Object {
+                    $candidateRepoId = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoId' -Default '')
+                    $candidateRepoName = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '')
+                    $candidateLocalPath = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'localPath' -Default '')
+                    $candidateGithubFullName = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'githubFullName' -Default '')
+                    $candidateRepoId -eq $repoId -or
+                    $candidateRepoName -eq $repoId -or
+                    $candidateLocalPath -eq $repoId -or
+                    $candidateGithubFullName -eq $repoId
+                } | Select-Object -First 1)
+
+                if ($repoEntry.Count -eq 0 -or $null -eq $repoEntry[0]) {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{ success = $false; error = "No operations repo record found for repoId '$repoId'." }
+                    $client.Close()
+                    continue
+                }
+
+                $effectiveRepoId = [string](Get-ObjectPropertyValue -InputObject $repoEntry[0] -PropertyName 'repoId' -Default $repoId)
+                $writeResult = Set-PortfolioRepoCurationState -WorkspaceRoot $WorkspaceRoot -RepoId $effectiveRepoId -CurationState $curationState -Reason $reason
+                if (-not $writeResult.success) {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{ success = $false; error = [string]$writeResult.error }
+                    $client.Close()
+                    continue
+                }
+
+                $updatedAt = [string](Get-ObjectPropertyValue -InputObject $writeResult.data -PropertyName 'updatedAt' -Default ((Get-Date).ToUniversalTime().ToString('o')))
+                $null = Update-PortfolioIndexRepoCuration -RepoId $effectiveRepoId -CurationState [string]$writeResult.data.curationState -UpdatedAt $updatedAt
+
+                Add-MetricCounter -Name 'api_requests_total'
+                Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{ success = $true; data = $writeResult.data }
+                $client.Close()
+                continue
+            }
+
             if ($req.Method -eq 'GET' -and $path -like '/api/operations/repos/*' -and $path -ne '/api/operations/repos') {
                 $repoId = [System.Uri]::UnescapeDataString($path.Substring('/api/operations/repos/'.Length))
                 if ([string]::IsNullOrWhiteSpace($repoId)) {
@@ -5244,11 +5360,47 @@ try {
                     $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
                     $defaultMaxDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 2 }
                     $defaultIncludeNonGit = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('includeNonGitFolders')) { [bool]$settings.inventory.includeNonGitFolders } else { $false }
+                    $configuredGitHubUser = if ($settings.ContainsKey('reconcile') -and $settings.reconcile.ContainsKey('gitHubOwner') -and $settings.reconcile.gitHubOwner) { [string]$settings.reconcile.gitHubOwner } else { '' }
+
                     $localRoots = if ($q.ContainsKey('localRoots') -and $q.localRoots) { @($q.localRoots -split ';|,') } else { $defaultRoots }
                     $maxDepth = if ($q.ContainsKey('maxDepth') -and $q.maxDepth) { [int]$q.maxDepth } else { $defaultMaxDepth }
                     $includeNonGit = if ($q.ContainsKey('includeNonGitFolders')) { Parse-Bool -Value $q.includeNonGitFolders -Default $defaultIncludeNonGit } else { $defaultIncludeNonGit }
+                    $refresh = if ($q.ContainsKey('refresh')) { Parse-Bool -Value $q.refresh -Default $false } else { $false }
+                    # stale=true: return disk cache immediately regardless of TTL (stale-while-revalidate)
+                    $stale = if ($q.ContainsKey('stale')) { Parse-Bool -Value $q.stale -Default $false } else { $false }
+                    $ttlSeconds = Get-StatusCacheTtlSeconds -Settings $settings
+                    $cacheKey = Get-StatusCacheKey -LocalRoots $localRoots -MaxDepth $maxDepth -IncludeNonGitFolders $includeNonGit
 
-                    $result = Get-StatusAdapterResult -LocalRoots $localRoots -MaxDepth $maxDepth -IncludeNonGitFolders:$includeNonGit -LogPath $LogPath
+                    $result = $null
+                    if (-not $refresh) {
+                        # With stale=true we bypass TTL; otherwise only hit cache when TTL > 0
+                        if ($stale -or ($ttlSeconds -gt 0)) {
+                            $cacheHit = Get-StatusFromCache -Key $cacheKey -TtlSeconds $ttlSeconds -IgnoreTtl:$stale
+                            if ($cacheHit.hit) {
+                                $result = Add-StatusCacheMeta -Result $cacheHit.response -CacheMeta (Get-StatusCacheMeta -Hit $true -Source $cacheHit.source -TtlSeconds $ttlSeconds -AgeSeconds $cacheHit.ageSeconds -BypassRequested:$false -CachedAt $cacheHit.cachedAt)
+                            }
+                        }
+                    }
+
+                    if ($null -eq $result) {
+                        $scanCachedAt = (Get-Date).ToUniversalTime().ToString('o')
+                        $statusLogPath = if ($script:OpsLogPath) { $script:OpsLogPath } else { $LogPath }
+                        $result = Get-StatusAdapterResult -LocalRoots $localRoots -MaxDepth $maxDepth -IncludeNonGitFolders:$includeNonGit -LogPath $statusLogPath
+                        if ($result.success) {
+                            $result = Add-GitHubMetadataToStatusResult -StatusResult $result -Settings $settings
+                        }
+                        $result = Add-StatusCacheMeta -Result $result -CacheMeta (Get-StatusCacheMeta -Hit $false -Source 'fresh-scan' -TtlSeconds $ttlSeconds -AgeSeconds 0 -BypassRequested:$refresh -CachedAt $scanCachedAt)
+                        if ($result.success -and ($ttlSeconds -gt 0)) {
+                            Save-StatusCache -Key $cacheKey -Response $result
+                        }
+                    }
+
+                    if ($null -eq $result.meta) {
+                        $result | Add-Member -NotePropertyName meta -NotePropertyValue @{} -Force
+                    }
+                    $result.meta.workspacePath = if (@($localRoots).Count -gt 0) { [string]$localRoots[0] } else { '' }
+                    $result.meta.configuredGithubUser = $configuredGitHubUser
+
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
                     Send-HttpJson -Stream $req.Stream -StatusCode $(if ($result.success) { 200 } else { 500 }) -CorrelationId $correlationId -Payload $result
@@ -6368,6 +6520,7 @@ try {
                     }
 
                     try {
+                        $curationMap = Get-PortfolioCurationMap -WorkspaceRoot $WorkspaceRoot
                         $indexArtifacts = Save-PortfolioIndexArtifacts `
                             -WorkspaceRoot $WorkspaceRoot `
                             -Assessments $assessments `
@@ -6375,6 +6528,7 @@ try {
                             -GitHubRepos $githubReposForAssessment `
                             -Summary $summary `
                             -SignalSources $signalSources `
+                            -CurationByRepoId $curationMap `
                             -GeneratedAt $generatedAt
                         Write-HostLog ("[TRACE] portfolio.assessment index-written path={0} artifact={1} count={2}" -f $indexArtifacts.indexPath, $indexArtifacts.artifactPath, $indexArtifacts.repoCount)
                     } catch {

@@ -1102,6 +1102,30 @@ function Get-PortfolioScanFingerprintFromIndexedRepo {
     return _Get-PortfolioStableHash -InputText ($parts -join '|')
 }
 
+function Get-PortfolioRepoId {
+    [CmdletBinding()]
+    param(
+        [Parameter()][string]$ScanFingerprint = '',
+        [Parameter()][string]$LocalPath = '',
+        [Parameter()][string]$GitHubFullName = '',
+        [Parameter()][string]$RepoName = ''
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($ScanFingerprint)) {
+        return $ScanFingerprint
+    }
+    if (-not [string]::IsNullOrWhiteSpace($LocalPath)) {
+        return ('path:{0}' -f $LocalPath.ToLowerInvariant())
+    }
+    if (-not [string]::IsNullOrWhiteSpace($GitHubFullName)) {
+        return ('gh:{0}' -f $GitHubFullName.ToLowerInvariant())
+    }
+    if (-not [string]::IsNullOrWhiteSpace($RepoName)) {
+        return ('repo:{0}' -f $RepoName.ToLowerInvariant())
+    }
+    return [guid]::NewGuid().Guid
+}
+
 function New-PortfolioIndexPayload {
     [CmdletBinding()]
     param(
@@ -1110,6 +1134,7 @@ function New-PortfolioIndexPayload {
         [Parameter()][AllowEmptyCollection()][object[]]$GitHubRepos = @(),
         [Parameter()][object]$Summary,
         [Parameter()][object]$SignalSources,
+        [Parameter()][hashtable]$CurationByRepoId = @{},
         [Parameter(Mandatory = $true)][string]$GeneratedAt
     )
 
@@ -1169,9 +1194,14 @@ function New-PortfolioIndexPayload {
         $readmeLastWriteUtc = if ([string]::IsNullOrWhiteSpace($localPath)) { '' } else { _Get-FileLastWriteUtcIso -FilePath (Join-Path $localPath 'README.md') }
         $roadmapLastWriteUtc = if ([string]::IsNullOrWhiteSpace($localPath)) { '' } else { _Get-FileLastWriteUtcIso -FilePath (Join-Path $localPath 'ROADMAP.md') }
         $scanFingerprint = Get-PortfolioScanFingerprintFromSignals -LocalRepo $localRepo -GitHubRepo $githubRepo -LocalPath $localPath -SourceCoverage ([string](_GetField -Obj $assessment -Name 'sourceCoverage' -Default 'local'))
+        $repoId = Get-PortfolioRepoId -ScanFingerprint $scanFingerprint -LocalPath $localPath -GitHubFullName $githubFullName -RepoName $repoName
+        $curation = if ($CurationByRepoId.ContainsKey($repoId)) { $CurationByRepoId[$repoId] } else { $null }
+        $curationState = if ($null -ne $curation -and -not [string]::IsNullOrWhiteSpace([string]$curation.curationState)) { [string]$curation.curationState } else { 'none' }
+        $curationUpdatedAt = if ($null -ne $curation -and -not [string]::IsNullOrWhiteSpace([string]$curation.updatedAt)) { [string]$curation.updatedAt } else { $null }
 
         $repos.Add([pscustomobject]@{
             ordinal             = $i + 1
+            repoId              = $repoId
             repoName            = $repoName
             sourceCoverage      = [string](_GetField -Obj $assessment -Name 'sourceCoverage' -Default 'local')
             localPath           = $localPath
@@ -1201,6 +1231,8 @@ function New-PortfolioIndexPayload {
             readmeLastWriteUtc = if ([string]::IsNullOrWhiteSpace($readmeLastWriteUtc)) { $null } else { $readmeLastWriteUtc }
             roadmapLastWriteUtc = if ([string]::IsNullOrWhiteSpace($roadmapLastWriteUtc)) { $null } else { $roadmapLastWriteUtc }
             scanFingerprint     = $scanFingerprint
+            curationState       = $curationState
+            curationUpdatedAt   = $curationUpdatedAt
             repoType            = [string](_GetField -Obj $assessment -Name 'repoType' -Default 'other')
             lifecycleState      = [string](_GetField -Obj $assessment -Name 'lifecycleState' -Default 'discovered')
             recommendedAction   = [string](_GetField -Obj $assessment -Name 'recommendedAction' -Default '')
@@ -1252,6 +1284,7 @@ function Save-PortfolioIndexArtifacts {
         [Parameter()][AllowEmptyCollection()][object[]]$GitHubRepos = @(),
         [Parameter()][object]$Summary,
         [Parameter()][object]$SignalSources,
+        [Parameter()][hashtable]$CurationByRepoId = @{},
         [Parameter(Mandatory = $true)][string]$GeneratedAt
     )
 
@@ -1270,6 +1303,7 @@ function Save-PortfolioIndexArtifacts {
         -GitHubRepos $GitHubRepos `
         -Summary $Summary `
         -SignalSources $SignalSources `
+        -CurationByRepoId $CurationByRepoId `
         -GeneratedAt $GeneratedAt
 
     $json = $payload | ConvertTo-Json -Depth 12
@@ -1315,6 +1349,7 @@ function Convert-PortfolioIndexReposToAssessments {
         if ($null -eq $repo) { continue }
 
         $out.Add([pscustomobject]@{
+            repoId              = [string](_GetField -Obj $repo -Name 'repoId' -Default '')
             repoName            = [string](_GetField -Obj $repo -Name 'repoName' -Default '')
             localPath           = [string](_GetField -Obj $repo -Name 'localPath' -Default '')
             htmlUrl             = [string](_GetField -Obj $repo -Name 'htmlUrl' -Default '')
@@ -1360,6 +1395,8 @@ function Convert-PortfolioIndexReposToAssessments {
             structureFindings   = @(_GetField -Obj $repo -Name 'structureFindings' -Default @())
             docFindingCount     = [int](_GetField -Obj $repo -Name 'docFindingCount' -Default 0)
             dispatchReadinessExplanation = [string](_GetField -Obj $repo -Name 'dispatchReadinessExplanation' -Default '')
+            curationState       = [string](_GetField -Obj $repo -Name 'curationState' -Default 'none')
+            curationUpdatedAt   = _GetField -Obj $repo -Name 'curationUpdatedAt' -Default $null
         }) | Out-Null
     }
 

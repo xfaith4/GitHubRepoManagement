@@ -334,6 +334,8 @@ function normalizeOperationsRepoEntry(entry: any): OperationsRepoEntry {
     hasTestSignal: Boolean(entry?.hasTestSignal ?? false),
     docFindingCount: Number(entry?.docFindingCount ?? 0),
     structureFindings: Array.isArray(entry?.structureFindings) ? entry.structureFindings : [],
+    curationState: (entry?.curationState ?? 'none') as OperationsRepoEntry['curationState'],
+    curationUpdatedAt: entry?.curationUpdatedAt ? String(entry.curationUpdatedAt) : null,
   };
 }
 
@@ -1731,6 +1733,33 @@ export async function getOperationsPromptHistory(repoName: string, limit = 20): 
       baseBranch: record?.baseBranch ? String(record.baseBranch) : null,
     })) : [],
   }));
+}
+
+export async function setOperationsRepoCuration(
+  repoId: string,
+  curationState: OperationsRepoEntry['curationState'],
+  reason?: string,
+): Promise<{ repoId: string; curationState: OperationsRepoEntry['curationState']; updatedAt: string }> {
+  const trimmedRepoId = repoId.trim();
+  if (!trimmedRepoId) {
+    throw new Error('repoId is required for operations curation update.');
+  }
+
+  const data = await postJson<any>(`/operations/repos/${encodeURIComponent(trimmedRepoId)}/curation`, {
+    curationState,
+    reason: reason ?? '',
+  });
+
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? data?.error ?? 'Operations curation update failed.');
+  }
+
+  const d = data?.data ?? {};
+  return {
+    repoId: String(d.repoId ?? trimmedRepoId),
+    curationState: (d.curationState ?? curationState) as OperationsRepoEntry['curationState'],
+    updatedAt: String(d.updatedAt ?? new Date().toISOString()),
+  };
 }
 
 // --- Release 1.9: AI documentation improvement cycles ---

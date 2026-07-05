@@ -752,6 +752,7 @@ depend on Phase 2 rollups.
 | Phase 2: History-backed rollups | Persist and aggregate daily portfolio/maturity history from Release 2.1 tables, widen `availableDays`, and compute real `improvedThisWeek` deltas | planned |
 | Phase 3: Distribution surfaces | Weekly digest webhook delivery, SVG badge routes, and `roadmap-audit-action` packaging | planned |
 | Phase 4: Standalone spec + portfolio economics | Extract the roadmap contract into a publishable spec directory and add cost/quota-burn analytics derived from raw run observations | planned |
+| Phase 5: Repository curation + change-aware indexing | Favorites / portfolio-candidate / archived-ignore curation, repo-level change probes, startup prioritization, and proof that unchanged repos are reused by default | planned |
 
 #### Engineering milestones
 
@@ -773,8 +774,97 @@ depend on Phase 2 rollups.
       units (forecast accuracy), and a credit-prompt / overage event
       trail — derived values are never written back into the append-only
       event log. *(state: planned)*
+- [ ] Add repository curation and change-awareness foundation:
+      operator-authored favorites/portfolio-candidate/archived-ignore
+      state, commit-aware scan cache metadata, and recently-changed
+      prioritization for startup ordering without default full reindex.
+      *(state: planned — Phase 5)*
 - [x] Smoke test the trend route response shape for daily rollups.
       *(state: smoke-tested — 2026-07-03)*
+
+#### Phase 5 plan — Repository Curation and Change-Aware Indexing [Not Started]
+
+**Goal:** Let operators maintain a curated portfolio subset (Favorites,
+Portfolio Candidates, Archived/Ignore), and make startup scan behavior
+incremental by default so unchanged repositories are reused from cache
+instead of being fully reindexed.
+
+**Execution note:** This phase is not blocked by Release 2.3's history
+rollups. It builds on the existing status cache, persisted portfolio
+index, and Operations repo-identity seams, so it can be scheduled as soon
+as Release 2.1 closeout is complete.
+
+**Concise scope summary:**
+
+- [ ] Add repo-level curation states (`favorite`, `portfolio-candidate`,
+      `archived-ignore`) with persisted storage keyed by stable repo identity.
+      *(state: planned)*
+- [ ] Add startup change probes (HEAD SHA/date/branch + metadata hash) and
+      reuse unchanged cached rows by default. *(state: planned)*
+- [ ] Add curated + recently-changed prioritization in the Repository Grid,
+      with explicit `Refresh All` to force full reassessment. *(state: planned)*
+- [ ] Add observability and smoke assertions proving unchanged repos are not
+      fully reindexed during ordinary startup. *(state: planned)*
+
+**Execution-ready API contract sketch (short form):**
+
+- [ ] `GET /api/portfolio/assessment?scanMode=differential&includeCuration=true`
+      returns curation + change-aware rows plus startup counters.
+      *(state: planned)*
+
+```json
+{
+  "data": {
+    "generatedAt": "ISO-8601",
+    "repos": [
+      {
+        "repoId": "string",
+        "repoName": "string",
+        "curationState": "none|favorite|portfolio-candidate|archived-ignore",
+        "changeState": "unchanged|new-commits|metadata-changed|needs-rescan|scan-failed",
+        "headCommitSha": "string|null",
+        "lastIndexedCommitSha": "string|null",
+        "lastScanStatus": "ok|failed|stale",
+        "scanDecisionReason": "reused-cache|new-commit|metadata-changed|cache-miss|cache-invalid|forced-refresh"
+      }
+    ],
+    "scanSummary": {
+      "reused": 0,
+      "reindexed": 0,
+      "failed": 0,
+      "durationMs": 0
+    }
+  }
+}
+```
+
+- [ ] `POST /api/operations/repos/{repoId}/curation` persists operator curation
+      state without forcing full rescan. *(state: planned)*
+
+```json
+{
+  "curationState": "favorite|portfolio-candidate|archived-ignore|none",
+  "reason": "optional-string"
+}
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "repoId": "string",
+    "curationState": "favorite|portfolio-candidate|archived-ignore|none",
+    "updatedAt": "ISO-8601"
+  }
+}
+```
+
+- [ ] `POST /api/portfolio/assessment/refresh-all` performs forced full
+      reassessment and emits `forced-refresh` decision reasons.
+      *(state: planned)*
+
+**Detailed design and validation matrix:** see
+[`docs/product/repository-curation-change-aware-indexing.md`](docs/product/repository-curation-change-aware-indexing.md).
 
 #### Acceptance criteria
 

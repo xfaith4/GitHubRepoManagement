@@ -721,6 +721,14 @@ CREATE TABLE IF NOT EXISTS quota_burn_snapshots (
   snapshot_json        TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_quota_burn_repo_time ON quota_burn_snapshots(repo_name, evaluated_at);
+
+CREATE TABLE IF NOT EXISTS repo_curation (
+    repo_id         TEXT PRIMARY KEY,
+    curation_state  TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    reason          TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_repo_curation_state ON repo_curation(curation_state);
 '@
 }
 
@@ -1719,6 +1727,84 @@ VALUES
     }
 
     return [pscustomobject]$out
+}
+
+<#
+.SYNOPSIS
+    Upserts one repo curation row in SQLite.
+#>
+function Write-AppDbRepoCurationEntry {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoId,
+        [Parameter(Mandatory = $true)][string]$CurationState,
+        [Parameter()][string]$UpdatedAt = '',
+        [Parameter()][string]$Reason = ''
+    )
+
+    $out = @{ success = $false; reason = '' }
+    if (-not $script:AppDbState.enabled) {
+        $out.reason = 'app-db-not-initialized'
+        return [pscustomobject]$out
+    }
+
+    try {
+        $updatedAtIso = if ([string]::IsNullOrWhiteSpace($UpdatedAt)) { (Get-Date).ToUniversalTime().ToString('o') } else { $UpdatedAt }
+        $null = Invoke-AppDbNonQuery -DatabasePath ([string]$script:AppDbState.databasePath) -Sql @'
+INSERT INTO repo_curation (repo_id, curation_state, updated_at, reason)
+VALUES (@repo_id, @curation_state, @updated_at, @reason)
+ON CONFLICT(repo_id) DO UPDATE SET
+  curation_state = excluded.curation_state,
+  updated_at = excluded.updated_at,
+  reason = excluded.reason
+'@ -Parameters @{
+            repo_id        = [string]$RepoId
+            curation_state = [string]$CurationState
+            updated_at     = [string]$updatedAtIso
+            reason         = if ([string]::IsNullOrWhiteSpace($Reason)) { $null } else { [string]$Reason }
+        }
+        $out.success = $true
+    } catch {
+        $out.reason = $_.Exception.Message
+    }
+
+    return [pscustomobject]$out
+}
+
+<#
+.SYNOPSIS
+    Reads all persisted repo curation rows from SQLite.
+#>
+function Get-AppDbRepoCurationEntries {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param()
+
+    if (-not $script:AppDbState.enabled) {
+        return [pscustomobject]@{ available = $false; entries = @(); reason = 'app-db-not-initialized' }
+    }
+
+    try {
+        $rows = @(Invoke-AppDbQuery -DatabasePath ([string]$script:AppDbState.databasePath) -Sql @'
+SELECT repo_id, curation_state, updated_at, reason
+FROM repo_curation
+ORDER BY updated_at DESC
+'@)
+
+        $entries = @($rows | ForEach-Object {
+            [pscustomobject]@{
+                repoId        = [string](_AppDbRecordValue -Record $_ -Name 'repo_id')
+                curationState = [string](_AppDbRecordValue -Record $_ -Name 'curation_state')
+                updatedAt     = [string](_AppDbRecordValue -Record $_ -Name 'updated_at')
+                reason        = [string](_AppDbRecordValue -Record $_ -Name 'reason')
+            }
+        })
+
+        return [pscustomobject]@{ available = $true; entries = $entries; reason = '' }
+    } catch {
+        return [pscustomobject]@{ available = $false; entries = @(); reason = $_.Exception.Message }
+    }
 }
 
 <#

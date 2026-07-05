@@ -1,5 +1,41 @@
 # Progress
 
+## 2026-07-05 (Release 2.3 Phase 5 planning: repository curation + change-aware indexing)
+
+- Audited the live startup and indexing path before drafting the roadmap
+  slice. Confirmed the Repository Grid still boots from `/api/status`
+  cache + refresh, while richer portfolio/Operations views consume the
+  persisted portfolio index and assessment caches.
+- Reconciled the existing latent Phase 5 draft in `ROADMAP.md` with the
+  current architecture and tightened the missing seams: stable `repoId`
+  usage instead of repo-name-only matching, operator-authored curation
+  persistence, commit-SHA probe metadata, startup prioritization, and
+  explicit proof criteria for "do not reindex everything by default."
+- No feature code was implemented in this pass. Work stayed in planning
+  artifacts only: roadmap-phase definition, architecture findings, and
+  execution-ready validation criteria.
+
+## 2026-07-05 (Incident: ERR_CONNECTION_RESET storm → third bfb3724 regression fixed)
+
+- Operator reported browser ERR_CONNECTION_RESET on four API routes at
+  00:23. Found the running host wedged: listener accepting TCP but the
+  single-threaded request loop frozen (flat CPU, log silent after
+  00:25:11), preceded by a 74.9 s portfolio scan and back-to-back 45 s
+  status scans.
+- Root cause: `bfb3724` had gutted the `GET /api/status` route body —
+  all stale/refresh cache handling dropped, five cache helpers left as
+  dead code — so the frontend's two-per-load status calls each ran a
+  ~45 s blocking scan and everything else piled up and reset. Restored
+  the route body from `bfb3724^`; swept the host for other zero-caller
+  cache helpers (none found).
+- Verified after restart: stale call 115 ms from disk cache, refresh
+  scan 49.2 s + cache file rewritten, warm call 26 ms from memory,
+  `meta.statusCache` + `meta.configuredGithubUser` restored, site
+  serves the current mobile bundle, all four originally failing routes
+  return 200. The hard freeze did not reproduce (15 rapid metrics calls
+  at 11-54 ms); if it recurs, capture a thread dump before killing —
+  suspect a blocked native SQLite call under pile-up.
+
 ## 2026-07-04 (Release 2.5 Phase 1: mobile responsive foundation)
 
 - Implemented the Phase 1 mobile foundation: fixed bottom tab bar

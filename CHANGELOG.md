@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here.
 
+## 2026-07-05 — Fix: restore GET /api/status caching gutted by bfb3724 (browser ERR_CONNECTION_RESET storm)
+
+### Changes
+
+- **`backend/api-host/Start-RepoManagementApiHost.ps1`** — restored the pre-`bfb3724` `GET /api/status` route body. The `bfb3724` "refactor" had silently reduced it to a bare full-scan handler, dropping the entire cache layer: `stale`/`refresh` query handling, `Get-StatusCacheKey`/`Get-StatusFromCache`/`Save-StatusCache`, cache metadata, GitHub metadata enrichment, and the `meta.workspacePath`/`meta.configuredGithubUser` fields the frontend consumes. All five helper functions had survived as dead code; only the route body was gutted. Consequence: every status call — including the frontend's two-per-page-load stale-while-revalidate pair — ran a ~45-second blocking scan on the single-threaded host, so any concurrent request (roadmap index, execution metrics, scan schedule) piled into the TCP backlog and surfaced in the browser as `ERR_CONNECTION_RESET`. This is the third confirmed silent regression from the 2026-07-03 commits, after the `d2cc6cc` standards/tools overwrites and the `bfb3724` reconcile-route deletion.
+
+### Testing
+
+- Parser check clean. After host restart: `GET /api/status?stale=true` returns 200 in **115 ms** from disk cache (was 45 s); `?refresh=true` full scan completes in 49.2 s and rewrites `status-cache.json`; subsequent warm call answers in **26 ms** from memory; `meta` again carries `statusCache` and `configuredGithubUser`; `GET /` serves the current bundle; `/api/roadmap/index`, `/api/execution/metrics`, `/api/scan/schedule` all 200.
+- **Incident note (2026-07-05 ~00:23–00:25):** the operator's host instance froze hard after the uncached-scan pile-up — flat CPU, listener accepting but never responding, last handled route `execution.metrics` (its `start`-without-`done` log pattern is normal; the freeze evidence is total log silence plus flat CPU). Not reproduced after restart, including 15 rapid sequential metrics calls (11–54 ms each). If it recurs now that status caching is restored, suspect a blocked native call (SQLite bridge) under request pile-up — capture a thread dump before killing the process.
+
+
+
 ## 2026-07-04 — Release 2.5 Phase 1: Mobile responsive foundation
 
 ### Changes

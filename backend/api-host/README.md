@@ -17,6 +17,7 @@ Minimal local PowerShell API host for adapter contracts.
 - `GET /api/portfolio/assessment`
 - `GET /api/operations/repos`
 - `GET /api/operations/repos/:repoId`
+- `POST /api/operations/repos/:repoId/curation`
 - `POST /api/operations/prompt/refine`
 - `GET /api/operations/prompt/history`
 - `GET /api/roadmap/index`
@@ -70,6 +71,7 @@ Notes:
 - `GET /api/portfolio/assessment` returns the normalized portfolio lifecycle/readiness model used by Portfolio Mission, Work Queue ranking, and collection reporting.
 - `GET /api/operations/repos` returns the repo-specific indexed portfolio records consumed by the Operations tab, with a warm assessment-cache fallback when the persisted index is not available yet.
 - `GET /api/operations/repos/:repoId` returns full Operations detail for one repo, including docs/roadmap audit findings, structure findings, and dispatch context used by the audit findings panel.
+- `POST /api/operations/repos/:repoId/curation` persists operator-authored curation state (`none`, `favorite`, `portfolio-candidate`, `archived-ignore`) keyed by stable repo identity; writes primary data to SQLite when available and mirrors to `output/index/repo-curation.json`.
 - `POST /api/operations/prompt/refine` builds on the existing `/api/copilot-task/preview` packet, applies operator-directed task/constraint/emphasis refinements, and returns a refined prompt plus warnings for dispatch review while persisting a per-repo refinement record.
 - `GET /api/operations/prompt/history` returns the most recent per-repo refinement records written by the prompt-refine route and merges any linked dispatch records written when `/api/roadmap/dispatch/execute` is called with a refinement run ID.
 - `POST /api/roadmap/scan` now carries active-release phase-plan rows, release budget-guardrail annotations, and `estimatedSessionWorkUnits` into each roadmap entry when those sections are present in the roadmap template.

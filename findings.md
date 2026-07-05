@@ -1,5 +1,28 @@
 # Findings
 
+## 2026-07-05 (Release 2.3 Phase 5 planning: repository curation + change-aware indexing)
+
+- The current startup path is still `GET /api/status?stale=true` followed
+  by `GET /api/status?refresh=true` in `frontend/App.tsx`. The UI labels
+  the second step as a background differential re-scan, but the live route
+  contract still performs a fresh status scan there.
+- The repo portal already has two parallel data shapes: transient
+  `RepoStatus` rows for the Repository Grid and persisted
+  `repos.index.json` / Operations payloads for portfolio-aware views.
+  Favorites and portfolio-candidate choices should not live only in the
+  transient status cache; they need a stable operator-authored store that
+  is merged into both read models.
+- Existing differential portfolio reassessment is useful but incomplete for
+  this feature: it compares a stable fingerprint from the persisted index,
+  yet the underlying status adapter does not emit a commit SHA and the
+  changed/unchanged merge still keys repos by repo name rather than stable
+  repo identity.
+- The repo already exposes a better identity seam than repo name alone:
+  `Get-OperationsRepoId` derives a stable repo identifier from
+  `scanFingerprint`, local path, or GitHub full name. Phase 5 should reuse
+  that boundary so curation and change-awareness do not collide on duplicate
+  names or folder renames.
+
 ## 2026-07-03 (Release 2.3 analytics scaffold)
 
 - Release 2.3 currently has roadmap goals and milestone bullets but no
