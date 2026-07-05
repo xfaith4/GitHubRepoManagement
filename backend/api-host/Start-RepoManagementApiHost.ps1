@@ -357,7 +357,17 @@ function Get-OperationsReposPayload {
     $cacheSource = ''
 
     if ($null -ne $indexPayload -and ($indexPayload.PSObject.Properties.Name -contains 'repos')) {
-        $entries = @($indexPayload.repos | Select-Object *, @{ Name = 'repoId'; Expression = { Get-OperationsRepoId -Repo $_ } })
+        $entries = @(
+            @($indexPayload.repos) | ForEach-Object {
+                $repo = $_
+                $repoId = [string](Get-ObjectPropertyValue -InputObject $repo -PropertyName 'repoId' -Default '')
+                if ([string]::IsNullOrWhiteSpace($repoId)) {
+                    $repoId = Get-OperationsRepoId -Repo $repo
+                    $repo | Add-Member -NotePropertyName repoId -NotePropertyValue $repoId -Force
+                }
+                $repo
+            }
+        )
         $generatedAt = [string](Get-ObjectPropertyValue -InputObject $indexPayload -PropertyName 'generatedAt' -Default '')
         $summary = Get-ObjectPropertyValue -InputObject $indexPayload -PropertyName 'summary' -Default $null
         $count = [int](Get-ObjectPropertyValue -InputObject $indexPayload -PropertyName 'repoCount' -Default @($entries).Count)
@@ -378,7 +388,17 @@ function Get-OperationsReposPayload {
                 -Summary $assessmentCache.summary `
                 -SignalSources $assessmentCache.signalSources `
                 -GeneratedAt $assessmentCache.generatedAt
-            $entries = @($fallbackPayload.repos | Select-Object *, @{ Name = 'repoId'; Expression = { Get-OperationsRepoId -Repo $_ } })
+            $entries = @(
+                @($fallbackPayload.repos) | ForEach-Object {
+                    $repo = $_
+                    $repoId = [string](Get-ObjectPropertyValue -InputObject $repo -PropertyName 'repoId' -Default '')
+                    if ([string]::IsNullOrWhiteSpace($repoId)) {
+                        $repoId = Get-OperationsRepoId -Repo $repo
+                        $repo | Add-Member -NotePropertyName repoId -NotePropertyValue $repoId -Force
+                    }
+                    $repo
+                }
+            )
             $generatedAt = [string](Get-ObjectPropertyValue -InputObject $fallbackPayload -PropertyName 'generatedAt' -Default '')
             $summary = Get-ObjectPropertyValue -InputObject $fallbackPayload -PropertyName 'summary' -Default $null
             $count = [int](Get-ObjectPropertyValue -InputObject $fallbackPayload -PropertyName 'repoCount' -Default @($entries).Count)

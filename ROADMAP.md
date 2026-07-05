@@ -11,6 +11,24 @@
 
 ---
 
+## Current Status (Agent Context)
+
+**Last updated:** 2026-07-05
+
+- Release 2.1 remains the active release for closeout and operator verification.
+- Release 2.3 Phase 1 is complete (analytics scaffold and snapshot-backed trend contract).
+- Release 2.3 Phase 5 is now **in progress** with Phase 5A-5C implemented:
+      curation persistence + route contract, differential indexing decision telemetry,
+      and first UI consumers in Repository Grid and Operations workspace.
+
+**Current focus (next agent actions):**
+
+- [ ] Complete Release 2.3 Phase 5D UI polish (badge legend, curation/decision discoverability, operator guidance copy).
+- [ ] Complete Release 2.3 Phase 5E startup prioritization + explicit Refresh All control behavior verification.
+- [ ] Complete Release 2.3 Phase 5F observability and smoke assertions proving unchanged-repo reuse by default.
+
+---
+
 ## 1. What This Document Is
 
 This is the **active execution roadmap**. Its job is to answer two questions
@@ -752,7 +770,7 @@ depend on Phase 2 rollups.
 | Phase 2: History-backed rollups | Persist and aggregate daily portfolio/maturity history from Release 2.1 tables, widen `availableDays`, and compute real `improvedThisWeek` deltas | planned |
 | Phase 3: Distribution surfaces | Weekly digest webhook delivery, SVG badge routes, and `roadmap-audit-action` packaging | planned |
 | Phase 4: Standalone spec + portfolio economics | Extract the roadmap contract into a publishable spec directory and add cost/quota-burn analytics derived from raw run observations | planned |
-| Phase 5: Repository curation + change-aware indexing | Favorites / portfolio-candidate / archived-ignore curation, repo-level change probes, startup prioritization, and proof that unchanged repos are reused by default | planned |
+| Phase 5: Repository curation + change-aware indexing | Favorites / portfolio-candidate / archived-ignore curation, repo-level change probes, startup prioritization, and proof that unchanged repos are reused by default | in progress (5A-5C complete; 5D-5F pending) |
 
 #### Engineering milestones
 
@@ -782,7 +800,7 @@ depend on Phase 2 rollups.
 - [x] Smoke test the trend route response shape for daily rollups.
       *(state: smoke-tested — 2026-07-03)*
 
-#### Phase 5 plan — Repository Curation and Change-Aware Indexing [Not Started]
+#### Phase 5 plan — Repository Curation and Change-Aware Indexing [In Progress]
 
 **Goal:** Let operators maintain a curated portfolio subset (Favorites,
 Portfolio Candidates, Archived/Ignore), and make startup scan behavior
@@ -796,21 +814,21 @@ as Release 2.1 closeout is complete.
 
 **Concise scope summary:**
 
-- [ ] Add repo-level curation states (`favorite`, `portfolio-candidate`,
+- [x] Add repo-level curation states (`favorite`, `portfolio-candidate`,
       `archived-ignore`) with persisted storage keyed by stable repo identity.
-      *(state: planned)*
-- [ ] Add startup change probes (HEAD SHA/date/branch + metadata hash) and
-      reuse unchanged cached rows by default. *(state: planned)*
+      *(state: smoke-tested — Phase 5A completed 2026-07-05)*
+- [x] Add startup change probes (HEAD SHA/date/branch + metadata hash) and
+      reuse unchanged cached rows by default. *(state: smoke-tested — Phase 5B completed 2026-07-05)*
 - [ ] Add curated + recently-changed prioritization in the Repository Grid,
-      with explicit `Refresh All` to force full reassessment. *(state: planned)*
+      with explicit `Refresh All` to force full reassessment. *(state: ui-connected — Phase 5C in place; explicit Refresh All verification pending 5E)*
 - [ ] Add observability and smoke assertions proving unchanged repos are not
       fully reindexed during ordinary startup. *(state: planned)*
 
 **Execution-ready API contract sketch (short form):**
 
-- [ ] `GET /api/portfolio/assessment?scanMode=differential&includeCuration=true`
+- [x] `GET /api/portfolio/assessment?scanMode=differential&includeCuration=true`
       returns curation + change-aware rows plus startup counters.
-      *(state: planned)*
+      *(state: ui-connected — implemented in API/docs/client; differential decision fields consumed in Grid + Operations)*
 
 ```json
 {
@@ -838,8 +856,8 @@ as Release 2.1 closeout is complete.
 }
 ```
 
-- [ ] `POST /api/operations/repos/{repoId}/curation` persists operator curation
-      state without forcing full rescan. *(state: planned)*
+- [x] `POST /api/operations/repos/{repoId}/curation` persists operator curation
+      state without forcing full rescan. *(state: smoke-tested — implemented and validated in API-host contract tests)*
 
 ```json
 {
