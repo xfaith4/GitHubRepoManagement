@@ -1,4 +1,4 @@
-import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult } from '../types';
+import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioAssessmentScanSummary, type PortfolioChangeState, type PortfolioScanDecisionReason, type PortfolioScanStatus, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -1397,6 +1397,67 @@ export async function getRepoEvaluationHistory(repoName?: string, limit = 25): P
 
 // Release 1.7.5 — Portfolio Mission Alignment
 
+function normalizePortfolioAssessmentEntry(entry: any): PortfolioAssessmentEntry {
+  return {
+    repoName: String(entry?.repoName ?? ''),
+    localPath: String(entry?.localPath ?? ''),
+    htmlUrl: String(entry?.htmlUrl ?? ''),
+    branch: String(entry?.branch ?? ''),
+    gitStatus: String(entry?.gitStatus ?? 'unknown'),
+    isArchived: Boolean(entry?.isArchived ?? false),
+    sourceCoverage: (entry?.sourceCoverage ?? 'local') as PortfolioAssessmentEntry['sourceCoverage'],
+    hasPages: entry?.hasPages == null ? undefined : Boolean(entry.hasPages),
+    pagesUrl: entry?.pagesUrl ? String(entry.pagesUrl) : null,
+    openPrCount: entry?.openPrCount == null ? undefined : Number(entry.openPrCount ?? 0),
+    pendingReviewPrCount: entry?.pendingReviewPrCount == null ? undefined : Number(entry.pendingReviewPrCount ?? 0),
+    latestWorkflowRunStatus: entry?.latestWorkflowRunStatus ? String(entry.latestWorkflowRunStatus) : null,
+    latestWorkflowRunConclusion: entry?.latestWorkflowRunConclusion ? String(entry.latestWorkflowRunConclusion) : null,
+    latestWorkflowRunName: entry?.latestWorkflowRunName ? String(entry.latestWorkflowRunName) : null,
+    latestWorkflowRunTimestamp: entry?.latestWorkflowRunTimestamp ? String(entry.latestWorkflowRunTimestamp) : null,
+    repoType: String(entry?.repoType ?? 'other'),
+    lifecycleState: (entry?.lifecycleState ?? 'discovered') as PortfolioAssessmentEntry['lifecycleState'],
+    recommendedAction: String(entry?.recommendedAction ?? ''),
+    blockingReasons: Array.isArray(entry?.blockingReasons) ? entry.blockingReasons.map((value: unknown) => String(value)) : [],
+    roadmapState: (entry?.roadmapState ?? 'missing') as PortfolioAssessmentEntry['roadmapState'],
+    roadmapPath: String(entry?.roadmapPath ?? ''),
+    hasRoadmap: Boolean(entry?.hasRoadmap ?? false),
+    readmeScore: entry?.readmeScore == null ? undefined : Number(entry.readmeScore),
+    roadmapScore: entry?.roadmapScore == null ? undefined : Number(entry.roadmapScore),
+    documentationHealthScore: entry?.documentationHealthScore == null ? undefined : Number(entry.documentationHealthScore),
+    pendingItemCount: Number(entry?.pendingItemCount ?? 0),
+    nextPendingItemText: String(entry?.nextPendingItemText ?? ''),
+    pendingItems: Array.isArray(entry?.pendingItems) ? entry.pendingItems : [],
+    topValueItem: entry?.topValueItem ?? null,
+    maturityLevel: (entry?.maturityLevel ?? 'L0-Absent') as PortfolioAssessmentEntry['maturityLevel'],
+    maturityScore: Number(entry?.maturityScore ?? 0),
+    dispatchReadiness: (entry?.dispatchReadiness ?? 'missing-roadmap') as PortfolioAssessmentEntry['dispatchReadiness'],
+    dispatchReadinessExplanation: entry?.dispatchReadinessExplanation ? String(entry.dispatchReadinessExplanation) : undefined,
+    executionState: (entry?.executionState ?? 'idle') as PortfolioAssessmentEntry['executionState'],
+    hasReadme: Boolean(entry?.hasReadme ?? false),
+    hasCiSignal: Boolean(entry?.hasCiSignal ?? false),
+    hasTestSignal: Boolean(entry?.hasTestSignal ?? false),
+    structureFindings: Array.isArray(entry?.structureFindings) ? entry.structureFindings : [],
+    docFindingCount: Number(entry?.docFindingCount ?? 0),
+    activeRelease: entry?.activeRelease ?? null,
+    activePhasePlan: entry?.activePhasePlan ?? null,
+    budgetGuardrail: entry?.budgetGuardrail ?? null,
+    estimatedSessionWorkUnits: entry?.estimatedSessionWorkUnits == null ? null : Number(entry.estimatedSessionWorkUnits),
+    changeState: (entry?.changeState ?? undefined) as PortfolioChangeState | undefined,
+    scanDecisionReason: (entry?.scanDecisionReason ?? undefined) as PortfolioScanDecisionReason | undefined,
+    headCommitSha: entry?.headCommitSha ? String(entry.headCommitSha) : null,
+    headCommitDate: entry?.headCommitDate ? String(entry.headCommitDate) : null,
+    headBranch: entry?.headBranch ? String(entry.headBranch) : null,
+    currentMetadataHash: entry?.currentMetadataHash ? String(entry.currentMetadataHash) : null,
+    lastIndexedCommitSha: entry?.lastIndexedCommitSha ? String(entry.lastIndexedCommitSha) : null,
+    lastIndexedCommitDate: entry?.lastIndexedCommitDate ? String(entry.lastIndexedCommitDate) : null,
+    lastIndexedBranch: entry?.lastIndexedBranch ? String(entry.lastIndexedBranch) : null,
+    lastMetadataHash: entry?.lastMetadataHash ? String(entry.lastMetadataHash) : null,
+    lastScannedAt: entry?.lastScannedAt ? String(entry.lastScannedAt) : null,
+    lastScanStatus: (entry?.lastScanStatus ?? undefined) as PortfolioScanStatus | undefined,
+    lastScanError: entry?.lastScanError ? String(entry.lastScanError) : null,
+  };
+}
+
 export async function getPortfolioAssessment(options: { refresh?: boolean; includeGithub?: boolean } = {}): Promise<PortfolioAssessmentResult> {
   const qs = new URLSearchParams();
   if (options.refresh) qs.set('refresh', 'true');
@@ -1404,7 +1465,7 @@ export async function getPortfolioAssessment(options: { refresh?: boolean; inclu
   const suffix = qs.toString() ? `?${qs.toString()}` : '';
   const data = await fetchJson<any>(`${API_BASE_URL}/portfolio/assessment${suffix}`);
   const d = data?.data ?? data ?? {};
-  const entries: PortfolioAssessmentEntry[] = Array.isArray(d.entries) ? d.entries : [];
+  const entries: PortfolioAssessmentEntry[] = Array.isArray(d.entries) ? d.entries.map(normalizePortfolioAssessmentEntry) : [];
   const summaryRaw = d.summary ?? {};
   const summary: PortfolioAssessmentSummary = {
     totalRepos: Number(summaryRaw.totalRepos ?? entries.length),
@@ -1425,6 +1486,14 @@ export async function getPortfolioAssessment(options: { refresh?: boolean; inclu
     count: Number(d.count ?? entries.length),
     cacheSource: d.cacheSource === 'memory' ? 'memory' : 'fresh-scan',
     cacheAgeSeconds: Number(d.cacheAgeSeconds ?? 0),
+    scanSummary: d.scanSummary
+      ? {
+          reused: Number((d.scanSummary as PortfolioAssessmentScanSummary)?.reused ?? 0),
+          reindexed: Number((d.scanSummary as PortfolioAssessmentScanSummary)?.reindexed ?? 0),
+          failed: Number((d.scanSummary as PortfolioAssessmentScanSummary)?.failed ?? 0),
+          durationMs: Number((d.scanSummary as PortfolioAssessmentScanSummary)?.durationMs ?? 0),
+        }
+      : undefined,
   };
 }
 

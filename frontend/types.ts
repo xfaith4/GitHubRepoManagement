@@ -939,6 +939,10 @@ export interface PortfolioPendingItemValue {
   };
 }
 
+export type PortfolioChangeState = 'unchanged' | 'new-commits' | 'metadata-changed' | 'needs-rescan' | 'scan-failed';
+export type PortfolioScanDecisionReason = 'reused-cache' | 'new-commit' | 'metadata-changed' | 'cache-miss' | 'cache-invalid' | 'forced-refresh';
+export type PortfolioScanStatus = 'ok' | 'failed' | 'stale';
+
 export interface PortfolioAssessmentEntry {
   repoName: string;
   localPath: string;
@@ -983,6 +987,19 @@ export interface PortfolioAssessmentEntry {
   activePhasePlan?: RoadmapPhasePlan | null;
   budgetGuardrail?: RoadmapBudgetGuardrail | null;
   estimatedSessionWorkUnits?: number | null;
+  changeState?: PortfolioChangeState;
+  scanDecisionReason?: PortfolioScanDecisionReason;
+  headCommitSha?: string | null;
+  headCommitDate?: string | null;
+  headBranch?: string | null;
+  currentMetadataHash?: string | null;
+  lastIndexedCommitSha?: string | null;
+  lastIndexedCommitDate?: string | null;
+  lastIndexedBranch?: string | null;
+  lastMetadataHash?: string | null;
+  lastScannedAt?: string | null;
+  lastScanStatus?: PortfolioScanStatus;
+  lastScanError?: string | null;
 }
 
 export interface PortfolioAssessmentSummary {
@@ -999,6 +1016,13 @@ export interface PortfolioAssessmentSummary {
 
 export type PortfolioSignalSource = 'cache' | 'fresh-scan' | 'ledger' | 'api' | 'unavailable' | 'not-evaluated' | 'no-token' | 'no-owner-configured' | 'error';
 
+export interface PortfolioAssessmentScanSummary {
+  reused: number;
+  reindexed: number;
+  failed: number;
+  durationMs: number;
+}
+
 export interface PortfolioAssessmentResult {
   entries: PortfolioAssessmentEntry[];
   summary: PortfolioAssessmentSummary;
@@ -1007,6 +1031,7 @@ export interface PortfolioAssessmentResult {
   count: number;
   cacheSource: 'memory' | 'fresh-scan';
   cacheAgeSeconds: number;
+  scanSummary?: PortfolioAssessmentScanSummary;
 }
 
 // Release 2.3 — Portfolio Analytics, Trend Visualization, and Distribution

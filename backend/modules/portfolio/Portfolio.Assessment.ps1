@@ -1033,6 +1033,7 @@ function Get-PortfolioScanFingerprintFromSignals {
         sourceCoverage             = [string]$SourceCoverage
         localPath                  = $effectiveLocalPath
         localBranch                = [string](_GetField -Obj $LocalRepo -Name 'branch' -Default '')
+        localHeadCommitSha         = [string](_GetField -Obj $LocalRepo -Name 'headCommitSha' -Default '')
         localStatus                = [string](_GetField -Obj $LocalRepo -Name 'status' -Default '')
         localOriginUrl             = [string](_GetField -Obj $LocalRepo -Name 'originUrl' -Default '')
         localLastCommitDate        = [string](_GetField -Obj $LocalRepo -Name 'lastCommitDate' -Default '')
@@ -1074,6 +1075,7 @@ function Get-PortfolioScanFingerprintFromIndexedRepo {
         sourceCoverage             = [string](_GetField -Obj $IndexedRepo -Name 'sourceCoverage' -Default '')
         localPath                  = [string](_GetField -Obj $IndexedRepo -Name 'localPath' -Default '')
         localBranch                = [string](_GetField -Obj $IndexedRepo -Name 'currentBranch' -Default '')
+        localHeadCommitSha         = [string](_GetField -Obj $IndexedRepo -Name 'headCommitSha' -Default '')
         localStatus                = [string](_GetField -Obj $IndexedRepo -Name 'gitStatus' -Default '')
         localOriginUrl             = [string](_GetField -Obj $IndexedRepo -Name 'remoteUrl' -Default '')
         localLastCommitDate        = [string](_GetField -Obj $IndexedRepo -Name 'localLastCommitDate' -Default '')
@@ -1186,6 +1188,7 @@ function New-PortfolioIndexPayload {
         $openPrCount = [int](_GetField -Obj $assessment -Name 'openPrCount' -Default (_GetField -Obj $githubRepo -Name 'openPrCount' -Default 0))
         $pendingReviewPrCount = [int](_GetField -Obj $assessment -Name 'pendingReviewPrCount' -Default (_GetField -Obj $githubRepo -Name 'pendingReviewPrCount' -Default 0))
         $localLastCommitDate = [string](_GetField -Obj $localRepo -Name 'lastCommitDate' -Default '')
+        $headCommitSha = [string](_GetField -Obj $localRepo -Name 'headCommitSha' -Default '')
         $localCommitsLastWeek = [int](_GetField -Obj $localRepo -Name 'commitsLastWeek' -Default 0)
         $localCommitsLastMonth = [int](_GetField -Obj $localRepo -Name 'commitsLastMonth' -Default 0)
         $localModifiedCount = [int](_GetField -Obj $localRepo -Name 'modifiedCount' -Default 0)
@@ -1198,6 +1201,12 @@ function New-PortfolioIndexPayload {
         $curation = if ($CurationByRepoId.ContainsKey($repoId)) { $CurationByRepoId[$repoId] } else { $null }
         $curationState = if ($null -ne $curation -and -not [string]::IsNullOrWhiteSpace([string]$curation.curationState)) { [string]$curation.curationState } else { 'none' }
         $curationUpdatedAt = if ($null -ne $curation -and -not [string]::IsNullOrWhiteSpace([string]$curation.updatedAt)) { [string]$curation.updatedAt } else { $null }
+        $scanDecisionReason = [string](_GetField -Obj $assessment -Name 'scanDecisionReason' -Default 'cache-miss')
+        $changeState = [string](_GetField -Obj $assessment -Name 'changeState' -Default 'needs-rescan')
+        $lastIndexedBranch = if ([string]::IsNullOrWhiteSpace($currentBranch)) { $null } else { $currentBranch }
+        $lastIndexedCommitDate = if ([string]::IsNullOrWhiteSpace($localLastCommitDate)) { $null } else { $localLastCommitDate }
+        $lastIndexedCommitSha = if ([string]::IsNullOrWhiteSpace($headCommitSha)) { $null } else { $headCommitSha }
+        $lastMetadataHash = if ([string]::IsNullOrWhiteSpace($scanFingerprint)) { $null } else { $scanFingerprint }
 
         $repos.Add([pscustomobject]@{
             ordinal             = $i + 1
@@ -1222,6 +1231,7 @@ function New-PortfolioIndexPayload {
             latestWorkflowRunTimestamp = if ([string]::IsNullOrWhiteSpace($latestWorkflowRunTimestamp)) { $null } else { $latestWorkflowRunTimestamp }
             openPrCount         = $openPrCount
             pendingReviewPrCount = $pendingReviewPrCount
+            headCommitSha       = if ([string]::IsNullOrWhiteSpace($headCommitSha)) { $null } else { $headCommitSha }
             localLastCommitDate = if ([string]::IsNullOrWhiteSpace($localLastCommitDate)) { $null } else { $localLastCommitDate }
             localCommitsLastWeek = $localCommitsLastWeek
             localCommitsLastMonth = $localCommitsLastMonth
@@ -1231,6 +1241,15 @@ function New-PortfolioIndexPayload {
             readmeLastWriteUtc = if ([string]::IsNullOrWhiteSpace($readmeLastWriteUtc)) { $null } else { $readmeLastWriteUtc }
             roadmapLastWriteUtc = if ([string]::IsNullOrWhiteSpace($roadmapLastWriteUtc)) { $null } else { $roadmapLastWriteUtc }
             scanFingerprint     = $scanFingerprint
+            lastIndexedBranch   = $lastIndexedBranch
+            lastIndexedCommitDate = $lastIndexedCommitDate
+            lastIndexedCommitSha = $lastIndexedCommitSha
+            lastMetadataHash    = $lastMetadataHash
+            lastScannedAt       = $GeneratedAt
+            lastScanStatus      = 'ok'
+            lastScanError       = $null
+            changeState         = $changeState
+            scanDecisionReason  = $scanDecisionReason
             curationState       = $curationState
             curationUpdatedAt   = $curationUpdatedAt
             repoType            = [string](_GetField -Obj $assessment -Name 'repoType' -Default 'other')
@@ -1354,6 +1373,7 @@ function Convert-PortfolioIndexReposToAssessments {
             localPath           = [string](_GetField -Obj $repo -Name 'localPath' -Default '')
             htmlUrl             = [string](_GetField -Obj $repo -Name 'htmlUrl' -Default '')
             branch              = [string](_GetField -Obj $repo -Name 'currentBranch' -Default '')
+            headCommitSha       = _GetField -Obj $repo -Name 'headCommitSha' -Default $null
             gitStatus           = [string](_GetField -Obj $repo -Name 'gitStatus' -Default 'unknown')
             isArchived          = [bool](_GetField -Obj $repo -Name 'isArchived' -Default $false)
             sourceCoverage      = [string](_GetField -Obj $repo -Name 'sourceCoverage' -Default 'local')
@@ -1395,6 +1415,15 @@ function Convert-PortfolioIndexReposToAssessments {
             structureFindings   = @(_GetField -Obj $repo -Name 'structureFindings' -Default @())
             docFindingCount     = [int](_GetField -Obj $repo -Name 'docFindingCount' -Default 0)
             dispatchReadinessExplanation = [string](_GetField -Obj $repo -Name 'dispatchReadinessExplanation' -Default '')
+            changeState         = [string](_GetField -Obj $repo -Name 'changeState' -Default 'needs-rescan')
+            scanDecisionReason  = [string](_GetField -Obj $repo -Name 'scanDecisionReason' -Default 'cache-miss')
+            lastIndexedBranch   = _GetField -Obj $repo -Name 'lastIndexedBranch' -Default $null
+            lastIndexedCommitDate = _GetField -Obj $repo -Name 'lastIndexedCommitDate' -Default $null
+            lastIndexedCommitSha = _GetField -Obj $repo -Name 'lastIndexedCommitSha' -Default $null
+            lastMetadataHash    = _GetField -Obj $repo -Name 'lastMetadataHash' -Default $null
+            lastScannedAt       = _GetField -Obj $repo -Name 'lastScannedAt' -Default $null
+            lastScanStatus      = [string](_GetField -Obj $repo -Name 'lastScanStatus' -Default 'ok')
+            lastScanError       = _GetField -Obj $repo -Name 'lastScanError' -Default $null
             curationState       = [string](_GetField -Obj $repo -Name 'curationState' -Default 'none')
             curationUpdatedAt   = _GetField -Obj $repo -Name 'curationUpdatedAt' -Default $null
         }) | Out-Null

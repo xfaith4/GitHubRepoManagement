@@ -6321,6 +6321,13 @@ try {
                     $localReposForAssessment = @($localRepos)
                     $githubReposForAssessmentSubset = @($githubReposForAssessment)
                     $differentialChangedSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+                    $differentialDecisionMap = @{}
+                    $scanSummary = [ordered]@{
+                        reused = 0
+                        reindexed = 0
+                        failed = 0
+                        durationMs = 0
+                    }
 
                     if ($useDifferentialScan) {
                         $previousIndexPayload = Get-PortfolioIndexPayload -WorkspaceRoot $WorkspaceRoot
@@ -6358,13 +6365,66 @@ try {
                                 $currentGithub = if ($currentGithubMap.ContainsKey($nameKey)) { $currentGithubMap[$nameKey] } else { $null }
                                 $currentSourceCoverage = if ($null -ne $currentLocal -and $null -ne $currentGithub) { 'local+github' } elseif ($null -ne $currentLocal) { 'local' } elseif ($null -ne $currentGithub) { 'github' } else { 'none' }
                                 $currentLocalPath = if ($null -ne $currentLocal) { [string](Get-ObjectPropertyValue -InputObject $currentLocal -PropertyName 'path' -Default '') } else { '' }
+                                $currentHeadCommitSha = if ($null -ne $currentLocal) { [string](Get-ObjectPropertyValue -InputObject $currentLocal -PropertyName 'headCommitSha' -Default '') } else { '' }
+                                $currentHeadCommitDate = if ($null -ne $currentLocal) { [string](Get-ObjectPropertyValue -InputObject $currentLocal -PropertyName 'lastCommitDate' -Default '') } else { '' }
+                                $currentHeadBranch = if ($null -ne $currentLocal) { [string](Get-ObjectPropertyValue -InputObject $currentLocal -PropertyName 'branch' -Default '') } else { '' }
                                 $currentFingerprint = if ($currentSourceCoverage -eq 'none') { '' } else { Get-PortfolioScanFingerprintFromSignals -LocalRepo $currentLocal -GitHubRepo $currentGithub -LocalPath $currentLocalPath -SourceCoverage $currentSourceCoverage }
 
                                 $previousRepo = if ($previousRepoMap.ContainsKey($nameKey)) { $previousRepoMap[$nameKey] } else { $null }
                                 $previousFingerprint = if ($null -ne $previousRepo) { Get-PortfolioScanFingerprintFromIndexedRepo -IndexedRepo $previousRepo } else { '' }
+                                $previousHeadCommitSha = if ($null -ne $previousRepo) { [string](Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'lastIndexedCommitSha' -Default (Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'headCommitSha' -Default '')) } else { '' }
+                                $previousHeadCommitDate = if ($null -ne $previousRepo) { [string](Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'lastIndexedCommitDate' -Default (Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'localLastCommitDate' -Default '')) } else { '' }
+                                $previousHeadBranch = if ($null -ne $previousRepo) { [string](Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'lastIndexedBranch' -Default (Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'currentBranch' -Default '')) } else { '' }
+                                $previousMetadataHash = if ($null -ne $previousRepo) { [string](Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'lastMetadataHash' -Default $previousFingerprint) } else { '' }
 
-                                if ([string]::IsNullOrWhiteSpace($previousFingerprint) -or [string]::IsNullOrWhiteSpace($currentFingerprint) -or $currentFingerprint -ne $previousFingerprint) {
+                                $scanDecisionReason = 'reused-cache'
+                                $changeState = 'unchanged'
+                                $changed = $false
+
+                                if ($null -eq $previousRepo) {
+                                    $scanDecisionReason = 'cache-miss'
+                                    $changeState = 'needs-rescan'
+                                    $changed = $true
+                                }
+                                elseif ($currentSourceCoverage -eq 'none') {
+                                    $scanDecisionReason = 'cache-invalid'
+                                    $changeState = 'needs-rescan'
+                                    $changed = $true
+                                }
+                                elseif ([string]::IsNullOrWhiteSpace($previousFingerprint) -or [string]::IsNullOrWhiteSpace($currentFingerprint)) {
+                                    $scanDecisionReason = 'cache-invalid'
+                                    $changeState = 'needs-rescan'
+                                    $changed = $true
+                                }
+                                elseif (-not [string]::IsNullOrWhiteSpace($currentHeadCommitSha) -and -not [string]::IsNullOrWhiteSpace($previousHeadCommitSha) -and $currentHeadCommitSha -ne $previousHeadCommitSha) {
+                                    $scanDecisionReason = 'new-commit'
+                                    $changeState = 'new-commits'
+                                    $changed = $true
+                                }
+                                elseif ($currentFingerprint -ne $previousFingerprint) {
+                                    $scanDecisionReason = 'metadata-changed'
+                                    $changeState = 'metadata-changed'
+                                    $changed = $true
+                                }
+
+                                if ($changed) {
                                     [void]$differentialChangedSet.Add($nameKey)
+                                }
+
+                                $differentialDecisionMap[$nameKey] = [pscustomobject]@{
+                                    changeState            = $changeState
+                                    scanDecisionReason     = $scanDecisionReason
+                                    headCommitSha          = if ([string]::IsNullOrWhiteSpace($currentHeadCommitSha)) { $null } else { $currentHeadCommitSha }
+                                    headCommitDate         = if ([string]::IsNullOrWhiteSpace($currentHeadCommitDate)) { $null } else { $currentHeadCommitDate }
+                                    headBranch             = if ([string]::IsNullOrWhiteSpace($currentHeadBranch)) { $null } else { $currentHeadBranch }
+                                    currentMetadataHash    = if ([string]::IsNullOrWhiteSpace($currentFingerprint)) { $null } else { $currentFingerprint }
+                                    lastIndexedCommitSha   = if ([string]::IsNullOrWhiteSpace($previousHeadCommitSha)) { $null } else { $previousHeadCommitSha }
+                                    lastIndexedCommitDate  = if ([string]::IsNullOrWhiteSpace($previousHeadCommitDate)) { $null } else { $previousHeadCommitDate }
+                                    lastIndexedBranch      = if ([string]::IsNullOrWhiteSpace($previousHeadBranch)) { $null } else { $previousHeadBranch }
+                                    lastMetadataHash       = if ([string]::IsNullOrWhiteSpace($previousMetadataHash)) { $null } else { $previousMetadataHash }
+                                    lastScannedAt          = if ($null -ne $previousRepo) { (Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'lastScannedAt' -Default $null) } else { $null }
+                                    lastScanStatus         = if ($null -ne $previousRepo) { [string](Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'lastScanStatus' -Default 'ok') } else { 'ok' }
+                                    lastScanError          = if ($null -ne $previousRepo) { (Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'lastScanError' -Default $null) } else { $null }
                                 }
                             }
 
@@ -6481,6 +6541,103 @@ try {
                         @($assessedChanged)
                     }
 
+                    if ($useDifferentialScan -and @($previousRepos).Count -gt 0) {
+                        foreach ($assessment in @($assessments)) {
+                            if ($null -eq $assessment) { continue }
+                            $repoName = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'repoName' -Default '')
+                            if ([string]::IsNullOrWhiteSpace($repoName)) { continue }
+                            $key = $repoName.ToLowerInvariant()
+                            if (-not $differentialDecisionMap.ContainsKey($key)) { continue }
+
+                            $decision = $differentialDecisionMap[$key]
+                            $assessment | Add-Member -NotePropertyName changeState -NotePropertyValue ([string](Get-ObjectPropertyValue -InputObject $decision -PropertyName 'changeState' -Default 'needs-rescan')) -Force
+                            $assessment | Add-Member -NotePropertyName scanDecisionReason -NotePropertyValue ([string](Get-ObjectPropertyValue -InputObject $decision -PropertyName 'scanDecisionReason' -Default 'cache-invalid')) -Force
+                            $assessment | Add-Member -NotePropertyName headCommitSha -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'headCommitSha' -Default $null) -Force
+                            $assessment | Add-Member -NotePropertyName headCommitDate -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'headCommitDate' -Default $null) -Force
+                            $assessment | Add-Member -NotePropertyName headBranch -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'headBranch' -Default $null) -Force
+                            $assessment | Add-Member -NotePropertyName currentMetadataHash -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'currentMetadataHash' -Default $null) -Force
+                            $assessment | Add-Member -NotePropertyName lastIndexedCommitSha -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'lastIndexedCommitSha' -Default $null) -Force
+                            $assessment | Add-Member -NotePropertyName lastIndexedCommitDate -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'lastIndexedCommitDate' -Default $null) -Force
+                            $assessment | Add-Member -NotePropertyName lastIndexedBranch -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'lastIndexedBranch' -Default $null) -Force
+                            $assessment | Add-Member -NotePropertyName lastMetadataHash -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'lastMetadataHash' -Default $null) -Force
+                            $assessment | Add-Member -NotePropertyName lastScannedAt -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'lastScannedAt' -Default $null) -Force
+                            $assessment | Add-Member -NotePropertyName lastScanStatus -NotePropertyValue ([string](Get-ObjectPropertyValue -InputObject $decision -PropertyName 'lastScanStatus' -Default 'ok')) -Force
+                            $assessment | Add-Member -NotePropertyName lastScanError -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'lastScanError' -Default $null) -Force
+                        }
+
+                        $scanSummary.reused = @($unchangedAssessments).Count
+                        $scanSummary.reindexed = @($assessedChanged).Count
+                        $scanSummary.failed = 0
+                    } else {
+                        foreach ($assessment in @($assessments)) {
+                            if ($null -eq $assessment) { continue }
+                            $assessment | Add-Member -NotePropertyName changeState -NotePropertyValue 'needs-rescan' -Force
+                            $assessment | Add-Member -NotePropertyName scanDecisionReason -NotePropertyValue $(if ($refresh) { 'forced-refresh' } else { 'cache-miss' }) -Force
+                        }
+                        $scanSummary.reused = 0
+                        $scanSummary.reindexed = @($assessments).Count
+                        $scanSummary.failed = 0
+                    }
+
+                    $localRepoByName = @{}
+                    foreach ($repo in @($localRepos)) {
+                        if ($null -eq $repo) { continue }
+                        $repoName = [string](Get-ObjectPropertyValue -InputObject $repo -PropertyName 'name' -Default '')
+                        if ([string]::IsNullOrWhiteSpace($repoName)) { continue }
+                        $localRepoByName[$repoName.ToLowerInvariant()] = $repo
+                    }
+
+                    $githubRepoByName = @{}
+                    foreach ($repo in @($githubReposForAssessment)) {
+                        if ($null -eq $repo) { continue }
+                        $repoName = [string](Get-ObjectPropertyValue -InputObject $repo -PropertyName 'name' -Default '')
+                        if ([string]::IsNullOrWhiteSpace($repoName)) { continue }
+                        $githubRepoByName[$repoName.ToLowerInvariant()] = $repo
+                    }
+
+                    foreach ($assessment in @($assessments)) {
+                        if ($null -eq $assessment) { continue }
+                        $repoName = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'repoName' -Default '')
+                        if ([string]::IsNullOrWhiteSpace($repoName)) { continue }
+
+                        $nameKey = $repoName.ToLowerInvariant()
+                        $localRepo = if ($localRepoByName.ContainsKey($nameKey)) { $localRepoByName[$nameKey] } else { $null }
+                        $githubRepo = if ($githubRepoByName.ContainsKey($nameKey)) { $githubRepoByName[$nameKey] } else { $null }
+                        $localPath = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'localPath' -Default (Get-ObjectPropertyValue -InputObject $localRepo -PropertyName 'path' -Default ''))
+                        $sourceCoverage = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'sourceCoverage' -Default $(if ($null -ne $localRepo -and $null -ne $githubRepo) { 'local+github' } elseif ($null -ne $localRepo) { 'local' } elseif ($null -ne $githubRepo) { 'github' } else { 'none' }))
+                        $headCommitSha = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'headCommitSha' -Default (Get-ObjectPropertyValue -InputObject $localRepo -PropertyName 'headCommitSha' -Default ''))
+                        $headCommitDate = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'headCommitDate' -Default (Get-ObjectPropertyValue -InputObject $localRepo -PropertyName 'lastCommitDate' -Default ''))
+                        $headBranch = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'headBranch' -Default (Get-ObjectPropertyValue -InputObject $localRepo -PropertyName 'branch' -Default (Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'branch' -Default '')))
+                        $currentMetadataHash = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'currentMetadataHash' -Default '')
+                        if ([string]::IsNullOrWhiteSpace($currentMetadataHash) -and $sourceCoverage -ne 'none') {
+                            $currentMetadataHash = Get-PortfolioScanFingerprintFromSignals -LocalRepo $localRepo -GitHubRepo $githubRepo -LocalPath $localPath -SourceCoverage $sourceCoverage
+                        }
+
+                        $assessment | Add-Member -NotePropertyName headCommitSha -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($headCommitSha)) { $null } else { $headCommitSha }) -Force
+                        $assessment | Add-Member -NotePropertyName headCommitDate -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($headCommitDate)) { $null } else { $headCommitDate }) -Force
+                        $assessment | Add-Member -NotePropertyName headBranch -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($headBranch)) { $null } else { $headBranch }) -Force
+                        $assessment | Add-Member -NotePropertyName currentMetadataHash -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($currentMetadataHash)) { $null } else { $currentMetadataHash }) -Force
+
+                        if ([string]::IsNullOrWhiteSpace([string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'lastIndexedCommitSha' -Default ''))) {
+                            $assessment | Add-Member -NotePropertyName lastIndexedCommitSha -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($headCommitSha)) { $null } else { $headCommitSha }) -Force
+                        }
+                        if ([string]::IsNullOrWhiteSpace([string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'lastIndexedCommitDate' -Default ''))) {
+                            $assessment | Add-Member -NotePropertyName lastIndexedCommitDate -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($headCommitDate)) { $null } else { $headCommitDate }) -Force
+                        }
+                        if ([string]::IsNullOrWhiteSpace([string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'lastIndexedBranch' -Default ''))) {
+                            $assessment | Add-Member -NotePropertyName lastIndexedBranch -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($headBranch)) { $null } else { $headBranch }) -Force
+                        }
+                        if ([string]::IsNullOrWhiteSpace([string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'lastMetadataHash' -Default ''))) {
+                            $assessment | Add-Member -NotePropertyName lastMetadataHash -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($currentMetadataHash)) { $null } else { $currentMetadataHash }) -Force
+                        }
+                        if ([string]::IsNullOrWhiteSpace([string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'lastScanStatus' -Default ''))) {
+                            $assessment | Add-Member -NotePropertyName lastScanStatus -NotePropertyValue 'ok' -Force
+                        }
+                        if ([string]::IsNullOrWhiteSpace([string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'lastScannedAt' -Default ''))) {
+                            $assessment | Add-Member -NotePropertyName lastScannedAt -NotePropertyValue $null -Force
+                        }
+                    }
+
                     $assessments = @($assessments | Sort-Object `
                         @{ Expression = { [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '') }; Ascending = $true },
                         @{ Expression = { [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'sourceCoverage' -Default '') }; Ascending = $true })
@@ -6539,6 +6696,8 @@ try {
                         Save-PortfolioAssessmentCache -Entries $assessments -Summary $summary -SignalSources $signalSources -GeneratedAt $generatedAt
                     }
 
+                    $scanSummary.durationMs = [int]((Get-Date) - $requestStart).TotalMilliseconds
+
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
                     Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} done count={1} ready={2} blocked={3} durationMs={4}" -f $correlationId, @($assessments).Count, $summary.readyForWorkCount, $summary.blockedCount, [int]((Get-Date) - $requestStart).TotalMilliseconds)
@@ -6552,6 +6711,7 @@ try {
                             count           = @($assessments).Count
                             cacheSource     = 'fresh-scan'
                             cacheAgeSeconds = 0
+                            scanSummary     = $scanSummary
                         }
                     }
                 }

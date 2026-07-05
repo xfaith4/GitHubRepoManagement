@@ -70,6 +70,24 @@ function Get-ErrorCategory {
 # Status adapter (was Status.Adapter.ps1)
 # ---------------------------------------------------------------------------
 
+function Get-LocalRepoHeadCommitSha {
+    [CmdletBinding()]
+    param([Parameter()][string]$RepoPath = '')
+
+    if ([string]::IsNullOrWhiteSpace($RepoPath)) { return '' }
+    if (-not (Test-Path -LiteralPath $RepoPath -PathType Container -ErrorAction SilentlyContinue)) { return '' }
+
+    try {
+        $sha = & git -C $RepoPath rev-parse HEAD 2>$null
+        if ($LASTEXITCODE -ne 0) { return '' }
+        $text = [string]$sha
+        if ([string]::IsNullOrWhiteSpace($text)) { return '' }
+        return $text.Trim()
+    } catch {
+        return ''
+    }
+}
+
 function Get-StatusAdapterResult {
     [CmdletBinding()]
     param(
@@ -128,6 +146,7 @@ function Get-StatusAdapterResult {
                     folderName = $_.FolderName
                     path = $_.LocalPath
                     branch = $_.CurrentBranch
+                    headCommitSha = (Get-LocalRepoHeadCommitSha -RepoPath $_.LocalPath)
                     lastCommitDate = $_.LastCommitDate
                     lastCommitMessage = $_.LastCommitMessage
                     lastCommitAuthor = $_.LastCommitAuthor
