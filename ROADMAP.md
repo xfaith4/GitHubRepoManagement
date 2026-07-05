@@ -888,7 +888,7 @@ shared-LAN bind depends on the Release 2.2 non-loopback auth guardrail
 
 #### Engineering milestones
 
-- [ ] Add a responsive layout foundation for the primary surfaces —
+- [x] Add a responsive layout foundation for the primary surfaces —
       [`Dashboard.tsx`](frontend/components/Dashboard.tsx),
       [`RepoGrid.tsx`](frontend/components/RepoGrid.tsx),
       [`WorkQueueView.tsx`](frontend/components/WorkQueueView.tsx),
@@ -896,14 +896,21 @@ shared-LAN bind depends on the Release 2.2 non-loopback auth guardrail
       [`ActionBar.tsx`](frontend/components/ActionBar.tsx) — using
       Tailwind breakpoints: repo tables collapse into stacked cards on
       narrow screens and wide content scrolls inside its own container,
-      never the page body. *(state: planned)*
-- [ ] Add mobile navigation (compact header plus bottom tab bar or
+      never the page body. *(state: scaffolded — implemented 2026-07-04;
+      RepoGrid card list + body overflow guard shipped, narrow-viewport
+      smoke pending)*
+- [x] Add mobile navigation (compact header plus bottom tab bar or
       collapsible menu) covering Repositories, Work Queue, Operations,
       Agent Runs, and Insights, and render modal dialogs as full-screen
-      sheets on small screens. *(state: planned)*
-- [ ] Apply touch ergonomics across the app: minimum ~44px touch
+      sheets on small screens. *(state: scaffolded — implemented
+      2026-07-04; fixed bottom tab bar mirrors all six desktop views,
+      twelve content modals render as full-screen `mobile-sheet` panels
+      below the sm breakpoint, narrow-viewport smoke pending)*
+- [x] Apply touch ergonomics across the app: minimum ~44px touch
       targets and tap equivalents for every hover-only affordance
-      (tooltips, row actions, rationale popovers). *(state: planned)*
+      (tooltips, row actions, rationale popovers). *(state: scaffolded —
+      implemented 2026-07-04 for the Phase 1 surfaces: bottom-nav items
+      56px, card actions 44px; remaining surfaces follow in Phases 2-3)*
 - [ ] Add a glanceable mobile Repo Health summary backed by the
       existing `/api/portfolio/assessment` model: lifecycle-state
       counts, Documentation Health, dirty worktrees, failing Actions,
@@ -955,7 +962,7 @@ shared-LAN bind depends on the Release 2.2 non-loopback auth guardrail
 
 | Phase                                       | Scope                                                                                                                     | Status  |
 | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------- |
-| Phase 1: Responsive foundation              | Breakpoint audit of primary surfaces, table-to-card collapse, mobile navigation, full-screen modal sheets, touch targets  | planned |
+| Phase 1: Responsive foundation              | Breakpoint audit of primary surfaces, table-to-card collapse, mobile navigation, full-screen modal sheets, touch targets  | **in progress** — implemented 2026-07-04 (`npm run build` + typecheck clean); narrow-viewport smoke pending |
 | Phase 2: Glanceable health + agent activity | Mobile Repo Health summary, always-visible agent-activity indicator, mobile agent-run list                                 | planned |
 | Phase 3: Mobile refinement + dispatch       | Prompt-refinement and roadmap-phase dispatch flows usable end-to-end on a phone with preview-first guardrails intact        | planned |
 | Phase 4: Home-screen install + verification | Web app manifest/icons, LAN access documentation, physical-Android verification of all four workflows, desktop regression  | planned |

@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented here.
 
+## 2026-07-04 — Release 2.5 Phase 1: Mobile responsive foundation
+
+### Changes
+
+- **`frontend/components/Dashboard.tsx`** — new fixed bottom tab bar below the md breakpoint mirroring all six desktop view tabs (Repos, Insights, Ops, Queue, Exec, Deps) with 56px touch targets, active-view indicator, ready-count badges, and safe-area inset padding; the desktop tab row is now `hidden md:flex`; the dashboard root reserves bottom padding on phones so the nav never covers content.
+- **`frontend/components/RepoGrid.tsx`** — below md the repository table collapses into stacked touch-friendly cards: same grouping/selection/quick-filter model, per-card status/stale/changes-severity/build/PR/roadmap/readiness badges, branch + last-commit meta, 44px Pull / Fetch / Details actions, an overflow menu (Open, Doc review, Roadmap, Roadmap scan, Git status), and inline expandable detail blocks. The expanded-row detail grid was extracted into `renderRepoDetailBlocks` shared by the table and cards. Also fixed a union-narrowing type error on `dataSource.configuredGithubUser` present in the original table code and inherited by the card copy.
+- **`frontend/App.tsx`** — header wraps on narrow screens (`min-h-16` instead of fixed height), the verbose data-source chip is hidden below lg, and the GitHub API button collapses to icon-only below sm.
+- **`frontend/styles.css`** — new `mobile-sheet` utility: below 640px an element takes over the full viewport (fixed inset-0, 100dvh, no radius/margin), unlayered so it wins over Tailwind utilities; plus an html/body `overflow-x: hidden` guard below md so wide content can only scroll inside its own container.
+- **Twelve content modals** (Help, RoadmapViewer, RoadmapRepair, RoadmapLint, RoadmapDispatch, RoadmapAudit, RepoGitStatus, ApiDocs, RepoEvaluation, CopilotTaskPreview, ReadmeGenerate, ReadmeStandardization) — panel now carries `mobile-sheet`, rendering as a full-screen sheet on phones. The five small form dialogs (Settings, Init, Artifacts, DataSource, DocReview) stay centered; their edge-to-edge overlays gained `p-4` breathing room.
+
+### Testing
+
+- **`npm run build`** — passed (fresh `dist/` bundle).
+- **`npx tsc -p frontend/tsconfig.json --noEmit`** — zero errors in every touched file (`RepoGrid.tsx`, `Dashboard.tsx`, `App.tsx`, modal files). Two pre-existing errors remain out of scope: `OperationsWorkspaceView.tsx:1473` (possibly-undefined `selectionSource`) and `RepoGitStatusModal.tsx` `global.JSX.Element` namespace declarations — neither gates the vite build.
+- **Narrow-viewport browser verification** — attempted via Chrome automation at 390×844 but blocked: the Claude-in-Chrome extension has no site permission for `127.0.0.1`, so navigation/screenshots were denied. Tracked as the remaining step before the Phase 1 milestones move past `scaffolded`.
+
+
+
 ## 2026-07-04 — Cleanup cycle: d2cc6cc tool repairs, doc-audit readiness-drift fix, reconcile route restoration
 
 ### Changes

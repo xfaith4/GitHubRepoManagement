@@ -652,7 +652,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                 {groupRepos.map((repo: RepoStatus) => {
                   const owner =
                     repo.owner ??
-                    (dataSource?.source === 'github' ? dataSource.username : dataSource?.configuredGithubUser ?? undefined);
+                    (dataSource?.source === 'github' ? dataSource.username : dataSource?.source === 'local' ? dataSource.configuredGithubUser ?? undefined : undefined);
                   const repoUrl = repo.htmlUrl ?? (owner ? `https://github.com/${owner}/${repo.name}` : undefined);
                   const pullsUrl = repoUrl ? `${repoUrl}/pulls` : undefined;
                   const repoId = getRepoSelectionId(repo);
@@ -874,7 +874,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                   {!collapsedGroups.has(groupKey) && groupRepos.map((repo: RepoStatus) => {
                         const owner =
                           repo.owner ??
-                          (dataSource?.source === 'github' ? dataSource.username : dataSource?.configuredGithubUser ?? undefined);
+                          (dataSource?.source === 'github' ? dataSource.username : dataSource?.source === 'local' ? dataSource.configuredGithubUser ?? undefined : undefined);
                         const repoUrl = repo.htmlUrl ?? (owner ? `https://github.com/${owner}/${repo.name}` : undefined);
                         const pullsUrl = repoUrl ? `${repoUrl}/pulls` : undefined;
                         const repoId = getRepoSelectionId(repo);

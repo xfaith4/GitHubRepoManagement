@@ -1,5 +1,26 @@
 # Progress
 
+## 2026-07-04 (Release 2.5 Phase 1: mobile responsive foundation)
+
+- Implemented the Phase 1 mobile foundation: fixed bottom tab bar
+  (< md) mirroring all six dashboard views with touch-sized targets and
+  count badges; RepoGrid table→card collapse with full badge/action
+  parity and shared detail blocks; wrap-friendly compact header;
+  `mobile-sheet` CSS utility turning twelve content modals into
+  full-screen sheets below 640px; `p-4` breathing room on the five
+  small form dialogs; html/body horizontal-overflow guard on phones.
+- Fixed a pre-existing union-narrowing type error on
+  `dataSource.configuredGithubUser` in RepoGrid (original table line +
+  the new card copy).
+- Verification: `npm run build` clean, frontend typecheck clean for all
+  touched files (two pre-existing errors elsewhere noted in CHANGELOG).
+  Narrow-viewport browser verification blocked — the Claude-in-Chrome
+  extension needs site access to `127.0.0.1` before automated
+  screenshots work; ROADMAP Phase 1 milestones marked `scaffolded`
+  until that smoke runs. Note: the operator's own dev host instance
+  (Start-App.ps1) took over port 7071 mid-session, which is fine — it
+  serves the same freshly built bundle.
+
 ## 2026-07-04 (Cleanup cycle: d2cc6cc tool repairs, doc-audit drift fix, reconcile route restored)
 
 - Audited the nine `d2cc6cc` files not covered by the morning's reverts.
