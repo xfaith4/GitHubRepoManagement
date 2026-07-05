@@ -21,7 +21,7 @@ const InitModal: React.FC<InitModalProps> = ({ isOpen, onClose, onInit }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
       <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md border border-gray-700" onClick={e => e.stopPropagation()}>
         <form onSubmit={handleSubmit}>
           <div className="p-6">

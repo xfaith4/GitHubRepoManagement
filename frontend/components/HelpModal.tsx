@@ -251,7 +251,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm p-4">
-      <div className="w-full max-w-5xl max-h-[92vh] overflow-hidden rounded-lg border border-gray-700 bg-gray-950 shadow-2xl">
+      <div className="mobile-sheet w-full max-w-5xl max-h-[92vh] overflow-hidden rounded-lg border border-gray-700 bg-gray-950 shadow-2xl">
         <div className="flex items-start justify-between gap-4 border-b border-gray-800 px-5 py-4">
           <div className="flex items-start gap-3">
             <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-md border border-blue-700/50 bg-blue-950/50 text-blue-300">

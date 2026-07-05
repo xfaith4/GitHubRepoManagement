@@ -280,13 +280,13 @@ function App() {
     <div className="min-h-screen bg-gray-900 text-gray-200 font-sans">
       <header className="bg-gray-800/50 backdrop-blur-sm sticky top-0 z-20 border-b border-gray-700">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-blue-400 mr-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
-              <h1 className="text-xl font-bold text-gray-100">GitHub Repo Manager</h1>
+          <div className="flex flex-wrap items-center justify-between gap-y-2 py-2 min-h-16 md:py-0">
+            <div className="flex items-center min-w-0">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-blue-400 mr-3 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
+              <h1 className="text-lg sm:text-xl font-bold text-gray-100 truncate">GitHub Repo Manager</h1>
             </div>
             <div className="flex items-center">
-                {renderDataSourceLabel()}
+                <span className="hidden lg:inline-flex">{renderDataSourceLabel()}</span>
                 {isBackgroundRefreshing && (
                   <span className="ml-2 inline-flex items-center gap-1.5 text-xs text-blue-400" title="Refreshing repository data in the background…">
                     <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -299,11 +299,11 @@ function App() {
                 {renderViewToggle()}
                 <button
                   onClick={() => setIsDataSourceModalOpen(true)}
-                  className="ml-3 inline-flex items-center px-3 py-1.5 border border-gray-600 rounded-md text-sm font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 transition-colors"
+                  className="ml-3 inline-flex items-center px-3 py-2 md:py-1.5 border border-gray-600 rounded-md text-sm font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 transition-colors"
                   title="Connect to GitHub API using a typed token, GITHUB_TOKEN, or the saved fallback token"
                 >
-                  <DatabaseIcon className="w-4 h-4 mr-2" />
-                  GitHub API
+                  <DatabaseIcon className="w-4 h-4 sm:mr-2" />
+                  <span className="hidden sm:inline">GitHub API</span>
                 </button>
             </div>
           </div>

@@ -1,1 +1,29 @@
 @import "tailwindcss";
+
+/* --- Release 2.5 Phase 1: mobile foundation ------------------------------ */
+
+/* Full-screen sheet behavior for modal panels on phones. Add `mobile-sheet`
+   to a modal's panel element; below the sm breakpoint the panel takes over
+   the whole viewport regardless of the overlay's centering and padding.
+   These rules are unlayered so they win over Tailwind's layered utilities. */
+@media (max-width: 639px) {
+  .mobile-sheet {
+    position: fixed;
+    inset: 0;
+    margin: 0;
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+  }
+}
+
+/* Keep the page body from ever scrolling horizontally on phones; wide
+   content must scroll inside its own container. */
+@media (max-width: 767px) {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+}

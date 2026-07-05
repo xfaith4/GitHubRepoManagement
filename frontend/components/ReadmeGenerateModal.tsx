@@ -102,7 +102,7 @@ export default function ReadmeGenerateModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <div className="relative w-full max-w-3xl mx-4 rounded-xl bg-gray-900 border border-gray-700 shadow-2xl flex flex-col max-h-[90vh]">
+      <div className="mobile-sheet relative w-full max-w-3xl mx-4 rounded-xl bg-gray-900 border border-gray-700 shadow-2xl flex flex-col max-h-[90vh]">
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700 flex-shrink-0">

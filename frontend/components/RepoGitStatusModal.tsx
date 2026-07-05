@@ -189,7 +189,7 @@ const RepoGitStatusModal = ({ isOpen, repoName, localPath, onClose, onStatusChan
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
 
       {/* Panel */}
-      <div className="relative z-10 w-full max-w-2xl bg-gray-900 border border-gray-700 rounded-xl shadow-2xl flex flex-col max-h-[90vh]">
+      <div className="mobile-sheet relative z-10 w-full max-w-2xl bg-gray-900 border border-gray-700 rounded-xl shadow-2xl flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="flex items-start justify-between px-6 py-4 border-b border-gray-700 shrink-0">
           <div>

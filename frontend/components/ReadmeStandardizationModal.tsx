@@ -96,7 +96,7 @@ export const ReadmeStandardizationModal: React.FC<ReadmeStandardizationModalProp
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 sm:p-6">
-      <div className="bg-gray-950 border border-gray-700 rounded-lg shadow-2xl w-full max-w-[96rem] h-[92vh] flex flex-col overflow-hidden">
+      <div className="mobile-sheet bg-gray-950 border border-gray-700 rounded-lg shadow-2xl w-full max-w-[96rem] h-[92vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 bg-gray-900">
           <div>

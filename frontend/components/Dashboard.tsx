@@ -28,7 +28,7 @@ import { getSettings, startInit, startUpdate, startSync, startArchive, startExpo
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
 import { useHealthPing } from '../hooks/useHealthPing';
-import { SpinnerIcon, IssuesIcon, ProjectsIcon, BranchIcon, HealthIcon } from './icons';
+import { SpinnerIcon, IssuesIcon, ProjectsIcon, BranchIcon, HealthIcon, DocReviewIcon, SyncIcon } from './icons';
 
 interface DashboardProps {
   repos: RepoStatus[];
@@ -1126,7 +1126,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
       : null;
 
   return (
-    <div>
+    <div className="pb-20 md:pb-0">
       {/* Backend connectivity badge + auto-scan schedule */}
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-3 flex justify-end items-center gap-4">
         {scanSchedule && (
@@ -1826,8 +1826,8 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
         {activeView === 'insights' && <ChangeHistoryPanel repos={repos} />}
 
         <div className="bg-gray-800/50 border border-gray-700 rounded-lg mt-4">
-            {/* View tabs */}
-            <div className="flex border-b border-gray-700 px-4 pt-3 gap-1">
+            {/* View tabs — desktop only; the mobile bottom nav mirrors these */}
+            <div className="hidden md:flex border-b border-gray-700 px-4 pt-3 gap-1">
               <button
                 onClick={() => setActiveView('repos')}
                 className={`px-4 py-2 text-sm font-medium rounded-t border-b-2 transition-colors ${
@@ -2067,6 +2067,45 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
             )}
         </div>
       </div>
+
+      {/* Mobile bottom navigation — Release 2.5 Phase 1. Mirrors the desktop
+          view tabs, which are hidden below the md breakpoint. */}
+      <nav
+        className="md:hidden fixed bottom-0 inset-x-0 z-40 border-t border-gray-700 bg-gray-900/95 backdrop-blur-sm"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        aria-label="Primary views"
+      >
+        <div className="flex overflow-x-auto">
+          {([
+            { view: 'repos' as const, label: 'Repos', icon: <ProjectsIcon className="w-5 h-5" />, badge: null as number | null },
+            { view: 'insights' as const, label: 'Insights', icon: <HealthIcon className="w-5 h-5" />, badge: null as number | null },
+            { view: 'operations' as const, label: 'Ops', icon: <DocReviewIcon className="w-5 h-5" />, badge: (portfolioAssessment?.summary.readyForWorkCount || null) as number | null },
+            { view: 'work-queue' as const, label: 'Queue', icon: <IssuesIcon className="w-5 h-5" />, badge: (docsAuditIndex ? (docsAuditIndex.entries.filter(e => e.dispatchReadiness === 'ready').length || null) : null) as number | null },
+            { view: 'execution-queue' as const, label: 'Exec', icon: <SyncIcon className="w-5 h-5" />, badge: null as number | null },
+            { view: 'dependencies' as const, label: 'Deps', icon: <BranchIcon className="w-5 h-5" />, badge: (dependencyGraph && dependencyGraph.totalEdges > 0 ? dependencyGraph.totalEdges : null) as number | null },
+          ]).map(item => (
+            <button
+              key={item.view}
+              onClick={() => setActiveView(item.view)}
+              className={`relative flex-1 min-w-[60px] min-h-14 flex flex-col items-center justify-center gap-0.5 px-1 py-1.5 text-[10px] font-medium transition-colors ${
+                activeView === item.view ? 'text-indigo-300' : 'text-gray-400'
+              }`}
+              aria-current={activeView === item.view ? 'page' : undefined}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+              {item.badge ? (
+                <span className="absolute top-1 right-1/2 translate-x-4 inline-flex items-center justify-center min-w-4 h-4 px-0.5 text-[9px] rounded-full bg-sky-700 text-sky-100 font-semibold">
+                  {item.badge}
+                </span>
+              ) : null}
+              {activeView === item.view && (
+                <span className="absolute top-0 inset-x-3 h-0.5 rounded-full bg-indigo-400" />
+              )}
+            </button>
+          ))}
+        </div>
+      </nav>
 
       <LogPanel
         isOpen={isLogPanelOpen}

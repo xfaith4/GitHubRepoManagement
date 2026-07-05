@@ -441,6 +441,54 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
   const hasReadinessData = repos.some(r => r.dispatchReadiness !== undefined);
   const activeQuickFilterCount = Object.values(quickFilters).filter(Boolean).length;
 
+  // Shared between the desktop table's expanded row and the mobile card's
+  // details section.
+  const renderRepoDetailBlocks = (repo: RepoStatus) => {
+    const pagesUrl = repo.pagesUrl;
+    const artifactDetails = typeof repo.artifactCount === 'number' ? repo.artifactCount : null;
+    const repoSizeMb = typeof repo.repoSizeKb === 'number' ? (repo.repoSizeKb / 1024) : null;
+    const testingWorkflowCount = repo.testingWorkflowCount ?? null;
+    const workflowCount = repo.actionsWorkflowCount ?? null;
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 text-xs text-gray-300">
+        <div className="rounded border border-gray-700 bg-gray-900/70 px-3 py-2">
+          <div className="text-gray-500">Local Path</div>
+          <div className="mt-1 break-all">{repo.localPath ?? 'N/A'}</div>
+        </div>
+        <div className="rounded border border-gray-700 bg-gray-900/70 px-3 py-2">
+          <div className="text-gray-500">Origin URL</div>
+          <div className="mt-1 break-all">{repo.originUrl ?? 'N/A'}</div>
+        </div>
+        <div className="rounded border border-gray-700 bg-gray-900/70 px-3 py-2">
+          <div className="text-gray-500">Artifacts / Size</div>
+          <div className="mt-1">{artifactDetails ?? 0} artifacts{repoSizeMb !== null ? ` · ${repoSizeMb.toFixed(1)} MB` : ''}</div>
+        </div>
+        <div className="rounded border border-gray-700 bg-gray-900/70 px-3 py-2">
+          <div className="text-gray-500">Pages</div>
+          <div className="mt-1 break-all">
+            {pagesUrl ? (
+              <a href={pagesUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-300 hover:text-emerald-200 hover:underline">{pagesUrl}</a>
+            ) : 'Not configured'}
+          </div>
+        </div>
+        <div className="rounded border border-gray-700 bg-gray-900/70 px-3 py-2">
+          <div className="text-gray-500">Workflows</div>
+          <div className="mt-1">{workflowCount ?? 0} total{testingWorkflowCount !== null ? ` · ${testingWorkflowCount} testing` : ''}</div>
+        </div>
+        <div className="rounded border border-gray-700 bg-gray-900/70 px-3 py-2">
+          <div className="text-gray-500">Artifacts</div>
+          <div className="mt-1 flex items-center gap-2">
+            {repo.hasArtifacts ? (
+              <button onClick={() => onViewArtifacts(repo.name)} className="text-blue-300 hover:text-blue-200 underline underline-offset-2">View artifacts</button>
+            ) : (
+              <span className="text-gray-500">No artifacts</span>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-4">
        {duplicateLocalRepoGroups.length > 0 && (
@@ -580,10 +628,201 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
         </button>
       </div>
 
-      <div className="mb-3 text-xs text-gray-500">
+      <div className="hidden md:block mb-3 text-xs text-gray-500">
         Additional metadata is available per row via Details to keep key comparison columns visible without horizontal scrolling.
        </div>
-      <div className="shadow overflow-hidden border-b border-gray-700 sm:rounded-lg">
+
+      {/* Mobile card list — Release 2.5 Phase 1. Mirrors the desktop table
+          below the md breakpoint: same grouping, selection, badges, and
+          per-repo actions, rendered as stacked touch-friendly cards. */}
+      <div className="md:hidden space-y-3">
+        {(Object.entries(groupedRepos) as [string, RepoStatus[]][]).sort(([keyA], [keyB]) => keyA.localeCompare(keyB)).map(([groupKey, groupRepos]) => (
+          <div key={groupKey}>
+            {groupBy !== 'none' && (
+              <button
+                onClick={() => toggleGroup(groupKey)}
+                className="w-full min-h-11 flex items-center gap-2 rounded-md bg-gray-800/70 px-3 py-2.5 text-sm font-bold text-gray-200"
+              >
+                {collapsedGroups.has(groupKey) ? <ChevronRightIcon className="w-4 h-4" /> : <ChevronDownIcon className="w-4 h-4" />}
+                {groupKey} ({groupRepos.length})
+              </button>
+            )}
+            {!collapsedGroups.has(groupKey) && (
+              <div className={`space-y-3 ${groupBy !== 'none' ? 'mt-2' : ''}`}>
+                {groupRepos.map((repo: RepoStatus) => {
+                  const owner =
+                    repo.owner ??
+                    (dataSource?.source === 'github' ? dataSource.username : dataSource?.configuredGithubUser ?? undefined);
+                  const repoUrl = repo.htmlUrl ?? (owner ? `https://github.com/${owner}/${repo.name}` : undefined);
+                  const pullsUrl = repoUrl ? `${repoUrl}/pulls` : undefined;
+                  const repoId = getRepoSelectionId(repo);
+                  const changesSeverity = getChangeSeverity(repo.uncommittedChanges ?? 0);
+                  const readinessBadge: Record<string, { cls: string; label: string }> = {
+                    ready: { cls: 'bg-green-900/40 text-green-300 border-green-700/40', label: '✓ Ready' },
+                    'needs-doc-standardization': { cls: 'bg-yellow-900/40 text-yellow-300 border-yellow-700/40', label: '⚠ Needs Docs' },
+                    blocked: { cls: 'bg-red-900/40 text-red-300 border-red-700/40', label: '✕ Blocked' },
+                    'missing-roadmap': { cls: 'bg-gray-700/50 text-gray-400 border-gray-600/40', label: 'No Roadmap' },
+                    'roadmap-complete': { cls: 'bg-blue-900/40 text-blue-300 border-blue-700/40', label: 'Roadmap Done' },
+                    'parse-error': { cls: 'bg-orange-900/40 text-orange-300 border-orange-700/40', label: '! Parse Error' },
+                  };
+                  const readinessCfg = repo.dispatchReadiness ? readinessBadge[repo.dispatchReadiness] : undefined;
+                  const roadmapCfg = getRoadmapBadgeConfig(repo.roadmapState as RoadmapBadgeState);
+                  return (
+                    <div
+                      key={repo.localPath ?? repo.name}
+                      className={`rounded-lg border px-3 py-3 ${selectedRepos.has(repoId) ? 'border-blue-600/60 bg-blue-900/20' : 'border-gray-700 bg-gray-900/60'}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedRepos.has(repoId)}
+                          onChange={() => handleSelectRepo(repoId)}
+                          className="mt-1 h-5 w-5 rounded bg-gray-700 border-gray-500 text-blue-500 focus:ring-blue-500"
+                        />
+                        <div className="min-w-0 flex-1">
+                          {repoUrl ? (
+                            <a href={repoUrl} target="_blank" rel="noopener noreferrer" className="block text-sm font-medium text-blue-400 hover:text-blue-300 truncate">
+                              {owner ? `${owner}/${repo.name}` : repo.name}
+                            </a>
+                          ) : (
+                            <span className="block text-sm font-medium text-gray-200 truncate">{repo.name}</span>
+                          )}
+                          <div className="text-xs text-gray-400 mt-0.5 break-all">{repo.localPath ?? 'No local path'}</div>
+                        </div>
+                        {getStatusBadge(repo.status, repo)}
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        {repo.isStale && (
+                          <span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded border bg-red-900/30 text-red-300 border-red-700/40">Stale</span>
+                        )}
+                        {repo.uncommittedChanges > 0 && (
+                          <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${changesSeverity.className}`}>
+                            {changesSeverity.label}
+                            <span className="font-semibold">{repo.uncommittedChanges}</span>
+                          </span>
+                        )}
+                        {getBuildStatusBadge(repo)}
+                        {(repo.openPrCount ?? 0) > 0 && (
+                          pullsUrl ? (
+                            <a href={pullsUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-gray-300 hover:text-blue-300">
+                              <PullRequestIcon className="w-4 h-4" /> {repo.openPrCount}
+                            </a>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-xs text-gray-400">
+                              <PullRequestIcon className="w-4 h-4" /> {repo.openPrCount}
+                            </span>
+                          )
+                        )}
+                        {repo.hasRoadmap && onViewRoadmap && (
+                          <button
+                            onClick={() => onViewRoadmap(repo.name)}
+                            className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded border transition-colors ${roadmapCfg.className}`}
+                            title={roadmapCfg.title}
+                          >
+                            {roadmapCfg.label}
+                          </button>
+                        )}
+                        {readinessCfg && (
+                          <span className={`inline-flex items-center text-xs px-1.5 py-0.5 rounded border ${readinessCfg.cls}`}>
+                            {readinessCfg.label}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="mt-2 text-xs text-gray-400">
+                        <span className="text-gray-300">{repo.branch}</span>
+                        {repo.lastCommitDate ? ` · ${new Date(repo.lastCommitDate).toLocaleDateString()}` : ''}
+                        {repo.lastCommitAuthor ? ` · ${repo.lastCommitAuthor}` : ''}
+                        {(repo.localAhead > 0 || repo.remoteAhead > 0) && (
+                          <span className="text-gray-500">
+                            {' · '}
+                            {repo.localAhead > 0 ? `${repo.localAhead} ahead` : ''}
+                            {repo.localAhead > 0 && repo.remoteAhead > 0 ? ', ' : ''}
+                            {repo.remoteAhead > 0 ? `${repo.remoteAhead} behind` : ''}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="mt-3 flex items-stretch gap-2">
+                        <button
+                          onClick={() => onRunRepoAction?.('update', repoId)}
+                          className="flex-1 min-h-11 rounded-md border border-gray-600 bg-gray-800 px-3 text-sm text-gray-200 active:bg-gray-700"
+                        >
+                          Pull
+                        </button>
+                        <button
+                          onClick={() => onRunRepoAction?.('sync', repoId)}
+                          className="flex-1 min-h-11 rounded-md border border-gray-600 bg-gray-800 px-3 text-sm text-gray-200 active:bg-gray-700"
+                        >
+                          Fetch
+                        </button>
+                        <button
+                          onClick={() => toggleExpandedRow(repoId)}
+                          className={`flex-1 min-h-11 rounded-md border px-3 text-sm active:bg-gray-700 ${expandedRows.has(repoId) ? 'border-indigo-500/60 bg-indigo-900/30 text-indigo-200' : 'border-gray-600 bg-gray-800 text-gray-200'}`}
+                        >
+                          Details
+                        </button>
+                        <details className="relative">
+                          <summary className="list-none min-h-11 h-full flex items-center cursor-pointer rounded-md border border-gray-600 bg-gray-800 px-3.5 text-sm text-gray-200">
+                            ⋯
+                          </summary>
+                          <div className="absolute right-0 bottom-full mb-1 w-44 rounded border border-gray-700 bg-gray-900 shadow-lg z-30 p-1">
+                            <a
+                              href={repoUrl ?? '#'}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={`block rounded px-2 py-2.5 text-left text-xs ${repoUrl ? 'text-gray-200 hover:bg-gray-800' : 'text-gray-500 cursor-not-allowed pointer-events-none'}`}
+                            >
+                              Open on GitHub
+                            </a>
+                            <button
+                              onClick={() => onOpenDocReview?.(repo.name)}
+                              className="w-full rounded px-2 py-2.5 text-left text-xs text-gray-200 hover:bg-gray-800"
+                            >
+                              Doc review
+                            </button>
+                            <button
+                              onClick={() => onViewRoadmap?.(repo.name)}
+                              className={`w-full rounded px-2 py-2.5 text-left text-xs ${onViewRoadmap ? 'text-gray-200 hover:bg-gray-800' : 'text-gray-500 cursor-not-allowed'}`}
+                              disabled={!onViewRoadmap}
+                            >
+                              Roadmap
+                            </button>
+                            <button
+                              onClick={() => onRunRoadmapScan?.(repo.name)}
+                              className={`w-full rounded px-2 py-2.5 text-left text-xs ${onRunRoadmapScan ? 'text-gray-200 hover:bg-gray-800' : 'text-gray-500 cursor-not-allowed'}`}
+                              disabled={!onRunRoadmapScan}
+                            >
+                              Roadmap scan
+                            </button>
+                            {repo.status !== 'clean' && onViewGitStatus && (
+                              <button
+                                onClick={() => onViewGitStatus(repo.name, repo.localPath ?? undefined)}
+                                className="w-full rounded px-2 py-2.5 text-left text-xs text-gray-200 hover:bg-gray-800"
+                              >
+                                Git status
+                              </button>
+                            )}
+                          </div>
+                        </details>
+                      </div>
+
+                      {expandedRows.has(repoId) && (
+                        <div className="mt-3">
+                          {renderRepoDetailBlocks(repo)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="hidden md:block shadow overflow-hidden border-b border-gray-700 sm:rounded-lg">
         <div className="max-h-[68vh] overflow-auto">
             <table className="min-w-full divide-y divide-gray-700 table-fixed">
             <thead className="bg-gray-800 sticky top-0 z-20">
@@ -637,12 +876,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                           repo.owner ??
                           (dataSource?.source === 'github' ? dataSource.username : dataSource?.configuredGithubUser ?? undefined);
                         const repoUrl = repo.htmlUrl ?? (owner ? `https://github.com/${owner}/${repo.name}` : undefined);
-                        const pagesUrl = repo.pagesUrl;
                         const pullsUrl = repoUrl ? `${repoUrl}/pulls` : undefined;
-                        const artifactDetails = typeof repo.artifactCount === 'number' ? repo.artifactCount : null;
-                        const repoSizeMb = typeof repo.repoSizeKb === 'number' ? (repo.repoSizeKb / 1024) : null;
-                        const testingWorkflowCount = repo.testingWorkflowCount ?? null;
-                        const workflowCount = repo.actionsWorkflowCount ?? null;
                         const repoId = getRepoSelectionId(repo);
                         const changesSeverity = getChangeSeverity(repo.uncommittedChanges ?? 0);
                         return (
@@ -812,42 +1046,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                           {expandedRows.has(repoId) && (
                             <tr className="bg-gray-950/60">
                               <td colSpan={10} className="px-4 py-3">
-                                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 text-xs text-gray-300">
-                                  <div className="rounded border border-gray-700 bg-gray-900/70 px-3 py-2">
-                                    <div className="text-gray-500">Local Path</div>
-                                    <div className="mt-1 break-all">{repo.localPath ?? 'N/A'}</div>
-                                  </div>
-                                  <div className="rounded border border-gray-700 bg-gray-900/70 px-3 py-2">
-                                    <div className="text-gray-500">Origin URL</div>
-                                    <div className="mt-1 break-all">{repo.originUrl ?? 'N/A'}</div>
-                                  </div>
-                                  <div className="rounded border border-gray-700 bg-gray-900/70 px-3 py-2">
-                                    <div className="text-gray-500">Artifacts / Size</div>
-                                    <div className="mt-1">{artifactDetails ?? 0} artifacts{repoSizeMb !== null ? ` · ${repoSizeMb.toFixed(1)} MB` : ''}</div>
-                                  </div>
-                                  <div className="rounded border border-gray-700 bg-gray-900/70 px-3 py-2">
-                                    <div className="text-gray-500">Pages</div>
-                                    <div className="mt-1 break-all">
-                                      {pagesUrl ? (
-                                        <a href={pagesUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-300 hover:text-emerald-200 hover:underline">{pagesUrl}</a>
-                                      ) : 'Not configured'}
-                                    </div>
-                                  </div>
-                                  <div className="rounded border border-gray-700 bg-gray-900/70 px-3 py-2">
-                                    <div className="text-gray-500">Workflows</div>
-                                    <div className="mt-1">{workflowCount ?? 0} total{testingWorkflowCount !== null ? ` · ${testingWorkflowCount} testing` : ''}</div>
-                                  </div>
-                                  <div className="rounded border border-gray-700 bg-gray-900/70 px-3 py-2">
-                                    <div className="text-gray-500">Artifacts</div>
-                                    <div className="mt-1 flex items-center gap-2">
-                                      {repo.hasArtifacts ? (
-                                        <button onClick={() => onViewArtifacts(repo.name)} className="text-blue-300 hover:text-blue-200 underline underline-offset-2">View artifacts</button>
-                                      ) : (
-                                        <span className="text-gray-500">No artifacts</span>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
+                                {renderRepoDetailBlocks(repo)}
                               </td>
                             </tr>
                           )}
