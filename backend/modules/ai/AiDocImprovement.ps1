@@ -278,8 +278,17 @@ function Invoke-HeuristicDocProvider {
 function _AiBuildSystemPrompt {
     param([string]$DocType)
     $docLabel = if ($DocType -eq 'roadmap') { 'ROADMAP.md' } else { 'README.md' }
+    $docSpecificRule = if ($DocType -eq 'roadmap') {
+        'For pending roadmap work, use compact action-first milestone text with explicit scope and verification signals.'
+    }
+    else {
+        'For README content, keep outcome, setup, and usage sections compact, executable, and easy to scan.'
+    }
     return @"
 You are a documentation specialist improving a project's $docLabel file.
+Use semantic compression: maximize information density; minimize filler, repetition, throat-clearing, and generic transitions.
+Prefer short headings, parallel bullets, and compact tables only when they are clearer than prose.
+$docSpecificRule
 Return only the improved Markdown document — no preamble, no commentary, no code fences around the whole document.
 Preserve accurate existing facts, links, badges, and genuine completion history. Do not invent features or fabricate completed work.
 "@
@@ -297,23 +306,34 @@ function _AiBuildUserPrompt {
     $sb = [System.Text.StringBuilder]::new()
     [void]$sb.AppendLine("Repository: $RepoName")
     [void]$sb.AppendLine("Document type: $DocType")
+    [void]$sb.AppendLine("")
+    [void]$sb.AppendLine("Compression contract:")
+    [void]$sb.AppendLine("- High information density; no filler or throat-clearing.")
+    [void]$sb.AppendLine("- Merge redundant statements; keep bullets parallel.")
+    [void]$sb.AppendLine("- Use the shortest wording that preserves operator/agent utility.")
+    if ($DocType -eq 'roadmap') {
+        [void]$sb.AppendLine("- ROADMAP pending items: action-first, independently selectable, verification-ready.")
+    }
+    else {
+        [void]$sb.AppendLine("- README sections: outcome-first, setup/usage executable, repeated explanation collapsed.")
+    }
     if (-not [string]::IsNullOrWhiteSpace($Guidance)) {
         [void]$sb.AppendLine("")
-        [void]$sb.AppendLine("Improvement intent:")
+        [void]$sb.AppendLine("Template intent:")
         [void]$sb.AppendLine($Guidance)
     }
     if (@($RequiredSections).Count -gt 0) {
         [void]$sb.AppendLine("")
-        [void]$sb.AppendLine("The improved document should converge toward these sections where they make sense:")
+        [void]$sb.AppendLine("Target sections:")
         foreach ($s in @($RequiredSections)) { [void]$sb.AppendLine("- $s") }
     }
     if (-not [string]::IsNullOrWhiteSpace($CustomPrompt)) {
         [void]$sb.AppendLine("")
-        [void]$sb.AppendLine("Additional operator instruction:")
+        [void]$sb.AppendLine("Operator delta:")
         [void]$sb.AppendLine($CustomPrompt)
     }
     [void]$sb.AppendLine("")
-    [void]$sb.AppendLine("Current document content:")
+    [void]$sb.AppendLine("Current document:")
     [void]$sb.AppendLine("-----BEGIN CURRENT DOCUMENT-----")
     [void]$sb.AppendLine($CurrentContent)
     [void]$sb.AppendLine("-----END CURRENT DOCUMENT-----")

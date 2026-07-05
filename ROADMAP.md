@@ -32,9 +32,9 @@
 
 **Current focus (next agent actions):**
 
-- [ ] Finish Release 2.1 operator verification against the live workspace and close the release.
-- [ ] Run the Release 2.5 Phase 1 narrow-viewport smoke so the mobile foundation milestones can move past `scaffolded`.
-- [ ] Start the Release 2.2 backend lane (API auth + network security) or Release 2.5 Phase 2, per the execution-order lanes.
+- [ ] Release 2.1 closeout: live-workspace operator verification.
+- [ ] Release 2.5 Phase 1: narrow-viewport smoke to lift mobile foundation past `scaffolded`.
+- [ ] Start next lane: Release 2.2 backend hardening or Release 2.5 Phase 2 mobile UX.
 
 ---
 
@@ -99,6 +99,12 @@ Render the state inline on each milestone in italics, e.g.:
 ```markdown
 - [x] Add `GET /api/portfolio/assessment` route. *(state: smoke-tested)*
 ```
+
+**Pending-item phrasing rule:** use semantic compression. Prefer
+action-first, surface-specific wording a coding agent can select without
+rereading surrounding prose: `verb + artifact/route/module + verification
+boundary`. Omit filler, repeated rationale, and narrative transitions
+already covered by release goals or acceptance criteria.
 
 ---
 
@@ -569,15 +575,15 @@ retrofit.
       *(state: smoke-tested — UI consumer planned)*
 - [x] Execution throughput metrics card in the dashboard (consumes
       `GET /api/execution/metrics`). *(state: smoke-tested)*
-- [ ] Dependency graph panel in the dashboard (consumes
-      `GET /api/roadmap/dependencies`). *(state: planned)*
-- [ ] Tag filter in Work Queue (filter by `[security]`, `[infra]`,
-      `[breaking]`, etc.). *(state: planned)*
-- [ ] Auto-scan schedule indicator in the dashboard header or settings
-      modal. *(state: planned)*
-- [ ] Smoke coverage for the Release 1.2 API routes
-      (`/api/execution/metrics`, `/api/roadmap/dependencies`,
-      `/api/scan/schedule`). *(state: planned)*
+- [ ] Dashboard dependency-graph panel via
+      `GET /api/roadmap/dependencies`. *(state: planned)*
+- [ ] Work Queue tag filter for `[security]`, `[infra]`, `[breaking]`,
+      etc. *(state: planned)*
+- [ ] Dashboard/header auto-scan schedule indicator via
+      `GET /api/scan/schedule`. *(state: planned)*
+- [ ] Smoke-route coverage for `/api/execution/metrics`,
+      `/api/roadmap/dependencies`, and `/api/scan/schedule`.
+      *(state: planned)*
 
 #### Acceptance criteria
 
@@ -709,21 +715,19 @@ the Release 2.4 agent API.
 
 #### Engineering milestones
 
-- [ ] Add settings-driven API auth and security controls: explicit API key
-      or env-var key, first-run key generation, scoped CORS, rate limiting,
-      non-loopback bind checks, and optional TLS. *(state: planned)*
-- [ ] Add frontend and API auth verification flow so the dashboard can
-      confirm auth state and send authenticated requests consistently.
+- [ ] Settings-driven API hardening: API key/env-key auth, first-run key
+      generation, scoped CORS, rate limiting, non-loopback bind guard,
+      optional TLS. *(state: planned)*
+- [ ] Auth-state verification flow: backend auth-status check +
+      frontend authenticated requests. *(state: planned)*
+- [ ] First-run setup routes: `GET /setup/status`,
+      `GET /setup/prerequisites`, `POST /setup/config`.
       *(state: planned)*
-- [ ] Add guided setup detection plus `GET /setup/status`,
-      `GET /setup/prerequisites`, and `POST /setup/config` for a
-      first-run configuration workflow. *(state: planned)*
-- [ ] Add a four-step Setup Wizard for prerequisites, local roots,
-      GitHub auth choice, and first-scan confirmation. *(state: planned)*
-- [ ] Add GitHub App integration settings, callback flow, token refresh,
-      auth status route, and token selection precedence over PATs.
-      *(state: planned)*
-- [ ] Smoke test authenticated API access and first-run setup completion.
+- [ ] Four-step Setup Wizard: prerequisites, local roots, GitHub auth
+      mode, first-scan confirmation. *(state: planned)*
+- [ ] GitHub App auth path: settings, callback, token refresh, status
+      route, PAT-precedence rules. *(state: planned)*
+- [ ] Smoke: authenticated API access + first-run setup completion.
       *(state: planned)*
 
 #### Acceptance criteria
@@ -783,24 +787,22 @@ depend on Phase 2 rollups.
 
 #### Engineering milestones
 
-- [ ] Add portfolio trend and repo-row sparkline visualizations backed by
-      maturity history and `GET /api/portfolio/trend`. *(state: scaffolded
-      — current-snapshot route + dashboard panel shipped 2026-07-03; full
-      history window still depends on Release 2.1 capture.)*
-- [ ] Add weekly digest generation plus scheduled webhook delivery for
-      portfolio KPIs and top candidate repos. *(state: planned)*
-- [ ] Package a `roadmap-audit-action` GitHub Action that runs the
-      roadmap auditor and posts PR check results. *(state: planned)*
-- [ ] Extract the roadmap contract standard into a standalone,
-      publishable spec directory. *(state: planned)*
-- [ ] Add portfolio and per-repo SVG badge routes for maturity display.
+- [ ] History-backed trend visuals + repo sparklines via
+      `GET /api/portfolio/trend`. *(state: scaffolded — snapshot-only
+      panel shipped 2026-07-03; full history waits on Release 2.1
+      capture.)*
+- [ ] Weekly KPI digest + scheduled webhook delivery.
       *(state: planned)*
-- [ ] Add cost and quota-burn analytics computed at report time from raw
-      run observations plus valuation config: cash cost per phase, quota
-      burn per repo, starvation-event counts, estimated-vs-actual work
-      units (forecast accuracy), and a credit-prompt / overage event
-      trail — derived values are never written back into the append-only
-      event log. *(state: planned)*
+- [ ] `roadmap-audit-action` GitHub Action packaging.
+      *(state: planned)*
+- [ ] Publishable roadmap-contract spec directory.
+      *(state: planned)*
+- [ ] Portfolio + per-repo SVG maturity badges.
+      *(state: planned)*
+- [ ] Report-time cost/quota-burn analytics from raw run events:
+      per-phase cash cost, per-repo burn, starvation counts, forecast
+      accuracy, credit-prompt/overage trail. Derived only; never
+      persisted into the append-only event log. *(state: planned)*
 - [x] Add repository curation and change-awareness foundation:
       operator-authored favorites/portfolio-candidate/archived-ignore
       state, commit-aware scan cache metadata, and recently-changed
@@ -950,24 +952,20 @@ event-log convention, and OpenAPI drafting can start anytime.
 
 #### Engineering milestones
 
-- [ ] Publish stable `/api/v1/agent/*` readiness, queue, claim, and
-      complete routes with schema-versioned task packets for agent use.
+- [ ] Stable `/api/v1/agent/*` readiness, queue, claim, complete routes
+      + schema-versioned task packets. *(state: planned)*
+- [ ] AI repair / README-standardization submit-PR functions +
+      review-branch routes. *(state: planned)*
+- [ ] Submit-PR actions in roadmap + README repair modals.
       *(state: planned)*
-- [ ] Add AI repair and README-standardization PR submission functions and
-      matching submit-pr routes that always work through review branches.
+- [ ] OpenAPI 3.1 spec for the agent API contract.
       *(state: planned)*
-- [ ] Add submit-PR actions to the roadmap and README repair modals.
+- [ ] Optional `roadmap-events.jsonl` contract in the Roadmap Standard:
+      append-only, schema-versioned execution history with constrained
+      lifecycle/validation/error/decision/commit/metric events.
       *(state: planned)*
-- [ ] Publish OpenAPI 3.1 documentation for the agent API contract.
+- [ ] Smoke: readiness-contract shape + concurrent-claim rejection.
       *(state: planned)*
-- [ ] Define an optional per-repo roadmap event-log convention in the
-      Roadmap Contract Standard: an append-only, schema-versioned
-      `roadmap-events.jsonl` with a constrained event vocabulary (phase and
-      task lifecycle, validation results, errors, decisions, commits,
-      metrics) so managed repos accumulate machine-readable execution
-      history this app and external agents can read. *(state: planned)*
-- [ ] Smoke test the readiness contract shape and concurrent claim
-      behavior. *(state: planned)*
 
 #### Acceptance criteria
 
@@ -1042,31 +1040,24 @@ shared-LAN bind depends on the Release 2.2 non-loopback auth guardrail
       (tooltips, row actions, rationale popovers). *(state: scaffolded —
       implemented 2026-07-04 for the Phase 1 surfaces: bottom-nav items
       56px, card actions 44px; remaining surfaces follow in Phases 2-3)*
-- [ ] Add a glanceable mobile Repo Health summary backed by the
-      existing `/api/portfolio/assessment` model: lifecycle-state
-      counts, Documentation Health, dirty worktrees, failing Actions,
-      and top recommended work. *(state: planned)*
-- [ ] Add an always-visible agent-activity indicator (any run active?)
-      with tap-through to a mobile-friendly agent-run list built on the
-      agent-run ledger routes. *(state: planned)*
-- [ ] Make the prompt-refinement flow usable end-to-end on a phone:
-      readable packet sections, workable textareas, prompt history, and
-      refine actions sized for touch. *(state: planned)*
-- [ ] Make roadmap-phase dispatch usable end-to-end on a phone:
-      select repo → select roadmap release/phase → review refined
-      prompt → dispatch to agent, preserving preview-first guardrails
-      and the quota guard. *(state: planned)*
-- [ ] Add a web app manifest and icons so the dashboard can be added
-      to the Android home screen and open standalone. *(state: planned)*
-- [ ] Document LAN access setup for mobile devices (host bind address,
-      firewall rule, phone URL). Binding beyond loopback for shared use
-      depends on the Release 2.2 non-loopback auth guardrail; a
-      single-operator LAN bind is acceptable in the interim.
+- [ ] Mobile Repo Health summary via `/api/portfolio/assessment`:
+      lifecycle counts, Documentation Health, dirty worktrees, failing
+      Actions, top recommended work. *(state: planned)*
+- [ ] Always-visible agent-activity indicator + tap-through mobile
+      agent-run list. *(state: planned)*
+- [ ] Phone-usable prompt refinement: readable packet sections,
+      touch-sized textareas/actions, prompt history. *(state: planned)*
+- [ ] Phone-usable roadmap dispatch: repo -> release/phase -> refined
+      prompt -> dispatch, with preview-first + quota guard intact.
       *(state: planned)*
-- [ ] Verify the four mobile workflows (health, agent activity,
-      refinement, dispatch) on a physical Android device plus
-      narrow-viewport browser checks, and confirm existing desktop
-      smoke tests still pass unchanged. *(state: planned)*
+- [ ] Web app manifest + icons for Android home-screen install.
+      *(state: planned)*
+- [ ] LAN mobile setup doc: bind address, firewall rule, phone URL.
+      Shared-use bind still waits on Release 2.2 auth guardrail; single-
+      operator interim bind is acceptable. *(state: planned)*
+- [ ] Verify four mobile workflows (health, agent activity, refinement,
+      dispatch) on physical Android + narrow-viewport browser; keep
+      desktop smoke green. *(state: planned)*
 
 #### Acceptance criteria
 
@@ -1106,36 +1097,30 @@ Continuous, not release-scoped:
 
 - [x] Strengthen API contract tests for all routes and error categories.
 - [x] Cap or roll `operations.jsonl` with configurable retention.
-- [ ] Maintain a stable repository identity model across local path,
-      GitHub remote URL, owner/repo, branch, and display name.
+- [ ] Stable repo identity across local path, remote URL, owner/repo,
+      branch, display name. *(state: planned)*
+- [ ] Preview-first writes unless the operator explicitly applies,
+      dispatches, submits, or merges. *(state: planned)*
+- [ ] Signal provenance on every dashboard surface.
       *(state: planned)*
-- [ ] Keep all write operations preview-first unless the operator performs
-      an explicit apply, dispatch, submit-PR, or merge action.
+- [ ] Stale-cache diagnostics across docs-audit, roadmap-audit,
+      portfolio-assessment, and index-backed views. *(state: planned)*
+- [ ] Scan performance budget logs: discovery, git status, GitHub API,
+      audit, index write. *(state: planned)*
+- [ ] Broader smoke coverage: launcher, health, roadmap parse/audit/
+      repair, docs-audit, task history, Operations, AI improvement
+      preview, agent runs, merge readiness. *(state: planned)*
+- [ ] Incremental large-root scan mode: skip unchanged directories where
+      safe. *(state: planned)*
+- [ ] Large-inventory cache invalidation + scan performance.
       *(state: planned)*
-- [ ] Ensure every dashboard signal can explain its source: local git,
-      GitHub API, roadmap audit, README audit, structure audit, AI preview,
-      or agent-run ledger. *(state: planned)*
-- [ ] Add stale-cache diagnostics for mismatches between docs-audit,
-      roadmap-audit, portfolio-assessment, and index-backed records.
+- [ ] Structured logs rich enough for scan -> parse -> normalize ->
+      audit -> preview -> apply -> dispatch -> monitor -> refresh ->
+      merge triage. *(state: planned)*
+- [ ] Operator docs keep pace with workflow changes.
       *(state: planned)*
-- [ ] Add scan performance budget logging for large repo roots: discovery
-      time, git status time, GitHub API time, audit time, and index write
-      time. *(state: planned)*
-- [ ] Expand smoke coverage around launcher, health, roadmap parsing,
-      contract audit, repair preview, docs-audit, task history,
-      Operations workspace, AI improvement preview, agent-run monitoring,
-      and merge-readiness flows. *(state: planned)*
-- [ ] Add incremental scan mode for large repo roots (skip unchanged
-      directories where safe). *(state: planned)*
-- [ ] Improve cache invalidation and scan performance for large local
-      inventories. *(state: planned)*
-- [ ] Keep structured logs rich enough to diagnose scan, parse, normalize,
-      audit, preview, apply, start, monitor, refresh, and merge-readiness
-      failures. *(state: planned)*
-- [ ] Continue improving operator-facing documentation as workflows evolve.
+- [ ] Keep rule packs + schemas data-driven where practical.
       *(state: planned)*
-- [ ] Keep rule packs and schemas data-driven where practical so standards
-      can evolve without broad code rewrites. *(state: planned)*
 
 ### Repository Grid UX Uplift [In Progress]
 
@@ -1171,10 +1156,9 @@ Insights view.
 
 Next-agent handoff:
 
-- [ ] Add a repo-scoped roadmap scan endpoint and wire per-row "Roadmap scan"
-      to run only for the selected repository (current per-row control falls
-      back to the existing global scan route because backend supports only
-      all-repo scans). *(state: planned)*
+- [ ] Repo-scoped roadmap scan endpoint + per-row "Roadmap scan" action;
+      stop falling back to the global all-repo scan route.
+      *(state: planned)*
 
 ---
 

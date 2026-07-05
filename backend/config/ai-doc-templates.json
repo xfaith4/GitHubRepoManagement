@@ -1,6 +1,6 @@
 {
   "schemaVersion": "v1",
-  "description": "Built-in AI documentation improvement templates. CANONICAL SOURCE OF TRUTH for README section contracts: each readmeTemplate's requiredSections is authoritative, and other configs (doc-standards.json, repo-structure-standards.json) reference these rather than redefining sections. The heuristic provider uses requiredSections to compute estimated score movement and to scaffold missing sections offline; the OpenAI/Anthropic providers fold guidance + requiredSections into the model instruction.",
+  "description": "Built-in AI documentation improvement templates. CANONICAL SOURCE OF TRUTH for README section contracts: each readmeTemplate's requiredSections is authoritative, and other configs (doc-standards.json, repo-structure-standards.json) reference these rather than redefining sections. All guidance assumes semantic compression: high information density, low filler, low repetition. The heuristic provider uses requiredSections to compute estimated score movement and to scaffold missing sections offline; the OpenAI/Anthropic providers fold guidance + requiredSections into the model instruction.",
   "readmeContract": {
     "description": "Sections required of EVERY README regardless of profile. Computed as the intersection of all readmeTemplate.requiredSections. Consumers that do not know a repo's profile should validate against these.",
     "universalSections": ["Overview", "Installation", "Usage", "License"],
@@ -11,28 +11,28 @@
       "id": "readme-product",
       "label": "Product README",
       "summary": "Outcome-first README aimed at end users evaluating or adopting the project.",
-      "guidance": "Rewrite this README so a prospective user understands what the product does, who it is for, and why it is valuable within the first few lines. Lead with a one-paragraph value statement, then quick-start installation and usage. Keep prose tight and benefit-oriented. Preserve any accurate existing badges, links, and license references.",
+      "guidance": "Rewrite for prospective users. Open with a one-paragraph value proposition, then quick-start installation and usage. Use semantic compression: high information density, short sections, low repetition. Preserve accurate badges, links, and license references.",
       "requiredSections": ["Overview", "Features", "Installation", "Usage", "Configuration", "License"]
     },
     {
       "id": "readme-developer",
       "label": "Developer / Operator README",
       "summary": "Contributor-facing README emphasizing local setup, architecture, and operations.",
-      "guidance": "Rewrite this README for a developer or operator who will run, extend, or maintain the project. Emphasize prerequisites, local setup, build/test commands, architecture overview, and troubleshooting. Keep instructions copy-pasteable and explicit about commands.",
+      "guidance": "Rewrite for developers/operators who will run, extend, or maintain the project. Prioritize prerequisites, local setup, build/test commands, architecture, and troubleshooting. Use semantic compression: compact but executable steps, command-first formatting, no filler.",
       "requiredSections": ["Overview", "Prerequisites", "Installation", "Usage", "Architecture", "Testing", "Contributing", "License"]
     },
     {
       "id": "readme-open-source",
       "label": "Open-Source README",
       "summary": "Community-ready README with contribution, support, and conduct signals.",
-      "guidance": "Rewrite this README to meet open-source community expectations. Make the project's purpose obvious, document installation and usage, and surface contribution guidelines, support channels, code of conduct, security policy, and license. Encourage external contributors without being verbose.",
+      "guidance": "Rewrite to meet open-source community expectations. Make purpose obvious, document installation and usage, and surface contribution, support, conduct, security, and license signals. Use semantic compression: concise community-facing docs, strong signal, minimal repetition.",
       "requiredSections": ["Overview", "Installation", "Usage", "Contributing", "Support", "Security", "License"]
     },
     {
       "id": "readme-portfolio",
       "label": "Portfolio Showcase README",
       "summary": "Polished README that frames the repo as portfolio evidence of skills.",
-      "guidance": "Rewrite this README to showcase the project as portfolio evidence. Highlight the problem it solves, the technical approach, notable engineering decisions, and the skills demonstrated. Keep it skimmable with a strong opening and clear screenshots/links placeholders where relevant.",
+      "guidance": "Rewrite as portfolio evidence. Highlight the problem, technical approach, notable engineering decisions, and skills demonstrated. Use semantic compression: skimmable sections, high evidence density, and placeholders for screenshots/links only where useful.",
       "requiredSections": ["Overview", "Highlights", "Tech Stack", "Installation", "Usage", "License"]
     }
   ],
@@ -41,28 +41,28 @@
       "id": "roadmap-release-oriented",
       "label": "Release-Oriented Roadmap",
       "summary": "Roadmap organized into bounded, shippable releases with status.",
-      "guidance": "Rewrite this ROADMAP so work is organized into bounded, numbered releases. Each release should have a clear goal, a small set of checkbox milestones, acceptance criteria, and an explicit status. Group related work; avoid an undifferentiated backlog dump. Preserve genuinely completed work as completed.",
+      "guidance": "Rewrite into bounded, numbered releases. Each release needs a clear goal, compact checkbox milestones, acceptance criteria, and explicit status. Use semantic compression: dense action-first milestone text, no backlog sprawl. Preserve genuinely completed work as completed.",
       "requiredSections": ["Status", "Release Index", "Active Release", "Acceptance Criteria"]
     },
     {
       "id": "roadmap-contract",
       "label": "Roadmap Contract Format",
       "summary": "Standards-compliant roadmap contract suitable for agent dispatch.",
-      "guidance": "Rewrite this ROADMAP to follow the Roadmap Contract Standard: an explicit status header, a release index, an active-release snapshot, per-release goals, checkbox milestones with implementation-state vocabulary, acceptance criteria, and out-of-scope notes. The result should be unambiguous enough for a coding agent to select the next concrete work item.",
+      "guidance": "Rewrite to the Roadmap Contract Standard: status header, release index, active-release snapshot, per-release goals, checkbox milestones with implementation-state vocabulary, acceptance criteria, and out-of-scope notes. Use semantic compression and selector-friendly wording so an agent can choose the next task unambiguously.",
       "requiredSections": ["Status", "Release Index", "Active Release", "Milestones", "Acceptance Criteria", "Out of Scope"]
     },
     {
       "id": "roadmap-agent-dispatch",
       "label": "Agent-Dispatch-Ready Roadmap",
       "summary": "Roadmap tuned for autonomous selection of high-value next work.",
-      "guidance": "Rewrite this ROADMAP so an autonomous agent can identify the single highest-value next task. Ensure each pending item is concrete, independently actionable, and carries enough acceptance detail to verify completion. Add explicit value or priority signals where missing, and keep token footprint per release modest.",
+      "guidance": "Rewrite so an autonomous agent can identify the single highest-value next task. Each pending item must be concrete, independently executable, verification-ready, and phrased with semantic compression. Add value/priority signals where missing; keep per-release token footprint low.",
       "requiredSections": ["Status", "Active Release", "Milestones", "Acceptance Criteria"]
     },
     {
       "id": "roadmap-recovery",
       "label": "Recovery / Repair Roadmap",
       "summary": "Roadmap that reconstructs structure for a weak or missing plan.",
-      "guidance": "Rewrite this ROADMAP to repair a weak, stale, or missing plan. Infer reasonable releases from the project's apparent state, separate already-done work from pending work, and establish a forward path with bounded releases and acceptance criteria. Do not invent completed history; mark uncertain items as proposed.",
+      "guidance": "Rewrite to repair a weak, stale, or missing plan. Infer bounded releases from current repo state, separate completed vs pending work, and establish a forward path with acceptance criteria. Use semantic compression. Do not invent completed history; mark uncertain work as proposed.",
       "requiredSections": ["Status", "Release Index", "Active Release", "Acceptance Criteria"]
     }
   ]
