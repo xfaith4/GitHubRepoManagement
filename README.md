@@ -166,9 +166,10 @@ Or add it permanently via Claude Code settings (`~/.claude/settings.json`):
 This will:
 
 1. Install frontend dependencies (`npm install`) if needed
-2. Start the PowerShell API host on `http://127.0.0.1:7071`
-3. Start the Vite frontend dev server on `http://localhost:7000`
-4. Open your browser automatically
+2. Start the PowerShell API host bound to `0.0.0.0:7071`
+3. Serve the built app on the LAN at `http://192.168.50.200:7071/`
+4. In `-Dev` mode, start the Vite frontend dev server on `http://192.168.50.200:7000/`
+5. Open your browser automatically
 
 ### Parameters
 
@@ -177,7 +178,8 @@ This will:
 | `-Mode` | `silent` | `silent` = background windows, `debug` = visible terminals |
 | `-ApiPort` | `7071` | Port for the PowerShell API host |
 | `-FrontendPort` | `7000` | Port for the Vite dev server |
-| `-ApiHost` | `127.0.0.1` | Bind address for the API |
+| `-ApiHost` | `0.0.0.0` | Bind address for the API host |
+| `-AppHost` | `192.168.50.200` | Hostname or IP that browsers should use to reach the app |
 | `-NoBrowser` | off | Pass to suppress automatic browser launch |
 
 ### Examples
@@ -189,8 +191,11 @@ This will:
 # Visible terminal output for debugging
 .\Start-App.ps1 -Mode debug
 
-# Custom ports
-.\Start-App.ps1 -ApiPort 8080 -FrontendPort 5173
+# Custom LAN host
+.\Start-App.ps1 -AppHost 192.168.50.200
+
+# Custom ports and host
+.\Start-App.ps1 -ApiPort 8080 -FrontendPort 5173 -AppHost 192.168.50.200
 
 # Headless (no browser)
 .\Start-App.ps1 -NoBrowser

@@ -28,6 +28,20 @@ interface CategoryDef {
   endpoints: EndpointDef[];
 }
 
+const API_DOCS_BASE_URL = (() => {
+  const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
+  const explicitUrl = (env?.VITE_API_URL as string | undefined) ?? (env?.REACT_APP_API_URL as string | undefined);
+  if (explicitUrl) {
+    return explicitUrl.replace(/\/api\/?$/, '');
+  }
+
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin;
+  }
+
+  return 'http://192.168.50.200:7071';
+})();
+
 // ---------------------------------------------------------------------------
 // Data
 // ---------------------------------------------------------------------------
@@ -1044,7 +1058,7 @@ const ApiDocsModal: React.FC<ApiDocsModalProps> = ({ isOpen, onClose }) => {
 
             {/* Footer */}
             <div className="flex-shrink-0 px-4 py-2 border-t border-gray-700/40 text-xs text-gray-600 flex justify-between">
-              <span>Base URL: <span className="font-mono text-gray-500">http://localhost:7071</span></span>
+              <span>Base URL: <span className="font-mono text-gray-500">{API_DOCS_BASE_URL}</span></span>
               <span>Full schema: <span className="font-mono text-gray-500">docs/reference/contracts.md</span></span>
             </div>
           </div>
