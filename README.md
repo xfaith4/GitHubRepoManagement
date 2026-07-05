@@ -4,22 +4,6 @@ A portfolio-level execution console for managing multiple GitHub repositories. U
 
 ---
 
-## Current Status (2026-07-05)
-
-- Release 2.1 (Persistent Data Layer) remains the active release for final operator verification and closeout.
-- Release 2.3 Phase 1 (portfolio trend scaffold) is complete and smoke-tested.
-- Release 2.3 Phase 5 is in progress through 5C:
-  curation persistence, differential change-awareness fields (`changeState`, `scanDecisionReason`, probe SHAs), and first UI consumers in Repository Grid + Operations workspace.
-
-## Expected Next Steps
-
-1. Finish Phase 5D UX polish: add concise legend/help affordances for change-state badges and decision telemetry.
-2. Finish Phase 5E behavior hardening: verify curated/recently-changed startup prioritization and explicit `Refresh All` path.
-3. Finish Phase 5F observability: add smoke assertions proving unchanged repos are reused by default and forced refresh emits `forced-refresh` reasons.
-4. Resume Release 2.3 Phase 2 rollups once sufficient live 2.1 history has accrued.
-
----
-
 ## What It Does
 
 Answers seven core questions across a portfolio of repositories:
