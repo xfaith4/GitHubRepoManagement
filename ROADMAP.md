@@ -1472,10 +1472,10 @@ Phase A — Unblockers (gated on operator decision + credentials):
 
 Phase B — Scheduled documentation refinement (safe first automation):
 
-- [ ] Add a scheduler that, on the configured interval, enumerates favorite/candidate repos and runs the doc-improve preview for those with weak README/ROADMAP; extend `/api/scan/schedule` with an automation config. *(state: planned)*
-- [ ] Deliver a digest (webhook) of proposed doc changes with approve/apply links; never auto-apply. *(state: planned)*
-- [ ] Add an append-only automation run-history store + `GET /api/automation/history` (per-run repos, decisions, outcomes). *(state: planned)*
-- [ ] Smoke: a scheduled run over a fixture favorite set produces previews + a digest and writes history, applying nothing. *(state: planned)*
+- [ ] Add a scheduler that, on the configured interval, enumerates favorite/candidate repos and runs the doc-improve preview for those with weak README/ROADMAP; extend `/api/scan/schedule` with an automation config. *(state: backend-complete — 2026-07-06)* — scope selector `Select-AutomationDocTargets` (favorites/candidates only, archived-ignore excluded) + preview-only runner `Invoke-ScheduledDocRefinement` in [`Automation.DocRefinement.ps1`](backend/modules/automation/Automation.DocRefinement.ps1), module-smoke-proven. **Pending:** `/api/scan/schedule` automation-config extension + a `POST /api/automation/run` trigger route.
+- [ ] Deliver a digest (webhook) of proposed doc changes with approve/apply links; never auto-apply. *(state: backend-complete — 2026-07-06)* — `New-AutomationDigestPayload` builds the payload (module-smoke-proven, `appliedCount=0`). **Pending:** webhook delivery wiring (reuse the notification hub; dry-run default).
+- [ ] Add an append-only automation run-history store + `GET /api/automation/history` (per-run repos, decisions, outcomes). *(state: backend-complete — 2026-07-06)* — append-only JSONL store `Write-AutomationRunRecord`/`Get-AutomationRunHistory` (refuses any run with `appliedCount != 0`), module-smoke-proven. **Pending:** the `GET /api/automation/history` route.
+- [ ] Smoke: a scheduled run over a fixture favorite set produces previews + a digest and writes history, applying nothing. *(state: smoke-tested — 2026-07-06)* — module smoke asserts scope exclusions, previews generated with `appliedCount=0`, the target README **unchanged on disk** (SHA-256), history+digest round-trip, and that an applied-run is refused. **Pending:** the api-host route-level smoke once the routes land.
 
 Phase C — Scheduled roadmap-item packaging (the prize; gated on Phase A):
 
@@ -1526,7 +1526,7 @@ Phase D — Hardening & observability (parallelizable, autonomous):
 | Phase | Scope | Status |
 | --- | --- | --- |
 | Phase A: Unblockers | Value-scoring decision, live GitHub App token, live submit-PR | planned — blocked on operator decision + creds |
-| Phase B: Scheduled doc refinement | Scheduler + favorite-scoped doc-improve previews + digest + run history | planned |
+| Phase B: Scheduled doc refinement | Scheduler + favorite-scoped doc-improve previews + digest + run history | **in progress** (2026-07-06) — core engine (scope, preview-only runner, append-only history, digest payload) done + module-smoke-proven; API routes + webhook delivery + api-host smoke pending |
 | Phase C: Scheduled roadmap packaging | Top-value item packaging + quota guard + approve-to-dispatch | planned — blocked on Phase A |
 | Phase D: Hardening & observability | Frontend unit tests, Dashboard decomposition, failure alerting, auth operator-verify | planned |
 

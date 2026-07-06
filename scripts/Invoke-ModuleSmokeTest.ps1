@@ -1321,4 +1321,77 @@ else {
     Write-Host '  RSA PEM import unavailable on this runtime — JWT test skipped (degraded contract accepted)' -ForegroundColor Yellow
 }
 
+# ── Release 2.7 Phase B — scheduled documentation refinement (preview-first) ──
+Write-Step 'Loading automation doc-refinement module (Release 2.7 Phase B)'
+$aiDocModule = Join-Path $WorkspaceRoot 'backend\modules\ai\AiDocImprovement.ps1'
+$automationModule = Join-Path $WorkspaceRoot 'backend\modules\automation\Automation.DocRefinement.ps1'
+if (-not (Test-Path -LiteralPath $aiDocModule)) { throw "Missing module file: $aiDocModule" }
+if (-not (Test-Path -LiteralPath $automationModule)) { throw "Missing module file: $automationModule" }
+. $aiDocModule
+. $automationModule
+Write-Host '  Automation doc-refinement module loaded successfully' -ForegroundColor DarkGray
+
+Write-Step 'Automation scope — smoke: curated subset only (favorites/candidates, never archived-ignore)'
+$autoEntries = @(
+    [pscustomobject]@{ repoId = 'fav-weak-readme';  repoName = 'fav-weak-readme';  curationState = 'favorite';             readmeScore = 10; roadmapScore = 90; roadmapState = 'complete' }
+    [pscustomobject]@{ repoId = 'cand-weak-roadmap'; repoName = 'cand-weak-roadmap'; curationState = 'portfolio-candidate'; readmeScore = 95; roadmapScore = 20; roadmapState = 'missing' }
+    [pscustomobject]@{ repoId = 'ignored-weak';     repoName = 'ignored-weak';     curationState = 'archived-ignore';      readmeScore = 5;  roadmapScore = 5;  roadmapState = 'missing' }
+    [pscustomobject]@{ repoId = 'uncurated-weak';   repoName = 'uncurated-weak';   curationState = '';                     readmeScore = 5;  roadmapScore = 5;  roadmapState = 'missing' }
+    [pscustomobject]@{ repoId = 'fav-healthy';      repoName = 'fav-healthy';      curationState = 'favorite';             readmeScore = 95; roadmapScore = 95; roadmapState = 'complete' }
+)
+$autoTargets = Select-AutomationDocTargets -Entries $autoEntries
+$targetNames = @($autoTargets | ForEach-Object { "$($_.repoName):$($_.docType)" } | Sort-Object)
+$expectedTargets = @('cand-weak-roadmap:roadmap', 'fav-weak-readme:readme') | Sort-Object
+if (($targetNames -join ',') -ne ($expectedTargets -join ',')) {
+    throw "Automation scope wrong. Expected [$($expectedTargets -join ', ')]; got [$($targetNames -join ', ')]"
+}
+Write-Host ("  scope ok: {0} targets (archived-ignore, uncurated, and healthy repos excluded)" -f @($autoTargets).Count) -ForegroundColor DarkGray
+
+Write-Step 'Automation run — smoke: doc-improve previews generated, NOTHING applied'
+$autoTmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gh-automation-smoke-" + [guid]::NewGuid().ToString('n'))
+$autoRepoDir = Join-Path $autoTmp 'fav-weak-readme'
+$null = New-Item -ItemType Directory -Path $autoRepoDir -Force
+$weakReadmePath = Join-Path $autoRepoDir 'README.md'
+Set-Content -LiteralPath $weakReadmePath -Value "# fav-weak-readme`n" -Encoding UTF8
+# Hash the file as-written so the unchanged-check is immune to encoding/newline
+# differences and only fails on an actual on-disk mutation.
+$readmeHashBefore = (Get-FileHash -LiteralPath $weakReadmePath -Algorithm SHA256).Hash
+try {
+    $runTargets = @([pscustomobject]@{ repoId = 'fav-weak-readme'; repoName = 'fav-weak-readme'; repoPath = $autoRepoDir; curationState = 'favorite'; docType = 'readme'; reason = 'curated=favorite weak-readme' })
+    $autoRun = Invoke-ScheduledDocRefinement -WorkspaceRoot $WorkspaceRoot -Targets $runTargets -Provider 'heuristic' -TriggeredBy 'module-smoke'
+    if ([int]$autoRun.appliedCount -ne 0) { throw "Preview-first invariant violated: appliedCount=$($autoRun.appliedCount)" }
+    if ([int]$autoRun.proposalCount -lt 1) { throw "Expected at least one doc-improve proposal; got $($autoRun.proposalCount)" }
+    $firstProposal = @($autoRun.proposals)[0]
+    if ([string]::IsNullOrWhiteSpace([string]$firstProposal.previewId)) { throw 'Proposal missing previewId' }
+    if ($firstProposal.applied -ne $false) { throw 'Proposal must be marked applied=false' }
+    # The target README on disk must be UNCHANGED (preview-only, no write-back).
+    if ((Get-FileHash -LiteralPath $weakReadmePath -Algorithm SHA256).Hash -ne $readmeHashBefore) {
+        throw 'Preview-first violated: the target README was modified on disk.'
+    }
+
+    # Append-only run history round-trip (isolated temp workspace).
+    $histWs = Join-Path $autoTmp 'ws'
+    $null = New-Item -ItemType Directory -Path $histWs -Force
+    $null = Write-AutomationRunRecord -WorkspaceRoot $histWs -Run $autoRun
+    $history = Get-AutomationRunHistory -WorkspaceRoot $histWs
+    if (@($history).Count -lt 1) { throw 'Automation run history did not persist the run' }
+    if ([string]@($history)[0].runId -ne [string]$autoRun.runId) { throw 'History newest-first ordering or runId mismatch' }
+
+    # Digest payload shape.
+    $digest = New-AutomationDigestPayload -Run $autoRun
+    if ([int]$digest.appliedCount -ne 0) { throw 'Digest must report appliedCount=0' }
+    if ([int]$digest.proposalCount -ne [int]$autoRun.proposalCount) { throw 'Digest proposalCount mismatch' }
+
+    # Guardrail: recording a run that claims to have applied changes must be refused.
+    $badRun = [pscustomobject]@{ runId = 'bad'; appliedCount = 1; proposals = @() }
+    $refused = $false
+    try { $null = Write-AutomationRunRecord -WorkspaceRoot $histWs -Run $badRun } catch { $refused = $true }
+    if (-not $refused) { throw 'Write-AutomationRunRecord must refuse a run with appliedCount != 0' }
+
+    Write-Host ("  automation run ok: {0} preview(s), applied=0, history+digest round-trip, applied-run refused (provider={1})" -f $autoRun.proposalCount, $autoRun.provider) -ForegroundColor DarkGray
+}
+finally {
+    Remove-Item -LiteralPath $autoTmp -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 Write-Step 'Smoke test completed'
