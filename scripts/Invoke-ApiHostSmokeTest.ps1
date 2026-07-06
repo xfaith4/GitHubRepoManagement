@@ -1391,6 +1391,39 @@ try {
     Write-Host ("  /api/roadmap/dependencies -> totalEdges={0} summaryCount={1}" -f $depGraphData.totalEdges, @($depGraphData.summary).Count) -ForegroundColor DarkGray
 
     # ------------------------------------------------------------------
+    # Portfolio fixture setup — required for Phase 5 proofs
+    # ------------------------------------------------------------------
+    # In CI the WorkspaceRoot is the management tool itself; there are no
+    # sub-git-repos so Get-LocalFolderInventory returns 0 items and the
+    # portfolio is always empty.  Create a minimal fixture repo directory
+    # and point the API host at it before the Release 1.7.5 tests run.
+    Write-Host '[STEP] Portfolio fixture: seed managed-repo for assessment proofs' -ForegroundColor Cyan
+    $portfolioFixtureRoot = Join-Path $smokeRoot 'portfolio-fixture-repos'
+    $fixtureRepoPath      = Join-Path $portfolioFixtureRoot 'smoke-managed-repo'
+    $null = New-Item -ItemType Directory -Path $portfolioFixtureRoot -Force
+    & git init "$fixtureRepoPath" *>&1 | Out-Null
+    if (Test-Path (Join-Path $fixtureRepoPath '.git')) {
+        Set-Content -LiteralPath (Join-Path $fixtureRepoPath 'README.md') `
+            -Value "# Smoke Fixture Repo`nFixture for portfolio assessment proofs." -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $fixtureRepoPath 'ROADMAP.md') `
+            -Value "# Smoke Fixture Roadmap`n`n## Release 1`n`n- [x] Completed item`n- [ ] Pending item`n" -Encoding UTF8
+        Write-Host ("  fixture repo initialised -> {0}" -f $fixtureRepoPath) -ForegroundColor DarkGray
+    } else {
+        Write-Host '  WARNING: git init did not create .git — portfolio proofs may fail with count=0' -ForegroundColor Yellow
+    }
+    $fixtureSettingsResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/settings" `
+        -Body @{ basePath = $portfolioFixtureRoot }
+    if ($fixtureSettingsResponse.StatusCode -ne 200) {
+        throw ("Fixture settings update failed: HTTP {0}. Body={1}" -f $fixtureSettingsResponse.StatusCode, $fixtureSettingsResponse.Content)
+    }
+    # Force a full portfolio rescan with the new root so both the in-memory
+    # cache and the on-disk index reflect the fixture repo before the
+    # Release 1.7.5 tests run.  Without this, the cache would still hold
+    # the zero-entry result from the early warm call at line ~657.
+    $null = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment?refresh=true"
+    Write-Host '  portfolio scan root updated and cache seeded with fixture repo' -ForegroundColor DarkGray
+
+    # ------------------------------------------------------------------
     # Release 1.7.5 — Portfolio Mission Alignment
     # ------------------------------------------------------------------
     Write-Host '[STEP] Portfolio assessment route (Release 1.7.5)' -ForegroundColor Cyan
