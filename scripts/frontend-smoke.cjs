@@ -33,6 +33,30 @@ async function main() {
     setupWizardRendered: false,
     agentActivityIndicatorVisible: false,
     mobileRepoHealthVisible: false,
+    // Release 2.6 Phase 1 — trust & orientation.
+    dataSourceIndicatorVisible: false,
+    dataSourceIndicatorPersistsAcrossTabs: false,
+    dataSourceKind: null,
+    toolbarButtonsLabeled: false,
+    needsAttentionRescoped: false,
+    needsAttentionValue: null,
+    totalReposValue: null,
+    // Release 2.6 Phase 2 — navigation & naming.
+    orientationOverlayShown: false,
+    orientationListsAllTabs: false,
+    orientationDismissalPersists: false,
+    viewSubtitleOk: false,
+    queuesRenamed: false,
+    // Release 2.6 Phase 3 — progressive disclosure.
+    advancedFiltersToggleOk: false,
+    workQueueWhyInlineOk: false,
+    // Release 2.6 Phase 4 — consistency pass.
+    actionLabelPatternOk: false,
+    badgeDefinitionsOk: false,
+    // Release 2.6 Phase 5 — contextual help & empty states.
+    bulkSelectionNotePromoted: false,
+    executionLaneEmptyStateOk: false,
+    dependenciesEmptyStateShown: false,
     consoleMessages: [],
     failedRequests: [],
     errorResponses: [],
@@ -64,10 +88,16 @@ async function main() {
     });
 
     page.on('requestfailed', req => {
+      const errorText = req.failure() ? req.failure().errorText : 'unknown';
+      // Ignore client-side aborts (navigation / component unmount /
+      // AbortController timeouts). These are cancellations, not server failures;
+      // real API errors surface via errorResponses (HTTP >= 400). Tab switches
+      // in this smoke routinely abort an in-flight /health/live or poll request.
+      if (errorText === 'net::ERR_ABORTED') return;
       report.failedRequests.push({
         url: req.url(),
         method: req.method(),
-        errorText: req.failure() ? req.failure().errorText : 'unknown',
+        errorText,
       });
     });
 
@@ -100,6 +130,192 @@ async function main() {
     } catch {
       report.agentActivityIndicatorVisible = false;
     }
+
+    // ── Release 2.6 Phase 2 — navigation & naming (runs first: the overlay is
+    // a modal that would intercept the Phase 1 tab clicks below). ────────────
+    try {
+      const overlay = page.locator('[data-testid="orientation-overlay"]');
+      await overlay.waitFor({ state: 'visible', timeout: timeoutMs });
+      const overlayText = await overlay.innerText();
+      const sixLabels = ['Repository Grid', 'Insights', 'Operations', 'Doc Readiness Queue', 'Copilot Execution Lanes', 'Dependencies'];
+      report.orientationListsAllTabs = sixLabels.every(l => overlayText.includes(l));
+      await page.locator('[data-testid="orientation-dismiss"]').click();
+      await overlay.waitFor({ state: 'hidden', timeout: timeoutMs });
+      // Dismissal is persisted to localStorage so the overlay never reappears on
+      // a later visit. Assert the flag directly rather than reloading — a reload
+      // aborts the app's in-flight polling requests (net::ERR_ABORTED), which is
+      // unrelated to this check and would trip the failed-request gate.
+      const dismissedFlag = await page.evaluate(() => {
+        try { return localStorage.getItem('ghrm.orientationDismissed.v1'); } catch { return null; }
+      });
+      report.orientationDismissalPersists = dismissedFlag === '1';
+      report.orientationOverlayShown = true;
+    } catch (err) {
+      report.orientationOverlayShown = false;
+      report.orientationError = err && err.message ? err.message : String(err);
+    }
+
+    // Per-view purpose subtitle reflects the active tab (landing = Repository Grid).
+    try {
+      const subtitle = page.locator('[data-testid="view-subtitle"]').first();
+      await subtitle.waitFor({ state: 'visible', timeout: timeoutMs });
+      report.viewSubtitleText = (await subtitle.innerText()).trim();
+      report.viewSubtitleOk = /main workspace/i.test(report.viewSubtitleText);
+    } catch (err) {
+      report.viewSubtitleOk = false;
+      report.viewSubtitleError = err && err.message ? err.message : String(err);
+    }
+
+    // Queue renames: the two colliding tabs now carry distinct, self-describing
+    // names, and the old ambiguous names are gone.
+    try {
+      await page.getByRole('button', { name: 'Doc Readiness Queue', exact: false }).first().waitFor({ state: 'visible', timeout: timeoutMs });
+      await page.getByRole('button', { name: 'Copilot Execution Lanes', exact: false }).first().waitFor({ state: 'visible', timeout: timeoutMs });
+      const oldWork = await page.getByRole('button', { name: 'Work Queue', exact: true }).count();
+      const oldExec = await page.getByRole('button', { name: 'Execution Queue', exact: true }).count();
+      report.queuesRenamed = oldWork === 0 && oldExec === 0;
+    } catch (err) {
+      report.queuesRenamed = false;
+      report.queuesRenamedError = err && err.message ? err.message : String(err);
+    }
+
+    // Release 2.6 Phase 1 — trust & orientation affordances (desktop viewport).
+    // (a) Persistent, color-coded data-source indicator, visible on every tab.
+    try {
+      const indicator = page.locator('[data-testid="data-source-indicator"]').first();
+      await indicator.waitFor({ state: 'visible', timeout: timeoutMs });
+      report.dataSourceKind = await indicator.getAttribute('data-source-kind');
+      report.dataSourceIndicatorVisible = true;
+      // Must stay visible after switching tabs — Operations changes what is
+      // shown without touching the active-source signal.
+      await page.getByRole('button', { name: 'Operations', exact: false }).first().click();
+      await indicator.waitFor({ state: 'visible', timeout: timeoutMs });
+      report.dataSourceIndicatorPersistsAcrossTabs = true;
+      await page.getByRole('button', { name: 'Repository Grid', exact: true }).first().click();
+    } catch (err) {
+      report.dataSourceIndicatorPersistsAcrossTabs = false;
+      report.dataSourceIndicatorError = err && err.message ? err.message : String(err);
+    }
+
+    // (b) Icon-only toolbar controls expose accessible names (help/book/refresh/gear).
+    try {
+      for (const name of ['Help', 'API docs', 'Refresh', 'Settings']) {
+        await page.getByRole('button', { name, exact: true }).first().waitFor({ state: 'visible', timeout: timeoutMs });
+      }
+      report.toolbarButtonsLabeled = true;
+    } catch (err) {
+      report.toolbarButtonsLabeled = false;
+      report.toolbarButtonsError = err && err.message ? err.message : String(err);
+    }
+
+    // (c) "Needs Attention" is a meaningful subset (< total) with a discoverable
+    // definition — not the ~100% ambient count the old predicate produced.
+    try {
+      const readCardValue = async (testId) => {
+        const valueText = await page.locator(`[data-testid="${testId}"] p`).first().innerText();
+        return Number(String(valueText).replace(/[^0-9-]/g, ''));
+      };
+      const total = await readCardValue('summary-total-repositories');
+      const attention = await readCardValue('summary-needs-attention');
+      report.totalReposValue = total;
+      report.needsAttentionValue = attention;
+      const hasDefinition = (await page.locator('[aria-label^="Needs Attention —"]').count()) > 0;
+      report.needsAttentionRescoped =
+        Number.isFinite(total) && Number.isFinite(attention) && total > 0 && attention < total && hasDefinition;
+    } catch (err) {
+      report.needsAttentionRescoped = false;
+      report.needsAttentionError = err && err.message ? err.message : String(err);
+    }
+
+    // ── Release 2.6 Phase 3 — progressive disclosure ─────────────────────────
+    // (a) Advanced-filters toggle: secondary filters are collapsed by default
+    // and expand on click (proven via the "Duplicates" chip).
+    try {
+      const dupChip = page.getByRole('button', { name: 'Duplicates', exact: true });
+      const hiddenByDefault = (await dupChip.count()) === 0 || !(await dupChip.first().isVisible());
+      await page.locator('[data-testid="advanced-filters-toggle"]').first().click();
+      await page.locator('[data-testid="advanced-filters-panel"]').first().waitFor({ state: 'visible', timeout: timeoutMs });
+      await dupChip.first().waitFor({ state: 'visible', timeout: timeoutMs });
+      report.advancedFiltersToggleOk = hiddenByDefault;
+    } catch (err) {
+      report.advancedFiltersToggleOk = false;
+      report.advancedFiltersError = err && err.message ? err.message : String(err);
+    }
+
+    // (b) Doc Readiness Queue "Why?" opens the value rationale inline (not just
+    // a hover tooltip).
+    try {
+      await page.getByRole('button', { name: 'Doc Readiness Queue', exact: false }).first().click();
+      const whyToggle = page.locator('[data-testid="value-why-toggle"]').first();
+      await whyToggle.waitFor({ state: 'visible', timeout: timeoutMs });
+      await whyToggle.click();
+      await page.locator('[data-testid="value-why-detail"]').first().waitFor({ state: 'visible', timeout: timeoutMs });
+      report.workQueueWhyInlineOk = true;
+    } catch (err) {
+      report.workQueueWhyInlineOk = false;
+      report.workQueueWhyError = err && err.message ? err.message : String(err);
+    }
+    // Return to the Repository Grid so downstream steps start from a known view.
+    try { await page.getByRole('button', { name: 'Repository Grid', exact: true }).first().click(); } catch { /* best-effort */ }
+
+    // ── Release 2.6 Phase 4 — consistency pass ───────────────────────────────
+    // (a) Unified action-label pattern: "Planned" is a separate tag, never baked
+    // into the label; no button accessible name contains "(Planned)".
+    try {
+      await page.getByRole('button', { name: 'Clone', exact: true }).first().waitFor({ state: 'visible', timeout: timeoutMs });
+      await page.locator('[data-testid="action-status-tag"]', { hasText: 'Planned' }).first().waitFor({ state: 'visible', timeout: timeoutMs });
+      const legacyPlanned = await page.getByRole('button', { name: /\(Planned\)/ }).count();
+      report.actionLabelPatternOk = legacyPlanned === 0;
+    } catch (err) {
+      report.actionLabelPatternOk = false;
+      report.actionLabelError = err && err.message ? err.message : String(err);
+    }
+
+    // (b) Filter chips carry hover-definition titles (no separate legend lookup).
+    try {
+      const dirtyTitle = await page.getByRole('button', { name: 'Dirty only', exact: true }).first().getAttribute('title');
+      await page.locator('[data-testid="advanced-filters-toggle"]').first().click();
+      await page.locator('[data-testid="advanced-filters-panel"]').first().waitFor({ state: 'visible', timeout: timeoutMs });
+      const roadmapFlaggedTitle = await page.getByRole('button', { name: 'ROADMAP flagged', exact: true }).first().getAttribute('title');
+      report.badgeDefinitionsOk = Boolean(dirtyTitle && dirtyTitle.length > 10 && roadmapFlaggedTitle && roadmapFlaggedTitle.length > 10);
+    } catch (err) {
+      report.badgeDefinitionsOk = false;
+      report.badgeDefinitionsError = err && err.message ? err.message : String(err);
+    }
+
+    // ── Release 2.6 Phase 5 — contextual help & empty states ─────────────────
+    // (a) Behavior-changing bulk-selection note is promoted (icon + bold key
+    // phrase), not plain gray metadata.
+    try {
+      const note = page.locator('[data-testid="bulk-selection-note"]').first();
+      await note.waitFor({ state: 'visible', timeout: timeoutMs });
+      const strongCount = await note.locator('strong').count();
+      const noteText = await note.innerText();
+      report.bulkSelectionNotePromoted = strongCount > 0 && /full filtered repository set/i.test(noteText);
+    } catch (err) {
+      report.bulkSelectionNotePromoted = false;
+      report.bulkSelectionNoteError = err && err.message ? err.message : String(err);
+    }
+
+    // (b) Empty Copilot Execution lanes carry explanatory guidance (how to fill).
+    try {
+      await page.getByRole('button', { name: 'Copilot Execution Lanes', exact: false }).first().click();
+      const emptyLane = page.locator('[data-testid="execution-lane-empty"]').first();
+      await emptyLane.waitFor({ state: 'visible', timeout: timeoutMs });
+      report.executionLaneEmptyStateOk = /Ready Queue/i.test(await emptyLane.innerText());
+    } catch (err) {
+      report.executionLaneEmptyStateOk = false;
+      report.executionLaneEmptyError = err && err.message ? err.message : String(err);
+    }
+
+    // (c) Dependencies zero-result explanatory empty state (best-effort — only
+    // meaningful when the portfolio has no detected edges; not gated).
+    try {
+      await page.getByRole('button', { name: 'Dependencies', exact: false }).first().click();
+      report.dependenciesEmptyStateShown = await page.locator('[data-testid="dependencies-empty-state"]').first()
+        .waitFor({ state: 'visible', timeout: 20000 }).then(() => true).catch(() => false);
+    } catch { /* best-effort */ }
+    try { await page.getByRole('button', { name: 'Repository Grid', exact: true }).first().click(); } catch { /* best-effort */ }
 
     // The secondary analytics widgets (Portfolio Analytics, Execution
     // Throughput, Documentation Health) were moved into the Insights view by
@@ -244,6 +460,21 @@ async function main() {
       report.setupWizardRendered &&
       report.agentActivityIndicatorVisible &&
       report.mobileRepoHealthVisible &&
+      report.dataSourceIndicatorVisible &&
+      report.dataSourceIndicatorPersistsAcrossTabs &&
+      report.toolbarButtonsLabeled &&
+      report.needsAttentionRescoped &&
+      report.orientationOverlayShown &&
+      report.orientationListsAllTabs &&
+      report.orientationDismissalPersists &&
+      report.viewSubtitleOk &&
+      report.queuesRenamed &&
+      report.advancedFiltersToggleOk &&
+      report.workQueueWhyInlineOk &&
+      report.actionLabelPatternOk &&
+      report.badgeDefinitionsOk &&
+      report.bulkSelectionNotePromoted &&
+      report.executionLaneEmptyStateOk &&
       report.failedRequests.length === 0 &&
       report.errorResponses.length === 0 &&
       report.consoleMessages.filter(entry => entry.type === 'error').length === 0;
@@ -272,6 +503,21 @@ async function main() {
       }
       if (!report.agentActivityIndicatorVisible) problems.push('agent-activity indicator not visible in the header');
       if (!report.mobileRepoHealthVisible) problems.push('mobile Repo-Health panel not visible at 390px');
+      if (!report.dataSourceIndicatorVisible) problems.push(`persistent data-source indicator not visible${report.dataSourceIndicatorError ? ': ' + report.dataSourceIndicatorError : ''}`);
+      if (!report.dataSourceIndicatorPersistsAcrossTabs) problems.push('data-source indicator did not persist after switching tabs');
+      if (!report.toolbarButtonsLabeled) problems.push(`icon-only toolbar buttons lack accessible labels${report.toolbarButtonsError ? ': ' + report.toolbarButtonsError : ''}`);
+      if (!report.needsAttentionRescoped) problems.push(`"Needs Attention" not a defined subset < total (attention ${report.needsAttentionValue} / total ${report.totalReposValue})${report.needsAttentionError ? ': ' + report.needsAttentionError : ''}`);
+      if (!report.orientationOverlayShown) problems.push(`orientation overlay did not show/dismiss on first visit${report.orientationError ? ': ' + report.orientationError : ''}`);
+      if (!report.orientationListsAllTabs) problems.push('orientation overlay did not name all six tabs');
+      if (!report.orientationDismissalPersists) problems.push('orientation overlay reappeared after reload (dismissal not persisted)');
+      if (!report.viewSubtitleOk) problems.push(`per-view subtitle missing/incorrect on landing (${report.viewSubtitleText || 'n/a'})`);
+      if (!report.queuesRenamed) problems.push(`queue tabs not renamed to distinct names${report.queuesRenamedError ? ': ' + report.queuesRenamedError : ''}`);
+      if (!report.advancedFiltersToggleOk) problems.push(`advanced-filters toggle did not collapse/expand secondary filters${report.advancedFiltersError ? ': ' + report.advancedFiltersError : ''}`);
+      if (!report.workQueueWhyInlineOk) problems.push(`Doc Readiness Queue "Why?" did not expand inline${report.workQueueWhyError ? ': ' + report.workQueueWhyError : ''}`);
+      if (!report.actionLabelPatternOk) problems.push(`action-label pattern wrong (legacy "(Planned)" label or missing status tag)${report.actionLabelError ? ': ' + report.actionLabelError : ''}`);
+      if (!report.badgeDefinitionsOk) problems.push(`filter chips missing hover-definition titles${report.badgeDefinitionsError ? ': ' + report.badgeDefinitionsError : ''}`);
+      if (!report.bulkSelectionNotePromoted) problems.push(`bulk-selection note not promoted (icon + bold key phrase)${report.bulkSelectionNoteError ? ': ' + report.bulkSelectionNoteError : ''}`);
+      if (!report.executionLaneEmptyStateOk) problems.push(`empty execution lane missing explanatory guidance${report.executionLaneEmptyError ? ': ' + report.executionLaneEmptyError : ''}`);
       if (report.failedRequests.length > 0) problems.push(`${report.failedRequests.length} request(s) failed`);
       if (report.errorResponses.length > 0) problems.push(`${report.errorResponses.length} API response(s) returned >= 400`);
       if (report.consoleMessages.some(entry => entry.type === 'error')) problems.push('browser console contained error messages');

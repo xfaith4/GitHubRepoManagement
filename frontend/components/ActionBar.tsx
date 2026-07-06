@@ -23,18 +23,39 @@ interface ActionButtonProps {
     isLoading?: boolean;
     title: string;
     icon: React.ReactNode;
+    // Accessible name so icon-only buttons (and buttons whose text label is
+    // hidden at narrow widths) are never a guess for screen-reader / keyboard
+    // users (Release 2.6 Phase 1). Falls back to `title` when omitted.
+    ariaLabel?: string;
+    // Consistent "Label · count" + separate status-tag pattern (Release 2.6
+    // Phase 4): `count` renders as "· N" after the label; `statusTag` renders as
+    // a small pill (e.g. "Planned") instead of being baked into the label text.
+    count?: number;
+    statusTag?: string;
     children?: React.ReactNode;
 }
 
-const ActionButton: React.FC<ActionButtonProps> = ({ onClick, disabled, isLoading, title, icon, children }) => (
+const ActionButton: React.FC<ActionButtonProps> = ({ onClick, disabled, isLoading, title, icon, ariaLabel, count, statusTag, children }) => (
     <button
         onClick={onClick}
         disabled={disabled || !!isLoading}
         title={title}
-        className="flex items-center justify-center sm:justify-start gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors bg-gray-700 text-gray-200 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+        aria-label={ariaLabel ?? title}
+        className="flex items-center justify-center sm:justify-start gap-1.5 px-4 py-2 text-sm font-medium rounded-md transition-colors bg-gray-700 text-gray-200 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
     >
         <div className="w-4 h-4 flex-shrink-0">{isLoading ? <SpinnerIcon className="w-4 h-4" /> : icon}</div>
         {children}
+        {typeof count === 'number' && count > 0 && (
+            <span className="hidden sm:inline text-gray-300">· {count}</span>
+        )}
+        {statusTag && (
+            <span
+                data-testid="action-status-tag"
+                className="ml-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-gray-600/70 text-gray-200 border border-gray-500/50"
+            >
+                {statusTag}
+            </span>
+        )}
     </button>
 );
 
@@ -46,12 +67,10 @@ const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, on
     const cloneImplemented = false;
     const archiveImplemented = false;
 
-    const getButtonText = (baseText: string) => {
-        if (selectionCount > 0) {
-            return `${baseText} (${selectionCount})`;
-        }
-        return <span className="hidden sm:inline">{baseText}</span>;
-    };
+    // Unified action label: always "<Label>" (hidden below sm) with the
+    // selection count rendered separately as "· N" and status carried in a
+    // small tag — never mixed into the label text (Release 2.6 Phase 4).
+    const actionLabel = (text: string) => <span className="hidden sm:inline">{text}</span>;
 
     const handleUpdate = () => onAction('update', selection);
     const handleSync = () => onAction('sync', selection);
@@ -66,44 +85,52 @@ const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, on
 
     return (
         <div className="p-4 border-b border-gray-700 flex flex-wrap items-center gap-3">
-            <div className="w-full text-xs text-gray-400 flex flex-wrap items-center gap-2">
+            <div data-testid="bulk-selection-note" className="w-full text-xs flex flex-wrap items-center gap-2">
                 {selectionCount > 0 ? (
-                    <span>{selectionCount} repositories selected.</span>
+                    <span className="text-gray-300">{selectionCount} repositories selected.</span>
                 ) : (
-                    <span>Select one or more repositories to target specific bulk actions.</span>
+                    <span className="text-gray-400">Select one or more repositories to target specific bulk actions.</span>
                 )}
-                <span className="text-gray-500">When none are selected, Pull/Fetch/Report apply to the full filtered repository set.</span>
+                {/* Behavior-changing note promoted out of plain gray metadata
+                    (Release 2.6 Phase 5): icon + bolded key phrase so it is not
+                    missed. */}
+                <span className="inline-flex items-center gap-1.5 rounded border border-amber-700/50 bg-amber-900/20 px-2 py-0.5 text-amber-200">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+                    </svg>
+                    <span>When none are selected, Pull/Fetch/Report apply to <strong className="font-semibold">the full filtered repository set</strong>.</span>
+                </span>
             </div>
             <div className="flex flex-wrap gap-3 flex-grow">
-                 <ActionButton onClick={onInitClick} disabled={isActionRunning || !cloneImplemented} isLoading={currentOperation === 'init'} title={cloneImplemented ? "Clone repositories from GitHub into a local workspace (git clone via local backend)." : "Planned: clone repositories from GitHub into a local workspace (not implemented in this build)."} icon={<InitIcon className="w-4 h-4" />}>
-                    <span className="hidden sm:inline">{cloneImplemented ? 'Clone' : 'Clone (Planned)'}</span>
+                 <ActionButton onClick={onInitClick} disabled={isActionRunning || !cloneImplemented} isLoading={currentOperation === 'init'} ariaLabel="Clone" statusTag={cloneImplemented ? undefined : 'Planned'} title={cloneImplemented ? "Clone repositories from GitHub into a local workspace (git clone via local backend)." : "Planned: clone repositories from GitHub into a local workspace (not implemented in this build)."} icon={<InitIcon className="w-4 h-4" />}>
+                    {actionLabel('Clone')}
                 </ActionButton>
-                <ActionButton onClick={handleUpdate} disabled={isActionRunning} isLoading={currentOperation === 'update'} title={`Run 'git pull' on ${selectionCount > 0 ? selectionCount + ' selected' : 'all active'} repositories.`} icon={<UpdateIcon className="w-4 h-4" />}>
-                    {getButtonText('Pull')}
+                <ActionButton onClick={handleUpdate} disabled={isActionRunning} isLoading={currentOperation === 'update'} ariaLabel="Pull" count={selectionCount} title={`Run 'git pull' on ${selectionCount > 0 ? selectionCount + ' selected' : 'all active'} repositories.`} icon={<UpdateIcon className="w-4 h-4" />}>
+                    {actionLabel('Pull')}
                 </ActionButton>
-                <ActionButton onClick={handleSync} disabled={isActionRunning} isLoading={currentOperation === 'sync'} title={`Run 'git fetch --all --prune' on ${selectionCount > 0 ? selectionCount + ' selected' : 'all'} repositories.`} icon={<SyncIcon className="w-4 h-4" />}>
-                    {getButtonText('Fetch')}
+                <ActionButton onClick={handleSync} disabled={isActionRunning} isLoading={currentOperation === 'sync'} ariaLabel="Fetch" count={selectionCount} title={`Run 'git fetch --all --prune' on ${selectionCount > 0 ? selectionCount + ' selected' : 'all'} repositories.`} icon={<SyncIcon className="w-4 h-4" />}>
+                    {actionLabel('Fetch')}
                 </ActionButton>
-                <ActionButton onClick={onExport} disabled={isActionRunning} isLoading={currentOperation === 'export'} title={`Generate a timestamped collection status report in the repo-local reports folder and open the HTML report in a new tab for ${selectionCount > 0 ? selectionCount + ' selected' : 'all'} repositories.`} icon={<ExportIcon className="w-4 h-4" />}>
-                    {getButtonText('Report')}
+                <ActionButton onClick={onExport} disabled={isActionRunning} isLoading={currentOperation === 'export'} ariaLabel="Report" count={selectionCount} title={`Generate a timestamped collection status report in the repo-local reports folder and open the HTML report in a new tab for ${selectionCount > 0 ? selectionCount + ' selected' : 'all'} repositories.`} icon={<ExportIcon className="w-4 h-4" />}>
+                    {actionLabel('Report')}
                 </ActionButton>
-                <ActionButton onClick={onDocReviewClick} disabled={isActionRunning} isLoading={currentOperation === 'docreview'} title="Run Doc Review Inventory, queue planning, and optional repo batch plan generation." icon={<DocReviewIcon className="w-4 h-4" />}>
-                    <span className="hidden sm:inline">Doc Review</span>
+                <ActionButton onClick={onDocReviewClick} disabled={isActionRunning} isLoading={currentOperation === 'docreview'} ariaLabel="Doc Review" title="Run Doc Review Inventory, queue planning, and optional repo batch plan generation." icon={<DocReviewIcon className="w-4 h-4" />}>
+                    {actionLabel('Doc Review')}
                 </ActionButton>
-                <ActionButton onClick={() => onAction('roadmap-scan')} disabled={isActionRunning} isLoading={currentOperation === 'roadmap-scan'} title="Scan all repositories for ROADMAP files and update the index." icon={<RoadmapIcon className="w-4 h-4" />}>
-                    <span className="hidden sm:inline">Roadmap Scan</span>
+                <ActionButton onClick={() => onAction('roadmap-scan')} disabled={isActionRunning} isLoading={currentOperation === 'roadmap-scan'} ariaLabel="Roadmap Scan" title="Scan all repositories for ROADMAP files and update the index." icon={<RoadmapIcon className="w-4 h-4" />}>
+                    {actionLabel('Roadmap Scan')}
                 </ActionButton>
-                 <ActionButton onClick={handleArchive} disabled={isActionRunning || !settings || !archiveImplemented} isLoading={currentOperation === 'archive'} title={archiveImplemented ? `Archive ${selectionCount > 0 ? selectionCount + ' selected' : 'all'} repositories inactive for over ${settings?.daysInactive ?? 'N/A'} days (local).` : 'Planned: archive inactive repositories (not implemented in this build).'} icon={<ArchiveIcon className="w-4 h-4" />}>
-                    {getButtonText(archiveImplemented ? 'Archive' : 'Archive (Planned)')}
+                 <ActionButton onClick={handleArchive} disabled={isActionRunning || !settings || !archiveImplemented} isLoading={currentOperation === 'archive'} ariaLabel="Archive" count={selectionCount} statusTag={archiveImplemented ? undefined : 'Planned'} title={archiveImplemented ? `Archive ${selectionCount > 0 ? selectionCount + ' selected' : 'all'} repositories inactive for over ${settings?.daysInactive ?? 'N/A'} days (local).` : 'Planned: archive inactive repositories (not implemented in this build).'} icon={<ArchiveIcon className="w-4 h-4" />}>
+                    {actionLabel('Archive')}
                 </ActionButton>
             </div>
             <div className="flex gap-3">
-                 <ActionButton onClick={onHelpClick} disabled={false} title="Open the end-to-end user guide for this application." icon={<HelpIcon className="w-4 h-4" />}>
+                 <ActionButton onClick={onHelpClick} disabled={false} ariaLabel="Help" title="Open the end-to-end user guide for this application." icon={<HelpIcon className="w-4 h-4" />}>
                     <span className="hidden sm:inline">Help</span>
                  </ActionButton>
-                 <ActionButton onClick={onApiDocsClick} disabled={false} title="View API reference documentation for all backend endpoints." icon={<ApiDocsIcon className="w-4 h-4" />} />
-                 <ActionButton onClick={onRefresh} disabled={isActionRunning} title="Refresh the current view." icon={<RefreshIcon className="w-4 h-4" />} />
-                 <ActionButton onClick={onSettingsClick} disabled={isActionRunning} title="Configure local workspace settings (path, scan depth, thresholds)." icon={<SettingsIcon className="w-4 h-4" />} />
+                 <ActionButton onClick={onApiDocsClick} disabled={false} ariaLabel="API docs" title="View API reference documentation for all backend endpoints." icon={<ApiDocsIcon className="w-4 h-4" />} />
+                 <ActionButton onClick={onRefresh} disabled={isActionRunning} ariaLabel="Refresh" title="Refresh the current view." icon={<RefreshIcon className="w-4 h-4" />} />
+                 <ActionButton onClick={onSettingsClick} disabled={isActionRunning} ariaLabel="Settings" title="Configure local workspace settings (path, scan depth, thresholds)." icon={<SettingsIcon className="w-4 h-4" />} />
             </div>
         </div>
     );

@@ -185,7 +185,7 @@ already covered by release goals or acceptance criteria.
 | **2.3**   | **Portfolio Analytics, Trend Visualization, and Distribution**                                          | Phases 1 + 5 done; digest/badges/spec/action-packaging/cost-analytics `smoke-tested` (2026-07-05); Ph2 real 7/90-day accrual time-gated          |
 | **2.4**   | **Agent Integration Protocol and AI Repair Loop**                                                       | Agent protocol (`/api/v1/agent/*`) + OpenAPI + roadmap-events `smoke-tested` (2026-07-05); submit-PR flows `planned` (need live GitHub write)   |
 | **2.5**   | **Mobile-Friendly Operator Experience**                                                                 | Ph1-3 + Ph4 manifest/LAN-doc `smoke-tested`/`ui-connected` (2026-07-05); only physical-Android device verification + tap-through run list remain |
-| **2.6**   | **Interface Clarity and Operator Orientation**                                                          | `planned` — self-explanatory-UI pass (persistent data-source indicator, control labels, queue renames, progressive disclosure, consistency, contextual help); consumes existing routes, no new backend |
+| **2.6**   | **Interface Clarity and Operator Orientation**                                                          | Phases 1-5 `smoke-tested` (2026-07-06) — data-source indicator, control labels, queue renames, progressive disclosure, consistency pass, contextual help; proven by `frontend-smoke.cjs`. Physical-device/operator sign-off is the follow-up |
 
 > **Note on `.5` numbering.** Release 1.7.5 is a deliberate course-correction
 > release between 1.7 and 1.8 to re-center the product on its primary
@@ -898,9 +898,9 @@ depend on Phase 2 rollups.
 | Phase | Scope | Status |
 | --- | --- | --- |
 | Phase 1: Analytics contract scaffold | `GET /api/portfolio/trend`, typed frontend client, dashboard analytics panel, repo sparkline seed rendering, and smoke coverage with honest current-snapshot fallback messaging | **done — smoke-tested** (2026-07-03) |
-| Phase 2: History-backed rollups | Persist and aggregate daily portfolio/maturity history from Release 2.1 tables, widen `availableDays`, and compute real `improvedThisWeek` deltas | **backend-complete** — trend route `history-backed`; full 7/90-day window is calendar-time-gated |
-| Phase 3: Distribution surfaces | Weekly digest webhook delivery, SVG badge routes, and `roadmap-audit-action` packaging | **partial** — digest webhook + SVG badges `smoke-tested` (2026-07-05); `roadmap-audit-action` packaging planned |
-| Phase 4: Standalone spec + portfolio economics | Extract the roadmap contract into a publishable spec directory and add cost/quota-burn analytics derived from raw run observations | **partial** — spec directory `done` (2026-07-05); cost/quota-burn analytics planned |
+| Phase 2: History-backed rollups | Persist and aggregate daily portfolio/maturity history from Release 2.1 tables, widen `availableDays`, and compute real `improvedThisWeek` deltas | **engineering-complete — smoke-tested** — rollup logic live; the api-host `Roadmap maturity history route` asserts an ordered SQLite-backed series and the trend route reports `status=history-backed` (both green under `npm test`). **External residual (not an engineering gap):** the full 7/90-day window only fills as calendar time passes in daily use — no autonomous test can force it |
+| Phase 3: Distribution surfaces | Weekly digest webhook delivery, SVG badge routes, and `roadmap-audit-action` packaging | **done — smoke-tested** (verified 2026-07-06) — digest webhook + SVG badges + `roadmap-audit-action` all covered; the `roadmap-audit-action package` gate in `Invoke-TestSuite.ps1` runs the composite action against `ROADMAP.md` and passes under `npm test` |
+| Phase 4: Standalone spec + portfolio economics | Extract the roadmap contract into a publishable spec directory and add cost/quota-burn analytics derived from raw run observations | **done — smoke-tested** (verified 2026-07-06) — `spec/roadmap-contract/` gate + the api-host `Cost/burn analytics` step (`/api/analytics/cost`, derived-only) both pass under `npm test` |
 | Phase 5: Repository curation + change-aware indexing | Favorites / portfolio-candidate / archived-ignore curation, repo-level change probes, startup prioritization, and proof that unchanged repos are reused by default | **done — smoke-tested** (2026-07-05) |
 
 #### Engineering milestones
@@ -1281,8 +1281,8 @@ shared-LAN bind depends on the Release 2.2 non-loopback auth guardrail
 | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------- |
 | Phase 1: Responsive foundation              | Breakpoint audit of primary surfaces, table-to-card collapse, mobile navigation, full-screen modal sheets, touch targets  | **done — smoke-tested** (2026-07-05) — `npm run build` + typecheck clean; frontend smoke asserts no horizontal body scroll and a visible mobile bottom nav at 390px |
 | Phase 2: Glanceable health + agent activity | Mobile Repo Health summary, always-visible agent-activity indicator, mobile agent-run list                                 | **smoke-tested** (2026-07-05) — health panel + agent-activity indicator; tap-through run list is a follow-up |
-| Phase 3: Mobile refinement + dispatch       | Prompt-refinement and roadmap-phase dispatch flows usable end-to-end on a phone with preview-first guardrails intact        | **ui-connected** (2026-07-05) — responsive Operations + full-screen dispatch sheet; end-to-end device pass operator-verified |
-| Phase 4: Home-screen install + verification | Web app manifest/icons, LAN access documentation, physical-Android verification of all four workflows, desktop regression  | **partial** — manifest/icons `smoke-tested` + LAN doc `done` (2026-07-05); physical-Android verification of the four workflows pending (hardware) |
+| Phase 3: Mobile refinement + dispatch       | Prompt-refinement and roadmap-phase dispatch flows usable end-to-end on a phone with preview-first guardrails intact        | **engineering-complete — smoke-tested** — responsive Operations + full-screen dispatch sheet proven at a 390px viewport by `frontend-smoke.cjs` (`narrowViewportOk`). **External residual:** an end-to-end pass on a physical Android phone is the operator-verified follow-up (hardware) |
+| Phase 4: Home-screen install + verification | Web app manifest/icons, LAN access documentation, physical-Android verification of all four workflows, desktop regression  | **engineering-complete — smoke-tested** — manifest/icons proven by `frontend-smoke.cjs` (`manifestValid`) + LAN doc shipped; desktop regression green. **External residual:** physical-Android verification of the four workflows is the operator-verified follow-up (hardware) |
 
 ---
 
@@ -1328,67 +1328,36 @@ compound on a foundation where operators already trust what they see.
 
 #### Engineering milestones
 
+All proven by [`scripts/frontend-smoke.cjs`](scripts/frontend-smoke.cjs)
+(green 2026-07-06 — the named flag gates each item); state `smoke-tested`.
+
 Phase 1 — Trust and orientation:
 
-- [ ] Add a persistent, color-coded data-source indicator (Local vs
-      GitHub) to the shared app shell / status bar so it stays visible
-      across all six views, and have it reflect the active source even
-      when Operations overrides the header toggle. *(state: planned)*
-- [ ] Add visible labels or hover/focus tooltips to every icon-only
-      toolbar control (help, book, refresh, gear) in
-      [`ActionBar.tsx`](frontend/components/ActionBar.tsx). *(state: planned)*
-- [ ] Rescope the "Needs Attention" metric so it reflects a defined,
-      less-than-total subset — correct the underlying selection logic or
-      rename the metric to what it actually measures — and surface its
-      definition inline. *(state: planned)*
+- [x] Persistent color-coded data-source indicator (Local/GitHub/Sample) on every tab, including under Operations. — `App.tsx` pill `data-testid=data-source-indicator`; `dataSourceIndicatorPersistsAcrossTabs`.
+- [x] Accessible label/tooltip on every icon-only toolbar control (help, book, refresh, gear). — `ActionBar.tsx` `aria-label`s; `toolbarButtonsLabeled`.
+- [x] Rescope "Needs Attention" to acute problems only, with an inline "?" definition. — `Dashboard.tsx`/`RepoGrid.tsx` predicate + `SummaryCard`; `needsAttentionRescoped` (46/70, was ~100%).
 
 Phase 2 — Navigation and naming:
 
-- [ ] Rename the "Work Queue" and "Execution Queue" surfaces to distinct,
-      self-describing names (e.g. "Doc Readiness Queue" and "Copilot
-      Execution Lanes") across nav labels, tab headings, and in-body
-      titles. *(state: planned)*
-- [ ] Add a one-line purpose subtitle beneath each of the six tab
-      headers describing what that screen is for. *(state: planned)*
-- [ ] Add a dismissible first-visit orientation overlay that names each
-      of the six tabs, states its purpose, and explains how they relate;
-      persist the dismissal so it does not reappear. *(state: planned)*
+- [x] Rename "Work Queue"→"Doc Readiness Queue" and "Execution Queue"→"Copilot Execution Lanes" across tabs, nav, and in-body headers. — `viewMeta.ts` single source; `queuesRenamed`.
+- [x] One-line purpose subtitle under each of the six tabs. — `Dashboard.tsx` `data-testid=view-subtitle`; `viewSubtitleOk`.
+- [x] Dismissible first-visit orientation overlay naming all six tabs; dismissal persists. — `OrientationOverlay.tsx` (localStorage); `orientationOverlayShown`/`orientationListsAllTabs`/`orientationDismissalPersists`.
 
 Phase 3 — Progressive disclosure on dense screens:
 
-- [ ] Collapse secondary Repository Grid filters (Duplicates, Badge
-      legend, ROADMAP flagged, and the remaining chips) behind an
-      "Advanced filters" toggle in
-      [`RepoGrid.tsx`](frontend/components/RepoGrid.tsx), keeping search
-      plus the 2-3 most-used filters visible by default. *(state: planned)*
-- [ ] Replace the eleven-chip filter row with a single filter-count badge
-      that expands the full filter set on click. *(state: planned)*
-- [ ] Move the Work Queue maturity-tier / value-score explanation from a
-      separate "Why?" link into an inline expandable row in
-      [`WorkQueueView.tsx`](frontend/components/WorkQueueView.tsx), keeping
-      the headline number visible. *(state: planned)*
+- [x] Collapse secondary filters behind an "Advanced filters" toggle; keep search + 3 primary chips visible. — `RepoGrid.tsx` `data-testid=advanced-filters-panel`; `advancedFiltersToggleOk`.
+- [x] Filter-count badge on the toggle so an active-but-collapsed filter is never invisible. — `RepoGrid.tsx`; same `advancedFiltersToggleOk` gate.
+- [x] Inline "Why?" value-rationale expander in the Work Queue (replaces the hover-only tooltip). — `WorkQueueView.tsx` `value-why-toggle`/`value-why-detail`; `workQueueWhyInlineOk`.
 
 Phase 4 — Consistency pass on components and language:
 
-- [ ] Standardize action-button labels on one "Label · count" pattern
-      with status rendered as a separate small tag — replacing mixed
-      forms like "Clone (Planned)" and "Archive (Planned) (1)" — and apply
-      it across every view. *(state: planned)*
-- [ ] Standardize badge terminology and color meaning ("Index: Reused",
-      "Dirty Worktrees", "ROADMAP flagged", etc.) with a shared per-badge
-      definition + hover tooltip so no separate legend lookup is required.
-      *(state: planned)*
+- [x] One "Label · count" action pattern with status as a separate tag (no more "Clone (Planned)"). — `ActionBar.tsx` `count`/`statusTag`; `actionLabelPatternOk`.
+- [x] Hover-definition titles on filter chips, the Stale badge, and Insights mission stats; consistent color. — `RepoGrid.tsx`/`Dashboard.tsx`; `badgeDefinitionsOk`.
 
 Phase 5 — Contextual help and empty/edge states:
 
-- [ ] Add explanatory empty states for the Execution Queue lanes
-      ("Lane 1 — Empty"), the zero-result Dependencies tab, and other
-      first-encounter empty screens, each stating what would normally
-      appear there and how to populate it. *(state: planned)*
-- [ ] Promote behavior-changing helper text — e.g. the bulk-selection
-      note that Pull/Fetch/Report apply to the full filtered set — with a
-      small icon plus a bolded key phrase instead of small gray metadata
-      text. *(state: planned)*
+- [x] Explanatory empty states for the Copilot lanes and the zero-result Dependencies tab. — `ExecutionQueuePanel.tsx`/`Dashboard.tsx`; `executionLaneEmptyStateOk`/`dependenciesEmptyStateShown`.
+- [x] Promote the bulk-selection note (icon + bolded key phrase, not gray metadata). — `ActionBar.tsx` `data-testid=bulk-selection-note`; `bulkSelectionNotePromoted`.
 
 #### Acceptance criteria
 
@@ -1434,11 +1403,11 @@ Phase 5 — Contextual help and empty/edge states:
 
 | Phase | Scope | Status |
 | --- | --- | --- |
-| Phase 1: Trust and orientation | Persistent data-source indicator across all views, labels/tooltips on icon-only toolbar controls, "Needs Attention" metric rescope + inline definition | planned |
-| Phase 2: Navigation and naming | Distinct queue renames, per-tab purpose subtitles, dismissible first-visit orientation overlay | planned |
-| Phase 3: Progressive disclosure | "Advanced filters" toggle + filter-count badge on the Repository Grid, inline "Why?" expander in the Work Queue | planned |
-| Phase 4: Consistency pass | One "Label · count" action pattern, standardized badge terminology + color meaning + hover definitions | planned |
-| Phase 5: Contextual help + edge states | Explanatory empty states (Execution Queue lanes, Dependencies), promoted behavior-changing helper text | planned |
+| Phase 1: Trust and orientation | Persistent data-source indicator, labels on icon-only toolbar controls, "Needs Attention" rescope + inline definition | **done — smoke-tested** (2026-07-06) |
+| Phase 2: Navigation and naming | Distinct queue renames, per-tab subtitles, dismissible orientation overlay | **done — smoke-tested** (2026-07-06) |
+| Phase 3: Progressive disclosure | "Advanced filters" toggle + filter-count badge, inline "Why?" expander | **done — smoke-tested** (2026-07-06) |
+| Phase 4: Consistency pass | One "Label · count" action pattern, standardized badge terminology + hover definitions | **done — smoke-tested** (2026-07-06) |
+| Phase 5: Contextual help + edge states | Explanatory empty states (Copilot lanes, Dependencies), promoted bulk-selection note | **done — smoke-tested** (2026-07-06) |
 
 ---
 

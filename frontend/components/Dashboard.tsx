@@ -24,6 +24,7 @@ import RepoGitStatusModal from './RepoGitStatusModal';
 import ReadmeGenerateModal from './ReadmeGenerateModal';
 import HelpModal from './HelpModal';
 import OperationsWorkspaceView from './OperationsWorkspaceView';
+import { VIEW_META_BY_KEY, type ViewKey } from '../viewMeta';
 import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getRoadmapDependencies, getPortfolioAssessment, refreshAllPortfolioAssessment, setOperationsRepoCuration, getPortfolioTrend, getOperationsRepos } from '../services/apiClient';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
@@ -1034,17 +1035,19 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     const stale = reposWithRoadmap.filter(r => r.isStale).length;
     const commitsThisWeek = reposWithRoadmap.reduce((sum, r) => sum + (r.commitsLastWeek ?? 0), 0);
     const commitsThisMonth = reposWithRoadmap.reduce((sum, r) => sum + (r.commitsLastMonth ?? 0), 0);
+    // "Needs Attention" = repos with an ACTIONABLE problem, not the ambient
+    // baseline. The prior predicate counted `lastBuildStatus === 'none'` (no CI
+    // configured — normal), `roadmapState === 'pending'` (a roadmap that simply
+    // has open items — normal), and `missing-roadmap`/`needs-doc-standardization`
+    // (baseline documentation gaps most repos share), so it flagged ~100% of the
+    // portfolio and told the operator nothing. Rescoped (Release 2.6 Phase 1) to
+    // acute signals only. Keep this list in sync with RepoGrid's isNeedsAttention.
     const needsAttention = reposWithRoadmap.filter(r =>
-      r.status !== 'clean' ||
+      r.status === 'dirty' ||
       r.uncommittedChanges > 0 ||
-      r.isStale ||
       r.lastBuildStatus === 'failure' ||
-      r.lastBuildStatus === 'none' ||
       r.dispatchReadiness === 'blocked' ||
-      r.dispatchReadiness === 'missing-roadmap' ||
-      r.dispatchReadiness === 'needs-doc-standardization' ||
       r.dispatchReadiness === 'parse-error' ||
-      r.roadmapState === 'pending' ||
       r.roadmapState === 'parse-error'
     ).length;
 
@@ -1276,7 +1279,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
 
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
             <SummaryCard title="Total Repositories" value={summary.total} color="blue" />
-            <SummaryCard title="Needs Attention" value={summary.needsAttention} color="yellow" />
+            <SummaryCard title="Needs Attention" value={summary.needsAttention} color="yellow" tooltip="Repos with an actionable problem: uncommitted changes, a failing build, a blocked or parse-error dispatch state, or an unparseable roadmap. Excludes baseline gaps like 'no CI yet' or a roadmap that merely has pending items." />
             <SummaryCard title="Dirty Repositories" value={summary.dirty} color="red" />
             <SummaryCard title="Stale Repositories" value={summary.stale} color="red" />
             <SummaryCard title="Commits This Week" value={summary.commitsThisWeek} color="green" />
@@ -1457,7 +1460,20 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                         { label: 'Pages Enabled', value: portfolioMission.pagesEnabled, accent: 'text-teal-300' },
                         { label: 'Failing Actions', value: portfolioMission.failingActions, accent: 'text-rose-300' },
                       ].map(metric => (
-                        <div key={metric.label} className="rounded-lg border border-gray-700 bg-gray-900/50 px-3 py-3">
+                        <div
+                          key={metric.label}
+                          title={({
+                            'Dirty Worktrees': 'Repos with uncommitted or untracked changes in the working tree.',
+                            'Missing README': 'Repos with no README file.',
+                            'Missing ROADMAP': 'Repos with no ROADMAP file.',
+                            'Weak ROADMAP': 'Repos whose ROADMAP is below the L3 contract-ready maturity bar.',
+                            'Failing Actions': 'Repos whose latest GitHub Actions run concluded in failure.',
+                            'Blocked': 'Repos blocked from dispatch (missing docs/roadmap or a parse error).',
+                            'Open PRs': 'Repos with at least one open pull request.',
+                            'Pages Enabled': 'Repos with GitHub Pages enabled.',
+                          } as Record<string, string>)[metric.label]}
+                          className="rounded-lg border border-gray-700 bg-gray-900/50 px-3 py-3"
+                        >
                           <div className={`text-lg font-semibold ${metric.accent}`}>{metric.value}</div>
                           <div className="mt-1 text-xs text-gray-400">{metric.label}</div>
                         </div>
@@ -1944,7 +1960,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                     : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-700/20'
                 }`}
               >
-                Work Queue
+                {VIEW_META_BY_KEY['work-queue'].label}
                 {docsAuditIndex && docsAuditIndex.entries.filter(e => e.dispatchReadiness === 'ready').length > 0 && (
                   <span className="inline-flex items-center justify-center w-5 h-5 text-xs rounded-full bg-green-700 text-green-100 font-semibold">
                     {docsAuditIndex.entries.filter(e => e.dispatchReadiness === 'ready').length}
@@ -1959,7 +1975,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                     : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-700/20'
                 }`}
               >
-                Execution Queue
+                {VIEW_META_BY_KEY['execution-queue'].label}
               </button>
               <button
                 onClick={() => setActiveView('dependencies')}
@@ -1976,6 +1992,15 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                   </span>
                 )}
               </button>
+            </div>
+
+            {/* Per-view purpose subtitle (Release 2.6 Phase 2) — lets operators
+                self-orient without trial and error as they land on each tab. */}
+            <div
+              data-testid="view-subtitle"
+              className="px-4 py-2 text-xs text-gray-400 border-b border-gray-700/60"
+            >
+              {VIEW_META_BY_KEY[activeView].subtitle}
             </div>
 
             {activeView === 'repos' ? (
@@ -2107,7 +2132,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                 )}
 
                 {!dependencyGraphLoading && (!dependencyGraph || dependencyGraph.summary.length === 0) && (
-                  <div className="text-center py-10 text-gray-500 text-sm">
+                  <div className="text-center py-10 text-gray-500 text-sm" data-testid="dependencies-empty-state">
                     <p className="mb-1">No cross-repo dependencies detected.</p>
                     <p className="text-gray-600 text-xs">Dependencies are found via GitHub URLs, <code>RepoName#42</code> refs, and keywords like "depends on" in roadmap files.</p>
                   </div>
@@ -2158,8 +2183,8 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
             { view: 'repos' as const, label: 'Repos', icon: <ProjectsIcon className="w-5 h-5" />, badge: null as number | null },
             { view: 'insights' as const, label: 'Insights', icon: <HealthIcon className="w-5 h-5" />, badge: null as number | null },
             { view: 'operations' as const, label: 'Ops', icon: <DocReviewIcon className="w-5 h-5" />, badge: (portfolioAssessment?.summary.readyForWorkCount || null) as number | null },
-            { view: 'work-queue' as const, label: 'Queue', icon: <IssuesIcon className="w-5 h-5" />, badge: (docsAuditIndex ? (docsAuditIndex.entries.filter(e => e.dispatchReadiness === 'ready').length || null) : null) as number | null },
-            { view: 'execution-queue' as const, label: 'Exec', icon: <SyncIcon className="w-5 h-5" />, badge: null as number | null },
+            { view: 'work-queue' as const, label: VIEW_META_BY_KEY['work-queue'].short, icon: <IssuesIcon className="w-5 h-5" />, badge: (docsAuditIndex ? (docsAuditIndex.entries.filter(e => e.dispatchReadiness === 'ready').length || null) : null) as number | null },
+            { view: 'execution-queue' as const, label: VIEW_META_BY_KEY['execution-queue'].short, icon: <SyncIcon className="w-5 h-5" />, badge: null as number | null },
             { view: 'dependencies' as const, label: 'Deps', icon: <BranchIcon className="w-5 h-5" />, badge: (dependencyGraph && dependencyGraph.totalEdges > 0 ? dependencyGraph.totalEdges : null) as number | null },
           ]).map(item => (
             <button

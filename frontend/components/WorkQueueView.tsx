@@ -233,6 +233,9 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
   const [maturityFilter, setMaturityFilter] = useState<RoadmapMaturityFilter>('all');
   const [tagFilter, setTagFilter] = useState<string>('all');
   const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
+  // Release 2.6 Phase 3 — inline value-rationale expansion, keyed by repo, so
+  // the "Why?" explanation opens in place instead of only in a hover tooltip.
+  const [whyExpanded, setWhyExpanded] = useState<Set<string>>(new Set());
   const [filterText, setFilterText] = useState('');
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>(() => {
     try {
@@ -366,7 +369,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
       {/* Header */}
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-white">Documentation Audit &amp; Work Queue</h2>
+          <h2 className="text-lg font-semibold text-white">Doc Readiness Queue</h2>
           <p className="text-sm text-gray-400 mt-0.5">
             Per-repo dispatch readiness based on roadmap state and documentation standards.
             {(portfolioAssessment?.entries?.length ?? 0) > 0 && ' Ready repos are ranked by highest-value pending roadmap item.'}
@@ -734,11 +737,21 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                             </div>
                             <button
                               type="button"
-                              onClick={event => event.stopPropagation()}
+                              onClick={event => {
+                                event.stopPropagation();
+                                setWhyExpanded(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(entry.repoName)) next.delete(entry.repoName);
+                                  else next.add(entry.repoName);
+                                  return next;
+                                });
+                              }}
+                              aria-expanded={whyExpanded.has(entry.repoName)}
+                              data-testid="value-why-toggle"
                               title={valueTooltip}
                               className="text-xs text-indigo-300 underline decoration-dotted underline-offset-2 hover:text-indigo-200"
                             >
-                              Why?
+                              {whyExpanded.has(entry.repoName) ? 'Hide' : 'Why?'}
                             </button>
                           </div>
                           <div className="mt-1 text-xs text-gray-400 truncate" title={topValueItem.text}>
@@ -747,6 +760,14 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                           <div className="mt-1 text-[11px] text-gray-500">
                             {assessment?.pendingItemCount ?? 0} pending roadmap item{assessment?.pendingItemCount === 1 ? '' : 's'}
                           </div>
+                          {whyExpanded.has(entry.repoName) && (
+                            <div
+                              data-testid="value-why-detail"
+                              className="mt-2 rounded border border-gray-700 bg-gray-900/70 px-2 py-1.5 text-[11px] text-gray-300 whitespace-pre-line"
+                            >
+                              {valueTooltip}
+                            </div>
+                          )}
                         </>
                       ) : (
                         <div className="mt-2 text-xs text-gray-500">

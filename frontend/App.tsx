@@ -4,6 +4,7 @@ import DataSourceModal from './components/DataSourceModal';
 import SetupWizard from './components/SetupWizard';
 import AgentActivityIndicator from './components/AgentActivityIndicator';
 import MobileRepoHealth from './components/MobileRepoHealth';
+import OrientationOverlay, { hasSeenOrientation } from './components/OrientationOverlay';
 import { getStatus, getGithubRepoInsights, getSetupStatus } from './services/apiClient';
 import { type RepoStatus, type GithubInsightsMeta } from './types';
 import { DatabaseIcon } from './components/icons';
@@ -35,6 +36,15 @@ function App() {
       .catch(() => { if (!cancelled) setShowSetup(false); });
     return () => { cancelled = true; };
   }, []);
+
+  // First-visit orientation overlay (Release 2.6 Phase 2). Shown once the
+  // setup check clears (showSetup === false) and only if never dismissed.
+  const [showOrientation, setShowOrientation] = useState(false);
+  useEffect(() => {
+    if (showSetup === false && !hasSeenOrientation()) {
+      setShowOrientation(true);
+    }
+  }, [showSetup]);
 
   const [localRepos, setLocalRepos] = useState<RepoStatus[]>([]);
   const [localSource, setLocalSource] = useState<{ source: 'sample' } | { source: 'local'; workspacePath?: string; configuredGithubUser?: string | null; repoCount?: number; scanDurationMs?: number } | null>(null);
@@ -212,55 +222,62 @@ function App() {
     }
   };
 
+  // Persistent, color-coded data-source indicator (Release 2.6 Phase 1).
+  // Rendered in the sticky header shell so it stays visible on every tab —
+  // including Operations, which changes what is shown without touching this
+  // active-source signal. Color-coded (Local = emerald, GitHub = violet,
+  // Sample = amber) so the Local-vs-GitHub distinction is impossible to lose.
   const renderDataSourceLabel = () => {
     const activeSource = viewMode === 'github' && githubSource ? githubSource : localSource;
     if (!activeSource) return null;
 
     const updatedBadge = relativeTime ? (
-      <span className="text-gray-400 text-xs" title={dataLastUpdated?.toLocaleString()}>
-        • Updated: {relativeTime}
+      <span className="opacity-70 hidden sm:inline" title={dataLastUpdated?.toLocaleString()}>
+        • {relativeTime}
       </span>
     ) : null;
 
+    const kind: 'sample' | 'local' | 'github' = activeSource.source;
+    const shortLabel = kind === 'sample' ? 'Sample' : kind === 'local' ? 'Local' : 'GitHub';
+
+    const palette: Record<typeof kind, string> = {
+      sample: 'bg-amber-900/60 text-amber-200 border-amber-600',
+      local: 'bg-emerald-900/60 text-emerald-200 border-emerald-600',
+      github: 'bg-violet-900/60 text-violet-200 border-violet-600',
+    };
+    const dotColor: Record<typeof kind, string> = {
+      sample: 'bg-amber-400',
+      local: 'bg-emerald-400',
+      github: 'bg-violet-400',
+    };
+
+    let detail: React.ReactNode = null;
+    let titleText: string;
     if (activeSource.source === 'sample') {
-      return (
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-800 text-yellow-200 border border-yellow-700">
-          Sample Data
-        </span>
-      );
+      titleText = 'Showing bundled sample data (no live source connected).';
+    } else if (activeSource.source === 'local') {
+      detail = activeSource.workspacePath
+        ? <span className="hidden lg:inline opacity-80">• {activeSource.workspacePath}</span>
+        : null;
+      titleText = `Showing repositories from the local workspace scan${activeSource.workspacePath ? ' — ' + activeSource.workspacePath : ''}. This stays the active source across every tab, including Operations.`;
+    } else {
+      detail = <span className="hidden lg:inline opacity-80">• {activeSource.username}</span>;
+      titleText = `Showing repositories returned by the GitHub API for ${activeSource.username}.`;
     }
 
-    if (activeSource.source === 'local') {
-      return (
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-700 text-gray-300 gap-2">
-          <span>
-            Local Scan{activeSource.workspacePath ? <strong className="ml-1">• {activeSource.workspacePath}</strong> : null}
-          </span>
-          {activeSource.configuredGithubUser ? (
-            <span className="text-gray-400">• GitHub user configured: {activeSource.configuredGithubUser}</span>
-          ) : null}
-          {updatedBadge}
-        </span>
-      );
-    }
-
-    if (activeSource.source === 'github') {
-      return (
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-700 text-gray-300 gap-2">
-          <span>
-            GitHub API: <strong className="ml-1">{activeSource.username}</strong>
-          </span>
-          {insightsMeta?.rateLimit && (
-            <span className="text-gray-400">
-              • API {insightsMeta.rateLimit.remaining}/{insightsMeta.rateLimit.limit}
-            </span>
-          )}
-          {updatedBadge}
-        </span>
-      );
-    }
-
-    return null;
+    return (
+      <span
+        data-testid="data-source-indicator"
+        data-source-kind={kind}
+        title={titleText}
+        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${palette[kind]}`}
+      >
+        <span className={`w-2 h-2 rounded-full ${dotColor[kind]}`} aria-hidden="true"></span>
+        <span>Source: {shortLabel}</span>
+        {detail}
+        {updatedBadge}
+      </span>
+    );
   };
 
   const renderViewToggle = () => {
@@ -319,7 +336,7 @@ function App() {
             </div>
             <div className="flex items-center gap-2">
                 <AgentActivityIndicator />
-                <span className="hidden lg:inline-flex">{renderDataSourceLabel()}</span>
+                <span className="inline-flex">{renderDataSourceLabel()}</span>
                 {isBackgroundRefreshing && (
                   <span className="ml-2 inline-flex items-center gap-1.5 text-xs text-blue-400" title="Refreshing repository data in the background…">
                     <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -365,6 +382,8 @@ function App() {
         onSave={handleDataSourceChange}
         currentUsername={githubSource?.username ?? (localSource?.source === 'local' ? localSource.configuredGithubUser ?? undefined : undefined)}
       />
+
+      {showOrientation && <OrientationOverlay onDismiss={() => setShowOrientation(false)} />}
     </div>
   );
 }
