@@ -794,6 +794,22 @@ if ($highValue.valueScore -le $lowValue.valueScore) { throw "Expected security/t
 if (@($highValue.valueRationale).Count -eq 0) { throw 'Expected value-scored item to include rationale' }
 Write-Host ("  value scorer ranked high={0} low={1}" -f $highValue.valueScore, $lowValue.valueScore) -ForegroundColor DarkGray
 
+Write-Step 'Portfolio value scoring — smoke: effortFit floor for sprawling items (Release 2.7 Phase A decision, model 1.1)'
+$sprawlItem = Invoke-PortfolioValueScore `
+    -ItemText 'Add a persistent OAuth distribution analytics layer' `
+    -ItemIndex 0 `
+    -RepoContext ([pscustomobject]@{ maturityLevel = 'L4-Orchestration-Ready' }) `
+    -ScoringConfig $valueScoringConfig
+$boundedItem = Invoke-PortfolioValueScore `
+    -ItemText 'Add repo status tests' `
+    -ItemIndex 0 `
+    -RepoContext ([pscustomobject]@{ maturityLevel = 'L4-Orchestration-Ready' }) `
+    -ScoringConfig $valueScoringConfig
+if ([int]$sprawlItem.scoringSignals.dimensions.effortFit -ne 2) { throw "Expected effortFit floor=2 for sprawling item; got $($sprawlItem.scoringSignals.dimensions.effortFit)" }
+if ([int]$boundedItem.scoringSignals.dimensions.effortFit -ne 4) { throw "Expected effortFit=4 for bounded item; got $($boundedItem.scoringSignals.dimensions.effortFit)" }
+if ($sprawlItem.scoringSignals.dimensions.effortFit -ge $boundedItem.scoringSignals.dimensions.effortFit) { throw 'effortFit floor did not penalize the sprawling item below the bounded item' }
+Write-Host ("  effortFit floor ok: sprawl effortFit={0} < bounded effortFit={1} (model {2})" -f $sprawlItem.scoringSignals.dimensions.effortFit, $boundedItem.scoringSignals.dimensions.effortFit, $valueScoringConfig.modelVersion) -ForegroundColor DarkGray
+
 Write-Step 'Portfolio assessment — smoke: ready-for-work fires on L4 + pending items'
 $readyRepo = [pscustomobject]@{ name = 'ready-repo'; localPath = $WorkspaceRoot; isArchived = $false; htmlUrl = ''; branch = 'main'; status = 'clean' }
 $readyRoadmap = @([pscustomobject]@{
