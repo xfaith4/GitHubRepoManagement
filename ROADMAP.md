@@ -185,6 +185,7 @@ already covered by release goals or acceptance criteria.
 | **2.3**   | **Portfolio Analytics, Trend Visualization, and Distribution**                                          | Phases 1 + 5 done; digest/badges/spec/action-packaging/cost-analytics `smoke-tested` (2026-07-05); Ph2 real 7/90-day accrual time-gated          |
 | **2.4**   | **Agent Integration Protocol and AI Repair Loop**                                                       | Agent protocol (`/api/v1/agent/*`) + OpenAPI + roadmap-events `smoke-tested` (2026-07-05); submit-PR flows `planned` (need live GitHub write)   |
 | **2.5**   | **Mobile-Friendly Operator Experience**                                                                 | Ph1-3 + Ph4 manifest/LAN-doc `smoke-tested`/`ui-connected` (2026-07-05); only physical-Android device verification + tap-through run list remain |
+| **2.6**   | **Interface Clarity and Operator Orientation**                                                          | `planned` — self-explanatory-UI pass (persistent data-source indicator, control labels, queue renames, progressive disclosure, consistency, contextual help); consumes existing routes, no new backend |
 
 > **Note on `.5` numbering.** Release 1.7.5 is a deliberate course-correction
 > release between 1.7 and 1.8 to re-center the product on its primary
@@ -239,6 +240,11 @@ appears.
 4. Release 2.4 last — it is the outward-facing agent contract and
    should sit on 2.2 auth before any non-loopback exposure; its spec,
    OpenAPI, and event-log-convention drafting can start anytime.
+5. Release 2.6 (interface clarity) — schedulable anytime; best
+   sequenced after the Release 2.5 Phase 1 responsive foundation so its
+   labels, tooltips, and disclosure toggles land responsive instead of
+   needing a mobile retrofit. No backend prerequisites — every target
+   surface already ships.
 
 **Dependency map (open work only):**
 
@@ -253,6 +259,7 @@ appears.
 | Release 2.4 submit-PR flows                                   | Release 2.2 GitHub App tokens                     | soft — PAT acceptable interim                   |
 | Release 1.2 remaining dashboard panels                        | Release 2.5 Phase 1 responsive foundation         | soft — avoids mobile retrofit                   |
 | Release 2.5 Phases 1-3; repo-scoped roadmap scan endpoint     | —                                                 | none — schedulable anytime                      |
+| Release 2.6 clarity affordances                               | Release 2.5 Phase 1 responsive foundation         | soft — avoids a mobile retrofit                 |
 
 ---
 
@@ -1276,6 +1283,162 @@ shared-LAN bind depends on the Release 2.2 non-loopback auth guardrail
 | Phase 2: Glanceable health + agent activity | Mobile Repo Health summary, always-visible agent-activity indicator, mobile agent-run list                                 | **smoke-tested** (2026-07-05) — health panel + agent-activity indicator; tap-through run list is a follow-up |
 | Phase 3: Mobile refinement + dispatch       | Prompt-refinement and roadmap-phase dispatch flows usable end-to-end on a phone with preview-first guardrails intact        | **ui-connected** (2026-07-05) — responsive Operations + full-screen dispatch sheet; end-to-end device pass operator-verified |
 | Phase 4: Home-screen install + verification | Web app manifest/icons, LAN access documentation, physical-Android verification of all four workflows, desktop regression  | **partial** — manifest/icons `smoke-tested` + LAN doc `done` (2026-07-05); physical-Android verification of the four workflows pending (hardware) |
+
+---
+
+### Release 2.6 — Interface Clarity and Operator Orientation
+
+**Goal:** Make the existing dashboard self-explanatory — every operator
+always knows what data they are looking at, what each control does, and
+what each screen is for — through labeling, naming, progressive
+disclosure, consistency, and contextual help. This release restructures
+no data flow and adds no backend route; it consumes the surfaces already
+shipped and reduces the acute confusion those surfaces currently create.
+
+**Prerequisites:** none hard — every target surface already ships.
+Ordering note: schedule after Release 2.5 Phase 1 so the new labels,
+tooltips, and disclosure toggles land on the responsive foundation
+instead of needing a mobile retrofit. The phases are sequenced so the
+cheapest, highest-relief changes (Phase 1) ship first and later phases
+compound on a foundation where operators already trust what they see.
+
+#### Product outcomes
+
+- Operators can always tell whether on-screen data is Local- or
+  GitHub-sourced, on every tab, without consulting the header toggle —
+  including while Operations overrides the active source.
+- Every toolbar control exposes a visible label or hover/focus tooltip;
+  no icon-only button (help, book, refresh, gear) requires guessing.
+- Portfolio metrics read truthfully at a glance: "Needs Attention"
+  reflects a meaningful subset with a discoverable definition rather than
+  reporting 100% of repos.
+- The two dispatch queues have distinct, self-describing names and a
+  one-line purpose subtitle each, so operators self-orient without
+  trial and error.
+- A first-time visitor sees a dismissible orientation overlay explaining
+  what each of the six tabs is for and how they relate.
+- Dense screens present a small default control set, with secondary
+  filters behind an "Advanced filters" toggle and headline numbers kept
+  visible while their derivation moves inline.
+- State words, counts, and badge terminology follow one consistent
+  pattern with shared color meaning across every tab.
+- Empty and edge states explain what would normally appear and how to
+  populate it; behavior-changing notes are visually promoted rather than
+  blended into secondary metadata text.
+
+#### Engineering milestones
+
+Phase 1 — Trust and orientation:
+
+- [ ] Add a persistent, color-coded data-source indicator (Local vs
+      GitHub) to the shared app shell / status bar so it stays visible
+      across all six views, and have it reflect the active source even
+      when Operations overrides the header toggle. *(state: planned)*
+- [ ] Add visible labels or hover/focus tooltips to every icon-only
+      toolbar control (help, book, refresh, gear) in
+      [`ActionBar.tsx`](frontend/components/ActionBar.tsx). *(state: planned)*
+- [ ] Rescope the "Needs Attention" metric so it reflects a defined,
+      less-than-total subset — correct the underlying selection logic or
+      rename the metric to what it actually measures — and surface its
+      definition inline. *(state: planned)*
+
+Phase 2 — Navigation and naming:
+
+- [ ] Rename the "Work Queue" and "Execution Queue" surfaces to distinct,
+      self-describing names (e.g. "Doc Readiness Queue" and "Copilot
+      Execution Lanes") across nav labels, tab headings, and in-body
+      titles. *(state: planned)*
+- [ ] Add a one-line purpose subtitle beneath each of the six tab
+      headers describing what that screen is for. *(state: planned)*
+- [ ] Add a dismissible first-visit orientation overlay that names each
+      of the six tabs, states its purpose, and explains how they relate;
+      persist the dismissal so it does not reappear. *(state: planned)*
+
+Phase 3 — Progressive disclosure on dense screens:
+
+- [ ] Collapse secondary Repository Grid filters (Duplicates, Badge
+      legend, ROADMAP flagged, and the remaining chips) behind an
+      "Advanced filters" toggle in
+      [`RepoGrid.tsx`](frontend/components/RepoGrid.tsx), keeping search
+      plus the 2-3 most-used filters visible by default. *(state: planned)*
+- [ ] Replace the eleven-chip filter row with a single filter-count badge
+      that expands the full filter set on click. *(state: planned)*
+- [ ] Move the Work Queue maturity-tier / value-score explanation from a
+      separate "Why?" link into an inline expandable row in
+      [`WorkQueueView.tsx`](frontend/components/WorkQueueView.tsx), keeping
+      the headline number visible. *(state: planned)*
+
+Phase 4 — Consistency pass on components and language:
+
+- [ ] Standardize action-button labels on one "Label · count" pattern
+      with status rendered as a separate small tag — replacing mixed
+      forms like "Clone (Planned)" and "Archive (Planned) (1)" — and apply
+      it across every view. *(state: planned)*
+- [ ] Standardize badge terminology and color meaning ("Index: Reused",
+      "Dirty Worktrees", "ROADMAP flagged", etc.) with a shared per-badge
+      definition + hover tooltip so no separate legend lookup is required.
+      *(state: planned)*
+
+Phase 5 — Contextual help and empty/edge states:
+
+- [ ] Add explanatory empty states for the Execution Queue lanes
+      ("Lane 1 — Empty"), the zero-result Dependencies tab, and other
+      first-encounter empty screens, each stating what would normally
+      appear there and how to populate it. *(state: planned)*
+- [ ] Promote behavior-changing helper text — e.g. the bulk-selection
+      note that Pull/Fetch/Report apply to the full filtered set — with a
+      small icon plus a bolded key phrase instead of small gray metadata
+      text. *(state: planned)*
+
+#### Acceptance criteria
+
+- The active data source (Local vs GitHub) is visible on every tab,
+  including while Operations is active, without opening the header toggle.
+- No toolbar control is icon-only: each exposes a label or a tooltip on
+  hover/focus.
+- The "Needs Attention" count reflects a defined subset below 100% of
+  repos, and its definition is discoverable in-app.
+- The two queues have distinct names and every tab shows a one-line
+  purpose subtitle.
+- A first-time visitor sees a dismissible overlay describing all six
+  tabs; it does not reappear after dismissal.
+- The Repository Grid shows search plus at most three filters by default,
+  with the remaining filters behind an "Advanced filters" toggle.
+- Action-button labels and badge terminology follow one documented
+  pattern with consistent color meaning across every view.
+- Empty Execution Queue lanes and the empty Dependencies tab show
+  guidance text, and the bulk-selection note is visually promoted.
+- `npm run build`, `npm run typecheck`, and the frontend smoke
+  (`scripts/frontend-smoke.cjs`) pass unchanged.
+
+#### Out of scope
+
+- Visual redesign or restyling beyond labeling, tooltips, and disclosure
+  layout — no new design language or color system.
+- New backend routes or data models; this release consumes existing
+  endpoints only.
+- Restructuring the six-tab information architecture — renames and
+  subtitles only, no tab merges, splits, or reordering.
+- Localization or internationalization of the new labels and help copy.
+
+#### Validation plan
+
+- Run `npm run build`, `npm run typecheck`, and
+  `node scripts/frontend-smoke.cjs` (via `npm test`) and confirm each
+  exits 0.
+- Drive both a 390px and a desktop viewport and confirm the persistent
+  data-source indicator, per-tab subtitles, and "Advanced filters" toggle
+  render and behave; capture the result as the phase evidence note.
+
+#### Phase plan (within this release)
+
+| Phase | Scope | Status |
+| --- | --- | --- |
+| Phase 1: Trust and orientation | Persistent data-source indicator across all views, labels/tooltips on icon-only toolbar controls, "Needs Attention" metric rescope + inline definition | planned |
+| Phase 2: Navigation and naming | Distinct queue renames, per-tab purpose subtitles, dismissible first-visit orientation overlay | planned |
+| Phase 3: Progressive disclosure | "Advanced filters" toggle + filter-count badge on the Repository Grid, inline "Why?" expander in the Work Queue | planned |
+| Phase 4: Consistency pass | One "Label · count" action pattern, standardized badge terminology + color meaning + hover definitions | planned |
+| Phase 5: Contextual help + edge states | Explanatory empty states (Execution Queue lanes, Dependencies), promoted behavior-changing helper text | planned |
 
 ---
 
