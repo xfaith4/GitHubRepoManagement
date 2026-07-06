@@ -244,6 +244,31 @@ try {
     if ($digestSend.Json.data.delivered -ne $false) { throw "/api/digest/send with no webhook should report delivered=false" }
     Write-Host '  distribution ok: portfolio.svg is SVG, digest payload has totalRepos/byLevel/improvedThisWeek/topCandidates (dry-run)' -ForegroundColor DarkGray
 
+    Write-Host '[STEP] Automation: scheduled doc-refinement (Release 2.7 Phase B, preview-first)' -ForegroundColor Cyan
+    # POST /api/automation/run — runs the curated-subset doc-refinement. It must
+    # never apply anything (appliedCount=0) and must write to the run history.
+    $autoRun = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/automation/run" -Body @{}
+    if ([int]$autoRun.StatusCode -ne 200) { throw "/api/automation/run expected 200, got $($autoRun.StatusCode). Body=$($autoRun.Content)" }
+    if ($null -eq $autoRun.Json -or $autoRun.Json.success -ne $true) { throw "/api/automation/run did not return success=true. Body=$($autoRun.Content)" }
+    $autoData = $autoRun.Json.data
+    if ($null -eq $autoData.run) { throw "/api/automation/run missing data.run" }
+    if ([int]$autoData.run.appliedCount -ne 0) { throw "/api/automation/run must never apply (appliedCount=$($autoData.run.appliedCount))" }
+    if ($autoData.delivered -ne $false) { throw "/api/automation/run with no webhook should report delivered=false" }
+    if ($null -eq $autoData.digest -or [int]$autoData.digest.appliedCount -ne 0) { throw "/api/automation/run digest must report appliedCount=0" }
+    $autoRunId = [string]$autoData.run.runId
+    # GET /api/automation/history — the run just made must be present, newest-first.
+    $autoHist = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/automation/history?limit=10"
+    if ([int]$autoHist.StatusCode -ne 200) { throw "/api/automation/history expected 200, got $($autoHist.StatusCode)" }
+    if ($null -eq $autoHist.Json -or $autoHist.Json.success -ne $true) { throw "/api/automation/history did not return success=true" }
+    $histRuns = @($autoHist.Json.data.runs)
+    if (@($histRuns).Count -lt 1) { throw "/api/automation/history returned no runs after a run" }
+    if ([string]$histRuns[0].runId -ne $autoRunId) { throw "/api/automation/history newest run should match the run just created" }
+    # /api/scan/schedule now surfaces the automation config block.
+    $schedAuto = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/scan/schedule"
+    if ($null -eq $schedAuto.Json.data.automation) { throw "/api/scan/schedule missing automation config block" }
+    if ($schedAuto.Json.data.automation.previewOnly -ne $true) { throw "/api/scan/schedule automation.previewOnly should be true" }
+    Write-Host ("  automation ok: run appliedCount=0, {0} proposal(s), history round-trip, scan/schedule exposes automation block (previewOnly)" -f $autoData.run.proposalCount) -ForegroundColor DarkGray
+
     Write-Host '[STEP] Cost/burn analytics (Release 2.3 Phase 4)' -ForegroundColor Cyan
     $costResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/analytics/cost?days=90"
     Assert-Not503 -Name '/api/analytics/cost' -Response $costResponse

@@ -51,6 +51,8 @@ $portfolioModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\portfolio'
 . (Join-Path $portfolioModuleRoot 'Portfolio.Curation.ps1')
 $aiModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\ai'
 . (Join-Path $aiModuleRoot 'AiDocImprovement.ps1')
+$automationModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\automation'
+. (Join-Path $automationModuleRoot 'Automation.DocRefinement.ps1')
 $agentRunsModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\agent-runs'
 . (Join-Path $agentRunsModuleRoot 'BudgetLedger.ps1')
 . (Join-Path $agentRunsModuleRoot 'AgentRuns.ps1')
@@ -5981,6 +5983,64 @@ try {
                         data = @{ delivered = [bool]$delivered; webhookConfigured = (-not [string]::IsNullOrWhiteSpace($webhookUrl)); deliveryError = $deliveryError; payload = $digest }
                     }
                 }
+                'POST /api/automation/run' {
+                    # Release 2.7 Phase B — scheduled documentation refinement.
+                    # Preview-first: select favorite/portfolio-candidate repos with
+                    # weak README/ROADMAP, generate doc-improve PREVIEWS (never apply),
+                    # record append-only history, and optionally deliver a digest.
+                    # Nothing is mutated. An external cron/webhook hits this endpoint.
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $body = Parse-JsonBody -Body $req.Body
+                    $settings = Get-HostSettings
+                    $opsPayload = Get-OperationsReposPayload -Settings $settings
+                    if (-not [bool](Get-ObjectPropertyValue -InputObject $opsPayload -PropertyName 'available' -Default $false)) {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 409 -ErrorMessage 'Portfolio not ready. Run /api/portfolio/assessment first, then retry.' -CorrelationId $correlationId -Operation 'automation.run'
+                    }
+                    else {
+                        $entries = @(Get-ObjectPropertyValue -InputObject $opsPayload -PropertyName 'entries' -Default @())
+                        $curationMap = @{}
+                        try { $curationMap = Get-PortfolioCurationMap -WorkspaceRoot $WorkspaceRoot } catch { $curationMap = @{} }
+                        $targets = @(Select-AutomationDocTargets -Entries $entries -CurationMap $curationMap)
+                        $run = Invoke-ScheduledDocRefinement -WorkspaceRoot $WorkspaceRoot -Targets $targets -Settings $settings -Provider 'heuristic' -TriggeredBy 'api'
+                        $null = Write-AutomationRunRecord -WorkspaceRoot $WorkspaceRoot -Run $run
+                        $digest = New-AutomationDigestPayload -Run $run
+
+                        # Optional webhook delivery (same pattern as /api/digest/send).
+                        # No webhook -> dry-run (delivered=false). Nothing is applied either way.
+                        $webhookUrl = ''
+                        if ($null -ne $body -and $body.ContainsKey('webhookUrl') -and $body.webhookUrl) { $webhookUrl = [string]$body.webhookUrl }
+                        elseif ($settings.ContainsKey('automation') -and $settings.automation -is [System.Collections.IDictionary] -and $settings.automation.ContainsKey('webhookUrl') -and $settings.automation.webhookUrl) { $webhookUrl = [string]$settings.automation.webhookUrl }
+                        $delivered = $false
+                        $deliveryError = $null
+                        if (-not [string]::IsNullOrWhiteSpace($webhookUrl)) {
+                            try {
+                                $null = Invoke-WebRequest -Uri $webhookUrl -Method Post -ContentType 'application/json' -Body ($digest | ConvertTo-Json -Depth 8) -TimeoutSec 15 -SkipHttpErrorCheck
+                                $delivered = $true
+                            } catch { $deliveryError = $_.Exception.Message }
+                        }
+
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data = @{
+                                run               = $run
+                                digest            = $digest
+                                delivered         = [bool]$delivered
+                                webhookConfigured = (-not [string]::IsNullOrWhiteSpace($webhookUrl))
+                                deliveryError     = $deliveryError
+                            }
+                        }
+                    }
+                }
+                'GET /api/automation/history' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $q = Parse-QueryString -Query $req.Query
+                    $limit = if ($q.ContainsKey('limit') -and $q.limit) { [int]$q.limit } else { 50 }
+                    $history = @(Get-AutomationRunHistory -WorkspaceRoot $WorkspaceRoot -Limit $limit)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = @{ count = @($history).Count; runs = $history }
+                    }
+                }
                 'GET /setup/status' {
                     Add-MetricCounter -Name 'api_requests_total'
                     $s = Get-HostSettings
@@ -8889,6 +8949,11 @@ try {
                 # -------------------------------------------------------
                 'GET /api/scan/schedule' {
                     Add-MetricCounter -Name 'api_requests_total'
+                    # Release 2.7 Phase B — surface the automation config alongside the
+                    # scan schedule. Actual interval firing is delegated to an external
+                    # cron hitting POST /api/automation/run (as with the digest webhook).
+                    $schedSettings = Get-HostSettings
+                    $autoCfg = if ($schedSettings.ContainsKey('automation') -and $schedSettings.automation -is [System.Collections.IDictionary]) { $schedSettings.automation } else { $null }
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data    = @{
@@ -8896,6 +8961,16 @@ try {
                             intervalMinutes = $script:AutoScanState.IntervalMinutes
                             nextScanAt      = if ($script:AutoScanState.NextScanAt -lt [datetime]::MaxValue) { $script:AutoScanState.NextScanAt.ToString('o') } else { $null }
                             lastScanAt      = if ($null -ne $script:AutoScanState.LastScanAt) { ([datetime]$script:AutoScanState.LastScanAt).ToString('o') } else { $null }
+                            automation      = @{
+                                enabled           = if ($null -ne $autoCfg -and $autoCfg.ContainsKey('enabled')) { [bool]$autoCfg.enabled } else { $false }
+                                docRefinement     = if ($null -ne $autoCfg -and $autoCfg.ContainsKey('docRefinement')) { [bool]$autoCfg.docRefinement } else { $false }
+                                intervalMinutes   = if ($null -ne $autoCfg -and $autoCfg.ContainsKey('intervalMinutes')) { [int]$autoCfg.intervalMinutes } else { 0 }
+                                scope             = 'favorites+candidates'
+                                previewOnly       = $true
+                                webhookConfigured = ($null -ne $autoCfg -and $autoCfg.ContainsKey('webhookUrl') -and -not [string]::IsNullOrWhiteSpace([string]$autoCfg.webhookUrl))
+                                runEndpoint       = 'POST /api/automation/run'
+                                historyEndpoint   = 'GET /api/automation/history'
+                            }
                         }
                     }
                 }
