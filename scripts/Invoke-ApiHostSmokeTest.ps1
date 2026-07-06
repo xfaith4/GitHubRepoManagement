@@ -616,7 +616,19 @@ try {
     Assert-Not503 -Name '/api/roadmap-agent/start' -Response $roadmapStartResponse
     Assert-Not503 -Name '/api/roadmap-agent/history' -Response $roadmapHistoryResponse
 
-    $workspaceRoadmapPath = Join-Path $WorkspaceRoot 'ROADMAP.md'
+    # Use a deterministic fixture roadmap (with a pending task) rather than the
+    # live workspace ROADMAP.md — the preview endpoint previews the next pending
+    # task, so the assertion must not depend on the workspace roadmap's current
+    # completion state (which is legitimately 100% complete).
+    $workspaceRoadmapPath = Join-Path $smokeRoot 'roadmap-agent-preview-fixture.md'
+    @'
+# Fixture Roadmap
+
+## Release 1 — Fixture Release
+
+- [x] A completed fixture item.
+- [ ] A pending fixture item to preview.
+'@ | Set-Content -LiteralPath $workspaceRoadmapPath -Encoding UTF8
     if (Test-Path -LiteralPath $workspaceRoadmapPath -PathType Leaf) {
         $roadmapPreviewLocalResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap-agent/preview" -Body @{
             repository = 'smoke-owner/smoke-repo'

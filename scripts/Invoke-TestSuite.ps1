@@ -53,6 +53,13 @@ function Clear-ListenerPort {
                 Write-Host ("  freed port {0} (terminated stale PID {1})" -f $PortNumber, $procId) -ForegroundColor DarkGray
             } catch { }
         }
+        # Wait for the port to actually release before the next gate binds it —
+        # a lingering stale listener causes a "connection forcibly closed" flake.
+        $deadline = (Get-Date).AddSeconds(10)
+        while ((Get-Date) -lt $deadline) {
+            if (-not (Get-NetTCPConnection -LocalPort $PortNumber -State Listen -ErrorAction SilentlyContinue)) { break }
+            Start-Sleep -Milliseconds 300
+        }
     } catch { }
 }
 
