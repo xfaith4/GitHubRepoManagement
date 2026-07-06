@@ -163,7 +163,7 @@ This will:
 | `-ApiPort` | `7071` | Port for the PowerShell API host |
 | `-FrontendPort` | `7000` | Port for the Vite dev server |
 | `-ApiHost` | `0.0.0.0` | Bind address for the API host |
-| `-AppHost` | `192.168.50.200` | Hostname or IP that browsers should use to reach the app |
+| `-AppHost` | `<localhostIP>` | Hostname or IP that browsers should use to reach the app |
 | `-NoBrowser` | off | Pass to suppress automatic browser launch |
 
 ### Examples
