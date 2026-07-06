@@ -55,6 +55,28 @@ const DEFAULT_QUICK_FILTERS: Record<QuickFilter, boolean> = {
   roadmapFlagged: false,
   duplicates: false,
 };
+
+// Progressive disclosure (Release 2.6 Phase 3): show only the most-used triage
+// filters by default; the rest collapse behind an "Advanced filters" toggle so
+// the grid presents a small default control set instead of eleven chips.
+// Each tuple is [key, label, hover definition] — the definition (Release 2.6
+// Phase 4) makes every chip self-explanatory without a separate legend lookup.
+const PRIMARY_QUICK_FILTERS: Array<[QuickFilter, string, string]> = [
+  ['dirtyOnly', 'Dirty only', 'Show only repos with a dirty working tree (uncommitted or untracked changes).'],
+  ['needsAttention', 'Needs attention', 'Show only repos with an actionable problem: uncommitted changes, a failing build, a blocked/parse-error dispatch state, or an unparseable roadmap.'],
+  ['hasOpenPrs', 'Has open PRs', 'Show only repos with at least one open pull request.'],
+];
+const ADVANCED_QUICK_FILTERS: Array<[QuickFilter, string, string]> = [
+  ['favoritesOnly', '★ Favorites', 'Show only repos you have marked as favorites (operator curation).'],
+  ['candidatesOnly', '◆ Candidates', 'Show only repos marked as portfolio candidates (being evaluated for active work).'],
+  ['hideIgnored', 'Hide ignored', 'Hide repos you have parked as archived/ignore.'],
+  ['hasUncommitted', 'Has uncommitted changes', 'Show only repos with uncommitted changes in the working tree.'],
+  ['staleOnly', 'Stale', 'Show only repos with no commits within the staleness threshold.'],
+  ['buildProblem', 'No builds / failed builds', 'Show only repos whose latest CI run failed or that have no CI configured.'],
+  ['roadmapFlagged', 'ROADMAP flagged', 'Show only repos whose ROADMAP is missing, unparseable, or needs repair.'],
+  ['duplicates', 'Duplicates', 'Show only repos detected as duplicates of another entry (same identity).'],
+];
+
 type GroupByOption = RepoGridProps['groupBy'];
 
 type RoadmapBadgeState = 'pending' | 'complete' | 'parse-error' | undefined;
@@ -210,6 +232,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
   const [readinessFilter, setReadinessFilter] = useState<DispatchReadiness | 'all'>('all');
   const [quickFilters, setQuickFilters] = useState<Record<QuickFilter, boolean>>({ ...DEFAULT_QUICK_FILTERS });
   const [legendOpen, setLegendOpen] = useState(false);
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
   const [refreshAllConfirmOpen, setRefreshAllConfirmOpen] = useState(false);
   const [curationPendingRepoId, setCurationPendingRepoId] = useState<string | null>(null);
   const [curationError, setCurationError] = useState<string | null>(null);
@@ -271,15 +294,18 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
       repo.dispatchReadiness === 'blocked';
   };
 
+  // Acute-problem definition, kept in sync with the Dashboard summary's
+  // "Needs Attention" metric (Release 2.6 Phase 1). Ambient/baseline conditions
+  // (no CI, staleness, a merely-pending roadmap, duplicates, roadmap-flagged)
+  // have their own dedicated quick-filters and are intentionally excluded here
+  // so this signal stays a meaningful subset rather than the whole portfolio.
   const isNeedsAttention = (repo: RepoStatus) => {
-    return repo.status !== 'clean' ||
+    return repo.status === 'dirty' ||
       repo.uncommittedChanges > 0 ||
-      repo.isStale ||
-      (repo.lastBuildStatus === 'failure') ||
-      (repo.lastBuildStatus === 'none') ||
-      Boolean((repo.openPrCount ?? 0) > 0 && (repo.pendingReviewPrCount ?? 0) > 0) ||
-      isRoadmapFlagged(repo) ||
-      duplicateRepoIds.has(getRepoSelectionId(repo));
+      repo.lastBuildStatus === 'failure' ||
+      repo.dispatchReadiness === 'blocked' ||
+      repo.dispatchReadiness === 'parse-error' ||
+      repo.roadmapState === 'parse-error';
   };
 
   const filteredAndSortedRepos = useMemo(() => {
@@ -831,56 +857,75 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
         )}
       </div>
 
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        {(
-          [
-            ['favoritesOnly', '★ Favorites'],
-            ['candidatesOnly', '◆ Candidates'],
-            ['hideIgnored', 'Hide ignored'],
-            ['dirtyOnly', 'Dirty only'],
-            ['hasUncommitted', 'Has uncommitted changes'],
-            ['staleOnly', 'Stale'],
-            ['needsAttention', 'Needs attention'],
-            ['hasOpenPrs', 'Has open PRs'],
-            ['buildProblem', 'No builds / failed builds'],
-            ['roadmapFlagged', 'ROADMAP flagged'],
-            ['duplicates', 'Duplicates'],
-          ] as Array<[QuickFilter, string]>
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            onClick={() => toggleQuickFilter(key)}
-            className={`px-2.5 py-1.5 text-xs rounded-full border transition-colors ${quickFilters[key]
-              ? 'border-blue-500/60 bg-blue-900/40 text-blue-100'
-              : 'border-gray-600 bg-gray-800/40 text-gray-300 hover:bg-gray-700/50'}`}
-          >
+      {(() => {
+        const chipClass = (key: QuickFilter) =>
+          `px-2.5 py-1.5 text-xs rounded-full border transition-colors ${quickFilters[key]
+            ? 'border-blue-500/60 bg-blue-900/40 text-blue-100'
+            : 'border-gray-600 bg-gray-800/40 text-gray-300 hover:bg-gray-700/50'}`;
+        const renderChip = ([key, label, definition]: [QuickFilter, string, string]) => (
+          <button key={key} onClick={() => toggleQuickFilter(key)} className={chipClass(key)} title={definition}>
             {label}
           </button>
-        ))}
-        <button
-          onClick={() => setQuickFilters({ ...DEFAULT_QUICK_FILTERS })}
-          className="px-2.5 py-1.5 text-xs rounded-full border border-gray-600 bg-gray-900 text-gray-300 hover:bg-gray-800"
-        >
-          Clear filters
-        </button>
-        {sortKey !== 'priority' && (
-          <button
-            onClick={() => { setSortKey('priority'); setSortOrder('asc'); }}
-            className="px-2.5 py-1.5 text-xs rounded-full border border-indigo-600/60 bg-indigo-900/30 text-indigo-200 hover:bg-indigo-800/40"
-            title="Restore the default ordering: favorites, then portfolio candidates, then recently changed repositories, then the unchanged long tail"
-          >
-            Priority order
-          </button>
-        )}
-        <button
-          onClick={() => setLegendOpen(prev => !prev)}
-          className={`px-2.5 py-1.5 text-xs rounded-full border transition-colors ${legendOpen
-            ? 'border-blue-500/60 bg-blue-900/40 text-blue-100'
-            : 'border-gray-600 bg-gray-800/40 text-gray-300 hover:bg-gray-700/50'}`}
-        >
-          {legendOpen ? 'Hide badge legend' : 'Badge legend'}
-        </button>
-      </div>
+        );
+        // Count advanced filters the operator has changed from their default so
+        // an active-but-hidden filter is never invisible while collapsed.
+        const advancedActiveCount = ADVANCED_QUICK_FILTERS.filter(
+          ([key]) => quickFilters[key] !== DEFAULT_QUICK_FILTERS[key],
+        ).length;
+        return (
+          <>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              {PRIMARY_QUICK_FILTERS.map(renderChip)}
+              <button
+                data-testid="advanced-filters-toggle"
+                onClick={() => setAdvancedFiltersOpen(prev => !prev)}
+                aria-expanded={advancedFiltersOpen}
+                className={`px-2.5 py-1.5 text-xs rounded-full border transition-colors inline-flex items-center gap-1.5 ${advancedFiltersOpen || advancedActiveCount > 0
+                  ? 'border-blue-500/60 bg-blue-900/40 text-blue-100'
+                  : 'border-gray-600 bg-gray-800/40 text-gray-300 hover:bg-gray-700/50'}`}
+                title="Show or hide the full set of secondary filters"
+              >
+                <span>{advancedFiltersOpen ? 'Hide advanced filters' : 'Advanced filters'}</span>
+                {advancedActiveCount > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-blue-600 text-white text-[10px] font-bold">
+                    {advancedActiveCount}
+                  </span>
+                )}
+                <span aria-hidden="true" className="text-gray-400">{advancedFiltersOpen ? '▲' : '▼'}</span>
+              </button>
+              <button
+                onClick={() => setQuickFilters({ ...DEFAULT_QUICK_FILTERS })}
+                className="px-2.5 py-1.5 text-xs rounded-full border border-gray-600 bg-gray-900 text-gray-300 hover:bg-gray-800"
+              >
+                Clear filters
+              </button>
+              {sortKey !== 'priority' && (
+                <button
+                  onClick={() => { setSortKey('priority'); setSortOrder('asc'); }}
+                  className="px-2.5 py-1.5 text-xs rounded-full border border-indigo-600/60 bg-indigo-900/30 text-indigo-200 hover:bg-indigo-800/40"
+                  title="Restore the default ordering: favorites, then portfolio candidates, then recently changed repositories, then the unchanged long tail"
+                >
+                  Priority order
+                </button>
+              )}
+            </div>
+
+            {advancedFiltersOpen && (
+              <div className="mb-3 flex flex-wrap items-center gap-2" data-testid="advanced-filters-panel">
+                {ADVANCED_QUICK_FILTERS.map(renderChip)}
+                <button
+                  onClick={() => setLegendOpen(prev => !prev)}
+                  className={`px-2.5 py-1.5 text-xs rounded-full border transition-colors ${legendOpen
+                    ? 'border-blue-500/60 bg-blue-900/40 text-blue-100'
+                    : 'border-gray-600 bg-gray-800/40 text-gray-300 hover:bg-gray-700/50'}`}
+                >
+                  {legendOpen ? 'Hide badge legend' : 'Badge legend'}
+                </button>
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {legendOpen && (
         <div className="mb-4 rounded-lg border border-gray-700 bg-gray-900/60 px-4 py-3 text-xs text-gray-300" data-testid="repo-grid-badge-legend">
@@ -991,7 +1036,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                           </span>
                         )}
                         {repo.isStale && (
-                          <span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded border bg-red-900/30 text-red-300 border-red-700/40">Stale</span>
+                          <span title="No commits within the configured staleness threshold." className="inline-flex items-center text-xs px-1.5 py-0.5 rounded border bg-red-900/30 text-red-300 border-red-700/40">Stale</span>
                         )}
                         {repo.uncommittedChanges > 0 && (
                           <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${changesSeverity.className}`}>

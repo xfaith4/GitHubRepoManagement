@@ -62,10 +62,16 @@ function LaneCard({
 }) {
   if (!entry) {
     return (
-      <div className="flex-1 rounded-lg border border-dashed border-gray-700 bg-gray-900/40 flex items-center justify-center min-h-[120px] text-gray-600 text-sm">
-        <div className="text-center">
+      <div
+        data-testid="execution-lane-empty"
+        className="flex-1 rounded-lg border border-dashed border-gray-700 bg-gray-900/40 flex items-center justify-center min-h-[120px] text-gray-500 text-sm"
+      >
+        <div className="text-center px-3">
           <div className="text-2xl mb-1">○</div>
-          <div>{slotLabel} — Empty</div>
+          <div className="font-medium text-gray-400">{slotLabel} — Empty</div>
+          <div className="text-xs text-gray-500 mt-1">
+            Dispatch a repo from the Ready Queue to start work in this lane.
+          </div>
         </div>
       </div>
     );
@@ -358,8 +364,8 @@ const ExecutionQueuePanel: React.FC<ExecutionQueuePanelProps> = ({ onDispatchPre
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700 flex-shrink-0">
         <div>
-          <h2 className="text-base font-semibold text-white">Execution Queue</h2>
-          <p className="text-xs text-gray-500 mt-0.5">Two-lane Copilot dispatch console</p>
+          <h2 className="text-base font-semibold text-white">Copilot Execution Lanes</h2>
+          <p className="text-xs text-gray-500 mt-0.5">Two-lane console tracking Copilot dispatches in progress</p>
         </div>
         <div className="flex items-center gap-2">
           {queueData && (
