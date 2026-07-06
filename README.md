@@ -151,8 +151,8 @@ This will:
 
 1. Install frontend dependencies (`npm install`) if needed
 2. Start the PowerShell API host bound to `0.0.0.0:7071`
-3. Serve the built app on the LAN at `http://192.168.50.200:7071/`
-4. In `-Dev` mode, start the Vite frontend dev server on `http://192.168.50.200:7000/`
+3. Serve the built app on the LAN at `http://<localhostIP>:7071/`
+4. In `-Dev` mode, start the Vite frontend dev server on `http://<localhostIP>:7000/`
 5. Open your browser automatically
 
 ### Parameters
