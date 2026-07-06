@@ -25,6 +25,7 @@ import ReadmeGenerateModal from './ReadmeGenerateModal';
 import HelpModal from './HelpModal';
 import OperationsWorkspaceView from './OperationsWorkspaceView';
 import { VIEW_META_BY_KEY, type ViewKey } from '../viewMeta';
+import { isRepoNeedsAttention } from '../lib/needsAttention';
 import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getRoadmapDependencies, getPortfolioAssessment, refreshAllPortfolioAssessment, setOperationsRepoCuration, getPortfolioTrend, getOperationsRepos } from '../services/apiClient';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
@@ -1036,20 +1037,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     const commitsThisWeek = reposWithRoadmap.reduce((sum, r) => sum + (r.commitsLastWeek ?? 0), 0);
     const commitsThisMonth = reposWithRoadmap.reduce((sum, r) => sum + (r.commitsLastMonth ?? 0), 0);
     // "Needs Attention" = repos with an ACTIONABLE problem, not the ambient
-    // baseline. The prior predicate counted `lastBuildStatus === 'none'` (no CI
-    // configured — normal), `roadmapState === 'pending'` (a roadmap that simply
-    // has open items — normal), and `missing-roadmap`/`needs-doc-standardization`
-    // (baseline documentation gaps most repos share), so it flagged ~100% of the
-    // portfolio and told the operator nothing. Rescoped (Release 2.6 Phase 1) to
-    // acute signals only. Keep this list in sync with RepoGrid's isNeedsAttention.
-    const needsAttention = reposWithRoadmap.filter(r =>
-      r.status === 'dirty' ||
-      r.uncommittedChanges > 0 ||
-      r.lastBuildStatus === 'failure' ||
-      r.dispatchReadiness === 'blocked' ||
-      r.dispatchReadiness === 'parse-error' ||
-      r.roadmapState === 'parse-error'
-    ).length;
+    // baseline (Release 2.6 Phase 1). Shared pure predicate — see
+    // frontend/lib/needsAttention.ts (Release 2.7 Phase D dedup).
+    const needsAttention = reposWithRoadmap.filter(r => isRepoNeedsAttention(r)).length;
 
     // Extended metrics
     const totalIssues = reposWithRoadmap.reduce((sum, r) => sum + (r.extended?.openIssuesCount || 0), 0);

@@ -31,7 +31,7 @@ function Get-PortfolioValueScoringConfig {
     }
 
     return [pscustomobject]@{
-        version = 'fallback'
+        modelVersion = 'fallback'
         maxScore = 100
         dimensions = [pscustomobject]@{
             impact = [pscustomobject]@{ weight = 25 }
@@ -78,10 +78,17 @@ function _PV_EvaluateKeywordRules {
         [string]$Text,
         [object]$Config,
         [string]$DimensionName,
-        [double]$DefaultScore
+        [double]$DefaultScore,
+        # Aggregation semantics settled by operator 2026-07-06 (Release 2.7 Phase A):
+        # MAX within a dimension. When $FloorAtOrBelow > 0 (used only for effortFit),
+        # a matched keyword scoring <= that cap floors the dimension to the LOWEST
+        # matched score even if a higher (bounded-verb) keyword also matched — so a
+        # sprawling item ("Add a persistent OAuth distribution layer") does not read
+        # as bounded one-task work.
+        [double]$FloorAtOrBelow = 0
     )
 
-    $bestScore = [double]$DefaultScore
+    $matchedScores = [System.Collections.Generic.List[double]]::new()
     $labels = [System.Collections.Generic.List[string]]::new()
     $keywordRules = _PV_GetField -Obj $Config -Name 'keywordRules' -Default $null
     $rules = @(_PV_GetField -Obj $keywordRules -Name $DimensionName -Default @())
@@ -92,14 +99,27 @@ function _PV_EvaluateKeywordRules {
         if ([string]::IsNullOrWhiteSpace($pattern)) { continue }
         if ($Text -match $pattern) {
             $score = [double](_PV_GetField -Obj $rule -Name 'score' -Default $DefaultScore)
-            if ($score -gt $bestScore) { $bestScore = $score }
+            $matchedScores.Add($score) | Out-Null
             $label = [string](_PV_GetField -Obj $rule -Name 'label' -Default '')
             if (-not [string]::IsNullOrWhiteSpace($label)) { $labels.Add($label) | Out-Null }
         }
     }
 
+    if ($matchedScores.Count -eq 0) {
+        $result = [double]$DefaultScore
+    }
+    elseif ($FloorAtOrBelow -gt 0 -and (@($matchedScores | Where-Object { $_ -le $FloorAtOrBelow }).Count -gt 0)) {
+        # Floor triggered: pull down to the lowest matched score (intentionally
+        # allowed to fall below DefaultScore — a sprawling item scores < baseline).
+        $result = ($matchedScores | Measure-Object -Minimum).Minimum
+    }
+    else {
+        # MAX aggregation, never below the dimension's DefaultScore (unchanged).
+        $result = [math]::Max([double]$DefaultScore, ($matchedScores | Measure-Object -Maximum).Maximum)
+    }
+
     return [pscustomobject]@{
-        score = (_PV_ClampScore -Value $bestScore)
+        score = (_PV_ClampScore -Value $result)
         labels = @($labels | Select-Object -Unique)
     }
 }
@@ -150,11 +170,20 @@ function Invoke-PortfolioValueScore {
     $cfg = if ($null -ne $ScoringConfig) { $ScoringConfig } else { Get-PortfolioValueScoringConfig }
     $combined = ((@($ItemText, $Section) + @($Tags)) -join ' ').ToLowerInvariant()
 
+    # effortFit floor cap (config-driven; 0 = disabled). Applies only to effortFit
+    # so the other dimensions keep pure MAX aggregation.
+    $effortFloorCap = 0.0
+    $agg = _PV_GetField -Obj $cfg -Name 'aggregation' -Default $null
+    $effFloor = _PV_GetField -Obj $agg -Name 'effortFitFloor' -Default $null
+    if ($null -ne $effFloor -and [bool](_PV_GetField -Obj $effFloor -Name 'enabled' -Default $false)) {
+        $effortFloorCap = [double](_PV_GetField -Obj $effFloor -Name 'cap' -Default 2)
+    }
+
     $impact = _PV_EvaluateKeywordRules -Text $combined -Config $cfg -DimensionName 'impact' -DefaultScore 2
     $unblock = _PV_EvaluateKeywordRules -Text $combined -Config $cfg -DimensionName 'unblockPotential' -DefaultScore 1
     $risk = _PV_EvaluateKeywordRules -Text $combined -Config $cfg -DimensionName 'riskReduction' -DefaultScore 1
     $dependency = _PV_EvaluateKeywordRules -Text $combined -Config $cfg -DimensionName 'dependencyReduction' -DefaultScore 1
-    $effort = _PV_EvaluateKeywordRules -Text $combined -Config $cfg -DimensionName 'effortFit' -DefaultScore 3
+    $effort = _PV_EvaluateKeywordRules -Text $combined -Config $cfg -DimensionName 'effortFit' -DefaultScore 3 -FloorAtOrBelow $effortFloorCap
 
     $maturityLevel = [string](_PV_GetField -Obj $RepoContext -Name 'maturityLevel' -Default 'L0-Absent')
     $maturityScore = [double](_PV_GetMaturityScore -MaturityLevel $maturityLevel)
@@ -208,7 +237,7 @@ function Invoke-PortfolioValueScore {
         scoringSignals = [pscustomobject]@{
             dimensions = [pscustomobject]$dimensionScores
             weights    = [pscustomobject]$weights
-            modelVersion = [string](_PV_GetField -Obj $cfg -Name 'version' -Default 'unknown')
+            modelVersion = [string](_PV_GetField -Obj $cfg -Name 'modelVersion' -Default ([string](_PV_GetField -Obj $cfg -Name 'version' -Default 'unknown')))
         }
     }
 }

@@ -41,10 +41,13 @@ happened, why it matters, and what to do next.
 
 ## Open decisions — surface, don't solve
 
-- `value-scoring.json` keyword double-counting (max-vs-sum within a dimension,
-  `effortFit` floor for mixed items) is **deferred pending Ben's decision on
-  scoring semantics**. If work touches scoring, flag the interaction and stop.
-  Do not fix it as a drive-by.
+- `value-scoring.json` scoring semantics (max-vs-sum within a dimension,
+  `effortFit` floor for mixed items) — **RESOLVED 2026-07-06.** Ben chose
+  **MAX within a dimension + an `effortFit` floor** (a larger-surface keyword
+  caps `effortFit` low even when a bounded verb also matched). Encoded as
+  `aggregation.{withinDimension, effortFitFloor}` in `value-scoring.json`
+  (model 1.1), implemented in `Portfolio.ValueScorer.ps1`, and covered by the
+  module-smoke "effortFit floor" assertion. No longer a drive-by hazard.
 
 ## Verify before commit
 

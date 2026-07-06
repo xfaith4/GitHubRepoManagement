@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { type RepoStatus, type DispatchReadiness, type RepoCurationState, type PortfolioAssessmentScanSummary } from '../types';
 import { BuildSuccessIcon, BuildFailureIcon, BuildInProgressIcon, PullRequestIcon, NoBuildsIcon, ChevronDownIcon, ChevronRightIcon } from './icons';
+import { isRepoNeedsAttention } from '../lib/needsAttention';
 
 declare global {
   namespace JSX {
@@ -294,19 +295,9 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
       repo.dispatchReadiness === 'blocked';
   };
 
-  // Acute-problem definition, kept in sync with the Dashboard summary's
-  // "Needs Attention" metric (Release 2.6 Phase 1). Ambient/baseline conditions
-  // (no CI, staleness, a merely-pending roadmap, duplicates, roadmap-flagged)
-  // have their own dedicated quick-filters and are intentionally excluded here
-  // so this signal stays a meaningful subset rather than the whole portfolio.
-  const isNeedsAttention = (repo: RepoStatus) => {
-    return repo.status === 'dirty' ||
-      repo.uncommittedChanges > 0 ||
-      repo.lastBuildStatus === 'failure' ||
-      repo.dispatchReadiness === 'blocked' ||
-      repo.dispatchReadiness === 'parse-error' ||
-      repo.roadmapState === 'parse-error';
-  };
+  // Acute-problem definition — shared pure module keeps this in sync with the
+  // Dashboard summary's "Needs Attention" metric (Release 2.6 Phase 1 / 2.7 Ph D).
+  const isNeedsAttention = (repo: RepoStatus) => isRepoNeedsAttention(repo);
 
   const filteredAndSortedRepos = useMemo(() => {
     const searchLower = search.trim().toLowerCase();

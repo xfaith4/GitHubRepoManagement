@@ -1,7 +1,16 @@
 {
-  "version": "1.0",
-  "description": "Release 1.7.5 value-scoring model for ranking pending roadmap work in portfolio assessment responses.",
+  "schemaVersion": "v1",
+  "modelVersion": "1.1",
+  "description": "Release 1.7.5 value-scoring model for ranking pending roadmap work in portfolio assessment responses. Aggregation semantics settled by operator 2026-07-06 (Release 2.7 Phase A): MAX within a dimension, with an effortFit floor for sprawling items.",
   "maxScore": 100,
+  "aggregation": {
+    "withinDimension": "max",
+    "effortFitFloor": {
+      "enabled": true,
+      "cap": 2,
+      "description": "A larger-surface effortFit keyword (score <= cap, e.g. refactor/rewrite/persistent/oauth/distribution/analytics/autonomous) floors effortFit at the lowest matched score even when a bounded verb (add/wire/...) also matched, so sprawling items do not read as bounded one-task work. Operator decision 2026-07-06."
+    }
+  },
   "dimensions": {
     "impact": {
       "weight": 25,

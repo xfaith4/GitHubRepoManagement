@@ -186,6 +186,7 @@ already covered by release goals or acceptance criteria.
 | **2.4**   | **Agent Integration Protocol and AI Repair Loop**                                                       | Agent protocol (`/api/v1/agent/*`) + OpenAPI + roadmap-events `smoke-tested` (2026-07-05); submit-PR flows `planned` (need live GitHub write)   |
 | **2.5**   | **Mobile-Friendly Operator Experience**                                                                 | Ph1-3 + Ph4 manifest/LAN-doc `smoke-tested`/`ui-connected` (2026-07-05); only physical-Android device verification + tap-through run list remain |
 | **2.6**   | **Interface Clarity and Operator Orientation**                                                          | Phases 1-5 `smoke-tested` (2026-07-06) — data-source indicator, control labels, queue renames, progressive disclosure, consistency pass, contextual help; proven by `frontend-smoke.cjs`. Physical-device/operator sign-off is the follow-up |
+| **2.7**   | **Guarded Scheduled Automation (Curated-Subset, Preview-First)**                                         | `planned` — scheduled doc-refinement + top-value roadmap packaging on favorites, preview-first up to the approval gate. **Gated on two operator inputs:** the value-scoring semantics decision and GitHub App/write creds (Ph A) |
 
 > **Note on `.5` numbering.** Release 1.7.5 is a deliberate course-correction
 > release between 1.7 and 1.8 to re-center the product on its primary
@@ -244,7 +245,13 @@ appears.
    sequenced after the Release 2.5 Phase 1 responsive foundation so its
    labels, tooltips, and disclosure toggles land responsive instead of
    needing a mobile retrofit. No backend prerequisites — every target
-   surface already ships.
+   surface already ships. **Done — smoke-tested 2026-07-06.**
+6. Release 2.7 (guarded scheduled automation) — the next new lane now
+   that 0.4–2.6 are engineering-complete. Phase B (scheduled doc
+   refinement) and Phase D (hardening) are schedulable immediately and
+   need nothing from anyone; Phase A and Phase C are **blocked on two
+   operator inputs**: the value-scoring semantics decision and GitHub
+   App/write credentials. Start B + D while those gates are open.
 
 **Dependency map (open work only):**
 
@@ -260,6 +267,10 @@ appears.
 | Release 1.2 remaining dashboard panels                        | Release 2.5 Phase 1 responsive foundation         | soft — avoids mobile retrofit                   |
 | Release 2.5 Phases 1-3; repo-scoped roadmap scan endpoint     | —                                                 | none — schedulable anytime                      |
 | Release 2.6 clarity affordances                               | Release 2.5 Phase 1 responsive foundation         | soft — avoids a mobile retrofit                 |
+| Release 2.7 Phase B (scheduled doc refinement) + Phase D (hardening) | —                                           | none — schedulable anytime                      |
+| Release 2.7 Phase A (live submit-PR)                          | GitHub write creds                                | **resolved 2026-07-06** — `GITHUB_TOKEN` PAT (read+write all repos, ~30d); app reports `mode=pat`. Live PR round-trip still to be exercised |
+| Release 2.7 Phase A (auto-ranking scoring lock)               | Value-scoring semantics decision (operator)       | hard — operator decision (only open Phase A gate) |
+| Release 2.7 Phase C (scheduled roadmap packaging)             | Release 2.7 Phase A                                | hard — no auto-rank/PR without settled scoring + creds |
 
 ---
 
@@ -1408,6 +1419,124 @@ Phase 5 — Contextual help and empty/edge states:
 | Phase 3: Progressive disclosure | "Advanced filters" toggle + filter-count badge, inline "Why?" expander | **done — smoke-tested** (2026-07-06) |
 | Phase 4: Consistency pass | One "Label · count" action pattern, standardized badge terminology + hover definitions | **done — smoke-tested** (2026-07-06) |
 | Phase 5: Contextual help + edge states | Explanatory empty states (Copilot lanes, Dependencies), promoted bulk-selection note | **done — smoke-tested** (2026-07-06) |
+
+---
+
+### Release 2.7 — Guarded Scheduled Automation (Curated-Subset, Preview-First)
+
+**Goal:** Turn the operator-driven pipeline into a scheduled one that
+advances **favorite / portfolio-candidate** repos automatically — proposing
+README/ROADMAP refinements and packaging the highest-value ready roadmap
+work on an interval — while stopping at the human approval gate. It adds no
+silent mutation and no auto-merge: everything runs preview-first, inside the
+existing quota/budget guard, with an append-only audit trail.
+
+**Prerequisites — two gates that are the operator's to open (surface, not
+solve):**
+
+1. **Value-scoring semantics decision.** The deferred
+   [`value-scoring.json`](backend/config/value-scoring.json) question
+   (keyword double-counting: max-vs-sum within a dimension, `effortFit`
+   floor for mixed items) must be settled before any scheduler auto-ranks a
+   "top-value item." Phase C stays blocked until Ben decides — this release
+   does **not** resolve it by engineering guess.
+2. **GitHub App / write credentials.** Live installation-token exchange
+   (Release 2.2 residual) and live submit-PR creation (Release 2.4 residual)
+   must be proven on one registered app/repo before the scheduler can emit
+   real PRs. Until then the scheduler runs **dry-run / preview-only**.
+
+**Prerequisites (engineering):** none new — builds on `/api/scan/schedule`
+(1.2), curation states (2.3 Ph5), AI doc-improve preview/apply (1.9), the
+notification hub (1.1), the quota/budget guard (2.0 Ph4), and
+`roadmap-events.jsonl` (2.4).
+
+#### Product outcomes
+
+- The operator enables an interval and the app keeps the curated subset
+  assessed and surfaces ready-to-approve improvements with no manual trigger.
+- Scheduled runs propose doc refinements as previews and notify by digest;
+  nothing is applied without an explicit approval action.
+- Scheduled runs package the top-value ready roadmap item per favorite repo
+  into a review-ready Copilot task + repair-PR plan, inside the quota guard.
+- Every scheduled action is recorded in append-only run history with a
+  reason; failures raise an alert.
+- Archived/ignored repos are never touched — scope is exactly the curated set.
+
+#### Engineering milestones
+
+Phase A — Unblockers (gated on operator decision + credentials):
+
+- [x] Settle the value-scoring semantics decision and lock it into `value-scoring.json` + a documented rule. *(state: smoke-tested — 2026-07-06)* — operator chose **MAX within a dimension + effortFit floor**; encoded as `aggregation.{withinDimension, effortFitFloor}` in [`value-scoring.json`](backend/config/value-scoring.json) (model 1.1), implemented in [`Portfolio.ValueScorer.ps1`](backend/modules/portfolio/Portfolio.ValueScorer.ps1), and asserted by the module-smoke "effortFit floor" check (sprawl effortFit=2 < bounded effortFit=4).
+- [ ] Prove live submit-PR creation on one repo with write access (closes 2.4 residual). *(state: planned — **write creds ready 2026-07-06**: `GITHUB_TOKEN` = full-access fine-grained PAT, read+write+admin on all 65 repos, ~30-day window; `GET /api/auth/github/status` reports `mode=pat`. Only an actual live PR round-trip remains — an explicit operator-authorized action.)*
+- [ ] (Optional) Prove live GitHub App installation-token exchange on one registered app (closes 2.2 residual). *(state: planned — not required for submit-PR; PAT covers it. Pursue only if the GitHub App path is wanted.)*
+
+Phase B — Scheduled documentation refinement (safe first automation):
+
+- [ ] Add a scheduler that, on the configured interval, enumerates favorite/candidate repos and runs the doc-improve preview for those with weak README/ROADMAP; extend `/api/scan/schedule` with an automation config. *(state: planned)*
+- [ ] Deliver a digest (webhook) of proposed doc changes with approve/apply links; never auto-apply. *(state: planned)*
+- [ ] Add an append-only automation run-history store + `GET /api/automation/history` (per-run repos, decisions, outcomes). *(state: planned)*
+- [ ] Smoke: a scheduled run over a fixture favorite set produces previews + a digest and writes history, applying nothing. *(state: planned)*
+
+Phase C — Scheduled roadmap-item packaging (the prize; gated on Phase A):
+
+- [ ] For each favorite repo with a ready L3+ roadmap, select the top-value pending item (settled scoring), build a Copilot task packet + repair-PR plan, and queue it for approval. *(state: planned — blocked on Phase A)*
+- [ ] Gate every packaged item through the quota/budget guard; skip + log when over budget. *(state: planned)*
+- [ ] Notify per run; approval triggers dispatch (live PR when creds exist). No auto-merge. *(state: planned)*
+- [ ] Smoke: a scheduled run ranks + packages one fixture repo's top item, honors the quota-refusal path, and dispatches only on explicit approval. *(state: planned)*
+
+Phase D — Hardening & observability (parallelizable, autonomous):
+
+- [ ] Add frontend unit tests (vitest) for pure logic: `needsAttention` predicate, value tiers, `viewMeta`, and the automation scope selector. *(state: planned)*
+- [ ] Decompose [`Dashboard.tsx`](frontend/components/Dashboard.tsx): extract the view-router/tab shell and the summary/mission sections. *(state: planned)*
+- [ ] Add scheduler failure alerting (webhook) + an automation-status surface in the dashboard. *(state: planned)*
+- [ ] Operator-verify the auth + shared-LAN path so automation runs on a bound, authenticated host. *(state: planned)*
+
+#### Acceptance criteria
+
+- Enabling automation runs unattended and produces, for the curated subset
+  only, doc-improve previews + a digest — with nothing applied.
+- A scheduled packaging run ranks favorites by the settled value score,
+  packages the top item, and stops at the approval gate; over-budget items
+  are skipped and logged.
+- `GET /api/automation/history` returns an ordered, append-only record of
+  every scheduled run and its decisions.
+- Archived/ignored repos never appear in any automation run.
+- No automation path applies a doc change, dispatches, or merges without an
+  explicit operator approval action.
+- All existing smoke tests pass; new automation smoke covers the
+  schedule → preview → notify → history loop.
+
+#### Out of scope
+
+- Auto-merge, or any write that bypasses the operator approval gate.
+- Autonomous execution on non-curated (default) repos.
+- Multi-tenant scheduling or per-agent automation credentials.
+- Resolving value-scoring semantics by engineering guess (it is Phase A's
+  operator decision).
+
+#### Validation plan
+
+- Run `npm run typecheck`, `npm test`, and the new automation smoke; confirm
+  each exits 0.
+- Drive a scheduled run against a fixture favorite set and confirm previews +
+  digest + history with zero applied changes.
+
+#### Phase plan (within this release)
+
+| Phase | Scope | Status |
+| --- | --- | --- |
+| Phase A: Unblockers | Value-scoring decision, live GitHub App token, live submit-PR | planned — blocked on operator decision + creds |
+| Phase B: Scheduled doc refinement | Scheduler + favorite-scoped doc-improve previews + digest + run history | planned |
+| Phase C: Scheduled roadmap packaging | Top-value item packaging + quota guard + approve-to-dispatch | planned — blocked on Phase A |
+| Phase D: Hardening & observability | Frontend unit tests, Dashboard decomposition, failure alerting, auth operator-verify | planned |
+
+#### Budget guardrail
+
+- Scheduled automation consumes AI work units per packaged item; every run
+  routes through the Release 2.0 quota/budget guard and refuses or annotates
+  over-budget work rather than proceeding.
+- Record raw observations per scheduled run (units consumed, credit/API
+  spend, refusals) into the automation run history.
 
 ---
 
