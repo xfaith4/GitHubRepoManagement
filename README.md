@@ -176,10 +176,10 @@ This will:
 .\Start-App.ps1 -Mode debug
 
 # Custom LAN host
-.\Start-App.ps1 -AppHost 192.168.50.200
+.\Start-App.ps1 -AppHost <localhostIP>
 
 # Custom ports and host
-.\Start-App.ps1 -ApiPort 8080 -FrontendPort 5173 -AppHost 192.168.50.200
+.\Start-App.ps1 -ApiPort 8080 -FrontendPort 5173 -AppHost <localhostIP>
 
 # Headless (no browser)
 .\Start-App.ps1 -NoBrowser
