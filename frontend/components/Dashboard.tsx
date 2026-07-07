@@ -572,6 +572,10 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
             : 'Scan complete. No repositories found.'
         ]);
         setLogStatus(error ? 'error' : 'success');
+        // Clear the operation so the toolbar re-enables. The scan panel is not
+        // auto-opened, so unlike a manual op there is no panel-close to reset it;
+        // without this the action buttons stay disabled forever after first load.
+        setCurrentOperation(null);
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -856,13 +860,16 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   };
 
   const handleLogPanelClose = () => {
-    const wasScan = currentOperation === 'scan';
+    // Refresh only when closing after an active *manual* operation (its results
+    // changed repo state). A completed scan already reset currentOperation to
+    // null (and produced fresh data), so closing its progress drawer must not
+    // kick off a redundant rescan.
+    const hadActiveManualOp = !!currentOperation && currentOperation !== 'scan';
     setIsLogPanelOpen(false);
     setCurrentOperation(null);
     setLogStatus('idle');
     prevBackendLogCountRef.current = 0;
-    // Only trigger a refresh for non-scan operations (scan was already triggered by App.tsx)
-    if (!wasScan) {
+    if (hadActiveManualOp) {
       fetchRepoStatus();
       refreshExecutionMetrics({ background: true }).catch(() => {/* surfaced in-card */});
     }
