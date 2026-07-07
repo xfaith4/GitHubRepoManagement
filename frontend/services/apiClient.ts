@@ -122,18 +122,19 @@ export interface AuthStatus {
 }
 
 export async function getAuthStatus(): Promise<AuthStatus> {
-  const res = await fetchJson<{ success: boolean; data: AuthStatus }>(`${API_BASE_URL}/api/auth/status`);
+  // API_BASE_URL already includes the /api prefix — do NOT repeat it here.
+  const res = await fetchJson<{ success: boolean; data: AuthStatus }>(`${API_BASE_URL}/auth/status`);
   return res.data;
 }
 
 // Exchange the operator password for a session cookie. Throws with the server's
 // message ('Invalid password.') on failure so the login form can surface it.
 export async function login(password: string): Promise<void> {
-  await postJson<{ success: boolean }>('/api/auth/login', { password });
+  await postJson<{ success: boolean }>('/auth/login', { password });
 }
 
 export async function logout(): Promise<void> {
-  try { await postJson<{ success: boolean }>('/api/auth/logout', {}); } catch { /* best-effort */ }
+  try { await postJson<{ success: boolean }>('/auth/logout', {}); } catch { /* best-effort */ }
 }
 
 function normalizeRepo(repo: any): RepoStatus {
