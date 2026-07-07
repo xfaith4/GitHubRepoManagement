@@ -2,10 +2,11 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import Dashboard from './components/Dashboard';
 import DataSourceModal from './components/DataSourceModal';
 import SetupWizard from './components/SetupWizard';
+import Login from './components/Login';
 import AgentActivityIndicator from './components/AgentActivityIndicator';
 import MobileRepoHealth from './components/MobileRepoHealth';
 import OrientationOverlay, { hasSeenOrientation } from './components/OrientationOverlay';
-import { getStatus, getGithubRepoInsights, getSetupStatus } from './services/apiClient';
+import { getStatus, getGithubRepoInsights, getSetupStatus, getAuthStatus, logout, type AuthStatus } from './services/apiClient';
 import { type RepoStatus, type GithubInsightsMeta } from './types';
 import { DatabaseIcon } from './components/icons';
 
@@ -23,6 +24,30 @@ function formatRelativeTime(date: Date): string {
 
 function App() {
   const [viewMode, setViewMode] = useState<'local' | 'github'>('local');
+
+  // Release 2.7 — auth gate. 'checking' until /api/auth/status resolves; 'required'
+  // when the portal is protected and this browser is not authenticated; 'ok' once
+  // authenticated (or when the host runs open). API-key browsers report
+  // authenticated=true here, so only truly-unauthenticated visitors see Login.
+  const [authState, setAuthState] = useState<'checking' | 'required' | 'ok'>('checking');
+  const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
+  const refreshAuth = useCallback(async () => {
+    try {
+      const s = await getAuthStatus();
+      setAuthStatus(s);
+      setAuthState(s.gateEnabled && !s.authenticated ? 'required' : 'ok');
+    } catch {
+      // Status endpoint unreachable (e.g. older host) — don't lock the operator
+      // out; let requests proceed and surface any 401s in context.
+      setAuthState('ok');
+    }
+  }, []);
+  useEffect(() => { void refreshAuth(); }, [refreshAuth]);
+
+  const handleLogout = useCallback(async () => {
+    await logout();
+    await refreshAuth();
+  }, [refreshAuth]);
 
   // Release 2.2 — first-run detection. null = still checking; true = show the
   // guided Setup Wizard. `?setup=1` forces it (for preview / smoke coverage).
@@ -309,6 +334,14 @@ function App() {
     );
   };
 
+  if (authState === 'checking') {
+    return <div className="min-h-screen bg-gray-900" aria-busy="true" />;
+  }
+
+  if (authState === 'required' && authStatus) {
+    return <Login status={authStatus} onAuthenticated={() => { void refreshAuth(); }} />;
+  }
+
   if (showSetup) {
     return (
       <SetupWizard
@@ -355,6 +388,17 @@ function App() {
                   <DatabaseIcon className="w-4 h-4 sm:mr-2" />
                   <span className="hidden sm:inline">GitHub API</span>
                 </button>
+                {authStatus?.method === 'session' && (
+                  <button
+                    onClick={() => { void handleLogout(); }}
+                    className="inline-flex items-center px-3 py-2 md:py-1.5 border border-gray-600 rounded-md text-sm font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 transition-colors"
+                    title="Sign out of the portal"
+                    data-testid="logout-button"
+                  >
+                    <span className="hidden sm:inline">Sign out</span>
+                    <span className="sm:hidden">Exit</span>
+                  </button>
+                )}
             </div>
           </div>
         </div>

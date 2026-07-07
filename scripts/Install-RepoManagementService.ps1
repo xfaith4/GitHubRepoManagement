@@ -54,6 +54,15 @@
     the service only (a LocalSystem service does NOT inherit your user env). If
     omitted, GitHub-authenticated features are unavailable until you provide one.
 
+.PARAMETER PfxPath
+    Path to a TLS certificate (.pfx). When supplied, the host serves HTTPS and the
+    installer injects REPO_MGMT_TLS_PFX / REPO_MGMT_TLS_PFX_PASSWORD for the
+    service. Generate one with New-RepoManagementTlsCertificate.ps1, or point at a
+    PFX from a real CA / ACME client (e.g. win-acme). Omit to serve plain HTTP.
+
+.PARAMETER PfxPassword
+    Password for the PFX. Injected for the service process only.
+
 .PARAMETER Credential
     Optional run-as account for the service. Default is LocalSystem (no password,
     fully unattended, can read local repos). Provide a credential to run least-
@@ -84,7 +93,10 @@ param(
     [int]$Port = 7071,
     [string]$ShawlPath = '',
     [switch]$AllowInsecureBind,
+    [string]$ApiKey = '',
     [string]$GitHubToken = '',
+    [string]$PfxPath = '',
+    [string]$PfxPassword = '',
     [System.Management.Automation.PSCredential]$Credential,
     [switch]$SkipBuild
 )
@@ -165,39 +177,59 @@ else {
 }
 
 # ---------------------------------------------------------------------------
-# 3. Security guard — refuse a silent unauthenticated network bind
-#    Mirrors the API host's own bind guard so the service never exposes an
-#    unauthenticated dashboard on the LAN by accident.
+# 3. Auth — a network bind is protected by default.
+#    The service enables the API-key gate by injecting REPO_MGMT_REQUIRE_API_KEY
+#    + REPO_MGMT_API_KEY for its own process only (settings.json stays open, so
+#    the smoke suite that assumes an open host is unaffected). Humans can also log
+#    in with a session password once one is set (scripts\Set-PortalLogin.ps1);
+#    the key remains the automation credential. -AllowInsecureBind is the explicit
+#    "run open, no auth" escape hatch for a fully trusted network segment.
 # ---------------------------------------------------------------------------
 $isLoopback = $BindAddress -in @('127.0.0.1', '::1', 'localhost')
 
-$authEnforced = $false
-if (Test-Path -LiteralPath $settings) {
-    try {
-        $cfg = Get-Content -LiteralPath $settings -Raw | ConvertFrom-Json
-        if ($cfg.PSObject.Properties.Name -contains 'auth' -and $cfg.auth `
-                -and ($cfg.auth.PSObject.Properties.Name -contains 'requireApiKey')) {
-            $authEnforced = [bool]$cfg.auth.requireApiKey
-        }
+$injectAuth = $false
+$effectiveApiKey = ''
+$needInsecureAck = $false
+
+if ($AllowInsecureBind) {
+    if (-not $isLoopback) {
+        $needInsecureAck = $true
+        Write-Warn2 'Binding non-loopback WITHOUT auth (acknowledged). Anyone on this network can use the dashboard.'
     }
-    catch { Write-Warn2 "Could not parse settings.json for auth check: $($_.Exception.Message)" }
+}
+elseif (-not $isLoopback -or $ApiKey) {
+    # Secure-by-default for a network bind; opt-in for loopback when -ApiKey given.
+    $injectAuth = $true
+    if ($ApiKey) {
+        $effectiveApiKey = $ApiKey
+    }
+    else {
+        $bytes = New-Object byte[] 32
+        $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+        try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+        $effectiveApiKey = ([System.BitConverter]::ToString($bytes) -replace '-', '').ToLowerInvariant()
+        Write-Ok 'Generated an API key for the service (shown at the end).'
+    }
 }
 
-$needInsecureAck = $false
-if (-not $isLoopback -and -not $authEnforced) {
-    if (-not $AllowInsecureBind) {
-        Write-Fail "Refusing to install: binding '$BindAddress' exposes the dashboard on the network WITHOUT API-key auth."
-        Write-Host ''
-        Write-Host '  Choose one:' -ForegroundColor Yellow
-        Write-Host "    A) Enable auth: set auth.requireApiKey=true (+ apiKey/apiKeyEnvVar) in" -ForegroundColor Gray
-        Write-Host "       backend\config\settings.json, then re-run." -ForegroundColor Gray
-        Write-Host "    B) Keep it local-only: -BindAddress 127.0.0.1" -ForegroundColor Gray
-        Write-Host "    C) Single-operator LAN, accept the risk: pass -AllowInsecureBind" -ForegroundColor Gray
-        Write-Host ''
-        throw 'Aborted for safety. See options above.'
+# ---------------------------------------------------------------------------
+# 3b. TLS — when a PFX is supplied the host serves HTTPS (SslStream per socket).
+#     Transport encryption is independent of API-key auth: HTTPS protects data
+#     in flight, the auth guard above protects who may call. Use both for a
+#     network-exposed portal.
+# ---------------------------------------------------------------------------
+$useTls = -not [string]::IsNullOrWhiteSpace($PfxPath)
+$scheme = 'http'
+if ($useTls) {
+    if (-not (Test-Path -LiteralPath $PfxPath)) {
+        throw "PfxPath not found: $PfxPath. Generate one with scripts\New-RepoManagementTlsCertificate.ps1."
     }
-    $needInsecureAck = $true
-    Write-Warn2 'Binding non-loopback WITHOUT API auth (acknowledged). Set auth.requireApiKey before sharing widely.'
+    $PfxPath = (Resolve-Path -LiteralPath $PfxPath).Path
+    $scheme = 'https'
+    Write-Ok "TLS enabled — serving HTTPS with certificate $PfxPath"
+    if ($needInsecureAck) {
+        Write-Warn2 'HTTPS is on, but there is still no API-key auth. Set auth.requireApiKey to restrict callers.'
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -252,8 +284,16 @@ Write-Step 'Creating service...'
 
 # Environment injected into the service process only (not machine-wide).
 $serviceEnv = New-Object System.Collections.Generic.List[string]
+if ($injectAuth) {
+    $serviceEnv.Add('REPO_MGMT_REQUIRE_API_KEY=true')
+    $serviceEnv.Add("REPO_MGMT_API_KEY=$effectiveApiKey")
+}
 if ($needInsecureAck) { $serviceEnv.Add('REPO_MGMT_ALLOW_INSECURE_BIND=true') }
 if ($GitHubToken)     { $serviceEnv.Add("GITHUB_TOKEN=$GitHubToken") }
+if ($useTls) {
+    $serviceEnv.Add("REPO_MGMT_TLS_PFX=$PfxPath")
+    $serviceEnv.Add("REPO_MGMT_TLS_PFX_PASSWORD=$PfxPassword")
+}
 
 $shawlArgs = New-Object System.Collections.Generic.List[string]
 $shawlArgs.AddRange([string[]]@(
@@ -315,13 +355,22 @@ $probeHost = switch ($BindAddress) {
     '[::]'    { '[::1]' }
     default   { $BindAddress }
 }
-$probeUrl = "http://${probeHost}:${Port}/health/live"
+$probeUrl = "${scheme}://${probeHost}:${Port}/health/live"
+
+# For a self-signed HTTPS cert the probe must skip chain validation. Prefer
+# pwsh 7's -SkipCertificateCheck; fall back to a session callback on 5.1.
+$supportsSkip = (Get-Command Invoke-RestMethod).Parameters.ContainsKey('SkipCertificateCheck')
+if ($useTls -and -not $supportsSkip) {
+    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+}
 
 Write-Step "Waiting for readiness at $probeUrl ..."
 $ready = $false
 for ($i = 0; $i -lt 40; $i++) {
     try {
-        $null = Invoke-RestMethod -Uri $probeUrl -Method Get -TimeoutSec 2
+        $irm = @{ Uri = $probeUrl; Method = 'Get'; TimeoutSec = 2 }
+        if ($useTls -and $supportsSkip) { $irm.SkipCertificateCheck = $true }
+        $null = Invoke-RestMethod @irm
         $ready = $true
         break
     }
@@ -332,12 +381,23 @@ Write-Host ''
 if ($ready) {
     Write-Ok "Portal is up and set to start at every boot."
     Write-Host ''
-    Write-Host "  Access  : http://${probeHost}:${Port}  (LAN: http://<this-host-ip>:${Port})" -ForegroundColor Green
+    Write-Host "  Access  : ${scheme}://${probeHost}:${Port}  (LAN: ${scheme}://<this-host-ip>:${Port})" -ForegroundColor Green
     Write-Host "  Logs    : $logDir" -ForegroundColor Gray
     Write-Host "  Status  : Get-Service $ServiceName" -ForegroundColor Gray
     Write-Host "  Restart : Restart-Service $ServiceName" -ForegroundColor Gray
     Write-Host "  Remove  : .\scripts\Uninstall-RepoManagementService.ps1" -ForegroundColor Gray
     Write-Host ''
+    if ($injectAuth) {
+        Write-Host '  Auth    : API-key gate ENABLED for the service.' -ForegroundColor Green
+        Write-Host '  API key (paste into the dashboard once, or use for automation):' -ForegroundColor Yellow
+        Write-Host "    $effectiveApiKey" -ForegroundColor Yellow
+        Write-Host '  For human login, set a password:  .\scripts\Set-PortalLogin.ps1  (then Restart-Service)' -ForegroundColor Gray
+        Write-Host ''
+    }
+    elseif ($needInsecureAck) {
+        Write-Warn2 'Auth is OFF (-AllowInsecureBind). The dashboard is unauthenticated on this network.'
+        Write-Host ''
+    }
 }
 else {
     Write-Fail "Service was created but did not answer $probeUrl within 20s."

@@ -4,6 +4,11 @@ Thumbs.db
 .vscode/
 backend/config/settings.json
 
+# TLS certificates and keys (secrets — never commit)
+*.pfx
+*.cer
+backend/config/tls/
+
 # PowerShell / logs / temp
 *.log
 *.tmp

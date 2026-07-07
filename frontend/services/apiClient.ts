@@ -74,10 +74,14 @@ export function getApiKey(): string {
 }
 
 function withAuthHeaders(init?: RequestInit): RequestInit {
+  // Always send cookies so a logged-in session (rmsid) authenticates the request
+  // (Release 2.7). The API key, when present, rides along as a fallback for
+  // automation / pre-login browsers.
   const key = getStoredApiKey();
-  if (!key) return init ?? {};
+  const base: RequestInit = { ...init, credentials: 'include' };
+  if (!key) return base;
   return {
-    ...init,
+    ...base,
     headers: { ...(init?.headers as Record<string, string> | undefined), 'X-Api-Key': key },
   };
 }
@@ -102,6 +106,34 @@ async function postJson<TResponse>(path: string, body: unknown): Promise<TRespon
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
+}
+
+// ── Release 2.7 — portal auth (session login + API-key status) ───────────────
+export interface AuthStatus {
+  authRequired: boolean;
+  authEnforced: boolean;
+  gateEnabled: boolean;
+  loginConfigured: boolean;
+  authenticated: boolean;
+  method: 'session' | 'apiKey' | null;
+  keyEnvVar?: string;
+  bindAddress?: string;
+  isLoopbackBind?: boolean;
+}
+
+export async function getAuthStatus(): Promise<AuthStatus> {
+  const res = await fetchJson<{ success: boolean; data: AuthStatus }>(`${API_BASE_URL}/api/auth/status`);
+  return res.data;
+}
+
+// Exchange the operator password for a session cookie. Throws with the server's
+// message ('Invalid password.') on failure so the login form can surface it.
+export async function login(password: string): Promise<void> {
+  await postJson<{ success: boolean }>('/api/auth/login', { password });
+}
+
+export async function logout(): Promise<void> {
+  try { await postJson<{ success: boolean }>('/api/auth/logout', {}); } catch { /* best-effort */ }
 }
 
 function normalizeRepo(repo: any): RepoStatus {

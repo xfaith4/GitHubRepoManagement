@@ -32,6 +32,7 @@ $executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 . (Join-Path $docAuditModuleRoot 'DocAudit.Scanner.ps1')
 . (Join-Path $executionModuleRoot 'Execution.Ledger.ps1')
 . (Join-Path $WorkspaceRoot 'backend\modules\auth\GitHubApp.ps1')
+. (Join-Path $WorkspaceRoot 'backend\modules\auth\SessionAuth.ps1')
 $docStdModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\docstandardization'
 . (Join-Path $roadmapModuleRoot 'Roadmap.Linter.ps1')
 . (Join-Path $roadmapModuleRoot 'MaturityDrift.Monitor.ps1')
@@ -673,25 +674,29 @@ function Send-HttpJson {
         [Parameter()]
         [string]$StatusText = 'OK',
         [Parameter()]
-        [string]$CorrelationId
+        [string]$CorrelationId,
+        [Parameter()]
+        [string[]]$ExtraHeaders = @()
     )
 
     $json = $Payload | ConvertTo-Json -Depth 12
     $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($json)
     try { $Stream.WriteTimeout = $script:ClientIoTimeoutMs } catch { }
 
-    $headers = @(
-        "HTTP/1.1 $StatusCode $StatusText",
-        'Content-Type: application/json; charset=utf-8',
-        "Content-Length: $($bodyBytes.Length)",
-        'Connection: close',
-        ("Access-Control-Allow-Origin: {0}" -f $(if ($script:CorsAllowOrigin) { $script:CorsAllowOrigin } else { '*' })),
-        'Access-Control-Allow-Methods: GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers: Content-Type, Authorization, X-Api-Key',
-        $(if ($CorrelationId) { "X-Correlation-Id: $CorrelationId" } else { '' }),
-        '',
-        ''
-    ) -join "`r`n"
+    $headerLines = [System.Collections.Generic.List[string]]::new()
+    $headerLines.Add("HTTP/1.1 $StatusCode $StatusText")
+    $headerLines.Add('Content-Type: application/json; charset=utf-8')
+    $headerLines.Add("Content-Length: $($bodyBytes.Length)")
+    $headerLines.Add('Connection: close')
+    $headerLines.Add("Access-Control-Allow-Origin: {0}" -f $(if ($script:CorsAllowOrigin) { $script:CorsAllowOrigin } else { '*' }))
+    $headerLines.Add('Access-Control-Allow-Methods: GET, POST, OPTIONS')
+    $headerLines.Add('Access-Control-Allow-Headers: Content-Type, Authorization, X-Api-Key')
+    $headerLines.Add('Access-Control-Allow-Credentials: true')
+    foreach ($h in $ExtraHeaders) { if (-not [string]::IsNullOrWhiteSpace($h)) { $headerLines.Add($h) } }
+    if ($CorrelationId) { $headerLines.Add("X-Correlation-Id: $CorrelationId") }
+    $headerLines.Add('')
+    $headerLines.Add('')
+    $headers = $headerLines -join "`r`n"
 
     $headerBytes = [System.Text.Encoding]::ASCII.GetBytes($headers)
     $Stream.Write($headerBytes, 0, $headerBytes.Length)
@@ -4874,6 +4879,16 @@ if ($script:AuthRequired -and [string]::IsNullOrWhiteSpace($script:EffectiveApiK
     $script:EffectiveApiKey = $generatedKey
 }
 $script:AuthEnforced = $script:AuthRequired -and -not [string]::IsNullOrWhiteSpace($script:EffectiveApiKey)
+# Release 2.7 — human login layer. Whether the API gate is ON stays governed by
+# the Release 2.2 switch (auth.requireApiKey / REPO_MGMT_REQUIRE_API_KEY) so the
+# open-by-default config the smokes rely on is unchanged. A configured operator
+# password does NOT by itself enable the gate; it adds a session-cookie credential
+# that, when the gate is on, authorizes a browser in place of the API key. So a
+# request is authorized by a valid API key (automation) OR a valid session cookie
+# (a logged-in human).
+$script:HumanLoginConfigured = $false
+try { $script:HumanLoginConfigured = [bool](Test-PortalPasswordConfigured -WorkspaceRoot $WorkspaceRoot) } catch { $script:HumanLoginConfigured = $false }
+$script:GateEnabled = $script:AuthEnforced
 # Explicit single-operator opt-out (roadmap: "single-operator interim bind is
 # acceptable"): binding a non-loopback address without auth is refused unless
 # the operator acknowledges the risk via REPO_MGMT_ALLOW_INSECURE_BIND or
@@ -4883,7 +4898,7 @@ $insecureEnv = [System.Environment]::GetEnvironmentVariable('REPO_MGMT_ALLOW_INS
 if (-not [string]::IsNullOrWhiteSpace($insecureEnv) -and $insecureEnv.Trim() -match '^(?i)(1|true|yes|on)$') { $allowInsecureBind = $true }
 if ($script:AuthSettings.ContainsKey('network') -and $script:AuthSettings.network -is [System.Collections.IDictionary] -and
     $script:AuthSettings.network.ContainsKey('allowInsecureBind') -and [bool]$script:AuthSettings.network.allowInsecureBind) { $allowInsecureBind = $true }
-if (-not (Test-IsLoopbackAddress -Address $BindAddress) -and -not $script:AuthEnforced) {
+if (-not (Test-IsLoopbackAddress -Address $BindAddress) -and -not $script:GateEnabled) {
     if ($allowInsecureBind) {
         Write-HostLog ("WARNING: binding non-loopback '{0}' WITHOUT API auth (allowInsecureBind acknowledged). The API is exposed unauthenticated on this network — set auth.requireApiKey for shared use." -f $BindAddress)
     }
@@ -5085,23 +5100,29 @@ try {
                 continue
             }
 
-            # Release 2.2 — API key auth gate. Health checks, the setup/auth
-            # status routes, and the static SPA shell stay open so an
-            # unconfigured first-run browser can reach the wizard; everything
-            # else under /api/ requires a valid key when auth is enforced.
-            if ($script:AuthEnforced) {
+            # Release 2.2/2.7 — request auth gate. Health checks, the auth status
+            # + login/logout routes, the setup wizard, and the static SPA shell
+            # stay open so an unconfigured/logged-out browser can reach the login
+            # screen; everything else under /api/ requires a valid API key
+            # (automation) OR a valid session cookie (a logged-in human).
+            if ($script:GateEnabled) {
                 $authExempt = ($path -eq '/health/live') -or ($path -eq '/health/ready') -or
-                    ($path -eq '/api/auth/status') -or ($path -eq '/setup') -or ($path -like '/setup/*') -or
+                    ($path -eq '/api/auth/status') -or ($path -eq '/api/auth/login') -or ($path -eq '/api/auth/logout') -or
+                    ($path -eq '/setup') -or ($path -like '/setup/*') -or
                     (-not ($path -like '/api/*'))
-                if (-not $authExempt -and -not (Test-RequestApiKeyValid -Request $req -ExpectedKey $script:EffectiveApiKey)) {
-                    Add-MetricCounter -Name 'api_requests_total'
-                    Send-HttpJson -Stream $req.Stream -StatusCode 401 -StatusText 'Unauthorized' -CorrelationId $correlationId -Payload @{
-                        success  = $false
-                        error    = 'Unauthorized: missing or invalid API key. Send it as `Authorization: Bearer <key>` or `X-Api-Key: <key>`.'
-                        category = 'auth'
+                if (-not $authExempt) {
+                    $apiKeyOk = $script:AuthEnforced -and (Test-RequestApiKeyValid -Request $req -ExpectedKey $script:EffectiveApiKey)
+                    $sessionOk = $script:HumanLoginConfigured -and (Test-RequestSessionValid -Request $req -WorkspaceRoot $WorkspaceRoot)
+                    if (-not $apiKeyOk -and -not $sessionOk) {
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 401 -StatusText 'Unauthorized' -CorrelationId $correlationId -Payload @{
+                            success  = $false
+                            error    = 'Unauthorized: log in at /api/auth/login, or send an API key as `Authorization: Bearer <key>` or `X-Api-Key: <key>`.'
+                            category = 'auth'
+                        }
+                        $client.Close()
+                        continue
                     }
-                    $client.Close()
-                    continue
                 }
             }
 
@@ -5902,19 +5923,59 @@ try {
                         agentRunEventCount = $agentRunEventCount
                     }
                 }
-                # ── Release 2.2 — auth status + guided first-run setup ──────────
+                # ── Release 2.2/2.7 — auth status, login, logout ────────────────
                 'GET /api/auth/status' {
                     Add-MetricCounter -Name 'api_requests_total'
+                    $apiKeyAuthed = if ($script:AuthEnforced) { [bool](Test-RequestApiKeyValid -Request $req -ExpectedKey $script:EffectiveApiKey) } else { $false }
+                    $sessionAuthed = if ($script:HumanLoginConfigured) { [bool](Test-RequestSessionValid -Request $req -WorkspaceRoot $WorkspaceRoot) } else { $false }
+                    $authedNow = if ($script:GateEnabled) { ($apiKeyAuthed -or $sessionAuthed) } else { $true }
+                    $authMethod = if ($sessionAuthed) { 'session' } elseif ($apiKeyAuthed) { 'apiKey' } else { $null }
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data = @{
-                            authRequired   = [bool]$script:AuthRequired
-                            authEnforced   = [bool]$script:AuthEnforced
-                            authenticated  = if ($script:AuthEnforced) { [bool](Test-RequestApiKeyValid -Request $req -ExpectedKey $script:EffectiveApiKey) } else { $true }
-                            keyEnvVar      = (Get-AuthApiKeyEnvVarName -Settings $script:AuthSettings)
-                            bindAddress    = $BindAddress
-                            isLoopbackBind = [bool](Test-IsLoopbackAddress -Address $BindAddress)
+                            authRequired    = [bool]$script:AuthRequired
+                            authEnforced    = [bool]$script:AuthEnforced
+                            gateEnabled     = [bool]$script:GateEnabled
+                            loginConfigured = [bool]$script:HumanLoginConfigured
+                            authenticated   = [bool]$authedNow
+                            method          = $authMethod
+                            keyEnvVar       = (Get-AuthApiKeyEnvVarName -Settings $script:AuthSettings)
+                            bindAddress     = $BindAddress
+                            isLoopbackBind  = [bool](Test-IsLoopbackAddress -Address $BindAddress)
                         }
+                    }
+                }
+                'POST /api/auth/login' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $loginBody = Parse-JsonBody -Body $req.Body
+                    $loginPassword = if ($loginBody -and $loginBody.ContainsKey('password')) { [string]$loginBody.password } else { '' }
+                    if (-not $script:HumanLoginConfigured) {
+                        Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                            success = $false; category = 'auth'
+                            error   = 'No portal password is configured. Set one with scripts\Set-PortalLogin.ps1, then restart the host.'
+                        }
+                    }
+                    elseif ([string]::IsNullOrEmpty($loginPassword) -or -not (Test-PortalPassword -WorkspaceRoot $WorkspaceRoot -Password $loginPassword)) {
+                        Send-HttpJson -Stream $req.Stream -StatusCode 401 -StatusText 'Unauthorized' -CorrelationId $correlationId -Payload @{
+                            success = $false; category = 'auth'; error = 'Invalid password.'
+                        }
+                    }
+                    else {
+                        $ttlHours = 12
+                        $token = New-SessionToken -WorkspaceRoot $WorkspaceRoot -TtlHours $ttlHours
+                        $cookieSecure = ($null -ne $script:TlsCertificate)
+                        $cookieHeader = New-SessionCookieHeader -Token $token -TtlHours $ttlHours -Secure $cookieSecure
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -ExtraHeaders @($cookieHeader) -Payload @{
+                            success = $true; data = @{ authenticated = $true; method = 'session'; ttlHours = $ttlHours }
+                        }
+                    }
+                }
+                'POST /api/auth/logout' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $cookieSecure = ($null -ne $script:TlsCertificate)
+                    $clearHeader = New-SessionClearCookieHeader -Secure $cookieSecure
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -ExtraHeaders @($clearHeader) -Payload @{
+                        success = $true; data = @{ authenticated = $false }
                     }
                 }
                 'GET /api/auth/github/status' {
