@@ -189,7 +189,10 @@ function _RoadmapParserGetPhasePlanFromLines {
 
     $headingIndex = -1
     for ($i = 0; $i -lt $Lines.Count; $i++) {
-        if ($Lines[$i] -match '^\s*###\s+Phase\s+plan\b') {
+        # Heading-level tolerant: real roadmaps nest releases under a section, so
+        # the phase-plan heading appears at ### or deeper (#### is common). Match
+        # any depth >= 3 rather than exactly ###.
+        if ($Lines[$i] -match '^\s*#{3,}\s+Phase\s+plan\b') {
             $headingIndex = $i
             break
         }
@@ -356,7 +359,11 @@ function Get-RoadmapReleaseContexts {
     }
 
     $boundedContent = (_RoadmapParserGetBoundedLines -Content $RoadmapContent) -join "`n"
-    $releaseHeadingRx = [regex]'(?im)^## Release (\d+[\d\.]*)\s*[—–-]+\s*(.+?)$'
+    # Heading-level tolerant: releases are often nested under a section heading
+    # (e.g. "## 6. Future Releases"), so the release heading is ### or deeper.
+    # Match any depth >= 2. The mandatory " — Title" dash separator still keeps
+    # "### Release 2.0 completion snapshot" (no dash) from being treated as a block.
+    $releaseHeadingRx = [regex]'(?im)^#{2,}\s+Release (\d+[\d\.]*)\s*[—–-]+\s*(.+?)$'
     $headingMatches = $releaseHeadingRx.Matches($boundedContent)
     if ($headingMatches.Count -eq 0) {
         return @()
