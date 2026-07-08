@@ -128,11 +128,12 @@ try {
     $gThreeCol = Test-RoadmapAgentReadiness -Content $threeCol -RepoPath $scratchRepo -MaturityLevel 4
     Assert ((-not $gThreeCol.eligible) -and ($gThreeCol.blockers -contains 'missing-protocol-columns')) "3-col table -> missing-protocol-columns"
 
-    # The flagship repo's OWN roadmap: correctly NOT ready (phase plans lack protocol columns).
+    # The flagship repo's OWN roadmap: after the P0 column upgrade its phase-plan
+    # tables carry the full protocol columns, so the format blocker is cleared (dogfood).
     $liveRoadmap = Get-Content (Join-Path $WorkspaceRoot 'ROADMAP.md') -Raw
     $gLive = Test-RoadmapAgentReadiness -Content $liveRoadmap -RepoPath $WorkspaceRoot -MaturityLevel 4
-    Assert ((-not $gLive.eligible) -and ($gLive.blockers -contains 'missing-protocol-columns')) "live ROADMAP.md -> NOT ready (missing-protocol-columns) [expected]"
-    Write-Host ("    live ROADMAP blockers: " + ($gLive.blockers -join ', ')) -ForegroundColor DarkGray
+    Assert (-not ($gLive.blockers -contains 'missing-protocol-columns')) "live ROADMAP.md -> phase-plan tables carry protocol columns [dogfood]"
+    Write-Host ("    live ROADMAP eligible=$($gLive.eligible) blockers: [" + ($gLive.blockers -join ', ') + ']') -ForegroundColor DarkGray
 }
 finally {
     Remove-Item -LiteralPath $scratchRepo -Recurse -Force -ErrorAction SilentlyContinue

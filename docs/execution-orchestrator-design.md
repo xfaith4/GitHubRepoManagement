@@ -200,10 +200,12 @@ first phase instead of being computed at the end.
   ##/###); added `Set-RoadmapPhaseState` (surgical, EOL-preserving write-back) and
   `Test-RoadmapAgentReadiness` (releases + full protocol columns + L3+ + CI signal)
   in `Roadmap.PhaseProtocol.ps1`, covered by `scripts/Invoke-PhaseProtocolTest.ps1`
-  (21 assertions) with the module smoke green. **Finding:** the flagship ROADMAP.md
-  is correctly flagged *not ready* — its phase-plan tables lack the protocol columns
-  (Completed / Token usage / Work units). Upgrading roadmaps to the full column set
-  is the first readiness task the engine will demand of every repo.
+  (21 assertions) with the module smoke green. **Dogfooded:** this repo's ROADMAP.md
+  phase-plan tables were upgraded to the full 6-column protocol (Completed / Token
+  usage / Work units appended append-only; completion dates back-filled from each
+  phase's status) — it is now **agent-eligible** (gate: eligible, 6/6 tables conform).
+  Bringing each other repo's roadmap to the full column set is the first readiness
+  task the engine will demand of it.
 - **P1 — Worker adapter.** Given (repo, phase), spawn a Claude Agent SDK worker
   (RTK hook on) that does Plan→Execute→Validate&Push→Report. One phase, by hand.
 - **P2 — Governor.** Real token metering per window + soft/hard throttle +

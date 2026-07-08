@@ -338,12 +338,12 @@ release direction remains anchored to
 
 #### Phase plan (within this release)
 
-| Phase                                        | Scope                                                                                                                                    | Status                               |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| Phase 1: SQLite foundation                   | Capability detection, `output/app.db` bootstrap, schema-v1 tables, `GET /api/persistence/status`, agent-run-event dual-write seam        | **done — smoke-tested** (2026-07-03) |
-| Phase 2: Execution ledger + ops log          | Migrate execution-ledger and ops-log reads/writes to parameterized SQL; JSON export kept as debugging artifact                            | **done — smoke-tested** (2026-07-03) |
-| Phase 3: History snapshots                   | Persist maturity, portfolio-index, repo-signal, merge-readiness, and agent-run timing/token/cost metrics over time                        | **done — smoke-tested** (2026-07-04) |
-| Phase 4: Trend routes + first-run migration  | Maturity/portfolio history and trend routes, repo-row sparkline consumer, first-run JSON-to-SQL migration, differential-scan history      | **done — smoke-tested** (2026-07-04) |
+| Phase                                        | Scope                                                                                                                                    | Status                               | Completed  | Token usage | Work units |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | ---------- | ----------- | ---------- |
+| Phase 1: SQLite foundation                   | Capability detection, `output/app.db` bootstrap, schema-v1 tables, `GET /api/persistence/status`, agent-run-event dual-write seam        | **done — smoke-tested** (2026-07-03) | 2026-07-03 | —           | —          |
+| Phase 2: Execution ledger + ops log          | Migrate execution-ledger and ops-log reads/writes to parameterized SQL; JSON export kept as debugging artifact                            | **done — smoke-tested** (2026-07-03) | 2026-07-03 | —           | —          |
+| Phase 3: History snapshots                   | Persist maturity, portfolio-index, repo-signal, merge-readiness, and agent-run timing/token/cost metrics over time                        | **done — smoke-tested** (2026-07-04) | 2026-07-04 | —           | —          |
+| Phase 4: Trend routes + first-run migration  | Maturity/portfolio history and trend routes, repo-row sparkline consumer, first-run JSON-to-SQL migration, differential-scan history      | **done — smoke-tested** (2026-07-04) | 2026-07-04 | —           | —          |
 
 ### Release 2.0 completion snapshot
 
@@ -581,18 +581,18 @@ prompt-refinement flow.
 
 #### Phase plan (within this release)
 
-| Phase                                     | Scope                                                                                                                                        | Status                               |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| Phase 1: Assessment foundation            | `RepoLifecycleState`, `Portfolio.Assessment.ps1`, `repo-structure-standards.json`, `GET /api/portfolio/assessment`, GitHub-vs-local coverage | **done — smoke-tested** (2026-04-25) |
-| Phase 2: Value ranking                    | `Portfolio.ValueScorer.ps1`, `value-scoring.json`, value score on each pending item in the assessment response                               | **done — smoke-tested** (2026-04-26) |
-| Phase 3A: Ordered portfolio index         | `output/index/repos.index.json`, normalized repo identity, scan artifacts under `output/index/scans/`                                        | **done — smoke-tested** (2026-05-11) |
-| Phase 3B: GitHub metadata enrichment      | PR detail, Pages status/link, latest Actions status, created/updated timestamps                                                              | **done — smoke-tested** (2026-05-12) |
-| Phase 3C: Dashboard signal model          | Portfolio Mission panel, Documentation Health, dashboard badges, index-backed assessment display                                             | **done — smoke-tested** (2026-05-12) |
-| Phase 4: Work Queue value display         | Value score column + rationale tooltip in `WorkQueueView.tsx`; rerank by value                                                               | **done — smoke-tested** (2026-05-27) |
-| Phase 5: Expanded evaluator               | Feature/modernization/security/test/doc opportunity findings beyond hardening                                                                | **done — smoke-tested** (2026-05-28) |
-| Phase 6: Prompt context packet foundation | Backend packet that combines README, ROADMAP, assessment, value rationale, and constraints for later prompt refinement                       | **done — smoke-tested** (2026-05-28) |
-| Phase 7A: Differential scan completion    | Refresh only repos whose local/git/GitHub signals changed since the last indexed snapshot                                                    | **done — smoke-tested** (2026-05-28) |
-| Phase 7B: Collection report + docs        | `Portfolio.Report.ps1` HTML/CSV; update `HelpModal.tsx` and `docs/reference/` for the north-star workflow                                    | **done — smoke-tested** (2026-05-28) |
+| Phase                                     | Scope                                                                                                                                        | Status                               | Completed  | Token usage | Work units |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | ---------- | ----------- | ---------- |
+| Phase 1: Assessment foundation            | `RepoLifecycleState`, `Portfolio.Assessment.ps1`, `repo-structure-standards.json`, `GET /api/portfolio/assessment`, GitHub-vs-local coverage | **done — smoke-tested** (2026-04-25) | 2026-04-25 | —           | —          |
+| Phase 2: Value ranking                    | `Portfolio.ValueScorer.ps1`, `value-scoring.json`, value score on each pending item in the assessment response                               | **done — smoke-tested** (2026-04-26) | 2026-04-26 | —           | —          |
+| Phase 3A: Ordered portfolio index         | `output/index/repos.index.json`, normalized repo identity, scan artifacts under `output/index/scans/`                                        | **done — smoke-tested** (2026-05-11) | 2026-05-11 | —           | —          |
+| Phase 3B: GitHub metadata enrichment      | PR detail, Pages status/link, latest Actions status, created/updated timestamps                                                              | **done — smoke-tested** (2026-05-12) | 2026-05-12 | —           | —          |
+| Phase 3C: Dashboard signal model          | Portfolio Mission panel, Documentation Health, dashboard badges, index-backed assessment display                                             | **done — smoke-tested** (2026-05-12) | 2026-05-12 | —           | —          |
+| Phase 4: Work Queue value display         | Value score column + rationale tooltip in `WorkQueueView.tsx`; rerank by value                                                               | **done — smoke-tested** (2026-05-27) | 2026-05-27 | —           | —          |
+| Phase 5: Expanded evaluator               | Feature/modernization/security/test/doc opportunity findings beyond hardening                                                                | **done — smoke-tested** (2026-05-28) | 2026-05-28 | —           | —          |
+| Phase 6: Prompt context packet foundation | Backend packet that combines README, ROADMAP, assessment, value rationale, and constraints for later prompt refinement                       | **done — smoke-tested** (2026-05-28) | 2026-05-28 | —           | —          |
+| Phase 7A: Differential scan completion    | Refresh only repos whose local/git/GitHub signals changed since the last indexed snapshot                                                    | **done — smoke-tested** (2026-05-28) | 2026-05-28 | —           | —          |
+| Phase 7B: Collection report + docs        | `Portfolio.Report.ps1` HTML/CSV; update `HelpModal.tsx` and `docs/reference/` for the north-star workflow                                    | **done — smoke-tested** (2026-05-28) | 2026-05-28 | —           | —          |
 
 ---
 
@@ -906,13 +906,13 @@ depend on Phase 2 rollups.
 
 #### Phase plan (within this release)
 
-| Phase | Scope | Status |
-| --- | --- | --- |
-| Phase 1: Analytics contract scaffold | `GET /api/portfolio/trend`, typed frontend client, dashboard analytics panel, repo sparkline seed rendering, and smoke coverage with honest current-snapshot fallback messaging | **done — smoke-tested** (2026-07-03) |
-| Phase 2: History-backed rollups | Persist and aggregate daily portfolio/maturity history from Release 2.1 tables, widen `availableDays`, and compute real `improvedThisWeek` deltas | **engineering-complete — smoke-tested** — rollup logic live; the api-host `Roadmap maturity history route` asserts an ordered SQLite-backed series and the trend route reports `status=history-backed` (both green under `npm test`). **External residual (not an engineering gap):** the full 7/90-day window only fills as calendar time passes in daily use — no autonomous test can force it |
-| Phase 3: Distribution surfaces | Weekly digest webhook delivery, SVG badge routes, and `roadmap-audit-action` packaging | **done — smoke-tested** (verified 2026-07-06) — digest webhook + SVG badges + `roadmap-audit-action` all covered; the `roadmap-audit-action package` gate in `Invoke-TestSuite.ps1` runs the composite action against `ROADMAP.md` and passes under `npm test` |
-| Phase 4: Standalone spec + portfolio economics | Extract the roadmap contract into a publishable spec directory and add cost/quota-burn analytics derived from raw run observations | **done — smoke-tested** (verified 2026-07-06) — `spec/roadmap-contract/` gate + the api-host `Cost/burn analytics` step (`/api/analytics/cost`, derived-only) both pass under `npm test` |
-| Phase 5: Repository curation + change-aware indexing | Favorites / portfolio-candidate / archived-ignore curation, repo-level change probes, startup prioritization, and proof that unchanged repos are reused by default | **done — smoke-tested** (2026-07-05) |
+| Phase | Scope | Status | Completed  | Token usage | Work units |
+| --- | --- | --- | ---------- | ----------- | ---------- |
+| Phase 1: Analytics contract scaffold | `GET /api/portfolio/trend`, typed frontend client, dashboard analytics panel, repo sparkline seed rendering, and smoke coverage with honest current-snapshot fallback messaging | **done — smoke-tested** (2026-07-03) | 2026-07-03 | —           | —          |
+| Phase 2: History-backed rollups | Persist and aggregate daily portfolio/maturity history from Release 2.1 tables, widen `availableDays`, and compute real `improvedThisWeek` deltas | **engineering-complete — smoke-tested** — rollup logic live; the api-host `Roadmap maturity history route` asserts an ordered SQLite-backed series and the trend route reports `status=history-backed` (both green under `npm test`). **External residual (not an engineering gap):** the full 7/90-day window only fills as calendar time passes in daily use — no autonomous test can force it | —          | —           | —          |
+| Phase 3: Distribution surfaces | Weekly digest webhook delivery, SVG badge routes, and `roadmap-audit-action` packaging | **done — smoke-tested** (verified 2026-07-06) — digest webhook + SVG badges + `roadmap-audit-action` all covered; the `roadmap-audit-action package` gate in `Invoke-TestSuite.ps1` runs the composite action against `ROADMAP.md` and passes under `npm test` | 2026-07-06 | —           | —          |
+| Phase 4: Standalone spec + portfolio economics | Extract the roadmap contract into a publishable spec directory and add cost/quota-burn analytics derived from raw run observations | **done — smoke-tested** (verified 2026-07-06) — `spec/roadmap-contract/` gate + the api-host `Cost/burn analytics` step (`/api/analytics/cost`, derived-only) both pass under `npm test` | 2026-07-06 | —           | —          |
+| Phase 5: Repository curation + change-aware indexing | Favorites / portfolio-candidate / archived-ignore curation, repo-level change probes, startup prioritization, and proof that unchanged repos are reused by default | **done — smoke-tested** (2026-07-05) | 2026-07-05 | —           | —          |
 
 #### Engineering milestones
 
@@ -1288,12 +1288,12 @@ shared-LAN bind depends on the Release 2.2 non-loopback auth guardrail
 
 #### Phase plan (within this release)
 
-| Phase                                       | Scope                                                                                                                     | Status  |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------- |
-| Phase 1: Responsive foundation              | Breakpoint audit of primary surfaces, table-to-card collapse, mobile navigation, full-screen modal sheets, touch targets  | **done — smoke-tested** (2026-07-05) — `npm run build` + typecheck clean; frontend smoke asserts no horizontal body scroll and a visible mobile bottom nav at 390px |
-| Phase 2: Glanceable health + agent activity | Mobile Repo Health summary, always-visible agent-activity indicator, mobile agent-run list                                 | **smoke-tested** (2026-07-05) — health panel + agent-activity indicator; tap-through run list is a follow-up |
-| Phase 3: Mobile refinement + dispatch       | Prompt-refinement and roadmap-phase dispatch flows usable end-to-end on a phone with preview-first guardrails intact        | **engineering-complete — smoke-tested** — responsive Operations + full-screen dispatch sheet proven at a 390px viewport by `frontend-smoke.cjs` (`narrowViewportOk`). **External residual:** an end-to-end pass on a physical Android phone is the operator-verified follow-up (hardware) |
-| Phase 4: Home-screen install + verification | Web app manifest/icons, LAN access documentation, physical-Android verification of all four workflows, desktop regression  | **engineering-complete — smoke-tested** — manifest/icons proven by `frontend-smoke.cjs` (`manifestValid`) + LAN doc shipped; desktop regression green. **External residual:** physical-Android verification of the four workflows is the operator-verified follow-up (hardware) |
+| Phase                                       | Scope                                                                                                                     | Status  | Completed  | Token usage | Work units |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------- | ---------- | ----------- | ---------- |
+| Phase 1: Responsive foundation              | Breakpoint audit of primary surfaces, table-to-card collapse, mobile navigation, full-screen modal sheets, touch targets  | **done — smoke-tested** (2026-07-05) — `npm run build` + typecheck clean; frontend smoke asserts no horizontal body scroll and a visible mobile bottom nav at 390px | 2026-07-05 | —           | —          |
+| Phase 2: Glanceable health + agent activity | Mobile Repo Health summary, always-visible agent-activity indicator, mobile agent-run list                                 | **smoke-tested** (2026-07-05) — health panel + agent-activity indicator; tap-through run list is a follow-up | 2026-07-05 | —           | —          |
+| Phase 3: Mobile refinement + dispatch       | Prompt-refinement and roadmap-phase dispatch flows usable end-to-end on a phone with preview-first guardrails intact        | **engineering-complete — smoke-tested** — responsive Operations + full-screen dispatch sheet proven at a 390px viewport by `frontend-smoke.cjs` (`narrowViewportOk`). **External residual:** an end-to-end pass on a physical Android phone is the operator-verified follow-up (hardware) | —          | —           | —          |
+| Phase 4: Home-screen install + verification | Web app manifest/icons, LAN access documentation, physical-Android verification of all four workflows, desktop regression  | **engineering-complete — smoke-tested** — manifest/icons proven by `frontend-smoke.cjs` (`manifestValid`) + LAN doc shipped; desktop regression green. **External residual:** physical-Android verification of the four workflows is the operator-verified follow-up (hardware) | —          | —           | —          |
 
 ---
 
@@ -1412,13 +1412,13 @@ Phase 5 — Contextual help and empty/edge states:
 
 #### Phase plan (within this release)
 
-| Phase | Scope | Status |
-| --- | --- | --- |
-| Phase 1: Trust and orientation | Persistent data-source indicator, labels on icon-only toolbar controls, "Needs Attention" rescope + inline definition | **done — smoke-tested** (2026-07-06) |
-| Phase 2: Navigation and naming | Distinct queue renames, per-tab subtitles, dismissible orientation overlay | **done — smoke-tested** (2026-07-06) |
-| Phase 3: Progressive disclosure | "Advanced filters" toggle + filter-count badge, inline "Why?" expander | **done — smoke-tested** (2026-07-06) |
-| Phase 4: Consistency pass | One "Label · count" action pattern, standardized badge terminology + hover definitions | **done — smoke-tested** (2026-07-06) |
-| Phase 5: Contextual help + edge states | Explanatory empty states (Copilot lanes, Dependencies), promoted bulk-selection note | **done — smoke-tested** (2026-07-06) |
+| Phase | Scope | Status | Completed  | Token usage | Work units |
+| --- | --- | --- | ---------- | ----------- | ---------- |
+| Phase 1: Trust and orientation | Persistent data-source indicator, labels on icon-only toolbar controls, "Needs Attention" rescope + inline definition | **done — smoke-tested** (2026-07-06) | 2026-07-06 | —           | —          |
+| Phase 2: Navigation and naming | Distinct queue renames, per-tab subtitles, dismissible orientation overlay | **done — smoke-tested** (2026-07-06) | 2026-07-06 | —           | —          |
+| Phase 3: Progressive disclosure | "Advanced filters" toggle + filter-count badge, inline "Why?" expander | **done — smoke-tested** (2026-07-06) | 2026-07-06 | —           | —          |
+| Phase 4: Consistency pass | One "Label · count" action pattern, standardized badge terminology + hover definitions | **done — smoke-tested** (2026-07-06) | 2026-07-06 | —           | —          |
+| Phase 5: Contextual help + edge states | Explanatory empty states (Copilot lanes, Dependencies), promoted bulk-selection note | **done — smoke-tested** (2026-07-06) | 2026-07-06 | —           | —          |
 
 ---
 
@@ -1523,12 +1523,12 @@ Phase D — Hardening & observability (parallelizable, autonomous):
 
 #### Phase plan (within this release)
 
-| Phase | Scope | Status |
-| --- | --- | --- |
-| Phase A: Unblockers | Value-scoring decision, live GitHub App token, live submit-PR | planned — blocked on operator decision + creds |
-| Phase B: Scheduled doc refinement | Scheduler + favorite-scoped doc-improve previews + digest + run history | **done — smoke-tested** (2026-07-06) — engine + `POST /api/automation/run` / `GET /api/automation/history` / `scan/schedule` automation block + webhook digest (dry-run default); module + api-host smoke green, preview-first (applies nothing) |
-| Phase C: Scheduled roadmap packaging | Top-value item packaging + quota guard + approve-to-dispatch | planned — blocked on Phase A |
-| Phase D: Hardening & observability | Frontend unit tests, Dashboard decomposition, failure alerting, auth operator-verify | planned |
+| Phase | Scope | Status | Completed  | Token usage | Work units |
+| --- | --- | --- | ---------- | ----------- | ---------- |
+| Phase A: Unblockers | Value-scoring decision, live GitHub App token, live submit-PR | planned — blocked on operator decision + creds | —          | —           | —          |
+| Phase B: Scheduled doc refinement | Scheduler + favorite-scoped doc-improve previews + digest + run history | **done — smoke-tested** (2026-07-06) — engine + `POST /api/automation/run` / `GET /api/automation/history` / `scan/schedule` automation block + webhook digest (dry-run default); module + api-host smoke green, preview-first (applies nothing) | 2026-07-06 | —           | —          |
+| Phase C: Scheduled roadmap packaging | Top-value item packaging + quota guard + approve-to-dispatch | planned — blocked on Phase A | —          | —           | —          |
+| Phase D: Hardening & observability | Frontend unit tests, Dashboard decomposition, failure alerting, auth operator-verify | planned | —          | —           | —          |
 
 #### Budget guardrail
 
