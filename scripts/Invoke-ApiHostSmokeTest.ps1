@@ -245,6 +245,15 @@ try {
     Write-Host '  distribution ok: portfolio.svg is SVG, digest payload has totalRepos/byLevel/improvedThisWeek/topCandidates (dry-run)' -ForegroundColor DarkGray
 
     Write-Host '[STEP] Automation: scheduled doc-refinement (Release 2.7 Phase B, preview-first)' -ForegroundColor Cyan
+    # Automation now depends on an available portfolio payload; prime it first.
+    $automationPortfolioWarm = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment"
+    Assert-Not503 -Name '/api/portfolio/assessment (warm for automation)' -Response $automationPortfolioWarm
+    if ([int]$automationPortfolioWarm.StatusCode -ne 200) {
+        throw "/api/portfolio/assessment warm-up for automation expected 200, got $($automationPortfolioWarm.StatusCode). Body=$($automationPortfolioWarm.Content)"
+    }
+    if ($null -eq $automationPortfolioWarm.Json -or $automationPortfolioWarm.Json.success -ne $true) {
+        throw "/api/portfolio/assessment warm-up for automation did not return success=true. Body=$($automationPortfolioWarm.Content)"
+    }
     # POST /api/automation/run — runs the curated-subset doc-refinement. It must
     # never apply anything (appliedCount=0) and must write to the run history.
     $autoRun = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/automation/run" -Body @{}
