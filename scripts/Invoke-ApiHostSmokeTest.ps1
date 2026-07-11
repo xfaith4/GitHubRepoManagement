@@ -1863,6 +1863,42 @@ try {
         }
     }
 
+    # ── Route census (silent-deletion tripwire) ──────────────────────────────
+    # Generalizes the reconcile-route regression: a route deleted in a "refactor"
+    # (d2cc6cc/bfb3724) used to vanish silently because nothing asserted it still
+    # existed. The naive check — "status must not be 404" — is ITSELF vacuous
+    # here: this host serves the SPA index.html for any unmatched GET path, so a
+    # silently-deleted API route returns HTTP 200 text/html, not 404. The real
+    # discriminator is the content type: every live API route (including /metrics
+    # and /health) returns application/json, whereas the SPA fallback returns
+    # text/html. So a census route that stops returning JSON has been deleted and
+    # is now being shadowed by the SPA catch-all. Heavy scan routes are exercised
+    # by their own steps above; this census stays to instant/cached JSON routes.
+    Write-Host '[STEP] Route census — critical API routes must return JSON (not the SPA fallback)' -ForegroundColor Cyan
+    $censusRoutes = @(
+        '/health/live', '/health/ready', '/health/dependencies', '/metrics',
+        '/api/persistence/status', '/api/auth/status', '/api/auth/github/status',
+        '/api/automation/history', '/api/settings', '/api/roadmap/index',
+        '/api/cache/diagnostics', '/api/scan/schedule', '/api/execution/metrics',
+        '/api/execution/queue', '/api/notifications/webhooks', '/api/roadmap/drift',
+        '/api/analytics/cost', '/api/roadmap/maturity-history', '/api/agent-runs',
+        '/api/report/artifacts', '/api/status/cache', '/api/log/tail'
+    )
+    $censusMissing = [System.Collections.Generic.List[string]]::new()
+    foreach ($route in $censusRoutes) {
+        $censusResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl$route"
+        $censusCt = [string]$censusResponse.ContentType
+        if ($censusCt -notlike 'application/json*') {
+            $observed = if ([string]::IsNullOrWhiteSpace($censusCt)) { "HTTP $($censusResponse.StatusCode), no content-type" } else { "HTTP $($censusResponse.StatusCode), $censusCt" }
+            $censusMissing.Add(("{0} ({1})" -f $route, $observed))
+            Write-Host ("  [MISSING] GET {0} -> {1} (not JSON — deleted route now shadowed by the SPA fallback)" -f $route, $observed) -ForegroundColor Red
+        }
+    }
+    if ($censusMissing.Count -gt 0) {
+        throw ("Route census failed — {0} critical API route(s) no longer return JSON (silently deleted?): {1}" -f $censusMissing.Count, ($censusMissing.ToArray() -join '; '))
+    }
+    Write-Host ("  {0}/{1} critical API routes return JSON (no silent deletions)" -f $censusRoutes.Count, $censusRoutes.Count) -ForegroundColor DarkGray
+
     Write-Host '[PASS] API host smoke completed' -ForegroundColor Green
     $statusCacheSuccess = if ($null -ne $statusCache.Json -and ($statusCache.Json.PSObject.Properties.Name -contains 'success')) { $statusCache.Json.success } else { $null }
     $settingsGetSuccess = if ($null -ne $settingsGet.Json -and ($settingsGet.Json.PSObject.Properties.Name -contains 'success')) { $settingsGet.Json.success } else { $null }
@@ -1937,6 +1973,8 @@ try {
         staticIndexOk = { $staticIndexOk }
         staticAssetsOk = { $staticAssetsOk }
         staticSkipped = { $staticSkipped }
+        routeCensusChecked = { $censusRoutes.Count }
+        routeCensusMissing = { $censusMissing.Count }
     }
     $summary = [ordered]@{}
     foreach ($entryName in $summarySpec.Keys) {

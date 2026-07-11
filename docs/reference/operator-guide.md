@@ -62,3 +62,45 @@ Optional execution history: `roadmap-events.jsonl`
 `npm run typecheck && npm test` (12-gate suite: module/adapter/API-host/contract/
 auth/repo-structure/config/OpenAPI/spec-dir/action/roadmap-lint). Frontend UI:
 `npm run smoke:frontend`.
+
+## Daily evidence routine
+
+The gate proves `smoke-tested`; it cannot cross to `operator-verified`. The
+daily routine closes that gap and accrues the trend history that is time-gated.
+
+**The loop (≈20–30 min):**
+
+1. **Cold gate + evidence** — run the driver *before* you start your working
+   host:
+
+   ```powershell
+   pwsh -File scripts/Invoke-DailyEvidence.ps1
+   ```
+
+   It runs the full gate on port **7099** (never 7071, so your portal survives),
+   boots its own host, runs one real differential scan (which accrues
+   `GET /api/portfolio/trend` history), and writes a dated snapshot under
+   `evidence/baseline/daily/<stamp>/` — `manifest.json`, `summary.md`,
+   `verify-queue.md`, and the parsed `roadmap-state-index.json`. It restores
+   `settings.json` byte-exact and tears the host down. Flags: `-SkipApiHost`
+   (fast gate), `-SkipGate` / `-SkipScan` (isolate a phase).
+
+2. **Promote one surface** — the snapshot's `verify-queue.md` lists every
+   surface still at `smoke-tested`, newest releases first. Pick one, drive it by
+   hand against the live workspace, then record it:
+
+   ```powershell
+   pwsh -File scripts/Add-OperatorVerification.ps1 -SurfaceId <id> `
+     -Evidence "<route + response / artifact path you observed>"
+   ```
+
+   This appends to the append-only `evidence/operator-verification-log.jsonl`;
+   tomorrow's driver drops that surface from the queue. Also flip the item's
+   inline `*(state: smoke-tested)*` to `operator-verified` in `ROADMAP.md` to
+   keep roadmap and log in sync. List candidate ids any time with
+   `Add-OperatorVerification.ps1 -List`.
+
+3. **Commit** the evidence snapshot with the day's work.
+
+A `red` verdict (any gate failed or the scan errored) exits non-zero; `green`
+exits 0.

@@ -116,7 +116,12 @@ Invoke-ScriptGate -Name 'Adapter smoke'     -ScriptPath (Join-Path $scriptsDir '
 
 if (-not $SkipApiHost) {
     Clear-ListenerPort -PortNumber $Port
-    Invoke-ScriptGate -Name 'API host smoke' -ScriptPath (Join-Path $scriptsDir 'Invoke-ApiHostSmokeTest.ps1')        -ScriptArgs $rootArgs
+    # Thread -Port/-BaseUrl into the smoke so a non-default port actually moves
+    # the live host off 7071. Without this the suite freed $Port but the smoke
+    # still bound its 7071 default — which, on a machine already running the
+    # portal on 7071, made the host terminate the operator's running instance.
+    $apiHostArgs = $rootArgs + @('-Port', $Port, '-BaseUrl', "http://127.0.0.1:$Port")
+    Invoke-ScriptGate -Name 'API host smoke' -ScriptPath (Join-Path $scriptsDir 'Invoke-ApiHostSmokeTest.ps1')        -ScriptArgs $apiHostArgs
 }
 else {
     Write-Host ''
