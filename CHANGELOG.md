@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here.
 
+## 2026-07-12 — Installer fix: Reconfigure preserves HTTPS + secrets move to machine env vars (out of git)
+
+### Changes
+
+- **Root cause it fixes:** `-Action Reconfigure` (run to rebuild `dist` / re-register) re-entered the fresh-install path, which only enabled TLS when `-PfxPath` was passed *that run*. Omitting it **silently downgraded the portal from HTTPS to plain HTTP** (host logged `started on http://…`), so `https://<host>:7071` failed with "SSL connection could not be established." The same run wrote a freshly-generated `auth.apiKey` in cleartext into the **git-tracked** `backend/config/settings.json` — a secret one `git add` from being committed.
+- **`scripts/Install-RepoManagementService.ps1`** — secrets now live in **machine environment variables** (`REPO_MGMT_API_KEY`, `REPO_MGMT_REQUIRE_API_KEY`, `REPO_MGMT_TLS_PFX`, `REPO_MGMT_TLS_PFX_PASSWORD`) which the host reads natively and which win over `settings.json` — the same pattern `GITHUB_TOKEN` already used. The tracked `settings.json` is left **secret-free** (any secret a prior installer parked there is stripped, and its ACL lock reset). New pure `Resolve-PortalSecretConfig` **carries forward** existing auth/TLS config (env first, then a legacy settings copy) so a reconfigure that omits `-PfxPath`/`-ApiKey` keeps HTTPS on and reuses the key instead of downgrading / regenerating. New pure `Remove-SettingsSecretKeys` strips the secret keys and prunes empty containers. `Repair` now migrates secrets out of `settings.json` too, and both `Repair` and the fresh-install probe/watchdog use the **effective** scheme (so an HTTPS host is probed over HTTPS). `Set-PortalSecretsInSettings` / `Lock-SettingsFile` removed.
+- **`docs/always-on-service.md`** — documents env-var secret storage, the secret-free tracked `settings.json`, and reconfigure carry-forward.
+- **`scripts/Invoke-ModuleSmokeTest.ps1`** — the installer section now covers `Resolve-PortalSecretConfig` (env/settings/param/generate carry-forward) and `Remove-SettingsSecretKeys` (git-safe strip + non-secret-sibling preservation).
+
+### Testing
+
+- Parser check clean; module smoke green — `service installer ok: 5 action cases, secrets carry-forward (env/settings/param/generate), settings-strip git-safe, drift flagged 4 missing`.
+- Elevated paths (env-var write, service re-register/restart, `icacls` reset) can't run from a non-elevated shell — verified by logic review + the pure-function smoke. **Operator verify (elevated):** `-Action Reconfigure -PfxPath .\backend\config\tls\portal.pfx -PfxPassword '<pw>'` → `sc qc` shows no secrets, `settings.json` has no `auth.apiKey`, and `https://<host>:7071` serves; a later bare `-Action Reconfigure` keeps HTTPS.
+
 ## 2026-07-12 — Pivot dispatch from GitHub Copilot to local Claude Code (queue + operator runner)
 
 ### Changes

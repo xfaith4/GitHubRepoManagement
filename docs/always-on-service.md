@@ -47,17 +47,23 @@ missing (needs `npm`). Pass `-SkipBuild` to install an API-only service.
 
 By default a network bind is **protected**: the installer turns on the API-key
 gate and prints the key (paste it into the dashboard once, or use it for
-automation). The key and the TLS password are written into an **ACL-locked
-`settings.json`** (`auth.apiKey` / `network.tls.pfxPassword`, which the host reads
-natively) — **not** the service command line, so they never appear in the
-world-readable `sc qc` / `Get-CimInstance Win32_Service` output. `GITHUB_TOKEN` is
-set as a machine environment variable for the same reason.
+automation). The key and the TLS path + password are stored as **machine
+environment variables** (`REPO_MGMT_API_KEY`, `REPO_MGMT_REQUIRE_API_KEY`,
+`REPO_MGMT_TLS_PFX`, `REPO_MGMT_TLS_PFX_PASSWORD`), which the host reads natively
+and which win over `settings.json`. This keeps them out of **both** the service
+command line (world-readable via `sc qc` / `Get-CimInstance Win32_Service`) **and**
+the git-tracked `settings.json` — the same pattern `GITHUB_TOKEN` already uses.
+The tracked `settings.json` is left **secret-free**; any secret an older installer
+wrote there is stripped on the next install/repair.
 
 The installer is a **smart entry point** — re-run it and it detects an existing
-service and offers **Repair** (reconcile config + restart, no teardown),
-**Reconfigure** (change bind/port/auth/TLS), **Reinstall** (full recreate), or
-**Uninstall**. Non-interactive: `-Action Repair|Reconfigure|Reinstall|Uninstall`.
-It verifies `/health/live` after every change.
+service and offers **Repair** (reconcile config, migrate secrets out of
+`settings.json`, restart — no teardown), **Reconfigure** (change bind/port/auth/TLS),
+**Reinstall** (full recreate), or **Uninstall**. Non-interactive:
+`-Action Repair|Reconfigure|Reinstall|Uninstall`. It verifies `/health/live` after
+every change. **A reconfigure that omits `-PfxPath` / `-ApiKey` carries the
+existing HTTPS certificate and key forward** — it will not silently downgrade to
+HTTP or mint a new key.
 
 ## HTTPS
 
@@ -86,9 +92,11 @@ PFX password.
     -PfxPath ".\backend\config\tls\portal.pfx" -PfxPassword '<password>'
 ```
 
-The PFX path and password are written into the ACL-locked `settings.json`
-(`network.tls.pfxPath` / `network.tls.pfxPassword`) — not the service command
-line. The portal is now at `https://<host>:7071`, protected by the API key.
+The PFX path and password are stored as the `REPO_MGMT_TLS_PFX` /
+`REPO_MGMT_TLS_PFX_PASSWORD` machine env vars — not the service command line and
+not `settings.json`. The portal is now at `https://<host>:7071`, protected by the
+API key. On a later reconfigure you can omit `-PfxPath`/`-PfxPassword` and HTTPS is
+preserved automatically.
 
 **Real, universally-trusted certificate:** if you have a public domain name, use
 an ACME client (e.g. [win-acme](https://www.win-acme.com/)) to obtain and

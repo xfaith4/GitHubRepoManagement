@@ -1439,7 +1439,7 @@ finally {
     Remove-Item -LiteralPath $wdTmp -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-Write-Step 'Portal service installer — smoke: action resolution + settings-secrets + drift (Release 2.7 Phase D)'
+Write-Step 'Portal service installer — smoke: action resolution + secrets carry-forward/strip + drift (Release 2.7 Phase D)'
 # Isolate the dot-source in a child scope so the installer's Write-* helpers do
 # not clobber the smoke's for the remaining steps.
 & {
@@ -1460,23 +1460,39 @@ Write-Step 'Portal service installer — smoke: action resolution + settings-sec
         if ($g -ne $c.Want) { throw ("Resolve-InstallAction wrong: exists={0} req={1} int={2} -> {3}, expected {4}" -f $c.Exists, $c.Req, $c.Int, $g, $c.Want) }
     }
 
+    # Secrets/TLS carry-forward: a reconfigure that OMITS -PfxPath/-ApiKey must
+    # preserve HTTPS + reuse the key (the bug that silently downgraded to HTTP).
+    $rEnv = Resolve-PortalSecretConfig -InjectAuth $true -ExistingSettings @{} `
+        -ExistingEnv @{ REPO_MGMT_API_KEY = 'envkey'; REPO_MGMT_TLS_PFX = 'C:\c.pfx'; REPO_MGMT_TLS_PFX_PASSWORD = 'envpw' } -KeyGenerator { 'GEN' }
+    if ($rEnv.ApiKey -ne 'envkey' -or $rEnv.ApiKeySource -ne 'env') { throw 'Resolve-PortalSecretConfig did not carry the key forward from env' }
+    if (-not $rEnv.UseTls -or $rEnv.PfxPath -ne 'C:\c.pfx' -or $rEnv.PfxPassword -ne 'envpw') { throw 'Resolve-PortalSecretConfig dropped TLS on carry-forward' }
+
+    # Legacy settings secrets migrate forward; explicit params win; generate last.
+    $rSet = Resolve-PortalSecretConfig -InjectAuth $true -ExistingEnv @{} `
+        -ExistingSettings @{ auth = @{ apiKey = 'setkey' }; network = @{ tls = @{ pfxPath = 'C:\s.pfx'; pfxPassword = 'setpw' } } } -KeyGenerator { 'GEN' }
+    if ($rSet.ApiKey -ne 'setkey' -or $rSet.ApiKeySource -ne 'settings' -or $rSet.PfxPassword -ne 'setpw') { throw 'Resolve-PortalSecretConfig did not migrate legacy settings secrets' }
+    $rParam = Resolve-PortalSecretConfig -InjectAuth $true -RequestedApiKey 'pk' -RequestedPfxPath 'C:\p.pfx' -RequestedPfxPassword 'ppw' `
+        -ExistingEnv @{ REPO_MGMT_API_KEY = 'envkey' } -ExistingSettings @{} -KeyGenerator { 'GEN' }
+    if ($rParam.ApiKeySource -ne 'param' -or $rParam.PfxPath -ne 'C:\p.pfx') { throw 'Resolve-PortalSecretConfig: explicit params should win' }
+    $rGen = Resolve-PortalSecretConfig -InjectAuth $true -ExistingEnv @{} -ExistingSettings @{} -KeyGenerator { 'GEN' }
+    if ($rGen.ApiKeySource -ne 'generated' -or $rGen.ApiKey -ne 'GEN') { throw 'Resolve-PortalSecretConfig should generate when nothing to carry' }
+
+    # Secret-strip: settings.json ends up secret-free (git-safe), non-secret keys kept.
+    $strip = Remove-SettingsSecretKeys -Settings @{ schemaVersion = 'v1'; inventory = @{ localRoots = @('X') }; auth = @{ apiKey = 'k'; requireApiKey = $true }; network = @{ tls = @{ pfxPath = 'p'; pfxPassword = 'pw' } } }
+    if ($strip.ContainsKey('auth') -or $strip.ContainsKey('network')) { throw 'Remove-SettingsSecretKeys left a secret container behind' }
+    if ($strip.schemaVersion -ne 'v1' -or $strip.inventory.localRoots[0] -ne 'X') { throw 'Remove-SettingsSecretKeys dropped a non-secret key' }
+    $stripSib = Remove-SettingsSecretKeys -Settings @{ auth = @{ apiKey = 'k'; apiKeyEnvVar = 'X' }; network = @{ corsOrigin = '*'; tls = @{ pfxPassword = 'pw' } } }
+    if (-not $stripSib.ContainsKey('auth') -or $stripSib.auth.ContainsKey('apiKey') -or $stripSib.auth.apiKeyEnvVar -ne 'X') { throw 'Remove-SettingsSecretKeys mishandled a non-secret auth sibling' }
+    if (-not $stripSib.ContainsKey('network') -or $stripSib.network.ContainsKey('tls') -or $stripSib.network.corsOrigin -ne '*') { throw 'Remove-SettingsSecretKeys mishandled a non-secret network sibling' }
+
     $instTmp = Join-Path $root 'output\smoke\module\svc-install'
     $null = New-Item -ItemType Directory -Path $instTmp -Force
     try {
-        $st = Join-Path $instTmp 'settings.json'
-        '{ "schemaVersion": "v1", "inventory": { "localRoots": ["X"] } }' | Set-Content -LiteralPath $st -Encoding UTF8
-        $null = Set-PortalSecretsInSettings -SettingsPath $st -RequireApiKey $true -ApiKey 'k123' -PfxPath (Join-Path $instTmp 'c.pfx') -PfxPassword 'pw'
-        $s = Get-Content -LiteralPath $st -Raw -Encoding UTF8 | ConvertFrom-Json
-        if ($s.schemaVersion -ne 'v1') { throw 'Set-PortalSecretsInSettings dropped schemaVersion' }
-        if ($s.inventory.localRoots[0] -ne 'X') { throw 'Set-PortalSecretsInSettings dropped existing keys' }
-        if ($s.auth.requireApiKey -ne $true -or $s.auth.apiKey -ne 'k123') { throw 'Set-PortalSecretsInSettings did not write auth' }
-        if ($s.network.tls.pfxPassword -ne 'pw') { throw 'Set-PortalSecretsInSettings did not write tls password' }
-
         $driftImg = "C:\gone\shawl.exe run --name X --cwd $instTmp --log-dir $instTmp\missing\logs -- $instTmp\pwsh.exe -File $instTmp\host.ps1"
         $drift = @(Get-ImagePathDrift -ImagePath $driftImg)
         if ($drift.Count -lt 1) { throw 'Get-ImagePathDrift should flag the missing paths' }
 
-        Write-Host ("  service installer ok: {0} action cases, settings-secrets round-trip (schemaVersion+keys preserved), drift flagged {1} missing" -f $instCases.Count, $drift.Count) -ForegroundColor DarkGray
+        Write-Host ("  service installer ok: {0} action cases, secrets carry-forward (env/settings/param/generate), settings-strip git-safe, drift flagged {1} missing" -f $instCases.Count, $drift.Count) -ForegroundColor DarkGray
     }
     finally {
         Remove-Item -LiteralPath $instTmp -Recurse -Force -ErrorAction SilentlyContinue

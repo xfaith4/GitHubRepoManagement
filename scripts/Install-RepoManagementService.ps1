@@ -17,16 +17,21 @@
       * Install / Reinstall / Reconfigure: create the service (Reinstall/
         Reconfigure tear down an existing one first).
       * Repair: non-destructive — validate the registered paths, re-apply
-        boot-start / recovery / description, migrate secrets into settings.json,
-        ensure the watchdog, restart, and health-check. No teardown.
+        boot-start / recovery / description, migrate any secrets out of
+        settings.json into machine env vars, ensure the watchdog, restart, and
+        health-check. No teardown.
       * Uninstall: remove the service (and the watchdog task).
 
-    SECRETS: the API key and TLS PFX password are written into
-    backend/config/settings.json (which the host reads natively — auth.apiKey /
-    network.tls.pfxPassword) and the file is ACL-locked, NOT injected as --env
-    args. This keeps them out of the service ImagePath, which is world-readable
-    via `sc qc`. GITHUB_TOKEN is set as a machine environment variable (out of the
-    ImagePath) rather than a --env arg.
+    SECRETS: the API key and TLS PFX (path + password) are written as MACHINE
+    environment variables (REPO_MGMT_API_KEY, REPO_MGMT_REQUIRE_API_KEY,
+    REPO_MGMT_TLS_PFX, REPO_MGMT_TLS_PFX_PASSWORD), which the host reads natively
+    and which win over settings.json. This keeps them out of BOTH the service
+    ImagePath (world-readable via `sc qc`) AND the git-tracked settings.json — the
+    same pattern GITHUB_TOKEN already uses. The tracked settings.json is left
+    secret-free (any secret a prior installer wrote there is stripped). A
+    reconfigure that omits -PfxPath / -ApiKey CARRIES FORWARD the existing values
+    (env first, then any legacy settings copy) so HTTPS is never silently dropped
+    and the key is never needlessly regenerated.
 
     RELIABILITY: after a successful install/repair the installer offers to register
     the freeze watchdog (scripts/service/Install-PortalWatchdog.ps1) so an
@@ -56,13 +61,16 @@
     TCP port. Default 7071.
 
 .PARAMETER PfxPath / PfxPassword
-    TLS certificate (.pfx) + password. When supplied the host serves HTTPS. The
-    password goes into settings.json (ACL-locked), not the ImagePath. Generate a
-    cert with scripts/New-RepoManagementTlsCertificate.ps1.
+    TLS certificate (.pfx) + password. When supplied the host serves HTTPS; the
+    path + password go into MACHINE env vars (REPO_MGMT_TLS_PFX / _PASSWORD), not
+    settings.json or the ImagePath. Omit on a reconfigure to keep the existing
+    HTTPS config. Generate a cert with scripts/New-RepoManagementTlsCertificate.ps1.
 
 .PARAMETER ApiKey
-    Explicit API key. If omitted while auth is enabled, one is generated. Stored
-    in settings.json (auth.apiKey), not the ImagePath.
+    Explicit API key. If omitted while auth is enabled, the existing key is reused
+    (carried forward from the env var or a legacy settings copy) and only generated
+    when none exists. Stored in the REPO_MGMT_API_KEY machine env var, not the
+    ImagePath or settings.json.
 
 .PARAMETER GitHubToken
     Optional GitHub token, set as the machine GITHUB_TOKEN env var for the service.
@@ -138,41 +146,103 @@ function Resolve-InstallAction {
     return 'Repair'
 }
 
-function Set-PortalSecretsInSettings {
-    <# Write auth + TLS secrets into settings.json so the host reads them natively
-       (auth.apiKey / network.tls.pfxPassword) instead of from --env args in the
-       ImagePath. Preserves existing keys and schemaVersion; JSON round-trips. #>
+function Resolve-PortalSecretConfig {
+    <# Compute the EFFECTIVE auth + TLS config for an install/reconfigure. Explicit
+       -ApiKey / -PfxPath / -PfxPassword win; otherwise carry forward the existing
+       value (machine env var first, then the legacy settings.json copy) so a
+       reconfigure that OMITS them preserves HTTPS and reuses the key instead of
+       silently downgrading to HTTP or minting a brand-new key. A key is generated
+       only when auth is required and none can be carried forward.
+
+       Pure: existing env + settings + the key generator are injected, so the smoke
+       exercises every branch with no real environment, RNG, or filesystem. #>
     param(
-        [Parameter(Mandatory)][string]$SettingsPath,
-        [bool]$RequireApiKey,
-        [string]$ApiKey,
-        [string]$PfxPath,
-        [string]$PfxPassword
+        [bool]$InjectAuth,
+        [string]$RequestedApiKey = '',
+        [string]$RequestedPfxPath = '',
+        [string]$RequestedPfxPassword = '',
+        [hashtable]$ExistingSettings,
+        [hashtable]$ExistingEnv,
+        [scriptblock]$KeyGenerator
     )
-    $obj = @{}
-    if (Test-Path -LiteralPath $SettingsPath) {
-        $raw = Get-Content -LiteralPath $SettingsPath -Raw -Encoding UTF8
-        if (-not [string]::IsNullOrWhiteSpace($raw)) { $obj = $raw | ConvertFrom-Json -AsHashtable }
+    if ($null -eq $ExistingEnv) { $ExistingEnv = @{} }
+    $envGet = {
+        param($n)
+        if ($ExistingEnv.ContainsKey($n) -and $null -ne $ExistingEnv[$n] -and "$($ExistingEnv[$n])" -ne '') { [string]$ExistingEnv[$n] } else { '' }
     }
-    if (-not $obj.ContainsKey('schemaVersion')) { $obj['schemaVersion'] = '1' }
+    $envApiKey = & $envGet 'REPO_MGMT_API_KEY'
+    $envPfx    = & $envGet 'REPO_MGMT_TLS_PFX'
+    $envPfxPw  = & $envGet 'REPO_MGMT_TLS_PFX_PASSWORD'
 
-    if (-not $obj.ContainsKey('auth') -or $obj['auth'] -isnot [System.Collections.IDictionary]) { $obj['auth'] = @{} }
-    $obj.auth['requireApiKey'] = [bool]$RequireApiKey
-    if ($ApiKey) { $obj.auth['apiKey'] = $ApiKey }
-
-    if ($PfxPath) {
-        if (-not $obj.ContainsKey('network') -or $obj['network'] -isnot [System.Collections.IDictionary]) { $obj['network'] = @{} }
-        if (-not $obj.network.ContainsKey('tls') -or $obj.network['tls'] -isnot [System.Collections.IDictionary]) { $obj.network['tls'] = @{} }
-        $obj.network.tls['pfxPath'] = $PfxPath
-        if ($PfxPassword) { $obj.network.tls['pfxPassword'] = $PfxPassword }
+    # Legacy settings.json copies (pre-fix installs wrote secrets here; we migrate
+    # them out to env vars and then strip them from the tracked file).
+    $setKey = ''; $setPfx = ''; $setPfxPw = ''
+    if ($ExistingSettings) {
+        if ($ExistingSettings.ContainsKey('auth') -and $ExistingSettings.auth -is [System.Collections.IDictionary] -and $ExistingSettings.auth.ContainsKey('apiKey')) {
+            $setKey = [string]$ExistingSettings.auth.apiKey
+        }
+        if ($ExistingSettings.ContainsKey('network') -and $ExistingSettings.network -is [System.Collections.IDictionary] -and
+            $ExistingSettings.network.ContainsKey('tls') -and $ExistingSettings.network.tls -is [System.Collections.IDictionary]) {
+            if ($ExistingSettings.network.tls.ContainsKey('pfxPath')) { $setPfx = [string]$ExistingSettings.network.tls.pfxPath }
+            if ($ExistingSettings.network.tls.ContainsKey('pfxPassword')) { $setPfxPw = [string]$ExistingSettings.network.tls.pfxPassword }
+        }
     }
 
-    ($obj | ConvertTo-Json -Depth 20) | Set-Content -LiteralPath $SettingsPath -Encoding UTF8
+    # API key: param -> env -> legacy settings -> generate (only when auth required).
+    $apiKey = ''; $apiKeySource = 'none'
+    if ($InjectAuth) {
+        if ($RequestedApiKey) { $apiKey = $RequestedApiKey; $apiKeySource = 'param' }
+        elseif ($envApiKey)   { $apiKey = $envApiKey;       $apiKeySource = 'env' }
+        elseif ($setKey)      { $apiKey = $setKey;          $apiKeySource = 'settings' }
+        elseif ($KeyGenerator){ $apiKey = [string](& $KeyGenerator); $apiKeySource = 'generated' }
+    }
+
+    # TLS pfx path: param -> env -> legacy settings.
+    $pfxPath = ''; $pfxSource = 'none'
+    if ($RequestedPfxPath) { $pfxPath = $RequestedPfxPath; $pfxSource = 'param' }
+    elseif ($envPfx)       { $pfxPath = $envPfx;           $pfxSource = 'env' }
+    elseif ($setPfx)       { $pfxPath = $setPfx;           $pfxSource = 'settings' }
+
+    # TLS password (only meaningful with a path): param -> env -> legacy settings.
+    $pfxPw = ''
+    if ($pfxPath) {
+        if ($RequestedPfxPassword) { $pfxPw = $RequestedPfxPassword }
+        elseif ($envPfxPw)         { $pfxPw = $envPfxPw }
+        elseif ($setPfxPw)         { $pfxPw = $setPfxPw }
+    }
+
     return [pscustomobject]@{
-        requireApiKey = [bool]$RequireApiKey
-        wroteApiKey   = [bool]$ApiKey
-        wroteTls      = [bool]$PfxPath
+        RequireApiKey = [bool]$InjectAuth
+        ApiKey        = $apiKey
+        ApiKeySource  = $apiKeySource
+        PfxPath       = $pfxPath
+        PfxPathSource = $pfxSource
+        PfxPassword   = $pfxPw
+        UseTls        = [bool]$pfxPath
     }
+}
+
+function Remove-SettingsSecretKeys {
+    <# Return $Settings with every installer-injected secret/policy key removed so
+       the git-TRACKED settings.json carries NO secrets (they live in machine env
+       vars instead): auth.apiKey, auth.requireApiKey, network.tls.pfxPath,
+       network.tls.pfxPassword. Prunes now-empty auth / network.tls / network
+       containers. All other keys are preserved untouched. Pure. #>
+    param([Parameter(Mandatory)][hashtable]$Settings)
+    if ($Settings.ContainsKey('auth') -and $Settings.auth -is [System.Collections.IDictionary]) {
+        [void]$Settings.auth.Remove('apiKey')
+        [void]$Settings.auth.Remove('requireApiKey')
+        if ($Settings.auth.Count -eq 0) { [void]$Settings.Remove('auth') }
+    }
+    if ($Settings.ContainsKey('network') -and $Settings.network -is [System.Collections.IDictionary]) {
+        if ($Settings.network.ContainsKey('tls') -and $Settings.network.tls -is [System.Collections.IDictionary]) {
+            [void]$Settings.network.tls.Remove('pfxPath')
+            [void]$Settings.network.tls.Remove('pfxPassword')
+            if ($Settings.network.tls.Count -eq 0) { [void]$Settings.network.Remove('tls') }
+        }
+        if ($Settings.network.Count -eq 0) { [void]$Settings.Remove('network') }
+    }
+    return $Settings
 }
 
 function Get-ImagePathDrift {
@@ -235,19 +305,53 @@ $scheme = if ($useTls) { 'https' } else { 'http' }
 $probeHost = switch ($BindAddress) { '0.0.0.0' { '127.0.0.1' } '::' { '[::1]' } '[::]' { '[::1]' } default { $BindAddress } }
 
 # ─── Elevated helpers ────────────────────────────────────────────────────────
-function Lock-SettingsFile {
-    param([string]$Path)
-    if (-not (Test-Path -LiteralPath $Path)) { return }
-    # Remove inherited (non-admin Users) access; grant SYSTEM read, Administrators
-    # full, and the file owner modify so the operator's non-elevated dev tools
-    # (smoke, daily-evidence driver) keep working while other local users cannot
-    # read the secrets. *S-1-5-32-544 = Administrators (locale-independent).
-    $owner = ''
-    try { $owner = (Get-Acl -LiteralPath $Path).Owner } catch { }
-    $grants = @('SYSTEM:R', '*S-1-5-32-544:F')
-    if ($owner) { $grants += ("{0}:M" -f $owner) }
-    & icacls $Path /inheritance:r /grant @grants *> $null
-    Write-Ok ("Locked settings.json (SYSTEM:R, Administrators:F{0})." -f $(if ($owner) { ", ${owner}:M" } else { '' }))
+function New-InstallerApiKey {
+    # 32 random bytes -> 64 hex chars (matches the host's New-ApiKey).
+    $bytes = New-Object byte[] 32
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+    return ([System.BitConverter]::ToString($bytes) -replace '-', '').ToLowerInvariant()
+}
+
+function Set-PortalSecretEnvironment {
+    <# Persist the auth + TLS secrets as MACHINE env vars (inherited by the
+       LocalSystem service on its next start, invisible to `sc qc`, never in git).
+       An empty value CLEARS the variable, so turning auth/TLS off removes the
+       stale secret rather than leaving it behind. #>
+    param([bool]$RequireApiKey, [string]$ApiKey, [string]$PfxPath, [string]$PfxPassword)
+    $setEnv = {
+        param($n, $v)
+        if ([string]::IsNullOrEmpty($v)) { [System.Environment]::SetEnvironmentVariable($n, $null, 'Machine') }
+        else { [System.Environment]::SetEnvironmentVariable($n, $v, 'Machine') }
+    }
+    & $setEnv 'REPO_MGMT_REQUIRE_API_KEY' $(if ($RequireApiKey) { 'true' } else { '' })
+    & $setEnv 'REPO_MGMT_API_KEY'            $ApiKey
+    & $setEnv 'REPO_MGMT_TLS_PFX'            $PfxPath
+    & $setEnv 'REPO_MGMT_TLS_PFX_PASSWORD'   $PfxPassword
+    $bits = New-Object System.Collections.Generic.List[string]
+    if ($RequireApiKey) { $bits.Add('REPO_MGMT_API_KEY + REQUIRE_API_KEY') }
+    if ($PfxPath)       { $bits.Add('REPO_MGMT_TLS_PFX (+ _PASSWORD)') }
+    if ($bits.Count -gt 0) { Write-Ok ("Stored secrets as MACHINE env vars ({0}) — not the ImagePath, not settings.json." -f ($bits -join ', ')) }
+    else { Write-Ok 'No auth/TLS secrets to store.' }
+}
+
+function Clear-SettingsSecretsOnDisk {
+    <# Strip installer-injected secrets from the git-tracked settings.json and, once
+       it holds no secrets, restore normal ACL inheritance (older installs locked
+       it). Writes only when something actually changed. #>
+    param([string]$SettingsPath)
+    if (-not (Test-Path -LiteralPath $SettingsPath)) { return }
+    $raw = Get-Content -LiteralPath $SettingsPath -Raw -Encoding UTF8
+    if ([string]::IsNullOrWhiteSpace($raw)) { return }
+    $obj = $raw | ConvertFrom-Json -AsHashtable
+    $before = ($obj | ConvertTo-Json -Depth 20 -Compress)
+    $obj = Remove-SettingsSecretKeys -Settings $obj
+    $after = ($obj | ConvertTo-Json -Depth 20 -Compress)
+    if ($after -ne $before) {
+        ($obj | ConvertTo-Json -Depth 20) | Set-Content -LiteralPath $SettingsPath -Encoding UTF8
+        Write-Ok 'Stripped secrets from settings.json (auth.apiKey / network.tls.*) — now secret-free and git-safe.'
+        try { & icacls $SettingsPath /reset *> $null } catch { }
+    }
 }
 
 function Stop-AndDeleteService {
@@ -292,11 +396,12 @@ function Register-NightlyRestartTask {
 }
 
 function Invoke-WatchdogFoldIn {
+    param([string]$Scheme = 'http')
     if ($NoWatchdog) { Write-Warn2 'Watchdog skipped (-NoWatchdog). A frozen host will NOT self-recover.'; return }
     if (-not (Test-Path -LiteralPath $watchdogInstaller)) { Write-Warn2 "Watchdog installer not found ($watchdogInstaller) — skipping."; return }
     $ans = if ($Host.UI.RawUI) { Read-Host '  Install the freeze watchdog (recommended)? [Y/n]' } else { 'y' }
     if ($ans -and $ans.Trim().ToLowerInvariant() -eq 'n') { Write-Warn2 'Watchdog declined.'; return }
-    & pwsh -NoProfile -ExecutionPolicy Bypass -File $watchdogInstaller -WorkspaceRoot $WorkspaceRoot -BaseUrl ("{0}://{1}:{2}" -f $scheme, $probeHost, $Port) -Port $Port -ServiceName $ServiceName
+    & pwsh -NoProfile -ExecutionPolicy Bypass -File $watchdogInstaller -WorkspaceRoot $WorkspaceRoot -BaseUrl ("{0}://{1}:{2}" -f $Scheme, $probeHost, $Port) -Port $Port -ServiceName $ServiceName
     if ($LASTEXITCODE -eq 0) { Write-Ok 'Freeze watchdog installed (probes health, restarts on freeze).' }
     else { Write-Warn2 "Watchdog installer returned exit $LASTEXITCODE — check output above." }
 }
@@ -333,37 +438,56 @@ function Invoke-FreshInstall {
     else { Write-Warn2 'SkipBuild: dashboard is served only once frontend/dist/index.html exists.' }
 
     # Auth decision (secure-by-default for a network bind).
-    $injectAuth = $false; $effectiveApiKey = ''; $needInsecureAck = $false
+    $injectAuth = $false; $needInsecureAck = $false
     if ($AllowInsecureBind) {
         if (-not $isLoopback) { $needInsecureAck = $true; Write-Warn2 'Binding non-loopback WITHOUT auth (acknowledged).' }
     }
     elseif (-not $isLoopback -or $ApiKey) {
         $injectAuth = $true
-        if ($ApiKey) { $effectiveApiKey = $ApiKey }
-        else {
-            $bytes = New-Object byte[] 32
-            $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-            try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
-            $effectiveApiKey = ([System.BitConverter]::ToString($bytes) -replace '-', '').ToLowerInvariant()
-            Write-Ok 'Generated an API key for the service (shown at the end).'
-        }
     }
 
-    # TLS pfx existence.
+    # Resolve EFFECTIVE secrets/TLS, carrying forward existing config (env first,
+    # then any legacy settings copy) so a reconfigure that omits -PfxPath / -ApiKey
+    # keeps HTTPS on and reuses the key instead of downgrading / regenerating.
+    $existingSettings = @{}
+    if (Test-Path -LiteralPath $settings) {
+        try { $existingSettings = (Get-Content -LiteralPath $settings -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable) } catch { $existingSettings = @{} }
+    }
+    $existingEnv = @{
+        REPO_MGMT_API_KEY          = [System.Environment]::GetEnvironmentVariable('REPO_MGMT_API_KEY', 'Machine')
+        REPO_MGMT_TLS_PFX          = [System.Environment]::GetEnvironmentVariable('REPO_MGMT_TLS_PFX', 'Machine')
+        REPO_MGMT_TLS_PFX_PASSWORD = [System.Environment]::GetEnvironmentVariable('REPO_MGMT_TLS_PFX_PASSWORD', 'Machine')
+    }
+    $sec = Resolve-PortalSecretConfig -InjectAuth $injectAuth -RequestedApiKey $ApiKey `
+        -RequestedPfxPath $PfxPath -RequestedPfxPassword $PfxPassword `
+        -ExistingSettings $existingSettings -ExistingEnv $existingEnv -KeyGenerator { New-InstallerApiKey }
+    $effectiveApiKey = $sec.ApiKey
+    switch ($sec.ApiKeySource) {
+        'generated' { Write-Ok 'Generated an API key for the service (shown at the end).' }
+        'env'       { Write-Ok 'Reusing the existing API key (from the machine env var).' }
+        'settings'  { Write-Ok 'Reusing the existing API key (migrated out of settings.json).' }
+        default     { }
+    }
+
+    # Effective TLS may differ from the -PfxPath param (carry-forward can enable
+    # HTTPS even when it was not passed this run). Recompute scheme accordingly.
+    $useTls = [bool]$sec.UseTls
+    $scheme = if ($useTls) { 'https' } else { 'http' }
     if ($useTls) {
-        if (-not (Test-Path -LiteralPath $PfxPath)) { throw "PfxPath not found: $PfxPath. Generate one with scripts\New-RepoManagementTlsCertificate.ps1." }
-        $script:PfxPath = (Resolve-Path -LiteralPath $PfxPath).Path
-        Write-Ok "TLS enabled — serving HTTPS with $($script:PfxPath)"
+        if (-not (Test-Path -LiteralPath $sec.PfxPath)) { throw "TLS pfx not found: $($sec.PfxPath) (source: $($sec.PfxPathSource)). Pass -PfxPath to a real .pfx (generate one with scripts\New-RepoManagementTlsCertificate.ps1)." }
+        $sec.PfxPath = (Resolve-Path -LiteralPath $sec.PfxPath).Path
+        Write-Ok ("TLS enabled — serving HTTPS with $($sec.PfxPath) (source: $($sec.PfxPathSource))")
+    }
+    elseif (-not $needInsecureAck) {
+        Write-Warn2 'No TLS certificate configured — serving plain HTTP. Pass -PfxPath + -PfxPassword to enable HTTPS.'
     }
 
-    # SECRETS -> settings.json (not --env). The host reads auth.apiKey /
-    # network.tls.pfxPassword natively; keeping them out of the ImagePath closes
-    # the `sc qc` exposure.
-    if ($injectAuth -or $useTls) {
-        $null = Set-PortalSecretsInSettings -SettingsPath $settings -RequireApiKey $injectAuth -ApiKey $effectiveApiKey -PfxPath $(if ($useTls) { $script:PfxPath } else { '' }) -PfxPassword $PfxPassword
-        Write-Ok 'Wrote secrets to settings.json (auth.apiKey / network.tls.pfxPassword) — not the ImagePath.'
-        Lock-SettingsFile -Path $settings
-    }
+    # SECRETS -> MACHINE ENV VARS (never the ImagePath, never the git-tracked
+    # settings.json). The host reads REPO_MGMT_API_KEY / REPO_MGMT_REQUIRE_API_KEY /
+    # REPO_MGMT_TLS_PFX / REPO_MGMT_TLS_PFX_PASSWORD natively and env wins over
+    # settings.json — then strip any secret a prior installer left in settings.json.
+    Set-PortalSecretEnvironment -RequireApiKey $sec.RequireApiKey -ApiKey $effectiveApiKey -PfxPath $(if ($useTls) { $sec.PfxPath } else { '' }) -PfxPassword $sec.PfxPassword
+    Clear-SettingsSecretsOnDisk -SettingsPath $settings
 
     # GITHUB_TOKEN -> machine env (out of the ImagePath).
     if ($GitHubToken) {
@@ -422,12 +546,12 @@ function Invoke-FreshInstall {
         Write-Ok 'Portal is up and set to start at every boot.'
         Write-Host "  Access : ${scheme}://${probeHost}:${Port}  (LAN: ${scheme}://<this-host-ip>:${Port})" -ForegroundColor Green
         if ($injectAuth) {
-            Write-Host '  Auth   : API-key gate ENABLED (key in settings.json).' -ForegroundColor Green
+            Write-Host '  Auth   : API-key gate ENABLED (key in the REPO_MGMT_API_KEY machine env var).' -ForegroundColor Green
             Write-Host '  API key (for automation / dashboard):' -ForegroundColor Yellow
             Write-Host "    $effectiveApiKey" -ForegroundColor Yellow
         }
         elseif ($needInsecureAck) { Write-Warn2 'Auth is OFF (-AllowInsecureBind). Dashboard is unauthenticated on this network.' }
-        Invoke-WatchdogFoldIn
+        Invoke-WatchdogFoldIn -Scheme $scheme
         if ($NightlyRestart) { Register-NightlyRestartTask -Name $nightlyTaskName -Svc $ServiceName }
         Write-Host "  Manage : Get-Service $ServiceName | Restart-Service $ServiceName | Uninstall via -Action Uninstall" -ForegroundColor Gray
     }
@@ -452,12 +576,33 @@ function Invoke-Repair {
     }
     else { Write-Ok 'All ImagePath references resolve.' }
 
-    # Migrate any secrets still in the ImagePath into settings.json.
     if ($wmi.PathName -match 'REPO_MGMT_API_KEY=|REPO_MGMT_TLS_PFX_PASSWORD=') {
-        Write-Warn2 'Secrets still present in the ImagePath — migrate with -Action Reconfigure (re-registers without --env secrets).'
+        Write-Warn2 'Secrets still present in the ImagePath — run -Action Reconfigure to re-register without --env secrets.'
     }
     else { Write-Ok 'No secrets in the ImagePath.' }
-    if (Test-Path -LiteralPath $settings) { Lock-SettingsFile -Path $settings }
+
+    # Migrate any secret still in the git-tracked settings.json OUT to machine env
+    # vars (carry-forward, no new values), then strip settings.json. Fixes an
+    # install that parked the key in tracked config — non-destructive, no teardown.
+    $existingSettings = @{}
+    if (Test-Path -LiteralPath $settings) {
+        try { $existingSettings = (Get-Content -LiteralPath $settings -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable) } catch { $existingSettings = @{} }
+    }
+    $existingEnv = @{
+        REPO_MGMT_API_KEY          = [System.Environment]::GetEnvironmentVariable('REPO_MGMT_API_KEY', 'Machine')
+        REPO_MGMT_TLS_PFX          = [System.Environment]::GetEnvironmentVariable('REPO_MGMT_TLS_PFX', 'Machine')
+        REPO_MGMT_TLS_PFX_PASSWORD = [System.Environment]::GetEnvironmentVariable('REPO_MGMT_TLS_PFX_PASSWORD', 'Machine')
+    }
+    $reqEnv = [System.Environment]::GetEnvironmentVariable('REPO_MGMT_REQUIRE_API_KEY', 'Machine')
+    $existingRequire = ($reqEnv -match '^(?i)(1|true|yes|on)$') -or
+        ($existingSettings.ContainsKey('auth') -and $existingSettings.auth -is [System.Collections.IDictionary] -and $existingSettings.auth.ContainsKey('requireApiKey') -and [bool]$existingSettings.auth.requireApiKey)
+    $rsec = Resolve-PortalSecretConfig -InjectAuth $existingRequire -ExistingSettings $existingSettings -ExistingEnv $existingEnv -KeyGenerator { New-InstallerApiKey }
+    Set-PortalSecretEnvironment -RequireApiKey $rsec.RequireApiKey -ApiKey $rsec.ApiKey -PfxPath $(if ($rsec.UseTls) { $rsec.PfxPath } else { '' }) -PfxPassword $rsec.PfxPassword
+    Clear-SettingsSecretsOnDisk -SettingsPath $settings
+
+    # Effective scheme for the health probe + watchdog (env/settings carry-forward).
+    $repairTls = [bool]$rsec.UseTls -and (Test-Path -LiteralPath $rsec.PfxPath)
+    $repairScheme = if ($repairTls) { 'https' } else { 'http' }
 
     # Re-apply SCM config idempotently.
     & sc.exe config $ServiceName start= auto | Out-Null
@@ -467,11 +612,11 @@ function Invoke-Repair {
 
     Write-Step 'Restarting service...'
     Restart-Service -Name $ServiceName -Force
-    $probeUrl = "${scheme}://${probeHost}:${Port}/health/live"
-    if (Wait-PortalHealthy -Url $probeUrl -Tls $useTls) { Write-Ok "Healthy at $probeUrl." }
+    $probeUrl = "${repairScheme}://${probeHost}:${Port}/health/live"
+    if (Wait-PortalHealthy -Url $probeUrl -Tls $repairTls) { Write-Ok "Healthy at $probeUrl ($repairScheme)." }
     else { Write-Fail "Not healthy at $probeUrl after restart — check $logDir." }
 
-    Invoke-WatchdogFoldIn
+    Invoke-WatchdogFoldIn -Scheme $repairScheme
     if ($NightlyRestart) { Register-NightlyRestartTask -Name $nightlyTaskName -Svc $ServiceName }
 }
 
