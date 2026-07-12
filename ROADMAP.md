@@ -1490,6 +1490,8 @@ Phase D — Hardening & observability (parallelizable, autonomous):
 - [ ] Decompose [`Dashboard.tsx`](frontend/components/Dashboard.tsx): extract the view-router/tab shell and the summary/mission sections. *(state: planned)*
 - [ ] Add scheduler failure alerting (webhook) + an automation-status surface in the dashboard. *(state: planned)*
 - [ ] Operator-verify the auth + shared-LAN path so automation runs on a bound, authenticated host. *(state: planned)*
+- [ ] **Portal service health watchdog (production reliability).** The always-on `RepoMgmtPortal` service (a `shawl`-wrapped pwsh host, LocalSystem) can *freeze* — process alive, port 7071 still `Listen`, but not responding (flat CPU, stuck `CloseWait`). Observed 2026-07-11 (PID 5704) and in the 2026-07-05 incident. `shawl` restarts only on process **exit**, so a hung-but-alive host is never recovered and squats 7071, which also blocks every manual `Start-App.ps1` fallback. Add an **external liveness watchdog** (Scheduled Task or companion service in SYSTEM context) that probes `GET /health/live` on a short timeout and, after N consecutive failures, force-kills the host PID and runs `Restart-Service RepoMgmtPortal` — appending every action to an append-only `output/logs/service-watchdog.jsonl` ledger and firing the `execution.failed` webhook so freezes are visible, not silent. Ship an elevated `Install-PortalWatchdog.ps1` registrar. *(state: planned — needs elevation to install/verify; watchdog decision logic is unit-testable without it.)*
+- [ ] **Freeze prevention (root cause), paired with the watchdog.** Keep the watchdog as the safety net but reduce the pile-up that triggers the hang: guarantee `/api/status` + assessment caching cannot regress off (a gutted cache caused the 2026-07-05 blocking-scan pile-up), add a per-request work timeout so one blocked native call (e.g. the SQLite bridge) cannot wedge the single-threaded accept loop, and schedule `app.db` maintenance (VACUUM + snapshot retention — it has grown to ~138 MB in daily use). *(state: planned)*
 
 #### Acceptance criteria
 
@@ -1528,7 +1530,7 @@ Phase D — Hardening & observability (parallelizable, autonomous):
 | Phase A: Unblockers | Value-scoring decision, live GitHub App token, live submit-PR | planned — blocked on operator decision + creds | —          | —           | —          |
 | Phase B: Scheduled doc refinement | Scheduler + favorite-scoped doc-improve previews + digest + run history | **done — smoke-tested** (2026-07-06) — engine + `POST /api/automation/run` / `GET /api/automation/history` / `scan/schedule` automation block + webhook digest (dry-run default); module + api-host smoke green, preview-first (applies nothing) | 2026-07-06 | —           | —          |
 | Phase C: Scheduled roadmap packaging | Top-value item packaging + quota guard + approve-to-dispatch | planned — blocked on Phase A | —          | —           | —          |
-| Phase D: Hardening & observability | Frontend unit tests, Dashboard decomposition, failure alerting, auth operator-verify | planned | —          | —           | —          |
+| Phase D: Hardening & observability | Frontend unit tests, Dashboard decomposition, failure alerting, auth operator-verify, **portal freeze watchdog + freeze prevention** | planned | — | — | — |
 
 #### Budget guardrail
 
