@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here.
 
+## 2026-07-12 — Portal service health watchdog (freeze recovery) — Release 2.7 Phase D
+
+### Changes
+
+- **`scripts/service/Watch-PortalHealth.ps1`** (new) — external liveness watchdog for the always-on `RepoMgmtPortal` service. The `shawl`-wrapped pwsh host can freeze (process alive, port 7071 `Listen`, not responding — flat CPU, stuck `CloseWait`), and `shawl` only restarts on process **exit**, so a hung host is never recovered and squats the port (also blocking `Start-App.ps1`). The watchdog probes `GET /health/live` on a short timeout and, after N consecutive failures, force-kills the listener PID and runs `Restart-Service RepoMgmtPortal`. Structured for testability: `Resolve-WatchdogAction` is a pure decision function, consecutive-failure count persists in a state file across scheduled invocations, every decision is appended to an append-only `output/logs/service-watchdog.jsonl` ledger, and a restart fires the `execution.failed` webhook. `-DryRun` decides + logs without killing/restarting; `-LoadFunctionsOnly` exposes the functions to the smoke. PowerShell 5.1-compatible (try/catch around `Invoke-WebRequest`, not `-SkipHttpErrorCheck`).
+- **`scripts/service/Install-PortalWatchdog.ps1`** (new) — elevated registrar that installs the watchdog as a SYSTEM Scheduled Task (`NT AUTHORITY\SYSTEM`, RunLevel Highest, every `-IntervalMinutes`, plus an `AtStartup` re-arm). Gated on an Administrator check; idempotent (`-Force`); `-Uninstall` removes it. This is the one part that needs elevation to install/verify.
+- **`scripts/Invoke-ModuleSmokeTest.ps1`** — new Release 2.7 Phase D section covering the watchdog decision logic (6 cases: healthy resets, failures accumulate, threshold triggers restart-then-reset) and the ledger/state round-trip on disk.
+- **`ROADMAP.md`** — the 2.7 Phase D watchdog item lifted to `smoke-tested`; live install + freeze-and-recover remains for `operator-verified` (needs SYSTEM).
+
+### Testing
+
+- Parser checks clean for both new scripts and the modified smoke.
+- Module smoke green end-to-end, incl. `watchdog ok: 6 decision cases, state round-trip, 2 append-only ledger records`.
+- **Dry-run against the actual frozen host** (PID 5704 on 7071): three cycles detected the freeze (probe timeout → unhealthy) and escalated `x1 → x2 → x3`, logging `[DRYRUN] would force-kill port 7071 and Restart-Service RepoMgmtPortal` at the threshold; the append-only ledger recorded `probe-fail ×3 → restart-triggered`. Nothing killed or restarted (dry-run). State persisted across the separate invocations.
+
 ## 2026-07-11 — Daily evidence routine: driver, operator-verification log, and a non-vacuous route census
 
 ### Changes

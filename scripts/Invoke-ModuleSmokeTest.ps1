@@ -1394,4 +1394,49 @@ finally {
     Remove-Item -LiteralPath $autoTmp -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+Write-Step 'Portal watchdog — smoke: decision logic + ledger/state round-trip (Release 2.7 Phase D)'
+. (Join-Path $WorkspaceRoot 'scripts\service\Watch-PortalHealth.ps1') -LoadFunctionsOnly
+
+# Pure decision logic: healthy resets to 0, failures accumulate, reaching the
+# threshold triggers a restart and resets the counter.
+$wdCases = @(
+    @{ Healthy = $true;  Prior = 0; Threshold = 3; Action = 'none';    Failures = 0 },
+    @{ Healthy = $true;  Prior = 2; Threshold = 3; Action = 'none';    Failures = 0 },
+    @{ Healthy = $false; Prior = 0; Threshold = 3; Action = 'none';    Failures = 1 },
+    @{ Healthy = $false; Prior = 1; Threshold = 3; Action = 'none';    Failures = 2 },
+    @{ Healthy = $false; Prior = 2; Threshold = 3; Action = 'restart'; Failures = 0 },
+    @{ Healthy = $false; Prior = 0; Threshold = 1; Action = 'restart'; Failures = 0 }
+)
+foreach ($c in $wdCases) {
+    $d = Resolve-WatchdogAction -Healthy $c.Healthy -PriorFailures $c.Prior -Threshold $c.Threshold
+    if ($d.Action -ne $c.Action -or $d.Failures -ne $c.Failures) {
+        throw ("Resolve-WatchdogAction wrong for healthy={0} prior={1} threshold={2}: got action={3}/failures={4}, expected {5}/{6}" -f $c.Healthy, $c.Prior, $c.Threshold, $d.Action, $d.Failures, $c.Action, $c.Failures)
+    }
+}
+
+# Ledger + state round-trip on disk (models persistence across scheduled invocations).
+$wdTmp = Join-Path $WorkspaceRoot 'output\smoke\module\watchdog'
+$null = New-Item -ItemType Directory -Path $wdTmp -Force
+try {
+    $wdLedger = Join-Path $wdTmp 'wd.jsonl'
+    $wdState = Join-Path $wdTmp 'wd.state.json'
+    Remove-Item -LiteralPath $wdLedger, $wdState -Force -ErrorAction SilentlyContinue
+
+    if ((Get-WatchdogState -Path $wdState) -ne 0) { throw 'Get-WatchdogState should default to 0 with no state file' }
+    Set-WatchdogState -Path $wdState -ConsecutiveFailures 2 -LastAction 'none'
+    if ((Get-WatchdogState -Path $wdState) -ne 2) { throw 'Watchdog state did not round-trip (expected 2)' }
+
+    Write-WatchdogLedger -Path $wdLedger -Event 'probe-fail' -Data @{ priorFailures = 1; decision = 'none' }
+    Write-WatchdogLedger -Path $wdLedger -Event 'restart-triggered' -Data @{ reason = 'test' }
+    $wdRecords = @(Get-Content -LiteralPath $wdLedger -Encoding UTF8 | ForEach-Object { $_ | ConvertFrom-Json })
+    if ($wdRecords.Count -ne 2) { throw "Watchdog ledger expected 2 append-only records, got $($wdRecords.Count)" }
+    if ($wdRecords[0].event -ne 'probe-fail' -or $wdRecords[1].event -ne 'restart-triggered') { throw 'Watchdog ledger records out of order or mislabeled' }
+    if (-not $wdRecords[0].timestamp) { throw 'Watchdog ledger record missing timestamp' }
+
+    Write-Host ("  watchdog ok: {0} decision cases, state round-trip, {1} append-only ledger records" -f $wdCases.Count, $wdRecords.Count) -ForegroundColor DarkGray
+}
+finally {
+    Remove-Item -LiteralPath $wdTmp -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 Write-Step 'Smoke test completed'
