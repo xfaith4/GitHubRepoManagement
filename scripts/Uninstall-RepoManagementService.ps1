@@ -10,10 +10,15 @@
 
 .PARAMETER ServiceName
     Windows service name to remove. Default: RepoMgmtPortal.
+
+.PARAMETER KeepWatchdog
+    Leave the freeze watchdog + nightly-restart scheduled tasks in place.
+    By default they are removed alongside the service.
 #>
 [CmdletBinding()]
 param(
-    [string]$ServiceName = 'RepoMgmtPortal'
+    [string]$ServiceName = 'RepoMgmtPortal',
+    [switch]$KeepWatchdog
 )
 
 Set-StrictMode -Version Latest
@@ -44,3 +49,14 @@ if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
 }
 
 Write-Host "  [OK] Service '$ServiceName' removed. Portal will no longer start at boot." -ForegroundColor Green
+
+# Remove the freeze watchdog + nightly-restart scheduled tasks (they have no
+# reason to run without the service). -KeepWatchdog leaves them.
+if (-not $KeepWatchdog) {
+    foreach ($task in @('RepoMgmtPortalWatchdog', "$ServiceName`Restart")) {
+        if (Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue) {
+            try { Unregister-ScheduledTask -TaskName $task -Confirm:$false; Write-Host "  [OK] Removed scheduled task '$task'." -ForegroundColor Green }
+            catch { Write-Host "  [warn] Could not remove task '$task': $($_.Exception.Message)" -ForegroundColor Yellow }
+        }
+    }
+}

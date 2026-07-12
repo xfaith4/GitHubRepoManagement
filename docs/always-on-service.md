@@ -47,12 +47,17 @@ missing (needs `npm`). Pass `-SkipBuild` to install an API-only service.
 
 By default a network bind is **protected**: the installer turns on the API-key
 gate and prints the key (paste it into the dashboard once, or use it for
-automation). It enables auth by injecting `REPO_MGMT_REQUIRE_API_KEY` +
-`REPO_MGMT_API_KEY` for the service process only — `settings.json` stays open, so
-the smoke suite (which assumes an open host) is unaffected.
+automation). The key and the TLS password are written into an **ACL-locked
+`settings.json`** (`auth.apiKey` / `network.tls.pfxPassword`, which the host reads
+natively) — **not** the service command line, so they never appear in the
+world-readable `sc qc` / `Get-CimInstance Win32_Service` output. `GITHUB_TOKEN` is
+set as a machine environment variable for the same reason.
 
-The installer is **idempotent** — re-run it any time to apply new settings; it
-stops, removes, and recreates the service, then verifies `/health/live`.
+The installer is a **smart entry point** — re-run it and it detects an existing
+service and offers **Repair** (reconcile config + restart, no teardown),
+**Reconfigure** (change bind/port/auth/TLS), **Reinstall** (full recreate), or
+**Uninstall**. Non-interactive: `-Action Repair|Reconfigure|Reinstall|Uninstall`.
+It verifies `/health/live` after every change.
 
 ## HTTPS
 
@@ -81,9 +86,9 @@ PFX password.
     -PfxPath ".\backend\config\tls\portal.pfx" -PfxPassword '<password>'
 ```
 
-The PFX path and password are injected as `REPO_MGMT_TLS_PFX` /
-`REPO_MGMT_TLS_PFX_PASSWORD` for the service only (kept out of `settings.json`).
-The portal is now at `https://<host>:7071`, protected by the API key.
+The PFX path and password are written into the ACL-locked `settings.json`
+(`network.tls.pfxPath` / `network.tls.pfxPassword`) — not the service command
+line. The portal is now at `https://<host>:7071`, protected by the API key.
 
 **Real, universally-trusted certificate:** if you have a public domain name, use
 an ACME client (e.g. [win-acme](https://www.win-acme.com/)) to obtain and
@@ -106,6 +111,26 @@ Stop-Service RepoMgmtPortal           # stop (auto-restarts at next boot)
 
 Logs: `backend\modules\output\logs\` — `apihost.log` (structured host log) and
 `shawl_for_RepoMgmtPortal_*.log` (captured stdout/stderr).
+
+## Reliability — freeze watchdog
+
+`shawl` restarts the host if the process **exits**, and SCM recovery restarts
+`shawl` itself. Neither catches a *freeze* — the host alive and holding the port
+but not responding (a blocked native call under request pile-up). For that, the
+installer offers a liveness **watchdog** automatically after install/repair
+(decline with `-NoWatchdog`); install it directly with:
+
+```powershell
+pwsh -File scripts\service\Install-PortalWatchdog.ps1     # elevated
+```
+
+It registers a SYSTEM Scheduled Task that probes `/health/live` every minute and,
+after 3 consecutive failures, force-kills the wedged host and restarts the
+service — logging to `output\logs\service-watchdog.jsonl` and firing the
+`execution.failed` webhook. Preview the loop without touching anything via
+`Watch-PortalHealth.ps1 -DryRun`. Optionally,
+`Install-RepoManagementService.ps1 -NightlyRestart` bounds long-uptime drift with
+a nightly restart.
 
 ## Authentication
 

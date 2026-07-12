@@ -1439,4 +1439,48 @@ finally {
     Remove-Item -LiteralPath $wdTmp -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+Write-Step 'Portal service installer — smoke: action resolution + settings-secrets + drift (Release 2.7 Phase D)'
+# Isolate the dot-source in a child scope so the installer's Write-* helpers do
+# not clobber the smoke's for the remaining steps.
+& {
+    # Capture the root first — dot-sourcing the installer rebinds $WorkspaceRoot
+    # to its param default ('') in this scope.
+    $root = $WorkspaceRoot
+    . (Join-Path $root 'scripts\Install-RepoManagementService.ps1') -LoadFunctionsOnly
+
+    $instCases = @(
+        @{ Exists = $false; Req = 'Auto';        Int = $true;  Want = 'Install' },
+        @{ Exists = $true;  Req = 'Auto';        Int = $true;  Want = 'Menu' },
+        @{ Exists = $true;  Req = 'Auto';        Int = $false; Want = 'Repair' },
+        @{ Exists = $true;  Req = 'Reconfigure'; Int = $true;  Want = 'Reconfigure' },
+        @{ Exists = $false; Req = 'Uninstall';   Int = $true;  Want = 'Uninstall' }
+    )
+    foreach ($c in $instCases) {
+        $g = Resolve-InstallAction -ServiceExists $c.Exists -RequestedAction $c.Req -Interactive $c.Int
+        if ($g -ne $c.Want) { throw ("Resolve-InstallAction wrong: exists={0} req={1} int={2} -> {3}, expected {4}" -f $c.Exists, $c.Req, $c.Int, $g, $c.Want) }
+    }
+
+    $instTmp = Join-Path $root 'output\smoke\module\svc-install'
+    $null = New-Item -ItemType Directory -Path $instTmp -Force
+    try {
+        $st = Join-Path $instTmp 'settings.json'
+        '{ "schemaVersion": "v1", "inventory": { "localRoots": ["X"] } }' | Set-Content -LiteralPath $st -Encoding UTF8
+        $null = Set-PortalSecretsInSettings -SettingsPath $st -RequireApiKey $true -ApiKey 'k123' -PfxPath (Join-Path $instTmp 'c.pfx') -PfxPassword 'pw'
+        $s = Get-Content -LiteralPath $st -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($s.schemaVersion -ne 'v1') { throw 'Set-PortalSecretsInSettings dropped schemaVersion' }
+        if ($s.inventory.localRoots[0] -ne 'X') { throw 'Set-PortalSecretsInSettings dropped existing keys' }
+        if ($s.auth.requireApiKey -ne $true -or $s.auth.apiKey -ne 'k123') { throw 'Set-PortalSecretsInSettings did not write auth' }
+        if ($s.network.tls.pfxPassword -ne 'pw') { throw 'Set-PortalSecretsInSettings did not write tls password' }
+
+        $driftImg = "C:\gone\shawl.exe run --name X --cwd $instTmp --log-dir $instTmp\missing\logs -- $instTmp\pwsh.exe -File $instTmp\host.ps1"
+        $drift = @(Get-ImagePathDrift -ImagePath $driftImg)
+        if ($drift.Count -lt 1) { throw 'Get-ImagePathDrift should flag the missing paths' }
+
+        Write-Host ("  service installer ok: {0} action cases, settings-secrets round-trip (schemaVersion+keys preserved), drift flagged {1} missing" -f $instCases.Count, $drift.Count) -ForegroundColor DarkGray
+    }
+    finally {
+        Remove-Item -LiteralPath $instTmp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 Write-Step 'Smoke test completed'

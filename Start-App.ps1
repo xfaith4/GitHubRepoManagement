@@ -1,9 +1,16 @@
 <#
 .SYNOPSIS
-    Single-entrypoint launcher for GitHub Repo Management.
+    Developer launcher for GitHub Repo Management (Vite hot-reload / debugging).
 
 .DESCRIPTION
     Starts the PowerShell API host and optionally the Vite frontend in one command.
+
+    NOTE: production is the always-on RepoMgmtPortal Windows service (install with
+    scripts\Install-RepoManagementService.ps1). This launcher is for DEVELOPMENT
+    — its distinct value over the service is `-Dev`, the Vite hot-reload server
+    for live frontend editing. It refuses to start when the service is running
+    (they collide on the port); use -Force, a different -ApiPort, or stop the
+    service first.
 
     Two modes are supported:
 
@@ -91,11 +98,34 @@ param(
 
     [switch]$Dev,
 
-    [switch]$Rebuild
+    [switch]$Rebuild,
+
+    [switch]$Force
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# ── Service-conflict guard ───────────────────────────────────────────────────
+# Production is the always-on RepoMgmtPortal service, which owns this port. This
+# launcher is a DEVELOPER tool (Vite hot-reload / visible-terminal debugging);
+# running it while the service holds the port collides. Detect and stop — this
+# NEVER touches the service. Use -Force to proceed, a different -ApiPort for a
+# side-by-side dev instance, or stop the service first.
+if (-not $Force) {
+    $portalSvc = Get-Service -Name 'RepoMgmtPortal' -ErrorAction SilentlyContinue
+    if ($portalSvc -and $portalSvc.Status -eq 'Running') {
+        Write-Host ''
+        Write-Host "[!!] The RepoMgmtPortal service is running and owns port $ApiPort." -ForegroundColor Red
+        Write-Host '     Start-App.ps1 is a developer launcher; production is the service.' -ForegroundColor Yellow
+        Write-Host '     Pick one:' -ForegroundColor Yellow
+        Write-Host '       Stop-Service RepoMgmtPortal   (elevated) then re-run, or' -ForegroundColor Gray
+        Write-Host "       .\Start-App.ps1 -Dev -ApiPort 7072 -FrontendPort 7001   (dev alongside), or" -ForegroundColor Gray
+        Write-Host '       .\Start-App.ps1 -Force   (proceed anyway)' -ForegroundColor Gray
+        Write-Host ''
+        exit 1
+    }
+}
 
 if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
     if ($PSCommandPath) {
