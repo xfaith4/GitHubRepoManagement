@@ -70,10 +70,12 @@ pattern itself. To land a change here:
    per-check detail but needs the PAT's **Checks: read** scope, which the
    current fine-grained PAT lacks — so `mergeStateStatus` is the reliable proxy.)
 3. **Merge only on `CLEAN`** — `gh pr merge <n> --squash --delete-branch`, then
-   `git switch main && git pull --ff-only`. Any other state means stop and
-   report: `UNKNOWN`/`BLOCKED` (still running or blocked), `UNSTABLE` (a check
-   failing), `DIRTY` (conflicts), `BEHIND` (needs update). Never merge on a
-   pending or failing state.
+   `git switch main && git pull --ff-only`. Poll until `CLEAN`; any other state
+   means stop and report: `UNSTABLE` (a check still pending or failing — the
+   usual not-yet-done state right after a push), `BLOCKED` (a required check
+   failed or a review is required), `DIRTY` (conflicts), `BEHIND` (needs
+   update), `UNKNOWN` (mergeability still computing). Never merge on a pending
+   or failing state.
 
 This monitor-to-green-then-merge loop is durably authorized for this repo.
 
