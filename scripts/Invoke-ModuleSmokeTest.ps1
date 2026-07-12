@@ -1483,4 +1483,44 @@ Write-Step 'Portal service installer — smoke: action resolution + settings-sec
     }
 }
 
+Write-Step 'Local Claude Code dispatch — smoke: queue writer + runner logic (Release 2.8)'
+& {
+    $root = $WorkspaceRoot
+    . (Join-Path $root 'scripts\Add-RoadmapTaskToQueue.ps1') -LoadFunctionsOnly
+    . (Join-Path $root 'scripts\Invoke-RoadmapTaskRunner.ps1') -LoadFunctionsOnly
+
+    $dispTmp = Join-Path $root 'output\smoke\module\claude-dispatch'
+    $null = New-Item -ItemType Directory -Path $dispTmp -Force
+    try {
+        # queue entry shape + append/read round-trip
+        $entry = New-RoadmapQueueEntry -RunId 'r1' -Repository 'x/y' -LocalRepoPath 'C:\repo' -RoadmapPath 'C:\repo\ROADMAP.md' -SelectedTask 'Do it' -TaskDescription 'PROMPT' -Branch '' -QueuedAt '2026-01-01T00:00:00Z'
+        if ($entry.status -ne 'queued') { throw 'queue entry status should be queued' }
+        if ($entry.branch -ne 'roadmap/r1') { throw 'queue entry branch default should be roadmap/<runId>' }
+        $qp = Join-Path $dispTmp 'queue.jsonl'
+        Add-RoadmapQueueEntry -QueuePath $qp -Entry $entry
+        Add-RoadmapQueueEntry -QueuePath $qp -Entry (New-RoadmapQueueEntry -RunId 'r2' -Repository 'x/z' -LocalRepoPath 'C:\repo2' -RoadmapPath 'C:\repo2\ROADMAP.md' -SelectedTask 'Two' -TaskDescription 'P2' -Branch 'roadmap/r2' -QueuedAt '2026-01-01T00:00:01Z')
+        $read = @(Get-QueueEntries -QueuePath $qp)
+        if ($read.Count -ne 2) { throw "queue round-trip expected 2 entries, got $($read.Count)" }
+        if ($read[0].prompt -ne 'PROMPT' -or $read[0].localRepoPath -ne 'C:\repo') { throw 'queue entry fields not preserved on round-trip' }
+
+        # summary status transitions (queued -> awaiting-review, fields merged)
+        $sp = Join-Path $dispTmp 'r1.summary.json'
+        Update-TaskSummary -SummaryPath $sp -Set @{ status = 'queued'; runId = 'r1' }
+        if ((Get-TaskSummaryStatus -SummaryPath $sp) -ne 'queued') { throw 'summary status should be queued' }
+        Update-TaskSummary -SummaryPath $sp -Set @{ status = 'awaiting-review'; branch = 'roadmap/r1' }
+        $reread = Get-Content -LiteralPath $sp -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($reread.status -ne 'awaiting-review' -or $reread.runId -ne 'r1') { throw 'summary merge/transition failed' }
+
+        # commit-message truncation + best-effort verify detection
+        if (((New-TaskCommitMessage -SelectedTask ('x' * 120) -RunId 'r1') -split "`n")[0].Length -gt ('roadmap: '.Length + 68)) { throw 'commit subject not truncated' }
+        '{ "scripts": { "test": "vitest" } }' | Set-Content -LiteralPath (Join-Path $dispTmp 'package.json') -Encoding UTF8
+        if ((Resolve-VerifyCommand -RepoPath $dispTmp) -ne 'npm test') { throw 'verify detection (npm test) failed' }
+
+        Write-Host ("  claude dispatch ok: queue round-trip ({0} entries), status transitions, commit-msg truncation, verify detection" -f $read.Count) -ForegroundColor DarkGray
+    }
+    finally {
+        Remove-Item -LiteralPath $dispTmp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 Write-Step 'Smoke test completed'

@@ -64,6 +64,13 @@ sheets, a glanceable **Repo-Health** panel, and an always-visible
 **agent-activity** indicator. Prompt refinement and roadmap dispatch use the
 same preview-first + quota-guard flow as desktop.
 
+## Local task runner (Claude Code)
+
+"Queue Task" in the ROADMAP modal enqueues the selected roadmap item; run
+`scripts/Invoke-RoadmapTaskRunner.ps1` **as yourself** to have Claude Code work it
+on the local repo and stop at `awaiting-review` before anything is pushed. Full
+flow: [`local-task-runner.md`](local-task-runner.md).
+
 ## Agent integration (`/api/v1/agent/*`)
 
 AI agents query readiness, claim work exclusively (second concurrent claim →

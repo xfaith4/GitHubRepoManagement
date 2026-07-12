@@ -29,7 +29,14 @@ param(
         "docs/planning/roadmap.md",
         "docs/ROADMAP.md",
         "roadmap.md"
-    )
+    ),
+
+    # 'claude' (default, post-pivot): enqueue the task for the local operator
+    # runner (Invoke-RoadmapTaskRunner.ps1) to execute with Claude Code on the
+    # LOCAL repo. 'copilot': legacy GitHub Copilot cloud dispatch (needs a remote).
+    [Parameter()]
+    [ValidateSet('claude', 'copilot')]
+    [string]$DispatchMode = 'claude'
 )
 
 Set-StrictMode -Version Latest
@@ -482,6 +489,39 @@ try {
         return
     }
 
+    # --- Claude Code dispatch (default): enqueue for the local operator runner ---
+    if ($DispatchMode -eq 'claude') {
+        $localRepoPath = Split-Path -Parent $resolvedRoadmap.Path
+        $branch = "roadmap/$($historyStore.RunId)"
+        $queueScript = Join-Path $PSScriptRoot 'Add-RoadmapTaskToQueue.ps1'
+        if (-not (Test-Path -LiteralPath $queueScript)) { throw "Queue writer script not found: $queueScript" }
+        Write-HistoryEvent -Store $historyStore -Type 'task_queued' -Data @{
+            repository    = $Repository
+            localRepoPath = $localRepoPath
+            branch        = $branch
+            roadmapPath   = $resolvedRoadmap.Path
+        }
+        & $queueScript -WorkspaceRoot (Split-Path -Parent $PSScriptRoot) -RunId $historyStore.RunId `
+            -Repository $Repository -LocalRepoPath $localRepoPath -RoadmapPath $resolvedRoadmap.Path `
+            -SelectedTask $nextTask.TaskText -TaskDescription ($taskDescription -join "`n") -Branch $branch
+        $summary = [ordered]@{
+            runId             = $historyStore.RunId
+            status            = 'queued'
+            startedAt         = $startedAt.ToString('o')
+            completedAt       = (Get-Date).ToString('o')
+            repository        = $Repository
+            roadmapPath       = $resolvedRoadmap.Path
+            selectedTask      = $nextTask.TaskText
+            localRepoPath     = $localRepoPath
+            branch            = $branch
+            historyEventsPath = $historyStore.RunEventsPath
+        }
+        $summary | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $historyStore.RunSummaryPath
+        Write-HistoryEvent -Store $historyStore -Type 'run_completed' -Data @{ status = 'queued'; summaryPath = $historyStore.RunSummaryPath }
+        return
+    }
+
+    # --- Copilot dispatch (legacy, -DispatchMode copilot; needs a GitHub remote) ---
     Write-HistoryEvent -Store $historyStore -Type 'copilot_task_start_requested' -Data @{
         repository = $Repository
         baseBranch = $BaseBranch
