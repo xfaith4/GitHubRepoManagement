@@ -57,6 +57,26 @@ happened, why it matters, and what to do next.
 - Never mark a ROADMAP phase complete without an evidence note naming the test
   or artifact that proves it.
 
+## PR and deployment workflow (dogfood the product's own job)
+
+This product's job is Actions-gated merge readiness, so the repo runs on that
+pattern itself. To land a change here:
+
+1. **Branch off `main`** — never commit feature work straight to `main`. Open a
+   PR with `gh pr create`.
+2. **Monitor its checks to completion.** The merge-safety signal is
+   `gh pr view <n> --json mergeStateStatus,mergeable`: `CLEAN` = mergeable, all
+   required checks passed, no conflicts. (`gh pr checks <n> --watch` gives
+   per-check detail but needs the PAT's **Checks: read** scope, which the
+   current fine-grained PAT lacks — so `mergeStateStatus` is the reliable proxy.)
+3. **Merge only on `CLEAN`** — `gh pr merge <n> --squash --delete-branch`, then
+   `git switch main && git pull --ff-only`. Any other state means stop and
+   report: `UNKNOWN`/`BLOCKED` (still running or blocked), `UNSTABLE` (a check
+   failing), `DIRTY` (conflicts), `BEHIND` (needs update). Never merge on a
+   pending or failing state.
+
+This monitor-to-green-then-merge loop is durably authorized for this repo.
+
 ## Conventions
 
 - PowerShell 5.1-compatible unless a file's `#Requires` says otherwise.
