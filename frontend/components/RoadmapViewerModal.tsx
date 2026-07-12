@@ -194,9 +194,9 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
         )}
 
         <div className="px-5 py-3 border-b border-gray-700 bg-gray-950/40 flex-shrink-0 space-y-2">
-          <div className="text-xs font-semibold text-gray-300">Roadmap Copilot Task</div>
+          <div className="text-xs font-semibold text-gray-300">Roadmap Task (local Claude Code)</div>
           <div className="text-xs text-gray-500">
-            This section prepares GitHub dispatch for the repository field above. When a local roadmap is loaded below, Preview Task and Start Task pass that local roadmap path through as the source for task selection.
+            Preview picks the next roadmap item; Queue Task adds it to the local task queue. A runner you start yourself (scripts/Invoke-RoadmapTaskRunner.ps1) executes it with Claude Code on the local repo and stops for your review before anything is pushed.
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
             <input
@@ -231,7 +231,7 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
               disabled={taskRunning || loading || !repositoryInput.trim()}
               className="text-xs px-3 py-1.5 rounded bg-green-700 hover:bg-green-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Start Task
+              Queue Task
             </button>
             <button
               onClick={() => void loadHistory()}
@@ -245,7 +245,7 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
           {taskMessage && (
             <div className={`text-xs rounded px-3 py-2 border ${isTaskError ? 'bg-red-950/60 border-red-700/60 text-red-100' : 'bg-blue-900/30 border-blue-700/40 text-blue-200'}`}>
               <div className="font-semibold mb-1">
-                {isTaskError ? 'Copilot task preview issue' : 'Copilot task preview'}
+                {isTaskError ? 'Task issue' : 'Task'}
               </div>
               <div>{taskMessage}</div>
               {isTaskError && hasLocalRoadmap && (

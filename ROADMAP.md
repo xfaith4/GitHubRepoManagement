@@ -187,6 +187,7 @@ already covered by release goals or acceptance criteria.
 | **2.5**   | **Mobile-Friendly Operator Experience**                                                                 | Ph1-3 + Ph4 manifest/LAN-doc `smoke-tested`/`ui-connected` (2026-07-05); only physical-Android device verification + tap-through run list remain |
 | **2.6**   | **Interface Clarity and Operator Orientation**                                                          | Phases 1-5 `smoke-tested` (2026-07-06) — data-source indicator, control labels, queue renames, progressive disclosure, consistency pass, contextual help; proven by `frontend-smoke.cjs`. Physical-device/operator sign-off is the follow-up |
 | **2.7**   | **Guarded Scheduled Automation (Curated-Subset, Preview-First)**                                         | `planned` — scheduled doc-refinement + top-value roadmap packaging on favorites, preview-first up to the approval gate. **Gated on two operator inputs:** the value-scoring semantics decision and GitHub App/write creds (Ph A) |
+| **2.8**   | **Local Claude Code Execution (queue + operator runner)**                                                | `smoke-tested` (2026-07-12) — pivot dispatch from Copilot cloud to local Claude Code: portal queues, an operator-run runner executes on the local repo and stops at `awaiting-review`. Real `claude` run needs operator sign-off |
 
 > **Note on `.5` numbering.** Release 1.7.5 is a deliberate course-correction
 > release between 1.7 and 1.8 to re-center the product on its primary
@@ -1540,6 +1541,27 @@ Phase D — Hardening & observability (parallelizable, autonomous):
   over-budget work rather than proceeding.
 - Record raw observations per scheduled run (units consumed, credit/API
   spend, refusals) into the automation run history.
+
+---
+
+### Release 2.8 — Local Claude Code Execution (queue + operator runner)
+
+**Goal:** dispatch roadmap work to **Claude Code on the local repo** instead of
+GitHub Copilot in the cloud. Copilot dispatch (`gh agent-task create`) requires a
+GitHub repo, so local-only repos previewed fine but failed to start. The portal
+(a LocalSystem service that cannot be the operator's authenticated Claude Code)
+**enqueues** the task; a **local runner run by the operator** executes it and
+stops for review before anything is pushed — matching the preview-first principle.
+
+#### Engineering milestones
+
+- [x] Queue writer [`Add-RoadmapTaskToQueue.ps1`](scripts/Add-RoadmapTaskToQueue.ps1) — append-only `output/roadmap-task-queue.jsonl` (`status='queued'`, local repo path, branch, task prompt). *(state: smoke-tested — 2026-07-12)*
+- [x] `Start-RoadmapCopilotTask.ps1` `-DispatchMode claude|copilot` (default `claude`) — enqueue instead of gh-dispatch; writes a `queued` run summary; Copilot stays behind `-DispatchMode copilot`. *(state: smoke-tested — 2026-07-12)* — orchestrator integration proven (fixture roadmap → queue+summary, no gh call).
+- [x] Local runner [`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1) — runs as the operator; claim → `roadmap/<runId>` branch → `claude` in the repo → best-effort verify → commit → `awaiting-review` (never pushes). `-Once`/`-Headless`/`-DryRun`. *(state: smoke-tested — 2026-07-12)* — dry-run E2E + pure logic covered by module smoke. **Remaining for `operator-verified`:** a real `claude` run in the operator's session.
+- [x] Frontend copy + statuses (Queue Task; `queued`/`running`/`awaiting-review`) and the start-route message. *(state: smoke-tested — 2026-07-12)* — typecheck green.
+- [ ] Optional follow-ups: an "approve & push" action from the portal; wire the disabled "Run AI Agent" button; api-host smoke asserting the start route enqueues. *(state: planned)*
+
+Docs: [`docs/reference/local-task-runner.md`](docs/reference/local-task-runner.md).
 
 ---
 

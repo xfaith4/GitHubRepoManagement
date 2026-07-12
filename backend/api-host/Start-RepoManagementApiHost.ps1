@@ -6602,7 +6602,7 @@ try {
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data = @{
-                            message = 'Roadmap Copilot task initiated.'
+                            message = 'Task queued for the local Claude Code runner. Run scripts/Invoke-RoadmapTaskRunner.ps1 (as yourself) to execute it on the local repo.'
                             output = $runResult.Output
                             latestHistory = $latest
                         }

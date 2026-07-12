@@ -1,0 +1,82 @@
+# Local task runner (Claude Code)
+
+The portal dispatches roadmap work to **Claude Code on the local repo**, not to
+GitHub Copilot in the cloud. Because the portal runs as a LocalSystem service (it
+can't be your authenticated Claude Code), dispatch is split in two:
+
+1. **Portal enqueues** — "Queue Task" in the ROADMAP modal writes the task to
+   `output/roadmap-task-queue.jsonl` (status `queued`).
+2. **You run the runner** — `scripts/Invoke-RoadmapTaskRunner.ps1`, in your own
+   session (your `claude` + auth), picks up queued tasks and executes them.
+
+Nothing is pushed to GitHub. The runner stops at `awaiting-review` so you review
+the branch and push / open a PR yourself.
+
+## Flow
+
+```text
+Portal (SYSTEM service)                You (operator session)
+─────────────────────                  ──────────────────────
+Preview Task  -> pick next roadmap item
+Queue Task    -> output/roadmap-task-queue.jsonl  (status=queued)
+                                       Invoke-RoadmapTaskRunner.ps1
+                                         claim        (status=running)
+                                         git switch -c roadmap/<runId>
+                                         claude  (task prompt, in the repo)
+                                         verify  (best-effort: npm test / Invoke-TestSuite)
+                                         git commit   (only if there are changes)
+                                         status=awaiting-review   <-- STOPS here
+                                       you review the branch -> push / PR
+```
+
+Status flows back to the portal via the existing run summary
+(`Get-RoadmapTaskHistory`), so the ROADMAP modal's history shows
+`queued → running → awaiting-review` (or `failed`).
+
+## Running the runner
+
+Run it **as yourself** (not elevated, not the service) — it needs your `claude`
+on PATH and your Claude auth:
+
+```powershell
+# one pass over the queue, then exit:
+pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1 -Once
+
+# keep watching the queue:
+pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1
+
+# preview the plan without doing anything (safe):
+pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1 -Once -DryRun
+```
+
+Options:
+
+- `-Headless` — run `claude -p "<prompt>"` non-interactively instead of an
+  interactive session. Tasks that run shell commands may stall on a permission
+  prompt headless mode can't answer; pair with `-PermissionMode bypassPermissions`.
+- `-PermissionMode <mode>` — Claude Code permission mode (default `acceptEdits`).
+- `-PollSeconds <n>` — poll interval for the watch loop (default 15).
+
+## Reviewing and pushing
+
+Each finished task leaves a `roadmap/<runId>` branch with the work committed. The
+runner never pushes. When you're satisfied:
+
+```powershell
+cd <the target repo>
+git switch roadmap/<runId>
+# review the diff, run whatever else you want, then:
+git push -u origin roadmap/<runId>   # if the repo has a GitHub remote
+gh pr create                          # or open a PR
+```
+
+For a local-only repo, publish it first (`gh repo create <owner>/<name> --private
+--source . --remote origin --push`) before pushing the branch.
+
+## Notes
+
+- Copilot dispatch is still available for repos that live on GitHub, behind
+  `Start-RoadmapCopilotTask.ps1 -DispatchMode copilot`, but it is no longer the
+  default.
+- `verify` is best-effort across arbitrary repos (record-only, non-blocking) —
+  the `awaiting-review` gate + your review are the real quality check.

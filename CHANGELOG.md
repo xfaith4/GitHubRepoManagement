@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented here.
 
+## 2026-07-12 — Pivot dispatch from GitHub Copilot to local Claude Code (queue + operator runner)
+
+### Changes
+
+- **Root cause it fixes:** "Start Task" dispatched to GitHub Copilot cloud (`gh agent-task create`), which requires the repo to exist on GitHub. Local-only repos (e.g. `F:\Development\20_Staging\AdministatorTools`, no remote) previewed fine but failed to start ("Failed to fetch"). The product pivoted to Claude Code working the **local** repo, with a review gate before anything is pushed.
+- **`scripts/Add-RoadmapTaskToQueue.ps1`** (new) — queue writer. Appends one append-only line to `output/roadmap-task-queue.jsonl` (`status='queued'`, local repo path, roadmap path, branch, full task prompt). Pure `New-RoadmapQueueEntry`/`Add-RoadmapQueueEntry` + `-LoadFunctionsOnly`.
+- **`scripts/Invoke-RoadmapTaskRunner.ps1`** (new) — the operator-run local runner (runs **as you**, with your `claude` + auth; never the SYSTEM service). Watches the queue and per task: claim (`running`) → `git switch -c roadmap/<runId>` → launch `claude` in the target repo with the prompt → best-effort verify → commit changes on the branch → **`awaiting-review`** (never pushes). `-Once`, `-Headless`, `-PermissionMode`, `-DryRun`; pure decision helpers + `-LoadFunctionsOnly`.
+- **`scripts/Start-RoadmapCopilotTask.ps1`** — new `-DispatchMode claude|copilot` (default `claude`). In `claude` mode it computes the local repo dir (`Split-Path -Parent $RoadmapPath`) and enqueues via the writer instead of calling the gh dispatcher, writing a `status='queued'` run summary. Copilot dispatch stays behind `-DispatchMode copilot`. The existing history store + `Get-RoadmapTaskHistory` + preview flow are unchanged.
+- **`Start-RepoManagementApiHost.ps1`** — `POST /api/roadmap-agent/start` success message now reads "Task queued for the local Claude Code runner…".
+- **`frontend/components/RoadmapViewerModal.tsx`** — reworded: "Roadmap Task (local Claude Code)", the button is now **Queue Task**, and the description explains the enqueue → runner → review flow. New `queued`/`running`/`awaiting-review` statuses render as non-errors (the `isTaskError` regex already excludes them).
+- **Docs**: `docs/reference/local-task-runner.md` (the full flow + how to run the runner + review/push), operator-guide pointer, ROADMAP item.
+
+### Testing
+
+- Parser checks clean on all touched scripts; `npm run typecheck` exit 0.
+- Module smoke green, incl. `claude dispatch ok: queue round-trip (2 entries), status transitions, commit-msg truncation, verify detection`.
+- Orchestrator integration: `Start-RoadmapCopilotTask.ps1 -DispatchMode claude` against a fixture roadmap enqueued the pending task (queue `0 → 1`, run summary `status=queued` with branch + local repo path) — no gh call.
+- Runner `-Once -DryRun` against a fixture queue found the queued task and logged the full plan (claim → branch → claude → verify → commit → awaiting-review), mutating nothing.
+- End-to-end with real `claude` needs the operator's session/auth (I can't) — operator verify: Queue Task for `AdministatorTools` → run the runner → work lands on `roadmap/<runId>`, status → `awaiting-review`.
+
 ## 2026-07-12 — Smart portal-service installer: repair flow, secrets out of the ImagePath, dev/prod split
 
 ### Changes
