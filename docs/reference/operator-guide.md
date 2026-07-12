@@ -32,6 +32,29 @@ enable API auth — see [`lan-mobile-setup.md`](lan-mobile-setup.md). Key points
 - Add the site to an Android home screen — the web app manifest launches it
   standalone.
 
+## Portal service reliability (freeze watchdog)
+
+When the app runs as the always-on `RepoMgmtPortal` service (a `shawl`-wrapped
+host), the host can occasionally **freeze** — process alive, port 7071 bound,
+but not responding. `shawl` only restarts on process *exit*, so a hung host is
+never recovered and squats the port (which also blocks a manual `Start-App.ps1`).
+
+- **Recover a frozen instance now** (elevated): `Restart-Service RepoMgmtPortal`,
+  then confirm `Invoke-RestMethod http://127.0.0.1:7071/health/live`.
+- **Prevent it going forward** — install the liveness watchdog (elevated, once):
+
+  ```powershell
+  pwsh -File scripts/service/Install-PortalWatchdog.ps1
+  ```
+
+  It registers a SYSTEM Scheduled Task that probes `/health/live` every minute
+  and, after 3 consecutive failures, force-kills the frozen host and restarts
+  the service — logging each action to `output/logs/service-watchdog.jsonl` and
+  firing the `execution.failed` webhook. Verify with
+  `Start-ScheduledTask -TaskName RepoMgmtPortalWatchdog` then check the ledger;
+  remove with `Install-PortalWatchdog.ps1 -Uninstall`. Preview the decision loop
+  without touching anything via `Watch-PortalHealth.ps1 -DryRun`.
+
 ## Mobile
 
 Below the `md` breakpoint the app shows a bottom tab bar, full-screen modal
