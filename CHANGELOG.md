@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here.
 
+## 2026-07-11 — Daily evidence routine: driver, operator-verification log, and a non-vacuous route census
+
+### Changes
+
+- **`scripts/Invoke-DailyEvidence.ps1`** (new) — the daily evidence driver. One command that runs the full gate on a **dedicated port (7099, never 7071)** so it cannot kill the operator's running portal, then boots its own host, runs one real differential portfolio scan (which also accrues the time-gated Release 2.3 trend history), and captures the live signals the host already emits: the `scan-summary` (reused/reindexed/failed) and `scan-budget` TRACE lines parsed from a fresh per-run host log, `/api/persistence/status` (capability/enabled/tables/agentRunEventCount), and the three health probes. Writes a dated snapshot under `evidence/baseline/daily/<stamp>/` — `manifest.json` (git SHA, per-gate exit codes, scan metrics, verdict), `summary.md`, `verify-queue.md`, and `roadmap-state-index.json`. Restores `settings.json` **byte-exact** via `File.ReadAllText`/`WriteAllText` (only when changed) so the driver introduces no diff of its own, and tears the host down via the shutdown-signal-file contract. `-SkipGate` / `-SkipScan` / `-SkipApiHost` isolate phases.
+- **`scripts/Add-OperatorVerification.ps1`** (new) — appends one record to the append-only `evidence/operator-verification-log.jsonl` (timestamp, surfaceId, release, surface text, evidence, verifiedBy, gitSha). The `SurfaceId` is a stable hash of `release || surface-text` shown in the driver's `verify-queue.md`; the script recomputes ROADMAP ids and **refuses an unknown id** so a typo can't log a verification against nothing. `-List` prints current `smoke-tested` surfaces. The driver reads this log to drop already-verified surfaces from tomorrow's queue.
+- **ROADMAP state parser (in both scripts)** — accumulates a milestone's text across wrapped continuation lines (the `*(state: ...)*` marker usually sits on a later line than the `- [ ]`), skips fenced code blocks (so the section-3 vocabulary example is not counted), and attributes each surface to its `##`/`###` heading (a `####` subheading like "Engineering milestones" no longer overwrites the parent release). Current portfolio: 117 stated surfaces — 93 `smoke-tested`, 7 `ui-connected`, 6 `done`, 1 `scaffolded`, 10 `planned`.
+- **`scripts/Invoke-ApiHostSmokeTest.ps1`** — new **route-census** step generalizing the reconcile-route regression (`d2cc6cc`/`bfb3724`), plus its summary-projection fields. **Key correction:** the naive check "status must not be 404" is *itself vacuous* on this host — unmatched GET paths fall through to the **SPA `index.html` fallback and return HTTP 200 `text/html`**, not 404. The census therefore asserts each critical API route returns **`application/json`** (the real discriminator: every live API route including `/metrics` and `/health` returns JSON, the fallback returns HTML). A silently-deleted route now trips the census instead of being shadowed by the catch-all.
+
+### Testing
+
+- **Parser checks** — clean for all three scripts (`[Parser]::ParseFile`).
+- **ROADMAP parse** — 117 surfaces with correct release attribution (2.7/2.6/… not "Engineering milestones"); the verify queue leads with active/recent releases.
+- **Live scan path** — driver booted a host on 7099, captured `mode=differential reused=68 reindexed=2 failed=0`, persistence `13 tables / 47 agent-run events`, health `200/200/200`; clean teardown (no lingering 7099 listener); `settings.json` **clean after run** (byte-exact restore proven — an earlier `Set-Content` restore had been accumulating trailing blank lines each run).
+- **Ledger round-trip** — recording a 2.7 surface dropped the queue 93 → 92 and removed that id from `verify-queue.md`.
+- **Adversarial census proof** — against a live host, all real API routes returned `application/json` and a simulated deleted route returned `text/html` and was caught; the census flags exactly the deleted route and passes the real ones (assertion is non-vacuous).
+
 ## 2026-07-05 — Release 2.3 Phase 5D-5F: curation UI, Refresh All, and proof that unchanged repos are reused
 
 ### Changes

@@ -1610,6 +1610,29 @@ Continuous, not release-scoped:
       (`value-scoring.json`, `doc-standards.json`,
       `repo-structure-standards.json`, `roadmap-audit-rules.json`,
       `ai-doc-templates.json`), loaded at runtime, not hard-coded.
+- [x] Daily evidence routine to convert `smoke-tested` into
+      `operator-verified` with durable proof. *(state: smoke-tested — 2026-07-11)* —
+      [`scripts/Invoke-DailyEvidence.ps1`](scripts/Invoke-DailyEvidence.ps1)
+      runs the gate on a dedicated port (never 7071), boots its own host, runs a
+      real differential scan (accruing time-gated trend history), and writes a
+      dated `evidence/baseline/daily/<stamp>/` snapshot (manifest + summary +
+      verify-queue + roadmap-state-index) with byte-exact `settings.json`
+      restore; [`scripts/Add-OperatorVerification.ps1`](scripts/Add-OperatorVerification.ps1)
+      appends to the append-only `evidence/operator-verification-log.jsonl`,
+      which the driver reads to shrink the verify queue. See the operator guide's
+      "Daily evidence routine". Ledger round-trip, live-scan capture, and
+      byte-exact restore are proven.
+- [x] Route-census tripwire so a silently deleted API route fails the smoke
+      loudly (generalizes the `d2cc6cc`/`bfb3724` regression class).
+      *(state: smoke-tested — 2026-07-11)* — a census step in
+      [`Invoke-ApiHostSmokeTest.ps1`](scripts/Invoke-ApiHostSmokeTest.ps1)
+      asserts every critical API route returns `application/json`, **not** the
+      naive "status ≠ 404" (itself vacuous here: unmatched GETs fall through to
+      the SPA `index.html` and return 200 `text/html`). Adversarially proven:
+      the census flags a simulated deleted route (`text/html`) and passes the
+      real ones. Also fixed `Invoke-TestSuite.ps1` to thread `-Port`/`-BaseUrl`
+      into the api-host smoke so a non-default port truly isolates the live host
+      from a running portal on 7071.
 
 ### Repository Grid UX Uplift [In Progress]
 
