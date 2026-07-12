@@ -1,11 +1,12 @@
 <#
 .SYNOPSIS
-    Stops background processes started by Start-App.ps1 (silent mode).
+    Stops the dev processes started by Start-App.ps1 (the developer launcher).
 
 .DESCRIPTION
     Reads backend/modules/output/runtime/app.pid, terminates the recorded
     processes, and removes the PID file. Safe to run even if processes have
-    already exited.
+    already exited. This does NOT touch the RepoMgmtPortal service (production) —
+    stop that with `Stop-Service RepoMgmtPortal` from an elevated shell.
 #>
 [CmdletBinding()]
 param(

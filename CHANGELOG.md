@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here.
 
+## 2026-07-12 — Smart portal-service installer: repair flow, secrets out of the ImagePath, dev/prod split
+
+### Changes
+
+- **`scripts/Install-RepoManagementService.ps1`** — reworked into a smart entry point. New `-Action` (`Auto`/`Install`/`Repair`/`Reconfigure`/`Reinstall`/`Uninstall`): `Auto` fresh-installs when the service is absent, else shows a menu (interactive) or `Repair` (non-interactive). **Repair** is non-destructive — validates the registered `ImagePath` paths, re-applies boot-start + SCM recovery, migrates secrets, restarts, and health-checks, with no teardown. **Secrets no longer go in the `ImagePath`:** the API key and TLS password are written to `settings.json` (`auth.apiKey` / `network.tls.pfxPassword`, which the host reads natively) and the file is ACL-locked (SYSTEM:R, Administrators:F, owner:M); `GITHUB_TOKEN` is set as a machine env var. Closes the `sc qc`-readable exposure. After install/repair the installer offers the **freeze watchdog** (decline with `-NoWatchdog`) and can register an optional `-NightlyRestart`. Pure logic (`Resolve-InstallAction`, `Set-PortalSecretsInSettings`, `Get-ImagePathDrift`) is factored and dot-sourceable via `-LoadFunctionsOnly`; the elevation gate moved from `#Requires -RunAsAdministrator` to a runtime check so the functions are testable non-elevated.
+- **`scripts/Uninstall-RepoManagementService.ps1`** — also removes the watchdog + nightly-restart scheduled tasks (`-KeepWatchdog` to leave them).
+- **`Start-App.ps1` / `Stop-App.ps1`** — re-scoped as **developer** tools (Vite hot-reload / debugging). `Start-App.ps1` gained a non-destructive service-conflict guard: it refuses to start when `RepoMgmtPortal` is running (they collide on the port) and prints the options (stop the service, use a dev `-ApiPort`, or `-Force`). It never touches the service.
+- **Removed** `start.bat`, `start-silent.bat`, `start-live.bat`, `stop.bat` — those encoded the obsolete "run the portal via the launcher" model, replaced by the service.
+- **`README.md`** — rewrote the run section: production = the service (installer), development = `Start-App.ps1 -Dev`; removed `.bat` references; HTTPS access URLs; a reliability note. **`docs/always-on-service.md`** — documents the smart actions, secrets-in-settings, and the watchdog. `ROADMAP.md` 2.7 Phase D updated.
+- **`scripts/Invoke-ModuleSmokeTest.ps1`** — new section covering the installer's pure logic: action resolution (5 cases), the settings-secrets writer (writes `auth.apiKey`/`tls.pfxPassword`, preserves `schemaVersion` + existing keys), and `ImagePath` drift detection.
+
+### Testing
+
+- Parser checks clean on all touched scripts.
+- Module smoke green, incl. `service installer ok: 5 action cases, settings-secrets round-trip …, drift flagged N missing`.
+- The elevated paths (service register/restart, `icacls`, scheduled tasks) can't be exercised from a non-elevated shell — verified by logic review + parser; the operator runs the elevated verify (fresh install, `-Action Repair`, `sc qc` shows no secrets, watchdog recovers a simulated freeze).
+
 ## 2026-07-12 — Fix: portal watchdog must probe HTTPS (the service serves TLS)
 
 ### Changes

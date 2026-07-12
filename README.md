@@ -141,63 +141,61 @@ Or add it permanently via Claude Code settings (`~/.claude/settings.json`):
 
 ---
 
-## Launch
+## Run it
+
+The portal runs two ways: as an **always-on Windows service** (production) or via
+a **developer launcher** (frontend dev with Vite hot-reload). Both serve the same
+app on the same port — run one at a time.
+
+### Production — the always-on service (recommended)
+
+Install (or repair/reconfigure) the `RepoMgmtPortal` service from an **elevated**
+PowerShell. It starts at boot, unattended, restarts on crash, and serves the API
+plus the built dashboard from a single process — no Node/Vite at runtime:
 
 ```powershell
-.\Start-App.ps1
+.\scripts\Install-RepoManagementService.ps1                     # local, HTTP
+.\scripts\Install-RepoManagementService.ps1 `
+  -PfxPath .\backend\config\tls\portal.pfx -PfxPassword $pw      # LAN + HTTPS
 ```
 
-This will:
+Re-running detects the existing service and offers **Repair / Reconfigure /
+Reinstall / Uninstall** (or pass `-Action Repair` non-interactively). Secrets
+(API key, TLS password) are written to an ACL-locked `settings.json`, never the
+service command line. Full guide: [`docs/always-on-service.md`](docs/always-on-service.md).
 
-1. Install frontend dependencies (`npm install`) if needed
-2. Start the PowerShell API host bound to `0.0.0.0:7071`
-3. Serve the built app on the LAN at `http://<localhostIP>:7071/`
-4. In `-Dev` mode, start the Vite frontend dev server on `http://<localhostIP>:7000/`
-5. Open your browser automatically
+```powershell
+Get-Service RepoMgmtPortal                                       # status
+Restart-Service RepoMgmtPortal                                   # (elevated)
+Invoke-RestMethod https://127.0.0.1:7071/health/live -SkipCertificateCheck
+.\scripts\Install-RepoManagementService.ps1 -Action Uninstall    # remove
+```
 
-### Parameters
+**Reliability:** `shawl` restarts the host if it exits; the installer also offers
+a **freeze watchdog** ([`scripts/service/`](scripts/service/)) that restarts the
+service if the host *hangs* (alive but unresponsive — which `shawl` alone can't
+catch), plus an optional `-NightlyRestart`.
+
+### Development — `Start-App.ps1` (Vite hot-reload)
+
+For frontend work the launcher runs the Vite dev server so edits hot-reload.
+**Stop the service first** (it owns the port), or use a dev port:
+
+```powershell
+Stop-Service RepoMgmtPortal          # elevated, if the service is running
+.\Start-App.ps1 -Dev                 # API + Vite hot-reload, opens the browser
+.\Start-App.ps1 -Dev -ApiPort 7072 -FrontendPort 7001   # alongside the service
+.\Stop-App.ps1                       # stop the dev processes (not the service)
+```
 
 | Parameter | Default | Description |
 | --- | --- | --- |
-| `-Mode` | `silent` | `silent` = background windows, `debug` = visible terminals |
-| `-ApiPort` | `7071` | Port for the PowerShell API host |
-| `-FrontendPort` | `7000` | Port for the Vite dev server |
-| `-ApiHost` | `0.0.0.0` | Bind address for the API host |
-| `-AppHost` | `<localhostIP>` | Hostname or IP that browsers should use to reach the app |
-| `-NoBrowser` | off | Pass to suppress automatic browser launch |
-
-### Examples
-
-```powershell
-# Normal use
-.\Start-App.ps1
-
-# Visible terminal output for debugging
-.\Start-App.ps1 -Mode debug
-
-# Custom LAN host
-.\Start-App.ps1 -AppHost <localhostIP>
-
-# Custom ports and host
-.\Start-App.ps1 -ApiPort 8080 -FrontendPort 5173 -AppHost <localhostIP>
-
-# Headless (no browser)
-.\Start-App.ps1 -NoBrowser
-```
-
-### Windows batch shortcuts
-
-```batch
-start.bat          # Silent mode
-start-live.bat     # Debug mode (visible windows)
-stop.bat           # Shutdown
-```
-
-### Stop
-
-```powershell
-.\Stop-App.ps1
-```
+| `-Dev` | off | Run the Vite dev server (hot-reload) instead of the built bundle |
+| `-Mode` | `silent` | `silent` = background, `debug` = visible terminals |
+| `-ApiPort` | `7071` | API host port (use another to run alongside the service) |
+| `-FrontendPort` | `7000` | Vite dev-server port |
+| `-NoBrowser` | off | Suppress automatic browser launch |
+| `-Force` | off | Start even if the service is running (skips the conflict guard) |
 
 ---
 
