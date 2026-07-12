@@ -26,7 +26,7 @@ param(
     [int]$IntervalMinutes = 1,
     [int]$Port = 7071,
     [string]$ServiceName = 'RepoMgmtPortal',
-    [string]$BaseUrl = 'http://127.0.0.1:7071',
+    [string]$BaseUrl = 'https://127.0.0.1:7071',
     [string]$WebhookUrl,
     [string]$TaskName = 'RepoMgmtPortalWatchdog',
     [switch]$Uninstall

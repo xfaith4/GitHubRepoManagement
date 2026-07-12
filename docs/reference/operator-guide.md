@@ -40,7 +40,9 @@ but not responding. `shawl` only restarts on process *exit*, so a hung host is
 never recovered and squats the port (which also blocks a manual `Start-App.ps1`).
 
 - **Recover a frozen instance now** (elevated): `Restart-Service RepoMgmtPortal`,
-  then confirm `Invoke-RestMethod http://127.0.0.1:7071/health/live`.
+  then confirm `Invoke-RestMethod https://127.0.0.1:7071/health/live -SkipCertificateCheck`
+  (the service serves HTTPS with a self-signed cert, so `-SkipCertificateCheck`
+  — or `http://…` for a non-TLS manual host).
 - **Prevent it going forward** — install the liveness watchdog (elevated, once):
 
   ```powershell
