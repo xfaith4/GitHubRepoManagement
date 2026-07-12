@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here.
 
+## 2026-07-12 — Fix: portal watchdog must probe HTTPS (the service serves TLS)
+
+### Changes
+
+- **`scripts/service/Watch-PortalHealth.ps1`** — the `RepoMgmtPortal` service runs with `REPO_MGMT_TLS_PFX` set, so the host wraps every accepted connection in an `SslStream` and serves **HTTPS** on 7071. The watchdog's default probe was `http://…`, which fails the TLS handshake against a *healthy* host — it would have marked a good service unhealthy and restarted it every N cycles (a false-positive restart loop). Default `-BaseUrl` is now `https://127.0.0.1:7071`, and `Test-PortalHealth` skips certificate validation for https (self-signed, loopback liveness probe): `-SkipCertificateCheck` on pwsh 6+, the `ServicePointManager` callback on Windows PowerShell 5.1. `Install-PortalWatchdog.ps1` default and the operator-guide health-check command were updated to https + cert-skip.
+
+### Testing
+
+- Verified against a real healthy TLS host (throwaway self-signed cert on port 7098): the fixed **https** probe returns `Healthy=True, 200`; the old **http** probe returns `Healthy=False` — proving the original default would have false-restarted a healthy service. Module smoke still green (6 decision cases + ledger/state round-trip).
+
 ## 2026-07-12 — Portal service health watchdog (freeze recovery) — Release 2.7 Phase D
 
 ### Changes

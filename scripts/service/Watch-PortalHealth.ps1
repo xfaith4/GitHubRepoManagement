@@ -35,7 +35,7 @@
 [CmdletBinding()]
 param(
     [string]$WorkspaceRoot,
-    [string]$BaseUrl = 'http://127.0.0.1:7071',
+    [string]$BaseUrl = 'https://127.0.0.1:7071',
     [string]$HealthPath = '/health/live',
     [int]$TimeoutSec = 5,
     [int]$FailureThreshold = 3,
@@ -115,16 +115,40 @@ function Write-WatchdogLedger {
 }
 
 function Test-PortalHealth {
-    <# HTTP probe. 5.1-safe: a non-2xx or a timeout (frozen host that never
-       responds) both throw and are caught as unhealthy. #>
+    <# Health probe. The portal serves HTTPS whenever a TLS cert is loaded
+       (REPO_MGMT_TLS_PFX / network.tls.pfxPath) — as the RepoMgmtPortal service
+       does — so an https URI MUST skip cert validation: the portal cert is
+       self-signed and this is a loopback liveness check, not a security
+       boundary. Probing http against that TLS listener fails the handshake and
+       would falsely mark a healthy host unhealthy (the original bug). 5.1-safe:
+       a non-2xx, a TLS handshake failure, or a timeout (frozen host) all throw
+       and are caught as unhealthy; cert-skip uses -SkipCertificateCheck on
+       pwsh 6+ and the ServicePointManager callback on Windows PowerShell 5.1. #>
     param([string]$Uri, [int]$TimeoutSec)
+    $splat = @{ Uri = $Uri; TimeoutSec = $TimeoutSec; UseBasicParsing = $true }
+    $isHttps = ($Uri -match '^(?i)https:')
+    $touchedCallback = $false
+    $prevCallback = $null
     try {
-        $resp = Invoke-WebRequest -Uri $Uri -TimeoutSec $TimeoutSec -UseBasicParsing
+        if ($isHttps) {
+            if ($PSVersionTable.PSVersion.Major -ge 6) {
+                $splat['SkipCertificateCheck'] = $true
+            }
+            else {
+                $prevCallback = [System.Net.ServicePointManager]::ServerCertificateValidationCallback
+                [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+                $touchedCallback = $true
+            }
+        }
+        $resp = Invoke-WebRequest @splat
         $ok = ([int]$resp.StatusCode -ge 200 -and [int]$resp.StatusCode -lt 300)
         return [pscustomobject]@{ Healthy = $ok; StatusCode = [int]$resp.StatusCode; Detail = "HTTP $($resp.StatusCode)" }
     }
     catch {
         return [pscustomobject]@{ Healthy = $false; StatusCode = 0; Detail = $_.Exception.Message }
+    }
+    finally {
+        if ($touchedCallback) { [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $prevCallback }
     }
 }
 
