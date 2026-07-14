@@ -47,7 +47,7 @@ jobs:
       # explicitly rather than inheriting the runner default. Use npm install
       # (not npm ci) because there is no lockfile to honor.
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "20"
 
