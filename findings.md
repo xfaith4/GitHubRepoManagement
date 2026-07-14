@@ -225,3 +225,79 @@
 - Existing portfolio assessment backend is `backend/modules/portfolio/Portfolio.Assessment.ps1`.
 - Existing module smoke coverage for portfolio assessment starts around `scripts/Invoke-ModuleSmokeTest.ps1` release 1.7.5 section.
 - Assessment entries now need additive fields only to preserve existing UI/API consumers: `pendingItems` and `topValueItem`.
+
+## 2026-07-12
+
+Existing Dispatch & Task-History Code Map
+
+1. scripts/Start-RoadmapCopilotTask.ps1 (the orchestrator)
+   Params (lines 1–33): -Repository (default "OWNER/REPO"), -BaseBranch, -CustomAgent, -Follow (switch), -PreviewOnly (switch), -HistoryRoot, -RoadmapPath, -RoadmapPathCandidates (default list: ROADMAP.md, Roadmap.md, docs/planning/roadmap.md, docs/ROADMAP.md, roadmap.md).
+
+Flow:
+
+Initialize-HistoryStore (38–63) creates output\roadmap-task-history\ + runs\, mints a runId = yyyyMMdd-HHmmss-<8hexguid>, and returns paths for history.jsonl, <runId>.events.jsonl, <runId>.summary.json.
+Roadmap resolution: if -RoadmapPath given → Get-LocalRoadmapContent (134) reads it locally; otherwise Get-GitHubRoadmapContent (169) pulls it via gh api repos/{repo}/contents/{path} and base64-decodes.
+Get-NextRoadmapTask (247–331) picks the first unchecked - [ ] item by heading priority (active/next, near-term, must, mid-term, long-term, technical debt), skipping process sections.
+Task packet = a plain-text $taskDescription array (375–393): "Continue roadmap execution for $Repository.", "Roadmap source: <path> (line N, section '<H>').", "Primary task: <text>", a 4-item "Execution requirements" block, and up to 3 "Follow-up candidates". This is the string shown in the preview UI's textarea.
+Does it call Start-GitHubCopilotTask.ps1? Yes. Lines 405–408 resolve Join-Path $PSScriptRoot 'Start-GitHubCopilotTask.ps1'; lines 410–418 build a $startParams hashtable (Repository, TaskDescription, HistoryRoot, ParentRunId=$runId, InitiatedBy='roadmap-script', RoadmapSourcePath, PrimaryRoadmapTask, plus optional BaseBranch/CustomAgent/Follow); and line 493 invokes it: & $startScriptPath @startParams.
+
+Preview vs Start branch: If -PreviewOnly (435–483) it emits a JSON $previewPayload (runId, repository, roadmapPath, selectedTask{heading,lineNumber,text}, followUpCandidates, generatedTaskDescription, history paths) to stdout and writes a status='preview' summary — it does NOT call the launcher. Otherwise it calls the launcher (493) and writes a status='started' summary.
+
+1b. scripts/Start-GitHubCopilotTask.ps1 (the actual dispatcher)
+The external command that dispatches is gh agent-task create, assembled at lines 207–226 and executed at line 231 via Invoke-GhCommand (which shells & $script:GhCommandPath @Args, line 144):
+
+$ghArgs.Add("agent-task"); $ghArgs.Add("create"); $ghArgs.Add($TaskDescription)
+$ghArgs.Add("--repo"); $ghArgs.Add($Repository)
+
+# optional: --base $BaseBranch, --custom-agent $CustomAgent, --follow
+
+It requires GitHub_Token/GITHUB_TOKEN (184–193), resolves gh.exe (Resolve-GhCommandPath, 48), runs gh auth status, then gh agent-task create. This is the single line to replace with a queue-writer. It logs a copilot_result event (233) and writes its own status='success'/'failed' summary.
+
+1. Task-history store
+   Get-RoadmapTaskHistory — backend/api-host/Start-RepoManagementApiHost.ps1:3538. Reads output\roadmap-task-history\runs\*.summary.json (NOT the jsonl), sorted by LastWriteTime desc, and projects each into: runId, status, repository, selectedTask, roadmapPath, startedAt, completedAt, error, summaryPath (3561–3571).
+
+Writers live in the two scripts, not the API host:
+
+Write-HistoryEvent (both scripts, e.g. Start-RoadmapCopilotTask.ps1:65) appends one compact JSON line to BOTH history.jsonl (shared, append-only) and <runId>.events.jsonl (per-run). Event record shape: { timestamp(o), runId, type, data{} }. Event type values seen: run_started, local_roadmap_read_started/completed, api_call_started/completed, roadmap_selection, preview_generated, copilot_task_start_requested, copilot_result, run_completed, run_failed.
+The <runId>.summary.json is what the UI reads. Confirmed shape (from output/.../runs/20260706-160310-c0eba7b6.summary.json):
+
+{ "runId":"20260706-160310-c0eba7b6", "status":"preview",
+"startedAt":"...o...", "completedAt":"...o...",
+"repository":"smoke-owner/smoke-repo", "roadmapPath":"F:\\...md",
+"selectedTask":"A pending fixture item to preview.",
+"historyEventsPath":"F:\\...\\<runId>.events.jsonl" }
+status ∈ preview | started | success | failed. The UI line 20260712-035858-d1b813ca / xfaith4/AdministatorTools / <task> / preview|failed maps directly to runId / repository / selectedTask / status.
+
+Files/dir: root output\roadmap-task-history\; shared log history.jsonl; per-run runs\<runId>.events.jsonl + runs\<runId>.summary.json.
+
+1. Task-prompt / packet builder — backend/modules/roadmap/Roadmap.Dispatcher.ps1
+   Note: there are TWO prompt systems. The # Copilot Task: Implement ... prompt at line 297 is \_BuildDispatchPrompt (287–360), used by the release-level dispatch (RoadmapDispatchModal / Build-ReleaseDispatchPacket), which is a separate flow from the roadmap-agent Preview/Start scripts above.
+
+Get-NextPendingRelease (111–201): parses ## Release X.Y — Title blocks, returns first block with an unchecked - [ ]; output includes releaseName, releaseVersion, releaseTitle, goal, pendingMilestones[], completedMilestones[], acceptanceCriteria[], outOfScope[], counts.
+Build-ReleaseDispatchPacket (228–285): inputs RepoName, RoadmapContent, RoadmapPath, GitHubRepo, AuditContract. Returns a packet: packetVersion='2.0', packetId, createdAt, repoName, githubRepo, roadmapPath, releaseName, releaseVersion, releaseGoal, pendingMilestones[], acceptanceCriteria[], outOfScope[], generatedPrompt, maturityLevel, maturityScore. This is the richest reusable structure for a queue entry.
+\_BuildDispatchPrompt (287–360): assembles the markdown prompt — # Copilot Task: Implement <release> for <repo>, ## Repository Context (Repository/Roadmap/Release/Goal), ## Engineering Milestones to Implement (numbered [ ] list), ## Acceptance Criteria, ## Guardrails (Out of Scope…), ## Execution Requirements (5 steps incl. "Create a PR titled …").
+Resolve-GitHubRepoIdentity (378–446): local clone → owner/repo via git -C <path> remote get-url origin, regex github\.com[/:]([^/]+)/([^/.]+). 4. Repo-name → local filesystem path resolution
+Two mechanisms, both in Start-RepoManagementApiHost.ps1:
+
+Resolve-RoadmapPathForRepo (3800–3827): given RepoName, optional LocalPath, and a RoadmapEntry, returns the roadmap file. Prefers RoadmapEntry.roadmapPath if it exists; else probes LocalPath for ROADMAP.md, Roadmap.md, docs\planning\roadmap.md, docs\ROADMAP.md, roadmap.md.
+GET /api/roadmap/content route (6677–6719): the actual source of the preview UI's Roadmap source: path. Given repo, it runs/reads the roadmap scan index (Get-RoadmapFromCache / Invoke-RoadmapScan, 6689–6690), finds $\_.repoName -eq $repoName, and takes $match.roadmapPath (6691–6692). Returns { repoName, content, path, sizeBytes, lastModified }. The scan index entries carry both roadmapPath and (per the README route at 6732) localPath — so roadmapPath's parent directory is the target repo's local checkout (e.g. F:\Development\20_Staging\AdministatorTools\).
+Important for the pivot: The preview/start API routes do NOT resolve the local path themselves. POST /api/roadmap-agent/preview (6552–6577) and POST /api/roadmap-agent/start (6578–6610) only read repository, baseBranch, customAgent, roadmapPath, follow from the body and forward them as args to Start-RoadmapCopilotTask.ps1 via Invoke-PowerShellScriptFile. The roadmapPath is supplied by the frontend, which got it from getRoadmapContent (content.path). The start route then reads back Get-RoadmapTaskHistory -Limit 1 for latestHistory (6598–6607). So a queue-writer replacing the gh dispatch would sit inside Start-GitHubCopilotTask.ps1 (or the start route), and the target repo's working dir = Split-Path -Parent $roadmapPath.
+
+1. Frontend dispatch UI
+   The modal you described ("Preview Task / Start Task / Refresh History", disabled "Run AI Agent") is frontend/components/RoadmapViewerModal.tsx — NOT RoadmapDispatchModal.tsx (that's the separate release-to-Copilot flow).
+
+State + handlers: handlePreviewTask (86–106), handleStartTask (108–128), loadHistory (61–71). Both pass roadmapPath = content?.path (the locally-loaded roadmap) into the request.
+API calls (frontend/services/apiClient.ts): previewRoadmapTask → POST /roadmap-agent/preview (768–774); startRoadmapTask → POST /roadmap-agent/start (776–786), returns {message, output, latestHistory}; getRoadmapTaskHistory(limit) → GET /roadmap-agent/history?limit= (788–790). Roadmap content via getRoadmapContent(name) → GET /api/roadmap/content.
+History render (277–289): maps taskHistory to rows showing item.runId (mono), item.status (red if failed, else green), item.repository, item.selectedTask.
+The "Copilot task preview issue / Failed to fetch" warning (245–256): isTaskError (line 142) = taskMessage matches /failed|error|not found|not installed|required/i. Header text toggles "Copilot task preview issue" vs "Copilot task preview" (248); a red sub-note (251–255) references content?.path. taskMessage is set to the caught error string in the handlers.
+"Run AI Agent" (173–178) is a disabled <span> labeled "AI Agent — Phase 2 coming soon" — a placeholder, not wired to anything yet. 6. Existing queue / runner / append-only JSONL patterns to model on
+Execution ledger — backend/modules/execution/Execution.Ledger.ps1: two-lane state machine with states idle | ready | running | blocked | complete (header 6–16), single JSON doc at output\execution\execution-ledger.json (Get-ExecutionLedgerPath, 35–46) with {schemaVersion, updatedAt, entries[], history[]}; Read-ExecutionLedger (53) / Write-ExecutionLedger (109), optional SQLite bridge (Read/Write-AppDbExecutionLedger). This already models "at most two repos running / no duplicate dispatch" — closest thing to a queue today.
+Append-only JSONL run history — backend/modules/automation/Automation.DocRefinement.ps1: $AutomationRunsRelPath = 'output/automation/automation-runs.jsonl' (24); Write-AutomationRunRecord (201–224) appends one compact JSON line via Add-Content -Encoding UTF8; Get-AutomationRunHistory (226+) reads it with a limit. Clean template for a task-queue.jsonl writer/reader. (Note its preview-first guardrail at 214–216.)
+Roadmap-agent history JSONL — the Write-HistoryEvent dual-append pattern (§2) is the existing per-run event log to reuse.
+Roadmap-events contract/spec — spec/roadmap-contract/roadmap-events.md, standards/roadmap/roadmap-events.md (append-only event schema docs).
+Agent HTTP protocol — docs/reference/agent-api.yaml defines /api/v1/agent/\*; frontend WorkQueueView.tsx and OperationsWorkspaceView.tsx already render queue/work views. Persistence primitives in backend/modules/persistence/Persistence.Store.ps1.
+Other JSONL stores under output\: roadmap-task-history\prompt-refinements\<Repo>.refinements.jsonl and ai-doc-improvements\<Repo>.improvements.jsonl — same per-repo append-only convention.
+Quick pointers for the pivot
+Queue-writer replaces the gh agent-task create block (Start-GitHubCopilotTask.ps1:207–231); everything else in both scripts (history store init, Write-HistoryEvent, summary.json emission) can be kept so the existing Get-RoadmapTaskHistory + UI keep working unchanged.
+Target local working dir for a claude runner = parent of the resolved roadmapPath (from GET /api/roadmap/content / Resolve-RoadmapPathForRepo); GitHub slug (if needed) via Resolve-GitHubRepoIdentity.
+The reusable prompt/packet content is either the plain generatedTaskDescription (Start-RoadmapCopilotTask.ps1:375–393) or the richer Build-ReleaseDispatchPacket structure (Roadmap.Dispatcher.ps1:228–285).
