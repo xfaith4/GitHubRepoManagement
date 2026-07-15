@@ -137,7 +137,10 @@ function Invoke-QueuedTask {
 
         # Working branch (create, or switch if it already exists).
         & git -C $repo switch -c $branch 2>$null
-        if ($LASTEXITCODE -ne 0) { & git -C $repo switch $branch 2>$null }
+        if ($LASTEXITCODE -ne 0) {
+            & git -C $repo switch $branch 2>$null
+            if ($LASTEXITCODE -ne 0) { throw "Failed to switch to branch '$branch' in repo '$repo'." }
+        }
 
         # Launch Claude Code in the repo.
         if (-not (Get-Command claude -ErrorAction SilentlyContinue)) { throw "'claude' not found on PATH. Run this as the operator with Claude Code installed." }
@@ -145,6 +148,7 @@ function Invoke-QueuedTask {
         try {
             if ($Headless) { & claude -p $prompt --permission-mode $PermissionMode }
             else { & claude --permission-mode $PermissionMode $prompt }
+            if ($LASTEXITCODE -ne 0) { throw "Claude Code execution failed with exit code $LASTEXITCODE." }
         }
         finally { Pop-Location }
 
