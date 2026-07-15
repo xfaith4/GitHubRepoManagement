@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem } from '../types';
-import { getRoadmapContent, triggerRoadmapScan, previewRoadmapTask, startRoadmapTask, getRoadmapTaskHistory } from '../services/apiClient';
+import { getRoadmapContent, triggerRoadmapScan, previewRoadmapTask, startRoadmapTask, approveRoadmapTask, getRoadmapTaskHistory } from '../services/apiClient';
 
 interface RoadmapViewerModalProps {
   isOpen: boolean;
@@ -24,6 +24,7 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
   const [taskMessage, setTaskMessage] = useState<string | null>(null);
   const [taskHistory, setTaskHistory] = useState<RoadmapTaskHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [approvingRunId, setApprovingRunId] = useState<string | null>(null);
 
   const loadContent = useCallback(async (name: string) => {
     setLoading(true);
@@ -127,6 +128,20 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
     }
   };
 
+  const handleApprovePush = async (runId: string) => {
+    setTaskMessage(null);
+    setApprovingRunId(runId);
+    try {
+      const result = await approveRoadmapTask(runId);
+      setTaskMessage(`${result.message}${result.branch ? ` (branch ${result.branch})` : ''}`);
+      await loadHistory();
+    } catch (err) {
+      setTaskMessage(err instanceof Error ? err.message : 'Approve & push failed.');
+    } finally {
+      setApprovingRunId(null);
+    }
+  };
+
   if (!isOpen) return null;
 
   const formatDate = (iso: string) => {
@@ -170,12 +185,14 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
             >
               Refresh
             </button>
-            <span
-              title="AI Agent — Phase 2 coming soon"
-              className="text-xs px-3 py-1.5 rounded bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700 select-none"
+            <button
+              onClick={handleStartTask}
+              disabled={taskRunning || loading || !repositoryInput.trim()}
+              title="Queue the next roadmap task for the local Claude Code runner"
+              className="text-xs px-3 py-1.5 rounded bg-indigo-800 hover:bg-indigo-700 text-indigo-100 border border-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              Run AI Agent
-            </span>
+              {taskRunning ? 'Working...' : 'Run AI Agent'}
+            </button>
             <button
               onClick={onClose}
               className="ml-1 text-gray-400 hover:text-gray-100 transition-colors text-xl leading-none"
@@ -277,9 +294,21 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
               <div className="max-h-24 overflow-auto space-y-1">
                 {taskHistory.map(item => (
                   <div key={item.runId} className="text-xs border-b border-gray-800 pb-1">
-                    <div className="flex justify-between gap-2">
+                    <div className="flex justify-between items-center gap-2">
                       <span className="font-mono text-gray-400">{item.runId}</span>
-                      <span className={item.status === 'failed' ? 'text-red-400' : 'text-green-400'}>{item.status}</span>
+                      <span className="flex items-center gap-2">
+                        <span className={item.status === 'failed' ? 'text-red-400' : item.status === 'awaiting-review' ? 'text-amber-300' : 'text-green-400'}>{item.status}</span>
+                        {item.status === 'awaiting-review' && (
+                          <button
+                            onClick={() => void handleApprovePush(item.runId)}
+                            disabled={approvingRunId !== null}
+                            title="Push the reviewed branch to origin (nothing is merged)"
+                            className="px-2 py-0.5 rounded bg-emerald-800 hover:bg-emerald-700 text-emerald-100 border border-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {approvingRunId === item.runId ? 'Pushing...' : 'Approve & push'}
+                          </button>
+                        )}
+                      </span>
                     </div>
                     <div className="text-gray-300 truncate" title={item.repository}>{item.repository}</div>
                     <div className="text-gray-500 truncate" title={item.selectedTask}>{item.selectedTask}</div>

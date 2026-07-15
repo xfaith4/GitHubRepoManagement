@@ -9,8 +9,10 @@ can't be your authenticated Claude Code), dispatch is split in two:
 2. **You run the runner** — `scripts/Invoke-RoadmapTaskRunner.ps1`, in your own
    session (your `claude` + auth), picks up queued tasks and executes them.
 
-Nothing is pushed to GitHub. The runner stops at `awaiting-review` so you review
-the branch and push / open a PR yourself.
+Nothing is pushed to GitHub by the runner. It stops at `awaiting-review` so you
+review the branch first — then push either yourself from the shell, or with the
+ROADMAP modal's **Approve & push** action (`POST /api/roadmap-agent/approve-push`),
+which pushes the run's branch to `origin` and marks the run `pushed`.
 
 ## Flow
 
@@ -26,12 +28,14 @@ Queue Task    -> output/roadmap-task-queue.jsonl  (status=queued)
                                          verify  (best-effort: npm test / Invoke-TestSuite)
                                          git commit   (only if there are changes)
                                          status=awaiting-review   <-- STOPS here
-                                       you review the branch -> push / PR
+                                       you review the branch
+                                         -> push yourself, or
+                                         -> Approve & push (portal)  (status=pushed)
 ```
 
 Status flows back to the portal via the existing run summary
 (`Get-RoadmapTaskHistory`), so the ROADMAP modal's history shows
-`queued → running → awaiting-review` (or `failed`).
+`queued → running → awaiting-review → pushed` (or `failed`).
 
 ## Running the runner
 
@@ -60,7 +64,11 @@ Options:
 ## Reviewing and pushing
 
 Each finished task leaves a `roadmap/<runId>` branch with the work committed. The
-runner never pushes. When you're satisfied:
+runner never pushes. When you're satisfied, the quickest path is the ROADMAP
+modal: rows in `awaiting-review` show an **Approve & push** button that pushes
+the branch to `origin` (using the configured GitHub token when the portal runs
+as a service) and moves the run to `pushed`. Only `awaiting-review` runs can be
+pushed — anything else is refused with a 409. Or do it yourself from the shell:
 
 ```powershell
 cd <the target repo>
