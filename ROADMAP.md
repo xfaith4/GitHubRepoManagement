@@ -1670,6 +1670,37 @@ Continuous, not release-scoped:
       real ones. Also fixed `Invoke-TestSuite.ps1` to thread `-Port`/`-BaseUrl`
       into the api-host smoke so a non-default port truly isolates the live host
       from a running portal on 7071.
+- [x] Repo layout & hygiene cleanup — archive-or-remove pass to keep the
+      working tree decision-grade. *(state: smoke-tested — 2026-07-15)* —
+      Performed: root worklogs (`findings.md`, `progress.md`, `task_plan.md`)
+      archived to [`docs/history/worklogs/`](docs/history/worklogs/); one-off
+      prompts (`.agents/prompt_followtheroadmap`,
+      `docs/Prompts/PRT_UpdateOperationsTab.md`) archived to
+      [`docs/history/prompts/`](docs/history/prompts/); removed dead
+      deployment artifacts (`Dockerfile`, `docker-compose.yml`,
+      `.dockerignore`, `start.sh` — undocumented; the supported run paths are
+      the service installer and `Start-App.ps1`, and Release 1.4 was renamed
+      away from containerized deployment) and superseded scripts
+      (`Register-ScheduledTasks.Template.ps1` — registered
+      `Run-ScheduledStatus.ps1`/`Run-ScheduledReconcile.ps1`, which no longer
+      exist; `Invoke-RetentionCleanup.ps1` — retention now lives in the
+      host/persistence layer; `Invoke-MigrationBaseline.ps1` — one-off
+      pre-2.1 baseline tool). All removals recoverable from git history.
+      Kept deliberately: `spec/roadmap-contract/` (published Release 2.3
+      deliverable with its own test-suite gate) alongside `standards/roadmap/`
+      (the live, code-referenced rule pack), and `scripts/model-routing/`
+      (dev-tooling config per CLAUDE.md). Module smoke green post-removal.
+- [ ] Layout follow-ups from the 2026-07-15 cleanup. *(state: planned)* —
+      (1) normalize hardcoded `G:\Development\GitHubRepoManagement`
+      `-WorkspaceRoot` defaults to `$PSScriptRoot`-derived paths
+      (`Invoke-ModuleSmokeTest.ps1` and any remaining scripts) so the suite
+      runs unmodified on any clone location; (2) add a standards↔spec drift
+      tripwire asserting `standards/roadmap/roadmap-audit-rules.json` stays
+      in sync with `spec/roadmap-contract/roadmap-audit-rules.json` (or
+      document intended divergence in `standards/MANIFEST.md`); (3) repair
+      `CLAUDE.md`'s dangling `@_base.md` / `@.claude/modes/implementer.md`
+      imports (neither file exists in the repo; the mode line is managed by
+      `ccmode.ps1`, so fix at the tool level).
 
 ### Repository Grid UX Uplift [In Progress]
 
