@@ -492,6 +492,9 @@ try {
     # --- Claude Code dispatch (default): enqueue for the local operator runner ---
     if ($DispatchMode -eq 'claude') {
         $localRepoPath = Split-Path -Parent $resolvedRoadmap.Path
+        if ([string]::IsNullOrWhiteSpace($localRepoPath)) {
+            throw "Local Claude Code dispatch requires a local repository path. Please provide a local -RoadmapPath."
+        }
         $branch = "roadmap/$($historyStore.RunId)"
         $queueScript = Join-Path $PSScriptRoot 'Add-RoadmapTaskToQueue.ps1'
         if (-not (Test-Path -LiteralPath $queueScript)) { throw "Queue writer script not found: $queueScript" }

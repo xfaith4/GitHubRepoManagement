@@ -1559,6 +1559,18 @@ stops for review before anything is pushed — matching the preview-first princi
 - [x] `Start-RoadmapCopilotTask.ps1` `-DispatchMode claude|copilot` (default `claude`) — enqueue instead of gh-dispatch; writes a `queued` run summary; Copilot stays behind `-DispatchMode copilot`. *(state: smoke-tested — 2026-07-12)* — orchestrator integration proven (fixture roadmap → queue+summary, no gh call).
 - [x] Local runner [`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1) — runs as the operator; claim → `roadmap/<runId>` branch → `claude` in the repo → best-effort verify → commit → `awaiting-review` (never pushes). `-Once`/`-Headless`/`-DryRun`. *(state: smoke-tested — 2026-07-12)* — dry-run E2E + pure logic covered by module smoke. **Remaining for `operator-verified`:** a real `claude` run in the operator's session.
 - [x] Frontend copy + statuses (Queue Task; `queued`/`running`/`awaiting-review`) and the start-route message. *(state: smoke-tested — 2026-07-12)* — typecheck green.
+- [x] Harden local Claude Code dispatch (PR #54 follow-up): add explicit
+      error handling for git branch switch failures, claude CLI exit codes,
+      and relative roadmap paths in
+      [`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1) /
+      [`Start-RoadmapCopilotTask.ps1`](scripts/Start-RoadmapCopilotTask.ps1)
+      — sourced from Gemini Code Assist review comments on PR #54.
+      *(state: smoke-tested — 2026-07-15)* — a failed branch switch and a
+      non-zero `claude` exit now throw (task marked `failed` instead of
+      silently proceeding to `awaiting-review`), and claude dispatch with a
+      GitHub-sourced (non-local) roadmap path fails fast with a clear error.
+      Existing module smoke passes post-change (regression proof); the new
+      throw paths are guard rails, not separately asserted.
 - [ ] Optional follow-ups: an "approve & push" action from the portal; wire the disabled "Run AI Agent" button; api-host smoke asserting the start route enqueues. *(state: planned)*
 
 Docs: [`docs/reference/local-task-runner.md`](docs/reference/local-task-runner.md).
