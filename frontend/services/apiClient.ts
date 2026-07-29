@@ -785,6 +785,18 @@ export async function startRoadmapTask(request: RoadmapTaskRequest): Promise<{ m
   };
 }
 
+export async function approveRoadmapTask(runId: string): Promise<{ message: string; branch: string; pushed: boolean }> {
+  const data = await postJson<any>('/roadmap-agent/approve-push', { runId });
+  if (!data?.success) {
+    throw new Error(data?.error?.message ?? 'Roadmap task approve & push failed.');
+  }
+  return {
+    message: String(data?.data?.message ?? 'Branch pushed.'),
+    branch: String(data?.data?.branch ?? ''),
+    pushed: Boolean(data?.data?.pushed)
+  };
+}
+
 export async function getRoadmapTaskHistory(limit = 25): Promise<RoadmapTaskHistoryItem[]> {
   const data = await fetchJson<any>(`${API_BASE_URL}/roadmap-agent/history?limit=${encodeURIComponent(String(limit))}`);
   if (!data?.success) {

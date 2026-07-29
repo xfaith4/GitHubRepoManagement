@@ -49,6 +49,14 @@ function Invoke-ApiRequest {
         $invokeSplat.Body = ($Body | ConvertTo-Json -Depth 8)
     }
 
+    # The booted host inherits this environment: when a machine-level
+    # REPO_MGMT_API_KEY is set (Release 2.2 auth), the host enforces it, so the
+    # smoke must send it. Unset (CI) means auth is off and no header is sent.
+    $smokeApiKey = [Environment]::GetEnvironmentVariable('REPO_MGMT_API_KEY')
+    if (-not [string]::IsNullOrWhiteSpace($smokeApiKey)) {
+        $invokeSplat.Headers = @{ 'X-Api-Key' = $smokeApiKey }
+    }
+
     $response = Invoke-WebRequest @invokeSplat
     $json = $null
     if (-not [string]::IsNullOrWhiteSpace($response.Content)) {
@@ -182,7 +190,11 @@ try {
     foreach ($f in @('authRequired', 'authEnforced', 'authenticated', 'bindAddress', 'isLoopbackBind')) {
         if (-not ($authStatus.data.PSObject.Properties.Name -contains $f)) { throw "/api/auth/status missing data.$f" }
     }
-    if ($authStatus.data.authEnforced -ne $false) { throw "/api/auth/status expected authEnforced=false on the default host, got $($authStatus.data.authEnforced)" }
+    # The booted host inherits this environment: with a machine-level API key
+    # configured (Release 2.2), enforcement is legitimately on and every smoke
+    # request already carries X-Api-Key; keyless (CI) hosts must not enforce.
+    $expectAuthEnforced = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable('REPO_MGMT_API_KEY'))
+    if ($authStatus.data.authEnforced -ne $expectAuthEnforced) { throw "/api/auth/status expected authEnforced=$expectAuthEnforced for this environment, got $($authStatus.data.authEnforced)" }
     if ($authStatus.data.isLoopbackBind -ne $true) { throw "/api/auth/status expected isLoopbackBind=true for a 127.0.0.1 bind" }
 
     $setupStatusResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/setup/status"
@@ -680,6 +692,92 @@ try {
     } else {
         Write-Host '  workspace ROADMAP.md not found — local-roadmap preview check skipped' -ForegroundColor Yellow
     }
+
+    Write-Host '[STEP] Roadmap-agent dispatch: start route enqueues + approve-push contract (Release 2.8)' -ForegroundColor Cyan
+    $dispatchFixtureRoot = Join-Path $smokeRoot 'roadmap-dispatch-fixture'
+    $dispatchRepoPath = Join-Path $dispatchFixtureRoot 'smoke-dispatch-repo'
+    if (Test-Path -LiteralPath $dispatchFixtureRoot) { Remove-Item -LiteralPath $dispatchFixtureRoot -Recurse -Force }
+    $null = New-Item -ItemType Directory -Path $dispatchRepoPath -Force
+    & git init "$dispatchRepoPath" *>&1 | Out-Null
+    $dispatchRoadmapPath = Join-Path $dispatchRepoPath 'ROADMAP.md'
+    Set-Content -LiteralPath $dispatchRoadmapPath `
+        -Value "# Smoke Dispatch Roadmap`n`n## Release 1`n`n- [ ] Pending dispatch fixture item`n" -Encoding UTF8
+
+    $dispatchQueuePath = Join-Path $WorkspaceRoot 'output\roadmap-task-queue.jsonl'
+    $queueLinesBefore = if (Test-Path -LiteralPath $dispatchQueuePath) { @(Get-Content -LiteralPath $dispatchQueuePath -Encoding UTF8 | Where-Object { $_ -and $_.Trim() }).Count } else { 0 }
+
+    $dispatchStartResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap-agent/start" -Body @{
+        repository = 'smoke-owner/smoke-dispatch-repo'
+        roadmapPath = $dispatchRoadmapPath
+    }
+    if ($dispatchStartResponse.StatusCode -ne 200) {
+        throw ("/api/roadmap-agent/start (fixture) failed: HTTP {0}. Body={1}" -f $dispatchStartResponse.StatusCode, $dispatchStartResponse.Content)
+    }
+    if (-not $dispatchStartResponse.Json.success) { throw '/api/roadmap-agent/start (fixture) returned success=false' }
+    $dispatchLatest = $dispatchStartResponse.Json.data.latestHistory
+    if ($null -eq $dispatchLatest -or [string]$dispatchLatest.status -ne 'queued') {
+        throw ("/api/roadmap-agent/start did not surface a 'queued' latestHistory (got '{0}')" -f $(if ($null -ne $dispatchLatest) { [string]$dispatchLatest.status } else { 'null' }))
+    }
+    $dispatchRunId = [string]$dispatchLatest.runId
+
+    # Deterministic enqueue evidence: the queue ledger gained a line whose runId
+    # matches the started run, and that run's summary is status='queued'.
+    $dispatchQueueLines = @(Get-Content -LiteralPath $dispatchQueuePath -Encoding UTF8 | Where-Object { $_ -and $_.Trim() })
+    if ($dispatchQueueLines.Count -le $queueLinesBefore) { throw 'roadmap-task-queue.jsonl did not gain an entry after /api/roadmap-agent/start' }
+    $dispatchQueueEntry = $dispatchQueueLines[-1] | ConvertFrom-Json
+    if ([string]$dispatchQueueEntry.runId -ne $dispatchRunId) { throw ("queue tail runId '{0}' does not match started run '{1}'" -f $dispatchQueueEntry.runId, $dispatchRunId) }
+    $dispatchSummaryPath = Join-Path $WorkspaceRoot ("output\roadmap-task-history\runs\{0}.summary.json" -f $dispatchRunId)
+    $dispatchSummary = Get-Content -LiteralPath $dispatchSummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ([string]$dispatchSummary.status -ne 'queued') { throw ("run summary status expected 'queued', got '{0}'" -f $dispatchSummary.status) }
+    Write-Host ("  start route enqueued run {0} (queue line + summary proven)" -f $dispatchRunId) -ForegroundColor DarkGray
+
+    # approve-push contract gates: 400 (no runId), 404 (unknown run), 409 (wrong
+    # state — a 'queued' run must not be pushable).
+    $approveMissing = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap-agent/approve-push" -Body @{}
+    if ($approveMissing.StatusCode -ne 400) { throw ("approve-push without runId expected 400, got {0}" -f $approveMissing.StatusCode) }
+    $approveUnknown = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap-agent/approve-push" -Body @{ runId = 'smoke-no-such-run' }
+    if ($approveUnknown.StatusCode -ne 404) { throw ("approve-push with unknown runId expected 404, got {0}" -f $approveUnknown.StatusCode) }
+    $approveWrongState = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap-agent/approve-push" -Body @{ runId = $dispatchRunId }
+    if ($approveWrongState.StatusCode -ne 409) { throw ("approve-push on a 'queued' run expected 409, got {0}" -f $approveWrongState.StatusCode) }
+
+    # approve-push happy path: a real push proven against a local bare remote
+    # (no network, deterministic). Lift the smoke run to awaiting-review with
+    # branch + localRepoPath exactly as the runner would have left it.
+    $bareRemotePath = Join-Path $dispatchFixtureRoot 'bare-remote.git'
+    & git init --bare "$bareRemotePath" *>&1 | Out-Null
+    & git -C $dispatchRepoPath -c user.email=smoke@local -c user.name=smoke commit -q --allow-empty -m 'smoke: dispatch fixture base' *>&1 | Out-Null
+    & git -C $dispatchRepoPath remote add origin "$bareRemotePath" *>&1 | Out-Null
+    $approveBranchName = "roadmap/$dispatchRunId"
+    & git -C $dispatchRepoPath switch -c $approveBranchName *>&1 | Out-Null
+    & git -C $dispatchRepoPath -c user.email=smoke@local -c user.name=smoke commit -q --allow-empty -m 'smoke: reviewed work' *>&1 | Out-Null
+    $dispatchSummaryHash = @{}
+    foreach ($prop in $dispatchSummary.PSObject.Properties) { $dispatchSummaryHash[$prop.Name] = $prop.Value }
+    $dispatchSummaryHash['status'] = 'awaiting-review'
+    $dispatchSummaryHash['branch'] = $approveBranchName
+    $dispatchSummaryHash['localRepoPath'] = $dispatchRepoPath
+    ($dispatchSummaryHash | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $dispatchSummaryPath -Encoding UTF8
+
+    $approveOk = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap-agent/approve-push" -Body @{ runId = $dispatchRunId }
+    if ($approveOk.StatusCode -ne 200) {
+        throw ("approve-push on awaiting-review run expected 200, got HTTP {0}. Body={1}" -f $approveOk.StatusCode, $approveOk.Content)
+    }
+    if (-not $approveOk.Json.success -or -not $approveOk.Json.data.pushed) { throw 'approve-push did not return success=true/pushed=true' }
+    & git -C $bareRemotePath rev-parse --verify ("refs/heads/{0}" -f $approveBranchName) *>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw ("bare remote does not contain pushed branch {0} — push was not real" -f $approveBranchName) }
+    $dispatchSummaryAfter = Get-Content -LiteralPath $dispatchSummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ([string]$dispatchSummaryAfter.status -ne 'pushed') { throw ("summary status after approve-push expected 'pushed', got '{0}'" -f $dispatchSummaryAfter.status) }
+    $approveAgain = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap-agent/approve-push" -Body @{ runId = $dispatchRunId }
+    if ($approveAgain.StatusCode -ne 409) { throw ("approve-push on a 'pushed' run expected 409 (terminal state), got {0}" -f $approveAgain.StatusCode) }
+    Write-Host '  approve-push ok: 400/404/409 gates, real push to local bare remote, terminal pushed state' -ForegroundColor DarkGray
+
+    # Park the smoke run so it reads as fixture data in history (the queue
+    # ledger stays append-only; the runner only ever claims status='queued').
+    $dispatchSummaryFinal = Get-Content -LiteralPath $dispatchSummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $dispatchFinalHash = @{}
+    foreach ($prop in $dispatchSummaryFinal.PSObject.Properties) { $dispatchFinalHash[$prop.Name] = $prop.Value }
+    $dispatchFinalHash['status'] = 'smoke-cancelled'
+    ($dispatchFinalHash | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $dispatchSummaryPath -Encoding UTF8
+    Remove-Item -LiteralPath $dispatchFixtureRoot -Recurse -Force -ErrorAction SilentlyContinue
 
     Write-Host '[STEP] Copilot task packet routes (Release 0.6)' -ForegroundColor Cyan
     # Preview with a missing repoName should return non-503 (400/500 is acceptable)

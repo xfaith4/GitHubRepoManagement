@@ -6622,6 +6622,82 @@ try {
                         }
                     }
                 }
+                'POST /api/roadmap-agent/approve-push' {
+                    # Release 2.8: operator approves an 'awaiting-review' runner branch
+                    # and the portal pushes it to origin. Only awaiting-review -> pushed
+                    # is a legal transition (409 otherwise); push success is proven by
+                    # the git exit code, never assumed.
+                    $body = Parse-JsonBody -Body $req.Body
+                    $approveRunId = if ($body.ContainsKey('runId') -and $body.runId) { [string]$body.runId } else { '' }
+                    Add-MetricCounter -Name 'api_requests_total'
+                    if ([string]::IsNullOrWhiteSpace($approveRunId) -or $approveRunId -notmatch '^[A-Za-z0-9._-]+$') {
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error = 'A valid runId is required for /api/roadmap-agent/approve-push'
+                            category = 'validation'
+                        }
+                    }
+                    else {
+                        $approveSummaryPath = Join-Path (Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs') ("{0}.summary.json" -f $approveRunId)
+                        if (-not (Test-Path -LiteralPath $approveSummaryPath -PathType Leaf)) {
+                            Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{
+                                success = $false
+                                error = ("No run summary found for runId '{0}'." -f $approveRunId)
+                            }
+                        }
+                        else {
+                            $approveSummary = Get-Content -LiteralPath $approveSummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                            $approveStatus = if ($approveSummary.PSObject.Properties.Name -contains 'status') { [string]$approveSummary.status } else { '' }
+                            $approveBranch = if ($approveSummary.PSObject.Properties.Name -contains 'branch') { [string]$approveSummary.branch } else { '' }
+                            $approveRepoPath = if ($approveSummary.PSObject.Properties.Name -contains 'localRepoPath') { [string]$approveSummary.localRepoPath } else { '' }
+                            if ($approveStatus -ne 'awaiting-review') {
+                                Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                                    success = $false
+                                    error = ("Cannot approve & push run '{0}' in status '{1}' — only 'awaiting-review' runs can be pushed." -f $approveRunId, $approveStatus)
+                                }
+                            }
+                            elseif ([string]::IsNullOrWhiteSpace($approveBranch) -or [string]::IsNullOrWhiteSpace($approveRepoPath) -or -not (Test-Path -LiteralPath (Join-Path $approveRepoPath '.git'))) {
+                                Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                                    success = $false
+                                    error = ("Run '{0}' summary is missing a usable branch/localRepoPath (branch='{1}', localRepoPath='{2}')." -f $approveRunId, $approveBranch, $approveRepoPath)
+                                    category = 'validation'
+                                }
+                            }
+                            else {
+                                # The service account has no git credential manager: push with
+                                # the configured GitHub token when present. A tokenless push
+                                # still works for SSH remotes or an operator-run host.
+                                $ghToken = $env:GitHub_Token
+                                if ([string]::IsNullOrWhiteSpace($ghToken)) { $ghToken = $env:GITHUB_TOKEN }
+                                $gitPushArgs = @('-C', $approveRepoPath)
+                                if (-not [string]::IsNullOrWhiteSpace($ghToken)) {
+                                    $basicToken = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("x-access-token:{0}" -f $ghToken)))
+                                    $gitPushArgs += @('-c', ("http.extraheader=AUTHORIZATION: basic {0}" -f $basicToken))
+                                }
+                                $pushOutput = (& git @gitPushArgs push -u origin $approveBranch 2>&1) | Out-String
+                                if ($LASTEXITCODE -ne 0) {
+                                    throw ("git push failed for branch '{0}' in '{1}': {2}" -f $approveBranch, $approveRepoPath, $pushOutput.Trim())
+                                }
+                                $updatedSummary = @{}
+                                foreach ($prop in $approveSummary.PSObject.Properties) { $updatedSummary[$prop.Name] = $prop.Value }
+                                $updatedSummary['status'] = 'pushed'
+                                $updatedSummary['pushedAt'] = (Get-Date).ToString('o')
+                                ($updatedSummary | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $approveSummaryPath -Encoding UTF8
+                                Write-HostLog ("[TRACE] roadmap-agent.approve-push correlationId={0} runId={1} branch={2} pushed=true" -f $correlationId, $approveRunId, $approveBranch)
+                                Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                                    success = $true
+                                    data = @{
+                                        runId = $approveRunId
+                                        branch = $approveBranch
+                                        pushed = $true
+                                        message = ("Branch '{0}' pushed to origin. Open the PR from GitHub when ready." -f $approveBranch)
+                                        output = $pushOutput.Trim()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 'GET /api/roadmap/index' {
                     Write-HostLog ("[TRACE] roadmap.index correlationId={0} start" -f $correlationId)
                     $q = Parse-QueryString -Query $req.Query

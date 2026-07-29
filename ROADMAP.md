@@ -1571,7 +1571,24 @@ stops for review before anything is pushed — matching the preview-first princi
       GitHub-sourced (non-local) roadmap path fails fast with a clear error.
       Existing module smoke passes post-change (regression proof); the new
       throw paths are guard rails, not separately asserted.
-- [ ] Optional follow-ups: an "approve & push" action from the portal; wire the disabled "Run AI Agent" button; api-host smoke asserting the start route enqueues. *(state: planned)*
+- [x] Follow-ups (2026-07-15): (1) **approve & push from the portal** —
+      `POST /api/roadmap-agent/approve-push` reads the run summary
+      server-side (`branch` + `localRepoPath`), enforces the state machine
+      (404 unknown run; 409 for any status other than `awaiting-review`,
+      including terminal `pushed`), pushes with the configured GitHub token
+      when present, and marks `pushed` only on a zero git exit code; the
+      ROADMAP modal shows an "Approve & push" action on amber-highlighted
+      `awaiting-review` rows. (2) **"Run AI Agent" wired** — the dead header
+      span in
+      [`RoadmapViewerModal.tsx`](frontend/components/RoadmapViewerModal.tsx)
+      is now a real button on the queue flow. (3) **start-route enqueue
+      smoke** — the api-host smoke dispatches a fixture repo through
+      `POST /api/roadmap-agent/start` and asserts deterministic evidence
+      (queue-ledger line with matching runId + `queued` summary), then
+      proves the full approve-push contract: 400/404/409 gates, a real push
+      verified inside a local bare remote, and a terminal-state 409 on
+      re-approve. *(state: smoke-tested — 2026-07-15)* — typecheck green;
+      docs updated ([`local-task-runner.md`](docs/reference/local-task-runner.md)).
 
 Docs: [`docs/reference/local-task-runner.md`](docs/reference/local-task-runner.md).
 
