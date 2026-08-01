@@ -20,6 +20,7 @@ import { RoadmapLintModal } from './RoadmapLintModal';
 import ExecutionQueuePanel from './ExecutionQueuePanel';
 import RepoEvaluationModal from './RepoEvaluationModal';
 import RoadmapDispatchModal from './RoadmapDispatchModal';
+import RepositoryImprovementWorkflowModal from './RepositoryImprovementWorkflowModal';
 import RepoGitStatusModal from './RepoGitStatusModal';
 import ReadmeGenerateModal from './ReadmeGenerateModal';
 import HelpModal from './HelpModal';
@@ -238,6 +239,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   const [standardizeModalRepo, setStandardizeModalRepo] = useState<string | null>(null);
   const [evaluationModalRepo, setEvaluationModalRepo] = useState<string | null>(null);
   const [dispatchModalRepo, setDispatchModalRepo] = useState<string | null>(null);
+  const [improvementWorkflowRepo, setImprovementWorkflowRepo] = useState<string | null | undefined>(undefined);
   const [gitStatusModalRepo, setGitStatusModalRepo] = useState<string | null>(null);
   const [gitStatusModalPath, setGitStatusModalPath] = useState<string | null>(null);
   const [readmeGenerateRepo, setReadmeGenerateRepo] = useState<string | null>(null);
@@ -977,6 +979,10 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
 
   const handleDispatchRelease = (repoName: string) => {
     setDispatchModalRepo(repoName);
+  };
+
+  const handleStartImprovementWorkflow = (repoName?: string) => {
+    setImprovementWorkflowRepo(repoName ?? null);
   };
 
   const handleViewGitStatus = (repoName: string, localPath?: string) => {
@@ -2082,6 +2088,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                 error={docsAuditError}
                 onRefresh={handleDocsAuditRefresh}
                 onScan={handleDocsAuditScan}
+                onStartImprovementWorkflow={handleStartImprovementWorkflow}
                 onViewRoadmap={handleViewRoadmap}
                 onPreviewTask={handlePreviewCopilotTask}
                 onViewRoadmapAudit={handleViewRoadmapAudit}
@@ -2329,6 +2336,16 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
         onDispatchComplete={() => {
           setDispatchModalRepo(null);
           getRoadmapAudit({ refresh: true }).then(setRoadmapAuditIndex).catch(() => {});
+          refreshExecutionMetrics({ background: true }).catch(() => {/* surfaced in-card */});
+        }}
+      />
+
+      <RepositoryImprovementWorkflowModal
+        isOpen={improvementWorkflowRepo !== undefined}
+        repos={docsAuditIndex?.entries ?? []}
+        initialRepoName={improvementWorkflowRepo}
+        onClose={() => setImprovementWorkflowRepo(undefined)}
+        onDispatchComplete={() => {
           refreshExecutionMetrics({ background: true }).catch(() => {/* surfaced in-card */});
         }}
       />

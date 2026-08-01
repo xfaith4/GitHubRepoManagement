@@ -30,6 +30,7 @@ $executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 . (Join-Path $roadmapModuleRoot 'Roadmap.Auditor.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.Repairer.ps1')
 . (Join-Path $docAuditModuleRoot 'DocAudit.Scanner.ps1')
+. (Join-Path $docAuditModuleRoot 'RepositoryImprovement.Workflow.ps1')
 . (Join-Path $executionModuleRoot 'Execution.Ledger.ps1')
 . (Join-Path $WorkspaceRoot 'backend\modules\auth\GitHubApp.ps1')
 . (Join-Path $WorkspaceRoot 'backend\modules\auth\SessionAuth.ps1')
@@ -7049,6 +7050,29 @@ try {
                             cacheSource = 'fresh-scan'
                             cacheAgeSeconds = 0
                         }
+                    }
+                }
+                'POST /api/repository-improvement/preview' {
+                    Write-HostLog ("[TRACE] repository-improvement.preview correlationId={0} start" -f $correlationId)
+                    $body = Parse-JsonBody -Body $req.Body
+                    $repoName = if ($body.ContainsKey('repoName') -and $body.repoName) { [string]$body.repoName } else { '' }
+                    $repoPath = if ($body.ContainsKey('repoPath') -and $body.repoPath) { [string]$body.repoPath } else { '' }
+                    if ([string]::IsNullOrWhiteSpace($repoName)) { throw 'repoName is required for /api/repository-improvement/preview' }
+                    if ([string]::IsNullOrWhiteSpace($repoPath)) { throw 'repoPath is required for /api/repository-improvement/preview' }
+
+                    $standardsPath = Join-Path $WorkspaceRoot 'backend\config\doc-standards.json'
+                    $preview = New-RepositoryImprovementPreview `
+                        -RepoName $repoName `
+                        -RepoPath $repoPath `
+                        -DocStandards (Get-DocStandards -StandardsPath $standardsPath) `
+                        -RoadmapAuditRules (Get-RoadmapStandard)
+
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Write-HostLog ("[TRACE] repository-improvement.preview correlationId={0} done repoName={1} findingCount={2}" -f $correlationId, $repoName, $preview.findingCount)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = $preview
                     }
                 }
                 'GET /api/portfolio/assessment' {

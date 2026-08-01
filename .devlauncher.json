@@ -1,0 +1,11 @@
+{
+  "name": "GitHubRepoManagement",
+  "id": "githubrepomanagement-34aa5895",
+  "collection": "General",
+  "assignedPort": 3009,
+  "projectType": "launcher",
+  "launchCommand": "pwsh -NoProfile -ExecutionPolicy Bypass -File .\\Start-App.ps1 -Mode debug -Dev -NoBrowser -FrontendPort {port}",
+  "portMode": "argument",
+  "urlTemplate": "http://localhost:{port}",
+  "updatedAt": "2026-08-01T04:13:25.3313246Z"
+}
