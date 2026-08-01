@@ -44,3 +44,11 @@
 - The doc scanner exports a single-repository function, `Invoke-AuditRepoDocumentation`, so a new workflow module can avoid a portfolio scan while reusing the established readiness vocabulary.
 - The guided modal can call the new scan/task-preview contract, allow prompt editing, then call the existing `executeRoadmapDispatch(repoName, prompt, { localPath })` client for the explicit execution gate.
 - Responsive behavior should use a horizontal step summary on desktop and stacked step labels/content on smaller screens; the task prompt remains editable before dispatch.
+
+## Implemented contract
+
+- `POST /api/repository-improvement/preview` validates a selected Git repository root, scans only its README and ROADMAP, and returns normalized findings plus an optional task.
+- Missing, malformed, complete, or structurally weak roadmaps are represented through the existing roadmap audit rules; unrelated LICENSE, CONTRIBUTING, and CHANGELOG findings are excluded from this focused workflow.
+- A zero-finding result returns `needsImprovement=false` and no task, so execution is not offered.
+- The UI sends the operator-reviewed prompt and local path to the existing `/api/roadmap/dispatch/execute` contract. That route tolerates a missing roadmap and retains quota, token, repository identity, history, and agent-run ledger safeguards.
+- Dispatch starts the remote Copilot task; it does not merge the resulting PR.

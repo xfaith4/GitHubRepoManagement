@@ -15,11 +15,11 @@ Create a repository-scoped guided workflow that lets an operator select one repo
 
 | Phase | Status | Outcome |
 |---|---|---|
-| 1. Contract and UX audit | in_progress | Map current repo selection, README/ROADMAP scan, task preview, execution, and PR capabilities and gaps. |
-| 2. Workflow design | pending | Define the step state machine, API composition, failure/retry behavior, and the smallest truthful implementation slice. |
-| 3. Backend/API implementation | pending | Add only the missing repository-scoped orchestration contracts and focused validation. |
-| 4. Frontend implementation | pending | Add the guided workflow entry point and stepper with clear review gates and status. |
-| 5. Verification and production bundle | pending | Run focused tests, typecheck/build, smoke relevant contracts, and document operator use. |
+| 1. Contract and UX audit | completed | Mapped current repo selection, README/ROADMAP scan, task preview, execution, and PR capabilities and gaps. |
+| 2. Workflow design | completed | Defined a four-step state machine with local retry and explicit execution approval. |
+| 3. Backend/API implementation | completed | Added a read-only repo-scoped preview contract that reuses the scanner and roadmap auditor. |
+| 4. Frontend implementation | completed | Added queue and row entry points plus the guided selection, scan, task-review, and PR-handoff modal. |
+| 5. Verification and production bundle | completed | Passed focused PowerShell validation, typecheck, 15 unit tests, production build, and the API-host smoke suite. |
 
 ## Frontend direction
 
@@ -31,4 +31,5 @@ Create a repository-scoped guided workflow that lets an operator select one repo
 
 | Error | Attempt | Resolution |
 |---|---|---|
-
+| Bash expanded PowerShell variables and produced an empty pipe element. | Focused preview-builder validation. | Re-ran the same command with literal single-quoted PowerShell source; validation passed. |
+| Linux PowerShell could not resolve the supplied Windows `F:` workspace path. | First API-host smoke invocation. | Re-ran with the native `/mnt/f/Development/GitHubRepoManagement` path; the full smoke suite passed. |
