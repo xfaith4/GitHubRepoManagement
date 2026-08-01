@@ -302,6 +302,47 @@ export interface DocAuditIndex {
   cacheAgeSeconds: number;
 }
 
+export interface RepositoryImprovementFinding {
+  source: 'readme' | 'roadmap';
+  file: 'README.md' | 'ROADMAP.md';
+  ruleId?: string | null;
+  severity: 'critical' | 'warning' | 'info';
+  message: string;
+  recommendedAction: string;
+}
+
+export interface RepositoryImprovementDocumentResult {
+  exists: boolean;
+  path?: string | null;
+  findingCount: number;
+  findings: RepositoryImprovementFinding[];
+}
+
+export interface RepositoryImprovementTask {
+  taskId: string;
+  title: string;
+  summary: string;
+  acceptanceCriteria: string[];
+  generatedPrompt: string;
+}
+
+export interface RepositoryImprovementPreview {
+  repoName: string;
+  repoPath: string;
+  scannedAt: string;
+  needsImprovement: boolean;
+  findingCount: number;
+  findings: RepositoryImprovementFinding[];
+  readme: RepositoryImprovementDocumentResult;
+  roadmap: RepositoryImprovementDocumentResult & {
+    state: 'pending' | 'complete' | 'missing' | 'parse-error';
+    maturityLevel: RoadmapMaturityLevel;
+    maturityScore: number;
+    pendingCount: number;
+  };
+  task?: RepositoryImprovementTask | null;
+}
+
 // Release 0.6 — Copilot Task Packaging & Preview Workflow
 
 export interface CopilotTaskPacketContext {

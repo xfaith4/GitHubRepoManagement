@@ -19,6 +19,7 @@ interface WorkQueueViewProps {
   error?: string | null;
   onRefresh: () => void;
   onScan: () => void;
+  onStartImprovementWorkflow?: (repoName?: string) => void;
   onViewRoadmap?: (repoName: string) => void;
   onPreviewTask?: (repoName: string, roadmapPath?: string) => void;
   onViewRoadmapAudit?: (repoName: string) => void;
@@ -216,6 +217,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
   error,
   onRefresh,
   onScan,
+  onStartImprovementWorkflow,
   onViewRoadmap,
   onPreviewTask,
   onViewRoadmapAudit,
@@ -376,6 +378,15 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {onStartImprovementWorkflow && (
+            <button
+              onClick={() => onStartImprovementWorkflow()}
+              disabled={entries.length === 0}
+              className="px-3 py-1.5 text-sm bg-emerald-800 hover:bg-emerald-700 text-emerald-100 rounded border border-emerald-600 disabled:opacity-50 transition-colors"
+            >
+              Guided Improvement
+            </button>
+          )}
           <button
             onClick={onRefresh}
             disabled={loading}
@@ -779,6 +790,15 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
 
                   {/* Action buttons */}
                   <div className="flex-shrink-0 flex flex-wrap items-center gap-1.5 sm:ml-auto">
+                    {onStartImprovementWorkflow && (
+                      <button
+                        onClick={e => { e.stopPropagation(); onStartImprovementWorkflow(entry.repoName); }}
+                        className="text-xs px-2 py-1 rounded border border-emerald-700/50 bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/60 transition-colors"
+                        title="Scan README and ROADMAP, review an improvement task, and dispatch it to a pull request"
+                      >
+                        Improve
+                      </button>
+                    )}
                     {onPreviewTask && entry.dispatchReadiness === 'ready' && (
                       <button
                         onClick={e => {

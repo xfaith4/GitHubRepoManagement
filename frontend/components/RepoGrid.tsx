@@ -954,14 +954,14 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
         </div>
       )}
 
-      <div className="hidden md:block mb-3 text-xs text-gray-500">
+      <div className="hidden lg:block mb-3 text-xs text-gray-500">
         Additional metadata is available per row via Details to keep key comparison columns visible without horizontal scrolling.
        </div>
 
-      {/* Mobile card list — Release 2.5 Phase 1. Mirrors the desktop table
-          below the md breakpoint: same grouping, selection, badges, and
+      {/* Mobile/tablet card list — Release 2.5 Phase 1. Mirrors the desktop table
+          below the lg breakpoint: same grouping, selection, badges, and
           per-repo actions, rendered as stacked touch-friendly cards. */}
-      <div className="md:hidden space-y-3">
+      <div className="lg:hidden space-y-3">
         {(Object.entries(groupedRepos) as [string, RepoStatus[]][]).sort(([keyA], [keyB]) => keyA.localeCompare(keyB)).map(([groupKey, groupRepos]) => (
           <div key={groupKey}>
             {groupBy !== 'none' && (
@@ -1163,40 +1163,52 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
         ))}
       </div>
 
-      <div className="hidden md:block shadow overflow-hidden border-b border-gray-700 sm:rounded-lg">
-        <div className="max-h-[68vh] overflow-auto">
-            <table className="min-w-full divide-y divide-gray-700 table-fixed">
+      <div className="hidden lg:block w-full min-w-0 shadow overflow-hidden border-b border-gray-700 sm:rounded-lg">
+        <div className="max-h-[68vh] overflow-y-auto overflow-x-hidden">
+            <table className="w-full table-fixed divide-y divide-gray-700">
+            <colgroup>
+              <col style={{ width: '4%' }} />
+              <col style={{ width: '23%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '13%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '5%' }} />
+            </colgroup>
             <thead className="bg-gray-800 sticky top-0 z-20">
                 <tr>
-                <th scope="col" className="px-4 py-3">
+                <th scope="col" className="px-2 py-3">
                   <span className="sr-only">Select all repositories</span>
                   <input type="checkbox" ref={selectAllCheckboxRef} onChange={handleSelectAll} className="h-4 w-4 rounded bg-gray-700 border-gray-500 text-blue-500 focus:ring-blue-500"/>
                 </th>
-                <th scope="col" onClick={() => handleSort('name')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer w-[24%]">
+                <th scope="col" onClick={() => handleSort('name')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">
                   <span className="inline-flex items-center gap-1">Repository {sortIndicator('name')}</span>
                 </th>
-                <th scope="col" onClick={() => handleSort('status')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer w-[11%]">
+                <th scope="col" onClick={() => handleSort('status')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">
                   <span className="inline-flex items-center gap-1">Status {sortIndicator('status')}</span>
                 </th>
-                <th scope="col" onClick={() => handleSort('isStale')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer w-[9%]">
+                <th scope="col" onClick={() => handleSort('isStale')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">
                   <span className="inline-flex items-center gap-1">Stale {sortIndicator('isStale')}</span>
                 </th>
-                <th scope="col" onClick={() => handleSort('branch')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer w-[12%]">
+                <th scope="col" onClick={() => handleSort('branch')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">
                   <span className="inline-flex items-center gap-1">Branch {sortIndicator('branch')}</span>
                 </th>
-                <th scope="col" onClick={() => handleSort('lastCommitDate')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer w-[14%]">
+                <th scope="col" onClick={() => handleSort('lastCommitDate')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">
                   <span className="inline-flex items-center gap-1">Last Commit {sortIndicator('lastCommitDate')}</span>
                 </th>
-                <th scope="col" onClick={() => handleSort('uncommittedChanges')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer w-[13%]">
+                <th scope="col" onClick={() => handleSort('uncommittedChanges')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">
                   <span className="inline-flex items-center gap-1">Changes {sortIndicator('uncommittedChanges')}</span>
                 </th>
-                <th scope="col" onClick={() => handleSort('lastBuildStatus')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer w-[9%]">
+                <th scope="col" onClick={() => handleSort('lastBuildStatus')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">
                   <span className="inline-flex items-center gap-1">Build {sortIndicator('lastBuildStatus')}</span>
                 </th>
-                <th scope="col" onClick={() => handleSort('openPrCount')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer w-[8%]">
+                <th scope="col" onClick={() => handleSort('openPrCount')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">
                   <span className="inline-flex items-center gap-1">PRs {sortIndicator('openPrCount')}</span>
                 </th>
-                <th scope="col" className="relative px-4 py-3 w-[10%]"><span className="sr-only">Actions</span></th>
+                <th scope="col" className="relative px-2 py-3"><span className="sr-only">Actions</span></th>
                 </tr>
             </thead>
             <tbody className="bg-gray-900 divide-y divide-gray-700">
@@ -1223,8 +1235,8 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                         return (
                         <React.Fragment key={repo.localPath ?? repo.name}>
                           <tr className={`hover:bg-gray-800/50 ${selectedRepos.has(repoId) ? 'bg-blue-900/30' : ''}`}>
-                            <td className="px-4 py-3 align-top"><input type="checkbox" checked={selectedRepos.has(repoId)} onChange={() => handleSelectRepo(repoId)} className="h-4 w-4 rounded bg-gray-700 border-gray-500 text-blue-500 focus:ring-blue-500" /></td>
-                            <td className="px-4 py-3 align-top">
+                            <td className="px-2 py-3 align-top"><input type="checkbox" checked={selectedRepos.has(repoId)} onChange={() => handleSelectRepo(repoId)} className="h-4 w-4 rounded bg-gray-700 border-gray-500 text-blue-500 focus:ring-blue-500" /></td>
+                            <td className="min-w-0 overflow-hidden px-4 py-3 align-top">
                                 {repoUrl ? (
                                   <a href={repoUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-400 hover:text-blue-300 hover:underline">
                                     {owner ? `${owner}/${repo.name}` : repo.name}
@@ -1232,7 +1244,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                                 ) : (
                                   <span className="text-sm font-medium text-gray-200">{repo.name}</span>
                                 )}
-                                <div className="text-xs text-gray-400 mt-0.5">{repo.localPath ?? 'No local path'}</div>
+                                <div className="truncate text-xs text-gray-400 mt-0.5" title={repo.localPath ?? 'No local path'}>{repo.localPath ?? 'No local path'}</div>
                                 {(() => {
                                   const curationCfg = getCurationBadgeConfig(repo.curationState);
                                   if (!curationCfg) return null;
@@ -1304,8 +1316,8 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                               </td>
                             <td className="px-4 py-3 whitespace-nowrap align-top">{getStatusBadge(repo.status, repo)}</td>
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-300 align-top">{repo.isStale ? 'Yes' : 'No'}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-300 align-top">{repo.branch}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-400 align-top" title={repo.lastCommitMessage}>
+                            <td className="truncate px-4 py-3 text-sm text-gray-300 align-top" title={repo.branch}>{repo.branch}</td>
+                            <td className="overflow-hidden px-4 py-3 whitespace-nowrap text-sm text-gray-400 align-top" title={repo.lastCommitMessage}>
                               {repo.lastCommitDate ? new Date(repo.lastCommitDate).toLocaleDateString() : 'N/A'}
                               {repo.lastCommitAuthor && (
                                 <div className="text-xs text-gray-500 truncate max-w-[180px]">{repo.lastCommitAuthor}</div>
@@ -1330,7 +1342,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                               )}
                             </td>
 
-                            <td className="px-4 py-3 whitespace-nowrap align-top">{getBuildStatusBadge(repo)}</td>
+                            <td className="overflow-hidden px-4 py-3 whitespace-nowrap align-top">{getBuildStatusBadge(repo)}</td>
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-400 align-top">
                                 {pullsUrl ? (
                                   <a href={pullsUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-blue-400 transition-colors">
@@ -1348,12 +1360,12 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                                 ) : null}
                             </td>
 
-                            <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium align-top">
+                            <td className="px-2 py-3 whitespace-nowrap text-right text-sm font-medium align-top">
                               <details className="relative inline-block text-left">
                                 <summary className="list-none cursor-pointer rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-200 hover:bg-gray-700">
                                   ⋯
                                 </summary>
-                                <div className="absolute right-0 mt-1 w-40 rounded border border-gray-700 bg-gray-900 shadow-lg z-30 p-1">
+                                <div className="absolute right-0 mt-1 w-40 whitespace-normal rounded border border-gray-700 bg-gray-900 shadow-lg z-30 p-1">
                                   <a
                                     href={repoUrl ?? '#'}
                                     target="_blank"
@@ -1364,44 +1376,44 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                                   </a>
                                   <button
                                     onClick={() => onRunRepoAction?.('update', repoId)}
-                                    className="w-full rounded px-2 py-1.5 text-left text-xs text-gray-200 hover:bg-gray-800"
+                                    className="block w-full rounded px-2 py-1.5 text-left text-xs text-gray-200 hover:bg-gray-800"
                                   >
                                     Pull
                                   </button>
                                   <button
                                     onClick={() => onRunRepoAction?.('sync', repoId)}
-                                    className="w-full rounded px-2 py-1.5 text-left text-xs text-gray-200 hover:bg-gray-800"
+                                    className="block w-full rounded px-2 py-1.5 text-left text-xs text-gray-200 hover:bg-gray-800"
                                   >
                                     Fetch
                                   </button>
                                   <button
                                     onClick={() => toggleExpandedRow(repoId)}
-                                    className="w-full rounded px-2 py-1.5 text-left text-xs text-gray-200 hover:bg-gray-800"
+                                    className="block w-full rounded px-2 py-1.5 text-left text-xs text-gray-200 hover:bg-gray-800"
                                   >
                                     View details
                                   </button>
                                   <button
                                     onClick={() => onOpenDocReview?.(repo.name)}
-                                    className="w-full rounded px-2 py-1.5 text-left text-xs text-gray-200 hover:bg-gray-800"
+                                    className="block w-full rounded px-2 py-1.5 text-left text-xs text-gray-200 hover:bg-gray-800"
                                   >
                                     Doc review
                                   </button>
                                   <button
                                     onClick={() => onViewRoadmap?.(repo.name)}
-                                    className={`w-full rounded px-2 py-1.5 text-left text-xs ${onViewRoadmap ? 'text-gray-200 hover:bg-gray-800' : 'text-gray-500 cursor-not-allowed'}`}
+                                    className={`block w-full rounded px-2 py-1.5 text-left text-xs ${onViewRoadmap ? 'text-gray-200 hover:bg-gray-800' : 'text-gray-500 cursor-not-allowed'}`}
                                     disabled={!onViewRoadmap}
                                   >
                                     Roadmap
                                   </button>
                                   <button
                                     onClick={() => onRunRoadmapScan?.(repo.name)}
-                                    className={`w-full rounded px-2 py-1.5 text-left text-xs ${onRunRoadmapScan ? 'text-gray-200 hover:bg-gray-800' : 'text-gray-500 cursor-not-allowed'}`}
+                                    className={`block w-full rounded px-2 py-1.5 text-left text-xs ${onRunRoadmapScan ? 'text-gray-200 hover:bg-gray-800' : 'text-gray-500 cursor-not-allowed'}`}
                                     disabled={!onRunRoadmapScan}
                                   >
                                     Roadmap scan
                                   </button>
                                   <button
-                                    className="w-full rounded px-2 py-1.5 text-left text-xs text-gray-500 cursor-not-allowed"
+                                    className="block w-full rounded px-2 py-1.5 text-left text-xs text-gray-500 cursor-not-allowed"
                                     disabled
                                     title="Archive is currently planned but not implemented in this build."
                                   >
