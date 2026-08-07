@@ -4,6 +4,10 @@ This folder holds the data-driven assets that define what a good roadmap looks
 like for this portfolio. Editing these files changes behavior without code
 changes.
 
+**Current version: audit rules v1.1 / contract schema v2.1.** See
+`CHANGELOG.md` for what changed and why, and for the one-time migration note
+for repos currently on schema 2.0.
+
 | File | Purpose |
 | ---- | ------- |
 | `ROADMAP_TEMPLATE.md` | Canonical authoring template for new roadmaps. |
@@ -12,7 +16,9 @@ changes.
 | `roadmap-audit-rules.json` | Weighted scoring rules + maturity thresholds (backend audit). |
 | `roadmap-repair-prompt.md` | Prompt template for preview-based roadmap repair. |
 | `ROADMAP_BUDGET_MODEL.md` | Cost/quota accounting model for agent-driven phases (cash, quota, opportunity). |
+| `roadmap-events.md` | Contract for the optional `roadmap-events.jsonl` execution ledger. |
 | `roadmap-validation.config.example.json` | Example config for the structure/quality validator. |
+| `CHANGELOG.md` | What changed between standard versions and why. |
 
 ## Two related systems
 

@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "roadmap-contract.schema.json",
   "title": "Roadmap Contract",
-  "description": "Normalized internal model produced by parsing ROADMAP.md. Used for audit, scoring, CI gating, and orchestration dispatch.",
+  "description": "Normalized internal model produced by parsing ROADMAP.md. Used for audit, scoring, CI gating, and orchestration dispatch. v2.1 adds optional release-level phases/budgetGuardrail/dispatchReadiness so the template's 'Phase plan' and 'Budget guardrail' sections are machine-visible instead of purely narrative. All new fields are optional and additive; a 2.0 contract with no phases/budgetGuardrail/dispatchReadiness data remains valid.",
   "type": "object",
   "required": [
     "schemaVersion",
@@ -23,7 +23,8 @@
     "schemaVersion": {
       "type": "string",
       "enum": [
-        "2.0"
+        "2.0",
+        "2.1"
       ]
     },
     "repoName": {
@@ -31,25 +32,14 @@
       "minLength": 1
     },
     "repoPath": {
-      "type": [
-        "string",
-        "null"
-      ]
+      "type": ["string", "null"]
     },
     "roadmapPath": {
-      "type": [
-        "string",
-        "null"
-      ]
+      "type": ["string", "null"]
     },
     "roadmapState": {
       "type": "string",
-      "enum": [
-        "pending",
-        "complete",
-        "missing",
-        "parse-error"
-      ]
+      "enum": ["pending", "complete", "missing", "parse-error"]
     },
     "maturityLevel": {
       "type": "string",
@@ -62,51 +52,27 @@
       ]
     },
     "maturityScore": {
-      "type": [
-        "number",
-        "null"
-      ],
+      "type": ["number", "null"],
       "minimum": 0,
       "maximum": 100
     },
-    "pendingCount": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "completedCount": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "totalCount": {
-      "type": "integer",
-      "minimum": 0
-    },
+    "pendingCount": { "type": "integer", "minimum": 0 },
+    "completedCount": { "type": "integer", "minimum": 0 },
+    "totalCount": { "type": "integer", "minimum": 0 },
     "nextPendingItem": {
       "oneOf": [
-        {
-          "type": "null"
-        },
+        { "type": "null" },
         {
           "type": "object",
-          "required": [
-            "text",
-            "section"
-          ],
+          "required": ["text", "section"],
           "additionalProperties": false,
           "properties": {
-            "text": {
-              "type": "string",
-              "minLength": 1
-            },
-            "section": {
-              "type": "string",
-              "minLength": 1
-            },
-            "releaseId": {
-              "type": [
-                "string",
-                "null"
-              ]
+            "text": { "type": "string", "minLength": 1 },
+            "section": { "type": "string", "minLength": 1 },
+            "releaseId": { "type": ["string", "null"] },
+            "milestoneId": {
+              "type": ["string", "null"],
+              "description": "Stable tag extracted from a leading '[[M#]]' marker on the item, if present. Null when the item has no ID. See ROADMAP_TEMPLATE.md authoring rules."
             }
           }
         }
@@ -116,38 +82,14 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "name",
-          "level",
-          "line",
-          "pendingItems",
-          "completedItems"
-        ],
+        "required": ["name", "level", "line", "pendingItems", "completedItems"],
         "additionalProperties": false,
         "properties": {
-          "name": {
-            "type": "string"
-          },
-          "level": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "line": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "pendingItems": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "completedItems": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
+          "name": { "type": "string" },
+          "level": { "type": "integer", "minimum": 1 },
+          "line": { "type": "integer", "minimum": 1 },
+          "pendingItems": { "type": "array", "items": { "type": "string" } },
+          "completedItems": { "type": "array", "items": { "type": "string" } }
         }
       }
     },
@@ -172,214 +114,117 @@
         ],
         "additionalProperties": false,
         "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1
-          },
-          "title": {
-            "type": "string"
-          },
-          "line": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "status": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
+          "id": { "type": "string", "minLength": 1 },
+          "title": { "type": "string" },
+          "line": { "type": "integer", "minimum": 1 },
+          "status": { "type": ["string", "null"] },
           "normalizedStatus": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "planned",
-              "active",
-              "blocked",
-              "validation",
-              "done",
-              "archived",
-              null
-            ]
+            "type": ["string", "null"],
+            "description": "Status after case-folding and alias normalization (see roadmap-validation.config statusAliases). Authoring should still use lowercase canonical values.",
+            "enum": ["planned", "active", "blocked", "validation", "done", "archived", null]
           },
-          "goal": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "pendingCount": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "completedCount": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "totalCount": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "hasAcceptanceCriteria": {
-            "type": "boolean"
-          },
-          "hasOutOfScope": {
-            "type": "boolean"
-          },
-          "hasValidationPlan": {
-            "type": "boolean"
-          },
-          "hasConcreteValidationPlan": {
-            "type": "boolean"
-          },
-          "hasTraceability": {
-            "type": "boolean"
-          },
-          "sections": {
+          "goal": { "type": ["string", "null"] },
+          "pendingCount": { "type": "integer", "minimum": 0 },
+          "completedCount": { "type": "integer", "minimum": 0 },
+          "totalCount": { "type": "integer", "minimum": 0 },
+          "hasAcceptanceCriteria": { "type": "boolean" },
+          "hasOutOfScope": { "type": "boolean" },
+          "hasValidationPlan": { "type": "boolean" },
+          "hasConcreteValidationPlan": { "type": "boolean" },
+          "hasTraceability": { "type": "boolean" },
+          "sections": { "type": "array", "items": { "type": "string" } },
+          "phases": {
             "type": "array",
+            "description": "Optional. Parsed from the release's 'Phase plan' table when present. Planning-time estimates only — actual consumption lives in roadmap-events.jsonl, never here.",
             "items": {
-              "type": "string"
+              "type": "object",
+              "required": ["name", "scope", "status"],
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string", "minLength": 1 },
+                "scope": { "type": "string" },
+                "status": {
+                  "type": "string",
+                  "enum": ["planned", "active", "blocked", "done"]
+                },
+                "completedDate": { "type": ["string", "null"], "format": "date" },
+                "workUnitsEstimate": { "type": ["number", "null"], "minimum": 0 }
+              }
             }
+          },
+          "budgetGuardrail": {
+            "type": ["object", "null"],
+            "description": "Optional. Parsed from the release's 'Budget guardrail' section when present.",
+            "additionalProperties": false,
+            "properties": {
+              "estimatedWorkUnits": { "type": ["number", "null"], "minimum": 0 },
+              "maxUnitsPerPhase": { "type": ["number", "null"], "minimum": 0 }
+            }
+          },
+          "dispatchReadiness": {
+            "type": ["string", "null"],
+            "description": "Computed, not authored: derived from normalizedStatus plus open audit findings for this release. 'ready' = active with zero critical/warning findings; 'blocked' = normalizedStatus is blocked; 'needs-repair' = active or planned with open critical/warning findings.",
+            "enum": ["ready", "blocked", "needs-repair", null]
           }
         }
       }
     },
     "activeRelease": {
       "oneOf": [
-        {
-          "type": "null"
-        },
+        { "type": "null" },
         {
           "type": "object",
-          "required": [
-            "id",
-            "title",
-            "status"
-          ],
+          "required": ["id", "title", "status"],
           "additionalProperties": false,
           "properties": {
-            "id": {
-              "type": "string"
-            },
-            "title": {
-              "type": "string"
-            },
-            "status": {
-              "type": "string"
-            }
+            "id": { "type": "string" },
+            "title": { "type": "string" },
+            "status": { "type": "string" }
           }
         }
       ]
     },
-    "hasProductIntent": {
-      "type": "boolean"
-    },
-    "hasReleaseSections": {
-      "type": "boolean"
-    },
-    "hasAcceptanceCriteria": {
-      "type": "boolean"
-    },
-    "hasOutOfScope": {
-      "type": "boolean"
-    },
-    "releaseCount": {
-      "type": "integer",
-      "minimum": 0
-    },
+    "hasProductIntent": { "type": "boolean" },
+    "hasReleaseSections": { "type": "boolean" },
+    "hasAcceptanceCriteria": { "type": "boolean" },
+    "hasOutOfScope": { "type": "boolean" },
+    "releaseCount": { "type": "integer", "minimum": 0 },
     "activeReleaseCount": {
       "type": "integer",
-      "minimum": 0
+      "minimum": 0,
+      "description": "Count of releases with normalizedStatus === 'active'. Must be exactly 1 for L3/L4 per ROADMAP-011/ROADMAP-012."
     },
-    "releasesMissingAcceptanceCriteria": {
-      "type": "integer",
-      "minimum": 0
+    "releasesMissingAcceptanceCriteria": { "type": "integer", "minimum": 0 },
+    "releasesMissingOutOfScope": { "type": "integer", "minimum": 0 },
+    "vagueItemCount": { "type": "integer", "minimum": 0 },
+    "unknownStatusCount": { "type": "integer", "minimum": 0 },
+    "doneReleaseUncheckedItemCount": { "type": "integer", "minimum": 0 },
+    "activeReleaseHasValidationPlan": { "type": "boolean" },
+    "activeReleaseHasTraceability": { "type": "boolean" },
+    "milestoneIdCoverage": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Optional, informational only, not scored. Fraction of checklist items across the roadmap carrying a '[[M#]]' ID tag. Useful as a traceability hygiene signal; adoption is encouraged, not required, so it never gates maturity level."
     },
-    "releasesMissingOutOfScope": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "vagueItemCount": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "unknownStatusCount": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "doneReleaseUncheckedItemCount": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "activeReleaseHasValidationPlan": {
-      "type": "boolean"
-    },
-    "activeReleaseHasTraceability": {
-      "type": "boolean"
-    },
-    "parseError": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "schemaFindings": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
+    "parseError": { "type": ["string", "null"] },
+    "schemaFindings": { "type": "array", "items": { "type": "string" } },
     "auditFindings": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "ruleId",
-          "severity",
-          "message"
-        ],
+        "required": ["ruleId", "severity", "message"],
         "additionalProperties": false,
         "properties": {
-          "ruleId": {
-            "type": "string"
-          },
-          "name": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "severity": {
-            "type": "string",
-            "enum": [
-              "critical",
-              "warning",
-              "info"
-            ]
-          },
-          "message": {
-            "type": "string"
-          },
-          "recommendedAction": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "scoreImpact": {
-            "type": [
-              "number",
-              "null"
-            ]
-          }
+          "ruleId": { "type": "string" },
+          "name": { "type": ["string", "null"] },
+          "severity": { "type": "string", "enum": ["critical", "warning", "info"] },
+          "message": { "type": "string" },
+          "recommendedAction": { "type": ["string", "null"] },
+          "scoreImpact": { "type": ["number", "null"] }
         }
       }
     },
-    "parsedAt": {
-      "type": "string",
-      "format": "date-time"
-    }
+    "parsedAt": { "type": "string", "format": "date-time" }
   }
 }
