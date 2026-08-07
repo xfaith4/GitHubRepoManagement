@@ -1,5 +1,5 @@
 {
-  "_comment": "Example configuration for tools/Test-RoadmapStructure.ps1. Copy this file to 'roadmap-validation.config.json' (same folder, or tools/) to activate it, or pass it explicitly with -Config. Every key is optional; omitted keys fall back to the built-in defaults shown here. Unknown keys are ignored. See docs/operations/roadmap-validation.md.",
+  "_comment": "Example configuration for tools/Test-RoadmapStructure.ps1. Copy this file to 'roadmap-validation.config.json' (same folder, or tools/) to activate it, or pass it explicitly with -Config. Every key is optional; omitted keys fall back to the built-in defaults shown here. Unknown keys are ignored. Status matching is always case-insensitive after trimming, then run through statusAliases (also matched case-insensitively) before comparison against allowedStatuses — author lowercase regardless, this is a parser safety net, not license to be inconsistent. See docs/operations/roadmap-validation.md.",
 
   "requiredSections": [
     "Goal",
@@ -36,6 +36,8 @@
     "released": "done"
   },
 
+  "requireSingleActiveRelease": true,
+
   "requiredReleases": ["1.2"],
 
   "maxActiveRoadmapLines": 900,
@@ -46,6 +48,8 @@
   "treatDoneWithUncheckedCriteriaAsError": false,
   "flagMissingStatusOnFutureReleases": false,
   "flagFutureReleaseRecommendations": false,
+  "requireMilestoneIds": false,
+  "parsePhaseTables": true,
 
   "validationSignals": [
     "npm test", "npm run test", "npm run build", "npm run lint", "dotnet test",
