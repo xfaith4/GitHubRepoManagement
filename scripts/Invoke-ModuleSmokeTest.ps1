@@ -339,6 +339,100 @@ if ($criticalFindings.Count -gt 0) {
 }
 Write-Host ("  audit findings: {0} total, 0 critical" -f @($scoredContract.auditFindings).Count) -ForegroundColor DarkGray
 
+Write-Step 'Roadmap auditor — smoke: active-release rules ROADMAP-011/012 gate dispatch (rules v1.1)'
+# A structurally complete roadmap that declares no active release must fire
+# ROADMAP-012, and one declaring two must fire ROADMAP-011 and be capped at L2 —
+# an ambiguous dispatch target is not dispatchable.
+$activeReleaseFixture = @'
+# Sample Project Roadmap
+
+Product intent: this product helps operators ship reliably.
+
+## Release 1.0 - First Release
+
+**Status:** {0}
+
+Goal: ship the first thing.
+
+### Acceptance criteria
+
+- The first thing ships and is verified by an automated test.
+
+### Out of scope
+
+- Anything not named above.
+
+- [ ] Implement the first documented behavior
+- [ ] Implement the second documented behavior
+- [ ] Implement the third documented behavior
+
+## Release 1.1 - Second Release
+
+**Status:** {1}
+
+Goal: ship the second thing.
+
+### Acceptance criteria
+
+- The second thing ships and is verified by an automated test.
+
+### Out of scope
+
+- Anything not named above.
+
+- [ ] Implement the fourth documented behavior
+- [ ] Implement the fifth documented behavior
+- [ ] Implement the sixth documented behavior
+'@
+
+function Get-SmokeActiveReleaseAudit {
+    param([string]$StatusOne, [string]$StatusTwo)
+    $content = $activeReleaseFixture -f $StatusOne, $StatusTwo
+    $parsed = Invoke-ParseRoadmapContent -Content $content -SourcePath 'ROADMAP.md'
+    $contract = Invoke-NormalizeRoadmapContract -ParsedResult $parsed -RawContent $content -RepoName 'smoke-active-release'
+    return (Invoke-AuditRoadmapContract -Contract $contract -AuditRules $auditRulesObj)
+}
+
+$noActiveAudit = Get-SmokeActiveReleaseAudit -StatusOne 'planned' -StatusTwo 'planned'
+if ([int]$noActiveAudit.activeReleaseCount -ne 0) { throw "Expected activeReleaseCount=0, got $($noActiveAudit.activeReleaseCount)" }
+if (@($noActiveAudit.auditFindings | Where-Object { $_.ruleId -eq 'ROADMAP-012' }).Count -ne 1) {
+    throw 'Expected ROADMAP-012 to fire when releases exist but none is active'
+}
+
+$oneActiveAudit = Get-SmokeActiveReleaseAudit -StatusOne 'active' -StatusTwo 'planned'
+if ([int]$oneActiveAudit.activeReleaseCount -ne 1) { throw "Expected activeReleaseCount=1, got $($oneActiveAudit.activeReleaseCount)" }
+if (@($oneActiveAudit.auditFindings | Where-Object { $_.ruleId -in @('ROADMAP-011','ROADMAP-012') }).Count -ne 0) {
+    throw 'Expected neither ROADMAP-011 nor ROADMAP-012 to fire for exactly one active release'
+}
+
+# 'In Progress' must normalize to active, per the rules v1.1 changelog.
+$twoActiveAudit = Get-SmokeActiveReleaseAudit -StatusOne 'active' -StatusTwo 'In Progress'
+if ([int]$twoActiveAudit.activeReleaseCount -ne 2) { throw "Expected activeReleaseCount=2 (alias 'In Progress' -> active), got $($twoActiveAudit.activeReleaseCount)" }
+if (@($twoActiveAudit.auditFindings | Where-Object { $_.ruleId -eq 'ROADMAP-011' }).Count -ne 1) {
+    throw 'Expected ROADMAP-011 to fire when more than one release is active'
+}
+if ($twoActiveAudit.maturityLevel -in @('L3-Contract-Ready','L4-Orchestration-Ready')) {
+    throw "More than one active release must cap maturity at L2, got $($twoActiveAudit.maturityScore) -> $($twoActiveAudit.maturityLevel)"
+}
+Write-Host ("  active-release rules ok: 0 active -> ROADMAP-012; 1 active -> clean; 2 active -> ROADMAP-011 + capped at {0}" -f $twoActiveAudit.maturityLevel) -ForegroundColor DarkGray
+
+# The canonical status form in ROADMAP_TEMPLATE.md is a blockquote. A detector
+# that only understood "**Status:** active" would fire ROADMAP-012 on every
+# template-conformant repo in the portfolio.
+Write-Step 'Roadmap auditor — smoke: canonical "> Status: active" blockquote form is detected'
+$blockquoteFixture = $activeReleaseFixture.Replace('**Status:** {0}', '> Status: {0}').Replace('**Status:** {1}', '> Status: {1}')
+$blockquoteContent = $blockquoteFixture -f 'active', 'planned'
+$blockquoteParsed = Invoke-ParseRoadmapContent -Content $blockquoteContent -SourcePath 'ROADMAP.md'
+$blockquoteContract = Invoke-NormalizeRoadmapContract -ParsedResult $blockquoteParsed -RawContent $blockquoteContent -RepoName 'smoke-blockquote-status'
+$blockquoteAudit = Invoke-AuditRoadmapContract -Contract $blockquoteContract -AuditRules $auditRulesObj
+if ([int]$blockquoteAudit.activeReleaseCount -ne 1) {
+    throw "Canonical '> Status: active' blockquote not detected: expected activeReleaseCount=1, got $($blockquoteAudit.activeReleaseCount)"
+}
+if (@($blockquoteAudit.auditFindings | Where-Object { $_.ruleId -eq 'ROADMAP-012' }).Count -ne 0) {
+    throw 'ROADMAP-012 must not fire for a template-conformant roadmap using the "> Status: active" blockquote'
+}
+Write-Host '  blockquote status form detected (activeReleaseCount=1, no ROADMAP-012)' -ForegroundColor DarkGray
+
 Write-Step 'Roadmap standard assets — smoke: validate roadmap-audit-rules.json (Release 0.7)'
 $roadmapAuditRulesPath   = Join-Path $WorkspaceRoot 'standards\roadmap\roadmap-audit-rules.json'
 $roadmapSchemaPath       = Join-Path $WorkspaceRoot 'standards\roadmap\roadmap-contract.schema.json'
@@ -355,6 +449,42 @@ if (@($auditRules.rules).Count -eq 0)         { throw "roadmap-audit-rules.json 
 $schema = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $roadmapSchemaPath -Raw -Encoding UTF8)
 if ($null -eq $schema.properties)             { throw "roadmap-contract.schema.json missing 'properties'" }
 Write-Host ("  roadmap standard assets valid: {0} audit rules, {1} maturity levels" -f @($auditRules.rules).Count, @($auditRules.maturityThresholds.PSObject.Properties).Count) -ForegroundColor DarkGray
+
+# Tripwire: every rule the pack ships must be evaluated by the auditor. An
+# unevaluated rule still contributes its weight to the denominator, so adding
+# one silently inflates every score and pushes roadmaps across the L3 dispatch
+# gate. This is the d2cc6cc / c6662cf regression class — counting rules is not
+# enough, the auditor must actually implement each id.
+Write-Step 'Roadmap standard assets — smoke: every shipped audit rule is implemented by the auditor'
+$auditorSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Auditor.ps1') -Raw -Encoding UTF8
+$unimplementedRules = @()
+foreach ($rule in @($auditRules.rules)) {
+    $ruleId = [string]$rule.id
+    if ($auditorSource -notmatch [regex]::Escape("'$ruleId'")) { $unimplementedRules += $ruleId }
+}
+if ($unimplementedRules.Count -gt 0) {
+    throw ("roadmap-audit-rules.json ships rule(s) the auditor never evaluates: {0}. Each contributes scoreWeight to maxPossibleScore but can never fail, inflating every maturity score. Implement a case in Invoke-AuditRoadmapContract or remove the rule." -f ($unimplementedRules -join ', '))
+}
+Write-Host ("  all {0} audit rules implemented in Roadmap.Auditor.ps1" -f @($auditRules.rules).Count) -ForegroundColor DarkGray
+
+# Tripwire: the published spec copy must not drift from the live rule pack.
+# standards/roadmap is code-referenced at runtime; spec/roadmap-contract is the
+# publishable Release 2.3 deliverable. README.md is intentionally per-location.
+Write-Step 'Roadmap standard assets — smoke: standards/roadmap and spec/roadmap-contract stay in sync'
+$specDrift = @()
+foreach ($assetName in @('ROADMAP_BUDGET_MODEL.md','ROADMAP_MATURITY_MODEL.md','ROADMAP_TEMPLATE.md','roadmap-audit-rules.json','roadmap-contract.schema.json','roadmap-events.md','roadmap-repair-prompt.md')) {
+    $standardsAsset = Join-Path $WorkspaceRoot ("standards\roadmap\{0}" -f $assetName)
+    $specAsset      = Join-Path $WorkspaceRoot ("spec\roadmap-contract\{0}" -f $assetName)
+    if (-not (Test-Path -LiteralPath $standardsAsset)) { throw "Roadmap standard asset not found: $standardsAsset" }
+    if (-not (Test-Path -LiteralPath $specAsset))      { throw "Published spec asset not found: $specAsset" }
+    $standardsHash = (Get-FileHash -LiteralPath $standardsAsset -Algorithm SHA256).Hash
+    $specHash      = (Get-FileHash -LiteralPath $specAsset -Algorithm SHA256).Hash
+    if ($standardsHash -ne $specHash) { $specDrift += $assetName }
+}
+if ($specDrift.Count -gt 0) {
+    throw ("standards/roadmap has drifted from spec/roadmap-contract for: {0}. Copy the updated file(s) into spec/roadmap-contract, or document the intended divergence in standards/MANIFEST.md." -f ($specDrift -join ', '))
+}
+Write-Host '  standards/roadmap and spec/roadmap-contract in sync (7 assets)' -ForegroundColor DarkGray
 
 Write-Step 'Loading roadmap repairer module (Release 0.9)'
 $roadmapRepairer = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Repairer.ps1'

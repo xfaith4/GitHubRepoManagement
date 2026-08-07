@@ -41,6 +41,44 @@ function _DetectReleaseSections {
     return ($count -gt 0)
 }
 
+# Count release blocks whose declared status normalizes to 'active'. The
+# canonical form in ROADMAP_TEMPLATE.md is a blockquote — "> Status: active" —
+# so a leading '>' must be tolerated; "**Status:** active", "Status: In
+# Progress", and "**Status: active**" are also accepted. Matching is
+# case-insensitive and alias-normalized so legacy wording scores the same as
+# the canonical wording.
+function _DetectActiveReleaseCount {
+    param([string]$Content)
+
+    if ([string]::IsNullOrWhiteSpace($Content)) { return 0 }
+
+    $aliases = @{
+        'active'      = 'active'
+        'in progress' = 'active'
+        'in-progress' = 'active'
+        'inprogress'  = 'active'
+        'wip'         = 'active'
+    }
+
+    $headings = [regex]::Matches($Content, '(?im)^#{1,3}\s+release\s+\d+[\.\d]*')
+    if ($headings.Count -eq 0) { return 0 }
+
+    $activeCount = 0
+    for ($i = 0; $i -lt $headings.Count; $i++) {
+        $start = $headings[$i].Index
+        $end = if ($i + 1 -lt $headings.Count) { $headings[$i + 1].Index } else { $Content.Length }
+        $block = $Content.Substring($start, $end - $start)
+
+        $m = [regex]::Match($block, '(?im)^\s*>?\s*\**\s*Status\s*:?\**\s*:?\s*\**\s*([A-Za-z][A-Za-z \-]*?)\s*\**\s*(?:$|[—–\-\(])')
+        if (-not $m.Success) { continue }
+
+        $raw = $m.Groups[1].Value.Trim().ToLowerInvariant()
+        if ($aliases.ContainsKey($raw)) { $activeCount++ }
+    }
+
+    return $activeCount
+}
+
 function _DetectAcceptanceCriteria {
     param([string]$Content)
     return ($Content -imatch '(^|\n)#+\s*(acceptance\s+criteria|done\s+criteria|definition\s+of\s+done)')
@@ -152,6 +190,7 @@ function Invoke-NormalizeRoadmapContract {
             hasAcceptanceCriteria = $false
             hasOutOfScope        = $false
             releaseCount         = 0
+            activeReleaseCount   = 0
             vagueItemCount       = 0
             parseError           = 'No roadmap file found.'
             auditFindings        = $null
@@ -181,6 +220,7 @@ function Invoke-NormalizeRoadmapContract {
         hasAcceptanceCriteria = (_DetectAcceptanceCriteria -Content $content)
         hasOutOfScope         = (_DetectOutOfScope -Content $content)
         releaseCount          = [int]$releaseCountRef.Value
+        activeReleaseCount    = (_DetectActiveReleaseCount -Content $content)
         vagueItemCount        = 0  # filled below
         parseError            = $ParsedResult.parseError
         auditFindings         = $null
@@ -236,6 +276,7 @@ function Invoke-AuditRoadmapContract {
 
     $totalPenalty = 0
     $findings     = [System.Collections.Generic.List[pscustomobject]]::new()
+    $hasActiveCount = ($Contract.PSObject.Properties.Name -contains 'activeReleaseCount')
 
     foreach ($rule in $rules) {
         $ruleId     = [string]$rule.id
@@ -258,6 +299,11 @@ function Invoke-AuditRoadmapContract {
             'ROADMAP-008' { $failed = ($Contract.pendingCount -lt 3 -and $Contract.roadmapState -eq 'pending') }
             'ROADMAP-009' { $failed = ($null -ne $Contract.releaseCount -and [int]$Contract.releaseCount -lt 2) }
             'ROADMAP-010' { $failed = ([int]$Contract.vagueItemCount -gt 0) }
+            # activeReleaseCount is read defensively: a contract deserialized from
+            # a pre-1.1 cache will not carry the property, and StrictMode makes a
+            # bare property access on it throw.
+            'ROADMAP-011' { $failed = ($hasActiveCount -and [int]$Contract.activeReleaseCount -gt 1) }
+            'ROADMAP-012' { $failed = ($hasActiveCount -and [int]$Contract.releaseCount -gt 0 -and [int]$Contract.activeReleaseCount -eq 0) }
             default       { $failed = $false }  # unknown rule — do not penalise
         }
 
@@ -282,6 +328,19 @@ function Invoke-AuditRoadmapContract {
 
     # L0-Absent if roadmap is missing regardless of score
     if ($Contract.roadmapState -eq 'missing') { $normalised = 0 }
+
+    # Maturity cap: more than one active release caps the roadmap at L2, per
+    # ROADMAP_MATURITY_MODEL.md. An ambiguous dispatch target is treated the
+    # same as missing structure, because neither an agent nor an operator can
+    # safely pick a target on its own. Capping the score (not just the label)
+    # keeps score and level consistent for every downstream consumer.
+    if ($hasActiveCount -and [int]$Contract.activeReleaseCount -gt 1) {
+        $l2Max = 64
+        if ($null -ne $thresholds -and $null -ne $thresholds.'L2-Structured') {
+            $l2Max = [int]$thresholds.'L2-Structured'.maxScore
+        }
+        if ($normalised -gt $l2Max) { $normalised = $l2Max }
+    }
 
     $Contract.maturityScore   = $normalised
     $Contract.maturityLevel   = _ScoreToMaturityLevel -Score $normalised -MaturityThresholds $thresholds

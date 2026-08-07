@@ -159,6 +159,22 @@ function Invoke-PlanRoadmapRepair {
                     severity       = [string]$finding.severity
                 })
             }
+            'ROADMAP-011' {
+                $actions.Add([pscustomobject]@{
+                    actionId       = 'RESOLVE-AMBIGUOUS-ACTIVE-RELEASE'
+                    description    = 'Re-status all but one active release to planned, blocked, validation, or done so dispatch has a single unambiguous target.'
+                    affectsSection = 'Release Sections'
+                    severity       = [string]$finding.severity
+                })
+            }
+            'ROADMAP-012' {
+                $actions.Add([pscustomobject]@{
+                    actionId       = 'DESIGNATE-ACTIVE-RELEASE'
+                    description    = 'Mark the release currently being worked on as "Status: active" so dispatch tooling has a default target.'
+                    affectsSection = 'Release Sections'
+                    severity       = [string]$finding.severity
+                })
+            }
         }
     }
 

@@ -211,92 +211,20 @@ closes or a new dependency appears.
 
 ### Active release detail — 2.7 Guarded Scheduled Automation
 
-**Status:** active — promoted 2026-08-07 after the Release 2.1 through 2.6
-and 2.8 closeout. Phase B shipped 2026-07-06; Phases A, C, and D are open.
+Release 2.7 was promoted 2026-08-07 after the Release 2.1 through 2.6 and 2.8
+closeout. Phase B shipped 2026-07-06; Phases A, C, and D are open.
 
-**Goal:** Turn the operator-driven pipeline into a scheduled one that
-advances **favorite / portfolio-candidate** repos automatically — proposing
-README/ROADMAP refinements and packaging the highest-value ready roadmap
-work on an interval — while stopping at the human approval gate. No silent
-mutation, no auto-merge: everything runs preview-first, inside the existing
-quota/budget guard, with an append-only audit trail.
+The full execution contract for the active release — goal, outcomes,
+milestones, acceptance criteria, validation plan, risks, dependencies, known
+issues, traceability, phase plan, and budget guardrail — lives in one place,
+[Release 2.7 below](#release-27--guarded-scheduled-automation-curated-subset-preview-first),
+per `ROADMAP_TEMPLATE.md`: the release section is the single source of truth
+for its own status. This heading exists so the roadmap validator can resolve
+the active-release pointer; it deliberately restates nothing.
 
 **Current focus:** Phase D first (it needs nothing from anyone and carries
 the production-reliability work), while Lane 0.2 resolves the credential
 gate that opens Phase A → Phase C.
-
-**Why now:** Every engineering prerequisite is shipped —
-`/api/scan/schedule` (1.2), curation states (2.3 Ph5), AI doc-improve
-preview/apply (1.9), the notification hub (1.1), the quota/budget guard
-(2.0 Ph4), and `roadmap-events.jsonl` (2.4). Phase B proved the safe half
-of the automation loop end-to-end and applies nothing. The remaining value
-is concentrated in Phase C, and the remaining risk is concentrated in Phase
-D's freeze prevention.
-
-**Validation plan:** run `npm run typecheck`, `npm test`
-(`scripts/Invoke-TestSuite.ps1`, mirroring `ci-smoke.yml`), and the
-automation smoke; confirm each exits 0. Drive a scheduled run against a
-fixture favorite set and confirm previews + digest + history with **zero**
-applied changes. For Phase C, additionally assert the quota-refusal path and
-that dispatch fires only on an explicit approval action.
-
-**Risks and blockers:**
-
-- **Blocked:** Phase A on GitHub write credentials (see Lane 0.2); Phase C
-  on Phase A.
-- **Risk — auto-ranking on unproven writes.** Packaging top-value items
-  before one live PR round trip has succeeded produces review queues that
-  cannot be acted on. This is why the sequence is hard, not advisory.
-- **Risk — the portal freezes under load.** Observed twice (2026-07-05,
-  2026-07-11): process alive, port listening, not responding. The watchdog
-  safety net is shipped but unproven at SYSTEM; the root-cause prevention
-  work is still open in Phase D.
-- **Risk — `app.db` growth.** ~138 MB in daily use with no scheduled
-  VACUUM or snapshot retention.
-
-**Dependencies:** `/api/scan/schedule` (1.2), repo curation states (2.3
-Ph5), AI doc-improve preview/apply (1.9), the notification hub (1.1), the
-quota/budget guard (2.0 Ph4), `roadmap-events.jsonl` (2.4), and valid
-GitHub write credentials for Phase A onward.
-
-**Known issues:**
-
-- [ ] Tracked `backend/config/settings.json` points `inventory.localRoots`
-      at a WSL smoke-fixture directory (Lane 0.1). Any scheduled automation
-      run enumerates fixtures instead of the real portfolio until it is
-      fixed — so **Lane 0.1 gates meaningful Phase D validation**, even
-      though it is not a formal Phase D dependency.
-- [ ] The `GITHUB_TOKEN` fine-grained PAT provisioned 2026-07-06 carried a
-      ~30-day window and is presumed expired (Lane 0.2). `GET
-      /api/auth/github/status` reporting `mode=pat` does **not** prove the
-      token is still valid — it reports configuration, not liveness.
-
-**Traceability:** Phase B shipped
-[`Automation.DocRefinement.ps1`](backend/modules/automation/Automation.DocRefinement.ps1)
-(`Select-AutomationDocTargets`, `Invoke-ScheduledDocRefinement`,
-`New-AutomationDigestPayload`, `Write-AutomationRunRecord` /
-`Get-AutomationRunHistory`), `POST /api/automation/run`, `GET
-/api/automation/history`, and the `automation` block on `GET
-/api/scan/schedule`, with module + api-host smoke coverage. Phase D's
-shipped half is [`Watch-PortalHealth.ps1`](scripts/service/Watch-PortalHealth.ps1),
-[`Install-PortalWatchdog.ps1`](scripts/service/Install-PortalWatchdog.ps1),
-and the reworked
-[`Install-RepoManagementService.ps1`](scripts/Install-RepoManagementService.ps1).
-Verification runs through `scripts/Invoke-TestSuite.ps1` (`npm test`), mirrored
-in [`.github/workflows/ci-smoke.yml`](.github/workflows/ci-smoke.yml); the
-Phase D frontend units live beside
-[`frontend/lib/needsAttention.test.ts`](frontend/lib/needsAttention.test.ts).
-Operator-facing behavior is documented in
-[`docs/reference/operator-guide.md`](docs/reference/operator-guide.md).
-
-#### Phase plan (within this release)
-
-| Phase                                | Scope                                                                                                   | Status                                                   | Completed  | Token usage | Work units |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ---------- | ----------- | ---------- |
-| Phase A: Unblockers                  | Live submit-PR proof on one write-enabled repo                                                          | **planned — blocked on credentials (Lane 0.2)**          | —          | —           | —          |
-| Phase B: Scheduled doc refinement    | Scheduler + favorite-scoped doc-improve previews + digest + run history                                 | **done — smoke-tested** (2026-07-06) — see archive       | 2026-07-06 | —           | —          |
-| Phase C: Scheduled roadmap packaging | Top-value item packaging + quota guard + approve-to-dispatch                                            | **planned — blocked on Phase A**                         | —          | —           | —          |
-| Phase D: Hardening & observability   | Frontend unit tests, Dashboard decomposition, failure alerting, freeze prevention, auth operator-verify | **planned — 2 of 6 items shipped; 4 open, none blocked** | —          | —           | —          |
 
 ---
 
@@ -304,9 +232,14 @@ Operator-facing behavior is documented in
 
 ### Release 2.7 — Guarded Scheduled Automation (Curated-Subset, Preview-First)
 
-**Goal:** as stated in the active-release detail above — scheduled,
-preview-first advancement of the curated repo subset, stopping at the human
-approval gate.
+**Status:** active
+
+**Goal:** turn the operator-driven pipeline into a scheduled one that
+advances **favorite / portfolio-candidate** repos automatically — proposing
+README/ROADMAP refinements and packaging the highest-value ready roadmap work
+on an interval — while stopping at the human approval gate. No silent
+mutation, no auto-merge: everything runs preview-first, inside the existing
+quota/budget guard, with an append-only audit trail.
 
 **Prerequisites:** Phase A needs valid GitHub write credentials (Lane 0.2).
 Phase C needs Phase A. Phase D needs nothing.
@@ -394,6 +327,71 @@ Phase D — Hardening & observability (parallelizable, autonomous, unblocked):
 - Autonomous execution on non-curated (default) repos.
 - Multi-tenant scheduling or per-agent automation credentials.
 
+**Validation plan:** run `npm run typecheck`, `npm test`
+(`scripts/Invoke-TestSuite.ps1`, mirroring `ci-smoke.yml`), and the
+automation smoke; confirm each exits 0. Drive a scheduled run against a
+fixture favorite set and confirm previews + digest + history with **zero**
+applied changes. For Phase C, additionally assert the quota-refusal path and
+that dispatch fires only on an explicit approval action.
+
+**Risks and blockers:**
+
+- **Blocked:** Phase A on GitHub write credentials (see Lane 0.2); Phase C
+  on Phase A.
+- **Risk — auto-ranking on unproven writes.** Packaging top-value items
+  before one live PR round trip has succeeded produces review queues that
+  cannot be acted on. This is why the sequence is hard, not advisory.
+- **Risk — the portal freezes under load.** Observed twice (2026-07-05,
+  2026-07-11): process alive, port listening, not responding. The watchdog
+  safety net is shipped but unproven at SYSTEM; the root-cause prevention
+  work is still open in Phase D.
+- **Risk — `app.db` growth.** ~138 MB in daily use with no scheduled
+  VACUUM or snapshot retention.
+
+**Dependencies:** `/api/scan/schedule` (1.2), repo curation states (2.3
+Ph5), AI doc-improve preview/apply (1.9), the notification hub (1.1), the
+quota/budget guard (2.0 Ph4), `roadmap-events.jsonl` (2.4), and valid
+GitHub write credentials for Phase A onward.
+
+**Known issues:**
+
+- [ ] Tracked `backend/config/settings.json` points `inventory.localRoots`
+      at a WSL smoke-fixture directory (Lane 0.1). Any scheduled automation
+      run enumerates fixtures instead of the real portfolio until it is
+      fixed — so **Lane 0.1 gates meaningful Phase D validation**, even
+      though it is not a formal Phase D dependency.
+- [ ] The `GITHUB_TOKEN` fine-grained PAT provisioned 2026-07-06 carried a
+      ~30-day window and is presumed expired (Lane 0.2). `GET
+      /api/auth/github/status` reporting `mode=pat` does **not** prove the
+      token is still valid — it reports configuration, not liveness.
+
+**Traceability:** Phase B shipped
+[`Automation.DocRefinement.ps1`](backend/modules/automation/Automation.DocRefinement.ps1)
+(`Select-AutomationDocTargets`, `Invoke-ScheduledDocRefinement`,
+`New-AutomationDigestPayload`, `Write-AutomationRunRecord` /
+`Get-AutomationRunHistory`), `POST /api/automation/run`, `GET
+/api/automation/history`, and the `automation` block on `GET
+/api/scan/schedule`, with module + api-host smoke coverage. Phase D's
+shipped half is [`Watch-PortalHealth.ps1`](scripts/service/Watch-PortalHealth.ps1),
+[`Install-PortalWatchdog.ps1`](scripts/service/Install-PortalWatchdog.ps1),
+and the reworked
+[`Install-RepoManagementService.ps1`](scripts/Install-RepoManagementService.ps1).
+Verification runs through `scripts/Invoke-TestSuite.ps1` (`npm test`), mirrored
+in [`.github/workflows/ci-smoke.yml`](.github/workflows/ci-smoke.yml); the
+Phase D frontend units live beside
+[`frontend/lib/needsAttention.test.ts`](frontend/lib/needsAttention.test.ts).
+Operator-facing behavior is documented in
+[`docs/reference/operator-guide.md`](docs/reference/operator-guide.md).
+
+#### Phase plan (within this release)
+
+| Phase                                | Scope                                                                                                   | Status                                                   | Completed  | Token usage | Work units |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ---------- | ----------- | ---------- |
+| Phase A: Unblockers                  | Live submit-PR proof on one write-enabled repo                                                          | **planned — blocked on credentials (Lane 0.2)**          | —          | —           | —          |
+| Phase B: Scheduled doc refinement    | Scheduler + favorite-scoped doc-improve previews + digest + run history                                 | **done — smoke-tested** (2026-07-06) — see archive       | 2026-07-06 | —           | —          |
+| Phase C: Scheduled roadmap packaging | Top-value item packaging + quota guard + approve-to-dispatch                                            | **planned — blocked on Phase A**                         | —          | —           | —          |
+| Phase D: Hardening & observability   | Frontend unit tests, Dashboard decomposition, failure alerting, freeze prevention, auth operator-verify | **planned — 2 of 6 items shipped; 4 open, none blocked** | —          | —           | —          |
+
 #### Budget guardrail
 
 - Scheduled automation consumes AI work units per packaged item; every run
@@ -405,6 +403,8 @@ Phase D — Hardening & observability (parallelizable, autonomous, unblocked):
 ---
 
 ### Release 2.9 — Operator Field Proof and Mobile Completion
+
+**Status:** planned
 
 **Goal:** convert every surface that is `smoke-tested` but still waits on an
 external resource into `operator-verified` with durable evidence, and finish
@@ -470,10 +470,9 @@ Field proof — physical Android device on the LAN, batch together:
       [`lan-mobile-setup.md`](docs/reference/lan-mobile-setup.md).
       *(state: smoke-tested at an emulated 390px viewport → needs
       `operator-verified` on hardware)*
-- [ ] Confirm the Release 2.6 clarity affordances on the same device pass:
-      data-source indicator, per-tab subtitles, advanced-filters toggle,
-      and the orientation overlay. *(state: smoke-tested → needs
-      `operator-verified`)*
+- [ ] Confirm the Release 2.6 clarity affordances pass on the same device:
+      data-source indicator, per-tab subtitles, advanced-filters toggle, and
+      the orientation overlay. *(state: smoke-tested → needs `operator-verified`)*
 
 Field proof — human / credential / calendar:
 
@@ -486,9 +485,8 @@ Field proof — human / credential / calendar:
       in the operator's authenticated session: claim → branch → run →
       verify → commit → `awaiting-review`. Closes the Release 2.8 residual.
       *(state: smoke-tested dry-run E2E → needs `operator-verified`)*
-- [ ] Operator-verify the auth + shared-LAN path so automation runs on a
-      bound, authenticated host. *(state: planned — carried over from
-      Release 2.7 Phase D; belongs with the other field proofs)*
+- [ ] Operator-verify the auth + shared-LAN path so automation runs on a bound,
+      authenticated host. *(state: planned — carried over from 2.7 Phase D)*
 - [ ] (Optional) Prove live GitHub App installation-token exchange
       (`Get-GitHubAppInstallationToken`) + auto-refresh on one registered
       app, closing the Release 2.2 residual. *(state: planned — not
@@ -568,16 +566,33 @@ Continuous, not release-scoped. Completed cross-cutting items were archived
       `backend/modules/docreview/Invoke-DocReviewInventory.ps1`, and both
       reconcile modules — a wider blast radius than the original note
       recorded)*
-- [ ] Add a standards↔spec drift tripwire asserting
-      `standards/roadmap/roadmap-audit-rules.json` stays in sync with
-      `spec/roadmap-contract/roadmap-audit-rules.json`, or document intended
-      divergence in `standards/MANIFEST.md`. *(state: planned — the two files
-      are byte-identical as of 2026-08-07, so the tripwire can be added now
-      with no reconciliation work)*
+- [ ] Implement the documented maturity **caps** that the auditor still does
+      not apply: `ROADMAP_MATURITY_MODEL.md` states "any critical finding caps
+      maturity at L1" and "any warning finding caps maturity at L3", but
+      `Invoke-AuditRoadmapContract` only does weighted-score arithmetic. The
+      >1-active-release cap was implemented 2026-08-07; these two remain
+      doc-only. *(state: planned — pre-existing doc↔code drift, surfaced while
+      fixing the rules v1.1 regression)*
 - [ ] Repair `CLAUDE.md`'s dangling `@_base.md` and
       `@.claude/modes/implementer.md` imports — neither file exists. The
       mode line is managed by `ccmode.ps1`, so fix at the tool level.
       *(state: planned — confirmed still broken 2026-08-07)*
+- [ ] Tune `tools/Test-RoadmapStructure.ps1` for the template's own layout:
+      `ROADMAP_TEMPLATE.md` puts the full execution contract inside the
+      `## Release X — Title` block, so R013's 120-line cap fires on any
+      conformant active release, and RQ001 wants a `Status` line on the
+      "Active release detail" pointer that must not restate it (declaring it
+      twice is an RQ003 error). Exempt the active release from R013 and let
+      the pointer block be status-free. *(state: planned — 3 advisory
+      warnings today, 0 errors; surfaced 2026-08-07 when this repo was made
+      conformant with its own standard)*
+
+**Shipped 2026-08-07 (from this lane):** a standards↔spec drift tripwire and an
+"every shipped audit rule is implemented by the auditor" tripwire, both in
+`scripts/Invoke-ModuleSmokeTest.ps1`. The second closes the `d2cc6cc` /
+`c6662cf` regression class — a rule added to the pack but never evaluated
+still contributes its `scoreWeight` to the denominator, silently inflating
+every maturity score. Both were adversarially proven to fail when violated.
 
 ### Lane 0.4 — Smoke coverage gaps
 
