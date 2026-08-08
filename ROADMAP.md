@@ -40,11 +40,14 @@ interchangeable — mixing them is what previously made the roadmap read as
 
 **Current focus (next agent actions), in order:**
 
-- [ ] **Lane 0.2 — give the always-on service a readable token.** The only
-      remaining credential gap: `RepoMgmtPortal` runs as LocalSystem and
-      cannot see the User-scoped `GITHUB_TOKEN`, so the portal's GitHub calls
-      run unauthenticated. This is the gate for Release 2.7 Phase A, which is
-      in turn the gate for Phase C — the largest remaining product increment.
+- [ ] **Release 2.7 Phase A — the live submit-PR proof.** Now unblocked: the
+      service reads a Machine-scoped token and returns private repos
+      (Lane 0.2, closed 2026-08-08). Phase A is in turn the gate for Phase C,
+      the largest remaining product increment.
+- [ ] **Release 3.0 — operator-context execution.** Dispatch cannot run from
+      the service at all (`gh agent-task` requires OAuth; LocalSystem cannot
+      hold one), so the guided-improvement wizard dead-ends at its last step.
+      Approach decided 2026-08-08; no prerequisites.
 - [ ] **Lane 0.4 — the automation-smoke cold-scan timeout.** A legitimate
       cold portfolio scan now exceeds both the smoke's client timeout and the
       Phase D 180-second request deadline, and the deadline kills the host on
@@ -58,7 +61,15 @@ interchangeable — mixing them is what previously made the roadmap read as
 **Closed 2026-08-08:** Lane 0.1 (settings.json regression), Lane 0.6
 (silent workspace-path failure), Lane 0.5's two data-integrity findings,
 Lane 0.2's credential reissue + live-validation probe, the two Lane 0.4 smoke
-gaps, and four of Release 2.7 Phase D's six items.
+gaps, and four of Release 2.7 Phase D's six items. Also closed that day, from
+one operator session: the service's readable token (Lane 0.2), two installer
+defects that had made the documented fix a silent no-op, and the
+Copilot-dispatch OAuth diagnosis that produced Release 3.0.
+
+**Forward arc.** Releases 3.0-3.3 were added 2026-08-08 to describe the
+finished product rather than the working one: dispatch that runs (3.0), the
+north-star loop closing end to end (3.1), an 80+ repo portfolio that feels
+immediate (3.2), and unattended operation (3.3).
 
 ---
 
@@ -156,6 +167,10 @@ already covered by release goals or acceptance criteria.
 | **2.7**   | **Guarded Scheduled Automation (Curated-Subset, Preview-First)**         | **active** — Phase B done; **Phases A, C, D open**                                         |
 | 2.8       | Local Claude Code Execution (queue + operator runner)                    | `done` (engineering) — 2026-07-15; real `claude` run tracked in 2.9                        |
 | **2.9**   | **Operator Field Proof and Mobile Completion**                           | `planned` — collects every external-resource residual plus the two unbuilt mobile surfaces |
+| **3.0**   | **Operator-Context Execution**                                           | `planned` — one dispatch model; the service enqueues, an operator session executes         |
+| **3.1**   | **Closed-Loop Delivery**                                                 | `planned` — rank → dispatch → monitor → Actions → merge readiness → roadmap write-back     |
+| **3.2**   | **Portfolio Scale and Responsiveness**                                   | `planned` — serve from the index; retire the cold-scan cliff and the deadline kill         |
+| **3.3**   | **Steady-State Operation**                                               | `planned` — unattended for months: retention, restore, honest TLS, decision-grade digests  |
 
 > **Note on `.5` numbering.** Release 1.7.5 was a deliberate course-correction
 > release between 1.7 and 1.8. Reserve the `.5` pattern for similar course
@@ -198,6 +213,21 @@ closes or a new dependency appears.
 3. **Release 2.9 trend accrual** — closes itself as calendar time passes;
    requires only that capture keeps running.
 
+**Then the 3.x arc — from "the pieces work" to "the console works":**
+
+Releases 3.0-3.3 are the path to a finished product rather than a working one.
+They are ordered by dependency, not by size:
+
+1. **3.0 Operator-Context Execution** — nothing downstream can be proven while
+   dispatch cannot run. Start here; it has no prerequisites.
+2. **3.1 Closed-Loop Delivery** — needs 3.0 for dispatch and 2.7 Phase A for a
+   proven write path. This is where the north-star workflow first runs whole.
+3. **3.2 Portfolio Scale and Responsiveness** — independent of 3.0/3.1 and
+   schedulable in parallel, but implements whichever way Lane 0.4's deadline
+   decision lands, so that decision comes first.
+4. **3.3 Steady-State Operation** — every milestone is independent; pick items
+   up whenever a release lane is blocked on an external resource.
+
 **Dependency map (open work only):**
 
 | Open item                                            | Depends on                                           | Type                                          |
@@ -214,6 +244,10 @@ closes or a new dependency appears.
 | Release 2.9 real `claude` run (2.8)                  | An authenticated operator Claude Code session        | hard — human                                  |
 | Release 2.9 GitHub App installation-token exchange   | A registered GitHub App                              | hard — optional; PAT supersedes               |
 | Release 2.9 trend accrual (2.3 Ph2)                  | Days of live capture                                 | hard, time-gated                              |
+| Release 3.0 operator-context execution               | —                                                    | none — approach decided 2026-08-08            |
+| Release 3.1 closed-loop delivery                     | Release 3.0; Release 2.7 Phase A; `Checks: Read`     | hard — needs dispatch and a proven write path |
+| Release 3.2 scale and responsiveness                 | Lane 0.4 request-deadline decision                   | soft — implements whichever way it lands      |
+| Release 3.3 steady-state operation                   | —                                                    | none — independent milestones, any order      |
 
 ---
 
@@ -595,6 +629,220 @@ Field proof — human / credential / calendar:
 
 ---
 
+### Release 3.0 — Operator-Context Execution
+
+**Status:** planned
+
+**Goal:** make dispatch work by running it as the operator rather than as the
+service. Every dispatch path — roadmap task, guided repository improvement,
+agent repair — enqueues from the portal and executes in a session that already
+holds the credential the work needs. The LocalSystem host stops attempting to
+wield delegated authority it structurally cannot hold.
+
+**Prerequisites:** none. The approach was decided 2026-08-08 (Lane 0.2) after
+`gh agent-task` was confirmed to reject a PAT, and it reuses the queue-plus-
+runner pattern Release 2.8 already shipped for Claude Code.
+
+#### Product outcomes
+
+- One dispatch model instead of two: the portal enqueues, an operator-session
+  runner executes, status returns through the existing run summary.
+- No dispatch path requires a long-lived OAuth token stored on disk.
+- A dispatch that cannot run says so **at enqueue time**, naming the missing
+  runner, rather than failing at the last step of a wizard.
+
+#### Engineering milestones
+
+- [ ] Route the guided-improvement wizard's PR handoff through the queue
+      instead of invoking the launcher in-process. _(state: planned — the API
+      host calls `Start-GitHubCopilotTask.ps1` directly at
+      [`Start-RepoManagementApiHost.ps1:8952`](backend/api-host/Start-RepoManagementApiHost.ps1#L8952);
+      `Start-RoadmapCopilotTask.ps1` already models the enqueue path as
+      `-DispatchMode claude`)_
+- [ ] Add `dispatchTarget` (`claude` | `copilot`) to the queue entry and teach
+      [`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1) to
+      execute a copilot entry via `gh agent-task create` in the operator
+      session, recording the resulting task URL in the run summary.
+      _(state: planned)_
+- [ ] Surface runner presence — last heartbeat and claimed-entry count — so the
+      portal can warn before queueing work nothing will pick up.
+      _(state: planned)_
+- [ ] Ship a per-user logon scheduled-task installer for the runner
+      (interactive session, never SYSTEM), mirroring the watchdog installer's
+      shape. _(state: planned)_
+- [ ] Make the API host refuse in-service cloud dispatch with a route-level
+      409 that names the runner, keeping `-DispatchMode copilot` reachable only
+      from an operator shell. _(state: planned)_
+
+#### Acceptance criteria
+
+- The wizard's final step returns a queue id and makes no `gh` call from the
+  service process.
+- A queued copilot entry executed by the operator runner reaches a real GitHub
+  agent task, with its URL in the run summary.
+- With no runner registered, queueing reports the missing runner in the UI.
+- Module smoke covers the `dispatchTarget` round-trip and the runner's copilot
+  branch.
+
+#### Out of scope
+
+- Re-hosting the portal service under a named user account — that trades
+  always-on-before-login for the whole product to fix one route.
+- Unattended dispatch with no operator session present.
+
+---
+
+### Release 3.1 — Closed-Loop Delivery
+
+**Status:** planned
+
+**Goal:** close the north-star loop end to end, repeatedly, with explicit
+operator gates at apply, dispatch, and merge. Today the console can rank work
+and prepare a prompt, and it can read merge readiness, but no single work item
+has ever travelled the whole chain — so the loop's real failure modes are
+unknown.
+
+**Prerequisites:** Release 2.7 Phase A (live submit-PR proof) for the write
+path, Release 3.0 for a dispatch that runs, and the PAT's `Checks: Read` grant
+(Lane 0.2) for per-check merge detail.
+
+#### Product outcomes
+
+- One roadmap item is carried from "ranked highest value" to "merged, with the
+  managed repo's roadmap updated" without a human stitching the steps.
+- Every stage transition is inspectable after the fact from one trace, rather
+  than reconstructed from four ledgers.
+- Roadmap write-back is preview-first: the console proposes the completion
+  edit and the operator applies it.
+
+#### Engineering milestones
+
+- [ ] Add a per-work-item trace view joining rank → prompt → dispatch → agent
+      run → Actions result → merge readiness → write-back, keyed by `runId`.
+      _(state: planned — every stage already writes its own ledger; nothing
+      joins them)_
+- [ ] Generate the managed repo's roadmap completion edit from merge evidence
+      and present it as a reviewed diff. _(state: planned — write-back is the
+      last unbuilt step of the north-star workflow)_
+- [ ] Gate write-back on merge evidence: refuse to mark an item complete from
+      code churn or a green run alone. _(state: planned — guardrail in
+      section 8 exists; no enforcement)_
+- [ ] Record a full-loop proof for one real item in `evidence/`, naming each
+      stage's artifact. _(state: planned)_
+
+#### Acceptance criteria
+
+- A single `runId` resolves to every stage artifact through one route.
+- A write-back attempt with no merge evidence is refused and says why.
+- The loop proof exists in `evidence/` with the PR, the Actions result, and
+  the applied roadmap diff.
+
+#### Out of scope
+
+- Automatic merge — merge stays an explicit operator action after readiness
+  passes.
+- Multi-repo parallel dispatch; one item end to end first.
+
+---
+
+### Release 3.2 — Portfolio Scale and Responsiveness
+
+**Status:** planned
+
+**Goal:** make an 80+ repo portfolio feel immediate. Reads serve from the
+persistent index; a cold full assessment becomes a visible background job
+instead of a synchronous request that can outlive its own deadline.
+
+**Prerequisites:** Lane 0.4's decision on whether the request deadline exempts
+long-running scan routes or the cold scan is bounded — this release implements
+whichever way that lands.
+
+#### Product outcomes
+
+- No portal action can trip the freeze guard that exists to protect it.
+- Portfolio reads are served from `app.db` and refreshed incrementally, so
+  repeated views cost nothing.
+- Scan progress is visible while it runs, rather than a spinner that may or may
+  not still be alive.
+
+#### Engineering milestones
+
+- [ ] Serve portfolio assessment from the persistent index with incremental
+      refresh; make a cold full scan an explicit background job with progress
+      and a cancel. _(state: planned — a cold scan currently exceeds both the
+      smoke's client timeout and the 180s request deadline on the real
+      75-repo workspace)_
+- [ ] Bound per-repo git work with a timeout and a concurrency cap so one
+      pathological repo cannot stall a sweep. _(state: planned)_
+- [ ] Declare and enforce a performance budget for the portfolio read path,
+      with the measured figure reported next to it. _(state: planned — no
+      target exists today, so regressions are invisible)_
+- [ ] Virtualize the repo grid so row count stops driving render cost.
+      _(state: planned — pairs with the `Dashboard.tsx` decomposition already
+      open in Release 2.7 Phase D)_
+
+#### Acceptance criteria
+
+- A cold full-portfolio assessment completes without tripping the request
+  deadline, and its progress is observable while it runs.
+- Repeated portfolio reads after a warm index are served without a rescan.
+- The performance budget is stated in the repo and checked by smoke.
+
+#### Out of scope
+
+- Distributed or multi-machine scanning.
+- Replacing SQLite.
+
+---
+
+### Release 3.3 — Steady-State Operation
+
+**Status:** planned
+
+**Goal:** run unattended for months without an operator babysitting it — bounded
+storage, honest transport, a restore path, and reports that state their own data
+window.
+
+**Prerequisites:** none; each milestone is independent.
+
+#### Product outcomes
+
+- Append-only evidence stays append-only without growing without bound.
+- What the portal claims about its own transport and credentials matches what
+  it is actually doing.
+- A lost or corrupted `app.db` is recoverable from evidence already on disk.
+- Every export and digest states its data window, units, headline finding, and
+  recommended next action.
+
+#### Engineering milestones
+
+- [ ] Add retention and compaction for the JSONL ledgers and `app.db`, with the
+      policy stated in config and the pruned range logged. _(state: planned —
+      `service-watchdog.jsonl` reached 6.9 MB from one-minute probes)_
+- [ ] Add a documented backup and restore path for `app.db`, including a schema
+      migration story. _(state: planned)_
+- [ ] Make the portal's self-reported transport match reality, closing behind
+      Lane 0.2's certificate recovery. _(state: planned — the host degrades to
+      plain HTTP on a certificate it cannot open, while config still claims
+      TLS)_
+- [ ] Bring every export and digest up to the decision-grade contract: data
+      window, units, headline finding, recommended next action.
+      _(state: planned — the digest payload ships; the framing does not)_
+
+#### Acceptance criteria
+
+- Ledger growth is bounded by a stated policy, and pruning is itself logged.
+- A restore from backup produces a working portal with its history intact.
+- The transport the portal reports is the transport it serves.
+- Every export names its window, units, headline, and next action.
+
+#### Out of scope
+
+- Multi-tenant or hosted operation.
+- Log shipping to an external observability platform.
+
+---
+
 ## 7. Cross-Cutting Engineering Work
 
 Continuous, not release-scoped. Completed cross-cutting items were archived
@@ -641,18 +889,21 @@ Continuous, not release-scoped. Completed cross-cutting items were archived
       `gh pr checks <n> --watch` is unusable and the merge loop relies on
       `mergeStateStatus` as a proxy. Metadata, Contents, Pull requests, and
       Actions reads all pass. Verified 2026-08-07.
-- [ ] **Give the always-on service a readable token.** _(state: planned —
-      blocks Release 2.7 Phase A)_ `RepoMgmtPortal` runs as **LocalSystem**,
-      which cannot see the User-scoped `GITHUB_TOKEN`; the ImagePath passes
-      no `-GitHubToken` and Machine scope is unset, so the portal's GitHub
-      calls run unauthenticated. Fix:
+- [x] **Give the always-on service a readable token.** _(state:
+      operator-verified 2026-08-08 — unblocks Release 2.7 Phase A)_
+      `RepoMgmtPortal` runs as **LocalSystem**, which cannot see the
+      User-scoped `GITHUB_TOKEN`; Machine scope was unset, so the portal's
+      GitHub calls ran unauthenticated. Closed by an elevated
       `.\scripts\Install-RepoManagementService.ps1 -Action Repair
--GitHubToken $env:GITHUB_TOKEN` (sets Machine scope, restarts).
-      Confirm afterwards with `GET /api/auth/github/status?validate=1` →
-      `tokenEnvScope=Machine`, `liveCheck.valid=true`. Verified unset
-      2026-08-07. **Note:** until the fix below shipped, that documented
-      command silently no-opped — `Invoke-Repair` never read `-GitHubToken`,
-      so the run reported `[OK]` while Machine scope stayed unset.
+-GitHubToken $env:GITHUB_TOKEN` — but only after the installer defect
+      below was fixed: the documented command had silently no-opped, because
+      `Invoke-Repair` never read `-GitHubToken` and still reported `[OK]`.
+      **Evidence:** `GET /api/auth/github/status?validate=1` returns
+      `mode=pat`, `tokenSource=env`, `tokenEnvScope=Machine`,
+      `runningAsService=true`, empty hint, `liveCheck.valid=true`,
+      `login=xfaith4`, `expiresAt=2026-11-06 03:41:59 UTC`;
+      `POST /api/github/status` returns 67 repos with 44 private in the first
+      50 — private visibility being the proof the token is in play.
 - [x] **`-Action Repair` ignored `-GitHubToken`, and wired the watchdog to a
       scheme the host does not serve.** _(state: done 2026-08-08)_ Two
       installer defects, both found by running the documented Repair command
@@ -694,20 +945,22 @@ Continuous, not release-scoped. Completed cross-cutting items were archived
       invoked (ledger shows `auth status` only); stored-credential clears
       `GH_TOKEN` and completes. Ledger shows `<redacted-token>`. Module smoke
       exit 0.
-- [ ] **Decide how the LocalSystem portal obtains an OAuth credential for
-      Copilot dispatch.** _(state: planned — blocks the guided-improvement
-      wizard's PR handoff, surfaced 2026-08-08)_ `gh agent-task` requires an
-      OAuth token from `gh auth login`; a fine-grained PAT cannot authorize it.
-      The portal runs as **LocalSystem**, which has neither a stored gh
-      credential nor any way to complete an interactive login, so the wizard
-      cannot dispatch no matter how the PAT is scoped. Options: run
-      `gh auth login --insecure-storage` under a `GH_CONFIG_DIR` the service
-      can read (writes a plaintext OAuth token to disk — a real trade-off
-      against the secret-free-config rule this repo otherwise holds); run the
-      dispatcher as an interactive user account rather than the service; or
-      drop the `gh` CLI for a direct API call if GitHub exposes a
-      PAT-authorized equivalent. Needs a decision before the wizard's final
-      step can work end-to-end.
+- [x] **Decide how the LocalSystem portal obtains an OAuth credential for
+      Copilot dispatch.** _(state: done 2026-08-08 — decision recorded; the
+      build is [Release 3.0](#release-30--operator-context-execution))_
+      `gh agent-task` requires an OAuth token from `gh auth login`; a
+      fine-grained PAT cannot authorize it. The portal runs as **LocalSystem**,
+      which has neither a stored gh credential nor any way to complete an
+      interactive login, so the wizard could not dispatch no matter how the PAT
+      was scoped. **Decision: run the dispatcher in an operator session** — the
+      portal enqueues, a runner in the operator's own session executes.
+      Rejected: `gh auth login --insecure-storage` under a service-readable
+      `GH_CONFIG_DIR` (writes a plaintext OAuth token to disk, against the
+      secret-free-config rule this repo holds everywhere else), and re-hosting
+      the service under a named user (surrenders always-on-before-login for the
+      whole portal to fix one route). The queue-plus-operator-runner pattern
+      Release 2.8 already shipped for Claude Code is the same shape, so this
+      unifies two dispatch models rather than adding a third.
 - [ ] **Populate `rateLimit` on the authenticated GitHub insights path.**
       _(state: planned — non-blocker, cosmetic, surfaced 2026-08-08)_
       `Get-GitHubReposViaApi` returns a hardcoded `rateLimit = $null`
