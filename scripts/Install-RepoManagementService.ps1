@@ -385,6 +385,28 @@ function Wait-PortalHealthy {
     return $false
 }
 
+function Test-PfxLoadable {
+    <# Can the host actually open this certificate? The host opens the PFX with
+       X509Certificate2 and, when that throws (a wrong REPO_MGMT_TLS_PFX_PASSWORD
+       is the usual cause), logs a WARN and serves plain HTTP anyway. Presence on
+       disk therefore does NOT mean TLS is live. Mirror the host's own load so the
+       installer wires the health probe and the watchdog to the scheme actually
+       served: a scheme mismatch makes the watchdog restart a perfectly healthy
+       host every time its failure threshold is reached. #>
+    param([string]$Path, [string]$Password)
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) { return $false }
+    try {
+        $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($Path, $Password)
+        $cert.Dispose()
+        return $true
+    }
+    catch {
+        Write-Warn2 ("TLS certificate '{0}' is present but cannot be opened - {1}" -f $Path, $_.Exception.Message)
+        return $false
+    }
+}
+
 function Register-NightlyRestartTask {
     param([string]$Name, [string]$Svc)
     $act = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ("-NoProfile -Command `"Restart-Service -Name '{0}' -Force`"" -f $Svc)
@@ -475,6 +497,11 @@ function Invoke-FreshInstall {
     $scheme = if ($useTls) { 'https' } else { 'http' }
     if ($useTls) {
         if (-not (Test-Path -LiteralPath $sec.PfxPath)) { throw "TLS pfx not found: $($sec.PfxPath) (source: $($sec.PfxPathSource)). Pass -PfxPath to a real .pfx (generate one with scripts\New-RepoManagementTlsCertificate.ps1)." }
+        # Fail here rather than register a service that degrades to HTTP behind an
+        # https-wired watchdog. Nothing has been torn down at this point.
+        if (-not (Test-PfxLoadable -Path $sec.PfxPath -Password $sec.PfxPassword)) {
+            throw "TLS pfx '$($sec.PfxPath)' (source: $($sec.PfxPathSource)) cannot be opened with the resolved password. Pass the correct -PfxPassword, or regenerate with scripts\New-RepoManagementTlsCertificate.ps1. Nothing was changed."
+        }
         $sec.PfxPath = (Resolve-Path -LiteralPath $sec.PfxPath).Path
         Write-Ok ("TLS enabled — serving HTTPS with $($sec.PfxPath) (source: $($sec.PfxPathSource))")
     }
@@ -600,8 +627,23 @@ function Invoke-Repair {
     Set-PortalSecretEnvironment -RequireApiKey $rsec.RequireApiKey -ApiKey $rsec.ApiKey -PfxPath $(if ($rsec.UseTls) { $rsec.PfxPath } else { '' }) -PfxPassword $rsec.PfxPassword
     Clear-SettingsSecretsOnDisk -SettingsPath $settings
 
-    # Effective scheme for the health probe + watchdog (env/settings carry-forward).
-    $repairTls = [bool]$rsec.UseTls -and (Test-Path -LiteralPath $rsec.PfxPath)
+    # -GitHubToken applies to every action that provisions the service, not only a
+    # fresh install: Repair is the documented way to give the LocalSystem service a
+    # readable token, and silently ignoring the parameter here left the portal
+    # unauthenticated while the run reported success. Set before the restart below
+    # so the restarted host inherits it.
+    if ($GitHubToken) {
+        [System.Environment]::SetEnvironmentVariable('GITHUB_TOKEN', $GitHubToken, 'Machine')
+        Write-Ok 'Set machine GITHUB_TOKEN (inherited by the LocalSystem service; not in the ImagePath).'
+    }
+
+    # Effective scheme for the health probe + watchdog. Presence of the pfx is not
+    # enough - an unopenable certificate degrades the host to plain HTTP, so probe
+    # and watchdog must follow the scheme the host will really serve.
+    $repairTls = [bool]$rsec.UseTls -and (Test-PfxLoadable -Path $rsec.PfxPath -Password $rsec.PfxPassword)
+    if ([bool]$rsec.UseTls -and -not $repairTls) {
+        Write-Warn2 'TLS is configured but unusable - the host will serve plain HTTP. Wiring the health probe and watchdog to http so the watchdog does not restart a healthy host. Fix REPO_MGMT_TLS_PFX_PASSWORD or regenerate with scripts\New-RepoManagementTlsCertificate.ps1, then re-run Repair.'
+    }
     $repairScheme = if ($repairTls) { 'https' } else { 'http' }
 
     # Re-apply SCM config idempotently.
