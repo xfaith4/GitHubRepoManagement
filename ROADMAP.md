@@ -651,6 +651,22 @@ Continuous, not release-scoped. Completed cross-cutting items were archived
       Confirm afterwards with `GET /api/auth/github/status?validate=1` →
       `tokenEnvScope=Machine`, `liveCheck.valid=true`. Verified unset
       2026-08-07.
+- [x] **Stop the unauthenticated `gh` fallback from surfacing a raw JSON
+      parse error.** _(state: done 2026-08-08)_ With no readable token (the
+      item above), `POST /api/github/status` fell through to
+      `gh repo list`, merged the CLI's stderr into the JSON string with
+      `2>&1`, and parsed it blind — so the Settings dialog showed
+      _"Conversion from JSON failed with error: Unexpected character
+      encountered while parsing value: T"_ (the **T** of gh's _"To get
+      started with GitHub CLI"_ notice) instead of the auth failure. The
+      route now checks `$LASTEXITCODE` and the payload shape first and
+      throws a named cause, reusing the new `Get-GitHubTokenMissHint`, which
+      also backs the `GET /api/auth/github/status` hint so the two surfaces
+      cannot drift. **Evidence:** with a present-but-unauthenticated `gh` on
+      PATH, `POST /api/github/status` returns HTTP 500 `category=dependency`
+      and _"GitHub is not authenticated for this host. Environment variable
+      'GITHUB_TOKEN' … The 'gh' CLI fallback also failed: To get started
+      with GitHub CLI…"_; module smoke exit 0.
 - [x] **Add a live token-validation probe.** `GET /api/auth/github/status`
       reported the configured _mode_ (`mode=pat`), not token liveness — it
       reported healthy throughout the expiry above. _(state: done
