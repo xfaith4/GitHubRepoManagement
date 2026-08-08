@@ -183,10 +183,10 @@ function settingsFromApi(data: any): AppSettings {
   };
 }
 
-export async function getStatus(options?: { stale?: boolean; refresh?: boolean; timeoutMs?: number }): Promise<{ repos: RepoStatus[]; source: 'sample' | 'local'; workspacePath?: string; configuredGithubUser?: string | null; repoCount?: number; scanDurationMs?: number; dataLastUpdated?: string; cacheSource?: string; cacheAgeSeconds?: number; fromCache: boolean; }> {
+export async function getStatus(options?: { stale?: boolean; refresh?: boolean; timeoutMs?: number }): Promise<{ repos: RepoStatus[]; source: 'sample' | 'local'; workspacePath?: string; configuredGithubUser?: string | null; repoCount?: number; scanDurationMs?: number; missingRoots?: string[]; dataLastUpdated?: string; cacheSource?: string; cacheAgeSeconds?: number; fromCache: boolean; }> {
   if (USE_MOCK_API) {
     const sample = getMockRepos();
-    return { repos: sample, source: 'sample', configuredGithubUser: null, workspacePath: undefined, repoCount: sample.length, dataLastUpdated: new Date().toISOString(), cacheSource: 'fresh-scan', cacheAgeSeconds: 0, fromCache: false };
+    return { repos: sample, source: 'sample', configuredGithubUser: null, workspacePath: undefined, repoCount: sample.length, missingRoots: [], dataLastUpdated: new Date().toISOString(), cacheSource: 'fresh-scan', cacheAgeSeconds: 0, fromCache: false };
   }
 
   const params = new URLSearchParams();
@@ -234,6 +234,10 @@ export async function getStatus(options?: { stale?: boolean; refresh?: boolean; 
     configuredGithubUser: data?.meta?.configuredGithubUser ? String(data.meta.configuredGithubUser) : null,
     repoCount: Number(data?.meta?.repoCount ?? repos.length),
     scanDurationMs: Number(data?.meta?.scanDurationMs ?? (Date.now() - requestStartedAt)),
+    // Configured workspace roots that are not on disk. A scan over a missing root
+    // succeeds with zero repos, so without this the UI cannot tell "empty
+    // workspace" from "wrong path".
+    missingRoots: Array.isArray(data?.meta?.missingRoots) ? data.meta.missingRoots.map(String) : [],
     dataLastUpdated: cacheMeta?.cachedAt ?? new Date().toISOString(),
     cacheSource: cacheMeta?.source ?? 'fresh-scan',
     cacheAgeSeconds: cacheMeta?.ageSeconds != null ? Number(cacheMeta.ageSeconds) : 0,

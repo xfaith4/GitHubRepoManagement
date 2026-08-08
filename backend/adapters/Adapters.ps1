@@ -129,6 +129,16 @@ function Get-StatusAdapterResult {
 
         Write-StructuredLog -Level Info -Component adapter.status -Operation $operation -CorrelationId $correlationId -Message 'Starting status scan adapter call' -Details @{ LocalRoots = $LocalRoots; MaxDepth = $MaxDepth } -LogPath $LogPath
 
+        # A root that is not on disk is skipped silently by the inventory walk, so
+        # the scan succeeds with zero repos and the caller cannot tell a genuinely
+        # empty workspace from a wrong path. Report it instead of swallowing it —
+        # this is the only signal for a bad root that was saved before validation
+        # existed, or for a path that has since been renamed or unmounted.
+        $missingRoots = @(@($LocalRoots) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Where-Object { -not (Test-Path -LiteralPath ([string]$_)) } | ForEach-Object { [string]$_ })
+        if (@($missingRoots).Count -gt 0) {
+            Write-StructuredLog -Level Warning -Component adapter.status -Operation $operation -CorrelationId $correlationId -Message 'Configured local root(s) not found on disk; scan will report zero repositories for them' -Details @{ MissingRoots = $missingRoots } -LogPath $LogPath
+        }
+
         $items = Get-LocalFolderInventory `
             -Roots $LocalRoots `
             -IgnoreDirNames $ignoreDirNames `
@@ -164,7 +174,7 @@ function Get-StatusAdapterResult {
         Write-StructuredLog -Level Info -Component adapter.status -Operation $operation -CorrelationId $correlationId -Message 'Status scan adapter call completed' -Details @{ RepoCount = @($repos).Count; ItemCount = @($items).Count } -LogPath $LogPath
 
         $scanDurationMs = [math]::Round(((Get-Date) - $scanStartedAt).TotalMilliseconds, 0)
-        return New-AdapterResponse -Operation $operation -CorrelationId $correlationId -Success $true -Data ([pscustomobject]@{ repos = $repos }) -Meta @{ localRoots = $LocalRoots; maxDepth = $MaxDepth; repoCount = @($repos).Count; itemCount = @($items).Count; scanDurationMs = $scanDurationMs }
+        return New-AdapterResponse -Operation $operation -CorrelationId $correlationId -Success $true -Data ([pscustomobject]@{ repos = $repos }) -Meta @{ localRoots = $LocalRoots; maxDepth = $MaxDepth; repoCount = @($repos).Count; itemCount = @($items).Count; scanDurationMs = $scanDurationMs; missingRoots = $missingRoots }
     }
     catch {
         $errorMessage = $_.Exception.Message

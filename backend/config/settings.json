@@ -11,7 +11,7 @@
   "inventory": {
     "maxDepth": 3,
     "localRoots": [
-      "/mnt/f/Development/GitHubRepoManagement/output/smoke/api-host/portfolio-fixture-repos"
+      "F:\\Development\\20_Staging"
     ],
     "includeNonGitFolders": false
   },

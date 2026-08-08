@@ -1,6 +1,9 @@
 [CmdletBinding()]
 param(
-    [string]$WorkspaceRoot = 'G:\Development\GitHubRepoManagement',
+    # Derived from this script's location rather than a hardcoded drive letter —
+    # the previous 'G:\...' default no longer resolves on this machine (same fix
+    # as Invoke-ModuleSmokeTest.ps1; ROADMAP Lane 0.3).
+    [string]$WorkspaceRoot = (Split-Path -Parent $PSScriptRoot),
     # 127.0.0.1, NOT localhost: the host binds IPv4 loopback only, and on this
     # machine the firewall silently drops (rather than refuses) connections to
     # [::1]:7071, so every 'localhost' request burned ~2s in a dual-stack
@@ -374,8 +377,51 @@ try {
         daysInactive = [int]($settingsJson.data.retention.days ?? 30)
         githubUser = [string]($settingsJson.data.reconcile.gitHubOwner ?? '')
     }
+    # Captured before the FIRST write to git-tracked settings.json, not just
+    # before the fixture step later on: every POST here round-trips the file
+    # through ConvertTo-Json and reorders its keys, so a backup taken any later
+    # still leaves the tracked file churned. The finally block restores this
+    # byte-exact however the run ends (ROADMAP Lane 0.1).
+    $script:TrackedSettingsPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
+    $script:TrackedSettingsBackup = if (Test-Path -LiteralPath $script:TrackedSettingsPath) {
+        Get-Content -LiteralPath $script:TrackedSettingsPath -Raw -Encoding UTF8
+    } else { $null }
+
     $settingsPost = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/settings" -Body $settingsPostBody
     Assert-Not503 -Name '/api/settings (POST)' -Response $settingsPost
+
+    # A workspace path that is not on disk must be refused here, not accepted and
+    # then silently scanned to zero repositories. '/setup/config' has always
+    # rejected a missing root; this route used to accept one, which is how a
+    # mistyped path presented as "the tool found nothing" instead of "that folder
+    # is not there".
+    Write-Host '[STEP] Workspace path validation — a missing basePath is refused and not persisted' -ForegroundColor Cyan
+    $bogusRoot = Join-Path $WorkspaceRoot ('does-not-exist-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    $badBasePath = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/settings" -Body @{ basePath = $bogusRoot }
+    if ([int]$badBasePath.StatusCode -ne 400) {
+        throw ("/api/settings must reject a basePath that is not on disk with HTTP 400; got {0}. Body={1}" -f $badBasePath.StatusCode, $badBasePath.Content)
+    }
+    $settingsAfterBadPath = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/settings"
+    $rootsAfterBadPath = @($settingsAfterBadPath.Json.data.inventory.localRoots)
+    if ($rootsAfterBadPath -contains $bogusRoot) {
+        throw ("/api/settings persisted a non-existent basePath. localRoots={0}" -f ($rootsAfterBadPath -join ', '))
+    }
+    $script:WorkspaceValidationOk = $true
+    Write-Host ("  rejected {0} with HTTP 400 and left localRoots untouched" -f $bogusRoot) -ForegroundColor DarkGray
+
+    # And when a bad root is already saved (or a drive goes away), the scan must
+    # say so rather than reporting an ordinary empty result.
+    $missingRootStatus = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/status?localRoots=$([uri]::EscapeDataString($bogusRoot))&maxDepth=2&includeNonGitFolders=false"
+    Assert-Not503 -Name '/api/status (missing root)' -Response $missingRootStatus
+    if ([int]$missingRootStatus.StatusCode -ne 200) {
+        throw ("/api/status over a missing root should still succeed; got {0}" -f $missingRootStatus.StatusCode)
+    }
+    $missingRootsReported = @($missingRootStatus.Json.meta.missingRoots)
+    if ($missingRootsReported.Count -eq 0) {
+        throw ("/api/status must report meta.missingRoots for a root that is not on disk. Body={0}" -f $missingRootStatus.Content)
+    }
+    $script:MissingRootsReportedOk = $true
+    Write-Host ("  /api/status reported meta.missingRoots = {0}" -f ($missingRootsReported -join ', ')) -ForegroundColor DarkGray
 
     # GitHub auth is env-var-name indirection only. These guard the three ways a
     # secret could re-enter the app: stored in tracked settings, posted from the
@@ -1587,6 +1633,11 @@ try {
     } else {
         Write-Host '  WARNING: git init did not create .git — portfolio proofs may fail with count=0' -ForegroundColor Yellow
     }
+    # This POST persists into the git-TRACKED backend/config/settings.json. Left
+    # unrestored, it is how commit 69dcc2d shipped a WSL fixture path as the real
+    # workspace root (ROADMAP Lane 0.1) — every scan from a clean checkout then
+    # enumerated fixtures instead of the portfolio. The byte-exact backup was
+    # taken at the first settings write above and is restored in the finally.
     $fixtureSettingsResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/settings" `
         -Body @{ basePath = $portfolioFixtureRoot }
     if ($fixtureSettingsResponse.StatusCode -ne 200) {
@@ -2128,6 +2179,8 @@ try {
         routeCensusMissing = { $censusMissing.Count }
         githubAuthProbeOk = { $githubAuthProbeOk }
         githubTokenSource = { $ghAuthData.tokenSource }
+        workspaceValidationOk = { $script:WorkspaceValidationOk }
+        missingRootsReportedOk = { $script:MissingRootsReportedOk }
     }
     $summary = [ordered]@{}
     foreach ($entryName in $summarySpec.Keys) {
@@ -2137,6 +2190,25 @@ try {
     [pscustomobject]$summary | Format-List
 }
 finally {
+    # Restore the tracked config the fixture step overwrote, byte-exact, before
+    # anything else in teardown — a failed run must not leave a fixture path
+    # sitting in git-tracked settings.json for someone to commit by accident.
+    if ($script:TrackedSettingsBackup) {
+        try {
+            $current = if (Test-Path -LiteralPath $script:TrackedSettingsPath) {
+                Get-Content -LiteralPath $script:TrackedSettingsPath -Raw -Encoding UTF8
+            } else { $null }
+            if ($current -ne $script:TrackedSettingsBackup) {
+                Set-Content -LiteralPath $script:TrackedSettingsPath -Value $script:TrackedSettingsBackup -Encoding UTF8 -NoNewline
+                Write-Host '  restored tracked settings.json overwritten by the portfolio fixture step' -ForegroundColor DarkGray
+            }
+        }
+        catch {
+            # Surface loudly: an unrestored mutation is the regression this guards.
+            Write-Host ("  WARNING: could not restore settings.json — check it before committing. {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+        }
+    }
+
     # Teardown order matters. Stop-Job against a job whose pipeline is wedged
     # inside a native call can block forever — that is exactly how the harness
     # used to hang after its last visible step and leave an orphaned host
