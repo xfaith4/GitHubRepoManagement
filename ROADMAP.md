@@ -1034,16 +1034,6 @@ Two further survey findings, both independent of the split question:
       to [`roadmap-contract.schema.json`](standards/roadmap/roadmap-contract.schema.json),
       set from a pointer link in the roadmap, and surface it in the audit
       payload.
-- [ ] **Stop the repairer asserting "(No completed items recorded yet)" on a
-      repo that archived its history.** _(state: planned — factual-accuracy
-      bug; the live risk, since repair is the only path that writes to a
-      managed repo's roadmap)_ `_BuildCompletedSection`
-      ([`Roadmap.Repairer.ps1`](backend/modules/roadmap/Roadmap.Repairer.ps1))
-      emits that literal placeholder whenever no inline `[x]` items exist, so
-      repairing a correctly-split roadmap would write a false claim into it —
-      against the section 8 guardrail "preserve genuine completion history
-      when rewriting roadmaps." Emit the archive pointer instead when one is
-      known, and say "not recorded in this file" rather than "not recorded".
 - [ ] **Sanction the external-archive pattern in the standard.** _(state:
       planned — documentation)_ `ROADMAP_TEMPLATE.md` Section 6 anticipates
       release sections being "archived or removed" but assumes the surviving
