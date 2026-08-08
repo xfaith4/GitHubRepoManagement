@@ -58,13 +58,16 @@ interchangeable — mixing them is what previously made the roadmap read as
 - [ ] **Lane 0.3 hygiene** — the five `backend/` files still carrying
       hardcoded `G:\` workspace defaults.
 
-**Closed 2026-08-08:** Lane 0.1 (settings.json regression), Lane 0.6
-(silent workspace-path failure), Lane 0.5's two data-integrity findings,
-Lane 0.2's credential reissue + live-validation probe, the two Lane 0.4 smoke
-gaps, and four of Release 2.7 Phase D's six items. Also closed that day, from
-one operator session: the service's readable token (Lane 0.2), two installer
-defects that had made the documented fix a silent no-op, and the
-Copilot-dispatch OAuth diagnosis that produced Release 3.0.
+**Closed 2026-08-08 and archived out of this file:** the settings.json
+regression (Lane 0.1, which closed entirely), the silent workspace-path
+failure, Lane 0.5's two data-integrity findings, the credential reissue and
+live-validation probe, the service's readable token, the two smoke gaps,
+scheduler failure alerting, two installer defects that had made the documented
+credential fix a silent no-op, and the Copilot-dispatch OAuth diagnosis that
+produced Release 3.0. Full text with evidence is in
+[the archive](docs/history/completed-releases.md#closed-2026-08-08-archived-from-roadmapmd).
+**This file now carries open work only** — every remaining checkbox is
+something still to do.
 
 **Forward arc.** Releases 3.0-3.3 were added 2026-08-08 to describe the
 finished product rather than the working one: dispatch that runs (3.0), the
@@ -182,25 +185,22 @@ Release numbers identify scope — they do not dictate sequence. Work through
 open items in the order below, and update this section whenever a lane
 closes or a new dependency appears.
 
-**Step 0 — unblockers and correctness (small, do first):**
+**Step 0 — unblockers and correctness: closed 2026-08-08.** All three landed —
+the tracked `settings.json` scan roots, GitHub write credentials including a
+token the LocalSystem service can actually read, and the two smoke gaps. Their
+detail is in
+[the archive](docs/history/completed-releases.md#closed-2026-08-08-archived-from-roadmapmd).
 
-1. **Restore the tracked `settings.json` scan roots** (Lane 0.1). A
-   correctness regression, not a feature. Everything downstream that reads
-   the portfolio is wrong until this lands.
-2. **Confirm GitHub write credentials** (Lane 0.2). Opens Release 2.7
-   Phase A, which opens Phase C.
-3. **Close the two smoke gaps** (Lane 0.4) so the routes shipped since
-   2026-07-05 are covered by the same tripwire as everything else.
-
-**Then two parallel lanes (no cross-dependency between them):**
+**Two parallel lanes (no cross-dependency between them):**
 
 - **Automation lane — Release 2.7 Phases A → C.** The largest remaining
-  product increment: scheduled roadmap-item packaging. Strictly sequential
-  behind credentials, because auto-ranking without a proven write path
-  produces packets nobody can act on.
-- **Reliability lane — Release 2.7 Phase D.** Zero prerequisites. Frontend
-  unit tests, `Dashboard.tsx` decomposition, scheduler failure alerting, and
-  freeze prevention are all schedulable immediately and independently.
+  product increment: scheduled roadmap-item packaging. Phase A's credential
+  gate is now open; Phase C stays strictly behind Phase A, because
+  auto-ranking without a proven write path produces packets nobody can act on.
+- **Reliability lane — Release 2.7 Phase D.** Zero prerequisites. The two
+  remaining frontend items (value-tier and automation-scope vitest units,
+  `Dashboard.tsx` decomposition) and freeze prevention are schedulable
+  immediately and independently.
 
 **After the lanes:**
 
@@ -232,10 +232,9 @@ They are ordered by dependency, not by size:
 
 | Open item                                            | Depends on                                           | Type                                          |
 | ---------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------- |
-| Lane 0.1 settings.json restore                       | —                                                    | none — do first; corrupts scans until fixed   |
-| Release 2.7 Phase A (live submit-PR proof)           | Valid GitHub write credentials (Lane 0.2)            | hard — external credential                    |
+| Release 2.7 Phase A (live submit-PR proof)           | —                                                    | none — credential gate closed 2026-08-08      |
 | Release 2.7 Phase C (scheduled roadmap packaging)    | Release 2.7 Phase A                                  | hard — no auto-rank/PR without a proven write |
-| Release 2.7 Phase D (all four items)                 | —                                                    | none — schedulable anytime                    |
+| Release 2.7 Phase D (two frontend items + freeze)    | —                                                    | none — schedulable anytime                    |
 | Release 2.7 Phase D freeze prevention                | Watchdog field proof (2.9) for the paired safety net | soft — ship prevention regardless             |
 | Lane 0.3 layout follow-ups; Lane 0.4 smoke gaps      | —                                                    | none — schedulable anytime                    |
 | Release 2.9 mobile completion (ergonomics, run list) | —                                                    | none — the responsive foundation is shipped   |
@@ -266,9 +265,9 @@ per `ROADMAP_TEMPLATE.md`: the release section is the single source of truth
 for its own status. This heading exists so the roadmap validator can resolve
 the active-release pointer; it deliberately restates nothing.
 
-**Current focus:** Phase D first (it needs nothing from anyone and carries
-the production-reliability work), while Lane 0.2 resolves the credential
-gate that opens Phase A → Phase C.
+**Current focus:** Phase A — its credential gate closed 2026-08-08, so the
+live submit-PR proof that opens Phase C is now the highest-value move. Phase D
+runs in parallel; it needs nothing from anyone.
 
 ---
 
@@ -363,35 +362,6 @@ Phase D — Hardening & observability (parallelizable, autonomous, unblocked):
 - [ ] Decompose [`Dashboard.tsx`](frontend/components/Dashboard.tsx):
       extract the view-router/tab shell and the summary/mission sections.
       _(state: planned — 2,376 lines as of 2026-08-07)_
-- [x] Add scheduler failure alerting (webhook) + an automation-status
-      surface in the dashboard, so a scheduled run that stops running is
-      visible rather than silently absent. _(state: smoke-tested 2026-08-08)_
-      Interval firing is delegated to an external cron, so the failure mode
-      was silence: the config kept reading "enabled" while history quietly
-      stopped growing. `Get-AutomationHealth`
-      ([`Automation.DocRefinement.ps1`](backend/modules/automation/Automation.DocRefinement.ps1))
-      derives `overdue` / `consecutiveFailures` / `alert` from the gap between
-      the configured interval and the newest run record (2x grace, so one
-      skipped tick is tolerated and two alert); `GET /api/automation/status`
-      serves it; `POST /api/automation/run` now fires the same
-      `execution.failed` notification the portal watchdog uses when a run
-      errors, instead of burying the errors in an HTTP 200 payload.
-      `Get-AutomationRunOutcome` classifies ok/partial/failed — a zero-target
-      run is `ok`, because "no favorite repo needed doc work" is a healthy
-      night, and alerting on it would train the operator to ignore the alert.
-      The dashboard renders
-      [`AutomationStatusBadge.tsx`](frontend/components/AutomationStatusBadge.tsx)
-      on the Operations tab off
-      [`automationStatus.ts`](frontend/lib/automationStatus.ts), polling every
-      2 minutes because "overdue" only becomes true with the passage of time.
-      A failed status call renders **unknown**, never healthy. **Evidence:**
-      module smoke (fresh=healthy, 5h gap on a 60-min interval=overdue,
-      disabled=silent, outcome classification, and a timezone tripwire —
-      `ConvertFrom-Json` returns `finishedAt` as a kind-less UTC `DateTime`
-      and converting it twice put `lastRunAt` in the future, silently
-      disabling overdue detection without failing any boolean assertion);
-      api-host smoke `automationStatusOk=True`; 10 vitest cases in
-      [`automationStatus.test.ts`](frontend/lib/automationStatus.test.ts).
 
 #### Acceptance criteria
 
@@ -451,17 +421,21 @@ GitHub write credentials for Phase A onward.
 
 **Known issues:**
 
-- [x] Tracked `backend/config/settings.json` pointed `inventory.localRoots`
-      at a WSL smoke-fixture directory. _(closed 2026-08-08 — Lane 0.1.)_
-      Restoring the real root made scheduled automation enumerate the real
-      portfolio, and also exposed the cold-scan timeout now tracked in
-      Lane 0.4.
-- [x] The `GITHUB_TOKEN` fine-grained PAT provisioned 2026-07-06 expired.
-      _(closed 2026-08-07 — Lane 0.2; reissued, and `GET
-/api/auth/github/status?validate=1` now probes liveness rather than
-      reporting configuration.)_ **Still open in Lane 0.2:** the LocalSystem
-      service cannot read the User-scoped token, which is what actually gates
-      Phase A.
+- [ ] The freeze guard can kill the host during a legitimate cold scan. The
+      Phase D request deadline defaults to 180s and terminates the host on
+      expiry, but a cold full-portfolio assessment over the real 75-repo
+      workspace exceeds that — so the guard that exists to protect the portal
+      is the thing that stops it. Tracked as the top open item in Lane 0.4;
+      Release 3.2 implements whichever way that decision lands.
+- [ ] Phase C's approval-triggers-dispatch step has no working dispatcher.
+      `gh agent-task` requires an OAuth token and the portal runs as
+      LocalSystem, so packaged items cannot currently be dispatched from the
+      service at all. Release 3.0 moves execution into an operator session;
+      until it lands, Phase C can package and queue but not dispatch.
+
+Both known issues that stood here on 2026-08-07 — the tracked `settings.json`
+fixture path and the expired PAT — closed 2026-08-08; see
+[the archive](docs/history/completed-releases.md#closed-2026-08-08-archived-from-roadmapmd).
 
 **Traceability:** Phase B shipped
 [`Automation.DocRefinement.ps1`](backend/modules/automation/Automation.DocRefinement.ps1)
@@ -845,43 +819,15 @@ window.
 
 ## 7. Cross-Cutting Engineering Work
 
-Continuous, not release-scoped. Completed cross-cutting items were archived
-2026-08-07 — see
-[the archive](docs/history/completed-releases.md#cross-cutting-engineering-work-completed-items).
-
-### Lane 0.1 — Configuration regression (P0)
-
-- [x] **Restore `backend/config/settings.json` `inventory.localRoots` to the
-      real workspace root and prevent recurrence.** _(state: done 2026-08-08)_
-      Commit `69dcc2d` (2026-08-01) committed a smoke-run mutation into the
-      **tracked** config: `localRoots` pointed at
-      `/mnt/f/Development/GitHubRepoManagement/output/smoke/api-host/portfolio-fixture-repos`
-      (a WSL fixture path), replacing `F:\Development\20_Staging`. Every
-      scan, assessment, index write, and scheduled automation run from a
-      clean checkout therefore enumerated fixtures, not the portfolio. This
-      was the root cause of the operator-visible "valid workspace path, zero
-      repositories" report on 2026-08-08. All three parts are closed:
-      (1) `localRoots` restored to `F:\Development\20_Staging`;
-      (2) `Invoke-ApiHostSmokeTest.ps1` now captures the tracked file
-      byte-exact **before its first settings write** — not just before the
-      portfolio-fixture step, since every `POST /api/settings` round-trips the
-      JSON and reorders keys — and restores it in `finally`, so the run leaves
-      no churn however it ends; (3) `Invoke-ModuleSmokeTest.ps1` gained a
-      tripwire that fails the suite when tracked `localRoots` names a path
-      under `output/`, or is empty. **Evidence:** api-host smoke exit 0 on a
-      free port with `git diff` on the tracked config showing only the single
-      intended line; tripwire verified to fail (exit 1) on a deliberately
-      reintroduced fixture path and to pass on the corrected config.
+Continuous, not release-scoped. **This section carries open work only.**
+Completed cross-cutting items were archived 2026-08-07 — see
+[the archive](docs/history/completed-releases.md#cross-cutting-engineering-work-completed-items) —
+and again 2026-08-08, when Lane 0.1 closed entirely and Lanes 0.2, 0.4, 0.5,
+and 0.6 shed their closed items to
+[the 2026-08-08 batch](docs/history/completed-releases.md#closed-2026-08-08-archived-from-roadmapmd).
 
 ### Lane 0.2 — Credential freshness
 
-- [x] **Reissue GitHub write credentials — confirmed expired 2026-08-07.**
-      _(state: done 2026-08-07)_ The fine-grained PAT provisioned 2026-07-06
-      carried a ~30-day window and expired; `gh api` returned
-      `HTTP 401: Bad credentials`. Reissued 2026-08-07 and set as the
-      **User**-scoped `GITHUB_TOKEN`. **Evidence:** `gh api user` returns
-      `xfaith4`; `Github-Authentication-Token-Expiration: 2026-11-06
-03:41:59 UTC`. Two follow-ups below.
 - [ ] **Grant the PAT `Checks: Read`.** _(state: planned — non-blocker)_
       The reissued token still 403s on
       `repos/{owner}/{repo}/commits/{ref}/check-runs`
@@ -889,78 +835,6 @@ Continuous, not release-scoped. Completed cross-cutting items were archived
       `gh pr checks <n> --watch` is unusable and the merge loop relies on
       `mergeStateStatus` as a proxy. Metadata, Contents, Pull requests, and
       Actions reads all pass. Verified 2026-08-07.
-- [x] **Give the always-on service a readable token.** _(state:
-      operator-verified 2026-08-08 — unblocks Release 2.7 Phase A)_
-      `RepoMgmtPortal` runs as **LocalSystem**, which cannot see the
-      User-scoped `GITHUB_TOKEN`; Machine scope was unset, so the portal's
-      GitHub calls ran unauthenticated. Closed by an elevated
-      `.\scripts\Install-RepoManagementService.ps1 -Action Repair
--GitHubToken $env:GITHUB_TOKEN` — but only after the installer defect
-      below was fixed: the documented command had silently no-opped, because
-      `Invoke-Repair` never read `-GitHubToken` and still reported `[OK]`.
-      **Evidence:** `GET /api/auth/github/status?validate=1` returns
-      `mode=pat`, `tokenSource=env`, `tokenEnvScope=Machine`,
-      `runningAsService=true`, empty hint, `liveCheck.valid=true`,
-      `login=xfaith4`, `expiresAt=2026-11-06 03:41:59 UTC`;
-      `POST /api/github/status` returns 67 repos with 44 private in the first
-      50 — private visibility being the proof the token is in play.
-- [x] **`-Action Repair` ignored `-GitHubToken`, and wired the watchdog to a
-      scheme the host does not serve.** _(state: done 2026-08-08)_ Two
-      installer defects, both found by running the documented Repair command
-      above on 2026-08-08. **(1)** The `SetEnvironmentVariable('GITHUB_TOKEN',
-      …, 'Machine')` call lived only in `Invoke-FreshInstall`, so Repair
-      accepted the parameter and dropped it — the operator got a clean `[OK]`
-      run and an unauthenticated portal. Repair now sets it before the
-      restart. **(2)** `$repairTls` was `UseTls -and (Test-Path pfx)` —
-      presence, not usability. The stored `REPO_MGMT_TLS_PFX_PASSWORD` does
-      not open the pfx (_"The specified network password is not correct"_),
-      so the host logs a WARN and degrades to plain HTTP while the installer
-      health-probed **https**, reported a false `[!!] Not healthy`, and
-      registered the freeze watchdog against `https://127.0.0.1:7071` — which
-      then restarted a healthy portal every ~3 minutes. New `Test-PfxLoadable`
-      mirrors the host's own `X509Certificate2` load: Repair warns and falls
-      back to http, fresh install throws before any teardown. **Evidence:**
-      `Test-PfxLoadable` returns false against the live machine pfx with the
-      host's exact error; watchdog ledger shows `probe-fail x3 -> restart` at
-      15:30:52 with the host serving http 200 throughout; module smoke exit 0
-      (installer step: 5 action cases, carry-forward, drift).
-- [x] **Copilot task dispatch reported a bare exit code and forced a PAT over
-      gh's own credential.** _(state: done 2026-08-08)_ The guided-improvement
-      wizard failed at the PR-handoff step with
-      `gh agent-task create failed with exit code 1`. The real reason was
-      already in the run ledger and nowhere else: _"this command requires an
-      OAuth token. Re-authenticate with: gh auth login"_. Three fixes in
-      `Start-GitHubCopilotTask.ps1`. **(1)** `Invoke-GhCommand` now puts gh's
-      own stderr in the thrown message instead of only the exit code.
-      **(2)** The script unconditionally set `$env:GH_TOKEN` to the PAT — a
-      token `agent-task` cannot accept, and one that _overrides_ any stored
-      OAuth credential, so the dispatch would have failed even after
-      `gh auth login`. New `Test-GhStoredCredential` probes gh with the env
-      tokens removed and prefers gh's own credential when it has one.
-      **(3)** A PAT-only environment now fails before spending the call, naming
-      `gh auth login` and the env-var precedence rule. Also redacts
-      token-shaped strings before they reach the history ledger — gh's
-      `auth status` prints an unmasked token prefix. **Evidence:** two shim
-      cases — PAT-only throws the OAuth message with `agent-task create` never
-      invoked (ledger shows `auth status` only); stored-credential clears
-      `GH_TOKEN` and completes. Ledger shows `<redacted-token>`. Module smoke
-      exit 0.
-- [x] **Decide how the LocalSystem portal obtains an OAuth credential for
-      Copilot dispatch.** _(state: done 2026-08-08 — decision recorded; the
-      build is [Release 3.0](#release-30--operator-context-execution))_
-      `gh agent-task` requires an OAuth token from `gh auth login`; a
-      fine-grained PAT cannot authorize it. The portal runs as **LocalSystem**,
-      which has neither a stored gh credential nor any way to complete an
-      interactive login, so the wizard could not dispatch no matter how the PAT
-      was scoped. **Decision: run the dispatcher in an operator session** — the
-      portal enqueues, a runner in the operator's own session executes.
-      Rejected: `gh auth login --insecure-storage` under a service-readable
-      `GH_CONFIG_DIR` (writes a plaintext OAuth token to disk, against the
-      secret-free-config rule this repo holds everywhere else), and re-hosting
-      the service under a named user (surrenders always-on-before-login for the
-      whole portal to fix one route). The queue-plus-operator-runner pattern
-      Release 2.8 already shipped for Claude Code is the same shape, so this
-      unifies two dispatch models rather than adding a third.
 - [ ] **Populate `rateLimit` on the authenticated GitHub insights path.**
       _(state: planned — non-blocker, cosmetic, surfaced 2026-08-08)_
       `Get-GitHubReposViaApi` returns a hardcoded `rateLimit = $null`
@@ -979,44 +853,6 @@ Continuous, not release-scoped. Completed cross-cutting items were archived
       Either recover the original password or regenerate with
       `scripts\New-RepoManagementTlsCertificate.ps1` and re-run
       `-Action Reconfigure -PfxPath … -PfxPassword …`.
-- [x] **Stop the unauthenticated `gh` fallback from surfacing a raw JSON
-      parse error.** _(state: done 2026-08-08)_ With no readable token (the
-      item above), `POST /api/github/status` fell through to
-      `gh repo list`, merged the CLI's stderr into the JSON string with
-      `2>&1`, and parsed it blind — so the Settings dialog showed
-      _"Conversion from JSON failed with error: Unexpected character
-      encountered while parsing value: T"_ (the **T** of gh's _"To get
-      started with GitHub CLI"_ notice) instead of the auth failure. The
-      route now checks `$LASTEXITCODE` and the payload shape first and
-      throws a named cause, reusing the new `Get-GitHubTokenMissHint`, which
-      also backs the `GET /api/auth/github/status` hint so the two surfaces
-      cannot drift. **Evidence:** with a present-but-unauthenticated `gh` on
-      PATH, `POST /api/github/status` returns HTTP 500 `category=dependency`
-      and _"GitHub is not authenticated for this host. Environment variable
-      'GITHUB_TOKEN' … The 'gh' CLI fallback also failed: To get started
-      with GitHub CLI…"_; module smoke exit 0.
-- [x] **Add a live token-validation probe.** `GET /api/auth/github/status`
-      reported the configured _mode_ (`mode=pat`), not token liveness — it
-      reported healthy throughout the expiry above. _(state: done
-      2026-08-07)_ The route now accepts `?validate=1`, which probes an
-      authenticated `GET /user` and returns `liveCheck.{valid, login,
-expiresAt}`; Settings surfaces it behind a **Test connection** button.
-      The same route also reports `tokenSource`, `tokenEnvScope`, and
-      `runningAsService` so an unreadable variable is distinguishable from an
-      unset one. **Evidence:** `scripts/Invoke-ApiHostSmokeTest.ps1` step
-      _"GitHub auth — env-var-name indirection"_ asserts the probe fields and
-      the 400 rejections; run 2026-08-07 exit 0, summary
-      `githubAuthProbeOk=True githubTokenSource=env`.
-- [x] **Remove the last stored-secret path: `readme.copilotApiKey`.**
-      _(state: done 2026-08-07)_ `Readme.Generator.ps1` `_ResolveApiKey`
-      accepted a literal Copilot key stored in `settings.json` (priority 1)
-      ahead of the `readme.copilotApiKeyEnvVar` name — the same leak shape
-      the `secrets.githubToken` removal closed. The literal path is gone;
-      resolution starts at the env-var name. The startup stripper is now
-      `Remove-StoredSecretsFromSettings` and clears **both** legacy slots.
-      **Evidence:** module smoke exit 0; API-host smoke exit 0 with
-      `githubAuthProbeOk=True`; `grep copilotApiKey` shows no remaining read
-      of the literal key.
 
 ### Lane 0.3 — Layout follow-ups from the 2026-07-15 cleanup
 
@@ -1066,47 +902,6 @@ every maturity score. Both were adversarially proven to fail when violated.
 
 ### Lane 0.4 — Smoke coverage gaps
 
-- [x] Add a scoped-path assertion for the repo-scoped roadmap scan
-      (`POST /api/roadmap/scan` with a `repoName`/`targetRepo` body) to the
-      api-host smoke. _(state: done 2026-08-08 — `smoke-tested`)_ Asserts the
-      scoped call returns exactly the target repo, echoes
-      `scopedRepo`, and — the load-bearing property — does **not** rewrite the
-      portfolio-wide roadmap cache, so one RepoGrid row action cannot silently
-      shrink the cached portfolio to a single repo. A companion unscoped scan
-      over the same two-repo fixture asserts it sees both, so the
-      single-result assertion cannot pass vacuously against an empty fixture.
-      **Evidence:** api-host smoke `scopedRoadmapScanOk=True`.
-- [x] Add an api-host smoke assertion for
-      `POST /api/repository-improvement/preview` (the Guided Repository
-      Improvement Workflow shipped 2026-08-01). _(state: done 2026-08-08 —
-      `smoke-tested`)_ Runs the preview against a deliberately thin fixture
-      repo (one-line README, no ROADMAP) and asserts `findingCount >= 1`, so a
-      preview that runs but evaluates nothing fails; also asserts a request
-      with no `repoPath` is refused rather than inferred. **Evidence:**
-      api-host smoke `improvementPreviewOk=True`.
-**Fixed 2026-08-08 while closing the two gaps above** — three defects in the
-api-host smoke harness itself, all of the "the gate passed without testing
-anything" class:
-
-- **`-Port` did not move `-BaseUrl`.** `-Port 7093` booted the host under test
-  on 7093 while `BaseUrl` stayed pinned to `http://127.0.0.1:7071`, so the run
-  silently exercised whatever host was already listening there — typically the
-  operator's live portal — and reported its behavior as the result. Every
-  assertion still ran; none tested the host under test. `BaseUrl` is now
-  derived from `Port` unless the caller sets both, and the run logs its target.
-- **The `finally` block masked every early failure.**
-  `$script:TrackedSettingsBackup` was assigned inside `try`, well after the
-  first steps, so under `Set-StrictMode` any failure before that point made
-  teardown throw _"variable has not been set"_ and replace the real error.
-  Both variables are now declared before the `try`.
-- **The auth assertion tested the wrong input.** It inferred expected
-  enforcement from `REPO_MGMT_API_KEY` alone, but the host gates on
-  `Test-ApiAuthRequired` (`auth.requireApiKey` / `REPO_MGMT_REQUIRE_API_KEY`)
-  **and** a non-empty key. It passed only while the tracked `settings.json`
-  carried leftover smoke pollution; the Lane 0.1 cleanup exposed the wrong
-  premise. The assertion now mirrors the host's own rule and names all three
-  inputs when it fails.
-
 - [ ] **Warm the assessment cache before the automation smoke step, or raise
       its client timeout.** _(state: planned — non-blocker, surfaced
       2026-08-08)_ `POST /api/automation/run` calls
@@ -1131,31 +926,6 @@ anything" class:
 
 ### Lane 0.6 — Workspace-path failure was silent (P0, 2026-08-08)
 
-- [x] **Reject a workspace path that is not on disk, and report one that is
-      already saved.** _(state: done 2026-08-08)_ An operator set a workspace
-      path and got zero repositories with no error: `Backend: Online`, a green
-      `Source: Local` badge, and a "successful" 0.1s scan. Two independent
-      causes. First, the tracked config pointed at a fixture path (Lane 0.1).
-      Second, `POST /api/settings` wrote `inventory.localRoots` with **no
-      existence check**, while `POST /api/setup` had always rejected a missing
-      root — so the Setup Wizard was guarded and the Settings dialog was the
-      unvalidated way in. `Get-LocalFolderInventory` then logged
-      _"Skipping invalid root"_ to the host log and returned an empty
-      inventory, which the adapter reported as a successful scan. Fixes:
-      `POST /api/settings` returns HTTP 400 naming the path and persists
-      nothing; the status adapter and `GET /api/status` both report
-      `meta.missingRoots`, recomputed at the route so a cache hit cannot replay
-      stale on-disk state; the portal renders a top-of-page alert naming the
-      exact path with a **Fix in Settings** action. The Settings dialog also
-      surfaced save failures for the first time — `handleSave` previously
-      swallowed the error with a `console.error` and a "you would show a toast"
-      comment, so the new 400 would have been invisible. **Evidence:**
-      api-host smoke `workspaceValidationOk=True`,
-      `missingRootsReportedOk=True` (rejects a bogus `basePath` with 400, leaves
-      `localRoots` untouched, and reports `meta.missingRoots` from
-      `/api/status`); direct adapter run over the restored root returned
-      **75 repositories** with `missingRoots` empty, and over the mistyped path
-      returned `success=True`, `repoCount=0`, `missingRoots` populated.
 - [ ] Point the zero-scope action hint at the specific cause when a root is
       missing. _(state: planned — non-blocker, cosmetic)_ The ActionBar hint
       still reads the generic "Scan a workspace first — set the workspace path
@@ -1167,52 +937,10 @@ anything" class:
 
 Surfaced by a walkthrough of the Repository Grid, Insights, Operations, and
 Doc Readiness Queue tabs against a workspace that scanned 0 repos. The two
-data-integrity findings from that audit were fixed the same day (see
-evidence below); these two are design-dependent and deliberately deferred.
+data-integrity findings from that audit were fixed the same day and are in
+[the archive](docs/history/completed-releases.md#closed-2026-08-08-archived-from-roadmapmd);
+these two are design-dependent and deliberately deferred.
 
-- [x] **Reconcile the live-scan vs. persisted-index contradiction.**
-      _(state: done 2026-08-08)_ The header read the live scan (`repos`)
-      while the Queue buckets, "68% Avg Maturity", and "15 Ready Repos" read
-      the persisted indexes in `output/index/`, so a 0-repo scan rendered
-      populated figures beside a `0 repos` count and read as a broken tool.
-      Both figures were always real; only the provenance was missing. Added
-      [`frontend/lib/dataProvenance.ts`](frontend/lib/dataProvenance.ts)
-      (`resolveProvenance` → `live` / `stale-only` / `empty`) plus
-      [`ProvenanceNotice.tsx`](frontend/components/ProvenanceNotice.tsx),
-      mounted at the top of the Insights tab (covering Portfolio Mission,
-      Documentation Health, and Portfolio Analytics in one notice) and above
-      the Doc Readiness Queue; the scan label now reads "No repos in this
-      scan". Badges have no room for a sentence, so the **Operations** and
-      **Doc Readiness Queue** counts — in both the desktop tab strip and the
-      mobile bottom nav — render amber with a `ring` and an explanatory
-      tooltip via `isCarriedOverCount` instead of as plain current-looking
-      numbers. **Evidence:** `frontend/lib/dataProvenance.test.ts` (24 cases,
-      incl. the unknown-live-count guards against a false banner and against
-      disabling by omission); `npx vitest run` 37/37; `tsc --noEmit` clean;
-      `vite build` clean with every new marker present in `dist`; module
-      smoke exit 0.
-- [x] **Disable repo-acting buttons when nothing is in scope.**
-      _(state: done 2026-08-08)_ Pull, Fetch, Report, Doc Review, and Roadmap
-      Scan stayed clickable at 0 repos, letting the operator click into a
-      no-op instead of being pointed at the blocker. `ActionBar` now takes a
-      `repoCount` prop and gates those five on
-      `canRunRepoActions(repoCount, isActionRunning)`, replacing the
-      implicit-bulk-scope callout with the actual blocker ("Scan a workspace
-      first…"). Refresh, Settings, Help, and API docs stay enabled — they are
-      the way out of the empty state. The Doc Readiness Queue's own actions
-      needed the same treatment for a subtler reason: its rows come from the
-      persisted index, so they outlive the scan and every row can target a
-      repo the app cannot currently see. **Guided Improvement** and the six
-      mutating row actions (Improve, Repair, Standardize, Generate README,
-      Evaluate, Dispatch Release) are gated on `isKnownEmptyScope`;
-      read-only actions (Audit, Lint, Roadmap, Preview Task) stay enabled,
-      because inspecting the carried-over data is how an operator diagnoses
-      _why_ the scan came back empty. `isKnownEmptyScope` returns false for an
-      unknown count, so a view that never receives `liveRepoCount` is never
-      disabled by omission. **Evidence:** as above;
-      `scripts/frontend-smoke.cjs` `bulkSelectionNotePromoted` made
-      state-aware so it asserts the correct variant rather than breaking on
-      the empty-workspace path.
 - [ ] **Add a confirmation step to implicit bulk-scope actions.** _(state:
       planned — non-blocker)_ With no rows selected, Pull/Fetch/Report apply
       to the **entire filtered set**. The amber callout in
