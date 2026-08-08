@@ -13,7 +13,10 @@ param(
     [string]$LogPath,
 
     [Parameter()]
-    [string]$ShutdownSignalPath
+    [string]$ShutdownSignalPath,
+
+    [Parameter()]
+    [int]$RequestTimeoutSeconds = 180
 )
 
 Set-StrictMode -Version Latest
@@ -63,6 +66,7 @@ $persistenceModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\persistence'
 . (Join-Path $persistenceModuleRoot 'Persistence.Store.ps1')
 . (Join-Path $commonRoot 'NotificationHub.ps1')
 . (Join-Path $PSScriptRoot 'ApiHost.ErrorHandling.ps1')
+. (Join-Path $PSScriptRoot 'RequestDeadline.ps1')
 
 $script:StatusCacheMemory = @{}
 $script:StatusCacheDefaultTtlSeconds = 120
@@ -80,6 +84,10 @@ $script:RoadmapAuditCacheDefaultTtlSeconds = 300
 $script:PortfolioAssessmentCacheMemory = @{}
 $script:PortfolioAssessmentCacheDefaultTtlSeconds = 180
 $script:ClientIoTimeoutMs = 15000
+$script:RequestTimeoutSeconds = Get-EffectiveRequestTimeoutSeconds `
+    -ConfiguredSeconds $RequestTimeoutSeconds `
+    -EnvironmentValue ([System.Environment]::GetEnvironmentVariable('REPO_MGMT_REQUEST_TIMEOUT_SECONDS'))
+$script:RequestDeadlineController = $null
 
 $script:RoadmapRepairHistoryRoot   = Join-Path $WorkspaceRoot 'output\roadmap-repair-history'
 $script:RepoEvaluationHistoryRoot  = Join-Path $WorkspaceRoot 'output\repo-evaluations'
@@ -1815,7 +1823,7 @@ function Get-StatusCacheTtlSeconds {
         $Settings.inventory.statusCacheTtlSeconds
     ) {
         $candidate = [int]$Settings.inventory.statusCacheTtlSeconds
-        if ($candidate -ge 0) {
+        if ($candidate -gt 0) {
             $ttl = $candidate
         }
     }
@@ -3462,7 +3470,7 @@ function Get-PortfolioAssessmentCacheTtlSeconds {
         $Settings.portfolio.assessmentCacheTtlSeconds
     ) {
         $candidate = [int]$Settings.portfolio.assessmentCacheTtlSeconds
-        if ($candidate -ge 0) { $ttl = $candidate }
+        if ($candidate -gt 0) { $ttl = $candidate }
     }
     return $ttl
 }
@@ -5097,6 +5105,11 @@ $listener.Start()
 Write-HostLog ("Repo Management API host started on http://{0}:{1}" -f $BindAddress, $Port)
 Write-HostLog ("Auth: {0}" -f $(if ($script:AuthEnforced) { 'API key required on /api routes' } else { 'open (loopback; no API key required)' }))
 Write-HostLog ("Ops log: {0}" -f (Get-ValueOrDefault $script:OpsLogPath '(none)'))
+$requestTimeoutLogPath = Join-Path $WorkspaceRoot 'output\logs\request-timeouts.jsonl'
+$script:RequestDeadlineController = Start-RequestDeadlineWatchdog `
+    -TimeoutSeconds $script:RequestTimeoutSeconds `
+    -IncidentLogPath $requestTimeoutLogPath
+Write-HostLog ("Request deadline: {0}s (incident log: {1})" -f $script:RequestTimeoutSeconds, $requestTimeoutLogPath)
 
 # GitHub auth is env-var-name indirection only: settings carry the variable
 # NAME, never a token. Report what the name resolves to in THIS process, since
@@ -5232,6 +5245,11 @@ try {
             }
             $correlationId = if ($req.Headers.ContainsKey('x-correlation-id') -and $req.Headers['x-correlation-id']) { $req.Headers['x-correlation-id'] } else { [guid]::NewGuid().ToString('n') }
             $requestStart = Get-Date
+            Set-RequestDeadline -Controller $script:RequestDeadlineController `
+                -TimeoutSeconds $script:RequestTimeoutSeconds `
+                -CorrelationId $correlationId `
+                -Method $req.Method `
+                -Path $path
 
             if ($req.Method -eq 'OPTIONS') {
                 Add-MetricCounter -Name 'api_requests_total'
@@ -10251,11 +10269,13 @@ try {
             }
         }
         finally {
+            Clear-RequestDeadline -Controller $script:RequestDeadlineController
             $client.Close()
         }
     }
 }
 finally {
+    Stop-RequestDeadlineWatchdog -Controller $script:RequestDeadlineController
     $listener.Stop()
     Write-HostLog 'Repo Management API host stopped'
 }

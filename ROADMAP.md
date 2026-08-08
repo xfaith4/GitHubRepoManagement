@@ -288,8 +288,12 @@ Phase D — Hardening & observability (parallelizable, autonomous, unblocked):
       per-request work timeout so one blocked native call — e.g. the SQLite
       bridge — cannot wedge the single-threaded accept loop; schedule
       `app.db` maintenance (VACUUM + snapshot retention; ~138 MB and
-      growing). *(state: planned — highest-impact Phase D item; the
-      watchdog is the net, this is the fix)*
+      growing). *(state: in progress — cache-off regression guards and the
+      180-second host request deadline implemented and smoke-tested
+      2026-08-08; live service deployment is pending an elevated Windows
+      install. Scheduled `app.db` VACUUM + snapshot retention also remains.
+      The deadline records the route/correlation ID and exits a wedged host
+      so Shawl/SCM recovery restarts it.)*
 - [ ] Complete the frontend unit-test set (vitest). `needsAttention` and
       `viewMeta` are covered
       ([`needsAttention.test.ts`](frontend/lib/needsAttention.test.ts),

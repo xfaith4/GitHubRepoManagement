@@ -40,6 +40,27 @@ Write-Step 'Validating copied module files exist'
 }
 Write-Host 'All expected module files are present' -ForegroundColor Green
 
+Write-Step 'API request deadline guard — bounds single-threaded host freezes'
+$requestDeadlineModule = Join-Path $WorkspaceRoot 'backend\api-host\RequestDeadline.ps1'
+if (-not (Test-Path -LiteralPath $requestDeadlineModule)) { throw "RequestDeadline.ps1 not found at: $requestDeadlineModule" }
+. $requestDeadlineModule
+if ((Get-EffectiveRequestTimeoutSeconds -ConfiguredSeconds 0) -ne 30) { throw 'Request timeout floor must remain 30 seconds' }
+if ((Get-EffectiveRequestTimeoutSeconds -ConfiguredSeconds 180 -EnvironmentValue '45') -ne 45) { throw 'Request timeout env override was not applied' }
+if ((Get-EffectiveRequestTimeoutSeconds -ConfiguredSeconds 180 -EnvironmentValue '99999') -ne 3600) { throw 'Request timeout ceiling must remain 3600 seconds' }
+$deadlineNow = [datetime]::UtcNow
+if ((Resolve-RequestDeadlineAction -Armed:$false -DeadlineUtc $deadlineNow -NowUtc $deadlineNow) -ne 'idle') { throw 'Disarmed request deadline must be idle' }
+if ((Resolve-RequestDeadlineAction -Armed:$true -DeadlineUtc $deadlineNow.AddSeconds(1) -NowUtc $deadlineNow) -ne 'wait') { throw 'Future request deadline must wait' }
+if ((Resolve-RequestDeadlineAction -Armed:$true -DeadlineUtc $deadlineNow -NowUtc $deadlineNow) -ne 'terminate') { throw 'Expired request deadline must terminate' }
+Write-Host '  deadline floor/override/ceiling and idle/wait/terminate states correct' -ForegroundColor DarkGray
+
+# Cache-off was the trigger for the 2026-07-05 request pile-up. Preserve an
+# explicit source-level tripwire because these helpers live inside the host
+# script and cannot be dot-sourced without starting the listener.
+$apiHostSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1') -Raw -Encoding UTF8
+if ($apiHostSource -notmatch '(?s)function Get-StatusCacheTtlSeconds.*?if \(\$candidate -gt 0\)') { throw 'Status cache TTL can be disabled; require a positive override' }
+if ($apiHostSource -notmatch '(?s)function Get-PortfolioAssessmentCacheTtlSeconds.*?if \(\$candidate -gt 0\)') { throw 'Portfolio assessment cache TTL can be disabled; require a positive override' }
+Write-Host '  status and assessment caches reject zero/negative TTL overrides' -ForegroundColor DarkGray
+
 # Tripwire for ROADMAP Lane 0.1. Commit 69dcc2d shipped a smoke-run mutation as
 # the real workspace root: tracked settings.json pointed inventory.localRoots at
 # a fixture directory under output/, so every scan, assessment, and scheduled

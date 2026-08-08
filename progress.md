@@ -1,5 +1,19 @@
 # Guided Repository Improvement Workflow Progress
 
+## 2026-08-08 — roadmap priority execution
+
+- Reconciled the active roadmap with current `HEAD`; Lane 0.1 is already fixed and merged at `c7f75cd`.
+- Selected Release 2.7 Phase D portal freeze prevention as the highest-impact unblocked engineering item.
+- Began tracing API-host caching, listener/request execution, native-call boundaries, and SQLite maintenance before choosing a deployment design.
+- Added `backend/api-host/RequestDeadline.ps1`: every accepted request receives a bounded deadline; expiry appends a correlation-rich incident record and terminates the wedged host so Shawl/SCM can restart it.
+- Wired the deadline into the API host with a 180-second default and a clamped `REPO_MGMT_REQUEST_TIMEOUT_SECONDS` override (30-3600 seconds).
+- Prevented status and portfolio-assessment cache TTL overrides from disabling caching with zero/negative values.
+- Added module-smoke coverage for deadline resolution and cache-on source tripwires.
+- Passed PowerShell parsing, an arm/clear/stop lifecycle check, the full module smoke, 20/20 API contract tests, and the full API-host smoke on isolated port 7091 (including 22/22 route census).
+- Updated the active roadmap and always-on-service/API-host documentation; the broader Phase D checkbox remains open only for scheduled SQLite VACUUM + snapshot retention.
+- Deployment audit: no Windows `RepoMgmtPortal` service or port-7071 listener exists; current identity `THESHIRE\xfaith` is non-admin and Shawl is not installed. Live deployment was not attempted because the required elevation/runtime prerequisite is absent.
+- Roadmap structural validation passed with 0 errors (2 pre-existing advisory warnings).
+
 ## 2026-08-01
 
 - Started the repository-grounded workflow implementation.

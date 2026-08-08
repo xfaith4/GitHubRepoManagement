@@ -1,5 +1,16 @@
 # Guided Repository Improvement Workflow Findings
 
+## 2026-08-08 roadmap-priority pass
+
+- `HEAD` already contains the Lane 0.1 workspace-root correctness fix (`c7f75cd`), despite stale earlier wording in the active-release known-issues section.
+- The next autonomous, high-impact item explicitly called out by the roadmap is Release 2.7 Phase D freeze prevention: preserve caching, bound per-request work, and maintain the growing SQLite store.
+- The checkout has extensive unrelated modifications. All implementation and validation must be scoped to selected reliability files and existing edits must be preserved.
+- The API host accepts and handles one TCP client at a time. Stream read/write timeouts do not bound route work, so a stuck synchronous/native call blocks `/health/live` and all later requests.
+- The persistence bridge already uses SQLite WAL mode and a 5-second busy timeout. The larger gap is bounding the route as a whole.
+- The service installer already configures Shawl `--restart` plus three SCM recovery restarts. A host deadline can therefore fail fast on a wedged request and recover without requiring a service architecture change.
+- `Get-StatusCacheTtlSeconds` and `Get-PortfolioAssessmentCacheTtlSeconds` accepted zero, disabling the caches implicated in the prior pile-up. Positive-only overrides retain explicit `refresh=true` while preventing global cache-off regression.
+- Live deployment is not currently present: Windows has no `RepoMgmtPortal` service, `127.0.0.1:7071` refuses connections, the current Windows identity is not Administrator, and `shawl` is unavailable. Production installation therefore requires an elevated Windows PowerShell session plus Shawl; isolated validation must not be described as live deployment.
+
 ## User intent
 
 - Select one repository.

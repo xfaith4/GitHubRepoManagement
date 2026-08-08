@@ -140,6 +140,14 @@ service — logging to `output\logs\service-watchdog.jsonl` and firing the
 `Install-RepoManagementService.ps1 -NightlyRestart` bounds long-uptime drift with
 a nightly restart.
 
+The API host also applies a 180-second deadline to every accepted request. If
+synchronous route work or a native call exceeds it, the host writes a
+correlation-rich incident to `output\logs\request-timeouts.jsonl` and exits so
+Shawl/SCM recovery can restart it. Override the deadline with the machine-scoped
+`REPO_MGMT_REQUEST_TIMEOUT_SECONDS` environment variable; values are clamped to
+30-3600 seconds so the guard cannot be disabled accidentally. Use a larger value
+only when a measured full-workspace operation legitimately needs it.
+
 ## Authentication
 
 The portal has two complementary credentials. The gate is turned ON by enabling

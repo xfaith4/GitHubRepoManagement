@@ -13,6 +13,11 @@ Minimal local PowerShell API host for adapter contracts.
 - `GET /health/dependencies`
 - `GET /metrics`
 - `GET /api/persistence/status`
+- Every accepted request has a bounded host deadline (180 seconds by default,
+  configurable via `REPO_MGMT_REQUEST_TIMEOUT_SECONDS`, clamped to 30-3600).
+  Deadline incidents are appended to
+  `output/logs/request-timeouts.jsonl`; the host then exits so the installed
+  Shawl/SCM recovery policy can replace the wedged process.
 - `GET /api/status`
 - `GET /api/portfolio/assessment`
 - `GET /api/operations/repos`
