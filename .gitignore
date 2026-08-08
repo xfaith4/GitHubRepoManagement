@@ -32,6 +32,11 @@ backend/modules/output/**
 /output/**
 !/output/**/
 !/output/**/.gitkeep
+# The !/output/**/ rule above re-includes every directory so .gitkeep survives,
+# which also left smoke fixtures showing as untracked. Those fixtures contain
+# nested .git directories, so `git add -A` errors out ("does not have a commit
+# checked out") or, worse, stages a fixture repo. Re-ignore them outright.
+/output/smoke/
 
 # Generated evidence
 /evidence/**

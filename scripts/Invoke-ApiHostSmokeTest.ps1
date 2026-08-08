@@ -20,7 +20,24 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# -Port alone used to boot the host on the requested port while BaseUrl stayed
+# pinned to :7071 — so the run silently exercised whatever host was ALREADY
+# listening there (typically the operator's live portal) and reported its
+# behavior as the result. Every assertion still "ran"; none of them tested the
+# host under test. Derive the URL from the port unless the caller set both.
+if (-not $PSBoundParameters.ContainsKey('BaseUrl') -and $PSBoundParameters.ContainsKey('Port')) {
+    $BaseUrl = "http://127.0.0.1:$Port"
+}
 $BaseUrl = $BaseUrl.TrimEnd('/')
+Write-Host ("[INFO] api-host smoke targeting {0} (host boots on port {1})" -f $BaseUrl, $Port) -ForegroundColor DarkGray
+
+# Declared BEFORE the try so the finally block can always read them. These are
+# assigned for real just before the first settings write; under StrictMode an
+# early failure would otherwise make the finally throw
+# "variable ... has not been set" and replace the actual error with a bogus one.
+$script:TrackedSettingsPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
+$script:TrackedSettingsBackup = $null
 
 $hostScript = Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1'
 $smokeRoot = Join-Path $WorkspaceRoot 'output\smoke\api-host'
@@ -193,11 +210,30 @@ try {
     foreach ($f in @('authRequired', 'authEnforced', 'authenticated', 'bindAddress', 'isLoopbackBind')) {
         if (-not ($authStatus.data.PSObject.Properties.Name -contains $f)) { throw "/api/auth/status missing data.$f" }
     }
-    # The booted host inherits this environment: with a machine-level API key
-    # configured (Release 2.2), enforcement is legitimately on and every smoke
-    # request already carries X-Api-Key; keyless (CI) hosts must not enforce.
-    $expectAuthEnforced = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable('REPO_MGMT_API_KEY'))
-    if ($authStatus.data.authEnforced -ne $expectAuthEnforced) { throw "/api/auth/status expected authEnforced=$expectAuthEnforced for this environment, got $($authStatus.data.authEnforced)" }
+    # Mirror the host's own rule (Test-ApiAuthRequired + a non-empty key):
+    # enforcement is governed by the requireApiKey SWITCH, not by whether a key
+    # happens to exist in the environment. The earlier version keyed only off
+    # REPO_MGMT_API_KEY, so any workstation that exports a key expected
+    # enforcement the host correctly does not apply — it passed only while the
+    # tracked settings.json carried leftover smoke pollution (an `auth` block).
+    # Cleaning that up (ROADMAP Lane 0.1) exposed the wrong premise.
+    $requireToggle = [Environment]::GetEnvironmentVariable('REPO_MGMT_REQUIRE_API_KEY')
+    $requireFromEnv = (-not [string]::IsNullOrWhiteSpace($requireToggle)) -and ($requireToggle.Trim() -match '^(?i)(1|true|yes|on)$')
+    $requireFromSettings = $false
+    if (Test-Path -LiteralPath $script:TrackedSettingsPath) {
+        try {
+            $trackedAuth = (Get-Content -LiteralPath $script:TrackedSettingsPath -Raw | ConvertFrom-Json).auth
+            if ($null -ne $trackedAuth -and ($trackedAuth.PSObject.Properties.Name -contains 'requireApiKey')) {
+                $requireFromSettings = [bool]$trackedAuth.requireApiKey
+            }
+        } catch { $requireFromSettings = $false }
+    }
+    $hasKey = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable('REPO_MGMT_API_KEY'))
+    $expectAuthEnforced = ($requireFromEnv -or $requireFromSettings) -and $hasKey
+    if ($authStatus.data.authEnforced -ne $expectAuthEnforced) {
+        throw ("/api/auth/status expected authEnforced={0} (requireApiKey env={1} settings={2}, key present={3}), got {4}" -f `
+                $expectAuthEnforced, $requireFromEnv, $requireFromSettings, $hasKey, $authStatus.data.authEnforced)
+    }
     if ($authStatus.data.isLoopbackBind -ne $true) { throw "/api/auth/status expected isLoopbackBind=true for a 127.0.0.1 bind" }
 
     $setupStatusResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/setup/status"
@@ -684,6 +720,135 @@ try {
     }
     finally {
         Remove-Item -LiteralPath $annotatedRoadmapRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    Write-Host '[STEP] Roadmap scan — repo-scoped branch (Lane 0.4)' -ForegroundColor Cyan
+    # The global-scope path is asserted above; the scoped branch (the RepoGrid
+    # per-row action) was ui-connected only. Its load-bearing property is that a
+    # single-repo scan must NOT overwrite the portfolio-wide roadmap cache —
+    # `useDefaultScope` is false for a scoped request, so Save-RoadmapCache is
+    # skipped. A regression there would let one row action silently shrink the
+    # cached portfolio to one repo.
+    $scopedScanOk = $false
+    $scopedRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("roadmap-scoped-" + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    try {
+        foreach ($fixtureName in @('scoped-target-repo', 'scoped-other-repo')) {
+            $fixtureRepo = Join-Path $scopedRoot $fixtureName
+            $null = New-Item -ItemType Directory -Path (Join-Path $fixtureRepo '.git') -Force
+            Set-Content -LiteralPath (Join-Path $fixtureRepo 'ROADMAP.md') -Encoding UTF8 -Value @"
+## Release 1.0 - $fixtureName
+
+### Engineering milestones
+
+- [ ] Pending item for $fixtureName
+- [x] Completed item for $fixtureName
+"@
+        }
+
+        # Cache state before the scoped call, so clobbering is detectable.
+        $cacheBefore = (Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/roadmap/cache").Json
+
+        $scopedResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/scan" -Body @{
+            localRoots = @($scopedRoot)
+            maxDepth   = 2
+            repoName   = 'scoped-target-repo'
+        }
+        Assert-Not503 -Name '/api/roadmap/scan (scoped)' -Response $scopedResponse
+        $scopedJson = $scopedResponse.Json
+        if ($null -eq $scopedJson) { throw "/api/roadmap/scan (scoped) did not return JSON. HTTP $($scopedResponse.StatusCode) Content-Type=$($scopedResponse.ContentType)" }
+        if (-not $scopedJson.success) { throw "/api/roadmap/scan (scoped) returned success=false. Body=$($scopedResponse.Content)" }
+
+        # The response must declare its own scope, so a consumer can tell a
+        # one-repo result from a portfolio that happens to hold one repo.
+        if ([string]$scopedJson.data.scopedRepo -ne 'scoped-target-repo') {
+            throw "Scoped scan must echo scopedRepo='scoped-target-repo'; got '$($scopedJson.data.scopedRepo)'"
+        }
+        $scopedEntries = @($scopedJson.data.entries)
+        if ($scopedEntries.Count -ne 1) {
+            throw ("Scoped scan must return exactly the target repo; got {0} entries: {1}" -f $scopedEntries.Count, (($scopedEntries | ForEach-Object { $_.repoName }) -join ', '))
+        }
+        if ([string]$scopedEntries[0].repoName -ne 'scoped-target-repo') {
+            throw "Scoped scan returned the wrong repo: '$($scopedEntries[0].repoName)'"
+        }
+
+        # The global scan over the same root must see BOTH repos — proving the
+        # single result above came from scoping, not from an empty fixture.
+        $unscopedResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/scan" -Body @{
+            localRoots = @($scopedRoot)
+            maxDepth   = 2
+        }
+        $unscopedCount = @($unscopedResponse.Json.data.entries).Count
+        if ($unscopedCount -lt 2) {
+            throw "Fixture check failed: an unscoped scan of the same root should see 2 repos, saw $unscopedCount — the scoped assertion above would be vacuous."
+        }
+        if ($null -ne $unscopedResponse.Json.data.scopedRepo) {
+            throw "An unscoped scan must report scopedRepo=null; got '$($unscopedResponse.Json.data.scopedRepo)'"
+        }
+
+        # Neither call used the default scope, so the portfolio-wide cache must
+        # be untouched by both.
+        $cacheAfter = (Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/roadmap/cache").Json
+        $beforeCount = if ($null -ne $cacheBefore -and $null -ne $cacheBefore.disk) { [int]$cacheBefore.disk.entryCount } else { -1 }
+        $afterCount = if ($null -ne $cacheAfter -and $null -ne $cacheAfter.disk) { [int]$cacheAfter.disk.entryCount } else { -1 }
+        if ($beforeCount -ge 0 -and $afterCount -ne $beforeCount) {
+            throw "A scoped/custom-root roadmap scan must not rewrite the portfolio roadmap cache (entryCount $beforeCount -> $afterCount)."
+        }
+
+        $scopedScanOk = $true
+        Write-Host ("  scoped scan ok: 1 entry (target), unscoped saw {0}, cache count unchanged at {1}" -f $unscopedCount, $afterCount) -ForegroundColor DarkGray
+    }
+    finally {
+        Remove-Item -LiteralPath $scopedRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    Write-Host '[STEP] Repository-improvement preview route (Lane 0.4)' -ForegroundColor Cyan
+    # The Guided Repository Improvement Workflow shipped 2026-08-01 as the only
+    # API route added since 2026-07-05 with no smoke coverage — which also left
+    # it outside the route-census tripwire (that census is GET-only).
+    $improvementPreviewOk = $false
+    $improvementRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("repo-improvement-" + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    $improvementRepo = Join-Path $improvementRoot 'improvement-smoke-repo'
+    try {
+        $null = New-Item -ItemType Directory -Path (Join-Path $improvementRepo '.git') -Force
+        # A deliberately thin repo: a one-line README and no ROADMAP, so the
+        # preview has real findings to report rather than an empty happy path.
+        Set-Content -LiteralPath (Join-Path $improvementRepo 'README.md') -Encoding UTF8 -Value "# improvement-smoke-repo`n"
+
+        $improvementResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/repository-improvement/preview" -Body @{
+            repoName = 'improvement-smoke-repo'
+            repoPath = $improvementRepo
+        }
+        Assert-Not503 -Name '/api/repository-improvement/preview' -Response $improvementResponse
+        if ([string]$improvementResponse.ContentType -notlike 'application/json*') {
+            throw "/api/repository-improvement/preview did not return JSON (HTTP $($improvementResponse.StatusCode), $($improvementResponse.ContentType)) — deleted route shadowed by the SPA fallback?"
+        }
+        $improvementJson = $improvementResponse.Json
+        if ($null -eq $improvementJson -or -not $improvementJson.success) {
+            throw "/api/repository-improvement/preview returned success=false for a valid repo. HTTP $($improvementResponse.StatusCode). Body=$($improvementResponse.Content)"
+        }
+        if ($null -eq $improvementJson.data) {
+            throw "/api/repository-improvement/preview returned success=true with no data. Body=$($improvementResponse.Content)"
+        }
+        if (-not ($improvementJson.data.PSObject.Properties.Name -contains 'findingCount')) {
+            throw "/api/repository-improvement/preview data missing 'findingCount'. Body=$($improvementResponse.Content)"
+        }
+        # A repo with a one-line README and no ROADMAP must produce findings; a
+        # zero here would mean the preview ran but evaluated nothing.
+        if ([int]$improvementJson.data.findingCount -lt 1) {
+            throw "Expected at least one finding for a thin repo with no ROADMAP; got findingCount=$($improvementJson.data.findingCount)"
+        }
+
+        # Required-input validation must refuse rather than guess a path.
+        $improvementBad = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/repository-improvement/preview" -Body @{ repoName = 'improvement-smoke-repo' }
+        if ($improvementBad.StatusCode -eq 200 -and $null -ne $improvementBad.Json -and $improvementBad.Json.success -eq $true) {
+            throw '/api/repository-improvement/preview must refuse a request with no repoPath, not infer one.'
+        }
+
+        $improvementPreviewOk = $true
+        Write-Host ("  repository-improvement/preview ok: findingCount={0}, missing-repoPath refused with HTTP {1}" -f $improvementJson.data.findingCount, $improvementBad.StatusCode) -ForegroundColor DarkGray
+    }
+    finally {
+        Remove-Item -LiteralPath $improvementRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     Write-Host '[STEP] Roadmap content route' -ForegroundColor Cyan
@@ -2076,11 +2241,73 @@ try {
     # text/html. So a census route that stops returning JSON has been deleted and
     # is now being shadowed by the SPA catch-all. Heavy scan routes are exercised
     # by their own steps above; this census stays to instant/cached JSON routes.
+    Write-Host '[STEP] app.db maintenance route (Release 2.7 Phase D)' -ForegroundColor Cyan
+    # GET previews without mutating; POST prunes + VACUUMs. The property worth
+    # asserting is that the trend-window floor survives the round trip — a
+    # retention window configured below 180 days must be clamped up, not
+    # honored, or the Release 2.9 trend accrual would be deleted by its own
+    # maintenance job.
+    $dbMaintenanceOk = $false
+    $maintGet = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/maintenance/database"
+    Assert-Not503 -Name '/api/maintenance/database (GET)' -Response $maintGet
+    if ($null -eq $maintGet.Json -or -not $maintGet.Json.success) {
+        throw "GET /api/maintenance/database returned success=false. HTTP $($maintGet.StatusCode). Body=$($maintGet.Content)"
+    }
+    if (-not [bool]$maintGet.Json.data.preview.reportOnly) {
+        throw 'GET /api/maintenance/database must be report-only (preview.reportOnly=true) and never mutate.'
+    }
+
+    $maintPost = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/maintenance/database" -Body @{ maxSnapshotDays = 30 }
+    Assert-Not503 -Name '/api/maintenance/database (POST)' -Response $maintPost
+    if ($null -eq $maintPost.Json -or -not $maintPost.Json.success) {
+        throw "POST /api/maintenance/database returned success=false. HTTP $($maintPost.StatusCode). Body=$($maintPost.Content)"
+    }
+    $maturityTable = @($maintPost.Json.data.tables | Where-Object { [string]$_.table -eq 'maturity_history' })
+    if ($maturityTable.Count -ne 1) { throw 'Maintenance result missing the maturity_history table entry.' }
+    if ([int]$maturityTable[0].retentionDays -lt 180) {
+        throw "Retention floor breached over HTTP: a 30-day request must clamp maturity_history up to 180 days; got $($maturityTable[0].retentionDays)."
+    }
+    if (-not [bool]$maintPost.Json.data.vacuumed) {
+        throw "POST /api/maintenance/database did not VACUUM: $($maintPost.Json.data.vacuumError)"
+    }
+    # The last-run result must now be visible, so an operator can tell a
+    # maintenance job that is running from one that is merely configured.
+    $maintGet2 = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/maintenance/database"
+    if ($null -eq $maintGet2.Json.data.lastRun) {
+        throw 'GET /api/maintenance/database must report lastRun after a POST.'
+    }
+    $dbMaintenanceOk = $true
+    Write-Host ("  maintenance ok: report-only GET, POST removed={0} vacuumed={1} floor={2}d, lastRun surfaced" -f `
+            $maintPost.Json.data.totalRowsRemoved, $maintPost.Json.data.vacuumed, $maturityTable[0].retentionDays) -ForegroundColor DarkGray
+
+    Write-Host '[STEP] Automation status route (Release 2.7 Phase D)' -ForegroundColor Cyan
+    $automationStatusOk = $false
+    $autoStatus = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/automation/status"
+    Assert-Not503 -Name '/api/automation/status' -Response $autoStatus
+    if ($null -eq $autoStatus.Json -or -not $autoStatus.Json.success) {
+        throw "GET /api/automation/status returned success=false. HTTP $($autoStatus.StatusCode). Body=$($autoStatus.Content)"
+    }
+    foreach ($autoField in @('enabled', 'intervalMinutes', 'overdue', 'healthy', 'lastOutcome', 'consecutiveFailures')) {
+        if (-not ($autoStatus.Json.data.PSObject.Properties.Name -contains $autoField)) {
+            throw "GET /api/automation/status missing '$autoField'. Body=$($autoStatus.Content)"
+        }
+    }
+    # Automation is disabled by default in this repo's settings, and disabled
+    # automation must never report itself overdue — a switched-off feature is
+    # not a failure, and alerting on it would train the operator to ignore it.
+    if (-not [bool]$autoStatus.Json.data.enabled -and [bool]$autoStatus.Json.data.overdue) {
+        throw 'Disabled automation must not report overdue=true.'
+    }
+    $automationStatusOk = $true
+    Write-Host ("  automation status ok: enabled={0} overdue={1} healthy={2} lastOutcome={3}" -f `
+            $autoStatus.Json.data.enabled, $autoStatus.Json.data.overdue, $autoStatus.Json.data.healthy, $autoStatus.Json.data.lastOutcome) -ForegroundColor DarkGray
+
     Write-Host '[STEP] Route census — critical API routes must return JSON (not the SPA fallback)' -ForegroundColor Cyan
     $censusRoutes = @(
         '/health/live', '/health/ready', '/health/dependencies', '/metrics',
         '/api/persistence/status', '/api/auth/status', '/api/auth/github/status',
-        '/api/automation/history', '/api/settings', '/api/roadmap/index',
+        '/api/automation/history', '/api/automation/status', '/api/settings', '/api/roadmap/index',
+        '/api/maintenance/database',
         '/api/cache/diagnostics', '/api/scan/schedule', '/api/execution/metrics',
         '/api/execution/queue', '/api/notifications/webhooks', '/api/roadmap/drift',
         '/api/analytics/cost', '/api/roadmap/maturity-history', '/api/agent-runs',
@@ -2177,6 +2404,10 @@ try {
         staticSkipped = { $staticSkipped }
         routeCensusChecked = { $censusRoutes.Count }
         routeCensusMissing = { $censusMissing.Count }
+        scopedRoadmapScanOk = { $scopedScanOk }
+        improvementPreviewOk = { $improvementPreviewOk }
+        dbMaintenanceOk = { $dbMaintenanceOk }
+        automationStatusOk = { $automationStatusOk }
         githubAuthProbeOk = { $githubAuthProbeOk }
         githubTokenSource = { $ghAuthData.tokenSource }
         workspaceValidationOk = { $script:WorkspaceValidationOk }

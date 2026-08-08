@@ -2219,3 +2219,199 @@ ORDER BY evaluated_at ASC, snapshot_id ASC
 
     return [pscustomobject]@{ available = $true; entries = $entries }
 }
+
+# ---------------------------------------------------------------------------
+# Release 2.7 Phase D — scheduled database maintenance
+# ---------------------------------------------------------------------------
+
+# Retention plan, table -> { column, floorDays }.
+#
+# The floor is the load-bearing part. `GET /api/portfolio/trend` answers up to
+# `days=180`, and Release 2.9 is explicitly waiting on 7- and 90-day windows to
+# accrue, so a retention window configured below the widest window the API will
+# serve would silently delete the very history that milestone is waiting on.
+# Configured values are therefore clamped UP to the floor, never honored below
+# it. Tables with no reader today are the actual size driver and carry a lower
+# floor.
+$script:AppDbRetentionPlan = [ordered]@{
+    # Read by Get-AppDbRoadmapMaturityHistory / Get-AppDbQuotaBurnHistory /
+    # Get-AppDbAgentRunMetricsHistory — these back the trend windows.
+    'maturity_history'          = @{ column = 'captured_at';  floorDays = 180 }
+    'quota_burn_snapshots'      = @{ column = 'evaluated_at'; floorDays = 180 }
+    'merge_readiness_snapshots' = @{ column = 'captured_at';  floorDays = 180 }
+    'agent_run_events'          = @{ column = 'timestamp';    floorDays = 180 }
+    # Write-only today (no reader) and the dominant growth contributor: one row
+    # per repo per scan across a 75-repo portfolio.
+    'portfolio_index_history'   = @{ column = 'captured_at';  floorDays = 30 }
+    'repo_signals'              = @{ column = 'captured_at';  floorDays = 30 }
+    'differential_scans'        = @{ column = 'COALESCE(completed_at, started_at)'; floorDays = 30 }
+}
+
+<#
+.SYNOPSIS
+    Resolves the configured snapshot-retention window from a settings object.
+.DESCRIPTION
+    Reads `retention.maxSnapshotDays`. Accepts either the hashtable shape the
+    API host holds or the PSCustomObject shape a script gets from
+    ConvertFrom-Json, so the host route and Invoke-DailyEvidence.ps1 resolve
+    the same number from the same key. Returns the default when unset or
+    non-positive; per-table floors are applied later by Invoke-AppDbMaintenance.
+
+    Note: `retention.days` already means doc-review inactivity days and is a
+    different setting — do not conflate them.
+#>
+function Get-AppDbMaintenanceRetentionDays {
+    [CmdletBinding()]
+    [OutputType([int])]
+    param(
+        [Parameter()][object]$Settings,
+        [Parameter()][int]$Default = 365
+    )
+
+    if ($null -eq $Settings) { return $Default }
+    $retention = _AppDbRecordValue -Record $Settings -Name 'retention'
+    if ($null -eq $retention) { return $Default }
+    $value = _AppDbRecordValue -Record $retention -Name 'maxSnapshotDays'
+    if ($null -eq $value) { return $Default }
+
+    $parsed = 0
+    if (-not [int]::TryParse([string]$value, [ref]$parsed)) { return $Default }
+    if ($parsed -lt 1) { return $Default }
+    return $parsed
+}
+
+<#
+.SYNOPSIS
+    Prunes aged rows from the snapshot/history tables and reclaims file space
+    with VACUUM.
+.DESCRIPTION
+    Release 2.7 Phase D. `app.db` had no scheduled maintenance and reached
+    ~138 MB in daily use. This trims only the snapshot-shaped tables named in
+    $script:AppDbRetentionPlan — the append-only operational records
+    (execution_ledger, execution_history, agent_runs, repo_curation,
+    schema_migrations) are never touched, and ops_log keeps its existing
+    row-count trim via Invoke-AppDbOpsLogTrim.
+
+    Retention windows are clamped up to each table's floor so a low
+    configuration value cannot truncate a trend window the API still serves.
+
+    Never throws: a failure on one table is recorded and the remaining tables
+    still run, mirroring Invoke-AppDbOpsLogTrim.
+.PARAMETER MaxSnapshotDays
+    Requested retention window in days. Clamped up per table.
+.PARAMETER SkipVacuum
+    Prune rows but do not VACUUM. VACUUM rewrites the whole file and needs free
+    space equal to the database size, so callers on a constrained volume can
+    reclaim logically without the rewrite.
+.PARAMETER ReportOnly
+    Count the rows that would be removed without deleting anything.
+#>
+function Invoke-AppDbMaintenance {
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter()][int]$MaxSnapshotDays = 365,
+        [Parameter()][switch]$SkipVacuum,
+        [Parameter()][switch]$ReportOnly
+    )
+
+    $started = Get-Date
+    $out = [ordered]@{
+        success          = $false
+        reason           = ''
+        databasePath     = ''
+        reportOnly       = [bool]$ReportOnly
+        requestedDays    = [int]$MaxSnapshotDays
+        sizeBeforeBytes  = $null
+        sizeAfterBytes   = $null
+        reclaimedBytes   = 0L
+        totalRowsRemoved = 0L
+        vacuumed         = $false
+        vacuumError      = ''
+        tables           = @()
+        durationMs       = 0
+        completedAt      = ''
+    }
+
+    if (-not $script:AppDbState.enabled) {
+        $out.reason = 'app-db-not-initialized'
+        return [pscustomobject]$out
+    }
+
+    $dbPath = [string]$script:AppDbState.databasePath
+    $out.databasePath = $dbPath
+    if ($MaxSnapshotDays -lt 1) { $MaxSnapshotDays = 1 }
+    $out.requestedDays = [int]$MaxSnapshotDays
+
+    try { $out.sizeBeforeBytes = [long](Get-Item -LiteralPath $dbPath -ErrorAction Stop).Length } catch { $out.sizeBeforeBytes = $null }
+
+    $tableResults = [System.Collections.Generic.List[object]]::new()
+    $removedTotal = 0L
+
+    foreach ($tableName in $script:AppDbRetentionPlan.Keys) {
+        $plan      = $script:AppDbRetentionPlan[$tableName]
+        $column    = [string]$plan.column
+        $floorDays = [int]$plan.floorDays
+        $effective = if ($MaxSnapshotDays -lt $floorDays) { $floorDays } else { $MaxSnapshotDays }
+        $cutoffIso = (Get-Date).ToUniversalTime().AddDays(-$effective).ToString('o')
+
+        $entry = [ordered]@{
+            table         = $tableName
+            column        = $column
+            retentionDays = $effective
+            floorDays     = $floorDays
+            floorApplied  = ($effective -ne $MaxSnapshotDays)
+            removed       = 0L
+            error         = ''
+        }
+
+        try {
+            if ($ReportOnly) {
+                # Column/table names cannot be parameterized; every value spliced
+                # here comes from the module-owned plan above, never from a caller.
+                $countRows = @(Invoke-AppDbQuery -DatabasePath $dbPath `
+                        -Sql ("SELECT COUNT(*) AS aged FROM {0} WHERE {1} IS NOT NULL AND {1} < @cutoff" -f $tableName, $column) `
+                        -Parameters @{ cutoff = $cutoffIso })
+                if ($countRows.Count -gt 0) {
+                    $entry.removed = [long](_AppDbRecordValue -Record $countRows[0] -Name 'aged')
+                }
+            }
+            elseif ($PSCmdlet.ShouldProcess(("{0} (rows older than {1} days)" -f $tableName, $effective), 'Delete aged rows')) {
+                $entry.removed = Invoke-AppDbNonQuery -DatabasePath $dbPath `
+                    -Sql ("DELETE FROM {0} WHERE {1} IS NOT NULL AND {1} < @cutoff" -f $tableName, $column) `
+                    -Parameters @{ cutoff = $cutoffIso }
+            }
+            $removedTotal += [long]$entry.removed
+        } catch {
+            $entry.error = $_.Exception.Message
+        }
+
+        $tableResults.Add([pscustomobject]$entry)
+    }
+
+    $out.tables           = $tableResults.ToArray()
+    $out.totalRowsRemoved = $removedTotal
+
+    if (-not $ReportOnly -and -not $SkipVacuum) {
+        if ($PSCmdlet.ShouldProcess($dbPath, 'VACUUM')) {
+            try {
+                # VACUUM cannot run inside a transaction and takes no parameters.
+                $null = Invoke-AppDbNonQuery -DatabasePath $dbPath -Sql 'VACUUM'
+                $out.vacuumed = $true
+            } catch {
+                $out.vacuumError = $_.Exception.Message
+            }
+        }
+    }
+
+    try { $out.sizeAfterBytes = [long](Get-Item -LiteralPath $dbPath -ErrorAction Stop).Length } catch { $out.sizeAfterBytes = $null }
+    if ($null -ne $out.sizeBeforeBytes -and $null -ne $out.sizeAfterBytes) {
+        $out.reclaimedBytes = [long]$out.sizeBeforeBytes - [long]$out.sizeAfterBytes
+    }
+
+    $out.durationMs  = [int]((Get-Date) - $started).TotalMilliseconds
+    $out.completedAt = (Get-Date).ToUniversalTime().ToString('o')
+    $out.success     = (@($tableResults | Where-Object { $_.error }).Count -eq 0)
+
+    return [pscustomobject]$out
+}

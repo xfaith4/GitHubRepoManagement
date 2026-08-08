@@ -13,7 +13,7 @@
 
 ## Current Status (Agent Context)
 
-**Last updated:** 2026-08-07
+**Last updated:** 2026-08-08
 
 Releases 0.4 through 2.6 and Release 2.8 are **engineering-complete and
 archived**. Their full text moved to
@@ -24,9 +24,10 @@ What remains falls into five kinds of work, and they are **not**
 interchangeable — mixing them is what previously made the roadmap read as
 "everything is done" while real gaps sat unlabelled:
 
-1. **Correctness regressions** — something shipped and then broke. One is
-   open and is the highest-priority item in this file (the tracked
-   `settings.json` now points every scan at a smoke fixture directory).
+1. **Correctness regressions** — something shipped and then broke. The two
+   open on 2026-08-07 (the tracked `settings.json` fixture path, and the
+   silent workspace-path failure) both closed 2026-08-08; see Lanes 0.1
+   and 0.6.
 2. **Credential-gated proof** — the code path is written and smoke-tested,
    but no live round trip has ever run (live submit-PR).
 3. **Genuinely unbuilt engineering** — Release 2.7 Phases C and D, two
@@ -39,16 +40,25 @@ interchangeable — mixing them is what previously made the roadmap read as
 
 **Current focus (next agent actions), in order:**
 
-- [ ] **Lane 0.1 — restore `backend/config/settings.json`.** Highest impact,
-      smallest change. Blocks nothing formally but corrupts every scan until
-      fixed.
-- [ ] **Lane 0.2 — confirm GitHub write credentials.** Gate for Release 2.7
-      Phase A, which is in turn the gate for Phase C — the largest remaining
-      product increment.
-- [ ] **Release 2.7 Phase D** — schedulable immediately, needs nothing from
-      anyone, and its freeze-prevention item is production-reliability work.
-- [ ] **Lane 0.3 / 0.4 hygiene + smoke gaps** — cheap, and they stop the next
-      regression of the class that produced Lane 0.1.
+- [ ] **Lane 0.2 — give the always-on service a readable token.** The only
+      remaining credential gap: `RepoMgmtPortal` runs as LocalSystem and
+      cannot see the User-scoped `GITHUB_TOKEN`, so the portal's GitHub calls
+      run unauthenticated. This is the gate for Release 2.7 Phase A, which is
+      in turn the gate for Phase C — the largest remaining product increment.
+- [ ] **Lane 0.4 — the automation-smoke cold-scan timeout.** A legitimate
+      cold portfolio scan now exceeds both the smoke's client timeout and the
+      Phase D 180-second request deadline, and the deadline kills the host on
+      expiry. Reliability work on the freeze guard itself.
+- [ ] **Release 2.7 Phase D — the two remaining frontend items** (value-tier
+      and automation-scope vitest units; `Dashboard.tsx` decomposition).
+      Unblocked, frontend-only, and independent of everything above.
+- [ ] **Lane 0.3 hygiene** — the five `backend/` files still carrying
+      hardcoded `G:\` workspace defaults.
+
+**Closed 2026-08-08:** Lane 0.1 (settings.json regression), Lane 0.6
+(silent workspace-path failure), Lane 0.5's two data-integrity findings,
+Lane 0.2's credential reissue + live-validation probe, the two Lane 0.4 smoke
+gaps, and four of Release 2.7 Phase D's six items.
 
 ---
 
@@ -110,11 +120,11 @@ checkbox alone is not enough — it does not distinguish "backend exists" from
 Render the state inline on each milestone in italics, e.g.:
 
 ```markdown
-- [x] Add `GET /api/portfolio/assessment` route. *(state: smoke-tested)*
+- [x] Add `GET /api/portfolio/assessment` route. _(state: smoke-tested)_
 ```
 
-**Checkbox rule (added 2026-08-07).** `[x]` means *nothing remains for that
-item in this roadmap*. An item whose engineering is complete but whose proof
+**Checkbox rule (added 2026-08-07).** `[x]` means _nothing remains for that
+item in this roadmap_. An item whose engineering is complete but whose proof
 is still outstanding stays `[ ]` and names the resource it waits on. The
 2026-08-07 reorganization found several `[x]` items carrying "remaining
 for `operator-verified`" prose; those were split — the shipped half went to
@@ -183,8 +193,8 @@ closes or a new dependency appears.
    surfaces, tap-through agent-run list) — engineering work, no gates.
 2. **Release 2.9 field proof** — batch the elevated/hardware/human checks
    into as few sessions as possible; several share a setup (an elevated
-   shell covers the watchdog *and* the service installer; a phone session
-   covers 2.5 *and* 2.6).
+   shell covers the watchdog _and_ the service installer; a phone session
+   covers 2.5 _and_ 2.6).
 3. **Release 2.9 trend accrual** — closes itself as calendar time passes;
    requires only that capture keeps running.
 
@@ -263,22 +273,22 @@ Phase A — Credential-gated proof:
 - [ ] Prove a live submit-PR round trip on one write-enabled repo: branch
       push, PR creation, PR visible in the target repo, run recorded.
       Closes the Release 2.4 residual and opens Phase C.
-      *(state: planned — the dry-run plan path is smoke-tested; only the
-      live round trip is missing. Explicit operator-authorized action.)*
+      _(state: planned — the dry-run plan path is smoke-tested; only the
+      live round trip is missing. Explicit operator-authorized action.)_
 
 Phase C — Scheduled roadmap-item packaging (the prize; gated on Phase A):
 
 - [ ] For each favorite repo with a ready L3+ roadmap, select the top-value
       pending item using the settled scoring semantics (MAX within a
       dimension + `effortFit` floor), build a task packet + repair-PR plan,
-      and queue it for approval. *(state: planned — blocked on Phase A)*
+      and queue it for approval. _(state: planned — blocked on Phase A)_
 - [ ] Gate every packaged item through the quota/budget guard; skip and log
-      when over budget. *(state: planned)*
+      when over budget. _(state: planned)_
 - [ ] Notify per run; approval triggers dispatch (live PR once Phase A
-      passes). No auto-merge. *(state: planned)*
+      passes). No auto-merge. _(state: planned)_
 - [ ] Smoke: a scheduled run ranks + packages one fixture repo's top item,
       honors the quota-refusal path, and dispatches only on explicit
-      approval. *(state: planned)*
+      approval. _(state: planned)_
 
 Phase D — Hardening & observability (parallelizable, autonomous, unblocked):
 
@@ -288,24 +298,66 @@ Phase D — Hardening & observability (parallelizable, autonomous, unblocked):
       per-request work timeout so one blocked native call — e.g. the SQLite
       bridge — cannot wedge the single-threaded accept loop; schedule
       `app.db` maintenance (VACUUM + snapshot retention; ~138 MB and
-      growing). *(state: in progress — cache-off regression guards and the
-      180-second host request deadline implemented and smoke-tested
-      2026-08-08; live service deployment is pending an elevated Windows
-      install. Scheduled `app.db` VACUUM + snapshot retention also remains.
-      The deadline records the route/correlation ID and exits a wedged host
-      so Shawl/SCM recovery restarts it.)*
+      growing). _(state: in progress — all three engineering parts are now
+      built and smoke-tested; only live service deployment (elevated Windows
+      install) remains.)_ Cache-off regression guards and the 180-second host
+      request deadline landed 2026-08-08; the deadline records the
+      route/correlation ID and exits a wedged host so Shawl/SCM recovery
+      restarts it. **Scheduled `app.db` maintenance landed 2026-08-08:**
+      `Invoke-AppDbMaintenance` prunes the seven snapshot/history tables and
+      runs `VACUUM`, exposed as report-only `GET /api/maintenance/database`
+      and mutating `POST /api/maintenance/database`, and driven daily from
+      [`Invoke-DailyEvidence.ps1`](scripts/Invoke-DailyEvidence.ps1) through
+      the host's own route (the host holds the SQLite connections, so an
+      out-of-process VACUUM would contend for the write lock). Retention
+      windows are clamped **up** to a per-table floor — 180 days for every
+      table with a history reader — because `GET /api/portfolio/trend` answers
+      up to `days=180` and Release 2.9 is waiting on 7/90-day accrual; a low
+      configured window must never delete the history that milestone needs.
+      Append-only operational records (`execution_ledger`,
+      `execution_history`, `agent_runs`, `repo_curation`) are never touched.
+      **Evidence:** module smoke asserts report-only counts without deleting,
+      the 180-day floor protecting 100-day-old rows against a 30-day request,
+      VACUUM running, and `ops_log` untouched; api-host smoke
+      `dbMaintenanceOk=True` asserts the floor survives the HTTP round trip.
 - [ ] Complete the frontend unit-test set (vitest). `needsAttention` and
       `viewMeta` are covered
       ([`needsAttention.test.ts`](frontend/lib/needsAttention.test.ts),
       [`viewMeta.test.ts`](frontend/viewMeta.test.ts)); **value tiers** and
-      the **automation scope selector** are not. *(state: planned —
-      2 of 4 named units covered)*
+      the **automation scope selector** are not. _(state: planned —
+      2 of 4 named units covered)_
 - [ ] Decompose [`Dashboard.tsx`](frontend/components/Dashboard.tsx):
       extract the view-router/tab shell and the summary/mission sections.
-      *(state: planned — 2,376 lines as of 2026-08-07)*
-- [ ] Add scheduler failure alerting (webhook) + an automation-status
+      _(state: planned — 2,376 lines as of 2026-08-07)_
+- [x] Add scheduler failure alerting (webhook) + an automation-status
       surface in the dashboard, so a scheduled run that stops running is
-      visible rather than silently absent. *(state: planned)*
+      visible rather than silently absent. _(state: smoke-tested 2026-08-08)_
+      Interval firing is delegated to an external cron, so the failure mode
+      was silence: the config kept reading "enabled" while history quietly
+      stopped growing. `Get-AutomationHealth`
+      ([`Automation.DocRefinement.ps1`](backend/modules/automation/Automation.DocRefinement.ps1))
+      derives `overdue` / `consecutiveFailures` / `alert` from the gap between
+      the configured interval and the newest run record (2x grace, so one
+      skipped tick is tolerated and two alert); `GET /api/automation/status`
+      serves it; `POST /api/automation/run` now fires the same
+      `execution.failed` notification the portal watchdog uses when a run
+      errors, instead of burying the errors in an HTTP 200 payload.
+      `Get-AutomationRunOutcome` classifies ok/partial/failed — a zero-target
+      run is `ok`, because "no favorite repo needed doc work" is a healthy
+      night, and alerting on it would train the operator to ignore the alert.
+      The dashboard renders
+      [`AutomationStatusBadge.tsx`](frontend/components/AutomationStatusBadge.tsx)
+      on the Operations tab off
+      [`automationStatus.ts`](frontend/lib/automationStatus.ts), polling every
+      2 minutes because "overdue" only becomes true with the passage of time.
+      A failed status call renders **unknown**, never healthy. **Evidence:**
+      module smoke (fresh=healthy, 5h gap on a 60-min interval=overdue,
+      disabled=silent, outcome classification, and a timezone tripwire —
+      `ConvertFrom-Json` returns `finishedAt` as a kind-less UTC `DateTime`
+      and converting it twice put `lastRunAt` in the future, silently
+      disabling overdue detection without failing any boolean assertion);
+      api-host smoke `automationStatusOk=True`; 10 vitest cases in
+      [`automationStatus.test.ts`](frontend/lib/automationStatus.test.ts).
 
 #### Acceptance criteria
 
@@ -349,8 +401,14 @@ that dispatch fires only on an explicit approval action.
   2026-07-11): process alive, port listening, not responding. The watchdog
   safety net is shipped but unproven at SYSTEM; the root-cause prevention
   work is still open in Phase D.
-- **Risk — `app.db` growth.** ~138 MB in daily use with no scheduled
-  VACUUM or snapshot retention.
+- **Risk — `app.db` growth.** ~138 MB in daily use. **Mitigated 2026-08-08:**
+  scheduled prune + VACUUM ships in Phase D and runs daily from
+  `Invoke-DailyEvidence.ps1`; per-table retention floors keep the trend
+  windows Release 2.9 is waiting on intact.
+- **Risk — the freeze guard kills the host during a legitimate cold scan.**
+  The Phase D request deadline defaults to 180s and terminates the host on
+  expiry, but a cold full-portfolio assessment over the real 75-repo
+  workspace exceeds that. Tracked as the top open item in Lane 0.4.
 
 **Dependencies:** `/api/scan/schedule` (1.2), repo curation states (2.3
 Ph5), AI doc-improve preview/apply (1.9), the notification hub (1.1), the
@@ -359,15 +417,17 @@ GitHub write credentials for Phase A onward.
 
 **Known issues:**
 
-- [ ] Tracked `backend/config/settings.json` points `inventory.localRoots`
-      at a WSL smoke-fixture directory (Lane 0.1). Any scheduled automation
-      run enumerates fixtures instead of the real portfolio until it is
-      fixed — so **Lane 0.1 gates meaningful Phase D validation**, even
-      though it is not a formal Phase D dependency.
-- [ ] The `GITHUB_TOKEN` fine-grained PAT provisioned 2026-07-06 carried a
-      ~30-day window and is presumed expired (Lane 0.2). `GET
-      /api/auth/github/status` reporting `mode=pat` does **not** prove the
-      token is still valid — it reports configuration, not liveness.
+- [x] Tracked `backend/config/settings.json` pointed `inventory.localRoots`
+      at a WSL smoke-fixture directory. _(closed 2026-08-08 — Lane 0.1.)_
+      Restoring the real root made scheduled automation enumerate the real
+      portfolio, and also exposed the cold-scan timeout now tracked in
+      Lane 0.4.
+- [x] The `GITHUB_TOKEN` fine-grained PAT provisioned 2026-07-06 expired.
+      _(closed 2026-08-07 — Lane 0.2; reissued, and `GET
+/api/auth/github/status?validate=1` now probes liveness rather than
+      reporting configuration.)_ **Still open in Lane 0.2:** the LocalSystem
+      service cannot read the User-scoped token, which is what actually gates
+      Phase A.
 
 **Traceability:** Phase B shipped
 [`Automation.DocRefinement.ps1`](backend/modules/automation/Automation.DocRefinement.ps1)
@@ -378,8 +438,17 @@ GitHub write credentials for Phase A onward.
 /api/scan/schedule`, with module + api-host smoke coverage. Phase D's
 shipped half is [`Watch-PortalHealth.ps1`](scripts/service/Watch-PortalHealth.ps1),
 [`Install-PortalWatchdog.ps1`](scripts/service/Install-PortalWatchdog.ps1),
-and the reworked
-[`Install-RepoManagementService.ps1`](scripts/Install-RepoManagementService.ps1).
+the reworked
+[`Install-RepoManagementService.ps1`](scripts/Install-RepoManagementService.ps1),
+[`RequestDeadline.ps1`](backend/api-host/RequestDeadline.ps1) with the
+cache-off regression guards, `Invoke-AppDbMaintenance` /
+`Get-AppDbMaintenanceRetentionDays` in
+[`Persistence.Store.ps1`](backend/modules/persistence/Persistence.Store.ps1)
+behind `GET`/`POST /api/maintenance/database`, and `Get-AutomationHealth` /
+`Get-AutomationRunOutcome` in
+[`Automation.DocRefinement.ps1`](backend/modules/automation/Automation.DocRefinement.ps1)
+behind `GET /api/automation/status`, surfaced by
+[`AutomationStatusBadge.tsx`](frontend/components/AutomationStatusBadge.tsx).
 Verification runs through `scripts/Invoke-TestSuite.ps1` (`npm test`), mirrored
 in [`.github/workflows/ci-smoke.yml`](.github/workflows/ci-smoke.yml); the
 Phase D frontend units live beside
@@ -394,7 +463,7 @@ Operator-facing behavior is documented in
 | Phase A: Unblockers                  | Live submit-PR proof on one write-enabled repo                                                          | **planned — blocked on credentials (Lane 0.2)**          | —          | —           | —          |
 | Phase B: Scheduled doc refinement    | Scheduler + favorite-scoped doc-improve previews + digest + run history                                 | **done — smoke-tested** (2026-07-06) — see archive       | 2026-07-06 | —           | —          |
 | Phase C: Scheduled roadmap packaging | Top-value item packaging + quota guard + approve-to-dispatch                                            | **planned — blocked on Phase A**                         | —          | —           | —          |
-| Phase D: Hardening & observability   | Frontend unit tests, Dashboard decomposition, failure alerting, freeze prevention, auth operator-verify | **planned — 2 of 6 items shipped; 4 open, none blocked** | —          | —           | —          |
+| Phase D: Hardening & observability   | Frontend unit tests, Dashboard decomposition, failure alerting, freeze prevention, auth operator-verify | **in progress — 4 of 6 shipped; 2 open (frontend)**      | —          | —           | —          |
 
 #### Budget guardrail
 
@@ -441,30 +510,30 @@ Mobile completion (no gates — build these first):
 - [ ] Apply touch ergonomics beyond the Release 2.5 Phase 1 surfaces:
       minimum ~44px touch targets and a tap equivalent for every hover-only
       affordance (tooltips, row actions, rationale popovers) across the
-      Phases 2-3 surfaces. *(state: scaffolded — Phase 1 surfaces done
+      Phases 2-3 surfaces. _(state: scaffolded — Phase 1 surfaces done
       2026-07-04 (bottom nav 56px, card actions 44px); the rest was
-      deferred and never built)*
+      deferred and never built)_
 - [ ] Add the tap-through mobile agent-run list from the agent-activity
-      indicator: status, repo, phase, elapsed time. *(state: planned — the
+      indicator: status, repo, phase, elapsed time. _(state: planned — the
       indicator ships and `/api/agent-runs` data is already reachable; only
-      the mobile list view is missing)*
+      the mobile list view is missing)_
 
 Field proof — elevated (SYSTEM) session, batch together:
 
 - [ ] Run the elevated
       [`Install-PortalWatchdog.ps1`](scripts/service/Install-PortalWatchdog.ps1)
       and confirm a real freeze-and-recover: kill + `Restart-Service
-      RepoMgmtPortal`, with the action appended to
+RepoMgmtPortal`, with the action appended to
       `output/logs/service-watchdog.jsonl` and the `execution.failed`
-      webhook fired. *(state: smoke-tested → needs `operator-verified`; the
+      webhook fired. _(state: smoke-tested → needs `operator-verified`; the
       decision logic and a dry-run against the actual frozen host, PID 5704,
-      are already proven)*
+      are already proven)_
 - [ ] Operator-verify the reworked
       [`Install-RepoManagementService.ps1`](scripts/Install-RepoManagementService.ps1):
       elevated install / repair / `icacls` / scheduled-task registration,
       and confirm secrets resolve from machine env vars with the tracked
-      `settings.json` staying secret-free. *(state: smoke-tested → needs
-      `operator-verified`; pure logic is covered by module smoke)*
+      `settings.json` staying secret-free. _(state: smoke-tested → needs
+      `operator-verified`; pure logic is covered by module smoke)_
 
 Field proof — physical Android device on the LAN, batch together:
 
@@ -472,35 +541,35 @@ Field proof — physical Android device on the LAN, batch together:
       repo health, agent activity, prompt refinement, roadmap dispatch —
       plus real touch input and on-device home-screen install. Steps in
       [`lan-mobile-setup.md`](docs/reference/lan-mobile-setup.md).
-      *(state: smoke-tested at an emulated 390px viewport → needs
-      `operator-verified` on hardware)*
+      _(state: smoke-tested at an emulated 390px viewport → needs
+      `operator-verified` on hardware)_
 - [ ] Confirm the Release 2.6 clarity affordances pass on the same device:
       data-source indicator, per-tab subtitles, advanced-filters toggle, and
-      the orientation overlay. *(state: smoke-tested → needs `operator-verified`)*
+      the orientation overlay. _(state: smoke-tested → needs `operator-verified`)_
 
 Field proof — human / credential / calendar:
 
 - [ ] Operator-verify Release 2.1 against the live workspace and record the
-      sign-off, closing the release formally. *(state: smoke-tested against
+      sign-off, closing the release formally. _(state: smoke-tested against
       live data — `output/app.db`, the real 68-repo `F:\Development` scan —
-      → needs a recorded human sign-off)*
+      → needs a recorded human sign-off)_
 - [ ] Execute one real `claude` run through
       [`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1)
       in the operator's authenticated session: claim → branch → run →
       verify → commit → `awaiting-review`. Closes the Release 2.8 residual.
-      *(state: smoke-tested dry-run E2E → needs `operator-verified`)*
+      _(state: smoke-tested dry-run E2E → needs `operator-verified`)_
 - [ ] Operator-verify the auth + shared-LAN path so automation runs on a bound,
-      authenticated host. *(state: planned — carried over from 2.7 Phase D)*
+      authenticated host. _(state: planned — carried over from 2.7 Phase D)_
 - [ ] (Optional) Prove live GitHub App installation-token exchange
       (`Get-GitHubAppInstallationToken`) + auto-refresh on one registered
-      app, closing the Release 2.2 residual. *(state: planned — not
-      required; the PAT path supersedes it)*
+      app, closing the Release 2.2 residual. _(state: planned — not
+      required; the PAT path supersedes it)_
 - [ ] Let the Release 2.3 Phase 2 trend windows accrue: confirm
       `GET /api/portfolio/trend` reports a real 7-day, then 90-day, window.
-      *(state: smoke-tested — rollup logic is live and
+      _(state: smoke-tested — rollup logic is live and
       `status=history-backed`; only calendar time is missing. Keep
       [`Invoke-DailyEvidence.ps1`](scripts/Invoke-DailyEvidence.ps1)
-      running — it accrues history as a side effect.)*
+      running — it accrues history as a side effect.)_
 
 #### Acceptance criteria
 
@@ -535,7 +604,7 @@ Continuous, not release-scoped. Completed cross-cutting items were archived
 ### Lane 0.1 — Configuration regression (P0)
 
 - [x] **Restore `backend/config/settings.json` `inventory.localRoots` to the
-      real workspace root and prevent recurrence.** *(state: done 2026-08-08)*
+      real workspace root and prevent recurrence.** _(state: done 2026-08-08)_
       Commit `69dcc2d` (2026-08-01) committed a smoke-run mutation into the
       **tracked** config: `localRoots` pointed at
       `/mnt/f/Development/GitHubRepoManagement/output/smoke/api-host/portfolio-fixture-repos`
@@ -559,43 +628,43 @@ Continuous, not release-scoped. Completed cross-cutting items were archived
 ### Lane 0.2 — Credential freshness
 
 - [x] **Reissue GitHub write credentials — confirmed expired 2026-08-07.**
-      *(state: done 2026-08-07)* The fine-grained PAT provisioned 2026-07-06
+      _(state: done 2026-08-07)_ The fine-grained PAT provisioned 2026-07-06
       carried a ~30-day window and expired; `gh api` returned
       `HTTP 401: Bad credentials`. Reissued 2026-08-07 and set as the
       **User**-scoped `GITHUB_TOKEN`. **Evidence:** `gh api user` returns
       `xfaith4`; `Github-Authentication-Token-Expiration: 2026-11-06
-      03:41:59 UTC`. Two follow-ups below.
-- [ ] **Grant the PAT `Checks: Read`.** *(state: planned — non-blocker)*
+03:41:59 UTC`. Two follow-ups below.
+- [ ] **Grant the PAT `Checks: Read`.** _(state: planned — non-blocker)_
       The reissued token still 403s on
       `repos/{owner}/{repo}/commits/{ref}/check-runs`
       (`Resource not accessible by personal access token`), so
       `gh pr checks <n> --watch` is unusable and the merge loop relies on
       `mergeStateStatus` as a proxy. Metadata, Contents, Pull requests, and
       Actions reads all pass. Verified 2026-08-07.
-- [ ] **Give the always-on service a readable token.** *(state: planned —
-      blocks Release 2.7 Phase A)* `RepoMgmtPortal` runs as **LocalSystem**,
+- [ ] **Give the always-on service a readable token.** _(state: planned —
+      blocks Release 2.7 Phase A)_ `RepoMgmtPortal` runs as **LocalSystem**,
       which cannot see the User-scoped `GITHUB_TOKEN`; the ImagePath passes
       no `-GitHubToken` and Machine scope is unset, so the portal's GitHub
       calls run unauthenticated. Fix:
       `.\scripts\Install-RepoManagementService.ps1 -Action Repair
-      -GitHubToken $env:GITHUB_TOKEN` (sets Machine scope, restarts).
+-GitHubToken $env:GITHUB_TOKEN` (sets Machine scope, restarts).
       Confirm afterwards with `GET /api/auth/github/status?validate=1` →
       `tokenEnvScope=Machine`, `liveCheck.valid=true`. Verified unset
       2026-08-07.
 - [x] **Add a live token-validation probe.** `GET /api/auth/github/status`
-      reported the configured *mode* (`mode=pat`), not token liveness — it
-      reported healthy throughout the expiry above. *(state: done
-      2026-08-07)* The route now accepts `?validate=1`, which probes an
+      reported the configured _mode_ (`mode=pat`), not token liveness — it
+      reported healthy throughout the expiry above. _(state: done
+      2026-08-07)_ The route now accepts `?validate=1`, which probes an
       authenticated `GET /user` and returns `liveCheck.{valid, login,
-      expiresAt}`; Settings surfaces it behind a **Test connection** button.
+expiresAt}`; Settings surfaces it behind a **Test connection** button.
       The same route also reports `tokenSource`, `tokenEnvScope`, and
       `runningAsService` so an unreadable variable is distinguishable from an
       unset one. **Evidence:** `scripts/Invoke-ApiHostSmokeTest.ps1` step
-      *"GitHub auth — env-var-name indirection"* asserts the probe fields and
+      _"GitHub auth — env-var-name indirection"_ asserts the probe fields and
       the 400 rejections; run 2026-08-07 exit 0, summary
       `githubAuthProbeOk=True githubTokenSource=env`.
 - [x] **Remove the last stored-secret path: `readme.copilotApiKey`.**
-      *(state: done 2026-08-07)* `Readme.Generator.ps1` `_ResolveApiKey`
+      _(state: done 2026-08-07)_ `Readme.Generator.ps1` `_ResolveApiKey`
       accepted a literal Copilot key stored in `settings.json` (priority 1)
       ahead of the `readme.copilotApiKeyEnvVar` name — the same leak shape
       the `secrets.githubToken` removal closed. The literal path is gone;
@@ -609,12 +678,12 @@ Continuous, not release-scoped. Completed cross-cutting items were archived
 
 - [ ] Normalize hardcoded `G:\Development\GitHubRepoManagement`
       `-WorkspaceRoot` defaults to `$PSScriptRoot`-derived paths so the
-      suite runs unmodified from any clone location. *(state: in progress —
+      suite runs unmodified from any clone location. _(state: in progress —
       confirmed 2026-08-07 still present in `backend/adapters/Adapters.ps1`,
       `backend/api-host/Start-RepoManagementApiHost.ps1`,
       `backend/modules/docreview/Invoke-DocReviewInventory.ps1`, and both
       reconcile modules — a wider blast radius than the original note
-      recorded)* **Partly closed 2026-08-08:**
+      recorded)_ **Partly closed 2026-08-08:**
       [`scripts/Invoke-ModuleSmokeTest.ps1`](scripts/Invoke-ModuleSmokeTest.ps1)
       now defaults to `(Split-Path -Parent $PSScriptRoot)`. This one mattered
       more than the note implied: the required pre-commit gate failed on its
@@ -627,23 +696,22 @@ Continuous, not release-scoped. Completed cross-cutting items were archived
 - [ ] Implement the documented maturity **caps** that the auditor still does
       not apply: `ROADMAP_MATURITY_MODEL.md` states "any critical finding caps
       maturity at L1" and "any warning finding caps maturity at L3", but
-      `Invoke-AuditRoadmapContract` only does weighted-score arithmetic. The
-      >1-active-release cap was implemented 2026-08-07; these two remain
-      doc-only. *(state: planned — pre-existing doc↔code drift, surfaced while
-      fixing the rules v1.1 regression)*
+      `Invoke-AuditRoadmapContract` only does weighted-score arithmetic. The >1-active-release cap was implemented 2026-08-07; these two remain
+      doc-only. _(state: planned — pre-existing doc↔code drift, surfaced while
+      fixing the rules v1.1 regression)_
 - [ ] Repair `CLAUDE.md`'s dangling `@_base.md` and
       `@.claude/modes/implementer.md` imports — neither file exists. The
       mode line is managed by `ccmode.ps1`, so fix at the tool level.
-      *(state: planned — confirmed still broken 2026-08-07)*
+      _(state: planned — confirmed still broken 2026-08-07)_
 - [ ] Tune `tools/Test-RoadmapStructure.ps1` for the template's own layout:
       `ROADMAP_TEMPLATE.md` puts the full execution contract inside the
       `## Release X — Title` block, so R013's 120-line cap fires on any
       conformant active release, and RQ001 wants a `Status` line on the
       "Active release detail" pointer that must not restate it (declaring it
       twice is an RQ003 error). Exempt the active release from R013 and let
-      the pointer block be status-free. *(state: planned — 3 advisory
+      the pointer block be status-free. _(state: planned — 3 advisory
       warnings today, 0 errors; surfaced 2026-08-07 when this repo was made
-      conformant with its own standard)*
+      conformant with its own standard)_
 
 **Shipped 2026-08-07 (from this lane):** a standards↔spec drift tripwire and an
 "every shipped audit rule is implemented by the auditor" tripwire, both in
@@ -654,27 +722,73 @@ every maturity score. Both were adversarially proven to fail when violated.
 
 ### Lane 0.4 — Smoke coverage gaps
 
-- [ ] Add a scoped-path assertion for the repo-scoped roadmap scan
+- [x] Add a scoped-path assertion for the repo-scoped roadmap scan
       (`POST /api/roadmap/scan` with a `repoName`/`targetRepo` body) to the
-      api-host smoke. The global-scope path is already asserted; the scoped
-      branch and the RepoGrid per-row action are `ui-connected` only.
-      *(state: ui-connected → needs `smoke-tested`)*
-- [ ] Add an api-host smoke assertion for
+      api-host smoke. _(state: done 2026-08-08 — `smoke-tested`)_ Asserts the
+      scoped call returns exactly the target repo, echoes
+      `scopedRepo`, and — the load-bearing property — does **not** rewrite the
+      portfolio-wide roadmap cache, so one RepoGrid row action cannot silently
+      shrink the cached portfolio to a single repo. A companion unscoped scan
+      over the same two-repo fixture asserts it sees both, so the
+      single-result assertion cannot pass vacuously against an empty fixture.
+      **Evidence:** api-host smoke `scopedRoadmapScanOk=True`.
+- [x] Add an api-host smoke assertion for
       `POST /api/repository-improvement/preview` (the Guided Repository
-      Improvement Workflow shipped 2026-08-01). It is the only API route
-      added since 2026-07-05 with no coverage, which also means the
-      route-census tripwire does not protect it. *(state: planned)*
+      Improvement Workflow shipped 2026-08-01). _(state: done 2026-08-08 —
+      `smoke-tested`)_ Runs the preview against a deliberately thin fixture
+      repo (one-line README, no ROADMAP) and asserts `findingCount >= 1`, so a
+      preview that runs but evaluates nothing fails; also asserts a request
+      with no `repoPath` is refused rather than inferred. **Evidence:**
+      api-host smoke `improvementPreviewOk=True`.
+**Fixed 2026-08-08 while closing the two gaps above** — three defects in the
+api-host smoke harness itself, all of the "the gate passed without testing
+anything" class:
+
+- **`-Port` did not move `-BaseUrl`.** `-Port 7093` booted the host under test
+  on 7093 while `BaseUrl` stayed pinned to `http://127.0.0.1:7071`, so the run
+  silently exercised whatever host was already listening there — typically the
+  operator's live portal — and reported its behavior as the result. Every
+  assertion still ran; none tested the host under test. `BaseUrl` is now
+  derived from `Port` unless the caller sets both, and the run logs its target.
+- **The `finally` block masked every early failure.**
+  `$script:TrackedSettingsBackup` was assigned inside `try`, well after the
+  first steps, so under `Set-StrictMode` any failure before that point made
+  teardown throw _"variable has not been set"_ and replace the real error.
+  Both variables are now declared before the `try`.
+- **The auth assertion tested the wrong input.** It inferred expected
+  enforcement from `REPO_MGMT_API_KEY` alone, but the host gates on
+  `Test-ApiAuthRequired` (`auth.requireApiKey` / `REPO_MGMT_REQUIRE_API_KEY`)
+  **and** a non-empty key. It passed only while the tracked `settings.json`
+  carried leftover smoke pollution; the Lane 0.1 cleanup exposed the wrong
+  premise. The assertion now mirrors the host's own rule and names all three
+  inputs when it fails.
+
+- [ ] **Warm the assessment cache before the automation smoke step, or raise
+      its client timeout.** _(state: planned — non-blocker, surfaced
+      2026-08-08)_ `POST /api/automation/run` calls
+      `Get-OperationsReposPayload`, which does a **cold full-portfolio
+      assessment**. That step was fast only while the tracked `settings.json`
+      pointed at a fixture directory; with the real root restored (Lane 0.1)
+      it exceeds the smoke's default `-RequestTimeoutSec 180` on the real
+      75-repo workspace, so `./scripts/Invoke-ApiHostSmokeTest.ps1` needs
+      `-RequestTimeoutSec 900` to pass locally. Worse, the **Phase D request
+      deadline defaults to 180s and terminates the host on expiry** — so a
+      legitimate cold scan can trip the freeze guard and kill the host it is
+      meant to protect. Decide whether the deadline should exempt known
+      long-running scan routes or whether the cold scan itself needs bounding;
+      until then, `REPO_MGMT_REQUEST_TIMEOUT_SECONDS=900` is the workaround.
+      This is the highest-value item left in this lane.
 - [ ] Archive the root worklogs `findings.md`, `progress.md`, and
       `task_plan.md` to [`docs/history/worklogs/`](docs/history/worklogs/),
       matching the 2026-07-15 cleanup convention they were re-created
-      against. *(state: planned — cosmetic, but the root keeps re-accruing
+      against. _(state: planned — cosmetic, but the root keeps re-accruing
       these; consider a `.gitignore` entry or a documented worklog location
-      so the convention holds without a manual sweep each time.)*
+      so the convention holds without a manual sweep each time.)_
 
 ### Lane 0.6 — Workspace-path failure was silent (P0, 2026-08-08)
 
 - [x] **Reject a workspace path that is not on disk, and report one that is
-      already saved.** *(state: done 2026-08-08)* An operator set a workspace
+      already saved.** _(state: done 2026-08-08)_ An operator set a workspace
       path and got zero repositories with no error: `Backend: Online`, a green
       `Source: Local` badge, and a "successful" 0.1s scan. Two independent
       causes. First, the tracked config pointed at a fixture path (Lane 0.1).
@@ -682,7 +796,7 @@ every maturity score. Both were adversarially proven to fail when violated.
       existence check**, while `POST /api/setup` had always rejected a missing
       root — so the Setup Wizard was guarded and the Settings dialog was the
       unvalidated way in. `Get-LocalFolderInventory` then logged
-      *"Skipping invalid root"* to the host log and returned an empty
+      _"Skipping invalid root"_ to the host log and returned an empty
       inventory, which the adapter reported as a successful scan. Fixes:
       `POST /api/settings` returns HTTP 400 naming the path and persists
       nothing; the status adapter and `GET /api/status` both report
@@ -699,7 +813,7 @@ every maturity score. Both were adversarially proven to fail when violated.
       **75 repositories** with `missingRoots` empty, and over the mistyped path
       returned `success=True`, `repoCount=0`, `missingRoots` populated.
 - [ ] Point the zero-scope action hint at the specific cause when a root is
-      missing. *(state: planned — non-blocker, cosmetic)* The ActionBar hint
+      missing. _(state: planned — non-blocker, cosmetic)_ The ActionBar hint
       still reads the generic "Scan a workspace first — set the workspace path
       in Settings, then Refresh" while the red alert directly above it names
       the actual missing path. The remedy it names is correct, so this is
@@ -713,7 +827,7 @@ data-integrity findings from that audit were fixed the same day (see
 evidence below); these two are design-dependent and deliberately deferred.
 
 - [x] **Reconcile the live-scan vs. persisted-index contradiction.**
-      *(state: done 2026-08-08)* The header read the live scan (`repos`)
+      _(state: done 2026-08-08)_ The header read the live scan (`repos`)
       while the Queue buckets, "68% Avg Maturity", and "15 Ready Repos" read
       the persisted indexes in `output/index/`, so a 0-repo scan rendered
       populated figures beside a `0 repos` count and read as a broken tool.
@@ -734,7 +848,7 @@ evidence below); these two are design-dependent and deliberately deferred.
       `vite build` clean with every new marker present in `dist`; module
       smoke exit 0.
 - [x] **Disable repo-acting buttons when nothing is in scope.**
-      *(state: done 2026-08-08)* Pull, Fetch, Report, Doc Review, and Roadmap
+      _(state: done 2026-08-08)_ Pull, Fetch, Report, Doc Review, and Roadmap
       Scan stayed clickable at 0 repos, letting the operator click into a
       no-op instead of being pointed at the blocker. `ActionBar` now takes a
       `repoCount` prop and gates those five on
@@ -749,14 +863,14 @@ evidence below); these two are design-dependent and deliberately deferred.
       Evaluate, Dispatch Release) are gated on `isKnownEmptyScope`;
       read-only actions (Audit, Lint, Roadmap, Preview Task) stay enabled,
       because inspecting the carried-over data is how an operator diagnoses
-      *why* the scan came back empty. `isKnownEmptyScope` returns false for an
+      _why_ the scan came back empty. `isKnownEmptyScope` returns false for an
       unknown count, so a view that never receives `liveRepoCount` is never
       disabled by omission. **Evidence:** as above;
       `scripts/frontend-smoke.cjs` `bulkSelectionNotePromoted` made
       state-aware so it asserts the correct variant rather than breaking on
       the empty-workspace path.
-- [ ] **Add a confirmation step to implicit bulk-scope actions.** *(state:
-      planned — non-blocker)* With no rows selected, Pull/Fetch/Report apply
+- [ ] **Add a confirmation step to implicit bulk-scope actions.** _(state:
+      planned — non-blocker)_ With no rows selected, Pull/Fetch/Report apply
       to the **entire filtered set**. The amber callout in
       [`ActionBar.tsx`](frontend/components/ActionBar.tsx) is honest about
       this and now names the count, but a banner alone still lets one click
@@ -766,8 +880,8 @@ evidence below); these two are design-dependent and deliberately deferred.
       pattern `handleArchive` already uses. Deferred because the right
       threshold (always, or only above N repos) is a product call, and
       because `Report` is read-only and may not warrant the same friction.
-- [ ] **Progressive disclosure for the six-tab dashboard.** *(state: planned
-      — non-blocker, design-dependent)* Grid, Insights, Operations, Doc
+- [ ] **Progressive disclosure for the six-tab dashboard.** _(state: planned
+      — non-blocker, design-dependent)_ Grid, Insights, Operations, Doc
       Readiness Queue, Copilot Execution Lanes, and Dependencies each render
       a dense multi-widget surface, which is heavy for the primary daily
       workflow (triage the repos needing attention). Candidate direction: a

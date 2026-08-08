@@ -1480,6 +1480,67 @@ if (-not $sqliteCap.available) {
         if ([string]$burnSecond.blockedCode -ne 'hard-stop-reached') { throw "Quota-burn blockedCode mismatch: $($burnSecond.blockedCode)" }
         if ([math]::Abs([double]$burnSecond.remainingAfter - (-20.0)) -gt 0.0001) { throw "Quota-burn remainingAfter mismatch: $($burnSecond.remainingAfter)" }
         Write-Host '  quota-burn snapshots persisted and readable as an ordered burn-down series' -ForegroundColor DarkGray
+
+        Write-Step 'App database maintenance — snapshot retention + VACUUM (Release 2.7 Phase D)'
+        # app.db reached ~138 MB in daily use with no scheduled maintenance. The
+        # retention floor is the part worth guarding: GET /api/portfolio/trend
+        # answers up to days=180 and Release 2.9 is waiting on 90-day accrual, so
+        # a low configured window must be clamped UP rather than honored.
+        $agedIso = (Get-Date).ToUniversalTime().AddDays(-400).ToString('o')
+        $midIso = (Get-Date).ToUniversalTime().AddDays(-100).ToString('o')
+        $freshIso = (Get-Date).ToUniversalTime().ToString('o')
+        foreach ($i in 1..12) {
+            $null = Invoke-AppDbNonQuery -DatabasePath $appDbInit.databasePath `
+                -Sql 'INSERT INTO repo_signals (repo_name, captured_at) VALUES (@n, @t)' `
+                -Parameters @{ n = "aged-$i"; t = $agedIso }
+        }
+        foreach ($i in 1..3) {
+            $null = Invoke-AppDbNonQuery -DatabasePath $appDbInit.databasePath `
+                -Sql 'INSERT INTO repo_signals (repo_name, captured_at) VALUES (@n, @t)' `
+                -Parameters @{ n = "fresh-$i"; t = $freshIso }
+        }
+        # 100 days old: inside maturity_history's 180-day floor, so a 30-day
+        # request must NOT delete it.
+        foreach ($i in 1..4) {
+            $null = Invoke-AppDbNonQuery -DatabasePath $appDbInit.databasePath `
+                -Sql 'INSERT INTO maturity_history (repo_name, maturity_level, captured_at) VALUES (@n, @l, @t)' `
+                -Parameters @{ n = "trend-$i"; l = 'L3'; t = $midIso }
+        }
+
+        # ReportOnly must count without deleting.
+        $maintReport = Invoke-AppDbMaintenance -MaxSnapshotDays 30 -ReportOnly
+        if (-not $maintReport.success) { throw "Maintenance report failed: $(($maintReport.tables | Where-Object { $_.error } | Select-Object -First 1).error)" }
+        if (-not $maintReport.reportOnly) { throw 'Maintenance report must set reportOnly=true' }
+        $reportSignals = ($maintReport.tables | Where-Object { $_.table -eq 'repo_signals' }).removed
+        if ([long]$reportSignals -ne 12) { throw "Maintenance report expected 12 aged repo_signals rows, got $reportSignals" }
+        $signalsAfterReport = Invoke-AppDbQuery -DatabasePath $appDbInit.databasePath -Sql 'SELECT COUNT(*) AS n FROM repo_signals'
+        if ([long]$signalsAfterReport[0].n -ne 15) { throw "ReportOnly must not delete: expected 15 repo_signals rows, got $($signalsAfterReport[0].n)" }
+
+        # The 180-day floor must be reported as applied for the trend tables.
+        $maturityPlan = $maintReport.tables | Where-Object { $_.table -eq 'maturity_history' }
+        if ([int]$maturityPlan.retentionDays -ne 180) { throw "maturity_history must clamp a 30-day request up to its 180-day floor; got $($maturityPlan.retentionDays)" }
+        if (-not $maturityPlan.floorApplied) { throw 'maturity_history must report floorApplied=true for a 30-day request' }
+
+        # Real run: aged rows go, fresh rows and floor-protected rows stay.
+        $maintRun = Invoke-AppDbMaintenance -MaxSnapshotDays 30 -Confirm:$false
+        if (-not $maintRun.success) { throw "Maintenance run failed: $(($maintRun.tables | Where-Object { $_.error } | Select-Object -First 1).error)" }
+        if (-not $maintRun.vacuumed) { throw "VACUUM did not run: $($maintRun.vacuumError)" }
+        if ([long]$maintRun.totalRowsRemoved -ne 12) { throw "Maintenance expected to remove 12 rows, removed $($maintRun.totalRowsRemoved)" }
+        $signalsAfterRun = Invoke-AppDbQuery -DatabasePath $appDbInit.databasePath -Sql 'SELECT COUNT(*) AS n FROM repo_signals'
+        if ([long]$signalsAfterRun[0].n -ne 3) { throw "Maintenance must keep the 3 fresh repo_signals rows, got $($signalsAfterRun[0].n)" }
+        $maturityAfterRun = Invoke-AppDbQuery -DatabasePath $appDbInit.databasePath -Sql 'SELECT COUNT(*) AS n FROM maturity_history'
+        if ([long]$maturityAfterRun[0].n -ne 4) { throw "Retention floor breached: maturity_history should still hold 4 rows, got $($maturityAfterRun[0].n)" }
+
+        # Append-only operational records must never be touched.
+        $ledgerAfterRun = Invoke-AppDbQuery -DatabasePath $appDbInit.databasePath -Sql 'SELECT COUNT(*) AS n FROM ops_log'
+        if ([long]$ledgerAfterRun[0].n -lt 26) { throw "Maintenance must not prune ops_log (it has its own row-count trim); got $($ledgerAfterRun[0].n)" }
+
+        # Config resolution reads retention.maxSnapshotDays, not retention.days.
+        if ((Get-AppDbMaintenanceRetentionDays -Settings @{ retention = @{ maxSnapshotDays = 200 } }) -ne 200) { throw 'Retention days must be read from retention.maxSnapshotDays' }
+        if ((Get-AppDbMaintenanceRetentionDays -Settings @{ retention = @{ days = 30 } }) -ne 365) { throw 'retention.days is doc-review inactivity and must NOT be read as the snapshot window' }
+        if ((Get-AppDbMaintenanceRetentionDays -Settings $null) -ne 365) { throw 'Missing settings must fall back to the 365-day default' }
+
+        Write-Host ("  app.db maintenance ok: report={0} aged, removed={1}, VACUUM ran, 180-day floor protected trend rows, ops_log untouched" -f $reportSignals, $maintRun.totalRowsRemoved) -ForegroundColor DarkGray
     }
     finally {
         Remove-Item -LiteralPath $appDbWorkspace -Recurse -Force -ErrorAction SilentlyContinue
@@ -1573,6 +1634,47 @@ try {
     if (-not $refused) { throw 'Write-AutomationRunRecord must refuse a run with appliedCount != 0' }
 
     Write-Host ("  automation run ok: {0} preview(s), applied=0, history+digest round-trip, applied-run refused (provider={1})" -f $autoRun.proposalCount, $autoRun.provider) -ForegroundColor DarkGray
+
+    # ---- Release 2.7 Phase D — scheduler failure alerting -------------------
+    # The failure this guards is silence: interval firing is delegated to an
+    # external cron, so a scheduler that stops leaves the config reading
+    # "enabled" while history quietly stops growing.
+    $healthSettings = @{ automation = @{ enabled = $true; intervalMinutes = 60 } }
+
+    # A fresh run must be healthy with no alert.
+    $freshHealth = Get-AutomationHealth -WorkspaceRoot $histWs -Settings $healthSettings
+    if (-not $freshHealth.healthy) { throw "Automation health: a just-recorded successful run must be healthy; alert=$($freshHealth.alert.code)" }
+    if ($freshHealth.lastOutcome -ne 'ok') { throw "Automation health: expected lastOutcome=ok; got $($freshHealth.lastOutcome)" }
+    if ($freshHealth.overdue) { throw 'Automation health: a just-recorded run must not be overdue' }
+    # Timezone tripwire. ConvertFrom-Json returns finishedAt as a kind-less
+    # DateTime that already holds UTC; converting it a second time put lastRunAt
+    # in the FUTURE and made overdue detection impossible without failing any
+    # boolean assertion. A just-written run must read as ~0 minutes old, and the
+    # tolerance must be well under one local-offset shift.
+    if ([math]::Abs([double]$freshHealth.minutesSinceLastRun) -gt 5) {
+        throw "Automation health: a just-recorded run must be ~0 minutes old; got $($freshHealth.minutesSinceLastRun) (double UTC conversion?)"
+    }
+
+    # Overdue detection: the same history evaluated 5 hours later, against a
+    # 60-minute interval and a 2x grace, must alert.
+    $lateHealth = Get-AutomationHealth -WorkspaceRoot $histWs -Settings $healthSettings -Now ([datetime]::UtcNow.AddHours(5))
+    if (-not $lateHealth.overdue) { throw 'Automation health: a 5-hour gap on a 60-minute interval must be overdue' }
+    if ($lateHealth.alert.code -ne 'automation-overdue') { throw "Automation health: expected automation-overdue; got $($lateHealth.alert.code)" }
+
+    # Disabled automation is never overdue — no alert for a feature that is off.
+    $offHealth = Get-AutomationHealth -WorkspaceRoot $histWs -Settings @{ automation = @{ enabled = $false; intervalMinutes = 60 } } -Now ([datetime]::UtcNow.AddHours(5))
+    if ($offHealth.overdue -or -not $offHealth.healthy) { throw 'Automation health: disabled automation must not alert' }
+
+    # Outcome classification: errors with no proposals = failed; errors with
+    # proposals = partial; zero targets = ok (a clean portfolio is not a failure).
+    $failedRun = [pscustomobject]@{ runId = 'f1'; proposalCount = 0; targetCount = 1; errors = @([pscustomobject]@{ repoName = 'x'; error = 'boom' }) }
+    $partialRun = [pscustomobject]@{ runId = 'p1'; proposalCount = 1; targetCount = 2; errors = @([pscustomobject]@{ repoName = 'x'; error = 'boom' }) }
+    $emptyRun = [pscustomobject]@{ runId = 'e1'; proposalCount = 0; targetCount = 0; errors = @() }
+    if ((Get-AutomationRunOutcome -Run $failedRun) -ne 'failed') { throw 'Automation outcome: errors with no proposals must classify as failed' }
+    if ((Get-AutomationRunOutcome -Run $partialRun) -ne 'partial') { throw 'Automation outcome: errors with proposals must classify as partial' }
+    if ((Get-AutomationRunOutcome -Run $emptyRun) -ne 'ok') { throw 'Automation outcome: a zero-target run must classify as ok, not a failure' }
+
+    Write-Host ("  automation health ok: fresh=healthy, 5h-gap=overdue, disabled=silent, outcomes=failed/partial/ok") -ForegroundColor DarkGray
 }
 finally {
     Remove-Item -LiteralPath $autoTmp -Recurse -Force -ErrorAction SilentlyContinue
