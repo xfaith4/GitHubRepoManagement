@@ -114,10 +114,21 @@ try {
     if ($authWithKey.Json.data.authenticated -ne $true) { throw "auth/status with key expected authenticated=true" }
 
     Write-Host '[STEP] /setup/config writes a valid settings.json (exempt from gate)' -ForegroundColor Cyan
+    # This step asserts that VALID roots return 200, so it has to supply roots
+    # that are valid on the machine running the test — not whatever the tracked
+    # settings.json happens to name. Tracked config carries the operator's own
+    # workspace path, which does not exist on a CI runner.
+    #
+    # This used to pass on CI only by accident: Invoke-ApiHostSmokeTest runs
+    # earlier in the same job and left its runner-local fixture path behind in
+    # settings.json, which this step then read back. Once that smoke started
+    # restoring the file byte-exact (ROADMAP Lane 0.1), the borrowed value went
+    # away and the hidden cross-test dependency surfaced as a 400 here.
     $currentRoots = @()
     if ($settingsBackup) {
         try { $currentRoots = @((ConvertFrom-Json $settingsBackup).inventory.localRoots) } catch { $currentRoots = @() }
     }
+    $currentRoots = @($currentRoots | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) -and (Test-Path -LiteralPath ([string]$_)) })
     if (@($currentRoots).Count -eq 0) { $currentRoots = @($WorkspaceRoot) }
     $setup = Invoke-AuthRequest -Method Post -Uri "$base/setup/config" -Body @{ localRoots = $currentRoots }
     if ($setup.StatusCode -ne 200) { throw "/setup/config (valid roots) expected 200, got $($setup.StatusCode). Body=$($setup.Content)" }
@@ -206,6 +217,15 @@ try {
     Remove-Item -LiteralPath $tlsSignal -Force -ErrorAction SilentlyContinue
     $tlsJob = Start-Job -ScriptBlock {
         param($ScriptPath, $Root, $Log, $ListenPort, $SignalPath, $Pfx, $PfxPass)
+        # This step asserts TLS transport, not the auth gate, so the gate is
+        # explicitly off — same as the non-loopback guard job above. Start-Job
+        # inherits the parent environment, and on a machine where the installed
+        # service has set REPO_MGMT_REQUIRE_API_KEY/REPO_MGMT_API_KEY at Machine
+        # scope this host would otherwise enforce auth and answer 401, failing a
+        # TLS assertion for a reason that has nothing to do with TLS. CI runners
+        # start clean, which is why this only ever bit local runs.
+        $env:REPO_MGMT_REQUIRE_API_KEY = ''
+        $env:REPO_MGMT_API_KEY = ''
         $env:REPO_MGMT_TLS_PFX = $Pfx
         $env:REPO_MGMT_TLS_PFX_PASSWORD = $PfxPass
         & $ScriptPath -WorkspaceRoot $Root -BindAddress '127.0.0.1' -Port $ListenPort -LogPath $Log -ShutdownSignalPath $SignalPath
