@@ -2228,6 +2228,28 @@ function Get-ConfiguredGitHubToken {
     return (Get-GitHubTokenResolution -Settings $Settings).Token
 }
 
+function Get-GitHubTokenMissHint {
+    <#
+    .SYNOPSIS
+        Operator-facing explanation for a token name that did not resolve.
+    .DESCRIPTION
+        Shared by the auth-status route and by the callers that fail on a
+        missing token, so every surface names the same cause. A service
+        process cannot read a User-scoped variable, which is the miss
+        operators hit most often.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$EnvVarName
+    )
+
+    if ($script:RunningAsService) {
+        return "Environment variable '$EnvVarName' is not visible to this host, which runs as a service. Service processes cannot read User-scoped variables - set it at Machine scope and restart the service."
+    }
+
+    return "Environment variable '$EnvVarName' is not set in the host's process. Set it and restart the host; a variable set after launch is not picked up."
+}
+
 function Get-GitHubApiHeaders {
     param(
         [Parameter()]
@@ -6208,11 +6230,7 @@ try {
                     # Name the actual cause of a miss instead of a bare "not set".
                     $hint = ''
                     if ($resolution.Source -eq 'none') {
-                        $hint = if ($script:RunningAsService) {
-                            "Environment variable '$tokenEnvVar' is not visible to this host, which runs as a service. Service processes cannot read User-scoped variables - set it at Machine scope and restart the service."
-                        } else {
-                            "Environment variable '$tokenEnvVar' is not set in the host's process. Set it and restart the host; a variable set after launch is not picked up."
-                        }
+                        $hint = Get-GitHubTokenMissHint -EnvVarName $tokenEnvVar
                     }
                     elseif ($resolution.Source -eq 'env' -and $resolution.Scope -eq 'Process' -and $script:RunningAsService) {
                         $hint = "Resolved from the process environment only. It will not survive a service restart unless it is set at Machine scope."
@@ -6824,8 +6842,22 @@ try {
                         Write-HostLog ("[TRACE] github.openpr gh aggregation failed owner={0} error={1}" -f $owner, $_.Exception.Message)
                     }
 
-                    $json = (& gh repo list $owner --limit $limit --json name,nameWithOwner,url,isArchived,isPrivate,isFork,defaultBranchRef,updatedAt,pushedAt 2>&1) | Out-String
-                    $reposRaw = $json | ConvertFrom-Json
+                    # gh writes its auth failure to stderr and exits non-zero.
+                    # Merging that into the JSON string and parsing blind used to
+                    # surface a raw "Unexpected character ... T" parse error - the
+                    # first letter of gh's "To get started with GitHub CLI" notice -
+                    # which told the operator nothing. Check the exit code and the
+                    # payload shape first and name the real cause: neither the
+                    # configured env var nor the gh credential resolved.
+                    $ghOutput = ((& gh repo list $owner --limit $limit --json name,nameWithOwner,url,isArchived,isPrivate,isFork,defaultBranchRef,updatedAt,pushedAt 2>&1) | Out-String).Trim()
+                    $ghExit = $LASTEXITCODE
+                    if ($ghExit -ne 0 -or -not ($ghOutput.StartsWith('[') -or $ghOutput.StartsWith('{'))) {
+                        $ghDetail = @($ghOutput -split "`r?`n" | Where-Object { $_.Trim() }) | Select-Object -First 1
+                        throw ("GitHub is not authenticated for this host. {0} The 'gh' CLI fallback also failed{1}" -f
+                            (Get-GitHubTokenMissHint -EnvVarName (Get-GitHubTokenEnvVarName -Settings $settings)),
+                            $(if ($ghDetail) { ": $ghDetail" } else { " (exit code $ghExit)." }))
+                    }
+                    $reposRaw = $ghOutput | ConvertFrom-Json
                     $repos = @($reposRaw | ForEach-Object {
                         if ((-not $includeForks) -and [bool]$_.isFork) { return }
                         if ((-not $includeArchived) -and [bool]$_.isArchived) { return }
