@@ -970,6 +970,33 @@ the shape this repo adopted 2026-08-08. It partly does and partly does not, and
 the gaps are asymmetric: nothing penalizes a split repo, but nothing can tell
 one apart from a repo that simply deleted its history.
 
+**Portfolio survey, 2026-08-08** (89 repo directories under
+`F:\Development\20_Staging`, 32 with a root `ROADMAP.md`;
+`output/roadmap-layout-survey.{csv,json}`):
+
+| Roadmap history layout  | Repos |
+| ----------------------- | ----- |
+| inline `[x]` only       | 15    |
+| no history recorded     | 15    |
+| in-file history section | 2     |
+| **split (archive)**     | **0** |
+
+**Zero managed repos use the split layout** — this repo is the only instance in
+the estate. That makes the repair path the live risk rather than the scoring
+path: repair would push all 32 toward in-file history, and would do the same to
+any repo that later adopts the split. The intent here is **awareness, not
+enforcement** — the split keeps an agent's context minimal and focused, so the
+standard should recognize and preserve it, never "correct" it.
+
+Two further survey findings, both independent of the split question:
+
+- **28 of 32 repos use no release sections at all** — a far larger conformance
+  gap than anything about history placement, and the reason so many sit at L2.
+- **No repo scores identically under both evaluators** (0/32), and three flip
+  the L3 dispatch-readiness threshold: `GenesysAudits` and
+  `Curated_Recipe_Book` are L3 by the app and L2 by the CLI;
+  `PowerBI_ReportFactory_Kit` is the reverse.
+
 - [ ] **Reconcile the two roadmap evaluators — they disagree on the same
       file.** _(state: planned — correctness, highest value in this lane)_
       Audited 2026-08-08, this repo's `ROADMAP.md` scores **92 /
@@ -978,14 +1005,25 @@ one apart from a repo that simply deleted its history.
       `Invoke-AuditRoadmapContract`) and **65 / L3-Contract-Ready with
       "Releases: 0"** through
       [`tools/Test-RoadmapContract.ps1`](tools/Test-RoadmapContract.ps1).
-      Cause: the module accepts a release heading at `#{1,3}` (and
+      Two distinct causes, both confirmed 2026-08-08. **(a) Heading depth,
+      which affects this repo only:** the module accepts a release heading at
+      `#{1,3}` and
       [`Roadmap.Parser.ps1`](backend/modules/roadmap/Roadmap.Parser.ps1)
       deliberately allows `### Release …` nested under a numbered `## …`
-      parent), while the CLI recognizes only the template's top-level
-      `## Release X.Y`. Whichever an operator happens to run decides the
-      verdict — the exact "two figures, one truth" failure this product
-      exists to catch. Share one detection path; smoke both against the same
-      fixture.
+      parent, while the CLI recognizes only the template's top-level
+      `## Release X.Y`. The portfolio survey found **no** managed repo using
+      nested release headings, so this one is not the estate-wide driver.
+      **(b) Acceptance-criteria scoping, which affects nearly the whole
+      estate:** traced on `Curated_Recipe_Book`, where the two agree on every
+      count (8 pending / 38 complete / 0 releases) and differ on exactly one
+      rule — ROADMAP-006. The module credits acceptance criteria found
+      anywhere in the document; the CLI only counts them **inside a release
+      section**, so the 28 repos with no release sections can never earn that
+      rule from the CLI. Result: **0 of 32 repos score identically**, and
+      three flip the L3 dispatch threshold. Whichever tool an operator runs
+      decides whether a repo is dispatch-ready — the exact "two figures, one
+      truth" failure this product exists to catch. Share one detection path;
+      smoke both against the same fixture.
 - [ ] **Record whether a repo externalizes its completion history.**
       _(state: planned)_ The contract carries `completedCount` as a required
       field, and a split roadmap reports ~0 forever. No rule reads it today,
@@ -998,7 +1036,8 @@ one apart from a repo that simply deleted its history.
       payload.
 - [ ] **Stop the repairer asserting "(No completed items recorded yet)" on a
       repo that archived its history.** _(state: planned — factual-accuracy
-      bug)_ `_BuildCompletedSection`
+      bug; the live risk, since repair is the only path that writes to a
+      managed repo's roadmap)_ `_BuildCompletedSection`
       ([`Roadmap.Repairer.ps1`](backend/modules/roadmap/Roadmap.Repairer.ps1))
       emits that literal placeholder whenever no inline `[x]` items exist, so
       repairing a correctly-split roadmap would write a false claim into it —
