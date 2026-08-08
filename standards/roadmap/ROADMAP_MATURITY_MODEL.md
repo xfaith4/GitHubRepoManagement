@@ -55,7 +55,7 @@ Typical gaps:
 
 - No formal `## Release X.Y — Title` sections
 - Missing acceptance criteria on one or more releases
-- Missing clear release statuses
+- Missing clear release statuses, or more than one release marked active
 - Insufficient validation context
 
 Permitted:
@@ -68,6 +68,7 @@ Required to reach L3:
 - Use formal release sections.
 - Add acceptance criteria to every non-archived release.
 - Use known release status vocabulary.
+- Designate exactly one release as active.
 
 ### L3 — Contract-Ready
 
@@ -78,6 +79,7 @@ Required properties:
 - Product intent exists.
 - Release sections are stable and machine-detectable.
 - Every non-archived release has acceptance criteria.
+- Exactly one release is marked active — dispatch has one unambiguous target.
 - Critical findings are absent.
 - Any remaining warnings are understood and accepted by an operator.
 
@@ -105,10 +107,15 @@ Required properties:
 - Score is within the L4 range.
 - There are zero critical findings.
 - There are zero warning findings.
+- Exactly one release is marked active.
 - Release sections, acceptance criteria, and out-of-scope boundaries are present.
 - Multiple releases provide forward visibility.
 - Active execution has a validation plan.
 - Done releases contain no unchecked work.
+
+Recommended but not scored:
+
+- Checklist items carry stable `[[M#]]` IDs so dispatch, traceability, and `roadmap-events.jsonl` correlation survive rewording. Adoption is tracked informationally via `milestoneIdCoverage` in the contract, but does not gate any level — retrofitting IDs onto an already-mature roadmap should never be required to keep its score.
 
 Permitted:
 
@@ -131,6 +138,7 @@ Then maturity caps are applied. For example:
 - Parse error caps maturity at L1.
 - Missing release sections caps maturity at L2.
 - Missing acceptance criteria caps maturity at L2.
+- More than one active release caps maturity at L2 — an ambiguous dispatch target is treated the same as missing structure, because an agent (or operator) cannot safely pick a target on its own.
 - Any critical finding caps maturity at L1.
 - Any warning finding caps maturity at L3, because L4 requires no critical or warning findings.
 

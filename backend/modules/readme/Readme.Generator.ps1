@@ -26,15 +26,11 @@ $script:DefaultCopilotApiUrl       = 'https://api.githubcopilot.com/chat/complet
 function _ResolveApiKey {
     param([pscustomobject]$Settings)
 
-    # Priority 1: direct key in settings
+    # Priority 1: env var NAME in settings. A literal 'readme.copilotApiKey' is
+    # deliberately NOT read: settings.json is git-tracked, so a key stored there
+    # is a secret one commit from leaking. Same rule as the GitHub token.
     if ($Settings.PSObject.Properties['readme']) {
         $readmeCfg = $Settings.readme
-        if ($readmeCfg.PSObject.Properties['copilotApiKey'] -and
-            -not [string]::IsNullOrWhiteSpace($readmeCfg.copilotApiKey)) {
-            return [string]$readmeCfg.copilotApiKey
-        }
-
-        # Priority 2: env var name in settings
         if ($readmeCfg.PSObject.Properties['copilotApiKeyEnvVar'] -and
             -not [string]::IsNullOrWhiteSpace($readmeCfg.copilotApiKeyEnvVar)) {
             $envVarName = [string]$readmeCfg.copilotApiKeyEnvVar
@@ -45,9 +41,17 @@ function _ResolveApiKey {
         }
     }
 
-    # Priority 3: standard GitHub token env vars
-    if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_TOKEN)) { return $env:GITHUB_TOKEN }
-    if (-not [string]::IsNullOrWhiteSpace($env:GitHub_Token))  { return $env:GitHub_Token }
+    # Priority 3: the GitHub token env var the host is configured to use. Read
+    # the configured NAME rather than hardcoding GITHUB_TOKEN, so pointing the
+    # host at a differently-named variable also works here.
+    $gitHubEnvVarName = 'GITHUB_TOKEN'
+    if ($Settings.PSObject.Properties['secrets'] -and
+        $Settings.secrets.PSObject.Properties['gitHubTokenEnvVar'] -and
+        -not [string]::IsNullOrWhiteSpace($Settings.secrets.gitHubTokenEnvVar)) {
+        $gitHubEnvVarName = [string]$Settings.secrets.gitHubTokenEnvVar
+    }
+    $gitHubEnvVal = [System.Environment]::GetEnvironmentVariable($gitHubEnvVarName)
+    if (-not [string]::IsNullOrWhiteSpace($gitHubEnvVal)) { return $gitHubEnvVal }
 
     # Priority 4: gh auth token CLI
     $ghCmd = Get-Command -Name 'gh' -ErrorAction SilentlyContinue
@@ -300,7 +304,7 @@ function Invoke-CopilotReadmeGeneration {
     # Resolve API key
     $apiKey = _ResolveApiKey -Settings $Settings
     if ([string]::IsNullOrWhiteSpace($apiKey)) {
-        throw "412: readme.copilotApiKey is not configured. Add 'readme.copilotApiKey' to Settings, set the env var named by 'readme.copilotApiKeyEnvVar', or ensure GITHUB_TOKEN is set with Copilot access."
+        throw "412: No Copilot API key available. Set the environment variable named by 'readme.copilotApiKeyEnvVar' in Settings, or by 'secrets.gitHubTokenEnvVar' with a token that has Copilot access. Storing a literal key in settings.json is not supported."
     }
 
     # Resolve API URL

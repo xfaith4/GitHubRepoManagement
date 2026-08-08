@@ -377,6 +377,50 @@ try {
     $settingsPost = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/settings" -Body $settingsPostBody
     Assert-Not503 -Name '/api/settings (POST)' -Response $settingsPost
 
+    # GitHub auth is env-var-name indirection only. These guard the three ways a
+    # secret could re-enter the app: stored in tracked settings, posted from the
+    # browser, or pasted into the name field. All must be refused, not ignored —
+    # a silent ignore reads as success while auth quietly degrades to anonymous.
+    Write-Host '[STEP] GitHub auth — env-var-name indirection (no stored/transmitted tokens)' -ForegroundColor Cyan
+    $storedTokenReject = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/settings" -Body @{ githubToken = 'ghp_smoketestvalue' }
+    if ($storedTokenReject.StatusCode -ne 400) {
+        throw ("/api/settings must reject a literal githubToken with HTTP 400; got {0}. Body={1}" -f $storedTokenReject.StatusCode, $storedTokenReject.Content)
+    }
+    $badNameReject = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/settings" -Body @{ gitHubTokenEnvVar = 'not a valid name' }
+    if ($badNameReject.StatusCode -ne 400) {
+        throw ("/api/settings must reject an invalid env var name with HTTP 400; got {0}. Body={1}" -f $badNameReject.StatusCode, $badNameReject.Content)
+    }
+    $tokenAsNameReject = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/settings" -Body @{ gitHubTokenEnvVar = 'github_pat_11ABCDEF' }
+    if ($tokenAsNameReject.StatusCode -ne 400) {
+        throw ("/api/settings must reject a token pasted into the env-var-name field with HTTP 400; got {0}. Body={1}" -f $tokenAsNameReject.StatusCode, $tokenAsNameReject.Content)
+    }
+    $wireTokenReject = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/github/status" -Body @{ githubUser = 'smoke-test'; apiKey = 'ghp_smoketestvalue' }
+    if ($wireTokenReject.StatusCode -ne 400) {
+        throw ("/api/github/status must reject a body token with HTTP 400; got {0}. Body={1}" -f $wireTokenReject.StatusCode, $wireTokenReject.Content)
+    }
+    # Confirm the tracked config never gained the key any of the above tried to set.
+    $settingsAfterReject = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/settings"
+    $secretsAfter = $settingsAfterReject.Json.data.secrets
+    if ($null -ne $secretsAfter -and ($secretsAfter.PSObject.Properties.Name -contains 'githubToken')) {
+        throw '/api/settings persisted a githubToken key; settings.json must stay secret-free.'
+    }
+    # The resolve probe must name the variable and report how it resolved, so an
+    # operator can tell "not set" from "set in a scope this process cannot read".
+    $ghAuth = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/auth/github/status"
+    Assert-Not503 -Name '/api/auth/github/status' -Response $ghAuth
+    $ghAuthData = $ghAuth.Json.data
+    foreach ($field in @('tokenEnvVar', 'tokenSource', 'tokenEnvScope', 'runningAsService', 'hint')) {
+        if (-not ($ghAuthData.PSObject.Properties.Name -contains $field)) {
+            throw ("/api/auth/github/status missing resolve-probe field '{0}'. Body={1}" -f $field, $ghAuth.Content)
+        }
+    }
+    if ($ghAuthData.tokenSource -notin @('env', 'gh-cli', 'none')) {
+        throw ("/api/auth/github/status returned unexpected tokenSource '{0}'." -f $ghAuthData.tokenSource)
+    }
+    $githubAuthProbeOk = $true
+    Write-Host ("  github auth ok: envVar={0} source={1} scope='{2}' service={3}; stored/wire/pasted tokens all rejected 400" -f `
+        $ghAuthData.tokenEnvVar, $ghAuthData.tokenSource, $ghAuthData.tokenEnvScope, $ghAuthData.runningAsService) -ForegroundColor DarkGray
+
     Write-Host '[STEP] Placeholder and git operation routes' -ForegroundColor Cyan
     $initResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/init" -Body @{ githubUser = 'smoke-test'; cloneOwned = $false }
     $updateResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/update" -Body @{ repoNames = @('__smoke_test_missing_repo__') }
@@ -2082,6 +2126,8 @@ try {
         staticSkipped = { $staticSkipped }
         routeCensusChecked = { $censusRoutes.Count }
         routeCensusMissing = { $censusMissing.Count }
+        githubAuthProbeOk = { $githubAuthProbeOk }
+        githubTokenSource = { $ghAuthData.tokenSource }
     }
     $summary = [ordered]@{}
     foreach ($entryName in $summarySpec.Keys) {

@@ -83,7 +83,9 @@ function App() {
   const [insightsMeta, setInsightsMeta] = useState<GithubInsightsMeta | null>(null);
   const [dataLastUpdated, setDataLastUpdated] = useState<Date | null>(null);
   const [relativeTime, setRelativeTime] = useState<string>('');
-  const githubCredentialsRef = useRef<{ username: string; apiKey?: string } | null>(null);
+  // Only the owner is client-side state now; the token lives in the host's
+  // environment under the variable named in Settings and never reaches here.
+  const githubCredentialsRef = useRef<{ username: string } | null>(null);
 
   // Apply local repo data returned from getStatus() to component state.
   const applyLocalData = useCallback((localData: Awaited<ReturnType<typeof getStatus>>) => {
@@ -121,13 +123,10 @@ function App() {
 
       const activeGithubUsername = githubCredentialsRef.current?.username?.trim()
         || (localData.source === 'local' ? localData.configuredGithubUser?.trim() ?? '' : '');
-      const activeGithubApiKey = githubCredentialsRef.current?.apiKey?.trim() || undefined;
-
       if (activeGithubUsername) {
         try {
           const data = await getGithubRepoInsights({
             githubUser: activeGithubUsername,
-            apiKey: activeGithubApiKey,
             includePrivate: true,
             includeForks: false,
             repoLimit: 50,
@@ -214,20 +213,18 @@ function App() {
     return () => clearInterval(timer);
   }, [dataLastUpdated]);
 
-  const handleDataSourceChange = async (username: string, apiKey?: string) => {
+  const handleDataSourceChange = async (username: string) => {
     setLoading(true);
     setError(null);
     try {
-      const normalizedApiKey = apiKey?.trim() ? apiKey.trim() : undefined;
       const data = await getGithubRepoInsights({
         githubUser: username,
-        apiKey: normalizedApiKey,
         includePrivate: true,
         includeForks: false,
         repoLimit: 50,
         fetchExtendedMetrics: true
       });
-      githubCredentialsRef.current = { username, apiKey: normalizedApiKey };
+      githubCredentialsRef.current = { username };
       setGithubRepos(data.repos);
       setGithubSource({ source: 'github', username: data.username });
       setInsightsMeta({
@@ -383,7 +380,7 @@ function App() {
                 <button
                   onClick={() => setIsDataSourceModalOpen(true)}
                   className="ml-3 inline-flex items-center px-3 py-2 md:py-1.5 border border-gray-600 rounded-md text-sm font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 transition-colors"
-                  title="Connect to GitHub API using a typed token, GITHUB_TOKEN, or the saved fallback token"
+                  title="Connect to the GitHub API using the token in the environment variable named in Settings"
                 >
                   <DatabaseIcon className="w-4 h-4 sm:mr-2" />
                   <span className="hidden sm:inline">GitHub API</span>

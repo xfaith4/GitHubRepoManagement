@@ -187,5 +187,19 @@ with `Set-PortalLogin.ps1` and sign in).
 Defaults to **LocalSystem**: no password, fully unattended, can read local repos.
 The host binds a raw TCP socket (not http.sys), so no URL-ACL reservation is
 needed and a least-privilege account also works — pass `-Credential` to use one.
-Note: a LocalSystem service does **not** inherit your user's environment, so the
-`GITHUB_TOKEN` must be supplied via `-GitHubToken` (or a machine-scoped env var).
+
+Note: a LocalSystem service does **not** inherit your user's environment. The
+host reads the GitHub token from the environment variable **named** by
+`secrets.gitHubTokenEnvVar` (default `GITHUB_TOKEN`) — it never stores the token
+itself — so that variable must exist at **Machine** scope, or be supplied via
+`-GitHubToken`, which sets it at Machine scope for you:
+
+```powershell
+.\scripts\Install-RepoManagementService.ps1 -Action Repair -GitHubToken $env:GITHUB_TOKEN
+```
+
+A **User**-scoped variable is invisible to the service no matter what it is
+named. To confirm what the running service actually resolved, call
+`GET /api/auth/github/status` (or open Settings in the dashboard): it reports the
+configured variable name, whether it resolved, and the scope it came from.
+Add `?validate=1` to confirm the token is live and see its expiry.

@@ -1,6 +1,9 @@
 {
-  "version": "1.0",
-  "description": "Weighted audit rules for roadmap contract quality scoring. Each rule is evaluated against a parsed roadmap contract and contributes to a 0–100 maturity score.",
+  "version": "1.1",
+  "description": "Weighted audit rules for roadmap contract quality scoring. Each rule is evaluated against a parsed roadmap contract and contributes to a 0-100 maturity score.",
+  "changelog": {
+    "1.1": "Added ROADMAP-011 (multiple active releases) and ROADMAP-012 (no active release designated). Status matching is case-insensitive with alias normalization; author lowercase regardless. See ROADMAP_MATURITY_MODEL.md for updated caps."
+  },
   "rules": [
     {
       "id": "ROADMAP-001",
@@ -110,6 +113,26 @@
       ],
       "message": "One or more checklist items appear to be vague placeholders.",
       "recommendedAction": "Replace vague items with concrete, testable, implementation-specific steps."
+    },
+    {
+      "id": "ROADMAP-011",
+      "name": "single-active-release",
+      "description": "At most one release is marked with normalizedStatus 'active'. A dispatch agent needs one unambiguous execution target.",
+      "severity": "critical",
+      "scoreWeight": 20,
+      "failCondition": "activeReleaseCount > 1",
+      "message": "More than one release is marked active. Dispatch target is ambiguous.",
+      "recommendedAction": "Re-status all but one active release to planned, blocked, validation, or done. Exactly one release should be active at a time."
+    },
+    {
+      "id": "ROADMAP-012",
+      "name": "has-designated-active-release",
+      "description": "When releases exist, exactly one is designated active so dispatch tooling has a default target.",
+      "severity": "warning",
+      "scoreWeight": 5,
+      "failCondition": "releaseCount > 0 && activeReleaseCount === 0",
+      "message": "Releases exist but none is marked active. Dispatch tooling has no default target.",
+      "recommendedAction": "Mark the release currently being worked on as 'Status: active'."
     }
   ],
   "maturityThresholds": {
@@ -126,12 +149,12 @@
     "L2-Structured": {
       "minScore": 40,
       "maxScore": 64,
-      "description": "Roadmap has checkboxes and some organization, but lacks release sections or acceptance criteria."
+      "description": "Roadmap has checkboxes and some organization, but lacks release sections, acceptance criteria, or an unambiguous active release."
     },
     "L3-Contract-Ready": {
       "minScore": 65,
       "maxScore": 84,
-      "description": "Roadmap uses release sections, has acceptance criteria, and is parseable. Ready for supervised dispatch."
+      "description": "Roadmap uses release sections, has acceptance criteria, is parseable, and designates exactly one active release. Ready for supervised dispatch."
     },
     "L4-Orchestration-Ready": {
       "minScore": 85,

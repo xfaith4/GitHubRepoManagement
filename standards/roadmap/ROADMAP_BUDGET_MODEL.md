@@ -32,6 +32,8 @@ Phase Cost =
    formula) live in editable config. Dollars-per-phase are computed when a
    report is rendered — never written into append-only history, so
    changing a formula later does not invalidate past records.
+   `ROADMAP.md` itself never carries a running actuals total (see
+   authoring rule 4 in the template) — only `roadmap-events.jsonl` does.
 3. **Automate first; manual telemetry decays.** Every field a human must
    fill at a session boundary will eventually be skipped, and a
    half-populated dataset is worse than a small honest one. Required
@@ -196,9 +198,9 @@ The guard is the highest-value piece of this model because it changes
 behavior before spend happens, rather than describing it afterward:
 
 - Pre-dispatch, estimate the session's work units (from the phase plan's
-  `Work units` annotation when present). **Do not start** a session whose
-  estimate exceeds `max_units_per_session`; split any phase likely to
-  exceed `max_units_per_phase`.
+  `Work units est` annotation when present). **Do not start** a session
+  whose estimate exceeds `max_units_per_session`; split any phase likely
+  to exceed `max_units_per_phase`.
 - The guard runs on tier-1 own-ledger counts against the project's
   configured budget — it does not depend on provider-reported quota.
 - If a usage-limit warning or credit-purchase prompt appears: **stop
@@ -231,7 +233,7 @@ At phase closure, the canonical `phase.completed` event stores the raw
 observations; reports render the valuations:
 
 ```text
-P02 completed.
+2.2/M3 completed.
   Stored:  AI work units consumed: 15 (estimated: 12)
            Direct credit spend: $0.00 · API spend: $0.00
            Human review: 45 min (observed)
@@ -241,7 +243,30 @@ P02 completed.
 ```
 
 Estimated-vs-actual units per phase is the forecast-accuracy signal that
-calibrates the unit weights and makes future phase sizing trustworthy.
+calibrates the unit weights and makes future phase sizing trustworthy. Use
+the stable `{releaseId}/{milestoneId}` form (see `roadmap-events.md`) as the
+phase identifier so this record still joins cleanly to the roadmap even if
+the release title or milestone wording is edited later.
+
+---
+
+## Contract schema mapping (v2.1)
+
+`roadmap-contract.schema.json` v2.1 adds optional, non-required fields so a
+release's "Phase plan" and "Budget guardrail" sections in `ROADMAP.md` are
+machine-visible rather than purely narrative:
+
+| ROADMAP.md section | Contract field | Nature |
+| --- | --- | --- |
+| Phase plan table | `release.phases[]` | Planning-time snapshot, parsed as-authored |
+| Budget guardrail bullets | `release.budgetGuardrail` | Planning-time snapshot, parsed as-authored |
+| Release Index "Dispatch readiness" | `release.dispatchReadiness` | Computed at parse time from status + findings, not authored |
+
+None of these fields carry actuals. Actuals (units consumed, spend, review
+minutes) live only in `roadmap-events.jsonl` and are joined to a
+`release.phases[]` entry by name at report time — the schema does not store
+actuals anywhere on the contract itself, consistent with operating
+principle 2 above.
 
 ---
 

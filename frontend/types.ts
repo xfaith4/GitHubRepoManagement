@@ -64,7 +64,30 @@ export interface AppSettings {
   zipArchive: boolean;
   scanDepth: number;
   githubUser?: string;
-  githubToken?: string;
+  /**
+   * NAME of the environment variable holding the GitHub token — never the
+   * token itself. The host reads the variable at runtime; no secret is stored
+   * in settings.json or transmitted from the browser.
+   */
+  gitHubTokenEnvVar?: string;
+}
+
+/** Reported by GET /api/auth/github/status — diagnostics for the env var name. */
+export interface GitHubAuthStatus {
+  mode: 'pat' | 'gh-cli' | 'github-app' | 'none';
+  tokenEnvVar: string;
+  tokenSource: 'env' | 'gh-cli' | 'none';
+  tokenEnvScope: string;
+  runningAsService: boolean;
+  hint: string;
+  ghCliPresent: boolean;
+  liveCheck?: {
+    checked: boolean;
+    valid: boolean;
+    login?: string;
+    expiresAt?: string;
+    error?: string;
+  } | null;
 }
 
 export interface Artifact {

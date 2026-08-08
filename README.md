@@ -76,7 +76,7 @@ Answers seven core questions across a portfolio of repositories:
 | GitHub CLI (`gh`) | Latest | Auth, PR counts, Copilot dispatch |
 | Node.js | v18+ | Frontend dev server |
 | npm | v9+ | Frontend dependencies |
-| GitHub PAT | — | Set as `GITHUB_TOKEN` env var |
+| GitHub PAT | — | Held in an env var; the app stores only that variable's **name** |
 
 > **OS:** Windows 10/11 (primary). Linux/macOS are untested.
 
@@ -115,11 +115,36 @@ Create `backend/config/settings.json` (or edit the existing file):
 
 ### 3. Set your GitHub token
 
+The app **never stores your token**. `settings.json` holds only the *name* of the
+environment variable to read (`secrets.gitHubTokenEnvVar`); the host reads that
+variable at runtime. Point it at any name you like, then set that variable:
+
 ```powershell
-$env:GITHUB_TOKEN = "ghp_your_personal_access_token"
+# The name configured above — use your own if you changed it.
+$env:GITHUB_TOKEN = "github_pat_..."
 ```
 
-The token needs read access to your org repos. Copilot task dispatch additionally requires the `copilot` scope.
+Required fine-grained PAT permissions:
+
+| Permission | Access | Needed for |
+| --- | --- | --- |
+| Metadata | Read | Repository listing and insights |
+| Contents | Read and write | README generation, branch pushes |
+| Pull requests | Read and write | PR creation and merge readiness |
+| Actions | Read | Workflow run state |
+| Checks | Read | Per-check merge detail (`gh pr checks`) |
+
+Copilot task dispatch additionally requires a token with Copilot access.
+
+> **Restart after changing it.** The host reads the variable at launch; a
+> variable set afterwards is not picked up until restart. If you run the
+> always-on service, the variable must be **Machine-scoped** — a LocalSystem
+> service cannot see User-scoped variables. See
+> [docs/always-on-service.md](docs/always-on-service.md).
+
+Settings → *GitHub Token — Environment Variable Name* shows whether the name you
+configured actually resolved in the host's process, and **Test connection**
+validates the token against GitHub and reports its expiry.
 
 ### 4. (Optional) Configure GitHub CLI path
 

@@ -1,10 +1,52 @@
 # {Project Name} — Product & Engineering Roadmap
 
-> Status: Active
->
-> Active release: {X.Y}
+> Project status: {Active | Paused | Archived}
 >
 > Product direction: {One-sentence description of the product direction and intended outcome}
+
+<!--
+AUTHORING RULES (not rendered as a section; parsers and agents should still read this comment)
+
+1. SINGLE SOURCE OF TRUTH FOR "ACTIVE": the active release is whichever release
+   section below carries `> Status: active`. Do not restate which release is
+   active up here in the header — a second field here would just be a second
+   place for that fact to go stale. Exactly one release should be `active` at
+   any time (see Section 8 guardrail).
+
+2. STATUS VOCABULARY IS LOWERCASE AND FIXED: planned | active | blocked |
+   validation | done | archived. Parsers normalize case and common aliases
+   (e.g. "in progress" -> active, "shipped" -> done), but always author in
+   lowercase to avoid relying on that normalization.
+
+3. MILESTONE IDS (recommended, not required for L3/L4 scoring): prefix a
+   checklist item with a short stable tag so it can be referenced from
+   roadmap-events.jsonl and from other milestones without relying on the
+   wording staying the same:
+     - [ ] [[M3]] Implement retry backoff in Poll-Provider.ps1
+   Reference a dependency inline when order matters and isn't top-to-bottom:
+     - [ ] [[M4]] Wire backoff into dispatcher (depends: M3)
+   Once assigned, an ID is permanent — never reassign it to a different item.
+
+4. TOKEN / COST DATA LIVES IN THE LEDGER, NOT HERE: do not hand-maintain a
+   running token or dollar total inline in this file. That number decays the
+   moment it's not updated. roadmap-events.jsonl is the append-only, always-
+   current source; ROADMAP_BUDGET_MODEL.md explains how it's valued. The
+   optional Phase plan table below is a point-in-time *estimate* for planning,
+   not a running actual.
+
+5. "Recently Completed" (Section 6) is NOT a mirror of the `[x]` items already
+   sitting inside active/planned release sections above — leave those where
+   they are. Section 6 only holds completed work whose original release
+   section has since been archived or removed from Section 5, so that
+   history survives even after the section that produced it is gone.
+
+6. "Dispatch readiness" in the Release Index (Section 4) is a computed field
+   (derived from `normalizedStatus` + open audit findings), not something to
+   hand-author differently from what the tooling would compute. If you're
+   filling this out by hand because no tooling exists yet, treat it as a
+   best-effort mirror of release status + known blockers, not a separate
+   judgment call.
+-->
 
 ## 1. Product Intent
 
@@ -33,6 +75,8 @@
 | {X.Y} | active | {Short purpose} | ready / blocked / needs repair |
 | {X.Z} | planned | {Short purpose} | planned |
 
+_Exactly one row above should show `active`. If a second release needs to become active, close out or explicitly re-status the first one in the same edit._
+
 ---
 
 ## 5. Release Roadmap
@@ -42,8 +86,6 @@
 > Status: active
 >
 > Completed: {YYYY-MM-DD — include only when status is done}
->
-> Token usage: {~N tokens — optional; cumulative AI/agent tokens spent delivering this release}
 
 **Goal:** {One sentence describing the functioning version this release should deliver. State what the product can do after this release that it cannot do before.}
 
@@ -54,9 +96,9 @@
 
 ### Engineering milestones
 
-- [x] {Completed implementation step} *(completed: {YYYY-MM-DD})*
-- [ ] {Concrete, testable implementation step — include file, function, command, or behavior where possible}
-- [ ] {Concrete, testable implementation step}
+- [x] [[M1]] {Completed implementation step} *(completed: {YYYY-MM-DD})*
+- [ ] [[M2]] {Concrete, testable implementation step — include file, function, command, or behavior where possible}
+- [ ] [[M3]] {Concrete, testable implementation step} (depends: M2)
 
 ### Acceptance criteria
 
@@ -75,25 +117,27 @@
 
 ### Risks and blockers
 
-- {Risk, blocker, or “None currently known.”}
+- {Risk, blocker, or "None currently known."}
 
 ### Dependencies
 
-- {Dependency, prerequisite, or “None.”}
+- {Dependency, prerequisite, or "None."}
 
 ### Known issues
 
-- {Known issue, pipeline feedback item, or “None currently known.”}
+- {Known issue, pipeline feedback item, or "None currently known."}
 
 ### Traceability
 
-- {Issue, PR, commit, ADR, workflow, test file, doc path, or “Not yet linked.”}
+- {Issue, PR, commit, ADR, workflow, test file, doc path, or "Not yet linked."} Reference milestone IDs where relevant, e.g. "M3 -> PR #482".
 
 ### Phase plan optional
 
-| Phase | Scope | Status | Completed | Token usage | Work units est → actual |
-| --- | --- | --- | --- | --- | --- |
-| Phase 1: {Name} | {Bounded commit-sized slice} | planned | — | — | {est. N} |
+_Planning-time estimate only — actuals are recorded in `roadmap-events.jsonl`, not edited back into this table._
+
+| Phase | Scope | Status | Completed | Work units est → actual |
+| --- | --- | --- | --- | --- |
+| Phase 1: {Name} | {Bounded commit-sized slice} | planned | — | {est. N} → {see ledger} |
 
 ### Budget guardrail optional
 
@@ -101,8 +145,8 @@ See `standards/roadmap/ROADMAP_BUDGET_MODEL.md` for the full model.
 
 - Estimated AI work units for this release: {N} · Max per phase: {N}
 - Before dispatch: check the budget ledger; do not start a session whose estimate exceeds the per-session cap.
-- Stop work if a usage-limit or credit-purchase prompt appears.
-- At each phase closure, record raw observations only: units consumed, token usage, direct credit/API spend, human review minutes, and credit-prompt/overage flags.
+- Stop work if a usage-limit or credit-purchase prompt appears; record a `quota.exhausted` event.
+- Actual consumption (units, tokens, spend, review minutes) is recorded as raw events at each phase closure — never re-typed into this file.
 
 ---
 
@@ -118,8 +162,8 @@ See `standards/roadmap/ROADMAP_BUDGET_MODEL.md` for the full model.
 
 ### Engineering milestones
 
-- [ ] {Concrete, testable implementation step}
-- [ ] {Concrete, testable implementation step}
+- [ ] [[M1]] {Concrete, testable implementation step}
+- [ ] [[M2]] {Concrete, testable implementation step}
 
 ### Acceptance criteria
 
@@ -133,9 +177,9 @@ See `standards/roadmap/ROADMAP_BUDGET_MODEL.md` for the full model.
 
 ## 6. Recently Completed
 
-{Preserve prior completed history here. Do not delete it. Every completed item carries an absolute completion date so the roadmap doubles as a project timeline.}
+{History preserved from release sections that have since been archived or removed from Section 5. Do not delete. Every completed item carries an absolute completion date so the roadmap doubles as a project timeline. Do not duplicate items still visible inline in Section 5 — they belong there, not here.}
 
-- [x] {Completed milestone or feature — short, verifiable description} *(completed: {YYYY-MM-DD})*
+- [x] {Completed milestone or feature — short, verifiable description} *(completed: {YYYY-MM-DD}, from Release {X.Y})*
 
 ---
 
@@ -156,6 +200,7 @@ These items support all releases and should be advanced continuously without obs
 
 ### Guardrails
 
+- Only one release may carry `Status: active` at a time; the active-release blockquote in Section 5 is the sole source of truth for this.
 - {Explicit rule to prevent a known failure mode}
 
 ---
@@ -172,3 +217,4 @@ A release should not be marked `done` unless:
 - Logging and error handling are sufficient to diagnose failures.
 - Later releases were not partially started just to create the illusion of momentum.
 - The release and each completed phase carry absolute completion dates in `YYYY-MM-DD` format where applicable.
+- Any milestone IDs referenced elsewhere (events, PRs, other milestones' `depends:` tags) still resolve — none were silently renumbered or removed.

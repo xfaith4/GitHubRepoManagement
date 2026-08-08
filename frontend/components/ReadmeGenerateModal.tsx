@@ -160,11 +160,13 @@ export default function ReadmeGenerateModal({
                     GitHub Copilot API key not configured
                   </div>
                   <div className="text-xs text-gray-300 space-y-1.5">
-                    <p>To enable README generation, configure one of the following:</p>
+                    <p>
+                      Keys are never stored in Settings — only the <em>name</em> of the environment
+                      variable that holds one. Configure any of the following:
+                    </p>
                     <ul className="list-disc list-inside space-y-1 text-gray-400">
-                      <li>Add <span className="font-mono text-yellow-300">readme.copilotApiKey</span> to Settings</li>
                       <li>Set the env var named by <span className="font-mono text-yellow-300">readme.copilotApiKeyEnvVar</span> in Settings</li>
-                      <li>Set <span className="font-mono text-yellow-300">GITHUB_TOKEN</span> with Copilot access</li>
+                      <li>Set the env var named by <span className="font-mono text-yellow-300">secrets.gitHubTokenEnvVar</span> to a token with Copilot access</li>
                       <li>Authenticate with <span className="font-mono text-yellow-300">gh auth login</span> (Copilot plan required)</li>
                     </ul>
                     <p className="text-gray-500 mt-2">
