@@ -883,9 +883,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     fetchRepoStatus(); // Refresh, as some settings might affect repo status (e.g. stale threshold)
   };
 
-  const handleInit = async (githubUser: string, cloneOwned: boolean, apiKey?: string, basePath?: string) => {
+  const handleInit = async (githubUser: string, cloneOwned: boolean, basePath?: string) => {
       try {
-        await startInit(githubUser, cloneOwned, apiKey, basePath);
+        await startInit(githubUser, cloneOwned, basePath);
         handleAction('init');
       } catch (err) {
         console.error("Init failed to start", err);

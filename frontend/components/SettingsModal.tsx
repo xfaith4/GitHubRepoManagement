@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect } from 'react';
-import { type AppSettings } from '../types';
-import { saveSettings } from '../services/apiClient';
+import React, { useState, useEffect, useCallback } from 'react';
+import { type AppSettings, type GitHubAuthStatus } from '../types';
+import { saveSettings, getGitHubAuthStatus } from '../services/apiClient';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -10,15 +10,47 @@ interface SettingsModalProps {
   currentSettings: AppSettings;
 }
 
+const ENV_VAR_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const TOKEN_LOOKALIKE_PATTERN = /^(gh[pousr]_|github_pat_)/;
+
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onSave, currentSettings }) => {
   const [settings, setSettings] = useState<AppSettings>(currentSettings);
   const [isSaving, setIsSaving] = useState(false);
+  const [authStatus, setAuthStatus] = useState<GitHubAuthStatus | null>(null);
+  const [isChecking, setIsChecking] = useState(false);
 
   useEffect(() => {
     setSettings(currentSettings);
   }, [currentSettings]);
 
+  // Resolve against the host's own environment as soon as the dialog opens, so
+  // an unreadable variable name is visible before the operator saves it.
+  const refreshAuthStatus = useCallback(async (validate: boolean) => {
+    setIsChecking(true);
+    try {
+      setAuthStatus(await getGitHubAuthStatus(validate));
+    } catch (error) {
+      console.error('Failed to read GitHub auth status', error);
+      setAuthStatus(null);
+    } finally {
+      setIsChecking(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) void refreshAuthStatus(false);
+  }, [isOpen, refreshAuthStatus]);
+
   if (!isOpen) return null;
+
+  const envVarName = settings.gitHubTokenEnvVar ?? '';
+  const envVarNameChanged = envVarName !== (currentSettings.gitHubTokenEnvVar ?? '');
+  const envVarNameError =
+    envVarName && TOKEN_LOOKALIKE_PATTERN.test(envVarName)
+      ? 'That looks like a token, not a variable name. Enter the NAME of the variable that holds it.'
+      : envVarName && !ENV_VAR_NAME_PATTERN.test(envVarName)
+        ? 'Use letters, digits, and underscores, starting with a letter or underscore.'
+        : '';
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
@@ -71,11 +103,85 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onSave, 
                 </p>
               </div>
               <div>
-                <label htmlFor="githubToken" className="block text-sm font-medium text-gray-300">GitHub Token (fallback)</label>
-                <input type="password" name="githubToken" id="githubToken" value={settings.githubToken ?? ''} onChange={handleChange} autoComplete="off" className="mt-1 block w-full bg-gray-900 border border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
-                <p className="mt-1 text-xs text-gray-500">
-                  Preferred source is environment variable <code>GITHUB_TOKEN</code>. This field is used only if env var is not set.
-                </p>
+                <label htmlFor="gitHubTokenEnvVar" className="block text-sm font-medium text-gray-300">GitHub Token — Environment Variable Name</label>
+                <input
+                  type="text"
+                  name="gitHubTokenEnvVar"
+                  id="gitHubTokenEnvVar"
+                  value={envVarName}
+                  onChange={handleChange}
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="GITHUB_TOKEN"
+                  aria-invalid={Boolean(envVarNameError)}
+                  aria-describedby="gitHubTokenEnvVarHelp"
+                  className={`mt-1 block w-full bg-gray-900 border rounded-md shadow-sm py-2 px-3 text-white font-mono focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${envVarNameError ? 'border-red-500' : 'border-gray-600'}`}
+                />
+                <div id="gitHubTokenEnvVarHelp" className="mt-1 space-y-1 text-xs text-gray-500">
+                  <p className="text-amber-300/90">
+                    Enter the <strong>name</strong> of the variable, not the token. This app never
+                    stores your token — it reads the named variable at runtime.
+                  </p>
+                  <p>
+                    The token needs these fine-grained permissions: <code>Metadata: Read</code>,{' '}
+                    <code>Contents: Read and write</code>, <code>Pull requests: Read and write</code>,{' '}
+                    <code>Actions: Read</code>, and <code>Checks: Read</code> for per-check merge detail.
+                  </p>
+                  <p>
+                    {authStatus?.runningAsService
+                      ? 'This host runs as a service, so the variable must be set at Machine scope — a User-scoped variable is invisible to it. Restart the service after setting it.'
+                      : 'Set the variable before launching the host; one set after launch is not picked up until restart.'}
+                  </p>
+                </div>
+
+                {envVarNameError && (
+                  <p className="mt-2 text-xs text-red-300">{envVarNameError}</p>
+                )}
+
+                <div className="mt-2 rounded-md border border-gray-700 bg-gray-900/50 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-gray-300">Resolution on the host</span>
+                    <button
+                      type="button"
+                      onClick={() => void refreshAuthStatus(true)}
+                      disabled={isChecking}
+                      className="text-xs text-blue-400 hover:text-blue-300 disabled:text-gray-500"
+                    >
+                      {isChecking ? 'Checking…' : 'Test connection'}
+                    </button>
+                  </div>
+
+                  {envVarNameChanged && (
+                    <p className="mt-2 text-xs text-amber-300">
+                      Save, then restart the host before testing — the status below still reflects
+                      the previously saved name.
+                    </p>
+                  )}
+
+                  {!authStatus && !isChecking && (
+                    <p className="mt-2 text-xs text-gray-500">Status unavailable.</p>
+                  )}
+
+                  {authStatus && (
+                    <div className="mt-2 space-y-1 text-xs">
+                      <p className={authStatus.tokenSource === 'none' ? 'text-red-300' : 'text-green-300'}>
+                        {authStatus.tokenSource === 'env'
+                          ? `Resolved from ${authStatus.tokenEnvVar} (${authStatus.tokenEnvScope} scope).`
+                          : authStatus.tokenSource === 'gh-cli'
+                            ? `${authStatus.tokenEnvVar} is empty — falling back to the gh CLI credential.`
+                            : `${authStatus.tokenEnvVar} did not resolve. GitHub calls run unauthenticated.`}
+                      </p>
+                      {authStatus.hint && <p className="text-amber-300">{authStatus.hint}</p>}
+                      {authStatus.liveCheck?.checked && (
+                        <p className={authStatus.liveCheck.valid ? 'text-green-300' : 'text-red-300'}>
+                          {authStatus.liveCheck.valid
+                            ? `Token is live as ${authStatus.liveCheck.login}${authStatus.liveCheck.expiresAt ? ` — expires ${authStatus.liveCheck.expiresAt}` : ''}.`
+                            : authStatus.liveCheck.error}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
               <div>
                 <label htmlFor="reportPath" className="block text-sm font-medium text-gray-300">Report Folder</label>
@@ -102,7 +208,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onSave, 
             <button type="button" onClick={onClose} className="py-2 px-4 text-sm font-medium rounded-md text-gray-300 bg-gray-600 hover:bg-gray-500 transition-colors">
               Cancel
             </button>
-            <button type="submit" disabled={isSaving} className="py-2 px-4 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50">
+            <button type="submit" disabled={isSaving || Boolean(envVarNameError)} className="py-2 px-4 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50">
               {isSaving ? 'Saving...' : 'Save'}
             </button>
           </div>

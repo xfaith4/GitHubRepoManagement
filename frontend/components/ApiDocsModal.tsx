@@ -522,8 +522,7 @@ const CATEGORIES: CategoryDef[] = [
           { name: 'scanDepth', type: 'int', description: 'Folder scan depth' },
           { name: 'daysInactive', type: 'int', description: 'Inactive threshold in days' },
           { name: 'githubUser', type: 'string', description: 'Default GitHub user or org' },
-          { name: 'githubToken', type: 'string', description: 'Saved fallback token when env var is not set' },
-          { name: 'gitHubTokenEnvVar', type: 'string', description: 'Environment variable name to read first for GitHub auth' },
+          { name: 'gitHubTokenEnvVar', type: 'string', description: 'NAME of the environment variable holding the GitHub token. Storing a literal token is rejected with 400.' },
         ],
         responseFields: [
           { name: 'success', type: 'bool', description: 'Save result flag' },
@@ -685,10 +684,9 @@ const CATEGORIES: CategoryDef[] = [
       {
         method: 'POST',
         path: '/api/github/status',
-        summary: 'Fetches repository insights from GitHub using direct REST API when a token is available, otherwise falls back to gh CLI.',
+        summary: 'Fetches repository insights from GitHub using the token in the configured environment variable, otherwise falls back to gh CLI. Sending a token in the body is rejected with 400.',
         bodyParams: [
           { name: 'githubUser', type: 'string', description: 'GitHub user or org name. Falls back to saved settings when omitted.' },
-          { name: 'apiKey', type: 'string', description: 'Request-scoped token override' },
           { name: 'includePrivate', type: 'bool', description: 'Include private repositories' },
           { name: 'includeArchived', type: 'bool', description: 'Include archived repositories' },
           { name: 'includeForks', type: 'bool', description: 'Include forked repositories' },

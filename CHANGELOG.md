@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-07 — GitHub auth is env-var-name indirection only (no stored or transmitted tokens)
+
+### Changes
+
+- **What it fixes:** the host had three ways to obtain a GitHub token, two of which handled the secret directly — a literal token persisted to the **git-tracked** `backend/config/settings.json` under `secrets.githubToken`, and a token typed into the browser and POSTed per request. The `secrets.gitHubTokenEnvVar` indirection already existed but was never exposed in the UI and was bypassed by three call sites that hardcoded `$env:GITHUB_TOKEN`, so renaming the variable silently broke them. Separately, a LocalSystem service cannot read a User-scoped variable, and nothing reported that — an operator saw only unexplained anonymous rate limits.
+- **`backend/api-host/Start-RepoManagementApiHost.ps1`** — new `Get-GitHubTokenEnvVarName` and `Get-GitHubTokenResolution` resolve the token from the **named** variable first, then the `gh` CLI, returning the source and environment scope alongside the token. This drops the `secrets.githubToken` fallback, and removes the prior implementation's transient process-wide `SetEnvironmentVariable($name, $null)` — a race in a threaded HTTP host — that also put `gh` ahead of the env var, contradicting the documented order. `Get-ConfiguredGitHubToken` is now a thin wrapper and no longer takes `-RequestToken`. New `Remove-StoredGitHubTokenFromSettings` strips a surviving stored token at startup and warns to revoke it (it may exist in git history). Startup logs which variable resolved and from which scope. `PATCH /api/settings` rejects `githubToken` with `400`, validates `gitHubTokenEnvVar` against `^[A-Za-z_][A-Za-z0-9_]*$`, and rejects values that look like a token rather than a name. `POST /api/github/status` rejects a body token with `400` instead of silently ignoring it. Three hardcoded `$env:GITHUB_TOKEN` reads (agent-run branch push, roadmap dispatch, setup prerequisites) now go through the resolver.
+- **`GET /api/auth/github/status`** — doubles as the resolve probe: reports `tokenEnvVar`, `tokenSource`, `tokenEnvScope`, `runningAsService`, and a `hint` naming the actual cause of a miss (User-scoped variable invisible to a service; variable set after launch). `?validate=1` spends one GitHub call to confirm the token is live and report its expiry.
+- **`backend/modules/readme/Readme.Generator.ps1`** — hardening, same leak shape: `_ResolveApiKey` no longer reads a literal `readme.copilotApiKey` from the git-tracked config, so resolution starts at the `readme.copilotApiKeyEnvVar` name. Its GitHub-token fallback also reads the configured variable name instead of hardcoding `GITHUB_TOKEN`. The startup stripper is generalized to `Remove-StoredSecretsFromSettings` and clears both legacy slots (`secrets.githubToken`, `readme.copilotApiKey`), warning to revoke what it removed.
+- **Frontend** — Settings replaces the token password field with a **variable name** input carrying the required PAT permissions and the Machine-scope warning, plus a live resolution panel and a **Test connection** button. Token inputs removed from the Data Source and Init modals; `AppSettings.githubToken` replaced by `gitHubTokenEnvVar`; new `GitHubAuthStatus` type and `getGitHubAuthStatus()` client.
+
+- **`scripts/Invoke-ApiHostSmokeTest.ps1`** — new step *"GitHub auth — env-var-name indirection"* asserts the three refusals (stored token, body token, token pasted into the name field) return `400`, that `settings.json` never gains a `githubToken` key, and that the resolve probe returns `tokenEnvVar`/`tokenSource`/`tokenEnvScope`/`runningAsService`/`hint`.
+
+### Testing
+
+- Parser check clean on both modified PowerShell files; `npm run typecheck --prefix frontend` exit 0.
+- Module smoke exit 0 (`-WorkspaceRoot F:\Development\GitHubRepoManagement`).
+- API-host smoke exit 0 on port 7392; new summary fields `githubAuthProbeOk=True githubTokenSource=env`, step output `github auth ok: envVar=GITHUB_TOKEN source=env scope='User' service=False; stored/wire/pasted tokens all rejected 400`. `routeCensusMissing=0`.
+- Not covered: the LocalSystem service path (`runningAsService=true` branch and the Machine-scope hint) — the smoke host runs interactively. Verify on the next service repair.
+
 ## 2026-07-12 — Installer fix: Reconfigure preserves HTTPS + secrets move to machine env vars (out of git)
 
 ### Changes

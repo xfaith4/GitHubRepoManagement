@@ -547,20 +547,52 @@ Continuous, not release-scoped. Completed cross-cutting items were archived
 
 ### Lane 0.2 — Credential freshness
 
-- [ ] **Reissue GitHub write credentials — confirmed expired 2026-08-07.**
-      *(state: planned — no longer a presumption)* The `GITHUB_TOKEN`
-      fine-grained PAT provisioned 2026-07-06 (read+write+admin, all 65
-      repos) carried a ~30-day window. `gh auth status` now reports **both**
-      the `GITHUB_TOKEN` env var and the keyring token as invalid, and
-      `gh api` returns `HTTP 401: Bad credentials`. Re-auth with
-      `gh auth login -h github.com`, then refresh the machine env var.
-      Gates Release 2.7 Phase A.
-- [ ] **Add a live token-validation probe.** `GET /api/auth/github/status`
-      reports the configured *mode* (`mode=pat`), not token liveness — it
-      reported healthy throughout the expiry above. Probe an authenticated
-      `GET /user` and surface validity + expiry in the auth status payload,
-      so an expired token is visible in the dashboard instead of surfacing
-      as a failed dispatch. *(state: planned)*
+- [x] **Reissue GitHub write credentials — confirmed expired 2026-08-07.**
+      *(state: done 2026-08-07)* The fine-grained PAT provisioned 2026-07-06
+      carried a ~30-day window and expired; `gh api` returned
+      `HTTP 401: Bad credentials`. Reissued 2026-08-07 and set as the
+      **User**-scoped `GITHUB_TOKEN`. **Evidence:** `gh api user` returns
+      `xfaith4`; `Github-Authentication-Token-Expiration: 2026-11-06
+      03:41:59 UTC`. Two follow-ups below.
+- [ ] **Grant the PAT `Checks: Read`.** *(state: planned — non-blocker)*
+      The reissued token still 403s on
+      `repos/{owner}/{repo}/commits/{ref}/check-runs`
+      (`Resource not accessible by personal access token`), so
+      `gh pr checks <n> --watch` is unusable and the merge loop relies on
+      `mergeStateStatus` as a proxy. Metadata, Contents, Pull requests, and
+      Actions reads all pass. Verified 2026-08-07.
+- [ ] **Give the always-on service a readable token.** *(state: planned —
+      blocks Release 2.7 Phase A)* `RepoMgmtPortal` runs as **LocalSystem**,
+      which cannot see the User-scoped `GITHUB_TOKEN`; the ImagePath passes
+      no `-GitHubToken` and Machine scope is unset, so the portal's GitHub
+      calls run unauthenticated. Fix:
+      `.\scripts\Install-RepoManagementService.ps1 -Action Repair
+      -GitHubToken $env:GITHUB_TOKEN` (sets Machine scope, restarts).
+      Confirm afterwards with `GET /api/auth/github/status?validate=1` →
+      `tokenEnvScope=Machine`, `liveCheck.valid=true`. Verified unset
+      2026-08-07.
+- [x] **Add a live token-validation probe.** `GET /api/auth/github/status`
+      reported the configured *mode* (`mode=pat`), not token liveness — it
+      reported healthy throughout the expiry above. *(state: done
+      2026-08-07)* The route now accepts `?validate=1`, which probes an
+      authenticated `GET /user` and returns `liveCheck.{valid, login,
+      expiresAt}`; Settings surfaces it behind a **Test connection** button.
+      The same route also reports `tokenSource`, `tokenEnvScope`, and
+      `runningAsService` so an unreadable variable is distinguishable from an
+      unset one. **Evidence:** `scripts/Invoke-ApiHostSmokeTest.ps1` step
+      *"GitHub auth — env-var-name indirection"* asserts the probe fields and
+      the 400 rejections; run 2026-08-07 exit 0, summary
+      `githubAuthProbeOk=True githubTokenSource=env`.
+- [x] **Remove the last stored-secret path: `readme.copilotApiKey`.**
+      *(state: done 2026-08-07)* `Readme.Generator.ps1` `_ResolveApiKey`
+      accepted a literal Copilot key stored in `settings.json` (priority 1)
+      ahead of the `readme.copilotApiKeyEnvVar` name — the same leak shape
+      the `secrets.githubToken` removal closed. The literal path is gone;
+      resolution starts at the env-var name. The startup stripper is now
+      `Remove-StoredSecretsFromSettings` and clears **both** legacy slots.
+      **Evidence:** module smoke exit 0; API-host smoke exit 0 with
+      `githubAuthProbeOk=True`; `grep copilotApiKey` shows no remaining read
+      of the literal key.
 
 ### Lane 0.3 — Layout follow-ups from the 2026-07-15 cleanup
 

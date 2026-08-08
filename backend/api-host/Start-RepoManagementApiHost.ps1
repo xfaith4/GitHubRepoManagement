@@ -1589,6 +1589,69 @@ function Get-HostSettings {
     return ConvertFrom-JsonCompat -Json (Get-Content -LiteralPath $configPath -Raw)
 }
 
+function Remove-StoredSecretsFromSettings {
+    <#
+    .SYNOPSIS
+        Strip literal secrets left in settings.json by an older build.
+    .DESCRIPTION
+        settings.json is git-tracked, so a literal secret stored in it is one
+        commit from leaking. The host reads only environment variable *names*
+        now, so any surviving value is dead weight and pure risk. Removes
+        secrets.githubToken and readme.copilotApiKey at startup and tells the
+        operator to revoke them. The secrets themselves are never logged.
+    .OUTPUTS
+        [string[]] The dotted paths of the keys that held a value.
+    #>
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param()
+
+    $configPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
+    if (-not (Test-Path -LiteralPath $configPath)) { return @() }
+
+    # container key -> secret key, for every literal-secret slot older builds wrote.
+    $legacySecretKeys = @(
+        @{ Container = 'secrets'; Key = 'githubToken';    EnvVarSetting = 'secrets.gitHubTokenEnvVar' },
+        @{ Container = 'readme';  Key = 'copilotApiKey';  EnvVarSetting = 'readme.copilotApiKeyEnvVar' }
+    )
+
+    try {
+        $settings = ConvertFrom-JsonCompat -Json (Get-Content -LiteralPath $configPath -Raw)
+        if (-not ($settings -is [System.Collections.IDictionary])) { return @() }
+
+        $removed = [System.Collections.Generic.List[string]]::new()
+        $changed = $false
+        foreach ($slot in $legacySecretKeys) {
+            if (-not $settings.ContainsKey($slot.Container)) { continue }
+            $container = $settings[$slot.Container]
+            if (-not ($container -is [System.Collections.IDictionary]) -or -not $container.ContainsKey($slot.Key)) { continue }
+            if (-not $PSCmdlet.ShouldProcess($configPath, ("Remove {0}.{1}" -f $slot.Container, $slot.Key))) { continue }
+
+            if (-not [string]::IsNullOrWhiteSpace([string]$container[$slot.Key])) {
+                $removed.Add(('{0}.{1} (use {2})' -f $slot.Container, $slot.Key, $slot.EnvVarSetting))
+            }
+            $container.Remove($slot.Key)
+            $changed = $true
+        }
+
+        if (-not $changed) { return @() }
+
+        if (-not $settings.ContainsKey('secrets')) { $settings.secrets = @{} }
+        if (-not $settings.secrets.ContainsKey('gitHubTokenEnvVar')) {
+            $settings.secrets.gitHubTokenEnvVar = 'GITHUB_TOKEN'
+        }
+        ($settings | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $configPath -Encoding UTF8
+
+        if ($removed.Count -gt 0) {
+            Write-HostLog ("WARN secrets: removed stored secret(s) from settings.json - {0}. Storing secrets is no longer supported; set the named environment variable instead, and REVOKE the removed value - it may exist in git history." -f ($removed -join '; '))
+        }
+        return $removed.ToArray()
+    }
+    catch {
+        Write-HostLog ("WARN secrets: could not strip stored secrets - {0}" -f $_.Exception.Message)
+        return @()
+    }
+}
+
 # ── Release 2.2 — API authentication + network hardening ─────────────────────
 # Backward-compatible by default: with no `auth` block (or requireApiKey=false)
 # the gate is a no-op and every existing loopback flow keeps working. Auth only
@@ -2041,59 +2104,115 @@ function Clear-StatusCache {
     }
 }
 
-function Get-ConfiguredGitHubToken {
+# Valid POSIX/Windows environment variable name. Enforced on write so a bad
+# name is rejected at the dialog instead of silently resolving to nothing.
+$script:EnvVarNamePattern = '^[A-Za-z_][A-Za-z0-9_]*$'
+
+# A service process cannot see User-scoped environment variables. Detecting this
+# lets the token diagnostics name the actual cause instead of "not set".
+$script:RunningAsService = (-not [Environment]::UserInteractive) -or
+    ([Environment]::UserName -eq 'SYSTEM')
+
+function Get-GitHubTokenEnvVarName {
+    <#
+    .SYNOPSIS
+        Name of the environment variable that holds the GitHub token.
+    .DESCRIPTION
+        The host never stores a token. Settings carry only the *name* of the
+        variable to read; 'GITHUB_TOKEN' is the default when unset.
+    #>
     param(
         [Parameter(Mandatory = $true)]
-        [hashtable]$Settings,
-        [Parameter()]
-        [string]$RequestToken
+        [hashtable]$Settings
     )
 
-    if (-not [string]::IsNullOrWhiteSpace($RequestToken)) {
-        return $RequestToken
+    if ($Settings.ContainsKey('secrets') -and
+        $Settings.secrets -is [System.Collections.IDictionary] -and
+        $Settings.secrets.ContainsKey('gitHubTokenEnvVar') -and
+        $Settings.secrets.gitHubTokenEnvVar) {
+        return [string]$Settings.secrets.gitHubTokenEnvVar
     }
 
-    $envVarName = if ($Settings.ContainsKey('secrets') -and $Settings.secrets.ContainsKey('gitHubTokenEnvVar') -and $Settings.secrets.gitHubTokenEnvVar) {
-        [string]$Settings.secrets.gitHubTokenEnvVar
-    }
-    else {
-        'GITHUB_TOKEN'
+    return 'GITHUB_TOKEN'
+}
+
+function Get-GitHubTokenResolution {
+    <#
+    .SYNOPSIS
+        Resolve the GitHub token plus the diagnostics needed to explain a miss.
+    .DESCRIPTION
+        Resolution order is the named environment variable first, then the
+        'gh' CLI credential as a last resort. Returns the token together with
+        the variable name, the source, and — on Windows — which environment
+        scope supplied the value, so the UI can tell an operator that a
+        User-scoped variable is invisible to a LocalSystem service.
+
+        Never emits the token into logs or responses; callers that surface
+        this to a client must project only the non-secret fields.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Settings
+    )
+
+    $envVarName = Get-GitHubTokenEnvVarName -Settings $Settings
+
+    $envToken = [Environment]::GetEnvironmentVariable($envVarName)
+    if (-not [string]::IsNullOrWhiteSpace($envToken)) {
+        # Report the scope this process actually inherited it from. A value
+        # present in Process but absent from User/Machine came from the
+        # launching shell and will not survive a service restart.
+        $scope = 'Process'
+        foreach ($candidate in 'Machine', 'User') {
+            try {
+                $scoped = [Environment]::GetEnvironmentVariable($envVarName, $candidate)
+                if ($scoped -eq $envToken) { $scope = $candidate; break }
+            }
+            catch { }
+        }
+
+        return [pscustomobject]@{
+            EnvVarName = $envVarName
+            Token      = $envToken
+            Source     = 'env'
+            Scope      = $scope
+        }
     }
 
     $ghCommand = Get-Command -Name 'gh' -ErrorAction SilentlyContinue
     if ($ghCommand) {
-        $originalEnvToken = [Environment]::GetEnvironmentVariable($envVarName)
         try {
-            if (-not [string]::IsNullOrWhiteSpace($originalEnvToken)) {
-                [Environment]::SetEnvironmentVariable($envVarName, $null)
-            }
-
-            $ghTokenOutput = & gh auth token 2>$null
+            $ghTokenOutput = & $ghCommand.Source auth token 2>$null
             if ($LASTEXITCODE -eq 0) {
                 $ghToken = ($ghTokenOutput | Out-String).Trim()
                 if (-not [string]::IsNullOrWhiteSpace($ghToken)) {
-                    return $ghToken
+                    return [pscustomobject]@{
+                        EnvVarName = $envVarName
+                        Token      = $ghToken
+                        Source     = 'gh-cli'
+                        Scope      = ''
+                    }
                 }
             }
         }
         catch { }
-        finally {
-            if (-not [string]::IsNullOrWhiteSpace($originalEnvToken)) {
-                [Environment]::SetEnvironmentVariable($envVarName, $originalEnvToken)
-            }
-        }
     }
 
-    $envToken = [Environment]::GetEnvironmentVariable($envVarName)
-    if (-not [string]::IsNullOrWhiteSpace($envToken)) {
-        return $envToken
+    return [pscustomobject]@{
+        EnvVarName = $envVarName
+        Token      = ''
+        Source     = 'none'
+        Scope      = ''
     }
+}
 
-    if ($Settings.ContainsKey('secrets') -and $Settings.secrets.ContainsKey('githubToken') -and $Settings.secrets.githubToken) {
-        return [string]$Settings.secrets.githubToken
-    }
+function Get-ConfiguredGitHubToken {
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Settings
+    )
 
-    return ''
+    return (Get-GitHubTokenResolution -Settings $Settings).Token
 }
 
 function Get-GitHubApiHeaders {
@@ -2450,7 +2569,7 @@ function Add-GitHubMetadataToStatusResult {
         return $StatusResult
     }
 
-    $token = Get-ConfiguredGitHubToken -Settings $Settings -RequestToken ''
+    $token = Get-ConfiguredGitHubToken -Settings $Settings
     foreach ($ownerEntry in $reposByOwner.Values) {
         $metadataMap = Get-GitHubRepoMetadataMapViaApi -Owner $ownerEntry.owner -Token $token
         if ($metadataMap.Count -eq 0) {
@@ -4979,6 +5098,26 @@ Write-HostLog ("Repo Management API host started on http://{0}:{1}" -f $BindAddr
 Write-HostLog ("Auth: {0}" -f $(if ($script:AuthEnforced) { 'API key required on /api routes' } else { 'open (loopback; no API key required)' }))
 Write-HostLog ("Ops log: {0}" -f (Get-ValueOrDefault $script:OpsLogPath '(none)'))
 
+# GitHub auth is env-var-name indirection only: settings carry the variable
+# NAME, never a token. Report what the name resolves to in THIS process, since
+# a LocalSystem service cannot see a User-scoped variable.
+$null = Remove-StoredSecretsFromSettings
+try {
+    $tokenResolution = Get-GitHubTokenResolution -Settings (Get-HostSettings)
+    switch ($tokenResolution.Source) {
+        'env' {
+            Write-HostLog ("GitHub auth: token from env var '{0}' ({1} scope)" -f $tokenResolution.EnvVarName, $tokenResolution.Scope)
+        }
+        'gh-cli' {
+            Write-HostLog ("GitHub auth: env var '{0}' is empty; falling back to the 'gh' CLI credential" -f $tokenResolution.EnvVarName)
+        }
+        default {
+            Write-HostLog ("WARN GitHub auth: env var '{0}' is not set in this process and no 'gh' credential is available - GitHub calls will run unauthenticated (60 req/hr, no private repos). Set it in a scope this host can read{1}." -f $tokenResolution.EnvVarName, $(if ($script:RunningAsService) { ' (a service cannot read User-scoped variables; use Machine scope)' } else { '' }))
+        }
+    }
+}
+catch { Write-HostLog ("WARN GitHub auth: token resolution probe failed - {0}" -f $_.Exception.Message) }
+
 # Release 2.1 Phase 1 — SQLite persistence boundary bootstrap (non-fatal).
 # JSON stores remain authoritative during rollout; a missing SQLite provider
 # only disables the additive mirror writes.
@@ -5984,19 +6123,67 @@ try {
                     # PAT-precedence. PAT/env token wins over a configured GitHub
                     # App. Live App-token minting/refresh needs a registered app
                     # (operator step); this route surfaces which mode is active.
+                    # Doubles as the env-var resolve probe for the Settings dialog:
+                    # it answers "does the name I configured actually resolve in
+                    # the host's own process?", which is the failure a browser
+                    # cannot detect on the operator's behalf. Pass ?validate=1 to
+                    # additionally spend one GitHub call confirming the token is
+                    # live and reporting its expiry.
                     Add-MetricCounter -Name 'api_requests_total'
+                    $q = Parse-QueryString -Query $req.Query
+                    $validateLive = ($q.ContainsKey('validate') -and $q['validate'] -in @('1', 'true', 'yes'))
                     $s = Get-HostSettings
-                    $tokenEnvVar = if ($s.ContainsKey('secrets') -and $s.secrets -is [System.Collections.IDictionary] -and $s.secrets.ContainsKey('gitHubTokenEnvVar') -and $s.secrets.gitHubTokenEnvVar) { [string]$s.secrets.gitHubTokenEnvVar } else { 'GITHUB_TOKEN' }
-                    $patPresent = -not [string]::IsNullOrWhiteSpace([System.Environment]::GetEnvironmentVariable($tokenEnvVar))
+                    $resolution = Get-GitHubTokenResolution -Settings $s
+                    $tokenEnvVar = $resolution.EnvVarName
+                    $patPresent = ($resolution.Source -eq 'env')
                     $ghCliPresent = [bool](Get-Command gh -ErrorAction SilentlyContinue)
                     $githubAppConfigured = $false
                     if ($s.ContainsKey('githubApp') -and $s.githubApp -is [System.Collections.IDictionary]) {
                         $ga = $s.githubApp
                         $githubAppConfigured = ($ga.ContainsKey('appId') -and $ga.appId) -and ($ga.ContainsKey('installationId') -and $ga.installationId)
                     }
-                    $mode = if ($patPresent) { 'pat' } elseif ($ghCliPresent) { 'gh-cli' } elseif ($githubAppConfigured) { 'github-app' } else { 'none' }
+                    $mode = if ($patPresent) { 'pat' } elseif ($resolution.Source -eq 'gh-cli') { 'gh-cli' } elseif ($githubAppConfigured) { 'github-app' } else { 'none' }
                     $appReadiness = $null
                     try { $appReadiness = Get-GitHubAppReadiness -GitHubApp $(if ($s.ContainsKey('githubApp')) { $s.githubApp } else { $null }) } catch { $appReadiness = $null }
+
+                    # Name the actual cause of a miss instead of a bare "not set".
+                    $hint = ''
+                    if ($resolution.Source -eq 'none') {
+                        $hint = if ($script:RunningAsService) {
+                            "Environment variable '$tokenEnvVar' is not visible to this host, which runs as a service. Service processes cannot read User-scoped variables - set it at Machine scope and restart the service."
+                        } else {
+                            "Environment variable '$tokenEnvVar' is not set in the host's process. Set it and restart the host; a variable set after launch is not picked up."
+                        }
+                    }
+                    elseif ($resolution.Source -eq 'env' -and $resolution.Scope -eq 'Process' -and $script:RunningAsService) {
+                        $hint = "Resolved from the process environment only. It will not survive a service restart unless it is set at Machine scope."
+                    }
+
+                    $liveCheck = $null
+                    if ($validateLive) {
+                        if ([string]::IsNullOrWhiteSpace($resolution.Token)) {
+                            $liveCheck = @{ checked = $true; valid = $false; error = 'No token to validate.' }
+                        }
+                        else {
+                            try {
+                                $probeHeaders = Get-GitHubApiHeaders -Token $resolution.Token
+                                $probeResponse = Invoke-WebRequest -Uri 'https://api.github.com/user' -Headers $probeHeaders -Method Get -UseBasicParsing -ErrorAction Stop
+                                $probeLogin = (ConvertFrom-JsonCompat -Json $probeResponse.Content).login
+                                $probeExpiry = ''
+                                try { $probeExpiry = [string]($probeResponse.Headers['github-authentication-token-expiration'] | Select-Object -First 1) } catch { }
+                                $liveCheck = @{
+                                    checked   = $true
+                                    valid     = $true
+                                    login     = [string]$probeLogin
+                                    expiresAt = $probeExpiry
+                                }
+                            }
+                            catch {
+                                $liveCheck = @{ checked = $true; valid = $false; error = ("GitHub rejected the token: {0}" -f $_.Exception.Message) }
+                            }
+                        }
+                    }
+
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data = @{
@@ -6006,7 +6193,12 @@ try {
                             githubAppConfigured = [bool]$githubAppConfigured
                             githubAppReadiness  = $appReadiness
                             tokenEnvVar         = $tokenEnvVar
-                            precedence          = @('pat', 'gh-cli', 'github-app')
+                            tokenSource         = $resolution.Source
+                            tokenEnvScope       = $resolution.Scope
+                            runningAsService    = [bool]$script:RunningAsService
+                            hint                = $hint
+                            liveCheck           = $liveCheck
+                            precedence          = @('env-var', 'gh-cli', 'github-app')
                         }
                     }
                 }
@@ -6127,8 +6319,9 @@ try {
                 'GET /setup/prerequisites' {
                     Add-MetricCounter -Name 'api_requests_total'
                     $s = Get-HostSettings
-                    $tokenEnvVar = if ($s.ContainsKey('secrets') -and $s.secrets -is [System.Collections.IDictionary] -and $s.secrets.ContainsKey('gitHubTokenEnvVar') -and $s.secrets.gitHubTokenEnvVar) { [string]$s.secrets.gitHubTokenEnvVar } else { 'GITHUB_TOKEN' }
-                    $tokenPresent = (-not [string]::IsNullOrWhiteSpace([System.Environment]::GetEnvironmentVariable($tokenEnvVar))) -or [bool](Get-Command gh -ErrorAction SilentlyContinue)
+                    $prereqResolution = Get-GitHubTokenResolution -Settings $s
+                    $tokenEnvVar = $prereqResolution.EnvVarName
+                    $tokenPresent = ($prereqResolution.Source -ne 'none')
                     $outputWritable = $false
                     try {
                         $probeDir = Join-Path $WorkspaceRoot 'output'
@@ -6143,7 +6336,7 @@ try {
                         @{ id = 'git';         label = 'Git available';                   required = $true;  ok = [bool](Get-Command git -ErrorAction SilentlyContinue); detail = '' },
                         @{ id = 'outputWritable'; label = 'output/ directory writable';    required = $true;  ok = $outputWritable; detail = '' },
                         @{ id = 'gh';          label = 'GitHub CLI (optional)';           required = $false; ok = [bool](Get-Command gh -ErrorAction SilentlyContinue); detail = '' },
-                        @{ id = 'githubToken'; label = 'GitHub token/CLI configured';     required = $false; ok = [bool]$tokenPresent; detail = "env: $tokenEnvVar" }
+                        @{ id = 'githubToken'; label = 'GitHub token/CLI configured';     required = $false; ok = [bool]$tokenPresent; detail = $(if ($tokenPresent) { "env var '$tokenEnvVar' (source: $($prereqResolution.Source))" } else { "env var '$tokenEnvVar' is not set" }) }
                     )
                     $requiredOk = (@($checks | Where-Object { $_.required -and -not $_.ok }).Count -eq 0)
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
@@ -6347,18 +6540,48 @@ try {
                         if (-not $existing.ContainsKey('reconcile')) { $existing.reconcile = @{} }
                         $existing.reconcile.gitHubOwner = [string]$body.githubUser
                     }
-                    if ($body.ContainsKey('githubToken')) {
-                        if (-not $existing.ContainsKey('secrets')) { $existing.secrets = @{} }
-                        if ([string]::IsNullOrWhiteSpace([string]$body.githubToken)) {
-                            $existing.secrets.Remove('githubToken')
+                    # Storing a literal token is no longer supported: settings.json
+                    # is git-tracked, so a secret written here leaks on commit.
+                    if ($body.ContainsKey('githubToken') -and -not [string]::IsNullOrWhiteSpace([string]$body.githubToken)) {
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                            success  = $false
+                            error    = "Storing a GitHub token in settings is not supported. Send 'gitHubTokenEnvVar' with the NAME of an environment variable holding the token instead."
+                            category = 'validation'
                         }
-                        else {
-                            $existing.secrets.githubToken = [string]$body.githubToken
-                        }
+                        break
                     }
                     if ($body.ContainsKey('gitHubTokenEnvVar') -and -not [string]::IsNullOrWhiteSpace([string]$body.gitHubTokenEnvVar)) {
+                        $requestedEnvVar = ([string]$body.gitHubTokenEnvVar).Trim()
+                        if ($requestedEnvVar -notmatch $script:EnvVarNamePattern) {
+                            Add-MetricCounter -Name 'api_requests_total'
+                            Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                                success  = $false
+                                error    = ("'{0}' is not a valid environment variable name. Use letters, digits, and underscores, starting with a letter or underscore." -f $requestedEnvVar)
+                                category = 'validation'
+                            }
+                            break
+                        }
+                        # Reject a value that looks like a token rather than a name —
+                        # the most likely paste mistake, and the one that would put a
+                        # secret in the tracked config.
+                        if ($requestedEnvVar -match '^(gh[pousr]_|github_pat_)') {
+                            Add-MetricCounter -Name 'api_requests_total'
+                            Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                                success  = $false
+                                error    = 'That looks like a token, not an environment variable name. Set the token in an environment variable and send that variable name here.'
+                                category = 'validation'
+                            }
+                            break
+                        }
                         if (-not $existing.ContainsKey('secrets')) { $existing.secrets = @{} }
-                        $existing.secrets.gitHubTokenEnvVar = [string]$body.gitHubTokenEnvVar
+                        $existing.secrets.gitHubTokenEnvVar = $requestedEnvVar
+                    }
+                    # Never let a previously stored token survive a settings write.
+                    if ($existing.ContainsKey('secrets') -and
+                        $existing.secrets -is [System.Collections.IDictionary] -and
+                        $existing.secrets.ContainsKey('githubToken')) {
+                        $existing.secrets.Remove('githubToken')
                     }
 
                     ($existing | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $configPath -Encoding UTF8
@@ -6445,8 +6668,19 @@ try {
                     if ([string]::IsNullOrWhiteSpace($owner)) {
                         throw 'githubUser is required for /api/github/status'
                     }
-                    $requestToken = if ($body.ContainsKey('apiKey') -and $body.apiKey) { [string]$body.apiKey } else { '' }
-                    $token = Get-ConfiguredGitHubToken -Settings $settings -RequestToken $requestToken
+                    # Tokens are never accepted over the wire. Reject rather than
+                    # ignore, so an old client fails loudly instead of silently
+                    # falling back to unauthenticated rate limits.
+                    if ($body.ContainsKey('apiKey') -and -not [string]::IsNullOrWhiteSpace([string]$body.apiKey)) {
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                            success  = $false
+                            error    = ("This host does not accept a GitHub token in the request body. Set the token in the environment variable named by settings.secrets.gitHubTokenEnvVar (currently '{0}') and restart the host." -f (Get-GitHubTokenEnvVarName -Settings $settings))
+                            category = 'validation'
+                        }
+                        break
+                    }
+                    $token = Get-ConfiguredGitHubToken -Settings $settings
 
                     if (-not [string]::IsNullOrWhiteSpace($token)) {
                         $apiResult = Get-GitHubReposViaApi -Owner $owner -Token $token -RepoLimit $limit -IncludePrivate:$includePrivate -IncludeForks:$includeForks -IncludeArchived:$includeArchived -FetchCommitMetrics:$fetchExtendedMetrics
@@ -6668,8 +6902,7 @@ try {
                                 # The service account has no git credential manager: push with
                                 # the configured GitHub token when present. A tokenless push
                                 # still works for SSH remotes or an operator-run host.
-                                $ghToken = $env:GitHub_Token
-                                if ([string]::IsNullOrWhiteSpace($ghToken)) { $ghToken = $env:GITHUB_TOKEN }
+                                $ghToken = Get-ConfiguredGitHubToken -Settings (Get-HostSettings)
                                 $gitPushArgs = @('-C', $approveRepoPath)
                                 if (-not [string]::IsNullOrWhiteSpace($ghToken)) {
                                     $basicToken = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("x-access-token:{0}" -f $ghToken)))
@@ -7238,7 +7471,7 @@ try {
                     } else { '' }
                     if (-not [string]::IsNullOrWhiteSpace($owner)) {
                         try {
-                            $token = Get-ConfiguredGitHubToken -Settings $settings -RequestToken ''
+                            $token = Get-ConfiguredGitHubToken -Settings $settings
                             if (-not [string]::IsNullOrWhiteSpace($token)) {
                                 $apiResult = Get-GitHubReposViaApi -Owner $owner -Token $token -RepoLimit 100 -IncludePrivate:$true -IncludeForks:$false -IncludeArchived:$true -FetchCommitMetrics:$false
                                 if ($null -ne $apiResult -and $apiResult.PSObject.Properties.Name -contains 'repos') {
@@ -8541,10 +8774,10 @@ try {
                     }
 
                     # Check for GitHub token only after the budget/quota guard passes.
-                    $ghToken = $env:GitHub_Token
-                    if ([string]::IsNullOrWhiteSpace($ghToken)) { $ghToken = $env:GITHUB_TOKEN }
+                    $dispatchTokenResolution = Get-GitHubTokenResolution -Settings $settingsForFallback
+                    $ghToken = $dispatchTokenResolution.Token
                     if ([string]::IsNullOrWhiteSpace($ghToken)) {
-                        throw 'GitHub token not found. Set GitHub_Token or GITHUB_TOKEN in your environment before dispatching.'
+                        throw ("GitHub token not found. Set the environment variable '{0}' (named by settings.secrets.gitHubTokenEnvVar) and restart the host before dispatching.{1}" -f $dispatchTokenResolution.EnvVarName, $(if ($script:RunningAsService) { ' This host runs as a service, so the variable must be Machine-scoped.' } else { '' }))
                     }
 
                     # Resolve GitHub owner/repo from git remote, falling back to settings owner

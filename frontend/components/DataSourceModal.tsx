@@ -3,13 +3,12 @@ import React, { useEffect, useState } from 'react';
 interface DataSourceModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (username: string, apiKey?: string) => void;
+  onSave: (username: string) => void;
   currentUsername?: string;
 }
 
 const DataSourceModal: React.FC<DataSourceModalProps> = ({ isOpen, onClose, onSave, currentUsername }) => {
   const [username, setUsername] = useState(currentUsername || '');
-  const [apiKey, setApiKey] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -30,7 +29,7 @@ const DataSourceModal: React.FC<DataSourceModalProps> = ({ isOpen, onClose, onSa
     
     setIsSubmitting(true);
     try {
-      await onSave(username.trim(), apiKey.trim());
+      await onSave(username.trim());
       onClose();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to apply data source configuration.';
@@ -42,7 +41,6 @@ const DataSourceModal: React.FC<DataSourceModalProps> = ({ isOpen, onClose, onSa
 
   const handleClose = () => {
     setUsername(currentUsername || '');
-    setApiKey('');
     setError('');
     onClose();
   };
@@ -54,10 +52,11 @@ const DataSourceModal: React.FC<DataSourceModalProps> = ({ isOpen, onClose, onSa
           <div className="p-6">
             <h2 className="text-xl font-bold text-white mb-4">Connect GitHub API</h2>
             <p className="text-sm text-gray-400 mb-4">
-              Enter a GitHub username or organization to query GitHub metadata via the GitHub API. The token field is optional when <code>GITHUB_TOKEN</code> is already set before launch or a fallback token is saved in Settings.
+              Enter a GitHub username or organization to query GitHub metadata via the GitHub API.
             </p>
             <p className="text-xs text-gray-500 mb-4">
-              This workflow does not scan or transmit local files. Any token entered here is stored in memory for this session only.
+              This workflow does not scan or transmit local files. Authentication uses the environment
+              variable named in Settings — tokens are never entered here or sent from the browser.
             </p>
             {error && (
               <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-md text-sm text-red-200">
@@ -81,25 +80,6 @@ const DataSourceModal: React.FC<DataSourceModalProps> = ({ isOpen, onClose, onSa
                 />
                 <p className="mt-1 text-xs text-gray-500">
                   Team-scoped queries are not supported in this build.
-                </p>
-              </div>
-              
-              <div>
-                <label htmlFor="apiKey" className="block text-sm font-medium text-gray-300">
-                  GitHub Personal Access Token (optional)
-                </label>
-                <input 
-                  type="password" 
-                  name="apiKey" 
-                  id="apiKey" 
-                  value={apiKey} 
-                  onChange={(e) => setApiKey(e.target.value)}
-                  autoComplete="off"
-                  className="mt-1 block w-full bg-gray-900 border border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  placeholder="ghp_..."
-                />
-                <p className="mt-2 text-xs text-gray-500">
-                  Token source priority: entered token, then environment variable <code>GITHUB_TOKEN</code>, then Settings fallback token.
                 </p>
               </div>
             </div>

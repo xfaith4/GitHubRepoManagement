@@ -3,13 +3,12 @@ import React, { useState } from 'react';
 interface InitModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onInit: (githubUser: string, cloneOwned: boolean, apiKey?: string, basePath?: string) => void;
+  onInit: (githubUser: string, cloneOwned: boolean, basePath?: string) => void;
 }
 
 const InitModal: React.FC<InitModalProps> = ({ isOpen, onClose, onInit }) => {
   const [githubUser, setGithubUser] = useState('');
   const [cloneOwned, setCloneOwned] = useState(true);
-  const [apiKey, setApiKey] = useState('');
   const [basePath, setBasePath] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -57,21 +56,10 @@ const InitModal: React.FC<InitModalProps> = ({ isOpen, onClose, onInit }) => {
 
               {cloneOwned && (
                  <>
-                    <div>
-                        <label htmlFor="apiKey" className="block text-sm font-medium text-gray-300">GitHub Personal Access Token</label>
-                        <input 
-                            type="password" 
-                            name="apiKey" 
-                            id="apiKey" 
-                            value={apiKey} 
-                            onChange={(e) => setApiKey(e.target.value)}
-                            required 
-                            autoComplete="new-password"
-                            className="mt-1 block w-full bg-gray-900 border border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                            placeholder="ghp_..."
-                        />
-                        <p className="mt-2 text-xs text-gray-500">
-                            A token with 'repo' scope is required. This is sent to your local backend to perform the clone operation.
+                    <div className="rounded-md border border-gray-700 bg-gray-900/50 p-3">
+                        <p className="text-xs text-gray-400">
+                            Authentication uses the token in the environment variable named under
+                            Settings. No token is entered here — the browser never handles one.
                         </p>
                     </div>
                     <div>

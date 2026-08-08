@@ -87,6 +87,7 @@ Notes:
 - `GET /api/readme/content` returns README markdown for a repo (or explicit path), used by the Operations repo-detail document viewer.
 - `POST /api/export` writes timestamped HTML and CSV reports into the repo-local `reports/` folder. When `portfolioEntries` are provided, it produces a Collection Status Report with lifecycle, blocker, recommended-action, and top-work fields.
 - `GET /api/reports/:reportName` serves a saved report file back to the browser so the HTML report can open in a new tab.
-- `POST /api/github/status` resolves auth in this order: request token, `GITHUB_TOKEN`, saved fallback token.
+- `POST /api/github/status` resolves auth from the environment variable named by `secrets.gitHubTokenEnvVar` (default `GITHUB_TOKEN`), then the `gh` CLI credential. A token supplied in the request body is rejected with `400` — the host never accepts a token over the wire, and never stores one.
+- `GET /api/auth/github/status` reports which variable name is configured, whether it resolved in the host's own process, and the environment scope it came from. Add `?validate=1` to spend one GitHub call confirming the token is live and reporting its expiry.
 - `GET /api/status` includes the configured default GitHub user in response metadata so the frontend can bootstrap GitHub scans without prompting for a token.
 - This host is intentionally minimal and intended as a migration bridge before a full production host.

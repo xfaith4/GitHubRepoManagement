@@ -1,4 +1,4 @@
-import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type RepositoryImprovementPreview, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioAssessmentScanSummary, type PortfolioChangeState, type PortfolioScanDecisionReason, type PortfolioScanStatus, type RepoCurationState, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult } from '../types';
+import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type RepositoryImprovementPreview, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioAssessmentScanSummary, type PortfolioChangeState, type PortfolioScanDecisionReason, type PortfolioScanStatus, type RepoCurationState, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult, type GitHubAuthStatus } from '../types';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -179,7 +179,7 @@ function settingsFromApi(data: any): AppSettings {
     zipArchive: true,
     scanDepth: Number(root?.inventory?.maxDepth ?? 3),
     githubUser: (root?.reconcile?.gitHubOwner as string | undefined) ?? '',
-    githubToken: ''
+    gitHubTokenEnvVar: (root?.secrets?.gitHubTokenEnvVar as string | undefined) ?? 'GITHUB_TOKEN'
   };
 }
 
@@ -260,9 +260,27 @@ export async function saveSettings(settings: AppSettings): Promise<AppSettings> 
   return settings;
 }
 
-export async function startInit(githubUser: string, cloneOwned: boolean, apiKey?: string, basePath?: string): Promise<void> {
+/**
+ * Ask the host whether the configured environment variable NAME actually
+ * resolves in its own process. The browser cannot see the host's environment,
+ * and a service cannot see User-scoped variables — so this is the only way to
+ * tell an operator their name is set in a scope the host cannot read.
+ * Pass validate=true to also spend one GitHub call confirming the token is live.
+ */
+export async function getGitHubAuthStatus(validate = false): Promise<GitHubAuthStatus> {
+  if (USE_MOCK_API) {
+    return {
+      mode: 'pat', tokenEnvVar: 'GITHUB_TOKEN', tokenSource: 'env', tokenEnvScope: 'User',
+      runningAsService: false, hint: '', ghCliPresent: true, liveCheck: null
+    };
+  }
+  const data = await fetchJson<any>(`${API_BASE_URL}/auth/github/status${validate ? '?validate=1' : ''}`);
+  return (data?.data ?? data) as GitHubAuthStatus;
+}
+
+export async function startInit(githubUser: string, cloneOwned: boolean, basePath?: string): Promise<void> {
   if (USE_MOCK_API) return;
-  await postJson('/init', { githubUser, cloneOwned, apiKey, basePath });
+  await postJson('/init', { githubUser, cloneOwned, basePath });
 }
 
 export async function startUpdate(repoNames?: string[], repoPaths?: string[]): Promise<OperationResult> {
@@ -629,7 +647,6 @@ export async function getArtifacts(repoName: string): Promise<Artifact[]> {
 
 interface GithubStatusRequest {
   githubUser: string;
-  apiKey?: string;
   includePrivate?: boolean;
   includeForks?: boolean;
   includeArchived?: boolean;
@@ -671,7 +688,7 @@ const mockSettings: AppSettings = {
   zipArchive: true,
   scanDepth: 3,
   githubUser: '',
-  githubToken: ''
+  gitHubTokenEnvVar: 'GITHUB_TOKEN'
 };
 
 const mockArtifacts: Record<string, Artifact[]> = {};
