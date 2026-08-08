@@ -962,6 +962,57 @@ these two are design-dependent and deliberately deferred.
       on **Needs Attention**. Deferred because it changes primary navigation
       shape and should not be done incrementally.
 
+### Lane 0.7 — Roadmap-standard fidelity: split-history awareness (2026-08-08)
+
+Surfaced by asking whether the standard this product applies to 80+ repos
+accounts for a roadmap that archives its completed work to a separate file —
+the shape this repo adopted 2026-08-08. It partly does and partly does not, and
+the gaps are asymmetric: nothing penalizes a split repo, but nothing can tell
+one apart from a repo that simply deleted its history.
+
+- [ ] **Reconcile the two roadmap evaluators — they disagree on the same
+      file.** _(state: planned — correctness, highest value in this lane)_
+      Audited 2026-08-08, this repo's `ROADMAP.md` scores **92 /
+      L4-Orchestration-Ready** through the backend modules
+      (`Invoke-ParseRoadmapContent` → `Invoke-NormalizeRoadmapContract` →
+      `Invoke-AuditRoadmapContract`) and **65 / L3-Contract-Ready with
+      "Releases: 0"** through
+      [`tools/Test-RoadmapContract.ps1`](tools/Test-RoadmapContract.ps1).
+      Cause: the module accepts a release heading at `#{1,3}` (and
+      [`Roadmap.Parser.ps1`](backend/modules/roadmap/Roadmap.Parser.ps1)
+      deliberately allows `### Release …` nested under a numbered `## …`
+      parent), while the CLI recognizes only the template's top-level
+      `## Release X.Y`. Whichever an operator happens to run decides the
+      verdict — the exact "two figures, one truth" failure this product
+      exists to catch. Share one detection path; smoke both against the same
+      fixture.
+- [ ] **Record whether a repo externalizes its completion history.**
+      _(state: planned)_ The contract carries `completedCount` as a required
+      field, and a split roadmap reports ~0 forever. No rule reads it today,
+      so nothing breaks — but nothing distinguishes "history archived to
+      `docs/history/`" from "history deleted", and any future consumer that
+      treats `completedCount` as progress would read a well-kept split repo as
+      inert. Add an explicit signal (e.g. `historyLocation` / `archiveRef`)
+      to [`roadmap-contract.schema.json`](standards/roadmap/roadmap-contract.schema.json),
+      set from a pointer link in the roadmap, and surface it in the audit
+      payload.
+- [ ] **Stop the repairer asserting "(No completed items recorded yet)" on a
+      repo that archived its history.** _(state: planned — factual-accuracy
+      bug)_ `_BuildCompletedSection`
+      ([`Roadmap.Repairer.ps1`](backend/modules/roadmap/Roadmap.Repairer.ps1))
+      emits that literal placeholder whenever no inline `[x]` items exist, so
+      repairing a correctly-split roadmap would write a false claim into it —
+      against the section 8 guardrail "preserve genuine completion history
+      when rewriting roadmaps." Emit the archive pointer instead when one is
+      known, and say "not recorded in this file" rather than "not recorded".
+- [ ] **Sanction the external-archive pattern in the standard.** _(state:
+      planned — documentation)_ `ROADMAP_TEMPLATE.md` Section 6 anticipates
+      release sections being "archived or removed" but assumes the surviving
+      history stays **in** the roadmap; no part of the standard, schema, or
+      the 12 audit rules mentions an external archive file. Document it as a
+      supported option with a required pointer convention, so a split repo is
+      self-describing rather than merely unpenalized.
+
 ---
 
 ## 8. Risks and Guardrails
