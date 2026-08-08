@@ -487,6 +487,71 @@ if (@($blockquoteAudit.auditFindings | Where-Object { $_.ruleId -eq 'ROADMAP-012
 }
 Write-Host '  blockquote status form detected (activeReleaseCount=1, no ROADMAP-012)' -ForegroundColor DarkGray
 
+# Tripwire: the two evaluators must return the SAME verdict for the same file.
+# Until 2026-08-08 they did not — the backend auditor and
+# tools/Test-RoadmapContract.ps1 each carried private detection, and no repo in
+# the estate scored the same under both. Whichever tool an operator happened to
+# run decided whether a repo was dispatch-ready, which is exactly the
+# "two figures, one truth" failure this product exists to catch. The status
+# signal was the last one to reconcile (rules v1.3), so it is asserted here in
+# both spellings and in the two-active case that trips the critical cap.
+Write-Step 'Roadmap evaluators — smoke: module and Test-RoadmapContract.ps1 agree on one fixture'
+$parityHost = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+$parityCli  = Join-Path $WorkspaceRoot 'tools\Test-RoadmapContract.ps1'
+if (-not (Test-Path -LiteralPath $parityCli)) { throw "Test-RoadmapContract.ps1 not found at: $parityCli" }
+$parityDir = Join-Path ([System.IO.Path]::GetTempPath()) ("roadmap-parity-{0}" -f ([guid]::NewGuid().ToString('N')))
+New-Item -ItemType Directory -Path $parityDir -Force | Out-Null
+try {
+    $parityCases = @(
+        @{ name = 'bold status, one active';       template = $activeReleaseFixture; one = 'active';  two = 'planned' }
+        @{ name = 'blockquote status, one active'; template = $blockquoteFixture;    one = 'active';  two = 'planned' }
+        @{ name = 'alias status, two active';      template = $activeReleaseFixture; one = 'active';  two = 'In Progress' }
+        @{ name = 'no active release';             template = $blockquoteFixture;    one = 'planned'; two = 'planned' }
+    )
+
+    foreach ($case in $parityCases) {
+        $caseContent = $case.template -f $case.one, $case.two
+        $caseRoot = Join-Path $parityDir ($case.name -replace '[^A-Za-z0-9]', '-')
+        New-Item -ItemType Directory -Path $caseRoot -Force | Out-Null
+        $caseRoadmap = Join-Path $caseRoot 'ROADMAP.md'
+        Set-Content -LiteralPath $caseRoadmap -Value $caseContent -Encoding UTF8
+
+        $caseParsed   = Invoke-ParseRoadmapContent -Content $caseContent -SourcePath 'ROADMAP.md'
+        $caseContract = Invoke-NormalizeRoadmapContract -ParsedResult $caseParsed -RawContent $caseContent -RepoName 'smoke-parity' -AuditRules $auditRulesObj
+        $moduleAudit  = Invoke-AuditRoadmapContract -Contract $caseContract -AuditRules $auditRulesObj
+
+        $caseContractOut = Join-Path $caseRoot 'contract.json'
+        & $parityHost -NoProfile -File $parityCli -Path $caseRoadmap `
+            -StandardsPath (Join-Path $WorkspaceRoot 'standards\roadmap') `
+            -ContractOut $caseContractOut -Quiet 2>&1 | Out-Null
+        if (-not (Test-Path -LiteralPath $caseContractOut)) {
+            throw ("Test-RoadmapContract.ps1 produced no contract for parity case '{0}'" -f $case.name)
+        }
+        $cliAudit = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $caseContractOut -Raw -Encoding UTF8)
+
+        $moduleFindings = (@($moduleAudit.auditFindings | ForEach-Object { [string]$_.ruleId } | Sort-Object) -join ',')
+        $cliFindings    = (@($cliAudit.auditFindings    | ForEach-Object { [string]$_.ruleId } | Sort-Object) -join ',')
+
+        foreach ($field in @(
+            @{ label = 'maturityScore';      mod = [int]$moduleAudit.maturityScore;      cli = [int]$cliAudit.maturityScore }
+            @{ label = 'maturityLevel';      mod = [string]$moduleAudit.maturityLevel;   cli = [string]$cliAudit.maturityLevel }
+            @{ label = 'releaseCount';       mod = [int]$moduleAudit.releaseCount;       cli = [int]$cliAudit.releaseCount }
+            @{ label = 'activeReleaseCount'; mod = [int]$moduleAudit.activeReleaseCount; cli = [int]$cliAudit.activeReleaseCount }
+            @{ label = 'pendingCount';       mod = [int]$moduleAudit.pendingCount;       cli = [int]$cliAudit.pendingCount }
+            @{ label = 'completedCount';     mod = [int]$moduleAudit.completedCount;     cli = [int]$cliAudit.completedCount }
+            @{ label = 'auditFindings';      mod = $moduleFindings;                      cli = $cliFindings }
+        )) {
+            if ($field.mod -ne $field.cli) {
+                throw ("Evaluator divergence on parity case '{0}': {1} module={2} cli={3}. Both evaluators must derive this signal from the 'detection' block in roadmap-audit-rules.json — do not reintroduce a private pattern in either tool." -f $case.name, $field.label, $field.mod, $field.cli)
+            }
+        }
+    }
+    Write-Host ("  evaluator parity ok: {0} fixtures agree on score, level, counts, and findings" -f @($parityCases).Count) -ForegroundColor DarkGray
+}
+finally {
+    Remove-Item -LiteralPath $parityDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 Write-Step 'Roadmap standard assets — smoke: validate roadmap-audit-rules.json (Release 0.7)'
 $roadmapAuditRulesPath   = Join-Path $WorkspaceRoot 'standards\roadmap\roadmap-audit-rules.json'
 $roadmapSchemaPath       = Join-Path $WorkspaceRoot 'standards\roadmap\roadmap-contract.schema.json'
