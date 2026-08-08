@@ -673,6 +673,16 @@ Continuous, not release-scoped. Completed cross-cutting items were archived
       host's exact error; watchdog ledger shows `probe-fail x3 -> restart` at
       15:30:52 with the host serving http 200 throughout; module smoke exit 0
       (installer step: 5 action cases, carry-forward, drift).
+- [ ] **Populate `rateLimit` on the authenticated GitHub insights path.**
+      _(state: planned — non-blocker, cosmetic, surfaced 2026-08-08)_
+      `Get-GitHubReposViaApi` returns a hardcoded `rateLimit = $null`
+      ([`Start-RepoManagementApiHost.ps1:2758`](backend/api-host/Start-RepoManagementApiHost.ps1#L2758)),
+      so `insightsMeta.rateLimit` is always null and the GitHub view's
+      rate-limit readout stays blank even though every call already receives
+      `X-RateLimit-Limit` / `-Remaining` / `-Reset` headers. Capture the
+      headers from the last response instead of returning null. Confirmed
+      2026-08-08 against the live service: `POST /api/github/status`
+      returned 50 repos and `rateLimit: null`.
 - [ ] **Recover or replace the portal TLS certificate password.** _(state:
       planned — non-blocker, surfaced 2026-08-08)_ Machine-scoped
       `REPO_MGMT_TLS_PFX_PASSWORD` (17 chars) does not open the configured
