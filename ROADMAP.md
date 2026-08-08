@@ -650,7 +650,37 @@ Continuous, not release-scoped. Completed cross-cutting items were archived
 -GitHubToken $env:GITHUB_TOKEN` (sets Machine scope, restarts).
       Confirm afterwards with `GET /api/auth/github/status?validate=1` →
       `tokenEnvScope=Machine`, `liveCheck.valid=true`. Verified unset
-      2026-08-07.
+      2026-08-07. **Note:** until the fix below shipped, that documented
+      command silently no-opped — `Invoke-Repair` never read `-GitHubToken`,
+      so the run reported `[OK]` while Machine scope stayed unset.
+- [x] **`-Action Repair` ignored `-GitHubToken`, and wired the watchdog to a
+      scheme the host does not serve.** _(state: done 2026-08-08)_ Two
+      installer defects, both found by running the documented Repair command
+      above on 2026-08-08. **(1)** The `SetEnvironmentVariable('GITHUB_TOKEN',
+      …, 'Machine')` call lived only in `Invoke-FreshInstall`, so Repair
+      accepted the parameter and dropped it — the operator got a clean `[OK]`
+      run and an unauthenticated portal. Repair now sets it before the
+      restart. **(2)** `$repairTls` was `UseTls -and (Test-Path pfx)` —
+      presence, not usability. The stored `REPO_MGMT_TLS_PFX_PASSWORD` does
+      not open the pfx (_"The specified network password is not correct"_),
+      so the host logs a WARN and degrades to plain HTTP while the installer
+      health-probed **https**, reported a false `[!!] Not healthy`, and
+      registered the freeze watchdog against `https://127.0.0.1:7071` — which
+      then restarted a healthy portal every ~3 minutes. New `Test-PfxLoadable`
+      mirrors the host's own `X509Certificate2` load: Repair warns and falls
+      back to http, fresh install throws before any teardown. **Evidence:**
+      `Test-PfxLoadable` returns false against the live machine pfx with the
+      host's exact error; watchdog ledger shows `probe-fail x3 -> restart` at
+      15:30:52 with the host serving http 200 throughout; module smoke exit 0
+      (installer step: 5 action cases, carry-forward, drift).
+- [ ] **Recover or replace the portal TLS certificate password.** _(state:
+      planned — non-blocker, surfaced 2026-08-08)_ Machine-scoped
+      `REPO_MGMT_TLS_PFX_PASSWORD` (17 chars) does not open the configured
+      pfx, so the portal has been serving plain HTTP on loopback while its
+      config claims TLS. Loopback-only keeps this off the critical path.
+      Either recover the original password or regenerate with
+      `scripts\New-RepoManagementTlsCertificate.ps1` and re-run
+      `-Action Reconfigure -PfxPath … -PfxPassword …`.
 - [x] **Stop the unauthenticated `gh` fallback from surfacing a raw JSON
       parse error.** _(state: done 2026-08-08)_ With no readable token (the
       item above), `POST /api/github/status` fell through to
