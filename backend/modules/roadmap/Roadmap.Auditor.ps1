@@ -24,21 +24,185 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # ---------------------------------------------------------------------------
+# Shared detection contract
+# ---------------------------------------------------------------------------
+#
+# Detection is DATA, not code. The canonical patterns live in
+# standards/roadmap/roadmap-audit-rules.json under "detection", and both this
+# module and tools/Test-RoadmapContract.ps1 read them from there. The literals
+# below are a mirror used only when a caller supplies no rule pack (or an
+# older one without the block) — keep them byte-identical to the JSON.
+#
+# Before 2026-08-08 the two evaluators each carried their own release-heading
+# regex, product-intent vocabulary, and acceptance-criteria scope. The result
+# was that no repository in the estate scored the same under both, and three
+# straddled the L3 dispatch threshold depending on which tool ran. Do not
+# reintroduce a private copy of any pattern here.
+
+$script:RoadmapDetectionDefaults = [pscustomobject]@{
+    releaseHeadingPattern            = '(?im)^#{2,}\s+Release\s+([0-9]+(?:\.[0-9]+)*)\s*[—–-]+\s*(.+?)\s*$'
+    productIntentHeadingPattern      = '(?im)^#{1,6}\s*(?:[0-9]+\.\s*)?(?:product\s+intent|product\s+scope|overview|about|purpose|background|what\s+this\s+(?:does|is))\b'
+    acceptanceCriteriaHeadingAliases = @('Acceptance criteria', 'Done criteria', 'Definition of done')
+    outOfScopeHeadingAliases         = @('Out of scope', 'Out-of-scope', 'Not in scope', 'Non-goals', 'Non goals', 'Not included', 'Excluded', 'Exclusions')
+    releaseScopedSignals             = @('hasAcceptanceCriteria', 'hasOutOfScope')
+    meaningfulBodyMinimumCharacters  = 4
+    meaningfulBodyPlaceholderPattern = '(?i)\b(tbd|todo|none yet|not yet|n/a)\b'
+    scoringMode                      = 'normalized'
+}
+
+<#
+.SYNOPSIS
+    Resolve the detection contract for an audit run.
+.PARAMETER AuditRules
+    A loaded roadmap-audit-rules.json object, or $null.
+.OUTPUTS
+    [pscustomobject] with every detection field populated — values from the
+    rule pack's "detection" block where present, canonical defaults otherwise.
+#>
+function Get-RoadmapDetectionProfile {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter()]
+        [AllowNull()]
+        [pscustomobject]$AuditRules
+    )
+
+    $detectionProfile = $script:RoadmapDetectionDefaults.PSObject.Copy()
+    if ($null -eq $AuditRules -or $AuditRules.PSObject.Properties.Name -notcontains 'detection') {
+        return $detectionProfile
+    }
+
+    $d = $AuditRules.detection
+    if ($null -eq $d) { return $detectionProfile }
+
+    $names = @($d.PSObject.Properties.Name)
+    if ($names -contains 'releaseHeadingPattern' -and -not [string]::IsNullOrWhiteSpace([string]$d.releaseHeadingPattern)) {
+        $detectionProfile.releaseHeadingPattern = [string]$d.releaseHeadingPattern
+    }
+    if ($names -contains 'productIntentHeadingPattern' -and -not [string]::IsNullOrWhiteSpace([string]$d.productIntentHeadingPattern)) {
+        $detectionProfile.productIntentHeadingPattern = [string]$d.productIntentHeadingPattern
+    }
+    if ($names -contains 'acceptanceCriteriaHeadingAliases' -and @($d.acceptanceCriteriaHeadingAliases).Count -gt 0) {
+        $detectionProfile.acceptanceCriteriaHeadingAliases = @($d.acceptanceCriteriaHeadingAliases)
+    }
+    if ($names -contains 'outOfScopeHeadingAliases' -and @($d.outOfScopeHeadingAliases).Count -gt 0) {
+        $detectionProfile.outOfScopeHeadingAliases = @($d.outOfScopeHeadingAliases)
+    }
+    if ($names -contains 'releaseScopedSignals') {
+        $detectionProfile.releaseScopedSignals = @($d.releaseScopedSignals)
+    }
+    if ($names -contains 'meaningfulBody' -and $null -ne $d.meaningfulBody) {
+        $mbNames = @($d.meaningfulBody.PSObject.Properties.Name)
+        if ($mbNames -contains 'minimumCharacters') {
+            $detectionProfile.meaningfulBodyMinimumCharacters = [int]$d.meaningfulBody.minimumCharacters
+        }
+        if ($mbNames -contains 'placeholderPattern' -and -not [string]::IsNullOrWhiteSpace([string]$d.meaningfulBody.placeholderPattern)) {
+            $detectionProfile.meaningfulBodyPlaceholderPattern = [string]$d.meaningfulBody.placeholderPattern
+        }
+    }
+    if ($names -contains 'scoring' -and $null -ne $d.scoring -and
+        @($d.scoring.PSObject.Properties.Name) -contains 'mode' -and
+        -not [string]::IsNullOrWhiteSpace([string]$d.scoring.mode)) {
+        $detectionProfile.scoringMode = [string]$d.scoring.mode
+    }
+
+    return $detectionProfile
+}
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
 function _DetectProductIntent {
-    param([string]$Content)
-    # Recognise headings that signal product intent (case-insensitive)
-    return ($Content -imatch '(^|\n)#+\s*(product\s+intent|product\s+scope|overview|about|purpose|background|what\s+this\s+(does|is))')
+    param([string]$Content, [pscustomobject]$Detection)
+    if ([string]::IsNullOrWhiteSpace($Content)) { return $false }
+    return ([regex]::IsMatch($Content, $Detection.productIntentHeadingPattern))
 }
 
-function _DetectReleaseSections {
-    param([string]$Content, [ref]$ReleaseCountOut)
-    $matches = [regex]::Matches($Content, '(?im)^#{1,3}\s+release\s+\d+[\.\d]*')
-    $count = $matches.Count
-    $ReleaseCountOut.Value = $count
-    return ($count -gt 0)
+# Split the document into release blocks: the text from one release heading up
+# to the next (or end of file). Returns [pscustomobject] with headingLevel and
+# text so subsection detection can require a heading DEEPER than its release.
+function _GetReleaseBlocks {
+    param([string]$Content, [pscustomobject]$Detection)
+
+    $blocks = [System.Collections.Generic.List[object]]::new()
+    if ([string]::IsNullOrWhiteSpace($Content)) { return @() }
+
+    $headingMatches = [regex]::Matches($Content, $Detection.releaseHeadingPattern)
+    for ($i = 0; $i -lt $headingMatches.Count; $i++) {
+        $start = $headingMatches[$i].Index
+        $end = if ($i + 1 -lt $headingMatches.Count) { $headingMatches[$i + 1].Index } else { $Content.Length }
+        $headingText = $headingMatches[$i].Value.TrimStart("`r", "`n")
+        $hashes = [regex]::Match($headingText, '^#+')
+        $blocks.Add([pscustomobject]@{
+            headingLevel = if ($hashes.Success) { $hashes.Value.Length } else { 2 }
+            text         = $Content.Substring($start, $end - $start)
+        }) | Out-Null
+    }
+
+    return @($blocks.ToArray())
+}
+
+function _TestMeaningfulBody {
+    param([string]$Body, [pscustomobject]$Detection)
+
+    if ([string]::IsNullOrWhiteSpace($Body)) { return $false }
+    $compact = ($Body -replace '[\s\-_*`#>]', '').Trim()
+    if ($compact.Length -lt [int]$Detection.meaningfulBodyMinimumCharacters) { return $false }
+    if ([regex]::IsMatch($Body, $Detection.meaningfulBodyPlaceholderPattern)) { return $false }
+    return $true
+}
+
+# True when at least one release block carries a subsection matching one of
+# $Aliases with a meaningful body. Release-scoped by contract: ROADMAP-006 and
+# ROADMAP-007 both read "at least one release section includes ...".
+function _TestReleaseScopedSubsection {
+    param([object[]]$ReleaseBlocks, [string[]]$Aliases, [pscustomobject]$Detection)
+
+    if ($null -eq $ReleaseBlocks -or @($ReleaseBlocks).Count -eq 0) { return $false }
+    if ($null -eq $Aliases -or @($Aliases).Count -eq 0) { return $false }
+
+    $aliasAlternation = (@($Aliases) | ForEach-Object { [regex]::Escape([string]$_) }) -join '|'
+
+    foreach ($block in @($ReleaseBlocks)) {
+        $lines = @($block.text -split "`r?`n")
+        $minDepth = [int]$block.headingLevel + 1
+        $capturing = $false
+        $buffer = [System.Collections.Generic.List[string]]::new()
+
+        foreach ($line in $lines) {
+            $heading = [regex]::Match($line, '^(#{1,6})\s+(.+?)\s*$')
+            if ($heading.Success) {
+                if ($capturing) {
+                    if (_TestMeaningfulBody -Body ($buffer -join "`n") -Detection $Detection) { return $true }
+                    $capturing = $false
+                    $buffer.Clear()
+                }
+                $level = $heading.Groups[1].Value.Length
+                $text = $heading.Groups[2].Value.Trim()
+                if ($level -ge $minDepth -and $text -match ('(?i)^\s*(?:' + $aliasAlternation + ')\s*$')) {
+                    $capturing = $true
+                }
+                continue
+            }
+            if ($capturing) { $buffer.Add($line) | Out-Null }
+        }
+
+        if ($capturing -and (_TestMeaningfulBody -Body ($buffer -join "`n") -Detection $Detection)) { return $true }
+    }
+
+    return $false
+}
+
+# Document-scoped variant, used only when the rule pack removes a signal from
+# detection.releaseScopedSignals. Any heading depth, anywhere in the file.
+function _TestDocumentScopedSubsection {
+    param([string]$Content, [string[]]$Aliases, [pscustomobject]$Detection)
+
+    if ([string]::IsNullOrWhiteSpace($Content)) { return $false }
+    $whole = @([pscustomobject]@{ headingLevel = 0; text = $Content })
+    return (_TestReleaseScopedSubsection -ReleaseBlocks $whole -Aliases $Aliases -Detection $Detection)
 }
 
 # Count release blocks whose declared status normalizes to 'active'. The
@@ -48,9 +212,9 @@ function _DetectReleaseSections {
 # case-insensitive and alias-normalized so legacy wording scores the same as
 # the canonical wording.
 function _DetectActiveReleaseCount {
-    param([string]$Content)
+    param([object[]]$ReleaseBlocks)
 
-    if ([string]::IsNullOrWhiteSpace($Content)) { return 0 }
+    if ($null -eq $ReleaseBlocks -or @($ReleaseBlocks).Count -eq 0) { return 0 }
 
     $aliases = @{
         'active'      = 'active'
@@ -60,16 +224,9 @@ function _DetectActiveReleaseCount {
         'wip'         = 'active'
     }
 
-    $headings = [regex]::Matches($Content, '(?im)^#{1,3}\s+release\s+\d+[\.\d]*')
-    if ($headings.Count -eq 0) { return 0 }
-
     $activeCount = 0
-    for ($i = 0; $i -lt $headings.Count; $i++) {
-        $start = $headings[$i].Index
-        $end = if ($i + 1 -lt $headings.Count) { $headings[$i + 1].Index } else { $Content.Length }
-        $block = $Content.Substring($start, $end - $start)
-
-        $m = [regex]::Match($block, '(?im)^\s*>?\s*\**\s*Status\s*:?\**\s*:?\s*\**\s*([A-Za-z][A-Za-z \-]*?)\s*\**\s*(?:$|[—–\-\(])')
+    foreach ($block in @($ReleaseBlocks)) {
+        $m = [regex]::Match($block.text, '(?im)^\s*>?\s*\**\s*Status\s*:?\**\s*:?\s*\**\s*([A-Za-z][A-Za-z \-]*?)\s*\**\s*(?:$|[—–\-\(])')
         if (-not $m.Success) { continue }
 
         $raw = $m.Groups[1].Value.Trim().ToLowerInvariant()
@@ -77,16 +234,6 @@ function _DetectActiveReleaseCount {
     }
 
     return $activeCount
-}
-
-function _DetectAcceptanceCriteria {
-    param([string]$Content)
-    return ($Content -imatch '(^|\n)#+\s*(acceptance\s+criteria|done\s+criteria|definition\s+of\s+done)')
-}
-
-function _DetectOutOfScope {
-    param([string]$Content)
-    return ($Content -imatch '(^|\n)#+\s*(out\s+of\s+scope|not\s+in\s+scope|excluded|exclusions)')
 }
 
 function _CountVagueItems {
@@ -139,6 +286,10 @@ function _ScoreToMaturityLevel {
     Optional absolute path to the repository root.
 .PARAMETER RoadmapPath
     Optional absolute path to the ROADMAP.md file.
+.PARAMETER AuditRules
+    Optional loaded roadmap-audit-rules.json. Supplies the "detection" block so
+    this module and tools/Test-RoadmapContract.ps1 read one set of patterns.
+    Omit it and the canonical defaults in $script:RoadmapDetectionDefaults apply.
 .OUTPUTS
     [pscustomobject] matching roadmap-contract.schema.json (schemaVersion "1.0").
     maturityLevel and maturityScore are set to defaults (L0-Absent / 0) until
@@ -165,9 +316,14 @@ function Invoke-NormalizeRoadmapContract {
 
         [Parameter()]
         [AllowEmptyString()]
-        [string]$RoadmapPath = ''
+        [string]$RoadmapPath = '',
+
+        [Parameter()]
+        [AllowNull()]
+        [pscustomobject]$AuditRules = $null
     )
 
+    $detection = Get-RoadmapDetectionProfile -AuditRules $AuditRules
     $parsedAt = (Get-Date).ToUniversalTime().ToString('o')
 
     # Missing roadmap — no parsed result
@@ -199,8 +355,21 @@ function Invoke-NormalizeRoadmapContract {
     }
 
     $content = if ([string]::IsNullOrWhiteSpace($RawContent)) { '' } else { $RawContent }
-    $releaseCountRef = [ref]0
-    $hasRelease = _DetectReleaseSections -Content $content -ReleaseCountOut $releaseCountRef
+    $releaseBlocks = @(_GetReleaseBlocks -Content $content -Detection $detection)
+
+    # ROADMAP-006 / ROADMAP-007 are release-scoped by contract: a heading found
+    # elsewhere in the document does not satisfy either rule.
+    $scoped = @($detection.releaseScopedSignals)
+    $hasAcceptance = if ($scoped -contains 'hasAcceptanceCriteria') {
+        _TestReleaseScopedSubsection -ReleaseBlocks $releaseBlocks -Aliases @($detection.acceptanceCriteriaHeadingAliases) -Detection $detection
+    } else {
+        _TestDocumentScopedSubsection -Content $content -Aliases @($detection.acceptanceCriteriaHeadingAliases) -Detection $detection
+    }
+    $hasOutOfScope = if ($scoped -contains 'hasOutOfScope') {
+        _TestReleaseScopedSubsection -ReleaseBlocks $releaseBlocks -Aliases @($detection.outOfScopeHeadingAliases) -Detection $detection
+    } else {
+        _TestDocumentScopedSubsection -Content $content -Aliases @($detection.outOfScopeHeadingAliases) -Detection $detection
+    }
 
     return [pscustomobject]@{
         schemaVersion         = '1.0'
@@ -215,12 +384,12 @@ function Invoke-NormalizeRoadmapContract {
         totalCount            = [int]$ParsedResult.totalCount
         nextPendingItem       = $ParsedResult.nextPendingItem
         sections              = @($ParsedResult.sections)
-        hasProductIntent      = (_DetectProductIntent -Content $content)
-        hasReleaseSections    = $hasRelease
-        hasAcceptanceCriteria = (_DetectAcceptanceCriteria -Content $content)
-        hasOutOfScope         = (_DetectOutOfScope -Content $content)
-        releaseCount          = [int]$releaseCountRef.Value
-        activeReleaseCount    = (_DetectActiveReleaseCount -Content $content)
+        hasProductIntent      = (_DetectProductIntent -Content $content -Detection $detection)
+        hasReleaseSections    = ($releaseBlocks.Count -gt 0)
+        hasAcceptanceCriteria = $hasAcceptance
+        hasOutOfScope         = $hasOutOfScope
+        releaseCount          = [int]$releaseBlocks.Count
+        activeReleaseCount    = (_DetectActiveReleaseCount -ReleaseBlocks $releaseBlocks)
         vagueItemCount        = 0  # filled below
         parseError            = $ParsedResult.parseError
         auditFindings         = $null

@@ -77,7 +77,8 @@ function New-RepositoryImprovementPreview {
         -RawContent $roadmapRaw `
         -RepoName $RepoName `
         -RepoPath $RepoPath `
-        -RoadmapPath $roadmapPath
+        -RoadmapPath $roadmapPath `
+        -AuditRules $RoadmapAuditRules
     $roadmapContract = Invoke-AuditRoadmapContract -Contract $roadmapContract -AuditRules $RoadmapAuditRules
 
     $nextPendingItem = if ($null -ne $roadmapContract.nextPendingItem) { [string]$roadmapContract.nextPendingItem.text } else { '' }

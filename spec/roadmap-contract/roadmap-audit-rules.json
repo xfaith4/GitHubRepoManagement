@@ -1,8 +1,45 @@
 {
-  "version": "1.1",
+  "version": "1.2",
   "description": "Weighted audit rules for roadmap contract quality scoring. Each rule is evaluated against a parsed roadmap contract and contributes to a 0-100 maturity score.",
   "changelog": {
-    "1.1": "Added ROADMAP-011 (multiple active releases) and ROADMAP-012 (no active release designated). Status matching is case-insensitive with alias normalization; author lowercase regardless. See ROADMAP_MATURITY_MODEL.md for updated caps."
+    "1.1": "Added ROADMAP-011 (multiple active releases) and ROADMAP-012 (no active release designated). Status matching is case-insensitive with alias normalization; author lowercase regardless. See ROADMAP_MATURITY_MODEL.md for updated caps.",
+    "1.2": "Added the 'detection' block. Detection was previously reimplemented independently by the backend auditor and tools/Test-RoadmapContract.ps1, so the same ROADMAP.md scored differently depending on which tool an operator ran. Detection is now data, not code: both evaluators read these patterns, the release-scoped signal list, and the scoring mode from this file."
+  },
+  "detection": {
+    "description": "Canonical detection contract. Every evaluator of this rule pack MUST derive its signals from these patterns rather than reimplementing them, so that one roadmap file produces one score.",
+    "releaseHeadingPattern": "(?im)^#{2,}\\s+Release\\s+([0-9]+(?:\\.[0-9]+)*)\\s*[\\u2014\\u2013-]+\\s*(.+?)\\s*$",
+    "releaseHeadingNote": "Depth-tolerant from level 2 down: releases are frequently nested under a numbered parent such as '## 6. Open Releases'. The mandatory dash-and-title suffix keeps prose headings like '### Release 2.0 completion snapshot' from being read as release blocks.",
+    "productIntentHeadingPattern": "(?im)^#{1,6}\\s*(?:[0-9]+\\.\\s*)?(?:product\\s+intent|product\\s+scope|overview|about|purpose|background|what\\s+this\\s+(?:does|is))\\b",
+    "productIntentNote": "Document-scoped: product intent describes the repository, not a release. A bare 'scope' token is deliberately excluded because it matches the 'Out of scope' heading that every conformant release carries.",
+    "acceptanceCriteriaHeadingAliases": [
+      "Acceptance criteria",
+      "Done criteria",
+      "Definition of done"
+    ],
+    "outOfScopeHeadingAliases": [
+      "Out of scope",
+      "Out-of-scope",
+      "Not in scope",
+      "Non-goals",
+      "Non goals",
+      "Not included",
+      "Excluded",
+      "Exclusions"
+    ],
+    "releaseScopedSignals": [
+      "hasAcceptanceCriteria",
+      "hasOutOfScope"
+    ],
+    "releaseScopedSignalsNote": "ROADMAP-006 and ROADMAP-007 read 'at least one RELEASE SECTION includes ...'. A heading found anywhere in the document does not satisfy them; a roadmap with no release sections scores false for both.",
+    "meaningfulBody": {
+      "minimumCharacters": 4,
+      "placeholderPattern": "(?i)\\b(tbd|todo|none yet|not yet|n/a)\\b",
+      "note": "A subsection satisfies its rule only when its body survives this test: strip whitespace and markdown punctuation, require the minimum character count, and reject placeholder text. An empty 'Acceptance criteria' heading is not acceptance criteria."
+    },
+    "scoring": {
+      "mode": "normalized",
+      "note": "score = round((sumOfAllRuleWeights - sumOfFailedRuleWeights) / sumOfAllRuleWeights * 100). The rule weights do not sum to 100, so subtracting penalties from a flat 100 produces a different number on the same file and must not be used."
+    }
   },
   "rules": [
     {

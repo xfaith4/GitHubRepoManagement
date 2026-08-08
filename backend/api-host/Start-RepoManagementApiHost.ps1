@@ -3137,7 +3137,7 @@ function Invoke-RoadmapAuditScan {
 
             # Normalize
             Write-HostLog ("[TRACE] roadmap.audit.scan normalize repoName={0} state={1}" -f $repoName, $parsed.roadmapState)
-            $contract = Invoke-NormalizeRoadmapContract -ParsedResult $parsed -RawContent $rawContent -RepoName $repoName -RepoPath $repoPath -RoadmapPath $roadmapPath
+            $contract = Invoke-NormalizeRoadmapContract -ParsedResult $parsed -RawContent $rawContent -RepoName $repoName -RepoPath $repoPath -RoadmapPath $roadmapPath -AuditRules $auditRules
 
             # Audit / score
             if ($null -ne $auditRules) {
@@ -3292,14 +3292,15 @@ function Build-RoadmapRepairPreview {
     if ($null -ne $roadmapEntry) {
         $repoPath = if ($roadmapEntry -is [System.Collections.IDictionary]) { [string](Get-ValueOrDefault $roadmapEntry['repoPath'] '') } else { [string](Get-ValueOrDefault $roadmapEntry.repoPath '') }
     }
+    $auditRules = Get-RoadmapStandard
     $contract = Invoke-NormalizeRoadmapContract `
         -ParsedResult $parsedResult `
         -RawContent $rawContent `
         -RepoName $RepoName `
         -RepoPath $repoPath `
-        -RoadmapPath $effectiveRoadmapPath
+        -RoadmapPath $effectiveRoadmapPath `
+        -AuditRules $auditRules
 
-    $auditRules = Get-RoadmapStandard
     if ($null -ne $auditRules) {
         $contract = Invoke-AuditRoadmapContract -Contract $contract -AuditRules $auditRules
     }
@@ -8772,13 +8773,14 @@ try {
                     $rawContent   = Get-Content -LiteralPath $effectiveRoadmapPath -Raw -Encoding UTF8 -ErrorAction Stop
                     $parsedResult = Invoke-ParseRoadmapContent -Content $rawContent -SourcePath $effectiveRoadmapPath
                     $repoPath     = if (-not [string]::IsNullOrWhiteSpace($localPath)) { $localPath } else { Split-Path -Path $effectiveRoadmapPath -Parent }
+                    $auditRules   = Get-RoadmapStandard
                     $contract     = Invoke-NormalizeRoadmapContract `
                                         -ParsedResult $parsedResult `
                                         -RawContent   $rawContent `
                                         -RepoName     $repoName `
                                         -RepoPath     $repoPath `
-                                        -RoadmapPath  $effectiveRoadmapPath
-                    $auditRules   = Get-RoadmapStandard
+                                        -RoadmapPath  $effectiveRoadmapPath `
+                                        -AuditRules   $auditRules
                     if ($null -ne $auditRules) {
                         $contract = Invoke-AuditRoadmapContract -Contract $contract -AuditRules $auditRules
                     }

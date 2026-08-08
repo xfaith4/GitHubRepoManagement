@@ -40,6 +40,76 @@ $script:LevelRank = @{
     'L4-Orchestration-Ready' = 4
 }
 
+# ---------------------------------------------------------------------------
+# Shared detection contract
+# ---------------------------------------------------------------------------
+#
+# Detection is DATA, not code. The canonical patterns live in
+# standards/roadmap/roadmap-audit-rules.json under "detection", and both this
+# tool and backend/modules/roadmap/Roadmap.Auditor.ps1 read them from there.
+# The literals below are a mirror used only when the rule pack predates the
+# block — keep them byte-identical to the JSON and to the module's copy.
+#
+# Before 2026-08-08 this tool carried its own release-heading regex,
+# product-intent vocabulary, acceptance-criteria scope, and score arithmetic.
+# No repository in the estate scored the same under both evaluators, and three
+# straddled the L3 dispatch threshold depending on which one an operator ran.
+# Do not reintroduce a private copy of any pattern here.
+
+$script:Detection = [pscustomobject]@{
+    releaseHeadingPattern            = '(?im)^#{2,}\s+Release\s+([0-9]+(?:\.[0-9]+)*)\s*[—–-]+\s*(.+?)\s*$'
+    productIntentHeadingPattern      = '(?im)^#{1,6}\s*(?:[0-9]+\.\s*)?(?:product\s+intent|product\s+scope|overview|about|purpose|background|what\s+this\s+(?:does|is))\b'
+    acceptanceCriteriaHeadingAliases = @('Acceptance criteria', 'Done criteria', 'Definition of done')
+    outOfScopeHeadingAliases         = @('Out of scope', 'Out-of-scope', 'Not in scope', 'Non-goals', 'Non goals', 'Not included', 'Excluded', 'Exclusions')
+    releaseScopedSignals             = @('hasAcceptanceCriteria', 'hasOutOfScope')
+    meaningfulBodyMinimumCharacters  = 4
+    meaningfulBodyPlaceholderPattern = '(?i)\b(tbd|todo|none yet|not yet|n/a)\b'
+    scoringMode                      = 'normalized'
+}
+
+function Set-DetectionProfile {
+    <#
+    .SYNOPSIS
+        Overlay the rule pack's "detection" block onto $script:Detection.
+    #>
+    param([Parameter(Mandatory=$true)]$Rules)
+
+    if ($Rules.PSObject.Properties.Name -notcontains 'detection') { return }
+    $d = $Rules.detection
+    if ($null -eq $d) { return }
+    $names = @($d.PSObject.Properties.Name)
+
+    if ($names -contains 'releaseHeadingPattern' -and -not [string]::IsNullOrWhiteSpace([string]$d.releaseHeadingPattern)) {
+        $script:Detection.releaseHeadingPattern = [string]$d.releaseHeadingPattern
+    }
+    if ($names -contains 'productIntentHeadingPattern' -and -not [string]::IsNullOrWhiteSpace([string]$d.productIntentHeadingPattern)) {
+        $script:Detection.productIntentHeadingPattern = [string]$d.productIntentHeadingPattern
+    }
+    if ($names -contains 'acceptanceCriteriaHeadingAliases' -and @($d.acceptanceCriteriaHeadingAliases).Count -gt 0) {
+        $script:Detection.acceptanceCriteriaHeadingAliases = @($d.acceptanceCriteriaHeadingAliases)
+    }
+    if ($names -contains 'outOfScopeHeadingAliases' -and @($d.outOfScopeHeadingAliases).Count -gt 0) {
+        $script:Detection.outOfScopeHeadingAliases = @($d.outOfScopeHeadingAliases)
+    }
+    if ($names -contains 'releaseScopedSignals') {
+        $script:Detection.releaseScopedSignals = @($d.releaseScopedSignals)
+    }
+    if ($names -contains 'meaningfulBody' -and $null -ne $d.meaningfulBody) {
+        $mb = @($d.meaningfulBody.PSObject.Properties.Name)
+        if ($mb -contains 'minimumCharacters') {
+            $script:Detection.meaningfulBodyMinimumCharacters = [int]$d.meaningfulBody.minimumCharacters
+        }
+        if ($mb -contains 'placeholderPattern' -and -not [string]::IsNullOrWhiteSpace([string]$d.meaningfulBody.placeholderPattern)) {
+            $script:Detection.meaningfulBodyPlaceholderPattern = [string]$d.meaningfulBody.placeholderPattern
+        }
+    }
+    if ($names -contains 'scoring' -and $null -ne $d.scoring -and
+        @($d.scoring.PSObject.Properties.Name) -contains 'mode' -and
+        -not [string]::IsNullOrWhiteSpace([string]$d.scoring.mode)) {
+        $script:Detection.scoringMode = [string]$d.scoring.mode
+    }
+}
+
 function Resolve-StandardsFile {
     param(
         [Parameter(Mandatory=$true)][AllowEmptyString()][string]$ExplicitPath,
@@ -111,24 +181,35 @@ function Get-HeadingMatch {
 function Get-ReleaseHeadingMatch {
     param([Parameter(Mandatory=$true)][AllowEmptyString()][string]$Line)
 
-    $m = [regex]::Match($Line, '^##\s+Release\s+([0-9]+(?:\.[0-9]+)*)\s+[—-]\s+(.+?)\s*$')
+    $m = [regex]::Match($Line, $script:Detection.releaseHeadingPattern)
     if (-not $m.Success) { return $null }
 
+    $hashes = [regex]::Match($Line, '^#+')
     return [pscustomobject]@{
         Id = $m.Groups[1].Value.Trim()
         Title = $m.Groups[2].Value.Trim()
+        Level = if ($hashes.Success) { $hashes.Value.Length } else { 2 }
     }
 }
 
 function Get-SectionBodiesFromBlock {
-    param([Parameter(Mandatory=$true)][AllowEmptyString()][string[]]$Lines)
+    # Subsection headings are recognised RELATIVE to the release heading that
+    # opened the block: '### Acceptance criteria' under '## Release 2.7', or
+    # '#### Acceptance criteria' under a '### Release 2.7' nested inside a
+    # numbered parent. A fixed '###' would silently miss the nested form.
+    param(
+        [Parameter(Mandatory=$true)][AllowEmptyString()][string[]]$Lines,
+        [Parameter()][int]$ReleaseHeadingLevel = 2
+    )
 
     $bodies = @{}
     $current = $null
     $buffer = New-Object 'System.Collections.Generic.List[string]'
+    $minDepth = $ReleaseHeadingLevel + 1
+    $subHeadingRx = "^#{$minDepth,6}\s+(.+?)\s*$"
 
     foreach ($line in $Lines) {
-        $m = [regex]::Match($line, '^###\s+(.+?)\s*$')
+        $m = [regex]::Match($line, $subHeadingRx)
         if ($m.Success) {
             if ($null -ne $current) {
                 $bodies[$current] = ($buffer -join "`n")
@@ -170,8 +251,8 @@ function Test-MeaningfulBody {
 
     if ([string]::IsNullOrWhiteSpace($Body)) { return $false }
     $compact = ($Body -replace '[\s\-_*`#>]', '').Trim()
-    if ($compact.Length -lt 4) { return $false }
-    if ($Body -match '(?i)\b(tbd|todo|none yet|not yet|n/a)\b') { return $false }
+    if ($compact.Length -lt [int]$script:Detection.meaningfulBodyMinimumCharacters) { return $false }
+    if ([regex]::IsMatch($Body, $script:Detection.meaningfulBodyPlaceholderPattern)) { return $false }
     return $true
 }
 
@@ -307,7 +388,9 @@ function ConvertTo-RoadmapContract {
             $currentPending = New-Object 'System.Collections.Generic.List[string]'
             $currentCompleted = New-Object 'System.Collections.Generic.List[string]'
 
-            if ($heading.Text -match '(?i)\b(product intent|scope|purpose)\b') {
+            # Product intent is document-scoped and matched against the whole
+            # heading line, so the shared pattern sees the '#' depth it anchors on.
+            if ([regex]::IsMatch($line, $script:Detection.productIntentHeadingPattern)) {
                 $contract.hasProductIntent = $true
             }
         }
@@ -317,6 +400,7 @@ function ConvertTo-RoadmapContract {
             [void]$releaseStarts.Add([pscustomobject]@{
                 id = $releaseHeading.Id
                 title = $releaseHeading.Title
+                level = $releaseHeading.Level
                 lineIndex = $i
                 line = $i + 1
             })
@@ -368,7 +452,7 @@ function ConvertTo-RoadmapContract {
         $blockLines = @($lines[$startIndex..$endIndex])
         $blockText = $blockLines -join "`n"
         $blockItems = @(Get-ChecklistItemsFromLines -Lines $blockLines)
-        $bodies = Get-SectionBodiesFromBlock -Lines $blockLines
+        $bodies = Get-SectionBodiesFromBlock -Lines $blockLines -ReleaseHeadingLevel ([int]$start.level)
 
         $status = $null
         $statusMatch = [regex]::Match($blockText, '(?im)^\s*>\s*Status:\s*(.+?)\s*$')
@@ -383,8 +467,8 @@ function ConvertTo-RoadmapContract {
             if (-not [string]::IsNullOrWhiteSpace($goalBody)) { $goal = $goalBody.Trim() }
         }
 
-        $acceptanceBody = Get-BodyForAliases -Bodies $bodies -Aliases @('Acceptance criteria','Acceptance Criteria')
-        $outOfScopeBody = Get-BodyForAliases -Bodies $bodies -Aliases @('Out of scope','Out-of-scope','Non-goals','Non goals','Not included')
+        $acceptanceBody = Get-BodyForAliases -Bodies $bodies -Aliases @($script:Detection.acceptanceCriteriaHeadingAliases)
+        $outOfScopeBody = Get-BodyForAliases -Bodies $bodies -Aliases @($script:Detection.outOfScopeHeadingAliases)
         $validationBody = Get-BodyForAliases -Bodies $bodies -Aliases @('Validation plan','Validation','Test plan')
         $traceabilityBody = Get-BodyForAliases -Bodies $bodies -Aliases @('Traceability','References','Links')
 
@@ -582,6 +666,8 @@ function Test-KnownRuleFailure {
         'ROADMAP-008' { return ($Contract.pendingCount -lt 3 -and $Contract.roadmapState -eq 'pending') }
         'ROADMAP-009' { return ($null -ne $Contract.releaseCount -and [int]$Contract.releaseCount -lt 2) }
         'ROADMAP-010' { return ([int]$Contract.vagueItemCount -gt 0) }
+        'ROADMAP-011' { return ([int]$Contract.activeReleaseCount -gt 1) }
+        'ROADMAP-012' { return ([int]$Contract.releaseCount -gt 0 -and [int]$Contract.activeReleaseCount -eq 0) }
         default       { return $false }  # unknown rule — do not penalise
     }
 }
@@ -595,7 +681,15 @@ function Invoke-RoadmapAuditRules {
     Set-VagueItemMetric -Contract $Contract -Rules $Rules
 
     $script:AuditFindings.Clear()
-    $score = 100.0
+
+    # detection.scoring.mode = "normalized": the rule weights do not sum to 100
+    # (they sum to 125 in v1.2), so the score is the surviving fraction of the
+    # total weight, rescaled to 0-100. Subtracting penalties from a flat 100 —
+    # what this tool did before 2026-08-08 — produces a different number than
+    # the backend auditor on the very same file.
+    $maxPossibleScore = ($Rules.rules | Measure-Object -Property scoreWeight -Sum).Sum
+    if ($null -eq $maxPossibleScore -or [double]$maxPossibleScore -le 0) { $maxPossibleScore = 100 }
+    $totalPenalty = 0.0
 
     foreach ($rule in @($Rules.rules)) {
         $failed = if ($rule.PSObject.Properties.Name -contains 'condition' -and $null -ne $rule.condition) {
@@ -606,7 +700,7 @@ function Invoke-RoadmapAuditRules {
         if ($failed) {
             $impact = 0.0
             if ($rule.PSObject.Properties.Name -contains 'scoreWeight') { $impact = [double]$rule.scoreWeight }
-            $score -= $impact
+            $totalPenalty += $impact
             [void]$script:AuditFindings.Add([pscustomobject]@{
                 ruleId = [string]$rule.id
                 name = [string]$rule.name
@@ -618,10 +712,17 @@ function Invoke-RoadmapAuditRules {
         }
     }
 
+    $rawScore = [double]$maxPossibleScore - $totalPenalty
+    if ($rawScore -lt 0) { $rawScore = 0 }
+    $score = [double][int][math]::Round(($rawScore / [double]$maxPossibleScore) * 100)
     if ($score -lt 0) { $score = 0 }
     if ($score -gt 100) { $score = 100 }
 
-    $Contract.maturityScore = [math]::Round($score, 2)
+    # A missing roadmap is L0-Absent regardless of which other rules happened
+    # not to fire.
+    if ($Contract.roadmapState -eq 'missing') { $score = 0 }
+
+    $Contract.maturityScore = $score
     $level = Get-MaturityFromScore -Score $Contract.maturityScore -Rules $Rules
 
     $criticalCount = @($script:AuditFindings | Where-Object { $_.severity -eq 'critical' }).Count
@@ -639,6 +740,23 @@ function Invoke-RoadmapAuditRules {
             if (Test-Condition -Condition $cap.when -Contract $Contract) {
                 $level = Cap-MaturityLevel -CurrentLevel $level -MaxLevel ([string]$cap.maxLevel)
             }
+        }
+    }
+
+    # More than one active release caps the roadmap at L2 per
+    # ROADMAP_MATURITY_MODEL.md: an ambiguous dispatch target is as unusable as
+    # missing structure. The SCORE is capped too, not just the label, so score
+    # and level stay consistent for every consumer — same as the backend
+    # auditor's cap.
+    if ([int]$Contract.activeReleaseCount -gt 1) {
+        $l2Max = 64
+        if ($Rules.PSObject.Properties.Name -contains 'maturityThresholds' -and
+            $Rules.maturityThresholds.PSObject.Properties.Name -contains 'L2-Structured') {
+            $l2Max = [int]$Rules.maturityThresholds.'L2-Structured'.maxScore
+        }
+        if ($Contract.maturityScore -gt $l2Max) {
+            $Contract.maturityScore = $l2Max
+            $level = Get-MaturityFromScore -Score $Contract.maturityScore -Rules $Rules
         }
     }
 
@@ -737,6 +855,10 @@ if (-not $LoadFunctionsOnly) {
 
     $rules = Get-Content -LiteralPath $rulesFile -Raw | ConvertFrom-Json
     $schema = Get-Content -LiteralPath $schemaFile -Raw | ConvertFrom-Json
+
+    # Adopt the rule pack's detection contract before parsing anything, so this
+    # tool and the backend auditor read the same file the same way.
+    Set-DetectionProfile -Rules $rules
 
     $contract = ConvertTo-RoadmapContract -RoadmapPath $Path -Rules $rules
     $contract = Invoke-RoadmapAuditRules -Contract $contract -Rules $rules
