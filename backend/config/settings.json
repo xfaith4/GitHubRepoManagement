@@ -16,7 +16,8 @@
     "includeNonGitFolders": false
   },
   "retention": {
-    "days": 30
+    "days": 30,
+    "maxSnapshotDays": 365
   },
   "reconcile": {
     "ownerType": "Auto",

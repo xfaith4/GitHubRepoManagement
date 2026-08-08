@@ -139,9 +139,15 @@ function Clear-ListenerPort {
 }
 
 function Invoke-Req {
-    param([string]$Method, [string]$Uri)
+    param([string]$Method, [string]$Uri, [string]$Body)
     try {
-        $response = Invoke-WebRequest -Uri $Uri -Method $Method -SkipHttpErrorCheck -TimeoutSec $RequestTimeoutSec
+        # Not $args — that is an automatic variable.
+        $reqArgs = @{ Uri = $Uri; Method = $Method; SkipHttpErrorCheck = $true; TimeoutSec = $RequestTimeoutSec }
+        if ($PSBoundParameters.ContainsKey('Body')) {
+            $reqArgs.Body = $Body
+            $reqArgs.ContentType = 'application/json'
+        }
+        $response = Invoke-WebRequest @reqArgs
         $json = $null
         if (-not [string]::IsNullOrWhiteSpace($response.Content)) {
             $looksJson = $response.Content.TrimStart() -match '^[\{\[]'
@@ -410,6 +416,30 @@ try {
             $scan.assessment = [ordered]@{ httpStatus = $assessment.StatusCode }
             foreach ($k in $scanMetrics.Keys) { $scan.assessment[$k] = $scanMetrics[$k] }
 
+            # Release 2.7 Phase D — scheduled app.db maintenance. Driven through
+            # the host's own route rather than the module directly: the host holds
+            # the SQLite connections, so an out-of-process VACUUM would contend for
+            # the write lock. Runs AFTER the assessment so the scan's fresh rows are
+            # already written and the prune reflects this run.
+            Write-Host '  running app.db maintenance (snapshot retention + VACUUM)...' -ForegroundColor DarkGray
+            $maint = Invoke-Req -Method Post -Uri "$baseUrl/api/maintenance/database" -Body '{}'
+            $maintOk = ($maint.Ok -and $maint.StatusCode -eq 200 -and $null -ne $maint.Json -and $maint.Json.success -eq $true)
+            $scan.maintenance = if ($maintOk) {
+                [ordered]@{
+                    httpStatus     = $maint.StatusCode
+                    rowsRemoved    = $maint.Json.data.totalRowsRemoved
+                    vacuumed       = $maint.Json.data.vacuumed
+                    reclaimedBytes = $maint.Json.data.reclaimedBytes
+                    sizeAfterBytes = $maint.Json.data.sizeAfterBytes
+                    durationMs     = $maint.Json.data.durationMs
+                }
+            } else {
+                [ordered]@{ httpStatus = $maint.StatusCode; rowsRemoved = $null; vacuumed = $null; reclaimedBytes = $null; sizeAfterBytes = $null; durationMs = $null }
+            }
+            Write-Host ("  maintenance: rowsRemoved={0} vacuumed={1} reclaimedBytes={2} sizeAfter={3}" -f `
+                    $scan.maintenance.rowsRemoved, $scan.maintenance.vacuumed, $scan.maintenance.reclaimedBytes, $scan.maintenance.sizeAfterBytes) -ForegroundColor DarkGray
+            if (-not $maintOk) { $notes.Add(("app.db maintenance did not succeed (HTTP {0}) — see host.log" -f $maint.StatusCode)) }
+
             Write-Host ("  health live/ready/deps: {0}/{1}/{2}" -f $live.StatusCode, $readyResp.StatusCode, $deps.StatusCode) -ForegroundColor DarkGray
             Write-Host ("  persistence: available={0} enabled={1} tables={2} agentRunEvents={3}" -f $scan.persistence.available, $scan.persistence.enabled, $scan.persistence.tables, $scan.persistence.agentRunEventCount) -ForegroundColor DarkGray
             Write-Host ("  scan: mode={0} reused={1} reindexed={2} failed={3} durationMs={4}" -f $scanMetrics.mode, $scanMetrics.reused, $scanMetrics.reindexed, $scanMetrics.failed, $scanMetrics.durationMs) -ForegroundColor DarkGray
@@ -514,6 +544,9 @@ try {
         [void]$sb.AppendLine("- **Assessment:** HTTP $($scan.assessment.httpStatus), mode=$($scan.assessment.mode), reused=$($scan.assessment.reused), reindexed=$($scan.assessment.reindexed), failed=$($scan.assessment.failed), durationMs=$($scan.assessment.durationMs)")
     [void]$sb.AppendLine("- **Health (live/ready/deps):** $($scan.health.live)/$($scan.health.ready)/$($scan.health.dependencies)")
         [void]$sb.AppendLine("- **Persistence:** available=$($scan.persistence.available), enabled=$($scan.persistence.enabled), tables=$($scan.persistence.tables), agentRunEvents=$($scan.persistence.agentRunEventCount)")
+        if ($scan.Contains('maintenance')) {
+            [void]$sb.AppendLine("- **app.db maintenance:** HTTP $($scan.maintenance.httpStatus), rowsRemoved=$($scan.maintenance.rowsRemoved), vacuumed=$($scan.maintenance.vacuumed), reclaimedBytes=$($scan.maintenance.reclaimedBytes), sizeAfterBytes=$($scan.maintenance.sizeAfterBytes)")
+        }
     }
     [void]$sb.AppendLine('')
     [void]$sb.AppendLine('## Verify-next queue')

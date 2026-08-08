@@ -245,6 +245,187 @@ function Get-AutomationRunHistory {
     return $ordered
 }
 
+function _Auto_ToUtc {
+    <#
+    .SYNOPSIS
+        Normalizes a run-record timestamp to UTC exactly once.
+    .DESCRIPTION
+        Run records are written with `(Get-Date).ToUniversalTime().ToString('o')`,
+        but ConvertFrom-Json hands the value back as a [datetime] with
+        Kind=Unspecified that already holds the UTC instant. Calling
+        ToUniversalTime() on that shifts it again by the local offset — which
+        put `lastRunAt` in the future and made overdue detection silently
+        impossible. A kind-less value is therefore treated as already-UTC.
+    #>
+    param([object]$Value)
+
+    if ($null -eq $Value) { return $null }
+
+    $dt = [datetime]::MinValue
+    if ($Value -is [datetime]) {
+        $dt = [datetime]$Value
+    }
+    else {
+        $text = [string]$Value
+        if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+        if (-not [datetime]::TryParse($text, [System.Globalization.CultureInfo]::InvariantCulture,
+                [System.Globalization.DateTimeStyles]::RoundtripKind, [ref]$dt)) {
+            return $null
+        }
+    }
+
+    if ($dt.Kind -eq [System.DateTimeKind]::Unspecified) {
+        return [datetime]::SpecifyKind($dt, [System.DateTimeKind]::Utc)
+    }
+    return $dt.ToUniversalTime()
+}
+
+function Get-AutomationRunOutcome {
+    <#
+    .SYNOPSIS
+        Classifies one recorded run as ok / partial / failed.
+    .DESCRIPTION
+        Release 2.7 Phase D. A run that produced no proposals and only errors is
+        `failed`; one that produced some of each is `partial`. A run with zero
+        targets is `ok` — "no favorite repo needed doc work" is a healthy
+        outcome, not a failure, and treating it as one would alert every night
+        on a clean portfolio.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][object]$Run)
+
+    $errorCount = @(_Auto_GetField -Obj $Run -Name 'errors' -Default @()).Count
+    $proposalCount = [int](_Auto_GetField -Obj $Run -Name 'proposalCount' -Default 0)
+
+    if ($errorCount -eq 0) { return 'ok' }
+    if ($proposalCount -gt 0) { return 'partial' }
+    return 'failed'
+}
+
+function Get-AutomationHealth {
+    <#
+    .SYNOPSIS
+        Reports whether scheduled automation is actually running, not merely
+        configured.
+    .DESCRIPTION
+        Release 2.7 Phase D. The failure mode this closes is silence: interval
+        firing is delegated to an external cron hitting POST /api/automation/run,
+        so if that cron stops, nothing in the product changes — the config still
+        reads "enabled" and the history simply stops growing. This derives an
+        alert from the gap between the configured interval and the newest run
+        record, so a scheduler that stopped is visible instead of absent.
+    .PARAMETER Settings
+        Host settings; the `automation` block supplies enabled/intervalMinutes.
+    .PARAMETER GraceFactor
+        How many intervals may elapse before a missed run is called overdue.
+        Two by default, so one skipped tick is tolerated and two is an alert.
+    .PARAMETER Now
+        Injectable clock for deterministic tests.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+        [Parameter()][object]$Settings = $null,
+        [Parameter()][double]$GraceFactor = 2.0,
+        [Parameter()][datetime]$Now = [datetime]::UtcNow
+    )
+
+    $auto = _Auto_GetField -Obj $Settings -Name 'automation' -Default $null
+    $enabled = [bool](_Auto_GetField -Obj $auto -Name 'enabled' -Default $false)
+    $intervalMinutes = [int](_Auto_GetField -Obj $auto -Name 'intervalMinutes' -Default 0)
+
+    $history = @(Get-AutomationRunHistory -WorkspaceRoot $WorkspaceRoot -Limit 50)
+    $lastRun = if ($history.Count -gt 0) { $history[0] } else { $null }
+
+    $lastRunAt = $null
+    $lastRunId = ''
+    $lastOutcome = 'never'
+    $lastErrorCount = 0
+    if ($null -ne $lastRun) {
+        $lastRunId = [string](_Auto_GetField -Obj $lastRun -Name 'runId' -Default '')
+        $lastOutcome = Get-AutomationRunOutcome -Run $lastRun
+        $lastErrorCount = @(_Auto_GetField -Obj $lastRun -Name 'errors' -Default @()).Count
+        $lastRunAt = _Auto_ToUtc -Value (_Auto_GetField -Obj $lastRun -Name 'finishedAt' -Default $null)
+    }
+    $nowUtc = _Auto_ToUtc -Value $Now
+
+    # Consecutive failures from newest backwards. `partial` does not reset the
+    # streak (it is still degraded) but does not extend it either.
+    $consecutiveFailures = 0
+    foreach ($record in $history) {
+        if ((Get-AutomationRunOutcome -Run $record) -eq 'failed') { $consecutiveFailures++ } else { break }
+    }
+
+    $minutesSinceLastRun = $null
+    if ($null -ne $lastRunAt) {
+        $minutesSinceLastRun = [math]::Round(($nowUtc - $lastRunAt).TotalMinutes, 1)
+    }
+
+    $expectedNextRunAt = $null
+    $overdue = $false
+    if ($enabled -and $intervalMinutes -gt 0) {
+        if ($null -eq $lastRunAt) {
+            # Enabled with an interval but no run has ever been recorded.
+            $overdue = $true
+        }
+        else {
+            $expectedNextRunAt = $lastRunAt.AddMinutes($intervalMinutes)
+            $deadline = $lastRunAt.AddMinutes($intervalMinutes * $GraceFactor)
+            $overdue = ($nowUtc -gt $deadline)
+        }
+    }
+
+    $alert = $null
+    if ($enabled -and $intervalMinutes -gt 0 -and $null -eq $lastRunAt) {
+        $alert = [pscustomobject]@{
+            severity = 'warning'
+            code     = 'automation-never-ran'
+            message  = ("Automation is enabled on a {0}-minute interval but no run has ever been recorded. Confirm the cron hitting POST /api/automation/run exists." -f $intervalMinutes)
+        }
+    }
+    elseif ($overdue) {
+        $alert = [pscustomobject]@{
+            severity = 'error'
+            code     = 'automation-overdue'
+            message  = ("No automation run in {0} minutes; the configured interval is {1} minutes. The scheduled trigger has probably stopped." -f $minutesSinceLastRun, $intervalMinutes)
+        }
+    }
+    elseif ($consecutiveFailures -gt 0) {
+        $alert = [pscustomobject]@{
+            severity = 'error'
+            code     = 'automation-run-failed'
+            message  = ("The last {0} automation run(s) produced no proposals and only errors." -f $consecutiveFailures)
+        }
+    }
+    elseif ($lastOutcome -eq 'partial') {
+        $alert = [pscustomobject]@{
+            severity = 'warning'
+            code     = 'automation-run-partial'
+            message  = ("The last automation run completed with {0} error(s)." -f $lastErrorCount)
+        }
+    }
+
+    return [pscustomobject]@{
+        enabled             = $enabled
+        intervalMinutes     = $intervalMinutes
+        runCount            = $history.Count
+        lastRunId           = $lastRunId
+        lastRunAt           = if ($null -ne $lastRunAt) { $lastRunAt.ToString('o') } else { $null }
+        lastOutcome         = $lastOutcome
+        lastErrorCount      = $lastErrorCount
+        minutesSinceLastRun = $minutesSinceLastRun
+        expectedNextRunAt   = if ($null -ne $expectedNextRunAt) { $expectedNextRunAt.ToString('o') } else { $null }
+        graceFactor         = $GraceFactor
+        overdue             = $overdue
+        consecutiveFailures = $consecutiveFailures
+        healthy             = ($null -eq $alert)
+        alert               = $alert
+        evaluatedAt         = $nowUtc.ToString('o')
+    }
+}
+
 function New-AutomationDigestPayload {
     <#
     .SYNOPSIS

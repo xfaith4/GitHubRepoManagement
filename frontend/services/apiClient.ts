@@ -1,4 +1,5 @@
 import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type RepositoryImprovementPreview, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioAssessmentScanSummary, type PortfolioChangeState, type PortfolioScanDecisionReason, type PortfolioScanStatus, type RepoCurationState, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult, type GitHubAuthStatus } from '../types';
+import { type AutomationHealthPayload } from '../lib/automationStatus';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -1480,6 +1481,24 @@ export async function getScanSchedule(): Promise<ScanSchedule> {
     nextScanAt: d.nextScanAt ?? null,
     lastScanAt: d.lastScanAt ?? null,
   };
+}
+
+/**
+ * Release 2.7 Phase D — scheduled-automation health.
+ *
+ * Returns null when the endpoint is unreachable rather than throwing or
+ * defaulting to a healthy shape: `resolveAutomationStatus` renders null as
+ * 'unknown', and reporting "healthy" because the status call failed would be
+ * the same false-green this surface exists to prevent.
+ */
+export async function getAutomationStatus(): Promise<AutomationHealthPayload | null> {
+  try {
+    const data = await fetchJson<any>(`${API_BASE_URL}/automation/status`);
+    const d = data?.data ?? null;
+    return d ? (d as AutomationHealthPayload) : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function getRoadmapDependencies(refresh = false): Promise<RoadmapDependencyGraph> {

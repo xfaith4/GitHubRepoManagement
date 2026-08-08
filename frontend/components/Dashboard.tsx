@@ -4,6 +4,8 @@ import SummaryCard from './SummaryCard';
 import ActionBar from './ActionBar';
 import ProvenanceNotice from './ProvenanceNotice';
 import { isCarriedOverCount } from '../lib/dataProvenance';
+import AutomationStatusBadge from './AutomationStatusBadge';
+import { type AutomationHealthPayload } from '../lib/automationStatus';
 import RepoGrid from './RepoGrid';
 import LogPanel from './LogPanel';
 import SettingsModal from './SettingsModal';
@@ -29,7 +31,7 @@ import HelpModal from './HelpModal';
 import OperationsWorkspaceView from './OperationsWorkspaceView';
 import { VIEW_META_BY_KEY, type ViewKey } from '../viewMeta';
 import { isRepoNeedsAttention } from '../lib/needsAttention';
-import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getRoadmapDependencies, getPortfolioAssessment, refreshAllPortfolioAssessment, setOperationsRepoCuration, getPortfolioTrend, getOperationsRepos } from '../services/apiClient';
+import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getAutomationStatus, getRoadmapDependencies, getPortfolioAssessment, refreshAllPortfolioAssessment, setOperationsRepoCuration, getPortfolioTrend, getOperationsRepos } from '../services/apiClient';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
 import { useHealthPing } from '../hooks/useHealthPing';
@@ -103,6 +105,9 @@ const EMPTY_EXECUTION_METRICS: ExecutionMetrics = {
 };
 
 const EXECUTION_METRICS_REFRESH_MS = 15_000;
+// Automation runs on a minutes-to-hours interval, so polling it as often as the
+// execution metrics would be pure noise against a status that changes slowly.
+const AUTOMATION_STATUS_REFRESH_MS = 120_000;
 
 const TREND_SERIES_COLORS: Record<string, { stroke: string; fill: string; textClass: string; badgeClass: string }> = {
   emerald: {
@@ -268,6 +273,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   const [executionMetricsError, setExecutionMetricsError] = useState<string | null>(null);
   const [executionMetricsUpdatedAt, setExecutionMetricsUpdatedAt] = useState<string | null>(null);
   const [scanSchedule, setScanSchedule] = useState<ScanSchedule | null>(null);
+  // Release 2.7 Phase D — null means "status unknown", which the badge renders
+  // as such. It must never be seeded with a healthy-looking default.
+  const [automationStatus, setAutomationStatus] = useState<AutomationHealthPayload | null>(null);
   const [dependencyGraph, setDependencyGraph] = useState<RoadmapDependencyGraph | null>(null);
   const [dependencyGraphLoading, setDependencyGraphLoading] = useState(false);
   const [hasAttemptedDepsLoad, setHasAttemptedDepsLoad] = useState(false);
@@ -475,7 +483,20 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   useEffect(() => {
     refreshExecutionMetrics().catch(() => {/* surfaced in-card */});
     getScanSchedule().then(setScanSchedule).catch(() => {/* silent */});
+    // getAutomationStatus resolves null on failure rather than throwing.
+    getAutomationStatus().then(setAutomationStatus);
   }, [refreshExecutionMetrics]);
+
+  // Release 2.7 Phase D — an overdue scheduler only becomes overdue with the
+  // passage of time, so this has to re-poll; a load-once fetch would show the
+  // status as it was when the tab was opened and never update.
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      getAutomationStatus().then(setAutomationStatus);
+    }, AUTOMATION_STATUS_REFRESH_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -2171,6 +2192,13 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                 </div>
               </div>
             ) : activeView === 'operations' ? (
+              <>
+              {/* Release 2.7 Phase D — automation acts on this tab's curated
+                  subset, so a scheduler that has stopped belongs here, next to
+                  the work it was supposed to be doing. */}
+              <div className="mb-3 flex justify-end">
+                <AutomationStatusBadge status={automationStatus} />
+              </div>
               <OperationsWorkspaceView
                 operationsRepos={operationsRepos}
                 loading={operationsReposLoading}
@@ -2184,6 +2212,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                 onViewGitStatus={handleViewGitStatus}
                 showIndexedPortfolioNote={dataSource?.source === 'github'}
               />
+              </>
             ) : activeView === 'work-queue' ? (
               <WorkQueueView
                 auditIndex={docsAuditIndex}

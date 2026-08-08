@@ -100,6 +100,11 @@ $script:OpsLogPath       = $null
 $script:OpsLogWriteCount = 0
 $script:OpsLogMaxLines   = 5000    # default; overridden from retention.maxOpsLogLines
 
+# Release 2.7 Phase D — last app.db maintenance result, surfaced by
+# GET /api/maintenance/database so an operator can see whether the scheduled
+# prune is actually running rather than only that it is configured.
+$script:LastDbMaintenance = $null
+
 # Auto-scan shared state — thread-safe; written by background runspace, read by main loop
 $script:AutoScanState = [hashtable]::Synchronized(@{
     Enabled             = $false
@@ -6081,6 +6086,42 @@ try {
                         agentRunEventCount = $agentRunEventCount
                     }
                 }
+                # ── Release 2.7 Phase D — scheduled app.db maintenance ──────────
+                # GET reports what a run WOULD remove (never mutates); POST runs
+                # the prune + VACUUM. Invoke-DailyEvidence.ps1 calls the same
+                # module function, so the scheduled path and the operator path
+                # cannot drift apart.
+                'GET /api/maintenance/database' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $maintDays = Get-AppDbMaintenanceRetentionDays -Settings (Get-HostSettings)
+                    $maintReport = Invoke-AppDbMaintenance -MaxSnapshotDays $maintDays -ReportOnly
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = @{
+                            configuredRetentionDays = $maintDays
+                            lastRun                 = $script:LastDbMaintenance
+                            preview                 = $maintReport
+                        }
+                    }
+                }
+                'POST /api/maintenance/database' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $maintBody = Parse-JsonBody -Body $req.Body
+                    $maintDays = Get-AppDbMaintenanceRetentionDays -Settings (Get-HostSettings)
+                    if ($null -ne $maintBody -and $maintBody.ContainsKey('maxSnapshotDays') -and [int]$maintBody.maxSnapshotDays -gt 0) {
+                        $maintDays = [int]$maintBody.maxSnapshotDays
+                    }
+                    $skipVacuum = ($null -ne $maintBody -and $maintBody.ContainsKey('skipVacuum') -and [bool]$maintBody.skipVacuum)
+                    $maintResult = Invoke-AppDbMaintenance -MaxSnapshotDays $maintDays -SkipVacuum:$skipVacuum -Confirm:$false
+                    $script:LastDbMaintenance = $maintResult
+                    Write-HostLog ("maintenance.database removed={0} vacuumed={1} reclaimedBytes={2} durationMs={3} correlationId={4}" -f `
+                            $maintResult.totalRowsRemoved, $maintResult.vacuumed, $maintResult.reclaimedBytes, $maintResult.durationMs, $correlationId)
+                    $maintStatus = if ($maintResult.success) { 200 } else { 500 }
+                    Send-HttpJson -Stream $req.Stream -StatusCode $maintStatus -CorrelationId $correlationId -Payload @{
+                        success = [bool]$maintResult.success
+                        data    = $maintResult
+                    }
+                }
                 # ── Release 2.2/2.7 — auth status, login, logout ────────────────
                 'GET /api/auth/status' {
                     Add-MetricCounter -Name 'api_requests_total'
@@ -6291,6 +6332,32 @@ try {
                             } catch { $deliveryError = $_.Exception.Message }
                         }
 
+                        # Release 2.7 Phase D — failure alerting. A run that errored
+                        # previously returned HTTP 200 with the errors buried in the
+                        # payload, so a scheduled run degrading over time was
+                        # invisible unless someone read the history by hand. Fire the
+                        # same execution.failed event the portal watchdog uses.
+                        $runOutcome = Get-AutomationRunOutcome -Run $run
+                        $alertFired = $false
+                        $alertError = $null
+                        if ($runOutcome -ne 'ok') {
+                            try {
+                                $null = Send-NotificationEvent -WorkspaceRoot $WorkspaceRoot -EventName 'execution.failed' -EventPayload @{
+                                    source        = 'automation-scheduler'
+                                    runId         = [string]$run.runId
+                                    kind          = [string]$run.kind
+                                    outcome       = $runOutcome
+                                    targetCount   = [int]$run.targetCount
+                                    proposalCount = [int]$run.proposalCount
+                                    errorCount    = @($run.errors).Count
+                                    errors        = @($run.errors)
+                                }
+                                $alertFired = $true
+                            } catch { $alertError = $_.Exception.Message }
+                            Write-HostLog ("WARN automation.run outcome={0} errors={1} runId={2} alertFired={3}" -f `
+                                    $runOutcome, @($run.errors).Count, $run.runId, $alertFired)
+                        }
+
                         Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                             success = $true
                             data = @{
@@ -6299,6 +6366,9 @@ try {
                                 delivered         = [bool]$delivered
                                 webhookConfigured = (-not [string]::IsNullOrWhiteSpace($webhookUrl))
                                 deliveryError     = $deliveryError
+                                outcome           = $runOutcome
+                                alertFired        = [bool]$alertFired
+                                alertError        = $alertError
                             }
                         }
                     }
@@ -6311,6 +6381,19 @@ try {
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data = @{ count = @($history).Count; runs = $history }
+                    }
+                }
+                # ── Release 2.7 Phase D — automation health ─────────────────────
+                # Interval firing is delegated to an external cron, so a scheduler
+                # that stops changes nothing visible in the product: the config
+                # still reads "enabled" and history just stops growing. This route
+                # turns that silence into an alert.
+                'GET /api/automation/status' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $autoHealth = Get-AutomationHealth -WorkspaceRoot $WorkspaceRoot -Settings (Get-HostSettings)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = $autoHealth
                     }
                 }
                 'GET /setup/status' {
