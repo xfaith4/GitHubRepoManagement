@@ -59,6 +59,33 @@ $script:LevelRank = @{
 $script:Detection = [pscustomobject]@{
     releaseHeadingPattern            = '(?im)^#{2,}\s+Release\s+([0-9]+(?:\.[0-9]+)*)\s*[—–-]+\s*(.+?)\s*$'
     productIntentHeadingPattern      = '(?im)^#{1,6}\s*(?:[0-9]+\.\s*)?(?:product\s+intent|product\s+scope|overview|about|purpose|background|what\s+this\s+(?:does|is))\b'
+    releaseStatusPattern             = '(?im)^\s*>?\s*\**\s*Status\s*:?\**\s*:?\s*\**\s*([A-Za-z][A-Za-z \-]*?)\s*\**\s*(?:$|[—–\-(])'
+    allowedStatuses                  = @('planned', 'active', 'blocked', 'validation', 'done', 'archived')
+    activeStatuses                   = @('active')
+    statusAliases                    = @{
+        'in progress' = 'active'
+        'in-progress' = 'active'
+        'inprogress'  = 'active'
+        'wip'         = 'active'
+        'current'     = 'active'
+        'ongoing'     = 'active'
+        'complete'    = 'done'
+        'completed'   = 'done'
+        'delivered'   = 'done'
+        'shipped'     = 'done'
+        'released'    = 'done'
+        'finished'    = 'done'
+        'pending'     = 'planned'
+        'not started' = 'planned'
+        'upcoming'    = 'planned'
+        'deferred'    = 'planned'
+        'proposed'    = 'planned'
+        'on hold'     = 'blocked'
+        'paused'      = 'blocked'
+        'in review'   = 'validation'
+        'review'      = 'validation'
+        'validating'  = 'validation'
+    }
     acceptanceCriteriaHeadingAliases = @('Acceptance criteria', 'Done criteria', 'Definition of done')
     outOfScopeHeadingAliases         = @('Out of scope', 'Out-of-scope', 'Not in scope', 'Non-goals', 'Non goals', 'Not included', 'Excluded', 'Exclusions')
     releaseScopedSignals             = @('hasAcceptanceCriteria', 'hasOutOfScope')
@@ -84,6 +111,25 @@ function Set-DetectionProfile {
     }
     if ($names -contains 'productIntentHeadingPattern' -and -not [string]::IsNullOrWhiteSpace([string]$d.productIntentHeadingPattern)) {
         $script:Detection.productIntentHeadingPattern = [string]$d.productIntentHeadingPattern
+    }
+    if ($names -contains 'releaseStatusPattern' -and -not [string]::IsNullOrWhiteSpace([string]$d.releaseStatusPattern)) {
+        $script:Detection.releaseStatusPattern = [string]$d.releaseStatusPattern
+    }
+    if ($names -contains 'statusVocabulary' -and $null -ne $d.statusVocabulary) {
+        $sv = @($d.statusVocabulary.PSObject.Properties.Name)
+        if ($sv -contains 'allowedStatuses' -and @($d.statusVocabulary.allowedStatuses).Count -gt 0) {
+            $script:Detection.allowedStatuses = @($d.statusVocabulary.allowedStatuses | ForEach-Object { ([string]$_).ToLowerInvariant() })
+        }
+        if ($sv -contains 'activeStatuses' -and @($d.statusVocabulary.activeStatuses).Count -gt 0) {
+            $script:Detection.activeStatuses = @($d.statusVocabulary.activeStatuses | ForEach-Object { ([string]$_).ToLowerInvariant() })
+        }
+        if ($sv -contains 'statusAliases' -and $null -ne $d.statusVocabulary.statusAliases) {
+            $aliasMap = @{}
+            foreach ($p in $d.statusVocabulary.statusAliases.PSObject.Properties) {
+                $aliasMap[$p.Name.ToLowerInvariant()] = ([string]$p.Value).ToLowerInvariant()
+            }
+            if ($aliasMap.Count -gt 0) { $script:Detection.statusAliases = $aliasMap }
+        }
     }
     if ($names -contains 'acceptanceCriteriaHeadingAliases' -and @($d.acceptanceCriteriaHeadingAliases).Count -gt 0) {
         $script:Detection.acceptanceCriteriaHeadingAliases = @($d.acceptanceCriteriaHeadingAliases)
@@ -140,29 +186,20 @@ function Get-RepoNameFromPath {
 
 function Normalize-Status {
     param(
-        [Parameter()][AllowNull()][string]$Status,
-        [Parameter(Mandatory=$true)]$Rules
+        [Parameter()][AllowNull()][string]$Status
     )
 
     if ([string]::IsNullOrWhiteSpace($Status)) { return $null }
 
-    $value = $Status.Trim().ToLowerInvariant()
-    $allowed = @('planned','active','blocked','validation','done','archived')
-    $aliases = @{}
-
-    if ($Rules.PSObject.Properties.Name -contains 'statusVocabulary') {
-        if ($Rules.statusVocabulary.PSObject.Properties.Name -contains 'allowedStatuses') {
-            $allowed = @($Rules.statusVocabulary.allowedStatuses)
-        }
-        if ($Rules.statusVocabulary.PSObject.Properties.Name -contains 'statusAliases') {
-            foreach ($p in $Rules.statusVocabulary.statusAliases.PSObject.Properties) {
-                $aliases[$p.Name.ToLowerInvariant()] = [string]$p.Value
-            }
-        }
-    }
+    # Vocabulary comes from the rule pack's detection block via
+    # Set-DetectionProfile — see the note above $script:Detection. Do not read
+    # it off $Rules directly; a top-level statusVocabulary is not the contract.
+    $value   = $Status.Trim().ToLowerInvariant()
+    $allowed = @($script:Detection.allowedStatuses)
+    $aliases = $script:Detection.statusAliases
 
     if ($allowed -contains $value) { return $value }
-    if ($aliases.ContainsKey($value)) { return $aliases[$value] }
+    if ($null -ne $aliases -and $aliases.ContainsKey($value)) { return [string]$aliases[$value] }
     return $null
 }
 
@@ -436,10 +473,7 @@ function ConvertTo-RoadmapContract {
     }
 
     $releaseList = [System.Collections.Generic.List[object]]::new()
-    $activeStatuses = @('active','blocked','validation')
-    if ($Rules.PSObject.Properties.Name -contains 'statusVocabulary' -and $Rules.statusVocabulary.PSObject.Properties.Name -contains 'activeStatuses') {
-        $activeStatuses = @($Rules.statusVocabulary.activeStatuses)
-    }
+    $activeStatuses = @($script:Detection.activeStatuses)
 
     for ($r = 0; $r -lt $releaseStarts.Count; $r++) {
         $start = $releaseStarts[$r]
@@ -455,9 +489,9 @@ function ConvertTo-RoadmapContract {
         $bodies = Get-SectionBodiesFromBlock -Lines $blockLines -ReleaseHeadingLevel ([int]$start.level)
 
         $status = $null
-        $statusMatch = [regex]::Match($blockText, '(?im)^\s*>\s*Status:\s*(.+?)\s*$')
+        $statusMatch = [regex]::Match($blockText, $script:Detection.releaseStatusPattern)
         if ($statusMatch.Success) { $status = $statusMatch.Groups[1].Value.Trim() }
-        $normalizedStatus = Normalize-Status -Status $status -Rules $Rules
+        $normalizedStatus = Normalize-Status -Status $status
 
         $goal = $null
         $goalMatch = [regex]::Match($blockText, '(?im)^\s*\*\*Goal:\*\*\s*(.+?)\s*$')

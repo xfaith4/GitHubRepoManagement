@@ -992,38 +992,45 @@ Two further survey findings, both independent of the split question:
 
 - **28 of 32 repos use no release sections at all** — a far larger conformance
   gap than anything about history placement, and the reason so many sit at L2.
-- **No repo scores identically under both evaluators** (0/32), and three flip
-  the L3 dispatch-readiness threshold: `GenesysAudits` and
-  `Curated_Recipe_Book` are L3 by the app and L2 by the CLI;
-  `PowerBI_ReportFactory_Kit` is the reverse.
+- **No repo scored identically under both evaluators** (0/32), and three flipped
+  the L3 dispatch-readiness threshold. **Closed 2026-08-08** — detection moved
+  into the rule pack (v1.2, v1.3) and the two evaluators now agree on every
+  roadmap in the estate; a module-smoke tripwire fails on any divergence. Full
+  text and evidence in
+  [the archive](docs/history/completed-releases.md#lane-07--the-two-roadmap-evaluators-disagreed-on-the-same-file).
 
-- [ ] **Reconcile the two roadmap evaluators — they disagree on the same
-      file.** _(state: planned — correctness, highest value in this lane)_
-      Audited 2026-08-08, this repo's `ROADMAP.md` scores **92 /
-      L4-Orchestration-Ready** through the backend modules
-      (`Invoke-ParseRoadmapContent` → `Invoke-NormalizeRoadmapContract` →
-      `Invoke-AuditRoadmapContract`) and **65 / L3-Contract-Ready with
-      "Releases: 0"** through
-      [`tools/Test-RoadmapContract.ps1`](tools/Test-RoadmapContract.ps1).
-      Two distinct causes, both confirmed 2026-08-08. **(a) Heading depth,
-      which affects this repo only:** the module accepts a release heading at
-      `#{1,3}` and
-      [`Roadmap.Parser.ps1`](backend/modules/roadmap/Roadmap.Parser.ps1)
-      deliberately allows `### Release …` nested under a numbered `## …`
-      parent, while the CLI recognizes only the template's top-level
-      `## Release X.Y`. The portfolio survey found **no** managed repo using
-      nested release headings, so this one is not the estate-wide driver.
-      **(b) Acceptance-criteria scoping, which affects nearly the whole
-      estate:** traced on `Curated_Recipe_Book`, where the two agree on every
-      count (8 pending / 38 complete / 0 releases) and differ on exactly one
-      rule — ROADMAP-006. The module credits acceptance criteria found
-      anywhere in the document; the CLI only counts them **inside a release
-      section**, so the 28 repos with no release sections can never earn that
-      rule from the CLI. Result: **0 of 32 repos score identically**, and
-      three flip the L3 dispatch threshold. Whichever tool an operator runs
-      decides whether a repo is dispatch-ready — the exact "two figures, one
-      truth" failure this product exists to catch. Share one detection path;
-      smoke both against the same fixture.
+- [ ] **Fold `tools/Test-RoadmapStructure.ps1` into the shared detection
+      contract — it is the third private copy.** _(state: planned — surfaced
+      2026-08-08 while closing the evaluator reconciliation)_ The two scoring
+      evaluators now read status from the rule pack, but the structural linter
+      still carries its own release-status regex
+      ([`Test-RoadmapStructure.ps1:889`](tools/Test-RoadmapStructure.ps1#L889))
+      and its own `statusAliases` map
+      ([`:128`](tools/Test-RoadmapStructure.ps1#L128)). It is a **lower-severity
+      divergence than the one just closed** — the linter emits structural
+      warnings rather than a maturity score, so drift there misreports a status
+      as unknown instead of flipping the L3 dispatch gate — but it is the same
+      regression class, and its map is not a subset of the pack's: it knew
+      `pending` → `planned` and `released` → `done`, which the rule pack did
+      not. Those two were merged into `statusVocabulary` when this was found,
+      so no repo loses coverage today; the structural fix is to delete the
+      linter's private copy and read the pack. Deferred because the linter has
+      its own Pester suite
+      ([`Test-RoadmapStructure.Tests.ps1`](tools/Test-RoadmapStructure.Tests.ps1))
+      that asserts against the private map, so the change is a coordinated edit
+      rather than a drop-in.
+- [ ] **Add "Product Direction" to the product-intent vocabulary, or rename
+      this repo's section.** _(state: planned — non-blocker, surfaced
+      2026-08-08 by the parity work)_ Both evaluators now agree that this
+      repo's `ROADMAP.md` fails ROADMAP-004, because
+      `productIntentHeadingPattern` recognizes `product intent`, `product
+      scope`, `overview`, `about`, `purpose`, `background`, and `what this
+      does/is`, but not **`Product Direction`** — the heading section 2
+      actually uses. This is a genuine finding rather than an evaluator bug
+      (the two tools agree), but it is a false negative estate-wide for any
+      repo using that natural synonym. Decide whether the standard should
+      accept it or the roadmap should be renamed; the choice belongs in the
+      standard, not in one repo's file.
 - [ ] **Record whether a repo externalizes its completion history.**
       _(state: planned)_ The contract carries `completedCount` as a required
       field, and a split roadmap reports ~0 forever. No rule reads it today,

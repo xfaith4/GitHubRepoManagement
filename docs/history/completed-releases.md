@@ -2105,6 +2105,54 @@ Items removed from the active roadmap on 2026-08-08 so it carries open work
 only. This is not a summary — it is the original roadmap text, moved verbatim,
 with its evidence intact.
 
+### Lane 0.7 — the two roadmap evaluators disagreed on the same file
+
+- [x] **Reconcile the two roadmap evaluators — they disagreed on the same
+      file.** _(state: smoke-tested — closed 2026-08-08)_ Detection is now
+      **data, not code**: the `detection` block in
+      [`roadmap-audit-rules.json`](../../standards/roadmap/roadmap-audit-rules.json)
+      is the single source, and both
+      [`Roadmap.Auditor.ps1`](../../backend/modules/roadmap/Roadmap.Auditor.ps1) and
+      [`tools/Test-RoadmapContract.ps1`](../../tools/Test-RoadmapContract.ps1) read
+      every signal from it. Landed in two steps: rules **v1.2** moved the
+      release-heading pattern, product-intent vocabulary, acceptance-criteria
+      scoping, meaningful-body test, and score arithmetic into the block;
+      rules **v1.3** moved the last private signal, release status, in as
+      `releaseStatusPattern` + `statusVocabulary`.
+      **Status was the one that mattered most.** The module accepted
+      `**Status:** active` and its own in-progress aliases; the CLI required a
+      `> Status:` blockquote and knew no aliases — so it read
+      `activeReleaseCount = 0` on almost every real roadmap. That drove
+      **ROADMAP-011 and ROADMAP-012, the two rules that decide whether
+      dispatch has a target**: `FamilyTreeBackup` has two `In progress`
+      releases and scored **64 / L2 (capped, ROADMAP-011)** through the module
+      and **92 / L4 (clean)** through the CLI — a two-level disagreement on
+      whether the repo was safe to dispatch against.
+      **Reconciled semantics**, both directions checked against
+      `ROADMAP_TEMPLATE.md`: the pattern is **tolerant on read** (accepts
+      `> Status:`, `**Status:**`, and bare `Status:`, plus trailing commentary)
+      while authoring tools still emit the canonical blockquote — an auditor
+      that reports "no active release" against a file a human can plainly read
+      is worse than one that accepts a second spelling. `activeStatuses` is
+      deliberately just `active`, matching the template's "only one release may
+      carry `Status: active`"; a blocked or validating release is not a
+      dispatch target, and widening it would trip the critical cap on a
+      perfectly conformant roadmap.
+      **Evidence:** an all-pairs sweep of every root `ROADMAP.md` under
+      `F:\Development` and `F:\Development\20_Staging` (15 roadmaps) went from
+      **0 identical / 1 L3-threshold flip** to **15 identical / 0 flips** —
+      score, maturity level, release/pending/complete counts, and the full
+      finding set all agree (`output/evaluator-parity.json`). This repo's own
+      roadmap now reads **92 / L4-Orchestration-Ready** with the same single
+      ROADMAP-004 finding through both tools, where the CLI previously reported
+      88 with a false ROADMAP-012. A new module-smoke step,
+      `Roadmap evaluators — smoke: module and Test-RoadmapContract.ps1 agree on
+      one fixture`, runs both evaluators over four fixtures (both status
+      spellings, the alias case, and the no-active case) and fails on any
+      divergence; it was **adversarially proven** — reintroducing the CLI's old
+      private regex fails the gate with
+      `Evaluator divergence … maturityScore module=92 cli=88`.
+
 ### Release 2.7 Phase D — scheduler failure alerting
 
 - [x] Add scheduler failure alerting (webhook) + an automation-status

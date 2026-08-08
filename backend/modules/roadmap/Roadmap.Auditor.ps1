@@ -41,6 +41,16 @@ $ErrorActionPreference = 'Stop'
 
 $script:RoadmapDetectionDefaults = [pscustomobject]@{
     releaseHeadingPattern            = '(?im)^#{2,}\s+Release\s+([0-9]+(?:\.[0-9]+)*)\s*[—–-]+\s*(.+?)\s*$'
+    releaseStatusPattern             = '(?im)^\s*>?\s*\**\s*Status\s*:?\**\s*:?\s*\**\s*([A-Za-z][A-Za-z \-]*?)\s*\**\s*(?:$|[—–\-(])'
+    activeStatuses                   = @('active')
+    statusAliases                    = @{
+        'in progress' = 'active'
+        'in-progress' = 'active'
+        'inprogress'  = 'active'
+        'wip'         = 'active'
+        'current'     = 'active'
+        'ongoing'     = 'active'
+    }
     productIntentHeadingPattern      = '(?im)^#{1,6}\s*(?:[0-9]+\.\s*)?(?:product\s+intent|product\s+scope|overview|about|purpose|background|what\s+this\s+(?:does|is))\b'
     acceptanceCriteriaHeadingAliases = @('Acceptance criteria', 'Done criteria', 'Definition of done')
     outOfScopeHeadingAliases         = @('Out of scope', 'Out-of-scope', 'Not in scope', 'Non-goals', 'Non goals', 'Not included', 'Excluded', 'Exclusions')
@@ -82,6 +92,22 @@ function Get-RoadmapDetectionProfile {
     }
     if ($names -contains 'productIntentHeadingPattern' -and -not [string]::IsNullOrWhiteSpace([string]$d.productIntentHeadingPattern)) {
         $detectionProfile.productIntentHeadingPattern = [string]$d.productIntentHeadingPattern
+    }
+    if ($names -contains 'releaseStatusPattern' -and -not [string]::IsNullOrWhiteSpace([string]$d.releaseStatusPattern)) {
+        $detectionProfile.releaseStatusPattern = [string]$d.releaseStatusPattern
+    }
+    if ($names -contains 'statusVocabulary' -and $null -ne $d.statusVocabulary) {
+        $svNames = @($d.statusVocabulary.PSObject.Properties.Name)
+        if ($svNames -contains 'activeStatuses' -and @($d.statusVocabulary.activeStatuses).Count -gt 0) {
+            $detectionProfile.activeStatuses = @($d.statusVocabulary.activeStatuses | ForEach-Object { ([string]$_).ToLowerInvariant() })
+        }
+        if ($svNames -contains 'statusAliases' -and $null -ne $d.statusVocabulary.statusAliases) {
+            $aliasMap = @{}
+            foreach ($p in $d.statusVocabulary.statusAliases.PSObject.Properties) {
+                $aliasMap[$p.Name.ToLowerInvariant()] = ([string]$p.Value).ToLowerInvariant()
+            }
+            if ($aliasMap.Count -gt 0) { $detectionProfile.statusAliases = $aliasMap }
+        }
     }
     if ($names -contains 'acceptanceCriteriaHeadingAliases' -and @($d.acceptanceCriteriaHeadingAliases).Count -gt 0) {
         $detectionProfile.acceptanceCriteriaHeadingAliases = @($d.acceptanceCriteriaHeadingAliases)
@@ -212,25 +238,25 @@ function _TestDocumentScopedSubsection {
 # case-insensitive and alias-normalized so legacy wording scores the same as
 # the canonical wording.
 function _DetectActiveReleaseCount {
-    param([object[]]$ReleaseBlocks)
+    param([object[]]$ReleaseBlocks, [pscustomobject]$Detection)
 
     if ($null -eq $ReleaseBlocks -or @($ReleaseBlocks).Count -eq 0) { return 0 }
+    if ($null -eq $Detection) { $Detection = Get-RoadmapDetectionProfile -AuditRules $null }
 
-    $aliases = @{
-        'active'      = 'active'
-        'in progress' = 'active'
-        'in-progress' = 'active'
-        'inprogress'  = 'active'
-        'wip'         = 'active'
-    }
+    $activeStatuses = @($Detection.activeStatuses)
+    $aliases        = $Detection.statusAliases
 
     $activeCount = 0
     foreach ($block in @($ReleaseBlocks)) {
-        $m = [regex]::Match($block.text, '(?im)^\s*>?\s*\**\s*Status\s*:?\**\s*:?\s*\**\s*([A-Za-z][A-Za-z \-]*?)\s*\**\s*(?:$|[—–\-\(])')
+        $m = [regex]::Match($block.text, $Detection.releaseStatusPattern)
         if (-not $m.Success) { continue }
 
         $raw = $m.Groups[1].Value.Trim().ToLowerInvariant()
-        if ($aliases.ContainsKey($raw)) { $activeCount++ }
+        # Normalize through the shared alias map before asking whether it is an
+        # active status, so 'In progress' and 'active' resolve identically here
+        # and in tools/Test-RoadmapContract.ps1.
+        if ($null -ne $aliases -and $aliases.ContainsKey($raw)) { $raw = [string]$aliases[$raw] }
+        if ($activeStatuses -contains $raw) { $activeCount++ }
     }
 
     return $activeCount
@@ -389,7 +415,7 @@ function Invoke-NormalizeRoadmapContract {
         hasAcceptanceCriteria = $hasAcceptance
         hasOutOfScope         = $hasOutOfScope
         releaseCount          = [int]$releaseBlocks.Count
-        activeReleaseCount    = (_DetectActiveReleaseCount -ReleaseBlocks $releaseBlocks)
+        activeReleaseCount    = (_DetectActiveReleaseCount -ReleaseBlocks $releaseBlocks -Detection $detection)
         vagueItemCount        = 0  # filled below
         parseError            = $ParsedResult.parseError
         auditFindings         = $null
