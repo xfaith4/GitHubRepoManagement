@@ -673,6 +673,41 @@ Continuous, not release-scoped. Completed cross-cutting items were archived
       host's exact error; watchdog ledger shows `probe-fail x3 -> restart` at
       15:30:52 with the host serving http 200 throughout; module smoke exit 0
       (installer step: 5 action cases, carry-forward, drift).
+- [x] **Copilot task dispatch reported a bare exit code and forced a PAT over
+      gh's own credential.** _(state: done 2026-08-08)_ The guided-improvement
+      wizard failed at the PR-handoff step with
+      `gh agent-task create failed with exit code 1`. The real reason was
+      already in the run ledger and nowhere else: _"this command requires an
+      OAuth token. Re-authenticate with: gh auth login"_. Three fixes in
+      `Start-GitHubCopilotTask.ps1`. **(1)** `Invoke-GhCommand` now puts gh's
+      own stderr in the thrown message instead of only the exit code.
+      **(2)** The script unconditionally set `$env:GH_TOKEN` to the PAT — a
+      token `agent-task` cannot accept, and one that _overrides_ any stored
+      OAuth credential, so the dispatch would have failed even after
+      `gh auth login`. New `Test-GhStoredCredential` probes gh with the env
+      tokens removed and prefers gh's own credential when it has one.
+      **(3)** A PAT-only environment now fails before spending the call, naming
+      `gh auth login` and the env-var precedence rule. Also redacts
+      token-shaped strings before they reach the history ledger — gh's
+      `auth status` prints an unmasked token prefix. **Evidence:** two shim
+      cases — PAT-only throws the OAuth message with `agent-task create` never
+      invoked (ledger shows `auth status` only); stored-credential clears
+      `GH_TOKEN` and completes. Ledger shows `<redacted-token>`. Module smoke
+      exit 0.
+- [ ] **Decide how the LocalSystem portal obtains an OAuth credential for
+      Copilot dispatch.** _(state: planned — blocks the guided-improvement
+      wizard's PR handoff, surfaced 2026-08-08)_ `gh agent-task` requires an
+      OAuth token from `gh auth login`; a fine-grained PAT cannot authorize it.
+      The portal runs as **LocalSystem**, which has neither a stored gh
+      credential nor any way to complete an interactive login, so the wizard
+      cannot dispatch no matter how the PAT is scoped. Options: run
+      `gh auth login --insecure-storage` under a `GH_CONFIG_DIR` the service
+      can read (writes a plaintext OAuth token to disk — a real trade-off
+      against the secret-free-config rule this repo otherwise holds); run the
+      dispatcher as an interactive user account rather than the service; or
+      drop the `gh` CLI for a direct API call if GitHub exposes a
+      PAT-authorized equivalent. Needs a decision before the wizard's final
+      step can work end-to-end.
 - [ ] **Populate `rateLimit` on the authenticated GitHub insights path.**
       _(state: planned — non-blocker, cosmetic, surfaced 2026-08-08)_
       `Get-GitHubReposViaApi` returns a hardcoded `rateLimit = $null`
