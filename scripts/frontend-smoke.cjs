@@ -286,12 +286,22 @@ async function main() {
     // ── Release 2.6 Phase 5 — contextual help & empty states ─────────────────
     // (a) Behavior-changing bulk-selection note is promoted (icon + bold key
     // phrase), not plain gray metadata.
+    // With zero repositories in scope the implicit-bulk-scope note is replaced
+    // by the actual blocker ("scan a workspace first"), so accept either
+    // variant — but require the state-appropriate one.
     try {
       const note = page.locator('[data-testid="bulk-selection-note"]').first();
       await note.waitFor({ state: 'visible', timeout: timeoutMs });
-      const strongCount = await note.locator('strong').count();
       const noteText = await note.innerText();
-      report.bulkSelectionNotePromoted = strongCount > 0 && /full filtered repository set/i.test(noteText);
+      const hasNoReposHint = (await note.locator('[data-testid="no-repos-hint"]').count()) > 0;
+      if (hasNoReposHint) {
+        report.bulkSelectionNoteState = 'no-repos';
+        report.bulkSelectionNotePromoted = /scan a workspace first/i.test(noteText);
+      } else {
+        const strongCount = await note.locator('strong').count();
+        report.bulkSelectionNoteState = 'bulk-scope';
+        report.bulkSelectionNotePromoted = strongCount > 0 && /full filtered repository set/i.test(noteText);
+      }
     } catch (err) {
       report.bulkSelectionNotePromoted = false;
       report.bulkSelectionNoteError = err && err.message ? err.message : String(err);

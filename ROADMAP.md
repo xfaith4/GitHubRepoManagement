@@ -598,12 +598,18 @@ Continuous, not release-scoped. Completed cross-cutting items were archived
 
 - [ ] Normalize hardcoded `G:\Development\GitHubRepoManagement`
       `-WorkspaceRoot` defaults to `$PSScriptRoot`-derived paths so the
-      suite runs unmodified from any clone location. *(state: planned —
+      suite runs unmodified from any clone location. *(state: in progress —
       confirmed 2026-08-07 still present in `backend/adapters/Adapters.ps1`,
       `backend/api-host/Start-RepoManagementApiHost.ps1`,
       `backend/modules/docreview/Invoke-DocReviewInventory.ps1`, and both
       reconcile modules — a wider blast radius than the original note
-      recorded)*
+      recorded)* **Partly closed 2026-08-08:**
+      [`scripts/Invoke-ModuleSmokeTest.ps1`](scripts/Invoke-ModuleSmokeTest.ps1)
+      now defaults to `(Split-Path -Parent $PSScriptRoot)`. This one mattered
+      more than the note implied: the required pre-commit gate failed on its
+      first step for anyone invoking it without `-WorkspaceRoot`, which is
+      exactly how `CLAUDE.md` documents running it. **Evidence:** gate re-run
+      with no arguments, exit 0. The five files above are still open.
 - [ ] Implement the documented maturity **caps** that the auditor still does
       not apply: `ROADMAP_MATURITY_MODEL.md` states "any critical finding caps
       maturity at L1" and "any warning finding caps maturity at L3", but
@@ -650,6 +656,77 @@ every maturity score. Both were adversarially proven to fail when violated.
       against. *(state: planned — cosmetic, but the root keeps re-accruing
       these; consider a `.gitignore` entry or a documented worklog location
       so the convention holds without a manual sweep each time.)*
+
+### Lane 0.5 — Portal UX follow-ups (empty-state audit 2026-08-08)
+
+Surfaced by a walkthrough of the Repository Grid, Insights, Operations, and
+Doc Readiness Queue tabs against a workspace that scanned 0 repos. The two
+data-integrity findings from that audit were fixed the same day (see
+evidence below); these two are design-dependent and deliberately deferred.
+
+- [x] **Reconcile the live-scan vs. persisted-index contradiction.**
+      *(state: done 2026-08-08)* The header read the live scan (`repos`)
+      while the Queue buckets, "68% Avg Maturity", and "15 Ready Repos" read
+      the persisted indexes in `output/index/`, so a 0-repo scan rendered
+      populated figures beside a `0 repos` count and read as a broken tool.
+      Both figures were always real; only the provenance was missing. Added
+      [`frontend/lib/dataProvenance.ts`](frontend/lib/dataProvenance.ts)
+      (`resolveProvenance` → `live` / `stale-only` / `empty`) plus
+      [`ProvenanceNotice.tsx`](frontend/components/ProvenanceNotice.tsx),
+      mounted at the top of the Insights tab (covering Portfolio Mission,
+      Documentation Health, and Portfolio Analytics in one notice) and above
+      the Doc Readiness Queue; the scan label now reads "No repos in this
+      scan". Badges have no room for a sentence, so the **Operations** and
+      **Doc Readiness Queue** counts — in both the desktop tab strip and the
+      mobile bottom nav — render amber with a `ring` and an explanatory
+      tooltip via `isCarriedOverCount` instead of as plain current-looking
+      numbers. **Evidence:** `frontend/lib/dataProvenance.test.ts` (24 cases,
+      incl. the unknown-live-count guards against a false banner and against
+      disabling by omission); `npx vitest run` 37/37; `tsc --noEmit` clean;
+      `vite build` clean with every new marker present in `dist`; module
+      smoke exit 0.
+- [x] **Disable repo-acting buttons when nothing is in scope.**
+      *(state: done 2026-08-08)* Pull, Fetch, Report, Doc Review, and Roadmap
+      Scan stayed clickable at 0 repos, letting the operator click into a
+      no-op instead of being pointed at the blocker. `ActionBar` now takes a
+      `repoCount` prop and gates those five on
+      `canRunRepoActions(repoCount, isActionRunning)`, replacing the
+      implicit-bulk-scope callout with the actual blocker ("Scan a workspace
+      first…"). Refresh, Settings, Help, and API docs stay enabled — they are
+      the way out of the empty state. The Doc Readiness Queue's own actions
+      needed the same treatment for a subtler reason: its rows come from the
+      persisted index, so they outlive the scan and every row can target a
+      repo the app cannot currently see. **Guided Improvement** and the six
+      mutating row actions (Improve, Repair, Standardize, Generate README,
+      Evaluate, Dispatch Release) are gated on `isKnownEmptyScope`;
+      read-only actions (Audit, Lint, Roadmap, Preview Task) stay enabled,
+      because inspecting the carried-over data is how an operator diagnoses
+      *why* the scan came back empty. `isKnownEmptyScope` returns false for an
+      unknown count, so a view that never receives `liveRepoCount` is never
+      disabled by omission. **Evidence:** as above;
+      `scripts/frontend-smoke.cjs` `bulkSelectionNotePromoted` made
+      state-aware so it asserts the correct variant rather than breaking on
+      the empty-workspace path.
+- [ ] **Add a confirmation step to implicit bulk-scope actions.** *(state:
+      planned — non-blocker)* With no rows selected, Pull/Fetch/Report apply
+      to the **entire filtered set**. The amber callout in
+      [`ActionBar.tsx`](frontend/components/ActionBar.tsx) is honest about
+      this and now names the count, but a banner alone still lets one click
+      run a bulk git operation across the whole portfolio. Gate the
+      no-selection path behind a `window.confirm`-style step naming the
+      count ("This will run on 47 repositories — continue?"), matching the
+      pattern `handleArchive` already uses. Deferred because the right
+      threshold (always, or only above N repos) is a product call, and
+      because `Report` is read-only and may not warrant the same friction.
+- [ ] **Progressive disclosure for the six-tab dashboard.** *(state: planned
+      — non-blocker, design-dependent)* Grid, Insights, Operations, Doc
+      Readiness Queue, Copilot Execution Lanes, and Dependencies each render
+      a dense multi-widget surface, which is heavy for the primary daily
+      workflow (triage the repos needing attention). Candidate direction: a
+      simplified default view with drill-down, or a collapsible "advanced
+      analytics" section, extending the inline-tooltip pattern already used
+      on **Needs Attention**. Deferred because it changes primary navigation
+      shape and should not be done incrementally.
 
 ---
 

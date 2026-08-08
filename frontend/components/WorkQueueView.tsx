@@ -12,6 +12,8 @@ import {
   type RoadmapMaturityLevel,
 } from '../types';
 import { SpinnerIcon } from './icons';
+import ProvenanceNotice from './ProvenanceNotice';
+import { isKnownEmptyScope, repoActionsBlockedReason } from '../lib/dataProvenance';
 
 interface WorkQueueViewProps {
   auditIndex: DocAuditIndex | null;
@@ -32,6 +34,13 @@ interface WorkQueueViewProps {
   isScanning: boolean;
   roadmapAuditIndex?: RoadmapAuditIndex | null;
   portfolioAssessment?: PortfolioAssessmentResult | null;
+  /**
+   * Repo count from the current live scan. The queue and its maturity buckets
+   * read the persisted doc-audit index, which outlives any single scan — this
+   * lets the view flag when the two disagree rather than showing populated
+   * buckets under a "0 repos" header.
+   */
+  liveRepoCount?: number;
 }
 
 type ReadinessFilter = DispatchReadiness | 'all';
@@ -230,6 +239,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
   isScanning,
   roadmapAuditIndex,
   portfolioAssessment,
+  liveRepoCount,
 }) => {
   const [readinessFilter, setReadinessFilter] = useState<ReadinessFilter>('all');
   const [maturityFilter, setMaturityFilter] = useState<RoadmapMaturityFilter>('all');
@@ -249,6 +259,18 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
   const [newFilterName, setNewFilterName] = useState('');
 
   const entries = auditIndex?.entries ?? [];
+
+  // Rows can outlive the scan that produced them (the index is persisted). When
+  // the live scan is known-empty, every row targets a repo the app cannot
+  // currently see, so *mutating* actions — Improve, Repair, Standardize,
+  // Generate README, Evaluate, Dispatch Release — would act on a path that may
+  // not exist. Read-only actions (Audit, Lint, Roadmap, Preview Task) stay
+  // enabled: inspecting the carried-over data is exactly how an operator
+  // diagnoses why the scan came back empty.
+  const mutatingActionsBlocked = isKnownEmptyScope(liveRepoCount);
+  const mutatingBlockedTitle = repoActionsBlockedReason(0);
+  const mutatingTitle = (normal: string) => (mutatingActionsBlocked ? mutatingBlockedTitle ?? normal : normal);
+  const disabledActionClass = ' disabled:opacity-40 disabled:cursor-not-allowed';
 
   // Build a lookup for roadmap audit entries by repoName
   const auditByRepo = useMemo(() => {
@@ -381,8 +403,9 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
           {onStartImprovementWorkflow && (
             <button
               onClick={() => onStartImprovementWorkflow()}
-              disabled={entries.length === 0}
-              className="px-3 py-1.5 text-sm bg-emerald-800 hover:bg-emerald-700 text-emerald-100 rounded border border-emerald-600 disabled:opacity-50 transition-colors"
+              disabled={entries.length === 0 || mutatingActionsBlocked}
+              title={mutatingTitle('Run the guided improvement workflow across the queue')}
+              className="px-3 py-1.5 text-sm bg-emerald-800 hover:bg-emerald-700 text-emerald-100 rounded border border-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               Guided Improvement
             </button>
@@ -410,6 +433,18 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
           {error}
         </div>
       )}
+
+      {/* The queue, its readiness counts, and the maturity buckets all come from
+          the persisted doc-audit index. When the live scan disagrees, say so
+          here rather than letting populated buckets sit under a "0 repos"
+          header. */}
+      <ProvenanceNotice
+        testId="queue-provenance-notice"
+        className="mb-4"
+        liveRepoCount={liveRepoCount as number}
+        persistedEntryCount={entries.length}
+        persistedGeneratedAt={auditIndex?.auditedAt}
+      />
 
       {/* Summary strip */}
       {entries.length > 0 && (
@@ -793,8 +828,9 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                     {onStartImprovementWorkflow && (
                       <button
                         onClick={e => { e.stopPropagation(); onStartImprovementWorkflow(entry.repoName); }}
-                        className="text-xs px-2 py-1 rounded border border-emerald-700/50 bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/60 transition-colors"
-                        title="Scan README and ROADMAP, review an improvement task, and dispatch it to a pull request"
+                        disabled={mutatingActionsBlocked}
+                        className={`text-xs px-2 py-1 rounded border border-emerald-700/50 bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/60 transition-colors${disabledActionClass}`}
+                        title={mutatingTitle('Scan README and ROADMAP, review an improvement task, and dispatch it to a pull request')}
                       >
                         Improve
                       </button>
@@ -824,8 +860,9 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                     {onRepairRoadmap && roadmapAudit && ['L0-Absent', 'L1-Informal', 'L2-Structured'].includes(roadmapAudit.maturityLevel) && (
                       <button
                         onClick={e => { e.stopPropagation(); onRepairRoadmap(entry.repoName); }}
-                        className="text-xs px-2 py-1 rounded border border-orange-700/50 bg-orange-900/40 text-orange-300 hover:bg-orange-800/60 transition-colors"
-                        title="Preview Roadmap Repair"
+                        disabled={mutatingActionsBlocked}
+                        className={`text-xs px-2 py-1 rounded border border-orange-700/50 bg-orange-900/40 text-orange-300 hover:bg-orange-800/60 transition-colors${disabledActionClass}`}
+                        title={mutatingTitle('Preview Roadmap Repair')}
                       >
                         Repair
                       </button>
@@ -842,8 +879,9 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                     {onStandardizeReadme && (
                       <button
                         onClick={e => { e.stopPropagation(); onStandardizeReadme(entry.repoName); }}
-                        className="text-xs px-2 py-1 rounded border border-cyan-700/50 bg-cyan-900/40 text-cyan-300 hover:bg-cyan-800/60 transition-colors"
-                        title="Standardize README"
+                        disabled={mutatingActionsBlocked}
+                        className={`text-xs px-2 py-1 rounded border border-cyan-700/50 bg-cyan-900/40 text-cyan-300 hover:bg-cyan-800/60 transition-colors${disabledActionClass}`}
+                        title={mutatingTitle('Standardize README')}
                       >
                         Standardize
                       </button>
@@ -851,8 +889,9 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                     {onGenerateReadme && hasMissingReadme && (
                       <button
                         onClick={e => { e.stopPropagation(); onGenerateReadme(entry.repoName); }}
-                        className="text-xs px-2 py-1 rounded border border-emerald-700/50 bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/60 transition-colors"
-                        title="Generate README with GitHub Copilot"
+                        disabled={mutatingActionsBlocked}
+                        className={`text-xs px-2 py-1 rounded border border-emerald-700/50 bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/60 transition-colors${disabledActionClass}`}
+                        title={mutatingTitle('Generate README with GitHub Copilot')}
                       >
                         Generate README
                       </button>
@@ -860,8 +899,9 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                     {onEvaluateRepo && (
                       <button
                         onClick={e => { e.stopPropagation(); onEvaluateRepo(entry.repoName); }}
-                        className="text-xs px-2 py-1 rounded border border-violet-700/50 bg-violet-900/40 text-violet-300 hover:bg-violet-800/60 transition-colors"
-                        title="Evaluate roadmap gaps, modernization opportunities, and hardening priorities"
+                        disabled={mutatingActionsBlocked}
+                        className={`text-xs px-2 py-1 rounded border border-violet-700/50 bg-violet-900/40 text-violet-300 hover:bg-violet-800/60 transition-colors${disabledActionClass}`}
+                        title={mutatingTitle('Evaluate roadmap gaps, modernization opportunities, and hardening priorities')}
                       >
                         Evaluate
                       </button>
@@ -869,8 +909,9 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                     {onDispatchRelease && entry.roadmapState === 'pending' && (
                       <button
                         onClick={e => { e.stopPropagation(); onDispatchRelease(entry.repoName); }}
-                        className="text-xs px-2 py-1 rounded border border-blue-700/50 bg-blue-900/40 text-blue-300 hover:bg-blue-800/60 transition-colors"
-                        title="Standardize roadmap and dispatch next release to GitHub Copilot"
+                        disabled={mutatingActionsBlocked}
+                        className={`text-xs px-2 py-1 rounded border border-blue-700/50 bg-blue-900/40 text-blue-300 hover:bg-blue-800/60 transition-colors${disabledActionClass}`}
+                        title={mutatingTitle('Standardize roadmap and dispatch next release to GitHub Copilot')}
                       >
                         Dispatch Release
                       </button>
