@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry, type DocAuditIndex, type RoadmapAuditIndex, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioAssessmentEntry, type PortfolioAssessmentResult, type PortfolioTrendPoint, type PortfolioTrendResult, type RepoLifecycleState, type PortfolioSignalSource, type OperationsReposResult, type RepoCurationState } from '../types';
 import SummaryCard from './SummaryCard';
 import ActionBar from './ActionBar';
+import ProvenanceNotice from './ProvenanceNotice';
 import RepoGrid from './RepoGrid';
 import LogPanel from './LogPanel';
 import SettingsModal from './SettingsModal';
@@ -1199,7 +1200,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
       ? `Workspace: ${settings?.basePath ?? dataSource.workspacePath ?? 'Unknown'}`
       : 'Sample data source';
   const scanMetaLabel = dataSource?.source === 'local' && typeof dataSource.repoCount === 'number'
-    ? `${dataSource.repoCount} repos${typeof dataSource.scanDurationMs === 'number' ? ` · ${(dataSource.scanDurationMs / 1000).toFixed(1)}s scan` : ''}`
+    // At zero, "0 repos" alone reads as a broken tool when index-backed panels
+    // below still show figures; name it as a property of *this* scan.
+    ? `${dataSource.repoCount === 0 ? 'No repos in this scan' : `${dataSource.repoCount} repos`}${typeof dataSource.scanDurationMs === 'number' ? ` · ${(dataSource.scanDurationMs / 1000).toFixed(1)}s scan` : ''}`
     : dataSource?.source === 'github' && insightsMeta
       ? `Showing ${insightsMeta.fetchedRepos} of ${insightsMeta.totalRepos} GitHub repositories`
       : null;
@@ -1570,6 +1573,16 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
 
               {portfolioTrend ? (
                 <>
+                  {/* Avg Maturity / Ready Now are computed from the persisted
+                      assessment index, not the live scan — say so when the two
+                      disagree instead of letting them contradict the header. */}
+                  <ProvenanceNotice
+                    testId="analytics-provenance-notice"
+                    className="mt-4"
+                    liveRepoCount={repos.length}
+                    persistedEntryCount={portfolioAssessment?.entries?.length ?? portfolioTrend.summary.readyForWorkCount}
+                    persistedGeneratedAt={portfolioTrend.generatedAt}
+                  />
                   <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mt-4">
                     {portfolioTrendSummaryCards.map(metric => (
                       <div key={metric.label} className="rounded-lg border border-gray-700 bg-gray-900/50 px-3 py-3">
@@ -2021,6 +2034,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                     currentOperation={currentOperation}
                     settings={settings}
                     selectedRepos={selectedRepoIds}
+                    repoCount={repos.length}
                 />
                 <RepoGrid
                   repos={reposWithRoadmap}
@@ -2101,6 +2115,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                 isScanning={currentOperation === 'docs-audit-scan'}
                 roadmapAuditIndex={roadmapAuditIndex}
                 portfolioAssessment={portfolioAssessment}
+                liveRepoCount={repos.length}
               />
             ) : activeView === 'execution-queue' ? (
               <ExecutionQueuePanel

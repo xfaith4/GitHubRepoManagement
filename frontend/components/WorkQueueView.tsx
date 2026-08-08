@@ -12,6 +12,7 @@ import {
   type RoadmapMaturityLevel,
 } from '../types';
 import { SpinnerIcon } from './icons';
+import ProvenanceNotice from './ProvenanceNotice';
 
 interface WorkQueueViewProps {
   auditIndex: DocAuditIndex | null;
@@ -32,6 +33,13 @@ interface WorkQueueViewProps {
   isScanning: boolean;
   roadmapAuditIndex?: RoadmapAuditIndex | null;
   portfolioAssessment?: PortfolioAssessmentResult | null;
+  /**
+   * Repo count from the current live scan. The queue and its maturity buckets
+   * read the persisted doc-audit index, which outlives any single scan — this
+   * lets the view flag when the two disagree rather than showing populated
+   * buckets under a "0 repos" header.
+   */
+  liveRepoCount?: number;
 }
 
 type ReadinessFilter = DispatchReadiness | 'all';
@@ -230,6 +238,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
   isScanning,
   roadmapAuditIndex,
   portfolioAssessment,
+  liveRepoCount,
 }) => {
   const [readinessFilter, setReadinessFilter] = useState<ReadinessFilter>('all');
   const [maturityFilter, setMaturityFilter] = useState<RoadmapMaturityFilter>('all');
@@ -410,6 +419,18 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
           {error}
         </div>
       )}
+
+      {/* The queue, its readiness counts, and the maturity buckets all come from
+          the persisted doc-audit index. When the live scan disagrees, say so
+          here rather than letting populated buckets sit under a "0 repos"
+          header. */}
+      <ProvenanceNotice
+        testId="queue-provenance-notice"
+        className="mb-4"
+        liveRepoCount={liveRepoCount as number}
+        persistedEntryCount={entries.length}
+        persistedGeneratedAt={auditIndex?.auditedAt}
+      />
 
       {/* Summary strip */}
       {entries.length > 0 && (

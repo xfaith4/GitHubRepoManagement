@@ -1,6 +1,7 @@
 import React from 'react';
 import { InitIcon, UpdateIcon, SyncIcon, ExportIcon, ArchiveIcon, RefreshIcon, SettingsIcon, SpinnerIcon, DocReviewIcon, RoadmapIcon, ApiDocsIcon, HelpIcon } from './icons';
 import { type OperationType, type AppSettings } from '../types';
+import { canRunRepoActions, repoActionsBlockedReason } from '../lib/dataProvenance';
 
 interface ActionBarProps {
   onAction: (operation: OperationType, repoNames?: string[]) => void;
@@ -15,6 +16,12 @@ interface ActionBarProps {
   currentOperation: OperationType | null;
   settings: AppSettings | null;
   selectedRepos: Set<string>;
+  /**
+   * Repositories currently in scope. At 0, every repo-acting button is disabled
+   * and the operator is pointed at the real blocker (scan a workspace) rather
+   * than being allowed to click into a no-op.
+   */
+  repoCount: number;
 }
 
 interface ActionButtonProps {
@@ -60,12 +67,21 @@ const ActionButton: React.FC<ActionButtonProps> = ({ onClick, disabled, isLoadin
 );
 
 
-const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, onSettingsClick, onInitClick, onDocReviewClick, onApiDocsClick, onHelpClick, isActionRunning, currentOperation, settings, selectedRepos }) => {
+const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, onSettingsClick, onInitClick, onDocReviewClick, onApiDocsClick, onHelpClick, isActionRunning, currentOperation, settings, selectedRepos, repoCount }) => {
 
     const selection = selectedRepos.size > 0 ? Array.from(selectedRepos) : undefined;
     const selectionCount = selectedRepos.size;
     const cloneImplemented = false;
     const archiveImplemented = false;
+
+    // Repo-acting buttons need something to act on. Navigational/recovery
+    // controls (Refresh, Settings, Help, API docs) stay enabled — they are the
+    // way out of the empty state.
+    const repoActionsEnabled = canRunRepoActions(repoCount, isActionRunning);
+    const blockedReason = repoActionsBlockedReason(repoCount);
+    // When nothing is in scope, the blocker replaces the action's own tooltip so
+    // hovering a greyed-out button explains itself.
+    const actionTitle = (normal: string) => blockedReason ?? normal;
 
     // Unified action label: always "<Label>" (hidden below sm) with the
     // selection count rendered separately as "· N" and status carried in a
@@ -86,41 +102,57 @@ const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, on
     return (
         <div className="p-4 border-b border-gray-700 flex flex-wrap items-center gap-3">
             <div data-testid="bulk-selection-note" className="w-full text-xs flex flex-wrap items-center gap-2">
-                {selectionCount > 0 ? (
-                    <span className="text-gray-300">{selectionCount} repositories selected.</span>
+                {blockedReason ? (
+                    // Nothing in scope: the implicit-bulk-scope note is meaningless
+                    // here, so the actual blocker takes its place.
+                    <span
+                        data-testid="no-repos-hint"
+                        className="inline-flex items-center gap-1.5 rounded border border-amber-700/50 bg-amber-900/20 px-2 py-0.5 text-amber-200"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+                        </svg>
+                        <span>{blockedReason}</span>
+                    </span>
                 ) : (
-                    <span className="text-gray-400">Select one or more repositories to target specific bulk actions.</span>
+                    <>
+                        {selectionCount > 0 ? (
+                            <span className="text-gray-300">{selectionCount} repositories selected.</span>
+                        ) : (
+                            <span className="text-gray-400">Select one or more repositories to target specific bulk actions.</span>
+                        )}
+                        {/* Behavior-changing note promoted out of plain gray metadata
+                            (Release 2.6 Phase 5): icon + bolded key phrase so it is not
+                            missed. */}
+                        <span className="inline-flex items-center gap-1.5 rounded border border-amber-700/50 bg-amber-900/20 px-2 py-0.5 text-amber-200">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+                            </svg>
+                            <span>When none are selected, Pull/Fetch/Report apply to <strong className="font-semibold">the full filtered repository set</strong> ({repoCount}).</span>
+                        </span>
+                    </>
                 )}
-                {/* Behavior-changing note promoted out of plain gray metadata
-                    (Release 2.6 Phase 5): icon + bolded key phrase so it is not
-                    missed. */}
-                <span className="inline-flex items-center gap-1.5 rounded border border-amber-700/50 bg-amber-900/20 px-2 py-0.5 text-amber-200">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
-                    </svg>
-                    <span>When none are selected, Pull/Fetch/Report apply to <strong className="font-semibold">the full filtered repository set</strong>.</span>
-                </span>
             </div>
             <div className="flex flex-wrap gap-3 flex-grow">
                  <ActionButton onClick={onInitClick} disabled={isActionRunning || !cloneImplemented} isLoading={currentOperation === 'init'} ariaLabel="Clone" statusTag={cloneImplemented ? undefined : 'Planned'} title={cloneImplemented ? "Clone repositories from GitHub into a local workspace (git clone via local backend)." : "Planned: clone repositories from GitHub into a local workspace (not implemented in this build)."} icon={<InitIcon className="w-4 h-4" />}>
                     {actionLabel('Clone')}
                 </ActionButton>
-                <ActionButton onClick={handleUpdate} disabled={isActionRunning} isLoading={currentOperation === 'update'} ariaLabel="Pull" count={selectionCount} title={`Run 'git pull' on ${selectionCount > 0 ? selectionCount + ' selected' : 'all active'} repositories.`} icon={<UpdateIcon className="w-4 h-4" />}>
+                <ActionButton onClick={handleUpdate} disabled={!repoActionsEnabled} isLoading={currentOperation === 'update'} ariaLabel="Pull" count={selectionCount} title={actionTitle(`Run 'git pull' on ${selectionCount > 0 ? selectionCount + ' selected' : 'all active'} repositories.`)} icon={<UpdateIcon className="w-4 h-4" />}>
                     {actionLabel('Pull')}
                 </ActionButton>
-                <ActionButton onClick={handleSync} disabled={isActionRunning} isLoading={currentOperation === 'sync'} ariaLabel="Fetch" count={selectionCount} title={`Run 'git fetch --all --prune' on ${selectionCount > 0 ? selectionCount + ' selected' : 'all'} repositories.`} icon={<SyncIcon className="w-4 h-4" />}>
+                <ActionButton onClick={handleSync} disabled={!repoActionsEnabled} isLoading={currentOperation === 'sync'} ariaLabel="Fetch" count={selectionCount} title={actionTitle(`Run 'git fetch --all --prune' on ${selectionCount > 0 ? selectionCount + ' selected' : 'all'} repositories.`)} icon={<SyncIcon className="w-4 h-4" />}>
                     {actionLabel('Fetch')}
                 </ActionButton>
-                <ActionButton onClick={onExport} disabled={isActionRunning} isLoading={currentOperation === 'export'} ariaLabel="Report" count={selectionCount} title={`Generate a timestamped collection status report in the repo-local reports folder and open the HTML report in a new tab for ${selectionCount > 0 ? selectionCount + ' selected' : 'all'} repositories.`} icon={<ExportIcon className="w-4 h-4" />}>
+                <ActionButton onClick={onExport} disabled={!repoActionsEnabled} isLoading={currentOperation === 'export'} ariaLabel="Report" count={selectionCount} title={actionTitle(`Generate a timestamped collection status report in the repo-local reports folder and open the HTML report in a new tab for ${selectionCount > 0 ? selectionCount + ' selected' : 'all'} repositories.`)} icon={<ExportIcon className="w-4 h-4" />}>
                     {actionLabel('Report')}
                 </ActionButton>
-                <ActionButton onClick={onDocReviewClick} disabled={isActionRunning} isLoading={currentOperation === 'docreview'} ariaLabel="Doc Review" title="Run Doc Review Inventory, queue planning, and optional repo batch plan generation." icon={<DocReviewIcon className="w-4 h-4" />}>
+                <ActionButton onClick={onDocReviewClick} disabled={!repoActionsEnabled} isLoading={currentOperation === 'docreview'} ariaLabel="Doc Review" title={actionTitle('Run Doc Review Inventory, queue planning, and optional repo batch plan generation.')} icon={<DocReviewIcon className="w-4 h-4" />}>
                     {actionLabel('Doc Review')}
                 </ActionButton>
-                <ActionButton onClick={() => onAction('roadmap-scan')} disabled={isActionRunning} isLoading={currentOperation === 'roadmap-scan'} ariaLabel="Roadmap Scan" title="Scan all repositories for ROADMAP files and update the index." icon={<RoadmapIcon className="w-4 h-4" />}>
+                <ActionButton onClick={() => onAction('roadmap-scan')} disabled={!repoActionsEnabled} isLoading={currentOperation === 'roadmap-scan'} ariaLabel="Roadmap Scan" title={actionTitle('Scan all repositories for ROADMAP files and update the index.')} icon={<RoadmapIcon className="w-4 h-4" />}>
                     {actionLabel('Roadmap Scan')}
                 </ActionButton>
-                 <ActionButton onClick={handleArchive} disabled={isActionRunning || !settings || !archiveImplemented} isLoading={currentOperation === 'archive'} ariaLabel="Archive" count={selectionCount} statusTag={archiveImplemented ? undefined : 'Planned'} title={archiveImplemented ? `Archive ${selectionCount > 0 ? selectionCount + ' selected' : 'all'} repositories inactive for over ${settings?.daysInactive ?? 'N/A'} days (local).` : 'Planned: archive inactive repositories (not implemented in this build).'} icon={<ArchiveIcon className="w-4 h-4" />}>
+                 <ActionButton onClick={handleArchive} disabled={!repoActionsEnabled || !settings || !archiveImplemented} isLoading={currentOperation === 'archive'} ariaLabel="Archive" count={selectionCount} statusTag={archiveImplemented ? undefined : 'Planned'} title={archiveImplemented ? `Archive ${selectionCount > 0 ? selectionCount + ' selected' : 'all'} repositories inactive for over ${settings?.daysInactive ?? 'N/A'} days (local).` : 'Planned: archive inactive repositories (not implemented in this build).'} icon={<ArchiveIcon className="w-4 h-4" />}>
                     {actionLabel('Archive')}
                 </ActionButton>
             </div>

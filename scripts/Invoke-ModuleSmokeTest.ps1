@@ -1,6 +1,9 @@
 [CmdletBinding()]
 param(
-    [string]$WorkspaceRoot = 'G:\Development\GitHubRepoManagement'
+    # Derived from this script's location rather than a hardcoded drive letter —
+    # the previous 'G:\...' default no longer resolved on this machine, so the
+    # gate failed on its first step for anyone not passing -WorkspaceRoot.
+    [string]$WorkspaceRoot = (Split-Path -Parent $PSScriptRoot)
 )
 
 Set-StrictMode -Version Latest
