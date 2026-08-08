@@ -2412,3 +2412,27 @@ anything" class:
       state-aware so it asserts the correct variant rather than breaking on
       the empty-workspace path.
 
+
+### Lane 0.7 — Roadmap-standard fidelity (closed items)
+
+- [x] **Stop the repairer asserting "(No completed items recorded yet)" on a
+      repo that archived its history.** _(state: smoke-tested 2026-08-08)_
+      The repairer emitted that literal placeholder whenever no inline `[x]`
+      items existed, so repairing a correctly-split roadmap wrote a false
+      claim into it — against the section 8 guardrail "preserve genuine
+      completion history when rewriting roadmaps." It carried a second defect:
+      the placeholder was a `- [x]` checkbox, which the parser counts as a
+      completed item, so each repair pass inflated `completedCount` with work
+      that never happened. New `Get-RoadmapHistoryPointer`
+      ([`Roadmap.Repairer.ps1`](../../backend/modules/roadmap/Roadmap.Repairer.ps1))
+      detects the archive link, and the empty state now either names the
+      archive or scopes the claim to "this file" — as a plain line, never a
+      checkbox. The two duplicate builders were collapsed into one so the
+      wording cannot drift. **Evidence:** module smoke step _"split-archive
+      layout is preserved, never contradicted"_ asserts pointer detection,
+      pointer preservation in the proposed content, `completedItemCount=0`,
+      and that the output reparses to zero completed items; assertions are
+      unconditional (the preview state is asserted, not used as a guard).
+      Tripwire confirmed by reintroducing the old placeholder — smoke fails
+      exit 1 naming the assertion — then restoring byte-exact.
+

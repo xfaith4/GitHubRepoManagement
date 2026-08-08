@@ -241,10 +241,52 @@ function _BuildPrinciplesSection {
 "@
 }
 
+function Get-RoadmapHistoryPointer {
+    <#
+    .SYNOPSIS
+        Find a roadmap's link to an external completion-history document.
+    .DESCRIPTION
+        A repo may keep completed work in a separate archive file so the active
+        roadmap stays small and focused for an agent — the split layout. Repair
+        has to recognize that layout: without it, a roadmap whose history is
+        safely archived looks identical to one that has no history at all, and
+        repair would replace a true statement with a false one.
+
+        Detection is the pointer link itself, so a split repo is self-describing.
+        Returns $null when the roadmap carries no such link.
+    .OUTPUTS
+        [pscustomobject] with Text and Target, or $null.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter()]
+        [AllowEmptyString()]
+        [AllowNull()]
+        [string]$Content
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Content)) { return $null }
+
+    $rx = [regex]'(?i)\[([^\]]{1,160})\]\(([^)\s]*(?:histor|archiv|completed[-_]releases)[^)\s]*\.md[^)\s]*)\)'
+    $m = $rx.Match($Content)
+    if (-not $m.Success) { return $null }
+
+    return [pscustomobject]@{
+        Text   = $m.Groups[1].Value.Trim()
+        Target = $m.Groups[2].Value.Trim()
+    }
+}
+
 function _BuildCompletedSection {
-    param([array]$Sections)
+    param(
+        [array]$Sections,
+        [string]$HeadingText = '## 3. Recently Completed',
+        [AllowNull()]
+        [pscustomobject]$HistoryPointer = $null
+    )
     $lines = [System.Collections.Generic.List[string]]::new()
-    $lines.Add('## 3. Recently Completed')
+    $lines.Add($HeadingText)
     $lines.Add('')
     $addedAny = $false
     foreach ($sec in $Sections) {
@@ -254,7 +296,18 @@ function _BuildCompletedSection {
         }
     }
     if (-not $addedAny) {
-        $lines.Add('- [x] (No completed items recorded yet)')
+        # Never assert that the repo has no completed work. Two reasons: the
+        # history may be archived to a separate file (the split layout), and a
+        # '- [x]' placeholder is worse than useless — the parser counts it as a
+        # completed item, so repair would inflate completedCount on the next
+        # pass. Point at the archive when the roadmap names one; otherwise scope
+        # the claim to this file rather than to the project.
+        if ($null -ne $HistoryPointer) {
+            $lines.Add(('- Completion history is maintained in [{0}]({1}) and is deliberately not duplicated here.' -f $HistoryPointer.Text, $HistoryPointer.Target))
+        }
+        else {
+            $lines.Add('- No completed items are recorded in this file.')
+        }
     }
     $lines.Add('')
     $lines.Add('---')
@@ -416,20 +469,16 @@ function Invoke-GenerateRepairPreview {
     # -----------------------------------------------------------------------
     # Section 2: Recently Completed
     # -----------------------------------------------------------------------
-    $output.Add('## 2. Recently Completed')
-    $output.Add('')
+    # One builder for both callers, so the archive-aware wording cannot drift
+    # between them. completedCount stays a count of REAL completed items — the
+    # empty-state line is deliberately not a checkbox.
     $completedCount = 0
     foreach ($sec in $sections) {
-        foreach ($item in @($sec.completedItems)) {
-            $output.Add("- [x] $item")
-            $completedCount++
-        }
+        $completedCount += @($sec.completedItems).Count
     }
-    if ($completedCount -eq 0) {
-        $output.Add('- [x] (No completed items recorded yet)')
-    }
-    $output.Add('')
-    $output.Add('---')
+    $output.Add((_BuildCompletedSection -Sections $sections `
+        -HeadingText '## 2. Recently Completed' `
+        -HistoryPointer (Get-RoadmapHistoryPointer -Content $RawContent)))
     $output.Add('')
 
     # -----------------------------------------------------------------------

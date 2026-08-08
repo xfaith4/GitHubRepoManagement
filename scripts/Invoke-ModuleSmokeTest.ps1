@@ -590,6 +590,66 @@ if ($null -ne $blockedPreview.proposedContent -and -not [string]::IsNullOrWhiteS
 }
 Write-Host '  blocked preview correctly returns null proposedContent' -ForegroundColor DarkGray
 
+Write-Step 'Roadmap repairer — smoke: split-archive layout is preserved, never contradicted (Lane 0.7)'
+# A roadmap that archives completed work to a separate file must not be told it
+# has no history. The old placeholder was doubly wrong: it asserted something
+# false, and '- [x]' was counted as a completed item on the next parse.
+$splitContent = @'
+# Split Roadmap
+
+Completed work lives in [the archive](docs/history/completed-releases.md).
+
+## Open Work
+
+- [ ] Build the first thing
+- [ ] Build the second thing
+- [ ] Build the third thing
+'@
+$splitParsed   = Invoke-ParseRoadmapContent -Content $splitContent
+$splitContract = Invoke-NormalizeRoadmapContract -ParsedResult $splitParsed -RawContent $splitContent -RepoName 'smoke-repair-split'
+$splitContract = Invoke-AuditRoadmapContract -Contract $splitContract -AuditRules $auditRulesObj
+$splitPlan     = Invoke-PlanRoadmapRepair -Contract $splitContract
+$splitPreview  = Invoke-GenerateRepairPreview -Contract $splitContract -RepairPlan $splitPlan -RawContent $splitContent -RepoName 'smoke-repair-split'
+
+$pointer = Get-RoadmapHistoryPointer -Content $splitContent
+if ($null -eq $pointer) { throw 'Expected the archive pointer link to be detected in a split roadmap' }
+if ($pointer.Target -ne 'docs/history/completed-releases.md') { throw "Expected pointer target docs/history/completed-releases.md, got '$($pointer.Target)'" }
+if ($null -ne (Get-RoadmapHistoryPointer -Content "## Tasks`n- [ ] a")) { throw 'Expected no pointer for a roadmap without an archive link' }
+
+# Assert the state rather than guarding on it — a guard would let every
+# assertion below silently stop running if the plan state ever changed.
+if ($splitPreview.previewState -ne 'repair-preview-ready') {
+    throw "Expected repair-preview-ready for the split fixture, got '$($splitPreview.previewState)' — the assertions below would not have run"
+}
+if ($splitPreview.proposedContent -match 'No completed items recorded yet') {
+    throw 'Repair must not assert "No completed items recorded yet" on a roadmap whose history is archived'
+}
+if ($splitPreview.proposedContent -notmatch [regex]::Escape('docs/history/completed-releases.md')) {
+    throw 'Repair must carry the archive pointer into the proposed content'
+}
+if ([int]$splitPreview.completedItemCount -ne 0) {
+    throw "Expected completedItemCount=0 for a split roadmap, got $($splitPreview.completedItemCount)"
+}
+# The empty-state line must not be a checkbox, or reparsing inflates the count.
+$reparsed = Invoke-ParseRoadmapContent -Content $splitPreview.proposedContent
+if ([int]$reparsed.completedCount -ne 0) {
+    throw "Repair output must not reparse as completed work; got completedCount=$($reparsed.completedCount)"
+}
+
+# No pointer -> the claim is scoped to the file, not the project.
+$noHistoryContent = "## Tasks`n- [ ] alpha`n- [ ] beta`n- [ ] gamma"
+$nhParsed   = Invoke-ParseRoadmapContent -Content $noHistoryContent
+$nhContract = Invoke-NormalizeRoadmapContract -ParsedResult $nhParsed -RawContent $noHistoryContent -RepoName 'smoke-repair-nohistory'
+$nhContract = Invoke-AuditRoadmapContract -Contract $nhContract -AuditRules $auditRulesObj
+$nhPlan     = Invoke-PlanRoadmapRepair -Contract $nhContract
+$nhPreview  = Invoke-GenerateRepairPreview -Contract $nhContract -RepairPlan $nhPlan -RawContent $noHistoryContent -RepoName 'smoke-repair-nohistory'
+if ($nhPreview.previewState -ne 'repair-preview-ready') {
+    throw "Expected repair-preview-ready for the no-history fixture, got '$($nhPreview.previewState)'"
+}
+if ($nhPreview.proposedContent -match 'No completed items recorded yet') { throw 'The old absolute placeholder must be gone' }
+if ($nhPreview.proposedContent -notmatch 'recorded in this file') { throw 'Expected the empty-state claim to be scoped to this file' }
+Write-Host '  split-archive repair ok: pointer detected + preserved, no false "no history" claim, output reparses to 0 completed' -ForegroundColor DarkGray
+
 Write-Step 'Loading repo evaluator module (Release 1.4 / Phase 5 expanded evaluator)'
 if (-not (Test-Path -LiteralPath $roadmapEvaluatorPath)) { throw "Roadmap.Evaluator.ps1 not found at: $roadmapEvaluatorPath" }
 . $roadmapEvaluatorPath
