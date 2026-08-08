@@ -1,6 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import Dashboard from './components/Dashboard';
-import DataSourceModal from './components/DataSourceModal';
 import SetupWizard from './components/SetupWizard';
 import Login from './components/Login';
 import AgentActivityIndicator from './components/AgentActivityIndicator';
@@ -8,7 +7,7 @@ import MobileRepoHealth from './components/MobileRepoHealth';
 import OrientationOverlay, { hasSeenOrientation } from './components/OrientationOverlay';
 import { getStatus, getGithubRepoInsights, getSetupStatus, getAuthStatus, logout, type AuthStatus } from './services/apiClient';
 import { type RepoStatus, type GithubInsightsMeta } from './types';
-import { DatabaseIcon } from './components/icons';
+import { SettingsIcon } from './components/icons';
 
 function formatRelativeTime(date: Date): string {
   const diffMs = Date.now() - date.getTime();
@@ -72,14 +71,18 @@ function App() {
   }, [showSetup]);
 
   const [localRepos, setLocalRepos] = useState<RepoStatus[]>([]);
-  const [localSource, setLocalSource] = useState<{ source: 'sample' } | { source: 'local'; workspacePath?: string; configuredGithubUser?: string | null; repoCount?: number; scanDurationMs?: number } | null>(null);
+  const [localSource, setLocalSource] = useState<{ source: 'sample' } | { source: 'local'; workspacePath?: string; configuredGithubUser?: string | null; repoCount?: number; scanDurationMs?: number; missingRoots?: string[] } | null>(null);
 
   const [githubRepos, setGithubRepos] = useState<RepoStatus[]>([]);
   const [githubSource, setGithubSource] = useState<{ source: 'github'; username: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isDataSourceModalOpen, setIsDataSourceModalOpen] = useState(false);
+  // The Settings dialog lives in Dashboard (it owns the settings fetch), but the
+  // gear that opens it now sits in this header. Incrementing this counter is the
+  // open signal — a counter rather than a boolean so repeated clicks re-open the
+  // dialog after it has been dismissed.
+  const [settingsOpenRequest, setSettingsOpenRequest] = useState(0);
   const [insightsMeta, setInsightsMeta] = useState<GithubInsightsMeta | null>(null);
   const [dataLastUpdated, setDataLastUpdated] = useState<Date | null>(null);
   const [relativeTime, setRelativeTime] = useState<string>('');
@@ -101,7 +104,8 @@ function App() {
         workspacePath: localData.workspacePath,
         configuredGithubUser: localData.configuredGithubUser,
         repoCount: localData.repoCount,
-        scanDurationMs: localData.scanDurationMs
+        scanDurationMs: localData.scanDurationMs,
+        missingRoots: localData.missingRoots ?? []
       });
     }
   }, []);
@@ -377,13 +381,18 @@ function App() {
                   </span>
                 )}
                 {renderViewToggle()}
+                {/* Settings moved out of the Repository Grid toolbar and into the
+                    header so it is reachable from every tab, not just the grid.
+                    GitHub API connection now lives inside this dialog. */}
                 <button
-                  onClick={() => setIsDataSourceModalOpen(true)}
+                  onClick={() => setSettingsOpenRequest(n => n + 1)}
                   className="ml-3 inline-flex items-center px-3 py-2 md:py-1.5 border border-gray-600 rounded-md text-sm font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 transition-colors"
-                  title="Connect to the GitHub API using the token in the environment variable named in Settings"
+                  title="Configure the local workspace path, scan depth, thresholds, and the GitHub API connection"
+                  aria-label="Settings"
+                  data-testid="header-settings-button"
                 >
-                  <DatabaseIcon className="w-4 h-4 sm:mr-2" />
-                  <span className="hidden sm:inline">GitHub API</span>
+                  <SettingsIcon className="w-4 h-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Settings</span>
                 </button>
                 {authStatus?.method === 'session' && (
                   <button
@@ -411,19 +420,15 @@ function App() {
             dataSource={viewMode === 'github' && githubSource ? githubSource : localSource}
             insightsMeta={viewMode === 'github' && githubSource ? insightsMeta : null}
             dataLastUpdated={dataLastUpdated}
+            settingsOpenRequest={settingsOpenRequest}
+            onConnectGitHub={handleDataSourceChange}
+            connectedGitHubUser={githubSource?.username ?? null}
         />
       </main>
       <footer className="text-center py-4 text-gray-500 text-sm border-t border-gray-800 mt-8">
         <p>GitHub Repo Manager | Local-First Edition</p>
       </footer>
       
-      <DataSourceModal
-        isOpen={isDataSourceModalOpen}
-        onClose={() => setIsDataSourceModalOpen(false)}
-        onSave={handleDataSourceChange}
-        currentUsername={githubSource?.username ?? (localSource?.source === 'local' ? localSource.configuredGithubUser ?? undefined : undefined)}
-      />
-
       {showOrientation && <OrientationOverlay onDismiss={() => setShowOrientation(false)} />}
     </div>
   );

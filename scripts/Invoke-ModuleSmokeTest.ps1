@@ -40,6 +40,36 @@ Write-Step 'Validating copied module files exist'
 }
 Write-Host 'All expected module files are present' -ForegroundColor Green
 
+# Tripwire for ROADMAP Lane 0.1. Commit 69dcc2d shipped a smoke-run mutation as
+# the real workspace root: tracked settings.json pointed inventory.localRoots at
+# a fixture directory under output/, so every scan, assessment, and scheduled
+# automation run from a clean checkout enumerated fixtures instead of the
+# portfolio — and nothing failed to say so. The api-host smoke now restores the
+# file byte-exact, but this fails the suite outright if a mutation ever lands
+# again, because the symptom (zero repositories, no error) is indistinguishable
+# from an empty workspace.
+Write-Step 'Config tripwire: tracked settings.json must not point at run output'
+$trackedSettingsPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
+if (Test-Path -LiteralPath $trackedSettingsPath) {
+    $trackedSettings = Get-Content -LiteralPath $trackedSettingsPath -Raw | ConvertFrom-Json
+    $trackedRoots = @()
+    if ($trackedSettings.PSObject.Properties.Name -contains 'inventory' -and
+        $trackedSettings.inventory.PSObject.Properties.Name -contains 'localRoots') {
+        $trackedRoots = @($trackedSettings.inventory.localRoots | ForEach-Object { [string]$_ })
+    }
+    $offending = @($trackedRoots | Where-Object { $_ -match '(^|[/\\])output([/\\]|$)' })
+    if (@($offending).Count -gt 0) {
+        # Parenthesise the concatenation before -f: otherwise the format operator
+        # binds to the trailing string only and {0} is emitted literally.
+        throw (("Tracked settings.json inventory.localRoots names a path under output/: {0}. " +
+                "That is run evidence, not a workspace — restore the real root before committing.") -f ($offending -join ', '))
+    }
+    if (@($trackedRoots).Count -eq 0) {
+        throw 'Tracked settings.json has no inventory.localRoots; the portal cannot scan anything.'
+    }
+    Write-Host ("  localRoots ok: {0}" -f ($trackedRoots -join ', ')) -ForegroundColor Green
+}
+
 Write-Step 'Loading roadmap parser module'
 . $roadmapParser
 Write-Host 'Roadmap parser module loaded successfully' -ForegroundColor Green

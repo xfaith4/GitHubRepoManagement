@@ -1,5 +1,5 @@
 import React from 'react';
-import { InitIcon, UpdateIcon, SyncIcon, ExportIcon, ArchiveIcon, RefreshIcon, SettingsIcon, SpinnerIcon, DocReviewIcon, RoadmapIcon, ApiDocsIcon, HelpIcon } from './icons';
+import { InitIcon, UpdateIcon, SyncIcon, ExportIcon, ArchiveIcon, RefreshIcon, SpinnerIcon, DocReviewIcon, RoadmapIcon, ApiDocsIcon, HelpIcon } from './icons';
 import { type OperationType, type AppSettings } from '../types';
 import { canRunRepoActions, repoActionsBlockedReason } from '../lib/dataProvenance';
 
@@ -7,7 +7,6 @@ interface ActionBarProps {
   onAction: (operation: OperationType, repoNames?: string[]) => void;
   onExport: () => void;
   onRefresh: () => void;
-  onSettingsClick: () => void;
   onInitClick: () => void;
   onDocReviewClick: () => void;
   onApiDocsClick: () => void;
@@ -67,7 +66,7 @@ const ActionButton: React.FC<ActionButtonProps> = ({ onClick, disabled, isLoadin
 );
 
 
-const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, onSettingsClick, onInitClick, onDocReviewClick, onApiDocsClick, onHelpClick, isActionRunning, currentOperation, settings, selectedRepos, repoCount }) => {
+const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, onInitClick, onDocReviewClick, onApiDocsClick, onHelpClick, isActionRunning, currentOperation, settings, selectedRepos, repoCount }) => {
 
     const selection = selectedRepos.size > 0 ? Array.from(selectedRepos) : undefined;
     const selectionCount = selectedRepos.size;
@@ -161,8 +160,9 @@ const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, on
                     <span className="hidden sm:inline">Help</span>
                  </ActionButton>
                  <ActionButton onClick={onApiDocsClick} disabled={false} ariaLabel="API docs" title="View API reference documentation for all backend endpoints." icon={<ApiDocsIcon className="w-4 h-4" />} />
+                 {/* Settings moved to the page header (left of Sign out) so it is
+                     reachable from every tab, not just the Repository Grid. */}
                  <ActionButton onClick={onRefresh} disabled={isActionRunning} ariaLabel="Refresh" title="Refresh the current view." icon={<RefreshIcon className="w-4 h-4" />} />
-                 <ActionButton onClick={onSettingsClick} disabled={isActionRunning} ariaLabel="Settings" title="Configure local workspace settings (path, scan depth, thresholds)." icon={<SettingsIcon className="w-4 h-4" />} />
             </div>
         </div>
     );

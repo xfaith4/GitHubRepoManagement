@@ -6442,6 +6442,11 @@ try {
                     }
                     $result.meta.workspacePath = if (@($localRoots).Count -gt 0) { [string]$localRoots[0] } else { '' }
                     $result.meta.configuredGithubUser = $configuredGitHubUser
+                    # Recomputed here rather than trusted from the adapter meta: a
+                    # cache hit would otherwise replay the on-disk state from
+                    # whenever the scan ran, and "does this folder exist right now"
+                    # is exactly the question the operator needs answered.
+                    $result.meta.missingRoots = @(@($localRoots) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Where-Object { -not (Test-Path -LiteralPath ([string]$_)) } | ForEach-Object { [string]$_ })
 
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
@@ -6528,7 +6533,24 @@ try {
                     if (-not $existing.ContainsKey('docReview')) { $existing.docReview = @{} }
 
                     if ($body.ContainsKey('basePath') -and $body.basePath) {
-                        $existing.inventory.localRoots = @([string]$body.basePath)
+                        # A workspace path that does not exist produces a scan that
+                        # returns zero repos and no error, which reads as "the tool
+                        # is broken" rather than "that folder is not there".
+                        # 'POST /api/setup' has always rejected a missing root; this
+                        # route silently accepted one, so the two disagreed and the
+                        # Settings dialog was the unguarded way in.
+                        $requestedBasePath = ([string]$body.basePath).Trim()
+                        if (-not (Test-Path -LiteralPath $requestedBasePath)) {
+                            Add-MetricCounter -Name 'api_requests_total'
+                            Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                                success  = $false
+                                error    = ("Workspace path not found on disk: {0}. Nothing was saved — correct the path and try again." -f $requestedBasePath)
+                                category = 'validation'
+                                field    = 'basePath'
+                            }
+                            break
+                        }
+                        $existing.inventory.localRoots = @($requestedBasePath)
                     }
                     if ($body.ContainsKey('scanDepth')) {
                         $existing.inventory.maxDepth = [int]$body.scanDepth

@@ -44,11 +44,20 @@ interface DashboardProps {
   fetchRepoStatus: () => void;
   dataSource:
     | { source: 'sample' }
-    | { source: 'local'; workspacePath?: string; configuredGithubUser?: string | null; repoCount?: number; scanDurationMs?: number }
+    | { source: 'local'; workspacePath?: string; configuredGithubUser?: string | null; repoCount?: number; scanDurationMs?: number; missingRoots?: string[] }
     | { source: 'github'; username: string }
     | null;
   insightsMeta?: GithubInsightsMeta | null;
   dataLastUpdated?: Date | null;
+  /**
+   * Open signal for the Settings dialog, driven by the header gear in App. A
+   * counter rather than a boolean: each increment is one open request, so the
+   * dialog re-opens after being dismissed.
+   */
+  settingsOpenRequest?: number;
+  /** Connects the GitHub API view; surfaced inside the Settings dialog. */
+  onConnectGitHub?: (username: string) => Promise<void>;
+  connectedGitHubUser?: string | null;
 }
 
 const SIGNAL_SOURCE_STYLES: Record<PortfolioSignalSource, string> = {
@@ -205,10 +214,15 @@ function buildTrendGeometry(points: PortfolioTrendPoint[], width = 320, height =
   };
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefreshing = false, error, fetchRepoStatus, dataSource, insightsMeta, dataLastUpdated }) => {
+const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefreshing = false, error, fetchRepoStatus, dataSource, insightsMeta, dataLastUpdated, settingsOpenRequest = 0, onConnectGitHub, connectedGitHubUser }) => {
   const [currentOperation, setCurrentOperation] = useState<OperationType | null>(null);
   const [isLogPanelOpen, setIsLogPanelOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  // Open on each increment from the header gear. Skips the initial 0 so the
+  // dialog does not pop open on mount.
+  useEffect(() => {
+    if (settingsOpenRequest > 0) setIsSettingsModalOpen(true);
+  }, [settingsOpenRequest]);
   const [isInitModalOpen, setIsInitModalOpen] = useState(false);
   const [isArtifactsModalOpen, setIsArtifactsModalOpen] = useState(false);
   const [isDocReviewModalOpen, setIsDocReviewModalOpen] = useState(false);
@@ -1200,6 +1214,8 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     : dataSource?.source === 'local'
       ? `Workspace: ${settings?.basePath ?? dataSource.workspacePath ?? 'Unknown'}`
       : 'Sample data source';
+  const missingRoots = dataSource?.source === 'local' ? dataSource.missingRoots ?? [] : [];
+
   // Tab / bottom-nav badges are index-backed too, and a badge has no room for a
   // sentence — so when the count describes a different repo set than the live
   // scan it is restyled amber with an explanatory tooltip rather than rendered
@@ -1270,6 +1286,43 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
       {error && repos.length > 0 && (
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-4">
           <div className="bg-red-900/20 border border-red-700/50 rounded-lg px-4 py-2 text-sm text-red-300">{error}</div>
+        </div>
+      )}
+      {/* A configured root that is not on disk is THE reason a scan comes back
+          empty while everything else reports healthy. It gets a hard, top-of-page
+          alert naming the exact path — not a subtle badge — because every other
+          signal on this screen (Backend: Online, green source badge, a fast
+          "successful" scan) actively suggests the tool is fine. */}
+      {missingRoots.length > 0 && (
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+          <div
+            data-testid="missing-workspace-root-alert"
+            role="alert"
+            className="flex items-start gap-3 rounded-lg border border-red-600 bg-red-900/30 px-4 py-3 text-sm text-red-100"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 flex-shrink-0 mt-0.5 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+            </svg>
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold">
+                Workspace path not found — this is why no repositories were found.
+              </div>
+              <div className="mt-1 break-all text-red-200">
+                {missingRoots.map(root => (
+                  <div key={root}><code className="bg-red-950/60 px-1 py-0.5 rounded">{root}</code></div>
+                ))}
+              </div>
+              <div className="mt-1.5 text-red-200/90">
+                The scan completed successfully but had nothing to walk. Check the path for typos, and that any external or network drive is connected.
+              </div>
+            </div>
+            <button
+              onClick={() => setIsSettingsModalOpen(true)}
+              className="flex-shrink-0 px-3 py-1.5 text-xs font-semibold rounded border border-red-500 bg-red-800/60 text-red-50 hover:bg-red-700/70 transition-colors"
+            >
+              Fix in Settings
+            </button>
+          </div>
         </div>
       )}
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-6">
@@ -2062,7 +2115,6 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                     onAction={handleAction}
                     onExport={handleExport}
                     onRefresh={fetchRepoStatus}
-                    onSettingsClick={() => setIsSettingsModalOpen(true)}
                     onInitClick={() => setIsInitModalOpen(true)}
                   onDocReviewClick={() => { setDocReviewTargetRepo(null); setIsDocReviewModalOpen(true); }}
                     onApiDocsClick={() => setIsApiDocsOpen(true)}
@@ -2289,6 +2341,8 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
           onClose={() => setIsSettingsModalOpen(false)}
           onSave={handleSaveSettings}
           currentSettings={settings}
+          onConnectGitHub={onConnectGitHub}
+          connectedGitHubUser={connectedGitHubUser}
         />
       )}
 

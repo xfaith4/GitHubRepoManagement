@@ -530,20 +530,27 @@ Continuous, not release-scoped. Completed cross-cutting items were archived
 
 ### Lane 0.1 — Configuration regression (P0)
 
-- [ ] **Restore `backend/config/settings.json` `inventory.localRoots` to the
-      real workspace root and prevent recurrence.** *(state: planned —
-      open regression)* Commit `69dcc2d` (2026-08-01) committed a smoke-run
-      mutation into the **tracked** config: `localRoots` is now
+- [x] **Restore `backend/config/settings.json` `inventory.localRoots` to the
+      real workspace root and prevent recurrence.** *(state: done 2026-08-08)*
+      Commit `69dcc2d` (2026-08-01) committed a smoke-run mutation into the
+      **tracked** config: `localRoots` pointed at
       `/mnt/f/Development/GitHubRepoManagement/output/smoke/api-host/portfolio-fixture-repos`
       (a WSL fixture path), replacing `F:\Development\20_Staging`. Every
       scan, assessment, index write, and scheduled automation run from a
-      clean checkout therefore enumerates fixtures, not the portfolio.
-      Fix in three parts: (1) restore the real root; (2) make the api-host
-      smoke write its settings mutation to a temp copy, or restore
-      byte-exact on exit as
-      [`Invoke-DailyEvidence.ps1`](scripts/Invoke-DailyEvidence.ps1)
-      already does; (3) add a pre-commit or test-suite tripwire that fails
-      when the tracked `settings.json` names a path under `output/`.
+      clean checkout therefore enumerated fixtures, not the portfolio. This
+      was the root cause of the operator-visible "valid workspace path, zero
+      repositories" report on 2026-08-08. All three parts are closed:
+      (1) `localRoots` restored to `F:\Development\20_Staging`;
+      (2) `Invoke-ApiHostSmokeTest.ps1` now captures the tracked file
+      byte-exact **before its first settings write** — not just before the
+      portfolio-fixture step, since every `POST /api/settings` round-trips the
+      JSON and reorders keys — and restores it in `finally`, so the run leaves
+      no churn however it ends; (3) `Invoke-ModuleSmokeTest.ps1` gained a
+      tripwire that fails the suite when tracked `localRoots` names a path
+      under `output/`, or is empty. **Evidence:** api-host smoke exit 0 on a
+      free port with `git diff` on the tracked config showing only the single
+      intended line; tripwire verified to fail (exit 1) on a deliberately
+      reintroduced fixture path and to pass on the corrected config.
 
 ### Lane 0.2 — Credential freshness
 
@@ -609,7 +616,10 @@ Continuous, not release-scoped. Completed cross-cutting items were archived
       more than the note implied: the required pre-commit gate failed on its
       first step for anyone invoking it without `-WorkspaceRoot`, which is
       exactly how `CLAUDE.md` documents running it. **Evidence:** gate re-run
-      with no arguments, exit 0. The five files above are still open.
+      with no arguments, exit 0.
+      [`scripts/Invoke-ApiHostSmokeTest.ps1`](scripts/Invoke-ApiHostSmokeTest.ps1)
+      was fixed the same way, so **both** required gates now run unmodified from
+      any clone location. The five `backend/` files above are still open.
 - [ ] Implement the documented maturity **caps** that the auditor still does
       not apply: `ROADMAP_MATURITY_MODEL.md` states "any critical finding caps
       maturity at L1" and "any warning finding caps maturity at L3", but
@@ -656,6 +666,40 @@ every maturity score. Both were adversarially proven to fail when violated.
       against. *(state: planned — cosmetic, but the root keeps re-accruing
       these; consider a `.gitignore` entry or a documented worklog location
       so the convention holds without a manual sweep each time.)*
+
+### Lane 0.6 — Workspace-path failure was silent (P0, 2026-08-08)
+
+- [x] **Reject a workspace path that is not on disk, and report one that is
+      already saved.** *(state: done 2026-08-08)* An operator set a workspace
+      path and got zero repositories with no error: `Backend: Online`, a green
+      `Source: Local` badge, and a "successful" 0.1s scan. Two independent
+      causes. First, the tracked config pointed at a fixture path (Lane 0.1).
+      Second, `POST /api/settings` wrote `inventory.localRoots` with **no
+      existence check**, while `POST /api/setup` had always rejected a missing
+      root — so the Setup Wizard was guarded and the Settings dialog was the
+      unvalidated way in. `Get-LocalFolderInventory` then logged
+      *"Skipping invalid root"* to the host log and returned an empty
+      inventory, which the adapter reported as a successful scan. Fixes:
+      `POST /api/settings` returns HTTP 400 naming the path and persists
+      nothing; the status adapter and `GET /api/status` both report
+      `meta.missingRoots`, recomputed at the route so a cache hit cannot replay
+      stale on-disk state; the portal renders a top-of-page alert naming the
+      exact path with a **Fix in Settings** action. The Settings dialog also
+      surfaced save failures for the first time — `handleSave` previously
+      swallowed the error with a `console.error` and a "you would show a toast"
+      comment, so the new 400 would have been invisible. **Evidence:**
+      api-host smoke `workspaceValidationOk=True`,
+      `missingRootsReportedOk=True` (rejects a bogus `basePath` with 400, leaves
+      `localRoots` untouched, and reports `meta.missingRoots` from
+      `/api/status`); direct adapter run over the restored root returned
+      **75 repositories** with `missingRoots` empty, and over the mistyped path
+      returned `success=True`, `repoCount=0`, `missingRoots` populated.
+- [ ] Point the zero-scope action hint at the specific cause when a root is
+      missing. *(state: planned — non-blocker, cosmetic)* The ActionBar hint
+      still reads the generic "Scan a workspace first — set the workspace path
+      in Settings, then Refresh" while the red alert directly above it names
+      the actual missing path. The remedy it names is correct, so this is
+      redundancy rather than a wrong instruction.
 
 ### Lane 0.5 — Portal UX follow-ups (empty-state audit 2026-08-08)
 
