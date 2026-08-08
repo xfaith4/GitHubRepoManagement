@@ -673,11 +673,18 @@ evidence below); these two are design-dependent and deliberately deferred.
       [`frontend/lib/dataProvenance.ts`](frontend/lib/dataProvenance.ts)
       (`resolveProvenance` → `live` / `stale-only` / `empty`) plus
       [`ProvenanceNotice.tsx`](frontend/components/ProvenanceNotice.tsx),
-      mounted above the Portfolio Analytics KPI row and the Doc Readiness
-      Queue; the scan label now reads "No repos in this scan". **Evidence:**
-      `frontend/lib/dataProvenance.test.ts` (17 cases, incl. the
-      unknown-live-count guard against a false banner); `npx vitest run`
-      30/30; `tsc --noEmit` clean; module smoke exit 0.
+      mounted at the top of the Insights tab (covering Portfolio Mission,
+      Documentation Health, and Portfolio Analytics in one notice) and above
+      the Doc Readiness Queue; the scan label now reads "No repos in this
+      scan". Badges have no room for a sentence, so the **Operations** and
+      **Doc Readiness Queue** counts — in both the desktop tab strip and the
+      mobile bottom nav — render amber with a `ring` and an explanatory
+      tooltip via `isCarriedOverCount` instead of as plain current-looking
+      numbers. **Evidence:** `frontend/lib/dataProvenance.test.ts` (24 cases,
+      incl. the unknown-live-count guards against a false banner and against
+      disabling by omission); `npx vitest run` 37/37; `tsc --noEmit` clean;
+      `vite build` clean with every new marker present in `dist`; module
+      smoke exit 0.
 - [x] **Disable repo-acting buttons when nothing is in scope.**
       *(state: done 2026-08-08)* Pull, Fetch, Report, Doc Review, and Roadmap
       Scan stayed clickable at 0 repos, letting the operator click into a
@@ -686,7 +693,17 @@ evidence below); these two are design-dependent and deliberately deferred.
       `canRunRepoActions(repoCount, isActionRunning)`, replacing the
       implicit-bulk-scope callout with the actual blocker ("Scan a workspace
       first…"). Refresh, Settings, Help, and API docs stay enabled — they are
-      the way out of the empty state. **Evidence:** as above;
+      the way out of the empty state. The Doc Readiness Queue's own actions
+      needed the same treatment for a subtler reason: its rows come from the
+      persisted index, so they outlive the scan and every row can target a
+      repo the app cannot currently see. **Guided Improvement** and the six
+      mutating row actions (Improve, Repair, Standardize, Generate README,
+      Evaluate, Dispatch Release) are gated on `isKnownEmptyScope`;
+      read-only actions (Audit, Lint, Roadmap, Preview Task) stay enabled,
+      because inspecting the carried-over data is how an operator diagnoses
+      *why* the scan came back empty. `isKnownEmptyScope` returns false for an
+      unknown count, so a view that never receives `liveRepoCount` is never
+      disabled by omission. **Evidence:** as above;
       `scripts/frontend-smoke.cjs` `bulkSelectionNotePromoted` made
       state-aware so it asserts the correct variant rather than breaking on
       the empty-workspace path.

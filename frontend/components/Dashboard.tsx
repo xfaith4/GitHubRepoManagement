@@ -3,6 +3,7 @@ import { type RepoStatus, type AppSettings, type OperationType, type GithubInsig
 import SummaryCard from './SummaryCard';
 import ActionBar from './ActionBar';
 import ProvenanceNotice from './ProvenanceNotice';
+import { isCarriedOverCount } from '../lib/dataProvenance';
 import RepoGrid from './RepoGrid';
 import LogPanel from './LogPanel';
 import SettingsModal from './SettingsModal';
@@ -1199,6 +1200,19 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     : dataSource?.source === 'local'
       ? `Workspace: ${settings?.basePath ?? dataSource.workspacePath ?? 'Unknown'}`
       : 'Sample data source';
+  // Tab / bottom-nav badges are index-backed too, and a badge has no room for a
+  // sentence — so when the count describes a different repo set than the live
+  // scan it is restyled amber with an explanatory tooltip rather than rendered
+  // as a plain number that reads as current.
+  const queueReadyCount = docsAuditIndex
+    ? docsAuditIndex.entries.filter(e => e.dispatchReadiness === 'ready').length
+    : 0;
+  const operationsReadyCount = portfolioAssessment?.summary.readyForWorkCount ?? 0;
+  const operationsBadgeCarriedOver = isCarriedOverCount(repos.length, operationsReadyCount);
+  const queueBadgeCarriedOver = isCarriedOverCount(repos.length, queueReadyCount);
+  const carriedOverBadgeTitle =
+    'Carried over from the last completed scan — the current scan found no repositories, so this count may not match the workspace. Re-scan to reconcile.';
+
   const scanMetaLabel = dataSource?.source === 'local' && typeof dataSource.repoCount === 'number'
     // At zero, "0 repos" alone reads as a broken tool when index-backed panels
     // below still show figures; name it as a property of *this* scan.
@@ -1298,6 +1312,21 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
           <div className="rounded-lg border border-gray-700 bg-gray-900/40 px-4 py-3 text-sm text-gray-300">
             Insights surfaces secondary analytics widgets (throughput, mission, docs health, trends, and activity) so the repository grid stays the primary operational workflow.
           </div>
+        )}
+
+        {/* Portfolio Mission, Documentation Health, and Portfolio Analytics all
+            read the persisted assessment/trend indexes rather than the live
+            scan. One notice covers the whole tab — three separate banners on one
+            screen would be noise, and the provenance is identical for all of
+            them. */}
+        {activeView === 'insights' && (
+          <ProvenanceNotice
+            testId="insights-provenance-notice"
+            className="mt-4"
+            liveRepoCount={repos.length}
+            persistedEntryCount={portfolioAssessment?.entries?.length ?? 0}
+            persistedGeneratedAt={portfolioAssessment?.generatedAt ?? portfolioTrend?.generatedAt}
+          />
         )}
 
         {activeView === 'insights' && (
@@ -1573,16 +1602,6 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
 
               {portfolioTrend ? (
                 <>
-                  {/* Avg Maturity / Ready Now are computed from the persisted
-                      assessment index, not the live scan — say so when the two
-                      disagree instead of letting them contradict the header. */}
-                  <ProvenanceNotice
-                    testId="analytics-provenance-notice"
-                    className="mt-4"
-                    liveRepoCount={repos.length}
-                    persistedEntryCount={portfolioAssessment?.entries?.length ?? portfolioTrend.summary.readyForWorkCount}
-                    persistedGeneratedAt={portfolioTrend.generatedAt}
-                  />
                   <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mt-4">
                     {portfolioTrendSummaryCards.map(metric => (
                       <div key={metric.label} className="rounded-lg border border-gray-700 bg-gray-900/50 px-3 py-3">
@@ -1963,7 +1982,16 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
               >
                 Operations
                 {portfolioAssessment?.summary.readyForWorkCount ? (
-                  <span className="inline-flex items-center justify-center w-5 h-5 text-xs rounded-full bg-sky-700 text-sky-100 font-semibold">
+                  <span
+                    data-testid="operations-tab-badge"
+                    data-carried-over={operationsBadgeCarriedOver || undefined}
+                    title={operationsBadgeCarriedOver ? carriedOverBadgeTitle : undefined}
+                    className={`inline-flex items-center justify-center w-5 h-5 text-xs rounded-full font-semibold ${
+                      operationsBadgeCarriedOver
+                        ? 'bg-amber-800 text-amber-100 ring-1 ring-amber-500/60'
+                        : 'bg-sky-700 text-sky-100'
+                    }`}
+                  >
                     {portfolioAssessment.summary.readyForWorkCount}
                   </span>
                 ) : null}
@@ -1977,9 +2005,18 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                 }`}
               >
                 {VIEW_META_BY_KEY['work-queue'].label}
-                {docsAuditIndex && docsAuditIndex.entries.filter(e => e.dispatchReadiness === 'ready').length > 0 && (
-                  <span className="inline-flex items-center justify-center w-5 h-5 text-xs rounded-full bg-green-700 text-green-100 font-semibold">
-                    {docsAuditIndex.entries.filter(e => e.dispatchReadiness === 'ready').length}
+                {queueReadyCount > 0 && (
+                  <span
+                    data-testid="work-queue-tab-badge"
+                    data-carried-over={queueBadgeCarriedOver || undefined}
+                    title={queueBadgeCarriedOver ? carriedOverBadgeTitle : undefined}
+                    className={`inline-flex items-center justify-center w-5 h-5 text-xs rounded-full font-semibold ${
+                      queueBadgeCarriedOver
+                        ? 'bg-amber-800 text-amber-100 ring-1 ring-amber-500/60'
+                        : 'bg-green-700 text-green-100'
+                    }`}
+                  >
+                    {queueReadyCount}
                   </span>
                 )}
               </button>
@@ -2201,11 +2238,11 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
           {([
             { view: 'repos' as const, label: 'Repos', icon: <ProjectsIcon className="w-5 h-5" />, badge: null as number | null },
             { view: 'insights' as const, label: 'Insights', icon: <HealthIcon className="w-5 h-5" />, badge: null as number | null },
-            { view: 'operations' as const, label: 'Ops', icon: <DocReviewIcon className="w-5 h-5" />, badge: (portfolioAssessment?.summary.readyForWorkCount || null) as number | null },
-            { view: 'work-queue' as const, label: VIEW_META_BY_KEY['work-queue'].short, icon: <IssuesIcon className="w-5 h-5" />, badge: (docsAuditIndex ? (docsAuditIndex.entries.filter(e => e.dispatchReadiness === 'ready').length || null) : null) as number | null },
+            { view: 'operations' as const, label: 'Ops', icon: <DocReviewIcon className="w-5 h-5" />, badge: (operationsReadyCount || null) as number | null, carriedOver: operationsBadgeCarriedOver },
+            { view: 'work-queue' as const, label: VIEW_META_BY_KEY['work-queue'].short, icon: <IssuesIcon className="w-5 h-5" />, badge: (queueReadyCount || null) as number | null, carriedOver: queueBadgeCarriedOver },
             { view: 'execution-queue' as const, label: VIEW_META_BY_KEY['execution-queue'].short, icon: <SyncIcon className="w-5 h-5" />, badge: null as number | null },
             { view: 'dependencies' as const, label: 'Deps', icon: <BranchIcon className="w-5 h-5" />, badge: (dependencyGraph && dependencyGraph.totalEdges > 0 ? dependencyGraph.totalEdges : null) as number | null },
-          ]).map(item => (
+          ] as Array<{ view: ViewKey; label: string; icon: React.ReactNode; badge: number | null; carriedOver?: boolean }>).map(item => (
             <button
               key={item.view}
               onClick={() => setActiveView(item.view)}
@@ -2217,7 +2254,15 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
               {item.icon}
               <span>{item.label}</span>
               {item.badge ? (
-                <span className="absolute top-1 right-1/2 translate-x-4 inline-flex items-center justify-center min-w-4 h-4 px-0.5 text-[9px] rounded-full bg-sky-700 text-sky-100 font-semibold">
+                <span
+                  data-carried-over={item.carriedOver || undefined}
+                  title={item.carriedOver ? carriedOverBadgeTitle : undefined}
+                  className={`absolute top-1 right-1/2 translate-x-4 inline-flex items-center justify-center min-w-4 h-4 px-0.5 text-[9px] rounded-full font-semibold ${
+                    item.carriedOver
+                      ? 'bg-amber-800 text-amber-100 ring-1 ring-amber-500/60'
+                      : 'bg-sky-700 text-sky-100'
+                  }`}
+                >
                   {item.badge}
                 </span>
               ) : null}

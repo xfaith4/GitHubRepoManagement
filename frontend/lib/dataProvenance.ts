@@ -99,6 +99,25 @@ export function canRunRepoActions(liveRepoCount: number, isActionRunning: boolea
   return liveRepoCount > 0 && !isActionRunning;
 }
 
+/**
+ * True only when the live repo count is *known* to be zero. Distinct from
+ * `!liveRepoCount`: an unknown count (optional prop not threaded through) must
+ * not disable anything, because that would break views that never receive it.
+ */
+export function isKnownEmptyScope(liveRepoCount?: number): boolean {
+  return Number.isFinite(liveRepoCount) && liveRepoCount === 0;
+}
+
+/**
+ * Whether a count rendered from a persisted index describes a different repo
+ * set than the live scan — the badge equivalent of `ProvenanceNotice`. A badge
+ * has no room for a sentence, so consumers use this to restyle it and attach an
+ * explanatory tooltip rather than showing a bare number that looks current.
+ */
+export function isCarriedOverCount(liveRepoCount: number | undefined, persistedCount: number): boolean {
+  return isKnownEmptyScope(liveRepoCount) && Number.isFinite(persistedCount) && persistedCount > 0;
+}
+
 /** Hint explaining why repo actions are unavailable, or null when they are. */
 export function repoActionsBlockedReason(liveRepoCount: number): string | null {
   return liveRepoCount > 0

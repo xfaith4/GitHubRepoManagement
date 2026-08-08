@@ -3,6 +3,8 @@ import {
   resolveProvenance,
   canRunRepoActions,
   repoActionsBlockedReason,
+  isKnownEmptyScope,
+  isCarriedOverCount,
 } from './dataProvenance';
 
 // Fixed formatter so assertions do not depend on the runner's locale.
@@ -98,6 +100,39 @@ describe('canRunRepoActions', () => {
 
   it('blocks repo actions while another operation is running', () => {
     expect(canRunRepoActions(12, true)).toBe(false);
+  });
+});
+
+describe('isKnownEmptyScope', () => {
+  it('is true only for a known zero', () => {
+    expect(isKnownEmptyScope(0)).toBe(true);
+  });
+
+  it('is false for a populated scope', () => {
+    expect(isKnownEmptyScope(7)).toBe(false);
+  });
+
+  it('is false when the count is unknown, so nothing gets disabled by omission', () => {
+    expect(isKnownEmptyScope(undefined)).toBe(false);
+    expect(isKnownEmptyScope(NaN)).toBe(false);
+  });
+});
+
+describe('isCarriedOverCount', () => {
+  it('flags a populated badge count under a known-empty live scope', () => {
+    expect(isCarriedOverCount(0, 15)).toBe(true);
+  });
+
+  it('does not flag a zero badge count', () => {
+    expect(isCarriedOverCount(0, 0)).toBe(false);
+  });
+
+  it('does not flag when the live scan found repos', () => {
+    expect(isCarriedOverCount(40, 15)).toBe(false);
+  });
+
+  it('does not flag when the live count is unknown', () => {
+    expect(isCarriedOverCount(undefined, 15)).toBe(false);
   });
 });
 
