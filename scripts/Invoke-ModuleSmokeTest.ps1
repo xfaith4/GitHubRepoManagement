@@ -523,6 +523,87 @@ if (@($blockquoteAudit.auditFindings | Where-Object { $_.ruleId -eq 'ROADMAP-012
 }
 Write-Host '  blockquote status form detected (activeReleaseCount=1, no ROADMAP-012)' -ForegroundColor DarkGray
 
+# The structure linter had NO smoke coverage, which is how it came to contradict
+# the template it lints: R013's size cap fired on any conformant active release
+# (the template deliberately puts the whole execution contract there), and RQ001
+# demanded a Status line on the pointer block that RQ003 then errors on for
+# declaring status twice. Both relaxations are pinned here alongside proof they
+# still fire when genuinely violated — a relaxed rule that no longer detects
+# anything is worse than the false positive it replaced.
+Write-Step 'Roadmap structure linter — smoke: R013/RQ001 relaxations still detect real violations'
+$structureLinter = Join-Path $WorkspaceRoot 'tools\Test-RoadmapStructure.ps1'
+if (-not (Test-Path -LiteralPath $structureLinter)) { throw "Test-RoadmapStructure.ps1 not found at: $structureLinter" }
+$structureFixtureDir = Join-Path $WorkspaceRoot 'output\smoke\roadmap-structure'
+$null = New-Item -ItemType Directory -Path $structureFixtureDir -Force
+
+function Invoke-StructureLintCodes {
+    param([Parameter(Mandatory)][string]$Content, [Parameter(Mandatory)][string]$Name)
+    $fixturePath = Join-Path $structureFixtureDir $Name
+    Set-Content -LiteralPath $fixturePath -Value $Content -Encoding UTF8
+    # *>&1, not 2>&1: the linter reports findings with Write-Host, which lands on
+    # the information stream. Capturing only stderr returned an empty string, so
+    # every "rule must fire" assertion passed vacuously while the finding it was
+    # looking for scrolled past on the console.
+    $output = & $structureLinter -Path $fixturePath *>&1 | Out-String
+    return $output
+}
+
+$bigBody = (1..160 | ForEach-Object { "- [ ] milestone item $_ _(state: planned)_" }) -join "`n"
+$activeBig = @"
+# Structure Fixture
+
+> **Status:** Active
+> **Active release:** **Release 1.0 - Alpha**
+
+## 5. Active Release Snapshot
+
+### Active release detail - 1.0 Alpha
+
+Pointer only; deliberately restates nothing.
+
+## 6. Open Releases
+
+### Release 1.0 - Alpha
+
+**Status:** active
+
+**Goal:** ship it.
+
+#### Engineering milestones
+
+$bigBody
+
+#### Acceptance criteria
+
+- It ships.
+"@
+$activeBigOut = Invoke-StructureLintCodes -Content $activeBig -Name 'active-oversized.md'
+if ($activeBigOut -match 'R013-FUTURE-RELEASE-SIZE') {
+    throw 'R013 must NOT fire on the active release: the template puts the full execution contract there'
+}
+if ($activeBigOut -match 'RQ001-MISSING-STATUS') {
+    throw 'RQ001 must NOT fire on a pointer block when the release itself declares its status'
+}
+
+# Same oversized body, but on a PLANNED release -> R013 must still fire.
+$plannedBig = $activeBig.Replace('**Status:** active', '**Status:** planned')
+if ((Invoke-StructureLintCodes -Content $plannedBig -Name 'planned-oversized.md') -notmatch 'R013-FUTURE-RELEASE-SIZE') {
+    throw 'R013 must still fire for an oversized non-active release'
+}
+
+# Status declared NOWHERE -> RQ001 must still fire (and must not crash: an
+# empty status-block set used to kill the linter on the very file it diagnoses).
+$noStatus = $activeBig.Replace("**Status:** active`r`n", '').Replace("**Status:** active`n", '').Replace('**Status:** active', '')
+$noStatusOut = Invoke-StructureLintCodes -Content $noStatus -Name 'no-status.md'
+if ($noStatusOut -match 'Cannot bind argument') { throw 'Structure linter crashed on a roadmap with no status lines instead of reporting RQ001' }
+if ($noStatusOut -notmatch 'RQ001-MISSING-STATUS') { throw 'RQ001 must still fire when neither the pointer nor the release declares a status' }
+
+# No release headings at all -> R000, not a StrictMode crash on $null.Count.
+$noReleasesOut = Invoke-StructureLintCodes -Content "# Empty`n`nNo releases here.`n" -Name 'no-releases.md'
+if ($noReleasesOut -match 'cannot be found on this object') { throw 'Structure linter crashed on a release-less file instead of reporting R000' }
+if ($noReleasesOut -notmatch 'R000-NO-RELEASES') { throw 'R000-NO-RELEASES must fire for a file with no release headings' }
+Write-Host '  structure linter ok: active exempt from R013, planned still flagged; RQ001 fires only when status is declared nowhere; release-less file reports R000 instead of crashing' -ForegroundColor DarkGray
+
 # Tripwire: the two evaluators must return the SAME verdict for the same file.
 # Until 2026-08-08 they did not — the backend auditor and
 # tools/Test-RoadmapContract.ps1 each carried private detection, and no repo in

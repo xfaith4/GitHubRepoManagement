@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-09 — Roadmap structure linter: stop contradicting the template, and stop crashing on the files it diagnoses
+
+### Changes
+
+- **What it fixes:** `tools/Test-RoadmapStructure.ps1` reported 3 advisory warnings on this repo's own conformant roadmap, because two rules contradicted `ROADMAP_TEMPLATE.md`:
+  - **R013** (release size) fired on the **active** release. The template deliberately puts the entire execution contract — goal, outcomes, milestones, acceptance criteria, validation plan, risks, traceability — inside the active release block, so a conformant active release necessarily exceeds the cap. The rule penalized the structure the template requires. The active release is now exempt; future releases are unchanged.
+  - **RQ001** (missing status) demanded a `Status` line on the "Active release detail" **pointer** block — which per the template restates nothing, and where declaring status a second time is an **RQ003 error**. The two rules could not both be satisfied. RQ001 now skips a pointer block whose release declares a valid status, and when neither declares one its message names both places.
+- **Two pre-existing crashes surfaced while testing the relaxations**, both the same shape — the linter dying on exactly the file it exists to diagnose:
+  - A roadmap with **no status lines anywhere** hit `Cannot bind argument to parameter 'StatusBlocks' because it is an empty array` before RQ001 could report it. Six rule parameters were missing the `[AllowEmptyCollection()]` a seventh already had; `$Releases` and `$Blocks` had the same gap.
+  - A file with **no release headings** hit a StrictMode `$null.Count` before `R000-NO-RELEASES` could fire. `ROADMAP_TEMPLATE.md` is such a file — the linter could not lint its own template.
+- **`scripts/Invoke-ModuleSmokeTest.ps1`** — the structure linter had **no smoke coverage at all**, which is how it drifted into contradicting the template it lints. New step pins both relaxations and proves each rule still fires when genuinely violated: an oversized *planned* release still trips R013, a roadmap declaring status nowhere still trips RQ001, and a release-less file reports R000 instead of crashing.
+
+### Testing
+
+- Module smoke exit 0; `ROADMAP.md` now validates **0 errors / 1 warning**, and the remaining one is the true `R010-FILE-LENGTH` signal rather than a false positive.
+- **Adversarially proven:** reverting either relaxation fails the gate at its matching assertion.
+- **A defect in the new coverage itself, found and fixed before commit:** the first version captured `2>&1`, but the linter reports findings via `Write-Host` (information stream), so every "must fire" assertion passed vacuously against an empty string while the finding scrolled past on the console. It captures `*>&1` now. Worth recording — a test that cannot see its subject's output is indistinguishable from a passing one.
+
 ## 2026-08-09 — No machine-specific path defaults, enforced by a tripwire (ROADMAP Lane 0.3)
 
 ### Changes

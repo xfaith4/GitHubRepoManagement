@@ -580,7 +580,7 @@ function Export-FindingsCsv {
 
 # Rule R001: detect duplicate release headings.
 function Invoke-RuleDuplicateReleases {
-    param([Parameter(Mandatory=$true)][object[]]$Releases)
+    param([Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Releases)
 
     $byVersion = @{}
     foreach ($r in $Releases) {
@@ -597,7 +597,7 @@ function Invoke-RuleDuplicateReleases {
 
 # Rule R002: detect releases that appear out of numerical order.
 function Invoke-RuleReleaseOrder {
-    param([Parameter(Mandatory=$true)][object[]]$Releases)
+    param([Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Releases)
 
     for ($i = 1; $i -lt $Releases.Count; $i++) {
         $prev = $Releases[$i - 1]
@@ -616,7 +616,7 @@ function Invoke-RuleReleaseOrder {
 # in config.requiredReleases is treated as a hard requirement.
 function Invoke-RuleMissing12 {
     param(
-        [Parameter(Mandatory=$true)][object[]]$Releases,
+        [Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Releases,
         [Parameter()][object]$Cfg = $script:ActiveConfig
     )
 
@@ -652,7 +652,7 @@ function Invoke-RuleMissing12 {
 # Rule R004: every release must have Goal / Product outcomes / Engineering
 # milestones / Acceptance criteria sub-sections.
 function Invoke-RuleRequiredSections {
-    param([Parameter(Mandatory=$true)][object[]]$Releases)
+    param([Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Releases)
 
     foreach ($r in $Releases) {
         foreach ($section in $script:RequiredReleaseSections) {
@@ -668,7 +668,7 @@ function Invoke-RuleRequiredSections {
 
 # Rule R005: simple title-vs-goal keyword mismatch heuristic.
 function Invoke-RuleTitleGoalMismatch {
-    param([Parameter(Mandatory=$true)][object[]]$Releases)
+    param([Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Releases)
 
     foreach ($r in $Releases) {
         $goal = Get-ReleaseGoalText -RawText $r.rawText
@@ -697,7 +697,7 @@ function Invoke-RuleTitleGoalMismatch {
 function Invoke-RuleImmediateNextFocus {
     param(
         [Parameter(Mandatory=$true)][string]$RoadmapText,
-        [Parameter(Mandatory=$true)][object[]]$Releases
+        [Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Releases
     )
 
     $section = [regex]::Match($RoadmapText, '(?ims)^##\s+\d*\.?\s*Immediate\s+Next\s+Focus.*?(?=^##\s+|\Z)')
@@ -723,7 +723,7 @@ function Invoke-RuleImmediateNextFocus {
 
 # Rule R007: future / unchecked release with no acceptance criteria.
 function Invoke-RuleUncheckedNoAcceptance {
-    param([Parameter(Mandatory=$true)][object[]]$Releases)
+    param([Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Releases)
 
     foreach ($r in $Releases) {
         $stats = Get-ReleaseCheckboxStats -RawText $r.rawText
@@ -743,7 +743,7 @@ function Invoke-RuleUncheckedNoAcceptance {
 function Invoke-RuleCompletedDominance {
     param(
         [Parameter(Mandatory=$true)][string]$RoadmapText,
-        [Parameter(Mandatory=$true)][object[]]$Releases
+        [Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Releases
     )
 
     $totalLen = $RoadmapText.Length
@@ -825,7 +825,7 @@ function Invoke-RuleActiveReleasePointer {
 
 # Rule R012: completed release detail should not live in the active roadmap.
 function Invoke-RuleCompletedReleaseSections {
-    param([Parameter(Mandatory=$true)][object[]]$Releases)
+    param([Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Releases)
 
     foreach ($r in $Releases) {
         $stats = Get-ReleaseCheckboxStats -RawText $r.rawText
@@ -838,12 +838,24 @@ function Invoke-RuleCompletedReleaseSections {
     }
 }
 
-# Rule R013: future release sections should stay summarized enough to keep
-# the active roadmap scannable.
+# Rule R013: FUTURE release sections should stay summarized enough to keep the
+# active roadmap scannable. The ACTIVE release is deliberately exempt:
+# ROADMAP_TEMPLATE.md puts the full execution contract — goal, outcomes,
+# milestones, acceptance criteria, validation plan, risks, traceability — inside
+# the active release block, so a conformant active release necessarily exceeds
+# the cap. Firing here penalized the very structure the template requires, which
+# is the opposite of what this rule is for.
 function Invoke-RuleFutureReleaseSize {
-    param([Parameter(Mandatory=$true)][object[]]$Releases)
+    param(
+        [Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Releases,
+        [Parameter()][object]$Cfg
+    )
 
     foreach ($r in $Releases) {
+        if ($null -ne $Cfg) {
+            $releaseStatus = Get-ReleaseStatus -RawText $r.rawText -Cfg $Cfg
+            if ($releaseStatus.found -and $releaseStatus.normalized -eq 'active') { continue }
+        }
         $lineCount = Get-LineCountForText -Text $r.rawText
         if ($lineCount -gt $script:MaxFutureReleaseLines) {
             Add-Finding -Severity 'warning' -Code 'R013-FUTURE-RELEASE-SIZE' `
@@ -1189,7 +1201,7 @@ function Test-KnownIssuesExplicitlyEmpty {
 # Build the list of status-bearing blocks once and share across RQ rules.
 function Get-StatusBearingBlocks {
     param(
-        [Parameter(Mandatory=$true)][object[]]$Blocks,
+        [Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Blocks,
         [Parameter(Mandatory=$true)][object]$Cfg
     )
     $result = [System.Collections.Generic.List[object]]::new()
@@ -1251,19 +1263,35 @@ function Invoke-RuleReleaseStatus {
 # future/planned = optional info gated by config).
 function Invoke-RuleMissingStatus {
     param(
-        [Parameter(Mandatory=$true)][object[]]$Blocks,
-        [Parameter(Mandatory=$true)][object[]]$Releases,
+        [Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Blocks,
+        [Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Releases,
         [Parameter(Mandatory=$true)][object]$Cfg
     )
+
+    # A release that declares its own status is the single source of truth for
+    # it. ROADMAP_TEMPLATE.md allows the active-release snapshot to be a bare
+    # POINTER at that release — a heading whose whole job is letting this
+    # validator resolve the active version, deliberately restating nothing.
+    # Demanding a Status line there would force the roadmap to declare the same
+    # status twice, which RQ003 then reports as an error: the two rules
+    # contradicted each other on any conformant roadmap.
+    $versionsDeclaringStatus = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($r in $Releases) {
+        $releaseStatus = Get-ReleaseStatus -RawText $r.rawText -Cfg $Cfg
+        if ($releaseStatus.found -and $releaseStatus.valid) {
+            [void]$versionsDeclaringStatus.Add([string]$r.version)
+        }
+    }
 
     foreach ($b in $Blocks) {
         if (-not $b.isActiveDetail) { continue }
         $status = Get-ReleaseStatus -RawText $b.rawText -Cfg $Cfg
         if (-not $status.found) {
+            if ($versionsDeclaringStatus.Contains([string]$b.version)) { continue }
             Add-Finding -Severity 'warning' -Code 'RQ001-MISSING-STATUS' -Category 'quality' -Rule 'release-status' `
-                -Message ("Active release detail '" + $b.heading + "' has no explicit Status line.") `
+                -Message ("Active release detail '" + $b.heading + "' has no explicit Status line, and release " + $b.version + " does not declare one either.") `
                 -Release $b.version -Line ($b.startLine + 1) -Section 'Status' `
-                -RecommendedAction 'Add a "**Status:** active" line so the execution contract declares its state.'
+                -RecommendedAction 'Add a "**Status:** active" line to the release section so the execution contract declares its state exactly once.'
         }
     }
 
@@ -1285,7 +1313,7 @@ function Invoke-RuleMissingStatus {
 # traceability). Emits per-section warnings via specific codes.
 function Invoke-RuleActiveReleaseSections {
     param(
-        [Parameter(Mandatory=$true)][object[]]$StatusBlocks,
+        [Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$StatusBlocks,
         [Parameter(Mandatory=$true)][object]$Cfg
     )
 
@@ -1329,7 +1357,7 @@ function Invoke-RuleActiveReleaseSections {
 # RQ004 — validation plan exists but is not concrete (weak).
 function Invoke-RuleValidationPlanQuality {
     param(
-        [Parameter(Mandatory=$true)][object[]]$StatusBlocks,
+        [Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$StatusBlocks,
         [Parameter(Mandatory=$true)][object]$Cfg
     )
 
@@ -1358,7 +1386,7 @@ function Invoke-RuleValidationPlanQuality {
 # that declare an acceptance-criteria section, regardless of status.
 function Invoke-RuleAcceptanceCriteriaQuality {
     param(
-        [Parameter(Mandatory=$true)][object[]]$Blocks,
+        [Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Blocks,
         [Parameter(Mandatory=$true)][object]$Cfg
     )
 
@@ -1377,7 +1405,7 @@ function Invoke-RuleAcceptanceCriteriaQuality {
 
 # RQ006 — active/validation blocks should carry traceability signals.
 function Invoke-RuleTraceability {
-    param([Parameter(Mandatory=$true)][object[]]$StatusBlocks)
+    param([Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$StatusBlocks)
 
     foreach ($sb in $StatusBlocks) {
         $st = $sb.status.normalized
@@ -1394,7 +1422,7 @@ function Invoke-RuleTraceability {
 # RQ009/RQ010 — pipeline / known-issues feedback for in-flight releases.
 function Invoke-RulePipelineFeedback {
     param(
-        [Parameter(Mandatory=$true)][object[]]$StatusBlocks,
+        [Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$StatusBlocks,
         [Parameter(Mandatory=$true)][object]$Cfg
     )
 
@@ -1447,7 +1475,7 @@ function Invoke-RulePipelineFeedback {
 
 # RQ007 — a blocked release must list at least one blocker.
 function Invoke-RuleBlockedReleaseHasBlocker {
-    param([Parameter(Mandatory=$true)][object[]]$StatusBlocks)
+    param([Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$StatusBlocks)
 
     foreach ($sb in $StatusBlocks) {
         if ($sb.status.normalized -ne 'blocked') { continue }
@@ -1467,7 +1495,7 @@ function Invoke-RuleBlockedReleaseHasBlocker {
 # done status. "Out of scope" satisfies the Non-goals recommendation.
 function Invoke-RulePlannedReleaseRecommendations {
     param(
-        [Parameter(Mandatory=$true)][object[]]$Releases,
+        [Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Releases,
         [Parameter(Mandatory=$true)][object]$Cfg
     )
 
@@ -1496,7 +1524,7 @@ function Invoke-RulePlannedReleaseRecommendations {
 # RQ008 — a done release should not retain unchecked items.
 function Invoke-RuleDoneReleaseCompletion {
     param(
-        [Parameter(Mandatory=$true)][object[]]$StatusBlocks,
+        [Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$StatusBlocks,
         [Parameter(Mandatory=$true)][object]$Cfg
     )
 
@@ -1542,12 +1570,17 @@ $script:MaxFutureReleaseLines   = [int]$script:ActiveConfig.maxFutureReleaseLine
 $lines = [System.IO.File]::ReadAllLines((Resolve-Path -LiteralPath $Path).Path)
 $text  = ($lines -join "`n")
 
-$releases = Get-ReleaseSections -Lines $lines
+# @() because Get-ReleaseSections returns $null when a file has no release
+# headings at all — exactly the case R000-NO-RELEASES below exists to report.
+# Under StrictMode a bare $null.Count threw before that finding could be added,
+# so the linter died on the very files it was supposed to diagnose (the
+# ROADMAP_TEMPLATE.md placeholder file is one).
+$releases = @(Get-ReleaseSections -Lines $lines)
 
 # Richer block model for the RQ layer: every '##'/'###' heading block, so
 # status-bearing blocks (Active release detail, completion snapshots) are
 # evaluated, not just '### Release X.Y' headings.
-$blocks         = Get-RoadmapBlocks -Lines $lines
+$blocks         = @(Get-RoadmapBlocks -Lines $lines)
 $statusBlocks   = @(Get-StatusBearingBlocks -Blocks $blocks -Cfg $script:ActiveConfig)
 $pointerVersion = Get-ActiveReleaseVersion -RoadmapText $text
 
@@ -1570,7 +1603,7 @@ Invoke-RuleStateVocabulary       -RoadmapText $text
 Invoke-RuleFileLength            -LineCount $lines.Count
 Invoke-RuleActiveReleasePointer  -RoadmapText $text -Lines $lines
 Invoke-RuleCompletedReleaseSections -Releases $releases
-Invoke-RuleFutureReleaseSize     -Releases $releases
+Invoke-RuleFutureReleaseSize     -Releases $releases -Cfg $script:ActiveConfig
 
 # --- Roadmap-quality rules (RQ-codes) ---
 Invoke-RuleReleaseStatus           -StatusBlocks $statusBlocks -PointerVersion $pointerVersion -Cfg $script:ActiveConfig

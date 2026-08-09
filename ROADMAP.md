@@ -960,15 +960,34 @@ and 0.6 shed their closed items to
       `@.claude/modes/implementer.md` imports — neither file exists. The
       mode line is managed by `ccmode.ps1`, so fix at the tool level.
       _(state: planned — confirmed still broken 2026-08-07)_
-- [ ] Tune `tools/Test-RoadmapStructure.ps1` for the template's own layout:
+- [x] Tune `tools/Test-RoadmapStructure.ps1` for the template's own layout:
       `ROADMAP_TEMPLATE.md` puts the full execution contract inside the
-      `## Release X — Title` block, so R013's 120-line cap fires on any
-      conformant active release, and RQ001 wants a `Status` line on the
+      `## Release X — Title` block, so R013's 120-line cap fired on any
+      conformant active release, and RQ001 wanted a `Status` line on the
       "Active release detail" pointer that must not restate it (declaring it
-      twice is an RQ003 error). Exempt the active release from R013 and let
-      the pointer block be status-free. _(state: planned — 3 advisory
-      warnings today, 0 errors; surfaced 2026-08-07 when this repo was made
-      conformant with its own standard)_
+      twice is an RQ003 error). _(state: smoke-tested — closed 2026-08-09;
+      this file is now 0 errors / 1 warning, and the one left is the true
+      R010 file-length signal)_ R013 now skips the active release; RQ001 now
+      skips a pointer block whose release declares a valid status, and its
+      message names both places when neither does. **Two pre-existing crashes
+      surfaced while testing the relaxations**, both in the
+      "linter dies on exactly the file it should diagnose" shape: a roadmap
+      with no status lines anywhere hit `Cannot bind argument ... empty array`
+      before RQ001 could report it (six rule parameters were missing the
+      `[AllowEmptyCollection()]` that a seventh already had), and a file with
+      no release headings hit a StrictMode `$null.Count` before
+      `R000-NO-RELEASES` could fire — `ROADMAP_TEMPLATE.md` itself is such a
+      file, so the linter could not lint its own template. Both fixed.
+      **The linter had no smoke coverage at all**, which is how it drifted
+      into contradicting the template it lints;
+      [`Invoke-ModuleSmokeTest.ps1`](scripts/Invoke-ModuleSmokeTest.ps1) now
+      pins both relaxations _and_ proves each rule still fires when genuinely
+      violated. **Evidence:** module smoke exit 0; adversarially proven —
+      reverting either relaxation fails the gate at the matching assertion.
+      The first version of that coverage captured only `2>&1`, so every
+      "must fire" assertion passed vacuously while the finding scrolled past
+      on the console; it captures `*>&1` now, which is what the linter's
+      `Write-Host` findings actually use.
 
 **Shipped 2026-08-07 (from this lane):** a standards↔spec drift tripwire and an
 "every shipped audit rule is implemented by the auditor" tripwire, both in
