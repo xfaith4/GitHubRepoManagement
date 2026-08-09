@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-09 — Release 2.7 Phase A: build the live submit-PR write path (it did not exist)
+
+### Changes
+
+- **What it fixes, and a scope correction worth recording.** ROADMAP Phase A read as a credentials gate — *"the dry-run plan path is smoke-tested; only the live round trip is missing"* — and the 2026-08-08 status note called it "now unblocked" because the service could finally read a Machine-scoped token. In fact `POST /api/roadmap/repair/submit-pr` **had no live path at all**: even with `createPr=true` it returned `created=false` / `prUrl=null` and a note saying no branch was pushed. There was no checkout, commit, push, or PR creation anywhere in the route. The credentials were never what blocked it.
+- **`backend/modules/roadmap/Roadmap.PrSubmitter.ps1`** (new) — branch → write → commit → push → `POST /repos/{owner}/{repo}/pulls`. The pure parts are split out so the refusal rules are testable without a git checkout or a token: `Get-RoadmapRepairBranchName`, `Resolve-GitHubRepoSlug` (https / `git@` / `ssh://` forms; `$null` for any non-GitHub remote rather than a guessed slug), and `Test-RoadmapRepairPrPreconditions` (returns `ok`/`reason`/`category` as data).
+- **Safety properties, each asserted:** never force-pushes; never commits onto the base branch; always returns to the starting branch via `finally`; refuses a **dirty working tree** rather than sweeping unrelated operator edits into an automated PR; refuses a **no-op diff** rather than opening an empty PR; keeps the token out of the git argv via a base64 `http.extraheader` (the same approach the existing `approve-push` path uses).
+- **A refusal is `409` with a named reason and category — never `200` with `created=false`.** That distinction is the whole point: the stub's behaviour made "no PR appeared" indistinguishable from success.
+- **Run recording** — a successful submit appends a `submit-pr` event to the existing append-only repair history with `prUrl` / `prNumber` / `branch` / `repoSlug`, so a repair's preview → apply → submit life is one ordered stream rather than three.
+- Half the machinery already existed and is unchanged: `POST /api/roadmap-agent/approve-push` performs a real token-authenticated push, but deliberately stops there ("Open the PR from GitHub when ready").
+
+### Testing
+
+- Module smoke exit 0 — `submit-PR ok: 4 remote forms parsed, 4 non-GitHub refused, 8 refusal categories named, token not in cleartext`.
+- API-host smoke exit 0 (the route changed); the dry-run default is unchanged and still asserted.
+- **Not yet done: the live round trip itself.** Ben approved it 2026-08-09 with this repo as the target; the PR it opens is the Phase A artifact and is left open for review, not merged.
+
 ## 2026-08-09 — Maturity caps implemented (rules v1.5), and ROADMAP-011 demoted to warning to resolve a self-contradiction
 
 ### Changes

@@ -316,8 +316,39 @@ Phase A — Credential-gated proof:
 - [ ] Prove a live submit-PR round trip on one write-enabled repo: branch
       push, PR creation, PR visible in the target repo, run recorded.
       Closes the Release 2.4 residual and opens Phase C.
-      _(state: planned — the dry-run plan path is smoke-tested; only the
-      live round trip is missing. Explicit operator-authorized action.)_
+      _(state: backend-complete — the write path was **built** 2026-08-09;
+      the live round trip is the remaining step. Explicit
+      operator-authorized action; Ben approved 2026-08-09, target = this
+      repo.)_
+      **This item was mis-scoped, and the correction matters.** It read as a
+      credentials gate — "the dry-run plan path is smoke-tested; only the live
+      round trip is missing", and the 2026-08-08 status note said Phase A was
+      "now unblocked" because the service could read a token. In fact
+      `POST /api/roadmap/repair/submit-pr` **had no live path at all**: even
+      with `createPr=true` it returned `created=false` / `prUrl=null` and a
+      note saying no branch was pushed. There was no checkout, commit, push,
+      or PR creation anywhere in the route. The credentials were never what
+      was blocking it. Half the machinery did exist —
+      `POST /api/roadmap-agent/approve-push` performs a real token-authenticated
+      push — but it stops at the push ("Open the PR from GitHub when ready").
+      **Built 2026-08-09:**
+      [`Roadmap.PrSubmitter.ps1`](backend/modules/roadmap/Roadmap.PrSubmitter.ps1)
+      does branch → write → commit → push → `POST /repos/{o}/{r}/pulls`, with
+      the pure parts (branch naming, remote-slug parsing, the refusal matrix)
+      split out so they are testable without a checkout or a token. Safety
+      properties, each asserted: never force-pushes, never commits onto the
+      base branch, always returns to the starting branch via `finally`,
+      refuses a dirty working tree rather than sweeping unrelated edits into
+      an automated PR, refuses a no-op diff rather than opening an empty PR,
+      and keeps the token out of the git argv (base64 `http.extraheader`, the
+      same approach `approve-push` uses). A refusal returns **409 with a named
+      reason and category**, never `200` with `created=false` — the caller
+      must not be able to read "no PR" as success, which is exactly how the
+      stub behaved. The run is recorded as a `submit-pr` event in the existing
+      append-only repair history, carrying `prUrl`/`prNumber`/`branch`/`repoSlug`.
+      **Evidence so far:** module smoke exit 0 — `submit-PR ok: 4 remote forms
+      parsed, 4 non-GitHub refused, 8 refusal categories named, token not in
+      cleartext`.
 
 Phase C — Scheduled roadmap-item packaging (the prize; gated on Phase A):
 

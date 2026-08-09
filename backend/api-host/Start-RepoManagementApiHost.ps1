@@ -39,6 +39,7 @@ $executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 . (Join-Path $roadmapModuleRoot 'Roadmap.Parser.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.Auditor.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.Repairer.ps1')
+. (Join-Path $roadmapModuleRoot 'Roadmap.PrSubmitter.ps1')
 . (Join-Path $docAuditModuleRoot 'DocAudit.Scanner.ps1')
 . (Join-Path $docAuditModuleRoot 'RepositoryImprovement.Workflow.ps1')
 . (Join-Path $executionModuleRoot 'Execution.Ledger.ps1')
@@ -3214,8 +3215,15 @@ function Save-RoadmapRepairHistoryEntry {
         [string]$RoadmapPath,
         [string]$PreviewState,
         [string]$OriginalMaturityLevel,
-        [string]$Event,        # 'preview' or 'apply'
-        [string]$AppliedAt     = ''
+        [string]$Event,        # 'preview', 'apply', or 'submit-pr'
+        [string]$AppliedAt     = '',
+        # Release 2.7 Phase A — a live submit-PR records the PR it opened here,
+        # in the same append-only stream as preview/apply, so a repair's whole
+        # life is one ordered history rather than three separate ones.
+        [string]$PrUrl         = '',
+        [string]$PrNumber      = '',
+        [string]$Branch        = '',
+        [string]$RepoSlug      = ''
     )
     try {
         $historyRoot = Get-RoadmapRepairHistoryPath
@@ -3231,6 +3239,9 @@ function Save-RoadmapRepairHistoryEntry {
         }
         if (-not [string]::IsNullOrWhiteSpace($AppliedAt)) {
             $record['appliedAt'] = $AppliedAt
+        }
+        foreach ($pair in @(@{k='prUrl';v=$PrUrl}, @{k='prNumber';v=$PrNumber}, @{k='branch';v=$Branch}, @{k='repoSlug';v=$RepoSlug})) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$pair.v)) { $record[$pair.k] = [string]$pair.v }
         }
         $line = ConvertTo-Json -InputObject $record -Compress -Depth 5
         Add-Content -LiteralPath $historyFile -Value $line -Encoding UTF8 -ErrorAction SilentlyContinue
@@ -9489,24 +9500,88 @@ try {
                     else {
                         $previewId = if ($body.ContainsKey('previewId')) { [string]$body.previewId } else { '' }
                         $createPr = ($body.ContainsKey('createPr') -and [bool]$body.createPr)
-                        $branch = "roadmap-repair/$([DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss'))"
+                        $submitProposed = if ($body.ContainsKey('proposedContent') -and $body.proposedContent) { [string]$body.proposedContent } else { '' }
+                        $submitRoadmapPath = if ($body.ContainsKey('roadmapPath') -and $body.roadmapPath) { [string]$body.roadmapPath } else { '' }
+                        $submitBase = if ($body.ContainsKey('baseBranch') -and $body.baseBranch) { [string]$body.baseBranch } else { '' }
+                        $branch = Get-RoadmapRepairBranchName
                         $plan = @{
                             repoName   = $repoName
                             previewId  = $previewId
                             branch     = $branch
-                            baseBranch = 'main'
+                            baseBranch = $(if ($submitBase) { $submitBase } else { 'main' })
                             title      = "Roadmap repair: $repoName"
                             body       = ("Automated roadmap repair for {0}.{1}" -f $repoName, $(if ($previewId) { " Based on repair preview $previewId." } else { '' }))
                         }
-                        $note = if ($createPr) {
-                            'live PR creation requires a git checkout + a GitHub token with write access to the target repo (operator-verified); no branch was pushed'
-                        } else {
-                            'dry-run: set createPr=true (with a git checkout + GitHub write token) to open a live PR'
+
+                        if (-not $createPr) {
+                            Add-MetricCounter -Name 'api_requests_total'
+                            Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                                success = $true
+                                data = @{
+                                    dryRun = $true; created = $false; prUrl = $null; plan = $plan
+                                    note = 'dry-run: set createPr=true (with proposedContent and a GitHub write token) to open a live PR'
+                                }
+                            }
                         }
-                        Add-MetricCounter -Name 'api_requests_total'
-                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
-                            success = $true
-                            data = @{ dryRun = (-not $createPr); created = $false; prUrl = $null; plan = $plan; note = $note }
+                        else {
+                            # Release 2.7 Phase A — the live round trip. Resolve the
+                            # repo's checkout + roadmap path the same way the repair
+                            # preview does, then branch/commit/push/open the PR.
+                            $submitSettings = Get-HostSettings
+                            $submitToken = Get-ConfiguredGitHubToken -Settings $submitSettings
+                            $submitRepoPath = ''
+                            $submitRoadmapTtl = Get-RoadmapCacheTtlSeconds -Settings $submitSettings
+                            $submitCache = Get-RoadmapFromCache -TtlSeconds $submitRoadmapTtl
+                            if ($submitCache.hit -and $submitCache.entries) {
+                                $submitEntry = @($submitCache.entries) | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1
+                                if ($null -ne $submitEntry) {
+                                    $submitRepoPath = [string](Get-ValueOrDefault $submitEntry.repoPath '')
+                                    if ([string]::IsNullOrWhiteSpace($submitRoadmapPath)) {
+                                        $submitRoadmapPath = [string](Get-ValueOrDefault $submitEntry.roadmapPath '')
+                                    }
+                                }
+                            }
+
+                            $submitResult = Invoke-RoadmapRepairPrSubmission `
+                                -RepoName $repoName -RepoPath $submitRepoPath -RoadmapPath $submitRoadmapPath `
+                                -ProposedContent $submitProposed -PreviewId $previewId -Token $submitToken `
+                                -BaseBranch $submitBase -BranchName $branch `
+                                -ApiHeaders (Get-GitHubApiHeaders -Token $submitToken)
+
+                            Add-MetricCounter -Name 'api_requests_total'
+                            if ($submitResult.refused) {
+                                # A refusal is a 409, never a 200-with-created=false:
+                                # the caller must not be able to read "no PR" as success.
+                                Write-HostLog ("[TRACE] roadmap.repair.submit-pr correlationId={0} repoName={1} REFUSED category={2}" -f $correlationId, $repoName, $submitResult.category)
+                                Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                                    success = $false
+                                    error = [string]$submitResult.reason
+                                    category = [string]$submitResult.category
+                                    data = @{ dryRun = $false; created = $false; prUrl = $null; plan = $plan }
+                                }
+                            }
+                            else {
+                                Save-RoadmapRepairHistoryEntry -PreviewId $previewId -RepoName $repoName `
+                                    -RoadmapPath $submitRoadmapPath -PreviewState 'submitted' -OriginalMaturityLevel '' `
+                                    -Event 'submit-pr' -PrUrl ([string]$submitResult.prUrl) `
+                                    -PrNumber ([string]$submitResult.prNumber) -Branch ([string]$submitResult.branch) `
+                                    -RepoSlug ([string]$submitResult.slug)
+                                Write-HostLog ("[TRACE] roadmap.repair.submit-pr correlationId={0} repoName={1} created=true pr={2}" -f $correlationId, $repoName, $submitResult.prUrl)
+                                Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                                    success = $true
+                                    data = @{
+                                        dryRun = $false
+                                        created = $true
+                                        prUrl = [string]$submitResult.prUrl
+                                        prNumber = $submitResult.prNumber
+                                        branch = [string]$submitResult.branch
+                                        baseBranch = [string]$submitResult.baseBranch
+                                        repoSlug = [string]$submitResult.slug
+                                        plan = $plan
+                                        note = 'live PR opened; nothing was merged'
+                                    }
+                                }
+                            }
                         }
                     }
                 }

@@ -24,6 +24,7 @@ $roadmapParser = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Parse
 $roadmapAuditor = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Auditor.ps1'
 $roadmapEvaluatorPath = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Evaluator.ps1'
 $roadmapRepairerPath = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Repairer.ps1'
+$roadmapPrSubmitterPath = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.PrSubmitter.ps1'
 $docAuditScanner = Join-Path $WorkspaceRoot 'backend\modules\docaudit\DocAudit.Scanner.ps1'
 $docStandards = Join-Path $WorkspaceRoot 'backend\config\doc-standards.json'
 $agentBudgetModule = Join-Path $WorkspaceRoot 'backend\modules\agent-runs\BudgetLedger.ps1'
@@ -33,7 +34,7 @@ Write-Step 'Loading reconciliation module functions only'
 Write-Host 'Loaded reconciliation module successfully' -ForegroundColor Green
 
 Write-Step 'Validating copied module files exist'
-@($docInventory, $docQueue, $docBatch, $reconcile, $reconcileModular, $reconcileTests, $roadmapParser, $roadmapAuditor, $roadmapEvaluatorPath, $roadmapRepairerPath, $docAuditScanner, $docStandards, $agentBudgetModule) | ForEach-Object {
+@($docInventory, $docQueue, $docBatch, $reconcile, $reconcileModular, $reconcileTests, $roadmapParser, $roadmapAuditor, $roadmapEvaluatorPath, $roadmapRepairerPath, $roadmapPrSubmitterPath, $docAuditScanner, $docStandards, $agentBudgetModule) | ForEach-Object {
     if (-not (Test-Path -LiteralPath $_)) {
         throw "Missing module file: $_"
     }
@@ -578,6 +579,88 @@ Write-Host '  blockquote status form detected (activeReleaseCount=1, no ROADMAP-
 # declaring status twice. Both relaxations are pinned here alongside proof they
 # still fire when genuinely violated — a relaxed rule that no longer detects
 # anything is worse than the false positive it replaced.
+# Release 2.7 Phase A. Until 2026-08-09 submit-pr was a plan builder that
+# returned created=false even with createPr=true, so "no PR appeared" was
+# indistinguishable from success. Every refusal now carries a NAMED reason, and
+# these assertions are what stop it regressing to a silent no-op.
+Write-Step 'Roadmap submit-PR — smoke: slug parsing and the refusal matrix'
+. (Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.PrSubmitter.ps1')
+
+foreach ($case in @(
+    @{ url = 'https://github.com/xfaith4/GitHubRepoManagement.git'; slug = 'xfaith4/GitHubRepoManagement' }
+    @{ url = 'https://github.com/xfaith4/GitHubRepoManagement';     slug = 'xfaith4/GitHubRepoManagement' }
+    @{ url = 'git@github.com:xfaith4/GitHubRepoManagement.git';     slug = 'xfaith4/GitHubRepoManagement' }
+    @{ url = 'ssh://git@github.com/xfaith4/GitHubRepoManagement';   slug = 'xfaith4/GitHubRepoManagement' }
+)) {
+    $parsed = Resolve-GitHubRepoSlug -RemoteUrl $case.url
+    if ($null -eq $parsed -or $parsed.slug -ne $case.slug) {
+        throw "Resolve-GitHubRepoSlug failed for '$($case.url)': expected '$($case.slug)', got '$(if ($null -ne $parsed) { $parsed.slug } else { '<null>' })'"
+    }
+}
+# A non-GitHub remote must refuse, not have a slug guessed for it.
+foreach ($badUrl in @('https://gitlab.com/o/r.git', 'C:\some\local\path', '', 'https://github.example.com/o/r')) {
+    if ($null -ne (Resolve-GitHubRepoSlug -RemoteUrl $badUrl)) { throw "Resolve-GitHubRepoSlug must return null for a non-GitHub remote: '$badUrl'" }
+}
+
+$okSlug = Resolve-GitHubRepoSlug -RemoteUrl 'https://github.com/o/r.git'
+$baseArgs = @{
+    RepoPath = 'C:\repo'; RoadmapPath = 'C:\repo\ROADMAP.md'; ProposedContent = 'new'
+    CurrentContent = 'old'; Token = 'tok'; Slug = $okSlug; IsGitRepo = $true
+    WorkingTreeDirty = $false; BaseBranch = 'main'
+}
+if (-not (Test-RoadmapRepairPrPreconditions @baseArgs).ok) { throw 'A fully valid submit-PR request must pass preconditions' }
+
+# Each refusal must fire for its own reason and carry a category.
+foreach ($refusal in @(
+    @{ name = 'no repo path';       override = @{ RepoPath = '' };                              category = 'validation' }
+    @{ name = 'not a git repo';     override = @{ IsGitRepo = $false };                         category = 'validation' }
+    @{ name = 'no roadmap path';    override = @{ RoadmapPath = '' };                           category = 'validation' }
+    @{ name = 'no proposedContent'; override = @{ ProposedContent = '' };                       category = 'validation' }
+    @{ name = 'no-op change';       override = @{ ProposedContent = 'same'; CurrentContent = 'same' }; category = 'no-op' }
+    @{ name = 'no token';           override = @{ Token = '' };                                 category = 'auth' }
+    @{ name = 'non-GitHub remote';  override = @{ Slug = $null };                               category = 'validation' }
+    @{ name = 'dirty tree';         override = @{ WorkingTreeDirty = $true };                   category = 'conflict' }
+)) {
+    $args = @{} + $baseArgs
+    foreach ($k in $refusal.override.Keys) { $args[$k] = $refusal.override[$k] }
+    $verdict = Test-RoadmapRepairPrPreconditions @args
+    if ($verdict.ok) { throw "submit-PR must refuse '$($refusal.name)' but it passed preconditions" }
+    if ($verdict.category -ne $refusal.category) { throw "submit-PR refusal '$($refusal.name)' expected category '$($refusal.category)', got '$($verdict.category)'" }
+    if ([string]::IsNullOrWhiteSpace($verdict.reason)) { throw "submit-PR refusal '$($refusal.name)' must carry a named reason, not an empty string" }
+}
+
+# Branch names must be unique per second and never collide with the base branch.
+$b1 = Get-RoadmapRepairBranchName -NowUtc ([datetime]'2026-08-09T06:00:00Z')
+$b2 = Get-RoadmapRepairBranchName -NowUtc ([datetime]'2026-08-09T06:00:01Z')
+if ($b1 -eq $b2) { throw 'Roadmap repair branch names must differ across timestamps' }
+if ($b1 -notlike 'roadmap-repair/*') { throw "Unexpected repair branch name format: $b1" }
+# The token must never appear verbatim in the git args.
+$tokenArgs = (Get-GitTokenPushArgs -Token 'super-secret-token') -join ' '
+if ($tokenArgs -match 'super-secret-token') { throw 'The GitHub token must not appear in cleartext in git push arguments' }
+if (@(Get-GitTokenPushArgs -Token '').Count -ne 0) { throw 'No token means no auth args (SSH remotes and operator-run hosts push without one)' }
+# The entry point must RETURN a named refusal for empty inputs, not throw a
+# parameter-binding error. Declaring RepoPath/RoadmapPath/ProposedContent as
+# Mandatory made PowerShell reject the empty string before the precondition
+# check ran, so the route answered 500 "Cannot bind argument to parameter
+# 'RepoPath'" instead of the 409 that says what to fix. Caught by the api-host
+# smoke on 2026-08-09; asserted here because it is cheaper to catch at this
+# layer than after a 15-minute host run.
+foreach ($empty in @(
+    @{ name = 'empty repoPath';        args = @{ RepoName = 'x'; RepoPath = '';        RoadmapPath = 'C:\r\ROADMAP.md'; ProposedContent = 'new' } }
+    @{ name = 'empty roadmapPath';     args = @{ RepoName = 'x'; RepoPath = 'C:\r';    RoadmapPath = '';                ProposedContent = 'new' } }
+    @{ name = 'empty proposedContent'; args = @{ RepoName = 'x'; RepoPath = 'C:\r';    RoadmapPath = 'C:\r\ROADMAP.md'; ProposedContent = '' } }
+)) {
+    $submitOutcome = $null
+    $submitSplat = $empty.args   # splatting needs a plain variable, not an expression
+    try { $submitOutcome = Invoke-RoadmapRepairPrSubmission @submitSplat }
+    catch { throw "Invoke-RoadmapRepairPrSubmission must RETURN a refusal for '$($empty.name)', not throw: $($_.Exception.Message)" }
+    if ($null -eq $submitOutcome) { throw "Invoke-RoadmapRepairPrSubmission returned null for '$($empty.name)'" }
+    if (-not $submitOutcome.refused) { throw "Invoke-RoadmapRepairPrSubmission must refuse '$($empty.name)'" }
+    if ($submitOutcome.created) { throw "Invoke-RoadmapRepairPrSubmission must not report created=true for '$($empty.name)'" }
+    if ([string]::IsNullOrWhiteSpace([string]$submitOutcome.reason)) { throw "Refusal for '$($empty.name)' must carry a named reason" }
+}
+Write-Host '  submit-PR ok: 4 remote forms parsed, 4 non-GitHub refused, 8 refusal categories named, 3 empty-input refusals returned (not thrown), token not in cleartext' -ForegroundColor DarkGray
+
 Write-Step 'Roadmap structure linter — smoke: R013/RQ001 relaxations still detect real violations'
 $structureLinter = Join-Path $WorkspaceRoot 'tools\Test-RoadmapStructure.ps1'
 if (-not (Test-Path -LiteralPath $structureLinter)) { throw "Test-RoadmapStructure.ps1 not found at: $structureLinter" }

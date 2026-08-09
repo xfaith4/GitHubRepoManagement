@@ -1521,7 +1521,26 @@ try {
     foreach ($f in @('branch', 'baseBranch', 'title', 'body')) {
         if (-not ($submitPr.Json.data.plan.PSObject.Properties.Name -contains $f)) { throw "/api/roadmap/repair/submit-pr plan missing '$f'" }
     }
-    Write-Host ("  submit-pr ok: dry-run plan (branch={0}), no-repoName -> 400" -f $submitPr.Json.data.plan.branch) -ForegroundColor DarkGray
+    if ($submitPr.Json.data.created -ne $false) { throw '/api/roadmap/repair/submit-pr dry-run must report created=false' }
+
+    # Release 2.7 Phase A — the live branch must be REACHABLE and must refuse
+    # loudly. Before 2026-08-09 createPr=true returned 200 with created=false,
+    # so a caller could not tell "refused" from "opened a PR". The refusal is
+    # now 409 with a named reason; asserting it here exercises the live code
+    # path without opening a PR, because the precondition check runs before any
+    # git or GitHub call.
+    $submitPrLive = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/repair/submit-pr" -Body @{
+        repoName = 'github-repo-management'; previewId = 'smoke-preview'; createPr = $true
+    }
+    if ([int]$submitPrLive.StatusCode -ne 409) {
+        throw "/api/roadmap/repair/submit-pr with createPr=true and no proposedContent must refuse with 409, got $($submitPrLive.StatusCode). Body=$($submitPrLive.Content)"
+    }
+    if ($submitPrLive.Json.success -ne $false) { throw 'A submit-pr refusal must report success=false, never success=true with created=false' }
+    if ([string]::IsNullOrWhiteSpace([string]$submitPrLive.Json.error)) { throw 'A submit-pr refusal must name its reason' }
+    if ([string]$submitPrLive.Json.category -ne 'validation') {
+        throw "submit-pr refusal for missing proposedContent expected category 'validation', got '$($submitPrLive.Json.category)'"
+    }
+    Write-Host ("  submit-pr ok: dry-run plan (branch={0}) created=false, no-repoName -> 400, live-without-content -> 409 '{1}'" -f $submitPr.Json.data.plan.branch, $submitPrLive.Json.category) -ForegroundColor DarkGray
 
     Write-Host '[STEP] Log tail route' -ForegroundColor Cyan
     $sinceIso = (Get-Date).ToUniversalTime().AddHours(-6).ToString('o')

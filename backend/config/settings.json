@@ -1,31 +1,31 @@
 {
-  "docReview": {
-    "generateQueue": true,
+  "inventory": {
+    "localRoots": [
+      "F:\\Development\\GitHubRepoManagement\\output\\smoke\\api-host\\portfolio-fixture-repos"
+    ],
     "maxDepth": 3,
-    "generateBatchPlan": true
+    "includeNonGitFolders": false
   },
-  "schemaVersion": "v1",
   "secrets": {
     "gitHubTokenEnvVar": "GITHUB_TOKEN"
-  },
-  "inventory": {
-    "maxDepth": 3,
-    "localRoots": [
-      "F:\\Development\\20_Staging"
-    ],
-    "includeNonGitFolders": false
   },
   "retention": {
     "days": 30,
     "maxSnapshotDays": 365
   },
+  "schemaVersion": "v1",
+  "docReview": {
+    "generateQueue": true,
+    "maxDepth": 3,
+    "generateBatchPlan": true
+  },
   "reconcile": {
-    "ownerType": "Auto",
     "retry": {
-      "maxAttempts": 3,
+      "baseDelayMs": 300,
       "maxDelayMs": 2000,
-      "baseDelayMs": 300
+      "maxAttempts": 3
     },
-    "gitHubOwner": "xfaith4"
+    "gitHubOwner": "xfaith4",
+    "ownerType": "Auto"
   }
 }
