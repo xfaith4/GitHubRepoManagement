@@ -76,6 +76,7 @@ $persistenceModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\persistence'
 . (Join-Path $commonRoot 'NotificationHub.ps1')
 . (Join-Path $PSScriptRoot 'ApiHost.ErrorHandling.ps1')
 . (Join-Path $PSScriptRoot 'RequestDeadline.ps1')
+. (Join-Path $PSScriptRoot 'GitHubRateLimit.ps1')
 
 $script:StatusCacheMemory = @{}
 $script:StatusCacheDefaultTtlSeconds = 120
@@ -2340,6 +2341,7 @@ function Get-GitHubCommitCountViaApi {
 
     try {
         $response = Invoke-WebRequest -Uri $uri -Headers $Headers -Method Get
+        $null = Update-GitHubRateLimitSnapshot -Headers $response.Headers
         $bodyText = [string]$response.Content
         $bodyItems = @()
         if (-not [string]::IsNullOrWhiteSpace($bodyText)) {
@@ -2386,7 +2388,14 @@ function Get-LatestGitHubWorkflowRunViaApi {
     }
 
     try {
-        $response = Invoke-RestMethod -Uri $uri -Headers $Headers -Method Get
+        # Invoke-WebRequest so the rate-limit headers survive: this is the LAST
+        # GitHub call an insights sweep makes (once per repo, after the commit
+        # counts), so its headers carry the most current remaining figure.
+        $rawResponse = Invoke-WebRequest -Uri $uri -Headers $Headers -Method Get -UseBasicParsing
+        $null = Update-GitHubRateLimitSnapshot -Headers $rawResponse.Headers
+        $responseBody = [string]$rawResponse.Content
+        if ([string]::IsNullOrWhiteSpace($responseBody)) { return $null }
+        $response = ConvertFrom-Json -InputObject $responseBody
         $runs = @(Get-ObjectPropertyValue -InputObject $response -PropertyName 'workflow_runs' -Default @())
         if ($runs.Count -eq 0) {
             return $null
@@ -2678,6 +2687,7 @@ function Get-GitHubReposViaApi {
     )
 
     $headers = Get-GitHubApiHeaders -Token $Token
+    Clear-GitHubRateLimitSnapshot
 
     $openPrCounts = @{}
     try {
@@ -2704,7 +2714,16 @@ function Get-GitHubReposViaApi {
     $repoMap = @{}
     foreach ($uri in $uris) {
         try {
-            $reposRaw = @((Invoke-RestMethod -Uri $uri -Headers $headers -Method Get) | ForEach-Object { $_ })
+            # Invoke-WebRequest, not Invoke-RestMethod: the rate-limit headers
+            # are only reachable on the response object, and Invoke-RestMethod
+            # discards them on Windows PowerShell.
+            $reposResponse = Invoke-WebRequest -Uri $uri -Headers $headers -Method Get -UseBasicParsing
+            $null = Update-GitHubRateLimitSnapshot -Headers $reposResponse.Headers
+            $reposBody = [string]$reposResponse.Content
+            $reposRaw = @()
+            if (-not [string]::IsNullOrWhiteSpace($reposBody)) {
+                $reposRaw = @((ConvertFrom-Json -InputObject $reposBody) | ForEach-Object { $_ })
+            }
             foreach ($repoItem in $reposRaw) {
                 if ($null -eq $repoItem -or -not $repoItem.name) { continue }
 
@@ -2786,7 +2805,10 @@ function Get-GitHubReposViaApi {
         totalRepos = @($allRepos).Count
         fetchedRepos = @($repos).Count
         repos = $repos
-        rateLimit = $null
+        # Observed, not assumed: whatever the last GitHub response reported.
+        # Still $null when no call returned parseable headers — a blank readout
+        # is honest, a fabricated 0/0 is not.
+        rateLimit = Get-GitHubRateLimitSnapshot
     }
 }
 
@@ -6471,10 +6493,25 @@ try {
                 # turns that silence into an alert.
                 'GET /api/automation/status' {
                     Add-MetricCounter -Name 'api_requests_total'
-                    $autoHealth = Get-AutomationHealth -WorkspaceRoot $WorkspaceRoot -Settings (Get-HostSettings)
+                    $healthSettings = Get-HostSettings
+                    $autoHealth = Get-AutomationHealth -WorkspaceRoot $WorkspaceRoot -Settings $healthSettings
+                    # Phase C's packaging cron has its own history file and its
+                    # own health reader — Get-AutomationHealth deliberately reads
+                    # only the doc-refinement file, so a packaging cron that
+                    # stopped was invisible here. Two readers, never a merged
+                    # file: each scheduler is judged by its own evidence.
+                    $packagingHealth = Get-PackagingHealth -WorkspaceRoot $WorkspaceRoot -Settings $healthSettings
+
+                    # The doc-refinement fields stay at the top level so the
+                    # existing badge keeps working unchanged; packaging is added
+                    # beside them rather than replacing the shape.
+                    $healthPayload = [ordered]@{}
+                    foreach ($property in $autoHealth.PSObject.Properties) { $healthPayload[$property.Name] = $property.Value }
+                    $healthPayload['kind'] = 'doc-refinement'
+                    $healthPayload['packaging'] = $packagingHealth
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
-                        data    = $autoHealth
+                        data    = $healthPayload
                     }
                 }
                 # ── Release 2.7 Phase C — scheduled roadmap-item packaging ──────
@@ -7238,7 +7275,17 @@ try {
                         totalRepos = @($repos).Count
                         fetchedRepos = @($repos).Count
                         repos = $repos
-                        rateLimit = $null
+                        # The gh fallback has no response object to read headers
+                        # from, so ask GitHub directly. GET /rate_limit does not
+                        # itself consume quota. Best-effort: a failure here
+                        # leaves the readout blank, exactly as before, and must
+                        # never fail the repo listing that already succeeded.
+                        rateLimit = $(
+                            try {
+                                $ghRateRaw = ((& gh api rate_limit 2>$null) | Out-String).Trim()
+                                if ($LASTEXITCODE -eq 0) { ConvertFrom-GitHubRateLimitPayload -Payload $ghRateRaw } else { $null }
+                            } catch { $null }
+                        )
                     }
                 }
                 'GET /api/status/cache' {

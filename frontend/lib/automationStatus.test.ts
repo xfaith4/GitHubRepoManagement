@@ -93,6 +93,38 @@ describe('resolveAutomationStatus', () => {
   });
 });
 
+// Two schedulers now report health (doc refinement and Phase C packaging), so
+// the label has to say WHICH one stopped. Identical badges would make a dead
+// packaging cron indistinguishable from a dead doc cron at a glance.
+describe('resolveAutomationStatus — subject labelling', () => {
+  it('names the subject in every state', () => {
+    expect(resolveAutomationStatus(null, 'Packaging').label).toBe('Packaging unknown');
+    expect(resolveAutomationStatus({ enabled: false }, 'Packaging').label).toBe('Packaging off');
+    expect(resolveAutomationStatus({ enabled: true, intervalMinutes: 60, runCount: 1, minutesSinceLastRun: 5 }, 'Packaging').label)
+      .toBe('Packaging healthy');
+    expect(
+      resolveAutomationStatus(
+        { enabled: true, alert: { severity: 'error', code: 'packaging-overdue', message: 'stopped' } },
+        'Packaging'
+      ).label
+    ).toBe('Packaging failing');
+  });
+
+  it('defaults to Automation so existing callers are unchanged', () => {
+    expect(resolveAutomationStatus(null).label).toBe('Automation unknown');
+    expect(resolveAutomationStatus({ enabled: false }).label).toBe('Automation off');
+  });
+
+  it('passes the backend alert code through so the two schedulers stay distinguishable', () => {
+    const view = resolveAutomationStatus(
+      { enabled: true, alert: { severity: 'error', code: 'packaging-overdue', message: 'no packaging run in 300 minutes' } },
+      'Packaging'
+    );
+    expect(view.code).toBe('packaging-overdue');
+    expect(view.detail).toContain('no packaging run');
+  });
+});
+
 describe('formatMinutesAgo', () => {
   it('formats sub-hour, hour, and day scales', () => {
     expect(formatMinutesAgo(0)).toBe('just now');

@@ -43,6 +43,15 @@ backend/modules/output/**
 !/evidence/**/
 !/evidence/**/.gitkeep
 
+# Agent worklogs at the repository root. The 2026-07-15 cleanup archived these
+# to docs/history/worklogs/ and they re-accrued within three weeks, so the
+# convention is enforced rather than restated: keep worklogs under
+# docs/history/worklogs/<date>-<topic>/ (see that directory's README), and a
+# module-smoke tripwire fails if one is tracked at the root again.
+/findings.md
+/progress.md
+/task_plan.md
+
 # Saved reports
 /reports/**
 !/reports/**/

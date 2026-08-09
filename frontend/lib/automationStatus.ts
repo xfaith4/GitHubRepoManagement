@@ -24,6 +24,14 @@ export interface AutomationHealthPayload {
   consecutiveFailures?: number;
   healthy?: boolean;
   alert?: { severity?: string; code?: string; message?: string } | null;
+  /** Which scheduler this payload describes. */
+  kind?: string;
+  /**
+   * Release 2.7 Phase C's packaging scheduler, reported by its own reader over
+   * its own history file. Two schedulers, two files, two verdicts — merging
+   * them would let a live packaging cron mask a dead doc cron.
+   */
+  packaging?: AutomationHealthPayload | null;
 }
 
 export interface AutomationStatusView {
@@ -67,13 +75,19 @@ export function formatMinutesAgo(minutes: number | null | undefined): string {
  * switched off is not a failure.
  */
 export function resolveAutomationStatus(
-  payload: AutomationHealthPayload | null | undefined
+  payload: AutomationHealthPayload | null | undefined,
+  /**
+   * Noun this badge describes. Two schedulers now report health, so the label
+   * has to say which one stopped — "Automation failing" on both would be
+   * indistinguishable at a glance.
+   */
+  subject = 'Automation'
 ): AutomationStatusView {
   if (!payload) {
     return {
       severity: 'unknown',
-      label: 'Automation unknown',
-      detail: 'Automation status is unavailable — the status endpoint did not respond.',
+      label: `${subject} unknown`,
+      detail: `${subject} status is unavailable — the status endpoint did not respond.`,
       needsAttention: false,
       code: null,
     };
@@ -82,8 +96,8 @@ export function resolveAutomationStatus(
   if (!payload.enabled) {
     return {
       severity: 'off',
-      label: 'Automation off',
-      detail: 'Scheduled automation is disabled. Enable it in Settings to keep favorites assessed automatically.',
+      label: `${subject} off`,
+      detail: `Scheduled ${subject.toLowerCase()} is disabled. Enable it in Settings to keep favorites assessed automatically.`,
       needsAttention: false,
       code: null,
     };
@@ -94,7 +108,7 @@ export function resolveAutomationStatus(
     const severity: AutomationSeverity = alert.severity === 'error' ? 'error' : 'warning';
     return {
       severity,
-      label: severity === 'error' ? 'Automation failing' : 'Automation degraded',
+      label: severity === 'error' ? `${subject} failing` : `${subject} degraded`,
       detail: alert.message,
       needsAttention: true,
       code: alert.code ?? null,
@@ -105,7 +119,7 @@ export function resolveAutomationStatus(
   const ago = formatMinutesAgo(payload.minutesSinceLastRun);
   return {
     severity: 'ok',
-    label: 'Automation healthy',
+    label: `${subject} healthy`,
     detail:
       payload.runCount && payload.runCount > 0
         ? `Last run ${ago}; running every ${interval} minutes.`

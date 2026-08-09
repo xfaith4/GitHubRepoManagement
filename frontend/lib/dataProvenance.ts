@@ -118,9 +118,29 @@ export function isCarriedOverCount(liveRepoCount: number | undefined, persistedC
   return isKnownEmptyScope(liveRepoCount) && Number.isFinite(persistedCount) && persistedCount > 0;
 }
 
-/** Hint explaining why repo actions are unavailable, or null when they are. */
-export function repoActionsBlockedReason(liveRepoCount: number): string | null {
-  return liveRepoCount > 0
-    ? null
-    : 'No repositories are in scope. Scan a workspace first — set the workspace path in Settings, then Refresh.';
+/**
+ * Hint explaining why repo actions are unavailable, or null when they are.
+ *
+ * When a configured root is not on disk, that IS the reason — so the hint names
+ * the path and the thing to check, rather than telling the operator to "scan a
+ * workspace first" when they already have one configured and a red alert above
+ * is naming the missing path. The generic remedy stays for the genuine
+ * nothing-configured / nothing-found case, where it is the correct next step.
+ */
+export function repoActionsBlockedReason(
+  liveRepoCount: number,
+  missingRoots: readonly string[] = []
+): string | null {
+  if (liveRepoCount > 0) return null;
+
+  const missing = missingRoots.filter(root => typeof root === 'string' && root.trim().length > 0);
+  if (missing.length > 0) {
+    const named = missing.length === 1
+      ? missing[0]
+      : `${missing[0]} (+${missing.length - 1} more)`;
+    return `No repositories are in scope: the configured workspace path ${named} was not found. ` +
+      'Reconnect the drive or correct the path in Settings, then Refresh.';
+  }
+
+  return 'No repositories are in scope. Scan a workspace first — set the workspace path in Settings, then Refresh.';
 }

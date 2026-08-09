@@ -2,6 +2,39 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-09 — Non-blocker sweep: approval UI, packaging health, rate limit, worklogs, zero-scope hint
+
+### Changes
+
+- **What it closes.** Every recorded non-blocker that did not need an operator decision outside this repository: Release 2.7 Phase C's two (no approval UI, no packaging overdue alert), Lane 0.2's permanently-null rate-limit readout, Lane 0.4's re-accruing root worklogs, and Lane 0.6's generic zero-scope action hint. Lanes 0.3, 0.4 and 0.6 are now closed entirely.
+- **`frontend/components/PackagedItemQueue.tsx` + `frontend/lib/packagedItems.ts`** (new) — the approval gate as a surface rather than a hand-written POST. The pure module **mirrors `Test-PackagedItemTransition`'s matrix instead of reinventing it**, so the UI cannot offer an action the backend answers with a 409, nor hide one it would allow; `dispatched` and `rejected` are terminal in both places. Rejection prompts for a reason and writes it to the append-only audit trail.
+- **A dispatched packet is not labelled "done".** Approval enqueues to the operator runner, which stops at a reviewed branch — no push, no PR, no merge. A "Complete" badge here would be exactly the decorative badge the roadmap's guardrails forbid, so a unit test asserts the label never reads done/complete/merged.
+- **`Get-PackagingHealth` / `Get-PackagingRunOutcome`** in `Automation.RoadmapPackaging.ps1` — the second health reader, over `packaging-runs.jsonl`, **never a merged file**. `Get-AutomationHealth` reads the doc-refinement history alone on purpose (a merged file would let a live packaging cron mask a dead doc cron); that left the reverse case invisible. Alert codes are packaging-specific (`packaging-never-ran`, `packaging-overdue`, `packaging-run-failed`, `packaging-run-partial`) because `automation-overdue` on both would leave a webhook unable to say which scheduler stopped.
+- **A skip is not a failure.** An over-budget repo is the quota guard doing its job, so a packaging run that only skipped classifies `ok`. Treating it otherwise would alert nightly on a healthy portfolio and train the operator to ignore the badge.
+- **`GET /api/automation/status`** gains a `packaging` block beside the unchanged doc-refinement fields, and both now self-identify (`kind`). `AutomationStatusBadge` takes a `subject`, so the Operations tab shows two distinct badges instead of two identical ones.
+- **`backend/api-host/GitHubRateLimit.ps1`** (new) — rate-limit parsing and the last-observation snapshot, in a dot-sourced file (the shape `RequestDeadline.ps1` uses) because a helper defined inside the host script cannot be loaded without starting the listener, and a parser reachable only through a live HTTP request is a parser nothing tests. Three calls moved from `Invoke-RestMethod` to `Invoke-WebRequest`, which is the only way the headers survive on Windows PowerShell.
+- **The rate-limit item named one call site and there were two.** A source tripwire over the whole file caught `POST /api/github/status`'s `gh` CLI fallback returning its own hardcoded null. That path has no response object, so it resolves from `GET /rate_limit` (which does not itself consume quota) through a parser that **reuses the header parser** — two GitHub paths emitting differently-shaped readouts is how one of them ends up rendering blank.
+- **Absent headers still yield `null`, never a zeroed object.** A fabricated "0/5000" would read as an exhausted quota and look like a real measurement; a blank readout is at least honest.
+- **`repoActionsBlockedReason`** now takes the same `missingRoots` the red alert reads. When a configured root is not on disk that IS the reason nothing is in scope, so the hint names the path and what to check rather than telling the operator to scan a workspace they have already configured. Blank entries fall back to the generic remedy instead of manufacturing a claim about nothing.
+- **Root worklogs archived to `docs/history/worklogs/2026-08-08-guided-improvement/`** — a dated subdirectory, not the directory root, because the three files already there are a **different** set and overwriting real history to satisfy a filename would have destroyed it.
+
+### Testing
+
+- **Module smoke exit 0** — `both header shapes parsed, /rate_limit payload shares the shape, newest observation wins, absent headers stay null` (PS 5.1's `Dictionary[string,string]` and PS 7's `Dictionary[string,string[]]` are both asserted; a parser handling one silently reads blank on the other); `packaging health ok: never-ran/overdue/partial named packaging-specifically, skips are not failures, doc runs cannot mask it`; `no worklogs tracked at the repository root; the convention is documented`.
+- **The independence proof matters most.** A workspace holding only a fresh doc-refinement run still reports `packaging-never-ran` — the two readers are independent in both directions, which is the whole point of keeping the files separate.
+- **API-host smoke exit 0** — `automation status ok: … packaging reported separately (kind=roadmap-packaging)`, asserting both blocks are present and self-identify so the route can never return the doc verdict twice.
+- **`npm run test:unit` 112 passing across 8 files** (was 91 across 7); `npm run typecheck` and `npm run build` exit 0.
+
+### Enforced, not just fixed
+
+- The worklog convention had lived only in a completed-release note, which is why the files came back within three weeks of being archived. All three defences ship together: a `.gitignore` rule stops new ones appearing, `docs/history/worklogs/README.md` states the convention where worklogs are actually written, and a module-smoke tripwire fails the required pre-commit gate if one is tracked at the root again — gitignore alone cannot stop an already-tracked file or a `git add -f`.
+- The rate-limit tripwire asserts across the whole host file rather than the line number the roadmap item named. That is what found the second offender.
+
+### Still open, and why
+
+- **Lane 0.2 `Checks: Read`** and **the portal TLS certificate password** need an action outside this repository (a GitHub PAT grant; recovering or regenerating a certificate). Both are reported, neither is guessed at.
+- **Lane 0.5's two UX items** (bulk-scope confirmation threshold, six-tab progressive disclosure) stay deferred: both were parked for a product decision, not for want of engineering time.
+
 ## 2026-08-09 — Release 2.7 Phase C: scheduled roadmap-item packaging
 
 ### Changes

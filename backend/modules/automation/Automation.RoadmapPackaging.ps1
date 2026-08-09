@@ -66,6 +66,40 @@ function _Pack_UtcNow {
     return (Get-Date).ToUniversalTime().ToString('o')
 }
 
+function _Pack_ToUtc {
+    <#
+        Parse a timestamp to UTC without double-converting.
+
+        ConvertFrom-Json returns Kind=Unspecified for a round-trip string that
+        already holds the UTC instant; calling ToUniversalTime() on that shifts
+        it again by the local offset, which puts `lastRunAt` in the future and
+        makes overdue detection silently impossible. That bug was found and
+        fixed in _Auto_ToUtc — this mirrors the fixed behaviour rather than
+        reintroducing it in a second reader.
+    #>
+    param([object]$Value)
+
+    if ($null -eq $Value) { return $null }
+
+    $dt = [datetime]::MinValue
+    if ($Value -is [datetime]) {
+        $dt = [datetime]$Value
+    }
+    else {
+        $text = [string]$Value
+        if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+        if (-not [datetime]::TryParse($text, [System.Globalization.CultureInfo]::InvariantCulture,
+                [System.Globalization.DateTimeStyles]::RoundtripKind, [ref]$dt)) {
+            return $null
+        }
+    }
+
+    if ($dt.Kind -eq [System.DateTimeKind]::Unspecified) {
+        return [datetime]::SpecifyKind($dt, [System.DateTimeKind]::Utc)
+    }
+    return $dt.ToUniversalTime()
+}
+
 function _Pack_NewId {
     param([string]$Prefix = 'pkt')
     return ("{0}-{1}-{2}" -f $Prefix, (Get-Date -Format 'yyyyMMdd-HHmmss'), ([guid]::NewGuid().ToString('N').Substring(0, 8)))
@@ -738,6 +772,179 @@ function Get-PackagingRunHistory {
 # ---------------------------------------------------------------------------
 # The approval queue and its state machine
 # ---------------------------------------------------------------------------
+
+function Get-PackagingRunOutcome {
+    <#
+    .SYNOPSIS
+        Classify one packaging run as ok / partial / failed.
+    .DESCRIPTION
+        Deliberately mirrors Get-AutomationRunOutcome's contract so the two
+        schedulers cannot disagree about what "degraded" means: errors with no
+        output is `failed`, errors alongside output is `partial`, and a run that
+        packaged nothing because nothing was ready is `ok` — a clean portfolio
+        must not alert every night.
+
+        A skip is NOT an error. Over-budget and not-curated are the guard doing
+        its job, and Phase C records them as named skips precisely so they read
+        as decisions rather than failures.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][object]$Run)
+
+    $errorCount = @(_Pack_GetField -Obj $Run -Name 'errors' -Default @()).Count
+    $packagedCount = [int](_Pack_GetField -Obj $Run -Name 'packagedCount' -Default 0)
+
+    if ($errorCount -eq 0) { return 'ok' }
+    if ($packagedCount -gt 0) { return 'partial' }
+    return 'failed'
+}
+
+function Get-PackagingHealth {
+    <#
+    .SYNOPSIS
+        Reports whether the packaging scheduler is actually running.
+    .DESCRIPTION
+        Closes the Phase C non-blocker. `Get-AutomationHealth` reads the
+        doc-refinement history alone — on purpose, because interleaving kinds
+        would let a live packaging cron mask a dead doc cron — which left a
+        packaging cron that stops completely invisible: the config still reads
+        enabled, packaging-runs.jsonl simply stops growing, and no surface in
+        the product changes.
+
+        The fix is a SECOND reader over the second file, not a merged file. Each
+        scheduler is then judged only by its own evidence, in both directions.
+
+        Interval resolution falls back deliberately: a deployment that runs one
+        cron hitting both routes configures `automation.intervalMinutes` only,
+        and must not be reported as "never ran" for want of a second setting.
+        `automation.packaging.intervalMinutes` overrides it when the two crons
+        genuinely run at different cadences.
+    .PARAMETER Settings
+        Host settings; the `automation` / `automation.packaging` blocks supply
+        enabled + intervalMinutes.
+    .PARAMETER GraceFactor
+        How many intervals may elapse before a missed run is called overdue.
+        Two by default, matching Get-AutomationHealth: one skipped tick is
+        tolerated, two is an alert.
+    .PARAMETER Now
+        Injectable clock for deterministic tests.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+        [Parameter()][object]$Settings = $null,
+        [Parameter()][double]$GraceFactor = 2.0,
+        [Parameter()][datetime]$Now = [datetime]::UtcNow
+    )
+
+    $auto = _Pack_GetField -Obj $Settings -Name 'automation' -Default $null
+    $packagingConfig = _Pack_GetField -Obj $auto -Name 'packaging' -Default $null
+
+    # `enabled` opts in the same way packaging scope does: an absent packaging
+    # block inherits the parent automation switch rather than defaulting on.
+    $enabled = [bool](_Pack_GetField -Obj $auto -Name 'enabled' -Default $false)
+    $packagingEnabled = _Pack_GetField -Obj $packagingConfig -Name 'enabled' -Default $null
+    if ($null -ne $packagingEnabled) { $enabled = [bool]$packagingEnabled }
+
+    $intervalMinutes = [int](_Pack_AsDouble -Value (_Pack_GetField -Obj $auto -Name 'intervalMinutes' -Default 0))
+    $packagingInterval = [int](_Pack_AsDouble -Value (_Pack_GetField -Obj $packagingConfig -Name 'intervalMinutes' -Default 0))
+    if ($packagingInterval -gt 0) { $intervalMinutes = $packagingInterval }
+
+    $history = @(Get-PackagingRunHistory -WorkspaceRoot $WorkspaceRoot -Limit 50)
+    $lastRun = if ($history.Count -gt 0) { $history[0] } else { $null }
+
+    $lastRunAt = $null
+    $lastRunId = ''
+    $lastOutcome = 'never'
+    $lastErrorCount = 0
+    $lastPackagedCount = 0
+    $lastSkippedCount = 0
+    if ($null -ne $lastRun) {
+        $lastRunId = [string](_Pack_GetField -Obj $lastRun -Name 'runId' -Default '')
+        $lastOutcome = Get-PackagingRunOutcome -Run $lastRun
+        $lastErrorCount = @(_Pack_GetField -Obj $lastRun -Name 'errors' -Default @()).Count
+        $lastPackagedCount = [int](_Pack_GetField -Obj $lastRun -Name 'packagedCount' -Default 0)
+        $lastSkippedCount = [int](_Pack_GetField -Obj $lastRun -Name 'skippedCount' -Default 0)
+        $lastRunAt = _Pack_ToUtc -Value (_Pack_GetField -Obj $lastRun -Name 'finishedAt' -Default $null)
+    }
+    $nowUtc = _Pack_ToUtc -Value $Now
+    if ($null -eq $nowUtc) { $nowUtc = [datetime]::UtcNow }
+
+    $consecutiveFailures = 0
+    foreach ($record in $history) {
+        if ((Get-PackagingRunOutcome -Run $record) -eq 'failed') { $consecutiveFailures++ } else { break }
+    }
+
+    $minutesSinceLastRun = $null
+    if ($null -ne $lastRunAt) { $minutesSinceLastRun = [math]::Round(($nowUtc - $lastRunAt).TotalMinutes, 1) }
+
+    $expectedNextRunAt = $null
+    $overdue = $false
+    if ($enabled -and $intervalMinutes -gt 0) {
+        if ($null -eq $lastRunAt) {
+            $overdue = $true
+        }
+        else {
+            $expectedNextRunAt = $lastRunAt.AddMinutes($intervalMinutes)
+            $overdue = ($nowUtc -gt $lastRunAt.AddMinutes($intervalMinutes * $GraceFactor))
+        }
+    }
+
+    # Codes are packaging-specific so an alert names which scheduler stopped.
+    # `automation-overdue` on both would be indistinguishable in a webhook.
+    $alert = $null
+    if ($enabled -and $intervalMinutes -gt 0 -and $null -eq $lastRunAt) {
+        $alert = [pscustomobject]@{
+            severity = 'warning'
+            code     = 'packaging-never-ran'
+            message  = ("Roadmap-item packaging is enabled on a {0}-minute interval but no packaging run has ever been recorded. Confirm the cron hitting POST /api/automation/package-run exists." -f $intervalMinutes)
+        }
+    }
+    elseif ($overdue) {
+        $alert = [pscustomobject]@{
+            severity = 'error'
+            code     = 'packaging-overdue'
+            message  = ("No roadmap-item packaging run in {0} minutes; the configured interval is {1} minutes. The packaging trigger has probably stopped." -f $minutesSinceLastRun, $intervalMinutes)
+        }
+    }
+    elseif ($consecutiveFailures -gt 0) {
+        $alert = [pscustomobject]@{
+            severity = 'error'
+            code     = 'packaging-run-failed'
+            message  = ("The last {0} packaging run(s) packaged nothing and only errored." -f $consecutiveFailures)
+        }
+    }
+    elseif ($lastOutcome -eq 'partial') {
+        $alert = [pscustomobject]@{
+            severity = 'warning'
+            code     = 'packaging-run-partial'
+            message  = ("The last packaging run completed with {0} error(s)." -f $lastErrorCount)
+        }
+    }
+
+    return [pscustomobject]@{
+        kind                = 'roadmap-packaging'
+        enabled             = $enabled
+        intervalMinutes     = $intervalMinutes
+        runCount            = $history.Count
+        lastRunId           = $lastRunId
+        lastRunAt           = if ($null -ne $lastRunAt) { $lastRunAt.ToString('o') } else { $null }
+        lastOutcome         = $lastOutcome
+        lastErrorCount      = $lastErrorCount
+        lastPackagedCount   = $lastPackagedCount
+        lastSkippedCount    = $lastSkippedCount
+        minutesSinceLastRun = $minutesSinceLastRun
+        expectedNextRunAt   = if ($null -ne $expectedNextRunAt) { $expectedNextRunAt.ToString('o') } else { $null }
+        graceFactor         = $GraceFactor
+        overdue             = $overdue
+        consecutiveFailures = $consecutiveFailures
+        healthy             = ($null -eq $alert)
+        alert               = $alert
+        evaluatedAt         = $nowUtc.ToString('o')
+    }
+}
 
 function Get-PackagedItemsFilePath {
     param([Parameter(Mandatory = $true)][string]$WorkspaceRoot)

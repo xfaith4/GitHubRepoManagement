@@ -144,4 +144,29 @@ describe('repoActionsBlockedReason', () => {
   it('returns null when actions are available', () => {
     expect(repoActionsBlockedReason(5)).toBeNull();
   });
+
+  // ROADMAP Lane 0.6: a missing root is THE cause, so the hint must name it
+  // rather than repeat the generic "scan a workspace first" remedy while the
+  // alert directly above already names the path.
+  it('names the missing root instead of the generic remedy', () => {
+    const reason = repoActionsBlockedReason(0, ['F:\\Development']);
+    expect(reason).toContain('F:\\Development');
+    expect(reason).toMatch(/was not found/);
+    expect(reason).not.toMatch(/Scan a workspace first/);
+  });
+
+  it('summarises multiple missing roots without listing all of them', () => {
+    const reason = repoActionsBlockedReason(0, ['F:\\Development', 'G:\\Archive', 'H:\\Old']);
+    expect(reason).toContain('F:\\Development');
+    expect(reason).toContain('+2 more');
+  });
+
+  // Blank entries must not manufacture a "path not found" claim about nothing.
+  it('falls back to the generic remedy when the roots are blank', () => {
+    expect(repoActionsBlockedReason(0, ['', '   '])).toMatch(/Scan a workspace first/);
+  });
+
+  it('stays null when repos are in scope even with a missing root', () => {
+    expect(repoActionsBlockedReason(5, ['F:\\Development'])).toBeNull();
+  });
 });

@@ -5,6 +5,8 @@ import ActionBar from './ActionBar';
 import ProvenanceNotice from './ProvenanceNotice';
 import { isCarriedOverCount } from '../lib/dataProvenance';
 import AutomationStatusBadge from './AutomationStatusBadge';
+import PackagedItemQueue from './PackagedItemQueue';
+import { type PackagedItem } from '../lib/packagedItems';
 import { type AutomationHealthPayload } from '../lib/automationStatus';
 import RepoGrid from './RepoGrid';
 import LogPanel from './LogPanel';
@@ -35,7 +37,7 @@ import PortfolioSummarySection from './PortfolioSummarySection';
 import PortfolioMissionSection from './PortfolioMissionSection';
 import { type ViewTabBadges } from '../lib/viewTabs';
 import { isRepoNeedsAttention } from '../lib/needsAttention';
-import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getAutomationStatus, getRoadmapDependencies, getPortfolioAssessment, refreshAllPortfolioAssessment, setOperationsRepoCuration, getPortfolioTrend, getOperationsRepos } from '../services/apiClient';
+import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getAutomationStatus, getPackagedItems, approvePackagedItem, rejectPackagedItem, getRoadmapDependencies, getPortfolioAssessment, refreshAllPortfolioAssessment, setOperationsRepoCuration, getPortfolioTrend, getOperationsRepos } from '../services/apiClient';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
 import { useHealthPing } from '../hooks/useHealthPing';
@@ -257,6 +259,12 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   // Release 2.7 Phase D — null means "status unknown", which the badge renders
   // as such. It must never be seeded with a healthy-looking default.
   const [automationStatus, setAutomationStatus] = useState<AutomationHealthPayload | null>(null);
+  // Release 2.7 Phase C — the packaged roadmap-item approval queue.
+  const [packagedItems, setPackagedItems] = useState<PackagedItem[]>([]);
+  const [packagedItemsLoading, setPackagedItemsLoading] = useState(false);
+  const [packagedItemsError, setPackagedItemsError] = useState<string | null>(null);
+  const [packagedItemsNotice, setPackagedItemsNotice] = useState<string | null>(null);
+  const [packagedItemBusyId, setPackagedItemBusyId] = useState<string | null>(null);
   const [dependencyGraph, setDependencyGraph] = useState<RoadmapDependencyGraph | null>(null);
   const [dependencyGraphLoading, setDependencyGraphLoading] = useState(false);
   const [hasAttemptedDepsLoad, setHasAttemptedDepsLoad] = useState(false);
@@ -387,6 +395,61 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     }
   }, []);
 
+  // Release 2.7 Phase C — approval queue. Unlike the automation status badge,
+  // a failure here surfaces in-panel: an empty list rendered after a failed
+  // fetch would read as "nothing needs approval", which is the same false-green
+  // the automation badge exists to prevent.
+  const refreshPackagedItems = useCallback(async () => {
+    setPackagedItemsLoading(true);
+    try {
+      const result = await getPackagedItems();
+      setPackagedItems(result.items);
+      setPackagedItemsError(null);
+    } catch (err) {
+      setPackagedItemsError(err instanceof Error ? err.message : 'The packaged-item queue is unavailable.');
+    } finally {
+      setPackagedItemsLoading(false);
+    }
+  }, []);
+
+  const handleApprovePackagedItem = useCallback(async (packetId: string) => {
+    setPackagedItemBusyId(packetId);
+    try {
+      const result = await approvePackagedItem(packetId);
+      setPackagedItemsError(null);
+      setPackagedItemsNotice(
+        result.dispatched
+          ? `Approved and queued for the operator runner (run ${result.dispatchRunId ?? 'unknown'}) on branch ${result.branch ?? 'unknown'}. Nothing was pushed or merged.`
+          : 'Approved. Nothing was dispatched.'
+      );
+    } catch (err) {
+      // A 409 here is the backend refusing the transition or the budget guard
+      // re-pricing the item — both are decisions worth showing verbatim.
+      setPackagedItemsNotice(null);
+      setPackagedItemsError(err instanceof Error ? err.message : 'Approval failed.');
+    } finally {
+      setPackagedItemBusyId(null);
+      await refreshPackagedItems();
+    }
+  }, [refreshPackagedItems]);
+
+  const handleRejectPackagedItem = useCallback(async (packetId: string) => {
+    const reason = window.prompt('Why is this packaged item being rejected? (recorded in the append-only audit trail)');
+    if (reason === null) return;
+    setPackagedItemBusyId(packetId);
+    try {
+      await rejectPackagedItem(packetId, reason.trim() || 'Rejected by the operator.');
+      setPackagedItemsError(null);
+      setPackagedItemsNotice('Packet rejected. It will not be dispatched.');
+    } catch (err) {
+      setPackagedItemsNotice(null);
+      setPackagedItemsError(err instanceof Error ? err.message : 'Rejection failed.');
+    } finally {
+      setPackagedItemBusyId(null);
+      await refreshPackagedItems();
+    }
+  }, [refreshPackagedItems]);
+
   // Backend health indicator — polls /health/live every 15 s
   const backendHealth = useHealthPing(15_000);
 
@@ -466,6 +529,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     getScanSchedule().then(setScanSchedule).catch(() => {/* silent */});
     // getAutomationStatus resolves null on failure rather than throwing.
     getAutomationStatus().then(setAutomationStatus);
+    refreshPackagedItems();
+    // refreshPackagedItems is stable (useCallback with no deps).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshExecutionMetrics]);
 
   // Release 2.7 Phase D — an overdue scheduler only becomes overdue with the
@@ -1934,6 +2000,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                     settings={settings}
                     selectedRepos={selectedRepoIds}
                     repoCount={repos.length}
+                    missingRoots={missingRoots}
                 />
                 <RepoGrid
                   repos={reposWithRoadmap}
@@ -1985,9 +2052,29 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
               {/* Release 2.7 Phase D — automation acts on this tab's curated
                   subset, so a scheduler that has stopped belongs here, next to
                   the work it was supposed to be doing. */}
-              <div className="mb-3 flex justify-end">
+              <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
                 <AutomationStatusBadge status={automationStatus} />
+                {/* Phase C's packaging cron is a SECOND scheduler with its own
+                    history file and its own health reader, so it gets its own
+                    badge. One merged badge would let a live doc cron mask a
+                    dead packaging cron — the exact failure the split files
+                    exist to prevent. */}
+                <AutomationStatusBadge
+                  status={automationStatus?.packaging ?? null}
+                  subject="Packaging"
+                  testId="packaging-status-badge"
+                />
               </div>
+              <PackagedItemQueue
+                items={packagedItems}
+                loading={packagedItemsLoading}
+                error={packagedItemsError}
+                notice={packagedItemsNotice}
+                busyPacketId={packagedItemBusyId}
+                onRefresh={() => { refreshPackagedItems(); }}
+                onApprove={handleApprovePackagedItem}
+                onReject={handleRejectPackagedItem}
+              />
               <OperationsWorkspaceView
                 operationsRepos={operationsRepos}
                 loading={operationsReposLoading}
