@@ -44,6 +44,7 @@ function Get-LongRunningScanRoutePattern {
         '/api/operations/repos'
         '/api/operations/repos/*'
         '/api/automation/run'
+        '/api/automation/package-run'
         '/api/digest/preview'
         '/api/digest/send'
         '/api/reconcile'

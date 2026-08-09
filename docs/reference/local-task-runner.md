@@ -81,6 +81,27 @@ gh pr create                          # or open a PR
 For a local-only repo, publish it first (`gh repo create <owner>/<name> --private
 --source . --remote origin --push`) before pushing the branch.
 
+## Scheduled packaging feeds the same queue
+
+Release 2.7 Phase C adds a second producer for this queue. `POST /api/automation/package-run`
+ranks each favorite / portfolio-candidate repo with a contract-ready (L3+) roadmap,
+packages its **top-value** pending item into a task packet, prices it through the
+quota guard, and queues it for approval — it never enqueues anything itself.
+`POST /api/automation/packages/approve` is the only path from a packet to this
+queue: it writes both the `roadmap-task-queue.jsonl` line and the `queued` run
+summary the runner claims on, so an approved packet is picked up by exactly the
+same runner loop described above.
+
+```text
+package-run  -> packet (pending-approval)   [nothing queued]
+approve      -> roadmap-task-queue.jsonl + <runId>.summary.json (status=queued)
+runner       -> claim -> branch -> claude -> verify -> commit -> awaiting-review
+```
+
+Inspect the approval queue with `GET /api/automation/packages?status=pending-approval`.
+A packet may be approved only from `pending-approval`, and a dispatched packet is
+terminal — re-approving is refused with a 409 rather than dispatched twice.
+
 ## Notes
 
 - Copilot dispatch is still available for repos that live on GitHub, behind

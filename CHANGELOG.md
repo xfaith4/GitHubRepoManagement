@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-09 — Release 2.7 Phase C: scheduled roadmap-item packaging
+
+### Changes
+
+- **What it adds.** The largest remaining product increment. On a scheduled run, each favorite / portfolio-candidate repo with a contract-ready (L3+) roadmap has its pending work ranked, its **top-value** item packaged into a task packet + repair-PR plan, priced through the Release 2.0 quota guard, and queued for approval. Nothing is dispatched, applied, or merged by the run itself.
+- **`backend/modules/automation/Automation.RoadmapPackaging.ps1`** (new) — scope resolution, ranking, packet construction, the quota gate, the append-only run history and approval queue, and the transition state machine. The pure parts are testable without a checkout, a token, or a scheduler.
+- **Every refusal is named, not silent.** `Resolve-AutomationPackagingScope` returns a decision per repo: `archived-ignore`, `not-curated`, `roadmap-not-ready`, `no-pending-work`, `no-scored-item`, `missing-local-path`. Scope **opts in** — an unrecognized curation state is excluded rather than admitted, the same contract `curationScope.ts` pins on the frontend.
+- **Ranking reuses the settled semantics rather than restating them.** `Select-TopValueRoadmapItem` reads the items the assessment already scored (MAX within a dimension + the `effortFit` floor) and breaks ties on earlier roadmap order — exactly what `_SelectTopValueItem` does, so a packet and the dashboard cannot disagree about "the top item". An **unscored** item is never packaged.
+- **The quota guard fails closed.** An over-budget repo is skipped with the guard's own `blockedCode` and message, never dropped quietly; and if `BudgetLedger.ps1` is not loaded the item is refused with `quota-guard-unavailable` rather than admitted. A guard that cannot be evaluated is not a pass. The quota is re-checked at approval time, because budget can be consumed in between.
+- **A scheduled run cannot dispatch.** `dispatchedCount` is an invariant and `Write-PackagingRunRecord` refuses to persist a run claiming otherwise — the same defense in depth Phase B applies to `appliedCount`. Packaging runs also get their **own** JSONL rather than sharing Phase B's, because Phase D's overdue alert reads the newest doc-refinement run: interleaving a differently-scheduled kind would let a live packaging cron mask a dead doc cron. `GET /api/automation/history` merges both kinds (and takes a `kind` filter) so its "every scheduled run" contract still holds.
+- **Dispatch is the approval action and nothing else.** `POST /api/automation/packages/approve` writes both the `roadmap-task-queue.jsonl` line **and** the `queued` run summary `Invoke-RoadmapTaskRunner.ps1` claims on — one without the other is a task nothing ever picks up. `Test-PackagedItemTransition` is the single definition of what may follow what; a refusal is a **409 with a named category**, never a `200` that reads like success, and a dispatched packet is terminal so it cannot be dispatched twice.
+- **`backend/api-host/RequestDeadline.ps1`** — `/api/automation/package-run` joins the extended (900s) tier. It reaches the same cold full-portfolio assessment `/api/automation/run` does, so leaving it on the 180s tier would have let the freeze guard terminate the host mid-scan.
+
+### Testing
+
+- **Module smoke exit 0** — `packaging scope ok: 2 selected, 7 refusals each named`; `packaging rank ok: max score, earlier roadmap order breaks the tie, unscored selects nothing`; `packaging quota ok: over-budget skipped+logged with the guard code, nothing queued, missing guard fails closed` (the fail-closed branch proven in a fresh runspace where `BudgetLedger.ps1` was never loaded); `packaging run ok: 2 packet(s) queued for approval, dispatched=0 applied=0, dispatch queue absent, invariant-violating runs refused`; `packaging approval ok: 8 transitions enforced, queue+summary written on dispatch, fold keeps 3-step history, sibling packet untouched`.
+- **A drift tripwire, not just a test** — `queue contract ok: 10 fields identical to the canonical writer` fails if `Add-RoadmapTaskToQueue.ps1`'s entry shape changes without this writer following. Without it, approved work would land in the queue as entries the runner silently mishandles, invisible until an operator wondered why an approved packet never ran.
+- **API-host smoke exit 0, `packagingOk=True`** — against a live host: `packaged 'Add the operator dashboard export route with smoke test coverage' (score 93, order 2) not the first item, over-budget twin skipped at stage=quota, dispatch only on approval (run 20260809-105754-0c048a3f), re-approval 409`. Two fixture repos are used because the pre-existing fixture's roadmap is deliberately below L3; the over-budget twin differs **only** by a phase-plan estimate above the per-session cap, so the refusal is caused by the budget and nothing else. The step restores the runner queue byte-for-byte and deletes its dispatched run summary, so a passing smoke leaves nothing runnable behind.
+
+### Known gaps, recorded rather than hidden
+
+- The approval queue has no operator UI; approving is an API call. The digest names the route.
+- Packaging has no overdue alert of its own — `Get-AutomationHealth` deliberately reads only the doc-refinement history, so a stopped packaging cron is currently invisible. Both are recorded as `[non-blocker]` items under Phase C.
+- An approved packet reaches a **branch with committed work awaiting review**, not an open PR. The PR is opened through Phase A's submit-PR route as a further operator action; the packet's repair-PR plan names it. Nothing auto-merges.
+
 ## 2026-08-09 — Release 2.7 Phase A proven live; roadmap repairs no longer strip the trailing newline
 
 ### Changes

@@ -2362,11 +2362,312 @@ try {
     Write-Host ("  automation status ok: enabled={0} overdue={1} healthy={2} lastOutcome={3}" -f `
             $autoStatus.Json.data.enabled, $autoStatus.Json.data.overdue, $autoStatus.Json.data.healthy, $autoStatus.Json.data.lastOutcome) -ForegroundColor DarkGray
 
+    # ------------------------------------------------------------------
+    # Release 2.7 Phase C — scheduled roadmap-item packaging
+    # ------------------------------------------------------------------
+    # Proves the whole route path: rank the curated subset, package the
+    # top-value item, refuse an over-budget one, and dispatch ONLY on an
+    # explicit approval. Two fixture repos are used because the single
+    # pre-existing fixture's roadmap is deliberately below L3.
+    Write-Host '[STEP] Automation: scheduled roadmap-item packaging (Release 2.7 Phase C)' -ForegroundColor Cyan
+    $packagingOk = $false
+    $packagingRepoName = 'smoke-packaging-repo'
+    $packagingOverName = 'smoke-packaging-overbudget'
+    $packagingQueuePath = Join-Path $WorkspaceRoot 'output\roadmap-task-queue.jsonl'
+    $packagingQueueBackup = if (Test-Path -LiteralPath $packagingQueuePath) { Get-Content -LiteralPath $packagingQueuePath -Raw -Encoding UTF8 } else { $null }
+    $packagingCuratedIds = [System.Collections.Generic.List[string]]::new()
+    $packagingDispatchRunId = ''
+    try {
+        # A contract-ready (L3+) fixture roadmap whose top-value item is
+        # deliberately NOT its first pending item, so "packaged the top-ranked
+        # item" cannot pass by accidentally taking the first one.
+        $packagingRoadmapBody = @'
+# {NAME} — Product & Engineering Roadmap
+
+> Project status: Active
+>
+> Product direction: A fixture repository used by the api-host smoke to prove scheduled roadmap-item packaging end to end.
+
+## 1. Product Intent
+
+This repository exists only as a smoke fixture. It carries a contract-ready roadmap so the Release 2.7 Phase C packaging run has a real L3 target to rank, package, and queue for approval.
+
+---
+
+## 2. Product Principles
+
+- **Deterministic** — the pending items are worded so value ranking is stable across runs.
+- **Contract-ready** — the roadmap satisfies the L3 contract, so dispatch readiness is not the thing under test.
+
+---
+
+## 3. Current State Summary
+
+The fixture ships a README and this roadmap. One release is active with two pending milestones, deliberately ordered so the highest-value item is not the first one.
+
+---
+
+## 4. Release Index
+
+| Release | Status | Purpose | Dispatch readiness |
+| --- | --- | --- | --- |
+| 1.0 | active | Prove packaging against a contract-ready roadmap | ready |
+| 1.1 | planned | Reserved for future fixture needs | planned |
+
+---
+
+## 5. Release Roadmap
+
+## Release 1.0 — Packaging Fixture
+
+> Status: active
+
+**Goal:** give the scheduled packaging run a contract-ready roadmap whose top-value item is provably not its first pending item.
+
+### Product outcomes
+
+- The packaging run selects a top-value item rather than the first pending item.
+- The selected item carries a value score and a rationale.
+
+### Engineering milestones
+
+- [x] Seed the fixture repository with a README *(completed: 2026-08-09)*
+- [ ] Document the changelog format for the fixture
+- [ ] Add the operator dashboard export route with smoke test coverage
+
+### Acceptance criteria
+
+- The packaging run packages exactly one item for this repository.
+- The packaged item is the highest-value pending item.
+
+### Out of scope
+
+- Any real product behavior; this repository is a fixture.
+
+### Validation plan
+
+- Run the api-host smoke and confirm it exits successfully.
+
+### Risks and blockers
+
+- None currently known.
+
+### Dependencies
+
+- None.
+
+### Known issues
+
+- None currently known.
+{PHASEPLAN}
+### Traceability
+
+- Release 2.7 Phase C — scripts/Invoke-ApiHostSmokeTest.ps1.
+
+---
+
+## Release 1.1 — Reserved
+
+> Status: planned
+
+**Goal:** hold space for future fixture needs.
+
+### Product outcomes
+
+- None yet.
+
+### Engineering milestones
+
+- [ ] Reserved
+
+### Acceptance criteria
+
+- Not applicable.
+
+### Out of scope
+
+- Everything.
+
+---
+
+## 6. Recently Completed
+
+- [x] Fixture repository created *(completed: 2026-08-09, from Release 1.0)*
+
+---
+
+## 7. Cross-Cutting Engineering Work
+
+- [ ] Keep the fixture roadmap contract-ready.
+
+---
+
+## 8. Risks and Design Guardrails
+
+### Risks
+
+- The fixture could drift below L3 and silently stop exercising packaging.
+
+### Guardrails
+
+- Only one release may carry `Status: active` at a time.
+- This smoke asserts the fixture audits to L3 or higher.
+
+---
+
+## 9. Definition of Done for Release Execution
+
+A release should not be marked `done` unless:
+
+- All checklist items are implemented, moved, or explicitly blocked.
+- Acceptance criteria are verifiably satisfied.
+- Validation commands have been run.
+'@
+        # The over-budget twin differs only by a phase-plan estimate above the
+        # quota guard's per-session cap, so the refusal is caused by the budget
+        # and nothing else.
+        $packagingOverPhasePlan = @'
+
+### Phase plan
+
+| Phase | Scope | Status | Completed | Work units |
+| --- | --- | --- | --- | --- |
+| Phase 1: Oversized | Deliberately larger than the per-session cap | planned | — | 99 |
+
+'@
+        foreach ($fixture in @(
+            @{ Name = $packagingRepoName; PhasePlan = "`n" },
+            @{ Name = $packagingOverName; PhasePlan = $packagingOverPhasePlan }
+        )) {
+            $fixtureDir = Join-Path $portfolioFixtureRoot $fixture.Name
+            $null = New-Item -ItemType Directory -Path $fixtureDir -Force
+            & git init "$fixtureDir" *>&1 | Out-Null
+            Set-Content -LiteralPath (Join-Path $fixtureDir 'README.md') -Value ("# {0}`n`nFixture for Release 2.7 Phase C packaging proofs." -f $fixture.Name) -Encoding UTF8
+            $fixtureRoadmap = $packagingRoadmapBody.Replace('{NAME}', $fixture.Name).Replace('{PHASEPLAN}', $fixture.PhasePlan)
+            Set-Content -LiteralPath (Join-Path $fixtureDir 'ROADMAP.md') -Value $fixtureRoadmap -Encoding UTF8
+        }
+        $null = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment?refresh=true"
+
+        $packagingOpsResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/operations/repos"
+        $packagingEntries = @($packagingOpsResponse.Json.data.entries)
+        foreach ($name in @($packagingRepoName, $packagingOverName)) {
+            $entry = @($packagingEntries) | Where-Object { [string]$_.repoName -eq $name } | Select-Object -First 1
+            if ($null -eq $entry) { throw "Packaging fixture '$name' was not indexed by /api/operations/repos" }
+            if ([string]$entry.maturityLevel -notin @('L3-Contract-Ready', 'L4-Orchestration-Ready')) {
+                throw "Packaging fixture '$name' audits to $($entry.maturityLevel); the packaging gate needs L3+. Fix the fixture roadmap, not the gate."
+            }
+            $curateResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/operations/repos/$([uri]::EscapeDataString([string]$entry.repoId))/curation" -Body @{ curationState = 'favorite'; reason = 'api-host smoke (Phase C)' }
+            if ($curateResponse.StatusCode -ne 200) { throw "Curating '$name' failed: HTTP $($curateResponse.StatusCode)" }
+            $packagingCuratedIds.Add([string]$entry.repoId)
+        }
+        $packagedEntry = @($packagingEntries) | Where-Object { [string]$_.repoName -eq $packagingRepoName } | Select-Object -First 1
+        if ($null -eq $packagedEntry.topValueItem) { throw "Packaging fixture '$packagingRepoName' carries no topValueItem; the value scorer did not run over it" }
+
+        # POST /api/automation/package-run — ranks, prices, packages, queues.
+        $packageRun = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/automation/package-run" -Body @{}
+        if ([int]$packageRun.StatusCode -ne 200) { throw "/api/automation/package-run expected 200, got $($packageRun.StatusCode). Body=$($packageRun.Content)" }
+        if ($null -eq $packageRun.Json -or $packageRun.Json.success -ne $true) { throw "/api/automation/package-run did not return success=true. Body=$($packageRun.Content)" }
+        $packageRunData = $packageRun.Json.data
+        if ([int]$packageRunData.run.dispatchedCount -ne 0) { throw "A scheduled packaging run must never dispatch (dispatchedCount=$($packageRunData.run.dispatchedCount))" }
+        if ([int]$packageRunData.run.appliedCount -ne 0) { throw "A scheduled packaging run must never apply (appliedCount=$($packageRunData.run.appliedCount))" }
+        if ($packageRunData.delivered -ne $false) { throw '/api/automation/package-run with no webhook should report delivered=false' }
+
+        $packagedPacket = @($packageRunData.run.packets) | Where-Object { [string]$_.repoName -eq $packagingRepoName } | Select-Object -First 1
+        if ($null -eq $packagedPacket) { throw "The packaging run did not package the curated L3 fixture '$packagingRepoName'. Skipped=$(($packageRunData.run.skipped | ConvertTo-Json -Compress -Depth 4))" }
+        # It must have packaged the TOP-VALUE item, not merely the first pending
+        # one — the whole point of ranking.
+        if ([int]$packagedPacket.roadmapOrder -le 1) { throw "Packaged item is the first pending item (roadmapOrder=$($packagedPacket.roadmapOrder)); ranking was not applied" }
+        if ([string]$packagedPacket.itemText -eq [string]$packagedEntry.nextPendingItemText) { throw 'Packaged item equals the next pending item; ranking was not applied' }
+        if ([string]$packagedPacket.itemText -ne [string]$packagedEntry.topValueItem.text) { throw "Packaged item '$($packagedPacket.itemText)' is not the entry's top-value item '$($packagedEntry.topValueItem.text)'" }
+        if ([int]$packagedPacket.valueScore -le 0) { throw 'Packaged item carries no value score' }
+        if ([string]::IsNullOrWhiteSpace([string]$packagedPacket.generatedPrompt)) { throw 'Packet carries no generated prompt' }
+        if ($packagedPacket.repairPlan.submitted -ne $false) { throw 'The repair-PR plan must be a plan (submitted=false)' }
+        if ($packagedPacket.dispatched -ne $false) { throw 'A freshly packaged item must be dispatched=false' }
+
+        # The over-budget twin must be SKIPPED AND LOGGED, with the quota
+        # guard's own code — not silently absent.
+        if (@($packageRunData.run.packets | Where-Object { [string]$_.repoName -eq $packagingOverName }).Count -ne 0) {
+            throw "The over-budget fixture '$packagingOverName' was packaged; the quota guard did not refuse it"
+        }
+        $overSkip = @($packageRunData.run.skipped) | Where-Object { [string]$_.repoName -eq $packagingOverName } | Select-Object -First 1
+        if ($null -eq $overSkip) { throw "The over-budget fixture was dropped without a skip record" }
+        if ([string]$overSkip.stage -ne 'quota') { throw "Expected the over-budget fixture to be skipped at stage=quota; got '$($overSkip.stage)'" }
+        if ([string]$overSkip.reason -ne 'session-cap-exceeded') { throw "Expected blockedCode session-cap-exceeded; got '$($overSkip.reason)'" }
+
+        # GET /api/automation/packages — the packet is queued for approval.
+        $packagesList = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/automation/packages?status=pending-approval"
+        if ([string]$packagesList.ContentType -notlike 'application/json*') { throw '/api/automation/packages did not return JSON' }
+        if ($packagesList.Json.success -ne $true) { throw '/api/automation/packages did not return success=true' }
+        $queuedPacket = @($packagesList.Json.data.items) | Where-Object { [string]$_.packetId -eq [string]$packagedPacket.packetId } | Select-Object -First 1
+        if ($null -eq $queuedPacket) { throw 'The packaged item is not in the pending-approval queue' }
+        if ([string]$queuedPacket.status -ne 'pending-approval') { throw "Queued packet status expected pending-approval; got '$($queuedPacket.status)'" }
+
+        # Nothing may have been dispatched by the run itself.
+        $queueAfterRun = if (Test-Path -LiteralPath $packagingQueuePath) { Get-Content -LiteralPath $packagingQueuePath -Raw -Encoding UTF8 } else { '' }
+        if ([string]$queueAfterRun -match [regex]::Escape([string]$packagedPacket.branch)) {
+            throw 'The packaging run enqueued work for the runner; it must stop at the approval gate.'
+        }
+
+        # An unknown packet is a 404 with a named category, not a 200.
+        $approveUnknown = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/automation/packages/approve" -Body @{ packetId = 'no-such-packet' }
+        if ([int]$approveUnknown.StatusCode -ne 404) { throw "Approving an unknown packet expected 404, got $($approveUnknown.StatusCode)" }
+        if ([string]$approveUnknown.Json.category -ne 'packet-not-found') { throw "Expected category packet-not-found; got '$($approveUnknown.Json.category)'" }
+
+        # The explicit approval action — the only path to dispatch.
+        $approve = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/automation/packages/approve" -Body @{ packetId = [string]$packagedPacket.packetId; actor = 'api-host-smoke' }
+        if ([int]$approve.StatusCode -ne 200) { throw "Approving the packet expected 200, got $($approve.StatusCode). Body=$($approve.Content)" }
+        if ([string]$approve.Json.data.status -ne 'dispatched') { throw "Approval expected status=dispatched; got '$($approve.Json.data.status)'" }
+        $packagingDispatchRunId = [string]$approve.Json.data.dispatchRunId
+        if ([string]::IsNullOrWhiteSpace($packagingDispatchRunId)) { throw 'Approval did not return a dispatch run id' }
+        $queueAfterApprove = if (Test-Path -LiteralPath $packagingQueuePath) { Get-Content -LiteralPath $packagingQueuePath -Raw -Encoding UTF8 } else { '' }
+        if ([string]$queueAfterApprove -notmatch [regex]::Escape($packagingDispatchRunId)) { throw 'Approval did not enqueue the task for the operator runner' }
+        $packagingSummaryPath = Join-Path $WorkspaceRoot ("output\roadmap-task-history\runs\{0}.summary.json" -f $packagingDispatchRunId)
+        if (-not (Test-Path -LiteralPath $packagingSummaryPath)) { throw 'Approval did not write the run summary the operator runner claims on' }
+        if ([string]((Get-Content -LiteralPath $packagingSummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json).status) -ne 'queued') {
+            throw 'The dispatched run summary must read status=queued for the runner to claim it'
+        }
+
+        # A dispatched packet is terminal: re-approving is a 409, never a second dispatch.
+        $reapprove = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/automation/packages/approve" -Body @{ packetId = [string]$packagedPacket.packetId; actor = 'api-host-smoke' }
+        if ([int]$reapprove.StatusCode -ne 409) { throw "Re-approving a dispatched packet expected 409, got $($reapprove.StatusCode)" }
+        if ([string]$reapprove.Json.category -notlike 'invalid-transition*') { throw "Expected an invalid-transition category; got '$($reapprove.Json.category)'" }
+
+        # The packaging run is visible in the shared automation history.
+        $packagingHistory = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/automation/history?kind=roadmap-packaging&limit=10"
+        if ($packagingHistory.Json.success -ne $true) { throw '/api/automation/history?kind=roadmap-packaging did not return success=true' }
+        if (@($packagingHistory.Json.data.runs | Where-Object { [string]$_.runId -eq [string]$packageRunData.run.runId }).Count -eq 0) {
+            throw 'The packaging run is missing from /api/automation/history'
+        }
+
+        $packagingOk = $true
+        Write-Host ("  packaging ok: packaged '{0}' (score {1}, order {2}) not the first item, over-budget twin skipped at stage=quota, dispatch only on approval (run {3}), re-approval 409" -f `
+                $packagedPacket.itemText, $packagedPacket.valueScore, $packagedPacket.roadmapOrder, $packagingDispatchRunId) -ForegroundColor DarkGray
+    }
+    finally {
+        # Leave nothing runnable behind: an approved packet enqueues real work
+        # for the operator's runner, and the fixture repo is about to be deleted.
+        if ($null -ne $packagingQueueBackup) {
+            Set-Content -LiteralPath $packagingQueuePath -Value $packagingQueueBackup -Encoding UTF8 -NoNewline
+        } elseif (Test-Path -LiteralPath $packagingQueuePath) {
+            Remove-Item -LiteralPath $packagingQueuePath -Force -ErrorAction SilentlyContinue
+        }
+        if (-not [string]::IsNullOrWhiteSpace($packagingDispatchRunId)) {
+            Remove-Item -LiteralPath (Join-Path $WorkspaceRoot ("output\roadmap-task-history\runs\{0}.summary.json" -f $packagingDispatchRunId)) -Force -ErrorAction SilentlyContinue
+        }
+        foreach ($curatedId in $packagingCuratedIds) {
+            $null = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/operations/repos/$([uri]::EscapeDataString($curatedId))/curation" -Body @{ curationState = 'none'; reason = 'api-host smoke cleanup' }
+        }
+        foreach ($name in @($packagingRepoName, $packagingOverName)) {
+            Remove-Item -LiteralPath (Join-Path $portfolioFixtureRoot $name) -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     Write-Host '[STEP] Route census — critical API routes must return JSON (not the SPA fallback)' -ForegroundColor Cyan
     $censusRoutes = @(
         '/health/live', '/health/ready', '/health/dependencies', '/metrics',
         '/api/persistence/status', '/api/auth/status', '/api/auth/github/status',
-        '/api/automation/history', '/api/automation/status', '/api/settings', '/api/roadmap/index',
+        '/api/automation/history', '/api/automation/status', '/api/automation/packages',
+        '/api/settings', '/api/roadmap/index',
         '/api/maintenance/database',
         '/api/cache/diagnostics', '/api/scan/schedule', '/api/execution/metrics',
         '/api/execution/queue', '/api/notifications/webhooks', '/api/roadmap/drift',
@@ -2468,6 +2769,7 @@ try {
         improvementPreviewOk = { $improvementPreviewOk }
         dbMaintenanceOk = { $dbMaintenanceOk }
         automationStatusOk = { $automationStatusOk }
+        packagingOk = { $packagingOk }
         githubAuthProbeOk = { $githubAuthProbeOk }
         githubTokenSource = { $ghAuthData.tokenSource }
         workspaceValidationOk = { $script:WorkspaceValidationOk }

@@ -40,10 +40,6 @@ interchangeable — mixing them is what previously made the roadmap read as
 
 **Current focus (next agent actions), in order:**
 
-- [ ] **Release 2.7 Phase C — scheduled roadmap-item packaging.** The largest
-      remaining product increment, and **unblocked 2026-08-09**: Phase A's
-      write path is built and proven live, so auto-ranked packets now have a
-      real path to a PR nobody has to open by hand.
 - [ ] **Release 3.0 — operator-context execution.** Dispatch cannot run from
       the service at all (`gh agent-task` requires OAuth; LocalSystem cannot
       hold one), so the guided-improvement wizard dead-ends at its last step.
@@ -51,6 +47,17 @@ interchangeable — mixing them is what previously made the roadmap read as
 - [ ] **Lane 0.5 / 0.6 cosmetics** — the GitHub rate-limit readout that is
       always null, the portal TLS certificate password, and the zero-scope
       action hint. All non-blockers; **Lane 0.3 closed entirely 2026-08-09.**
+
+**Closed 2026-08-09 — Release 2.7 Phase C, the largest remaining product
+increment.** Scheduled roadmap-item packaging is built and smoke-tested end to
+end: a scheduled run ranks each curated L3+ repo's pending work, packages the
+top-value item into a task packet + repair-PR plan, prices it through the
+quota guard (skipping over-budget repos with the guard's own code), notifies,
+and stops at the approval gate. Dispatch happens only through an explicit
+approval, which enqueues to the Release 2.8 operator-runner queue. **Release
+2.7 is now engineering-complete** — every remaining item in it is either an
+external-resource proof (Phase D's elevated service install) or a recorded
+non-blocker. Detail and evidence are on the Phase C milestones below.
 
 **Closed 2026-08-09:** Lane 0.4's cold-scan request deadline — the freeze guard
 now classifies routes into a 180-second default tier and a 900-second
@@ -176,7 +183,7 @@ already covered by release goals or acceptance criteria.
 | 2.4       | Agent Integration Protocol and AI Repair Loop                            | `done` (engineering) — 2026-07-05; live submit-PR proof tracked in 2.7 Phase A             |
 | 2.5       | Mobile-Friendly Operator Experience                                      | `done` (engineering) — 2026-07-05; two surfaces + device proof tracked in 2.9              |
 | 2.6       | Interface Clarity and Operator Orientation                               | `done` — 2026-07-06; device sign-off tracked in 2.9                                        |
-| **2.7**   | **Guarded Scheduled Automation (Curated-Subset, Preview-First)**         | **active** — Phase B done; **Phases A, C, D open**                                         |
+| **2.7**   | **Guarded Scheduled Automation (Curated-Subset, Preview-First)**         | **active** — Phases A, B, C done; Phase D awaits an elevated service install               |
 | 2.8       | Local Claude Code Execution (queue + operator runner)                    | `done` (engineering) — 2026-07-15; real `claude` run tracked in 2.9                        |
 | **2.9**   | **Operator Field Proof and Mobile Completion**                           | `planned` — collects every external-resource residual plus the two unbuilt mobile surfaces |
 | **3.0**   | **Operator-Context Execution**                                           | `planned` — one dispatch model; the service enqueues, an operator session executes         |
@@ -202,14 +209,10 @@ detail is in
 
 **Two parallel lanes (no cross-dependency between them):**
 
-- **Automation lane — Release 2.7 Phases A → C.** The largest remaining
-  product increment: scheduled roadmap-item packaging. Phase A's credential
-  gate is now open; Phase C stays strictly behind Phase A, because
-  auto-ranking without a proven write path produces packets nobody can act on.
-- **Reliability lane — Release 2.7 Phase D.** Zero prerequisites. The two
-  remaining frontend items (value-tier and automation-scope vitest units,
-  `Dashboard.tsx` decomposition) and freeze prevention are schedulable
-  immediately and independently.
+**Both Release 2.7 lanes closed 2026-08-09.** The automation lane (Phases A → C)
+is done: the write path is proven live and scheduled packaging ships behind it.
+The reliability lane (Phase D) is engineering-complete; only its live service
+deployment waits on an elevated Windows install. What follows is the 3.x arc.
 
 **After the lanes:**
 
@@ -242,9 +245,7 @@ They are ordered by dependency, not by size:
 
 | Open item                                            | Depends on                                           | Type                                          |
 | ---------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------- |
-| Release 2.7 Phase A (live submit-PR proof)           | —                                                    | none — credential gate closed 2026-08-08      |
-| Release 2.7 Phase C (scheduled roadmap packaging)    | Release 2.7 Phase A                                  | hard — no auto-rank/PR without a proven write |
-| Release 2.7 Phase D (two frontend items + freeze)    | —                                                    | none — schedulable anytime                    |
+| Release 2.7 Phase D (freeze prevention, live deploy) | An elevated (SYSTEM) Windows install                 | hard — privilege                              |
 | Release 2.7 Phase D freeze prevention                | Watchdog field proof (2.9) for the paired safety net | soft — ship prevention regardless             |
 | Lane 0.3 layout follow-ups; Lane 0.4 worklog archive | —                                                    | none — schedulable anytime                    |
 | Release 2.9 mobile completion (ergonomics, run list) | —                                                    | none — the responsive foundation is shipped   |
@@ -275,9 +276,10 @@ per `ROADMAP_TEMPLATE.md`: the release section is the single source of truth
 for its own status. This heading exists so the roadmap validator can resolve
 the active-release pointer; it deliberately restates nothing.
 
-**Current focus:** Phase A — its credential gate closed 2026-08-08, so the
-live submit-PR proof that opens Phase C is now the highest-value move. Phase D
-runs in parallel; it needs nothing from anyone.
+**Current focus:** none — Phases A, B, and C are done and Phase D is
+engineering-complete. What remains in this release is the elevated Windows
+install its freeze-prevention item has always waited on, plus two recorded
+non-blockers under Phase C. The next active release is 2.9.
 
 ---
 
@@ -294,8 +296,9 @@ on an interval — while stopping at the human approval gate. No silent
 mutation, no auto-merge: everything runs preview-first, inside the existing
 quota/budget guard, with an append-only audit trail.
 
-**Prerequisites:** Phase A needs valid GitHub write credentials (Lane 0.2).
-Phase C needs Phase A. Phase D needs nothing.
+**Prerequisites:** all met. Phase A's credential gate closed 2026-08-08 and the
+live proof landed 2026-08-09; Phase C followed it the same day. Phase D's
+remaining step needs an elevated (SYSTEM) Windows session.
 
 #### Product outcomes
 
@@ -313,7 +316,7 @@ Phase C needs Phase A. Phase D needs nothing.
 
 Phase A — Credential-gated proof:
 
-- [ ] Prove a live submit-PR round trip on one write-enabled repo: branch
+- [x] Prove a live submit-PR round trip on one write-enabled repo: branch
       push, PR creation, PR visible in the target repo, run recorded.
       Closes the Release 2.4 residual and opens Phase C.
       _(state: **done** — proven live 2026-08-09 against this repo,
@@ -359,17 +362,92 @@ Phase A — Credential-gated proof:
 
 Phase C — Scheduled roadmap-item packaging (the prize; gated on Phase A):
 
-- [ ] For each favorite repo with a ready L3+ roadmap, select the top-value
+Built 2026-08-09 in
+[`Automation.RoadmapPackaging.ps1`](backend/modules/automation/Automation.RoadmapPackaging.ps1),
+behind `POST /api/automation/package-run`, `GET /api/automation/packages`, and
+`POST /api/automation/packages/approve` / `/reject`.
+
+- [x] For each favorite repo with a ready L3+ roadmap, select the top-value
       pending item using the settled scoring semantics (MAX within a
       dimension + `effortFit` floor), build a task packet + repair-PR plan,
-      and queue it for approval. _(state: planned — blocked on Phase A)_
-- [ ] Gate every packaged item through the quota/budget guard; skip and log
-      when over budget. _(state: planned)_
-- [ ] Notify per run; approval triggers dispatch (live PR once Phase A
-      passes). No auto-merge. _(state: planned)_
-- [ ] Smoke: a scheduled run ranks + packages one fixture repo's top item,
+      and queue it for approval. _(state: smoke-tested — closed 2026-08-09)_
+      Scope is resolved by `Resolve-AutomationPackagingScope`, which returns a
+      decision per repo and **names every refusal** rather than shrinking the
+      list silently: `archived-ignore`, `not-curated`, `roadmap-not-ready`
+      (below L3), `no-pending-work`, `no-scored-item`, `missing-local-path`.
+      Scope opts **in** — an unrecognized curation state is excluded, the same
+      contract `curationScope.ts` pins on the frontend. Ranking reuses the
+      assessment's already-scored items (`Select-TopValueRoadmapItem`: highest
+      `valueScore`, earlier `roadmapOrder` breaks the tie, exactly as
+      `_SelectTopValueItem` does) so a packet and the dashboard can never
+      disagree about "the top item", and an **unscored** item is never
+      packaged. The packet carries the item, its score/tier/rationale, a
+      namespaced `roadmap-item/<slug>-<id>` branch, an item-scoped prompt that
+      forbids widening the scope, and a repair-PR plan naming the Phase A
+      write path (`POST /api/roadmap/repair/submit-pr`) with `submitted=false`.
+- [x] Gate every packaged item through the quota/budget guard; skip and log
+      when over budget. _(state: smoke-tested — closed 2026-08-09)_
+      `Test-PackagingQuota` delegates to the Release 2.0
+      `Test-AgentDispatchQuota`, prices each item from the roadmap's own
+      annotated phase estimate (falling back to a configured default), and a
+      refusal is recorded as a skip carrying **the guard's own `blockedCode`
+      and message**. The guard is **fail-closed**: if `BudgetLedger.ps1` is not
+      loaded the item is refused with `quota-guard-unavailable` rather than
+      admitted — a guard that cannot be evaluated is not a pass. The quota is
+      re-checked at approval time, because budget can be consumed between
+      packaging and approval.
+- [x] Notify per run; approval triggers dispatch (live PR once Phase A
+      passes). No auto-merge. _(state: smoke-tested — closed 2026-08-09)_
+      Each run emits a digest (webhook when configured, dry-run otherwise)
+      listing what was packaged and what was skipped with its reason, and a
+      degraded run fires the same `execution.failed` event Phase D wired.
+      **A scheduled run never dispatches** — `dispatchedCount` is an invariant
+      and `Write-PackagingRunRecord` refuses to persist a run claiming
+      otherwise, the same defense-in-depth Phase B applies to `appliedCount`.
+      Dispatch happens only through the explicit approval action, which
+      enqueues to the Release 2.8 operator-runner queue (queue line **and** the
+      `queued` run summary the runner claims on — one without the other is a
+      task nothing picks up). `Test-PackagedItemTransition` is the single
+      definition of what may follow what; a refusal is a **409 with a named
+      category**, never a 200 that reads like success, and a dispatched packet
+      is terminal so it cannot be dispatched twice.
+- [x] Smoke: a scheduled run ranks + packages one fixture repo's top item,
       honors the quota-refusal path, and dispatches only on explicit
-      approval. _(state: planned)_
+      approval. _(state: smoke-tested — closed 2026-08-09)_
+      **Module smoke** (exit 0): `packaging scope ok: 2 selected, 7 refusals
+      each named`; `packaging rank ok: max score, earlier roadmap order breaks
+      the tie, unscored selects nothing`; `packaging quota ok: over-budget
+      skipped+logged with the guard code, nothing queued, missing guard fails
+      closed` (the fail-closed branch is proven in a fresh runspace where
+      `BudgetLedger.ps1` was never loaded); `packaging run ok: 2 packet(s)
+      queued for approval, dispatched=0 applied=0, dispatch queue absent,
+      invariant-violating runs refused`; `packaging approval ok: 8 transitions
+      enforced, queue+summary written on dispatch, fold keeps 3-step history,
+      sibling packet untouched`; and a **drift tripwire** — `queue contract ok:
+      10 fields identical to the canonical writer` — that fails if
+      `Add-RoadmapTaskToQueue.ps1`'s entry shape ever changes without this
+      writer following, which would otherwise strand approved work in the queue
+      as entries the runner silently mishandles.
+      **Api-host smoke** (exit 0, `packagingOk=True`) against a live host:
+      `packaged 'Add the operator dashboard export route with smoke test
+      coverage' (score 93, order 2) not the first item, over-budget twin
+      skipped at stage=quota, dispatch only on approval (run
+      20260809-105754-0c048a3f), re-approval 409`. Two fixture repos are used
+      because the pre-existing fixture's roadmap is deliberately below L3; the
+      over-budget twin differs **only** by a phase-plan estimate above the
+      per-session cap, so the refusal is caused by the budget and nothing else,
+      and the packaged item is asserted to be neither the first pending item nor
+      merely whatever the route returned.
+- [ ] **[non-blocker]** The approval queue has no operator UI — approving is an
+      API call (`POST /api/automation/packages/approve`). The digest names the
+      route, so the loop is usable, but a packaged item is less discoverable
+      than a doc-improve preview in the AI Docs panel. _(state: planned)_
+- [ ] **[non-blocker]** Packaging has no overdue alert of its own.
+      `Get-AutomationHealth` deliberately reads only the doc-refinement history
+      (interleaving kinds would let a live packaging cron mask a dead doc cron),
+      so a packaging cron that stops is currently invisible. _(state: planned —
+      the fix is a second health reader over `packaging-runs.jsonl`, not a
+      merged file.)_
 
 Phase D — Hardening & observability (parallelizable, autonomous, unblocked):
 
@@ -481,11 +559,12 @@ that dispatch fires only on an explicit approval action.
 
 **Risks and blockers:**
 
-- **Blocked:** Phase A on GitHub write credentials (see Lane 0.2); Phase C
-  on Phase A.
-- **Risk — auto-ranking on unproven writes.** Packaging top-value items
-  before one live PR round trip has succeeded produces review queues that
-  cannot be acted on. This is why the sequence is hard, not advisory.
+- **Cleared 2026-08-09:** Phase A's credential/write-path blocker and the
+  Phase C dependency it gated. The sequence held — packaging shipped only
+  after one live PR round trip proved the write path.
+- **Risk — auto-ranking on unproven writes.** Retired: packaging now sits
+  behind a write path proven live (PR #96), so a packet's repair-PR plan
+  names a route that demonstrably opens a PR.
 - **Risk — the portal freezes under load.** Observed twice (2026-07-05,
   2026-07-11): process alive, port listening, not responding. The watchdog
   safety net is shipped but unproven at SYSTEM; the root-cause prevention
@@ -512,17 +591,37 @@ GitHub write credentials for Phase A onward.
       workspace exceeds that — so the guard that exists to protect the portal
       is the thing that stops it. Tracked as the top open item in Lane 0.4;
       Release 3.2 implements whichever way that decision lands.
-- [ ] Phase C's approval-triggers-dispatch step has no working dispatcher.
-      `gh agent-task` requires an OAuth token and the portal runs as
-      LocalSystem, so packaged items cannot currently be dispatched from the
-      service at all. Release 3.0 moves execution into an operator session;
-      until it lands, Phase C can package and queue but not dispatch.
+- [ ] Phase C dispatches to the **operator runner**, not to the cloud. `gh
+      agent-task` requires an OAuth token the LocalSystem service structurally
+      cannot hold, so approval enqueues to the Release 2.8 queue
+      (`output/roadmap-task-queue.jsonl` + a `queued` run summary) and
+      `Invoke-RoadmapTaskRunner.ps1` executes it in the operator's session.
+      That is the one dispatch path that works from a service today, and it is
+      proven in both smokes. Cloud (Copilot) dispatch for packaged items still
+      needs Release 3.0. An approved packet therefore reaches a **branch with
+      committed work awaiting review**, not an open PR — the PR is opened
+      through Phase A's submit-PR route, which the packet's repair-PR plan
+      names, as a further operator action. Nothing auto-merges.
 
 Both known issues that stood here on 2026-08-07 — the tracked `settings.json`
 fixture path and the expired PAT — closed 2026-08-08; see
 [the archive](docs/history/completed-releases.md#closed-2026-08-08-archived-from-roadmapmd).
 
-**Traceability:** Phase B shipped
+**Traceability:** Phase C shipped
+[`Automation.RoadmapPackaging.ps1`](backend/modules/automation/Automation.RoadmapPackaging.ps1)
+(`Resolve-AutomationPackagingScope`, `Select-TopValueRoadmapItem`,
+`New-RoadmapItemTaskPacket`, `Test-PackagingQuota`,
+`Invoke-ScheduledRoadmapPackaging`, `Write-PackagingRunRecord` /
+`Get-PackagingRunHistory`, `Get-PackagedItemQueue`,
+`Test-PackagedItemTransition`, `Submit-PackagedItemToRunner`), the routes
+`POST /api/automation/package-run`, `GET /api/automation/packages`, and
+`POST /api/automation/packages/approve` / `/reject`, a `kind` filter plus
+both-kind merge on `GET /api/automation/history`, and
+`/api/automation/package-run` added to the extended request-deadline tier in
+[`RequestDeadline.ps1`](backend/api-host/RequestDeadline.ps1) (it reaches the
+same full-portfolio scan `/api/automation/run` does). Operator-facing behavior
+is documented in
+[`local-task-runner.md`](docs/reference/local-task-runner.md). Phase B shipped
 [`Automation.DocRefinement.ps1`](backend/modules/automation/Automation.DocRefinement.ps1)
 (`Select-AutomationDocTargets`, `Invoke-ScheduledDocRefinement`,
 `New-AutomationDigestPayload`, `Write-AutomationRunRecord` /
@@ -553,9 +652,9 @@ Operator-facing behavior is documented in
 
 | Phase                                | Scope                                                                                                   | Status                                                   | Completed  | Token usage | Work units |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ---------- | ----------- | ---------- |
-| Phase A: Unblockers                  | Live submit-PR proof on one write-enabled repo                                                          | **planned — blocked on credentials (Lane 0.2)**          | —          | —           | —          |
+| Phase A: Unblockers                  | Live submit-PR proof on one write-enabled repo                                                          | **done — proven live** (PR #96)                          | 2026-08-09 | —           | —          |
 | Phase B: Scheduled doc refinement    | Scheduler + favorite-scoped doc-improve previews + digest + run history                                 | **done — smoke-tested** (2026-07-06) — see archive       | 2026-07-06 | —           | —          |
-| Phase C: Scheduled roadmap packaging | Top-value item packaging + quota guard + approve-to-dispatch                                            | **planned — blocked on Phase A**                         | —          | —           | —          |
+| Phase C: Scheduled roadmap packaging | Top-value item packaging + quota guard + approve-to-dispatch                                            | **done — smoke-tested**; 2 non-blockers recorded         | 2026-08-09 | —           | —          |
 | Phase D: Hardening & observability   | Frontend unit tests, Dashboard decomposition, failure alerting, freeze prevention, auth operator-verify | **in progress — 4 of 6 shipped; 2 open (frontend)**      | —          | —           | —          |
 
 #### Budget guardrail
