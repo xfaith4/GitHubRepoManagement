@@ -1,6 +1,7 @@
 import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type RepositoryImprovementPreview, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type MaturityDriftAlert, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioAssessmentScanSummary, type PortfolioChangeState, type PortfolioScanDecisionReason, type PortfolioScanStatus, type RepoCurationState, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult, type GitHubAuthStatus } from '../types';
 import { type AutomationHealthPayload } from '../lib/automationStatus';
 import { type PackagedItem } from '../lib/packagedItems';
+import { type RunnerPresencePayload } from '../lib/runnerPresence';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -1497,6 +1498,23 @@ export async function getAutomationStatus(): Promise<AutomationHealthPayload | n
     const data = await fetchJson<any>(`${API_BASE_URL}/automation/status`);
     const d = data?.data ?? null;
     return d ? (d as AutomationHealthPayload) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Release 3.0 — operator-runner presence.
+ *
+ * Resolves null on failure rather than throwing: `resolveRunnerPresence` renders
+ * null as 'unknown' and still warns before queueing, which is the safe direction.
+ * Throwing here would break a dispatch surface over a status call.
+ */
+export async function getRunnerPresence(): Promise<RunnerPresencePayload | null> {
+  try {
+    const data = await fetchJson<any>(`${API_BASE_URL}/roadmap/runner`);
+    const d = data?.data ?? null;
+    return d ? (d as RunnerPresencePayload) : null;
   } catch {
     return null;
   }

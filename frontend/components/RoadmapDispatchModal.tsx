@@ -6,8 +6,16 @@ import {
   type RoadmapMaturityLevel,
   type RoadmapRepairPreview,
 } from '../types';
-import { checkRoadmapDispatch, executeRoadmapDispatch, applyRoadmapRepair } from '../services/apiClient';
+import { checkRoadmapDispatch, executeRoadmapDispatch, applyRoadmapRepair, getRunnerPresence } from '../services/apiClient';
+import { resolveRunnerPresence, runnerStartCommand, type RunnerPresencePayload } from '../lib/runnerPresence';
 import { SpinnerIcon } from './icons';
+
+const RUNNER_SEVERITY_CLASSES: Record<string, string> = {
+  ok: 'border-emerald-700/50 bg-emerald-900/20 text-emerald-200',
+  warning: 'border-amber-700/50 bg-amber-900/20 text-amber-100',
+  error: 'border-red-700/60 bg-red-900/25 text-red-100',
+  unknown: 'border-slate-700/60 bg-slate-800/40 text-slate-300',
+};
 
 interface RoadmapDispatchModalProps {
   isOpen: boolean;
@@ -115,6 +123,11 @@ const RoadmapDispatchModal: React.FC<RoadmapDispatchModalProps> = ({
   const [editedPrompt, setEditedPrompt] = useState('');
   const [dispatchResult, setDispatchResult] = useState<DispatchExecuteResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Release 3.0 — dispatch enqueues for the operator-session runner, so whether
+  // one exists is the difference between "about to run" and "will sit forever".
+  // Read it while the operator reviews the packet, not after they commit.
+  const [runnerPresence, setRunnerPresence] = useState<RunnerPresencePayload | null>(null);
+  const [runnerChecked, setRunnerChecked] = useState(false);
 
   // Run the dispatch readiness check whenever the modal opens
   useEffect(() => {
@@ -125,6 +138,12 @@ const RoadmapDispatchModal: React.FC<RoadmapDispatchModalProps> = ({
     setEditedPrompt('');
     setDispatchResult(null);
     setError(null);
+    setRunnerPresence(null);
+    setRunnerChecked(false);
+
+    // getRunnerPresence resolves null on failure rather than throwing, so a
+    // status hiccup cannot break the readiness check running alongside it.
+    getRunnerPresence().then(presence => { setRunnerPresence(presence); setRunnerChecked(true); });
 
     checkRoadmapDispatch(repoName)
       .then(result => {
@@ -214,6 +233,9 @@ const RoadmapDispatchModal: React.FC<RoadmapDispatchModalProps> = ({
 
   const repair = checkResult?.repairPreview ?? null;
   const packet: ReleaseDispatchPacket | null = checkResult?.releasePacket ?? null;
+  // Prefer what the dispatch response reported over the pre-flight read: it is
+  // the state at the moment the work was actually queued.
+  const runnerView = resolveRunnerPresence(dispatchResult?.runner ?? runnerPresence);
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
@@ -320,6 +342,21 @@ const RoadmapDispatchModal: React.FC<RoadmapDispatchModalProps> = ({
           {/* REVIEW PACKET */}
           {phase === 'review-packet' && packet && (
             <div className="space-y-1">
+              {/* Release 3.0 — dispatch enqueues for the operator-session
+                  runner, so this warns BEFORE the operator spends the prompt
+                  review. Queueing into an empty room otherwise looks identical
+                  to queueing into a running one until nothing ever happens. */}
+              {runnerChecked && runnerView.warnBeforeQueueing && (
+                <div
+                  data-testid="dispatch-runner-warning"
+                  role={runnerView.needsAttention ? 'alert' : 'status'}
+                  className={`mb-2 rounded-lg border px-3 py-2 text-xs ${RUNNER_SEVERITY_CLASSES[runnerView.severity]}`}
+                >
+                  <span className="font-semibold">{runnerView.label}.</span>{' '}
+                  <span>{runnerView.detail}</span>
+                </div>
+              )}
+
               {/* Release header */}
               <div className="bg-indigo-900/20 border border-indigo-700/40 rounded-lg p-4 mb-2">
                 <div className="text-base font-semibold text-indigo-200 mb-1">{packet.releaseName}</div>
@@ -400,11 +437,29 @@ const RoadmapDispatchModal: React.FC<RoadmapDispatchModalProps> = ({
           {/* DONE */}
           {phase === 'done' && dispatchResult && (
             <div className="space-y-3">
-              <div className="bg-green-900/20 border border-green-700/40 rounded-lg p-4 flex items-start gap-3">
-                <span className="text-green-400 text-xl flex-shrink-0">✓</span>
+              {/* Release 3.0: the host enqueues, it does not start. Saying
+                  "dispatched successfully" when no runner exists would be a
+                  green tick over work that will never move. */}
+              <div
+                data-testid="dispatch-outcome"
+                className={`rounded-lg border p-4 flex items-start gap-3 ${
+                  runnerView.warnBeforeQueueing
+                    ? 'bg-amber-900/20 border-amber-700/40'
+                    : 'bg-green-900/20 border-green-700/40'
+                }`}
+              >
+                <span className={`text-xl flex-shrink-0 ${runnerView.warnBeforeQueueing ? 'text-amber-400' : 'text-green-400'}`}>
+                  {runnerView.warnBeforeQueueing ? '!' : '✓'}
+                </span>
                 <div>
-                  <div className="text-green-300 font-semibold text-sm mb-0.5">Task dispatched successfully</div>
-                  <div className="text-xs text-green-400/70">{dispatchResult.message}</div>
+                  <div className={`font-semibold text-sm mb-0.5 ${runnerView.warnBeforeQueueing ? 'text-amber-200' : 'text-green-300'}`}>
+                    {runnerView.warnBeforeQueueing
+                      ? 'Queued — but nothing is running to pick it up'
+                      : 'Queued for the operator runner'}
+                  </div>
+                  <div className={`text-xs ${runnerView.warnBeforeQueueing ? 'text-amber-300/80' : 'text-green-400/70'}`}>
+                    {dispatchResult.message}
+                  </div>
                 </div>
               </div>
               <div className="bg-gray-800/60 border border-gray-700 rounded-lg p-3 space-y-1.5 text-sm">
@@ -426,8 +481,18 @@ const RoadmapDispatchModal: React.FC<RoadmapDispatchModalProps> = ({
                 </div>
               </div>
               <p className="text-xs text-gray-500">
-                GitHub Copilot will create a branch, implement the release milestones, and open a PR for your review.
+                The portal cannot start a GitHub agent task itself —{' '}
+                <code className="text-gray-400">gh agent-task</code> needs an OAuth credential the
+                service cannot hold. The task runner picks this up in your own session and creates
+                it there; GitHub Copilot then branches, implements the milestones, and opens a PR
+                for your review.
               </p>
+              {runnerView.warnBeforeQueueing && (
+                <p className="text-xs text-amber-300/80">
+                  Start the runner to release this task:{' '}
+                  <code className="rounded bg-gray-800 px-1 py-0.5">{runnerStartCommand()}</code>
+                </p>
+              )}
             </div>
           )}
 

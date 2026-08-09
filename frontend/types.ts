@@ -920,10 +920,20 @@ export interface DispatchQuotaSummary {
 export interface DispatchExecuteResult {
   runId: string;
   agentRunId?: string | null;
-  status: 'started' | 'failed';
+  /**
+   * Release 3.0: `queued`, not `started`. The API host enqueues for the
+   * operator-session runner — it cannot start a cloud agent task itself,
+   * because `gh agent-task` needs an OAuth credential a LocalSystem service
+   * structurally cannot hold. `started` remains for older recorded results.
+   */
+  status: 'queued' | 'started' | 'failed';
+  dispatchTarget?: 'claude' | 'copilot';
   githubRepo: string;
+  branch?: string | null;
   startedAt: string;
   message: string;
+  /** Whether a runner is present to pick the queued work up. */
+  runner?: import('./lib/runnerPresence').RunnerPresencePayload | null;
   quota?: DispatchQuotaSummary | null;
   error?: string | null;
 }

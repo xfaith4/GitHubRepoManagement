@@ -1905,6 +1905,166 @@ Docs: [`docs/reference/local-task-runner.md`](../../docs/reference/local-task-ru
 
 ---
 
+## Release 3.0 — Operator-Context Execution
+
+**Status:** done (engineering) — closed 2026-08-09; a live `gh agent-task`
+round trip through the runner is an external-resource proof tracked in 2.9
+
+**Goal:** make dispatch work by running it as the operator rather than as the
+service. Every dispatch path — roadmap task, guided repository improvement,
+agent repair — enqueues from the portal and executes in a session that already
+holds the credential the work needs. The LocalSystem host stops attempting to
+wield delegated authority it structurally cannot hold.
+
+**Prerequisites:** none. The approach was decided 2026-08-08 (Lane 0.2) after
+`gh agent-task` was confirmed to reject a PAT, and it reuses the queue-plus-
+runner pattern Release 2.8 already shipped for Claude Code.
+
+**Closed 2026-08-09.** All five milestones ship. The wizard no longer dead-ends:
+its final step enqueues with `dispatchTarget: 'copilot'` and the operator-session
+runner creates the GitHub agent task. Two findings are worth carrying forward
+because they were not in the milestone text:
+
+1. **The token check in front of the old dispatch was answering the wrong
+   question.** It verified a PAT was present, which a PAT always satisfied — and
+   the dispatch still failed, because `gh agent-task` needs OAuth. A guard that
+   passes for the credential that cannot work is worse than no guard: it moves
+   the failure further from its cause.
+2. **The refusal had to be unconditional, not service-conditional.** Refusing
+   only when the (heuristic) service check fires would bring the failure back the
+   moment it is wrong — and an interactive host fails too, because it inherits
+   the PAT it reads for every other GitHub call and `gh` ignores its stored OAuth
+   credential whenever one is set.
+
+### Product outcomes
+
+- One dispatch model instead of two: the portal enqueues, an operator-session
+  runner executes, status returns through the existing run summary.
+- No dispatch path requires a long-lived OAuth token stored on disk.
+- A dispatch that cannot run says so **at enqueue time**, naming the missing
+  runner, rather than failing at the last step of a wizard.
+
+### Engineering milestones
+
+- [x] Route the guided-improvement wizard's PR handoff through the queue
+      instead of invoking the launcher in-process. _(state: smoke-tested —
+      closed 2026-08-09)_ `POST /api/roadmap/dispatch/execute` now writes the
+      queue line **and** the `queued` run summary the runner claims on (one
+      without the other is a task nothing picks up — the same defence
+      `Submit-PackagedItemToRunner` applies) and returns `status: 'queued'`,
+      not `'started'`. The in-process `Invoke-PowerShellScriptFile` call to
+      `Start-GitHubCopilotTask.ps1` is gone, and a module-smoke tripwire over
+      the host source fails if it returns. **The token check that stood in
+      front of it was answering the wrong question** and has been removed: a
+      PAT passed it and the dispatch still failed at the last step, because
+      `gh agent-task` needs OAuth. The response also carries the runner's
+      presence, so the UI can say "queued and about to run" or "queued, but
+      nothing is running" instead of a uniform green tick.
+- [x] Add `dispatchTarget` (`claude` | `copilot`) to the queue entry and teach
+      [`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1) to
+      execute a copilot entry via `gh agent-task create` in the operator
+      session, recording the resulting task URL in the run summary.
+      _(state: smoke-tested — closed 2026-08-09)_ Both queue writers moved in
+      lockstep — the Phase C drift tripwire now reports **12 identical fields**
+      (was 10), which is what stopped the packaging writer from silently
+      omitting the new field. An entry written before 3.0 carries no
+      `dispatchTarget` and resolves to `claude`; an entry naming something
+      **unrecognized is refused, never defaulted**, because running the wrong
+      tool against a real repository is worse than leaving the task queued.
+      The argv is built as an array, never a command string — the prompt is
+      multi-line roadmap text and splicing it into a shell line breaks on the
+      first quote it contains. A copilot entry never branches or commits: the
+      cloud agent owns the working copy, so what is recorded is the task URL,
+      and **an absent URL records the absence** rather than a fabricated link.
+      Packaged items stay `claude` by construction — their prompt names a
+      working branch and a local repo path, so cloud-dispatching one would send
+      work to an agent with no checkout to do it in.
+- [x] Surface runner presence — last heartbeat and claimed-entry count — so the
+      portal can warn before queueing work nothing will pick up.
+      _(state: smoke-tested — closed 2026-08-09)_
+      [`Automation.RunnerPresence.ps1`](backend/modules/automation/Automation.RunnerPresence.ps1)
+      behind `GET /api/roadmap/runner`, rendered by
+      [`lib/runnerPresence.ts`](frontend/lib/runnerPresence.ts) in the dispatch
+      modal **while the operator reviews the packet**, not after they commit.
+      The runner beats every cycle **including idle ones** — a runner that only
+      announced itself while working would look absent exactly when the portal
+      most needs to know it is there. The staleness budget derives from the
+      runner's own `-PollSeconds`, so a deliberately slow runner is not called
+      dead each cycle, with a floor so a fast one does not race its reader.
+      An unreadable heartbeat is **absent, never present**. Presence alone
+      understates the problem, so the route also reports the still-`queued`
+      backlog split by target (`queuedClaude` / `queuedCopilot`) — that names
+      _which_ runner session is missing — and `strandedCount`.
+- [x] Ship a per-user logon scheduled-task installer for the runner
+      (interactive session, never SYSTEM), mirroring the watchdog installer's
+      shape. _(state: smoke-tested — closed 2026-08-09)_
+      [`Install-RoadmapTaskRunner.ps1`](scripts/service/Install-RoadmapTaskRunner.ps1)
+      is the deliberate **mirror image** of `Install-PortalWatchdog.ps1`: that
+      one demands elevation and registers as SYSTEM because it must kill a
+      SYSTEM-owned process; this one **refuses** SYSTEM, LOCAL SERVICE and
+      NETWORK SERVICE, because a service-account runner registers fine, shows
+      as running, claims queued work, and fails every task for a credential
+      reason that looks nothing like the cause. Registers `LogonType
+      Interactive` + `RunLevel Limited` (elevation would gain nothing and widen
+      the blast radius of a tool that runs agent-authored code) with no
+      execution time limit, since the default 72-hour cap would kill the poll
+      loop mid-run every third day. Paths are quoted — an unquoted workspace
+      root with a space truncates into a directory that does not exist.
+- [x] Make the API host refuse in-service cloud dispatch with a route-level
+      409 that names the runner, keeping `-DispatchMode copilot` reachable only
+      from an operator shell. _(state: smoke-tested — closed 2026-08-09)_
+      `Test-InProcessCloudDispatchAllowed` refuses **unconditionally**, not
+      only when the service check fires. Two reasons, both recorded in the
+      function: the service detection is a heuristic, so refusing only when it
+      is true brings the failure back the moment it is wrong; and even an
+      interactive host would inherit the PAT it reads for every other GitHub
+      call, which makes `gh` ignore its stored OAuth credential — so the
+      interactive case fails too, for a reason that looks nothing like the
+      service case. `Start-RoadmapCopilotTask.ps1 -DispatchMode copilot` is
+      untouched: it already ran as the operator.
+
+### Acceptance criteria
+
+- [x] The wizard's final step returns a queue id and makes no `gh` call from the
+      service process. _(module smoke fails if the host references the launcher
+      again; api-host smoke asserts the 409 refusal)_
+- [ ] A queued copilot entry executed by the operator runner reaches a real
+      GitHub agent task, with its URL in the run summary. _(the one external
+      -resource proof — needs an operator session with `gh auth login`; tracked
+      in Release 2.9, batch with the 2.8 `claude` run)_
+- [x] With no runner registered, queueing reports the missing runner in the UI.
+      _(api-host smoke: `state=absent present=False`; the dispatch modal renders
+      an amber outcome rather than a green tick)_
+- [x] Module smoke covers the `dispatchTarget` round-trip and the runner's
+      copilot branch.
+
+### Traceability
+
+Shipped [`Automation.RunnerPresence.ps1`](backend/modules/automation/Automation.RunnerPresence.ps1)
+(`Resolve-RunnerPresence`, `Get-RunnerPresence`, `Get-QueuedTaskBacklog`,
+`Test-InProcessCloudDispatchAllowed`) behind `GET /api/roadmap/runner`;
+`dispatchTarget` / `baseBranch` on both queue writers
+([`Add-RoadmapTaskToQueue.ps1`](scripts/Add-RoadmapTaskToQueue.ps1)'s
+`New-RoadmapQueueEntry` and the packaging module's `New-PackagedItemQueueEntry`,
+held together by the Phase C drift tripwire); the runner's copilot branch
+(`Invoke-QueuedCopilotTask`, `New-CopilotAgentTaskArgs`,
+`Get-AgentTaskUrlFromOutput`, `Test-CopilotDispatchPrecondition`) and its
+heartbeat (`New-RunnerHeartbeat`, `Write-RunnerHeartbeat`) in
+[`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1);
+[`Install-RoadmapTaskRunner.ps1`](scripts/service/Install-RoadmapTaskRunner.ps1);
+and [`lib/runnerPresence.ts`](frontend/lib/runnerPresence.ts) consumed by
+[`RoadmapDispatchModal.tsx`](frontend/components/RoadmapDispatchModal.tsx).
+Operator-facing behavior is documented in
+[`local-task-runner.md`](docs/reference/local-task-runner.md).
+
+### Out of scope
+
+- Re-hosting the portal service under a named user account — that trades
+  always-on-before-login for the whole product to fix one route.
+- Unattended dispatch with no operator session present.
+
+---
+
 ## Release 2.7 — Guarded Scheduled Automation (completed phases)
 
 **Status:** partially complete — Phase B shipped and smoke-tested 2026-07-06; the value-scoring decision (Phase A) and two Phase D reliability items shipped 2026-07-06 / 2026-07-12. Phases A (live PR proof), C, and the rest of D remain open and stay in the active roadmap.

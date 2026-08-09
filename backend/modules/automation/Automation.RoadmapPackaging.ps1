@@ -1140,16 +1140,23 @@ function New-PackagedItemQueueEntry {
     if ([string]::IsNullOrWhiteSpace($branch)) { $branch = "roadmap/$RunId" }
 
     return [ordered]@{
-        schemaVersion = '1'
-        runId         = $RunId
-        status        = 'queued'
-        repository    = [string](_Pack_GetField -Obj $Packet -Name 'repoName' -Default '')
-        localRepoPath = [string](_Pack_GetField -Obj $Packet -Name 'repoPath' -Default '')
-        roadmapPath   = [string](_Pack_GetField -Obj $Packet -Name 'roadmapPath' -Default '')
-        selectedTask  = [string](_Pack_GetField -Obj $Packet -Name 'itemText' -Default '')
-        branch        = $branch
-        prompt        = [string](_Pack_GetField -Obj $Packet -Name 'generatedPrompt' -Default '')
-        queuedAt      = $QueuedAt
+        schemaVersion  = '1'
+        runId          = $RunId
+        status         = 'queued'
+        repository     = [string](_Pack_GetField -Obj $Packet -Name 'repoName' -Default '')
+        localRepoPath  = [string](_Pack_GetField -Obj $Packet -Name 'repoPath' -Default '')
+        roadmapPath    = [string](_Pack_GetField -Obj $Packet -Name 'roadmapPath' -Default '')
+        selectedTask   = [string](_Pack_GetField -Obj $Packet -Name 'itemText' -Default '')
+        branch         = $branch
+        prompt         = [string](_Pack_GetField -Obj $Packet -Name 'generatedPrompt' -Default '')
+        # Release 3.0. A packaged item is always a LOCAL Claude Code task: the
+        # packet's prompt names a working branch and a repo path, and its
+        # repair-PR plan hands the result to the Phase A submit-PR route. Sending
+        # that to a cloud agent would dispatch work with no local checkout to do
+        # it in. Cloud dispatch reaches the queue only from the wizard.
+        dispatchTarget = 'claude'
+        baseBranch     = [string](_Pack_GetField -Obj $Packet -Name 'baseBranch' -Default '')
+        queuedAt       = $QueuedAt
     }
 }
 

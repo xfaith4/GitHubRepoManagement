@@ -1,8 +1,12 @@
-# Local task runner (Claude Code)
+# Local task runner (Claude Code and Copilot)
 
-The portal dispatches roadmap work to **Claude Code on the local repo**, not to
-GitHub Copilot in the cloud. Because the portal runs as a LocalSystem service (it
-can't be your authenticated Claude Code), dispatch is split in two:
+**Release 3.0 — one dispatch model.** The portal enqueues; this runner executes
+in your session. That is now true for *both* targets: local Claude Code work and
+cloud GitHub Copilot agent tasks. The portal never runs either itself, because a
+LocalSystem service holds neither your Claude Code login nor the OAuth credential
+`gh agent-task` requires.
+
+Because the portal runs as a LocalSystem service, dispatch is split in two:
 
 1. **Portal enqueues** — "Queue Task" in the ROADMAP modal writes the task to
    `output/roadmap-task-queue.jsonl` (status `queued`).
@@ -102,10 +106,87 @@ Inspect the approval queue with `GET /api/automation/packages?status=pending-app
 A packet may be approved only from `pending-approval`, and a dispatched packet is
 terminal — re-approving is refused with a 409 rather than dispatched twice.
 
+## Cloud (Copilot) dispatch runs here too — Release 3.0
+
+The guided-improvement wizard's final step used to call
+`Start-GitHubCopilotTask.ps1` inside the API host. That could never succeed from
+the service: `gh agent-task create` requires an **OAuth** credential, `gh`
+ignores its stored credential whenever `GH_TOKEN`/`GITHUB_TOKEN` is set (the host
+sets one for its own GitHub calls), and LocalSystem has no interactive login to
+obtain one. The wizard therefore dead-ended after the operator had already spent
+the refinement work.
+
+`POST /api/roadmap/dispatch/execute` now enqueues instead, with
+`dispatchTarget: "copilot"` on the queue entry, and this runner creates the agent
+task in your session:
+
+```text
+Portal            -> roadmap-task-queue.jsonl (dispatchTarget=copilot, status=queued)
+Invoke-RoadmapTaskRunner.ps1
+                     gh agent-task create <prompt> --repo <owner/repo> [--base <branch>]
+                     status=dispatched + agentTaskUrl recorded
+```
+
+The runner **never branches or commits** for a copilot entry — the cloud agent
+owns the working copy. What it records is the task URL, which is the only durable
+handle on the run.
+
+Two things block cloud dispatch, and both are refused with a named reason rather
+than left to fail at the call:
+
+| Reason | What it means | Fix |
+| --- | --- | --- |
+| `gh-not-found` | The GitHub CLI is not on PATH. | Install it, or set `GH_CLI_PATH`. |
+| `env-token-overrides-oauth` | This shell carries `GH_TOKEN`/`GITHUB_TOKEN`. | `$env:GH_TOKEN=$null; $env:GITHUB_TOKEN=$null`, then re-run. |
+
+A blocked entry is **not** claimed — it stays `queued` so it can run once the
+session is fixed, instead of being burned on a session that cannot execute it.
+
+Asking the host to run cloud dispatch in-process (`inProcess: true`) is refused
+with a **409 `operator-runner-required`** naming this runner, in both service and
+interactive mode. The service check is a heuristic; refusing only when it fires
+would bring the failure back the moment it is wrong.
+
+## Is a runner actually running?
+
+The portal enqueues work it cannot execute, so queueing into an empty room used
+to look exactly like queueing into a running one. The runner writes a heartbeat
+every poll cycle — including idle ones, so it is visible *before* work is queued
+— and `GET /api/roadmap/runner` reports it:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:7071/api/roadmap/runner
+```
+
+| Field | Meaning |
+| --- | --- |
+| `state` | `present`, `stale`, or `absent`. Never `present` on an unreadable heartbeat. |
+| `secondsSinceBeat` / `staleAfterSeconds` | Age, and the budget derived from the runner's own `-PollSeconds` (so a slow runner is not called dead). |
+| `queuedClaude` / `queuedCopilot` | Still-`queued` backlog, split by target — this names *which* runner session is missing. |
+| `strandedCount` | Queued work with nothing to pick it up. Zero when a runner is present. |
+
+The roadmap dispatch modal reads this while you review the packet and warns
+before you commit to queueing.
+
+### Start it automatically at logon
+
+```powershell
+# from YOUR normal (non-elevated) PowerShell:
+pwsh -File scripts/service/Install-RoadmapTaskRunner.ps1
+pwsh -File scripts/service/Install-RoadmapTaskRunner.ps1 -Uninstall
+```
+
+This registers an **interactive, unelevated** logon task — the mirror image of
+`Install-PortalWatchdog.ps1`, which demands elevation and registers as SYSTEM.
+The installer **refuses** SYSTEM, LOCAL SERVICE and NETWORK SERVICE outright: a
+runner registered as a service account installs fine, shows as running, claims
+queued work, and fails every task for a credential reason that looks nothing like
+the cause.
+
 ## Notes
 
-- Copilot dispatch is still available for repos that live on GitHub, behind
-  `Start-RoadmapCopilotTask.ps1 -DispatchMode copilot`, but it is no longer the
-  default.
+- Copilot dispatch is also reachable directly from an operator shell with
+  `Start-RoadmapCopilotTask.ps1 -DispatchMode copilot`, which bypasses the queue.
+  That path is unchanged; it already ran as the operator.
 - `verify` is best-effort across arbitrary repos (record-only, non-blocking) —
   the `awaiting-review` gate + your review are the real quality check.

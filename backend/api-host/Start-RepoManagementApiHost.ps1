@@ -67,6 +67,7 @@ $aiModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\ai'
 $automationModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\automation'
 . (Join-Path $automationModuleRoot 'Automation.DocRefinement.ps1')
 . (Join-Path $automationModuleRoot 'Automation.RoadmapPackaging.ps1')
+. (Join-Path $automationModuleRoot 'Automation.RunnerPresence.ps1')
 $agentRunsModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\agent-runs'
 . (Join-Path $agentRunsModuleRoot 'BudgetLedger.ps1')
 . (Join-Path $agentRunsModuleRoot 'AgentRuns.ps1')
@@ -6486,6 +6487,26 @@ try {
                         }
                     }
                 }
+                # ── Release 3.0 — operator-runner presence ──────────────────────
+                # The portal enqueues work it cannot execute. Without this route
+                # the UI cannot tell "queued and about to run" from "queued into
+                # an empty room", and the operator only finds out when nothing
+                # ever leaves `queued`.
+                'GET /api/roadmap/runner' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $runnerState = Get-RunnerPresence -WorkspaceRoot $WorkspaceRoot
+                    $runnerBacklog = Get-QueuedTaskBacklog -WorkspaceRoot $WorkspaceRoot
+                    $runnerPayload = [ordered]@{}
+                    foreach ($property in $runnerState.PSObject.Properties) { $runnerPayload[$property.Name] = $property.Value }
+                    foreach ($property in $runnerBacklog.PSObject.Properties) { $runnerPayload[$property.Name] = $property.Value }
+                    # Backlog without presence understates the problem: "no
+                    # runner" matters far more with 12 tasks already waiting.
+                    $runnerPayload['strandedCount'] = if ($runnerState.present) { 0 } else { [int]$runnerBacklog.queuedTotal }
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = $runnerPayload
+                    }
+                }
                 # ── Release 2.7 Phase D — automation health ─────────────────────
                 # Interval firing is delegated to an external cron, so a scheduler
                 # that stops changes nothing visible in the product: the config
@@ -9228,6 +9249,31 @@ try {
                         throw 'prompt is required for /api/roadmap/dispatch/execute'
                     }
 
+                    # Release 3.0 — a caller may not ask the host to run cloud
+                    # dispatch in-process. Refused with a 409 that names the
+                    # runner rather than accepted and failed at the last step,
+                    # which is the shape this release exists to remove.
+                    $requestedInProcess = $false
+                    if ($body.ContainsKey('inProcess')) { $requestedInProcess = [bool]$body.inProcess }
+                    elseif ($body.ContainsKey('dispatchMode') -and ([string]$body.dispatchMode).Trim().ToLowerInvariant() -in @('in-process', 'inprocess', 'service')) {
+                        $requestedInProcess = $true
+                    }
+                    if ($requestedInProcess) {
+                        $inProcessVerdict = Test-InProcessCloudDispatchAllowed -Caller 'POST /api/roadmap/dispatch/execute' -RunningAsService ([bool]$script:RunningAsService)
+                        Write-HostLog ("WARN roadmap.dispatch.execute correlationId={0} refused in-process cloud dispatch (runningAsService={1})" -f $correlationId, $inProcessVerdict.runningAsService)
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                            success  = $false
+                            error    = [string]$inProcessVerdict.message
+                            category = [string]$inProcessVerdict.code
+                            data     = @{
+                                runnerCommand = 'pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1'
+                                runner        = (Get-RunnerPresence -WorkspaceRoot $WorkspaceRoot)
+                            }
+                        }
+                        break
+                    }
+
                     $settingsForFallback = Get-HostSettings
                     $roadmapTtl   = Get-RoadmapCacheTtlSeconds -Settings $settingsForFallback
                     $roadmapCache = Get-RoadmapFromCache -TtlSeconds $roadmapTtl
@@ -9319,12 +9365,13 @@ try {
                         break
                     }
 
-                    # Check for GitHub token only after the budget/quota guard passes.
-                    $dispatchTokenResolution = Get-GitHubTokenResolution -Settings $settingsForFallback
-                    $ghToken = $dispatchTokenResolution.Token
-                    if ([string]::IsNullOrWhiteSpace($ghToken)) {
-                        throw ("GitHub token not found. Set the environment variable '{0}' (named by settings.secrets.gitHubTokenEnvVar) and restart the host before dispatching.{1}" -f $dispatchTokenResolution.EnvVarName, $(if ($script:RunningAsService) { ' This host runs as a service, so the variable must be Machine-scoped.' } else { '' }))
-                    }
+                    # Release 3.0 — the host no longer attempts cloud dispatch
+                    # itself. `gh agent-task` requires an OAuth credential that a
+                    # LocalSystem service structurally cannot hold, so the token
+                    # check that used to stand here was answering the wrong
+                    # question: a PAT would have passed it and the dispatch would
+                    # still have failed at the last step of the wizard. The route
+                    # now enqueues for the operator-session runner.
 
                     # Resolve GitHub owner/repo from git remote, falling back to settings owner
                     $fallbackOwner = ''
@@ -9337,18 +9384,6 @@ try {
                         -FallbackRepoName $repoName
 
                     Write-HostLog ("[TRACE] roadmap.dispatch.execute correlationId={0} repoName={1} githubRepo={2}" -f $correlationId, $repoName, $githubRepo)
-
-                    # Invoke Start-GitHubCopilotTask.ps1 directly with the pre-built prompt
-                    $historyRoot = Join-Path $WorkspaceRoot 'output\roadmap-task-history'
-                    $startScriptPath = Join-Path $WorkspaceRoot 'scripts\Start-GitHubCopilotTask.ps1'
-                    $scriptArgs = @(
-                        '-Repository',    $githubRepo,
-                        '-TaskDescription', $prompt,
-                        '-HistoryRoot',   $historyRoot,
-                        '-InitiatedBy',   'release-dispatch-api'
-                    )
-                    if (-not [string]::IsNullOrWhiteSpace($baseBranch)) { $scriptArgs += @('-BaseBranch', $baseBranch) }
-                    if ($follow) { $scriptArgs += '-Follow' }
 
                     if (@($quotaResult.warnings).Count -gt 0) {
                         $quotaWarningData = [ordered]@{}
@@ -9363,13 +9398,62 @@ try {
                             -Data $quotaWarningData
                     }
 
-                    $runResult = Invoke-PowerShellScriptFile -ScriptPath $startScriptPath -Arguments $scriptArgs
-
-                    # Read back the latest history entry to surface the run ID
-                    $historyItems = Get-RoadmapTaskHistory -Limit 1
-                    $latest = if (@($historyItems).Count -gt 0) { $historyItems[0] } else { $null }
-                    $runId = if ($null -ne $latest) { [string]$latest.runId } else { '' }
+                    # Release 3.0 — enqueue for the operator runner instead of
+                    # invoking Start-GitHubCopilotTask.ps1 in-process.
+                    #
+                    # The in-process call could never succeed from the service:
+                    # `gh agent-task create` requires an OAuth token, gh ignores
+                    # its stored credential whenever GH_TOKEN/GITHUB_TOKEN is
+                    # set, and LocalSystem has neither a stored credential nor an
+                    # interactive login to obtain one. So the wizard reliably
+                    # dead-ended at its final step, after the operator had
+                    # already spent the refinement work.
+                    #
+                    # Both halves are written together — the queue line AND the
+                    # `queued` run summary the runner claims on. One without the
+                    # other is a task nothing ever picks up, which is the same
+                    # defence Phase C's Submit-PackagedItemToRunner applies.
+                    $runId = New-PackagedItemDispatchRunId
                     $startedAt = (Get-Date).ToUniversalTime().ToString('o')
+                    $dispatchBranch = "roadmap/$runId"
+
+                    . (Join-Path $WorkspaceRoot 'scripts\Add-RoadmapTaskToQueue.ps1') -LoadFunctionsOnly
+                    $queueEntry = New-RoadmapQueueEntry `
+                        -RunId $runId `
+                        -Repository $githubRepo `
+                        -LocalRepoPath $localPath `
+                        -RoadmapPath $effectiveRoadmapPath `
+                        -SelectedTask ([string](Get-ValueOrDefault $planningContext.selectedTaskText '')) `
+                        -TaskDescription $prompt `
+                        -Branch $dispatchBranch `
+                        -QueuedAt $startedAt `
+                        -DispatchTarget 'copilot' `
+                        -BaseBranch $baseBranch
+                    $dispatchQueuePath = Join-Path $WorkspaceRoot 'output\roadmap-task-queue.jsonl'
+                    $dispatchQueueDir = Split-Path -Parent $dispatchQueuePath
+                    if (-not (Test-Path -LiteralPath $dispatchQueueDir)) { $null = New-Item -ItemType Directory -Path $dispatchQueueDir -Force }
+                    Add-Content -LiteralPath $dispatchQueuePath -Value ([pscustomobject]$queueEntry | ConvertTo-Json -Depth 8 -Compress) -Encoding UTF8
+
+                    $dispatchRunsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
+                    if (-not (Test-Path -LiteralPath $dispatchRunsDir)) { $null = New-Item -ItemType Directory -Path $dispatchRunsDir -Force }
+                    ([ordered]@{
+                        runId             = $runId
+                        status            = 'queued'
+                        dispatchTarget    = 'copilot'
+                        startedAt         = $startedAt
+                        repository        = $githubRepo
+                        roadmapPath       = $effectiveRoadmapPath
+                        localRepoPath     = $localPath
+                        baseBranch        = $baseBranch
+                        branch            = $dispatchBranch
+                        selectedTask      = [string](Get-ValueOrDefault $planningContext.selectedTaskText '')
+                        queuedBy          = 'release-dispatch-api'
+                    } | ConvertTo-Json -Depth 8) | Set-Content -LiteralPath (Join-Path $dispatchRunsDir ("{0}.summary.json" -f $runId)) -Encoding UTF8
+
+                    # Presence is read AFTER queueing, not instead of it. The
+                    # work is recorded either way; what changes is whether the
+                    # response says a runner will pick it up.
+                    $runnerPresence = Get-RunnerPresence -WorkspaceRoot $WorkspaceRoot
 
                     if (-not [string]::IsNullOrWhiteSpace($promptRefinementRunId) -and -not [string]::IsNullOrWhiteSpace($runId)) {
                         $null = Write-OperationsPromptDispatchRecord `
@@ -9377,7 +9461,7 @@ try {
                             -PromptRefinementRunId $promptRefinementRunId `
                             -DispatchRunId $runId `
                             -GitHubRepo $githubRepo `
-                            -Status 'started' `
+                            -Status 'queued' `
                             -StartedAt $startedAt `
                             -LocalPath $localPath `
                             -BaseBranch $baseBranch
@@ -9406,23 +9490,34 @@ try {
                         Write-HostLog ("[WARN ] roadmap.dispatch.execute correlationId={0} agent-run ledger write failed: {1}" -f $correlationId, $_.Exception.Message)
                     }
 
-                    $dispatchMessage = "Copilot task dispatched for $githubRepo"
+                    # Say what actually happened. "Dispatched" would be a claim
+                    # with nothing behind it — the task is queued, and whether it
+                    # runs depends on a runner existing.
+                    $dispatchMessage = if ($runnerPresence.present) {
+                        "Queued for the operator runner on $($runnerPresence.hostname)\$($runnerPresence.user); it will create the GitHub agent task for $githubRepo."
+                    }
+                    else {
+                        "Queued for $githubRepo, but no operator runner is currently reporting in — nothing will pick this up until one runs. $($runnerPresence.message)"
+                    }
                     if (@($quotaResult.warnings).Count -gt 0) {
-                        $dispatchMessage += ". Quota warning: $([string]$quotaResult.warnings[0])"
+                        $dispatchMessage += " Quota warning: $([string]$quotaResult.warnings[0])"
                     }
 
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
-                    Write-HostLog ("[TRACE] roadmap.dispatch.execute correlationId={0} done repoName={1} runId={2} agentRunId={3}" -f $correlationId, $repoName, $runId, $agentRunId)
+                    Write-HostLog ("[TRACE] roadmap.dispatch.execute correlationId={0} done repoName={1} runId={2} agentRunId={3} target=copilot runnerState={4}" -f $correlationId, $repoName, $runId, $agentRunId, $runnerPresence.state)
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data    = @{
-                            runId      = $runId
-                            agentRunId = $agentRunId
-                            status     = 'started'
-                            githubRepo = $githubRepo
-                            startedAt  = $startedAt
-                            message    = $dispatchMessage
+                            runId          = $runId
+                            agentRunId     = $agentRunId
+                            status         = 'queued'
+                            dispatchTarget = 'copilot'
+                            githubRepo     = $githubRepo
+                            branch         = $dispatchBranch
+                            startedAt      = $startedAt
+                            runner         = $runnerPresence
+                            message        = $dispatchMessage
                             quota      = @{
                                 estimatedWorkUnits = [double]$quotaResult.estimatedWorkUnits
                                 estimateSource = [string](Get-ValueOrDefault $planningContext.workUnitsEstimateSource '')

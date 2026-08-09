@@ -2305,10 +2305,214 @@ Write-Step 'Local Claude Code dispatch — smoke: queue writer + runner logic (R
         if ((Resolve-VerifyCommand -RepoPath $dispTmp) -ne 'npm test') { throw 'verify detection (npm test) failed' }
 
         Write-Host ("  claude dispatch ok: queue round-trip ({0} entries), status transitions, commit-msg truncation, verify detection" -f $read.Count) -ForegroundColor DarkGray
+
+        # ── Release 3.0 — dispatchTarget on the queue contract ───────────────
+        Write-Step 'Operator-context dispatch — smoke: dispatchTarget contract + copilot runner branch (Release 3.0)'
+
+        # An entry written before Release 3.0 carries no dispatchTarget and IS a
+        # Claude Code task; defaulting it to anything else would run the wrong
+        # tool against a real repo.
+        if ($entry.dispatchTarget -ne 'claude') { throw "Default dispatchTarget must be claude; got '$($entry.dispatchTarget)'" }
+        $legacyEntry = [pscustomobject]@{ runId = 'legacy'; prompt = 'p' }
+        if ((Get-QueueEntryDispatchTarget -Entry $legacyEntry) -ne 'claude') { throw 'A pre-3.0 entry with no dispatchTarget must resolve to claude' }
+        $copilotEntry = New-RoadmapQueueEntry -RunId 'r3' -Repository 'x/y' -LocalRepoPath 'C:\repo' -RoadmapPath 'C:\repo\ROADMAP.md' `
+            -SelectedTask 'Cloud' -TaskDescription 'PROMPT' -Branch '' -QueuedAt '2026-01-01T00:00:02Z' -DispatchTarget 'copilot' -BaseBranch 'main'
+        if ($copilotEntry.dispatchTarget -ne 'copilot' -or $copilotEntry.baseBranch -ne 'main') { throw 'Copilot entry did not carry dispatchTarget/baseBranch' }
+        if ((Get-QueueEntryDispatchTarget -Entry ([pscustomobject]$copilotEntry)) -ne 'copilot') { throw 'Runner did not read dispatchTarget=copilot back' }
+        if ((Resolve-RoadmapDispatchTarget -DispatchTarget 'COPILOT') -ne 'copilot') { throw 'dispatchTarget must normalize case' }
+
+        # Refuse, never default. Running an unrecognized target as claude would
+        # execute the wrong tool against a real repository.
+        $unknownRefused = $false
+        try { $null = Resolve-RoadmapDispatchTarget -DispatchTarget 'gemini' } catch { $unknownRefused = $true }
+        if (-not $unknownRefused) { throw 'An unknown dispatchTarget must be refused, not defaulted' }
+        $runnerRefused = $false
+        try { $null = Get-QueueEntryDispatchTarget -Entry ([pscustomobject]@{ runId = 'r'; dispatchTarget = 'gemini' }) } catch { $runnerRefused = $true }
+        if (-not $runnerRefused) { throw 'The runner must refuse an unknown dispatchTarget rather than guess' }
+
+        # `gh agent-task create` argv: an array, never a command string — the
+        # prompt is multi-line roadmap text full of quotes.
+        $quotingPrompt = "line1`nHe said `"go`" — and 'stop'"
+        $ghArgs = @(New-CopilotAgentTaskArgs -Repository 'owner/repo' -Prompt $quotingPrompt -BaseBranch 'main')
+        if ($ghArgs[0] -ne 'agent-task' -or $ghArgs[1] -ne 'create') { throw 'agent-task argv must start with agent-task create' }
+        if ($ghArgs -notcontains '--repo' -or $ghArgs -notcontains 'owner/repo') { throw 'agent-task argv must name the repo' }
+        if ($ghArgs -notcontains '--base' -or $ghArgs -notcontains 'main') { throw 'agent-task argv must pass the base branch' }
+        # One argv element, verbatim. A prompt spliced into a command string
+        # would break on the first quote the roadmap text happens to contain.
+        if (@($ghArgs | Where-Object { $_ -eq $quotingPrompt }).Count -ne 1) { throw 'The prompt must survive as one verbatim argv element, not split or re-quoted' }
+        $noBase = @(New-CopilotAgentTaskArgs -Repository 'owner/repo' -Prompt 'p')
+        if ($noBase -contains '--base') { throw 'An empty base branch must not emit a bare --base flag' }
+
+        # The task URL is the only durable handle on a cloud run. Absent output
+        # yields '' so the caller records the absence rather than a fake link.
+        if ((Get-AgentTaskUrlFromOutput -Output 'Created https://github.com/owner/repo/agents/task/42.') -ne 'https://github.com/owner/repo/agents/task/42') { throw 'agent-task URL not extracted (or trailing punctuation kept)' }
+        if ((Get-AgentTaskUrlFromOutput -Output 'no url here') -ne '') { throw 'Missing agent-task URL must yield empty, never a fabricated link' }
+        if ((Get-AgentTaskUrlFromOutput -Output '') -ne '') { throw 'Empty output must yield an empty URL' }
+
+        # The credential trap this release routes around: gh IGNORES its stored
+        # OAuth credential whenever GH_TOKEN/GITHUB_TOKEN is set, so a PAT
+        # inherited from the portal turns a good operator session into the same
+        # failure the service has.
+        $okPre = Test-CopilotDispatchPrecondition -GhAvailable $true -EnvToken ''
+        if (-not $okPre.ok) { throw 'A gh-present, token-free session must be allowed to dispatch' }
+        $noGh = Test-CopilotDispatchPrecondition -GhAvailable $false -EnvToken ''
+        if ($noGh.ok -or $noGh.reason -ne 'gh-not-found') { throw 'A session without gh must be refused with a named reason' }
+        $envTok = Test-CopilotDispatchPrecondition -GhAvailable $true -EnvToken 'github_pat_abc'
+        if ($envTok.ok -or $envTok.reason -ne 'env-token-overrides-oauth') { throw 'An environment token must block cloud dispatch with a named reason' }
+        if ($envTok.message -notmatch 'GH_TOKEN') { throw 'The refusal must name the variable to clear' }
+        Write-Host '  dispatch target ok: legacy entries stay claude, unknown targets refused, agent-task argv + URL parsed, env-token trap named' -ForegroundColor DarkGray
     }
     finally {
         Remove-Item -LiteralPath $dispTmp -Recurse -Force -ErrorAction SilentlyContinue
     }
+}
+
+# ── Release 3.0 — operator-runner presence and the in-host dispatch refusal ──
+Write-Step 'Runner presence — smoke: queueing into an empty room is visible (Release 3.0)'
+& {
+    $root = $WorkspaceRoot
+    $presenceModule = Join-Path $root 'backend\modules\automation\Automation.RunnerPresence.ps1'
+    if (-not (Test-Path -LiteralPath $presenceModule)) { throw "Missing module file: $presenceModule" }
+    . $presenceModule
+    . (Join-Path $root 'scripts\Invoke-RoadmapTaskRunner.ps1') -LoadFunctionsOnly
+
+    $presenceNow = [datetime]::UtcNow
+
+    # No heartbeat at all is the state that matters most: the portal enqueues
+    # work it cannot execute, so "nothing has ever reported in" must never read
+    # as fine.
+    $absent = Resolve-RunnerPresence -Heartbeat $null -Now $presenceNow
+    if ($absent.present -or $absent.state -ne 'absent') { throw 'A missing heartbeat must classify as absent' }
+    if ($absent.message -notmatch 'Invoke-RoadmapTaskRunner') { throw 'The absent message must name the command that fixes it' }
+
+    # A fresh beat is present; the staleness budget comes from the runner's OWN
+    # poll interval, so a deliberately slow runner is not called dead each cycle.
+    $freshBeat = New-RunnerHeartbeat -QueuePath 'C:\q.jsonl' -PollSeconds 15 -ClaimedCount 2 -Mode 'interactive' -BeatAt $presenceNow.AddSeconds(-5).ToString('o')
+    $present = Resolve-RunnerPresence -Heartbeat $freshBeat -Now $presenceNow
+    if (-not $present.present -or $present.state -ne 'present') { throw 'A 5-second-old heartbeat must classify as present' }
+    if ($present.claimedCount -ne 2) { throw 'Presence must carry the claimed-entry count' }
+
+    $staleBeat = New-RunnerHeartbeat -QueuePath 'C:\q.jsonl' -PollSeconds 15 -BeatAt $presenceNow.AddMinutes(-30).ToString('o')
+    $stale = Resolve-RunnerPresence -Heartbeat $staleBeat -Now $presenceNow
+    if ($stale.present -or $stale.state -ne 'stale') { throw 'A 30-minute-old heartbeat on a 15s interval must classify as stale' }
+
+    $slowBeat = New-RunnerHeartbeat -QueuePath 'C:\q.jsonl' -PollSeconds 600 -BeatAt $presenceNow.AddMinutes(-20).ToString('o')
+    $slow = Resolve-RunnerPresence -Heartbeat $slowBeat -Now $presenceNow
+    if (-not $slow.present) { throw 'A slow-polling runner (600s) must not be called dead 20 minutes in' }
+
+    # A 1-second poll interval must not make every reader race the writer.
+    $fastBeat = New-RunnerHeartbeat -QueuePath 'C:\q.jsonl' -PollSeconds 1 -BeatAt $presenceNow.AddSeconds(-30).ToString('o')
+    if (-not (Resolve-RunnerPresence -Heartbeat $fastBeat -Now $presenceNow).present) { throw 'The staleness floor must protect a very fast poll interval' }
+
+    # Unreadable is absent, never present — this surface exists to stop the
+    # portal claiming a runner is there when it is not.
+    $garbled = Resolve-RunnerPresence -Heartbeat ([pscustomobject]@{ pollSeconds = 15; lastHeartbeatAt = 'not-a-date' }) -Now $presenceNow
+    if ($garbled.present -or $garbled.state -ne 'absent') { throw 'A heartbeat with an unreadable timestamp must classify as absent, not present' }
+
+    # ConvertFrom-Json hands back Kind=Unspecified for a UTC round-trip string;
+    # converting it again would put the last beat in the FUTURE and make a dead
+    # runner look freshly alive. Same defect already fixed in _Auto_ToUtc.
+    $jsonBeat = ($freshBeat | ConvertTo-Json -Depth 6) | ConvertFrom-Json
+    $fromJson = Resolve-RunnerPresence -Heartbeat $jsonBeat -Now $presenceNow
+    if ($fromJson.secondsSinceBeat -lt 0) { throw 'Heartbeat age went negative — the UTC double-conversion bug is back' }
+    if ([math]::Abs($fromJson.secondsSinceBeat - 5) -gt 2) { throw "Heartbeat age wrong after a JSON round-trip: $($fromJson.secondsSinceBeat)s" }
+
+    # Backlog counts only entries still sitting at `queued`. The queue file is
+    # append-only, so counting every line would report every task ever
+    # dispatched as a permanent backlog.
+    $backlogWs = Join-Path $root 'output\smoke\module\runner-backlog'
+    if (Test-Path -LiteralPath $backlogWs) { Remove-Item -LiteralPath $backlogWs -Recurse -Force }
+    $null = New-Item -ItemType Directory -Path (Join-Path $backlogWs 'output\roadmap-task-history\runs') -Force
+    $backlogQueue = Join-Path $backlogWs 'output\roadmap-task-queue.jsonl'
+    foreach ($spec in @(
+            @{ RunId = 'q1'; Target = 'claude';  Status = 'queued' },
+            @{ RunId = 'q2'; Target = 'copilot'; Status = 'queued' },
+            @{ RunId = 'q3'; Target = 'copilot'; Status = 'dispatched' })) {
+        Add-Content -LiteralPath $backlogQueue -Encoding UTF8 -Value (([pscustomobject]@{ runId = $spec.RunId; dispatchTarget = $spec.Target } | ConvertTo-Json -Compress))
+        ([pscustomobject]@{ runId = $spec.RunId; status = $spec.Status } | ConvertTo-Json) |
+            Set-Content -LiteralPath (Join-Path $backlogWs ("output\roadmap-task-history\runs\{0}.summary.json" -f $spec.RunId)) -Encoding UTF8
+    }
+    $backlog = Get-QueuedTaskBacklog -WorkspaceRoot $backlogWs
+    if ($backlog.queuedTotal -ne 2) { throw "Backlog must count only still-queued entries; got $($backlog.queuedTotal)" }
+    if ($backlog.queuedClaude -ne 1 -or $backlog.queuedCopilot -ne 1) { throw 'Backlog must split by dispatch target so the missing runner kind is named' }
+
+    # Get-RunnerPresence over a real (missing) file must answer, not throw: the
+    # route's whole job is to say "is anything going to pick this up", and a 500
+    # answers that less usefully than "no".
+    $diskPresence = Get-RunnerPresence -WorkspaceRoot $backlogWs -Now $presenceNow
+    if ($diskPresence.present -or $diskPresence.state -ne 'absent') { throw 'A workspace with no heartbeat file must report absent' }
+    Write-RunnerHeartbeat -Path (Get-RunnerHeartbeatFilePath -WorkspaceRoot $backlogWs) -Heartbeat $freshBeat
+    if (-not (Get-RunnerPresence -WorkspaceRoot $backlogWs -Now $presenceNow).present) { throw 'A written heartbeat must read back as present' }
+    'not json at all' | Set-Content -LiteralPath (Get-RunnerHeartbeatFilePath -WorkspaceRoot $backlogWs) -Encoding UTF8
+    if ((Get-RunnerPresence -WorkspaceRoot $backlogWs -Now $presenceNow).present) { throw 'A corrupt heartbeat file must report absent, not present' }
+
+    # The one dispatch model: the HOST never runs cloud dispatch itself, in
+    # either service or interactive mode. Allowing it when the service check
+    # happens to be false brings the failure straight back.
+    foreach ($asService in @($true, $false)) {
+        $verdict = Test-InProcessCloudDispatchAllowed -Caller 'smoke' -RunningAsService $asService
+        if ($verdict.allowed) { throw "In-process cloud dispatch must be refused (runningAsService=$asService)" }
+        if ($verdict.code -ne 'operator-runner-required') { throw 'The refusal must carry a named code' }
+        if ($verdict.message -notmatch 'Invoke-RoadmapTaskRunner') { throw 'The refusal must name the runner that CAN do it' }
+    }
+
+    # The route must actually be gone, not merely unused: the host invoking the
+    # launcher in-process is the defect this release removes.
+    # Comment lines are stripped first: the route documents WHY it no longer
+    # calls the launcher, and a tripwire that fires on its own explanation would
+    # be deleted rather than fixed the first time it goes off.
+    $hostSource = Get-Content -LiteralPath (Join-Path $root 'backend\api-host\Start-RepoManagementApiHost.ps1') -Encoding UTF8
+    $hostCode = @($hostSource | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+    if ($hostCode -match 'Start-GitHubCopilotTask\.ps1') { throw 'The API host invokes Start-GitHubCopilotTask.ps1 again; cloud dispatch must go through the operator-runner queue' }
+    if ($hostCode -notmatch 'Test-InProcessCloudDispatchAllowed') { throw 'The dispatch route must refuse an in-process cloud dispatch request' }
+    if ($hostCode -notmatch "DispatchTarget 'copilot'") { throw 'The dispatch route must enqueue with dispatchTarget=copilot' }
+    Remove-Item -LiteralPath $backlogWs -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host '  runner presence ok: absent/stale/present classified from the runner own interval, backlog split by target, corrupt heartbeat is absent, in-host cloud dispatch refused in both modes' -ForegroundColor DarkGray
+}
+
+Write-Step 'Runner logon-task installer — smoke: refuses service accounts (Release 3.0)'
+& {
+    $root = $WorkspaceRoot
+    . (Join-Path $root 'scripts\service\Install-RoadmapTaskRunner.ps1') -LoadFunctionsOnly
+
+    # The mirror image of the watchdog installer: that one REQUIRES SYSTEM, this
+    # one refuses it. A SYSTEM-registered runner would register fine, show as
+    # running, claim queued work, and fail every task for a credential reason
+    # that looks nothing like the cause.
+    foreach ($forbidden in @('NT AUTHORITY\SYSTEM', 'system', 'NT AUTHORITY\LOCAL SERVICE', 'NETWORK SERVICE')) {
+        $check = Test-RunnerPrincipalSafe -UserId $forbidden
+        if ($check.safe) { throw "The runner installer must refuse the service account '$forbidden'" }
+        if ($check.reason -ne 'service-account') { throw "Refusing '$forbidden' must name it as a service account" }
+    }
+    if ((Test-RunnerPrincipalSafe -UserId '').safe) { throw 'An empty principal must be refused' }
+    if (-not (Test-RunnerPrincipalSafe -UserId 'WORKSTATION\ben').safe) { throw 'A normal interactive account must be accepted' }
+
+    # Paths are quoted: a workspace root with a space silently truncates at the
+    # first space into a -WorkspaceRoot that does not exist.
+    $argString = New-RunnerTaskArgumentString -ScriptPath 'C:\Program Files\repo\scripts\Invoke-RoadmapTaskRunner.ps1' `
+        -WorkspaceRoot 'C:\Program Files\repo' -PollSeconds 30 -PermissionMode 'acceptEdits'
+    if ($argString -notmatch '-File "C:\\Program Files\\repo\\scripts\\Invoke-RoadmapTaskRunner\.ps1"') { throw 'The script path must be quoted' }
+    if ($argString -notmatch '-WorkspaceRoot "C:\\Program Files\\repo"') { throw 'The workspace root must be quoted' }
+    if ($argString -match '\-Once') { throw 'A logon task must not pass -Once; it is the long-running poll loop' }
+    if ($argString -match '\-Headless') { throw 'Headless must be opt-in, not the default' }
+    if ((New-RunnerTaskArgumentString -ScriptPath 'a' -WorkspaceRoot 'b' -Headless $true) -notmatch '\-Headless') { throw '-Headless must be passed through when requested' }
+
+    foreach ($case in @(
+            @{ Uninstall = $false; Exists = $false; Expected = 'install' },
+            @{ Uninstall = $false; Exists = $true;  Expected = 'reinstall' },
+            @{ Uninstall = $true;  Exists = $true;  Expected = 'uninstall' },
+            @{ Uninstall = $true;  Exists = $false; Expected = 'uninstall-noop' })) {
+        $resolved = Resolve-RunnerTaskAction -Uninstall $case.Uninstall -TaskExists $case.Exists
+        if ($resolved -ne $case.Expected) { throw "Runner task action wrong: uninstall=$($case.Uninstall) exists=$($case.Exists) -> $resolved" }
+    }
+
+    # Registration must be interactive and unelevated. Highest would gain
+    # nothing and widen the blast radius of a tool that runs agent-authored code.
+    $installerSource = Get-Content -LiteralPath (Join-Path $root 'scripts\service\Install-RoadmapTaskRunner.ps1') -Raw -Encoding UTF8
+    if ($installerSource -notmatch 'LogonType Interactive') { throw 'The runner task must register with LogonType Interactive' }
+    if ($installerSource -notmatch 'RunLevel Limited') { throw 'The runner task must register unelevated (RunLevel Limited)' }
+    if ($installerSource -match "UserId 'NT AUTHORITY\\SYSTEM'") { throw 'The runner task must never register as SYSTEM' }
+    Write-Host '  runner installer ok: 4 service accounts refused, paths quoted, 4 action cases, interactive + unelevated principal' -ForegroundColor DarkGray
 }
 
 # ── Release 2.7 Phase C — scheduled roadmap-item packaging ───────────────────
