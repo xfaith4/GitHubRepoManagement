@@ -48,16 +48,19 @@ interchangeable — mixing them is what previously made the roadmap read as
       the service at all (`gh agent-task` requires OAuth; LocalSystem cannot
       hold one), so the guided-improvement wizard dead-ends at its last step.
       Approach decided 2026-08-08; no prerequisites.
-- [ ] **Release 2.7 Phase D — the two remaining frontend items** (value-tier
-      and automation-scope vitest units; `Dashboard.tsx` decomposition).
-      Unblocked, frontend-only, and independent of everything above.
+- [ ] **Release 2.7 Phase D — the `Dashboard.tsx` decomposition.** The last
+      frontend item; the value-tier and automation-scope vitest units closed
+      2026-08-09. Unblocked, frontend-only, independent of everything above.
 - [ ] **Lane 0.3 hygiene** — the five `backend/` files still carrying
       hardcoded `G:\` workspace defaults.
 
-**Closed 2026-08-09:** Lane 0.4's cold-scan request deadline. The freeze guard
+**Closed 2026-08-09:** Lane 0.4's cold-scan request deadline — the freeze guard
 now classifies routes into a 180-second default tier and a 900-second
 full-portfolio-scan tier, so a legitimate cold scan no longer trips the guard
 into a restart loop, and neither smoke gate needs a timeout override any more.
+Also Phase D's frontend unit-test set, which reached 4 of 4 named units by
+extracting the value-tier and curation-scope logic into pure `frontend/lib`
+modules the components now consume.
 
 **Closed 2026-08-08 and archived out of this file:** the settings.json
 regression (Lane 0.1, which closed entirely), the silent workspace-path
@@ -355,12 +358,27 @@ Phase D — Hardening & observability (parallelizable, autonomous, unblocked):
       the 180-day floor protecting 100-day-old rows against a 30-day request,
       VACUUM running, and `ops_log` untouched; api-host smoke
       `dbMaintenanceOk=True` asserts the floor survives the HTTP round trip.
-- [ ] Complete the frontend unit-test set (vitest). `needsAttention` and
-      `viewMeta` are covered
+- [x] Complete the frontend unit-test set (vitest). _(state: smoke-tested —
+      4 of 4 named units covered, closed 2026-08-09)_ `needsAttention` and
+      `viewMeta` were already covered
       ([`needsAttention.test.ts`](frontend/lib/needsAttention.test.ts),
-      [`viewMeta.test.ts`](frontend/viewMeta.test.ts)); **value tiers** and
-      the **automation scope selector** are not. _(state: planned —
-      2 of 4 named units covered)_
+      [`viewMeta.test.ts`](frontend/viewMeta.test.ts)). The two gaps closed
+      by extracting the logic out of the components that held it, so the
+      tests cover the code that actually ships rather than a copy:
+      **value tiers** → [`lib/valueTier.ts`](frontend/lib/valueTier.ts) +
+      [`valueTier.test.ts`](frontend/lib/valueTier.test.ts), consumed by
+      `WorkQueueView`; **automation scope selector** (operator curation) →
+      [`lib/curationScope.ts`](frontend/lib/curationScope.ts) +
+      [`curationScope.test.ts`](frontend/lib/curationScope.test.ts),
+      consumed by `RepoGrid`. The scope suite pins the Release 2.7 contract
+      the backend also enforces: `archived-ignore` is never in automation
+      scope, and neither is an uncurated repo — scope opts in, it never opts
+      out, so an unrecognized curation state is excluded rather than
+      admitted. **Evidence:** `npm run test:unit` 79 passing across 6 files,
+      `npm run typecheck` exit 0; the never-touch assertion was
+      adversarially proven — widening `isInAutomationScope` to
+      `state !== 'none'` fails
+      [`curationScope.test.ts:72`](frontend/lib/curationScope.test.ts#L72).
 - [ ] Decompose [`Dashboard.tsx`](frontend/components/Dashboard.tsx):
       extract the view-router/tab shell and the summary/mission sections.
       _(state: planned — 2,376 lines as of 2026-08-07)_
