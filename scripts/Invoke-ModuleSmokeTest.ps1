@@ -2234,4 +2234,241 @@ Write-Step 'Local Claude Code dispatch — smoke: queue writer + runner logic (R
     }
 }
 
+# ── Release 2.7 Phase C — scheduled roadmap-item packaging ───────────────────
+Write-Step 'Loading roadmap-packaging module (Release 2.7 Phase C)'
+$packagingModule = Join-Path $WorkspaceRoot 'backend\modules\automation\Automation.RoadmapPackaging.ps1'
+if (-not (Test-Path -LiteralPath $packagingModule)) { throw "Missing module file: $packagingModule" }
+. $packagingModule
+Write-Host '  Roadmap-packaging module loaded successfully' -ForegroundColor DarkGray
+
+Write-Step 'Packaging scope — smoke: every refusal is named, and scope opts in'
+$pkgItemHigh = [pscustomobject]@{ text = 'Add the merge-readiness route'; section = 'Release 1.0'; roadmapOrder = 3; valueScore = 88; valueTier = 'highest'; valueRationale = @('unblocks dispatch') }
+$pkgItemLow  = [pscustomobject]@{ text = 'Tidy the changelog';           section = 'Release 1.0'; roadmapOrder = 1; valueScore = 40; valueTier = 'low';     valueRationale = @('cosmetic') }
+$pkgItemTie  = [pscustomobject]@{ text = 'Earlier item, same score';     section = 'Release 1.0'; roadmapOrder = 2; valueScore = 88; valueTier = 'highest'; valueRationale = @('tie-break probe') }
+
+$pkgEntries = @(
+    [pscustomobject]@{ repoId = 'fav-ready';    repoName = 'fav-ready';    curationState = 'favorite';             maturityLevel = 'L3-Contract-Ready';      pendingItemCount = 3; localPath = 'C:\repos\fav-ready';    roadmapPath = 'C:\repos\fav-ready\ROADMAP.md';    githubFullName = 'owner/fav-ready'; defaultBranch = 'main'; estimatedSessionWorkUnits = 4; valueRankedItems = @($pkgItemLow, $pkgItemHigh, $pkgItemTie) }
+    [pscustomobject]@{ repoId = 'cand-ready';   repoName = 'cand-ready';   curationState = 'portfolio-candidate';  maturityLevel = 'L4-Orchestration-Ready'; pendingItemCount = 1; localPath = 'C:\repos\cand-ready';   roadmapPath = 'C:\repos\cand-ready\ROADMAP.md';   topValueItem = $pkgItemHigh }
+    [pscustomobject]@{ repoId = 'ignored';      repoName = 'ignored';      curationState = 'archived-ignore';      maturityLevel = 'L4-Orchestration-Ready'; pendingItemCount = 9; localPath = 'C:\repos\ignored';      topValueItem = $pkgItemHigh }
+    [pscustomobject]@{ repoId = 'uncurated';    repoName = 'uncurated';    curationState = '';                     maturityLevel = 'L3-Contract-Ready';      pendingItemCount = 9; localPath = 'C:\repos\uncurated';    topValueItem = $pkgItemHigh }
+    [pscustomobject]@{ repoId = 'weird-state';  repoName = 'weird-state';  curationState = 'some-future-state';    maturityLevel = 'L3-Contract-Ready';      pendingItemCount = 9; localPath = 'C:\repos\weird';        topValueItem = $pkgItemHigh }
+    [pscustomobject]@{ repoId = 'fav-l2';       repoName = 'fav-l2';       curationState = 'favorite';             maturityLevel = 'L2-Structured';          pendingItemCount = 9; localPath = 'C:\repos\fav-l2';       topValueItem = $pkgItemHigh }
+    [pscustomobject]@{ repoId = 'fav-done';     repoName = 'fav-done';     curationState = 'favorite';             maturityLevel = 'L3-Contract-Ready';      pendingItemCount = 0; localPath = 'C:\repos\fav-done';     topValueItem = $pkgItemHigh }
+    [pscustomobject]@{ repoId = 'fav-unscored'; repoName = 'fav-unscored'; curationState = 'favorite';             maturityLevel = 'L3-Contract-Ready';      pendingItemCount = 2; localPath = 'C:\repos\fav-unscored' }
+    [pscustomobject]@{ repoId = 'fav-nopath';   repoName = 'fav-nopath';   curationState = 'favorite';             maturityLevel = 'L3-Contract-Ready';      pendingItemCount = 2; topValueItem = $pkgItemHigh }
+)
+
+$pkgDecisions = @(Resolve-AutomationPackagingScope -Entries $pkgEntries)
+$pkgReasonByRepo = @{}
+foreach ($d in $pkgDecisions) { $pkgReasonByRepo[[string]$d.repoName] = $d }
+$pkgExpectedRefusals = @{
+    'ignored'      = 'archived-ignore'
+    'uncurated'    = 'not-curated'
+    'weird-state'  = 'not-curated'      # scope opts IN — an unknown state is excluded, never admitted
+    'fav-l2'       = 'roadmap-not-ready'
+    'fav-done'     = 'no-pending-work'
+    'fav-unscored' = 'no-scored-item'
+    'fav-nopath'   = 'missing-local-path'
+}
+foreach ($repo in $pkgExpectedRefusals.Keys) {
+    $decision = $pkgReasonByRepo[$repo]
+    if ($null -eq $decision) { throw "Packaging scope: no decision recorded for '$repo'" }
+    if ($decision.selected) { throw "Packaging scope: '$repo' must not be selected (expected refusal '$($pkgExpectedRefusals[$repo])')" }
+    if ([string]$decision.reason -ne $pkgExpectedRefusals[$repo]) {
+        throw "Packaging scope: '$repo' expected reason '$($pkgExpectedRefusals[$repo])'; got '$($decision.reason)'"
+    }
+}
+$pkgSelected = @($pkgDecisions | Where-Object { $_.selected } | ForEach-Object { [string]$_.repoName } | Sort-Object)
+if (($pkgSelected -join ',') -ne 'cand-ready,fav-ready') {
+    throw "Packaging scope: expected [cand-ready, fav-ready]; got [$($pkgSelected -join ', ')]"
+}
+Write-Host ("  packaging scope ok: {0} selected, {1} refusals each named (archived-ignore, not-curated x2, roadmap-not-ready, no-pending-work, no-scored-item, missing-local-path)" -f $pkgSelected.Count, $pkgExpectedRefusals.Count) -ForegroundColor DarkGray
+
+Write-Step 'Packaging rank — smoke: highest value wins, ties break on roadmap order'
+$pkgTop = Select-TopValueRoadmapItem -Entry $pkgEntries[0]
+if ([string]$pkgTop.text -ne 'Earlier item, same score') {
+    throw "Top-value selection wrong: expected the earlier of two equally-scored items; got '$($pkgTop.text)' (score $($pkgTop.valueScore), order $($pkgTop.roadmapOrder))"
+}
+if ([int]$pkgTop.valueScore -ne 88) { throw 'Top-value selection did not pick the highest score' }
+# An entry with no ranked list falls back to the precomputed topValueItem.
+if ([string](Select-TopValueRoadmapItem -Entry $pkgEntries[1]).text -ne 'Add the merge-readiness route') { throw 'topValueItem fallback failed' }
+# An entry with neither is NOT packaged with an unscored item.
+if ($null -ne (Select-TopValueRoadmapItem -Entry $pkgEntries[7])) { throw 'An entry with no scored item must select nothing' }
+Write-Host '  packaging rank ok: max score, earlier roadmap order breaks the tie, unscored selects nothing' -ForegroundColor DarkGray
+
+Write-Step 'Packaging quota — smoke: over-budget items are skipped and logged, never silently dropped'
+& {
+    $pkgWs = Join-Path $WorkspaceRoot 'output\smoke\module\packaging'
+    if (Test-Path -LiteralPath $pkgWs) { Remove-Item -LiteralPath $pkgWs -Recurse -Force }
+    $null = New-Item -ItemType Directory -Path $pkgWs -Force
+    try {
+        # A budget whose per-session cap (2) is below the fixture's 4-unit estimate.
+        $tightBudget = Get-AgentBudgetLedgerConfig -WorkspaceRoot $pkgWs -Settings @{
+            budgetLedger = @{
+                quotaGuard     = @{ softStopRemainingUnits = 1; hardStopRemainingUnits = 0; maxUnitsPerPhase = 25; maxUnitsPerSession = 2 }
+                defaultProject = @{ monthlyQuotaBudgetUnits = 50; monthlyBudgetUsd = 6; priority = 1 }
+            }
+        }
+        $tightRun = Invoke-ScheduledRoadmapPackaging -WorkspaceRoot $pkgWs -Entries $pkgEntries -BudgetConfig $tightBudget -TriggeredBy 'module-smoke'
+        if ([int]$tightRun.packagedCount -ne 0) { throw "Over-budget run packaged $($tightRun.packagedCount) item(s); expected 0" }
+        $quotaSkips = @($tightRun.skipped | Where-Object { [string]$_.stage -eq 'quota' })
+        if ($quotaSkips.Count -ne 2) { throw "Expected 2 quota skips (both candidates); got $($quotaSkips.Count)" }
+        if ([string]$quotaSkips[0].reason -ne 'session-cap-exceeded') { throw "Quota skip must carry the guard's own code; got '$($quotaSkips[0].reason)'" }
+        if ([string]::IsNullOrWhiteSpace([string]$quotaSkips[0].message)) { throw 'A quota skip must carry the guard message, not just a code' }
+        if (Test-Path -LiteralPath (Get-PackagedItemsFilePath -WorkspaceRoot $pkgWs)) { throw 'An over-budget run must not queue anything for approval' }
+
+        # A guard that cannot be evaluated is a REFUSAL, not a pass. Proven in a
+        # fresh runspace where BudgetLedger.ps1 was never loaded.
+        $isolated = [powershell]::Create()
+        try {
+            $null = $isolated.AddScript(@"
+. '$packagingModule'
+`$r = Test-PackagingQuota -WorkspaceRoot '$pkgWs' -RepoName 'x' -EstimatedWorkUnits 1
+"[{0}|{1}]" -f `$r.allowed, `$r.blockedCode
+"@)
+            $isolatedOut = [string](@($isolated.Invoke()) -join '')
+        } finally { $isolated.Dispose() }
+        if ($isolatedOut -ne '[False|quota-guard-unavailable]') {
+            throw "Fail-closed quota guard broken: expected [False|quota-guard-unavailable], got '$isolatedOut'"
+        }
+        Write-Host '  packaging quota ok: over-budget skipped+logged with the guard code, nothing queued, missing guard fails closed' -ForegroundColor DarkGray
+
+        Write-Step 'Packaging run — smoke: packets queued for approval, NOTHING dispatched'
+        $okBudget = Get-AgentBudgetLedgerConfig -WorkspaceRoot $pkgWs -Settings @{
+            budgetLedger = @{
+                quotaGuard     = @{ softStopRemainingUnits = 2; hardStopRemainingUnits = 1; maxUnitsPerPhase = 25; maxUnitsPerSession = 12 }
+                defaultProject = @{ monthlyQuotaBudgetUnits = 50; monthlyBudgetUsd = 6; priority = 1 }
+            }
+        }
+        $pkgRun = Invoke-ScheduledRoadmapPackaging -WorkspaceRoot $pkgWs -Entries $pkgEntries -BudgetConfig $okBudget -TriggeredBy 'module-smoke'
+        if ([int]$pkgRun.packagedCount -ne 2) { throw "Expected 2 packaged items; got $($pkgRun.packagedCount)" }
+        if ([int]$pkgRun.dispatchedCount -ne 0) { throw 'Scheduled-run invariant violated: dispatchedCount != 0' }
+        if ([int]$pkgRun.appliedCount -ne 0) { throw 'Scheduled-run invariant violated: appliedCount != 0' }
+        if (Test-Path -LiteralPath (Join-Path $pkgWs 'output\roadmap-task-queue.jsonl')) {
+            throw 'A scheduled packaging run wrote to the dispatch queue; it must stop at the approval gate.'
+        }
+
+        $favPacket = @($pkgRun.packets | Where-Object { [string]$_.repoName -eq 'fav-ready' })[0]
+        if ([string]$favPacket.itemText -ne 'Earlier item, same score') { throw 'Packet did not carry the top-ranked item' }
+        if ([double]$favPacket.estimatedWorkUnits -ne 4) { throw "Packet must price the roadmap's own annotated estimate; got $($favPacket.estimatedWorkUnits)" }
+        if ($favPacket.branch -notmatch '^roadmap-item/') { throw "Packet branch must be namespaced; got '$($favPacket.branch)'" }
+        if ([string]$favPacket.baseBranch -ne 'main') { throw 'Packet must record the base branch' }
+        if ($favPacket.generatedPrompt -notmatch [regex]::Escape($favPacket.itemText)) { throw 'Prompt does not name the selected item' }
+        if ($favPacket.generatedPrompt -notmatch 'Implement ONLY') { throw 'Prompt is missing the single-item scope guardrail' }
+        if ($favPacket.repairPlan.submitted -ne $false) { throw 'The repair-PR plan must be a plan: submitted=false' }
+        if ($favPacket.repairPlan.requiresApproval -ne $true) { throw 'The repair-PR plan must require approval' }
+        if ([string]$favPacket.repairPlan.branch -ne [string]$favPacket.branch) { throw 'Repair plan branch must match the packet branch' }
+        if ($favPacket.dispatched -ne $false) { throw 'A freshly packaged item must be dispatched=false' }
+        # A candidate whose roadmap carries no estimate falls back to the default.
+        $candPacket = @($pkgRun.packets | Where-Object { [string]$_.repoName -eq 'cand-ready' })[0]
+        if ([double]$candPacket.estimatedWorkUnits -ne 3) { throw "Unannotated item must fall back to the default estimate; got $($candPacket.estimatedWorkUnits)" }
+
+        # Append-only history + the two invariants defended at the writer.
+        $null = Write-PackagingRunRecord -WorkspaceRoot $pkgWs -Run $pkgRun
+        $pkgHistory = @(Get-PackagingRunHistory -WorkspaceRoot $pkgWs)
+        if ($pkgHistory.Count -lt 1) { throw 'Packaging run history did not persist the run' }
+        if ([string]$pkgHistory[0].runId -ne [string]$pkgRun.runId) { throw 'Packaging history newest-first ordering or runId mismatch' }
+        foreach ($badCase in @(
+            @{ Run = [pscustomobject]@{ runId = 'bad1'; appliedCount = 1; dispatchedCount = 0 }; Label = 'appliedCount != 0' },
+            @{ Run = [pscustomobject]@{ runId = 'bad2'; appliedCount = 0; dispatchedCount = 1 }; Label = 'dispatchedCount != 0' }
+        )) {
+            $refused = $false
+            try { $null = Write-PackagingRunRecord -WorkspaceRoot $pkgWs -Run $badCase.Run } catch { $refused = $true }
+            if (-not $refused) { throw "Write-PackagingRunRecord must refuse a run claiming $($badCase.Label)" }
+        }
+
+        # Digest: what was packaged, what was skipped, and nothing dispatched.
+        $pkgDigest = New-PackagingDigestPayload -Run $pkgRun
+        if ([int]$pkgDigest.packagedCount -ne 2) { throw 'Digest packagedCount mismatch' }
+        if ([int]$pkgDigest.dispatchedCount -ne 0) { throw 'Digest must report dispatchedCount=0' }
+        if (@($pkgDigest.skipped).Count -lt 7) { throw 'Digest must carry the skipped repos and their reasons' }
+
+        Write-Host ("  packaging run ok: {0} packet(s) queued for approval, dispatched=0 applied=0, dispatch queue absent, invariant-violating runs refused" -f $pkgRun.packagedCount) -ForegroundColor DarkGray
+
+        Write-Step 'Packaging approval — smoke: the state machine is the only path to dispatch'
+        $queued = @(Get-PackagedItemQueue -WorkspaceRoot $pkgWs)
+        if ($queued.Count -ne 2) { throw "Expected 2 items in the approval queue; got $($queued.Count)" }
+        if (@($queued | Where-Object { [string]$_.status -ne 'pending-approval' }).Count -ne 0) { throw 'Every freshly packaged item must be pending-approval' }
+        $target = @($queued | Where-Object { [string]$_.repoName -eq 'fav-ready' })[0]
+
+        foreach ($case in @(
+            @{ From = 'pending-approval'; To = 'approved';   Want = $true  },
+            @{ From = 'pending-approval'; To = 'rejected';   Want = $true  },
+            @{ From = 'pending-approval'; To = 'dispatched'; Want = $false },   # never skip the gate
+            @{ From = 'approved';        To = 'dispatched'; Want = $true  },
+            @{ From = 'dispatched';      To = 'dispatched'; Want = $false },   # never dispatch twice
+            @{ From = 'dispatched';      To = 'approved';   Want = $false },
+            @{ From = 'rejected';        To = 'approved';   Want = $false },
+            @{ From = '';                To = 'approved';   Want = $false }    # unknown packet
+        )) {
+            $verdict = Test-PackagedItemTransition -From $case.From -To $case.To
+            if ([bool]$verdict.allowed -ne [bool]$case.Want) {
+                throw "Transition '$($case.From)' -> '$($case.To)' expected allowed=$($case.Want); got $($verdict.allowed)"
+            }
+            if (-not $verdict.allowed -and [string]::IsNullOrWhiteSpace([string]$verdict.reason)) {
+                throw "A refused transition must carry a named reason ('$($case.From)' -> '$($case.To)')"
+            }
+        }
+        if ([string](Test-PackagedItemTransition -From '' -To 'approved').reason -ne 'packet-not-found') { throw 'An unknown packet must refuse with packet-not-found' }
+
+        # Approve -> dispatch: the queue entry and the run summary the operator
+        # runner claims on must BOTH appear, or the task is one nothing picks up.
+        $null = Write-PackagedItemRecord -WorkspaceRoot $pkgWs -Record ([pscustomobject]@{
+            schemaVersion = '1'; packetId = $target.packetId; runId = $pkgRun.runId; repoName = 'fav-ready'
+            status = 'approved'; recordedAt = (Get-Date).ToUniversalTime().ToString('o'); actor = 'module-smoke'; note = 'approved'
+        })
+        $dispatch = Submit-PackagedItemToRunner -WorkspaceRoot $pkgWs -Packet $target.packet -Actor 'module-smoke'
+        if (-not (Test-Path -LiteralPath $dispatch.queuePath)) { throw 'Dispatch did not write the runner queue entry' }
+        if (-not (Test-Path -LiteralPath $dispatch.summaryPath)) { throw 'Dispatch did not write the run summary the runner claims on' }
+        $summaryStatus = [string]((Get-Content -LiteralPath $dispatch.summaryPath -Raw -Encoding UTF8 | ConvertFrom-Json).status)
+        if ($summaryStatus -ne 'queued') { throw "Run summary must read status=queued for the runner to claim it; got '$summaryStatus'" }
+        $null = Write-PackagedItemRecord -WorkspaceRoot $pkgWs -Record ([pscustomobject]@{
+            schemaVersion = '1'; packetId = $target.packetId; runId = $pkgRun.runId; repoName = 'fav-ready'
+            status = 'dispatched'; recordedAt = (Get-Date).ToUniversalTime().ToString('o'); actor = 'module-smoke'
+            dispatchRunId = $dispatch.runId; note = 'enqueued'
+        })
+
+        $folded = Get-PackagedItem -WorkspaceRoot $pkgWs -PacketId $target.packetId
+        if ([string]$folded.status -ne 'dispatched') { throw "Fold must take the newest status; got '$($folded.status)'" }
+        if ([string]$folded.dispatchRunId -ne [string]$dispatch.runId) { throw 'Fold lost the dispatch run id' }
+        if (@($folded.history).Count -ne 3) { throw "Append-only history must keep every transition; got $(@($folded.history).Count)" }
+        if ([string]@($folded.history)[0].status -ne 'pending-approval') { throw 'History must start at pending-approval' }
+        if ($null -eq $folded.packet) { throw 'Fold lost the packet body carried by the first record' }
+        # The other packet is untouched — approving one never approves the rest.
+        $untouched = @(Get-PackagedItemQueue -WorkspaceRoot $pkgWs -Status 'pending-approval')
+        if ($untouched.Count -ne 1 -or [string]$untouched[0].repoName -ne 'cand-ready') {
+            throw 'Approving one packet must not change any other packet''s state'
+        }
+        Write-Host ("  packaging approval ok: 8 transitions enforced, queue+summary written on dispatch, fold keeps 3-step history, sibling packet untouched") -ForegroundColor DarkGray
+    }
+    finally {
+        Remove-Item -LiteralPath $pkgWs -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Write-Step 'Packaging queue contract — tripwire: the entry shape the runner claims must not drift'
+& {
+    $root = $WorkspaceRoot
+    . (Join-Path $root 'scripts\Add-RoadmapTaskToQueue.ps1') -LoadFunctionsOnly
+    # The runner reads entries written by BOTH writers. If Add-RoadmapTaskToQueue's
+    # shape changes and the packaging writer's does not, approved work would land
+    # in the queue as entries the runner silently mishandles — invisible until an
+    # operator wonders why an approved packet never ran.
+    $canonical = New-RoadmapQueueEntry -RunId 'r1' -Repository 'owner/x' -LocalRepoPath 'C:\repo' -RoadmapPath 'C:\repo\ROADMAP.md' -SelectedTask 'Task' -TaskDescription 'PROMPT' -Branch 'b' -QueuedAt '2026-01-01T00:00:00Z'
+    $packaged = New-PackagedItemQueueEntry -RunId 'r1' -QueuedAt '2026-01-01T00:00:00Z' -Packet ([pscustomobject]@{
+        repoName = 'owner/x'; repoPath = 'C:\repo'; roadmapPath = 'C:\repo\ROADMAP.md'; itemText = 'Task'; generatedPrompt = 'PROMPT'; branch = 'b'
+    })
+    $canonicalKeys = @($canonical.Keys | Sort-Object) -join ','
+    $packagedKeys = @($packaged.Keys | Sort-Object) -join ','
+    if ($canonicalKeys -ne $packagedKeys) {
+        throw "Queue-entry drift: Add-RoadmapTaskToQueue writes [$canonicalKeys] but the packaging writer writes [$packagedKeys]"
+    }
+    foreach ($k in $canonical.Keys) {
+        if ([string]$canonical[$k] -ne [string]$packaged[$k]) {
+            throw "Queue-entry drift on '$k': canonical='$($canonical[$k])' packaged='$($packaged[$k])'"
+        }
+    }
+    Write-Host ("  queue contract ok: {0} fields identical to the canonical writer" -f @($canonical.Keys).Count) -ForegroundColor DarkGray
+}
+
 Write-Step 'Smoke test completed'

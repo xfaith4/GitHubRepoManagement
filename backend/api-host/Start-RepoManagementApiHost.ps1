@@ -66,6 +66,7 @@ $aiModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\ai'
 . (Join-Path $aiModuleRoot 'AiDocImprovement.ps1')
 $automationModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\automation'
 . (Join-Path $automationModuleRoot 'Automation.DocRefinement.ps1')
+. (Join-Path $automationModuleRoot 'Automation.RoadmapPackaging.ps1')
 $agentRunsModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\agent-runs'
 . (Join-Path $agentRunsModuleRoot 'BudgetLedger.ps1')
 . (Join-Path $agentRunsModuleRoot 'AgentRuns.ps1')
@@ -6438,10 +6439,29 @@ try {
                     Add-MetricCounter -Name 'api_requests_total'
                     $q = Parse-QueryString -Query $req.Query
                     $limit = if ($q.ContainsKey('limit') -and $q.limit) { [int]$q.limit } else { 50 }
-                    $history = @(Get-AutomationRunHistory -WorkspaceRoot $WorkspaceRoot -Limit $limit)
+                    $kindFilter = if ($q.ContainsKey('kind') -and $q.kind) { [string]$q.kind } else { '' }
+                    # Every scheduled run, both kinds. They are stored in separate
+                    # files on purpose (Phase D's overdue alert reads the
+                    # doc-refinement file alone, so a live packaging cron cannot
+                    # mask a dead doc cron), and merged here so the history route
+                    # still answers "every scheduled run" as its contract says.
+                    $docRuns = @(Get-AutomationRunHistory -WorkspaceRoot $WorkspaceRoot -Limit 0)
+                    $pkgRuns = @(Get-PackagingRunHistory -WorkspaceRoot $WorkspaceRoot -Limit 0)
+                    $history = @(@($docRuns) + @($pkgRuns))
+                    if (-not [string]::IsNullOrWhiteSpace($kindFilter)) {
+                        $history = @($history | Where-Object { [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'kind' -Default 'doc-refinement') -eq $kindFilter })
+                    }
+                    $history = @($history | Sort-Object -Property @{ Expression = { [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'finishedAt' -Default '') }; Descending = $true })
+                    if ($limit -gt 0 -and @($history).Count -gt $limit) { $history = @($history[0..($limit - 1)]) }
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
-                        data = @{ count = @($history).Count; runs = $history }
+                        data = @{
+                            count             = @($history).Count
+                            kind              = $kindFilter
+                            docRefinementRuns = @($docRuns).Count
+                            packagingRuns     = @($pkgRuns).Count
+                            runs              = $history
+                        }
                     }
                 }
                 # ── Release 2.7 Phase D — automation health ─────────────────────
@@ -6455,6 +6475,286 @@ try {
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data    = $autoHealth
+                    }
+                }
+                # ── Release 2.7 Phase C — scheduled roadmap-item packaging ──────
+                # For each curated repo with a contract-ready (L3+) roadmap: rank
+                # its pending items, price the top one through the quota guard,
+                # build a task packet + repair-PR plan, and QUEUE IT FOR APPROVAL.
+                # This route never dispatches and never merges — dispatch needs
+                # the explicit approval action below.
+                'POST /api/automation/package-run' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $body = Parse-JsonBody -Body $req.Body
+                    $settings = Get-HostSettings
+                    $opsPayload = Get-OperationsReposPayload -Settings $settings
+                    if (-not [bool](Get-ObjectPropertyValue -InputObject $opsPayload -PropertyName 'available' -Default $false)) {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 409 -ErrorMessage 'Portfolio not ready. Run /api/portfolio/assessment first, then retry.' -CorrelationId $correlationId -Operation 'automation.package-run'
+                    }
+                    else {
+                        $entries = @(Get-ObjectPropertyValue -InputObject $opsPayload -PropertyName 'entries' -Default @())
+                        $curationMap = @{}
+                        try { $curationMap = Get-PortfolioCurationMap -WorkspaceRoot $WorkspaceRoot } catch { $curationMap = @{} }
+
+                        $packagingConfig = $null
+                        if ($settings.ContainsKey('automation') -and $settings.automation -is [System.Collections.IDictionary] -and $settings.automation.ContainsKey('packaging')) {
+                            $packagingConfig = $settings.automation.packaging
+                        }
+                        $defaultWorkUnits = 3.0
+                        if ($null -ne $packagingConfig -and $packagingConfig -is [System.Collections.IDictionary] -and $packagingConfig.ContainsKey('defaultWorkUnitsPerItem')) {
+                            $parsedUnits = 0.0
+                            if ([double]::TryParse([string]$packagingConfig.defaultWorkUnitsPerItem, [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$parsedUnits) -and $parsedUnits -gt 0) {
+                                $defaultWorkUnits = [double]$parsedUnits
+                            }
+                        }
+
+                        $packagingRun = Invoke-ScheduledRoadmapPackaging `
+                            -WorkspaceRoot $WorkspaceRoot `
+                            -Entries $entries `
+                            -CurationMap $curationMap `
+                            -Settings $settings `
+                            -DefaultWorkUnits $defaultWorkUnits `
+                            -TriggeredBy 'api'
+                        $null = Write-PackagingRunRecord -WorkspaceRoot $WorkspaceRoot -Run $packagingRun
+                        $packagingDigest = New-PackagingDigestPayload -Run $packagingRun
+
+                        # Notify per run (same delivery path as Phase B's digest).
+                        # No webhook configured -> dry-run; nothing is dispatched either way.
+                        $pkgWebhookUrl = ''
+                        if ($null -ne $body -and $body.ContainsKey('webhookUrl') -and $body.webhookUrl) { $pkgWebhookUrl = [string]$body.webhookUrl }
+                        elseif ($settings.ContainsKey('automation') -and $settings.automation -is [System.Collections.IDictionary] -and $settings.automation.ContainsKey('webhookUrl') -and $settings.automation.webhookUrl) { $pkgWebhookUrl = [string]$settings.automation.webhookUrl }
+                        $pkgDelivered = $false
+                        $pkgDeliveryError = $null
+                        if (-not [string]::IsNullOrWhiteSpace($pkgWebhookUrl)) {
+                            try {
+                                $null = Invoke-WebRequest -Uri $pkgWebhookUrl -Method Post -ContentType 'application/json' -Body ($packagingDigest | ConvertTo-Json -Depth 10) -TimeoutSec 15 -SkipHttpErrorCheck
+                                $pkgDelivered = $true
+                            } catch { $pkgDeliveryError = $_.Exception.Message }
+                        }
+
+                        # Failure alerting, same contract as Phase B: a run that
+                        # errored must not return a quiet 200 with the errors
+                        # buried in the payload.
+                        $pkgOutcome = Get-AutomationRunOutcome -Run $packagingRun
+                        $pkgAlertFired = $false
+                        $pkgAlertError = $null
+                        if ($pkgOutcome -ne 'ok') {
+                            try {
+                                $null = Send-NotificationEvent -WorkspaceRoot $WorkspaceRoot -EventName 'execution.failed' -EventPayload @{
+                                    source        = 'automation-packaging'
+                                    runId         = [string]$packagingRun.runId
+                                    kind          = [string]$packagingRun.kind
+                                    outcome       = $pkgOutcome
+                                    packagedCount = [int]$packagingRun.packagedCount
+                                    skippedCount  = [int]$packagingRun.skippedCount
+                                    errorCount    = @($packagingRun.errors).Count
+                                    errors        = @($packagingRun.errors)
+                                }
+                                $pkgAlertFired = $true
+                            } catch { $pkgAlertError = $_.Exception.Message }
+                            Write-HostLog ("WARN automation.package-run outcome={0} errors={1} runId={2} alertFired={3}" -f `
+                                    $pkgOutcome, @($packagingRun.errors).Count, $packagingRun.runId, $pkgAlertFired)
+                        }
+
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data = @{
+                                run               = $packagingRun
+                                digest            = $packagingDigest
+                                delivered         = [bool]$pkgDelivered
+                                webhookConfigured = (-not [string]::IsNullOrWhiteSpace($pkgWebhookUrl))
+                                deliveryError     = $pkgDeliveryError
+                                outcome           = $pkgOutcome
+                                alertFired        = [bool]$pkgAlertFired
+                                alertError        = $pkgAlertError
+                                note              = 'Packaged for approval only. Nothing was dispatched, applied, or merged.'
+                            }
+                        }
+                    }
+                }
+                'GET /api/automation/packages' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $q = Parse-QueryString -Query $req.Query
+                    $pkgStatus = if ($q.ContainsKey('status') -and $q.status) { [string]$q.status } else { '' }
+                    $pkgLimit = if ($q.ContainsKey('limit') -and $q.limit) { [int]$q.limit } else { 100 }
+                    $pkgItems = @(Get-PackagedItemQueue -WorkspaceRoot $WorkspaceRoot -Status $pkgStatus -Limit $pkgLimit)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = @{
+                            count            = @($pkgItems).Count
+                            status           = $pkgStatus
+                            pendingCount     = @(@($pkgItems) | Where-Object { [string]$_.status -eq 'pending-approval' }).Count
+                            items            = $pkgItems
+                        }
+                    }
+                }
+                'POST /api/automation/packages/approve' {
+                    # The approval gate. A packet becomes runnable here and
+                    # nowhere else — and only from pending-approval, only if the
+                    # quota guard still allows it at approval time.
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $body = Parse-JsonBody -Body $req.Body
+                    $approvePacketId = if ($null -ne $body -and $body.ContainsKey('packetId') -and $body.packetId) { [string]$body.packetId } else { '' }
+                    $approveActor = if ($null -ne $body -and $body.ContainsKey('actor') -and $body.actor) { [string]$body.actor } else { 'operator' }
+                    $approveDispatch = $true
+                    if ($null -ne $body -and $body.ContainsKey('dispatch')) { $approveDispatch = [bool]$body.dispatch }
+
+                    if ([string]::IsNullOrWhiteSpace($approvePacketId)) {
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{ success = $false; error = 'packetId is required'; category = 'validation' }
+                    }
+                    else {
+                        $approveItem = Get-PackagedItem -WorkspaceRoot $WorkspaceRoot -PacketId $approvePacketId
+                        $approveFrom = if ($null -ne $approveItem) { [string]$approveItem.status } else { '' }
+                        $approveTransition = Test-PackagedItemTransition -From $approveFrom -To 'approved'
+                        if (-not $approveTransition.allowed) {
+                            $approveStatusCode = if ($approveTransition.reason -eq 'packet-not-found') { 404 } else { 409 }
+                            $approveStatusText = if ($approveStatusCode -eq 404) { 'Not Found' } else { 'Conflict' }
+                            Send-HttpJson -Stream $req.Stream -StatusCode $approveStatusCode -StatusText $approveStatusText -CorrelationId $correlationId -Payload @{
+                                success  = $false
+                                error    = [string]$approveTransition.message
+                                category = [string]$approveTransition.reason
+                                data     = @{ packetId = $approvePacketId; status = $approveFrom }
+                            }
+                        }
+                        else {
+                            $approvePacket = $approveItem.packet
+                            $approveSettings = Get-HostSettings
+                            $approveQuota = Test-PackagingQuota `
+                                -WorkspaceRoot $WorkspaceRoot `
+                                -RepoName ([string](Get-ObjectPropertyValue -InputObject $approvePacket -PropertyName 'repoName' -Default $approveItem.repoName)) `
+                                -EstimatedWorkUnits ([double](Get-ObjectPropertyValue -InputObject $approvePacket -PropertyName 'estimatedWorkUnits' -Default 3.0)) `
+                                -Settings $approveSettings
+
+                            if (-not $approveQuota.allowed) {
+                                # Budget may have been consumed since packaging.
+                                # Record the refused attempt (status unchanged) so
+                                # the audit trail shows it, and refuse with 409.
+                                $null = Write-PackagedItemRecord -WorkspaceRoot $WorkspaceRoot -Record ([pscustomobject]@{
+                                    schemaVersion = '1'
+                                    packetId      = $approvePacketId
+                                    runId         = [string]$approveItem.runId
+                                    repoName      = [string]$approveItem.repoName
+                                    status        = 'pending-approval'
+                                    recordedAt    = (Get-Date).ToUniversalTime().ToString('o')
+                                    actor         = $approveActor
+                                    note          = ("quota-refused: {0} — {1}" -f $approveQuota.blockedCode, $approveQuota.message)
+                                })
+                                Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                                    success  = $false
+                                    error    = [string]$approveQuota.message
+                                    category = ("quota-refused:{0}" -f $approveQuota.blockedCode)
+                                    data     = @{ packetId = $approvePacketId; status = 'pending-approval'; dispatched = $false }
+                                }
+                            }
+                            else {
+                                $null = Write-PackagedItemRecord -WorkspaceRoot $WorkspaceRoot -Record ([pscustomobject]@{
+                                    schemaVersion = '1'
+                                    packetId      = $approvePacketId
+                                    runId         = [string]$approveItem.runId
+                                    repoName      = [string]$approveItem.repoName
+                                    status        = 'approved'
+                                    recordedAt    = (Get-Date).ToUniversalTime().ToString('o')
+                                    actor         = $approveActor
+                                    note          = 'Approved by an explicit operator action.'
+                                })
+
+                                $approveDispatchResult = $null
+                                $approveDispatchError = $null
+                                if ($approveDispatch) {
+                                    try {
+                                        $approveDispatchResult = Submit-PackagedItemToRunner -WorkspaceRoot $WorkspaceRoot -Packet $approvePacket -Actor $approveActor
+                                        $null = Write-PackagedItemRecord -WorkspaceRoot $WorkspaceRoot -Record ([pscustomobject]@{
+                                            schemaVersion = '1'
+                                            packetId      = $approvePacketId
+                                            runId         = [string]$approveItem.runId
+                                            repoName      = [string]$approveItem.repoName
+                                            status        = 'dispatched'
+                                            recordedAt    = (Get-Date).ToUniversalTime().ToString('o')
+                                            actor         = $approveActor
+                                            dispatchRunId = [string]$approveDispatchResult.runId
+                                            note          = ("Enqueued for the operator runner as run {0} on branch {1}." -f $approveDispatchResult.runId, $approveDispatchResult.branch)
+                                        })
+                                    } catch {
+                                        $approveDispatchError = $_.Exception.Message
+                                        $null = Write-PackagedItemRecord -WorkspaceRoot $WorkspaceRoot -Record ([pscustomobject]@{
+                                            schemaVersion = '1'
+                                            packetId      = $approvePacketId
+                                            runId         = [string]$approveItem.runId
+                                            repoName      = [string]$approveItem.repoName
+                                            status        = 'dispatch-failed'
+                                            recordedAt    = (Get-Date).ToUniversalTime().ToString('o')
+                                            actor         = $approveActor
+                                            note          = ("Dispatch failed: {0}" -f $approveDispatchError)
+                                        })
+                                    }
+                                }
+
+                                if ($approveDispatch -and $null -eq $approveDispatchResult) {
+                                    Send-HttpJson -Stream $req.Stream -StatusCode 500 -StatusText 'Internal Server Error' -CorrelationId $correlationId -Payload @{
+                                        success  = $false
+                                        error    = ("Packet {0} was approved but could not be enqueued: {1}" -f $approvePacketId, $approveDispatchError)
+                                        category = 'dispatch-failed'
+                                        data     = @{ packetId = $approvePacketId; status = 'dispatch-failed'; dispatched = $false }
+                                    }
+                                }
+                                else {
+                                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                                        success = $true
+                                        data = @{
+                                            packetId       = $approvePacketId
+                                            status         = if ($approveDispatch) { 'dispatched' } else { 'approved' }
+                                            dispatched     = [bool]$approveDispatch
+                                            dispatchTarget = 'operator-runner'
+                                            dispatchRunId  = if ($null -ne $approveDispatchResult) { [string]$approveDispatchResult.runId } else { $null }
+                                            branch         = if ($null -ne $approveDispatchResult) { [string]$approveDispatchResult.branch } else { $null }
+                                            note           = 'Queued for the operator runner (Invoke-RoadmapTaskRunner.ps1). Nothing was merged; the PR opens for review.'
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                'POST /api/automation/packages/reject' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $body = Parse-JsonBody -Body $req.Body
+                    $rejectPacketId = if ($null -ne $body -and $body.ContainsKey('packetId') -and $body.packetId) { [string]$body.packetId } else { '' }
+                    $rejectActor = if ($null -ne $body -and $body.ContainsKey('actor') -and $body.actor) { [string]$body.actor } else { 'operator' }
+                    $rejectReason = if ($null -ne $body -and $body.ContainsKey('reason') -and $body.reason) { [string]$body.reason } else { 'Rejected by the operator.' }
+
+                    if ([string]::IsNullOrWhiteSpace($rejectPacketId)) {
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{ success = $false; error = 'packetId is required'; category = 'validation' }
+                    }
+                    else {
+                        $rejectItem = Get-PackagedItem -WorkspaceRoot $WorkspaceRoot -PacketId $rejectPacketId
+                        $rejectFrom = if ($null -ne $rejectItem) { [string]$rejectItem.status } else { '' }
+                        $rejectTransition = Test-PackagedItemTransition -From $rejectFrom -To 'rejected'
+                        if (-not $rejectTransition.allowed) {
+                            $rejectStatusCode = if ($rejectTransition.reason -eq 'packet-not-found') { 404 } else { 409 }
+                            $rejectStatusText = if ($rejectStatusCode -eq 404) { 'Not Found' } else { 'Conflict' }
+                            Send-HttpJson -Stream $req.Stream -StatusCode $rejectStatusCode -StatusText $rejectStatusText -CorrelationId $correlationId -Payload @{
+                                success  = $false
+                                error    = [string]$rejectTransition.message
+                                category = [string]$rejectTransition.reason
+                                data     = @{ packetId = $rejectPacketId; status = $rejectFrom }
+                            }
+                        }
+                        else {
+                            $null = Write-PackagedItemRecord -WorkspaceRoot $WorkspaceRoot -Record ([pscustomobject]@{
+                                schemaVersion = '1'
+                                packetId      = $rejectPacketId
+                                runId         = [string]$rejectItem.runId
+                                repoName      = [string]$rejectItem.repoName
+                                status        = 'rejected'
+                                recordedAt    = (Get-Date).ToUniversalTime().ToString('o')
+                                actor         = $rejectActor
+                                note          = $rejectReason
+                            })
+                            Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                                success = $true
+                                data = @{ packetId = $rejectPacketId; status = 'rejected'; dispatched = $false }
+                            }
+                        }
                     }
                 }
                 'GET /setup/status' {
