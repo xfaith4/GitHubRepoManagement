@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-09 — Request bodies were parsed as ASCII, corrupting every non-ASCII character
+
+### Changes
+
+- **What it fixes, and how it surfaced.** The API host read every request through a `StreamReader` constructed with `[System.Text.Encoding]::ASCII`, so **any** non-ASCII byte in a JSON body was replaced with `?` before a route ever saw it. One em-dash (3 UTF-8 bytes) arrived as `???`. This is pre-existing and affects **every route that accepts a body**, not just the new one — it went unnoticed because no prior route round-tripped a large non-ASCII document. Release 2.7 Phase A's live submit-PR did, and opened a real PR that rewrote all of `ROADMAP.md` with mangled em-dashes: **225 additions / 219 deletions** for what should have been an 8-line append.
+- **Why the obvious fix would have hung the host.** `Content-Length` is a **byte** count, but `StreamReader.ReadBlock` counts **chars**. A UTF-8 reader decodes multi-byte sequences into fewer chars than `Content-Length`, so `ReadBlock` would block waiting for bytes that never arrive — turning a corruption bug into a wedged accept loop.
+- **`backend/api-host/Start-RepoManagementApiHost.ps1`** — the request reader is now **Latin-1** (`GetEncoding(28591)`), the only single-byte encoding with a lossless 1:1 byte↔char mapping for all 256 values. Header parsing is unaffected (ASCII is a subset) and the char count still equals the byte count, so `Content-Length` stays correct. The body's original bytes are then recovered from those chars and decoded as UTF-8 — what an `application/json` body actually is. Responses were already UTF-8 and are unchanged.
+- **`scripts/Invoke-ApiHostSmokeTest.ps1`** — echoes a probe containing an em-dash, arrow, accented character, and CJK text through a real route and compares it **byte-for-byte**, plus an explicit check for the `???` signature.
+
+### Testing
+
+- API-host smoke: `request body encoding ok: em-dash / arrow / accent / CJK all survived the round trip`.
+- The corrupted PR this produced (#94) was **closed, not merged** — its diff would have rewritten `ROADMAP.md` destructively.
+
 ## 2026-08-09 — Release 2.7 Phase A: build the live submit-PR write path (it did not exist)
 
 ### Changes

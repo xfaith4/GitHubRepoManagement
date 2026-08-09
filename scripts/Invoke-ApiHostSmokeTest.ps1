@@ -407,6 +407,30 @@ try {
     Assert-Not503 -Name '/api/status/cache' -Response $statusCache
     Assert-Not503 -Name '/api/status/cache/clear' -Response $statusCacheClear
 
+    # The host read every request through an ASCII StreamReader until 2026-08-09,
+    # so any non-ASCII character in a JSON body was replaced with '?' before a
+    # route saw it — an em-dash (3 UTF-8 bytes) arrived as '???'. It surfaced
+    # only when the Phase A live submit-PR opened a real PR that mangled every
+    # '—' in ROADMAP.md. Echo a known non-ASCII payload back through a route and
+    # compare it byte-for-byte, so this cannot regress silently again.
+    Write-Host '[STEP] Request body encoding — non-ASCII must survive the round trip' -ForegroundColor Cyan
+    $unicodeProbe = 'em-dash:— arrow:→ accent:é quote:" cjk:日本語 emoji-free-ascii:ok'
+    $echoResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/repair/submit-pr" -Body @{
+        repoName = $unicodeProbe
+    }
+    if ([int]$echoResponse.StatusCode -ne 200) {
+        throw "encoding probe: submit-pr dry-run expected 200, got $($echoResponse.StatusCode). Body=$($echoResponse.Content)"
+    }
+    $echoedName = [string]$echoResponse.Json.data.plan.repoName
+    if ($echoedName -ne $unicodeProbe) {
+        throw ("Request body encoding is lossy. Sent '{0}' but the host parsed '{1}'. " -f $unicodeProbe, $echoedName) +
+              'The request StreamReader must preserve bytes (Latin-1) and decode the body as UTF-8.'
+    }
+    if ($echoedName -match '\?\?\?') {
+        throw 'Request body encoding replaced a multi-byte character with "???" — the ASCII-reader regression is back.'
+    }
+    Write-Host '  request body encoding ok: em-dash / arrow / accent / CJK all survived the round trip' -ForegroundColor DarkGray
+
     Write-Host '[STEP] Settings routes' -ForegroundColor Cyan
     $settingsGet = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/settings"
     Assert-Not503 -Name '/api/settings (GET)' -Response $settingsGet
