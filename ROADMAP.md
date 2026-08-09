@@ -999,38 +999,49 @@ Two further survey findings, both independent of the split question:
   text and evidence in
   [the archive](docs/history/completed-releases.md#lane-07--the-two-roadmap-evaluators-disagreed-on-the-same-file).
 
-- [ ] **Fold `tools/Test-RoadmapStructure.ps1` into the shared detection
-      contract — it is the third private copy.** _(state: planned — surfaced
-      2026-08-08 while closing the evaluator reconciliation)_ The two scoring
-      evaluators now read status from the rule pack, but the structural linter
-      still carries its own release-status regex
-      ([`Test-RoadmapStructure.ps1:889`](tools/Test-RoadmapStructure.ps1#L889))
-      and its own `statusAliases` map
-      ([`:128`](tools/Test-RoadmapStructure.ps1#L128)). It is a **lower-severity
-      divergence than the one just closed** — the linter emits structural
-      warnings rather than a maturity score, so drift there misreports a status
-      as unknown instead of flipping the L3 dispatch gate — but it is the same
-      regression class, and its map is not a subset of the pack's: it knew
-      `pending` → `planned` and `released` → `done`, which the rule pack did
-      not. Those two were merged into `statusVocabulary` when this was found,
-      so no repo loses coverage today; the structural fix is to delete the
-      linter's private copy and read the pack. Deferred because the linter has
-      its own Pester suite
-      ([`Test-RoadmapStructure.Tests.ps1`](tools/Test-RoadmapStructure.Tests.ps1))
-      that asserts against the private map, so the change is a coordinated edit
-      rather than a drop-in.
-- [ ] **Add "Product Direction" to the product-intent vocabulary, or rename
-      this repo's section.** _(state: planned — non-blocker, surfaced
-      2026-08-08 by the parity work)_ Both evaluators now agree that this
-      repo's `ROADMAP.md` fails ROADMAP-004, because
-      `productIntentHeadingPattern` recognizes `product intent`, `product
-      scope`, `overview`, `about`, `purpose`, `background`, and `what this
-      does/is`, but not **`Product Direction`** — the heading section 2
-      actually uses. This is a genuine finding rather than an evaluator bug
-      (the two tools agree), but it is a false negative estate-wide for any
-      repo using that natural synonym. Decide whether the standard should
-      accept it or the roadmap should be renamed; the choice belongs in the
-      standard, not in one repo's file.
+- [x] **Fold `tools/Test-RoadmapStructure.ps1` into the shared detection
+      contract — it was the third private copy.** _(state: done 2026-08-08)_
+      The linter now reads `detection.releaseStatusPattern` and
+      `detection.statusVocabulary` from the rule pack at load
+      (`Import-RoadmapStatusContract`); the literals it keeps are a declared
+      mirror for standalone use in a repo that does not vendor the standards
+      tree, byte-identical to the JSON and guarded by a test that diffs them
+      against it. Its private map was **not** a subset of the pack's — it knew
+      `pending` and `released`, which were merged into `statusVocabulary` when
+      this was found, and it was missing twelve the pack had (`deferred`,
+      `on hold`, `in review`, `paused`, …), so the same word could read as a
+      status in one tool and as unknown in the other. Folding it in also
+      forced a **rule-pack 1.4** correction: the linter's regex tolerated
+      `Status: done. Shipped 2026-05.` and `Status: active, pending review`,
+      which the 1.3 pattern matched **not at all**, so adopting 1.3 unchanged
+      would have converted readable statuses into `RQ001-MISSING-STATUS`
+      warnings. Sentence punctuation (`.`, `,`, `;`) is now a status
+      terminator in the shared pattern; tolerance still applies to reading
+      only. That widening immediately exposed a second defect the linter's
+      stricter copy did not have: 1.3 made the **colon optional**, so any
+      prose line opening with the word "status" parsed as a declaration — this
+      lane's own write-up tripped `RQ002-INVALID-STATUS` on a sentence. The
+      colon is mandatory in 1.4, which makes the shared pattern strictly more
+      precise than 1.3 rather than only more tolerant. Evidence: `Test-RoadmapStructure.Tests.ps1` 27/27 (3 new cases —
+      punctuation tolerance, full alias vocabulary, and a pack-vs-mirror
+      equality guard), linter output on this `ROADMAP.md` byte-identical
+      before and after, `Invoke-ModuleSmokeTest.ps1` exit 0, and
+      `Invoke-TestSuite.ps1 -SkipApiHost` 11/11 gates green. `Test-RoadmapStructure.Tests.ps1`
+      28/28 (4 new cases — punctuation tolerance, mandatory colon, full alias
+      vocabulary, and a pack-vs-mirror equality guard).
+- [x] **"Product Direction" accepted into the product-intent vocabulary.**
+      _(state: done 2026-08-08 — decided in the standard, not in this repo's
+      file)_ `productIntentHeadingPattern` recognized `product intent`,
+      `product scope`, `overview`, `about`, `purpose`, `background`, and
+      `what this does/is`, but not **`Product Direction`** — the heading
+      section 2 actually uses, and a plain synonym of the already-accepted
+      `product intent` rather than a missing section. Renaming this repo's
+      heading would have left the same false negative in place estate-wide for
+      any repo using the synonym, so the vocabulary was widened in rule pack
+      1.4 instead. `productIntentNote` now records that synonyms are added on
+      evidence, not speculatively. Evidence: this repo's contract score
+      **92 → 100** (`L4-Orchestration-Ready` both before and after) with
+      ROADMAP-004 the only rule that changed state.
 - [ ] **Record whether a repo externalizes its completion history.**
       _(state: planned)_ The contract carries `completedCount` as a required
       field, and a split roadmap reports ~0 forever. No rule reads it today,
