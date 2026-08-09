@@ -501,10 +501,58 @@ if ([int]$twoActiveAudit.activeReleaseCount -ne 2) { throw "Expected activeRelea
 if (@($twoActiveAudit.auditFindings | Where-Object { $_.ruleId -eq 'ROADMAP-011' }).Count -ne 1) {
     throw 'Expected ROADMAP-011 to fire when more than one release is active'
 }
-if ($twoActiveAudit.maturityLevel -in @('L3-Contract-Ready','L4-Orchestration-Ready')) {
-    throw "More than one active release must cap maturity at L2, got $($twoActiveAudit.maturityScore) -> $($twoActiveAudit.maturityLevel)"
+if ($twoActiveAudit.maturityLevel -ne 'L2-Structured') {
+    throw "More than one active release must cap maturity at exactly L2-Structured, got $($twoActiveAudit.maturityScore) -> $($twoActiveAudit.maturityLevel)"
 }
-Write-Host ("  active-release rules ok: 0 active -> ROADMAP-012; 1 active -> clean; 2 active -> ROADMAP-011 + capped at {0}" -f $twoActiveAudit.maturityLevel) -ForegroundColor DarkGray
+# ROADMAP-011 must stay a WARNING. As a critical it would take the blanket L1
+# cap, making its own documented L2 cap unreachable and silently downgrading
+# every ambiguous-dispatch repo in the portfolio a level below the model.
+$rule011 = @($auditRulesObj.rules | Where-Object { $_.id -eq 'ROADMAP-011' })[0]
+if ([string]$rule011.severity -ne 'warning') {
+    throw "ROADMAP-011 must be severity 'warning' so its named L2 cap stays reachable (see ROADMAP_MATURITY_MODEL.md); got '$($rule011.severity)'"
+}
+Write-Host ("  active-release rules ok: 0 active -> ROADMAP-012; 1 active -> clean; 2 active -> ROADMAP-011 (warning) + capped at {0}" -f $twoActiveAudit.maturityLevel) -ForegroundColor DarkGray
+
+# The two blanket maturity caps ROADMAP_MATURITY_MODEL.md documented from the
+# start but no evaluator applied until rules v1.5: weighted-score arithmetic
+# alone let a roadmap carry a critical finding and still score
+# orchestration-ready.
+Write-Step 'Roadmap auditor — smoke: blanket maturity caps (critical -> L1, warning -> L3)'
+$capThresholds = $auditRulesObj.maturityThresholds
+$l1Max = [int]$capThresholds.'L1-Informal'.maxScore
+$l3Max = [int]$capThresholds.'L3-Contract-Ready'.maxScore
+
+# Same well-formed roadmap that scores L3+, but flipped to parse-error, which is
+# critical -> must cap at L1 no matter how much structure is otherwise present.
+$criticalContract = Invoke-NormalizeRoadmapContract `
+    -ParsedResult (Invoke-ParseRoadmapContent -Content $pendingContent) `
+    -RawContent $pendingContent -RepoName 'smoke-critical-cap'
+$criticalContract.roadmapState = 'parse-error'
+$criticalAudit = Invoke-AuditRoadmapContract -Contract $criticalContract -AuditRules $auditRulesObj
+if (@($criticalAudit.auditFindings | Where-Object { $_.severity -eq 'critical' }).Count -lt 1) {
+    throw 'Fixture error: expected at least one critical finding for the critical-cap case'
+}
+if ([int]$criticalAudit.maturityScore -gt $l1Max) {
+    throw "Any critical finding must cap maturity at L1 (<= $l1Max), got $($criticalAudit.maturityScore) -> $($criticalAudit.maturityLevel)"
+}
+if ($criticalAudit.maturityLevel -notin @('L0-Absent', 'L1-Informal')) {
+    throw "Critical-capped roadmap must land at L0/L1, got $($criticalAudit.maturityLevel)"
+}
+
+# L4 requires NO critical or warning findings, so any warning caps at L3. The
+# well-formed fixture already carries warnings, so it is the natural case here.
+$warningAudit = $scoredContract
+$warningFindingCount = @($warningAudit.auditFindings | Where-Object { $_.severity -eq 'warning' }).Count
+if ($warningFindingCount -gt 0) {
+    if ([int]$warningAudit.maturityScore -gt $l3Max) {
+        throw "Any warning finding must cap maturity at L3 (<= $l3Max), got $($warningAudit.maturityScore) -> $($warningAudit.maturityLevel)"
+    }
+    if ($warningAudit.maturityLevel -eq 'L4-Orchestration-Ready') {
+        throw 'L4-Orchestration-Ready requires zero warning findings'
+    }
+}
+Write-Host ("  maturity caps ok: critical -> {0} (<= {1}); {2} warning finding(s) -> {3} (<= {4})" -f `
+    $criticalAudit.maturityLevel, $l1Max, $warningFindingCount, $warningAudit.maturityLevel, $l3Max) -ForegroundColor DarkGray
 
 # The canonical status form in ROADMAP_TEMPLATE.md is a blockquote. A detector
 # that only understood "**Status:** active" would fire ROADMAP-012 on every

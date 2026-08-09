@@ -777,21 +777,42 @@ function Invoke-RoadmapAuditRules {
         }
     }
 
-    # More than one active release caps the roadmap at L2 per
-    # ROADMAP_MATURITY_MODEL.md: an ambiguous dispatch target is as unusable as
-    # missing structure. The SCORE is capped too, not just the label, so score
-    # and level stay consistent for every consumer — same as the backend
-    # auditor's cap.
-    if ([int]$Contract.activeReleaseCount -gt 1) {
-        $l2Max = 64
+    # Maturity caps per ROADMAP_MATURITY_MODEL.md. Caps compose: the effective
+    # ceiling is the lowest that applies. The SCORE is capped too, not just the
+    # label, so score and level stay consistent for every consumer — and this
+    # block must stay behaviourally identical to Roadmap.Auditor.ps1's, or the
+    # module-smoke parity tripwire fails (which is exactly how the two blanket
+    # caps below were caught missing here when the backend gained them).
+    $thresholdMax = {
+        param([string]$LevelName, [int]$Fallback)
         if ($Rules.PSObject.Properties.Name -contains 'maturityThresholds' -and
-            $Rules.maturityThresholds.PSObject.Properties.Name -contains 'L2-Structured') {
-            $l2Max = [int]$Rules.maturityThresholds.'L2-Structured'.maxScore
+            $Rules.maturityThresholds.PSObject.Properties.Name -contains $LevelName) {
+            return [int]$Rules.maturityThresholds.$LevelName.maxScore
         }
-        if ($Contract.maturityScore -gt $l2Max) {
-            $Contract.maturityScore = $l2Max
-            $level = Get-MaturityFromScore -Score $Contract.maturityScore -Rules $Rules
-        }
+        return $Fallback
+    }
+
+    $capMax = [int]$Contract.maturityScore
+
+    # Any critical finding caps at L1; any warning finding caps at L3, because
+    # L4 requires no critical or warning findings at all.
+    if ($criticalCount -gt 0) {
+        $capMax = [math]::Min($capMax, [int](& $thresholdMax 'L1-Informal' 39))
+    }
+    if ($warningCount -gt 0) {
+        $capMax = [math]::Min($capMax, [int](& $thresholdMax 'L3-Contract-Ready' 84))
+    }
+
+    # More than one active release caps at L2: an ambiguous dispatch target is
+    # as unusable as missing structure. ROADMAP-011 is a warning (rules v1.5)
+    # precisely so this named cap stays reachable.
+    if ([int]$Contract.activeReleaseCount -gt 1) {
+        $capMax = [math]::Min($capMax, [int](& $thresholdMax 'L2-Structured' 64))
+    }
+
+    if ($Contract.maturityScore -gt $capMax) {
+        $Contract.maturityScore = [math]::Max(0, $capMax)
+        $level = Get-MaturityFromScore -Score $Contract.maturityScore -Rules $Rules
     }
 
     $Contract.maturityLevel = $level

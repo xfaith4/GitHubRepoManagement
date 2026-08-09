@@ -142,6 +142,12 @@ Then maturity caps are applied. For example:
 - Any critical finding caps maturity at L1.
 - Any warning finding caps maturity at L3, because L4 requires no critical or warning findings.
 
+Caps **compose**: when several apply, the effective ceiling is the lowest of them. The score is capped, not just the label, so score and level stay consistent for every consumer.
+
+Two of these caps were documented here from the start but applied by no evaluator until rules v1.5 — the auditors did weighted-score arithmetic only, so a roadmap could carry a critical finding and still be scored orchestration-ready.
+
+**Why `ROADMAP-011` (more than one active release) is a `warning` and not a `critical`.** It carries a named L2 cap *and* a severity. Were it critical, the blanket "any critical caps at L1" rule would always be the lower ceiling, and its own documented L2 cap could never be reached — the model would contradict itself. As a warning it takes the L3 blanket cap plus its named L2 cap and lands at L2, exactly as documented above. Ambiguous dispatch is still a hard gate: L2 is below the L3 contract-ready bar, so such a roadmap is not dispatchable. Do not re-promote it to `critical` without also deleting the L2 line above.
+
 ## Maintenance rule
 
 When `roadmap-audit-rules.json` changes, update this document and the schema together. The rule pack is the executable source of truth; this document explains the rules in human terms.

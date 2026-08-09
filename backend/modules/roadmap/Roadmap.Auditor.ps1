@@ -540,18 +540,47 @@ function Invoke-AuditRoadmapContract {
     # L0-Absent if roadmap is missing regardless of score
     if ($Contract.roadmapState -eq 'missing') { $normalised = 0 }
 
-    # Maturity cap: more than one active release caps the roadmap at L2, per
-    # ROADMAP_MATURITY_MODEL.md. An ambiguous dispatch target is treated the
-    # same as missing structure, because neither an agent nor an operator can
-    # safely pick a target on its own. Capping the score (not just the label)
-    # keeps score and level consistent for every downstream consumer.
-    if ($hasActiveCount -and [int]$Contract.activeReleaseCount -gt 1) {
-        $l2Max = 64
-        if ($null -ne $thresholds -and $null -ne $thresholds.'L2-Structured') {
-            $l2Max = [int]$thresholds.'L2-Structured'.maxScore
+    # Maturity caps, per ROADMAP_MATURITY_MODEL.md. Caps compose: the effective
+    # ceiling is the lowest one that applies. Capping the SCORE (not just the
+    # label) keeps score and level consistent for every downstream consumer.
+    #
+    # Two of these were documented from the start but never implemented — the
+    # auditor did weighted-score arithmetic only, so a roadmap could carry a
+    # critical finding and still be scored orchestration-ready.
+    $capMax = [int]$normalised
+    $levelMax = {
+        param([string]$LevelName, [int]$Fallback)
+        if ($null -ne $thresholds -and $null -ne $thresholds.$LevelName) {
+            return [int]$thresholds.$LevelName.maxScore
         }
-        if ($normalised -gt $l2Max) { $normalised = $l2Max }
+        return $Fallback
     }
+
+    $findingSeverities = @($findings | ForEach-Object { [string]$_.severity })
+
+    # Any critical finding caps at L1. Nothing carrying a critical defect is
+    # structured, let alone contract-ready.
+    if ($findingSeverities -contains 'critical') {
+        $capMax = [math]::Min($capMax, [int](& $levelMax 'L1-Informal' 39))
+    }
+
+    # Any warning finding caps at L3, because L4 requires no critical or
+    # warning findings at all.
+    if ($findingSeverities -contains 'warning') {
+        $capMax = [math]::Min($capMax, [int](& $levelMax 'L3-Contract-Ready' 84))
+    }
+
+    # More than one active release caps at L2 — an ambiguous dispatch target is
+    # treated the same as missing structure, because neither an agent nor an
+    # operator can safely pick a target on its own. This named cap is why
+    # ROADMAP-011 is a WARNING and not a critical (rules v1.5): as a critical it
+    # would take the L1 cap above and make this documented L2 cap unreachable.
+    if ($hasActiveCount -and [int]$Contract.activeReleaseCount -gt 1) {
+        $capMax = [math]::Min($capMax, [int](& $levelMax 'L2-Structured' 64))
+    }
+
+    if ($normalised -gt $capMax) { $normalised = $capMax }
+    if ($normalised -lt 0) { $normalised = 0 }
 
     $Contract.maturityScore   = $normalised
     $Contract.maturityLevel   = _ScoreToMaturityLevel -Score $normalised -MaturityThresholds $thresholds

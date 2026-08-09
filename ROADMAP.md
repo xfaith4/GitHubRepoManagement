@@ -48,9 +48,9 @@ interchangeable — mixing them is what previously made the roadmap read as
       the service at all (`gh agent-task` requires OAuth; LocalSystem cannot
       hold one), so the guided-improvement wizard dead-ends at its last step.
       Approach decided 2026-08-08; no prerequisites.
-- [ ] **Lane 0.3 remainder** — the documented maturity **caps** the auditor
-      still does not apply, `CLAUDE.md`'s two dangling `@` imports, and the
-      `Test-RoadmapStructure.ps1` tuning for the template's own layout.
+- [ ] **Lane 0.5 / 0.6 cosmetics** — the GitHub rate-limit readout that is
+      always null, the portal TLS certificate password, and the zero-scope
+      action hint. All non-blockers; **Lane 0.3 closed entirely 2026-08-09.**
 
 **Closed 2026-08-09:** Lane 0.4's cold-scan request deadline — the freeze guard
 now classifies routes into a 180-second default tier and a 900-second
@@ -950,16 +950,46 @@ and 0.6 shed their closed items to
       found; module smoke and adapter smoke both exit 0, the latter run with no
       `-WorkspaceRoot` argument at all; each of the three adapter guards was
       confirmed to raise its named error when the root is omitted.
-- [ ] Implement the documented maturity **caps** that the auditor still does
-      not apply: `ROADMAP_MATURITY_MODEL.md` states "any critical finding caps
+- [x] Implement the documented maturity **caps** that the auditor did not
+      apply: `ROADMAP_MATURITY_MODEL.md` states "any critical finding caps
       maturity at L1" and "any warning finding caps maturity at L3", but
-      `Invoke-AuditRoadmapContract` only does weighted-score arithmetic. The >1-active-release cap was implemented 2026-08-07; these two remain
-      doc-only. _(state: planned — pre-existing doc↔code drift, surfaced while
-      fixing the rules v1.1 regression)_
-- [ ] Repair `CLAUDE.md`'s dangling `@_base.md` and
-      `@.claude/modes/implementer.md` imports — neither file exists. The
-      mode line is managed by `ccmode.ps1`, so fix at the tool level.
-      _(state: planned — confirmed still broken 2026-08-07)_
+      `Invoke-AuditRoadmapContract` only did weighted-score arithmetic, so a
+      roadmap could carry a critical finding and still score
+      orchestration-ready. _(state: smoke-tested — closed 2026-08-09)_
+      **The model contradicted itself, and Ben chose the resolution
+      2026-08-09.** `ROADMAP-011` (>1 active release) carried a named L2 cap
+      _and_ `critical` severity; applying the blanket critical cap literally
+      would have forced it to L1 and made its own documented L2 cap
+      unreachable. Rather than add a precedence rule, **the severity was the
+      bug**: `ROADMAP-011` is now `warning` (rules **v1.5**), so it takes the
+      L3 blanket cap plus its named L2 cap and lands at L2 exactly as
+      documented — and "any critical finding caps at L1" became literally
+      true. Ambiguous dispatch is still a hard gate, because L2 is below the
+      L3 contract-ready bar. Caps now **compose**: the effective ceiling is
+      the lowest that applies. **Both rule-pack mirrors and both
+      `ROADMAP_MATURITY_MODEL.md` copies moved in lockstep**, and the model
+      now records why the severity must not be re-promoted.
+      **The parity tripwire earned its keep:** implementing the caps in the
+      backend auditor alone broke it immediately
+      (`maturityScore module=84 cli=92`), because
+      [`Test-RoadmapContract.ps1`](tools/Test-RoadmapContract.ps1) carries its
+      own cap block — exactly the "two figures, one truth" divergence this
+      product exists to catch. Both evaluators now implement the same
+      composed caps. **Evidence:** module smoke exit 0 —
+      `maturity caps ok: critical -> L1-Informal (<= 39); 1 warning finding(s)
+      -> L3-Contract-Ready (<= 84)`, `2 active -> ROADMAP-011 (warning) +
+      capped at L2-Structured`, and `evaluator parity ok: 4 fixtures agree`.
+      A new assertion fails the gate if `ROADMAP-011` is ever re-promoted to
+      `critical`.
+- [x] Repair `CLAUDE.md`'s dangling `@_base.md` and
+      `@.claude/modes/implementer.md` imports — neither file exists.
+      _(state: done — closed 2026-08-09)_ The note said to "fix at the tool
+      level" because `ccmode.ps1` manages the mode line, but **`ccmode.ps1`
+      does not exist either** — not in this repo and not under any `.claude`
+      directory on this machine — so there was no tool level to fix at. Ben
+      chose removal 2026-08-09: both imports are gone, replaced by a comment
+      recording what they were and that `ccmode.ps1` can re-add its own line
+      if it is ever restored. Nothing was fabricated to satisfy them.
 - [x] Tune `tools/Test-RoadmapStructure.ps1` for the template's own layout:
       `ROADMAP_TEMPLATE.md` puts the full execution contract inside the
       `## Release X — Title` block, so R013's 120-line cap fired on any
