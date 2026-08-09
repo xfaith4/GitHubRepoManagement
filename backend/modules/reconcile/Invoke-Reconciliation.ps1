@@ -8,7 +8,8 @@
     and generates reports including potential duplicates. It includes logging, defensive validation, and HTML/CSV/JSON outputs.
 
 .PARAMETER LocalRoots
-    Array of local root paths to scan for repositories. Default: @('G:\Development')
+    Array of local root paths to scan for repositories. Required — there is no
+    default, because a scan target cannot be inferred from the tool's location.
 
 .PARAMETER GitHubOwner
     GitHub username or organization name. If omitted, GitHub inventory is skipped.
@@ -42,8 +43,11 @@
 #>
 [CmdletBinding()]
 param(
+    # Scan target, not the tool's own location, so there is nothing sensible to
+    # derive it from. The old 'G:\Development' default silently scanned a drive
+    # that does not exist on every machine (ROADMAP Lane 0.3).
     [Parameter()]
-    [string[]]$LocalRoots = @('G:\Development'),
+    [string[]]$LocalRoots = @(),
 
     [Parameter()]
     [string]$GitHubOwner,
@@ -86,13 +90,18 @@ param(
 #Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-if ($LocalRoots.Count -eq 0) {
+# -LoadFunctionsOnly dot-sources this file purely to import its functions, so it
+# has no scan to configure and must not require a root. Adapters.ps1 does
+# exactly that, and it used to satisfy this check only by accident: the removed
+# 'G:\Development' default made LocalRoots non-empty on every machine, whether
+# or not that path existed.
+if (-not $LoadFunctionsOnly -and $LocalRoots.Count -eq 0) {
     throw 'LocalRoots parameter cannot be empty.'
 }
 
 if (-not $OutDir) {
     if ($LoadFunctionsOnly) {
-        $OutDir = [string]$LocalRoots[0]
+        $OutDir = if ($LocalRoots.Count -gt 0) { [string]$LocalRoots[0] } else { '' }
     }
     else {
     $OutDir = Join-Path -Path (Join-Path -Path $LocalRoots[0] -ChildPath 'Repo_reconciliation-dashboard') -ChildPath '_repo_reconciliation'

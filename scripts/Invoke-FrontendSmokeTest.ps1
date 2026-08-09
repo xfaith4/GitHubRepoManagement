@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
-    [string]$WorkspaceRoot = 'G:\Development\GitHubRepoManagement',
+    # Derived from this script's location rather than a hardcoded drive letter,
+    # so the suite runs unmodified from any clone location (ROADMAP Lane 0.3).
+    [string]$WorkspaceRoot = (Split-Path -Parent $PSScriptRoot),
     [string]$BaseUrl = 'http://127.0.0.1:7071',
     [int]$TimeoutSeconds = 90,
     [switch]$NoStartApp

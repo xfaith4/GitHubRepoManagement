@@ -48,8 +48,9 @@ interchangeable — mixing them is what previously made the roadmap read as
       the service at all (`gh agent-task` requires OAuth; LocalSystem cannot
       hold one), so the guided-improvement wizard dead-ends at its last step.
       Approach decided 2026-08-08; no prerequisites.
-- [ ] **Lane 0.3 hygiene** — the five `backend/` files still carrying
-      hardcoded `G:\` workspace defaults.
+- [ ] **Lane 0.3 remainder** — the documented maturity **caps** the auditor
+      still does not apply, `CLAUDE.md`'s two dangling `@` imports, and the
+      `Test-RoadmapStructure.ps1` tuning for the template's own layout.
 
 **Closed 2026-08-09:** Lane 0.4's cold-scan request deadline — the freeze guard
 now classifies routes into a 180-second default tier and a 900-second
@@ -62,6 +63,9 @@ decomposition landed its two named extractions (tab shell, summary/mission).
 **Release 2.7 Phase D is now engineering-complete** except for the live service
 deployment its freeze-prevention item has always been waiting on (an elevated
 Windows install). The only open 2.7 work is Phase A and the Phase C it gates.
+Also Lane 0.3's hardcoded workspace defaults, where the fix is now enforced by a
+module-smoke tripwire rather than just applied — the tripwire found two `F:\`
+offenders that the item's own `G:\` file list could never have named.
 
 **Closed 2026-08-08 and archived out of this file:** the settings.json
 regression (Lane 0.1, which closed entirely), the silent workspace-path
@@ -899,9 +903,9 @@ and 0.6 shed their closed items to
 
 ### Lane 0.3 — Layout follow-ups from the 2026-07-15 cleanup
 
-- [ ] Normalize hardcoded `G:\Development\GitHubRepoManagement`
+- [x] Normalize hardcoded `G:\Development\GitHubRepoManagement`
       `-WorkspaceRoot` defaults to `$PSScriptRoot`-derived paths so the
-      suite runs unmodified from any clone location. _(state: in progress —
+      suite runs unmodified from any clone location. _(state: smoke-tested —
       confirmed 2026-08-07 still present in `backend/adapters/Adapters.ps1`,
       `backend/api-host/Start-RepoManagementApiHost.ps1`,
       `backend/modules/docreview/Invoke-DocReviewInventory.ps1`, and both
@@ -915,7 +919,37 @@ and 0.6 shed their closed items to
       with no arguments, exit 0.
       [`scripts/Invoke-ApiHostSmokeTest.ps1`](scripts/Invoke-ApiHostSmokeTest.ps1)
       was fixed the same way, so **both** required gates now run unmodified from
-      any clone location. The five `backend/` files above are still open.
+      any clone location. **Closed 2026-08-09**, and the file list above was
+      wrong in both directions — worth recording, because the same mistake
+      produced the 2026-08-07 "wider blast radius than the original note"
+      correction:
+      **(a) Three of the five named `backend/` files were not `-WorkspaceRoot`
+      defaults at all.** `Adapters.ps1`, `Invoke-DocReviewInventory.ps1`, and
+      the reconcile modules hardcoded `$LocalRoots` / `$RootPath` — **scan
+      targets**, i.e. where the operator's repos live, not where the tool
+      lives. `$PSScriptRoot` derivation is meaningless for those. Every caller
+      already passed them explicitly, so the defaults were dead code whose only
+      possible effect was to scan a nonexistent drive and return "no repos"
+      instead of "misconfigured". They now default to empty and throw a named
+      error. Removing them exposed a hidden coupling:
+      `Invoke-Reconciliation.ps1`'s empty-roots check ran even under
+      `-LoadFunctionsOnly`, and had been passing only because the dead
+      `G:\Development` default made the array non-empty — so `Adapters.ps1`
+      broke the moment the default was honest. The check is now correctly
+      skipped when only loading functions.
+      **(b) Seven files were missing from the list**, including
+      `Invoke-AuthSmokeTest.ps1` and `Invoke-PhaseProtocolTest.ps1`, which
+      hardcode **`F:\`** — the current machine's drive, so they work here and
+      break on every other clone. A `G:\` grep could never have found them.
+      **The instances are fixed and the pattern is now enforced:**
+      [`Invoke-ModuleSmokeTest.ps1`](scripts/Invoke-ModuleSmokeTest.ps1) fails
+      if any tracked `backend/`, `scripts/`, or `tools/` script declares a
+      `[string]$Param = 'X:\...'` default (`*.Tests.ps1` exempt — those use
+      absolute paths as synthetic fixtures). **Evidence:** the tripwire was
+      written before the last two fixes and caught them, which is how they were
+      found; module smoke and adapter smoke both exit 0, the latter run with no
+      `-WorkspaceRoot` argument at all; each of the three adapter guards was
+      confirmed to raise its named error when the root is omitted.
 - [ ] Implement the documented maturity **caps** that the auditor still does
       not apply: `ROADMAP_MATURITY_MODEL.md` states "any critical finding caps
       maturity at L1" and "any warning finding caps maturity at L3", but

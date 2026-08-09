@@ -91,8 +91,14 @@ function Get-LocalRepoHeadCommitSha {
 function Get-StatusAdapterResult {
     [CmdletBinding()]
     param(
+        # No machine-specific default. This is a SCAN TARGET, not the tool's own
+        # location, so there is nothing sensible to derive it from — the old
+        # 'G:\Development' default silently scanned a drive that does not exist
+        # on every machine, producing an empty result that read as "no repos"
+        # rather than as a misconfiguration. Every caller passes this
+        # explicitly; a caller that forgets now gets told so (ROADMAP Lane 0.3).
         [Parameter()]
-        [string[]]$LocalRoots = @('G:\Development'),
+        [string[]]$LocalRoots = @(),
 
         [Parameter()]
         [int]$MaxDepth = 2,
@@ -103,6 +109,10 @@ function Get-StatusAdapterResult {
         [Parameter()]
         [string]$LogPath
     )
+
+    if (@($LocalRoots).Count -eq 0) {
+        throw 'Get-StatusAdapterResult requires -LocalRoots: pass the configured workspace root(s) to scan.'
+    }
 
     $correlationId = [guid]::NewGuid().ToString('n')
     $operation = 'status.scan'
@@ -194,8 +204,9 @@ function Get-StatusAdapterResult {
 function Invoke-ReconcileAdapter {
     [CmdletBinding()]
     param(
+        # Scan target, not the tool's own location — see Get-StatusAdapterResult.
         [Parameter()]
-        [string[]]$LocalRoots = @('G:\Development'),
+        [string[]]$LocalRoots = @(),
 
         [Parameter()]
         [string]$GitHubOwner,
@@ -216,6 +227,10 @@ function Invoke-ReconcileAdapter {
         [Parameter()]
         [string]$LogPath
     )
+
+    if (@($LocalRoots).Count -eq 0) {
+        throw 'Invoke-ReconcileAdapter requires -LocalRoots: pass the configured workspace root(s) to scan.'
+    }
 
     $correlationId = [guid]::NewGuid().ToString('n')
     $operation = 'reconcile.run'
@@ -260,8 +275,9 @@ function Invoke-ReconcileAdapter {
 function Invoke-DocReviewAdapter {
     [CmdletBinding()]
     param(
+        # Scan target, not the tool's own location — see Get-StatusAdapterResult.
         [Parameter()]
-        [string]$RootPath = 'G:\Development\20_Staging',
+        [string]$RootPath = '',
 
         [Parameter()]
         [int]$MaxDepth = 3,
@@ -281,6 +297,10 @@ function Invoke-DocReviewAdapter {
         [Parameter()]
         [string]$LogPath
     )
+
+    if ([string]::IsNullOrWhiteSpace($RootPath)) {
+        throw 'Invoke-DocReviewAdapter requires -RootPath: pass the configured workspace root to scan.'
+    }
 
     $correlationId = [guid]::NewGuid().ToString('n')
     $operation = 'docreview.run'

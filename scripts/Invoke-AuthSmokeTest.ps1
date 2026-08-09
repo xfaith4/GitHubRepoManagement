@@ -19,7 +19,9 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$WorkspaceRoot = 'F:\Development\GitHubRepoManagement',
+    # Derived from this script's location rather than a hardcoded drive letter,
+    # so the suite runs unmodified from any clone location (ROADMAP Lane 0.3).
+    [string]$WorkspaceRoot = (Split-Path -Parent $PSScriptRoot),
     [int]$Port = 7091,
     [int]$BindGuardPort = 7092,
     [int]$CorsRatePort = 7093,

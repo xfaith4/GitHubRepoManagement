@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-09 — No machine-specific path defaults, enforced by a tripwire (ROADMAP Lane 0.3)
+
+### Changes
+
+- **What it fixes:** scripts across `backend/` and `scripts/` hardcoded an absolute workspace path as a parameter default. Two distinct bugs hid under one label:
+  - **`-WorkspaceRoot` defaults** — the tool's own location, which *can* be derived. Seven files fixed to `$PSScriptRoot`-derived paths: the API host (`backend/api-host/`, two levels up) and `Invoke-RepositoryStructureAudit`, `Invoke-RegressionSmokeTest`, `Invoke-FrontendSmokeTest`, `Invoke-ApiContractTest`, `Invoke-AdapterSmokeTest`, `Invoke-AuthSmokeTest`, `Invoke-PhaseProtocolTest`.
+  - **`$LocalRoots` / `$RootPath` scan targets** — where the operator's repos live, which *cannot* be derived from the tool's location. `Adapters.ps1` (all three adapters), both reconcile entry points, and `Invoke-DocReviewInventory.ps1` defaulted to `G:\Development`. Every caller already passed these explicitly, so the defaults were dead code whose only possible effect was to scan a nonexistent drive and return "no repos" instead of "misconfigured". They now default to empty and throw a named error.
+- **Hidden coupling the removal exposed:** `Invoke-Reconciliation.ps1`'s empty-roots check ran even under `-LoadFunctionsOnly`, and had been passing only because the dead `G:\Development` default made the array non-empty. `Adapters.ps1` dot-sources it that way, so it broke the moment the default became honest. The check is now skipped when only loading functions, and `Invoke-Reconciliation.Modular.ps1` — a real entry point with no check at all — gained one.
+- **`scripts/Invoke-ModuleSmokeTest.ps1`** — new tripwire fails the gate if any tracked `backend/`, `scripts/`, or `tools/` script declares a `[string]$Param = 'X:\...'` default. `*.Tests.ps1` is exempt: those use absolute paths as synthetic fixtures that are never touched on disk.
+
+### Testing
+
+- The tripwire was written before the last two fixes and **caught them** — `Invoke-AuthSmokeTest.ps1` and `Invoke-PhaseProtocolTest.ps1` hardcoded **`F:\`**, the current machine's drive, so they worked here and would break on any other clone. A `G:\` grep could not have found them; this is how they were found.
+- Module smoke exit 0; adapter smoke exit 0 **run with no `-WorkspaceRoot` argument**, exercising all three adapters (`statusSuccess`/`reconcileSuccess`/`docreviewSuccess` all True).
+- Each of the three adapter guards confirmed to raise its named error when the root is omitted.
+- Parser check clean on all twelve modified PowerShell files; api-host smoke exit 0 on port 7099.
+
 ## 2026-08-09 — Dashboard.tsx decomposition: tab shell and summary/mission sections extracted
 
 ### Changes
