@@ -125,7 +125,31 @@ if (Test-Path -LiteralPath $trackedSettingsPath) {
     if (@($trackedRoots).Count -eq 0) {
         throw 'Tracked settings.json has no inventory.localRoots; the portal cannot scan anything.'
     }
-    Write-Host ("  localRoots ok: {0}" -f ($trackedRoots -join ', ')) -ForegroundColor Green
+
+    # Also check the COMMITTED version, not just the working copy. On 2026-08-09
+    # a commit was made while the api-host smoke held settings.json pointed at
+    # its fixture, so the fixture path landed on main — and this tripwire stayed
+    # green afterwards because the smoke's finally had since restored the
+    # working copy. Checking only what is on disk cannot see pollution that is
+    # already in history.
+    $committedSettings = $null
+    try { $committedSettings = (& git -C $WorkspaceRoot show HEAD:backend/config/settings.json 2>$null) | Out-String } catch { }
+    if (-not [string]::IsNullOrWhiteSpace($committedSettings)) {
+        $committedRoots = @()
+        try {
+            $committedJson = $committedSettings | ConvertFrom-Json
+            if ($committedJson.PSObject.Properties.Name -contains 'inventory' -and
+                $committedJson.inventory.PSObject.Properties.Name -contains 'localRoots') {
+                $committedRoots = @($committedJson.inventory.localRoots | ForEach-Object { [string]$_ })
+            }
+        } catch { }
+        $committedOffending = @($committedRoots | Where-Object { $_ -match '(^|[/\\])output([/\\]|$)' })
+        if (@($committedOffending).Count -gt 0) {
+            throw (("COMMITTED settings.json inventory.localRoots names a path under output/: {0}. " +
+                    "Run evidence was committed as config — restore the real root and commit the fix.") -f ($committedOffending -join ', '))
+        }
+    }
+    Write-Host ("  localRoots ok (working copy and HEAD): {0}" -f ($trackedRoots -join ', ')) -ForegroundColor Green
 }
 
 Write-Step 'Loading roadmap parser module'
