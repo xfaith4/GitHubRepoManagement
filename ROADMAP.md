@@ -1322,3 +1322,9 @@ pwsh ./tools/Test-RoadmapStructure.ps1 -Path ./ROADMAP.md `
 
 CI runs the same script with `-FailOnError`, so warnings remain advisory
 while structural errors fail the smoke workflow.
+
+<!-- Release 2.7 Phase A — live submit-PR evidence.
+     This note was written, committed, pushed, and opened as a pull request by
+     POST /api/roadmap/repair/submit-pr (createPr=true) at 2026-08-09 12:43:32 UTC.
+     Its existence in a PR IS the Phase A artifact: it proves the write path
+     runs end to end against a real repo, not just the dry-run plan. -->
