@@ -40,10 +40,10 @@ interchangeable — mixing them is what previously made the roadmap read as
 
 **Current focus (next agent actions), in order:**
 
-- [ ] **Release 2.7 Phase A — the live submit-PR proof.** Now unblocked: the
-      service reads a Machine-scoped token and returns private repos
-      (Lane 0.2, closed 2026-08-08). Phase A is in turn the gate for Phase C,
-      the largest remaining product increment.
+- [ ] **Release 2.7 Phase C — scheduled roadmap-item packaging.** The largest
+      remaining product increment, and **unblocked 2026-08-09**: Phase A's
+      write path is built and proven live, so auto-ranked packets now have a
+      real path to a PR nobody has to open by hand.
 - [ ] **Release 3.0 — operator-context execution.** Dispatch cannot run from
       the service at all (`gh agent-task` requires OAuth; LocalSystem cannot
       hold one), so the guided-improvement wizard dead-ends at its last step.
@@ -316,10 +316,17 @@ Phase A — Credential-gated proof:
 - [ ] Prove a live submit-PR round trip on one write-enabled repo: branch
       push, PR creation, PR visible in the target repo, run recorded.
       Closes the Release 2.4 residual and opens Phase C.
-      _(state: backend-complete — the write path was **built** 2026-08-09;
-      the live round trip is the remaining step. Explicit
-      operator-authorized action; Ben approved 2026-08-09, target = this
-      repo.)_
+      _(state: **done** — proven live 2026-08-09 against this repo,
+      [PR #96](https://github.com/xfaith4/GitHubRepoManagement/pull/96):
+      6 additions / 0 deletions, 1 file, `MERGEABLE`, left open for review.
+      **Phase C is now unblocked.**)_
+      **Evidence, each verified independently rather than inferred from a
+      success message:** the route returned `created=true` with a `prUrl`;
+      a separate GitHub API read confirmed `state=open head=roadmap-repair/…
+      base=main changed_files=1`; the append-only repair history carries a
+      matching `submit-pr` record with the PR number and branch; and the
+      checkout was left back on `main` and clean, proving the `finally`
+      restore works on the success path and not only on failure.
       **This item was mis-scoped, and the correction matters.** It read as a
       credentials gate — "the dry-run plan path is smoke-tested; only the live
       round trip is missing", and the 2026-08-08 status note said Phase A was

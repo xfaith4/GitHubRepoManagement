@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-09 — Release 2.7 Phase A proven live; roadmap repairs no longer strip the trailing newline
+
+### Changes
+
+- **Phase A is done.** `POST /api/roadmap/repair/submit-pr` with `createPr=true` opened [PR #96](https://github.com/xfaith4/GitHubRepoManagement/pull/96) against this repo: **6 additions / 0 deletions, 1 file, `MERGEABLE`**, left open for review rather than merged. This closes the Release 2.4 residual and **unblocks Phase C**, the largest remaining product increment.
+- **Each claim verified independently**, not read off a success message: the route returned `created=true` with a `prUrl`; a separate GitHub API call confirmed `state=open head=roadmap-repair/… base=main changed_files=1`; the append-only repair history carries a matching `submit-pr` record; and the checkout was left back on `main` and clean — proving the `finally` restore works on the success path, not only on failure.
+- **`backend/modules/roadmap/Roadmap.PrSubmitter.ps1`** — preserve the file's trailing newline. Writing the caller's content verbatim let a proposal ending at its last character strip the file's final newline, which git reports as `\ No newline at end of file` and markdownlint fails as **MD047** — a repair tool quietly damaging the file it was asked to improve. It now only ever *adds* one, never strips or doubles it. Found on the Phase A artifact itself.
+- **`scripts/Invoke-ModuleSmokeTest.ps1`** — asserts all three newline cases (adds when missing, keeps when present, never doubles).
+
+### Testing
+
+- The live round trip is the evidence; the earlier corrupted attempt (#94) is closed with its diagnosis recorded on it.
+- Module smoke exit 0.
+
 ## 2026-08-09 — Request bodies were parsed as ASCII, corrupting every non-ASCII character
 
 ### Changes
