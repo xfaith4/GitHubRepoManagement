@@ -911,7 +911,20 @@ function Read-HttpRequest {
         $stream.ReadTimeout = $script:ClientIoTimeoutMs
         $stream.WriteTimeout = $script:ClientIoTimeoutMs
     } catch { }
-    $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::ASCII, $false, 4096, $true)
+    # Latin-1 (ISO-8859-1), not ASCII: it is the only single-byte encoding with a
+    # lossless 1:1 byte<->char mapping for all 256 values, so the reader stays
+    # byte-exact while Content-Length (a BYTE count) still matches the char count
+    # ReadBlock expects. A UTF-8 reader would decode multi-byte sequences into
+    # fewer chars than Content-Length, and ReadBlock would then block waiting for
+    # bytes that never arrive. The body is re-decoded as UTF-8 below.
+    #
+    # ASCII silently replaced every non-ASCII byte with '?', so any JSON body
+    # containing an em-dash, arrow, or accented character was corrupted before a
+    # route ever saw it — one em-dash (3 UTF-8 bytes) arrived as '???'. Found
+    # 2026-08-09 when the Phase A live submit-PR opened a PR that mangled every
+    # '—' in ROADMAP.md.
+    $requestReaderEncoding = [System.Text.Encoding]::GetEncoding(28591)
+    $reader = New-Object System.IO.StreamReader($stream, $requestReaderEncoding, $false, 4096, $true)
 
     $requestLine = $reader.ReadLine()
     if ([string]::IsNullOrWhiteSpace($requestLine)) {
@@ -954,6 +967,9 @@ function Read-HttpRequest {
         $buffer = New-Object char[] $contentLength
         $read = $reader.ReadBlock($buffer, 0, $contentLength)
         $body = -join $buffer[0..($read - 1)]
+        # Recover the original bytes from the byte-exact Latin-1 chars, then
+        # decode them as UTF-8 — what an application/json body actually is.
+        $body = [System.Text.Encoding]::UTF8.GetString($requestReaderEncoding.GetBytes($body))
     }
 
     $uriObj = [System.Uri]("http://localhost$target")
