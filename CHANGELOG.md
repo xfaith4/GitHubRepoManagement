@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-09 — Dashboard.tsx decomposition: tab shell and summary/mission sections extracted
+
+### Changes
+
+- **What it closes:** the last open Release 2.7 Phase D frontend item. `Dashboard.tsx` had grown to 2,519 lines with the view-router/tab shell and the summary/mission sections inlined.
+- **`frontend/components/DashboardViewTabs.tsx`** + **`frontend/lib/viewTabs.ts`** (new) — the desktop tab strip and the per-view subtitle. The strip renders from `VIEW_META` instead of six near-identical hardcoded buttons; `viewTabs.ts` holds the per-view accent, the active/inactive class choice, and the badge-visibility rule as pure functions.
+- **`frontend/components/PortfolioSummarySection.tsx`** (new) — the page header and the five headline counts. Presentation only; every number is computed by the caller.
+- **`frontend/components/PortfolioMissionSection.tsx`** (new) — the Portfolio Mission panel, with `SIGNAL_SOURCE_STYLES` and `formatSignalLabel` moved alongside it (both were used only here) and the metric tooltips lifted out of the JSX into a named map. The mission rollup's shape is now the explicit `PortfolioMission` interface rather than an inferred object, so a dropped field fails at the call site instead of rendering as `undefined`.
+- **Two drift hazards the extraction exposed, both closed:** four of the six tabs hardcoded their label rather than reading `VIEW_META` — the exact drift `viewMeta.ts` exists to prevent — and the badge-visibility rule was written three different ways inline (a truthiness check and two `> 0` comparisons). Each is now one definition.
+- **`Dashboard.tsx`** 2,519 → 2,308 lines.
+
+### Testing
+
+- `npm run test:unit` — 91 passing across 7 files (12 new `viewTabs` assertions); `npm run typecheck` and `npm run build` exit 0; module smoke exit 0.
+- Tab labels and ordering are unchanged: `VIEW_META` already carried the same six labels in the same order the hardcoded strip used, so the extraction is behavior-preserving. Badge `data-testid`s (`operations-tab-badge`, `work-queue-tab-badge`) are preserved.
+- Not covered: rendered output — no component renderer is configured in this project, so the extraction is verified by typecheck, build, and the pure-logic units rather than by a DOM assertion. **Operator verify:** load the portal and confirm all six tabs, their badges, and the Insights mission panel still render.
+
 ## 2026-08-09 — Frontend unit-test set completed: value tiers and the automation scope selector
 
 ### Changes
