@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-09 — Request deadline gains a scan tier, so the freeze guard stops causing restart loops
+
+### Changes
+
+- **What it fixes:** the Phase D request deadline bounded *every* route at 180 seconds and terminates the host on expiry so Shawl/SCM recovery can replace a wedged process. But a cold full-portfolio assessment of the real 75-repo workspace legitimately exceeds 180 seconds, so `POST /api/automation/run` and its siblings tripped the guard — and recovery restarted the host straight back into the same scan. The guard was manufacturing the outage it exists to prevent. `REPO_MGMT_REQUEST_TIMEOUT_SECONDS=900` plus `-RequestTimeoutSec 900` were the standing workarounds (ROADMAP Lane 0.4).
+- **Decision — an extended tier, not an exemption.** Exempting the scan routes would restore the unbounded wedge Phase D was built to stop; bounding the cold scan itself is Release 3.2 performance work, not a reliability fix. So the deadline classifies routes instead, and both tiers stay bounded.
+- **`backend/api-host/RequestDeadline.ps1`** — new `Get-LongRunningScanRoutePattern` names the routes that reach `Get-OperationsReposPayload` / `Invoke-PortfolioAssessment` (`/api/portfolio/assessment`, `/api/operations/repos`, `/api/automation/run`, `/api/digest/*`, `/api/reconcile`, `/api/docreview/run`, `/api/badges/*`, `/api/v1/agent/*`); `Test-LongRunningScanRoute` normalizes the path the same way the dispatcher does before matching; `Get-EffectiveScanRequestTimeoutSeconds` clamps the extended tier to the same 30-3600 range and raises it to at least the default tier, so an extended tier can never be shorter than the tier it extends; `Get-RequestDeadlineSecondsForPath` selects between them. The watchdog now reads the timeout from the synchronized per-request state rather than the value captured at construction, so an incident record and its `FailFast` message report the tier that actually fired.
+- **`backend/api-host/Start-RepoManagementApiHost.ps1`** — new `-ScanRequestTimeoutSeconds` parameter (default 900) and `REPO_MGMT_SCAN_REQUEST_TIMEOUT_SECONDS` override; the dispatcher arms each request with the tier its path selects, and startup logs both tiers.
+- **`scripts/Invoke-ApiHostSmokeTest.ps1`** — dot-sources the host's own classifier so the client timeout and the server deadline cannot drift apart, and gains `-ScanRequestTimeoutSec` (default 900) applied to exactly the routes the host puts on the extended tier. Ordinary routes keep the tighter 180-second client timeout, so a real hang still surfaces fast.
+- **`scripts/Invoke-ModuleSmokeTest.ps1`** — asserts the classification both ways, the trailing-slash form, the 900/180 selection, and both clamp behaviors.
+- **Docs** — `backend/api-host/README.md` and `docs/always-on-service.md` document the two tiers and why the split exists.
+
+### Testing
+
+- Parser check clean on all three modified PowerShell files.
+- Module smoke exit 0 — `scan routes get the extended (still bounded) deadline tier; ordinary routes do not`. Adversarially proven: with `Get-LongRunningScanRoutePattern` stubbed to `@()`, the scan-route assertion throws.
+- API-host smoke exit 0 on port 7099 with **no `-RequestTimeoutSec` override and no `REPO_MGMT_REQUEST_TIMEOUT_SECONDS`** — the two workarounds this change removes.
+- Not covered: the terminate path itself under the extended tier (it ends the process, so it stays out of the automated gate); the existing `Resolve-RequestDeadlineAction` state assertions cover the decision logic.
+
 ## 2026-08-07 — GitHub auth is env-var-name indirection only (no stored or transmitted tokens)
 
 ### Changes

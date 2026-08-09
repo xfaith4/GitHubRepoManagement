@@ -13,7 +13,7 @@
 
 ## Current Status (Agent Context)
 
-**Last updated:** 2026-08-08
+**Last updated:** 2026-08-09
 
 Releases 0.4 through 2.6 and Release 2.8 are **engineering-complete and
 archived**. Their full text moved to
@@ -48,15 +48,16 @@ interchangeable — mixing them is what previously made the roadmap read as
       the service at all (`gh agent-task` requires OAuth; LocalSystem cannot
       hold one), so the guided-improvement wizard dead-ends at its last step.
       Approach decided 2026-08-08; no prerequisites.
-- [ ] **Lane 0.4 — the automation-smoke cold-scan timeout.** A legitimate
-      cold portfolio scan now exceeds both the smoke's client timeout and the
-      Phase D 180-second request deadline, and the deadline kills the host on
-      expiry. Reliability work on the freeze guard itself.
 - [ ] **Release 2.7 Phase D — the two remaining frontend items** (value-tier
       and automation-scope vitest units; `Dashboard.tsx` decomposition).
       Unblocked, frontend-only, and independent of everything above.
 - [ ] **Lane 0.3 hygiene** — the five `backend/` files still carrying
       hardcoded `G:\` workspace defaults.
+
+**Closed 2026-08-09:** Lane 0.4's cold-scan request deadline. The freeze guard
+now classifies routes into a 180-second default tier and a 900-second
+full-portfolio-scan tier, so a legitimate cold scan no longer trips the guard
+into a restart loop, and neither smoke gate needs a timeout override any more.
 
 **Closed 2026-08-08 and archived out of this file:** the settings.json
 regression (Lane 0.1, which closed entirely), the silent workspace-path
@@ -223,8 +224,9 @@ They are ordered by dependency, not by size:
 2. **3.1 Closed-Loop Delivery** — needs 3.0 for dispatch and 2.7 Phase A for a
    proven write path. This is where the north-star workflow first runs whole.
 3. **3.2 Portfolio Scale and Responsiveness** — independent of 3.0/3.1 and
-   schedulable in parallel, but implements whichever way Lane 0.4's deadline
-   decision lands, so that decision comes first.
+   schedulable in parallel. Lane 0.4's deadline decision landed 2026-08-09
+   (extended tier, not exemption), so 3.2 starts from a bounded 900-second
+   scan budget it has to beat rather than from an open question.
 4. **3.3 Steady-State Operation** — every milestone is independent; pick items
    up whenever a release lane is blocked on an external resource.
 
@@ -236,7 +238,7 @@ They are ordered by dependency, not by size:
 | Release 2.7 Phase C (scheduled roadmap packaging)    | Release 2.7 Phase A                                  | hard — no auto-rank/PR without a proven write |
 | Release 2.7 Phase D (two frontend items + freeze)    | —                                                    | none — schedulable anytime                    |
 | Release 2.7 Phase D freeze prevention                | Watchdog field proof (2.9) for the paired safety net | soft — ship prevention regardless             |
-| Lane 0.3 layout follow-ups; Lane 0.4 smoke gaps      | —                                                    | none — schedulable anytime                    |
+| Lane 0.3 layout follow-ups; Lane 0.4 worklog archive | —                                                    | none — schedulable anytime                    |
 | Release 2.9 mobile completion (ergonomics, run list) | —                                                    | none — the responsive foundation is shipped   |
 | Release 2.9 physical-Android proof (2.5 + 2.6)       | An Android device on the LAN                         | hard — hardware                               |
 | Release 2.9 watchdog + service-installer proof       | An elevated (SYSTEM) session                         | hard — privilege                              |
@@ -245,7 +247,7 @@ They are ordered by dependency, not by size:
 | Release 2.9 trend accrual (2.3 Ph2)                  | Days of live capture                                 | hard, time-gated                              |
 | Release 3.0 operator-context execution               | —                                                    | none — approach decided 2026-08-08            |
 | Release 3.1 closed-loop delivery                     | Release 3.0; Release 2.7 Phase A; `Checks: Read`     | hard — needs dispatch and a proven write path |
-| Release 3.2 scale and responsiveness                 | Lane 0.4 request-deadline decision                   | soft — implements whichever way it lands      |
+| Release 3.2 scale and responsiveness                 | —                                                    | none — deadline decision landed 2026-08-09    |
 | Release 3.3 steady-state operation                   | —                                                    | none — independent milestones, any order      |
 
 ---
@@ -902,21 +904,45 @@ every maturity score. Both were adversarially proven to fail when violated.
 
 ### Lane 0.4 — Smoke coverage gaps
 
-- [ ] **Warm the assessment cache before the automation smoke step, or raise
-      its client timeout.** _(state: planned — non-blocker, surfaced
-      2026-08-08)_ `POST /api/automation/run` calls
+- [x] **The cold-scan request deadline — decided and shipped 2026-08-09.**
+      _(state: smoke-tested)_ `POST /api/automation/run` calls
       `Get-OperationsReposPayload`, which does a **cold full-portfolio
       assessment**. That step was fast only while the tracked `settings.json`
       pointed at a fixture directory; with the real root restored (Lane 0.1)
-      it exceeds the smoke's default `-RequestTimeoutSec 180` on the real
-      75-repo workspace, so `./scripts/Invoke-ApiHostSmokeTest.ps1` needs
-      `-RequestTimeoutSec 900` to pass locally. Worse, the **Phase D request
-      deadline defaults to 180s and terminates the host on expiry** — so a
-      legitimate cold scan can trip the freeze guard and kill the host it is
-      meant to protect. Decide whether the deadline should exempt known
-      long-running scan routes or whether the cold scan itself needs bounding;
-      until then, `REPO_MGMT_REQUEST_TIMEOUT_SECONDS=900` is the workaround.
-      This is the highest-value item left in this lane.
+      it exceeded the smoke's default `-RequestTimeoutSec 180` on the real
+      75-repo workspace. Worse, the **Phase D request deadline also defaulted
+      to 180s and terminates the host on expiry** — so a legitimate cold scan
+      tripped the freeze guard, and Shawl/SCM recovery restarted the host
+      straight back into the same scan. The guard was manufacturing the
+      outage it exists to prevent.
+      **Decision: an extended tier, not an exemption.** Exempting the scan
+      routes outright would restore the unbounded wedge the Phase D guard was
+      built to stop, and bounding the cold scan itself is a Release 3.2
+      performance problem, not a reliability fix — so the deadline now
+      classifies routes instead. `Get-LongRunningScanRoutePattern` in
+      [`RequestDeadline.ps1`](backend/api-host/RequestDeadline.ps1) names the
+      routes that reach a full-portfolio assessment
+      (`/api/portfolio/assessment`, `/api/operations/repos`,
+      `/api/automation/run`, `/api/digest/*`, `/api/reconcile`,
+      `/api/docreview/run`, `/api/badges/*`, `/api/v1/agent/*`); those get
+      **900 seconds** (`REPO_MGMT_SCAN_REQUEST_TIMEOUT_SECONDS`, same 30-3600
+      clamp, never below the default tier), everything else keeps 180. The
+      deadline is now recorded per request, so an incident record reports the
+      tier that actually fired rather than the startup default.
+      `Invoke-ApiHostSmokeTest.ps1` dot-sources the same classifier for its
+      client timeout, so client and server cannot drift apart.
+      **Evidence:** module smoke asserts the classification both ways (five
+      scan paths in, five ordinary paths plus the empty path out), the
+      trailing-slash form, the 900/180 selection, and that the extended tier
+      can neither drop below the default tier nor exceed the 3600 ceiling;
+      the assertion was adversarially proven to throw with the pattern list
+      emptied. `./scripts/Invoke-ApiHostSmokeTest.ps1 -Port 7099` passes with
+      **no `-RequestTimeoutSec 900` and no
+      `REPO_MGMT_REQUEST_TIMEOUT_SECONDS` override** — the two workarounds
+      this item existed to remove.
+      **This decision is the input Release 3.2 was waiting on** (see the
+      dependency map): 3.2 inherits a bounded 900-second scan budget as the
+      number its responsiveness work has to beat, not an unbounded route.
 - [ ] Archive the root worklogs `findings.md`, `progress.md`, and
       `task_plan.md` to [`docs/history/worklogs/`](docs/history/worklogs/),
       matching the 2026-07-15 cleanup convention they were re-created

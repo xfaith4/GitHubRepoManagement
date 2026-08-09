@@ -15,6 +15,13 @@ Minimal local PowerShell API host for adapter contracts.
 - `GET /api/persistence/status`
 - Every accepted request has a bounded host deadline (180 seconds by default,
   configurable via `REPO_MGMT_REQUEST_TIMEOUT_SECONDS`, clamped to 30-3600).
+  Routes whose work is a full-portfolio scan — `/api/portfolio/assessment`,
+  `/api/operations/repos`, `/api/automation/run`, `/api/digest/*`,
+  `/api/reconcile`, `/api/docreview/run`, `/api/badges/*`, `/api/v1/agent/*` —
+  run on an extended tier instead (900 seconds by default, configurable via
+  `REPO_MGMT_SCAN_REQUEST_TIMEOUT_SECONDS`, same 30-3600 clamp and never below
+  the default tier). The tier is an extension, not an exemption: a wedged scan
+  still terminates the host.
   Deadline incidents are appended to
   `output/logs/request-timeouts.jsonl`; the host then exits so the installed
   Shawl/SCM recovery policy can replace the wedged process.

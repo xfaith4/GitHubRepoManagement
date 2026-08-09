@@ -16,7 +16,10 @@ param(
     [string]$ShutdownSignalPath,
 
     [Parameter()]
-    [int]$RequestTimeoutSeconds = 180
+    [int]$RequestTimeoutSeconds = 180,
+
+    [Parameter()]
+    [int]$ScanRequestTimeoutSeconds = 900
 )
 
 Set-StrictMode -Version Latest
@@ -87,6 +90,12 @@ $script:ClientIoTimeoutMs = 15000
 $script:RequestTimeoutSeconds = Get-EffectiveRequestTimeoutSeconds `
     -ConfiguredSeconds $RequestTimeoutSeconds `
     -EnvironmentValue ([System.Environment]::GetEnvironmentVariable('REPO_MGMT_REQUEST_TIMEOUT_SECONDS'))
+# Cold full-portfolio scans legitimately outrun the ordinary deadline, so the
+# scan routes get their own (still bounded) tier instead of an exemption.
+$script:ScanRequestTimeoutSeconds = Get-EffectiveScanRequestTimeoutSeconds `
+    -ConfiguredSeconds $ScanRequestTimeoutSeconds `
+    -EnvironmentValue ([System.Environment]::GetEnvironmentVariable('REPO_MGMT_SCAN_REQUEST_TIMEOUT_SECONDS')) `
+    -BaseSeconds $script:RequestTimeoutSeconds
 $script:RequestDeadlineController = $null
 
 $script:RoadmapRepairHistoryRoot   = Join-Path $WorkspaceRoot 'output\roadmap-repair-history'
@@ -5137,7 +5146,7 @@ $requestTimeoutLogPath = Join-Path $WorkspaceRoot 'output\logs\request-timeouts.
 $script:RequestDeadlineController = Start-RequestDeadlineWatchdog `
     -TimeoutSeconds $script:RequestTimeoutSeconds `
     -IncidentLogPath $requestTimeoutLogPath
-Write-HostLog ("Request deadline: {0}s (incident log: {1})" -f $script:RequestTimeoutSeconds, $requestTimeoutLogPath)
+Write-HostLog ("Request deadline: {0}s default / {1}s scan routes (incident log: {2})" -f $script:RequestTimeoutSeconds, $script:ScanRequestTimeoutSeconds, $requestTimeoutLogPath)
 
 # GitHub auth is env-var-name indirection only: settings carry the variable
 # NAME, never a token. Report what the name resolves to in THIS process, since
@@ -5274,7 +5283,9 @@ try {
             $correlationId = if ($req.Headers.ContainsKey('x-correlation-id') -and $req.Headers['x-correlation-id']) { $req.Headers['x-correlation-id'] } else { [guid]::NewGuid().ToString('n') }
             $requestStart = Get-Date
             Set-RequestDeadline -Controller $script:RequestDeadlineController `
-                -TimeoutSeconds $script:RequestTimeoutSeconds `
+                -TimeoutSeconds (Get-RequestDeadlineSecondsForPath -Path $path `
+                    -DefaultSeconds $script:RequestTimeoutSeconds `
+                    -ScanSeconds $script:ScanRequestTimeoutSeconds) `
                 -CorrelationId $correlationId `
                 -Method $req.Method `
                 -Path $path
