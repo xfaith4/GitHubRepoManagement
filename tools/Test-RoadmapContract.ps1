@@ -58,8 +58,8 @@ $script:LevelRank = @{
 
 $script:Detection = [pscustomobject]@{
     releaseHeadingPattern            = '(?im)^#{2,}\s+Release\s+([0-9]+(?:\.[0-9]+)*)\s*[—–-]+\s*(.+?)\s*$'
-    productIntentHeadingPattern      = '(?im)^#{1,6}\s*(?:[0-9]+\.\s*)?(?:product\s+intent|product\s+scope|overview|about|purpose|background|what\s+this\s+(?:does|is))\b'
-    releaseStatusPattern             = '(?im)^\s*>?\s*\**\s*Status\s*:?\**\s*:?\s*\**\s*([A-Za-z][A-Za-z \-]*?)\s*\**\s*(?:$|[—–\-(])'
+    productIntentHeadingPattern      = '(?im)^#{1,6}\s*(?:[0-9]+\.\s*)?(?:product\s+intent|product\s+scope|product\s+direction|overview|about|purpose|background|what\s+this\s+(?:does|is))\b'
+    releaseStatusPattern             = '(?im)^\s*>?\s*\**\s*Status\s*\**\s*:\s*\**\s*([A-Za-z][A-Za-z \-]*?)\s*\**\s*(?:$|[—–\-(.,;])'
     allowedStatuses                  = @('planned', 'active', 'blocked', 'validation', 'done', 'archived')
     activeStatuses                   = @('active')
     statusAliases                    = @{

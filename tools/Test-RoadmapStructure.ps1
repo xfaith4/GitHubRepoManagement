@@ -51,8 +51,10 @@
     On top of the structural R-rules above, this script evaluates roadmap
     *execution quality* against the canonical release contract documented in
     docs/reference/roadmap-contracts.md:
-      - explicit release Status parsing (planned/active/blocked/validation/
-        done/archived, with pending/in-progress/complete aliases)
+      - explicit release Status parsing, using the shared status contract in
+        standards/roadmap/roadmap-audit-rules.json (detection.releaseStatusPattern
+        and detection.statusVocabulary) so this linter, the backend auditor, and
+        tools/Test-RoadmapContract.ps1 all read one roadmap the same way
       - validation-plan presence and concreteness
       - acceptance-criteria quality (vague-term heuristics)
       - risks/blockers, dependencies, known-issues/pipeline-feedback sections
@@ -122,19 +124,35 @@ $script:DefaultConfig = @{
         'Known issues',
         'Traceability'
     )
-    # Canonical statuses plus the aliases used by the legacy template
-    # (pending / in progress / complete) so older roadmaps do not error.
+    # Status contract — MIRROR ONLY. The canonical vocabulary and pattern live
+    # in standards/roadmap/roadmap-audit-rules.json under "detection"; see the
+    # note below Import-RoadmapStatusContract. Keep byte-identical to the JSON.
+    releaseStatusPattern = '(?im)^\s*>?\s*\**\s*Status\s*\**\s*:\s*\**\s*([A-Za-z][A-Za-z \-]*?)\s*\**\s*(?:$|[—–\-(.,;])'
     allowedStatuses = @('planned','active','blocked','validation','done','archived')
+    activeStatuses  = @('active')
     statusAliases = @{
-        'pending'      = 'planned'
         'in progress'  = 'active'
         'in-progress'  = 'active'
         'inprogress'   = 'active'
         'wip'          = 'active'
+        'current'      = 'active'
+        'ongoing'      = 'active'
         'complete'     = 'done'
         'completed'    = 'done'
+        'delivered'    = 'done'
         'shipped'      = 'done'
         'released'     = 'done'
+        'finished'     = 'done'
+        'pending'      = 'planned'
+        'not started'  = 'planned'
+        'upcoming'     = 'planned'
+        'deferred'     = 'planned'
+        'proposed'     = 'planned'
+        'on hold'      = 'blocked'
+        'paused'       = 'blocked'
+        'in review'    = 'validation'
+        'review'       = 'validation'
+        'validating'   = 'validation'
     }
     # Releases that must exist. '1.2' keeps its special "only required when a
     # later 1.x release exists" semantics (R003); any other listed version is
@@ -175,6 +193,121 @@ $script:DefaultConfig = @{
         'deployment','smoke'
     )
 }
+
+# ---------------------------------------------------------------------------
+# Shared status contract
+# ---------------------------------------------------------------------------
+#
+# Status detection is DATA, not code. The canonical pattern and vocabulary live
+# in standards/roadmap/roadmap-audit-rules.json under "detection", and the
+# backend auditor (backend/modules/roadmap/Roadmap.Auditor.ps1) and the maturity
+# scorer (tools/Test-RoadmapContract.ps1) already read them from there.
+#
+# Until 2026-08-08 this linter carried a third private copy. It knew two aliases
+# the pack did not ('pending', 'released') and was missing twelve the pack had
+# ('deferred', 'on hold', 'in review', 'paused', ...), so the same roadmap could
+# report a clean status here and RQ002-INVALID-STATUS-equivalent divergence in
+# the scorer. Its regex was also the more tolerant of the two: it read
+# 'Status: done. Shipped 2026-05.', which the 1.3 pack pattern did not match at
+# all. Rule pack 1.4 adopts that tolerance rather than dropping it.
+#
+# The literals in $script:DefaultConfig above are a MIRROR, used only when the
+# rule pack is not reachable — this script is designed to run standalone inside
+# a managed repo that may not vendor the standards tree. Keep them
+# byte-identical to the JSON; do not reintroduce a private vocabulary here.
+
+function Resolve-RoadmapRulePackPath {
+    param(
+        [Parameter()][AllowEmptyString()][string]$RoadmapPath = ''
+    )
+
+    $roots = [System.Collections.Generic.List[string]]::new()
+    if (-not [string]::IsNullOrWhiteSpace($RoadmapPath)) {
+        try {
+            $rp = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($RoadmapPath))
+            if (-not [string]::IsNullOrWhiteSpace($rp)) { [void]$roots.Add($rp) }
+        } catch { }
+    }
+    if ($PSScriptRoot) {
+        # tools/ -> repo root is the parent of the script directory.
+        [void]$roots.Add((Split-Path -Parent $PSScriptRoot))
+        [void]$roots.Add($PSScriptRoot)
+    }
+    [void]$roots.Add((Get-Location).Path)
+
+    $relatives = @(
+        (Join-Path 'standards' (Join-Path 'roadmap' 'roadmap-audit-rules.json')),
+        (Join-Path 'spec' (Join-Path 'roadmap-contract' 'roadmap-audit-rules.json'))
+    )
+
+    foreach ($root in $roots) {
+        foreach ($rel in $relatives) {
+            $candidate = Join-Path $root $rel
+            if (Test-Path -LiteralPath $candidate) { return $candidate }
+        }
+    }
+    return ''
+}
+
+# Overlay the rule pack's detection.statusVocabulary / releaseStatusPattern onto
+# a config hashtable, in place. Returns a result object describing what happened
+# so main can surface a parse failure as a finding (the findings list does not
+# exist yet at load time, so this function never calls Add-Finding).
+function Import-RoadmapStatusContract {
+    param(
+        [Parameter(Mandatory=$true)][System.Collections.IDictionary]$Config,
+        [Parameter()][AllowEmptyString()][string]$RoadmapPath = ''
+    )
+
+    $result = [pscustomobject]@{ loaded = $false; path = ''; error = '' }
+
+    $packPath = Resolve-RoadmapRulePackPath -RoadmapPath $RoadmapPath
+    if ([string]::IsNullOrWhiteSpace($packPath)) { return $result }
+    $result.path = $packPath
+
+    try {
+        $raw  = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $packPath).Path)
+        $pack = ConvertFrom-Json -InputObject $raw
+    } catch {
+        $result.error = $_.Exception.Message
+        return $result
+    }
+
+    if (@($pack.PSObject.Properties.Name) -notcontains 'detection') { return $result }
+    $d = $pack.detection
+    if ($null -eq $d) { return $result }
+    $names = @($d.PSObject.Properties.Name)
+
+    if ($names -contains 'releaseStatusPattern' -and -not [string]::IsNullOrWhiteSpace([string]$d.releaseStatusPattern)) {
+        $Config['releaseStatusPattern'] = [string]$d.releaseStatusPattern
+    }
+    if ($names -contains 'statusVocabulary' -and $null -ne $d.statusVocabulary) {
+        $sv = @($d.statusVocabulary.PSObject.Properties.Name)
+        if ($sv -contains 'allowedStatuses' -and @($d.statusVocabulary.allowedStatuses).Count -gt 0) {
+            $Config['allowedStatuses'] = @($d.statusVocabulary.allowedStatuses | ForEach-Object { ([string]$_).ToLowerInvariant() })
+        }
+        if ($sv -contains 'activeStatuses' -and @($d.statusVocabulary.activeStatuses).Count -gt 0) {
+            $Config['activeStatuses'] = @($d.statusVocabulary.activeStatuses | ForEach-Object { ([string]$_).ToLowerInvariant() })
+        }
+        if ($sv -contains 'statusAliases' -and $null -ne $d.statusVocabulary.statusAliases) {
+            $aliasMap = @{}
+            foreach ($p in $d.statusVocabulary.statusAliases.PSObject.Properties) {
+                $aliasMap[$p.Name.ToLowerInvariant()] = ([string]$p.Value).ToLowerInvariant()
+            }
+            if ($aliasMap.Count -gt 0) { $Config['statusAliases'] = $aliasMap }
+        }
+    }
+
+    $result.loaded = $true
+    return $result
+}
+
+# Apply the shared contract at load time so a dot-sourced session
+# (-LoadFunctionsOnly, used by the Pester suite) sees the same vocabulary a
+# real run does. A repo-local roadmap-validation.config.json can still override
+# these keys through Merge-RoadmapValidationConfig — that is a declared opt-out,
+# not a private copy.
+$script:StatusContract = Import-RoadmapStatusContract -Config $script:DefaultConfig -RoadmapPath $Path
 
 # Active-config holder; populated in main from defaults + file overrides.
 $script:ActiveConfig = $script:DefaultConfig
@@ -886,7 +1019,16 @@ function Get-ReleaseStatus {
         [Parameter(Mandatory=$true)][object]$Cfg
     )
 
-    $m = [regex]::Match($RawText, '(?im)^\s*>?\s*\*{0,2}Status\*{0,2}\s*:\s*\*{0,2}\s*([A-Za-z][A-Za-z \-]*)')
+    # Pattern comes from the shared contract (rule pack -> detection
+    # .releaseStatusPattern), falling back to the mirror when a caller passes a
+    # config that predates it. Never hardcode a second spelling here.
+    $pattern = [string]$script:DefaultConfig.releaseStatusPattern
+    if ($Cfg -is [System.Collections.IDictionary] -and $Cfg.Contains('releaseStatusPattern') -and
+        -not [string]::IsNullOrWhiteSpace([string]$Cfg['releaseStatusPattern'])) {
+        $pattern = [string]$Cfg['releaseStatusPattern']
+    }
+
+    $m = [regex]::Match($RawText, $pattern)
     if (-not $m.Success) {
         return [pscustomobject]@{ found = $false; raw = ''; normalized = ''; valid = $false }
     }
@@ -1074,12 +1216,16 @@ function Invoke-RuleReleaseStatus {
             Add-Finding -Severity 'error' -Code 'RQ002-INVALID-STATUS' -Category 'quality' -Rule 'release-status' `
                 -Message ("Block '" + $sb.block.heading + "' declares an unrecognized status '" + $sb.status.raw + "'.") `
                 -Release $sb.block.version -Line ($sb.block.startLine + 1) -Section 'Status' `
-                -RecommendedAction ('Use one of: ' + (@($Cfg.allowedStatuses) -join ', ') + ' (aliases: pending, in progress, complete).')
+                -RecommendedAction ('Use one of: ' + (@($Cfg.allowedStatuses) -join ', ') + ' (aliases are defined in standards/roadmap/roadmap-audit-rules.json under detection.statusVocabulary.statusAliases).')
         }
     }
 
-    # RQ003 — more than one block marked active (error).
-    $activeBlocks = @($StatusBlocks | Where-Object { $_.status.normalized -eq 'active' })
+    # RQ003 — more than one block marked active (error). 'Active' is whatever
+    # the shared contract says it is: the scorer's ROADMAP-011 counts the same
+    # set, so a roadmap must not be single-active here and multi-active there.
+    $activeStatuses = @($Cfg.activeStatuses)
+    if ($activeStatuses.Count -eq 0) { $activeStatuses = @('active') }
+    $activeBlocks = @($StatusBlocks | Where-Object { $activeStatuses -contains $_.status.normalized })
     if ($activeBlocks.Count -gt 1) {
         foreach ($ab in $activeBlocks) {
             Add-Finding -Severity 'error' -Code 'RQ003-MULTIPLE-ACTIVE-RELEASES' -Category 'quality' -Rule 'release-status' `

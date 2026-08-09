@@ -355,6 +355,56 @@ Describe 'Helper functions (unit)' {
         Test-ValidationPlanIsConcrete -PlanText 'make sure it works well' -Cfg $script:DefaultConfig | Should -BeFalse
     }
 
+    It 'Get-ReleaseStatus reads statuses terminated by sentence punctuation' {
+        # The shared pattern (rule pack 1.4) has to keep the tolerance this
+        # linter had before it was folded in — a status followed by prose is
+        # still a status a human can plainly read.
+        (Get-ReleaseStatus -RawText '**Status:** done. Shipped 2026-05.'  -Cfg $script:DefaultConfig).normalized | Should -Be 'done'
+        (Get-ReleaseStatus -RawText 'Status: active, pending review'      -Cfg $script:DefaultConfig).normalized | Should -Be 'active'
+        (Get-ReleaseStatus -RawText '> Status: blocked (waiting on #42)'  -Cfg $script:DefaultConfig).normalized | Should -Be 'blocked'
+        (Get-ReleaseStatus -RawText '**Status:** validation — smoke run'  -Cfg $script:DefaultConfig).normalized | Should -Be 'validation'
+    }
+
+    It 'Get-ReleaseStatus does not read prose that merely starts with "status"' {
+        # The colon is mandatory. Without it, widening the terminator set to
+        # sentence punctuation turned any paragraph opening with the word
+        # 'status' into a status declaration (caught on this repo's own Lane 0.7
+        # write-up, which reported RQ002-INVALID-STATUS against a sentence).
+        (Get-ReleaseStatus -RawText 'status in one tool and as unknown in the other. Folding it in' -Cfg $script:DefaultConfig).found | Should -BeFalse
+        (Get-ReleaseStatus -RawText 'Status of the release is unclear here.' -Cfg $script:DefaultConfig).found | Should -BeFalse
+        # ... while every documented spelling still carries one.
+        (Get-ReleaseStatus -RawText '**Status**: active' -Cfg $script:DefaultConfig).normalized | Should -Be 'active'
+        (Get-ReleaseStatus -RawText 'Status : validation' -Cfg $script:DefaultConfig).normalized | Should -Be 'validation'
+    }
+
+    It 'Get-ReleaseStatus knows the full shared alias vocabulary' {
+        # These four came from the rule pack, not from this script's mirror
+        # history — they are the regression guard against a fourth private copy.
+        (Get-ReleaseStatus -RawText '**Status:** on hold'   -Cfg $script:DefaultConfig).normalized | Should -Be 'blocked'
+        (Get-ReleaseStatus -RawText '**Status:** deferred'  -Cfg $script:DefaultConfig).normalized | Should -Be 'planned'
+        (Get-ReleaseStatus -RawText '**Status:** in review' -Cfg $script:DefaultConfig).normalized | Should -Be 'validation'
+        (Get-ReleaseStatus -RawText '**Status:** delivered' -Cfg $script:DefaultConfig).normalized | Should -Be 'done'
+    }
+
+    It 'the status contract is loaded from the shared rule pack, not a private copy' {
+        $script:StatusContract.loaded | Should -BeTrue -Because 'the rule pack must be discoverable from tools/'
+        $script:StatusContract.error  | Should -BeNullOrEmpty
+
+        $pack = Get-Content -LiteralPath $script:StatusContract.path -Raw | ConvertFrom-Json
+        $vocab = $pack.detection.statusVocabulary
+
+        [string]$script:DefaultConfig.releaseStatusPattern | Should -BeExactly ([string]$pack.detection.releaseStatusPattern)
+        @($script:DefaultConfig.allowedStatuses) | Should -Be @($vocab.allowedStatuses)
+        @($script:DefaultConfig.activeStatuses)  | Should -Be @($vocab.activeStatuses)
+
+        # Every alias in the pack resolves here, with the pack's target.
+        foreach ($p in $vocab.statusAliases.PSObject.Properties) {
+            $script:DefaultConfig.statusAliases[$p.Name.ToLowerInvariant()] |
+                Should -BeExactly ([string]$p.Value) -Because "alias '$($p.Name)' must come from the pack"
+        }
+        $script:DefaultConfig.statusAliases.Count | Should -Be @($vocab.statusAliases.PSObject.Properties).Count
+    }
+
     It 'Merge-RoadmapValidationConfig overlays file values onto defaults' {
         $override = '{ "maxActiveRoadmapLines": 1234 }' | ConvertFrom-Json
         $merged = Merge-RoadmapValidationConfig -Defaults $script:DefaultConfig -Override $override
