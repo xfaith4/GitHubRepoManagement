@@ -653,6 +653,18 @@ foreach ($refusal in @(
     if ([string]::IsNullOrWhiteSpace($verdict.reason)) { throw "submit-PR refusal '$($refusal.name)' must carry a named reason, not an empty string" }
 }
 
+# A repair must not strip the file's trailing newline (git "\ No newline at end
+# of file", markdownlint MD047). Caught on the Phase A artifact PR #96.
+$newlineCases = @(
+    @{ name = 'adds a missing trailing newline'; input = "line one`nline two";   expected = "line one`nline two`n" }
+    @{ name = 'keeps an existing one';           input = "line one`nline two`n"; expected = "line one`nline two`n" }
+    @{ name = 'does not double it';              input = "text`n";               expected = "text`n" }
+)
+foreach ($nl in $newlineCases) {
+    $normalized = if ($nl.input.EndsWith("`n")) { $nl.input } else { $nl.input + "`n" }
+    if ($normalized -ne $nl.expected) { throw "Trailing-newline normalization failed — $($nl.name)" }
+}
+
 # Branch names must be unique per second and never collide with the base branch.
 $b1 = Get-RoadmapRepairBranchName -NowUtc ([datetime]'2026-08-09T06:00:00Z')
 $b2 = Get-RoadmapRepairBranchName -NowUtc ([datetime]'2026-08-09T06:00:01Z')

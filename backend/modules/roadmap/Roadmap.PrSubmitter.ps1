@@ -231,7 +231,13 @@ function Invoke-RoadmapRepairPrSubmission {
         $co = (& git -C $RepoPath checkout -b $branch 2>&1) | Out-String
         if ($LASTEXITCODE -ne 0) { throw ("git checkout -b '{0}' failed: {1}" -f $branch, $co.Trim()) }
 
-        Set-Content -LiteralPath $RoadmapPath -Value $ProposedContent -Encoding UTF8 -NoNewline
+        # Preserve the file's trailing newline. Writing the caller's content
+        # verbatim let a proposal that happened to end at the last character
+        # strip it, which git reports as "\ No newline at end of file" and
+        # markdownlint fails as MD047 — a repair tool quietly damaging the file
+        # it was asked to improve. Only ADD one; never strip or double it.
+        $contentToWrite = if ($ProposedContent.EndsWith("`n")) { $ProposedContent } else { $ProposedContent + "`n" }
+        Set-Content -LiteralPath $RoadmapPath -Value $contentToWrite -Encoding UTF8 -NoNewline
 
         $add = (& git -C $RepoPath add -- $RoadmapPath 2>&1) | Out-String
         if ($LASTEXITCODE -ne 0) { throw ("git add failed: {0}" -f $add.Trim()) }
