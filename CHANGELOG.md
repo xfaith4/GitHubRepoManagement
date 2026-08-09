@@ -2,6 +2,34 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-09 — Maturity caps implemented (rules v1.5), and ROADMAP-011 demoted to warning to resolve a self-contradiction
+
+### Changes
+
+- **What it fixes:** `ROADMAP_MATURITY_MODEL.md` documented from the start that "any critical finding caps maturity at L1" and "any warning finding caps maturity at L3", but no evaluator applied either — both did weighted-score arithmetic only, so a roadmap could carry a **critical** finding and still be scored **orchestration-ready**.
+- **The model contradicted itself, and the resolution is Ben's call (2026-08-09).** `ROADMAP-011` (more than one active release) carried a named **L2** cap *and* `critical` severity. Applying the blanket critical cap literally would force it to L1 and make its own documented L2 cap permanently unreachable. Rather than invent a precedence rule, **the severity was treated as the bug**: `ROADMAP-011` is now `warning`, so it takes the L3 blanket cap plus its named L2 cap and lands at **L2 exactly as documented** — and "any critical finding caps at L1" becomes literally true with no exceptions. Ambiguous dispatch remains a hard gate, since L2 is below the L3 contract-ready bar.
+- **`spec/roadmap-contract/roadmap-audit-rules.json`** + **`standards/roadmap/roadmap-audit-rules.json`** — bumped to **v1.5** with a changelog entry; `ROADMAP-011` severity `critical` → `warning`. Both mirrors moved in lockstep (the standards↔spec drift tripwire enforces this).
+- **`backend/modules/roadmap/Roadmap.Auditor.ps1`** and **`tools/Test-RoadmapContract.ps1`** — caps now **compose**: the effective ceiling is the lowest that applies, and the score is capped rather than only the label.
+- **`ROADMAP_MATURITY_MODEL.md`** (both copies) — documents that caps compose, that two of them went unimplemented until v1.5, and **why `ROADMAP-011` must not be re-promoted to `critical`**.
+
+### Testing
+
+- **The evaluator-parity tripwire earned its keep.** Implementing the caps in the backend auditor alone broke it immediately — `maturityScore module=84 cli=92` — because `Test-RoadmapContract.ps1` carries its own cap block. That is precisely the "two figures, one truth" divergence this product exists to catch, caught on the first run. Both evaluators now implement identical composed caps.
+- Module smoke exit 0: `maturity caps ok: critical -> L1-Informal (<= 39); 1 warning finding(s) -> L3-Contract-Ready (<= 84)`; `2 active -> ROADMAP-011 (warning) + capped at L2-Structured`; `evaluator parity ok: 4 fixtures agree on score, level, counts, and findings`.
+- New assertion fails the gate if `ROADMAP-011` is ever re-promoted to `critical`, since that would silently make its L2 cap unreachable again.
+- **Expected score movement:** roadmaps carrying any warning finding can no longer reach L4-Orchestration-Ready. That is the documented intent — L4 requires zero critical and zero warning findings — but it will move levels across the portfolio on the next scan.
+
+## 2026-08-09 — CLAUDE.md: remove two dangling `@` imports
+
+### Changes
+
+- `CLAUDE.md` imported `@_base.md` and `@.claude/modes/implementer.md`. **Neither file exists**, and neither does `ccmode.ps1` — the tool the ROADMAP note said should own the fix — anywhere in this repo or under any `.claude` directory on this machine. There was no tool level to fix at, so the imports had been resolving to nothing on every session.
+- Removed both, leaving a comment recording what they were and noting that `ccmode.ps1` can re-add its own mode line if restored. Nothing was fabricated to satisfy them.
+
+### Testing
+
+- Documentation-only; module smoke exit 0 alongside the rest of this batch.
+
 ## 2026-08-09 — Roadmap structure linter: stop contradicting the template, and stop crashing on the files it diagnoses
 
 ### Changes

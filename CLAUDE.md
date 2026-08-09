@@ -1,7 +1,10 @@
 # GITHUBREPOMANAGEMENT — repo context
 
-@_base.md
-@.claude/modes/implementer.md   <!-- swapped by ccmode.ps1 — do not edit this line by hand -->
+<!-- Removed 2026-08-09 (ROADMAP Lane 0.3): this file imported `@_base.md` and
+     `@.claude/modes/implementer.md`. Neither exists, and neither does
+     `ccmode.ps1`, the tool that was supposed to swap the mode line — so the
+     imports resolved to nothing on every session. If ccmode.ps1 is restored it
+     can re-add its own line here. -->
 
 ## What this is
 
