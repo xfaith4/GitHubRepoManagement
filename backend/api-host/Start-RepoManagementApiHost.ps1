@@ -9502,6 +9502,12 @@ try {
                         $createPr = ($body.ContainsKey('createPr') -and [bool]$body.createPr)
                         $submitProposed = if ($body.ContainsKey('proposedContent') -and $body.proposedContent) { [string]$body.proposedContent } else { '' }
                         $submitRoadmapPath = if ($body.ContainsKey('roadmapPath') -and $body.roadmapPath) { [string]$body.roadmapPath } else { '' }
+                        # repoPath is overridable for the same reason roadmapPath is:
+                        # the roadmap index only covers the CONFIGURED localRoots, so a
+                        # repo outside them (this repo itself, for one) is unresolvable
+                        # from the cache no matter how many scans run. Without this the
+                        # route could only ever submit for repos inside the portfolio root.
+                        $submitRepoPathOverride = if ($body.ContainsKey('repoPath') -and $body.repoPath) { [string]$body.repoPath } else { '' }
                         $submitBase = if ($body.ContainsKey('baseBranch') -and $body.baseBranch) { [string]$body.baseBranch } else { '' }
                         $branch = Get-RoadmapRepairBranchName
                         $plan = @{
@@ -9529,15 +9535,30 @@ try {
                             # preview does, then branch/commit/push/open the PR.
                             $submitSettings = Get-HostSettings
                             $submitToken = Get-ConfiguredGitHubToken -Settings $submitSettings
-                            $submitRepoPath = ''
+                            $submitRepoPath = $submitRepoPathOverride
                             $submitRoadmapTtl = Get-RoadmapCacheTtlSeconds -Settings $submitSettings
                             $submitCache = Get-RoadmapFromCache -TtlSeconds $submitRoadmapTtl
-                            if ($submitCache.hit -and $submitCache.entries) {
+                            # An explicit repoPath wins; the cache is the fallback.
+                            if ([string]::IsNullOrWhiteSpace($submitRepoPath) -and $submitCache.hit -and $submitCache.entries) {
                                 $submitEntry = @($submitCache.entries) | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1
                                 if ($null -ne $submitEntry) {
-                                    $submitRepoPath = [string](Get-ValueOrDefault $submitEntry.repoPath '')
+                                    # Cache entries come back as hashtables when
+                                    # rehydrated from disk and as PSCustomObjects
+                                    # when freshly scanned. Build-RoadmapRepairPreview
+                                    # already guards both; reading only the object
+                                    # form silently yielded an empty repoPath and a
+                                    # "run a scan first" refusal on a warm cache.
+                                    $submitRepoPath = if ($submitEntry -is [System.Collections.IDictionary]) {
+                                        [string](Get-ValueOrDefault $submitEntry['repoPath'] '')
+                                    } else {
+                                        [string](Get-ValueOrDefault $submitEntry.repoPath '')
+                                    }
                                     if ([string]::IsNullOrWhiteSpace($submitRoadmapPath)) {
-                                        $submitRoadmapPath = [string](Get-ValueOrDefault $submitEntry.roadmapPath '')
+                                        $submitRoadmapPath = if ($submitEntry -is [System.Collections.IDictionary]) {
+                                            [string](Get-ValueOrDefault $submitEntry['roadmapPath'] '')
+                                        } else {
+                                            [string](Get-ValueOrDefault $submitEntry.roadmapPath '')
+                                        }
                                     }
                                 }
                             }
