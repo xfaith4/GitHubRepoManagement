@@ -40,16 +40,36 @@ interchangeable — mixing them is what previously made the roadmap read as
 
 **Current focus (next agent actions), in order:**
 
-- [ ] **Release 3.0 — operator-context execution.** Dispatch cannot run from
-      the service at all (`gh agent-task` requires OAuth; LocalSystem cannot
-      hold one), so the guided-improvement wizard dead-ends at its last step.
-      Approach decided 2026-08-08; no prerequisites.
+- [ ] **Release 3.1 — closed-loop delivery.** Its two hard prerequisites both
+      landed (2.7 Phase A's proven write path, and 3.0's dispatch that runs), so
+      the north-star loop can now be driven end to end for one real item. Only
+      the PAT's `Checks: Read` grant is still missing, and that affects
+      per-check detail rather than the loop.
+- [ ] **Release 3.2 — portfolio scale.** Independent of 3.1 and schedulable in
+      parallel; it starts from the bounded 900-second scan budget Lane 0.4
+      settled rather than from an open question.
 - [ ] **Two operator-decision items remain in Lane 0.2 and Lane 0.5** — the
       PAT's `Checks: Read` grant and the portal TLS certificate password both
       need an action outside this repository, and Lane 0.5's two UX items were
       deferred pending a product call, not for want of engineering time. Every
       other recorded non-blocker closed 2026-08-09; **Lanes 0.3, 0.4 and 0.6 are
       now closed entirely.**
+
+**Closed 2026-08-09 (third pass) — Release 3.0, the dispatch that could never
+run.** All five milestones ship: the guided-improvement wizard enqueues with
+`dispatchTarget: 'copilot'` instead of calling the launcher in-process, the
+operator-session runner executes it with `gh agent-task create` and records the
+task URL, runner presence is readable before work is queued, a logon-task
+installer registers the runner as an interactive user (and refuses SYSTEM), and
+in-host cloud dispatch is a 409 that names the runner. **Release 3.0 is
+engineering-complete and archived** (its full text moved to
+[the archive](docs/history/completed-releases.md#release-30--operator-context-execution)
+the same day, per the split rule in section 8); the one live `gh agent-task`
+round trip belongs to 2.9's
+operator session, batched with the 2.8 `claude` run it shares a prerequisite
+with. Two corrections worth carrying: the token check in front of the old
+dispatch was answering the wrong question (a PAT passed it and the dispatch still
+failed), and the refusal had to be unconditional rather than service-conditional.
 
 **Closed 2026-08-09 (second pass) — every recorded non-blocker that did not need
 an operator decision.** Phase C's two: the approval queue now has an operator UI
@@ -200,7 +220,7 @@ already covered by release goals or acceptance criteria.
 | **2.7**   | **Guarded Scheduled Automation (Curated-Subset, Preview-First)**         | **active** — Phases A, B, C done; Phase D awaits an elevated service install               |
 | 2.8       | Local Claude Code Execution (queue + operator runner)                    | `done` (engineering) — 2026-07-15; real `claude` run tracked in 2.9                        |
 | **2.9**   | **Operator Field Proof and Mobile Completion**                           | `planned` — collects every external-resource residual plus the two unbuilt mobile surfaces |
-| **3.0**   | **Operator-Context Execution**                                           | `planned` — one dispatch model; the service enqueues, an operator session executes         |
+| 3.0       | Operator-Context Execution                                               | `done` (engineering) — 2026-08-09; see archive. Live proof tracked in 2.9                  |
 | **3.1**   | **Closed-Loop Delivery**                                                 | `planned` — rank → dispatch → monitor → Actions → merge readiness → roadmap write-back     |
 | **3.2**   | **Portfolio Scale and Responsiveness**                                   | `planned` — serve from the index; retire the cold-scan cliff and the deadline kill         |
 | **3.3**   | **Steady-State Operation**                                               | `planned` — unattended for months: retention, restore, honest TLS, decision-grade digests  |
@@ -244,10 +264,11 @@ deployment waits on an elevated Windows install. What follows is the 3.x arc.
 Releases 3.0-3.3 are the path to a finished product rather than a working one.
 They are ordered by dependency, not by size:
 
-1. **3.0 Operator-Context Execution** — nothing downstream can be proven while
-   dispatch cannot run. Start here; it has no prerequisites.
-2. **3.1 Closed-Loop Delivery** — needs 3.0 for dispatch and 2.7 Phase A for a
-   proven write path. This is where the north-star workflow first runs whole.
+1. ~~**3.0 Operator-Context Execution**~~ — **done 2026-08-09.** Dispatch now
+   runs, so what was blocking everything downstream is gone.
+2. **3.1 Closed-Loop Delivery** — needed 3.0 for dispatch and 2.7 Phase A for a
+   proven write path; **both landed 2026-08-09**, so this is now the next
+   release. It is where the north-star workflow first runs whole.
 3. **3.2 Portfolio Scale and Responsiveness** — independent of 3.0/3.1 and
    schedulable in parallel. Lane 0.4's deadline decision landed 2026-08-09
    (extended tier, not exemption), so 3.2 starts from a bounded 900-second
@@ -261,15 +282,16 @@ They are ordered by dependency, not by size:
 | ---------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------- |
 | Release 2.7 Phase D (freeze prevention, live deploy) | An elevated (SYSTEM) Windows install                 | hard — privilege                              |
 | Release 2.7 Phase D freeze prevention                | Watchdog field proof (2.9) for the paired safety net | soft — ship prevention regardless             |
-| Lane 0.3 layout follow-ups; Lane 0.4 worklog archive | —                                                    | none — schedulable anytime                    |
+| Lane 0.2 `Checks: Read`; TLS certificate password    | An operator action outside this repository           | hard — external                               |
+| Lane 0.5 bulk-scope confirmation; tab disclosure     | A product decision, not engineering time             | hard — design                                 |
 | Release 2.9 mobile completion (ergonomics, run list) | —                                                    | none — the responsive foundation is shipped   |
 | Release 2.9 physical-Android proof (2.5 + 2.6)       | An Android device on the LAN                         | hard — hardware                               |
 | Release 2.9 watchdog + service-installer proof       | An elevated (SYSTEM) session                         | hard — privilege                              |
 | Release 2.9 real `claude` run (2.8)                  | An authenticated operator Claude Code session        | hard — human                                  |
 | Release 2.9 GitHub App installation-token exchange   | A registered GitHub App                              | hard — optional; PAT supersedes               |
 | Release 2.9 trend accrual (2.3 Ph2)                  | Days of live capture                                 | hard, time-gated                              |
-| Release 3.0 operator-context execution               | —                                                    | none — approach decided 2026-08-08            |
-| Release 3.1 closed-loop delivery                     | Release 3.0; Release 2.7 Phase A; `Checks: Read`     | hard — needs dispatch and a proven write path |
+| Release 3.0 live `gh agent-task` proof (via runner)  | An operator session with `gh auth login`             | hard — human; batch with the 2.8 `claude` run |
+| Release 3.1 closed-loop delivery                     | `Checks: Read` (3.0 and 2.7 Phase A both landed)     | soft — per-check detail only; loop unblocked  |
 | Release 3.2 scale and responsiveness                 | —                                                    | none — deadline decision landed 2026-08-09    |
 | Release 3.3 steady-state operation                   | —                                                    | none — independent milestones, any order      |
 
@@ -726,17 +748,16 @@ between "the automated suite is green" and "this works in the field."
 **Prerequisites:** the mobile-completion milestones have none. Each field-proof
 milestone names the one external resource it waits on; none block each other,
 and several share a session — an elevated shell covers both SYSTEM milestones,
-one phone session on the LAN covers both device milestones. Batch them rather
-than scheduling six separate sessions.
+one phone session covers both device milestones, one authenticated operator
+shell covers both runner milestones. Batch them.
 
 #### Product outcomes
 
 - No milestone is marked complete on the strength of an automated suite alone
   when what it claims needs hardware, elevation, credentials, or a human.
-- The always-on portal is proven to recover from a real freeze, not a
-  simulated one.
-- The dashboard is proven usable on a real Android phone — touch, install,
-  and all four target workflows — not only at an emulated 390px viewport.
+- The always-on portal is proven to recover from a real freeze, not a simulated
+  one, and the dashboard from a real Android phone — touch, install, and all
+  four target workflows — not only at an emulated 390px viewport.
 - Trend charts show real 7- and 90-day windows.
 - `evidence/` carries a durable record for each proof, so the next agent can
   read the evidence instead of re-litigating whether something works.
@@ -745,12 +766,11 @@ than scheduling six separate sessions.
 
 Mobile completion (no gates — build these first):
 
-- [ ] Apply touch ergonomics beyond the Release 2.5 Phase 1 surfaces:
-      minimum ~44px touch targets and a tap equivalent for every hover-only
+- [ ] Apply touch ergonomics beyond the Release 2.5 Phase 1 surfaces: ~44px
+      minimum touch targets and a tap equivalent for every hover-only
       affordance (tooltips, row actions, rationale popovers) across the
-      Phases 2-3 surfaces. _(state: scaffolded — Phase 1 surfaces done
-      2026-07-04 (bottom nav 56px, card actions 44px); the rest was
-      deferred and never built)_
+      Phases 2-3 surfaces. _(state: scaffolded — Phase 1 done 2026-07-04
+      (bottom nav 56px, card actions 44px); the rest was never built)_
 - [ ] Add the tap-through mobile agent-run list from the agent-activity
       indicator: status, repo, phase, elapsed time. _(state: planned — the
       indicator ships and `/api/agent-runs` data is already reachable; only
@@ -761,26 +781,23 @@ Field proof — elevated (SYSTEM) session, batch together:
 - [ ] Run the elevated
       [`Install-PortalWatchdog.ps1`](scripts/service/Install-PortalWatchdog.ps1)
       and confirm a real freeze-and-recover: kill + `Restart-Service
-RepoMgmtPortal`, with the action appended to
-      `output/logs/service-watchdog.jsonl` and the `execution.failed`
-      webhook fired. _(state: smoke-tested → needs `operator-verified`; the
-      decision logic and a dry-run against the actual frozen host, PID 5704,
-      are already proven)_
+RepoMgmtPortal`, the action appended to `output/logs/service-watchdog.jsonl`,
+      and the `execution.failed` webhook fired. _(state: smoke-tested → needs
+      `operator-verified`; decision logic and a dry-run against the actual
+      frozen host, PID 5704, are already proven)_
 - [ ] Operator-verify the reworked
       [`Install-RepoManagementService.ps1`](scripts/Install-RepoManagementService.ps1):
-      elevated install / repair / `icacls` / scheduled-task registration,
-      and confirm secrets resolve from machine env vars with the tracked
-      `settings.json` staying secret-free. _(state: smoke-tested → needs
-      `operator-verified`; pure logic is covered by module smoke)_
+      elevated install / repair / `icacls` / scheduled-task registration, with
+      secrets resolving from machine env vars and the tracked `settings.json`
+      staying secret-free. _(state: smoke-tested → needs `operator-verified`)_
 
 Field proof — physical Android device on the LAN, batch together:
 
 - [ ] Verify the four Release 2.5 workflows on a **physical Android phone**:
-      repo health, agent activity, prompt refinement, roadmap dispatch —
-      plus real touch input and on-device home-screen install. Steps in
-      [`lan-mobile-setup.md`](docs/reference/lan-mobile-setup.md).
-      _(state: smoke-tested at an emulated 390px viewport → needs
-      `operator-verified` on hardware)_
+      repo health, agent activity, prompt refinement, roadmap dispatch — plus
+      real touch input and on-device home-screen install. Steps in
+      [`lan-mobile-setup.md`](docs/reference/lan-mobile-setup.md). _(state:
+      smoke-tested at an emulated 390px viewport → needs `operator-verified`)_
 - [ ] Confirm the Release 2.6 clarity affordances pass on the same device:
       data-source indicator, per-tab subtitles, advanced-filters toggle, and
       the orientation overlay. _(state: smoke-tested → needs `operator-verified`)_
@@ -796,6 +813,11 @@ Field proof — human / credential / calendar:
       in the operator's authenticated session: claim → branch → run →
       verify → commit → `awaiting-review`. Closes the Release 2.8 residual.
       _(state: smoke-tested dry-run E2E → needs `operator-verified`)_
+- [ ] Same session: run one real **copilot** entry through the runner —
+      `gh agent-task create` reaches a live task, URL in the run summary.
+      Closes the Release 3.0 residual. _(state: smoke-tested → needs
+      `operator-verified`. Requires `gh auth login` and **no**
+      `GH_TOKEN`/`GITHUB_TOKEN` set; gh ignores stored OAuth when one is.)_
 - [ ] Operator-verify the auth + shared-LAN path so automation runs on a bound,
       authenticated host. _(state: planned — carried over from 2.7 Phase D)_
 - [ ] (Optional) Prove live GitHub App installation-token exchange
@@ -804,10 +826,10 @@ Field proof — human / credential / calendar:
       required; the PAT path supersedes it)_
 - [ ] Let the Release 2.3 Phase 2 trend windows accrue: confirm
       `GET /api/portfolio/trend` reports a real 7-day, then 90-day, window.
-      _(state: smoke-tested — rollup logic is live and
-      `status=history-backed`; only calendar time is missing. Keep
-      [`Invoke-DailyEvidence.ps1`](scripts/Invoke-DailyEvidence.ps1)
-      running — it accrues history as a side effect.)_
+      _(state: smoke-tested — rollup logic is live and `status=history-backed`;
+      only calendar time is missing. Keep
+      [`Invoke-DailyEvidence.ps1`](scripts/Invoke-DailyEvidence.ps1) running —
+      it accrues history as a side effect.)_
 
 #### Acceptance criteria
 
@@ -833,69 +855,6 @@ Field proof — human / credential / calendar:
 
 ---
 
-### Release 3.0 — Operator-Context Execution
-
-**Status:** planned
-
-**Goal:** make dispatch work by running it as the operator rather than as the
-service. Every dispatch path — roadmap task, guided repository improvement,
-agent repair — enqueues from the portal and executes in a session that already
-holds the credential the work needs. The LocalSystem host stops attempting to
-wield delegated authority it structurally cannot hold.
-
-**Prerequisites:** none. The approach was decided 2026-08-08 (Lane 0.2) after
-`gh agent-task` was confirmed to reject a PAT, and it reuses the queue-plus-
-runner pattern Release 2.8 already shipped for Claude Code.
-
-#### Product outcomes
-
-- One dispatch model instead of two: the portal enqueues, an operator-session
-  runner executes, status returns through the existing run summary.
-- No dispatch path requires a long-lived OAuth token stored on disk.
-- A dispatch that cannot run says so **at enqueue time**, naming the missing
-  runner, rather than failing at the last step of a wizard.
-
-#### Engineering milestones
-
-- [ ] Route the guided-improvement wizard's PR handoff through the queue
-      instead of invoking the launcher in-process. _(state: planned — the API
-      host calls `Start-GitHubCopilotTask.ps1` directly at
-      [`Start-RepoManagementApiHost.ps1:8952`](backend/api-host/Start-RepoManagementApiHost.ps1#L8952);
-      `Start-RoadmapCopilotTask.ps1` already models the enqueue path as
-      `-DispatchMode claude`)_
-- [ ] Add `dispatchTarget` (`claude` | `copilot`) to the queue entry and teach
-      [`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1) to
-      execute a copilot entry via `gh agent-task create` in the operator
-      session, recording the resulting task URL in the run summary.
-      _(state: planned)_
-- [ ] Surface runner presence — last heartbeat and claimed-entry count — so the
-      portal can warn before queueing work nothing will pick up.
-      _(state: planned)_
-- [ ] Ship a per-user logon scheduled-task installer for the runner
-      (interactive session, never SYSTEM), mirroring the watchdog installer's
-      shape. _(state: planned)_
-- [ ] Make the API host refuse in-service cloud dispatch with a route-level
-      409 that names the runner, keeping `-DispatchMode copilot` reachable only
-      from an operator shell. _(state: planned)_
-
-#### Acceptance criteria
-
-- The wizard's final step returns a queue id and makes no `gh` call from the
-  service process.
-- A queued copilot entry executed by the operator runner reaches a real GitHub
-  agent task, with its URL in the run summary.
-- With no runner registered, queueing reports the missing runner in the UI.
-- Module smoke covers the `dispatchTarget` round-trip and the runner's copilot
-  branch.
-
-#### Out of scope
-
-- Re-hosting the portal service under a named user account — that trades
-  always-on-before-login for the whole product to fix one route.
-- Unattended dispatch with no operator session present.
-
----
-
 ### Release 3.1 — Closed-Loop Delivery
 
 **Status:** planned
@@ -906,9 +865,11 @@ and prepare a prompt, and it can read merge readiness, but no single work item
 has ever travelled the whole chain — so the loop's real failure modes are
 unknown.
 
-**Prerequisites:** Release 2.7 Phase A (live submit-PR proof) for the write
-path, Release 3.0 for a dispatch that runs, and the PAT's `Checks: Read` grant
-(Lane 0.2) for per-check merge detail.
+**Prerequisites:** all but one are met. Release 2.7 Phase A (the live submit-PR
+proof) and Release 3.0 (a dispatch that runs) both closed 2026-08-09. Only the
+PAT's `Checks: Read` grant (Lane 0.2) is outstanding, and it affects per-check
+merge detail rather than the loop — `mergeStateStatus` already answers the
+merge-readiness question this release gates on.
 
 #### Product outcomes
 

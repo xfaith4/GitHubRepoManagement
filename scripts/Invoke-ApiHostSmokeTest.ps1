@@ -2685,11 +2685,56 @@ A release should not be marked `done` unless:
         }
     }
 
+    Write-Host '[STEP] Operator-runner presence + in-host cloud-dispatch refusal (Release 3.0)' -ForegroundColor Cyan
+    $runnerRouteOk = $false
+    $runnerResp = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/roadmap/runner"
+    Assert-Not503 -Name '/api/roadmap/runner' -Response $runnerResp
+    if ($null -eq $runnerResp.Json -or -not $runnerResp.Json.success) {
+        throw "GET /api/roadmap/runner returned success=false. HTTP $($runnerResp.StatusCode). Body=$($runnerResp.Content)"
+    }
+    foreach ($runnerField in @('state', 'present', 'message', 'queuedTotal', 'queuedClaude', 'queuedCopilot', 'strandedCount')) {
+        if (-not ($runnerResp.Json.data.PSObject.Properties.Name -contains $runnerField)) {
+            throw "GET /api/roadmap/runner missing '$runnerField'. Body=$($runnerResp.Content)"
+        }
+    }
+    if ([string]$runnerResp.Json.data.state -notin @('present', 'stale', 'absent')) {
+        throw "Runner state must be present/stale/absent; got '$($runnerResp.Json.data.state)'"
+    }
+    # Presence and `present` must agree. Two fields disagreeing about liveness is
+    # exactly the "two figures, one truth" divergence this product exists to catch.
+    if ([bool]$runnerResp.Json.data.present -ne ([string]$runnerResp.Json.data.state -eq 'present')) {
+        throw "Runner present flag disagrees with state: present=$($runnerResp.Json.data.present) state=$($runnerResp.Json.data.state)"
+    }
+    # No runner in a smoke run, so nothing may be reported as about to run.
+    if ([bool]$runnerResp.Json.data.present) {
+        throw 'The smoke host has no operator runner; reporting one present would be the false-green this route exists to prevent.'
+    }
+
+    # The route-level refusal: asking the host to run cloud dispatch itself must
+    # be a 409 that names the runner, not a 200 that fails at the last step.
+    $inProcessResp = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/dispatch/execute" -Body @{
+        repoName = 'smoke-in-process-refusal'; prompt = 'noop'; inProcess = $true
+    }
+    if ($inProcessResp.StatusCode -ne 409) {
+        throw "In-process cloud dispatch must be refused with 409; got HTTP $($inProcessResp.StatusCode). Body=$($inProcessResp.Content)"
+    }
+    if ([string]$inProcessResp.Json.category -ne 'operator-runner-required') {
+        throw "The 409 must carry category=operator-runner-required; got '$($inProcessResp.Json.category)'"
+    }
+    if ([string]$inProcessResp.Json.error -notmatch 'Invoke-RoadmapTaskRunner') {
+        throw "The refusal must name the runner that can do it. Body=$($inProcessResp.Content)"
+    }
+    $runnerRouteOk = $true
+    Write-Host ("  runner presence ok: state={0} present={1} queued={2} stranded={3}; in-process cloud dispatch refused 409 ({4})" -f `
+            $runnerResp.Json.data.state, $runnerResp.Json.data.present, $runnerResp.Json.data.queuedTotal, `
+            $runnerResp.Json.data.strandedCount, $inProcessResp.Json.category) -ForegroundColor DarkGray
+
     Write-Host '[STEP] Route census — critical API routes must return JSON (not the SPA fallback)' -ForegroundColor Cyan
     $censusRoutes = @(
         '/health/live', '/health/ready', '/health/dependencies', '/metrics',
         '/api/persistence/status', '/api/auth/status', '/api/auth/github/status',
         '/api/automation/history', '/api/automation/status', '/api/automation/packages',
+        '/api/roadmap/runner',
         '/api/settings', '/api/roadmap/index',
         '/api/maintenance/database',
         '/api/cache/diagnostics', '/api/scan/schedule', '/api/execution/metrics',
@@ -2793,6 +2838,7 @@ A release should not be marked `done` unless:
         dbMaintenanceOk = { $dbMaintenanceOk }
         automationStatusOk = { $automationStatusOk }
         packagingOk = { $packagingOk }
+        runnerRouteOk = { $runnerRouteOk }
         githubAuthProbeOk = { $githubAuthProbeOk }
         githubTokenSource = { $ghAuthData.tokenSource }
         workspaceValidationOk = { $script:WorkspaceValidationOk }

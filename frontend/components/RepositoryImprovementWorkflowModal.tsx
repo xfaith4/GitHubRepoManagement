@@ -163,10 +163,14 @@ const RepositoryImprovementWorkflowModal: React.FC<RepositoryImprovementWorkflow
           {phase === 'done' && dispatchResult && (
             <div className="mx-auto max-w-2xl rounded-lg border border-emerald-700/50 bg-emerald-950/20 p-6 text-center">
               <div className="text-2xl text-emerald-300">✓</div>
-              <h3 className="mt-2 text-lg font-semibold text-white">Task dispatched</h3>
+              {/* Release 3.0 — the host enqueues; the operator-session runner
+                  creates the agent task. Saying "dispatched" here overstated
+                  what happened even before that change, since the wizard's last
+                  step could not succeed from the service at all. */}
+              <h3 className="mt-2 text-lg font-semibold text-white">Task queued for the operator runner</h3>
               <p className="mt-2 text-sm text-gray-300">{dispatchResult.message}</p>
               <dl className="mt-4 grid grid-cols-1 gap-2 text-left text-xs sm:grid-cols-2"><div><dt className="text-gray-500">Repository</dt><dd className="mt-1 text-gray-200">{dispatchResult.githubRepo}</dd></div><div><dt className="text-gray-500">Run ID</dt><dd className="mt-1 break-all text-gray-200">{dispatchResult.runId || dispatchResult.agentRunId}</dd></div></dl>
-              <p className="mt-4 text-xs text-gray-400">Track progress in Copilot Execution Lanes or GitHub. The pull request remains a review gate; it is not merged automatically.</p>
+              <p className="mt-4 text-xs text-gray-400">The task runner creates the GitHub agent task in your own session — the portal cannot, because <code>gh agent-task</code> needs an OAuth credential a service cannot hold. Start it with <code>pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1</code> if it is not already running. Track progress in Copilot Execution Lanes or GitHub; the pull request remains a review gate and is not merged automatically.</p>
             </div>
           )}
         </div>

@@ -2,6 +2,35 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-09 — Release 3.0: Operator-Context Execution
+
+### Changes
+
+- **What it fixes.** Dispatch could not run from the service *at all*. `gh agent-task create` requires an **OAuth** credential; `gh` ignores its stored credential whenever `GH_TOKEN`/`GITHUB_TOKEN` is set (the host sets one for its own GitHub calls); and LocalSystem has no interactive login to obtain one. The guided-improvement wizard therefore dead-ended at its final step, *after* the operator had already spent the refinement work. There is now one dispatch model: the portal enqueues, an operator-session runner executes.
+- **`POST /api/roadmap/dispatch/execute` enqueues instead of launching.** It writes the queue line **and** the `queued` run summary the runner claims on — one without the other is a task nothing ever picks up, the same defence `Submit-PackagedItemToRunner` applies — and returns `status: 'queued'`, not `'started'`. The in-process `Start-GitHubCopilotTask.ps1` call is gone, and a module-smoke tripwire over the host source fails if it returns.
+- **The token check in front of that call was answering the wrong question**, and is removed. It verified a PAT was present, which a PAT always satisfied — and the dispatch still failed, because agent-task needs OAuth. A guard that passes for the one credential that cannot work is worse than no guard: it moves the failure further from its cause.
+- **`dispatchTarget` (`claude` | `copilot`) and `baseBranch` on the queue entry.** Both writers moved in lockstep — the Phase C drift tripwire now reports **12 identical fields** (was 10), which is exactly what stopped the packaging writer from silently omitting them. An entry written before 3.0 has no `dispatchTarget` and resolves to `claude`; an entry naming something **unrecognized is refused, never defaulted**, because running the wrong tool against a real repository is worse than leaving the task queued.
+- **The runner executes copilot entries in the operator session.** `gh agent-task create` argv is built as an **array, never a command string** — the prompt is multi-line roadmap text and splicing it into a shell line breaks on the first quote it contains. A copilot entry never branches or commits (the cloud agent owns the working copy); what it records is the task URL, and **an absent URL records the absence** rather than a fabricated link.
+- **The credential trap is named, not hit.** `gh-not-found` and `env-token-overrides-oauth` are refused with a message naming the variable to clear, and a blocked entry is **not claimed** — it stays `queued` so it can run once the session is fixed, instead of being burned on a session that cannot execute it.
+- **Packaged items stay `claude` by construction.** A Phase C packet's prompt names a working branch and a local repo path, and its repair-PR plan hands the result to the Phase A submit-PR route. Cloud-dispatching one would send work to an agent with no checkout to do it in.
+- **`GET /api/roadmap/runner`** (`Automation.RunnerPresence.ps1`) reports whether anything will pick queued work up. The runner beats **every cycle including idle ones** — a runner that only announced itself while working would look absent exactly when the portal most needs to know it is there. The staleness budget derives from the runner's own `-PollSeconds` (a slow runner is not called dead each cycle) with a floor so a fast one does not race its reader, and an **unreadable heartbeat is absent, never present**.
+- **Backlog, not just presence.** "No runner" matters far more with 12 tasks already waiting, so the route also reports the still-`queued` backlog split by target (`queuedClaude` / `queuedCopilot` — which names *which* runner session is missing) and `strandedCount`. Only entries still at `queued` count: the queue file is append-only, so counting every line would report every task ever dispatched as a permanent backlog.
+- **The dispatch modal warns while you review the packet**, not after you commit, and the outcome panel goes amber with "Queued — but nothing is running to pick it up" instead of a uniform green tick.
+- **`scripts/service/Install-RoadmapTaskRunner.ps1`** (new) is the deliberate **mirror image** of `Install-PortalWatchdog.ps1`: that one demands elevation and registers as SYSTEM; this one **refuses** SYSTEM, LOCAL SERVICE and NETWORK SERVICE. A service-account runner registers fine, shows as running, claims queued work, and fails every task for a credential reason that looks nothing like the cause. Registers `LogonType Interactive` + `RunLevel Limited`, with no execution time limit (the default 72-hour cap would kill the poll loop mid-run every third day).
+- **In-host cloud dispatch is refused unconditionally**, with a 409 `operator-runner-required` naming the runner. Not service-conditional: the service check is a heuristic, so refusing only when it fires brings the failure back the moment it is wrong — and an interactive host fails too, because it inherits the PAT it reads for every other GitHub call.
+
+### Testing
+
+- **Module smoke exit 0** — `dispatch target ok: legacy entries stay claude, unknown targets refused, agent-task argv + URL parsed, env-token trap named`; `runner presence ok: absent/stale/present classified from the runner own interval, backlog split by target, corrupt heartbeat is absent, in-host cloud dispatch refused in both modes`; `runner installer ok: 4 service accounts refused, paths quoted, 4 action cases, interactive + unelevated principal`.
+- **The drift tripwire earned its keep again** — `queue contract ok: 12 fields identical to the canonical writer` (was 10). Adding `dispatchTarget` to one writer alone fails the gate rather than stranding approved work as entries the runner mishandles.
+- **The UTC double-conversion defect is pinned** — a heartbeat is asserted through a real `ConvertTo-Json`/`ConvertFrom-Json` round trip, because `Kind=Unspecified` converted a second time would put the last beat in the *future* and make a dead runner look freshly alive. That exact bug was found and fixed once already in `_Auto_ToUtc`.
+- **API-host smoke exit 0, `runnerRouteOk=True`** — `runner presence ok: state=absent present=False queued=6 stranded=6; in-process cloud dispatch refused 409 (operator-runner-required)`. The `present` flag and `state` are asserted to agree, because two fields disagreeing about liveness is the "two figures, one truth" divergence this product exists to catch.
+- **`npm run test:unit` 119 passing across 9 files**; `npm run typecheck` and `npm run build` exit 0; `Invoke-TestSuite.ps1 -SkipApiHost` 11/11 gates green.
+
+### Not proven, and named
+
+- **One live `gh agent-task` round trip through the runner** is the single external-resource residual. It needs an operator session with `gh auth login` and **no** `GH_TOKEN`/`GITHUB_TOKEN` set. Tracked in Release 2.9, batched with the 2.8 real-`claude` run, since both need the same authenticated shell.
+
 ## 2026-08-09 — Non-blocker sweep: approval UI, packaging health, rate limit, worklogs, zero-scope hint
 
 ### Changes
