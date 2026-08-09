@@ -48,9 +48,6 @@ interchangeable — mixing them is what previously made the roadmap read as
       the service at all (`gh agent-task` requires OAuth; LocalSystem cannot
       hold one), so the guided-improvement wizard dead-ends at its last step.
       Approach decided 2026-08-08; no prerequisites.
-- [ ] **Release 2.7 Phase D — the `Dashboard.tsx` decomposition.** The last
-      frontend item; the value-tier and automation-scope vitest units closed
-      2026-08-09. Unblocked, frontend-only, independent of everything above.
 - [ ] **Lane 0.3 hygiene** — the five `backend/` files still carrying
       hardcoded `G:\` workspace defaults.
 
@@ -58,9 +55,13 @@ interchangeable — mixing them is what previously made the roadmap read as
 now classifies routes into a 180-second default tier and a 900-second
 full-portfolio-scan tier, so a legitimate cold scan no longer trips the guard
 into a restart loop, and neither smoke gate needs a timeout override any more.
-Also Phase D's frontend unit-test set, which reached 4 of 4 named units by
-extracting the value-tier and curation-scope logic into pure `frontend/lib`
-modules the components now consume.
+Also **both remaining Phase D frontend items**: the unit-test set reached 4 of 4
+named units by extracting the value-tier and curation-scope logic into pure
+`frontend/lib` modules the components now consume, and the `Dashboard.tsx`
+decomposition landed its two named extractions (tab shell, summary/mission).
+**Release 2.7 Phase D is now engineering-complete** except for the live service
+deployment its freeze-prevention item has always been waiting on (an elevated
+Windows install). The only open 2.7 work is Phase A and the Phase C it gates.
 
 **Closed 2026-08-08 and archived out of this file:** the settings.json
 regression (Lane 0.1, which closed entirely), the silent workspace-path
@@ -379,9 +380,31 @@ Phase D — Hardening & observability (parallelizable, autonomous, unblocked):
       adversarially proven — widening `isInAutomationScope` to
       `state !== 'none'` fails
       [`curationScope.test.ts:72`](frontend/lib/curationScope.test.ts#L72).
-- [ ] Decompose [`Dashboard.tsx`](frontend/components/Dashboard.tsx):
+- [x] Decompose [`Dashboard.tsx`](frontend/components/Dashboard.tsx):
       extract the view-router/tab shell and the summary/mission sections.
-      _(state: planned — 2,376 lines as of 2026-08-07)_
+      _(state: smoke-tested — both named extractions landed 2026-08-09)_
+      The tab shell became
+      [`DashboardViewTabs.tsx`](frontend/components/DashboardViewTabs.tsx)
+      over a pure [`lib/viewTabs.ts`](frontend/lib/viewTabs.ts); the summary
+      and mission blocks became
+      [`PortfolioSummarySection.tsx`](frontend/components/PortfolioSummarySection.tsx)
+      and
+      [`PortfolioMissionSection.tsx`](frontend/components/PortfolioMissionSection.tsx).
+      The extraction also closed two latent drift hazards it exposed: four of
+      the six tabs hardcoded their label instead of reading `VIEW_META` (the
+      exact drift [`viewMeta.ts`](frontend/viewMeta.ts) exists to prevent), and
+      the badge-visibility rule was written three different ways inline. Both
+      are now single definitions. **Evidence:** `npm run test:unit` 91 passing
+      across 7 files (12 new `viewTabs` assertions), `npm run typecheck` and
+      `npm run build` exit 0; tab labels and order are unchanged because
+      `VIEW_META` already carried the same six labels in the same order.
+- [ ] **[non-blocker]** `Dashboard.tsx` is still 2,308 lines after the Phase D
+      extractions (down from 2,519). The two sections Phase D named are out;
+      what remains large is the ~600-line Insights block (Execution Throughput,
+      Documentation Health, Portfolio Analytics/trend) and ~1,000 lines of
+      hooks and handlers above the return. _(state: planned — recorded rather
+      than folded into the milestone above, which asked for two specific
+      extractions and got them. Worth doing, not worth blocking on.)_
 
 #### Acceptance criteria
 

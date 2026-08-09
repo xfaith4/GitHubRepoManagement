@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry, type DocAuditIndex, type RoadmapAuditIndex, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioAssessmentEntry, type PortfolioAssessmentResult, type PortfolioTrendPoint, type PortfolioTrendResult, type RepoLifecycleState, type PortfolioSignalSource, type OperationsReposResult, type RepoCurationState } from '../types';
+import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry, type DocAuditIndex, type RoadmapAuditIndex, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioAssessmentEntry, type PortfolioAssessmentResult, type PortfolioTrendPoint, type PortfolioTrendResult, type RepoLifecycleState, type OperationsReposResult, type RepoCurationState } from '../types';
 import SummaryCard from './SummaryCard';
 import ActionBar from './ActionBar';
 import ProvenanceNotice from './ProvenanceNotice';
@@ -30,6 +30,10 @@ import ReadmeGenerateModal from './ReadmeGenerateModal';
 import HelpModal from './HelpModal';
 import OperationsWorkspaceView from './OperationsWorkspaceView';
 import { VIEW_META_BY_KEY, type ViewKey } from '../viewMeta';
+import DashboardViewTabs from './DashboardViewTabs';
+import PortfolioSummarySection from './PortfolioSummarySection';
+import PortfolioMissionSection from './PortfolioMissionSection';
+import { type ViewTabBadges } from '../lib/viewTabs';
 import { isRepoNeedsAttention } from '../lib/needsAttention';
 import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getAutomationStatus, getRoadmapDependencies, getPortfolioAssessment, refreshAllPortfolioAssessment, setOperationsRepoCuration, getPortfolioTrend, getOperationsRepos } from '../services/apiClient';
 import { useSse } from '../hooks/useSse';
@@ -61,18 +65,6 @@ interface DashboardProps {
   onConnectGitHub?: (username: string) => Promise<void>;
   connectedGitHubUser?: string | null;
 }
-
-const SIGNAL_SOURCE_STYLES: Record<PortfolioSignalSource, string> = {
-  cache: 'bg-slate-800 text-slate-200 border-slate-600',
-  'fresh-scan': 'bg-emerald-900/40 text-emerald-200 border-emerald-700/50',
-  ledger: 'bg-blue-900/40 text-blue-200 border-blue-700/50',
-  api: 'bg-indigo-900/40 text-indigo-200 border-indigo-700/50',
-  unavailable: 'bg-gray-800 text-gray-300 border-gray-600',
-  'not-evaluated': 'bg-gray-800 text-gray-300 border-gray-600',
-  'no-token': 'bg-amber-900/40 text-amber-200 border-amber-700/50',
-  'no-owner-configured': 'bg-amber-900/40 text-amber-200 border-amber-700/50',
-  error: 'bg-red-900/40 text-red-200 border-red-700/50',
-};
 
 const LIFECYCLE_STYLES: Record<RepoLifecycleState, string> = {
   discovered: 'bg-slate-800 text-slate-200 border-slate-600',
@@ -138,17 +130,6 @@ const TREND_SERIES_COLORS: Record<string, { stroke: string; fill: string; textCl
 
 function formatLifecycleLabel(state: RepoLifecycleState): string {
   return state.replaceAll('-', ' ');
-}
-
-function formatSignalLabel(key: string): string {
-  switch (key) {
-    case 'docAudit':
-      return 'Docs';
-    case 'roadmapAudit':
-      return 'Roadmap';
-    default:
-      return key.charAt(0).toUpperCase() + key.slice(1);
-  }
 }
 
 function formatTrendStatusLabel(status: PortfolioTrendResult['trendStatus']): string {
@@ -1250,6 +1231,23 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   const carriedOverBadgeTitle =
     'Carried over from the last completed scan — the current scan found no repositories, so this count may not match the workspace. Re-scan to reconcile.';
 
+  // One descriptor per badged tab. The strip decides visibility (positive
+  // counts only) and styling; this only supplies the numbers and their
+  // provenance.
+  const viewTabBadges: ViewTabBadges = {
+    'operations': {
+      count: operationsReadyCount,
+      carriedOver: operationsBadgeCarriedOver,
+      title: carriedOverBadgeTitle,
+    },
+    'work-queue': {
+      count: queueReadyCount,
+      carriedOver: queueBadgeCarriedOver,
+      title: carriedOverBadgeTitle,
+    },
+    'dependencies': { count: dependencyGraph?.totalEdges ?? 0 },
+  };
+
   const scanMetaLabel = dataSource?.source === 'local' && typeof dataSource.repoCount === 'number'
     // At zero, "0 repos" alone reads as a broken tool when index-backed panels
     // below still show figures; name it as a property of *this* scan.
@@ -1346,40 +1344,13 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
           </div>
         </div>
       )}
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-        <section className="rounded-lg border border-gray-700 bg-gray-800/60 px-4 py-4">
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div>
-              <h1 className="text-xl font-semibold text-white">Repository Management</h1>
-              <p className="text-sm text-gray-300 mt-1">{sourceLabel}</p>
-              <div className="text-xs text-gray-400 mt-2 flex flex-wrap items-center gap-3">
-                {scanMetaLabel && <span>{scanMetaLabel}</span>}
-                {dataLastUpdated && (
-                  <span>
-                    Last scan: <strong>{dataLastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong>
-                  </span>
-                )}
-                {insightsMeta?.rateLimit && dataSource?.source === 'github' && (
-                  <span>
-                    Rate limit {insightsMeta.rateLimit.remaining}/{insightsMeta.rateLimit.limit}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="text-xs text-gray-500">
-              Use the view tabs below for Repository Grid and Insights.
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
-            <SummaryCard title="Total Repositories" value={summary.total} color="blue" />
-            <SummaryCard title="Needs Attention" value={summary.needsAttention} color="yellow" tooltip="Repos with an actionable problem: uncommitted changes, a failing build, a blocked or parse-error dispatch state, or an unparseable roadmap. Excludes baseline gaps like 'no CI yet' or a roadmap that merely has pending items." />
-            <SummaryCard title="Dirty Repositories" value={summary.dirty} color="red" />
-            <SummaryCard title="Stale Repositories" value={summary.stale} color="red" />
-            <SummaryCard title="Commits This Week" value={summary.commitsThisWeek} color="green" />
-          </div>
-        </section>
-      </div>
+      <PortfolioSummarySection
+        sourceLabel={sourceLabel}
+        scanMetaLabel={scanMetaLabel}
+        dataLastUpdated={dataLastUpdated}
+        rateLimit={dataSource?.source === 'github' ? insightsMeta?.rateLimit ?? null : null}
+        summary={summary}
+      />
 
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4">
         {activeView === 'insights' && (
@@ -1513,94 +1484,12 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
         {(portfolioMission || portfolioAssessmentLoading || portfolioAssessmentError) && (
           <div className="mt-4 space-y-4">
             <div className="grid grid-cols-1 xl:grid-cols-[1.5fr,1fr] gap-4">
-              <section className="bg-gray-800/60 border border-gray-700 rounded-lg px-4 py-4">
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div>
-                    <h2 className="text-lg font-semibold text-white">Portfolio Mission</h2>
-                    <p className="text-sm text-gray-400 mt-1">Index-backed collection state for the current portfolio scan.</p>
-                  </div>
-                  {portfolioMission && (
-                    <div className="text-xs text-gray-500 text-right">
-                      <div>Generated {new Date(portfolioMission.generatedAt).toLocaleTimeString()}</div>
-                      <div>{portfolioMission.cacheSource === 'memory' ? 'Memory cache' : 'Fresh scan'}{portfolioMission.cacheAgeSeconds > 0 ? ` · ${Math.round(portfolioMission.cacheAgeSeconds)}s old` : ''}</div>
-                    </div>
-                  )}
-                  <button
-                    onClick={() => { refreshPortfolioAssessment(true).catch(() => {/* surfaced in-panel */}); }}
-                    className="px-2.5 py-1 rounded border border-gray-600 bg-gray-700/60 text-xs text-gray-200 hover:bg-gray-600/70"
-                  >
-                    Retry
-                  </button>
-                </div>
-
-                {portfolioMission ? (
-                  <>
-                    <div className="flex flex-wrap gap-2 mt-3">
-                      {Object.entries(portfolioMission.signalSources).map(([key, value]) => {
-                        if (!value) {
-                          return null;
-                        }
-
-                        const source = value as PortfolioSignalSource;
-                        return (
-                          <span key={key} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${SIGNAL_SOURCE_STYLES[source] ?? SIGNAL_SOURCE_STYLES.unavailable}`}>
-                            <span className="text-gray-300">{formatSignalLabel(key)}</span>
-                            <span>{source}</span>
-                          </span>
-                        );
-                      })}
-                    </div>
-
-                    <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3 mt-4">
-                      {[
-                        { label: 'Total', value: portfolioMission.totalRepos, accent: 'text-white' },
-                        { label: 'Local Only', value: portfolioMission.localOnly, accent: 'text-slate-200' },
-                        { label: 'Linked', value: portfolioMission.linked, accent: 'text-emerald-300' },
-                        { label: 'GitHub Only', value: portfolioMission.githubOnly, accent: 'text-indigo-300' },
-                        { label: 'Missing ROADMAP', value: portfolioMission.missingRoadmap, accent: 'text-amber-300' },
-                        { label: 'Missing README', value: portfolioMission.missingReadme, accent: 'text-amber-300' },
-                        { label: 'Weak ROADMAP', value: portfolioMission.weakRoadmap, accent: 'text-orange-300' },
-                        { label: 'Ready', value: portfolioMission.ready, accent: 'text-emerald-300' },
-                        { label: 'Running', value: portfolioMission.running, accent: 'text-blue-300' },
-                        { label: 'Blocked', value: portfolioMission.blocked, accent: 'text-red-300' },
-                        { label: 'Completed', value: portfolioMission.completed, accent: 'text-violet-300' },
-                        { label: 'Dirty Worktrees', value: portfolioMission.dirtyWorktrees, accent: 'text-yellow-300' },
-                        { label: 'Open PRs', value: portfolioMission.openPrs, accent: 'text-cyan-300' },
-                        { label: 'Pages Enabled', value: portfolioMission.pagesEnabled, accent: 'text-teal-300' },
-                        { label: 'Failing Actions', value: portfolioMission.failingActions, accent: 'text-rose-300' },
-                      ].map(metric => (
-                        <div
-                          key={metric.label}
-                          title={({
-                            'Dirty Worktrees': 'Repos with uncommitted or untracked changes in the working tree.',
-                            'Missing README': 'Repos with no README file.',
-                            'Missing ROADMAP': 'Repos with no ROADMAP file.',
-                            'Weak ROADMAP': 'Repos whose ROADMAP is below the L3 contract-ready maturity bar.',
-                            'Failing Actions': 'Repos whose latest GitHub Actions run concluded in failure.',
-                            'Blocked': 'Repos blocked from dispatch (missing docs/roadmap or a parse error).',
-                            'Open PRs': 'Repos with at least one open pull request.',
-                            'Pages Enabled': 'Repos with GitHub Pages enabled.',
-                          } as Record<string, string>)[metric.label]}
-                          className="rounded-lg border border-gray-700 bg-gray-900/50 px-3 py-3"
-                        >
-                          <div className={`text-lg font-semibold ${metric.accent}`}>{metric.value}</div>
-                          <div className="mt-1 text-xs text-gray-400">{metric.label}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                ) : portfolioAssessmentLoading ? (
-                  <div className="flex items-center gap-3 py-8 text-gray-400 justify-center">
-                    <SpinnerIcon className="w-5 h-5 animate-spin" />
-                    <span>Loading portfolio assessment…</span>
-                  </div>
-                ) : (
-                  <div className="mt-4 rounded-lg border border-amber-700/40 bg-amber-900/20 px-4 py-3 text-sm text-amber-100">
-                    Portfolio Mission is unavailable. {portfolioAssessmentError ?? 'Assessment data was not returned.'}
-                  </div>
-                )}
-              </section>
-
+              <PortfolioMissionSection
+                mission={portfolioMission}
+                loading={portfolioAssessmentLoading}
+                error={portfolioAssessmentError}
+                onRetry={() => { refreshPortfolioAssessment(true).catch(() => {/* surfaced in-panel */}); }}
+              />
               <section className="bg-gray-800/60 border border-gray-700 rounded-lg px-4 py-4">
                 <div>
                   <h2 className="text-lg font-semibold text-white">Documentation Health</h2>
@@ -2024,111 +1913,11 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
         {activeView === 'insights' && <ChangeHistoryPanel repos={repos} />}
 
         <div className="bg-gray-800/50 border border-gray-700 rounded-lg mt-4">
-            {/* View tabs — desktop only; the mobile bottom nav mirrors these */}
-            <div className="hidden md:flex border-b border-gray-700 px-4 pt-3 gap-1">
-              <button
-                onClick={() => setActiveView('repos')}
-                className={`px-4 py-2 text-sm font-medium rounded-t border-b-2 transition-colors ${
-                  activeView === 'repos'
-                    ? 'border-indigo-500 text-indigo-300 bg-gray-700/40'
-                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-700/20'
-                }`}
-              >
-                Repository Grid
-              </button>
-              <button
-                onClick={() => setActiveView('insights')}
-                className={`px-4 py-2 text-sm font-medium rounded-t border-b-2 transition-colors ${
-                  activeView === 'insights'
-                    ? 'border-sky-500 text-sky-300 bg-gray-700/40'
-                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-700/20'
-                }`}
-              >
-                Insights
-              </button>
-              <button
-                onClick={() => setActiveView('operations')}
-                className={`px-4 py-2 text-sm font-medium rounded-t border-b-2 transition-colors flex items-center gap-1.5 ${
-                  activeView === 'operations'
-                    ? 'border-sky-500 text-sky-300 bg-gray-700/40'
-                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-700/20'
-                }`}
-              >
-                Operations
-                {portfolioAssessment?.summary.readyForWorkCount ? (
-                  <span
-                    data-testid="operations-tab-badge"
-                    data-carried-over={operationsBadgeCarriedOver || undefined}
-                    title={operationsBadgeCarriedOver ? carriedOverBadgeTitle : undefined}
-                    className={`inline-flex items-center justify-center w-5 h-5 text-xs rounded-full font-semibold ${
-                      operationsBadgeCarriedOver
-                        ? 'bg-amber-800 text-amber-100 ring-1 ring-amber-500/60'
-                        : 'bg-sky-700 text-sky-100'
-                    }`}
-                  >
-                    {portfolioAssessment.summary.readyForWorkCount}
-                  </span>
-                ) : null}
-              </button>
-              <button
-                onClick={() => setActiveView('work-queue')}
-                className={`px-4 py-2 text-sm font-medium rounded-t border-b-2 transition-colors flex items-center gap-1.5 ${
-                  activeView === 'work-queue'
-                    ? 'border-indigo-500 text-indigo-300 bg-gray-700/40'
-                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-700/20'
-                }`}
-              >
-                {VIEW_META_BY_KEY['work-queue'].label}
-                {queueReadyCount > 0 && (
-                  <span
-                    data-testid="work-queue-tab-badge"
-                    data-carried-over={queueBadgeCarriedOver || undefined}
-                    title={queueBadgeCarriedOver ? carriedOverBadgeTitle : undefined}
-                    className={`inline-flex items-center justify-center w-5 h-5 text-xs rounded-full font-semibold ${
-                      queueBadgeCarriedOver
-                        ? 'bg-amber-800 text-amber-100 ring-1 ring-amber-500/60'
-                        : 'bg-green-700 text-green-100'
-                    }`}
-                  >
-                    {queueReadyCount}
-                  </span>
-                )}
-              </button>
-              <button
-                onClick={() => setActiveView('execution-queue')}
-                className={`px-4 py-2 text-sm font-medium rounded-t border-b-2 transition-colors flex items-center gap-1.5 ${
-                  activeView === 'execution-queue'
-                    ? 'border-blue-500 text-blue-300 bg-gray-700/40'
-                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-700/20'
-                }`}
-              >
-                {VIEW_META_BY_KEY['execution-queue'].label}
-              </button>
-              <button
-                onClick={() => setActiveView('dependencies')}
-                className={`px-4 py-2 text-sm font-medium rounded-t border-b-2 transition-colors flex items-center gap-1.5 ${
-                  activeView === 'dependencies'
-                    ? 'border-teal-500 text-teal-300 bg-gray-700/40'
-                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-700/20'
-                }`}
-              >
-                Dependencies
-                {dependencyGraph && dependencyGraph.totalEdges > 0 && (
-                  <span className="inline-flex items-center justify-center w-5 h-5 text-xs rounded-full bg-teal-700 text-teal-100 font-semibold">
-                    {dependencyGraph.totalEdges}
-                  </span>
-                )}
-              </button>
-            </div>
-
-            {/* Per-view purpose subtitle (Release 2.6 Phase 2) — lets operators
-                self-orient without trial and error as they land on each tab. */}
-            <div
-              data-testid="view-subtitle"
-              className="px-4 py-2 text-xs text-gray-400 border-b border-gray-700/60"
-            >
-              {VIEW_META_BY_KEY[activeView].subtitle}
-            </div>
+            <DashboardViewTabs
+              activeView={activeView}
+              onSelectView={setActiveView}
+              badges={viewTabBadges}
+            />
 
             {activeView === 'repos' ? (
               <>
