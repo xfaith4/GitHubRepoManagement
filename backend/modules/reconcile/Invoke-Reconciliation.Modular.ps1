@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
+    # Scan target, not the tool's own location — see Invoke-Reconciliation.ps1.
     [Parameter()]
-    [string[]]$LocalRoots = @('G:\Development'),
+    [string[]]$LocalRoots = @(),
 
     [Parameter()]
     [string]$GitHubOwner,
@@ -41,6 +42,13 @@ $ErrorActionPreference = 'Stop'
 $moduleRoot = $PSScriptRoot
 $workspaceRoot = Split-Path -Parent (Split-Path -Parent $moduleRoot)
 $correlationId = [guid]::NewGuid().ToString('n')
+
+# This entry point is always invoked (never dot-sourced for its functions), so a
+# missing scan target is a caller error and should say so rather than scan
+# nothing and report success.
+if (@($LocalRoots).Count -eq 0) {
+    throw 'LocalRoots parameter cannot be empty: pass the configured workspace root(s) to scan.'
+}
 
 if (-not $OutDir) {
     $OutDir = Join-Path -Path $workspaceRoot -ChildPath 'output\reconciliation'

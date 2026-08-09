@@ -70,6 +70,25 @@ if ((Get-EffectiveScanRequestTimeoutSeconds -ConfiguredSeconds 300 -BaseSeconds 
 if ((Get-EffectiveScanRequestTimeoutSeconds -ConfiguredSeconds 900 -EnvironmentValue '99999' -BaseSeconds 180) -ne 3600) { throw 'Scan deadline must stay clamped to the 3600-second ceiling' }
 Write-Host '  scan routes get the extended (still bounded) deadline tier; ordinary routes do not' -ForegroundColor DarkGray
 
+Write-Step 'No machine-specific path defaults in tracked PowerShell (ROADMAP Lane 0.3)'
+# A hardcoded 'G:\...' parameter default is invisible until someone runs the
+# suite from a different clone, at which point it either fails on step one or —
+# worse — silently scans a drive that does not exist and reports "no repos"
+# instead of "misconfigured". Both happened. Test files are exempt: they use
+# G:\ strings as synthetic fixture paths that are never touched on disk.
+$pathDefaultOffenders = @()
+foreach ($candidate in @(Get-ChildItem -Path (Join-Path $WorkspaceRoot 'backend'), (Join-Path $WorkspaceRoot 'scripts'), (Join-Path $WorkspaceRoot 'tools') -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue)) {
+    if ($candidate.Name -like '*.Tests.ps1') { continue }
+    $offending = @(Select-String -LiteralPath $candidate.FullName -Pattern '^\s*\[string(\[\])?\]\$\w+\s*=\s*[''"][A-Za-z]:\\' -ErrorAction SilentlyContinue)
+    foreach ($hit in $offending) {
+        $pathDefaultOffenders += ('{0}:{1}' -f $candidate.FullName.Substring($WorkspaceRoot.Length + 1), $hit.LineNumber)
+    }
+}
+if ($pathDefaultOffenders.Count -gt 0) {
+    throw ("Hardcoded absolute-path parameter defaults found (derive from `$PSScriptRoot, or require the parameter): " + ($pathDefaultOffenders -join ', '))
+}
+Write-Host ('  no absolute-path parameter defaults in tracked backend/scripts/tools PowerShell') -ForegroundColor DarkGray
+
 # Cache-off was the trigger for the 2026-07-05 request pile-up. Preserve an
 # explicit source-level tripwire because these helpers live inside the host
 # script and cannot be dot-sourced without starting the listener.

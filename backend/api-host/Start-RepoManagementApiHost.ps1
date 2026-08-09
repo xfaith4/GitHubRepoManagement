@@ -7,7 +7,11 @@ param(
     [int]$Port = 7071,
 
     [Parameter()]
-    [string]$WorkspaceRoot = 'G:\Development\GitHubRepoManagement',
+    # Derived from this script's location (backend/api-host -> repo root) rather
+    # than a hardcoded drive letter, so the host starts from any clone location
+    # (ROADMAP Lane 0.3). The installed service always passes -WorkspaceRoot
+    # explicitly; this default is what makes a bare interactive launch work.
+    [string]$WorkspaceRoot = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
 
     [Parameter()]
     [string]$LogPath,

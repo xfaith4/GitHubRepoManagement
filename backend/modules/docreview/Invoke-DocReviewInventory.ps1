@@ -5,8 +5,11 @@ param(
     [Parameter()]
     [string]$OutDir = (Join-Path $PSScriptRoot '..\output\inventory'),
 
+    # Scan target, not the tool's own location, so there is nothing sensible to
+    # derive it from. The old 'G:\Development\20_Staging' default silently
+    # scanned a path that does not exist on every machine (ROADMAP Lane 0.3).
     [Parameter()]
-    [string]$RootPath = 'G:\Development\20_Staging',
+    [string]$RootPath = '',
 
     [Parameter()]
     [int]$MaxDepth = 3
