@@ -6,7 +6,6 @@ import {
   type PortfolioAssessmentEntry,
   type PortfolioAssessmentResult,
   type PortfolioPendingItemValue,
-  type PortfolioValueTier,
   type RoadmapAuditIndex,
   type RoadmapMaturityFilter,
   type RoadmapMaturityLevel,
@@ -14,6 +13,7 @@ import {
 import { SpinnerIcon } from './icons';
 import ProvenanceNotice from './ProvenanceNotice';
 import { isKnownEmptyScope, repoActionsBlockedReason } from '../lib/dataProvenance';
+import { formatValueScoreLabel, getValueTierPresentation } from '../lib/valueTier';
 
 interface WorkQueueViewProps {
   auditIndex: DocAuditIndex | null;
@@ -137,39 +137,6 @@ const SEVERITY_BG: Record<string, string> = {
   info: 'bg-blue-900/20 border-blue-700/30',
 };
 
-const VALUE_TIER_CONFIG: Record<PortfolioValueTier, { label: string; chipClass: string; scoreClass: string }> = {
-  highest: {
-    label: 'Highest',
-    chipClass: 'bg-emerald-900/40 text-emerald-200 border-emerald-700/50',
-    scoreClass: 'text-emerald-200',
-  },
-  high: {
-    label: 'High',
-    chipClass: 'bg-cyan-900/40 text-cyan-200 border-cyan-700/50',
-    scoreClass: 'text-cyan-200',
-  },
-  medium: {
-    label: 'Medium',
-    chipClass: 'bg-indigo-900/40 text-indigo-200 border-indigo-700/50',
-    scoreClass: 'text-indigo-200',
-  },
-  low: {
-    label: 'Low',
-    chipClass: 'bg-slate-800 text-slate-200 border-slate-600',
-    scoreClass: 'text-slate-200',
-  },
-  deferred: {
-    label: 'Deferred',
-    chipClass: 'bg-amber-900/40 text-amber-200 border-amber-700/50',
-    scoreClass: 'text-amber-200',
-  },
-  unscored: {
-    label: 'Unscored',
-    chipClass: 'bg-gray-800 text-gray-300 border-gray-600',
-    scoreClass: 'text-gray-300',
-  },
-};
-
 function ReadinessBadge({ readiness }: { readiness: DispatchReadiness }) {
   const config = READINESS_CONFIG[readiness] ?? READINESS_CONFIG['missing-roadmap'];
   return (
@@ -191,7 +158,7 @@ function getDefaultRoadmapPath(repoPath?: string | null): string | undefined {
 function buildValueRationaleTooltip(item: PortfolioPendingItemValue, assessment?: PortfolioAssessmentEntry | null): string {
   const lines = [
     `Highest-value roadmap item: ${item.text}`,
-    `Score: ${item.valueScore} (${VALUE_TIER_CONFIG[item.valueTier]?.label ?? item.valueTier})`,
+    `Score: ${formatValueScoreLabel(item.valueScore, item.valueTier)}`,
   ];
 
   if (assessment?.pendingItemCount) {
@@ -692,7 +659,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
             const roadmapAudit = auditByRepo.get(repoKey);
             const assessment = assessmentByRepo.get(repoKey);
             const topValueItem = assessment?.topValueItem ?? null;
-            const valueTier = topValueItem ? (VALUE_TIER_CONFIG[topValueItem.valueTier] ?? VALUE_TIER_CONFIG.unscored) : null;
+            const valueTier = topValueItem ? getValueTierPresentation(topValueItem.valueTier) : null;
             const valueTooltip = topValueItem ? buildValueRationaleTooltip(topValueItem, assessment) : '';
             return (
               <div

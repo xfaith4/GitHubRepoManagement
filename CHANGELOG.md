@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-09 — Frontend unit-test set completed: value tiers and the automation scope selector
+
+### Changes
+
+- **What it closes:** Release 2.7 Phase D's frontend unit-test milestone, which stood at 2 of 4 named units. The two uncovered ones — **value tiers** and the **automation scope selector** — were both logic embedded inside components, so they were untestable without mounting the component. Extracted rather than duplicated, so the tests cover the code that actually ships.
+- **`frontend/lib/valueTier.ts`** (new) — `VALUE_TIER_CONFIG` moved out of `WorkQueueView.tsx`, plus `getValueTierPresentation` (degrades null/undefined/unknown to `unscored` instead of returning undefined), `getValueTierRank` / `VALUE_TIER_ORDER` (ranking that does not depend on object declaration order), and `formatValueScoreLabel` (keeps the tooltip's tier label from drifting from the chip's). `WorkQueueView.tsx` consumes all three.
+- **`frontend/lib/curationScope.ts`** (new) — `getCurationBadgeConfig`, `getCurationRank`, and `matchesCurationFilters` moved out of `RepoGrid.tsx`, plus `isInAutomationScope`, which states the Release 2.7 scope contract in one place: favorites and portfolio candidates only. `RepoGrid.tsx` consumes them, and its three inline curation filter predicates collapse to one call.
+- **`frontend/lib/valueTier.test.ts`, `frontend/lib/curationScope.test.ts`** (new) — the scope suite pins the contract the backend also enforces: `archived-ignore` is never in automation scope, an uncurated repo is not either, and an unrecognized curation state is excluded rather than admitted (scope opts in; it never opts out). `getCurationRank` is pinned to put uncurated ahead of archived, so a parked repo never outranks an untriaged one.
+
+### Testing
+
+- `npm run test:unit` — 79 passing across 6 files; `npm run typecheck` exit 0.
+- Adversarially proven: widening `isInAutomationScope` to `state !== 'none'` fails the never-touch assertion at `curationScope.test.ts:72`.
+- Not covered: component rendering — these are pure-logic units, consistent with the existing `needsAttention` / `viewMeta` suites. No renderer is configured in this project.
+
 ## 2026-08-09 — Request deadline gains a scan tier, so the freeze guard stops causing restart loops
 
 ### Changes

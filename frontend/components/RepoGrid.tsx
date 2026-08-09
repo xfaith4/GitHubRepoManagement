@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { type RepoStatus, type DispatchReadiness, type RepoCurationState, type PortfolioAssessmentScanSummary } from '../types';
 import { BuildSuccessIcon, BuildFailureIcon, BuildInProgressIcon, PullRequestIcon, NoBuildsIcon, ChevronDownIcon, ChevronRightIcon } from './icons';
 import { isRepoNeedsAttention } from '../lib/needsAttention';
+import { getCurationBadgeConfig, getCurationRank, matchesCurationFilters } from '../lib/curationScope';
 
 declare global {
   namespace JSX {
@@ -137,38 +138,10 @@ function getChangeStateBadgeConfig(state?: RepoStatus['changeState']): { classNa
   }
 }
 
-function getCurationBadgeConfig(state?: RepoCurationState): { className: string; label: string; title: string } | null {
-  switch (state) {
-    case 'favorite':
-      return {
-        className: 'bg-yellow-900/40 text-yellow-200 border-yellow-600/50',
-        label: '★ Favorite',
-        title: 'Operator curation: Favorite — always surfaced first in priority order',
-      };
-    case 'portfolio-candidate':
-      return {
-        className: 'bg-sky-900/40 text-sky-300 border-sky-700/50',
-        label: '◆ Candidate',
-        title: 'Operator curation: Portfolio Candidate — being evaluated for active work',
-      };
-    case 'archived-ignore':
-      return {
-        className: 'bg-gray-800/70 text-gray-400 border-gray-600/50',
-        label: '⊘ Ignored',
-        title: 'Operator curation: Archived / Ignore — suppressed by the "Hide ignored" filter',
-      };
-    default:
-      return null;
-  }
-}
-
 // Priority ordering used by the default sort: curated repos first, then
 // recently changed repos, then the unchanged long tail; archived last.
 function getPrioritySortValue(repo: RepoStatus): string {
-  const curationRank =
-    repo.curationState === 'favorite' ? 0 :
-    repo.curationState === 'portfolio-candidate' ? 1 :
-    repo.curationState === 'archived-ignore' ? 3 : 2;
+  const curationRank = getCurationRank(repo.curationState);
   const changed =
     repo.changeState === 'new-commits' ||
     repo.changeState === 'metadata-changed' ||
@@ -320,11 +293,9 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
       const matchesBuildProblem = !quickFilters.buildProblem || !repo.lastBuildStatus || repo.lastBuildStatus === 'none' || repo.lastBuildStatus === 'failure';
       const matchesRoadmapFlag = !quickFilters.roadmapFlagged || isRoadmapFlagged(repo);
       const matchesDuplicates = !quickFilters.duplicates || duplicateRepoIds.has(repoId);
-      const matchesFavorites = !quickFilters.favoritesOnly || repo.curationState === 'favorite';
-      const matchesCandidates = !quickFilters.candidatesOnly || repo.curationState === 'portfolio-candidate';
-      const matchesHideIgnored = !quickFilters.hideIgnored || repo.curationState !== 'archived-ignore';
+      const matchesCuration = matchesCurationFilters(repo.curationState, quickFilters);
 
-      return matchesSearch && matchesReadiness && matchesDirtyOnly && matchesUncommitted && matchesStale && matchesAttention && matchesOpenPrs && matchesBuildProblem && matchesRoadmapFlag && matchesDuplicates && matchesFavorites && matchesCandidates && matchesHideIgnored;
+      return matchesSearch && matchesReadiness && matchesDirtyOnly && matchesUncommitted && matchesStale && matchesAttention && matchesOpenPrs && matchesBuildProblem && matchesRoadmapFlag && matchesDuplicates && matchesCuration;
     });
 
     const valueForSort = (repo: RepoStatus): string | number => {
