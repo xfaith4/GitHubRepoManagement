@@ -2358,9 +2358,32 @@ try {
     if (-not [bool]$autoStatus.Json.data.enabled -and [bool]$autoStatus.Json.data.overdue) {
         throw 'Disabled automation must not report overdue=true.'
     }
+    # Phase C's packaging cron reports separately, on its own history file. A
+    # single merged verdict would let a live doc cron mask a dead packaging one
+    # (and vice versa), which is why the two readers exist at all — assert the
+    # route actually carries both rather than the doc one twice.
+    if (-not ($autoStatus.Json.data.PSObject.Properties.Name -contains 'packaging')) {
+        throw "GET /api/automation/status missing the packaging health block. Body=$($autoStatus.Content)"
+    }
+    $pkgHealthBlock = $autoStatus.Json.data.packaging
+    foreach ($pkgField in @('kind', 'enabled', 'intervalMinutes', 'overdue', 'healthy', 'lastOutcome', 'consecutiveFailures')) {
+        if (-not ($pkgHealthBlock.PSObject.Properties.Name -contains $pkgField)) {
+            throw "Packaging health block missing '$pkgField'. Body=$($autoStatus.Content)"
+        }
+    }
+    if ([string]$pkgHealthBlock.kind -ne 'roadmap-packaging') {
+        throw "Packaging health block must identify itself as roadmap-packaging; got '$($pkgHealthBlock.kind)'"
+    }
+    if ([string]$autoStatus.Json.data.kind -ne 'doc-refinement') {
+        throw "The top-level health block must identify itself as doc-refinement; got '$($autoStatus.Json.data.kind)'"
+    }
+    if (-not [bool]$pkgHealthBlock.enabled -and [bool]$pkgHealthBlock.overdue) {
+        throw 'Disabled packaging automation must not report overdue=true.'
+    }
     $automationStatusOk = $true
-    Write-Host ("  automation status ok: enabled={0} overdue={1} healthy={2} lastOutcome={3}" -f `
-            $autoStatus.Json.data.enabled, $autoStatus.Json.data.overdue, $autoStatus.Json.data.healthy, $autoStatus.Json.data.lastOutcome) -ForegroundColor DarkGray
+    Write-Host ("  automation status ok: enabled={0} overdue={1} healthy={2} lastOutcome={3}; packaging reported separately (kind={4} healthy={5})" -f `
+            $autoStatus.Json.data.enabled, $autoStatus.Json.data.overdue, $autoStatus.Json.data.healthy, $autoStatus.Json.data.lastOutcome, `
+            $pkgHealthBlock.kind, $pkgHealthBlock.healthy) -ForegroundColor DarkGray
 
     # ------------------------------------------------------------------
     # Release 2.7 Phase C — scheduled roadmap-item packaging

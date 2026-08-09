@@ -71,6 +71,83 @@ if ((Get-EffectiveScanRequestTimeoutSeconds -ConfiguredSeconds 300 -BaseSeconds 
 if ((Get-EffectiveScanRequestTimeoutSeconds -ConfiguredSeconds 900 -EnvironmentValue '99999' -BaseSeconds 180) -ne 3600) { throw 'Scan deadline must stay clamped to the 3600-second ceiling' }
 Write-Host '  scan routes get the extended (still bounded) deadline tier; ordinary routes do not' -ForegroundColor DarkGray
 
+Write-Step 'Worklog location tripwire — root worklogs stay archived (ROADMAP Lane 0.4)'
+# The 2026-07-15 cleanup archived findings.md / progress.md / task_plan.md to
+# docs/history/worklogs/ and they were back in the root by 2026-08-08, because
+# the convention lived only in a completed-release note nothing reads while
+# working. Enforce it here: .gitignore stops new ones appearing, and this stops
+# an already-tracked one surviving a `git add -f`.
+$rootWorklogNames = @('findings.md', 'progress.md', 'task_plan.md')
+$trackedRootWorklogs = @()
+foreach ($worklogName in $rootWorklogNames) {
+    $tracked = ''
+    try { $tracked = (& git -C $WorkspaceRoot ls-files --error-unmatch $worklogName 2>$null) | Out-String } catch { }
+    if (-not [string]::IsNullOrWhiteSpace($tracked)) { $trackedRootWorklogs += $worklogName }
+}
+if (@($trackedRootWorklogs).Count -gt 0) {
+    throw (("Worklog(s) tracked at the repository root: {0}. Move them under " +
+            "docs/history/worklogs/<date>-<topic>/ — see docs/history/worklogs/README.md.") -f ($trackedRootWorklogs -join ', '))
+}
+$worklogReadme = Join-Path $WorkspaceRoot 'docs\history\worklogs\README.md'
+if (-not (Test-Path -LiteralPath $worklogReadme)) { throw 'docs/history/worklogs/README.md is missing; the worklog convention must stay documented where worklogs are written' }
+Write-Host '  no worklogs tracked at the repository root; the convention is documented' -ForegroundColor DarkGray
+
+Write-Step 'GitHub rate-limit readout — headers observed, never fabricated (ROADMAP Lane 0.2)'
+$rateLimitModule = Join-Path $WorkspaceRoot 'backend\api-host\GitHubRateLimit.ps1'
+if (-not (Test-Path -LiteralPath $rateLimitModule)) { throw "GitHubRateLimit.ps1 not found at: $rateLimitModule" }
+. $rateLimitModule
+# Windows PowerShell returns Dictionary[string,string]; PowerShell 7 returns
+# Dictionary[string,string[]]. A parser that handles one and not the other reads
+# blank on the other edition — exactly the failure this item existed to fix.
+$ps51Headers = @{ 'X-RateLimit-Limit' = '5000'; 'X-RateLimit-Remaining' = '4987'; 'X-RateLimit-Reset' = '1786320000' }
+$ps7Headers = @{ 'x-ratelimit-limit' = @('5000'); 'x-ratelimit-remaining' = @('4987'); 'x-ratelimit-reset' = @('1786320000') }
+foreach ($shape in @(@{ Name = 'PS5.1 string'; Headers = $ps51Headers }, @{ Name = 'PS7 string[] lowercase'; Headers = $ps7Headers })) {
+    $parsed = ConvertFrom-GitHubRateLimitHeader -Headers $shape.Headers
+    if ($null -eq $parsed) { throw ("Rate-limit headers must parse from the {0} shape" -f $shape.Name) }
+    if ($parsed.limit -ne 5000 -or $parsed.remaining -ne 4987) { throw ("Rate-limit values wrong for the {0} shape: {1}/{2}" -f $shape.Name, $parsed.remaining, $parsed.limit) }
+    if ($parsed.used -ne 13) { throw ("X-RateLimit-Used must be derived when absent; got {0}" -f $parsed.used) }
+    if ([string]::IsNullOrWhiteSpace($parsed.resetAt)) { throw 'A non-zero reset must produce an ISO resetAt' }
+}
+# Absent/garbage headers must stay null. A zeroed object would render as "0/5000
+# remaining" and read as a real measurement of an exhausted quota.
+if ($null -ne (ConvertFrom-GitHubRateLimitHeader -Headers $null)) { throw 'Null headers must yield no rate limit, not a zeroed one' }
+if ($null -ne (ConvertFrom-GitHubRateLimitHeader -Headers @{})) { throw 'Empty headers must yield no rate limit, not a zeroed one' }
+if ($null -ne (ConvertFrom-GitHubRateLimitHeader -Headers @{ 'X-RateLimit-Limit' = 'unknown'; 'X-RateLimit-Remaining' = '10' })) { throw 'Unparseable headers must yield no rate limit' }
+# Newest response wins, and a response without headers must not erase what was
+# already observed (only some GitHub endpoints omit them).
+Clear-GitHubRateLimitSnapshot
+if ($null -ne (Get-GitHubRateLimitSnapshot)) { throw 'Cleared snapshot must read back as null' }
+$null = Update-GitHubRateLimitSnapshot -Headers $ps51Headers
+$null = Update-GitHubRateLimitSnapshot -Headers @{ 'X-RateLimit-Limit' = '5000'; 'X-RateLimit-Remaining' = '4900'; 'X-RateLimit-Reset' = '1786320000' }
+$null = Update-GitHubRateLimitSnapshot -Headers @{}
+$snapshot = Get-GitHubRateLimitSnapshot
+if ($null -eq $snapshot -or $snapshot.remaining -ne 4900) { throw ("Snapshot must hold the newest parseable observation; got {0}" -f $(if ($null -eq $snapshot) { 'null' } else { $snapshot.remaining })) }
+Clear-GitHubRateLimitSnapshot
+# The `gh` CLI fallback has no response object to read headers from, so it asks
+# GET /rate_limit instead. Same output shape by construction — it reuses the
+# header parser — because two GitHub paths reporting differently-shaped rate
+# limits is how the frontend ends up rendering one of them as blank.
+$ratePayload = @{ resources = @{ core = @{ limit = 5000; remaining = 4321; reset = 1786320000; used = 679 } } }
+$fromPayload = ConvertFrom-GitHubRateLimitPayload -Payload $ratePayload
+if ($null -eq $fromPayload -or $fromPayload.remaining -ne 4321 -or $fromPayload.limit -ne 5000) { throw 'GET /rate_limit payload did not parse into the shared shape' }
+if ($fromPayload.used -ne 679) { throw 'GET /rate_limit payload must carry the reported used count' }
+if ($fromPayload.resource -ne 'core') { throw 'GET /rate_limit payload must name the resource bucket it read' }
+$fromJson = ConvertFrom-GitHubRateLimitPayload -Payload ($ratePayload | ConvertTo-Json -Depth 5)
+if ($null -eq $fromJson -or $fromJson.remaining -ne 4321) { throw 'GET /rate_limit raw JSON text must parse identically to a parsed object' }
+foreach ($badPayload in @($null, '', 'not json', @{ resources = @{} }, @{ nothing = 1 })) {
+    if ($null -ne (ConvertFrom-GitHubRateLimitPayload -Payload $badPayload)) { throw 'A malformed /rate_limit payload must yield no rate limit, not a zeroed one' }
+}
+
+# The regression itself: the payload hardcoded `rateLimit = $null`, so the
+# readout could never populate no matter what the headers said. The item named
+# ONE site; the source scan found a second (the gh CLI fallback route), which is
+# why this asserts across the whole file rather than one line number.
+$apiHostRateLimitSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1') -Raw -Encoding UTF8
+if ($apiHostRateLimitSource -match '(?m)^\s*rateLimit\s*=\s*\$null\s*$') { throw 'A GitHub insights payload hardcodes rateLimit = $null again; every path must report an observed figure' }
+if ($apiHostRateLimitSource -notmatch 'rateLimit\s*=\s*Get-GitHubRateLimitSnapshot') { throw 'The token path must return the observed rate-limit snapshot' }
+if ($apiHostRateLimitSource -notmatch 'ConvertFrom-GitHubRateLimitPayload') { throw 'The gh CLI fallback path must resolve its rate limit from GET /rate_limit' }
+Write-Host '  both header shapes parsed, /rate_limit payload shares the shape, newest observation wins, absent headers stay null' -ForegroundColor DarkGray
+
 Write-Step 'No machine-specific path defaults in tracked PowerShell (ROADMAP Lane 0.3)'
 # A hardcoded 'G:\...' parameter default is invisible until someone runs the
 # suite from a different clone, at which point it either fails on step one or —
@@ -2469,6 +2546,78 @@ Write-Step 'Packaging queue contract — tripwire: the entry shape the runner cl
         }
     }
     Write-Host ("  queue contract ok: {0} fields identical to the canonical writer" -f @($canonical.Keys).Count) -ForegroundColor DarkGray
+
+    Write-Step 'Packaging health — a stopped packaging cron is visible on its own evidence'
+    # Get-AutomationHealth reads the doc-refinement file alone, on purpose: a
+    # merged file would let a live packaging cron mask a dead doc cron. That
+    # left the reverse case invisible — a packaging cron that stops changes
+    # nothing anywhere. This is the second reader that closes it.
+    $healthWs = Join-Path $WorkspaceRoot 'output\smoke\module\packaging-health'
+    if (Test-Path -LiteralPath $healthWs) { Remove-Item -LiteralPath $healthWs -Recurse -Force }
+    $null = New-Item -ItemType Directory -Path (Join-Path $healthWs 'output\automation') -Force
+    $pkgHealthSettings = @{ automation = @{ enabled = $true; intervalMinutes = 60 } }
+
+    # Enabled with an interval but no run ever recorded.
+    $neverRan = Get-PackagingHealth -WorkspaceRoot $healthWs -Settings $pkgHealthSettings
+    if ($neverRan.healthy) { throw 'Packaging health: enabled with no run ever recorded must not read healthy' }
+    if ([string]$neverRan.alert.code -ne 'packaging-never-ran') { throw "Packaging health: expected packaging-never-ran, got '$($neverRan.alert.code)'" }
+
+    $pkgHealthNow = [datetime]::UtcNow
+    $null = Write-PackagingRunRecord -WorkspaceRoot $healthWs -Run ([pscustomobject]@{
+        runId = 'pkg-1'; kind = 'roadmap-packaging'; finishedAt = $pkgHealthNow.AddMinutes(-10).ToString('o')
+        packagedCount = 2; skippedCount = 1; dispatchedCount = 0; appliedCount = 0; errors = @()
+    })
+
+    $fresh = Get-PackagingHealth -WorkspaceRoot $healthWs -Settings $pkgHealthSettings -Now $pkgHealthNow
+    if (-not $fresh.healthy) { throw "Packaging health: a 10-minute-old run on a 60-minute interval must read healthy; alert=$($fresh.alert.code)" }
+    if ($fresh.lastOutcome -ne 'ok') { throw 'Packaging health: an error-free run must classify ok' }
+
+    # Two intervals plus grace elapsed -> overdue, with a PACKAGING-specific
+    # code. Reusing `automation-overdue` would make a webhook unable to say
+    # which of the two schedulers stopped.
+    $late = Get-PackagingHealth -WorkspaceRoot $healthWs -Settings $pkgHealthSettings -Now $pkgHealthNow.AddHours(5)
+    if (-not $late.overdue) { throw 'Packaging health: 5 hours past a 60-minute interval must be overdue' }
+    if ([string]$late.alert.code -ne 'packaging-overdue') { throw "Packaging health alert must be packaging-specific; got '$($late.alert.code)'" }
+
+    # Disabled is not a failure.
+    $offHealth = Get-PackagingHealth -WorkspaceRoot $healthWs -Settings @{ automation = @{ enabled = $false; intervalMinutes = 60 } } -Now $pkgHealthNow.AddHours(5)
+    if ($offHealth.overdue -or -not $offHealth.healthy) { throw 'Packaging health: disabled automation must not raise an alert' }
+
+    # A packaging-specific interval overrides the shared one; an absent
+    # packaging block inherits it rather than defaulting the feature on.
+    $splitInterval = Get-PackagingHealth -WorkspaceRoot $healthWs -Settings @{
+        automation = @{ enabled = $true; intervalMinutes = 60; packaging = @{ intervalMinutes = 1440 } }
+    } -Now $pkgHealthNow.AddHours(5)
+    if ($splitInterval.intervalMinutes -ne 1440) { throw "Packaging interval override ignored; got $($splitInterval.intervalMinutes)" }
+    if ($splitInterval.overdue) { throw 'Packaging health: 5 hours into a 1440-minute interval must not be overdue' }
+    $inheritEnabled = Get-PackagingHealth -WorkspaceRoot $healthWs -Settings @{ automation = @{ enabled = $true; intervalMinutes = 60; packaging = @{ enabled = $false } } } -Now $pkgHealthNow.AddHours(5)
+    if ($inheritEnabled.enabled) { throw 'Packaging health: an explicit packaging.enabled=false must switch it off' }
+
+    # A skip is a decision, not a failure — over-budget repos must never make
+    # the scheduler look broken, or the guard doing its job becomes an alert.
+    $skipOnly = [pscustomobject]@{ runId = 'pkg-2'; kind = 'roadmap-packaging'; finishedAt = $pkgHealthNow.ToString('o'); packagedCount = 0; skippedCount = 5; dispatchedCount = 0; appliedCount = 0; errors = @() }
+    if ((Get-PackagingRunOutcome -Run $skipOnly) -ne 'ok') { throw 'Packaging outcome: a run that only skipped must classify ok, not failed' }
+    $erroredRun = [pscustomobject]@{ packagedCount = 0; errors = @('boom') }
+    $partialRun = [pscustomobject]@{ packagedCount = 1; errors = @('boom') }
+    if ((Get-PackagingRunOutcome -Run $erroredRun) -ne 'failed') { throw 'Packaging outcome: errors with no packets must classify failed' }
+    if ((Get-PackagingRunOutcome -Run $partialRun) -ne 'partial') { throw 'Packaging outcome: errors with packets must classify partial' }
+
+    # The two readers must stay independent in BOTH directions: a live doc cron
+    # must not make the packaging reader look healthy.
+    if ((Get-PackagingRunsFilePath -WorkspaceRoot $healthWs) -eq (Get-AutomationRunsFilePath -WorkspaceRoot $healthWs)) {
+        throw 'Packaging and doc-refinement history must stay in separate files'
+    }
+    $docOnlyWs = Join-Path $WorkspaceRoot 'output\smoke\module\packaging-health-doconly'
+    if (Test-Path -LiteralPath $docOnlyWs) { Remove-Item -LiteralPath $docOnlyWs -Recurse -Force }
+    $null = New-Item -ItemType Directory -Path (Join-Path $docOnlyWs 'output\automation') -Force
+    $null = Write-AutomationRunRecord -WorkspaceRoot $docOnlyWs -Run ([pscustomobject]@{
+        runId = 'doc-1'; kind = 'doc-refinement'; finishedAt = $pkgHealthNow.ToString('o')
+        targetCount = 1; proposalCount = 1; appliedCount = 0; errors = @()
+    })
+    $maskedByDoc = Get-PackagingHealth -WorkspaceRoot $docOnlyWs -Settings $pkgHealthSettings -Now $pkgHealthNow
+    if ($maskedByDoc.healthy) { throw 'A live doc-refinement run must not make the packaging reader report healthy' }
+    if ([string]$maskedByDoc.alert.code -ne 'packaging-never-ran') { throw 'Packaging health must judge packaging evidence only' }
+    Write-Host '  packaging health ok: never-ran/overdue/partial named packaging-specifically, skips are not failures, doc runs cannot mask it' -ForegroundColor DarkGray
 }
 
 Write-Step 'Smoke test completed'

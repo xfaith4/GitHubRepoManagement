@@ -6,6 +6,8 @@ interface AutomationStatusBadgeProps {
   status: AutomationHealthPayload | null;
   className?: string;
   testId?: string;
+  /** Noun the badge labels, so two schedulers do not read identically. */
+  subject?: string;
 }
 
 const SEVERITY_CLASSES: Record<string, string> = {
@@ -36,8 +38,9 @@ const AutomationStatusBadge: React.FC<AutomationStatusBadgeProps> = ({
   status,
   className = '',
   testId = 'automation-status-badge',
+  subject = 'Automation',
 }) => {
-  const view = resolveAutomationStatus(status);
+  const view = resolveAutomationStatus(status, subject);
 
   return (
     <div

@@ -44,9 +44,23 @@ interchangeable — mixing them is what previously made the roadmap read as
       the service at all (`gh agent-task` requires OAuth; LocalSystem cannot
       hold one), so the guided-improvement wizard dead-ends at its last step.
       Approach decided 2026-08-08; no prerequisites.
-- [ ] **Lane 0.5 / 0.6 cosmetics** — the GitHub rate-limit readout that is
-      always null, the portal TLS certificate password, and the zero-scope
-      action hint. All non-blockers; **Lane 0.3 closed entirely 2026-08-09.**
+- [ ] **Two operator-decision items remain in Lane 0.2 and Lane 0.5** — the
+      PAT's `Checks: Read` grant and the portal TLS certificate password both
+      need an action outside this repository, and Lane 0.5's two UX items were
+      deferred pending a product call, not for want of engineering time. Every
+      other recorded non-blocker closed 2026-08-09; **Lanes 0.3, 0.4 and 0.6 are
+      now closed entirely.**
+
+**Closed 2026-08-09 (second pass) — every recorded non-blocker that did not need
+an operator decision.** Phase C's two: the approval queue now has an operator UI
+on the Operations tab (mirroring the backend's transition matrix so it cannot
+offer an action that 409s), and packaging has its own overdue alert from a
+second health reader over its own history file. Plus Lane 0.2's null rate-limit
+readout, Lane 0.4's root worklogs (archived, gitignored, documented, and now
+tripwired), and Lane 0.6's zero-scope action hint. Two of these were larger than
+their notes implied: the rate-limit item named one call site and a source
+tripwire found a second, and the worklog item asked for a move that would have
+overwritten genuine earlier history.
 
 **Closed 2026-08-09 — Release 2.7 Phase C, the largest remaining product
 increment.** Scheduled roadmap-item packaging is built and smoke-tested end to
@@ -438,16 +452,48 @@ behind `POST /api/automation/package-run`, `GET /api/automation/packages`, and
       per-session cap, so the refusal is caused by the budget and nothing else,
       and the packaged item is asserted to be neither the first pending item nor
       merely whatever the route returned.
-- [ ] **[non-blocker]** The approval queue has no operator UI — approving is an
-      API call (`POST /api/automation/packages/approve`). The digest names the
-      route, so the loop is usable, but a packaged item is less discoverable
-      than a doc-improve preview in the AI Docs panel. _(state: planned)_
-- [ ] **[non-blocker]** Packaging has no overdue alert of its own.
-      `Get-AutomationHealth` deliberately reads only the doc-refinement history
-      (interleaving kinds would let a live packaging cron mask a dead doc cron),
-      so a packaging cron that stops is currently invisible. _(state: planned —
-      the fix is a second health reader over `packaging-runs.jsonl`, not a
-      merged file.)_
+- [x] The approval queue now has an operator UI on the Operations tab.
+      _(state: smoke-tested — closed 2026-08-09)_ Approving was an API call
+      (`POST /api/automation/packages/approve`); the loop worked but a packaged
+      item was less discoverable than a doc-improve preview in the AI Docs
+      panel. [`PackagedItemQueue.tsx`](frontend/components/PackagedItemQueue.tsx)
+      renders the queue over a pure
+      [`lib/packagedItems.ts`](frontend/lib/packagedItems.ts) that **mirrors
+      `Test-PackagedItemTransition`'s matrix rather than reinventing it**, so the
+      UI can never offer an action the backend answers with a 409 (nor hide one
+      it would allow) — `dispatched` and `rejected` are terminal in both places.
+      A rejection prompts for a reason and it is written to the append-only
+      audit trail. **`dispatched` is deliberately not labelled "done"**: approval
+      enqueues to the operator runner, which stops at a reviewed branch, so a
+      "Complete" badge here would be exactly the decorative badge section 8
+      forbids — a unit test asserts the label never reads done/complete/merged.
+      **Evidence:** `npm run test:unit` 112 passing across 8 files (23 new
+      assertions in `packagedItems.test.ts`), `npm run typecheck` and
+      `npm run build` exit 0.
+- [x] Packaging now has an overdue alert of its own.
+      _(state: smoke-tested — closed 2026-08-09)_ `Get-AutomationHealth`
+      deliberately reads only the doc-refinement history (interleaving kinds
+      would let a live packaging cron mask a dead doc cron), so a packaging cron
+      that stopped was invisible. The fix is the second reader the item
+      specified — `Get-PackagingHealth` / `Get-PackagingRunOutcome` over
+      `packaging-runs.jsonl`, **never a merged file** — surfaced as a
+      `packaging` block on `GET /api/automation/status` beside the unchanged
+      doc-refinement fields, and rendered as a second badge on the Operations
+      tab. Alert codes are packaging-specific (`packaging-never-ran`,
+      `packaging-overdue`, `packaging-run-failed`, `packaging-run-partial`)
+      because `automation-overdue` on both would leave a webhook unable to say
+      which scheduler stopped. A **skip is not a failure** — an over-budget repo
+      is the guard working, so a run that only skipped classifies `ok`.
+      Interval falls back to `automation.intervalMinutes` when no
+      `automation.packaging.intervalMinutes` is set, so a single cron hitting
+      both routes is not reported as "never ran" for want of a second setting.
+      **Evidence:** module smoke — `packaging health ok: never-ran/overdue/
+      partial named packaging-specifically, skips are not failures, doc runs
+      cannot mask it` (that last assertion is the independence proof: a
+      workspace holding only a fresh doc-refinement run still reports
+      `packaging-never-ran`); api-host smoke asserts both blocks are present and
+      self-identify (`kind=doc-refinement` / `kind=roadmap-packaging`) so the
+      route can never return the doc verdict twice.
 
 Phase D — Hardening & observability (parallelizable, autonomous, unblocked):
 
@@ -654,7 +700,7 @@ Operator-facing behavior is documented in
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ---------- | ----------- | ---------- |
 | Phase A: Unblockers                  | Live submit-PR proof on one write-enabled repo                                                          | **done — proven live** (PR #96)                          | 2026-08-09 | —           | —          |
 | Phase B: Scheduled doc refinement    | Scheduler + favorite-scoped doc-improve previews + digest + run history                                 | **done — smoke-tested** (2026-07-06) — see archive       | 2026-07-06 | —           | —          |
-| Phase C: Scheduled roadmap packaging | Top-value item packaging + quota guard + approve-to-dispatch                                            | **done — smoke-tested**; 2 non-blockers recorded         | 2026-08-09 | —           | —          |
+| Phase C: Scheduled roadmap packaging | Top-value item packaging + quota guard + approve-to-dispatch + approval UI + packaging health           | **done — smoke-tested**; both non-blockers closed        | 2026-08-09 | —           | —          |
 | Phase D: Hardening & observability   | Frontend unit tests, Dashboard decomposition, failure alerting, freeze prevention, auth operator-verify | **in progress — 4 of 6 shipped; 2 open (frontend)**      | —          | —           | —          |
 
 #### Budget guardrail
@@ -1019,16 +1065,34 @@ and 0.6 shed their closed items to
       `gh pr checks <n> --watch` is unusable and the merge loop relies on
       `mergeStateStatus` as a proxy. Metadata, Contents, Pull requests, and
       Actions reads all pass. Verified 2026-08-07.
-- [ ] **Populate `rateLimit` on the authenticated GitHub insights path.**
-      _(state: planned — non-blocker, cosmetic, surfaced 2026-08-08)_
-      `Get-GitHubReposViaApi` returns a hardcoded `rateLimit = $null`
-      ([`Start-RepoManagementApiHost.ps1:2758`](backend/api-host/Start-RepoManagementApiHost.ps1#L2758)),
-      so `insightsMeta.rateLimit` is always null and the GitHub view's
-      rate-limit readout stays blank even though every call already receives
-      `X-RateLimit-Limit` / `-Remaining` / `-Reset` headers. Capture the
-      headers from the last response instead of returning null. Confirmed
-      2026-08-08 against the live service: `POST /api/github/status`
-      returned 50 repos and `rateLimit: null`.
+- [x] **Populate `rateLimit` on the GitHub insights path.** _(state:
+      smoke-tested — closed 2026-08-09)_ `Get-GitHubReposViaApi` returned a
+      hardcoded `rateLimit = $null`, so `insightsMeta.rateLimit` was always null
+      and the readout stayed blank even though every call already receives
+      `X-RateLimit-Limit` / `-Remaining` / `-Reset`. The parser and the
+      last-observation snapshot live in a dot-sourced
+      [`GitHubRateLimit.ps1`](backend/api-host/GitHubRateLimit.ps1) — the shape
+      `RequestDeadline.ps1` uses — because a helper defined inside the host
+      script cannot be loaded without starting the listener, and a parser only
+      reachable through a live HTTP request is a parser nothing tests.
+      Three calls switched from `Invoke-RestMethod` to `Invoke-WebRequest`
+      (`Invoke-RestMethod` discards headers on Windows PowerShell); the snapshot
+      is cleared per request and takes the **newest** observation, because the
+      limit is consumed by every call in the sweep, not just the first.
+      **The item named one call site and there were two.** A source tripwire
+      over the whole file — not the named line — caught
+      `POST /api/github/status`'s **`gh` CLI fallback** returning its own
+      hardcoded null. That path has no response object to read, so it resolves
+      from `GET /rate_limit` (which does not itself consume quota) through
+      `ConvertFrom-GitHubRateLimitPayload`, which **reuses the header parser**
+      so the two paths cannot emit differently-shaped readouts.
+      **Absent or unparseable headers still yield `$null`, never a zeroed
+      object** — a fabricated "0/5000" would read as an exhausted quota and look
+      like a real measurement. **Evidence:** module smoke —
+      `both header shapes parsed, /rate_limit payload shares the shape, newest
+      observation wins, absent headers stay null` (PS 5.1's
+      `Dictionary[string,string]` and PS 7's `Dictionary[string,string[]]` are
+      both asserted; a parser handling one silently reads blank on the other).
 - [ ] **Recover or replace the portal TLS certificate password.** _(state:
       planned — non-blocker, surfaced 2026-08-08)_ Machine-scoped
       `REPO_MGMT_TLS_PFX_PASSWORD` (17 chars) does not open the configured
@@ -1204,21 +1268,41 @@ every maturity score. Both were adversarially proven to fail when violated.
       **This decision is the input Release 3.2 was waiting on** (see the
       dependency map): 3.2 inherits a bounded 900-second scan budget as the
       number its responsiveness work has to beat, not an unbounded route.
-- [ ] Archive the root worklogs `findings.md`, `progress.md`, and
+- [x] Archive the root worklogs `findings.md`, `progress.md`, and
       `task_plan.md` to [`docs/history/worklogs/`](docs/history/worklogs/),
-      matching the 2026-07-15 cleanup convention they were re-created
-      against. _(state: planned — cosmetic, but the root keeps re-accruing
-      these; consider a `.gitignore` entry or a documented worklog location
-      so the convention holds without a manual sweep each time.)_
+      matching the 2026-07-15 cleanup convention they were re-created against.
+      _(state: smoke-tested — closed 2026-08-09)_ They went to
+      `docs/history/worklogs/2026-08-08-guided-improvement/` rather than the
+      directory root: the three files already archived there are a **different**
+      set from the pre-2026-07-15 layout, and overwriting real history to
+      satisfy a filename would have destroyed it. **The convention is now
+      enforced rather than restated** — the note explaining it lived only inside
+      a completed release, which is why the files came back within three weeks.
+      All three fixes ship together: a `.gitignore` rule stops new ones
+      appearing, [`docs/history/worklogs/README.md`](docs/history/worklogs/README.md)
+      states the convention where worklogs are actually written, and a
+      module-smoke tripwire fails the required pre-commit gate if a worklog is
+      tracked at the root again (gitignore alone cannot stop an already-tracked
+      file, or a `git add -f`). **Evidence:** module smoke —
+      `no worklogs tracked at the repository root; the convention is
+      documented`.
 
 ### Lane 0.6 — Workspace-path failure was silent (P0, 2026-08-08)
 
-- [ ] Point the zero-scope action hint at the specific cause when a root is
-      missing. _(state: planned — non-blocker, cosmetic)_ The ActionBar hint
-      still reads the generic "Scan a workspace first — set the workspace path
-      in Settings, then Refresh" while the red alert directly above it names
-      the actual missing path. The remedy it names is correct, so this is
-      redundancy rather than a wrong instruction.
+- [x] Point the zero-scope action hint at the specific cause when a root is
+      missing. _(state: smoke-tested — closed 2026-08-09)_ The ActionBar hint
+      read the generic "Scan a workspace first — set the workspace path in
+      Settings, then Refresh" while the red alert directly above it named the
+      actual missing path. `repoActionsBlockedReason` now takes the same
+      `missingRoots` the alert reads and, when one is present, names the path
+      and the thing to check ("reconnect the drive or correct the path"), since
+      telling an operator to scan a workspace they have already configured is
+      redundancy, not guidance. The generic remedy survives for the genuine
+      nothing-configured case, where it is the correct next step. **Blank
+      entries fall back rather than manufacturing a claim about nothing.**
+      **Evidence:** `npm run test:unit` — five new `dataProvenance` assertions
+      covering single root, multi-root summarisation, blank-root fallback, and
+      that a populated scope stays unblocked even with a missing root.
 
 ### Lane 0.5 — Portal UX follow-ups (empty-state audit 2026-08-08)
 

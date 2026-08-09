@@ -21,6 +21,12 @@ interface ActionBarProps {
    * than being allowed to click into a no-op.
    */
   repoCount: number;
+  /**
+   * Configured workspace roots that are not on disk. When present these are the
+   * reason nothing is in scope, so the blocked-action hint names the path
+   * instead of repeating the generic "scan a workspace first" remedy.
+   */
+  missingRoots?: string[];
 }
 
 interface ActionButtonProps {
@@ -66,7 +72,7 @@ const ActionButton: React.FC<ActionButtonProps> = ({ onClick, disabled, isLoadin
 );
 
 
-const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, onInitClick, onDocReviewClick, onApiDocsClick, onHelpClick, isActionRunning, currentOperation, settings, selectedRepos, repoCount }) => {
+const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, onInitClick, onDocReviewClick, onApiDocsClick, onHelpClick, isActionRunning, currentOperation, settings, selectedRepos, repoCount, missingRoots }) => {
 
     const selection = selectedRepos.size > 0 ? Array.from(selectedRepos) : undefined;
     const selectionCount = selectedRepos.size;
@@ -77,7 +83,7 @@ const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, on
     // controls (Refresh, Settings, Help, API docs) stay enabled — they are the
     // way out of the empty state.
     const repoActionsEnabled = canRunRepoActions(repoCount, isActionRunning);
-    const blockedReason = repoActionsBlockedReason(repoCount);
+    const blockedReason = repoActionsBlockedReason(repoCount, missingRoots ?? []);
     // When nothing is in scope, the blocker replaces the action's own tooltip so
     // hovering a greyed-out button explains itself.
     const actionTitle = (normal: string) => blockedReason ?? normal;
