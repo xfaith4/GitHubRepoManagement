@@ -23,6 +23,85 @@ function Get-EffectiveRequestTimeoutSeconds {
     return $seconds
 }
 
+function Get-LongRunningScanRoutePattern {
+    <#
+        .SYNOPSIS
+            Routes whose work is a full-portfolio scan, not a request.
+
+        .DESCRIPTION
+            Every path here reaches Get-OperationsReposPayload / Invoke-PortfolioAssessment,
+            which on a cold cache assesses the entire workspace (75+ repos). That legitimately
+            outruns the ordinary request deadline, so killing the host on expiry would turn a
+            normal scan into a restart loop — the freeze guard destroying the host it protects.
+            These routes get the extended tier instead: still bounded, just bounded higher.
+    #>
+    [CmdletBinding()]
+    param()
+
+    return @(
+        '/api/portfolio/assessment'
+        '/api/portfolio/assessment/*'
+        '/api/operations/repos'
+        '/api/operations/repos/*'
+        '/api/automation/run'
+        '/api/digest/preview'
+        '/api/digest/send'
+        '/api/reconcile'
+        '/api/docreview/run'
+        '/api/badges/*'
+        '/api/v1/agent/*'
+    )
+}
+
+function Test-LongRunningScanRoute {
+    [CmdletBinding()]
+    param([AllowEmptyString()][string]$Path = '')
+
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+
+    $normalized = '/' + (($Path -replace '\\', '/') -replace '^/+', '' -replace '/+', '/')
+    if ($normalized.Length -gt 1) { $normalized = $normalized.TrimEnd('/') }
+
+    foreach ($pattern in (Get-LongRunningScanRoutePattern)) {
+        if ($normalized -like $pattern) { return $true }
+    }
+    return $false
+}
+
+function Get-EffectiveScanRequestTimeoutSeconds {
+    <#
+        .SYNOPSIS
+            The extended deadline applied to long-running scan routes.
+
+        .DESCRIPTION
+            Clamped by the same 30-3600 floor/ceiling as the ordinary deadline, then raised to
+            at least BaseSeconds: an extended tier shorter than the tier it extends would be a
+            silent downgrade for exactly the routes that need the most headroom.
+    #>
+    [CmdletBinding()]
+    param(
+        [int]$ConfiguredSeconds = 900,
+        [AllowEmptyString()][string]$EnvironmentValue = '',
+        [int]$BaseSeconds = 180
+    )
+
+    $seconds = Get-EffectiveRequestTimeoutSeconds -ConfiguredSeconds $ConfiguredSeconds -EnvironmentValue $EnvironmentValue
+    if ($seconds -lt $BaseSeconds) { return $BaseSeconds }
+    return $seconds
+}
+
+function Get-RequestDeadlineSecondsForPath {
+    [CmdletBinding()]
+    param(
+        [AllowEmptyString()][string]$Path = '',
+        [Parameter(Mandatory)][int]$DefaultSeconds,
+        [Parameter(Mandatory)][int]$ScanSeconds
+    )
+
+    if (Test-LongRunningScanRoute -Path $Path) { return $ScanSeconds }
+    return $DefaultSeconds
+}
+
 function Resolve-RequestDeadlineAction {
     [CmdletBinding()]
     param(
@@ -52,6 +131,9 @@ function Start-RequestDeadlineWatchdog {
         Path          = ''
         StartedAtUtc  = [datetime]::MinValue
         DeadlineUtc   = [datetime]::MaxValue
+        # Per-request, because scan routes run on an extended tier. Reported in
+        # the incident record so the log says which deadline actually fired.
+        TimeoutSeconds = $TimeoutSeconds
         StopRequested = $false
     })
 
@@ -65,6 +147,7 @@ function Start-RequestDeadlineWatchdog {
 
             $requestId = [string]$State.RequestId
             $deadlineUtc = [datetime]$State.DeadlineUtc
+            $effectiveTimeout = [int]$State.TimeoutSeconds
             if ([datetime]::UtcNow -lt $deadlineUtc) { continue }
 
             # Re-check the generation after reading the deadline. A request
@@ -86,7 +169,7 @@ function Start-RequestDeadlineWatchdog {
                     path           = [string]$State.Path
                     startedAt      = ([datetime]$State.StartedAtUtc).ToString('o')
                     deadlineAt     = $deadlineUtc.ToString('o')
-                    timeoutSeconds = [int]$TimeoutSeconds
+                    timeoutSeconds = $effectiveTimeout
                     processId      = [int]$PID
                 }
                 $line = ($incident | ConvertTo-Json -Compress) + [Environment]::NewLine
@@ -98,7 +181,7 @@ function Start-RequestDeadlineWatchdog {
             # is the only reliable way to release the accept loop. Shawl's
             # --restart policy and SCM recovery bring the host back within
             # seconds; the external watchdog remains a second line of defense.
-            [Environment]::FailFast("API request deadline exceeded for $($State.Method) $($State.Path) (correlationId=$($State.CorrelationId), timeoutSeconds=$TimeoutSeconds).")
+            [Environment]::FailFast("API request deadline exceeded for $($State.Method) $($State.Path) (correlationId=$($State.CorrelationId), timeoutSeconds=$effectiveTimeout).")
         }
     }).AddArgument($state).AddArgument($TimeoutSeconds).AddArgument($IncidentLogPath).AddArgument($PollMilliseconds)
 
@@ -128,6 +211,7 @@ function Set-RequestDeadline {
     $Controller.State.Path = $Path
     $Controller.State.StartedAtUtc = $nowUtc
     $Controller.State.DeadlineUtc = $nowUtc.AddSeconds($TimeoutSeconds)
+    $Controller.State.TimeoutSeconds = $TimeoutSeconds
     $Controller.State.Armed = $true
 }
 

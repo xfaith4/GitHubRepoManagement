@@ -145,8 +145,18 @@ synchronous route work or a native call exceeds it, the host writes a
 correlation-rich incident to `output\logs\request-timeouts.jsonl` and exits so
 Shawl/SCM recovery can restart it. Override the deadline with the machine-scoped
 `REPO_MGMT_REQUEST_TIMEOUT_SECONDS` environment variable; values are clamped to
-30-3600 seconds so the guard cannot be disabled accidentally. Use a larger value
-only when a measured full-workspace operation legitimately needs it.
+30-3600 seconds so the guard cannot be disabled accidentally.
+
+Full-portfolio scan routes are the one case where 180 seconds is not a hang but
+ordinary work — a cold assessment of the 75-repo workspace exceeds it — so those
+routes (`/api/portfolio/assessment`, `/api/operations/repos`,
+`/api/automation/run`, `/api/digest/*`, `/api/reconcile`, `/api/docreview/run`,
+`/api/badges/*`, `/api/v1/agent/*`) run on a **900-second extended tier**,
+overridable with `REPO_MGMT_SCAN_REQUEST_TIMEOUT_SECONDS` under the same 30-3600
+clamp and never lower than the default tier. Without this split the guard
+terminated the host mid-scan and recovery restarted it into the same scan — a
+restart loop caused by the guard rather than prevented by it. The tier still
+bounds the work, so a genuinely wedged scan is still caught.
 
 ## Authentication
 

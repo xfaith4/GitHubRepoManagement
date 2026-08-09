@@ -15,11 +15,21 @@ param(
     # (e.g. /api/portfolio/assessment) can legitimately take well over 30s on a
     # large real workspace, so the default is generous enough to let them finish
     # rather than tripping a false "hang" before later steps run.
-    [int]$RequestTimeoutSec = 180
+    [int]$RequestTimeoutSec = 180,
+    # Cold full-portfolio scans on the real 75-repo workspace outrun 180s, which
+    # is why this smoke previously needed -RequestTimeoutSec 900 to pass locally.
+    # Raising the client timeout for exactly the routes the host already puts on
+    # its extended deadline tier removes the workaround without blunting the
+    # false-hang detection on ordinary routes.
+    [int]$ScanRequestTimeoutSec = 900
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# Same route classification the host uses for its request deadline, so the
+# client timeout and the server deadline can never drift apart.
+. (Join-Path $WorkspaceRoot 'backend\api-host\RequestDeadline.ps1')
 
 # -Port alone used to boot the host on the requested port while BaseUrl stayed
 # pinned to :7071 — so the run silently exercised whatever host was ALREADY
@@ -54,6 +64,13 @@ function Invoke-ApiRequest {
         [object]$Body
     )
 
+    # Scan routes get the same extended budget the host's deadline gives them;
+    # everything else keeps the tighter timeout so a real hang still surfaces.
+    $requestPath = try { ([uri]$Uri).AbsolutePath } catch { $Uri }
+    $effectiveTimeoutSec = Get-RequestDeadlineSecondsForPath -Path $requestPath `
+        -DefaultSeconds $RequestTimeoutSec `
+        -ScanSeconds ([Math]::Max($RequestTimeoutSec, $ScanRequestTimeoutSec))
+
     $invokeSplat = @{
         Uri = $Uri
         Method = $Method
@@ -61,7 +78,7 @@ function Invoke-ApiRequest {
         # On pwsh 7.4+ TimeoutSec is an alias of ConnectionTimeoutSeconds and
         # sets HttpClient.Timeout, so this bounds the whole request including
         # the connect phase — a stalled connect cannot hang the harness.
-        TimeoutSec = $RequestTimeoutSec
+        TimeoutSec = $effectiveTimeoutSec
     }
 
     if ($null -ne $Body) {
