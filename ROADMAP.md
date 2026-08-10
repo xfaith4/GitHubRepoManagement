@@ -1066,14 +1066,21 @@ and 0.6 shed their closed items to
       observation wins, absent headers stay null` (PS 5.1's
       `Dictionary[string,string]` and PS 7's `Dictionary[string,string[]]` are
       both asserted; a parser handling one silently reads blank on the other).
-- [ ] **Recover or replace the portal TLS certificate password.** _(state:
-      planned — non-blocker, surfaced 2026-08-08)_ Machine-scoped
-      `REPO_MGMT_TLS_PFX_PASSWORD` (17 chars) does not open the configured
-      pfx, so the portal has been serving plain HTTP on loopback while its
-      config claims TLS. Loopback-only keeps this off the critical path.
-      Either recover the original password or regenerate with
-      `scripts\New-RepoManagementTlsCertificate.ps1` and re-run
-      `-Action Reconfigure -PfxPath … -PfxPassword …`.
+- [ ] **Regenerate the portal TLS certificate (recovery is dead).** _(state:
+      planned — non-blocker; recovery path exhausted 2026-08-10)_
+      Machine-scoped `REPO_MGMT_TLS_PFX_PASSWORD` (17 chars) does not open
+      `backend\config\tls\portal.pfx`, so the portal serves plain HTTP on
+      loopback while `REPO_MGMT_TLS_PFX` points at the pfx. **Recovery is no
+      longer an option:** the pre-#53 shawl logs that recorded the plaintext
+      password have rotated away — a 2026-08-10 sweep of the shawl log dir,
+      `evidence/`, and `output/` found zero `-PfxPassword` matches (which
+      also closes the old plaintext-leak concern). Remaining remedy is one
+      **elevated** session (the service is LocalSystem, so the env var must
+      be Machine-scope and the restart needs admin):
+      `scripts\New-RepoManagementTlsCertificate.ps1 -Force` (prints the new
+      password once), then `scripts\Install-RepoManagementService.ps1
+      -Action Reconfigure` with it. Note: enabling TLS flips the portal to
+      `https://127.0.0.1:7071` — plain `http://` URLs stop working.
 
 ### Lane 0.3 — Layout follow-ups from the 2026-07-15 cleanup
 
