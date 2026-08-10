@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-10 — Production posture: the merge gate is now enforced, and the README tells the truth about verification
+
+### Changes
+
+- **Branch protection on `main`** (repo settings, not a commit): the `smoke` check — the full 17-gate suite on `windows-latest` — is **required**, with `enforce_admins` on; force pushes and branch deletion blocked. `mergeStateStatus: CLEAN` was convention until today; it is enforcement now. The PR landing this entry is the first merge made under it.
+- **README "Smoke Tests" → "Verification"**: the section predated the honest gate — it named four scripts and not `npm test`, the canonical 17-gate suite, the frontend gates, either linter, or CI parity. Rewritten to lead with the one command and its CI relationship; targeted per-layer scripts kept. Requirements row for Node now names the test-gate dependency.
+
+### Verification
+
+- This PR merges through the protection it documents — required `smoke` check, admins included.
+
 ## 2026-08-10 — Hardening: a render error degrades to a named card, never a white screen
 
 ### Changes
