@@ -1434,6 +1434,57 @@ Two further survey findings, both independent of the split question:
       supported option with a required pointer convention, so a split repo is
       self-describing rather than merely unpenalized.
 
+### Lane 0.8 — Verification gate integrity (CI audit 2026-08-10)
+
+Surfaced by asking what actually gates a merge. Findings, each verified:
+**the frontend has no gate anywhere** — `ci-smoke.yml` (9 gates) and
+`Invoke-TestSuite.ps1` (11 gates) run zero frontend checks, so the 149 vitest
+assertions, `typecheck`, and the Vite build run only when someone types them;
+**`ci.yml` is a no-op green check** — it calls `reusable-ci.yml` with
+`node/python/dotnet: false`, so every step body is `if [ "false" = "true" ]`
+(run 31357209466: green in 9s with Setup Node skipped), yet it counts toward
+`mergeStateStatus: CLEAN`, half the merge evidence for PRs #99–#101;
+**no linter runs anywhere** (no ESLint config exists; PSScriptAnalyzer is
+installed for the Copilot sandbox and read by `Roadmap.Evaluator.ps1` to score
+_other_ repos — the product grades the portfolio on validation signals it does
+not apply to itself); **`main` has no branch protection**, so even the check
+list is convention. A green tick that cannot fail spends trust it never earned.
+
+Safe path, in order — cover must never drop between steps:
+
+- [ ] **Make the gate honest, then delete `ci.yml`.** _(state: planned)_
+      First add the frontend gates (`npm ci`, `typecheck`, `test:unit`,
+      `build`) to `ci-smoke.yml` **and** `Invoke-TestSuite.ps1` so local
+      `npm test` and CI run the same list; expect the first run to fail and
+      fix on the branch — that is the gate working, not a regression. Only
+      then delete `ci.yml` **and** `reusable-ci.yml`: `gh search code` shows
+      no caller outside this repo's own `ci.yml`, so both go together or the
+      reusable file survives as an orphan. Acceptance: every check that
+      reports on a PR can actually fail; `mergeStateStatus: CLEAN` means all
+      real gates passed, not one real and one vacuous.
+- [ ] **Tripwire: CI must cover the local suite.** _(state: planned)_ A
+      module-smoke assertion that parses `ci-smoke.yml` and fails if any gate
+      in `Invoke-TestSuite.ps1`'s list (including the new frontend gates) has
+      no corresponding CI step — so the next test surface cannot land guarded
+      locally but unguarded on PRs, which is exactly how the frontend spent
+      months dark. Adversarially prove it by deleting a step in a scratch
+      copy, per the Lane 0.4 convention.
+- [ ] **Close the render gap.** _(state: planned)_ jsdom +
+      `@testing-library/react` so component behavior is asserted from the
+      DOM, not from source-text positions. First targets: Insights renders
+      inside its tab panel (backstopping the source-order tripwire with the
+      behavior it proxies) and the implicit-bulk confirm flow. Decide the
+      unused `playwright` root dependency at the same time — its only
+      reference in the codebase is a keyword string inside
+      `tools/Test-RoadmapStructure.ps1`; remove it or make it real.
+- [ ] **Linting, report-only first.** _(state: planned)_ ESLint (flat
+      config) for the frontend and PSScriptAnalyzer with a committed settings
+      file for ~15k lines of PowerShell. Land both as report-only artifacts
+      first, triage the initial wall into a baseline, then promote to failing
+      gates — a linter switched on cold across this much code is noise that
+      teaches people to ignore it. Closes the dogfood gap
+      `Roadmap.Evaluator.ps1` currently embodies.
+
 ---
 
 ## 8. Risks and Guardrails
