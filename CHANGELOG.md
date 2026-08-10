@@ -2,6 +2,29 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-10 — P0 follow-up 2: the GitHub phase ran dark, and `/api/status` was killing the host outright
+
+### Changes
+
+- **The route was covered; the work inside it was not.** With the classifier fix deployed the assessment was still killed at 215s. The watchdog was correct throughout — it suppressed while progress was fresh (ages 3s / 39s / 99s) and restarted only after 159s of staleness against a 120s tolerance. Progress had genuinely stopped: a **134-second unpublished GitHub phase** sat between the local inventory and `cold-roadmap-scan`.
+- **Cause**: `Get-GitHubReposViaApi` makes sequential per-repo network calls (`Get-LatestGitHubWorkflowRunViaApi`, and the Pages lookup inside `ConvertTo-GitHubRepoMetadata`) — roughly 150 round-trips across the portfolio, publishing nothing. Both affected routes reach it through the same `Add-GitHubMetadataToStatusResult`, so a single fix covers the assessment and the status scan. Progress is now published per repo inside the loop, and per owner — a dead owner returns zero repos, so the per-repo tick would never run.
+- **The previous tripwire asserted the wrong invariant.** "Every `Get-StatusAdapterResult` call site passes `-OnProgress`" checks call-site wiring; it passed while a third of the assessment ran dark. The replacement enforces the real property via the AST: a loop containing per-item network calls must publish **from inside that loop**, because a tick outside it does not bound the silent window.
+- **`GET /api/status` ran a full-portfolio scan on the 180s tier.** The request deadline does not fail the request on expiry — it calls `Environment.FailFast` and terminates the process. The route the browser polls was on the default tier: `Process terminated. API request deadline exceeded for GET /api/status (timeoutSeconds=180)`, started 05:09:10 and dead at 05:12:10, exactly 180s. Three occurrences on 2026-08-10 (04:06:25, 04:58:50, 05:12:14) — predating the heartbeat work, so a distinct pre-existing defect rather than a regression. This is precisely the failure the tier exists to prevent.
+- **The smoke test had asserted `/api/status` was an ordinary route.** That classification was the bug. It was corrected on production evidence, not to make a change pass, and tier membership is now derived from what each handler actually calls rather than from a hand-maintained list — a hand-maintained list is exactly what drifted.
+
+### Verification
+
+- Module smoke: `network-loop progress ok: 2 per-item GitHub loop(s) all tick from inside the loop` and `scan-route deadline tier ok: 7 full-portfolio route(s) all on the extended tier`.
+- **Adversarially proven, both tripwires.** Run against the pre-fix sources: the network-loop detector reports **2 violations — exactly the two loops that caused the outage**; the tier detector reports **1 violation — `GET /api/status`**. Both pass on the fixed sources. An earlier draft of the network-loop detector produced a false positive (`Invoke-MergeReadinessForRepo` — a loop and a network call, but not one inside the other) and was tightened to true lexical containment.
+- **Live production proof** of the progress fix: assessment completed **HTTP 200 in 235s** (previously dead at 215s), watchdog progress age never above 12s across four probes (was 3 → 39 → 99 → 159 → kill), **zero restarts**.
+- The `/api/status` tier fix is verified by the suite but **not yet observed in production** — it requires an elevated service restart to load.
+- PSSA ratchet: still exactly 598, no new debt.
+
+### Known-open
+
+- `Environment.FailFast` as deadline policy means one slow request destroys every in-flight request. The tier list is now correct; the blast radius remains a design question.
+- Head-of-line blocking is unchanged: with the crashes gone, a request still waits behind a running scan rather than failing. Tracked as the `/health/live` architectural item.
+
 ## 2026-08-10 — P0 follow-up: the heartbeat covered one route; the long ones were still being killed
 
 ### Changes

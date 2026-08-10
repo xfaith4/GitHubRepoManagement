@@ -2647,7 +2647,14 @@ function Add-GitHubMetadataToStatusResult {
     }
 
     $token = Get-ConfiguredGitHubToken -Settings $Settings
+    $ownerProgressCount = 0
     foreach ($ownerEntry in $reposByOwner.Values) {
+        # Owner-level tick bounds the silent window even when an owner resolves to
+        # zero repos and the per-repo tick inside the fetch never runs — the shape
+        # a dead owner (404) produces.
+        $ownerProgressCount++
+        $null = Update-ActivePortalOperationProgress -Stage 'github-metadata' -Completed $ownerProgressCount
+
         $metadataMap = Get-GitHubRepoMetadataMapViaApi -Owner $ownerEntry.owner -Token $token
         if ($metadataMap.Count -eq 0) {
             continue
@@ -2748,7 +2755,16 @@ function Get-GitHubReposViaApi {
     }
 
     $allRepos = @($repoMap.Values | Sort-Object -Property updated_at -Descending)
+    # Each iteration below makes sequential network calls (workflow run, and the
+    # Pages lookup inside ConvertTo-GitHubRepoMetadata). Across ~75 repos that is
+    # minutes of wall clock. Publishing per repo is what keeps the watchdog's
+    # progress contract true here: without it the whole phase reads as frozen and
+    # a working scan is restarted. Ambient, so it is a no-op outside a request.
+    $repoProgressCount = 0
     $repos = @($allRepos | Select-Object -First $RepoLimit | ForEach-Object {
+        $repoProgressCount++
+        $null = Update-ActivePortalOperationProgress -Stage 'github-metadata' -Completed $repoProgressCount
+
         $repoOpenPrCount = 0
         if ($openPrCounts.ContainsKey($_.name)) {
             $repoOpenPrCount = [int]$openPrCounts[$_.name]
