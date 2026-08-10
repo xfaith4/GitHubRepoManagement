@@ -2346,6 +2346,54 @@ $hbAgeUnspec = Get-PortalOperationProgressAge -State ([pscustomobject]@{ active 
 if ($null -eq $hbAgeUnspec -or [math]::Abs($hbAgeUnspec - 30) -gt 2) { throw "Kind=Unspecified timestamp must be read as UTC (~30s), got $hbAgeUnspec" }
 Write-Host ("  watchdog progress-suppression ok: {0} decision cases, invariant clamps short tolerance up, {1} progress-age shapes" -f $wdProgressCases.Count, 6) -ForegroundColor DarkGray
 
+# ── Heartbeat COVERAGE tripwire (ROADMAP Lane 0.9, second pass) ──────────────
+# The first fix instrumented ONE route (/api/status) by hand while
+# Get-LongRunningScanRoutePattern already listed the routes that actually get
+# the 900s budget — so /api/portfolio/assessment and its siblings kept being
+# restarted mid-scan and the Insights page never loaded. The lesson is the one
+# this repo keeps relearning: a per-instance fix drifts, so bind the
+# instrumentation to the SAME classifier the deadline uses and assert it here.
+$hostSource = (Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1') -Encoding UTF8 |
+    Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+if ($hostSource -notmatch 'if\s*\(\s*Test-LongRunningScanRoute\s+-Path\s+\$path\s*\)\s*\{[^}]*Start-PortalOperation') {
+    throw ('The request loop no longer starts an operation heartbeat for every Test-LongRunningScanRoute path. ' +
+        'Per-route instrumentation drifts — that is exactly how /api/portfolio/assessment stayed unprotected and the ' +
+        'watchdog kept killing it. Key the heartbeat off the route classifier, not off individual routes.')
+}
+if ($hostSource -notmatch 'Test-PortalOperationActive[\s\S]{0,200}Complete-PortalOperation') {
+    throw 'The request loop must complete the operation heartbeat in its finally, or a finished scan keeps suppressing restarts until it ages out.'
+}
+# Every scan-engine call in the host must publish progress. A marked-active
+# operation with no ticks goes stale and gets restarted anyway — the marker
+# alone is not protection.
+$scanEngineCalls = @([regex]::Matches($hostSource, 'Get-StatusAdapterResult[^\r\n]*'))
+if (@($scanEngineCalls).Count -eq 0) { throw 'No Get-StatusAdapterResult call sites found; the coverage tripwire cannot verify progress reporting.' }
+foreach ($call in $scanEngineCalls) {
+    if ($call.Value -notmatch '-OnProgress') {
+        throw ("Get-StatusAdapterResult called without -OnProgress: '{0}'. A long operation with no progress ticks goes stale and is restarted mid-scan." -f $call.Value.Trim())
+    }
+}
+# The ambient tick must be a no-op outside an operation, so scan engines can
+# call it unconditionally without every route having to opt in.
+. (Join-Path $WorkspaceRoot 'backend\api-host\OperationHeartbeat.ps1')
+if (Test-PortalOperationActive) { throw 'No operation should be active in a fresh smoke process' }
+Update-ActivePortalOperationProgress -Stage 'noop-check' -Completed 1   # must not throw
+$hbCoverTmp = Join-Path $WorkspaceRoot 'output\smoke\module\heartbeat-cover'
+$null = New-Item -ItemType Directory -Path (Join-Path $hbCoverTmp 'output\logs') -Force
+try {
+    $null = Start-PortalOperation -WorkspaceRoot $hbCoverTmp -Operation 'GET /api/portfolio/assessment' -Stage 'started'
+    if (-not (Test-PortalOperationActive)) { throw 'Start-PortalOperation must register the ambient operation' }
+    & (Get-ActivePortalOperationTick -Stage 'cold-status-scan') 7
+    $hbCovered = Read-PortalOperationState -Path (Get-PortalOperationStatePath -WorkspaceRoot $hbCoverTmp)
+    if ([string]$hbCovered.operation -ne 'GET /api/portfolio/assessment') { throw "Ambient operation name wrong: $($hbCovered.operation)" }
+    $null = Complete-PortalOperation -WorkspaceRoot $hbCoverTmp -Outcome 'request-ended'
+    if (Test-PortalOperationActive) { throw 'Complete-PortalOperation must clear the ambient operation' }
+    $hbCleared = Read-PortalOperationState -Path (Get-PortalOperationStatePath -WorkspaceRoot $hbCoverTmp)
+    if ($null -ne (Get-PortalOperationProgressAge -State $hbCleared)) { throw 'A completed operation must yield null progress age (no suppression)' }
+    Write-Host ("  heartbeat coverage ok: request loop keyed off Test-LongRunningScanRoute, {0} scan-engine call site(s) all publish progress, ambient tick no-ops when idle" -f @($scanEngineCalls).Count) -ForegroundColor DarkGray
+}
+finally { Remove-Item -LiteralPath $hbCoverTmp -Recurse -Force -ErrorAction SilentlyContinue }
+
 # Ledger + state round-trip on disk (models persistence across scheduled invocations).
 $wdTmp = Join-Path $WorkspaceRoot 'output\smoke\module\watchdog'
 $null = New-Item -ItemType Directory -Path $wdTmp -Force

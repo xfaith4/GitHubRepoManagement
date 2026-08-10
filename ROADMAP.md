@@ -1354,6 +1354,42 @@ sibling.
       service normally. The guard discriminates rather than merely tolerating.
       The 71s reading also gives the first real measurement of scan tick
       spacing against the 120s tolerance — previously unmeasurable.
+- [x] **The first fix instrumented one route; the long routes stayed bare.**
+      _(state: smoke-tested — closed 2026-08-10, second pass)_ Reported as
+      "Insights page does not load": Portfolio Mission showed `Failed to
+      fetch`, Documentation Health and Portfolio Analytics stayed unavailable.
+      Cause: the heartbeat was added **per route**, to `/api/status` only —
+      which is not even on the extended-deadline list — while
+      `Get-LongRunningScanRoutePattern` already enumerated the routes that
+      genuinely run for minutes. `/api/portfolio/assessment` therefore had no
+      heartbeat and was restarted mid-scan exactly as before: ledger shows
+      `04:24:33 suppressed=True age=76` then `04:25:33 decision=restart` while
+      the host log shows `04:25:22 portfolio.assessment start` →
+      `04:25:35 host started`. **This repo's third instance of fixing the
+      named instance instead of the pattern.** The heartbeat lifecycle now
+      hangs off the **same classifier the request deadline uses**
+      (`Test-LongRunningScanRoute`) in the request loop, completing in the
+      same `finally` as `Clear-RequestDeadline`, so a route added to that list
+      is covered automatically. An ambient tick
+      (`Update-ActivePortalOperationProgress` /
+      `Get-ActivePortalOperationTick`) lets deep scan code publish progress
+      without threading a callback through every layer, and no-ops outside an
+      operation. **Evidence:** module smoke — `heartbeat coverage ok: request
+      loop keyed off Test-LongRunningScanRoute, 3 scan-engine call site(s) all
+      publish progress, ambient tick no-ops when idle`; the tripwire fails if
+      the request loop stops keying off the classifier, if it stops completing
+      in `finally`, or if **any** `Get-StatusAdapterResult` call site omits
+      `-OnProgress` — a marked-active operation with no ticks goes stale and is
+      restarted anyway, so the marker alone is not protection.
+- [ ] **Insights has no way to run the assessment it tells you to run.**
+      _(state: planned — surfaced with the 2026-08-10 bug report)_ Portfolio
+      Analytics says "Refresh the portfolio assessment to seed the Release 2.3
+      trend view" and Documentation Health says it is "unavailable until a
+      portfolio assessment succeeds", but the tab offers no control that runs
+      one — `Retry` only re-fetches the existing result. Instructions the
+      surface cannot carry out are worse than no instructions. Give Insights a
+      real "Run assessment" action (or point explicitly at the control that
+      does it).
 - [ ] **Make `/health/live` independently responsive during long operations.**
       _(state: planned — architectural, deliberately out of the incident fix)_
       The heartbeat makes the watchdog correct, but the underlying cause

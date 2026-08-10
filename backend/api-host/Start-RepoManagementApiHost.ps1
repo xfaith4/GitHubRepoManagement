@@ -2916,7 +2916,7 @@ function Invoke-GitOperation {
         [string[]]$RepoPaths
     )
 
-    $status = Get-StatusAdapterResult -LocalRoots @($WorkspaceRoot) -MaxDepth 4 -IncludeNonGitFolders:$false -LogPath $LogPath
+    $status = Get-StatusAdapterResult -LocalRoots @($WorkspaceRoot) -MaxDepth 4 -IncludeNonGitFolders:$false -LogPath $LogPath -OnProgress (Get-ActivePortalOperationTick -Stage 'workspace-scan')
     if (-not $status.success) {
         throw "Unable to enumerate repositories for ${OperationType}: $($status.error)"
     }
@@ -5352,6 +5352,19 @@ try {
                 -Method $req.Method `
                 -Path $path
 
+            # The heartbeat lifecycle mirrors the deadline lifecycle and is keyed
+            # off the SAME route classifier, so every route that gets the extended
+            # scan budget is automatically visible to the watchdog as "working".
+            # Per-route instrumentation was the original defect: the first fix
+            # instrumented /api/status only, while /api/portfolio/assessment and
+            # the rest of Get-LongRunningScanRoutePattern stayed bare and kept
+            # being restarted mid-scan (ROADMAP Lane 0.9).
+            if (Test-LongRunningScanRoute -Path $path) {
+                $null = Start-PortalOperation -WorkspaceRoot $WorkspaceRoot `
+                    -Operation ("{0} {1}" -f $req.Method, $path) `
+                    -CorrelationId $correlationId -Stage 'started'
+            }
+
             if ($req.Method -eq 'OPTIONS') {
                 Add-MetricCounter -Name 'api_requests_total'
                 Send-HttpJson -Stream $req.Stream -StatusCode 204 -StatusText 'No Content' -Payload @{} -CorrelationId $correlationId
@@ -6962,13 +6975,7 @@ try {
                         # restarting a healthy scan every three minutes.
                         $scanOp = Start-PortalOperation -WorkspaceRoot $WorkspaceRoot -Operation 'status.scan' -CorrelationId $correlationId -Stage 'inventory'
                         try {
-                            $result = Get-StatusAdapterResult -LocalRoots $localRoots -MaxDepth $maxDepth -IncludeNonGitFolders:$includeNonGit -LogPath $statusLogPath -OnProgress {
-                                param($scanned)
-                                # $scanOp is a hashtable: Update- mutates it in
-                                # place, so the outer state advances even though
-                                # a reassignment here would be closure-local.
-                                $null = Update-PortalOperationProgress -WorkspaceRoot $WorkspaceRoot -State $scanOp -Completed ([int]$scanned)
-                            }.GetNewClosure()
+                            $result = Get-StatusAdapterResult -LocalRoots $localRoots -MaxDepth $maxDepth -IncludeNonGitFolders:$includeNonGit -LogPath $statusLogPath -OnProgress (Get-ActivePortalOperationTick -Stage 'inventory')
                             if ($result.success) {
                                 $scanOp = Update-PortalOperationProgress -WorkspaceRoot $WorkspaceRoot -State $scanOp -Stage 'github-metadata' -Force
                                 $result = Add-GitHubMetadataToStatusResult -StatusResult $result -Settings $settings
@@ -7967,7 +7974,7 @@ try {
                     }
                     if ($null -eq $statusResult) {
                         Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} cold-status-scan localRoots={1} depth={2}" -f $correlationId, ($defaultRoots -join ','), $defaultDepth)
-                        $statusResult = Get-StatusAdapterResult -LocalRoots $defaultRoots -MaxDepth $defaultDepth -IncludeNonGitFolders:$false -LogPath $LogPath
+                        $statusResult = Get-StatusAdapterResult -LocalRoots $defaultRoots -MaxDepth $defaultDepth -IncludeNonGitFolders:$false -LogPath $LogPath -OnProgress (Get-ActivePortalOperationTick -Stage 'cold-status-scan')
                         if ($null -ne $statusResult -and $statusResult.success) {
                             $signalSources['status'] = 'fresh-scan'
                             if ($statusTtl -gt 0) {
@@ -10986,6 +10993,12 @@ try {
         }
         finally {
             Clear-RequestDeadline -Controller $script:RequestDeadlineController
+            # Symmetric with the deadline: whatever happened to the request, the
+            # operation marker must not outlive it, or a completed scan keeps
+            # suppressing restarts until it ages out.
+            if (Test-PortalOperationActive) {
+                $null = Complete-PortalOperation -WorkspaceRoot $WorkspaceRoot -Outcome 'request-ended'
+            }
             $client.Close()
         }
     }
