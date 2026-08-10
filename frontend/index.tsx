@@ -2,6 +2,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import ErrorBoundary from './components/ErrorBoundary';
 import './styles.css';
 
 const rootElement = document.getElementById('root');
@@ -12,6 +13,10 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <App />
+    {/* Last-resort boundary: an unhandled render error shows a named card
+        instead of a silent white screen (frontend hardening, 2026-08-10). */}
+    <ErrorBoundary label="The portal">
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>
 );

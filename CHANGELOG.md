@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-10 — Hardening: a render error degrades to a named card, never a white screen
+
+### Changes
+
+- **`ErrorBoundary.tsx`** (new) — the portal had no error boundary anywhere: a render-time throw in any of ~38 components killed the entire UI with no message and no recovery path. A class component (no hook equivalent exists for `componentDidCatch`) renders a `role="alert"` card naming the failed region and the error, with a working "Try again" reset.
+- **Two mount points**: `index.tsx` wraps `<App />` as the last resort; `Dashboard.tsx` wraps the active tab panel with `key={activeView}` — a crashed view leaves the header, tab strip, and the other five views working, and switching tabs resets the boundary.
+
+### Verification
+
+- Four DOM tests: happy path untouched; throwing child → named `role="alert"` card, not a blank; "Try again" genuinely re-renders once the cause is gone; a still-broken child re-shows the card. `npm run test:unit` **168 passing across 15 files**; typecheck, lint, build, module smoke exit 0.
+
 ## 2026-08-10 — Lane 0.8: linting is a failing gate; pre-existing debt is ratcheted, not forgiven
 
 ### Changes
