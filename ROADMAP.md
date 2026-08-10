@@ -1460,8 +1460,12 @@ assertions, `typecheck`, and the Vite build run only when someone types them;
 **no linter runs anywhere** (no ESLint config exists; PSScriptAnalyzer is
 installed for the Copilot sandbox and read by `Roadmap.Evaluator.ps1` to score
 _other_ repos — the product grades the portfolio on validation signals it does
-not apply to itself); **`main` has no branch protection**, so even the check
-list is convention. A green tick that cannot fail spends trust it never earned.
+not apply to itself); **`main` had no branch protection**, so even the check
+list was convention. A green tick that cannot fail spends trust it never earned.
+_Resolved 2026-08-10 after the gates became honest:_ `main` now requires the
+`smoke` check (the full 17-gate suite), `enforce_admins` included; force
+pushes and branch deletion are blocked. `mergeStateStatus: CLEAN` is
+enforcement now, not convention.
 
 Safe path, in order — cover must never drop between steps:
 

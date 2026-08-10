@@ -74,7 +74,7 @@ Answers seven core questions across a portfolio of repositories:
 | PowerShell | 5.1+ or 7+ | Backend API host |
 | Git | Any recent | Local repo scanning |
 | GitHub CLI (`gh`) | Latest | Auth, PR counts, Copilot dispatch |
-| Node.js | v18+ | Frontend dev server |
+| Node.js | v18+ | Frontend dev server + the frontend gates in `npm test` |
 | npm | v9+ | Frontend dependencies |
 | GitHub PAT | — | Held in an env var; the app stores only that variable's **name** |
 
@@ -280,21 +280,34 @@ Full interactive API reference available in-app via the **API Docs** button.
 
 ---
 
-## Smoke Tests
+## Verification
+
+One command runs the canonical gate list — the same list CI runs on every PR
+(`ci-smoke.yml` invokes this script, so local and CI cannot drift apart):
 
 ```powershell
-# Test backend modules
-.\scripts\Invoke-ModuleSmokeTest.ps1
-
-# Test adapter contracts
-.\scripts\Invoke-AdapterSmokeTest.ps1
-
-# Test all API routes against a running host
-.\scripts\Invoke-ApiHostSmokeTest.ps1
-
-# Full regression suite
-.\scripts\Invoke-RegressionSmokeTest.ps1
+npm test          # Invoke-TestSuite.ps1: all 17 gates, ~10 min (live API-host smoke included)
+npm run test:fast # same suite minus the API-host smoke, ~2 min
 ```
+
+The 17 gates: module smoke (incl. source tripwires), adapter contracts,
+frontend typecheck / ESLint / 168 unit+DOM tests (vitest + jsdom) / production
+build, PowerShell lint (PSScriptAnalyzer with a per-rule ratchet baseline —
+Error severity is a hard zero; warning counts may only shrink), live API-host
+smoke, API contract (Pester), auth smoke, repository-structure audit, config
+and spec integrity checks, and the roadmap structure linter.
+
+Targeted runs when iterating on one layer:
+
+```powershell
+.\scripts\Invoke-ModuleSmokeTest.ps1     # backend modules + tripwires
+.\scripts\Invoke-ApiHostSmokeTest.ps1    # boots a live host on a dedicated port
+.\scripts\Invoke-LintGate.ps1            # PSSA ratchet (-UpdateBaseline after cleanup)
+npm run lint                             # ESLint (flat config, --max-warnings ratchet)
+```
+
+`main` is branch-protected: the `smoke` check (the full suite on
+`windows-latest`) is required, admins included — a PR merges only on green.
 
 ---
 
