@@ -13,7 +13,7 @@
 
 ## Current Status (Agent Context)
 
-**Last updated:** 2026-08-09
+**Last updated:** 2026-08-10
 
 Releases 0.4 through 2.6 and Release 2.8 are **engineering-complete and
 archived**. Their full text moved to
@@ -53,6 +53,22 @@ interchangeable — mixing them is what previously made the roadmap read as
       certificate password. **Lane 0.5 closed 2026-08-10** once Ben settled the
       product calls it was waiting on. **Lanes 0.3, 0.4 and 0.6 closed
       2026-08-09.**
+
+**MILESTONE 2026-08-10 — verification is structurally enforced (Lane 0.8
+closed same-day, PRs #102–#107).** Before today the merge signal was half
+convention: the frontend's tests/typecheck/build gated nothing, one of the two
+green checks executed nothing, no linter ran, and `main` was unprotected. Now
+`ci-smoke.yml` **invokes `Invoke-TestSuite.ps1` itself** (17 gates — one list
+for CI and local, tripwired against hollowing), both linters fail the build
+(ESLint 0-errors + 161-warning ratchet; PSSA Errors hard-zero + 598-warning
+per-rule ratchet), error boundaries stop render-throw white-screens, and
+`main` **requires** the `smoke` check with `enforce_admins` on. **The
+enforcement was demonstrated, not just configured:** PR #107 sat `BLOCKED`
+while its required check ran and merged only after `completed/success` →
+`CLEAN` — a blocked-then-clean merge is the required check working in anger.
+The two lint baselines are **controlled technical debt**: counts may only
+shrink, reductions land as the small planned batches at the end of Lane 0.8,
+and `set-state-in-effect` is deliberately excluded from mechanical cleanup.
 
 **Closed 2026-08-10 — Lane 0.5, and a navigation defect hiding under it.** The
 "six-tab dashboard is dense" complaint had a concrete cause: **the Insights tab
@@ -1031,13 +1047,21 @@ and 0.6 shed their closed items to
 
 ### Lane 0.2 — Credential freshness
 
-- [ ] **Grant the PAT `Checks: Read`.** _(state: planned — non-blocker)_
-      The reissued token still 403s on
-      `repos/{owner}/{repo}/commits/{ref}/check-runs`
-      (`Resource not accessible by personal access token`), so
-      `gh pr checks <n> --watch` is unusable and the merge loop relies on
-      `mergeStateStatus` as a proxy. Metadata, Contents, Pull requests, and
-      Actions reads all pass. Verified 2026-08-07.
+- [ ] **Decide the PAT `Checks: Read` grant — it is optional, not required.**
+      _(state: planned — non-blocker; scope audit 2026-08-10)_ The token 403s
+      on `repos/{owner}/{repo}/commits/{ref}/check-runs` and on GraphQL
+      `statusCheckRollup`. **Nothing in the product depends on it**: the
+      merge-readiness feature reads `mergeable_state` from the Pulls API, and
+      the merge loop's `mergeStateStatus` proxy works without it — both
+      verified in code and in practice (six PRs merged 2026-08-10 on the
+      proxy alone, including through required-check branch protection).
+      Granting it adds only development-workflow detail: `gh pr checks <n>
+      --watch` (live per-check names/durations) and direct check-run reads
+      for verifying which check ran on a ref. Read-only, single-repo-scoped,
+      low risk — but under a minimal-permissions policy it is legitimate to
+      **decline permanently** and keep the proxy; if declined, close this
+      item as "decided: proxy is the contract". Metadata, Contents, Pull
+      requests, and Actions reads all pass (verified 2026-08-07).
 - [x] **Populate `rateLimit` on the GitHub insights path.** _(state:
       smoke-tested — closed 2026-08-09)_ `Get-GitHubReposViaApi` returned a
       hardcoded `rateLimit = $null`, so `insightsMeta.rateLimit` was always null
@@ -1552,6 +1576,42 @@ Safe path, in order — cover must never drop between steps:
       proven (+1 `Invoke-Expression` → FAIL naming rule/delta/site; removed →
       PASS); suite now 17 gates; typecheck, lint, 164 unit tests, build,
       module smoke all exit 0.
+
+**Warning-debt reduction plan (decided 2026-08-10).** The baselines are
+controlled debt, not a cleanup backlog — **no blanket lint sweep.** Work lands
+as small, behaviorally coherent batches, each ending with `-UpdateBaseline` /
+a lowered `--max-warnings` so the ratchet locks the gain. Priority order:
+
+- [ ] **P1 — PSSA correctness micro-batch (12 findings, low risk).**
+      `PossibleIncorrectComparisonWithNull` 1, `AvoidAssignmentToAutomatic
+      Variable` 3, `UseDeclaredVarsMoreThanAssignments` 6,
+      `AvoidOverwritingBuiltInCmdlets` 1, `AvoidUsingInvokeExpression` 1.
+      Mechanical, each a latent-bug class, one PR.
+- [ ] **E1 — ESLint `exhaustive-deps` review (8 findings).** Behavioral, not
+      mechanical: each missing dep is either a real staleness bug or a
+      deliberate omission that earns a comment. Small enough for one PR.
+- [ ] **P2 — empty catch blocks (79), classify then fix.** Guardrail-aligned
+      ("never swallow silently"): each site becomes either an annotated
+      deliberate best-effort (narrowed catch + comment) or a surfaced
+      failure. Batch by module; multiple PRs.
+- [ ] **E2 — type the API client (`no-explicit-any`, 123, bulk in
+      `apiClient.ts`).** Per endpoint-group batches; the value is contract
+      drift caught at typecheck, not style. Lower the ratchet after each.
+- [ ] **P3 — plaintext-password params (9).** Design review per surface
+      (SecureString vs env-var flow), coupled to the Lane 0.2 TLS work —
+      **not** mechanical remediation.
+- [ ] **P4 — BOM/PS5.1 hazard (60).** Measure first: which BOM-less files
+      contain non-ASCII AND can run under Windows PowerShell 5.1; add BOMs to
+      that subset only.
+- **Deliberately unscheduled (accepted debt, held at baseline):** naming and
+  style tiers — `UseSingularNouns` 90 / `UseApprovedVerbs` 18 (renames are
+  call-site churn for zero behavior), `UseOutputTypeCorrectly` 136,
+  `UseShouldProcessForStateChangingFunctions` 67,
+  `AvoidUsingPositionalParameters` 34, `UseUsingScopeModifierInNewRunspaces`
+  44, `ReviewUnusedParameter` 26, `ProvideCommentHelp` 18.
+- **Separate lane, never batched mechanically:** ESLint
+  `set-state-in-effect` (31) — every site needs individual behavioral review
+  because a "fix" can change real render behavior.
 
 ---
 
