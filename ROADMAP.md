@@ -48,12 +48,22 @@ interchangeable — mixing them is what previously made the roadmap read as
 - [ ] **Release 3.2 — portfolio scale.** Independent of 3.1 and schedulable in
       parallel; it starts from the bounded 900-second scan budget Lane 0.4
       settled rather than from an open question.
-- [ ] **Two operator-decision items remain in Lane 0.2 and Lane 0.5** — the
-      PAT's `Checks: Read` grant and the portal TLS certificate password both
-      need an action outside this repository, and Lane 0.5's two UX items were
-      deferred pending a product call, not for want of engineering time. Every
-      other recorded non-blocker closed 2026-08-09; **Lanes 0.3, 0.4 and 0.6 are
-      now closed entirely.**
+- [ ] **Lane 0.2's two items still need an operator action outside this
+      repository** — the PAT's `Checks: Read` grant and the portal TLS
+      certificate password. **Lane 0.5 closed 2026-08-10** once Ben settled the
+      product calls it was waiting on. **Lanes 0.3, 0.4 and 0.6 closed
+      2026-08-09.**
+
+**Closed 2026-08-10 — Lane 0.5, and a navigation defect hiding under it.** The
+"six-tab dashboard is dense" complaint had a concrete cause: **the Insights tab
+rendered its content above the tab bar.** Clicking Insights inserted ~560 lines
+above the control just clicked, pushing the tab strip off-screen, while the panel
+underneath held only "Insights widgets are shown above this section." Fixed by
+extracting `InsightsView.tsx` and mounting it inside the panel — which also took
+`Dashboard.tsx` from 2,308 to 1,752 lines. Bulk-scope confirmation shipped
+alongside it on the rule Ben settled: mutating actions always confirm, read-only
+ones keep their single click. The wider progressive-disclosure question stays
+open and is now a smaller one.
 
 **Closed 2026-08-09 (third pass) — Release 3.0, the dispatch that could never
 run.** All five milestones ship: the guided-improvement wizard enqueues with
@@ -586,13 +596,15 @@ Phase D — Hardening & observability (parallelizable, autonomous, unblocked):
       across 7 files (12 new `viewTabs` assertions), `npm run typecheck` and
       `npm run build` exit 0; tab labels and order are unchanged because
       `VIEW_META` already carried the same six labels in the same order.
-- [ ] **[non-blocker]** `Dashboard.tsx` is still 2,308 lines after the Phase D
-      extractions (down from 2,519). The two sections Phase D named are out;
-      what remains large is the ~600-line Insights block (Execution Throughput,
-      Documentation Health, Portfolio Analytics/trend) and ~1,000 lines of
-      hooks and handlers above the return. _(state: planned — recorded rather
-      than folded into the milestone above, which asked for two specific
-      extractions and got them. Worth doing, not worth blocking on.)_
+- [ ] **[non-blocker]** `Dashboard.tsx` is **1,752 lines** (2,519 → 2,308 after
+      the Phase D extractions → 1,752 on 2026-08-10). The ~600-line Insights
+      block this item named is out: it became
+      [`InsightsView.tsx`](frontend/components/InsightsView.tsx) over a pure
+      [`lib/portfolioTrendView.ts`](frontend/lib/portfolioTrendView.ts) as a
+      side effect of fixing the Lane 0.5 tab-inversion defect. What remains is
+      ~1,000 lines of hooks and handlers above the return — a different shape of
+      problem from the JSX blocks, and one with no user-visible symptom driving
+      it. _(state: planned — worth doing, not worth blocking on.)_
 
 #### Acceptance criteria
 
@@ -1273,26 +1285,56 @@ data-integrity findings from that audit were fixed the same day and are in
 [the archive](docs/history/completed-releases.md#closed-2026-08-08-archived-from-roadmapmd);
 these two are design-dependent and deliberately deferred.
 
-- [ ] **Add a confirmation step to implicit bulk-scope actions.** _(state:
-      planned — non-blocker)_ With no rows selected, Pull/Fetch/Report apply
-      to the **entire filtered set**. The amber callout in
-      [`ActionBar.tsx`](frontend/components/ActionBar.tsx) is honest about
-      this and now names the count, but a banner alone still lets one click
-      run a bulk git operation across the whole portfolio. Gate the
-      no-selection path behind a `window.confirm`-style step naming the
-      count ("This will run on 47 repositories — continue?"), matching the
-      pattern `handleArchive` already uses. Deferred because the right
-      threshold (always, or only above N repos) is a product call, and
-      because `Report` is read-only and may not warrant the same friction.
-- [ ] **Progressive disclosure for the six-tab dashboard.** _(state: planned
-      — non-blocker, design-dependent)_ Grid, Insights, Operations, Doc
-      Readiness Queue, Copilot Execution Lanes, and Dependencies each render
-      a dense multi-widget surface, which is heavy for the primary daily
-      workflow (triage the repos needing attention). Candidate direction: a
-      simplified default view with drill-down, or a collapsible "advanced
-      analytics" section, extending the inline-tooltip pattern already used
-      on **Needs Attention**. Deferred because it changes primary navigation
-      shape and should not be done incrementally.
+- [x] **Add a confirmation step to implicit bulk-scope actions.** _(state:
+      smoke-tested — closed 2026-08-10)_ With no rows selected, Pull/Fetch/Report
+      applied to the **entire filtered set** (75 repos on the real workspace)
+      behind nothing but an amber banner. **Ben settled the deferred product
+      call 2026-08-10: mutating actions always confirm; read-only ones keep
+      their single click.** So Pull and Fetch gate on a `window.confirm` naming
+      the command and the count; `Report` (and Doc Review, and Roadmap Scan) are
+      read-only and reversible, and spending the dialog there would train the
+      operator to dismiss the one that matters. The rule is **"mutating +
+      implicit", not "mutating + big"** — no threshold, because two working
+      trees the operator did not name is still two they did not name. An
+      explicit selection never re-asks: that selection _is_ the operator naming
+      the scope. Encoded in [`lib/bulkScope.ts`](frontend/lib/bulkScope.ts),
+      which lists the mutating actions **by name** so a new bulk action is a
+      deliberate decision on both sides of the line rather than silently
+      defaulting to no confirmation. **Evidence:** 11 new `bulkScope`
+      assertions.
+- [x] **Progressive disclosure for the six-tab dashboard — the navigation
+      defect underneath it.** _(state: smoke-tested — closed 2026-08-10)_
+      Investigating the density complaint found a concrete cause rather than a
+      taste question: **the Insights tab rendered its content above the tab
+      bar.** 558 lines and six widgets sat in a container preceding
+      `<DashboardViewTabs>`, while the Insights tab panel held one sentence —
+      "Insights widgets are shown above this section." Clicking Insights
+      inserted ~560 lines above the control the operator had just clicked,
+      pushing the tab bar off-screen; the panel then pointed back upward. The
+      tab metaphor was inverted for one of six tabs.
+      Fixed by extracting
+      [`InsightsView.tsx`](frontend/components/InsightsView.tsx) over a pure
+      [`lib/portfolioTrendView.ts`](frontend/lib/portfolioTrendView.ts) and
+      mounting it **inside** the panel. **Enforced, not just fixed:** a
+      module-smoke tripwire fails if `<InsightsView>` ever precedes
+      `<DashboardViewTabs>` in source, if any `activeView === '…'` render gate
+      sits above the tab strip (so a _future_ tab cannot repeat it), or if the
+      "shown above this section" apology copy returns. Adversarially proven —
+      re-injecting the old layout fires both assertions.
+      **This also took `Dashboard.tsx` from 2,308 to 1,752 lines**, closing the
+      larger half of the Phase D decomposition non-blocker below.
+      **Evidence:** `npm run test:unit` 149 passing across 11 files (22 new
+      `portfolioTrendView` assertions covering the sparkline edge cases —
+      empty series, flat series, single point — that previously rendered as
+      `NaN` path data, i.e. a silently blank chart); `npm run typecheck` and
+      `npm run build` exit 0; module smoke exit 0.
+- [ ] **[non-blocker]** The wider progressive-disclosure question is still
+      open, and is now a smaller one. With Insights no longer competing for the
+      same vertical space as the tab strip, the remaining candidates are a
+      triage-first default view with drill-down, collapsible advanced sections,
+      or regrouping the six peers into three. _(state: planned — design
+      -dependent; deliberately not decided while fixing the defect underneath
+      it, since the density judgement changes once the layout is honest.)_
 
 ### Lane 0.7 — Roadmap-standard fidelity: split-history awareness (2026-08-08)
 

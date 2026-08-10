@@ -2,6 +2,33 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-10 — Lane 0.5: the Insights tab rendered above its own tab bar
+
+### Changes
+
+- **The defect.** The "six-tab dashboard is dense" complaint had a concrete cause underneath it. `Dashboard.tsx` rendered 558 lines and six Insights widgets — Execution Throughput, Portfolio Mission, Documentation Health, Portfolio Analytics (Repo Momentum + Top Candidates), Index-Backed Assessment, Change History — in a container that **preceded `<DashboardViewTabs>`**. The Insights tab panel held a single sentence: *"Insights widgets are shown above this section."* Clicking Insights therefore inserted ~560 lines above the control the operator had just clicked, pushed the tab strip off-screen, and pointed them back upward. The tab metaphor was inverted for one of six tabs.
+- **`frontend/components/InsightsView.tsx`** (new) — the whole Insights body, mounted **inside** the tab panel. Living in its own component makes the inversion structurally impossible to reintroduce: the content can only render where the panel renders it.
+- **`frontend/lib/portfolioTrendView.ts`** (new) — the sparkline geometry, trend formatters, lifecycle chip styles, and KPI-tile builder. Pure, because the geometry has real edge cases worth asserting directly rather than through a rendered chart.
+- **Two silent-failure paths pinned while extracting.** An **empty** series reached `Math.min()` of nothing → `Infinity` → `NaN` path data, which renders as a blank chart rather than an error. A **flat** series has zero range and divided by it. Both were already handled; neither was tested. They are now, along with the single-point case.
+- **Fallbacks are explicit.** `trendSeriesPalette` and `lifecycleStyle` fall back to a real palette/chip rather than `undefined` — a chart with no stroke colour renders invisibly, which is worse than a wrong colour.
+- **`Dashboard.tsx`: 2,308 → 1,752 lines.** That closes the larger half of the Release 2.7 Phase D decomposition non-blocker, which named this exact block. What remains there is ~1,000 lines of hooks and handlers — a different shape of problem, with no user-visible symptom driving it.
+- **`frontend/lib/bulkScope.ts`** (new) — implicit bulk-scope guarding. With nothing selected, Pull/Fetch/Report applied to the entire filtered set (75 repos on the real workspace) behind nothing but a banner.
+
+### The product calls, settled 2026-08-10
+
+- **Mutating actions always confirm; read-only ones keep their single click.** Pull and Fetch gate on a `window.confirm` naming the command and the count. `Report`, Doc Review and Roadmap Scan are read-only and reversible — spending the dialog there would train the operator to dismiss the one that matters.
+- **No threshold.** The rule is "mutating + implicit", not "mutating + big": two working trees the operator did not name is still two they did not name.
+- **An explicit selection never re-asks.** That selection *is* the operator naming the scope; re-asking would be friction with no information in it.
+- **Mutating actions are listed by name**, so a new bulk action is a deliberate decision on both sides of the line rather than silently defaulting to no confirmation.
+- **The wider progressive-disclosure question stays open** — deliberately not decided while fixing the defect underneath it, since the density judgement changes once the layout is honest.
+
+### Testing
+
+- **Module smoke exit 0** — new tripwire: `Insights renders inside its tab panel; no activeView-gated content sits above the tab strip`. It fails if `<InsightsView>` precedes `<DashboardViewTabs>` in source, if **any** `activeView === '…'` render gate sits above the tab strip (so a *future* tab cannot repeat the inversion), or if the "shown above this section" apology copy returns.
+- **Adversarially proven.** Re-injecting the old layout fires both assertions — `order assertion fires: True`, `gate assertion fires: True (1 gate above the tab strip)`.
+- **`npm run test:unit` 149 passing across 11 files** (was 119/9): 22 new `portfolioTrendView` assertions and 11 new `bulkScope` assertions.
+- **`npm run typecheck` and `npm run build` exit 0**; `Invoke-TestSuite.ps1 -SkipApiHost` 11/11 green; api-host smoke exit 0.
+
 ## 2026-08-09 — Release 3.0: Operator-Context Execution
 
 ### Changes

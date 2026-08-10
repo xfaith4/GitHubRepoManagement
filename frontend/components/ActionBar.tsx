@@ -2,6 +2,7 @@ import React from 'react';
 import { InitIcon, UpdateIcon, SyncIcon, ExportIcon, ArchiveIcon, RefreshIcon, SpinnerIcon, DocReviewIcon, RoadmapIcon, ApiDocsIcon, HelpIcon } from './icons';
 import { type OperationType, type AppSettings } from '../types';
 import { canRunRepoActions, repoActionsBlockedReason } from '../lib/dataProvenance';
+import { bulkConfirmationMessage, requiresBulkConfirmation, type BulkActionKind } from '../lib/bulkScope';
 
 interface ActionBarProps {
   onAction: (operation: OperationType, repoNames?: string[]) => void;
@@ -93,8 +94,21 @@ const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, on
     // small tag — never mixed into the label text (Release 2.6 Phase 4).
     const actionLabel = (text: string) => <span className="hidden sm:inline">{text}</span>;
 
-    const handleUpdate = () => onAction('update', selection);
-    const handleSync = () => onAction('sync', selection);
+    // ROADMAP Lane 0.5. With nothing selected these apply to the entire filtered
+    // set, and the amber banner alone still let one click run bulk git across
+    // the whole portfolio. Mutating actions now gate on an explicit confirm
+    // naming the count; read-only ones (Report, Doc Review, Roadmap Scan) keep
+    // their single click — see lib/bulkScope.ts for why the line sits there.
+    const runBulkAction = (action: BulkActionKind, run: () => void) => {
+        if (requiresBulkConfirmation(action, selectionCount, repoCount)
+            && !window.confirm(bulkConfirmationMessage(action, repoCount))) {
+            return;
+        }
+        run();
+    };
+
+    const handleUpdate = () => runBulkAction('update', () => onAction('update', selection));
+    const handleSync = () => runBulkAction('sync', () => onAction('sync', selection));
 
     const handleArchive = () => {
         if (!archiveImplemented) return;
@@ -133,7 +147,7 @@ const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, on
                             <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                                 <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
                             </svg>
-                            <span>When none are selected, Pull/Fetch/Report apply to <strong className="font-semibold">the full filtered repository set</strong> ({repoCount}).</span>
+                            <span>When none are selected, Pull/Fetch/Report apply to <strong className="font-semibold">the full filtered repository set</strong> ({repoCount}). Pull and Fetch ask first; Report is read-only and runs straight away.</span>
                         </span>
                     </>
                 )}
