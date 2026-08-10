@@ -314,7 +314,14 @@ function Get-LocalFolderInventory {
         [Parameter(Mandatory = $true)][string[]]$IgnorePathRegex,
         [Parameter(Mandatory = $true)][int]$MaxDepth,
         [Parameter()]
-        [switch]$IncludeNonGitFolders
+        [switch]$IncludeNonGitFolders,
+        # Optional progress tick, invoked with the running item count as the walk
+        # proceeds. The API host uses it to keep its operation heartbeat fresh so
+        # the external watchdog can tell a long scan from a frozen host
+        # (portal restart-loop incident, 2026-08-10). Throttling is the
+        # caller's business; this fires often and cheaply.
+        [Parameter()]
+        [scriptblock]$OnProgress
     )
 
     $results = New-Object System.Collections.Generic.List[object]
@@ -339,6 +346,15 @@ function Get-LocalFolderInventory {
             $item = $queue.Dequeue()
             $currentPath = $item.Path
             $depth = $item.Depth
+
+            if ($OnProgress) {
+                try { & $OnProgress $results.Count }
+                catch {
+                    # A failing progress tick must not abort the scan it is only
+                    # describing — but it is logged, not swallowed.
+                    Write-Log "Progress callback failed: $($_.Exception.Message)" -Level Debug
+                }
+            }
 
             if ($depth -gt $MaxDepth) {
                 Write-Log "Skipping path beyond MaxDepth ($MaxDepth): $currentPath" -Level Debug

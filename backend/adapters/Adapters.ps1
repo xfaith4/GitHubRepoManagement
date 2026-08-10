@@ -111,7 +111,14 @@ function Get-StatusAdapterResult {
         [switch]$IncludeNonGitFolders,
 
         [Parameter()]
-        [string]$LogPath
+        [string]$LogPath,
+
+        # Progress tick threaded into the inventory walk so the API host can keep
+        # its operation heartbeat fresh during a multi-minute scan; without it the
+        # external watchdog reads a working host as frozen and restarts it
+        # (portal restart-loop incident, 2026-08-10).
+        [Parameter()]
+        [scriptblock]$OnProgress
     )
 
     if (@($LocalRoots).Count -eq 0) {
@@ -158,7 +165,8 @@ function Get-StatusAdapterResult {
             -IgnoreDirNames $ignoreDirNames `
             -IgnorePathRegex $ignorePathRegex `
             -MaxDepth $MaxDepth `
-            -IncludeNonGitFolders:$IncludeNonGitFolders
+            -IncludeNonGitFolders:$IncludeNonGitFolders `
+            -OnProgress $OnProgress
 
         $repos = @(
             @($items) | Where-Object { $_.IsGitRepo } | ForEach-Object {

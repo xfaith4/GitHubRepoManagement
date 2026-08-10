@@ -1291,6 +1291,95 @@ every maturity score. Both were adversarially proven to fail when violated.
       `no worklogs tracked at the repository root; the convention is
       documented`.
 
+### Lane 0.9 — Portal restart loop: the watchdog was killing healthy scans (P0, 2026-08-10)
+
+**Incident.** Every `/api/...` call hung; the portal showed "Backend:
+Connecting…" and a scan progress bar that never finished, then collapsed to a
+bare "Failed to fetch". The host was **not** hung, crashed, or overloaded — it
+was being force-restarted every ~3 minutes by its own watchdog, **10 times in
+one stretch**, killing scans mid-flight. With no browser requesting a scan the
+same host answered `/health/live` in 0.1s.
+
+**Cause — two guards with different budgets.** The host is single-threaded, so
+`/health/live` is unanswerable while a full-portfolio scan runs. Lane 0.4 raised
+the in-process request deadline to **900s** for scan routes; the external
+watchdog kept **1-min interval × 5s probe × 3 failures ≈ 180s**. A cold 75-repo
+scan is known to exceed 180s — that is _why_ Lane 0.4 raised the deadline — so
+every full scan was guaranteed to be killed, and the browser's retry restarted
+the cycle. Lane 0.4 fixed one killer and the same outage returned through its
+sibling.
+
+- [x] **Teach the watchdog to tell "busy" from "frozen" via a progress
+      heartbeat.** _(state: smoke-tested — closed 2026-08-10)_ The host now
+      publishes what it is doing and when it last moved
+      ([`OperationHeartbeat.ps1`](backend/api-host/OperationHeartbeat.ps1),
+      dot-sourced so it is testable without starting the listener); the scan
+      path marks itself active, ticks progress per directory through a new
+      `-OnProgress` callback threaded into `Get-LocalFolderInventory`, and
+      clears in a `finally` so a thrown scan cannot leave a marker behind.
+      `Resolve-WatchdogAction` takes the progress state as an **explicit
+      input** and stays pure. **Progress, not CPU, is the contract** — a
+      healthy scan can block for minutes on GitHub, `git`/`gh`, or the
+      filesystem while accruing no CPU, and a runaway can burn CPU while
+      achieving nothing; `cpuAdvanced` is carried to the ledger as
+      corroboration only and is never consulted by the decision. Suppression
+      is gated on the **age** of the last progress record, so an orphaned
+      marker ages out by itself and restarts resume with no cleanup; failures
+      keep counting while suppressed, so staleness restarts immediately rather
+      than three probes later. A configuration invariant
+      (`Test-WatchdogToleranceInvariant`) refuses a no-progress tolerance
+      shorter than the cadence the **host itself declares** in the heartbeat
+      file, clamping up — and the tolerance is a no-progress budget (120s),
+      deliberately **not** raised to the 900s request deadline, so a scan that
+      keeps reporting is never restarted however long it runs while a host
+      that stops moving is still caught in ~2 minutes. **Evidence:** module
+      smoke — 10 decision cases (fresh progress suppresses at threshold; fresh
+      progress + flat CPU still suppresses; stale progress restarts; no
+      operation keeps the old policy both below and at threshold; healthy
+      resets mid-operation; completed operation returns to ordinary policy;
+      orphaned 24h marker restarts; tolerance boundary fresh/stale) plus 6
+      progress-age shapes (null/inactive/unparseable/missing all yield "no
+      suppression", and a `Kind=Unspecified` stamp is read as UTC).
+      **Adversarially proven** against both rejected designs: the pre-fix
+      counter restarts the healthy scan the new logic protects; a CPU-based
+      guard would kill a scan blocked on I/O _and_ never restart a
+      CPU-burning runaway.
+      **Live production proof (2026-08-10, service restarted onto this code),
+      both halves observed unprompted in the watchdog ledger:** with a scan
+      active and progress fresh, three consecutive failed probes at 04:03:33 /
+      04:04:34 / 04:05:36 (ages 3s / 11s / 71s) recorded `suppressed=true` and
+      **no restart** — the exact sequence that force-restarted the host at
+      03:19, 03:22 and 03:25 before the fix; then with **no** operation
+      active, failed probes at 04:07:33 / 04:08:33 / 04:09:33 restarted the
+      service normally. The guard discriminates rather than merely tolerating.
+      The 71s reading also gives the first real measurement of scan tick
+      spacing against the 120s tolerance — previously unmeasurable.
+- [ ] **Make `/health/live` independently responsive during long operations.**
+      _(state: planned — architectural, deliberately out of the incident fix)_
+      The heartbeat makes the watchdog correct, but the underlying cause
+      remains: a single-threaded host cannot answer liveness while working, so
+      the portal is genuinely unresponsive to the operator for the duration of
+      a scan. Options to weigh: a dedicated listener thread/runspace for
+      `/health/*`, moving scans to a background runspace with a job handle the
+      UI polls, or a small always-available status surface. This is a design
+      decision, not a patch.
+- [ ] **Clear and harden the stale browser-persisted GitHub owner.** _(state:
+      planned — recorded 2026-08-10, not bundled into the watchdog fix)_ Every
+      scan queries GitHub for owner `Benjamin-Fuhr_genesys`, which 404s/422s
+      and adds failing round-trips to an already-long scan. It is **not** in
+      `settings.json` (correctly `xfaith4`) or any env var — the browser sends
+      it in the request body, and has since **2026-07-07** (116 occurrences in
+      the host log). Clear the persisted client value and stop a client-supplied
+      owner from silently overriding validated configuration.
+- [ ] **Replace the bare `Failed to fetch` screen with an actionable retry
+      state.** _(state: planned — recorded 2026-08-10)_ When the backend stops
+      answering, `Dashboard.tsx`'s top-level `error && repos.length === 0`
+      branch renders the raw exception string and nothing else — no retry, no
+      explanation, no indication the server is the problem. (The Lane 0.5 error
+      boundary does not cover this: it catches render throws, not rejected
+      fetches.) Give it a retry affordance and copy that distinguishes "backend
+      unreachable" from "no repositories configured".
+
 ### Lane 0.6 — Workspace-path failure was silent (P0, 2026-08-08)
 
 - [x] Point the zero-scope action hint at the specific cause when a root is
