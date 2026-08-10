@@ -19,6 +19,11 @@ interface PackagedItemQueueProps {
   onRefresh: () => void;
   onApprove: (packetId: string) => void;
   onReject: (packetId: string) => void;
+  /**
+   * Release 3.1 — open this item's trace. Takes whichever id the chain has
+   * minted so far; the backend resolves any of them to the same work item.
+   */
+  onViewTrace: (traceId: string) => void;
 }
 
 const SEVERITY_CLASSES: Record<string, string> = {
@@ -52,6 +57,7 @@ const PackagedItemQueue: React.FC<PackagedItemQueueProps> = ({
   onRefresh,
   onApprove,
   onReject,
+  onViewTrace,
 }) => {
   const sorted = sortPackagedItems(items);
   const awaiting = countAwaitingDecision(items);
@@ -150,6 +156,16 @@ const PackagedItemQueue: React.FC<PackagedItemQueueProps> = ({
                 </div>
 
                 <div className="flex flex-shrink-0 items-center gap-2">
+                  {/* Read-only, so it keeps its single click — the bulk-scope
+                      rule only requires confirmation for mutating actions. */}
+                  <button
+                    data-testid="packaged-item-trace"
+                    onClick={() => onViewTrace(item.dispatchRunId || item.packetId)}
+                    title="Show this item's whole life: rank, prompt, dispatch, run, validation, merge readiness and write-back."
+                    className="rounded border border-gray-600 px-2.5 py-1 text-xs font-medium text-gray-200 transition-colors hover:bg-gray-700"
+                  >
+                    Trace
+                  </button>
                   {/* Buttons appear only for transitions the backend accepts,
                       so the UI can never offer an action that 409s. */}
                   {canApprove(item) && (

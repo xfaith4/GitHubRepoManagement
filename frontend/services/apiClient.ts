@@ -2,6 +2,7 @@ import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type RepoS
 import { type AutomationHealthPayload } from '../lib/automationStatus';
 import { type PackagedItem } from '../lib/packagedItems';
 import { type RunnerPresencePayload } from '../lib/runnerPresence';
+import { type WorkItemTrace } from '../lib/workItemTrace';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -1578,6 +1579,20 @@ export async function rejectPackagedItem(
 ): Promise<PackagedItemActionResult> {
   const data = await postJson<any>('/automation/packages/reject', { packetId, reason, actor });
   return (data?.data ?? {}) as PackagedItemActionResult;
+}
+
+/**
+ * Release 3.1 — one work item's whole life, from any id the chain minted.
+ *
+ * The backend accepts a packetId, a packaging runId, a dispatch runId or an
+ * agent-run id and resolves them all to the same trace, so callers never have
+ * to know which ledger produced the id they are holding. A 404 means no work
+ * item matches — surfaced as an error rather than an empty trace, because an
+ * empty trace reads as "nothing happened" when the truth is "unknown id".
+ */
+export async function getWorkItemTrace(id: string): Promise<WorkItemTrace> {
+  const data = await fetchJson<{ data?: WorkItemTrace }>(`${API_BASE_URL}/trace/${encodeURIComponent(id)}`);
+  return (data?.data ?? ({} as WorkItemTrace));
 }
 
 export async function getRoadmapDependencies(refresh = false): Promise<RoadmapDependencyGraph> {

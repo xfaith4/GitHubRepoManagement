@@ -2662,9 +2662,44 @@ A release should not be marked `done` unless:
             throw 'The packaging run is missing from /api/automation/history'
         }
 
+        # Release 3.1 — the work-item trace, on the item this run just packaged
+        # and dispatched. This is the release's acceptance criterion ("a single
+        # runId resolves to every stage artifact through one route") checked
+        # against real ledgers rather than fixtures.
+        $traceByRun = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/trace/$([uri]::EscapeDataString($packagingDispatchRunId))"
+        Assert-Not503 -Name '/api/trace/{dispatchRunId}' -Response $traceByRun
+        if ([int]$traceByRun.StatusCode -ne 200) { throw "/api/trace/{dispatchRunId} expected 200, got $($traceByRun.StatusCode). Body=$($traceByRun.Content)" }
+        if ([string]$traceByRun.ContentType -notlike 'application/json*') { throw '/api/trace/{id} did not return JSON' }
+        if ($traceByRun.Json.success -ne $true) { throw '/api/trace/{dispatchRunId} returned success=false' }
+        $traceData = $traceByRun.Json.data
+        if (@($traceData.stages).Count -ne 7) { throw "/api/trace/{id} returned $(@($traceData.stages).Count) stages; the chain is seven" }
+        if ([string]$traceData.identity.dispatchRunId -ne $packagingDispatchRunId) { throw '/api/trace/{id} did not resolve the dispatch run id' }
+        $traceDispatchStage = @($traceData.stages | Where-Object { [string]$_.stage -eq 'dispatch' }) | Select-Object -First 1
+        if ([string]$traceDispatchStage.status -ne 'complete') {
+            throw "An approved-and-enqueued item must trace dispatch=complete; got '$($traceDispatchStage.status)'"
+        }
+
+        # The same item, asked for by the packaging-side id: an operator holding
+        # any id the chain minted must land on the same trace.
+        $traceByPacket = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/trace/$([uri]::EscapeDataString([string]$packagedPacket.packetId))"
+        if ([int]$traceByPacket.StatusCode -ne 200) { throw "/api/trace/{packetId} expected 200, got $($traceByPacket.StatusCode)" }
+        if ([string]$traceByPacket.Json.data.traceId -ne [string]$traceData.traceId) {
+            throw "packetId and dispatchRunId resolved to different traces ('$($traceByPacket.Json.data.traceId)' vs '$($traceData.traceId)')"
+        }
+
+        # An unknown id must 404 as JSON. Status alone is not enough: an
+        # unmatched GET falls through to the SPA shell, which answers 200 with
+        # text/html — a deleted route would pass a status-only check.
+        $traceUnknown = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/trace/no-such-work-item"
+        Assert-Not503 -Name '/api/trace/{id} (unknown)' -Response $traceUnknown
+        if ([int]$traceUnknown.StatusCode -ne 404) { throw "/api/trace/{id} for an unknown id expected 404, got $($traceUnknown.StatusCode)" }
+        if ([string]$traceUnknown.ContentType -notlike 'application/json*') { throw '/api/trace/{id} 404 must be JSON, not the SPA shell' }
+
         $packagingOk = $true
         Write-Host ("  packaging ok: packaged '{0}' (score {1}, order {2}) not the first item, over-budget twin skipped at stage=quota, dispatch only on approval (run {3}), re-approval 409" -f `
                 $packagedPacket.itemText, $packagedPacket.valueScore, $packagedPacket.roadmapOrder, $packagingDispatchRunId) -ForegroundColor DarkGray
+        Write-Host ("  trace ok: {0}/7 stages joined for run {1}, packetId resolves to the same trace, unknown id 404s as JSON" -f `
+                $traceData.completeStageCount, $packagingDispatchRunId) -ForegroundColor DarkGray
     }
     finally {
         # Leave nothing runnable behind: an approved packet enqueues real work
@@ -2740,7 +2775,11 @@ A release should not be marked `done` unless:
         '/api/cache/diagnostics', '/api/scan/schedule', '/api/execution/metrics',
         '/api/execution/queue', '/api/notifications/webhooks', '/api/roadmap/drift',
         '/api/analytics/cost', '/api/roadmap/maturity-history', '/api/agent-runs',
-        '/api/report/artifacts', '/api/status/cache', '/api/log/tail'
+        '/api/report/artifacts', '/api/status/cache', '/api/log/tail',
+        # Release 3.1. The census asserts content-type, not status, so an
+        # id that matches nothing still proves the route exists: its 404 is
+        # JSON, whereas a deleted route would answer 200 text/html.
+        '/api/trace/no-such-work-item'
     )
     $censusMissing = [System.Collections.Generic.List[string]]::new()
     foreach ($route in $censusRoutes) {

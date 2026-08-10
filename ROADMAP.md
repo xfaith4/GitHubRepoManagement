@@ -44,7 +44,10 @@ interchangeable — mixing them is what previously made the roadmap read as
       landed (2.7 Phase A's proven write path, and 3.0's dispatch that runs), so
       the north-star loop can now be driven end to end for one real item. Only
       the PAT's `Checks: Read` grant is still missing, and that affects
-      per-check detail rather than the loop.
+      per-check detail rather than the loop. **The trace milestone closed
+      2026-08-10:** `GET /api/trace/{id}` joins all seven stages from any id the
+      chain minted, and names the links that are broken rather than leaving a
+      blank that reads like "not yet". What remains is the write-back half.
 - [ ] **Release 3.2 — portfolio scale.** Independent of 3.1 and schedulable in
       parallel; it starts from the bounded 900-second scan budget Lane 0.4
       settled rather than from an open question.
@@ -885,7 +888,13 @@ Field proof — human / credential / calendar:
 
 ### Release 3.1 — Closed-Loop Delivery
 
-**Status:** planned
+**Status:** planned — 1 of 4 milestones shipped (the work-item trace,
+2026-08-10); the remaining three are the write-back half. The status token
+stays `planned` because `active` means _the single dispatch target_ and
+Release 2.7 still holds it (section 5); it does not mean "no work has
+started". **[non-blocker]** 2.7's only open item is an elevated Windows
+install, so whether it should still be the active release is a governance
+call for the next roadmap pass, not something this release decides.
 
 **Goal:** close the north-star loop end to end, repeatedly, with explicit
 operator gates at apply, dispatch, and merge. Today the console can rank work
@@ -910,10 +919,34 @@ merge-readiness question this release gates on.
 
 #### Engineering milestones
 
-- [ ] Add a per-work-item trace view joining rank → prompt → dispatch → agent
+- [x] Add a per-work-item trace view joining rank → prompt → dispatch → agent
       run → Actions result → merge readiness → write-back, keyed by `runId`.
-      _(state: planned — every stage already writes its own ledger; nothing
-      joins them)_
+      _(state: smoke-tested — closed 2026-08-10)_ The join is explicit and pure:
+      [`Execution.Trace.ps1`](backend/modules/execution/Execution.Trace.ps1)'s
+      `Join-WorkItemTrace` takes the already-read stage records and returns the
+      seven-stage chain, so the whole decision table is testable offline;
+      `Get-WorkItemTrace` is the thin reader behind `GET /api/trace/{id}`.
+      **Any id the chain mints resolves to the same trace** — packetId,
+      packaging runId, dispatch runId or agent-run id — because an operator
+      holding one of them should not have to know which ledger minted it. The
+      PR stage joins on **branch**: the submit-PR history shares no run id with
+      the dispatch chain, and repo name alone would attribute another item's PR
+      to this one. **The load-bearing distinction is `pending` vs `missing`:**
+      `pending` means the chain has not reached a stage, `missing` means it
+      demonstrably has and the artifact that should exist does not. Only
+      `missing` becomes a gap, and gaps displace the progress narrative in both
+      the API roll-up and the UI — "6 of 7 done" would otherwise hide a stage
+      nothing ever recorded. **Evidence:** module smoke — 18 stage cases across
+      the loop's shapes, 4 ids resolving to one trace, 7/7 stages joined from
+      real ledger files on disk, plus a **tripwire that every stage must be
+      able to report a gap** (a stage that could only ever read `pending` would
+      make a broken chain look merely young; an eighth stage without gap
+      detection fails the gate). api-host smoke traces the item its own
+      packaging run just dispatched, checks `packetId` and `dispatchRunId`
+      resolve to the same `traceId`, and asserts an unknown id 404s **as JSON**
+      — status alone would pass against the SPA fallback. Frontend: 16 pure
+      view tests + 5 DOM tests asserting a gap renders differently from
+      unreached work.
 - [ ] Generate the managed repo's roadmap completion edit from merge evidence
       and present it as a reviewed diff. _(state: planned — write-back is the
       last unbuilt step of the north-star workflow)_
