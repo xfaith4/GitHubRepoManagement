@@ -21,6 +21,7 @@ import RoadmapAuditModal from './RoadmapAuditModal';
 import RoadmapRepairModal from './RoadmapRepairModal';
 import { ReadmeStandardizationModal } from './ReadmeStandardizationModal';
 import { RoadmapLintModal } from './RoadmapLintModal';
+import WorkItemTraceModal from './WorkItemTraceModal';
 import ExecutionQueuePanel from './ExecutionQueuePanel';
 import RepoEvaluationModal from './RepoEvaluationModal';
 import RoadmapDispatchModal from './RoadmapDispatchModal';
@@ -134,6 +135,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   const [packagedItemsError, setPackagedItemsError] = useState<string | null>(null);
   const [packagedItemsNotice, setPackagedItemsNotice] = useState<string | null>(null);
   const [packagedItemBusyId, setPackagedItemBusyId] = useState<string | null>(null);
+  // Release 3.1 — whichever id the operator clicked Trace on. Any id the chain
+  // minted resolves to the same work item, so this holds it verbatim.
+  const [traceModalId, setTraceModalId] = useState<string | null>(null);
   const [dependencyGraph, setDependencyGraph] = useState<RoadmapDependencyGraph | null>(null);
   const [dependencyGraphLoading, setDependencyGraphLoading] = useState(false);
   const [hasAttemptedDepsLoad, setHasAttemptedDepsLoad] = useState(false);
@@ -1397,6 +1401,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                 onRefresh={() => { refreshPackagedItems(); }}
                 onApprove={handleApprovePackagedItem}
                 onReject={handleRejectPackagedItem}
+                onViewTrace={setTraceModalId}
               />
               <OperationsWorkspaceView
                 operationsRepos={operationsRepos}
@@ -1648,6 +1653,13 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
         <RoadmapLintModal
           repoName={lintModalRepo}
           onClose={() => setLintModalRepo(null)}
+        />
+      )}
+
+      {traceModalId && (
+        <WorkItemTraceModal
+          traceId={traceModalId}
+          onClose={() => setTraceModalId(null)}
         />
       )}
 

@@ -10,7 +10,7 @@
   "PSProvideCommentHelp": 18,
   "PSReviewUnusedParameter": 26,
   "PSUseApprovedVerbs": 18,
-  "PSUseBOMForUnicodeEncodedFile": 60,
+  "PSUseBOMForUnicodeEncodedFile": 59,
   "PSUseDeclaredVarsMoreThanAssignments": 6,
   "PSUseOutputTypeCorrectly": 136,
   "PSUseShouldProcessForStateChangingFunctions": 67,

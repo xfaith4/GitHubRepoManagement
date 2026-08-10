@@ -72,6 +72,9 @@ $agentRunsModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\agent-runs'
 . (Join-Path $agentRunsModuleRoot 'BudgetLedger.ps1')
 . (Join-Path $agentRunsModuleRoot 'AgentRuns.ps1')
 . (Join-Path $agentRunsModuleRoot 'MergeReadiness.ps1')
+# Release 3.1 — the work-item trace joins the stage ledgers above, so it loads
+# after all of them (packaging, agent runs, merge readiness).
+. (Join-Path $executionModuleRoot 'Execution.Trace.ps1')
 $persistenceModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\persistence'
 . (Join-Path $persistenceModuleRoot 'Persistence.Store.ps1')
 . (Join-Path $commonRoot 'NotificationHub.ps1')
@@ -5775,6 +5778,50 @@ try {
                 Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                     success = $true
                     data    = $runDetail
+                }
+                $client.Close()
+                continue
+            }
+
+            # ── Release 3.1 — one work item's whole life, from one id ──────
+            # Accepts any identifier the chain mints (packetId, packaging runId,
+            # dispatch runId, agent-run id): an operator holding one of them
+            # should not have to know which ledger minted it.
+            if ($req.Method -eq 'GET' -and $path -like '/api/trace/*' -and $path -ne '/api/trace/') {
+                $traceIdParam = [System.Uri]::UnescapeDataString($path.Substring('/api/trace/'.Length))
+                if ([string]::IsNullOrWhiteSpace($traceIdParam)) {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        error = 'id is required in /api/trace/{id}.'
+                    }
+                    $client.Close()
+                    continue
+                }
+
+                Write-HostLog ("[TRACE] trace.get correlationId={0} id={1} start" -f $correlationId, $traceIdParam)
+                try {
+                    $workItemTrace = Get-WorkItemTrace -WorkspaceRoot $WorkspaceRoot -Id $traceIdParam
+                } catch {
+                    $workItemTrace = $null
+                    Write-HostLog ("[TRACE] trace.get correlationId={0} id={1} error={2}" -f $correlationId, $traceIdParam, $_.Exception.Message)
+                }
+                Add-MetricCounter -Name 'api_requests_total'
+                if ($null -eq $workItemTrace) {
+                    Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        error = "No work item matches id '$traceIdParam'. Accepted ids: packetId, packaging runId, dispatch runId, or agent-run id."
+                    }
+                    $client.Close()
+                    continue
+                }
+
+                Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                Write-HostLog ("[TRACE] trace.get correlationId={0} id={1} done status={2} stage={3} gaps={4}" -f `
+                        $correlationId, $traceIdParam, $workItemTrace.status, $workItemTrace.currentStage, (@($workItemTrace.gaps) -join ','))
+                Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                    success = $true
+                    data    = $workItemTrace
                 }
                 $client.Close()
                 continue

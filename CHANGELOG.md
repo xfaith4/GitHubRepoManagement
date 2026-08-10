@@ -2,6 +2,29 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-10 — Release 3.1: one work item's whole life, from any id it was ever given
+
+### Changes
+
+- **Every stage of the north-star loop already wrote its own ledger; nothing joined them.** Answering "what happened to this item?" meant reading the packaging ledger, the dispatch queue, the runner's run summary, the agent-run record and the merge-readiness snapshot, then inferring the links between them. `GET /api/trace/{id}` now returns the whole chain — rank → prompt → dispatch → agent run → Actions result → merge readiness → write-back — as one record.
+- **The join is pure.** `Join-WorkItemTrace` ([`Execution.Trace.ps1`](backend/modules/execution/Execution.Trace.ps1)) takes the already-read stage records and returns the trace, so the entire decision table is testable offline with no disk, no network and no host. `Get-WorkItemTrace` is the thin reader behind the route.
+- **Any id resolves to the same trace.** The chain mints a new identifier at nearly every stage — `packetId`, the packaging `runId`, the dispatch `runId`, the agent-run id — and an operator holding one of them should not have to know which ledger produced it. The submit-PR history shares no run id with the dispatch chain at all, so the PR stage joins on **branch**; repo name alone would attribute another item's PR to this one.
+- **`pending` and `missing` are different things, and the trace says which.** `pending` means the chain has not reached a stage; `missing` means it demonstrably has and the artifact that should exist does not. Only `missing` becomes a gap, and gaps displace the progress line in both the roll-up and the UI — otherwise "6 of 7 stages complete" reads as nearly-done while a stage nothing ever recorded sits inside it.
+- **Frontend:** a trace modal reachable from every row of the packaged-item queue, with the gap styled apart from both "done" and "not started". The read-only action keeps its single click, per the bulk-scope rule.
+
+### Verification
+
+- Module smoke: `trace: 18 stage cases, 4 ids resolve to one trace, 7/7 stages joined from disk, every stage can report a gap`, plus `/api/trace/{id} is routed and resolves through Get-WorkItemTrace`.
+- **Tripwire — every stage must be able to report a gap.** A stage that could only ever read `pending` would make a broken chain look merely young, which is the exact failure the trace exists to prevent; an eighth stage added without gap detection fails the gate rather than shipping a blind spot.
+- api-host smoke traces the item its own packaging run just packaged and dispatched: 7 stages, `dispatch=complete`, and `packetId` and `dispatchRunId` resolving to the same `traceId`. An unknown id must 404 **as JSON** — a status-only check would pass against the SPA fallback, which answers unmatched GETs with 200 text/html. The route is also in the route census for the same reason.
+- Frontend: 16 pure view tests and 5 DOM tests, the latter asserting that a `missing` stage and a `pending` stage in the same position render differently.
+- ESLint: 161 warnings, exactly at the ratchet. PSSA: 597, one **below** the previous 598 baseline (a new module carrying a BOM), and the baseline was moved down to lock it in.
+
+### Known-open
+
+- The remaining three Release 3.1 milestones are the write-back half: generate the managed repo's completion edit from merge evidence, refuse it without that evidence, and record a full-loop proof in `evidence/`.
+- The write-back stage reads merge evidence from the merge-readiness snapshot, which is the only recorded source today. That is why `pr-already-merged` — a merge-readiness *blocker* — is the trace's success state for that stage.
+
 ## 2026-08-10 — P0 follow-up 2: the GitHub phase ran dark, and `/api/status` was killing the host outright
 
 ### Changes
