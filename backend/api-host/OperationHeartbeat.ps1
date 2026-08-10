@@ -110,6 +110,8 @@ function Start-PortalOperation {
         hostPid                  = $PID
     }
     Write-PortalOperationState -Path (Get-PortalOperationStatePath -WorkspaceRoot $WorkspaceRoot) -State $state
+    $script:PortalActiveOperationState = $state
+    $script:PortalActiveOperationWorkspace = $WorkspaceRoot
     return $state
 }
 
@@ -147,6 +149,43 @@ function Update-PortalOperationProgress {
     return $State
 }
 
+# The operation currently in flight, so deep scan code can report progress
+# without every layer between it and the request loop having to thread a
+# callback. Set by Start-PortalOperation, cleared by Complete-PortalOperation.
+$script:PortalActiveOperationState = $null
+$script:PortalActiveOperationWorkspace = ''
+
+function Update-ActivePortalOperationProgress {
+    <# Ambient progress tick. No-ops when nothing is active, so scan engines can
+       call it unconditionally — including on routes that run outside a tracked
+       operation. This is what makes coverage a property of the request loop
+       rather than of remembering to instrument each route. #>
+    [CmdletBinding()]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Advances an in-flight progress marker in a gitignored status file; nothing destructive and no interactive caller.')]
+    param([string]$Stage = '', [int]$Completed = -1, [switch]$Force)
+    if ($null -eq $script:PortalActiveOperationState) { return }
+    $null = Update-PortalOperationProgress -WorkspaceRoot $script:PortalActiveOperationWorkspace `
+        -State $script:PortalActiveOperationState -Stage $Stage -Completed $Completed -Force:$Force
+}
+
+function Get-ActivePortalOperationTick {
+    <# The ambient tick as a scriptblock, for APIs that take an -OnProgress
+       callback (Get-StatusAdapterResult / Get-LocalFolderInventory). #>
+    [CmdletBinding()]
+    [OutputType([scriptblock])]
+    param([string]$Stage = '')
+    $stageName = $Stage
+    # Capture the function BODY, not just variables: .GetNewClosure() closes over
+    # variables only, and this scriptblock is invoked from inside the reconcile
+    # module's scope where the name would not resolve.
+    $updater = ${function:Update-ActivePortalOperationProgress}
+    return {
+        param($scanned)
+        & $updater -Stage $stageName -Completed ([int]$scanned)
+    }.GetNewClosure()
+}
+
 function Complete-PortalOperation {
     <# Clear the active marker. MUST run on the failure path too (finally), or a
        thrown scan leaves a marker that suppresses restarts until it ages out. #>
@@ -165,7 +204,17 @@ function Complete-PortalOperation {
     $final.lastProgressAt = [datetime]::UtcNow.ToString('o')
     if (-not $final.ContainsKey('heartbeatIntervalSeconds')) { $final.heartbeatIntervalSeconds = $script:PortalHeartbeatIntervalSeconds }
     Write-PortalOperationState -Path (Get-PortalOperationStatePath -WorkspaceRoot $WorkspaceRoot) -State $final
+    $script:PortalActiveOperationState = $null
+    $script:PortalActiveOperationWorkspace = ''
     return $final
+}
+
+function Test-PortalOperationActive {
+    <# Whether an operation is currently tracked in this process. #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param()
+    return ($null -ne $script:PortalActiveOperationState)
 }
 
 function Clear-PortalOperationState {

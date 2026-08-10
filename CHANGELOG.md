@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-10 — P0 follow-up: the heartbeat covered one route; the long ones were still being killed
+
+### Changes
+
+- **Reported as "Insights page does not load."** Portfolio Mission showed `Failed to fetch`; Documentation Health and Portfolio Analytics stayed unavailable. Cause: the previous fix added the progress heartbeat **per route**, to `/api/status` only — which is not even on the extended-deadline list — while `Get-LongRunningScanRoutePattern` already enumerated the routes that genuinely run for minutes. `/api/portfolio/assessment` had no heartbeat and was restarted mid-scan exactly as before the fix.
+- **Evidence**: watchdog ledger `04:24:33 suppressed=True age=76` → `04:25:33 decision=restart`, against host log `04:25:22 portfolio.assessment start` → `04:25:35 Repo Management API host started`.
+- **The heartbeat lifecycle now hangs off the same classifier the request deadline uses.** `Test-LongRunningScanRoute` starts the operation in the request loop and it completes in the same `finally` as `Clear-RequestDeadline` — so a route added to that list is covered automatically instead of needing to be remembered.
+- **Ambient progress tick** (`Update-ActivePortalOperationProgress` / `Get-ActivePortalOperationTick`) lets deep scan code publish progress without threading a callback through every layer, and no-ops outside an operation. All three `Get-StatusAdapterResult` call sites now publish progress, including the assessment's cold status scan — the multi-minute step that was going stale.
+- **Coverage tripwire** fails if the request loop stops keying off the classifier, stops completing in `finally`, or if **any** `Get-StatusAdapterResult` call omits `-OnProgress`: a marked-active operation with no ticks goes stale and is restarted anyway, so the marker alone is not protection.
+
+### Verification
+
+- Module smoke: `heartbeat coverage ok: request loop keyed off Test-LongRunningScanRoute, 3 scan-engine call site(s) all publish progress, ambient tick no-ops when idle`, alongside the existing 10 decision cases and 6 progress-age shapes.
+- A latent scope bug was found and fixed en route: `.GetNewClosure()` closes over variables, not function resolution, so the ambient tick failed when invoked from inside the reconcile module. The tick now captures the function body (`${function:...}`); verified clean across repeated smoke runs.
+- PSSA ratchet: still exactly 598, no new debt.
+
 ## 2026-08-10 — P0: the portal watchdog was restarting healthy scans (Lane 0.9)
 
 ### Changes
