@@ -71,6 +71,38 @@ if ((Get-EffectiveScanRequestTimeoutSeconds -ConfiguredSeconds 300 -BaseSeconds 
 if ((Get-EffectiveScanRequestTimeoutSeconds -ConfiguredSeconds 900 -EnvironmentValue '99999' -BaseSeconds 180) -ne 3600) { throw 'Scan deadline must stay clamped to the 3600-second ceiling' }
 Write-Host '  scan routes get the extended (still bounded) deadline tier; ordinary routes do not' -ForegroundColor DarkGray
 
+Write-Step 'Dashboard tab-panel tripwire — tab content renders below its tabs (ROADMAP Lane 0.5)'
+# The defect this pins: the Insights widgets rendered in a container ABOVE
+# <DashboardViewTabs>, while the Insights tab panel held a single sentence
+# pointing back upward. Clicking "Insights" therefore inserted ~560 lines above
+# the control the operator had just clicked and pushed the tab bar off-screen —
+# the tab metaphor inverted for one of six tabs. Source-order is the honest
+# check: React renders a tree in source order, so a view component appearing
+# before the tab strip renders before it on screen.
+$dashboardPath = Join-Path $WorkspaceRoot 'frontend\components\Dashboard.tsx'
+if (-not (Test-Path -LiteralPath $dashboardPath)) { throw "Dashboard.tsx not found at: $dashboardPath" }
+$dashboardSource = Get-Content -LiteralPath $dashboardPath -Raw -Encoding UTF8
+$tabStripIndex = $dashboardSource.IndexOf('<DashboardViewTabs')
+if ($tabStripIndex -lt 0) { throw 'Dashboard.tsx no longer renders <DashboardViewTabs>; the tab contract cannot be checked.' }
+$insightsIndex = $dashboardSource.IndexOf('<InsightsView')
+if ($insightsIndex -lt 0) { throw 'Dashboard.tsx no longer renders <InsightsView>; Insights content must live in a component the tab panel mounts.' }
+if ($insightsIndex -lt $tabStripIndex) {
+    throw 'Dashboard.tsx renders <InsightsView> BEFORE <DashboardViewTabs>; tab content must render inside the panel, not above the tab strip.'
+}
+# The apology copy is the symptom. If it is back, so is the layout.
+if ($dashboardSource -match 'shown above this section') {
+    throw 'Dashboard.tsx tells the operator that tab content is "shown above this section"; the content belongs in the panel instead.'
+}
+# Every `activeView === '<key>'` render gate must sit after the tab strip too,
+# or a future tab repeats the same inversion without touching Insights.
+$gateMatches = [regex]::Matches($dashboardSource, "activeView === '[a-z-]+'")
+$gatesAboveTabs = @($gateMatches | Where-Object { $_.Index -lt $tabStripIndex })
+if (@($gatesAboveTabs).Count -gt 0) {
+    throw ("Dashboard.tsx gates {0} render(s) on activeView above the tab strip: {1}. Tab content must render inside the panel." -f `
+            @($gatesAboveTabs).Count, ((@($gatesAboveTabs) | ForEach-Object { $_.Value }) -join ', '))
+}
+Write-Host '  Insights renders inside its tab panel; no activeView-gated content sits above the tab strip' -ForegroundColor DarkGray
+
 Write-Step 'Worklog location tripwire — root worklogs stay archived (ROADMAP Lane 0.4)'
 # The 2026-07-15 cleanup archived findings.md / progress.md / task_plan.md to
 # docs/history/worklogs/ and they were back in the root by 2026-08-08, because
