@@ -1432,6 +1432,15 @@ sibling.
       `Get-OperationsReposPayload`) rather than a hand-maintained list, since a
       hand-maintained list is exactly what drifted; verified against the
       pre-fix tier list — **1 violation, `GET /api/status`**.
+      **Live production proof (2026-08-10 17:22, service running the fixed
+      code since 05:59:40):** a forced cold scan
+      `GET /api/status?refresh=true` returned **HTTP 200 in 194s** — past the
+      180s deadline that previously terminated the process — with the service
+      PID unchanged across the request and **no new `FailFast`** (the last
+      remains 05:45:52, before the fix loaded). The reported symptom is gone:
+      the roadmap modal's endpoints answer immediately
+      (`/api/roadmap-agent/history` 200 in 0s, `/api/roadmap/content` 200 in
+      4s) where both previously hung behind a scan about to kill the host.
       **[non-blocker]** `FailFast` as deadline policy means one slow request
       destroys every in-flight request; the blast radius is a design question
       left open.
