@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-10 — Release 3.1: the roadmap may only be marked complete by a merge
+
+### Changes
+
+- **Write-back is the last unbuilt step of the north-star workflow, and its guardrail had no enforcement.** `POST /api/roadmap/write-back/preview` resolves a work item from any trace id, re-reads its pull request **live**, and returns a line-level diff of the completion edit. `POST /api/roadmap/write-back/apply` writes it — and re-runs the whole gate first rather than trusting the preview it was handed.
+- **What is not evidence, and why each is refused rather than merely unimplemented.** Code churn says work happened, not that it was accepted — a branch full of commits that never merged is the commonest shape of abandoned work in this portfolio. A green Actions run on an open PR means the change is *safe to merge*, which is the opposite of merged. A local `verifyResult=passed` is the runner's own opinion, recorded before review, on a machine the change never left. And a merged PR with no successful validation run is how a roadmap starts lying. Nine refusal shapes, each with a code, a sentence, and the remedy that would satisfy it.
+- **`Test-RoadmapWriteBackEvidence` fails closed:** no evidence at all is a refusal, not a pass. A merge known only from a stored merge-readiness snapshot is `merge-unverified` rather than `no-merge-commit` — a snapshot never carries a merge commit, so its absence means nobody asked GitHub, which is a different problem with a different remedy.
+- **Every refusal is a 409**, never a 200 carrying `changed=false` that a caller could read as success. The ledger itself throws on an applied record with no allowed gate: a ledger that can hold an unattributable "applied" is a ledger that can launder one.
+- **The pattern, not the instance.** The Release 1.1 completion-preview route carried its own inline `- [ ]` → `- [x]` rewrite. Left alone there would have been two generators of the same edit and only one of them gated — the moment anyone added an apply route for the older one, the gate would be nowhere near it. It now delegates to the single generator.
+- **The edit is conservative on purpose.** Exact matching on the trimmed item text (a fuzzy match eventually ticks the wrong line in someone else's roadmap), indentation preserved, re-running reported as `alreadyComplete` rather than claimed twice, a miss named rather than returned as a silent zero-line edit, and a line-level diff instead of a whole-file dump the operator cannot actually review.
+
+### Verification
+
+- Module smoke: `write-back: 9 refusal shapes enforced, merged+validated passes, edit exact/indent-preserving/idempotent, applied record reaches the trace` and `write-back gate tripwire: 1 completion-edit generator, 1 write site(s) all gated, both routes present, apply re-checks`.
+- **Both tripwires adversarially proven.** The one-generator detector flags the pre-fix host and none of the four legitimate near-misses — the parser and dispatcher match open checkboxes, the linter and repairer emit `- [x]` into history sections, and only the intersection turns an open item into a completed one. The gate detector fires (reporting the exact host line) when `gate.allowed` is stripped from the apply route.
+- The applied-record assertion is behavioral, not a constant comparison: `Roadmap.WriteBack.ps1` and `Execution.Trace.ps1` name the same ledger through two constants, and if they drift the trace would show `writeBack=missing` forever rather than failing.
+- api-host smoke: preview **and** apply both refuse a real ranked-approved-dispatched item with 409 because nothing merged, the fixture roadmap is verified untouched afterwards, and an unknown id 404s as JSON.
+- Frontend: 197 tests. New coverage asserts that apply confirms before writing (it edits a file in a **different** repository), that every refusal code is shown with its remedy, and that a refusal appearing only at apply time replaces the preview rather than leaving a stale success on screen.
+- ESLint 161 (at the ratchet); PSSA 597 (at the ratchet, with a justified suppression on the pure edit builder — `-WhatIf` on a function that changes nothing would suggest it does).
+
+### Known-open
+
+- The fourth Release 3.1 milestone, a live full-loop proof in `evidence/`, is **blocked on an operator session, not on engineering**: one real item has to travel the chain end to end, which needs an authenticated `claude` / `gh agent-task` run, a real PR, and a real merge. Batch it with Release 2.9's operator session.
+
 ## 2026-08-10 — Release 3.1: one work item's whole life, from any id it was ever given
 
 ### Changes

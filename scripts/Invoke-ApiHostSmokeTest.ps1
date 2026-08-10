@@ -2695,9 +2695,55 @@ A release should not be marked `done` unless:
         if ([int]$traceUnknown.StatusCode -ne 404) { throw "/api/trace/{id} for an unknown id expected 404, got $($traceUnknown.StatusCode)" }
         if ([string]$traceUnknown.ContentType -notlike 'application/json*') { throw '/api/trace/{id} 404 must be JSON, not the SPA shell' }
 
+        # Release 3.1 — the write-back gate, on an item that has NOT merged.
+        # This is the release's central claim checked over HTTP: a real,
+        # ranked, approved, dispatched work item still cannot be marked
+        # complete, because nothing has merged. Both routes must refuse
+        # independently — apply re-runs the gate rather than trusting a
+        # preview — and both must refuse with 409, never a 200 carrying
+        # changed=false that a caller could read as success.
+        foreach ($wbRoute in @('preview', 'apply')) {
+            $wbResp = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/write-back/$wbRoute" -Body @{ id = $packagingDispatchRunId }
+            Assert-Not503 -Name "/api/roadmap/write-back/$wbRoute" -Response $wbResp
+            if ([string]$wbResp.ContentType -notlike 'application/json*') { throw "/api/roadmap/write-back/$wbRoute did not return JSON" }
+            if ([int]$wbResp.StatusCode -ne 409) {
+                throw "/api/roadmap/write-back/$wbRoute for an unmerged item expected 409, got $($wbResp.StatusCode). Body=$($wbResp.Content)"
+            }
+            if ($wbResp.Json.success -ne $false) { throw "/api/roadmap/write-back/$wbRoute refusal must carry success=false" }
+            # The refusal has to say which rule stopped it, or the operator is
+            # left guessing which of six preconditions is missing.
+            $wbCategory = [string]$wbResp.Json.category
+            if ($wbCategory -notin @('write-back-refused', 'roadmap-not-found')) {
+                throw "/api/roadmap/write-back/$wbRoute refused with an unexpected category '$wbCategory'. Body=$($wbResp.Content)"
+            }
+            if ($wbCategory -eq 'write-back-refused') {
+                $wbCodes = @(@($wbResp.Json.data.refusals) | ForEach-Object { [string]$_.code })
+                if ($wbCodes.Count -eq 0) { throw "/api/roadmap/write-back/$wbRoute refused without naming a refusal code" }
+                foreach ($wbRefusal in @($wbResp.Json.data.refusals)) {
+                    if ([string]::IsNullOrWhiteSpace([string]$wbRefusal.remedy)) { throw "Refusal '$($wbRefusal.code)' carries no remedy" }
+                }
+            }
+            $wbRefusalCategory = $wbCategory
+        }
+
+        # The managed repo's roadmap must be untouched by a refused write-back.
+        $wbFixtureRoadmap = Join-Path $portfolioFixtureRoot (Join-Path $packagingRepoName 'ROADMAP.md')
+        if (Test-Path -LiteralPath $wbFixtureRoadmap) {
+            $wbRoadmapAfter = Get-Content -LiteralPath $wbFixtureRoadmap -Raw -Encoding UTF8
+            if ($wbRoadmapAfter -match [regex]::Escape("- [x] $([string]$packagedPacket.itemText)")) {
+                throw 'A refused write-back marked the roadmap item complete anyway.'
+            }
+        }
+
+        $wbUnknown = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/write-back/preview" -Body @{ id = 'no-such-work-item' }
+        Assert-Not503 -Name '/api/roadmap/write-back/preview (unknown id)' -Response $wbUnknown
+        if ([int]$wbUnknown.StatusCode -ne 404) { throw "/api/roadmap/write-back/preview for an unknown id expected 404, got $($wbUnknown.StatusCode)" }
+        if ([string]$wbUnknown.ContentType -notlike 'application/json*') { throw '/api/roadmap/write-back/preview 404 must be JSON, not the SPA shell' }
+
         $packagingOk = $true
         Write-Host ("  packaging ok: packaged '{0}' (score {1}, order {2}) not the first item, over-budget twin skipped at stage=quota, dispatch only on approval (run {3}), re-approval 409" -f `
                 $packagedPacket.itemText, $packagedPacket.valueScore, $packagedPacket.roadmapOrder, $packagingDispatchRunId) -ForegroundColor DarkGray
+        Write-Host ("  write-back ok: preview AND apply both refuse the unmerged item 409 ({0}), roadmap untouched, unknown id 404s as JSON" -f $wbRefusalCategory) -ForegroundColor DarkGray
         Write-Host ("  trace ok: {0}/7 stages joined for run {1}, packetId resolves to the same trace, unknown id 404s as JSON" -f `
                 $traceData.completeStageCount, $packagingDispatchRunId) -ForegroundColor DarkGray
     }

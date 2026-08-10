@@ -14,8 +14,25 @@ import React from 'react';
 import type { WorkItemTrace } from '../lib/workItemTrace';
 
 const getWorkItemTrace = vi.fn();
+const previewRoadmapWriteBack = vi.fn();
+const applyRoadmapWriteBack = vi.fn();
+
+class TestWriteBackRefusedError extends Error {
+  category: string;
+  refusals: Array<{ code: string; message: string; remedy: string }>;
+  constructor(message: string, category: string, refusals: Array<{ code: string; message: string; remedy: string }>) {
+    super(message);
+    this.name = 'WriteBackRefusedError';
+    this.category = category;
+    this.refusals = refusals;
+  }
+}
+
 vi.mock('../services/apiClient', () => ({
   getWorkItemTrace: (id: string) => getWorkItemTrace(id),
+  previewRoadmapWriteBack: (id: string) => previewRoadmapWriteBack(id),
+  applyRoadmapWriteBack: (id: string, previewId: string, content: string) => applyRoadmapWriteBack(id, previewId, content),
+  WriteBackRefusedError: TestWriteBackRefusedError,
 }));
 
 // Imported after the mock so the component picks it up.
@@ -69,7 +86,11 @@ const traceNotStarted: WorkItemTrace = {
   ],
 };
 
-beforeEach(() => { getWorkItemTrace.mockReset(); });
+beforeEach(() => {
+  getWorkItemTrace.mockReset();
+  previewRoadmapWriteBack.mockReset();
+  applyRoadmapWriteBack.mockReset();
+});
 afterEach(cleanup);
 
 const stageRow = (key: string) =>
@@ -134,5 +155,111 @@ describe('WorkItemTraceModal', () => {
 
     fireEvent.click(screen.getByText('Refresh'));
     await waitFor(() => expect(getWorkItemTrace).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe('WorkItemTraceModal — roadmap write-back', () => {
+  const openTrace = async () => {
+    getWorkItemTrace.mockResolvedValue(traceWithGap);
+    render(<WorkItemTraceModal traceId="t" onClose={() => {}} />);
+    await waitFor(() => expect(screen.getByTestId('work-item-write-back')).toBeInTheDocument());
+  };
+
+  // The gate's refusal is the product here. Showing only "failed" would leave
+  // the operator guessing which of six preconditions is missing.
+  it('shows every refusal code with the remedy that would satisfy it', async () => {
+    previewRoadmapWriteBack.mockRejectedValue(
+      new TestWriteBackRefusedError('Completion cannot be claimed for this item: Pull request #7 is still open.', 'write-back-refused', [
+        { code: 'pr-not-merged', message: 'Pull request #7 is still open.', remedy: 'Merge the pull request, then re-check.' },
+      ]),
+    );
+    await openTrace();
+    fireEvent.click(screen.getByTestId('work-item-write-back-preview'));
+
+    const refusal = await screen.findByTestId('work-item-write-back-refusal');
+    expect(refusal).toHaveTextContent('pr-not-merged');
+    expect(refusal).toHaveTextContent('Merge the pull request, then re-check.');
+    expect(screen.queryByTestId('work-item-write-back-apply')).not.toBeInTheDocument();
+  });
+
+  it('renders the proposed edit as a diff before anything is written', async () => {
+    previewRoadmapWriteBack.mockResolvedValue({
+      previewId: 'prev-1',
+      roadmapPath: 'C:\\repos\\demo\\ROADMAP.md',
+      itemText: 'Add the operator export route',
+      markedCount: 1,
+      proposedContent: '- [x] Add the operator export route',
+      diff: [{ line: 7, before: '- [ ] Add the operator export route', after: '- [x] Add the operator export route' }],
+    });
+    await openTrace();
+    fireEvent.click(screen.getByTestId('work-item-write-back-preview'));
+
+    const result = await screen.findByTestId('work-item-write-back-preview-result');
+    expect(result).toHaveTextContent('- [ ] Add the operator export route');
+    expect(result).toHaveTextContent('+ - [x] Add the operator export route');
+    expect(result).toHaveTextContent('Nothing is written until you apply it.');
+    expect(applyRoadmapWriteBack).not.toHaveBeenCalled();
+  });
+
+  // Applying edits a file in a different repository, so it confirms first.
+  it('confirms before applying, and does not apply on cancel', async () => {
+    previewRoadmapWriteBack.mockResolvedValue({
+      previewId: 'prev-1',
+      roadmapPath: 'C:\\repos\\demo\\ROADMAP.md',
+      markedCount: 1,
+      proposedContent: 'content',
+      diff: [{ line: 7, before: 'a', after: 'b' }],
+    });
+    await openTrace();
+    fireEvent.click(screen.getByTestId('work-item-write-back-preview'));
+    fireEvent.click(await screen.findByTestId('work-item-write-back-apply'));
+
+    expect(screen.getByTestId('work-item-write-back-confirm-prompt')).toHaveTextContent('C:\\repos\\demo\\ROADMAP.md');
+    expect(applyRoadmapWriteBack).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('work-item-write-back-cancel'));
+    expect(applyRoadmapWriteBack).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('work-item-write-back-confirm-prompt')).not.toBeInTheDocument();
+  });
+
+  it('applies on confirm and re-reads the trace', async () => {
+    previewRoadmapWriteBack.mockResolvedValue({
+      previewId: 'prev-1',
+      roadmapPath: 'C:\\repos\\demo\\ROADMAP.md',
+      markedCount: 1,
+      proposedContent: 'content',
+      diff: [{ line: 7, before: 'a', after: 'b' }],
+    });
+    applyRoadmapWriteBack.mockResolvedValue({ applied: true, markedCount: 1, roadmapPath: 'C:\\repos\\demo\\ROADMAP.md' });
+    await openTrace();
+    await waitFor(() => expect(getWorkItemTrace).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByTestId('work-item-write-back-preview'));
+    fireEvent.click(await screen.findByTestId('work-item-write-back-apply'));
+    fireEvent.click(screen.getByTestId('work-item-write-back-confirm'));
+
+    await waitFor(() => expect(applyRoadmapWriteBack).toHaveBeenCalledWith('t', 'prev-1', 'content'));
+    expect(await screen.findByTestId('work-item-write-back-applied')).toHaveTextContent('Marked 1 item complete');
+    // The trace must be re-read: the write-back stage just changed.
+    await waitFor(() => expect(getWorkItemTrace).toHaveBeenCalledTimes(2));
+  });
+
+  // Apply re-runs the gate server-side. If it refuses at that point, the UI
+  // must show the refusal rather than a stale success.
+  it('surfaces a refusal that only appears at apply time', async () => {
+    previewRoadmapWriteBack.mockResolvedValue({
+      previewId: 'prev-1', roadmapPath: 'r.md', markedCount: 1, proposedContent: 'content',
+      diff: [{ line: 1, before: 'a', after: 'b' }],
+    });
+    applyRoadmapWriteBack.mockRejectedValue(
+      new TestWriteBackRefusedError('The roadmap changed since this preview was generated.', 'stale-preview', []),
+    );
+    await openTrace();
+    fireEvent.click(screen.getByTestId('work-item-write-back-preview'));
+    fireEvent.click(await screen.findByTestId('work-item-write-back-apply'));
+    fireEvent.click(screen.getByTestId('work-item-write-back-confirm'));
+
+    expect(await screen.findByTestId('work-item-write-back-refusal')).toHaveTextContent('The roadmap changed since this preview was generated.');
+    expect(screen.queryByTestId('work-item-write-back-applied')).not.toBeInTheDocument();
   });
 });
