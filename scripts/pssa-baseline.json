@@ -1,0 +1,19 @@
+{
+  "PSAvoidAssignmentToAutomaticVariable": 3,
+  "PSAvoidDefaultValueSwitchParameter": 5,
+  "PSAvoidOverwritingBuiltInCmdlets": 1,
+  "PSAvoidUsingEmptyCatchBlock": 79,
+  "PSAvoidUsingInvokeExpression": 1,
+  "PSAvoidUsingPlainTextForPassword": 9,
+  "PSAvoidUsingPositionalParameters": 34,
+  "PSPossibleIncorrectComparisonWithNull": 1,
+  "PSProvideCommentHelp": 18,
+  "PSReviewUnusedParameter": 26,
+  "PSUseApprovedVerbs": 18,
+  "PSUseBOMForUnicodeEncodedFile": 60,
+  "PSUseDeclaredVarsMoreThanAssignments": 6,
+  "PSUseOutputTypeCorrectly": 136,
+  "PSUseShouldProcessForStateChangingFunctions": 67,
+  "PSUseSingularNouns": 90,
+  "PSUseUsingScopeModifierInNewRunspaces": 44
+}

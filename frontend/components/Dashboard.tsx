@@ -1,8 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry, type DocAuditIndex, type RoadmapAuditIndex, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioAssessmentEntry, type PortfolioAssessmentResult, type PortfolioTrendPoint, type PortfolioTrendResult, type RepoLifecycleState, type OperationsReposResult, type RepoCurationState } from '../types';
-import SummaryCard from './SummaryCard';
+import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry, type DocAuditIndex, type RoadmapAuditIndex, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioAssessmentEntry, type PortfolioAssessmentResult, type PortfolioTrendResult, type OperationsReposResult, type RepoCurationState } from '../types';
 import ActionBar from './ActionBar';
-import ProvenanceNotice from './ProvenanceNotice';
 import { isCarriedOverCount } from '../lib/dataProvenance';
 import AutomationStatusBadge from './AutomationStatusBadge';
 import PackagedItemQueue from './PackagedItemQueue';
@@ -34,7 +32,6 @@ import OperationsWorkspaceView from './OperationsWorkspaceView';
 import { VIEW_META_BY_KEY, type ViewKey } from '../viewMeta';
 import DashboardViewTabs from './DashboardViewTabs';
 import PortfolioSummarySection from './PortfolioSummarySection';
-import PortfolioMissionSection from './PortfolioMissionSection';
 import { type ViewTabBadges } from '../lib/viewTabs';
 import { isRepoNeedsAttention } from '../lib/needsAttention';
 import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getAutomationStatus, getPackagedItems, approvePackagedItem, rejectPackagedItem, getRoadmapDependencies, getPortfolioAssessment, refreshAllPortfolioAssessment, setOperationsRepoCuration, getPortfolioTrend, getOperationsRepos } from '../services/apiClient';
@@ -67,22 +64,6 @@ interface DashboardProps {
   onConnectGitHub?: (username: string) => Promise<void>;
   connectedGitHubUser?: string | null;
 }
-
-const EMPTY_EXECUTION_METRICS: ExecutionMetrics = {
-  completedToday: 0,
-  completedThisWeek: 0,
-  totalCompleted: 0,
-  totalCancelled: 0,
-  avgCurrentRunMins: 0,
-  errorRatePct: 0,
-  stateCounts: {
-    idle: 0,
-    ready: 0,
-    running: 0,
-    blocked: 0,
-    complete: 0,
-  },
-};
 
 const EXECUTION_METRICS_REFRESH_MS = 15_000;
 // Automation runs on a minutes-to-hours interval, so polling it as often as the
@@ -1117,20 +1098,6 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     };
   }, [portfolioAssessment]);
 
-  const portfolioTrendSummaryCards = useMemo(() => {
-    if (!portfolioTrend) {
-      return [];
-    }
-
-    return [
-      { label: 'Avg Maturity', value: `${Math.round(portfolioTrend.summary.averageMaturityScore)}%`, accent: 'text-emerald-200' },
-      { label: 'Docs Health', value: `${Math.round(portfolioTrend.summary.averageDocumentationHealthScore)}%`, accent: 'text-sky-200' },
-      { label: 'Ready Now', value: portfolioTrend.summary.readyForWorkCount.toString(), accent: 'text-blue-200' },
-      { label: 'Improved This Week', value: portfolioTrend.summary.improvedThisWeek.toString(), accent: 'text-cyan-200' },
-      { label: 'Visible Window', value: `${portfolioTrend.availableDays}d`, accent: 'text-amber-200' },
-    ];
-  }, [portfolioTrend]);
-
   if (error && repos.length === 0) {
     return <div className="text-center p-8 text-red-400">{error}</div>;
   }
@@ -1157,13 +1124,6 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     ? 'bg-red-500'
     : 'bg-yellow-400 animate-pulse';
   const healthLabel = backendHealth === 'online' ? 'Backend: Online' : backendHealth === 'offline' ? 'Backend: Offline' : 'Backend: Connecting…';
-  const metrics = executionMetrics ?? EMPTY_EXECUTION_METRICS;
-  const hasExecutionActivity = metrics.totalCompleted > 0 ||
-    metrics.totalCancelled > 0 ||
-    metrics.stateCounts.running > 0 ||
-    metrics.stateCounts.ready > 0 ||
-    metrics.stateCounts.blocked > 0 ||
-    metrics.stateCounts.complete > 0;
   const sourceLabel = dataSource?.source === 'github'
     ? `GitHub API: ${dataSource.username}`
     : dataSource?.source === 'local'

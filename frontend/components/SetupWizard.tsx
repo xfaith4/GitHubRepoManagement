@@ -13,7 +13,9 @@ type Step = 1 | 2 | 3 | 4;
 function SetupWizard({ onComplete }: SetupWizardProps) {
   const [step, setStep] = useState<Step>(1);
   const [prereqs, setPrereqs] = useState<SetupPrerequisite[]>([]);
-  const [prereqsMet, setPrereqsMet] = useState(false);
+  // The setter feeds state the wizard reads per-check via `prereqs`; the
+  // rolled-up boolean itself is not consumed anywhere yet.
+  const [_prereqsMet, setPrereqsMet] = useState(false);
   const [prereqLoading, setPrereqLoading] = useState(true);
   const [localRootsText, setLocalRootsText] = useState('');
   const [gitHubOwner, setGitHubOwner] = useState('');

@@ -23,8 +23,12 @@ function New-AdapterResponse {
         [Parameter()]
         [object]$Data,
 
+        # Renamed from $Error (Lane 0.8): a parameter named Error shadows the
+        # automatic $Error collection inside this function — the one PSSA
+        # Error-severity finding in the repo. The emitted JSON key is
+        # unchanged, so the API contract is unaffected.
         [Parameter()]
-        [string]$Error,
+        [string]$ErrorMessage,
 
         [Parameter()]
         [hashtable]$Meta
@@ -36,7 +40,7 @@ function New-AdapterResponse {
         success = $Success
         timestamp = (Get-Date).ToString('o')
         data = $Data
-        error = $Error
+        error = $ErrorMessage
         meta = if ($Meta) { $Meta } else { @{} }
     }
 }
@@ -192,7 +196,7 @@ function Get-StatusAdapterResult {
             -Operation $operation `
             -CorrelationId $correlationId `
             -Success $false `
-            -Error $errorMessage `
+            -ErrorMessage $errorMessage `
             -Meta @{ errorCategory = (Get-ErrorCategory -Message $errorMessage) }
     }
 }
@@ -263,7 +267,7 @@ function Invoke-ReconcileAdapter {
             -Operation $operation `
             -CorrelationId $correlationId `
             -Success $false `
-            -Error $errorMessage `
+            -ErrorMessage $errorMessage `
             -Meta @{ errorCategory = (Get-ErrorCategory -Message $errorMessage) }
     }
 }
@@ -358,7 +362,7 @@ function Invoke-DocReviewAdapter {
             -Operation $operation `
             -CorrelationId $correlationId `
             -Success $false `
-            -Error $errorMessage `
+            -ErrorMessage $errorMessage `
             -Meta @{ errorCategory = (Get-ErrorCategory -Message $errorMessage) }
     }
 }

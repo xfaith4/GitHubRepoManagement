@@ -7,7 +7,7 @@ import {
   getVisibleTabBadge,
   type ViewTabBadges,
 } from './viewTabs';
-import { VIEW_META, type ViewKey } from '../viewMeta';
+import { VIEW_META } from '../viewMeta';
 
 describe('VIEW_TAB_ACCENTS — every view is renderable', () => {
   it('has an accent for every view VIEW_META declares', () => {

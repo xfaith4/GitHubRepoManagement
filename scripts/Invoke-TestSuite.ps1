@@ -159,8 +159,13 @@ Invoke-ScriptGate -Name 'Adapter smoke'     -ScriptPath (Join-Path $scriptsDir '
 # These were dark until 2026-08-10 — 149 vitest assertions, the typecheck, and
 # the production build ran only when someone typed them (ROADMAP Lane 0.8).
 Invoke-NpmGate -Name 'Frontend typecheck'  -ScriptName 'typecheck'
+Invoke-NpmGate -Name 'Frontend lint'       -ScriptName 'lint'
 Invoke-NpmGate -Name 'Frontend unit tests' -ScriptName 'test:unit'
 Invoke-NpmGate -Name 'Frontend build'      -ScriptName 'build'
+
+# PowerShell lint: PSSA with a per-rule ratchet baseline — 0 Error-severity
+# findings ever; warning counts may only shrink (ROADMAP Lane 0.8).
+Invoke-ScriptGate -Name 'PowerShell lint'   -ScriptPath (Join-Path $scriptsDir 'Invoke-LintGate.ps1')             -ScriptArgs $rootArgs
 
 if (-not $SkipApiHost) {
     Clear-ListenerPort -PortNumber $Port
