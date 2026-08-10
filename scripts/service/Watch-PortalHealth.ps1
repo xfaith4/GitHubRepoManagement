@@ -43,6 +43,18 @@ param(
     [string]$ServiceName = 'RepoMgmtPortal',
     [string]$StatePath,
     [string]$LedgerPath,
+    # Path to the host's operation heartbeat. A failed probe while THIS file
+    # shows fresh progress means the host is busy, not frozen.
+    [string]$OperationStatePath,
+    # How stale the host's last progress record may be before a failing probe is
+    # treated as a freeze. This is a NO-PROGRESS budget, deliberately NOT the
+    # 900s request deadline: a scan that keeps reporting progress is never
+    # restarted however long it runs, while a host that stops moving is caught in
+    # ~2 minutes. Clamped up if it is below the host's declared heartbeat cadence
+    # (see Test-WatchdogToleranceInvariant).
+    [int]$NoProgressToleranceSeconds = 120,
+    # Fallback cadence when no heartbeat file exists to declare one.
+    [int]$DefaultHeartbeatIntervalSeconds = 30,
     [string]$WebhookUrl,
     [switch]$DryRun,
     [switch]$LoadFunctionsOnly
@@ -55,26 +67,109 @@ if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
     $WorkspaceRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 }
 
+# Reuse the host's own heartbeat reader rather than reimplementing the parse —
+# a second copy of the shape is how the two sides drift apart.
+. (Join-Path $WorkspaceRoot 'backend\api-host\OperationHeartbeat.ps1')
+
 # ── Pure decision logic (unit-tested by the module smoke — no elevation) ──────
+function Test-WatchdogToleranceInvariant {
+    <#
+      Configuration invariant: the no-progress tolerance must be at least the
+      producer's own heartbeat interval, or a legitimately slow stage reads as
+      stale and the restart loop returns through the back door.
+
+      The interval is taken from the heartbeat file itself — the host declares
+      the cadence it actually promises — so the two sides cannot drift apart by
+      someone editing a number in one file. Returns the verdict plus the minimum
+      the caller must use; the caller clamps UP, never down, because being too
+      patient delays freeze recovery while being too eager kills healthy work.
+    #>
+    param(
+        [Parameter(Mandatory)][int]$ToleranceSeconds,
+        [Parameter(Mandatory)][int]$HeartbeatIntervalSeconds,
+        # Two missed heartbeats before calling it stale: one missed write is a
+        # slow disk or a GC pause, not a freeze.
+        [int]$SafetyFactor = 2
+    )
+    $required = [int]($HeartbeatIntervalSeconds * $SafetyFactor)
+    $valid = ($ToleranceSeconds -ge $required)
+    return [pscustomobject]@{
+        Valid                    = $valid
+        RequiredSeconds          = $required
+        EffectiveSeconds         = [math]::Max($ToleranceSeconds, $required)
+        HeartbeatIntervalSeconds = $HeartbeatIntervalSeconds
+        Reason                   = if ($valid) { "tolerance ${ToleranceSeconds}s >= required ${required}s" } else { "tolerance ${ToleranceSeconds}s < required ${required}s (heartbeat ${HeartbeatIntervalSeconds}s x$SafetyFactor); clamped up" }
+    }
+}
+
 function Resolve-WatchdogAction {
     <#
-      Given the current probe result and the prior consecutive-failure count,
-      decide whether to restart. Restart fires when failures reach the threshold;
-      the counter resets on success OR after a restart is triggered.
+      Given the current probe result, the prior consecutive-failure count, and
+      the host's declared operation progress, decide whether to restart.
+
+      A failed probe is NOT evidence of a freeze on this host: it is
+      single-threaded, so any long scan makes /health/live unanswerable. The
+      discriminator is PROGRESS — the host publishes what it is doing and when it
+      last moved, and a restart is suppressed only while that statement is fresh.
+
+      Progress, not CPU, is the contract. A healthy scan can block for minutes on
+      GitHub, `git`/`gh` child processes, or filesystem I/O while accruing almost
+      no CPU, and a runaway loop can burn CPU while achieving nothing — so
+      CpuAdvanced is carried for the ledger as corroboration and is never on its
+      own a reason to skip a restart.
+
+      Suppression cannot become permanent: it is gated on the AGE of the last
+      progress record, so an orphaned marker (host killed mid-scan) goes stale by
+      itself and ordinary policy resumes with no cleanup step. Failures keep
+      counting while suppressed, so the moment progress does go stale the
+      threshold is already satisfied and recovery is immediate rather than
+      three probes away.
+
+      ProgressAgeSeconds is $null whenever there is no active, readable operation
+      — missing file, unparseable JSON, inactive marker. Absence of proof is
+      never suppression.
     #>
     param(
         [Parameter(Mandatory)][bool]$Healthy,
         [Parameter(Mandatory)][int]$PriorFailures,
-        [Parameter(Mandatory)][int]$Threshold
+        [Parameter(Mandatory)][int]$Threshold,
+        [object]$ProgressAgeSeconds = $null,
+        [string]$OperationName = '',
+        [int]$NoProgressToleranceSeconds = 0,
+        [object]$CpuAdvanced = $null
     )
     if ($Healthy) {
-        return [pscustomobject]@{ Action = 'none'; Failures = 0; Reason = 'healthy' }
+        return [pscustomobject]@{ Action = 'none'; Failures = 0; Reason = 'healthy'; Suppressed = $false; OperationName = $OperationName; ProgressAgeSeconds = $ProgressAgeSeconds; CpuAdvanced = $CpuAdvanced }
     }
+
     $next = $PriorFailures + 1
-    if ($next -ge $Threshold) {
-        return [pscustomobject]@{ Action = 'restart'; Failures = 0; Reason = "unhealthy x$next >= threshold $Threshold" }
+    $hasProgress = ($null -ne $ProgressAgeSeconds)
+    $progressFresh = $hasProgress -and ([double]$ProgressAgeSeconds -le $NoProgressToleranceSeconds)
+
+    if ($progressFresh) {
+        # Working, not frozen. Keep counting so a later staleness restarts at once.
+        return [pscustomobject]@{
+            Action = 'none'; Failures = $next; Suppressed = $true
+            Reason = ("unhealthy x{0} but operation '{1}' progressed {2:N0}s ago (<= {3}s tolerance) — busy, not frozen" -f $next, $OperationName, [double]$ProgressAgeSeconds, $NoProgressToleranceSeconds)
+            OperationName = $OperationName; ProgressAgeSeconds = $ProgressAgeSeconds; CpuAdvanced = $CpuAdvanced
+        }
     }
-    return [pscustomobject]@{ Action = 'none'; Failures = $next; Reason = "unhealthy x$next < threshold $Threshold" }
+
+    if ($next -ge $Threshold) {
+        $why = if ($hasProgress) {
+            ("operation '{0}' has not progressed for {1:N0}s (> {2}s tolerance)" -f $OperationName, [double]$ProgressAgeSeconds, $NoProgressToleranceSeconds)
+        } else { 'no active operation' }
+        return [pscustomobject]@{
+            Action = 'restart'; Failures = 0; Suppressed = $false
+            Reason = "unhealthy x$next >= threshold $Threshold; $why"
+            OperationName = $OperationName; ProgressAgeSeconds = $ProgressAgeSeconds; CpuAdvanced = $CpuAdvanced
+        }
+    }
+    return [pscustomobject]@{
+        Action = 'none'; Failures = $next; Suppressed = $false
+        Reason = "unhealthy x$next < threshold $Threshold"
+        OperationName = $OperationName; ProgressAgeSeconds = $ProgressAgeSeconds; CpuAdvanced = $CpuAdvanced
+    }
 }
 
 function Get-WatchdogState {
@@ -91,7 +186,7 @@ function Get-WatchdogState {
 }
 
 function Set-WatchdogState {
-    param([string]$Path, [int]$ConsecutiveFailures, [string]$LastAction)
+    param([string]$Path, [int]$ConsecutiveFailures, [string]$LastAction, [object]$LastCpuSeconds = $null)
     if (-not $Path) { return }
     $dir = Split-Path -Parent $Path
     if ($dir -and -not (Test-Path -LiteralPath $dir)) { $null = New-Item -ItemType Directory -Path $dir -Force }
@@ -99,6 +194,9 @@ function Set-WatchdogState {
         consecutiveFailures = $ConsecutiveFailures
         lastAction          = $LastAction
         updatedAt           = (Get-Date).ToString('o')
+        # Diagnostic only — the next cycle diffs this for the ledger's
+        # cpuAdvanced field. Never an input to the restart decision.
+        lastCpuSeconds      = $LastCpuSeconds
     }
     ($obj | ConvertTo-Json -Depth 4) | Set-Content -LiteralPath $Path -Encoding UTF8
 }
@@ -193,12 +291,71 @@ if ($LoadFunctionsOnly) { return }
 if (-not $StatePath) { $StatePath = Join-Path $WorkspaceRoot 'output\logs\service-watchdog.state.json' }
 if (-not $LedgerPath) { $LedgerPath = Join-Path $WorkspaceRoot 'output\logs\service-watchdog.jsonl' }
 
+if (-not $OperationStatePath) { $OperationStatePath = Join-Path $WorkspaceRoot 'output\logs\portal-operation.json' }
+
 $prior = Get-WatchdogState -Path $StatePath
 $probe = Test-PortalHealth -Uri "$BaseUrl$HealthPath" -TimeoutSec $TimeoutSec
-$decision = Resolve-WatchdogAction -Healthy $probe.Healthy -PriorFailures $prior -Threshold $FailureThreshold
+
+# Operation progress — the discriminator between "busy" and "frozen". Every
+# failure mode here ($null) falls through to ordinary restart policy.
+$operationState = Read-PortalOperationState -Path $OperationStatePath
+$progressAge = Get-PortalOperationProgressAge -State $operationState
+$operationName = ''
+$declaredHeartbeat = $DefaultHeartbeatIntervalSeconds
+if ($null -ne $operationState) {
+    if (Test-PortalStateHasProperty -State $operationState -Name 'operation') {
+        $operationName = [string]$operationState.operation
+    }
+    if (Test-PortalStateHasProperty -State $operationState -Name 'heartbeatIntervalSeconds') {
+        $declared = 0
+        if ([int]::TryParse([string]$operationState.heartbeatIntervalSeconds, [ref]$declared) -and $declared -gt 0) {
+            $declaredHeartbeat = $declared
+        }
+    }
+}
+
+# Enforce the tolerance invariant against the cadence the HOST declares, and
+# clamp up if it is short — never silently run a tolerance that would make a
+# healthy slow stage look stale.
+$invariant = Test-WatchdogToleranceInvariant -ToleranceSeconds $NoProgressToleranceSeconds -HeartbeatIntervalSeconds $declaredHeartbeat
+$effectiveTolerance = $invariant.EffectiveSeconds
+if (-not $invariant.Valid) {
+    Write-WatchdogLedger -Path $LedgerPath -Event 'config-invalid' -Data @{
+        reason = $invariant.Reason; configuredTolerance = $NoProgressToleranceSeconds; effectiveTolerance = $effectiveTolerance
+    }
+}
+
+# CPU delta: recorded as corroboration only. Never consulted by the decision —
+# a scan blocked on GitHub or git accrues no CPU while perfectly healthy.
+$cpuAdvanced = $null
+$cpuSampleError = ''
+try {
+    $listenerPid = (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess)
+    if ($listenerPid) {
+        $cpuNow = (Get-Process -Id $listenerPid -ErrorAction SilentlyContinue).CPU
+        $cpuPrior = $null
+        $priorState = Read-PortalOperationState -Path $StatePath
+        if ($null -ne $priorState -and (Test-PortalStateHasProperty -State $priorState -Name 'lastCpuSeconds')) {
+            $cpuPrior = $priorState.lastCpuSeconds
+        }
+        if ($null -ne $cpuNow -and $null -ne $cpuPrior) { $cpuAdvanced = ([double]$cpuNow -gt [double]$cpuPrior) }
+        $script:LastCpuSeconds = $cpuNow
+    }
+}
+catch {
+    # Diagnostic-only sample: never blocks the decision, but the reason is
+    # carried to the ledger rather than dropped into an empty catch.
+    $cpuSampleError = $_.Exception.Message
+}
+
+$decision = Resolve-WatchdogAction -Healthy $probe.Healthy -PriorFailures $prior -Threshold $FailureThreshold `
+    -ProgressAgeSeconds $progressAge -OperationName $operationName `
+    -NoProgressToleranceSeconds $effectiveTolerance -CpuAdvanced $cpuAdvanced
 
 Write-WatchdogLedger -Path $LedgerPath -Event $(if ($probe.Healthy) { 'probe-ok' } else { 'probe-fail' }) -Data @{
     statusCode = $probe.StatusCode; detail = $probe.Detail; priorFailures = $prior; decision = $decision.Action; reason = $decision.Reason; dryRun = [bool]$DryRun
+    operation = $operationName; progressAgeSeconds = $progressAge; suppressed = [bool]$decision.Suppressed
+    noProgressToleranceSeconds = $effectiveTolerance; cpuAdvanced = $cpuAdvanced; cpuSampleError = $cpuSampleError
 }
 
 if ($decision.Action -eq 'restart') {
@@ -219,7 +376,7 @@ if ($decision.Action -eq 'restart') {
     }
 }
 
-Set-WatchdogState -Path $StatePath -ConsecutiveFailures $decision.Failures -LastAction $decision.Action
+Set-WatchdogState -Path $StatePath -ConsecutiveFailures $decision.Failures -LastAction $decision.Action -LastCpuSeconds $script:LastCpuSeconds
 
 Write-Host ("[watchdog] healthy={0} priorFailures={1} -> action={2} ({3})" -f $probe.Healthy, $prior, $decision.Action, $decision.Reason) -ForegroundColor $(if ($probe.Healthy) { 'Green' } elseif ($decision.Action -eq 'restart') { 'Red' } else { 'Yellow' })
 exit 0

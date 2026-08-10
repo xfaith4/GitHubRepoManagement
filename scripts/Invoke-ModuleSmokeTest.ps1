@@ -2268,6 +2268,84 @@ foreach ($c in $wdCases) {
     }
 }
 
+# ── Progress-aware suppression (portal restart-loop incident, 2026-08-10) ────
+# The incident: a cold 75-repo scan outlives the watchdog's ~180s patience while
+# the single-threaded host cannot answer /health/live, so the watchdog restarted
+# a HEALTHY host 10 times in a row and no scan ever finished. Lane 0.4 fixed the
+# same bug class in the in-process request deadline; the watchdog kept its own
+# shorter budget. The discriminator is the host's PROGRESS heartbeat — never CPU,
+# which a scan blocked on GitHub or `git` legitimately fails to accrue.
+$wdProgressCases = @(
+    # 1. Fails + active scan + fresh progress -> suppressed, no restart, even at threshold.
+    @{ Name = 'fresh progress suppresses at threshold'; Healthy = $false; Prior = 2; Threshold = 3; Age = 10; Tol = 120; Cpu = $true;  Action = 'none'; Suppressed = $true }
+    # 2. Same, but host CPU is flat — CPU must NOT be what protects it.
+    @{ Name = 'fresh progress + flat CPU still suppresses'; Healthy = $false; Prior = 5; Threshold = 3; Age = 15; Tol = 120; Cpu = $false; Action = 'none'; Suppressed = $true }
+    # 3. Fails + active scan + STALE progress -> restart (threshold already met).
+    @{ Name = 'stale progress restarts'; Healthy = $false; Prior = 2; Threshold = 3; Age = 600; Tol = 120; Cpu = $false; Action = 'restart'; Suppressed = $false }
+    # 4. Fails + no active operation -> existing policy, unchanged.
+    @{ Name = 'no operation keeps old policy (below threshold)'; Healthy = $false; Prior = 0; Threshold = 3; Age = $null; Tol = 120; Cpu = $null; Action = 'none'; Suppressed = $false }
+    @{ Name = 'no operation keeps old policy (at threshold)';    Healthy = $false; Prior = 2; Threshold = 3; Age = $null; Tol = 120; Cpu = $null; Action = 'restart'; Suppressed = $false }
+    # 5. Probe succeeds -> failure state resets regardless of operation state.
+    @{ Name = 'healthy resets even mid-operation'; Healthy = $true; Prior = 9; Threshold = 3; Age = 5; Tol = 120; Cpu = $true; Action = 'none'; Suppressed = $false; Failures = 0 }
+    # 6. Operation cleared (age $null because active=false) -> ordinary behaviour returns.
+    @{ Name = 'completed operation returns to ordinary policy'; Healthy = $false; Prior = 2; Threshold = 3; Age = $null; Tol = 120; Cpu = $true; Action = 'restart'; Suppressed = $false }
+    # 7. Orphaned marker cannot suppress forever: age grows without bound -> restart.
+    @{ Name = 'orphaned marker ages out and restarts'; Healthy = $false; Prior = 2; Threshold = 3; Age = 86400; Tol = 120; Cpu = $false; Action = 'restart'; Suppressed = $false }
+    # Boundary: exactly at tolerance is still fresh; one second past is not.
+    @{ Name = 'age == tolerance is fresh';  Healthy = $false; Prior = 2; Threshold = 3; Age = 120; Tol = 120; Cpu = $false; Action = 'none';    Suppressed = $true }
+    @{ Name = 'age > tolerance is stale';   Healthy = $false; Prior = 2; Threshold = 3; Age = 121; Tol = 120; Cpu = $false; Action = 'restart'; Suppressed = $false }
+)
+foreach ($c in $wdProgressCases) {
+    $d = Resolve-WatchdogAction -Healthy $c.Healthy -PriorFailures $c.Prior -Threshold $c.Threshold `
+        -ProgressAgeSeconds $c.Age -OperationName 'status.scan' -NoProgressToleranceSeconds $c.Tol -CpuAdvanced $c.Cpu
+    if ($d.Action -ne $c.Action) {
+        throw ("Watchdog progress case '{0}': expected action {1}, got {2} (reason: {3})" -f $c.Name, $c.Action, $d.Action, $d.Reason)
+    }
+    if ([bool]$d.Suppressed -ne [bool]$c.Suppressed) {
+        throw ("Watchdog progress case '{0}': expected suppressed={1}, got {2}" -f $c.Name, $c.Suppressed, $d.Suppressed)
+    }
+    if ($c.ContainsKey('Failures') -and $d.Failures -ne $c.Failures) {
+        throw ("Watchdog progress case '{0}': expected failures={1}, got {2}" -f $c.Name, $c.Failures, $d.Failures)
+    }
+}
+# Suppression must keep COUNTING failures, so recovery is immediate once progress
+# goes stale rather than three more probes away.
+$wdSuppressed = Resolve-WatchdogAction -Healthy $false -PriorFailures 7 -Threshold 3 -ProgressAgeSeconds 5 -OperationName 'status.scan' -NoProgressToleranceSeconds 120
+if ($wdSuppressed.Failures -ne 8) { throw "Suppressed cycles must still count failures (expected 8, got $($wdSuppressed.Failures))" }
+
+# Configuration invariant: tolerance may never be shorter than the cadence the
+# HOST declares it writes progress at, or a slow-but-healthy stage reads as stale
+# and the restart loop returns. Clamps UP — being too patient delays freeze
+# recovery; being too eager kills healthy work, which is the incident.
+$invValid = Test-WatchdogToleranceInvariant -ToleranceSeconds 120 -HeartbeatIntervalSeconds 30
+if (-not $invValid.Valid) { throw '120s tolerance vs 30s heartbeat should satisfy the invariant' }
+if ($invValid.EffectiveSeconds -ne 120) { throw "Valid tolerance must pass through unchanged, got $($invValid.EffectiveSeconds)" }
+$invShort = Test-WatchdogToleranceInvariant -ToleranceSeconds 15 -HeartbeatIntervalSeconds 30
+if ($invShort.Valid) { throw '15s tolerance vs 30s heartbeat must FAIL the invariant' }
+if ($invShort.EffectiveSeconds -ne 60) { throw "Short tolerance must clamp UP to 2x heartbeat (60s), got $($invShort.EffectiveSeconds)" }
+$invEqual = Test-WatchdogToleranceInvariant -ToleranceSeconds 60 -HeartbeatIntervalSeconds 30
+if (-not $invEqual.Valid) { throw 'Tolerance exactly at 2x heartbeat must be valid' }
+# The tolerance is a NO-PROGRESS budget, not the 900s request deadline: a scan
+# that keeps reporting is never restarted however long it runs.
+if ($invValid.EffectiveSeconds -ge 900) { throw 'No-progress tolerance must not be raised to the request-deadline budget' }
+
+# Progress-age reader: every unreadable shape must yield $null (= no suppression),
+# and an active marker must age from its own timestamp.
+. (Join-Path $WorkspaceRoot 'backend\api-host\OperationHeartbeat.ps1')
+$hbNow = [datetime]::UtcNow
+if ($null -ne (Get-PortalOperationProgressAge -State $null -NowUtc $hbNow)) { throw 'Null state must yield null progress age' }
+if ($null -ne (Get-PortalOperationProgressAge -State ([pscustomobject]@{ active = $false; lastProgressAt = $hbNow.ToString('o') }) -NowUtc $hbNow)) { throw 'Inactive operation must yield null progress age' }
+if ($null -ne (Get-PortalOperationProgressAge -State ([pscustomobject]@{ active = $true; lastProgressAt = 'not-a-date' }) -NowUtc $hbNow)) { throw 'Unparseable timestamp must yield null progress age' }
+if ($null -ne (Get-PortalOperationProgressAge -State ([pscustomobject]@{ active = $true }) -NowUtc $hbNow)) { throw 'Missing timestamp must yield null progress age' }
+$hbAge = Get-PortalOperationProgressAge -State ([pscustomobject]@{ active = $true; lastProgressAt = $hbNow.AddSeconds(-45).ToString('o') }) -NowUtc $hbNow
+if ($null -eq $hbAge -or [math]::Abs($hbAge - 45) -gt 2) { throw "Active operation age should be ~45s, got $hbAge" }
+# ConvertFrom-Json yields Kind=Unspecified; a UTC stamp must not be shifted by
+# the local offset (the double-conversion bug class fixed elsewhere in this repo).
+$hbUnspecified = $hbNow.AddSeconds(-30).ToString('yyyy-MM-ddTHH:mm:ss.fffffff')
+$hbAgeUnspec = Get-PortalOperationProgressAge -State ([pscustomobject]@{ active = $true; lastProgressAt = $hbUnspecified }) -NowUtc $hbNow
+if ($null -eq $hbAgeUnspec -or [math]::Abs($hbAgeUnspec - 30) -gt 2) { throw "Kind=Unspecified timestamp must be read as UTC (~30s), got $hbAgeUnspec" }
+Write-Host ("  watchdog progress-suppression ok: {0} decision cases, invariant clamps short tolerance up, {1} progress-age shapes" -f $wdProgressCases.Count, 6) -ForegroundColor DarkGray
+
 # Ledger + state round-trip on disk (models persistence across scheduled invocations).
 $wdTmp = Join-Path $WorkspaceRoot 'output\smoke\module\watchdog'
 $null = New-Item -ItemType Directory -Path $wdTmp -Force

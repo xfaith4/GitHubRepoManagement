@@ -78,6 +78,7 @@ $persistenceModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\persistence'
 . (Join-Path $PSScriptRoot 'ApiHost.ErrorHandling.ps1')
 . (Join-Path $PSScriptRoot 'RequestDeadline.ps1')
 . (Join-Path $PSScriptRoot 'GitHubRateLimit.ps1')
+. (Join-Path $PSScriptRoot 'OperationHeartbeat.ps1')
 
 $script:StatusCacheMemory = @{}
 $script:StatusCacheDefaultTtlSeconds = 120
@@ -5203,6 +5204,12 @@ $script:RequestDeadlineController = Start-RequestDeadlineWatchdog `
     -IncidentLogPath $requestTimeoutLogPath
 Write-HostLog ("Request deadline: {0}s default / {1}s scan routes (incident log: {2})" -f $script:RequestTimeoutSeconds, $script:ScanRequestTimeoutSeconds, $requestTimeoutLogPath)
 
+# A fresh process has no operation in flight. Without this, a host killed
+# mid-scan leaves an active marker behind and its successor inherits a claim to
+# be busy that it is not (portal restart-loop incident, 2026-08-10).
+Clear-PortalOperationState -WorkspaceRoot $WorkspaceRoot
+Write-HostLog ("Operation heartbeat: {0} (progress written at least every {1}s while a long operation is active)" -f (Get-PortalOperationStatePath -WorkspaceRoot $WorkspaceRoot), $script:PortalHeartbeatIntervalSeconds)
+
 # GitHub auth is env-var-name indirection only: settings carry the variable
 # NAME, never a token. Report what the name resolves to in THIS process, since
 # a LocalSystem service cannot see a User-scoped variable.
@@ -6947,13 +6954,36 @@ try {
                     if ($null -eq $result) {
                         $scanCachedAt = (Get-Date).ToUniversalTime().ToString('o')
                         $statusLogPath = if ($script:OpsLogPath) { $script:OpsLogPath } else { $LogPath }
-                        $result = Get-StatusAdapterResult -LocalRoots $localRoots -MaxDepth $maxDepth -IncludeNonGitFolders:$includeNonGit -LogPath $statusLogPath
-                        if ($result.success) {
-                            $result = Add-GitHubMetadataToStatusResult -StatusResult $result -Settings $settings
+                        # This is THE path the watchdog used to kill: a cold
+                        # 75-repository scan outlives the watchdog's ~180s
+                        # patience while the single-threaded host cannot answer
+                        # /health/live. Publishing progress lets the watchdog
+                        # distinguish "working" from "frozen" instead of
+                        # restarting a healthy scan every three minutes.
+                        $scanOp = Start-PortalOperation -WorkspaceRoot $WorkspaceRoot -Operation 'status.scan' -CorrelationId $correlationId -Stage 'inventory'
+                        try {
+                            $result = Get-StatusAdapterResult -LocalRoots $localRoots -MaxDepth $maxDepth -IncludeNonGitFolders:$includeNonGit -LogPath $statusLogPath -OnProgress {
+                                param($scanned)
+                                # $scanOp is a hashtable: Update- mutates it in
+                                # place, so the outer state advances even though
+                                # a reassignment here would be closure-local.
+                                $null = Update-PortalOperationProgress -WorkspaceRoot $WorkspaceRoot -State $scanOp -Completed ([int]$scanned)
+                            }.GetNewClosure()
+                            if ($result.success) {
+                                $scanOp = Update-PortalOperationProgress -WorkspaceRoot $WorkspaceRoot -State $scanOp -Stage 'github-metadata' -Force
+                                $result = Add-GitHubMetadataToStatusResult -StatusResult $result -Settings $settings
+                            }
+                            $scanOp = Update-PortalOperationProgress -WorkspaceRoot $WorkspaceRoot -State $scanOp -Stage 'cache-write' -Force
+                            $result = Add-StatusCacheMeta -Result $result -CacheMeta (Get-StatusCacheMeta -Hit $false -Source 'fresh-scan' -TtlSeconds $ttlSeconds -AgeSeconds 0 -BypassRequested:$refresh -CachedAt $scanCachedAt)
+                            if ($result.success -and ($ttlSeconds -gt 0)) {
+                                Save-StatusCache -Key $cacheKey -Response $result
+                            }
                         }
-                        $result = Add-StatusCacheMeta -Result $result -CacheMeta (Get-StatusCacheMeta -Hit $false -Source 'fresh-scan' -TtlSeconds $ttlSeconds -AgeSeconds 0 -BypassRequested:$refresh -CachedAt $scanCachedAt)
-                        if ($result.success -and ($ttlSeconds -gt 0)) {
-                            Save-StatusCache -Key $cacheKey -Response $result
+                        finally {
+                            # Must clear on the throw path too — a marker left
+                            # active by a failed scan would suppress restarts
+                            # until it aged out.
+                            Complete-PortalOperation -WorkspaceRoot $WorkspaceRoot -State $scanOp -Outcome 'completed' | Out-Null
                         }
                     }
 

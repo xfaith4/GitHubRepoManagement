@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-10 — P0: the portal watchdog was restarting healthy scans (Lane 0.9)
+
+### Changes
+
+- **The incident.** Every `/api/...` call hung and the portal collapsed to a bare "Failed to fetch". The host was not hung, crashed, or overloaded — its own watchdog force-restarted it **10 times in one stretch**, killing every scan mid-flight. Idle, the same host answered `/health/live` in 0.1s.
+- **The cause: two guards with different budgets.** The host is single-threaded, so `/health/live` cannot be answered during a full-portfolio scan. Lane 0.4 raised the in-process request deadline to **900s** for scan routes; the external watchdog kept **~180s** (1-min interval × 5s probe × 3 failures). A cold 75-repo scan is known to exceed 180s — that is why Lane 0.4 raised the deadline — so every scan was guaranteed to be killed and the browser's retry restarted the cycle. Lane 0.4 fixed one killer; the outage returned through its sibling.
+- **`backend/api-host/OperationHeartbeat.ps1`** (new, dot-sourced so it is testable without starting the listener): the host declares what it is doing, when it last moved, and **its own progress cadence**. `Start-` / `Update-` / `Complete-` / `Clear-PortalOperationState`, plus a pure `Get-PortalOperationProgressAge`. Disk writes are throttled (5s) so a 75-repo scan costs a handful of writes, not hundreds.
+- **Scan path instrumented**: `GET /api/status` marks the operation active, ticks progress per directory through a new `-OnProgress` callback threaded into `Get-StatusAdapterResult` → `Get-LocalFolderInventory`, and clears in a `finally` so a thrown scan cannot leave a marker behind. The host clears any inherited marker at startup.
+- **`Resolve-WatchdogAction` takes progress as an explicit input** and stays pure. **Progress, not CPU, is the contract**: a healthy scan can block for minutes on GitHub, `git`/`gh`, or the filesystem while accruing no CPU, and a runaway can burn CPU while achieving nothing. `cpuAdvanced` is recorded in the ledger as corroboration only and is never consulted by the decision.
+- **Nothing suppresses forever**: suppression is gated on the *age* of the last progress record, so an orphaned marker ages out on its own; failures keep counting while suppressed, so staleness restarts immediately rather than three probes later; and a missing/empty/unparseable/inactive marker means "no proof of progress" → ordinary policy.
+- **Configuration invariant** (`Test-WatchdogToleranceInvariant`): the no-progress tolerance may never be shorter than the cadence the host itself declares in the heartbeat file (2× for two missed beats), clamping **up** and logging a `config-invalid` ledger event. The tolerance is a **no-progress budget (120s)**, deliberately *not* raised to the 900s request deadline — a scan that keeps reporting is never restarted however long it runs, while a host that stops moving is still caught in ~2 minutes.
+
+### Verification
+
+- Module smoke: **10 decision cases** (fresh progress suppresses at threshold; fresh progress + flat CPU still suppresses; stale progress restarts; no active operation keeps the old policy below and at threshold; healthy resets mid-operation; completed operation returns to ordinary policy; orphaned 24h marker restarts; tolerance boundary fresh/stale) and **6 progress-age shapes** (null / inactive / unparseable / missing all yield no suppression; `Kind=Unspecified` read as UTC).
+- **Adversarially proven against both rejected designs**: the pre-fix counter restarts the healthy scan the new logic protects; a CPU-based guard would kill a scan blocked on I/O **and** would never restart a CPU-burning runaway.
+- One test fixture was wrong and corrected against reality: `[datetime]::Parse` on a `Z` string converts to local, so stripping the zone afterwards produced a local-time fixture, not the UTC-without-marker shape `ConvertFrom-Json` actually yields.
+
+### Not included (recorded in Lane 0.9, deliberately unbundled)
+
+- Making `/health/live` independently responsive during long operations — architectural, a design decision rather than a patch.
+- Clearing the stale browser-persisted GitHub owner `Benjamin-Fuhr_genesys` (in the host log since 2026-07-07; sent by the client, absent from `settings.json`).
+- Replacing `Dashboard.tsx`'s bare `Failed to fetch` branch with an actionable retry state. The Lane 0.5 error boundary does not cover it — that catches render throws, not rejected fetches.
+
 ## 2026-08-10 — Production posture: the merge gate is now enforced, and the README tells the truth about verification
 
 ### Changes
