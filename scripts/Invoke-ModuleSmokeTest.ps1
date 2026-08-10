@@ -124,6 +124,56 @@ $worklogReadme = Join-Path $WorkspaceRoot 'docs\history\worklogs\README.md'
 if (-not (Test-Path -LiteralPath $worklogReadme)) { throw 'docs/history/worklogs/README.md is missing; the worklog convention must stay documented where worklogs are written' }
 Write-Host '  no worklogs tracked at the repository root; the convention is documented' -ForegroundColor DarkGray
 
+Write-Step 'CI gate coverage tripwire — CI runs the canonical suite, un-hollowed (ROADMAP Lane 0.8)'
+# The defect this pins: the frontend's 149 assertions, typecheck, and build
+# gated nothing for months because they existed only as npm scripts nobody was
+# required to run, while a second workflow (ci.yml -> reusable-ci.yml with
+# node/python/dotnet all false) reported green in 9 seconds having executed
+# nothing — and that vacuous tick counted toward mergeStateStatus CLEAN.
+# The fix made ci-smoke.yml invoke Invoke-TestSuite.ps1 itself, so CI and
+# local `npm test` are one list by construction. This tripwire guards the
+# ways that construction can be quietly undone.
+$ciSmokePath = Join-Path $WorkspaceRoot '.github\workflows\ci-smoke.yml'
+$suitePath = Join-Path $WorkspaceRoot 'scripts\Invoke-TestSuite.ps1'
+if (-not (Test-Path -LiteralPath $ciSmokePath)) { throw "ci-smoke.yml not found at: $ciSmokePath — PRs are merging with no gate at all." }
+if (-not (Test-Path -LiteralPath $suitePath)) { throw "Invoke-TestSuite.ps1 not found at: $suitePath" }
+# Strip comment lines before matching — a mention in a comment satisfies nothing.
+$ciSmokeSource = (Get-Content -LiteralPath $ciSmokePath -Encoding UTF8 | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+$suiteSource = (Get-Content -LiteralPath $suitePath -Encoding UTF8 | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+if ($ciSmokeSource -notmatch 'Invoke-TestSuite\.ps1') {
+    throw 'ci-smoke.yml no longer invokes Invoke-TestSuite.ps1; CI and the local suite can drift apart again. Run the suite, do not re-inline gates.'
+}
+if ($ciSmokeSource -match '-SkipApiHost') {
+    throw 'ci-smoke.yml passes -SkipApiHost; CI must run the FULL suite, not the fast subset.'
+}
+if ($ciSmokeSource -match '(?m)^\s*paths(-ignore)?:') {
+    throw 'ci-smoke.yml filters paths; every PR must run the gate, or filtered PRs merge on no evidence.'
+}
+if ($ciSmokeSource -notmatch '(?m)^\s*pull_request:') {
+    throw 'ci-smoke.yml no longer triggers on pull_request; the merge gate is gone.'
+}
+if ($ciSmokeSource -notmatch 'npm ci') {
+    throw 'ci-smoke.yml does not install npm dependencies; the frontend gates would fail for the wrong reason.'
+}
+foreach ($legacyWorkflow in @('ci.yml', 'reusable-ci.yml')) {
+    if (Test-Path -LiteralPath (Join-Path $WorkspaceRoot ".github\workflows\$legacyWorkflow")) {
+        throw "$legacyWorkflow is back under .github/workflows/. It reported green while executing nothing (all inputs false) and was deleted 2026-08-10; a check that cannot fail must not return."
+    }
+}
+# The suite itself must stay non-hollow: invoking an emptied suite would pass
+# every assertion above while gating nothing.
+$suiteScriptGates = @([regex]::Matches($suiteSource, "Invoke-ScriptGate\s+-Name\s+'[^']+'\s+-ScriptPath\s+\(Join-Path\s+\$\w+\s+'([\w.-]+\.ps1)'\)") | ForEach-Object { $_.Groups[1].Value })
+$suiteNpmGates = @([regex]::Matches($suiteSource, "Invoke-NpmGate\s+-Name\s+'[^']+'\s+-ScriptName\s+'([\w:-]+)'") | ForEach-Object { $_.Groups[1].Value })
+if (@($suiteScriptGates).Count -lt 7) {
+    throw ("Invoke-TestSuite.ps1 defines only {0} script gate(s); expected at least 7. The suite has been hollowed or the gate syntax changed without updating this tripwire." -f @($suiteScriptGates).Count)
+}
+foreach ($requiredNpmGate in @('typecheck', 'test:unit', 'build')) {
+    if ($suiteNpmGates -notcontains $requiredNpmGate) {
+        throw ("Invoke-TestSuite.ps1 no longer runs the frontend '{0}' gate. The frontend spent months ungated exactly this way; put it back." -f $requiredNpmGate)
+    }
+}
+Write-Host ("  ci-smoke.yml runs the full suite ({0} script gates, {1} npm gates); no vacuous workflow, no path filter, no -SkipApiHost" -f @($suiteScriptGates).Count, @($suiteNpmGates).Count) -ForegroundColor DarkGray
+
 Write-Step 'GitHub rate-limit readout — headers observed, never fabricated (ROADMAP Lane 0.2)'
 $rateLimitModule = Join-Path $WorkspaceRoot 'backend\api-host\GitHubRateLimit.ps1'
 if (-not (Test-Path -LiteralPath $rateLimitModule)) { throw "GitHubRateLimit.ps1 not found at: $rateLimitModule" }

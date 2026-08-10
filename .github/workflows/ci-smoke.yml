@@ -1,72 +1,44 @@
 name: CI Smoke
 
+# One list, two runners: this workflow invokes scripts/Invoke-TestSuite.ps1 —
+# the same command `npm test` runs locally — so CI and local verification
+# cannot drift apart. Do NOT re-inline individual gates here; add new gates to
+# Invoke-TestSuite.ps1 and they run in both places. A module-smoke tripwire
+# (ROADMAP Lane 0.8) fails if this file stops invoking the suite, hollows it
+# with -SkipApiHost, or filters paths so some PRs merge ungated.
+
 on:
   pull_request:
   push:
     branches:
       - main
+  workflow_dispatch:
+
+concurrency:
+  group: ci-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   smoke:
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Run module smoke test
-        shell: pwsh
-        run: ./scripts/Invoke-ModuleSmokeTest.ps1 -WorkspaceRoot "${{ github.workspace }}"
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: package-lock.json
 
-      - name: Run adapter smoke test
-        shell: pwsh
-        run: ./scripts/Invoke-AdapterSmokeTest.ps1 -WorkspaceRoot "${{ github.workspace }}"
+      - name: Install dependencies
+        run: npm ci --include=optional
 
-      - name: Run API host smoke test
+      - name: Run canonical test suite
         shell: pwsh
-        run: ./scripts/Invoke-ApiHostSmokeTest.ps1 -WorkspaceRoot "${{ github.workspace }}"
-
-      - name: Run API contract test
-        shell: pwsh
-        run: ./scripts/Invoke-ApiContractTest.ps1 -WorkspaceRoot "${{ github.workspace }}"
-
-      - name: Run auth smoke test (Release 2.2)
-        shell: pwsh
-        run: ./scripts/Invoke-AuthSmokeTest.ps1 -WorkspaceRoot "${{ github.workspace }}"
-
-      - name: Audit repository structure
-        shell: pwsh
-        run: ./scripts/Invoke-RepositoryStructureAudit.ps1 -WorkspaceRoot "${{ github.workspace }}"
-
-      - name: Check doc-standards.json integrity
-        shell: pwsh
-        run: |
-          $path = "${{ github.workspace }}/backend/config/doc-standards.json"
-          if (-not (Test-Path -LiteralPath $path)) { throw "doc-standards.json not found at $path" }
-          $content = Get-Content -LiteralPath $path -Raw -Encoding UTF8
-          $parsed = ConvertFrom-Json -InputObject $content
-          if ($null -eq $parsed.requiredRootFiles) { throw "doc-standards.json missing requiredRootFiles" }
-          if ($null -eq $parsed.readmeStandards) { throw "doc-standards.json missing readmeStandards" }
-          Write-Host "doc-standards.json valid: $(@($parsed.requiredRootFiles).Count) required file specs"
-
-      - name: Check roadmap standard assets integrity
-        shell: pwsh
-        run: |
-          $rulesPath    = "${{ github.workspace }}/standards/roadmap/roadmap-audit-rules.json"
-          $schemaPath   = "${{ github.workspace }}/standards/roadmap/roadmap-contract.schema.json"
-          $templatePath = "${{ github.workspace }}/standards/roadmap/ROADMAP_TEMPLATE.md"
-          $maturityPath = "${{ github.workspace }}/standards/roadmap/ROADMAP_MATURITY_MODEL.md"
-          $repairPath   = "${{ github.workspace }}/standards/roadmap/roadmap-repair-prompt.md"
-          foreach ($p in @($rulesPath, $schemaPath, $templatePath, $maturityPath, $repairPath)) {
-              if (-not (Test-Path -LiteralPath $p)) { throw "Roadmap standard asset not found: $p" }
-          }
-          $rules = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $rulesPath -Raw -Encoding UTF8)
-          if ($null -eq $rules.rules)              { throw "roadmap-audit-rules.json missing 'rules' array" }
-          if ($null -eq $rules.maturityThresholds) { throw "roadmap-audit-rules.json missing 'maturityThresholds'" }
-          if (@($rules.rules).Count -eq 0)         { throw "roadmap-audit-rules.json 'rules' array is empty" }
-          $schema = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $schemaPath -Raw -Encoding UTF8)
-          if ($null -eq $schema.properties)        { throw "roadmap-contract.schema.json missing 'properties'" }
-          Write-Host "Roadmap standard assets valid: $(@($rules.rules).Count) audit rules, $(@($rules.maturityThresholds.PSObject.Properties).Count) maturity levels"
-
-      - name: Validate ROADMAP.md structure
-        shell: pwsh
-        run: ./tools/Test-RoadmapStructure.ps1 -Path "${{ github.workspace }}/ROADMAP.md" -FailOnError
+        run: ./scripts/Invoke-TestSuite.ps1 -WorkspaceRoot "${{ github.workspace }}"

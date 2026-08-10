@@ -1452,23 +1452,37 @@ list is convention. A green tick that cannot fail spends trust it never earned.
 
 Safe path, in order — cover must never drop between steps:
 
-- [ ] **Make the gate honest, then delete `ci.yml`.** _(state: planned)_
-      First add the frontend gates (`npm ci`, `typecheck`, `test:unit`,
-      `build`) to `ci-smoke.yml` **and** `Invoke-TestSuite.ps1` so local
-      `npm test` and CI run the same list; expect the first run to fail and
-      fix on the branch — that is the gate working, not a regression. Only
-      then delete `ci.yml` **and** `reusable-ci.yml`: `gh search code` shows
-      no caller outside this repo's own `ci.yml`, so both go together or the
-      reusable file survives as an orphan. Acceptance: every check that
-      reports on a PR can actually fail; `mergeStateStatus: CLEAN` means all
-      real gates passed, not one real and one vacuous.
-- [ ] **Tripwire: CI must cover the local suite.** _(state: planned)_ A
-      module-smoke assertion that parses `ci-smoke.yml` and fails if any gate
-      in `Invoke-TestSuite.ps1`'s list (including the new frontend gates) has
-      no corresponding CI step — so the next test surface cannot land guarded
-      locally but unguarded on PRs, which is exactly how the frontend spent
-      months dark. Adversarially prove it by deleting a step in a scratch
-      copy, per the Lane 0.4 convention.
+- [x] **Make the gate honest, then delete `ci.yml`.** _(state: smoke-tested —
+      closed 2026-08-10)_ Implemented in a **stronger form than planned**:
+      instead of mirroring the gate list into `ci-smoke.yml` and policing the
+      two copies, CI now **invokes `Invoke-TestSuite.ps1` itself** (checkout →
+      setup-node → `npm ci --include=optional` → the suite), so local
+      `npm test` and CI are one list **by construction** — mirroring would
+      also have preserved the reverse gap, since the local suite already
+      covered three gates CI never ran (OpenAPI spec, spec dir,
+      roadmap-audit-action). The suite gained the three frontend gates
+      (`typecheck`, `test:unit`, `build`) via `Invoke-NpmGate`, which **fails
+      with a named cause** when npm or `node_modules` is missing rather than
+      skipping — a suite that silently passes without Node is the vacuous
+      green this item exists to kill. `ci.yml` and `reusable-ci.yml` are
+      deleted (no external caller per `gh search code`). Folded-in hardening:
+      the suite's default port moved **7071 → 7171** — `Clear-ListenerPort`
+      kills whatever listens on the target port, so a bare `npm test`
+      previously terminated the operator's live portal. **Evidence:** full
+      suite exit 0 with the three frontend gates in the summary; the landing
+      PR's own CI Smoke run is the first honest CI pass — that green is the
+      live proof, not a prior claim.
+- [x] **Tripwire: CI must cover the local suite.** _(state: smoke-tested —
+      closed 2026-08-10)_ Module smoke now fails if `ci-smoke.yml` stops
+      invoking the suite, smuggles in `-SkipApiHost`, adds a `paths` filter
+      (filtered PRs merge on no evidence), drops the `pull_request` trigger,
+      skips `npm ci`, or if either vacuous workflow file returns; and it
+      fails if the suite itself is hollowed (≥7 script gates asserted, and
+      `typecheck`/`test:unit`/`build` by name). Comment lines are stripped
+      before matching, per the Lane 0.5 precedent. **Evidence:** module
+      smoke — `ci-smoke.yml runs the full suite (7 script gates, 3 npm
+      gates)`; adversarially proven with seven scratch mutations (baseline
+      passes, six hollowings each fire the specific assertion).
 - [ ] **Close the render gap.** _(state: planned)_ jsdom +
       `@testing-library/react` so component behavior is asserted from the
       DOM, not from source-text positions. First targets: Insights renders

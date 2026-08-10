@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-10 — Lane 0.8: the merge gate now runs everything, and nothing vacuous
+
+### Changes
+
+- **The defect.** The frontend's 149 vitest assertions, the TypeScript typecheck, and the production build gated nothing — they ran only when someone typed them. Meanwhile `ci.yml` called `reusable-ci.yml` with `node/python/dotnet: false`, so every step body was `if [ "false" = "true" ]`: a check that went green in 9 seconds having executed nothing, and still counted toward `mergeStateStatus: CLEAN`.
+- **`ci-smoke.yml` now invokes `Invoke-TestSuite.ps1` itself** (checkout → setup-node 24 → `npm ci --include=optional` → the suite). CI and local `npm test` are one gate list by construction — a gate added to the suite runs on every PR automatically. This also closed the reverse gap: the local suite already ran three gates CI never did (OpenAPI spec, spec directory, roadmap-audit-action).
+- **`Invoke-TestSuite.ps1`** gained `Invoke-NpmGate` and three frontend gates — `Frontend typecheck`, `Frontend unit tests`, `Frontend build` — placed before the slow API-host smoke so cheap failures fail fast. A missing npm or `node_modules` is a **failing gate with a named cause**, never a skip.
+- **`ci.yml` and `reusable-ci.yml` deleted.** `gh search code` shows no caller outside this repo. A green tick that cannot fail spends trust it never earned.
+- **Suite default port 7071 → 7171.** `Clear-ListenerPort` terminates whatever listens on the target port before the API-host gate binds it — defaulting to the live portal's port meant a bare `npm test` killed the operator's running portal.
+- **Module-smoke tripwire (Lane 0.8)** fails if `ci-smoke.yml` stops invoking the suite, adds `-SkipApiHost`, filters paths, drops the `pull_request` trigger, skips `npm ci`, or if either vacuous workflow returns — and if the suite itself is hollowed (≥7 script gates; `typecheck`/`test:unit`/`build` by name).
+
+### Verification
+
+- Adversarial proof: seven scratch scenarios — the honest baseline passes; all six hollowings fire their specific assertion.
+- Full `Invoke-TestSuite.ps1` run (new port default, frontend gates included) exit 0; module smoke exit 0.
+- The landing PR's CI Smoke run is the first honest CI pass over the full suite.
+
 ## 2026-08-10 — Lane 0.5: the Insights tab rendered above its own tab bar
 
 ### Changes

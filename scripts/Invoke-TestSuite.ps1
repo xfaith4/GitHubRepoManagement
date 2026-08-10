@@ -1,12 +1,16 @@
 <#
 .SYNOPSIS
-    Canonical local test suite — the exit-0/1 gate behind `npm test`.
+    Canonical test suite — the exit-0/1 gate behind `npm test` AND behind CI.
 
 .DESCRIPTION
-    Mirrors .github/workflows/ci-smoke.yml so `npm test` reproduces CI locally:
-    module smoke, adapter smoke, API-host smoke, API contract (Pester),
-    repository-structure audit, config-integrity checks, and the roadmap
-    structure linter (-FailOnError).
+    The single gate list. .github/workflows/ci-smoke.yml invokes THIS file, so
+    CI and local verification run the same gates by construction — a gate added
+    here runs on every PR; a gate that exists anywhere else gates nothing.
+    Gates: module smoke, adapter smoke, frontend typecheck/unit tests/build,
+    API-host smoke, API contract (Pester), auth smoke, repository-structure
+    audit, config-integrity checks, and the roadmap structure linter
+    (-FailOnError). A module-smoke tripwire (ROADMAP Lane 0.8) enforces that
+    ci-smoke.yml keeps invoking this suite un-hollowed.
 
     Each script gate runs in its own `pwsh -File` child process so a gate's
     exit code is a real process exit code (0 = pass; an unhandled `throw`
@@ -26,7 +30,11 @@
 param(
     [string]$WorkspaceRoot,
     [switch]$SkipApiHost,
-    [int]$Port = 7071
+    # A DEDICATED port, never 7071: Clear-ListenerPort terminates whatever is
+    # listening on $Port before the API-host gate binds it, so defaulting to the
+    # live portal's port meant a bare `npm test` killed the operator's running
+    # portal. Same convention as Invoke-DailyEvidence.ps1.
+    [int]$Port = 7171
 )
 
 Set-StrictMode -Version Latest
@@ -86,6 +94,39 @@ function Invoke-ScriptGate {
     $gateResults.Add([pscustomobject]@{ Name = $Name; Ok = $ok; Seconds = $seconds })
 }
 
+function Invoke-NpmGate {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$ScriptName
+    )
+    Write-Host ''
+    Write-Host "===== $Name =====" -ForegroundColor Cyan
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $ok = $false
+    $npmCommand = Get-Command npm -ErrorAction SilentlyContinue
+    if ($null -eq $npmCommand) {
+        # Missing toolchain is a FAILING gate with a named cause, never a skip —
+        # a suite that silently passes without Node is the vacuous-green
+        # workflow this suite exists to replace.
+        Write-Host '  npm not found on PATH — install Node.js; the frontend gates are required.' -ForegroundColor Red
+    }
+    elseif (-not (Test-Path -LiteralPath (Join-Path $WorkspaceRoot 'node_modules'))) {
+        Write-Host '  node_modules missing — run `npm ci --include=optional` first.' -ForegroundColor Red
+    }
+    else {
+        Push-Location $WorkspaceRoot
+        try {
+            & npm run --silent $ScriptName
+            $ok = ($LASTEXITCODE -eq 0)
+        }
+        finally { Pop-Location }
+    }
+    $sw.Stop()
+    $seconds = [math]::Round($sw.Elapsed.TotalSeconds, 1)
+    Write-Host ("[{0}] {1} ({2}s)" -f $(if ($ok) { 'PASS' } else { 'FAIL' }), $Name, $seconds) -ForegroundColor $(if ($ok) { 'Green' } else { 'Red' })
+    $gateResults.Add([pscustomobject]@{ Name = $Name; Ok = $ok; Seconds = $seconds })
+}
+
 function Invoke-InProcessGate {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -113,6 +154,13 @@ Write-Host ("SkipApiHost:   {0}" -f [bool]$SkipApiHost) -ForegroundColor DarkGra
 
 Invoke-ScriptGate -Name 'Module smoke'      -ScriptPath (Join-Path $scriptsDir 'Invoke-ModuleSmokeTest.ps1')         -ScriptArgs $rootArgs
 Invoke-ScriptGate -Name 'Adapter smoke'     -ScriptPath (Join-Path $scriptsDir 'Invoke-AdapterSmokeTest.ps1')        -ScriptArgs $rootArgs
+
+# Frontend gates before the slow API-host smoke: cheap failures fail fast.
+# These were dark until 2026-08-10 — 149 vitest assertions, the typecheck, and
+# the production build ran only when someone typed them (ROADMAP Lane 0.8).
+Invoke-NpmGate -Name 'Frontend typecheck'  -ScriptName 'typecheck'
+Invoke-NpmGate -Name 'Frontend unit tests' -ScriptName 'test:unit'
+Invoke-NpmGate -Name 'Frontend build'      -ScriptName 'build'
 
 if (-not $SkipApiHost) {
     Clear-ListenerPort -PortNumber $Port
