@@ -1381,6 +1381,60 @@ sibling.
       in `finally`, or if **any** `Get-StatusAdapterResult` call site omits
       `-OnProgress` — a marked-active operation with no ticks goes stale and is
       restarted anyway, so the marker alone is not protection.
+- [x] **Route coverage was right; the work inside the route still ran dark.**
+      _(state: smoke-tested + live-proven — closed 2026-08-10, third pass)_
+      With the classifier fix deployed, the assessment was **still** killed at
+      215s. The watchdog was not at fault: it suppressed correctly while
+      progress was fresh (ages 3s / 39s / 99s) and restarted only once progress
+      had been stale for 159s > the 120s tolerance. Progress had genuinely
+      stopped — between the local inventory ending (~04:52:55) and
+      `cold-roadmap-scan` (04:55:09) sat a **134-second unpublished GitHub
+      phase**. `Get-GitHubReposViaApi` makes sequential per-repo network calls
+      (`Get-LatestGitHubWorkflowRunViaApi`, plus the Pages lookup inside
+      `ConvertTo-GitHubRepoMetadata`) — ~150 round-trips across the portfolio,
+      publishing nothing. Both broken routes reach it through the same
+      `Add-GitHubMetadataToStatusResult`, so one fix covers both. Now ticks per
+      repo inside the loop, and per owner (a dead owner returns zero repos, so
+      the per-repo tick never runs). **The second-pass tripwire asserted the
+      wrong invariant** — "every `Get-StatusAdapterResult` call site passes
+      `-OnProgress`" is call-site wiring, and it passed while a third of the
+      assessment ran dark. The replacement enforces the actual property via the
+      AST: a loop containing per-item network calls must publish **from inside
+      that loop** (a tick outside does not bound the silent window).
+      **Evidence:** `network-loop progress ok: 2 per-item GitHub loop(s) all
+      tick from inside the loop`; adversarially proven by running the detector
+      against the pre-fix file — **2 violations, exactly the two loops that
+      caused the outage**. An earlier draft of the detector produced a false
+      positive (`Invoke-MergeReadinessForRepo`, which has a loop and a network
+      call but not one inside the other) and was tightened to true lexical
+      containment. **Live production proof:** assessment completed **HTTP 200
+      in 235s** (previously dead at 215s), watchdog progress age never above
+      12s across four probes (was 3→39→99→159→kill), **zero restarts**.
+- [x] **`/api/status` ran a full-portfolio scan on the 180s tier and the
+      deadline guard killed the host.** _(state: smoke-tested — closed
+      2026-08-10, third pass)_ Reported as an endless spinner on the roadmap
+      modal. The request deadline does not fail the request on expiry — it
+      calls `Environment.FailFast`, terminating the process. `GET /api/status`
+      — the route the browser polls — runs `Get-StatusAdapterResult` over the
+      workspace plus ~150 GitHub calls, but was on the **default** tier:
+      `Process terminated. API request deadline exceeded for GET /api/status
+      (timeoutSeconds=180)`, started 05:09:10 and dead at 05:12:10, exactly
+      180s. Three occurrences on 2026-08-10 (04:06:25, 04:58:50, 05:12:14),
+      predating the heartbeat work — a distinct, pre-existing defect, not a
+      regression. This is the failure the tier's own comment says it exists to
+      prevent: "the guard becoming the outage it exists to prevent". The smoke
+      test had explicitly asserted `/api/status` was an ordinary route; that
+      classification was the bug, and it was corrected **on production
+      evidence**, not to make a change pass. **Evidence:** `scan-route deadline
+      tier ok: 7 full-portfolio route(s) all on the extended tier` — the
+      tripwire derives tier membership from what each handler actually calls
+      (`Get-StatusAdapterResult` / `Invoke-PortfolioAssessment` /
+      `Get-OperationsReposPayload`) rather than a hand-maintained list, since a
+      hand-maintained list is exactly what drifted; verified against the
+      pre-fix tier list — **1 violation, `GET /api/status`**.
+      **[non-blocker]** `FailFast` as deadline policy means one slow request
+      destroys every in-flight request; the blast radius is a design question
+      left open.
 - [ ] **Insights has no way to run the assessment it tells you to run.**
       _(state: planned — surfaced with the 2026-08-10 bug report)_ Portfolio
       Analytics says "Refresh the portfolio assessment to seed the Release 2.3
