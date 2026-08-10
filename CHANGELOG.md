@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-10 — Lane 0.8: component behavior is now asserted from the DOM
+
+### Changes
+
+- **jsdom + `@testing-library/react`** added; `*.test.tsx` files run under jsdom via a per-file `@vitest-environment` pragma while the pure-logic `*.test.ts` suite keeps the cheaper node environment. `@vitejs/plugin-react` wired into `vitest.config.ts` for JSX transform.
+- **15 DOM tests across three components**, each proving the half its pure-logic twin cannot see:
+  - `ActionBar.test.tsx` — the component actually consults `requiresBulkConfirmation` (a component that never calls the guard passes every `bulkScope` test and still runs bulk git across 75 working trees); **Cancel really stops the action**; explicit selection skips the dialog; read-only Report never shows it; zero scope disables the buttons and names the missing workspace root.
+  - `DashboardViewTabs.test.tsx` — every `VIEW_META` view is reachable, clicks fire `onSelectView`, the subtitle tracks the active view, badges render only where declared.
+  - `InsightsView.test.tsx` — the panel body renders (the DOM half of the Lane 0.5 tab contract, backstopping the source-order tripwire with the behavior it proxies); an idle ledger stays visible with an explanation while never-loaded metrics show the distinct unavailable state; a failed refresh labels the stale snapshot; the analytics Retry is wired to the trend loader, not the assessment's.
+- **`playwright` removed** from root devDependencies. Unused: its only reference in the codebase was a keyword string inside the roadmap linter. E2E can return as a deliberate decision, not a dormant dependency.
+- **`npm audit fix`: 4 advisories → 0** (3 high, including the vite `server.fs.deny` Windows UNC-path bypass and launch-editor NTLMv2 hash disclosure — both Windows-relevant, and this portal runs on Windows).
+
+### Verification
+
+- `npm run test:unit` — **164 passing across 14 files** (was 149/11). Two initial InsightsView fixtures were wrong about component behavior and were corrected against it: a `null` ledger renders the red "unavailable" state (not the idle explanation), and the analytics section only mounts once assessment context exists — the tests now document both distinctions.
+- `npm run typecheck`, `npm run build`, module smoke: exit 0. `npm audit`: 0 vulnerabilities.
+
 ## 2026-08-10 — Lane 0.8: the merge gate now runs everything, and nothing vacuous
 
 ### Changes

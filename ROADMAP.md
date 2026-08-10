@@ -1483,14 +1483,26 @@ Safe path, in order — cover must never drop between steps:
       smoke — `ci-smoke.yml runs the full suite (7 script gates, 3 npm
       gates)`; adversarially proven with seven scratch mutations (baseline
       passes, six hollowings each fire the specific assertion).
-- [ ] **Close the render gap.** _(state: planned)_ jsdom +
-      `@testing-library/react` so component behavior is asserted from the
-      DOM, not from source-text positions. First targets: Insights renders
-      inside its tab panel (backstopping the source-order tripwire with the
-      behavior it proxies) and the implicit-bulk confirm flow. Decide the
-      unused `playwright` root dependency at the same time — its only
-      reference in the codebase is a keyword string inside
-      `tools/Test-RoadmapStructure.ps1`; remove it or make it real.
+- [x] **Close the render gap.** _(state: smoke-tested — closed 2026-08-10)_
+      jsdom + `@testing-library/react`; `*.test.tsx` files run under jsdom via
+      a per-file pragma so the pure-logic tests keep the cheaper node
+      environment. Fifteen DOM tests across three components, each asserting
+      the half its pure-logic twin cannot see: **ActionBar** — the component
+      actually consults `requiresBulkConfirmation`, Cancel really stops the
+      action, explicit selection skips the dialog, read-only Report never
+      shows it, and the zero-scope hint names the missing root;
+      **DashboardViewTabs** — every `VIEW_META` view is reachable, selection
+      fires, the subtitle tracks the active view; **InsightsView** — the
+      panel body renders (the DOM half of the Lane 0.5 contract), an idle
+      ledger stays visible with an explanation while never-loaded metrics
+      show the distinct unavailable state, a failed refresh labels the stale
+      snapshot, and the analytics Retry is wired to the trend loader.
+      **`playwright` removed** from root devDependencies — unused; its only
+      codebase reference was a keyword string in the roadmap linter.
+      Folded-in hardening: `npm audit fix` cleared 4 advisories (3 high,
+      incl. the vite Windows UNC-path fs.deny bypass) → **0 vulnerabilities**.
+      **Evidence:** `npm run test:unit` 164 passing across 14 files (15 new
+      DOM assertions); typecheck, build, module smoke all exit 0.
 - [ ] **Linting, report-only first.** _(state: planned)_ ESLint (flat
       config) for the frontend and PSScriptAnalyzer with a committed settings
       file for ~15k lines of PowerShell. Land both as report-only artifacts
