@@ -1279,6 +1279,19 @@ every maturity score. Both were adversarially proven to fail when violated.
 
 ### Lane 0.5 — Portal UX follow-ups (empty-state audit 2026-08-08)
 
+- [x] **A render error in any component no longer white-screens the portal.**
+      _(state: smoke-tested — closed 2026-08-10)_ No error boundary existed
+      anywhere: one render-time throw in any of ~38 components killed the
+      entire UI with no message and no recovery.
+      [`ErrorBoundary.tsx`](frontend/components/ErrorBoundary.tsx) now mounts
+      twice — `index.tsx` wraps `<App />` as the last resort, and Dashboard
+      wraps the active tab panel with `key={activeView}`, so a crashed view
+      degrades to a card naming the view and the error while the header, tab
+      strip, and the other five views keep working; switching tabs resets the
+      boundary. **Evidence:** four DOM tests — untouched happy path, named
+      card with `role="alert"`, Try-again genuinely re-renders after the
+      cause is gone, and a still-broken child re-shows the card.
+
 Surfaced by a walkthrough of the Repository Grid, Insights, Operations, and
 Doc Readiness Queue tabs against a workspace that scanned 0 repos. The two
 data-integrity findings from that audit were fixed the same day and are in

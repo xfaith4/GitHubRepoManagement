@@ -31,6 +31,7 @@ import HelpModal from './HelpModal';
 import OperationsWorkspaceView from './OperationsWorkspaceView';
 import { VIEW_META_BY_KEY, type ViewKey } from '../viewMeta';
 import DashboardViewTabs from './DashboardViewTabs';
+import ErrorBoundary from './ErrorBoundary';
 import PortfolioSummarySection from './PortfolioSummarySection';
 import { type ViewTabBadges } from '../lib/viewTabs';
 import { isRepoNeedsAttention } from '../lib/needsAttention';
@@ -1273,6 +1274,11 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
               badges={viewTabBadges}
             />
 
+            {/* Per-view boundary: a crashed panel degrades to a named error
+                card while the tab strip and the other views keep working.
+                key={activeView} resets the boundary on every tab switch, so
+                one broken view never locks the operator out of the rest. */}
+            <ErrorBoundary key={activeView} label={`The ${VIEW_META_BY_KEY[activeView].label} view`}>
             {activeView === 'repos' ? (
               <>
                 <ActionBar
@@ -1498,6 +1504,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                 )}
               </div>
             )}
+            </ErrorBoundary>
         </div>
       </div>
 
