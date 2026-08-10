@@ -2,7 +2,7 @@ import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type RepoS
 import { type AutomationHealthPayload } from '../lib/automationStatus';
 import { type PackagedItem } from '../lib/packagedItems';
 import { type RunnerPresencePayload } from '../lib/runnerPresence';
-import { type WorkItemTrace } from '../lib/workItemTrace';
+import { type WorkItemTrace, type WriteBackPreview, type WriteBackRefusal } from '../lib/workItemTrace';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -1593,6 +1593,60 @@ export async function rejectPackagedItem(
 export async function getWorkItemTrace(id: string): Promise<WorkItemTrace> {
   const data = await fetchJson<{ data?: WorkItemTrace }>(`${API_BASE_URL}/trace/${encodeURIComponent(id)}`);
   return (data?.data ?? ({} as WorkItemTrace));
+}
+
+/**
+ * Release 3.1 — roadmap completion write-back.
+ *
+ * Both calls go through the merge-evidence gate, and both refuse with HTTP 409
+ * rather than a 200 carrying `changed: false` — the caller must not be able to
+ * read "nothing was marked" as success. A refusal's body carries the codes and
+ * remedies, so it is re-thrown as a typed error the UI can render in full
+ * instead of a bare status.
+ */
+interface WriteBackResponse {
+  success?: boolean;
+  error?: string;
+  category?: string;
+  data?: WriteBackPreview & { refusals?: WriteBackRefusal[] };
+}
+
+async function postWriteBack(path: string, body: Record<string, unknown>): Promise<WriteBackPreview> {
+  const response = await fetch(`${API_BASE_URL}${path}`, withAuthHeaders({
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }));
+  const text = await response.text();
+  let payload: WriteBackResponse | null;
+  try { payload = text ? (JSON.parse(text) as WriteBackResponse) : null; } catch { payload = null; }
+  if (!response.ok || payload?.success !== true) {
+    throw new WriteBackRefusedError(
+      String(payload?.error ?? `Write-back request failed with HTTP ${response.status}`),
+      String(payload?.category ?? 'unknown'),
+      Array.isArray(payload?.data?.refusals) ? payload.data.refusals : [],
+    );
+  }
+  return (payload.data ?? {}) as WriteBackPreview;
+}
+
+export class WriteBackRefusedError extends Error {
+  category: string;
+  refusals: WriteBackRefusal[];
+  constructor(message: string, category: string, refusals: WriteBackRefusal[]) {
+    super(message);
+    this.name = 'WriteBackRefusedError';
+    this.category = category;
+    this.refusals = refusals;
+  }
+}
+
+export function previewRoadmapWriteBack(id: string): Promise<WriteBackPreview> {
+  return postWriteBack('/roadmap/write-back/preview', { id });
+}
+
+export function applyRoadmapWriteBack(id: string, previewId: string, proposedContent: string): Promise<WriteBackPreview> {
+  return postWriteBack('/roadmap/write-back/apply', { id, previewId, proposedContent });
 }
 
 export async function getRoadmapDependencies(refresh = false): Promise<RoadmapDependencyGraph> {

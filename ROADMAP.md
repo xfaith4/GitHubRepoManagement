@@ -44,10 +44,14 @@ interchangeable — mixing them is what previously made the roadmap read as
       landed (2.7 Phase A's proven write path, and 3.0's dispatch that runs), so
       the north-star loop can now be driven end to end for one real item. Only
       the PAT's `Checks: Read` grant is still missing, and that affects
-      per-check detail rather than the loop. **The trace milestone closed
-      2026-08-10:** `GET /api/trace/{id}` joins all seven stages from any id the
-      chain minted, and names the links that are broken rather than leaving a
-      blank that reads like "not yet". What remains is the write-back half.
+      per-check detail rather than the loop. **Three of its four milestones
+      closed 2026-08-10:** `GET /api/trace/{id}` joins all seven stages from
+      any id the chain minted and names the links that are broken rather than
+      leaving a blank that reads like "not yet"; write-back generates the
+      managed repo's completion edit as a reviewed diff; and the merge-evidence
+      gate refuses nine shapes that are not completion — including code churn
+      and a green check on an open PR. What remains is the **live full-loop
+      proof**, which needs an operator session, so batch it with 2.9's.
 - [ ] **Release 3.2 — portfolio scale.** Independent of 3.1 and schedulable in
       parallel; it starts from the bounded 900-second scan budget Lane 0.4
       settled rather than from an open question.
@@ -888,8 +892,10 @@ Field proof — human / credential / calendar:
 
 ### Release 3.1 — Closed-Loop Delivery
 
-**Status:** planned — 1 of 4 milestones shipped (the work-item trace,
-2026-08-10); the remaining three are the write-back half. The status token
+**Status:** planned — 3 of 4 milestones shipped 2026-08-10 (the work-item
+trace, the completion-edit generator, and the merge-evidence gate). The fourth
+is the live full-loop proof, which needs an operator session rather than
+engineering time; batch it with Release 2.9's. The status token
 stays `planned` because `active` means _the single dispatch target_ and
 Release 2.7 still holds it (section 5); it does not mean "no work has
 started". **[non-blocker]** 2.7's only open item is an elevated Windows
@@ -947,14 +953,65 @@ merge-readiness question this release gates on.
       — status alone would pass against the SPA fallback. Frontend: 16 pure
       view tests + 5 DOM tests asserting a gap renders differently from
       unreached work.
-- [ ] Generate the managed repo's roadmap completion edit from merge evidence
-      and present it as a reviewed diff. _(state: planned — write-back is the
-      last unbuilt step of the north-star workflow)_
-- [ ] Gate write-back on merge evidence: refuse to mark an item complete from
-      code churn or a green run alone. _(state: planned — guardrail in
-      section 8 exists; no enforcement)_
+- [x] Generate the managed repo's roadmap completion edit from merge evidence
+      and present it as a reviewed diff. _(state: smoke-tested — closed
+      2026-08-10)_ `POST /api/roadmap/write-back/preview` resolves the work
+      item from any trace id, re-reads its pull request **live** (a stored
+      merge-readiness snapshot never carries a merge commit, so a snapshot
+      alone can only ever say "unverified"), and returns a **line-level** diff
+      rather than a whole-file dump — the roadmaps this edits are thousands of
+      lines, so a full body is not a review surface. Matching is exact on the
+      trimmed item text: a fuzzy match would eventually tick the wrong line in
+      someone else's roadmap. Re-running is a no-op reported as
+      `alreadyComplete`, never a second claim, and a miss is named rather than
+      returned as a silent zero-line edit.
+- [x] Gate write-back on merge evidence: refuse to mark an item complete from
+      code churn or a green run alone. _(state: smoke-tested — closed
+      2026-08-10)_ `Test-RoadmapWriteBackEvidence`
+      ([`Roadmap.WriteBack.ps1`](backend/modules/roadmap/Roadmap.WriteBack.ps1))
+      is pure and **fails closed** — no evidence at all is a refusal, not a
+      pass. Nine shapes are refused, each with a code, a sentence and the
+      remedy that would satisfy it: churn-only (`no-pull-request`, which names
+      the changed-file count and the passing local verify so the operator is
+      told those are not the thing), a green check on an open PR
+      (`pr-not-merged`), closed-without-merging, merged-with-no-Actions,
+      merged-mid-validation, merged past a red check (`validation-failed`),
+      merged with no merge commit, merged per a stored snapshot only
+      (`merge-unverified` — nobody asked GitHub), and no item text. **Apply
+      re-runs the gate from scratch** rather than inheriting the preview's
+      verdict, refuses a preview whose file moved underneath it
+      (`stale-preview`), and the ledger itself throws on an applied record with
+      no allowed gate. Every refusal is a **409**, never a 200 carrying
+      `changed=false` a caller could read as success.
+      **The pattern, not the instance:** the Release 1.1 completion-preview
+      route carried its own inline `- [ ]` → `- [x]` rewrite, so there were
+      about to be two generators and only one of them gated. It now delegates,
+      and a tripwire asserts there is **exactly one** generator in `backend/`
+      — a file that both matches an open checkbox and emits a complete one.
+      **Evidence:** module smoke — the 9 refusal shapes, the allowed case,
+      edit exactness/indentation/idempotence, the ledger round trip, and the
+      applied record reaching the trace's final stage (two modules name that
+      file through two constants; the assertion is behavioral so drift fails
+      rather than silently showing `writeBack=missing` forever). Two tripwires,
+      both **adversarially proven**: the one-generator detector reports the
+      pre-fix host as a generator and none of the four legitimate near-misses
+      (parser and dispatcher match open items; linter and repairer emit `- [x]`
+      into history sections), and the gate detector fires when `gate.allowed`
+      is removed from the apply route. api-host smoke: preview **and** apply
+      both refuse a real ranked-approved-dispatched item 409 because nothing
+      merged, the fixture roadmap is verified untouched, and an unknown id 404s
+      as JSON. Frontend: 8 DOM/view tests, including that apply confirms first
+      (it writes to a file in a **different** repository) and that a refusal
+      appearing only at apply time is surfaced rather than a stale success.
 - [ ] Record a full-loop proof for one real item in `evidence/`, naming each
-      stage's artifact. _(state: planned)_
+      stage's artifact. _(state: blocked — needs an operator session, not
+      engineering time)_ Every stage is now built and gated, but the proof
+      requires one real item to travel the chain: the operator runner must
+      execute the dispatched task (`claude` or `gh agent-task`, both of which
+      need an authenticated operator session — the same gate Release 2.9 and
+      3.0's live round trips wait on), a PR must open and merge, and the
+      write-back must apply against real merge evidence. Batch it with 2.9's
+      operator session rather than scheduling a separate one.
 
 #### Acceptance criteria
 

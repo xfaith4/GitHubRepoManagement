@@ -61,6 +61,48 @@ export interface WorkItemTrace {
   joinedAt?: string;
 }
 
+// ── Release 3.1 milestones 2 and 3 — roadmap completion write-back ──────────
+
+export interface WriteBackRefusal {
+  code: string;
+  message: string;
+  /** What would satisfy the rule. A gate that only says no makes you guess. */
+  remedy: string;
+}
+
+export interface WriteBackDiffLine {
+  line: number;
+  before: string | null;
+  after: string | null;
+}
+
+export interface WriteBackPreview {
+  previewId?: string;
+  recordId?: string;
+  runId?: string;
+  repoName?: string;
+  roadmapPath?: string;
+  itemText?: string;
+  markedCount?: number;
+  diff?: WriteBackDiffLine[];
+  proposedContent?: string;
+  applied?: boolean;
+  note?: string;
+}
+
+/**
+ * The completion claim, in one line. Names the file being edited, because the
+ * edit lands in a DIFFERENT repository from the one the operator is looking at
+ * — the managed repo's roadmap, not this one's.
+ */
+export function summarizeWriteBackPreview(preview: WriteBackPreview | null): string {
+  if (!preview) return '';
+  const lines = preview.markedCount ?? 0;
+  const where = preview.roadmapPath ? ` in ${preview.roadmapPath}` : '';
+  if (preview.applied) return `Marked ${lines} item${lines === 1 ? '' : 's'} complete${where}.`;
+  return `Proposes marking ${lines} item${lines === 1 ? '' : 's'} complete${where}. Nothing is written until you apply it.`;
+}
+
 export type TraceSeverity = 'ok' | 'active' | 'error' | 'gap' | 'idle';
 
 export interface TraceStageView {

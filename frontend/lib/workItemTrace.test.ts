@@ -4,6 +4,7 @@ import {
   describeTraceStatus,
   sortTraceStages,
   summarizeTrace,
+  summarizeWriteBackPreview,
   traceEvidenceRows,
   traceIdentityPairs,
   type TraceStage,
@@ -160,5 +161,28 @@ describe('traceEvidenceRows', () => {
   it('returns nothing for a stage with no evidence', () => {
     expect(traceEvidenceRows(null)).toEqual([]);
     expect(traceEvidenceRows(stage('rank', 1, 'pending'))).toEqual([]);
+  });
+});
+
+describe('summarizeWriteBackPreview', () => {
+  // The edit lands in a DIFFERENT repository from the one on screen, so the
+  // path is not decoration — it is the answer to "what am I about to change?".
+  it('names the file and says nothing is written yet', () => {
+    expect(summarizeWriteBackPreview({ markedCount: 1, roadmapPath: 'C:\\repos\\demo\\ROADMAP.md' })).toBe(
+      'Proposes marking 1 item complete in C:\\repos\\demo\\ROADMAP.md. Nothing is written until you apply it.',
+    );
+  });
+
+  it('switches to past tense once applied', () => {
+    expect(summarizeWriteBackPreview({ markedCount: 2, roadmapPath: 'r.md', applied: true })).toBe(
+      'Marked 2 items complete in r.md.',
+    );
+  });
+
+  it('handles a missing preview and a missing path', () => {
+    expect(summarizeWriteBackPreview(null)).toBe('');
+    expect(summarizeWriteBackPreview({ markedCount: 1 })).toBe(
+      'Proposes marking 1 item complete. Nothing is written until you apply it.',
+    );
   });
 });
