@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { type RepoStatus } from '../types';
 
 interface ChangeHistoryPanelProps {
@@ -6,8 +6,11 @@ interface ChangeHistoryPanelProps {
 }
 
 const ChangeHistoryPanel: React.FC<ChangeHistoryPanelProps> = ({ repos }) => {
+  // Captured once per mount via the lazy initializer, so render stays pure
+  // (react-hooks/purity). Week/month activity windows do not need a clock that
+  // ticks between re-renders — a stable "now" is the correct semantic here.
+  const [now] = useState(() => Date.now());
   const activityMetrics = useMemo(() => {
-    const now = Date.now();
     const weekWindowMs = 7 * 24 * 60 * 60 * 1000;
     const monthWindowMs = 30 * 24 * 60 * 60 * 1000;
     const totalCommitsWeek = repos.reduce((sum, r) => sum + (r.commitsLastWeek ?? 0), 0);
@@ -68,7 +71,7 @@ const ChangeHistoryPanel: React.FC<ChangeHistoryPanelProps> = ({ repos }) => {
       commitMetricsUnavailableWeek,
       commitMetricsUnavailableMonth,
     };
-  }, [repos]);
+  }, [repos, now]);
   
   const getActivityLevel = (commits: number): { level: string; color: string } => {
     if (commits === 0) return { level: 'Inactive', color: 'text-gray-500' };

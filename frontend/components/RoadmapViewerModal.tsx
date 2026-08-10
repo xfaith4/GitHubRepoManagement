@@ -40,6 +40,21 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
     }
   }, []);
 
+  // Declared before the effect that calls it — the effect previously
+  // referenced this via hoisting-by-closure, which the react-hooks immutability
+  // rule rejects because the early reference cannot track later changes.
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const items = await getRoadmapTaskHistory(10);
+      setTaskHistory(items);
+    } catch {
+      setTaskHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (isOpen && repoName) {
       setTaskMessage(null);
@@ -57,19 +72,7 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
       void loadHistory();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, repoName, defaultOwner, loadContent]);
-
-  const loadHistory = useCallback(async () => {
-    setHistoryLoading(true);
-    try {
-      const items = await getRoadmapTaskHistory(10);
-      setTaskHistory(items);
-    } catch {
-      setTaskHistory([]);
-    } finally {
-      setHistoryLoading(false);
-    }
-  }, []);
+  }, [isOpen, repoName, defaultOwner, loadContent, loadHistory]);
 
   const handleScanAll = async () => {
     setScanning(true);

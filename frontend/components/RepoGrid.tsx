@@ -4,14 +4,6 @@ import { BuildSuccessIcon, BuildFailureIcon, BuildInProgressIcon, PullRequestIco
 import { isRepoNeedsAttention } from '../lib/needsAttention';
 import { getCurationBadgeConfig, getCurationRank, matchesCurationFilters } from '../lib/curationScope';
 
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      [elemName: string]: any;
-    }
-  }
-}
-
 interface RepoGridProps {
   repos: RepoStatus[];
   onViewArtifacts: (repoName: string) => void;

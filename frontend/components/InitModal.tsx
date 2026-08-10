@@ -6,11 +6,12 @@ interface InitModalProps {
   onInit: (githubUser: string, cloneOwned: boolean, basePath?: string) => void;
 }
 
-const InitModal: React.FC<InitModalProps> = ({ isOpen, onClose, onInit }) => {
+// `onInit` stays on the interface for the caller's sake, but Clone is a
+// planned feature — the modal never invokes it in this build.
+const InitModal: React.FC<InitModalProps> = ({ isOpen, onClose }) => {
   const [githubUser, setGithubUser] = useState('');
   const [cloneOwned, setCloneOwned] = useState(true);
   const [basePath, setBasePath] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 

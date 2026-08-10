@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-10 — Lane 0.8: linting is a failing gate; pre-existing debt is ratcheted, not forgiven
+
+### Changes
+
+- **ESLint (flat config)** — typescript-eslint + react-hooks over the frontend; `npm run lint` gates the suite at `--max-warnings 161`. The initial 185-finding wall was triaged at adoption, not deferred:
+  - **`RepoGrid`'s `declare global { namespace JSX { IntrinsicElements: [any] } }` deleted.** It disabled element-name typechecking for the entire app — a typo'd tag would have compiled. Typecheck stayed clean after removal, so nothing was hiding behind it.
+  - `RoadmapViewerModal`: `loadHistory` was referenced by an effect above its `useCallback` declaration; reordered and added to the dep list.
+  - `ChangeHistoryPanel`: `Date.now()` during render moved to a `useState` lazy initializer — a stable per-mount "now" is the correct semantic for week/month activity windows.
+  - `apiClient`: two dead `payload` initializers removed; the scan-timeout error now carries the underlying abort as `cause`; unused `MaturityDriftAlert` import dropped.
+  - `Dashboard`: five dead imports, a dead 5-tile memo, and a dead local `EMPTY_EXECUTION_METRICS`/`hasExecutionActivity` pair — all leftovers of the Lane 0.5 extraction — deleted.
+  - Debt rules held at warn + ratchet: `no-explicit-any` (123), `set-state-in-effect` (31, each needs individual behavioral review).
+- **PSScriptAnalyzer** — `scripts/Invoke-LintGate.ps1` + root `PSScriptAnalyzerSettings.psd1` + committed `scripts/pssa-baseline.json`; wired as a suite gate (so it runs on every PR via ci-smoke).
+  - **The repo's one Error-severity finding fixed**: `New-AdapterResponse` declared a parameter named `$Error`, shadowing the automatic variable. Renamed to `$ErrorMessage`; the emitted JSON key is unchanged.
+  - Gate policy: Error severity is a hard zero forever; per-rule warning counts (598 across 17 rules) may only shrink — growth or a new rule fails, `-UpdateBaseline` locks improvements in.
+  - `PSAvoidUsingWriteHost` (723) excluded as **policy**, not debt: gate scripts' colored PASS/FAIL output is their operator UI, and this repo's linters deliberately emit findings on the information stream.
+
+### Verification
+
+- Ratchet adversarially proven: a scratch `Invoke-Expression` file → FAIL naming the rule, the delta, and the site; removed → PASS.
+- ESLint: 0 errors, 161 warnings (the ratchet ceiling). Suite is now 17 gates; typecheck, lint, 164 unit tests, build, module smoke all exit 0.
+
 ## 2026-08-10 — Lane 0.8: component behavior is now asserted from the DOM
 
 ### Changes

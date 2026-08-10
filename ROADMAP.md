@@ -1503,13 +1503,31 @@ Safe path, in order — cover must never drop between steps:
       incl. the vite Windows UNC-path fs.deny bypass) → **0 vulnerabilities**.
       **Evidence:** `npm run test:unit` 164 passing across 14 files (15 new
       DOM assertions); typecheck, build, module smoke all exit 0.
-- [ ] **Linting, report-only first.** _(state: planned)_ ESLint (flat
-      config) for the frontend and PSScriptAnalyzer with a committed settings
-      file for ~15k lines of PowerShell. Land both as report-only artifacts
-      first, triage the initial wall into a baseline, then promote to failing
-      gates — a linter switched on cold across this much code is noise that
-      teaches people to ignore it. Closes the dogfood gap
-      `Roadmap.Evaluator.ps1` currently embodies.
+- [x] **Linting — failing gates from day one, with the debt ratcheted.**
+      _(state: smoke-tested — closed 2026-08-10)_ Landed stronger than the
+      report-only plan: both linters are **failing suite gates immediately**,
+      with pre-existing debt held by ratchets that only tighten. **ESLint**
+      (flat config, typescript-eslint + react-hooks): initial wall was 185;
+      real defects fixed at adoption — `RepoGrid`'s
+      `declare global JSX IntrinsicElements: any` escape hatch **deleted**
+      (it disabled element-name typechecking app-wide; typecheck stayed clean,
+      so nothing hid behind it), `RoadmapViewerModal` use-before-declaration
+      reordered, `ChangeHistoryPanel` impure `Date.now()` render moved to a
+      lazy initializer, `apiClient` dead assignments removed and the scan
+      timeout now carries its `cause`, ~20 dead imports/vars deleted. Debt
+      rules (`no-explicit-any` 123, `set-state-in-effect` 31) downgraded to
+      warn under `--max-warnings 161`. **PSScriptAnalyzer**
+      ([`Invoke-LintGate.ps1`](scripts/Invoke-LintGate.ps1) +
+      `PSScriptAnalyzerSettings.psd1` + `scripts/pssa-baseline.json`): the
+      one Error-severity finding **fixed** (`New-AdapterResponse`'s `$Error`
+      parameter shadowed the automatic variable; JSON key unchanged), Errors
+      hard-zero forever, 598 warnings baselined per-rule (17 rules), any
+      growth or new rule fails, `-UpdateBaseline` locks improvements in.
+      `PSAvoidUsingWriteHost` (723) excluded as **policy** — gate scripts'
+      operator UI — not counted as debt. **Evidence:** ratchet adversarially
+      proven (+1 `Invoke-Expression` → FAIL naming rule/delta/site; removed →
+      PASS); suite now 17 gates; typecheck, lint, 164 unit tests, build,
+      module smoke all exit 0.
 
 ---
 
