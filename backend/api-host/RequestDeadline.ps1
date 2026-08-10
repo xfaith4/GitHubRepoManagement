@@ -39,6 +39,13 @@ function Get-LongRunningScanRoutePattern {
     param()
 
     return @(
+        # /api/status runs Get-StatusAdapterResult over the whole workspace and
+        # then Add-GitHubMetadataToStatusResult (~150 sequential GitHub calls).
+        # It is the route the browser polls, and it was on the DEFAULT 180s tier:
+        # a cold scan hit the deadline and FailFast killed the host mid-request,
+        # every time. Same class of work as the routes below, same tier.
+        '/api/status'
+        '/api/status/*'
         '/api/portfolio/assessment'
         '/api/portfolio/assessment/*'
         '/api/operations/repos'

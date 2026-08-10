@@ -57,15 +57,21 @@ Write-Host '  deadline floor/override/ceiling and idle/wait/terminate states cor
 # A cold full-portfolio scan legitimately outruns the 180s default. Without the
 # extended tier the freeze guard terminates the host mid-scan and Shawl restarts
 # it into the same scan — the guard becoming the outage it exists to prevent.
-foreach ($scanPath in @('/api/portfolio/assessment', '/api/operations/repos', '/api/operations/repos/foo/curation', '/api/automation/run', '/api/badges/foo.svg')) {
+foreach ($scanPath in @('/api/status', '/api/portfolio/assessment', '/api/operations/repos', '/api/operations/repos/foo/curation', '/api/automation/run', '/api/badges/foo.svg')) {
     if (-not (Test-LongRunningScanRoute -Path $scanPath)) { throw "Scan route must use the extended deadline tier: $scanPath" }
 }
-foreach ($fastPath in @('/api/status', '/health/live', '/api/automation/history', '/api/settings', '')) {
+# /api/status moved here from the "ordinary" list on production evidence, not to
+# make a change pass: the host log recorded "Process terminated. API request
+# deadline exceeded for GET /api/status (timeoutSeconds=180)" — the exact freeze
+# guard becoming the outage described above. It runs the same cold full-portfolio
+# scan as the routes on the tier; classifying it as fast was the bug.
+foreach ($fastPath in @('/health/live', '/api/automation/history', '/api/settings', '')) {
     if (Test-LongRunningScanRoute -Path $fastPath) { throw "Ordinary route must keep the default deadline: '$fastPath'" }
 }
 if (-not (Test-LongRunningScanRoute -Path '/api/operations/repos/')) { throw 'Trailing-slash scan route must still match the extended tier' }
 if ((Get-RequestDeadlineSecondsForPath -Path '/api/automation/run' -DefaultSeconds 180 -ScanSeconds 900) -ne 900) { throw 'Scan route did not receive the extended deadline' }
-if ((Get-RequestDeadlineSecondsForPath -Path '/api/status' -DefaultSeconds 180 -ScanSeconds 900) -ne 180) { throw 'Ordinary route did not receive the default deadline' }
+if ((Get-RequestDeadlineSecondsForPath -Path '/api/status' -DefaultSeconds 180 -ScanSeconds 900) -ne 900) { throw '/api/status runs a cold full-portfolio scan and must receive the extended deadline' }
+if ((Get-RequestDeadlineSecondsForPath -Path '/api/settings' -DefaultSeconds 180 -ScanSeconds 900) -ne 180) { throw 'Ordinary route did not receive the default deadline' }
 if ((Get-EffectiveScanRequestTimeoutSeconds -ConfiguredSeconds 900 -BaseSeconds 180) -ne 900) { throw 'Scan deadline default must be 900 seconds' }
 if ((Get-EffectiveScanRequestTimeoutSeconds -ConfiguredSeconds 300 -BaseSeconds 1200) -ne 1200) { throw 'Scan deadline must never fall below the default tier it extends' }
 if ((Get-EffectiveScanRequestTimeoutSeconds -ConfiguredSeconds 900 -EnvironmentValue '99999' -BaseSeconds 180) -ne 3600) { throw 'Scan deadline must stay clamped to the 3600-second ceiling' }
@@ -2393,6 +2399,103 @@ try {
     Write-Host ("  heartbeat coverage ok: request loop keyed off Test-LongRunningScanRoute, {0} scan-engine call site(s) all publish progress, ambient tick no-ops when idle" -f @($scanEngineCalls).Count) -ForegroundColor DarkGray
 }
 finally { Remove-Item -LiteralPath $hbCoverTmp -Recurse -Force -ErrorAction SilentlyContinue }
+
+# ── Network-bound loop progress tripwire (ROADMAP Lane 0.9, third pass) ──────
+# The coverage tripwire above asserted the SCAN ENGINE call sites publish, and
+# passed while a third of the assessment ran dark: the GitHub metadata phase
+# walks ~75 repos making sequential per-repo network calls and published
+# nothing. Progress went stale for 134s, and the watchdog — correctly, by its
+# own contract — restarted a host that was working. Call-site coverage was the
+# wrong invariant. What has to hold is that a loop doing per-item network work
+# publishes progress FROM INSIDE THE LOOP; a tick outside it does not bound the
+# silent window. Enforced structurally via the AST so a new per-repo GitHub
+# call in a loop cannot be added without one.
+$hostFilePath = Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1'
+$hostFileAst = [System.Management.Automation.Language.Parser]::ParseFile($hostFilePath, [ref]$null, [ref]$null)
+$perItemNetworkCalls = @(
+    'Get-LatestGitHubWorkflowRunViaApi'
+    'Get-GitHubCommitCountViaApi'
+    'Get-GitHubPagesSiteUrlViaApi'
+    'ConvertTo-GitHubRepoMetadata'
+    'Get-GitHubRepoMetadataMapViaApi'
+    'Get-GitHubOpenPrCountsViaApi'
+    'Get-GitHubReposViaApi'
+)
+$progressPublishers = @('Update-ActivePortalOperationProgress', 'Get-ActivePortalOperationTick', 'Update-PortalOperationProgress')
+$netLoopChecked = 0
+foreach ($fnAst in @($hostFileAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true))) {
+    # Real loop statements, plus ForEach-Object script blocks (the pipeline form
+    # is how the per-repo GitHub projection is written).
+    $loopNodes = @($fnAst.FindAll({ param($n)
+        $n -is [System.Management.Automation.Language.ForEachStatementAst] -or
+        $n -is [System.Management.Automation.Language.ForStatementAst] -or
+        $n -is [System.Management.Automation.Language.WhileStatementAst] -or
+        $n -is [System.Management.Automation.Language.DoWhileStatementAst] -or
+        $n -is [System.Management.Automation.Language.DoUntilStatementAst] }, $true))
+    $loopNodes += @($fnAst.FindAll({ param($n)
+        $n -is [System.Management.Automation.Language.CommandAst] -and
+        $n.GetCommandName() -in @('ForEach-Object', '%') }, $true) |
+        ForEach-Object { $_.CommandElements | Where-Object { $_ -is [System.Management.Automation.Language.ScriptBlockExpressionAst] } })
+
+    foreach ($loopNode in $loopNodes) {
+        $loopCommands = @($loopNode.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true) |
+            ForEach-Object { $_.GetCommandName() } | Where-Object { $_ })
+        # Exclude self-recursion: a helper is not required to tick for being itself.
+        $netCallsInLoop = @($loopCommands | Where-Object { $_ -in $perItemNetworkCalls -and $_ -ne $fnAst.Name } | Select-Object -Unique)
+        if (@($netCallsInLoop).Count -eq 0) { continue }
+
+        $netLoopChecked++
+        if (@($loopCommands | Where-Object { $_ -in $progressPublishers }).Count -eq 0) {
+            $netLoopDetail = '{0} (line {1}) makes per-item network calls [{2}] inside a loop without publishing progress.' -f `
+                $fnAst.Name, $loopNode.Extent.StartLineNumber, ($netCallsInLoop -join ', ')
+            throw ($netLoopDetail +
+                ' A network-bound loop that does not tick reads as frozen: this is exactly how the GitHub metadata phase' +
+                ' went silent for 134s and the watchdog restarted a working scan. Call Update-ActivePortalOperationProgress' +
+                ' inside the loop (it is ambient and no-ops outside a request).')
+        }
+    }
+}
+if ($netLoopChecked -eq 0) {
+    throw 'No per-item GitHub network loops found; the progress tripwire is vacuous. Update $perItemNetworkCalls to match the current host.'
+}
+Write-Host ("  network-loop progress ok: {0} per-item GitHub loop(s) all tick from inside the loop" -f $netLoopChecked) -ForegroundColor DarkGray
+
+# ── Scan-route deadline tier tripwire (ROADMAP Lane 0.9, third pass) ─────────
+# GET /api/status runs a cold full-portfolio scan (Get-StatusAdapterResult over
+# the workspace, then ~150 sequential GitHub calls) but sat on the DEFAULT 180s
+# tier. The in-process deadline does not fail the request — it calls
+# Environment.FailFast and takes the whole host down. So the route the browser
+# polls hard-killed the process every cold scan, which is what the operator saw
+# as an endless spinner: "Process terminated. API request deadline exceeded for
+# GET /api/status (timeoutSeconds=180)". Membership of the extended tier is not
+# a list to maintain by hand — derive it from what the handler actually calls.
+. (Join-Path $WorkspaceRoot 'backend\api-host\RequestDeadline.ps1')
+$scanEngineFunctions = @('Get-StatusAdapterResult', 'Invoke-PortfolioAssessment', 'Get-OperationsReposPayload')
+$scanRoutesChecked = 0
+foreach ($switchAst in @($hostFileAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.SwitchStatementAst] }, $true))) {
+    foreach ($clause in $switchAst.Clauses) {
+        $routeLabel = $clause.Item1.Extent.Text.Trim("'`"")
+        if ($routeLabel -notmatch '^(GET|POST|PUT|DELETE|PATCH)\s') { continue }
+
+        $clauseCommands = @($clause.Item2.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true) |
+            ForEach-Object { $_.GetCommandName() } | Where-Object { $_ })
+        $enginesUsed = @($clauseCommands | Where-Object { $_ -in $scanEngineFunctions } | Select-Object -Unique)
+        if (@($enginesUsed).Count -eq 0) { continue }
+
+        $scanRoutesChecked++
+        $routePath = ($routeLabel -split '\s+', 2)[1]
+        if (-not (Test-LongRunningScanRoute -Path $routePath)) {
+            $tierDetail = "Route '{0}' runs a full-portfolio scan [{1}] but is not on the extended deadline tier." -f $routeLabel, ($enginesUsed -join ', ')
+            throw ($tierDetail +
+                ' The request deadline calls Environment.FailFast on expiry, so a cold scan on the 180s tier kills the host' +
+                ' mid-request rather than failing the request. Add the path to Get-LongRunningScanRoutePattern.')
+        }
+    }
+}
+if ($scanRoutesChecked -eq 0) {
+    throw 'No scan routes discovered; the deadline tier tripwire is vacuous. Update $scanEngineFunctions to match the current host.'
+}
+Write-Host ("  scan-route deadline tier ok: {0} full-portfolio route(s) all on the extended tier" -f $scanRoutesChecked) -ForegroundColor DarkGray
 
 # Ledger + state round-trip on disk (models persistence across scheduled invocations).
 $wdTmp = Join-Path $WorkspaceRoot 'output\smoke\module\watchdog'
