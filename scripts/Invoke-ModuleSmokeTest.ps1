@@ -41,6 +41,126 @@ Write-Step 'Validating copied module files exist'
 }
 Write-Host 'All expected module files are present' -ForegroundColor Green
 
+Write-Step 'No HTTP request may run a portfolio scan — the freeze tripwire'
+# Measured on the live portal 2026-08-11: the status cache TTL is 120s and a
+# cold sweep costs 196.7s. Because the host serves requests serially and the
+# miss path scanned INLINE, the refresh interval was shorter than the refresh
+# took — so the portal never reached steady state and spent roughly two thirds
+# of its life unable to answer anything, /health/live included.
+#
+# The rule this enforces: a scan belongs to the background worker, never to a
+# request. Asserted over the host's AST rather than by grep, so a scan moved
+# into a helper still fails.
+$apiHostPath = Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1'
+$statusRefreshWorker = Join-Path $WorkspaceRoot 'scripts\Invoke-StatusCacheRefresh.ps1'
+if (-not (Test-Path -LiteralPath $statusRefreshWorker)) { throw "Background status refresh worker not found at: $statusRefreshWorker" }
+
+$hostParseErrors = $null
+$hostAst = [System.Management.Automation.Language.Parser]::ParseFile($apiHostPath, [ref]$null, [ref]$hostParseErrors)
+if ($hostParseErrors -and $hostParseErrors.Count -gt 0) { throw "API host does not parse: $($hostParseErrors[0].Message)" }
+$apiHostText = Get-Content -LiteralPath $apiHostPath -Raw
+
+# Not offenders:
+#   Invoke-GitOperation      - an operator asked for a pull/sync and is waiting
+#                              on that one action's result.
+#   Invoke-RoadmapAuditScan  - these two ARE the scan implementations; they
+#   Invoke-DocAuditScan        compose Invoke-RoadmapScan rather than adding a
+#                              new place a request can block.
+$scanAllowedInFunctions = @('Invoke-GitOperation', 'Invoke-RoadmapAuditScan', 'Invoke-DocAuditScan')
+
+# Ratchet, not a clean sheet. GET /api/status and GET /api/portfolio/assessment
+# are fixed and asserted below; the remaining routes still scan inline and are
+# tracked in ROADMAP.md. This baseline only moves DOWN - the same discipline the
+# PSScriptAnalyzer gate uses - so the freeze cannot spread back into the routes
+# already cleaned.
+#
+# 18, not 15: the first version of this gate watched three scan commands and
+# counted 15. Adding Invoke-RoadmapAuditScan - which the assessment route called
+# directly, and which alone cost prepMs=27799 after the other three were moved -
+# revealed three further sites that were always there. The number went up
+# because the lens widened, not because the code got worse. Recorded plainly
+# rather than quietly re-baselined, since a baseline nobody can explain is a
+# baseline nobody will lower.
+$inlineScanBaseline = 18
+
+# All three portfolio sweeps, not just the status one. GET
+# /api/portfolio/assessment reported prepMs=40669 from Invoke-RoadmapScan alone
+# after the status scan had already been moved off the request thread — fixing
+# one door and leaving two open is not fixing the freeze.
+# Invoke-RoadmapAuditScan is on this list because the assessment route called it
+# directly. With the other three sweeps moved off the request thread it alone
+# still held the request for prepMs=27799 — an entry point missing from the
+# tripwire is an entry point that comes back.
+$scanCommands = @('Get-StatusAdapterResult', 'Invoke-RoadmapScan', 'Invoke-DocAuditScan', 'Invoke-RoadmapAuditScan')
+
+$scanCallSites = @($hostAst.FindAll({
+    param($node)
+    $node -is [System.Management.Automation.Language.CommandAst] -and
+    $scanCommands -contains $node.GetCommandName()
+}, $true))
+if ($scanCallSites.Count -eq 0) { throw "Expected at least one call to $($scanCommands -join '/'); the tripwire would be vacuous without one" }
+$inlineScanSites = @()
+
+foreach ($callSite in $scanCallSites) {
+    $enclosing = $callSite.Parent
+    while ($null -ne $enclosing -and -not ($enclosing -is [System.Management.Automation.Language.FunctionDefinitionAst])) {
+        $enclosing = $enclosing.Parent
+    }
+    # No enclosing function means it sits in the main script body — which is
+    # where the route switch lives, i.e. on the request thread.
+    $owner = if ($null -ne $enclosing) { $enclosing.Name } else { '<request thread>' }
+    if ($scanAllowedInFunctions -notcontains $owner) {
+        $inlineScanSites += "$($callSite.GetCommandName()) at line $($callSite.Extent.StartLineNumber) in $owner"
+    }
+}
+
+if ($inlineScanSites.Count -gt $inlineScanBaseline) {
+    $added = $inlineScanSites.Count - $inlineScanBaseline
+    throw ("Inline portfolio scans on the request thread rose to $($inlineScanSites.Count) (baseline $inlineScanBaseline, +$added). A scan on the request thread freezes every other route, including /health/live. Kick Start-BackgroundStatusRefresh and serve what is cached. Sites:`n  " + ($inlineScanSites -join "`n  "))
+}
+
+# The two routes fixed here must stay fixed regardless of what the baseline
+# allows elsewhere: a count alone would let a clean route regress while another
+# was cleaned up.
+foreach ($fixedRoute in @('status.cache miss correlationId', 'roadmap-cache miss served', 'doc-audit-cache miss served', 'roadmap-audit-cache miss served')) {
+    if ($apiHostText -notmatch [regex]::Escape($fixedRoute)) {
+        throw "GET /api/status and GET /api/portfolio/assessment must serve cached data on a miss and kick the worker; the '$fixedRoute' path is gone"
+    }
+}
+
+# The worker has to actually perform all three, or moving them off the request
+# thread would just mean they never run.
+$workerText = Get-Content -LiteralPath $statusRefreshWorker -Raw
+foreach ($scanCommand in $scanCommands) {
+    if ($workerText -notmatch [regex]::Escape($scanCommand)) {
+        throw "The background refresh worker must run $scanCommand; a scan removed from the request path and not added here would simply never happen"
+    }
+}
+foreach ($cacheWrite in @('Save-StatusCache', 'Save-RoadmapCache', 'Save-DocAuditCache', 'Save-RoadmapAuditCache')) {
+    if ($workerText -notmatch [regex]::Escape($cacheWrite)) {
+        throw "The background refresh worker must call $cacheWrite; a scan whose result is never cached makes every request pay for it again"
+    }
+}
+
+# The miss paths must actually start the worker, or they would just serve
+# permanently stale data and never refresh.
+$refreshKicks = ([regex]::Matches($apiHostText, 'Start-BackgroundStatusRefresh\s+-LocalRoots')).Count
+if ($refreshKicks -lt 2) {
+    throw "Both GET /api/status and GET /api/portfolio/assessment must kick a background refresh on a cache miss; found $refreshKicks call site(s)"
+}
+
+# -LoadDefinitionsOnly must return BEFORE the host takes the port. One line
+# later and a background worker would terminate the running service, because
+# Stop-PortListeners kills whatever holds the port.
+$definitionsGuardIndex = $apiHostText.IndexOf('if ($LoadDefinitionsOnly) {')
+$portSeizeIndex = $apiHostText.IndexOf('Stop-PortListeners -LocalPort $Port')
+if ($definitionsGuardIndex -lt 0) { throw 'The API host must support -LoadDefinitionsOnly so the refresh worker can reuse its code' }
+if ($portSeizeIndex -lt 0) { throw 'Expected Stop-PortListeners in the API host; the ordering assertion below would be vacuous' }
+if ($definitionsGuardIndex -gt $portSeizeIndex) {
+    throw 'The -LoadDefinitionsOnly early return must come BEFORE Stop-PortListeners, or loading definitions would kill the running service'
+}
+Write-Host "  inline scans $($inlineScanSites.Count)/$inlineScanBaseline (baseline moves down only); /api/status + /api/portfolio/assessment serve cached and kick the worker; worker runs all 3 scans and writes all 3 caches; definitions-only returns before the port is taken" -ForegroundColor DarkGray
+
 Write-Step 'Absent GitHub owner memory — one dead remote must not cost a sweep per request'
 # Measured 2026-08-11 on the live portal: a repo whose origin named a github.com
 # account that does not exist held the host's single request thread while three
