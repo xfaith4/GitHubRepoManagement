@@ -41,6 +41,103 @@ Write-Step 'Validating copied module files exist'
 }
 Write-Host 'All expected module files are present' -ForegroundColor Green
 
+Write-Step 'Absent GitHub owner memory — one dead remote must not cost a sweep per request'
+# Measured 2026-08-11 on the live portal: a repo whose origin named a github.com
+# account that does not exist held the host's single request thread while three
+# owner-scoped calls 404'd, on every sweep. Because the host serves requests
+# serially, /health/live went from 0.61s to a 313.9s stall behind it. The cache
+# below is what stops the rediscovery; these assertions are what stop it
+# regressing — including the two that keep it from over-firing.
+$githubOwnerCache = Join-Path $WorkspaceRoot 'backend\modules\github\GitHub.OwnerCache.ps1'
+if (-not (Test-Path -LiteralPath $githubOwnerCache)) { throw "GitHub.OwnerCache.ps1 not found at: $githubOwnerCache" }
+. $githubOwnerCache
+
+# Two code paths, and both must be exercised. PowerShell 7 surfaces the status
+# on the exception's Response object; Windows PowerShell only puts it in the
+# message text. An earlier version of this gate built error records with no
+# Response at all, so it silently tested the text path twice — a deliberate
+# mutation (making 403 mark an owner absent) passed it. Hence the fake below.
+class SmokeFakeHttpResponse {
+    [int]$StatusCode
+}
+class SmokeHttpStatusException : System.Exception {
+    [object]$Response
+    SmokeHttpStatusException([string]$message, [int]$statusCode) : base($message) {
+        $this.Response = [SmokeFakeHttpResponse]@{ StatusCode = $statusCode }
+    }
+}
+
+function New-SmokeHttpErrorRecord {
+    [CmdletBinding()]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Pure constructor for a test fixture — it builds and returns an ErrorRecord and changes no state, so there is nothing for -WhatIf to confirm.')]
+    # StatusCode 0 means "no Response object" — the Windows PowerShell shape.
+    param([string]$Message, [int]$StatusCode = 0)
+    $exception = if ($StatusCode -gt 0) {
+        [SmokeHttpStatusException]::new($Message, $StatusCode)
+    } else {
+        [System.Exception]::new($Message)
+    }
+    return (New-Object System.Management.Automation.ErrorRecord $exception, 'smoke', 'NotSpecified', $null)
+}
+
+# Only 404 proves absence. A 403 (token cannot see it) or 422 (bad query) that
+# poisoned the cache would hide a real owner for the whole TTL.
+foreach ($withStatus in @($true, $false)) {
+    $shape = if ($withStatus) { 'Response.StatusCode' } else { 'message text' }
+
+    $absentRecord = if ($withStatus) {
+        New-SmokeHttpErrorRecord -Message 'Not Found' -StatusCode 404
+    } else {
+        New-SmokeHttpErrorRecord -Message 'Response status code does not indicate success: 404 (Not Found).'
+    }
+    if (-not (Test-GitHubErrorIsOwnerAbsent -ErrorRecord $absentRecord)) {
+        throw "A 404 must be recognised as an absent owner (via $shape)"
+    }
+
+    foreach ($code in @(422, 403, 401, 500, 429)) {
+        $record = if ($withStatus) {
+            New-SmokeHttpErrorRecord -Message "status $code" -StatusCode $code
+        } else {
+            New-SmokeHttpErrorRecord -Message "Response status code does not indicate success: $code."
+        }
+        if (Test-GitHubErrorIsOwnerAbsent -ErrorRecord $record) {
+            throw "Only 404 may mark an owner absent, but $code did (via $shape)"
+        }
+    }
+}
+if (Test-GitHubErrorIsOwnerAbsent -ErrorRecord (New-SmokeHttpErrorRecord -Message 'The operation has timed out.')) {
+    throw 'A timeout must never mark an owner absent'
+}
+# A repo or message that merely contains the digits must not trigger it.
+if (Test-GitHubErrorIsOwnerAbsent -ErrorRecord (New-SmokeHttpErrorRecord -Message 'Cannot resolve host for repo build404tools.')) {
+    throw '404 embedded in a word must not mark an owner absent'
+}
+
+Clear-GitHubOwnerCache
+if (Test-GitHubOwnerKnownAbsent -Owner 'never-looked-up') { throw 'An unseen owner must not be reported absent' }
+Set-GitHubOwnerKnownAbsent -Owner 'Ghost-Owner'
+if (-not (Test-GitHubOwnerKnownAbsent -Owner 'Ghost-Owner')) { throw 'A recorded absent owner must be remembered' }
+if (-not (Test-GitHubOwnerKnownAbsent -Owner 'GHOST-owner')) { throw 'Owner matching must be case-insensitive — GitHub logins are' }
+
+# TTL, not permanent: an owner created after the 404 must be picked up without
+# restarting the host.
+$script:GitHubDeadOwnerCache['ghost-owner'] = (Get-Date).AddSeconds(-1)
+if (Test-GitHubOwnerKnownAbsent -Owner 'Ghost-Owner') { throw 'An expired absent-owner record must be forgotten' }
+Clear-GitHubOwnerCache
+if (Test-GitHubOwnerKnownAbsent -Owner 'Ghost-Owner') { throw 'Clear-GitHubOwnerCache must empty the cache' }
+
+# The skip is only worth anything if the sweep actually consults it. Assert the
+# choke point over the host source rather than trusting that it stayed wired.
+$apiHostSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1') -Raw
+if ($apiHostSource -notmatch 'GitHub\.OwnerCache\.ps1') {
+    throw 'The API host must load GitHub.OwnerCache.ps1'
+}
+if ($apiHostSource -notmatch 'if \(Test-GitHubOwnerKnownAbsent -Owner \$Owner\)') {
+    throw 'Get-GitHubRepoMetadataMapViaApi must short-circuit on a known-absent owner'
+}
+Write-Host '  404-only detection, case-insensitive memory, TTL expiry, and the sweep short-circuit all hold' -ForegroundColor DarkGray
+
 Write-Step 'API request deadline guard — bounds single-threaded host freezes'
 $requestDeadlineModule = Join-Path $WorkspaceRoot 'backend\api-host\RequestDeadline.ps1'
 if (-not (Test-Path -LiteralPath $requestDeadlineModule)) { throw "RequestDeadline.ps1 not found at: $requestDeadlineModule" }

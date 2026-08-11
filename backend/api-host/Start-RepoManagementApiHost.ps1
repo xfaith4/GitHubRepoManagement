@@ -76,6 +76,10 @@ $automationModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\automation'
 # and `$baseBranch`. Everything on this list is a param-less library; the
 # module smoke asserts that over this file's source.
 . (Join-Path $automationModuleRoot 'Automation.RoadmapQueue.ps1')
+# Absent-owner memory for the GitHub sweep. Loaded here, with every other
+# param-less library, for the same reason the queue contract above is.
+$githubModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\github'
+. (Join-Path $githubModuleRoot 'GitHub.OwnerCache.ps1')
 $agentRunsModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\agent-runs'
 . (Join-Path $agentRunsModuleRoot 'BudgetLedger.ps1')
 . (Join-Path $agentRunsModuleRoot 'AgentRuns.ps1')
@@ -2453,7 +2457,12 @@ function Get-GitHubOwnerTypeViaApi {
         }
     }
     catch {
-        Write-HostLog ("[TRACE] github.ownerType lookup failed owner={0} error={1}" -f $Owner, $_.Exception.Message)
+        if (Test-GitHubErrorIsOwnerAbsent -ErrorRecord $_) {
+            Set-GitHubOwnerKnownAbsent -Owner $Owner
+        }
+        else {
+            Write-HostLog ("[TRACE] github.ownerType lookup failed owner={0} error={1}" -f $Owner, $_.Exception.Message)
+        }
     }
 
     return 'User'
@@ -2704,6 +2713,13 @@ function Get-GitHubRepoMetadataMapViaApi {
     $repoMap = @{}
     $repoLimit = [Math]::Max(100, $MaxPages * 100)
 
+    # Single choke point for owner-scoped metadata: one check here spares the
+    # three sequential 404s (owner type, repo list, open PRs) that a dead owner
+    # otherwise costs on every sweep.
+    if (Test-GitHubOwnerKnownAbsent -Owner $Owner) {
+        return $repoMap
+    }
+
     try {
         $apiResult = Get-GitHubReposViaApi -Owner $Owner -Token $Token -RepoLimit $repoLimit -IncludePrivate:$true -IncludeForks:$false -IncludeArchived:$true -FetchCommitMetrics:$false
         foreach ($repo in @($apiResult.repos)) {
@@ -2882,7 +2898,15 @@ function Get-GitHubReposViaApi {
             }
         }
         catch {
-            Write-HostLog ("[TRACE] github.repos fetch failed owner={0} uri={1} error={2}" -f $Owner, $uri, $_.Exception.Message)
+            # The /user/repos URI is token-scoped, not owner-scoped: a 404 there
+            # says nothing about whether $Owner exists, so it must not mark one
+            # absent.
+            if ((Test-GitHubErrorIsOwnerAbsent -ErrorRecord $_) -and ($uri -notmatch '://api\.github\.com/user/repos')) {
+                Set-GitHubOwnerKnownAbsent -Owner $Owner
+            }
+            else {
+                Write-HostLog ("[TRACE] github.repos fetch failed owner={0} uri={1} error={2}" -f $Owner, $uri, $_.Exception.Message)
+            }
             continue
         }
     }
