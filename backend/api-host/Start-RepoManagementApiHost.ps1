@@ -69,6 +69,13 @@ $automationModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\automation'
 . (Join-Path $automationModuleRoot 'Automation.DocRefinement.ps1')
 . (Join-Path $automationModuleRoot 'Automation.RoadmapPackaging.ps1')
 . (Join-Path $automationModuleRoot 'Automation.RunnerPresence.ps1')
+# The roadmap-queue contract, loaded here with every other library rather than
+# mid-request. Dot-sourcing runs the target in the CALLER'S scope and assigns
+# its `param()` variables there, so the dispatch route's old in-route
+# dot-source of `scripts\Add-RoadmapTaskToQueue.ps1` blanked its own `$runId`
+# and `$baseBranch`. Everything on this list is a param-less library; the
+# module smoke asserts that over this file's source.
+. (Join-Path $automationModuleRoot 'Automation.RoadmapQueue.ps1')
 $agentRunsModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\agent-runs'
 . (Join-Path $agentRunsModuleRoot 'BudgetLedger.ps1')
 . (Join-Path $agentRunsModuleRoot 'AgentRuns.ps1')
@@ -9661,7 +9668,6 @@ try {
                     $startedAt = (Get-Date).ToUniversalTime().ToString('o')
                     $dispatchBranch = "roadmap/$runId"
 
-                    . (Join-Path $WorkspaceRoot 'scripts\Add-RoadmapTaskToQueue.ps1') -LoadFunctionsOnly
                     $queueEntry = New-RoadmapQueueEntry `
                         -RunId $runId `
                         -Repository $githubRepo `

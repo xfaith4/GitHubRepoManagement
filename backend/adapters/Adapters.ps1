@@ -133,6 +133,15 @@ function Get-StatusAdapterResult {
         $callerLocalRoots = @($LocalRoots)
         $callerMaxDepth = $MaxDepth
         $callerIncludeNonGitFolders = $IncludeNonGitFolders
+        # $LogPath belongs on this list too: Invoke-Reconciliation.ps1 declares
+        # its own [string]$LogPath, so the dot-source below blanked the caller's
+        # and every structured log in this function silently went to the default
+        # path instead of the one the caller asked for. Nothing failed, which is
+        # why it survived — the same dot-source-clobbers-caller-scope hazard that
+        # killed the dispatch route's $runId outright. The module smoke now
+        # derives this restore list from both param blocks, so a parameter added
+        # to either script fails a gate instead of quietly eating a value.
+        $callerLogPath = $LogPath
 
         . (Join-Path $PSScriptRoot '..\modules\common\Logging.ps1')
         . (Join-Path $PSScriptRoot '..\modules\reconcile\Invoke-Reconciliation.ps1') -LoadFunctionsOnly
@@ -141,6 +150,7 @@ function Get-StatusAdapterResult {
         $LocalRoots = $callerLocalRoots
         $MaxDepth = $callerMaxDepth
         $IncludeNonGitFolders = $callerIncludeNonGitFolders
+        $LogPath = $callerLogPath
 
         $ignoreDirNames = @(
             'node_modules','vendor','dist','build','out','.vs','.idea','.vscode',

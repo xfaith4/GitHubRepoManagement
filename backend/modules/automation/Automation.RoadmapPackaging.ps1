@@ -1123,7 +1123,7 @@ function New-PackagedItemQueueEntry {
     .SYNOPSIS
         Pure — the roadmap-task-queue entry for an approved packet.
     .DESCRIPTION
-        Mirrors New-RoadmapQueueEntry (scripts/Add-RoadmapTaskToQueue.ps1); the
+        Mirrors New-RoadmapQueueEntry (Automation.RoadmapQueue.ps1); the
         module smoke asserts the two key sets stay identical, so a change to the
         queue contract fails a gate instead of producing entries the runner
         silently ignores.
