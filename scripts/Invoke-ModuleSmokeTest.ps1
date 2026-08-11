@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     # Derived from this script's location rather than a hardcoded drive letter —
     # the previous 'G:\...' default no longer resolved on this machine, so the
@@ -1915,6 +1915,425 @@ try {
 finally {
     Remove-Item -LiteralPath $mrWorkspace -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+# ---------------------------------------------------------------------------
+# Release 3.1 — the work-item trace
+# ---------------------------------------------------------------------------
+
+Write-Step 'Work-item trace — smoke: stage decision table, gap detection, id resolution, disk join (Release 3.1)'
+$tracePackagingModule = Join-Path $WorkspaceRoot 'backend\modules\automation\Automation.RoadmapPackaging.ps1'
+$traceModule = Join-Path $WorkspaceRoot 'backend\modules\execution\Execution.Trace.ps1'
+foreach ($traceDep in @($tracePackagingModule, $traceModule)) {
+    if (-not (Test-Path -LiteralPath $traceDep)) { throw "Trace dependency not found at: $traceDep" }
+}
+. $tracePackagingModule
+. $traceModule
+
+$tracePacket = [pscustomobject]@{
+    packetId = 'pkt-trace'; runId = 'pkgrun-trace'; repoId = 'repo:trace-smoke'; repoName = 'trace-smoke'
+    createdAt = '2026-08-10T00:00:00Z'; itemText = 'Add the operator export route'; itemSection = 'Engineering milestones'
+    roadmapOrder = 2; valueScore = 93; valueTier = 'highest'; valueRationale = @('operator-facing outcome')
+    estimatedWorkUnits = 3.0; maturityLevel = 'L4-Orchestration-Ready'
+    branch = 'roadmap-item/add-export'; baseBranch = 'main'; roadmapPath = 'C:\repos\trace-smoke\ROADMAP.md'
+    generatedPrompt = ('p' * 120)
+}
+$tracePending = [pscustomobject]@{ packetId = 'pkt-trace'; runId = 'pkgrun-trace'; repoName = 'trace-smoke'; status = 'pending-approval'; updatedAt = '2026-08-10T00:00:01Z'; updatedBy = 'api'; dispatchRunId = ''; packet = $tracePacket; history = @() }
+$traceApproved = [pscustomobject]@{ packetId = 'pkt-trace'; runId = 'pkgrun-trace'; repoName = 'trace-smoke'; status = 'approved'; updatedAt = '2026-08-10T00:01:00Z'; updatedBy = 'ben'; dispatchRunId = '20260810-000100-abcd1234'; packet = $tracePacket; history = @() }
+$traceRejected = [pscustomobject]@{ packetId = 'pkt-trace'; runId = 'pkgrun-trace'; repoName = 'trace-smoke'; status = 'rejected'; updatedAt = '2026-08-10T00:02:00Z'; updatedBy = 'ben'; dispatchRunId = ''; packet = $tracePacket; history = @() }
+$traceQueue = [pscustomobject]@{ runId = '20260810-000100-abcd1234'; status = 'queued'; repository = 'trace-smoke'; branch = 'roadmap-item/add-export'; prompt = ('p' * 120); dispatchTarget = 'claude'; queuedAt = '2026-08-10T00:01:00Z'; roadmapPath = 'C:\repos\trace-smoke\ROADMAP.md'; selectedTask = 'Add the operator export route' }
+$traceRunDone = [pscustomobject]@{ runId = '20260810-000100-abcd1234'; status = 'awaiting-review'; repository = 'trace-smoke'; branch = 'roadmap-item/add-export'; commitSha = 'abc1234'; filesChanged = 4; verifyResult = 'passed'; runnerCompletedAt = '2026-08-10T00:20:00Z' }
+$traceRunFailed = [pscustomobject]@{ runId = '20260810-000100-abcd1234'; status = 'failed'; repository = 'trace-smoke'; error = 'Not a git repo'; runnerCompletedAt = '2026-08-10T00:05:00Z' }
+$tracePr = [pscustomobject]@{ event = 'submit-pr'; repoName = 'trace-smoke'; branch = 'roadmap-item/add-export'; prUrl = 'https://github.com/o/trace-smoke/pull/7'; prNumber = '7'; timestamp = '2026-08-10T00:30:00Z' }
+$traceAgentRun = [pscustomobject]@{ runId = 'agentrun-trace'; dispatchRunId = '20260810-000100-abcd1234'; repoName = 'trace-smoke'; repoId = 'repo:trace-smoke'; status = 'completed'; prUrl = 'https://github.com/o/trace-smoke/pull/7'; updatedAt = '2026-08-10T00:40:00Z'; actions = [pscustomobject]@{ status = 'completed'; conclusion = 'success'; workflowName = 'CI Smoke' } }
+$traceMrOpen = [pscustomobject]@{ repoId = 'repo:trace-smoke'; repoName = 'trace-smoke'; ready = $false; blockers = @([pscustomobject]@{ code = 'dirty-worktree' }); evidence = [pscustomobject]@{ prState = 'open'; actionsStatus = 'completed'; actionsConclusion = 'success'; actionsWorkflowName = 'CI Smoke' }; evaluatedAt = '2026-08-10T00:45:00Z' }
+$traceMrMerged = [pscustomobject]@{ repoId = 'repo:trace-smoke'; repoName = 'trace-smoke'; ready = $false; blockers = @([pscustomobject]@{ code = 'pr-already-merged' }); evidence = [pscustomobject]@{ prState = 'merged'; actionsStatus = 'completed'; actionsConclusion = 'success'; actionsWorkflowName = 'CI Smoke' }; evaluatedAt = '2026-08-10T01:00:00Z' }
+$traceWriteBack = [pscustomobject]@{ runId = '20260810-000100-abcd1234'; packetId = 'pkt-trace'; applied = $true; markedCount = 1; actor = 'ben'; recordedAt = '2026-08-10T01:05:00Z' }
+
+function Get-TraceStageStatus {
+    param([object]$Trace, [string]$Stage)
+    $found = @($Trace.stages | Where-Object { [string]$_.stage -eq $Stage })
+    if ($found.Count -ne 1) { throw "Trace has $($found.Count) '$Stage' stage(s); expected exactly one" }
+    return [string]$found[0].status
+}
+
+# The chain is a contract, not an implementation detail: these seven stages in
+# this order are what Release 3.1 gates on.
+$traceExpectedStages = @('rank', 'prompt', 'dispatch', 'agentRun', 'actions', 'mergeReadiness', 'writeBack')
+$traceBaseline = Join-WorkItemTrace -PackagedItem $tracePending
+$traceActualStages = @($traceBaseline.stages | ForEach-Object { [string]$_.stage })
+if (($traceActualStages -join ',') -ne ($traceExpectedStages -join ',')) {
+    throw "Trace stage chain drifted. Expected: $($traceExpectedStages -join ' -> '); got: $($traceActualStages -join ' -> ')"
+}
+
+# Decision table — each row is (label, trace, stage, expected status).
+$traceQueuedNoRunner = Join-WorkItemTrace -PackagedItem $traceApproved -QueueEntry $traceQueue
+$traceRunning = Join-WorkItemTrace -PackagedItem $traceApproved -QueueEntry $traceQueue -RunSummary ([pscustomobject]@{ runId = '20260810-000100-abcd1234'; status = 'running'; repository = 'trace-smoke'; runnerStartedAt = '2026-08-10T00:10:00Z' })
+$traceReviewNoPr = Join-WorkItemTrace -PackagedItem $traceApproved -QueueEntry $traceQueue -RunSummary $traceRunDone
+$tracePrNoActions = Join-WorkItemTrace -PackagedItem $traceApproved -QueueEntry $traceQueue -RunSummary $traceRunDone -PrRecord $tracePr
+$traceGreenNoMr = Join-WorkItemTrace -PackagedItem $traceApproved -QueueEntry $traceQueue -RunSummary $traceRunDone -PrRecord $tracePr -AgentRun $traceAgentRun
+$traceMergeBlocked = Join-WorkItemTrace -PackagedItem $traceApproved -QueueEntry $traceQueue -RunSummary $traceRunDone -PrRecord $tracePr -AgentRun $traceAgentRun -MergeReadiness $traceMrOpen
+$traceMergedNoWriteBack = Join-WorkItemTrace -PackagedItem $traceApproved -QueueEntry $traceQueue -RunSummary $traceRunDone -PrRecord $tracePr -AgentRun $traceAgentRun -MergeReadiness $traceMrMerged
+$traceFullLoop = Join-WorkItemTrace -PackagedItem $traceApproved -QueueEntry $traceQueue -RunSummary $traceRunDone -PrRecord $tracePr -AgentRun $traceAgentRun -MergeReadiness $traceMrMerged -WriteBack $traceWriteBack
+$traceApprovedNoQueue = Join-WorkItemTrace -PackagedItem $traceApproved
+$traceFailedRun = Join-WorkItemTrace -PackagedItem $traceApproved -QueueEntry $traceQueue -RunSummary $traceRunFailed
+$traceRejectedTrace = Join-WorkItemTrace -PackagedItem $traceRejected
+$traceWizard = Join-WorkItemTrace -AgentRun $traceAgentRun
+
+$traceCases = @(
+    @{ label = 'awaiting approval';         trace = $traceBaseline;           stage = 'dispatch';       expect = 'active' }
+    @{ label = 'rejected packet';           trace = $traceRejectedTrace;      stage = 'dispatch';       expect = 'blocked' }
+    @{ label = 'approved, no queue line';   trace = $traceApprovedNoQueue;    stage = 'dispatch';       expect = 'missing' }
+    @{ label = 'queued, no run summary';    trace = $traceQueuedNoRunner;     stage = 'agentRun';       expect = 'missing' }
+    @{ label = 'runner running';            trace = $traceRunning;            stage = 'agentRun';       expect = 'active' }
+    @{ label = 'runner failed';             trace = $traceFailedRun;          stage = 'agentRun';       expect = 'failed' }
+    @{ label = 'awaiting review';           trace = $traceReviewNoPr;         stage = 'agentRun';       expect = 'complete' }
+    # No PR yet means Actions has nothing to validate — `pending`, not a gap.
+    @{ label = 'no PR yet';                 trace = $traceReviewNoPr;         stage = 'actions';        expect = 'pending' }
+    @{ label = 'PR open, no Actions state'; trace = $tracePrNoActions;        stage = 'actions';        expect = 'missing' }
+    @{ label = 'Actions green';             trace = $traceGreenNoMr;          stage = 'actions';        expect = 'complete' }
+    @{ label = 'green, never evaluated';    trace = $traceGreenNoMr;          stage = 'mergeReadiness'; expect = 'missing' }
+    @{ label = 'merge blocked';             trace = $traceMergeBlocked;       stage = 'mergeReadiness'; expect = 'blocked' }
+    # pr-already-merged is a merge-readiness BLOCKER but the trace's success
+    # state: there is nothing left to gate once the PR is in.
+    @{ label = 'merged';                    trace = $traceMergedNoWriteBack;  stage = 'mergeReadiness'; expect = 'complete' }
+    @{ label = 'merged, roadmap untouched'; trace = $traceMergedNoWriteBack;  stage = 'writeBack';      expect = 'missing' }
+    @{ label = 'before merge';              trace = $traceMergeBlocked;       stage = 'writeBack';      expect = 'pending' }
+    @{ label = 'write-back applied';        trace = $traceFullLoop;           stage = 'writeBack';      expect = 'complete' }
+    @{ label = 'dispatched without packet'; trace = $traceWizard;             stage = 'rank';           expect = 'missing' }
+    @{ label = 'ran without a prompt';      trace = $traceWizard;             stage = 'prompt';         expect = 'missing' }
+)
+foreach ($traceCase in $traceCases) {
+    $actualStatus = Get-TraceStageStatus -Trace $traceCase.trace -Stage $traceCase.stage
+    if ($actualStatus -ne $traceCase.expect) {
+        throw ("Trace case '{0}': stage '{1}' expected '{2}' but got '{3}'" -f $traceCase.label, $traceCase.stage, $traceCase.expect, $actualStatus)
+    }
+}
+
+# Roll-up: a failed or blocked stage must surface at the top, and only a fully
+# complete chain may read 'complete'.
+if ($traceFullLoop.status -ne 'complete') { throw "Full loop should roll up to 'complete'; got '$($traceFullLoop.status)'" }
+if ($traceFullLoop.completeStageCount -ne 7) { throw "Full loop should have 7 complete stages; got $($traceFullLoop.completeStageCount)" }
+if ($traceFullLoop.hasGaps) { throw 'A complete loop must report no gaps' }
+if ($null -ne $traceFullLoop.currentStage) { throw "A complete loop has no current stage; got '$($traceFullLoop.currentStage)'" }
+if ($traceFailedRun.status -ne 'failed') { throw "A failed runner must roll up to 'failed'; got '$($traceFailedRun.status)'" }
+if ($traceMergeBlocked.status -ne 'blocked') { throw "A blocked merge must roll up to 'blocked'; got '$($traceMergeBlocked.status)'" }
+if ($traceQueuedNoRunner.currentStage -ne 'agentRun') { throw "Current stage should be the first incomplete one; got '$($traceQueuedNoRunner.currentStage)'" }
+
+# TRIPWIRE — every stage must be able to report a gap. A stage that can only
+# ever be 'pending' makes a broken chain read as merely young, which is the
+# exact failure this trace exists to prevent. Adding an eighth stage without
+# gap detection fails here rather than shipping a blind spot.
+$traceGapUnion = @(@($traceApprovedNoQueue, $traceQueuedNoRunner, $tracePrNoActions, $traceGreenNoMr, $traceMergedNoWriteBack, $traceWizard) |
+        ForEach-Object { @($_.gaps) } | Sort-Object -Unique)
+$traceUncovered = @($traceExpectedStages | Where-Object { $_ -notin $traceGapUnion })
+if ($traceUncovered.Count -gt 0) {
+    throw ("These trace stages can never report a gap, so a broken chain would read as merely incomplete: {0}" -f ($traceUncovered -join ', '))
+}
+
+# Identity resolution — every id the chain mints lands on the same work item.
+foreach ($traceId in @('pkt-trace', 'pkgrun-trace', '20260810-000100-abcd1234', 'agentrun-trace')) {
+    $resolved = Resolve-WorkItemTraceIdentity -Id $traceId -PackagedItems @($traceApproved) -QueueEntries @($traceQueue) -AgentRuns @($traceAgentRun)
+    if (-not $resolved.found) { throw "Id '$traceId' should resolve to the work item" }
+    if ($resolved.dispatchRunId -ne '20260810-000100-abcd1234') { throw "Id '$traceId' resolved to dispatchRunId '$($resolved.dispatchRunId)'" }
+    if ($null -eq $resolved.packagedItem -or $null -eq $resolved.queueEntry -or $null -eq $resolved.agentRun) {
+        throw "Id '$traceId' did not resolve to all three stage records"
+    }
+}
+$traceUnknown = Resolve-WorkItemTraceIdentity -Id 'no-such-id' -PackagedItems @($traceApproved) -QueueEntries @($traceQueue) -AgentRuns @($traceAgentRun)
+if ($traceUnknown.found) { throw 'An unknown id must not resolve to a work item' }
+
+# The PR ledger shares no run id with the dispatch chain, so the join is on
+# branch. Repo name alone would attribute another item's PR to this one.
+$traceHistory = @(
+    [pscustomobject]@{ event = 'submit-pr'; repoName = 'trace-smoke'; branch = 'some-other-branch'; prUrl = 'https://github.com/o/trace-smoke/pull/1' }
+    [pscustomobject]@{ event = 'preview'; repoName = 'trace-smoke'; branch = 'roadmap-item/add-export' }
+    $tracePr
+)
+$tracePrPicked = Select-WorkItemTracePrRecord -RepairHistory $traceHistory -Branch 'roadmap-item/add-export' -RepoName 'trace-smoke'
+if ($null -eq $tracePrPicked -or [string]$tracePrPicked.prUrl -ne 'https://github.com/o/trace-smoke/pull/7') { throw 'PR join on branch picked the wrong record' }
+if ($null -ne (Select-WorkItemTracePrRecord -RepairHistory $traceHistory -Branch '' -RepoName 'trace-smoke')) {
+    throw 'With no branch to join on, the trace must claim no PR rather than guess one'
+}
+
+# Disk join — the same seven stages, read from real ledger files.
+$traceWorkspace = Join-Path ([System.IO.Path]::GetTempPath()) ("work-item-trace-smoke-" + [guid]::NewGuid().ToString('n').Substring(0, 8))
+try {
+    foreach ($traceDir in @('output\automation', 'output\roadmap-task-history\runs', 'output\agent-runs\runs', 'output\roadmap-repair-history', 'output\merge-readiness', 'output\roadmap-writeback')) {
+        New-Item -ItemType Directory -Path (Join-Path $traceWorkspace $traceDir) -Force | Out-Null
+    }
+    $tracePacketRecord = [ordered]@{
+        schemaVersion = '1'; packetId = 'pkt-trace'; runId = 'pkgrun-trace'; repoName = 'trace-smoke'
+        status = 'approved'; recordedAt = '2026-08-10T00:01:00Z'; actor = 'ben'; note = 'Approved.'
+        dispatchRunId = '20260810-000100-abcd1234'; packet = $tracePacket
+    }
+    (ConvertTo-Json -InputObject $tracePacketRecord -Compress -Depth 8) | Set-Content -LiteralPath (Join-Path $traceWorkspace 'output\automation\packaged-items.jsonl') -Encoding UTF8
+    (ConvertTo-Json -InputObject $traceQueue -Compress -Depth 8) | Set-Content -LiteralPath (Join-Path $traceWorkspace 'output\roadmap-task-queue.jsonl') -Encoding UTF8
+    (ConvertTo-Json -InputObject $traceRunDone -Depth 8) | Set-Content -LiteralPath (Join-Path $traceWorkspace 'output\roadmap-task-history\runs\20260810-000100-abcd1234.summary.json') -Encoding UTF8
+    (ConvertTo-Json -InputObject $traceAgentRun -Depth 8) | Set-Content -LiteralPath (Join-Path $traceWorkspace 'output\agent-runs\runs\agentrun-trace.json') -Encoding UTF8
+    (ConvertTo-Json -InputObject $tracePr -Compress -Depth 8) | Set-Content -LiteralPath (Join-Path $traceWorkspace 'output\roadmap-repair-history\repair-history.jsonl') -Encoding UTF8
+    $null = Save-MergeReadinessSnapshot -WorkspaceRoot $traceWorkspace -Evaluation $traceMrMerged
+    (ConvertTo-Json -InputObject $traceWriteBack -Compress -Depth 8) | Set-Content -LiteralPath (Join-Path $traceWorkspace 'output\roadmap-writeback\history.jsonl') -Encoding UTF8
+
+    $traceFromDiskIds = @('pkt-trace', 'pkgrun-trace', '20260810-000100-abcd1234', 'agentrun-trace')
+    foreach ($traceDiskId in $traceFromDiskIds) {
+        $traceFromDisk = Get-WorkItemTrace -WorkspaceRoot $traceWorkspace -Id $traceDiskId
+        if ($null -eq $traceFromDisk) { throw "Get-WorkItemTrace returned nothing for id '$traceDiskId'" }
+        if ($traceFromDisk.traceId -ne '20260810-000100-abcd1234') { throw "Id '$traceDiskId' produced traceId '$($traceFromDisk.traceId)'" }
+        if ($traceFromDisk.status -ne 'complete') { throw "Id '$traceDiskId' produced status '$($traceFromDisk.status)' from a complete loop on disk" }
+        if ($traceFromDisk.completeStageCount -ne 7) { throw "Id '$traceDiskId' resolved only $($traceFromDisk.completeStageCount)/7 stages from disk" }
+        if ([string]$traceFromDisk.identity.prUrl -ne 'https://github.com/o/trace-smoke/pull/7') { throw "Id '$traceDiskId' did not join the PR record from disk" }
+    }
+    if ($null -ne (Get-WorkItemTrace -WorkspaceRoot $traceWorkspace -Id 'no-such-id')) { throw 'An unknown id must produce no trace, not an empty one' }
+
+    Write-Host ("  trace: {0} stage cases, {1} ids resolve to one trace, 7/7 stages joined from disk, every stage can report a gap" -f $traceCases.Count, $traceFromDiskIds.Count) -ForegroundColor DarkGray
+}
+finally {
+    Remove-Item -LiteralPath $traceWorkspace -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# The route is the acceptance criterion ("a single runId resolves to every
+# stage artifact through one route"), so assert the host actually exposes it
+# and keys it off the joiner rather than reimplementing the join inline.
+$traceHostSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1') -Raw -Encoding UTF8
+if ($traceHostSource -notmatch [regex]::Escape("'/api/trace/*'")) { throw 'The API host no longer routes /api/trace/{id}' }
+if ($traceHostSource -notmatch 'Get-WorkItemTrace\s+-WorkspaceRoot') { throw 'The /api/trace route must resolve through Get-WorkItemTrace' }
+if ($traceHostSource -notmatch [regex]::Escape("Execution.Trace.ps1")) { throw 'The API host no longer dot-sources Execution.Trace.ps1' }
+Write-Host '  /api/trace/{id} is routed and resolves through Get-WorkItemTrace' -ForegroundColor DarkGray
+
+# ---------------------------------------------------------------------------
+# Release 3.1 — roadmap completion write-back, gated on merge evidence
+# ---------------------------------------------------------------------------
+
+Write-Step 'Roadmap write-back — smoke: what is and is not merge evidence, the edit, the ledger (Release 3.1)'
+$writeBackModule = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.WriteBack.ps1'
+if (-not (Test-Path -LiteralPath $writeBackModule)) { throw "Roadmap.WriteBack.ps1 not found at: $writeBackModule" }
+. $writeBackModule
+
+$wbItem = 'Add the operator export route'
+$wbRoadmap = @"
+# Demo roadmap
+
+## Release 1
+
+### Engineering milestones
+
+- [ ] $wbItem
+- [x] Ship the health endpoint
+  - [ ] Nested pending item
+- [ ] Something else entirely
+"@
+
+$wbMergedPr = [pscustomobject]@{ html_url = 'https://github.com/o/r/pull/7'; number = 7; state = 'closed'; merged_at = '2026-08-10T12:00:00Z'; merge_commit_sha = 'deadbeef' }
+$wbGreenActions = [pscustomobject]@{ actions = [pscustomobject]@{ status = 'completed'; conclusion = 'success'; workflowName = 'CI' } }
+
+# THE GATE. Each row is a shape that must NOT be read as completion, and the
+# code the refusal must carry. These are not hypotheticals: churn-only and
+# green-but-open are the two shapes the console produces most often.
+$wbGateCases = @(
+    @{
+        label = 'nothing known at all'
+        evidence = $null
+        expect = 'no-evidence'
+    }
+    @{
+        label = 'code churn and a passing local verify, no PR'
+        evidence = (Get-RoadmapWriteBackEvidence -RunSummary ([pscustomobject]@{ commitSha = 'abc1234'; filesChanged = 4; verifyResult = 'passed' }))
+        expect = 'no-pull-request'
+    }
+    @{
+        label = 'green Actions on an open PR'
+        evidence = (Get-RoadmapWriteBackEvidence -PrDetail ([pscustomobject]@{ html_url = 'https://github.com/o/r/pull/7'; number = 7; state = 'open'; merged_at = $null }) -AgentRun $wbGreenActions)
+        expect = 'pr-not-merged'
+    }
+    @{
+        label = 'PR closed without merging'
+        evidence = (Get-RoadmapWriteBackEvidence -PrDetail ([pscustomobject]@{ html_url = 'https://github.com/o/r/pull/7'; number = 7; state = 'closed'; merged_at = $null }) -AgentRun $wbGreenActions)
+        expect = 'pr-not-merged'
+    }
+    @{
+        label = 'merged with no Actions ever observed'
+        evidence = (Get-RoadmapWriteBackEvidence -PrDetail $wbMergedPr)
+        expect = 'no-validation-evidence'
+    }
+    @{
+        label = 'merged while validation is still running'
+        evidence = (Get-RoadmapWriteBackEvidence -PrDetail $wbMergedPr -AgentRun ([pscustomobject]@{ actions = [pscustomobject]@{ status = 'in_progress'; conclusion = '' } }))
+        expect = 'validation-incomplete'
+    }
+    @{
+        label = 'merged past a red check'
+        evidence = (Get-RoadmapWriteBackEvidence -PrDetail $wbMergedPr -AgentRun ([pscustomobject]@{ actions = [pscustomobject]@{ status = 'completed'; conclusion = 'failure' } }))
+        expect = 'validation-failed'
+    }
+    @{
+        label = 'merged per GitHub but with no merge commit'
+        evidence = (Get-RoadmapWriteBackEvidence -PrDetail ([pscustomobject]@{ html_url = 'https://github.com/o/r/pull/7'; number = 7; state = 'closed'; merged_at = '2026-08-10T12:00:00Z'; merge_commit_sha = '' }) -AgentRun $wbGreenActions)
+        expect = 'no-merge-commit'
+    }
+    @{
+        # A stored snapshot can say `merged` but never carries a merge commit,
+        # so "no merge commit" from a snapshot means nobody asked GitHub. That
+        # is a different refusal, and it names a different remedy.
+        label = 'merged per a stored snapshot only'
+        evidence = (Get-RoadmapWriteBackEvidence -MergeReadiness ([pscustomobject]@{
+                    repoId = 'repo:wb'; prUrl = 'https://github.com/o/r/pull/7'; prNumber = 7; ready = $false
+                    blockers = @([pscustomobject]@{ code = 'pr-already-merged' })
+                    evidence = [pscustomobject]@{ prState = 'merged'; actionsStatus = 'completed'; actionsConclusion = 'success' }
+                }))
+        expect = 'merge-unverified'
+    }
+)
+foreach ($wbCase in $wbGateCases) {
+    $wbGate = Test-RoadmapWriteBackEvidence -Evidence $wbCase.evidence -ItemText $wbItem
+    if ($wbGate.allowed) { throw ("Write-back gate allowed '{0}'; it must refuse with '{1}'" -f $wbCase.label, $wbCase.expect) }
+    if ($wbCase.expect -notin @($wbGate.refusalCodes)) {
+        throw ("Write-back case '{0}' expected refusal '{1}'; got: {2}" -f $wbCase.label, $wbCase.expect, (@($wbGate.refusalCodes) -join ', '))
+    }
+}
+
+# Only a merged PR with a merge commit and a successful run passes.
+$wbGoodEvidence = Get-RoadmapWriteBackEvidence -PrDetail $wbMergedPr -AgentRun $wbGreenActions
+$wbAllowed = Test-RoadmapWriteBackEvidence -Evidence $wbGoodEvidence -ItemText $wbItem
+if (-not $wbAllowed.allowed) { throw "A merged, validated PR must pass the gate; refusals: $((@($wbAllowed.refusalCodes)) -join ', ')" }
+# ...and only for an item the caller can name.
+$wbNoItem = Test-RoadmapWriteBackEvidence -Evidence $wbGoodEvidence -ItemText ''
+if ($wbNoItem.allowed -or 'no-item-text' -notin @($wbNoItem.refusalCodes)) { throw 'Write-back with no item text must be refused' }
+# Refusals carry a remedy: a gate that only says no makes the operator guess.
+foreach ($wbRefusal in @($wbNoItem.refusals)) {
+    if ([string]::IsNullOrWhiteSpace([string]$wbRefusal.remedy)) { throw "Refusal '$($wbRefusal.code)' carries no remedy" }
+}
+
+# THE EDIT. Exact matching on purpose — a fuzzy match eventually ticks the
+# wrong line in someone else's roadmap.
+$wbEdit = New-RoadmapCompletionEdit -Content $wbRoadmap -ItemTexts @($wbItem)
+if (-not $wbEdit.changed -or $wbEdit.markedCount -ne 1) { throw 'The completion edit did not mark the open item' }
+if (@($wbEdit.diff).Count -ne 1) { throw "A one-item edit must produce a one-line diff; got $(@($wbEdit.diff).Count)" }
+if ([string]$wbEdit.diff[0].after -ne "- [x] $wbItem") { throw "Unexpected edited line: '$($wbEdit.diff[0].after)'" }
+if ($wbEdit.proposedContent -notmatch [regex]::Escape("- [x] $wbItem")) { throw 'The proposed content does not contain the marked item' }
+
+$wbNested = New-RoadmapCompletionEdit -Content $wbRoadmap -ItemTexts @('Nested pending item')
+if ([string]$wbNested.diff[0].after -ne '  - [x] Nested pending item') { throw "Indentation was not preserved: '$($wbNested.diff[0].after)'" }
+
+# Re-running must be a no-op, not a second claim.
+$wbRepeat = New-RoadmapCompletionEdit -Content $wbEdit.proposedContent -ItemTexts @($wbItem)
+if ($wbRepeat.changed -or @($wbRepeat.alreadyComplete).Count -ne 1) { throw 'Re-marking an already-complete item must be a no-op reported as alreadyComplete' }
+
+# A miss is named, never a silent zero-line edit that reads as success.
+$wbMiss = New-RoadmapCompletionEdit -Content $wbRoadmap -ItemTexts @('An item that is not there')
+if ($wbMiss.changed -or @($wbMiss.notFound).Count -ne 1) { throw 'A non-matching item must report notFound and change nothing' }
+$wbPartial = New-RoadmapCompletionEdit -Content $wbRoadmap -ItemTexts @($wbItem, 'ghost item')
+if ($wbPartial.markedCount -ne 1 -or @($wbPartial.notFound).Count -ne 1) { throw 'A partial match must mark what it found and name what it did not' }
+
+# THE LEDGER, and its contract with the trace. Two modules name the same file
+# through two constants; if they drift the trace shows writeBack=missing
+# forever, so this asserts the behavior rather than comparing the constants.
+$wbWorkspace = Join-Path ([System.IO.Path]::GetTempPath()) ("roadmap-writeback-smoke-" + [guid]::NewGuid().ToString('n').Substring(0, 8))
+try {
+    New-Item -ItemType Directory -Path $wbWorkspace -Force | Out-Null
+    $null = Write-RoadmapWriteBackRecord -WorkspaceRoot $wbWorkspace -RunId '20260810-000100-abcd1234' -PacketId 'pkt-trace' `
+        -RepoName 'trace-smoke' -RoadmapPath 'C:\repos\trace-smoke\ROADMAP.md' -ItemText $wbItem `
+        -MarkedCount 1 -Evidence $wbGoodEvidence -Gate $wbAllowed -Actor 'api'
+    $null = Write-RoadmapWriteBackRecord -WorkspaceRoot $wbWorkspace -RunId '20260810-000100-abcd1234' -PacketId 'pkt-trace' `
+        -RepoName 'trace-smoke' -RoadmapPath 'C:\repos\trace-smoke\ROADMAP.md' -ItemText $wbItem `
+        -Applied -MarkedCount 1 -Evidence $wbGoodEvidence -Gate $wbAllowed -Actor 'operator'
+    $wbHistory = @(Get-RoadmapWriteBackHistory -WorkspaceRoot $wbWorkspace -RunId '20260810-000100-abcd1234')
+    if ($wbHistory.Count -ne 2) { throw "Write-back history should hold the preview and the apply; got $($wbHistory.Count)" }
+    if (-not [bool]$wbHistory[1].applied) { throw 'The second record should be the applied one' }
+    if (@(Get-RoadmapWriteBackHistory -WorkspaceRoot $wbWorkspace -RunId 'some-other-run').Count -ne 0) { throw 'History must filter by runId' }
+
+    # An applied record without an allowed gate is unattributable, and a ledger
+    # that can hold one is a ledger that can launder one.
+    $wbRefused = Test-RoadmapWriteBackEvidence -Evidence $null -ItemText $wbItem
+    $wbLaundered = $false
+    $wbLaunderError = ''
+    try {
+        $null = Write-RoadmapWriteBackRecord -WorkspaceRoot $wbWorkspace -RunId 'run-x' -Applied -Gate $wbRefused
+        $wbLaundered = $true
+    } catch {
+        $wbLaunderError = [string]$_.Exception.Message
+    }
+    if ($wbLaundered) { throw 'The write-back ledger accepted an applied record with no allowed gate' }
+    if ($wbLaunderError -notmatch 'allowed merge-evidence gate') {
+        throw "The ledger refused for the wrong reason: $wbLaunderError"
+    }
+
+    # The trace must see it. Same file, read by the other module's constant.
+    foreach ($wbDir in @('output\automation', 'output\roadmap-task-history\runs', 'output\agent-runs\runs', 'output\merge-readiness')) {
+        New-Item -ItemType Directory -Path (Join-Path $wbWorkspace $wbDir) -Force | Out-Null
+    }
+    (ConvertTo-Json -InputObject ([ordered]@{
+                schemaVersion = '1'; packetId = 'pkt-trace'; runId = 'pkgrun-trace'; repoName = 'trace-smoke'
+                status = 'approved'; recordedAt = '2026-08-10T00:01:00Z'; actor = 'ben'
+                dispatchRunId = '20260810-000100-abcd1234'; packet = $tracePacket
+            }) -Compress -Depth 8) | Set-Content -LiteralPath (Join-Path $wbWorkspace 'output\automation\packaged-items.jsonl') -Encoding UTF8
+    (ConvertTo-Json -InputObject $traceQueue -Compress -Depth 8) | Set-Content -LiteralPath (Join-Path $wbWorkspace 'output\roadmap-task-queue.jsonl') -Encoding UTF8
+    $wbTrace = Get-WorkItemTrace -WorkspaceRoot $wbWorkspace -Id '20260810-000100-abcd1234'
+    if ($null -eq $wbTrace) { throw 'The trace could not resolve the write-back fixture' }
+    $wbTraceStage = @($wbTrace.stages | Where-Object { [string]$_.stage -eq 'writeBack' }) | Select-Object -First 1
+    if ([string]$wbTraceStage.status -ne 'complete') {
+        throw "An applied write-back must show as complete in the trace; got '$($wbTraceStage.status)'. The two modules' ledger paths have drifted."
+    }
+
+    Write-Host ("  write-back: {0} refusal shapes enforced, merged+validated passes, edit exact/indent-preserving/idempotent, applied record reaches the trace" -f $wbGateCases.Count) -ForegroundColor DarkGray
+}
+finally {
+    Remove-Item -LiteralPath $wbWorkspace -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# TRIPWIRE 1 — there is exactly ONE generator of a completion edit.
+# Two places that turn `- [ ]` into `- [x]` is how a gate gets bypassed: the
+# release gates the generator, so a second one is an ungated door. This route
+# previously carried its own inline rewrite; it now delegates.
+#
+# A generator is code that BOTH matches an open checkbox and emits a complete
+# one. Each half alone is legitimate and common: the parser and dispatcher read
+# open items, and the linter and repairer emit `- [x]` lines (the repairer
+# re-lists already-complete items into a history section). Only the
+# intersection turns an open item into a completed one.
+$wbSourceFiles = @(Get-ChildItem -LiteralPath (Join-Path $WorkspaceRoot 'backend') -Recurse -Filter '*.ps1' -File -ErrorAction SilentlyContinue)
+$wbGenerators = New-Object System.Collections.Generic.List[string]
+foreach ($wbFile in $wbSourceFiles) {
+    $wbText = Get-Content -LiteralPath $wbFile.FullName -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+    if ([string]::IsNullOrEmpty($wbText)) { continue }
+    if ($wbText.Contains('\[\s\]') -and $wbText.Contains('- [x] ')) {
+        $wbGenerators.Add($wbFile.FullName.Substring($WorkspaceRoot.Length).TrimStart('\', '/'))
+    }
+}
+$wbGeneratorList = @($wbGenerators.ToArray())
+if ($wbGeneratorList.Count -ne 1 -or $wbGeneratorList[0] -notlike '*Roadmap.WriteBack.ps1') {
+    throw ("Completion edits must be generated in exactly one place (backend\modules\roadmap\Roadmap.WriteBack.ps1), so the merge-evidence gate has no bypass. Found {0}: {1}" -f `
+            $wbGeneratorList.Count, ($wbGeneratorList -join ', '))
+}
+
+# TRIPWIRE 2 — the generator's output may not reach disk without the gate.
+# Keyed on the write, not on a route name, so a new route is covered the day
+# it is added. Only writes of THIS generator's output count: the roadmap
+# repair route writes its own proposedContent and has its own preview flow.
+$wbHostLines = @($traceHostSource -split "`r?`n")
+$wbEditVars = @($wbHostLines | Where-Object { $_ -match 'New-RoadmapCompletionEdit' } |
+        ForEach-Object { if ($_ -match '\$(\w+)\s*=\s*New-RoadmapCompletionEdit') { $Matches[1] } } |
+        Where-Object { $_ } | Sort-Object -Unique)
+if ($wbEditVars.Count -eq 0) { throw 'The API host never calls New-RoadmapCompletionEdit; the write-back routes are missing.' }
+$wbWriteSites = @(0..($wbHostLines.Count - 1) | Where-Object {
+        $line = $wbHostLines[$_]
+        if ($line -notmatch 'Set-Content') { return $false }
+        $hit = $false
+        foreach ($v in $wbEditVars) { if ($line -match ('\$' + [regex]::Escape($v) + '\.proposedContent')) { $hit = $true } }
+        return $hit
+    })
+if ($wbWriteSites.Count -eq 0) { throw 'No completion-edit write site found in the API host; the write-back apply route is missing.' }
+foreach ($wbSite in $wbWriteSites) {
+    $wbWindowStart = [Math]::Max(0, $wbSite - 60)
+    $wbWindow = ($wbHostLines[$wbWindowStart..$wbSite] -join "`n")
+    if ($wbWindow -notmatch 'gate\.allowed') {
+        throw ("A completion edit is written to disk at host line {0} without an enclosing merge-evidence gate check." -f ($wbSite + 1))
+    }
+}
+if ($traceHostSource -notmatch [regex]::Escape("'POST /api/roadmap/write-back/preview'")) { throw 'The API host no longer routes POST /api/roadmap/write-back/preview' }
+if ($traceHostSource -notmatch [regex]::Escape("'POST /api/roadmap/write-back/apply'")) { throw 'The API host no longer routes POST /api/roadmap/write-back/apply' }
+# Apply must re-derive the gate rather than inherit the preview's verdict.
+if ($traceHostSource -notmatch 'Resolve-WriteBackContext -Id \$wbaId') { throw 'The write-back apply route must re-resolve its own context, not trust the preview' }
+Write-Host ("  write-back gate tripwire: 1 completion-edit generator, {0} write site(s) all gated, both routes present, apply re-checks" -f $wbWriteSites.Count) -ForegroundColor DarkGray
 
 # ---------------------------------------------------------------------------
 # Release 2.1 — Persistent Data Layer (Phase 1)

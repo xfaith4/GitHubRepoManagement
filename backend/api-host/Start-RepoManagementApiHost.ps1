@@ -40,6 +40,7 @@ $executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 . (Join-Path $roadmapModuleRoot 'Roadmap.Auditor.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.Repairer.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.PrSubmitter.ps1')
+. (Join-Path $roadmapModuleRoot 'Roadmap.WriteBack.ps1')
 . (Join-Path $docAuditModuleRoot 'DocAudit.Scanner.ps1')
 . (Join-Path $docAuditModuleRoot 'RepositoryImprovement.Workflow.ps1')
 . (Join-Path $executionModuleRoot 'Execution.Ledger.ps1')
@@ -72,6 +73,9 @@ $agentRunsModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\agent-runs'
 . (Join-Path $agentRunsModuleRoot 'BudgetLedger.ps1')
 . (Join-Path $agentRunsModuleRoot 'AgentRuns.ps1')
 . (Join-Path $agentRunsModuleRoot 'MergeReadiness.ps1')
+# Release 3.1 — the work-item trace joins the stage ledgers above, so it loads
+# after all of them (packaging, agent runs, merge readiness).
+. (Join-Path $executionModuleRoot 'Execution.Trace.ps1')
 $persistenceModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\persistence'
 . (Join-Path $persistenceModuleRoot 'Persistence.Store.ps1')
 . (Join-Path $commonRoot 'NotificationHub.ps1')
@@ -693,6 +697,127 @@ function Invoke-MergeReadinessForRepo {
     }
 
     return [pscustomobject]@{ success = $true; statusCode = 200; error = $null; evaluation = $evaluation }
+}
+
+function Resolve-WriteBackPullRequestDetail {
+    <#
+    .SYNOPSIS
+        Release 3.1 — read the work item's pull request live from GitHub.
+    .DESCRIPTION
+        Write-back needs a merge commit, and no stored artifact in this repo
+        records one: the merge-readiness snapshot knows `prState` but not the
+        commit, so a snapshot alone can only ever yield `merge-unverified`.
+        The PR url carries both halves of the slug and the number, so it is the
+        join key rather than the agent-run record, which the packaging path may
+        not have at all.
+
+        Returns $null on any failure — a missing PR detail must produce a
+        refusal from the gate, never an optimistic pass.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$PrUrl,
+        [Parameter()][string]$CorrelationId = ''
+    )
+
+    if ([string]::IsNullOrWhiteSpace($PrUrl)) { return $null }
+    $m = [regex]::Match($PrUrl, '^https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)')
+    if (-not $m.Success) {
+        Write-HostLog ("[WARN ] roadmap.write-back correlationId={0} unrecognized PR url '{1}'" -f $CorrelationId, $PrUrl)
+        return $null
+    }
+
+    $token = Get-ConfiguredGitHubToken -Settings (Get-HostSettings)
+    try {
+        $uri = "https://api.github.com/repos/$($m.Groups[1].Value)/$($m.Groups[2].Value)/pulls/$($m.Groups[3].Value)"
+        return (Invoke-RestMethod -Uri $uri -Headers (Get-GitHubApiHeaders -Token $token) -Method Get)
+    } catch {
+        Write-HostLog ("[WARN ] roadmap.write-back correlationId={0} PR lookup failed for {1}: {2}" -f $CorrelationId, $PrUrl, $_.Exception.Message)
+        return $null
+    }
+}
+
+function Resolve-WriteBackContext {
+    <#
+    .SYNOPSIS
+        Release 3.1 — everything both write-back routes need, gathered once.
+    .DESCRIPTION
+        Preview and apply must agree on the item, the roadmap file and the
+        evidence, and apply must re-derive all of it rather than trust what the
+        preview returned. Sharing this resolver is what makes "apply re-runs
+        the gate" true rather than a comment.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Id,
+        [Parameter()][AllowEmptyString()][string]$ItemTextOverride = '',
+        [Parameter()][AllowEmptyString()][string]$RoadmapPathOverride = '',
+        [Parameter()][string]$CorrelationId = ''
+    )
+
+    $trace = Get-WorkItemTrace -WorkspaceRoot $WorkspaceRoot -Id $Id
+    if ($null -eq $trace) {
+        return [pscustomobject]@{
+            ok = $false; statusCode = 404; category = 'work-item-not-found'
+            error = "No work item matches id '$Id'. Accepted ids: packetId, packaging runId, dispatch runId, or agent-run id."
+        }
+    }
+
+    $repoName = [string](Get-ValueOrDefault $trace.identity.repoName '')
+    $itemText = if (-not [string]::IsNullOrWhiteSpace($ItemTextOverride)) { $ItemTextOverride } else { [string](Get-ValueOrDefault $trace.identity.itemText '') }
+
+    # The roadmap index only covers the configured localRoots, so an explicit
+    # path has to win — the same reason submit-pr accepts one.
+    $roadmapPath = if (-not [string]::IsNullOrWhiteSpace($RoadmapPathOverride)) { $RoadmapPathOverride } else { [string](Get-ValueOrDefault $trace.identity.roadmapPath '') }
+    if ([string]::IsNullOrWhiteSpace($roadmapPath) -and -not [string]::IsNullOrWhiteSpace($repoName)) {
+        $cache = Get-RoadmapFromCache -TtlSeconds (Get-RoadmapCacheTtlSeconds -Settings (Get-HostSettings))
+        if ($cache.hit -and $cache.entries) {
+            $entry = @($cache.entries) | Where-Object { [string](if ($_ -is [System.Collections.IDictionary]) { $_['repoName'] } else { $_.repoName }) -eq $repoName } | Select-Object -First 1
+            if ($null -ne $entry) {
+                $roadmapPath = [string](if ($entry -is [System.Collections.IDictionary]) { Get-ValueOrDefault $entry['roadmapPath'] '' } else { Get-ValueOrDefault $entry.roadmapPath '' })
+            }
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($roadmapPath) -or -not (Test-Path -LiteralPath $roadmapPath -PathType Leaf)) {
+        return [pscustomobject]@{
+            ok = $false; statusCode = 409; category = 'roadmap-not-found'
+            error = "No roadmap file could be resolved for '$repoName'. Run a roadmap scan, or pass roadmapPath explicitly."
+            trace = $trace
+        }
+    }
+
+    # Re-read the PR live; the snapshot cannot carry a merge commit.
+    $prUrl = [string](Get-ValueOrDefault $trace.identity.prUrl '')
+    $prDetail = Resolve-WriteBackPullRequestDetail -PrUrl $prUrl -CorrelationId $CorrelationId
+
+    $repoId = [string](Get-ValueOrDefault $trace.identity.repoId '')
+    $snapshot = if (-not [string]::IsNullOrWhiteSpace($repoId)) { Get-MergeReadinessSnapshot -WorkspaceRoot $WorkspaceRoot -RepoId $repoId } else { $null }
+
+    $agentRunId = [string](Get-ValueOrDefault $trace.identity.agentRunId '')
+    $agentRun = if (-not [string]::IsNullOrWhiteSpace($agentRunId)) { Get-AgentRunDetail -WorkspaceRoot $WorkspaceRoot -RunId $agentRunId } else { $null }
+
+    $dispatchRunId = [string](Get-ValueOrDefault $trace.identity.dispatchRunId '')
+    $runSummary = $null
+    if (-not [string]::IsNullOrWhiteSpace($dispatchRunId)) {
+        $summaryPath = Join-Path $WorkspaceRoot ("output\roadmap-task-history\runs\{0}.summary.json" -f $dispatchRunId)
+        if (Test-Path -LiteralPath $summaryPath -PathType Leaf) {
+            try { $runSummary = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $summaryPath -Raw -Encoding UTF8) } catch { $runSummary = $null }
+        }
+    }
+
+    $evidence = Get-RoadmapWriteBackEvidence -PrDetail $prDetail -MergeReadiness $snapshot -AgentRun $agentRun -RunSummary $runSummary
+    $gate = Test-RoadmapWriteBackEvidence -Evidence $evidence -ItemText $itemText
+
+    return [pscustomobject]@{
+        ok            = $true
+        statusCode    = 200
+        trace         = $trace
+        repoName      = $repoName
+        itemText      = $itemText
+        roadmapPath   = $roadmapPath
+        dispatchRunId = $dispatchRunId
+        packetId      = [string](Get-ValueOrDefault $trace.identity.packetId '')
+        evidence      = $evidence
+        gate          = $gate
+    }
 }
 
 function Send-HttpJson {
@@ -5780,6 +5905,50 @@ try {
                 continue
             }
 
+            # ── Release 3.1 — one work item's whole life, from one id ──────
+            # Accepts any identifier the chain mints (packetId, packaging runId,
+            # dispatch runId, agent-run id): an operator holding one of them
+            # should not have to know which ledger minted it.
+            if ($req.Method -eq 'GET' -and $path -like '/api/trace/*' -and $path -ne '/api/trace/') {
+                $traceIdParam = [System.Uri]::UnescapeDataString($path.Substring('/api/trace/'.Length))
+                if ([string]::IsNullOrWhiteSpace($traceIdParam)) {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        error = 'id is required in /api/trace/{id}.'
+                    }
+                    $client.Close()
+                    continue
+                }
+
+                Write-HostLog ("[TRACE] trace.get correlationId={0} id={1} start" -f $correlationId, $traceIdParam)
+                try {
+                    $workItemTrace = Get-WorkItemTrace -WorkspaceRoot $WorkspaceRoot -Id $traceIdParam
+                } catch {
+                    $workItemTrace = $null
+                    Write-HostLog ("[TRACE] trace.get correlationId={0} id={1} error={2}" -f $correlationId, $traceIdParam, $_.Exception.Message)
+                }
+                Add-MetricCounter -Name 'api_requests_total'
+                if ($null -eq $workItemTrace) {
+                    Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        error = "No work item matches id '$traceIdParam'. Accepted ids: packetId, packaging runId, dispatch runId, or agent-run id."
+                    }
+                    $client.Close()
+                    continue
+                }
+
+                Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                Write-HostLog ("[TRACE] trace.get correlationId={0} id={1} done status={2} stage={3} gaps={4}" -f `
+                        $correlationId, $traceIdParam, $workItemTrace.status, $workItemTrace.currentStage, (@($workItemTrace.gaps) -join ','))
+                Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                    success = $true
+                    data    = $workItemTrace
+                }
+                $client.Close()
+                continue
+            }
+
             # ── Release 2.3 Phase 3 — SVG maturity/health badges ───────────
             if ($req.Method -eq 'GET' -and $path -like '/api/badges/*' -and $path.EndsWith('.svg')) {
                 $badgeName = [System.Uri]::UnescapeDataString($path.Substring('/api/badges/'.Length))
@@ -10849,18 +11018,20 @@ try {
                             throw "No roadmap content found for repo '$repoName'"
                         }
 
-                        # Mark completedItems as done: replace `- [ ] {itemText}` with `- [x] {itemText}`
-                        $proposedContent = $rawContent
-                        $markedCount = 0
-                        foreach ($itemText in $completedItems) {
-                            if ([string]::IsNullOrWhiteSpace($itemText)) { continue }
-                            $escaped = [regex]::Escape($itemText.Trim())
-                            $pattern = "(?m)^(\s*)-\s+\[\s\]\s+" + $escaped
-                            if ($proposedContent -match $pattern) {
-                                $proposedContent = $proposedContent -replace $pattern, ('$1- [x] ' + $itemText.Trim())
-                                $markedCount++
-                            }
-                        }
+                        # Release 3.1 — this used to carry its own inline
+                        # `- [ ]` -> `- [x]` rewrite. Two generators for the
+                        # same edit is how a gate gets bypassed: the moment
+                        # someone adds an apply route for this preview, the
+                        # merge-evidence gate would be nowhere near it. There
+                        # is now exactly one generator, and the module smoke
+                        # asserts that.
+                        #
+                        # This route stays PREVIEW-ONLY and ungated on purpose:
+                        # it proposes an edit from a caller-supplied item list
+                        # and writes nothing. Marking an item complete for real
+                        # goes through /api/roadmap/write-back/*, which refuses
+                        # without merge evidence.
+                        $completionEdit = New-RoadmapCompletionEdit -Content $rawContent -ItemTexts @($completedItems | ForEach-Object { [string]$_ })
 
                         $previewId = [guid]::NewGuid().ToString('n')
                         Add-MetricCounter -Name 'api_requests_total'
@@ -10871,14 +11042,182 @@ try {
                                 repoName         = $repoName
                                 roadmapPath      = $roadmapPath
                                 currentContent   = $rawContent
-                                proposedContent  = $proposedContent
-                                markedCount      = $markedCount
+                                proposedContent  = [string]$completionEdit.proposedContent
+                                markedCount      = $completionEdit.markedCount
                                 completedItems   = @($completedItems)
+                                alreadyComplete  = @($completionEdit.alreadyComplete)
+                                notFound         = @($completionEdit.notFound)
+                                diff             = @($completionEdit.diff)
                                 generatedAt      = (Get-Date).ToUniversalTime().ToString('o')
+                                note             = 'Preview only, and ungated: it writes nothing. Recording completion for real goes through POST /api/roadmap/write-back/apply, which refuses without merge evidence.'
                             }
                         }
                     } catch {
                         Send-ErrorJson -Stream $req.Stream -StatusCode 400 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'roadmap.completion-preview'
+                    }
+                }
+                # -------------------------------------------------------
+                # Release 3.1 — roadmap completion write-back, gated on
+                # merge evidence.
+                #
+                # Preview and apply share one resolver, and apply re-runs the
+                # gate from scratch rather than trusting the preview it was
+                # handed: a preview is a claim about a moment, and the moment
+                # an operator clicks apply is a different one.
+                #
+                # A refusal is a 409 with its codes, never a 200 carrying
+                # changed=false — the caller must not be able to read "nothing
+                # was marked" as success.
+                # -------------------------------------------------------
+                'POST /api/roadmap/write-back/preview' {
+                    Write-HostLog ("[TRACE] roadmap.write-back.preview correlationId={0} start" -f $correlationId)
+                    try {
+                        $wbBody = Parse-JsonBody -Body $req.Body
+                        $wbId = [string](Get-ObjectPropertyValue -InputObject $wbBody -PropertyName 'id' -Default '')
+                        if ([string]::IsNullOrWhiteSpace($wbId)) { throw 'id is required (a packetId, packaging runId, dispatch runId, or agent-run id).' }
+                        $wbItemText = [string](Get-ObjectPropertyValue -InputObject $wbBody -PropertyName 'itemText' -Default '')
+                        $wbRoadmapPath = [string](Get-ObjectPropertyValue -InputObject $wbBody -PropertyName 'roadmapPath' -Default '')
+
+                        $wbCtx = Resolve-WriteBackContext -Id $wbId -ItemTextOverride $wbItemText -RoadmapPathOverride $wbRoadmapPath -CorrelationId $correlationId
+                        Add-MetricCounter -Name 'api_requests_total'
+                        if (-not $wbCtx.ok) {
+                            Send-HttpJson -Stream $req.Stream -StatusCode $wbCtx.statusCode -StatusText $(if ($wbCtx.statusCode -eq 404) { 'Not Found' } else { 'Conflict' }) -CorrelationId $correlationId -Payload @{
+                                success = $false; error = [string]$wbCtx.error; category = [string]$wbCtx.category
+                            }
+                        }
+                        elseif (-not $wbCtx.gate.allowed) {
+                            Write-HostLog ("[TRACE] roadmap.write-back.preview correlationId={0} id={1} REFUSED codes={2}" -f $correlationId, $wbId, (@($wbCtx.gate.refusalCodes) -join ','))
+                            Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                                success  = $false
+                                error    = ("Completion cannot be claimed for this item: {0}" -f (@($wbCtx.gate.refusals | ForEach-Object { [string]$_.message }) -join ' '))
+                                category = 'write-back-refused'
+                                data     = @{
+                                    refused  = $true
+                                    refusals = @($wbCtx.gate.refusals)
+                                    evidence = $wbCtx.evidence
+                                    itemText = [string]$wbCtx.itemText
+                                }
+                            }
+                        }
+                        else {
+                            $wbContent = Get-Content -LiteralPath $wbCtx.roadmapPath -Raw -Encoding UTF8
+                            if ($null -eq $wbContent) { $wbContent = '' }
+                            $wbEdit = New-RoadmapCompletionEdit -Content $wbContent -ItemTexts @($wbCtx.itemText)
+                            if (-not $wbEdit.changed) {
+                                $wbWhy = if (@($wbEdit.alreadyComplete).Count -gt 0) {
+                                    "'$($wbCtx.itemText)' is already marked complete in $($wbCtx.roadmapPath)."
+                                } else {
+                                    "No open checkbox matching '$($wbCtx.itemText)' exists in $($wbCtx.roadmapPath). Matching is exact on purpose — a fuzzy match would eventually tick the wrong line."
+                                }
+                                Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                                    success  = $false
+                                    error    = $wbWhy
+                                    category = $(if (@($wbEdit.alreadyComplete).Count -gt 0) { 'already-complete' } else { 'no-matching-item' })
+                                    data     = @{ alreadyComplete = @($wbEdit.alreadyComplete); notFound = @($wbEdit.notFound) }
+                                }
+                            }
+                            else {
+                                $wbRecord = Write-RoadmapWriteBackRecord -WorkspaceRoot $WorkspaceRoot -RunId $wbCtx.dispatchRunId `
+                                    -PacketId $wbCtx.packetId -RepoName $wbCtx.repoName -RoadmapPath $wbCtx.roadmapPath `
+                                    -ItemText $wbCtx.itemText -MarkedCount $wbEdit.markedCount -Evidence $wbCtx.evidence -Gate $wbCtx.gate -Actor 'api'
+                                Write-HostLog ("[TRACE] roadmap.write-back.preview correlationId={0} id={1} previewId={2} marked={3}" -f $correlationId, $wbId, $wbRecord.recordId, $wbEdit.markedCount)
+                                Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                                    success = $true
+                                    data    = @{
+                                        previewId       = [string]$wbRecord.recordId
+                                        runId           = [string]$wbCtx.dispatchRunId
+                                        repoName        = [string]$wbCtx.repoName
+                                        roadmapPath     = [string]$wbCtx.roadmapPath
+                                        itemText        = [string]$wbCtx.itemText
+                                        markedCount     = $wbEdit.markedCount
+                                        diff            = @($wbEdit.diff)
+                                        proposedContent = [string]$wbEdit.proposedContent
+                                        evidence        = $wbCtx.evidence
+                                        applied         = $false
+                                        note            = 'Preview only. POST /api/roadmap/write-back/apply re-checks the merge evidence before writing.'
+                                    }
+                                }
+                            }
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 400 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'roadmap.write-back.preview'
+                    }
+                }
+                'POST /api/roadmap/write-back/apply' {
+                    Write-HostLog ("[TRACE] roadmap.write-back.apply correlationId={0} start" -f $correlationId)
+                    try {
+                        $wbaBody = Parse-JsonBody -Body $req.Body
+                        $wbaId = [string](Get-ObjectPropertyValue -InputObject $wbaBody -PropertyName 'id' -Default '')
+                        if ([string]::IsNullOrWhiteSpace($wbaId)) { throw 'id is required (a packetId, packaging runId, dispatch runId, or agent-run id).' }
+                        $wbaItemText = [string](Get-ObjectPropertyValue -InputObject $wbaBody -PropertyName 'itemText' -Default '')
+                        $wbaRoadmapPath = [string](Get-ObjectPropertyValue -InputObject $wbaBody -PropertyName 'roadmapPath' -Default '')
+                        $wbaPreviewId = [string](Get-ObjectPropertyValue -InputObject $wbaBody -PropertyName 'previewId' -Default '')
+                        $wbaProposed = [string](Get-ObjectPropertyValue -InputObject $wbaBody -PropertyName 'proposedContent' -Default '')
+
+                        $wbaCtx = Resolve-WriteBackContext -Id $wbaId -ItemTextOverride $wbaItemText -RoadmapPathOverride $wbaRoadmapPath -CorrelationId $correlationId
+                        Add-MetricCounter -Name 'api_requests_total'
+                        if (-not $wbaCtx.ok) {
+                            Send-HttpJson -Stream $req.Stream -StatusCode $wbaCtx.statusCode -StatusText $(if ($wbaCtx.statusCode -eq 404) { 'Not Found' } else { 'Conflict' }) -CorrelationId $correlationId -Payload @{
+                                success = $false; error = [string]$wbaCtx.error; category = [string]$wbaCtx.category
+                            }
+                        }
+                        elseif (-not $wbaCtx.gate.allowed) {
+                            # Re-checked, not inherited. A preview that passed
+                            # the gate five minutes ago proves nothing now.
+                            Write-HostLog ("[TRACE] roadmap.write-back.apply correlationId={0} id={1} REFUSED codes={2}" -f $correlationId, $wbaId, (@($wbaCtx.gate.refusalCodes) -join ','))
+                            Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                                success  = $false
+                                error    = ("Completion cannot be claimed for this item: {0}" -f (@($wbaCtx.gate.refusals | ForEach-Object { [string]$_.message }) -join ' '))
+                                category = 'write-back-refused'
+                                data     = @{ refused = $true; refusals = @($wbaCtx.gate.refusals); evidence = $wbaCtx.evidence }
+                            }
+                        }
+                        else {
+                            $wbaContent = Get-Content -LiteralPath $wbaCtx.roadmapPath -Raw -Encoding UTF8
+                            if ($null -eq $wbaContent) { $wbaContent = '' }
+                            $wbaEdit = New-RoadmapCompletionEdit -Content $wbaContent -ItemTexts @($wbaCtx.itemText)
+                            if (-not $wbaEdit.changed) {
+                                Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                                    success  = $false
+                                    error    = $(if (@($wbaEdit.alreadyComplete).Count -gt 0) { "'$($wbaCtx.itemText)' is already marked complete." } else { "No open checkbox matching '$($wbaCtx.itemText)' exists in $($wbaCtx.roadmapPath)." })
+                                    category = $(if (@($wbaEdit.alreadyComplete).Count -gt 0) { 'already-complete' } else { 'no-matching-item' })
+                                }
+                            }
+                            elseif (-not [string]::IsNullOrWhiteSpace($wbaProposed) -and $wbaProposed -ne [string]$wbaEdit.proposedContent) {
+                                # The file moved under the preview. Writing the
+                                # stale body would silently revert whatever
+                                # changed since — refuse and make them re-preview.
+                                Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                                    success  = $false
+                                    error    = "The roadmap changed since this preview was generated; applying it would revert those edits. Re-run the preview."
+                                    category = 'stale-preview'
+                                }
+                            }
+                            else {
+                                Set-Content -LiteralPath $wbaCtx.roadmapPath -Value ([string]$wbaEdit.proposedContent) -Encoding UTF8 -NoNewline
+                                $wbaRecord = Write-RoadmapWriteBackRecord -WorkspaceRoot $WorkspaceRoot -RunId $wbaCtx.dispatchRunId `
+                                    -PacketId $wbaCtx.packetId -RepoName $wbaCtx.repoName -RoadmapPath $wbaCtx.roadmapPath `
+                                    -ItemText $wbaCtx.itemText -Applied -MarkedCount $wbaEdit.markedCount `
+                                    -Evidence $wbaCtx.evidence -Gate $wbaCtx.gate -Actor 'operator' -PreviewId $wbaPreviewId
+                                Write-HostLog ("[TRACE] roadmap.write-back.apply correlationId={0} id={1} applied marked={2} path={3}" -f $correlationId, $wbaId, $wbaEdit.markedCount, $wbaCtx.roadmapPath)
+                                Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                                    success = $true
+                                    data    = @{
+                                        applied     = $true
+                                        recordId    = [string]$wbaRecord.recordId
+                                        runId       = [string]$wbaCtx.dispatchRunId
+                                        repoName    = [string]$wbaCtx.repoName
+                                        roadmapPath = [string]$wbaCtx.roadmapPath
+                                        itemText    = [string]$wbaCtx.itemText
+                                        markedCount = $wbaEdit.markedCount
+                                        diff        = @($wbaEdit.diff)
+                                        evidence    = $wbaCtx.evidence
+                                    }
+                                }
+                            }
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 400 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'roadmap.write-back.apply'
                     }
                 }
                 'GET /api/log/tail' {

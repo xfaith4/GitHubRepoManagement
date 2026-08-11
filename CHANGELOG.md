@@ -2,6 +2,53 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-10 — Release 3.1: the roadmap may only be marked complete by a merge
+
+### Changes
+
+- **Write-back is the last unbuilt step of the north-star workflow, and its guardrail had no enforcement.** `POST /api/roadmap/write-back/preview` resolves a work item from any trace id, re-reads its pull request **live**, and returns a line-level diff of the completion edit. `POST /api/roadmap/write-back/apply` writes it — and re-runs the whole gate first rather than trusting the preview it was handed.
+- **What is not evidence, and why each is refused rather than merely unimplemented.** Code churn says work happened, not that it was accepted — a branch full of commits that never merged is the commonest shape of abandoned work in this portfolio. A green Actions run on an open PR means the change is *safe to merge*, which is the opposite of merged. A local `verifyResult=passed` is the runner's own opinion, recorded before review, on a machine the change never left. And a merged PR with no successful validation run is how a roadmap starts lying. Nine refusal shapes, each with a code, a sentence, and the remedy that would satisfy it.
+- **`Test-RoadmapWriteBackEvidence` fails closed:** no evidence at all is a refusal, not a pass. A merge known only from a stored merge-readiness snapshot is `merge-unverified` rather than `no-merge-commit` — a snapshot never carries a merge commit, so its absence means nobody asked GitHub, which is a different problem with a different remedy.
+- **Every refusal is a 409**, never a 200 carrying `changed=false` that a caller could read as success. The ledger itself throws on an applied record with no allowed gate: a ledger that can hold an unattributable "applied" is a ledger that can launder one.
+- **The pattern, not the instance.** The Release 1.1 completion-preview route carried its own inline `- [ ]` → `- [x]` rewrite. Left alone there would have been two generators of the same edit and only one of them gated — the moment anyone added an apply route for the older one, the gate would be nowhere near it. It now delegates to the single generator.
+- **The edit is conservative on purpose.** Exact matching on the trimmed item text (a fuzzy match eventually ticks the wrong line in someone else's roadmap), indentation preserved, re-running reported as `alreadyComplete` rather than claimed twice, a miss named rather than returned as a silent zero-line edit, and a line-level diff instead of a whole-file dump the operator cannot actually review.
+
+### Verification
+
+- Module smoke: `write-back: 9 refusal shapes enforced, merged+validated passes, edit exact/indent-preserving/idempotent, applied record reaches the trace` and `write-back gate tripwire: 1 completion-edit generator, 1 write site(s) all gated, both routes present, apply re-checks`.
+- **Both tripwires adversarially proven.** The one-generator detector flags the pre-fix host and none of the four legitimate near-misses — the parser and dispatcher match open checkboxes, the linter and repairer emit `- [x]` into history sections, and only the intersection turns an open item into a completed one. The gate detector fires (reporting the exact host line) when `gate.allowed` is stripped from the apply route.
+- The applied-record assertion is behavioral, not a constant comparison: `Roadmap.WriteBack.ps1` and `Execution.Trace.ps1` name the same ledger through two constants, and if they drift the trace would show `writeBack=missing` forever rather than failing.
+- api-host smoke: preview **and** apply both refuse a real ranked-approved-dispatched item with 409 because nothing merged, the fixture roadmap is verified untouched afterwards, and an unknown id 404s as JSON.
+- Frontend: 197 tests. New coverage asserts that apply confirms before writing (it edits a file in a **different** repository), that every refusal code is shown with its remedy, and that a refusal appearing only at apply time replaces the preview rather than leaving a stale success on screen.
+- ESLint 161 (at the ratchet); PSSA 597 (at the ratchet, with a justified suppression on the pure edit builder — `-WhatIf` on a function that changes nothing would suggest it does).
+
+### Known-open
+
+- The fourth Release 3.1 milestone, a live full-loop proof in `evidence/`, is **blocked on an operator session, not on engineering**: one real item has to travel the chain end to end, which needs an authenticated `claude` / `gh agent-task` run, a real PR, and a real merge. Batch it with Release 2.9's operator session.
+
+## 2026-08-10 — Release 3.1: one work item's whole life, from any id it was ever given
+
+### Changes
+
+- **Every stage of the north-star loop already wrote its own ledger; nothing joined them.** Answering "what happened to this item?" meant reading the packaging ledger, the dispatch queue, the runner's run summary, the agent-run record and the merge-readiness snapshot, then inferring the links between them. `GET /api/trace/{id}` now returns the whole chain — rank → prompt → dispatch → agent run → Actions result → merge readiness → write-back — as one record.
+- **The join is pure.** `Join-WorkItemTrace` ([`Execution.Trace.ps1`](backend/modules/execution/Execution.Trace.ps1)) takes the already-read stage records and returns the trace, so the entire decision table is testable offline with no disk, no network and no host. `Get-WorkItemTrace` is the thin reader behind the route.
+- **Any id resolves to the same trace.** The chain mints a new identifier at nearly every stage — `packetId`, the packaging `runId`, the dispatch `runId`, the agent-run id — and an operator holding one of them should not have to know which ledger produced it. The submit-PR history shares no run id with the dispatch chain at all, so the PR stage joins on **branch**; repo name alone would attribute another item's PR to this one.
+- **`pending` and `missing` are different things, and the trace says which.** `pending` means the chain has not reached a stage; `missing` means it demonstrably has and the artifact that should exist does not. Only `missing` becomes a gap, and gaps displace the progress line in both the roll-up and the UI — otherwise "6 of 7 stages complete" reads as nearly-done while a stage nothing ever recorded sits inside it.
+- **Frontend:** a trace modal reachable from every row of the packaged-item queue, with the gap styled apart from both "done" and "not started". The read-only action keeps its single click, per the bulk-scope rule.
+
+### Verification
+
+- Module smoke: `trace: 18 stage cases, 4 ids resolve to one trace, 7/7 stages joined from disk, every stage can report a gap`, plus `/api/trace/{id} is routed and resolves through Get-WorkItemTrace`.
+- **Tripwire — every stage must be able to report a gap.** A stage that could only ever read `pending` would make a broken chain look merely young, which is the exact failure the trace exists to prevent; an eighth stage added without gap detection fails the gate rather than shipping a blind spot.
+- api-host smoke traces the item its own packaging run just packaged and dispatched: 7 stages, `dispatch=complete`, and `packetId` and `dispatchRunId` resolving to the same `traceId`. An unknown id must 404 **as JSON** — a status-only check would pass against the SPA fallback, which answers unmatched GETs with 200 text/html. The route is also in the route census for the same reason.
+- Frontend: 16 pure view tests and 5 DOM tests, the latter asserting that a `missing` stage and a `pending` stage in the same position render differently.
+- ESLint: 161 warnings, exactly at the ratchet. PSSA: 597, one **below** the previous 598 baseline (a new module carrying a BOM), and the baseline was moved down to lock it in.
+
+### Known-open
+
+- The remaining three Release 3.1 milestones are the write-back half: generate the managed repo's completion edit from merge evidence, refuse it without that evidence, and record a full-loop proof in `evidence/`.
+- The write-back stage reads merge evidence from the merge-readiness snapshot, which is the only recorded source today. That is why `pr-already-merged` — a merge-readiness *blocker* — is the trace's success state for that stage.
+
 ## 2026-08-10 — P0 follow-up 2: the GitHub phase ran dark, and `/api/status` was killing the host outright
 
 ### Changes
