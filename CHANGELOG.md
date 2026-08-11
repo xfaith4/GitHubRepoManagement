@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-11 — Priority reset: mobile deferred, one PC workflow that finishes promoted
+
+### Changes
+
+- **Mobile surfaces are deferred; PC reliability is the priority.** The trigger was evidence, not preference. The live portal reported `state=absent, queuedTotal=6, strandedCount=6` — six dispatches queued into a room with no runner, none ever claimed — while the wizard that queued them kept offering an enabled "Approve and create PR task" button that, the same day, was found to have been incapable of succeeding since Release 3.0. A second device form factor cannot be the priority while the first has a workflow that does not complete and does not say so.
+- **Release 3.1 is the active release, widened rather than replaced.** A separate release was drafted for this work and then discarded: 3.1's goal is already "rank → dispatch → monitor → Actions → merge readiness → write-back", which *is* the end-to-end workflow being asked for. Inventing 3.4 alongside it would have split one objective across two releases and added a second execution contract to keep in sync. 3.1 now carries four new engineering milestones alongside its existing full-loop proof, which also un-blocks it — it was previously waiting entirely on a human.
+- **Release 3.2 is demoted, not cancelled.** Nothing in it was found wrong; the ordering was. A portal that renders faster while queueing work nobody executes is not more reliable. It resumes as the active release when 3.1 closes, and its execution contract is compressed to the summary form a non-active release is supposed to carry.
+- **The four new milestones are each a named gap found by reading the code, not a guess.**
+  - *Nothing may be queued into an empty room.* `POST /api/roadmap/dispatch/execute` already calls `Get-RunnerPresence` — but **after** writing the queue line, so the response explains the problem the operator now has instead of preventing it.
+  - *Every surface names its engine.* The Operations workspace does this well (provider selector, `Provider: <id>` on preview and history, a warning on heuristic fallback). The guided-improvement wizard shows nothing, though `RepositoryImprovement.Workflow.ps1` is pure deterministic rule evaluation — and the same modal then hands the result to an AI agent.
+  - *Token and cost are measured, not declared.* `tokenUsage` and `apiSpendUsd` exist on the agent-run record, flow through `tokens_reported` in `app.db` and out to analytics, and are **never written by production code**: the Anthropic and OpenAI adapters send `max_tokens` and discard the `usage` block the API returns. The only real value in the repo is a smoke fixture.
+  - *Enabled means available.* Lane 0.9 already recorded three instances of the same defect — Insights telling you to run an assessment it offers no control for, the bare `Failed to fetch` screen, and the dispatch wizard. They are closed here rather than separately.
+- **A new headline guardrail:** *do not leave a control enabled that cannot succeed.* A disabled control names its unmet precondition; an enabled one is a promise.
+
+### Verification
+
+- `tools/Test-RoadmapStructure.ps1`: **0 errors, 0 warnings**, at exactly **900 lines** against the 900-line `R010-FILE-LENGTH` cap.
+- **The re-prioritization paid for its own space.** Adding an active release to a file already at 889/900 meant reclaiming ~150 lines first, and the cuts were chosen so that no open work lost detail: demoted 3.2 shed the active-only contract sections it is no longer required to carry, Release 2.9 was compressed to the summary form `R013` asks of a future release, and four archived incident narratives (Lanes 0.3/0.4/0.6, 0.7, 0.8, 0.9) were reduced to their conclusions, which is what the archive holds in full.
+- Every open checkbox in the file survived; the only content removed was already recorded in `docs/history/completed-releases.md` or `CHANGELOG.md`.
+- Module smoke exit 0 — the live-roadmap parser still reads the file and the release-index assertions hold.
+
 ## 2026-08-11 — The guided-improvement wizard could never finish, because a dot-source ate its run id
 
 ### Changes
