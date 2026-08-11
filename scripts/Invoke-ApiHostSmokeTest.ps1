@@ -2300,6 +2300,28 @@ try {
     }
 
     Write-Host '[STEP] Differential reuse proof: warm unchanged startup must not reindex (Release 2.3 Phase 5B/5F)' -ForegroundColor Cyan
+    # The assessment route no longer scans on the request thread: a cold cache
+    # answers awaiting-first-scan and kicks a background worker instead, because
+    # scanning inline froze every other route for the length of the sweep. This
+    # proof needs a WARM index, so it now waits for that worker rather than
+    # asserting against a cache nothing has filled yet. Waiting here is not a
+    # workaround for flakiness — an empty cache is the correct response to the
+    # first request, and a client that wants data has to wait for one too.
+    $warmDeadlineUtc = (Get-Date).AddSeconds(300)
+    $warmEntryCount = 0
+    while ((Get-Date) -lt $warmDeadlineUtc) {
+        $warmProbe = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment?scanMode=differential&includeCuration=true"
+        if ($null -ne $warmProbe.Json -and $warmProbe.Json.success -and $null -ne $warmProbe.Json.data) {
+            $warmEntryCount = [int]$warmProbe.Json.data.count
+        }
+        if ($warmEntryCount -ge 1) { break }
+        Start-Sleep -Seconds 5
+    }
+    if ($warmEntryCount -lt 1) {
+        throw "Portfolio cache never warmed: the background refresh produced no entries within 300s. Check the host log for 'status.refresh.worker' - either it never started, or it failed."
+    }
+    Write-Host ("  portfolio cache warmed by the background worker -> {0} entr(ies)" -f $warmEntryCount) -ForegroundColor DarkGray
+
     $reuseProofResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment?scanMode=differential&includeCuration=true"
     Assert-Not503 -Name '/api/portfolio/assessment?scanMode=differential&includeCuration=true' -Response $reuseProofResponse
     $reuseProofJson = $reuseProofResponse.Json
