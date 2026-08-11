@@ -83,6 +83,7 @@ $persistenceModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\persistence'
 . (Join-Path $PSScriptRoot 'RequestDeadline.ps1')
 . (Join-Path $PSScriptRoot 'GitHubRateLimit.ps1')
 . (Join-Path $PSScriptRoot 'OperationHeartbeat.ps1')
+. (Join-Path $PSScriptRoot 'PerformanceBudget.ps1')
 
 $script:StatusCacheMemory = @{}
 $script:StatusCacheDefaultTtlSeconds = 120
@@ -8124,6 +8125,12 @@ try {
                             Add-MetricCounter -Name 'api_requests_total'
                             Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
                             Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} done source=cache ageSeconds={1}" -f $correlationId, [math]::Round($cacheHit.ageSeconds, 1))
+                            $readBudget = New-PortfolioReadBudgetResult -CacheSource 'memory' `
+                                -MeasuredMs ([double]((Get-Date) - $requestStart).TotalMilliseconds) -Settings $settings
+                            Write-HostLog (Format-PortfolioReadBudgetLog -Result $readBudget -CorrelationId $correlationId -Route '/api/portfolio/assessment')
+                            if (-not $readBudget.withinBudget) {
+                                Write-HostLog ("WARN portfolio.assessment read budget exceeded correlationId={0} class={1} measuredMs={2} budgetMs={3} overByMs={4}" -f $correlationId, $readBudget.readClass, $readBudget.measuredMs, $readBudget.budgetMs, $readBudget.overByMs)
+                            }
                             Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                                 success = $true
                                 data = @{
@@ -8134,6 +8141,7 @@ try {
                                     count           = @($cacheHitEntries).Count
                                     cacheSource     = 'memory'
                                     cacheAgeSeconds = [math]::Round($cacheHit.ageSeconds, 1)
+                                    performance     = $readBudget
                                 }
                             }
                             break
@@ -8699,6 +8707,12 @@ try {
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
                     Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} done count={1} ready={2} blocked={3} durationMs={4}" -f $correlationId, @($assessments).Count, $summary.readyForWorkCount, $summary.blockedCount, [int]((Get-Date) - $requestStart).TotalMilliseconds)
+                    $readBudget = New-PortfolioReadBudgetResult -CacheSource 'fresh-scan' `
+                        -MeasuredMs ([double]((Get-Date) - $requestStart).TotalMilliseconds) -Settings $settings
+                    Write-HostLog (Format-PortfolioReadBudgetLog -Result $readBudget -CorrelationId $correlationId -Route '/api/portfolio/assessment')
+                    if (-not $readBudget.withinBudget) {
+                        Write-HostLog ("WARN portfolio.assessment read budget exceeded correlationId={0} class={1} measuredMs={2} budgetMs={3} overByMs={4}" -f $correlationId, $readBudget.readClass, $readBudget.measuredMs, $readBudget.budgetMs, $readBudget.overByMs)
+                    }
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data = @{
@@ -8710,6 +8724,7 @@ try {
                             cacheSource     = 'fresh-scan'
                             cacheAgeSeconds = 0
                             scanSummary     = $scanSummary
+                            performance     = $readBudget
                         }
                     }
                 }
@@ -8768,6 +8783,12 @@ try {
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
                     Write-HostLog ("[TRACE] operations.repos correlationId={0} done source={1} count={2} durationMs={3}" -f $correlationId, $opsPayload.cacheSource, @($opsPayload.entries).Count, [int]((Get-Date) - $requestStart).TotalMilliseconds)
+                    $readBudget = New-PortfolioReadBudgetResult -CacheSource ([string]$opsPayload.cacheSource) `
+                        -MeasuredMs ([double]((Get-Date) - $requestStart).TotalMilliseconds) -Settings $settings
+                    Write-HostLog (Format-PortfolioReadBudgetLog -Result $readBudget -CorrelationId $correlationId -Route '/api/operations/repos')
+                    if (-not $readBudget.withinBudget) {
+                        Write-HostLog ("WARN operations.repos read budget exceeded correlationId={0} class={1} measuredMs={2} budgetMs={3} overByMs={4}" -f $correlationId, $readBudget.readClass, $readBudget.measuredMs, $readBudget.budgetMs, $readBudget.overByMs)
+                    }
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data = @{
@@ -8776,6 +8797,7 @@ try {
                             count = $opsPayload.count
                             cacheSource = $opsPayload.cacheSource
                             summary = $opsPayload.summary
+                            performance = $readBudget
                         }
                     }
                 }

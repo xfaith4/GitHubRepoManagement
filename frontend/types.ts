@@ -1110,6 +1110,22 @@ export interface PortfolioAssessmentScanSummary {
   durationMs: number;
 }
 
+// Release 3.2 — portfolio read-path performance budget. The measured duration
+// travels WITH the budget it was judged against, so a consumer never has to go
+// and look up the target to know whether the number is good. `declared: false`
+// means the read class carries no budget at all; it fails closed to
+// `withinBudget: false`, because an unbudgeted path is unmeasured, not fast.
+export type PortfolioReadClass = 'memory' | 'portfolio-index' | 'assessment-cache' | 'fresh-scan';
+
+export interface PortfolioReadBudget {
+  readClass: PortfolioReadClass | string;
+  declared: boolean;
+  budgetMs: number;
+  measuredMs: number;
+  withinBudget: boolean;
+  overByMs: number;
+}
+
 export interface PortfolioAssessmentResult {
   entries: PortfolioAssessmentEntry[];
   summary: PortfolioAssessmentSummary;
@@ -1119,6 +1135,7 @@ export interface PortfolioAssessmentResult {
   cacheSource: 'memory' | 'fresh-scan';
   cacheAgeSeconds: number;
   scanSummary?: PortfolioAssessmentScanSummary;
+  performance?: PortfolioReadBudget;
 }
 
 // Release 2.3 — Portfolio Analytics, Trend Visualization, and Distribution

@@ -167,6 +167,7 @@ const CATEGORIES: CategoryDef[] = [
           { name: 'data.signalSources', type: 'object', description: 'Per-signal cache/freshness metadata including differential markers when requested' },
           { name: 'data.generatedAt', type: 'ISO 8601', description: 'Assessment generation time' },
           { name: 'data.scanSummary', type: 'PortfolioAssessmentScanSummary', description: 'Differential scan accounting: reused vs reindexed counts and timing' },
+          { name: 'data.performance', type: 'PortfolioReadBudget', description: 'Release 3.2 read-path budget: the measured duration reported next to the budget it was judged against (readClass, budgetMs, measuredMs, withinBudget, overByMs). An undeclared read class fails closed with declared=false and withinBudget=false.' },
         ],
       },
       {
@@ -211,6 +212,7 @@ const CATEGORIES: CategoryDef[] = [
           { name: 'data.count', type: 'number', description: 'Number of operations records returned' },
           { name: 'data.cacheSource', type: '"portfolio-index" | "assessment-cache"', description: 'Whether the route served the persisted index or a warm assessment fallback' },
           { name: 'data.summary', type: 'PortfolioAssessmentSummary | null', description: 'Portfolio-level lifecycle counts for the current index snapshot' },
+          { name: 'data.performance', type: 'PortfolioReadBudget', description: 'Release 3.2 read-path budget for the class this call actually served from (readClass matches cacheSource), with the measured duration next to it.' },
         ],
         notes: 'Operations prefers the persisted index written by /api/portfolio/assessment. If that index is not available yet, the host falls back to the warm assessment cache when possible.',
       },
