@@ -30,8 +30,8 @@ interchangeable — mixing them is what previously made the roadmap read as
    and 0.6.
 2. **Credential-gated proof** — the code path is written and smoke-tested,
    but no live round trip has ever run (live submit-PR).
-3. **Genuinely unbuilt engineering** — Release 2.7 Phases C and D, two
-   mobile surfaces, and four cross-cutting hygiene items.
+3. **Genuinely unbuilt engineering** — Release 3.2, two mobile surfaces, Lane
+   0.9's follow-ups, and four cross-cutting hygiene items.
 4. **Elevated / hardware / human verification** — needs SYSTEM rights, a
    physical Android phone, or an operator sitting at an authenticated
    Claude Code session. No autonomous test can produce these.
@@ -40,19 +40,41 @@ interchangeable — mixing them is what previously made the roadmap read as
 
 **Current focus (next agent actions), in order:**
 
-- [ ] **Release 3.1 — closed-loop delivery.** Its two hard prerequisites both
-      landed (2.7 Phase A's proven write path, and 3.0's dispatch that runs), so
-      the north-star loop can now be driven end to end for one real item. Only
-      the PAT's `Checks: Read` grant is still missing, and that affects
-      per-check detail rather than the loop.
-- [ ] **Release 3.2 — portfolio scale.** Independent of 3.1 and schedulable in
-      parallel; it starts from the bounded 900-second scan budget Lane 0.4
-      settled rather than from an open question.
+- [ ] **Release 3.2 — portfolio scale.** Now the next engineering release:
+      independent of everything open, and it starts from the bounded 900-second
+      scan budget Lane 0.4 settled rather than from an open question.
+- [ ] **Lane 0.9's four follow-ups** recorded with the 2026-08-10 portal
+      incident: Insights cannot run the assessment it tells you to run, the
+      stale browser-persisted GitHub owner, the bare `Failed to fetch` screen,
+      and the architectural question of making `/health/live` independently
+      responsive during a scan.
 - [ ] **Lane 0.2's two items still need an operator action outside this
       repository** — the PAT's `Checks: Read` grant and the portal TLS
       certificate password. **Lane 0.5 closed 2026-08-10** once Ben settled the
       product calls it was waiting on. **Lanes 0.3, 0.4 and 0.6 closed
       2026-08-09.**
+- [ ] **One operator session closes four residuals at once** — 2.8's real
+      `claude` run, 3.0's `gh agent-task` round trip, 3.1's full-loop proof, and
+      2.9's Release 2.1 sign-off all wait on the same authenticated sitting.
+
+**Closed 2026-08-10 — Release 3.1, and the write-back guardrail that was
+documented but never enforced.** The loop's stages each wrote their own ledger
+and nothing joined them, so `GET /api/trace/{runId}` now answers "what happened
+to this item?" from one route — and from **any** of the four ids the loop mints,
+because a trace you can only open with the id you don't have is not a trace.
+Absent stages are reported with the action that would advance them, and a hole
+in the middle is not hidden by a later success. Write-back is built and
+**gated**: only a merged PR with a successful validation run admits a completion
+edit, and churn and a green-run-on-an-unmerged-branch are refused by the
+guardrail's own names. The item named one route; the hazard was the pattern —
+`POST /api/roadmap/completion-preview` had been flipping any checkbox it was
+handed, with no evidence of any kind, since Release 1.1. It now runs the same
+gate, and an AST tripwire derives write-back surfaces from the api host itself
+so the next one cannot ship ungated. **Release 3.1 is engineering-complete and
+archived** (full text in
+[the archive](docs/history/completed-releases.md#release-31--closed-loop-delivery),
+per the split rule in section 8); the live full-loop proof is now a 2.9 item,
+batched with the `claude` session it shares a prerequisite with.
 
 **MILESTONE 2026-08-10 — verification is structurally enforced (Lane 0.8
 closed same-day, PRs #102–#107).** Before today the merge signal was half
@@ -247,7 +269,7 @@ already covered by release goals or acceptance criteria.
 | 2.8       | Local Claude Code Execution (queue + operator runner)                    | `done` (engineering) — 2026-07-15; real `claude` run tracked in 2.9                        |
 | **2.9**   | **Operator Field Proof and Mobile Completion**                           | `planned` — collects every external-resource residual plus the two unbuilt mobile surfaces |
 | 3.0       | Operator-Context Execution                                               | `done` (engineering) — 2026-08-09; see archive. Live proof tracked in 2.9                  |
-| **3.1**   | **Closed-Loop Delivery**                                                 | `planned` — rank → dispatch → monitor → Actions → merge readiness → roadmap write-back     |
+| 3.1       | Closed-Loop Delivery                                                     | `done` (engineering) — 2026-08-10; see archive. Full-loop proof tracked in 2.9             |
 | **3.2**   | **Portfolio Scale and Responsiveness**                                   | `planned` — serve from the index; retire the cold-scan cliff and the deadline kill         |
 | **3.3**   | **Steady-State Operation**                                               | `planned` — unattended for months: retention, restore, honest TLS, decision-grade digests  |
 
@@ -292,13 +314,15 @@ They are ordered by dependency, not by size:
 
 1. ~~**3.0 Operator-Context Execution**~~ — **done 2026-08-09.** Dispatch now
    runs, so what was blocking everything downstream is gone.
-2. **3.1 Closed-Loop Delivery** — needed 3.0 for dispatch and 2.7 Phase A for a
-   proven write path; **both landed 2026-08-09**, so this is now the next
-   release. It is where the north-star workflow first runs whole.
+2. ~~**3.1 Closed-Loop Delivery**~~ — **engineering-complete 2026-08-10.** The
+   trace joins the loop and write-back is built and gated; the one open item is
+   the live full-loop proof, which shares the operator `claude` session 2.9
+   already batches.
 3. **3.2 Portfolio Scale and Responsiveness** — independent of 3.0/3.1 and
-   schedulable in parallel. Lane 0.4's deadline decision landed 2026-08-09
-   (extended tier, not exemption), so 3.2 starts from a bounded 900-second
-   scan budget it has to beat rather than from an open question.
+   schedulable in parallel, and now the next engineering release. Lane 0.4's
+   deadline decision landed 2026-08-09 (extended tier, not exemption), so 3.2
+   starts from a bounded 900-second scan budget it has to beat rather than from
+   an open question.
 4. **3.3 Steady-State Operation** — every milestone is independent; pick items
    up whenever a release lane is blocked on an external resource.
 
@@ -317,7 +341,7 @@ They are ordered by dependency, not by size:
 | Release 2.9 GitHub App installation-token exchange   | A registered GitHub App                              | hard — optional; PAT supersedes               |
 | Release 2.9 trend accrual (2.3 Ph2)                  | Days of live capture                                 | hard, time-gated                              |
 | Release 3.0 live `gh agent-task` proof (via runner)  | An operator session with `gh auth login`             | hard — human; batch with the 2.8 `claude` run |
-| Release 3.1 closed-loop delivery                     | `Checks: Read` (3.0 and 2.7 Phase A both landed)     | soft — per-check detail only; loop unblocked  |
+| Release 3.1 full-loop proof (its one open item)      | An operator `claude` session — batch with 2.9        | hard — human; engineering closed 2026-08-10   |
 | Release 3.2 scale and responsiveness                 | —                                                    | none — deadline decision landed 2026-08-09    |
 | Release 3.3 steady-state operation                   | —                                                    | none — independent milestones, any order      |
 
@@ -777,18 +801,18 @@ between "the automated suite is green" and "this works in the field."
 milestone names the one external resource it waits on; none block each other,
 and several share a session — an elevated shell covers both SYSTEM milestones,
 one phone session covers both device milestones, one authenticated operator
-shell covers both runner milestones. Batch them.
+shell covers the runner milestones and the 3.1 loop proof. Batch them.
 
 #### Product outcomes
 
 - No milestone is marked complete on the strength of an automated suite alone
   when what it claims needs hardware, elevation, credentials, or a human.
-- The always-on portal is proven to recover from a real freeze, not a simulated
-  one, and the dashboard from a real Android phone — touch, install, and all
-  four target workflows — not only at an emulated 390px viewport.
+- The always-on portal is proven to recover from a real freeze, and the
+  dashboard from a real Android phone — touch, install, and all four target
+  workflows — not only at an emulated 390px viewport.
 - Trend charts show real 7- and 90-day windows.
-- `evidence/` carries a durable record for each proof, so the next agent can
-  read the evidence instead of re-litigating whether something works.
+- `evidence/` carries a durable record for each proof, so the next agent reads
+  the evidence instead of re-litigating whether something works.
 
 #### Engineering milestones
 
@@ -846,6 +870,12 @@ Field proof — human / credential / calendar:
       Closes the Release 3.0 residual. _(state: smoke-tested → needs
       `operator-verified`. Requires `gh auth login` and **no**
       `GH_TOKEN`/`GITHUB_TOKEN` set; gh ignores stored OAuth when one is.)_
+- [ ] Same session: carry that item the rest of the way and record the
+      **full-loop proof** in `evidence/` — `GET /api/trace/{runId}` names every
+      stage's artifact, `POST /api/roadmap/write-back/preview` proposes the
+      completion edit, `.../repair/submit-pr` applies it. Closes the Release 3.1
+      residual. _(state: every stage smoke-tested and gated → needs one real
+      item to travel it; same `claude` prerequisite as above)_
 - [ ] Operator-verify the auth + shared-LAN path so automation runs on a bound,
       authenticated host. _(state: planned — carried over from 2.7 Phase D)_
 - [ ] (Optional) Prove live GitHub App installation-token exchange
@@ -880,61 +910,6 @@ Field proof — human / credential / calendar:
 
 - New product capability — this release only proves and finishes what exists.
 - Remote (non-LAN) mobile access; native apps or app-store distribution.
-
----
-
-### Release 3.1 — Closed-Loop Delivery
-
-**Status:** planned
-
-**Goal:** close the north-star loop end to end, repeatedly, with explicit
-operator gates at apply, dispatch, and merge. Today the console can rank work
-and prepare a prompt, and it can read merge readiness, but no single work item
-has ever travelled the whole chain — so the loop's real failure modes are
-unknown.
-
-**Prerequisites:** all but one are met. Release 2.7 Phase A (the live submit-PR
-proof) and Release 3.0 (a dispatch that runs) both closed 2026-08-09. Only the
-PAT's `Checks: Read` grant (Lane 0.2) is outstanding, and it affects per-check
-merge detail rather than the loop — `mergeStateStatus` already answers the
-merge-readiness question this release gates on.
-
-#### Product outcomes
-
-- One roadmap item is carried from "ranked highest value" to "merged, with the
-  managed repo's roadmap updated" without a human stitching the steps.
-- Every stage transition is inspectable after the fact from one trace, rather
-  than reconstructed from four ledgers.
-- Roadmap write-back is preview-first: the console proposes the completion
-  edit and the operator applies it.
-
-#### Engineering milestones
-
-- [ ] Add a per-work-item trace view joining rank → prompt → dispatch → agent
-      run → Actions result → merge readiness → write-back, keyed by `runId`.
-      _(state: planned — every stage already writes its own ledger; nothing
-      joins them)_
-- [ ] Generate the managed repo's roadmap completion edit from merge evidence
-      and present it as a reviewed diff. _(state: planned — write-back is the
-      last unbuilt step of the north-star workflow)_
-- [ ] Gate write-back on merge evidence: refuse to mark an item complete from
-      code churn or a green run alone. _(state: planned — guardrail in
-      section 8 exists; no enforcement)_
-- [ ] Record a full-loop proof for one real item in `evidence/`, naming each
-      stage's artifact. _(state: planned)_
-
-#### Acceptance criteria
-
-- A single `runId` resolves to every stage artifact through one route.
-- A write-back attempt with no merge evidence is refused and says why.
-- The loop proof exists in `evidence/` with the PR, the Actions result, and
-  the applied roadmap diff.
-
-#### Out of scope
-
-- Automatic merge — merge stays an explicit operator action after readiness
-  passes.
-- Multi-repo parallel dispatch; one item end to end first.
 
 ---
 

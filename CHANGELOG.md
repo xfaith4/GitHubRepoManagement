@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-10 — Release 3.1: the loop has a trace, and write-back has a gate
+
+### Changes
+
+- **`GET /api/trace/{runId}` joins the north-star loop.** Every stage already wrote its own evidence and nothing joined them, so answering "what happened to this item?" meant opening four ledgers by hand and matching ids across them. [`Execution.Trace.ps1`](backend/modules/execution/Execution.Trace.ps1) joins rank → prompt → dispatch → agent run → Actions → merge readiness → write-back, and **any of the four ids the loop mints resolves the same trace** — packet id, packaging run id, dispatch run id, agent run id. A trace view you can only open with the id you don't have is not a trace view.
+- **Absence is reported, not omitted.** All seven stages come back every time; an absent one carries the action that would advance it, so a stalled loop cannot read as a finished one. A **hole in the middle stays visible**: `currentStage` reports the furthest stage reached and `firstGapStage` reports the earliest missing one, so a green merge-readiness sitting over an unobserved Actions run is a reported gap rather than a silent pass.
+- **Merge proof is now recorded where it can be verified.** `Invoke-AgentRunRefresh` keeps `prMergedAt` and `prMergeCommitSha` on the run record instead of folding the merge time into `agentCompletedAt`, which other paths also set — reading merge proof out of a timing metric would accept a merge claim from something that never merged anything.
+- **Roadmap write-back ships, preview-first.** [`Roadmap.WriteBack.ps1`](backend/modules/roadmap/Roadmap.WriteBack.ps1) generates the completion edit and its unified diff and writes nothing; the operator applies through the existing `POST /api/roadmap/repair/submit-pr`. The generator verifies its own output — exactly one `- [ ]` may match (ambiguity refuses rather than guessing which item completed), an already-`[x]` item is a no-op, and a proposal that differs anywhere other than the flipped checkbox and the one inserted line refuses as `unexpected-edit` rather than handing a reviewer a diff that quietly rewrote the file. The inserted line names the merged PR and the validation run, and lands after the item's continuation prose rather than inside it.
+- **`POST /api/roadmap/write-back/preview` is gated on merge evidence.** A merged PR with a successful validation run is the only combination that admits a completion edit. Churn (`churn-only`) and a green run on an unmerged branch (`pr-not-merged`) are refused by the section 8 guardrail's own names, and a merge claimed with neither a timestamp nor a merge commit is `merge-unverified` — an unverifiable claim is not evidence.
+- **The item named one route; the hazard was the pattern.** `POST /api/roadmap/completion-preview` has existed since Release 1.1 and flipped any checkbox it was handed with no evidence of any kind — exactly the "silently mark roadmap items complete based only on code churn" the guardrail forbids, sitting behind an HTTP POST. It now runs the same gate; the multi-item shape survives, the free pass does not.
+- **Refusals are first-class.** They answer 409 (the request is well-formed; the evidence does not justify it), carry **no `proposedContent`** so there is nothing for a UI to click past, and are appended to `output/roadmap-writeback.jsonl` as durably as proposals — a guardrail whose refusals leave no trace is indistinguishable from one that never ran.
+- Frontend: typed `getWorkItemTrace` / `previewRoadmapWriteBack` clients (a refusal is returned for rendering, not thrown), `previewRoadmapCompletion` now takes evidence, and both routes are documented in the API modal.
+
+### Verification
+
+- Module smoke: `write-back gate ok: 8 refusals each named`, `completion edit ok: 1 line flipped + 1 evidence note appended after the item body, siblings and prior [x] untouched`, `trace join ok: 7 stages always reported … a mid-loop hole is not hidden by a later success`, and `trace resolution ok: packet/packaging/dispatch/agent ids all resolve the same trace, a decoy run is not matched`.
+- **Coverage tripwire derived from the api host's own AST**, not a hand-maintained list — any route body that generates a completed checkbox must reach the gate: `write-back tripwire ok: 0 ungated checkbox generators in 137 route bodies`.
+- **Adversarially proven.** The detector was run against the pre-fix route shape and found **exactly 1 violation, `completion-preview`** — the route this change hardened. Separately, the pre-fix regex was run against the fixture roadmap to confirm it marks the item on churn alone that the gate now refuses; a detector that never fires is indistinguishable from one that is broken.
+- api-host smoke: `/api/trace/{runId}` answers as JSON (content-type asserted, since unmatched GET routes fall through to the SPA index with HTTP 200) with 404 + all seven stages for an unknown id; both write-back surfaces return 409 `write-back-refused:no-evidence` and `write-back-refused:churn-only` with nothing proposed. The **admitted** path is proven too — merged + green returns 200 with one changed line, a reviewable diff, an evidence note naming the PR and the workflow, and the fixture roadmap **byte-identical on disk**, which is the preview-first contract stated as an assertion rather than a promise.
+- Frontend: typecheck clean, 168 unit tests pass, ESLint back to exactly 161 warnings — the two `any` warnings the first draft added were typed away rather than ratcheted up. PSSA ratchet: still exactly 598, no new debt.
+
+### Known-open
+
+- The live full-loop proof for one real item is the only remaining Release 3.1 item. It needs `claude` running in an authenticated operator session, so it batches with Release 2.9's sitting alongside the 2.8 `claude` run and the 3.0 `gh agent-task` round trip.
+- Roadmap validation: 0 errors, 2 advisory warnings. Moving 3.1 to the archive shortened `ROADMAP.md` (1889 → 1865 lines, R010 still over its cap), but adding the loop-proof residual took Release 2.9 to 126 lines against R013's 120. That is the collection release absorbing each closed release's residual, and the rule exempts the *active* release for exactly this reason — it self-resolves when 2.9 is promoted. Trimming operator-critical detail to satisfy a cosmetic cap was the worse trade.
+
 ## 2026-08-10 — P0 follow-up 2: the GitHub phase ran dark, and `/api/status` was killing the host outright
 
 ### Changes

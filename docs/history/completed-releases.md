@@ -2644,3 +2644,139 @@ anything" class:
       Tripwire confirmed by reintroducing the old placeholder — smoke fails
       exit 1 naming the assertion — then restoring byte-exact.
 
+---
+
+## Release 3.1 — Closed-Loop Delivery
+
+**Status:** `done` (engineering) — closed 2026-08-10. The one open item is the
+live full-loop proof, which needs the same operator `claude` session Release 2.9
+already batches.
+
+**Goal:** close the north-star loop end to end, repeatedly, with explicit
+operator gates at apply, dispatch, and merge. Today the console can rank work
+and prepare a prompt, and it can read merge readiness, but no single work item
+has ever travelled the whole chain — so the loop's real failure modes are
+unknown.
+
+**Prerequisites:** all but one are met. Release 2.7 Phase A (the live submit-PR
+proof) and Release 3.0 (a dispatch that runs) both closed 2026-08-09. Only the
+PAT's `Checks: Read` grant (Lane 0.2) is outstanding, and it affects per-check
+merge detail rather than the loop — `mergeStateStatus` already answers the
+merge-readiness question this release gates on.
+
+### Product outcomes
+
+- One roadmap item is carried from "ranked highest value" to "merged, with the
+  managed repo's roadmap updated" without a human stitching the steps.
+- Every stage transition is inspectable after the fact from one trace, rather
+  than reconstructed from four ledgers.
+- Roadmap write-back is preview-first: the console proposes the completion
+  edit and the operator applies it.
+
+### Engineering milestones
+
+- [x] Add a per-work-item trace view joining rank → prompt → dispatch → agent
+      run → Actions result → merge readiness → write-back, keyed by `runId`.
+      _(state: smoke-tested — closed 2026-08-10)_ Every stage already wrote its
+      own ledger and nothing joined them, so "what happened to this item?" meant
+      opening four files by hand and matching ids across them.
+      [`Execution.Trace.ps1`](../../backend/modules/execution/Execution.Trace.ps1) is
+      that join, behind `GET /api/trace/{runId}`. **Any of the four ids the loop
+      mints resolves the same trace** — packet id, packaging run id, dispatch
+      run id, agent run id — because a trace view you can only open with the id
+      you don't have is not a trace view; `Join-WorkItemTrace` is pure so every
+      stage combination is testable without a workspace. Two decisions carry it:
+      **absence is a finding** (all seven stages are always reported, and an
+      absent one names the action that would advance it, so a stalled loop
+      cannot read as a finished one), and **a hole in the middle stays visible**
+      — the furthest stage reached is a different question from "is every
+      earlier stage done", so a green merge-readiness over an unobserved Actions
+      run is reported as a gap at `actions`, not hidden behind the later
+      success. `Invoke-AgentRunRefresh` now keeps `prMergedAt` and
+      `prMergeCommitSha` on the run record instead of folding the merge time
+      into `agentCompletedAt`, which other paths also set — reading merge proof
+      out of a timing metric would accept a merge claim from something that
+      never merged. **Evidence:** module smoke — 7 stages always reported with a
+      next action on each absent one, a mid-loop hole reported as a gap while
+      `currentStage` still reports the furthest stage, and disk resolution from
+      all four ids against a fixture workspace that also contains a **decoy run
+      for a different dispatch** (selection must be by id, not "the only file in
+      the directory").
+- [x] Generate the managed repo's roadmap completion edit from merge evidence
+      and present it as a reviewed diff. _(state: smoke-tested — closed
+      2026-08-10)_
+      [`Roadmap.WriteBack.ps1`](../../backend/modules/roadmap/Roadmap.WriteBack.ps1)
+      produces the proposal and its unified diff; it writes nothing, and the
+      operator applies through the existing `POST /api/roadmap/repair/submit-pr`
+      where review already lives. The generator is deliberately conservative and
+      **verifies its own output**: exactly one `- [ ]` may match (ambiguity
+      refuses rather than guessing which item completed, since marking the wrong
+      one silently corrupts the history this loop exists to keep honest), an
+      already-`[x]` item is a no-op, and if the proposal differs from the
+      original anywhere other than the flipped checkbox and the one inserted
+      line it refuses as `unexpected-edit` rather than handing a reviewer a diff
+      that quietly rewrote the file. The inserted line is an **evidence note
+      naming the merged PR and the validation run**, because this repo's own
+      contract is that nothing is marked complete without naming the artifact
+      that proves it — and it lands after the item's continuation prose, not
+      spliced into the middle of a sentence. **Evidence:** module smoke — one
+      line flipped plus one note appended, sibling items and pre-existing `[x]`
+      untouched, note placement asserted against the lines on either side.
+- [x] Gate write-back on merge evidence: refuse to mark an item complete from
+      code churn or a green run alone. _(state: smoke-tested — closed
+      2026-08-10)_ `Test-RoadmapWriteBackEvidence` is the single definition of
+      "proven complete", and **churn and a green run are refused by their own
+      names** rather than folded into a generic failure — `churn-only` and
+      `pr-not-merged` are the two halves of the section 8 guardrail, quoted back
+      to the caller. A merge claimed with neither a merge timestamp nor a merge
+      commit is refused as `merge-unverified`: an unverifiable claim is not
+      evidence. **The item as written named one route; the hazard was the
+      pattern.** `POST /api/roadmap/completion-preview` already existed and
+      flipped any checkbox it was handed with no evidence of any kind — the
+      exact behaviour the guardrail forbids, sitting behind an HTTP POST — so it
+      now runs the same gate, and its multi-item shape survives while the free
+      pass does not. Refusals are 409 (the request is well-formed; the answer is
+      that the evidence does not justify it), carry **no `proposedContent`** so
+      there is nothing for a UI to click past, and are appended to
+      `output/roadmap-writeback.jsonl` as durably as proposals — a guardrail
+      whose refusals leave no trace is indistinguishable from one that never
+      ran. **Evidence:** module smoke — 8 refusals each named, plus a **tripwire
+      that derives write-back surfaces from the api host's own AST** (any route
+      body that generates a completed checkbox must reach the gate) rather than
+      a hand-maintained list, since a hand-maintained list is what drifted here
+      before: `0 ungated checkbox generators in 137 route bodies`.
+      **Adversarially proven** — the detector was run against the pre-fix route
+      shape and found exactly 1 violation, `completion-preview`, and the pre-fix
+      regex was run against the fixture roadmap to confirm it marks the item on
+      churn alone that the gate now refuses.
+- [ ] Record a full-loop proof for one real item in `evidence/`, naming each
+      stage's artifact. _(state: blocked on an operator session — the only
+      remaining 3.1 item)_ Every stage is built and gated; the proof needs one
+      real item to travel `rank → … → write-back`, and the agent-run stage runs
+      `claude` in an authenticated operator session. **Batch it with Release
+      2.9's operator session**, which already carries the 2.8 `claude` run and
+      the 3.0 `gh agent-task` round trip — the same prerequisite, one sitting.
+
+### Acceptance criteria
+
+- A single `runId` resolves to every stage artifact through one route.
+  **Met 2026-08-10** — and so do the packet, packaging-run, and agent-run ids.
+  api-host smoke asserts `/api/trace/{runId}` answers as **JSON** (an unmatched
+  GET falls through to the SPA index at HTTP 200, so status alone would pass on
+  a route that does not exist) with 404 and all seven stages for an unknown id.
+- A write-back attempt with no merge evidence is refused and says why.
+  **Met 2026-08-10** — 409 `write-back-refused:<reason>` on both surfaces, with
+  no `proposedContent` in the refusal. The **admitted** path is asserted too:
+  merged + green returns 200 with one changed line, a reviewable diff, and the
+  fixture roadmap **byte-identical on disk** — preview-first stated as an
+  assertion rather than a promise.
+- The loop proof exists in `evidence/` with the PR, the Actions result, and
+  the applied roadmap diff. **Open** — needs the operator session above.
+
+### Out of scope
+
+- Automatic merge — merge stays an explicit operator action after readiness
+  passes.
+- Multi-repo parallel dispatch; one item end to end first.
+
+---

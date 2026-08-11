@@ -1762,6 +1762,63 @@ try {
     }
     Write-Host ("  /api/roadmap/completion-preview (no repoName) -> HTTP {0} correctly rejected" -f $completionPreviewNoRepo.StatusCode) -ForegroundColor DarkGray
 
+    # Release 3.1 — the same route used to flip any checkbox it was handed. With
+    # a repoName but no evidence it must now refuse with the gate's own code.
+    $completionPreviewNoEvidence = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/completion-preview" -Body @{ repoName = 'GitHubRepoManagement'; completedItems = @('Anything at all') }
+    if ($completionPreviewNoEvidence.StatusCode -ne 409) {
+        throw ("/api/roadmap/completion-preview (no evidence) expected HTTP 409, got {0}. Body={1}" -f $completionPreviewNoEvidence.StatusCode, $completionPreviewNoEvidence.Content)
+    }
+    if ([string]$completionPreviewNoEvidence.Json.category -ne 'write-back-refused:no-evidence') {
+        throw ("/api/roadmap/completion-preview (no evidence) expected category write-back-refused:no-evidence, got '{0}'" -f $completionPreviewNoEvidence.Json.category)
+    }
+    if (-not [string]::IsNullOrWhiteSpace([string]$completionPreviewNoEvidence.Json.data.proposedContent)) {
+        throw '/api/roadmap/completion-preview returned proposedContent alongside a refusal'
+    }
+    Write-Host ("  /api/roadmap/completion-preview (no evidence) -> HTTP 409 {0}, nothing proposed" -f $completionPreviewNoEvidence.Json.category) -ForegroundColor DarkGray
+
+    Write-Host '[STEP] Work-item trace and roadmap write-back routes (Release 3.1)' -ForegroundColor Cyan
+    # Content-type, not just status: unmatched GET routes fall through to the SPA
+    # index.html with HTTP 200, so a status-only assertion passes on a route that
+    # does not exist.
+    $traceUnknown = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/trace/definitely-not-a-run-id"
+    if ($traceUnknown.ContentType -notlike 'application/json*') {
+        throw ("/api/trace/{{runId}} did not answer as JSON (content-type '{0}'); the route is missing and the SPA fallback answered." -f $traceUnknown.ContentType)
+    }
+    if ($traceUnknown.StatusCode -ne 404) {
+        throw ("/api/trace/{{runId}} (unknown id) expected HTTP 404, got {0}" -f $traceUnknown.StatusCode)
+    }
+    if ([string]$traceUnknown.Json.category -ne 'trace-not-found') {
+        throw ("/api/trace/{{runId}} (unknown id) expected category trace-not-found, got '{0}'" -f $traceUnknown.Json.category)
+    }
+    if (@($traceUnknown.Json.data.stages).Count -ne 7) {
+        throw ("/api/trace/{{runId}} must report all 7 loop stages even when nothing resolved; got {0}" -f @($traceUnknown.Json.data.stages).Count)
+    }
+    Write-Host ("  /api/trace/{{runId}} (unknown) -> HTTP 404 {0}, all 7 stages reported" -f $traceUnknown.Json.category) -ForegroundColor DarkGray
+
+    $writeBackNoKey = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/write-back/preview" -Body @{}
+    if ($writeBackNoKey.StatusCode -ne 400) {
+        throw ("/api/roadmap/write-back/preview (no key) expected HTTP 400, got {0}. Body={1}" -f $writeBackNoKey.StatusCode, $writeBackNoKey.Content)
+    }
+    $writeBackNoEvidence = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/write-back/preview" -Body @{ repoName = 'GitHubRepoManagement'; itemText = 'Anything at all' }
+    if ($writeBackNoEvidence.StatusCode -ne 409) {
+        throw ("/api/roadmap/write-back/preview (no evidence) expected HTTP 409, got {0}. Body={1}" -f $writeBackNoEvidence.StatusCode, $writeBackNoEvidence.Content)
+    }
+    if ([string]$writeBackNoEvidence.Json.category -ne 'write-back-refused:no-evidence') {
+        throw ("/api/roadmap/write-back/preview (no evidence) expected category write-back-refused:no-evidence, got '{0}'" -f $writeBackNoEvidence.Json.category)
+    }
+    # Churn is refused by name — the guardrail's own wording, reachable over HTTP.
+    $writeBackChurn = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/write-back/preview" -Body @{
+        repoName = 'GitHubRepoManagement'; itemText = 'Anything at all'
+        evidence = @{ filesChanged = 9; commitSha = 'abc1234' }
+    }
+    if ($writeBackChurn.StatusCode -ne 409 -or [string]$writeBackChurn.Json.category -ne 'write-back-refused:churn-only') {
+        throw ("/api/roadmap/write-back/preview (churn only) expected HTTP 409 write-back-refused:churn-only, got {0} '{1}'" -f $writeBackChurn.StatusCode, $writeBackChurn.Json.category)
+    }
+    if (-not [string]::IsNullOrWhiteSpace([string]$writeBackChurn.Json.data.proposedContent)) {
+        throw '/api/roadmap/write-back/preview returned proposedContent alongside a refusal'
+    }
+    Write-Host ("  /api/roadmap/write-back/preview -> 400 without a key, 409 {0} without evidence, 409 {1} on churn, nothing proposed" -f $writeBackNoEvidence.Json.category, $writeBackChurn.Json.category) -ForegroundColor DarkGray
+
     Write-Host '[STEP] Execution metrics route (Release 1.2)' -ForegroundColor Cyan
     $execMetricsResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/execution/metrics"
     Assert-Not503 -Name '/api/execution/metrics' -Response $execMetricsResponse
@@ -1874,6 +1931,43 @@ try {
     # the zero-entry result from the early warm call at line ~657.
     $null = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment?refresh=true"
     Write-Host '  portfolio scan root updated and cache seeded with fixture repo' -ForegroundColor DarkGray
+
+    # Release 3.1 — the write-back HAPPY path over HTTP. The earlier steps prove
+    # the gate refuses; this proves it also admits, and that admitting produces a
+    # reviewable diff rather than a write. Runs here because it needs a real
+    # roadmap file, which the fixture above is the first to provide.
+    Write-Host '[STEP] Roadmap write-back preview — the admitted path (Release 3.1)' -ForegroundColor Cyan
+    $wbFixtureRoadmap = Join-Path $fixtureRepoPath 'ROADMAP.md'
+    if (Test-Path -LiteralPath $wbFixtureRoadmap -PathType Leaf) {
+        $wbFixtureBefore = Get-Content -LiteralPath $wbFixtureRoadmap -Raw -Encoding UTF8
+        $wbAdmitted = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/write-back/preview" -Body @{
+            repoName    = 'smoke-managed-repo'
+            roadmapPath = $wbFixtureRoadmap
+            itemText    = 'Pending item'
+            evidence    = @{
+                prUrl = 'https://github.com/xfaith4/smoke-managed-repo/pull/1'; prNumber = 1
+                prState = 'merged'; mergedAt = '2026-08-10T12:00:00Z'; mergeCommitSha = 'abcdef1'
+                actionsStatus = 'completed'; actionsConclusion = 'success'; workflowName = 'CI Smoke'
+            }
+        }
+        if ($wbAdmitted.StatusCode -ne 200) {
+            throw ("/api/roadmap/write-back/preview (merged + green) expected HTTP 200, got {0}. Body={1}" -f $wbAdmitted.StatusCode, $wbAdmitted.Content)
+        }
+        $wbData = $wbAdmitted.Json.data
+        if ([string]$wbData.decision -ne 'proposed') { throw ("write-back preview decision was '{0}', expected proposed" -f $wbData.decision) }
+        if ([int]$wbData.changedLineCount -ne 1) { throw ("write-back preview rewrote {0} existing line(s); exactly one may change" -f $wbData.changedLineCount) }
+        if (([string]$wbData.proposedLine) -notmatch '^\s*-\s+\[x\]') { throw 'write-back preview did not flip the checkbox' }
+        foreach ($token in @('pull/1', 'CI Smoke')) {
+            if (([string]$wbData.evidenceNote) -notlike ("*{0}*" -f $token)) { throw "write-back evidence note omits '$token'" }
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$wbData.diff)) { throw 'write-back preview returned no diff to review' }
+        # Preview-first is the whole contract: the file on disk must be byte-identical.
+        $wbFixtureAfter = Get-Content -LiteralPath $wbFixtureRoadmap -Raw -Encoding UTF8
+        if ($wbFixtureAfter -cne $wbFixtureBefore) { throw 'write-back preview MODIFIED the roadmap file; it must propose only' }
+        Write-Host ("  /api/roadmap/write-back/preview (merged + green) -> 200 proposed, 1 line changed, diff returned, roadmap byte-identical on disk") -ForegroundColor DarkGray
+    } else {
+        throw "Write-back happy-path check needs the fixture roadmap at $wbFixtureRoadmap"
+    }
 
     # ------------------------------------------------------------------
     # Release 1.7.5 — Portfolio Mission Alignment

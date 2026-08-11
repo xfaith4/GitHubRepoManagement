@@ -690,6 +690,15 @@ function Invoke-AgentRunRefresh {
             'merged' {
                 $patch['status'] = 'completed'
                 $patch['outcome'] = 'merged'
+                # Release 3.1: keep the merge timestamp and merge commit on the
+                # record, not only folded into agentCompletedAt. The write-back
+                # evidence gate refuses a merge it cannot verify, and
+                # agentCompletedAt is a timing metric that other paths also set —
+                # reading merge proof out of it would accept a merge claim from
+                # something that never merged anything.
+                $patch['prMergedAt'] = $mergedAt
+                $mergeCommitSha = [string](_AgentRunsField -Obj $pr -Name 'merge_commit_sha' -Default '')
+                if (-not [string]::IsNullOrWhiteSpace($mergeCommitSha)) { $patch['prMergeCommitSha'] = $mergeCommitSha }
                 if ($null -eq $agentCompletedAt) { $patch['agentCompletedAt'] = $mergedAt }
                 $summaryParts += "PR #$($patch['prNumber']) merged"
             }

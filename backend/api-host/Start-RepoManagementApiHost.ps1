@@ -40,6 +40,7 @@ $executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 . (Join-Path $roadmapModuleRoot 'Roadmap.Auditor.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.Repairer.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.PrSubmitter.ps1')
+. (Join-Path $roadmapModuleRoot 'Roadmap.WriteBack.ps1')
 . (Join-Path $docAuditModuleRoot 'DocAudit.Scanner.ps1')
 . (Join-Path $docAuditModuleRoot 'RepositoryImprovement.Workflow.ps1')
 . (Join-Path $executionModuleRoot 'Execution.Ledger.ps1')
@@ -72,6 +73,10 @@ $agentRunsModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\agent-runs'
 . (Join-Path $agentRunsModuleRoot 'BudgetLedger.ps1')
 . (Join-Path $agentRunsModuleRoot 'AgentRuns.ps1')
 . (Join-Path $agentRunsModuleRoot 'MergeReadiness.ps1')
+# Release 3.1 — the work-item trace. Loaded AFTER packaging, agent-runs and
+# merge-readiness because it joins all three; it guards each call with
+# Get-Command so a partial load degrades to a missing stage, not a crash.
+. (Join-Path $executionModuleRoot 'Execution.Trace.ps1')
 $persistenceModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\persistence'
 . (Join-Path $persistenceModuleRoot 'Persistence.Store.ps1')
 . (Join-Path $commonRoot 'NotificationHub.ps1')
@@ -693,6 +698,110 @@ function Invoke-MergeReadinessForRepo {
     }
 
     return [pscustomobject]@{ success = $true; statusCode = 200; error = $null; evaluation = $evaluation }
+}
+
+# ---------------------------------------------------------------------------
+# Release 3.1 — roadmap completion write-back
+#
+# Both write-back surfaces resolve their inputs here so neither can reach the
+# edit generator on evidence the other would have refused. The gate itself
+# lives in Roadmap.WriteBack.ps1 and is pure; these two helpers only fetch the
+# roadmap content and turn a trace key into the evidence the gate reads.
+# ---------------------------------------------------------------------------
+
+function Resolve-RoadmapWriteBackTarget {
+    <#
+    .SYNOPSIS
+        Locate a repo's roadmap file and read its current content.
+    .DESCRIPTION
+        An explicit roadmapPath wins over the index for the same reason the
+        submit-PR route allows one: the roadmap index only covers configured
+        localRoots, so a repo outside them (this repo itself, for one) is
+        unresolvable from the cache no matter how many scans run.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoName,
+        [Parameter()][AllowEmptyString()][string]$RoadmapPath = ''
+    )
+
+    $resolvedPath = $RoadmapPath
+    if ([string]::IsNullOrWhiteSpace($resolvedPath)) {
+        $entries = @()
+        if ($null -ne $script:RoadmapCacheMemory -and $script:RoadmapCacheMemory.ContainsKey('entries')) {
+            $entries = @($script:RoadmapCacheMemory.entries)
+        }
+        foreach ($entry in $entries) {
+            $entryName = if ($entry -is [System.Collections.IDictionary]) { [string]$entry['repoName'] } else { [string](Get-ObjectPropertyValue -InputObject $entry -PropertyName 'repoName' -Default '') }
+            if ($entryName -ne $RepoName) { continue }
+            $resolvedPath = if ($entry -is [System.Collections.IDictionary]) { [string]$entry['roadmapPath'] } else { [string](Get-ObjectPropertyValue -InputObject $entry -PropertyName 'roadmapPath' -Default '') }
+            break
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($resolvedPath) -or -not (Test-Path -LiteralPath $resolvedPath -PathType Leaf)) {
+        return [pscustomobject]@{
+            found = $false
+            roadmapPath = $resolvedPath
+            content = ''
+            error = ("No roadmap file could be resolved for '{0}'. Run a roadmap scan, or pass roadmapPath explicitly." -f $RepoName)
+        }
+    }
+
+    $raw = Get-Content -LiteralPath $resolvedPath -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+    if ($null -eq $raw) { $raw = '' }
+    return [pscustomobject]@{ found = $true; roadmapPath = $resolvedPath; content = $raw; error = $null }
+}
+
+function Resolve-RoadmapWriteBackEvidence {
+    <#
+    .SYNOPSIS
+        Turn a request body into the evidence object the gate judges.
+    .DESCRIPTION
+        Two accepted sources, in priority order: a trace key (the loop's own
+        recorded evidence) and an explicit evidence object (for repos whose work
+        did not travel the packaged-item path). Neither is trusted to be
+        sufficient — whatever comes back goes through
+        Test-RoadmapWriteBackEvidence, which is the only thing that decides.
+    #>
+    param(
+        [Parameter()][object]$Body = $null,
+        [Parameter()][AllowEmptyString()][string]$TraceKey = ''
+    )
+
+    $key = $TraceKey
+    if ([string]::IsNullOrWhiteSpace($key) -and $null -ne $Body) {
+        foreach ($field in @('traceKey', 'runId', 'dispatchRunId', 'packetId')) {
+            $candidate = [string](Get-ObjectPropertyValue -InputObject $Body -PropertyName $field -Default '')
+            if (-not [string]::IsNullOrWhiteSpace($candidate)) { $key = $candidate; break }
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($key)) {
+        $trace = Get-WorkItemTrace -WorkspaceRoot $WorkspaceRoot -Key $key
+        if ($trace.resolved) {
+            return [pscustomobject]@{
+                source   = 'trace'
+                traceKey = $key
+                trace    = $trace
+                evidence = (Get-RoadmapWriteBackEvidenceFromTrace -Trace $trace)
+            }
+        }
+        # An unresolvable key yields NO evidence of its own — it must not be
+        # treated as a pass. It falls through to explicit evidence only when the
+        # caller actually supplied some, and `source` then reports `explicit` so
+        # the answer never looks like it came from the loop's own records.
+        if ($null -eq (Get-ObjectPropertyValue -InputObject $Body -PropertyName 'evidence' -Default $null)) {
+            return [pscustomobject]@{ source = 'trace-unresolved'; traceKey = $key; trace = $trace; evidence = $null }
+        }
+    }
+
+    $explicit = Get-ObjectPropertyValue -InputObject $Body -PropertyName 'evidence' -Default $null
+    return [pscustomobject]@{
+        source   = $(if ($null -ne $explicit) { 'explicit' } else { 'none' })
+        traceKey = $key
+        trace    = $null
+        evidence = $explicit
+    }
 }
 
 function Send-HttpJson {
@@ -5490,6 +5599,47 @@ try {
                 Add-MetricCounter -Name 'api_requests_total'
                 Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
                 Send-HttpContent -Stream $req.Stream -StatusCode 200 -ContentType $contentType -CorrelationId $correlationId -BodyBytes ([System.IO.File]::ReadAllBytes($reportPath))
+                $client.Close()
+                continue
+            }
+
+            # Release 3.1 — one route resolves a work item's whole journey.
+            # Any of the four ids the loop mints (packet, packaging run,
+            # dispatch run, agent run) resolves the same trace: a trace view you
+            # can only open with the id you don't have is not a trace view.
+            if ($req.Method -eq 'GET' -and $path -like '/api/trace/*') {
+                $traceKey = [System.Uri]::UnescapeDataString($path.Substring('/api/trace/'.Length))
+                Add-MetricCounter -Name 'api_requests_total'
+                if ([string]::IsNullOrWhiteSpace($traceKey)) {
+                    Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        error = 'A run id, packet id, or dispatch id is required in /api/trace/{runId}.'
+                        category = 'validation'
+                    }
+                    $client.Close()
+                    continue
+                }
+
+                Write-HostLog ("[TRACE] trace.get correlationId={0} key={1}" -f $correlationId, $traceKey)
+                $traceResult = Get-WorkItemTrace -WorkspaceRoot $WorkspaceRoot -Key $traceKey
+                Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                if (-not $traceResult.resolved) {
+                    # 404, not an empty 200: "no stage of the loop knows this id"
+                    # is a different answer from "here is a trace with nothing in
+                    # it", and a UI that cannot tell them apart shows an empty
+                    # timeline for a typo.
+                    Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        error = ("No stage of the delivery loop carries id '{0}'. Accepted ids: packet id, packaging run id, dispatch run id, agent run id." -f $traceKey)
+                        category = 'trace-not-found'
+                        data = $traceResult
+                    }
+                } else {
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = $traceResult
+                    }
+                }
                 $client.Close()
                 continue
             }
@@ -10823,7 +10973,151 @@ try {
                 # -------------------------------------------------------
                 # Release 1.1 — Roadmap Completion Update Preview
                 # -------------------------------------------------------
+                'POST /api/roadmap/write-back/preview' {
+                    # Release 3.1 — the last step of the north-star loop, and the
+                    # only gated one. Takes a trace key, judges the loop's own
+                    # recorded evidence, and returns the proposed completion diff.
+                    # It applies nothing: the operator applies through
+                    # POST /api/roadmap/repair/submit-pr, where review already lives.
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Write-HostLog ("[TRACE] roadmap.write-back.preview correlationId={0} start" -f $correlationId)
+                    $body = Parse-JsonBody -Body $req.Body
+                    $wbTraceKey = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'traceKey' -Default '')
+                    if ([string]::IsNullOrWhiteSpace($wbTraceKey)) { $wbTraceKey = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'runId' -Default '') }
+                    $wbRepoName = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'repoName' -Default '')
+                    $wbRoadmapPath = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'roadmapPath' -Default '')
+                    $wbItemText = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'itemText' -Default '')
+                    $wbActor = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'actor' -Default 'operator')
+                    # A repo with no workflows can never satisfy `actions-missing`,
+                    # so without an override its items could never be written back
+                    # however cleanly they merged. Explicit, off by default, and
+                    # recorded on the ledger entry — an override nobody can see
+                    # after the fact is just a weaker gate.
+                    $wbAllowMissingActions = [bool](Get-ObjectPropertyValue -InputObject $body -PropertyName 'allowMissingActions' -Default $false)
+
+                    $wbResolved = Resolve-RoadmapWriteBackEvidence -Body $body -TraceKey $wbTraceKey
+                    if ($null -ne $wbResolved.trace) {
+                        if ([string]::IsNullOrWhiteSpace($wbRepoName)) { $wbRepoName = [string]$wbResolved.trace.repoName }
+                        if ([string]::IsNullOrWhiteSpace($wbItemText)) { $wbItemText = [string]$wbResolved.trace.itemText }
+                    }
+
+                    if ([string]::IsNullOrWhiteSpace($wbRepoName) -or [string]::IsNullOrWhiteSpace($wbItemText)) {
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error = 'A resolvable traceKey (or an explicit repoName + itemText) is required for /api/roadmap/write-back/preview.'
+                            category = 'validation'
+                        }
+                    }
+                    else {
+                        # Gate BEFORE touching the filesystem. "The evidence does
+                        # not justify this" is true whether or not the roadmap
+                        # file resolves, and answering "roadmap not found" first
+                        # would let an unevidenced request look like a path
+                        # problem the caller could fix.
+                        $wbEarlyGate = Test-RoadmapWriteBackEvidence -Evidence $wbResolved.evidence -AllowMissingActions:$wbAllowMissingActions
+                        $wbTarget = if ($wbEarlyGate.allowed) { Resolve-RoadmapWriteBackTarget -RepoName $wbRepoName -RoadmapPath $wbRoadmapPath } else { $null }
+                        if ($wbEarlyGate.allowed -and -not $wbTarget.found) {
+                            Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{
+                                success = $false; error = [string]$wbTarget.error; category = 'roadmap-not-found'
+                            }
+                        }
+                        else {
+                            # Content is empty when the early gate already refused
+                            # (no file was read); New-RoadmapWriteBackPreview
+                            # re-runs the same gate and returns the refusal before
+                            # it ever looks at content, so the composition point
+                            # stays the only path to the generator.
+                            $wbContent = if ($null -ne $wbTarget) { [string]$wbTarget.content } else { '' }
+                            $wbRoadmapResolved = if ($null -ne $wbTarget) { [string]$wbTarget.roadmapPath } else { '' }
+                            $wbPreview = New-RoadmapWriteBackPreview `
+                                -RoadmapContent $wbContent `
+                                -ItemText $wbItemText `
+                                -Evidence $wbResolved.evidence `
+                                -TraceKey $wbResolved.traceKey `
+                                -RepoName $wbRepoName `
+                                -AllowMissingActions:$wbAllowMissingActions
+
+                            # Refusals are recorded as deliberately as proposals:
+                            # a guardrail whose refusals leave no trace is
+                            # indistinguishable from a guardrail that never ran.
+                            try {
+                                $null = Write-WorkItemWriteBackRecord -WorkspaceRoot $WorkspaceRoot -Record ([pscustomobject]@{
+                                    schemaVersion = '1'
+                                    decision      = [string]$wbPreview.decision
+                                    reason        = [string]$wbPreview.reason
+                                    runId         = [string]$wbResolved.traceKey
+                                    packetId      = $(if ($null -ne $wbResolved.trace) { [string]$wbResolved.trace.keys.packetId } else { '' })
+                                    agentRunId    = $(if ($null -ne $wbResolved.trace) { [string]$wbResolved.trace.keys.agentRunId } else { '' })
+                                    repoName      = $wbRepoName
+                                    roadmapPath   = $wbRoadmapResolved
+                                    itemText      = $wbItemText
+                                    previewId     = [string]$wbPreview.previewId
+                                    prUrl         = $(if ($null -ne $wbPreview.evidence) { [string]$wbPreview.evidence.prUrl } else { '' })
+                                    mergedAt      = $(if ($null -ne $wbPreview.evidence) { [string]$wbPreview.evidence.mergedAt } else { '' })
+                                    evidenceSource = [string]$wbResolved.source
+                                    allowMissingActions = $wbAllowMissingActions
+                                    actor         = $wbActor
+                                    recordedAt    = (Get-Date).ToUniversalTime().ToString('o')
+                                })
+                            } catch {
+                                Write-HostLog ("[WARN ] roadmap.write-back.preview correlationId={0} ledger append failed: {1}" -f $correlationId, $_.Exception.Message)
+                            }
+
+                            Write-HostLog ("[TRACE] roadmap.write-back.preview correlationId={0} repo={1} decision={2} reason={3}" -f $correlationId, $wbRepoName, $wbPreview.decision, $wbPreview.reason)
+                            if (-not $wbPreview.allowed) {
+                                # 409, not 400: the request is well-formed and the
+                                # answer is "the evidence does not justify this",
+                                # which is the guardrail working, not a client bug.
+                                Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                                    success  = $false
+                                    error    = [string]$wbPreview.message
+                                    category = ("write-back-refused:{0}" -f $wbPreview.reason)
+                                    data     = @{
+                                        repoName = $wbRepoName; itemText = $wbItemText
+                                        traceKey = [string]$wbResolved.traceKey
+                                        decision = 'refused'; reason = [string]$wbPreview.reason
+                                        evidenceSource = [string]$wbResolved.source
+                                        proposedContent = ''
+                                    }
+                                }
+                            } else {
+                                Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                                    success = $true
+                                    data = @{
+                                        previewId        = [string]$wbPreview.previewId
+                                        repoName         = $wbRepoName
+                                        roadmapPath      = $wbRoadmapResolved
+                                        traceKey         = [string]$wbResolved.traceKey
+                                        itemText         = $wbItemText
+                                        decision         = 'proposed'
+                                        currentContent   = [string]$wbPreview.currentContent
+                                        proposedContent  = [string]$wbPreview.proposedContent
+                                        diff             = [string]$wbPreview.diff
+                                        lineNumber       = [int]$wbPreview.lineNumber
+                                        matchedLine      = [string]$wbPreview.matchedLine
+                                        proposedLine     = [string]$wbPreview.proposedLine
+                                        evidenceNote     = [string]$wbPreview.evidenceNote
+                                        changedLineCount = [int]$wbPreview.changedLineCount
+                                        evidence         = $wbPreview.evidence
+                                        evidenceSummary  = [string]$wbPreview.evidenceSummary
+                                        evidenceSource   = [string]$wbResolved.source
+                                        applyRoute       = [string]$wbPreview.applyRoute
+                                        generatedAt      = [string]$wbPreview.generatedAt
+                                        note             = 'Preview only. Nothing was written to the roadmap and no PR was opened.'
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 'POST /api/roadmap/completion-preview' {
+                    # Release 3.1 hardened this route. It used to flip any
+                    # `- [ ]` the caller named, with no evidence of any kind —
+                    # the exact "silently mark roadmap items complete based only
+                    # on code churn" the section 8 guardrail forbids, sitting
+                    # behind an HTTP POST. It now runs the SAME gate as
+                    # /api/roadmap/write-back/preview; the multi-item shape is
+                    # preserved, the free pass is not.
                     Write-HostLog ("[TRACE] roadmap.completion-preview correlationId={0} start" -f $correlationId)
                     try {
                         $body = Parse-JsonBody -Body $req.Body
@@ -10831,50 +11125,97 @@ try {
                         $completedItems = @(Get-ObjectPropertyValue -InputObject $body -PropertyName 'completedItems' -Default @())
                         if ([string]::IsNullOrWhiteSpace($repoName)) { throw 'repoName is required' }
 
-                        # Load current roadmap content
-                        $roadmapPath = $null
-                        $rawContent  = ''
-                        $roadmapIndexEntries = @()
-                        if ($null -ne $script:RoadmapCacheMemory -and $script:RoadmapCacheMemory.ContainsKey('entries')) {
-                            $roadmapIndexEntries = @($script:RoadmapCacheMemory.entries)
-                        }
-                        $indexEntry = $roadmapIndexEntries | Where-Object { $_.repoName -eq $repoName } | Select-Object -First 1
-                        if ($null -ne $indexEntry -and $indexEntry.roadmapPath -and (Test-Path -LiteralPath $indexEntry.roadmapPath)) {
-                            $roadmapPath = $indexEntry.roadmapPath
-                            $rawContent  = Get-Content -LiteralPath $roadmapPath -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
-                            if ($null -eq $rawContent) { $rawContent = '' }
+                        # The gate runs before the roadmap file is located. An
+                        # unevidenced request is refused on its own terms; telling
+                        # the caller "roadmap not found" first would frame a
+                        # guardrail refusal as a path they could fix.
+                        $cpResolved = Resolve-RoadmapWriteBackEvidence -Body $body
+                        $cpGate = Test-RoadmapWriteBackEvidence -Evidence $cpResolved.evidence
+                        Add-MetricCounter -Name 'api_requests_total'
+
+                        $cpTarget = $null
+                        if ($cpGate.allowed) {
+                            $cpTarget = Resolve-RoadmapWriteBackTarget -RepoName $repoName `
+                                -RoadmapPath ([string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'roadmapPath' -Default ''))
+                            if (-not $cpTarget.found) { throw ("No roadmap content found for repo '{0}'" -f $repoName) }
                         }
 
-                        if ([string]::IsNullOrWhiteSpace($rawContent)) {
-                            throw "No roadmap content found for repo '$repoName'"
-                        }
-
-                        # Mark completedItems as done: replace `- [ ] {itemText}` with `- [x] {itemText}`
-                        $proposedContent = $rawContent
-                        $markedCount = 0
-                        foreach ($itemText in $completedItems) {
-                            if ([string]::IsNullOrWhiteSpace($itemText)) { continue }
-                            $escaped = [regex]::Escape($itemText.Trim())
-                            $pattern = "(?m)^(\s*)-\s+\[\s\]\s+" + $escaped
-                            if ($proposedContent -match $pattern) {
-                                $proposedContent = $proposedContent -replace $pattern, ('$1- [x] ' + $itemText.Trim())
-                                $markedCount++
+                        if (-not $cpGate.allowed) {
+                            Write-HostLog ("[TRACE] roadmap.completion-preview correlationId={0} repo={1} refused={2}" -f $correlationId, $repoName, $cpGate.reason)
+                            Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                                success  = $false
+                                error    = [string]$cpGate.message
+                                category = ("write-back-refused:{0}" -f $cpGate.reason)
+                                data     = @{
+                                    repoName = $repoName; decision = 'refused'; reason = [string]$cpGate.reason
+                                    markedCount = 0; proposedContent = ''
+                                    evidenceSource = [string]$cpResolved.source
+                                    hint = 'Pass a traceKey that resolves to merged-PR evidence, or an explicit evidence object with a merged PR and a successful validation run.'
+                                }
                             }
                         }
+                        else {
+                            # Apply each item against the ACCUMULATING content so
+                            # a second item is matched against the first item's
+                            # result — otherwise two edits to the same block both
+                            # compute their insert point from stale line numbers.
+                            $proposedContent = [string]$cpTarget.content
+                            $markedCount = 0
+                            $cpRefusals = [System.Collections.Generic.List[object]]::new()
+                            $cpMarked = [System.Collections.Generic.List[object]]::new()
+                            foreach ($itemText in $completedItems) {
+                                if ([string]::IsNullOrWhiteSpace($itemText)) { continue }
+                                $cpEdit = New-RoadmapCompletionEdit -RoadmapContent $proposedContent -ItemText ([string]$itemText) `
+                                    -Evidence $cpGate.evidence -TraceKey ([string]$cpResolved.traceKey)
+                                if ($cpEdit.ok) {
+                                    $proposedContent = [string]$cpEdit.proposedContent
+                                    $markedCount++
+                                    $cpMarked.Add([pscustomobject]@{ itemText = [string]$itemText; lineNumber = [int]$cpEdit.lineNumber }) | Out-Null
+                                } else {
+                                    $cpRefusals.Add([pscustomobject]@{ itemText = [string]$itemText; reason = [string]$cpEdit.reason; message = [string]$cpEdit.message }) | Out-Null
+                                }
+                            }
 
-                        $previewId = [guid]::NewGuid().ToString('n')
-                        Add-MetricCounter -Name 'api_requests_total'
-                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
-                            success = $true
-                            data    = @{
-                                previewId        = $previewId
-                                repoName         = $repoName
-                                roadmapPath      = $roadmapPath
-                                currentContent   = $rawContent
-                                proposedContent  = $proposedContent
-                                markedCount      = $markedCount
-                                completedItems   = @($completedItems)
-                                generatedAt      = (Get-Date).ToUniversalTime().ToString('o')
+                            $previewId = 'wb_' + [guid]::NewGuid().ToString('n').Substring(0, 12)
+                            try {
+                                $null = Write-WorkItemWriteBackRecord -WorkspaceRoot $WorkspaceRoot -Record ([pscustomobject]@{
+                                    schemaVersion  = '1'
+                                    decision       = $(if ($markedCount -gt 0) { 'proposed' } else { 'refused' })
+                                    reason         = $(if ($markedCount -gt 0) { '' } else { 'no-item-matched' })
+                                    runId          = [string]$cpResolved.traceKey
+                                    repoName       = $repoName
+                                    roadmapPath    = [string]$cpTarget.roadmapPath
+                                    itemText       = (@($cpMarked | ForEach-Object { $_.itemText }) -join ' | ')
+                                    previewId      = $previewId
+                                    prUrl          = [string]$cpGate.evidence.prUrl
+                                    mergedAt       = [string]$cpGate.evidence.mergedAt
+                                    evidenceSource = [string]$cpResolved.source
+                                    actor          = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'actor' -Default 'operator')
+                                    recordedAt     = (Get-Date).ToUniversalTime().ToString('o')
+                                })
+                            } catch {
+                                Write-HostLog ("[WARN ] roadmap.completion-preview correlationId={0} ledger append failed: {1}" -f $correlationId, $_.Exception.Message)
+                            }
+
+                            Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                                success = $true
+                                data    = @{
+                                    previewId        = $previewId
+                                    repoName         = $repoName
+                                    roadmapPath      = [string]$cpTarget.roadmapPath
+                                    currentContent   = [string]$cpTarget.content
+                                    proposedContent  = $proposedContent
+                                    markedCount      = $markedCount
+                                    completedItems   = @($completedItems)
+                                    marked           = @($cpMarked.ToArray())
+                                    refusedItems     = @($cpRefusals.ToArray())
+                                    decision         = $(if ($markedCount -gt 0) { 'proposed' } else { 'refused' })
+                                    evidence         = $cpGate.evidence
+                                    evidenceSummary  = [string]$cpGate.message
+                                    evidenceSource   = [string]$cpResolved.source
+                                    generatedAt      = (Get-Date).ToUniversalTime().ToString('o')
+                                    note             = 'Preview only. Nothing was written to the roadmap.'
+                                }
                             }
                         }
                     } catch {

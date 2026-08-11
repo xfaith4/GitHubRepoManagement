@@ -748,6 +748,111 @@ export interface RoadmapCompletionPreview {
   markedCount: number;
   completedItems: string[];
   generatedAt: string;
+  /** Release 3.1 — the gate's verdict travels with the preview. */
+  decision?: 'proposed' | 'refused';
+  marked?: Array<{ itemText: string; lineNumber: number }>;
+  refusedItems?: Array<{ itemText: string; reason: string; message: string }>;
+  evidence?: RoadmapWriteBackEvidence | null;
+  evidenceSummary?: string;
+  evidenceSource?: string;
+}
+
+// Release 3.1 — Closed-loop delivery: work-item trace and roadmap write-back
+
+/**
+ * The evidence the write-back gate judges. A merged PR with a successful
+ * validation run is the only combination that admits a completion edit.
+ */
+export interface RoadmapWriteBackEvidence {
+  prUrl?: string | null;
+  prNumber?: number | null;
+  prState?: string | null;
+  merged?: boolean;
+  mergedAt?: string | null;
+  mergeCommitSha?: string | null;
+  actionsStatus?: string | null;
+  actionsConclusion?: string | null;
+  workflowName?: string | null;
+  filesChanged?: number;
+  commitSha?: string | null;
+}
+
+/** One stage of the delivery loop. Absent stages are reported, not omitted. */
+export interface WorkItemTraceStage {
+  stage:
+    | 'rank'
+    | 'prompt'
+    | 'dispatch'
+    | 'agent-run'
+    | 'actions'
+    | 'merge-readiness'
+    | 'write-back';
+  present: boolean;
+  at?: string | null;
+  artifacts: string[];
+  summary: string;
+  nextAction: string;
+  detail?: unknown;
+}
+
+export interface WorkItemTrace {
+  traceVersion: string;
+  traceKey: string;
+  resolved: boolean;
+  repoId?: string | null;
+  repoName?: string | null;
+  itemText?: string | null;
+  keys: {
+    packetId?: string | null;
+    packagingRunId?: string | null;
+    dispatchRunId?: string | null;
+    agentRunId?: string | null;
+  };
+  stageOrder: string[];
+  stages: WorkItemTraceStage[];
+  stageCount: number;
+  presentCount: number;
+  currentStage?: string | null;
+  firstGapStage?: string | null;
+  nextAction: string;
+  evaluatedAt: string;
+}
+
+export interface RoadmapWriteBackPreview {
+  previewId: string;
+  repoName: string;
+  roadmapPath?: string | null;
+  traceKey?: string | null;
+  itemText: string;
+  decision: 'proposed';
+  currentContent: string;
+  proposedContent: string;
+  diff: string;
+  lineNumber: number;
+  matchedLine: string;
+  proposedLine: string;
+  evidenceNote: string;
+  changedLineCount: number;
+  evidence: RoadmapWriteBackEvidence;
+  evidenceSummary: string;
+  evidenceSource: string;
+  applyRoute: string;
+  generatedAt: string;
+  note: string;
+}
+
+/**
+ * A refusal from either write-back surface. It deliberately carries no
+ * proposedContent — there is nothing for a UI to apply past the guardrail.
+ */
+export interface RoadmapWriteBackRefusal {
+  refused: true;
+  reason: string;
+  message: string;
+  repoName?: string;
+  itemText?: string;
+  traceKey?: string | null;
+  evidenceSource?: string;
 }
 
 // Release 1.2 — Execution metrics, auto-scan schedule, cross-repo dependency graph

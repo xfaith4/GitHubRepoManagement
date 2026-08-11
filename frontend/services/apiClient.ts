@@ -1,4 +1,4 @@
-import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type RepositoryImprovementPreview, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioAssessmentScanSummary, type PortfolioChangeState, type PortfolioScanDecisionReason, type PortfolioScanStatus, type RepoCurationState, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult, type GitHubAuthStatus } from '../types';
+import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type RepoStatus, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type RepositoryImprovementPreview, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioAssessmentScanSummary, type PortfolioChangeState, type PortfolioScanDecisionReason, type PortfolioScanStatus, type RepoCurationState, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult, type GitHubAuthStatus, type WorkItemTrace, type RoadmapWriteBackPreview, type RoadmapWriteBackRefusal, type RoadmapWriteBackEvidence } from '../types';
 import { type AutomationHealthPayload } from '../lib/automationStatus';
 import { type PackagedItem } from '../lib/packagedItems';
 import { type RunnerPresencePayload } from '../lib/runnerPresence';
@@ -1441,13 +1441,29 @@ export async function removeNotificationWebhook(id: string): Promise<{ success: 
   return data?.data ?? { success: true };
 }
 
+/**
+ * Preview marking roadmap items complete.
+ *
+ * Release 3.1: this is a gated write-back surface. It refuses with HTTP 409 and
+ * a `write-back-refused:<reason>` category unless the caller supplies merge
+ * evidence — either a `traceKey` that resolves to a merged PR, or an explicit
+ * evidence object. A refusal never carries proposedContent, so there is nothing
+ * to apply past the guardrail.
+ */
 export async function previewRoadmapCompletion(
   repoName: string,
   completedItems: string[],
+  options?: { traceKey?: string; evidence?: RoadmapWriteBackEvidence; roadmapPath?: string },
 ): Promise<RoadmapCompletionPreview> {
-  const data = await postJson<any>('/roadmap/completion-preview', { repoName, completedItems });
+  const data = await postJson<any>('/roadmap/completion-preview', {
+    repoName,
+    completedItems,
+    ...(options?.traceKey ? { traceKey: options.traceKey } : {}),
+    ...(options?.evidence ? { evidence: options.evidence } : {}),
+    ...(options?.roadmapPath ? { roadmapPath: options.roadmapPath } : {}),
+  });
   if (!data?.success) {
-    throw new Error(data?.error?.message ?? 'Roadmap completion preview failed.');
+    throw new Error(data?.error?.message ?? data?.error ?? 'Roadmap completion preview failed.');
   }
   return data.data as RoadmapCompletionPreview;
 }
@@ -2368,6 +2384,99 @@ export async function executeMergeReadinessMerge(repoId: string): Promise<MergeR
     throw new Error(data?.error?.message ?? data?.error ?? 'Merge was refused or failed.');
   }
   return data.data as MergeReadinessMergeResult;
+}
+
+// ---------------------------------------------------------------------------
+// Release 3.1 — Closed-loop delivery
+// ---------------------------------------------------------------------------
+
+/** The host's response envelope. Typed rather than `any` so the lint ratchet keeps shrinking. */
+interface ApiEnvelope {
+  success?: boolean;
+  error?: string | { message?: string };
+  category?: string;
+  data?: unknown;
+}
+
+function parseEnvelope(text: string): ApiEnvelope | null {
+  if (!text) return null;
+  try { return JSON.parse(text) as ApiEnvelope; } catch { return null; }
+}
+
+function envelopeError(payload: ApiEnvelope | null, fallback: string): string {
+  const err = payload?.error;
+  if (typeof err === 'string' && err) return err;
+  if (err && typeof err === 'object' && typeof err.message === 'string' && err.message) return err.message;
+  return fallback;
+}
+
+/**
+ * Resolve a work item's whole journey from any one of its ids: packet id,
+ * packaging run id, dispatch run id, or agent run id.
+ *
+ * Returns null when no stage of the loop carries the id (HTTP 404) — which is a
+ * different answer from "a trace with nothing in it", and the caller should say
+ * so rather than render an empty timeline.
+ */
+export async function getWorkItemTrace(key: string): Promise<WorkItemTrace | null> {
+  if (!key.trim()) {
+    throw new Error('A run id, packet id, or dispatch id is required to load a trace.');
+  }
+
+  const response = await fetch(`${API_BASE_URL}/trace/${encodeURIComponent(key.trim())}`);
+  const payload = parseEnvelope(await response.text());
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok || !payload?.success) {
+    throw new Error(envelopeError(payload, `Failed to load the work-item trace (HTTP ${response.status}).`));
+  }
+  return payload.data as WorkItemTrace;
+}
+
+/**
+ * Propose the roadmap completion edit for one traced work item.
+ *
+ * Preview-first by contract: the response carries the proposed content and its
+ * diff, and applying it is a separate explicit operator action through
+ * `submitRoadmapRepairPr`. A refusal comes back as a
+ * {@link RoadmapWriteBackRefusal} rather than a thrown error, because "the
+ * evidence does not justify this" is an answer the UI should render, not an
+ * exception it should swallow.
+ */
+export async function previewRoadmapWriteBack(request: {
+  traceKey?: string;
+  repoName?: string;
+  itemText?: string;
+  roadmapPath?: string;
+  evidence?: RoadmapWriteBackEvidence;
+  actor?: string;
+  /** Admits a verified merge whose Actions run was never observed — e.g. a repo with no workflows. Audited on the write-back ledger. */
+  allowMissingActions?: boolean;
+}): Promise<RoadmapWriteBackPreview | RoadmapWriteBackRefusal> {
+  const response = await fetch(`${API_BASE_URL}/roadmap/write-back/preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  const payload = parseEnvelope(await response.text());
+
+  if (response.status === 409) {
+    const refusal = (payload?.data ?? {}) as Partial<RoadmapWriteBackRefusal> & { reason?: string };
+    return {
+      refused: true,
+      reason: refusal.reason ?? payload?.category ?? 'write-back-refused',
+      message: envelopeError(payload, 'The write-back evidence gate refused this request.'),
+      repoName: refusal.repoName,
+      itemText: refusal.itemText,
+      traceKey: refusal.traceKey ?? null,
+      evidenceSource: refusal.evidenceSource,
+    };
+  }
+  if (!response.ok || !payload?.success) {
+    throw new Error(envelopeError(payload, `Roadmap write-back preview failed (HTTP ${response.status}).`));
+  }
+  return payload.data as RoadmapWriteBackPreview;
 }
 
 export async function refreshAgentRun(runId: string): Promise<AgentRunRefreshResult> {
