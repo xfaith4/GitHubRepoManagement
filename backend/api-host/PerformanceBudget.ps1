@@ -1,4 +1,4 @@
-# Portfolio read-path performance budget (Release 3.2).
+﻿# Portfolio read-path performance budget (Release 3.2).
 #
 # Why this file exists: before it, nothing in the repo declared how long a
 # portfolio read is ALLOWED to take, so a performance regression was invisible.
@@ -69,15 +69,17 @@ function Get-PortfolioReadBudgetTable {
     return $copy
 }
 
-function Get-PortfolioReadBudgetClasses {
-    <# The read classes carrying a declared budget, for the drift tripwire. #>
+function Get-PortfolioReadBudgetClass {
+    <# The read classes carrying a declared budget, for the drift tripwire.
+       Singular noun per PowerShell convention (Get-ChildItem, Get-Process):
+       the verb-noun names the item kind, not the cardinality of the result. #>
     [CmdletBinding()]
     [OutputType([string[]])]
     param()
-    return @($script:PortfolioReadBudgetDefaults.Keys | Sort-Object)
+    return [string[]]@($script:PortfolioReadBudgetDefaults.Keys | Sort-Object)
 }
 
-function Get-PortfolioReadBudgetMs {
+function Resolve-PortfolioReadBudget {
     <# Resolve the budget for one read class. Returns 0 when the class is not
        declared — the caller must treat that as a breach, not as "no limit".
 
@@ -127,6 +129,8 @@ function New-PortfolioReadBudgetResult {
        reporting it as passing is how a regression stays invisible. #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Pure evaluator: builds a verdict object from its inputs and mutates nothing. -WhatIf plumbing here would suggest the function changes state, which is the opposite of its contract.')]
     param(
         [Parameter(Mandatory)][AllowEmptyString()][string]$CacheSource,
         [Parameter(Mandatory)][double]$MeasuredMs,
@@ -134,7 +138,7 @@ function New-PortfolioReadBudgetResult {
     )
 
     $key = if ($null -eq $CacheSource) { '' } else { $CacheSource.Trim().ToLowerInvariant() }
-    $budgetMs = Get-PortfolioReadBudgetMs -CacheSource $key -Settings $Settings
+    $budgetMs = Resolve-PortfolioReadBudget -CacheSource $key -Settings $Settings
     $declared = ($budgetMs -gt 0)
     $measured = [math]::Round([math]::Max(0, $MeasuredMs), 1)
 

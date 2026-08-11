@@ -3592,13 +3592,13 @@ if ($emptyResult.withinBudget -or $emptyResult.declared) { throw 'An empty read 
 # Config overrides are clamped rather than rejected: a typo must degrade to a
 # usable bound, never silently disable the budget (budgetMs=0 reads as
 # undeclared, which would then fail closed on a legitimately configured class).
-$floorClamped = Get-PortfolioReadBudgetMs -CacheSource 'memory' -Settings @{ performance = @{ readPathBudgetMs = @{ memory = 0 } } }
+$floorClamped = Resolve-PortfolioReadBudget -CacheSource 'memory' -Settings @{ performance = @{ readPathBudgetMs = @{ memory = 0 } } }
 if ($floorClamped -lt 100) { throw "A zero/negative configured budget must clamp up to the floor; got $floorClamped" }
-$ceilClamped = Get-PortfolioReadBudgetMs -CacheSource 'memory' -Settings @{ performance = @{ readPathBudgetMs = @{ memory = 99999999 } } }
+$ceilClamped = Resolve-PortfolioReadBudget -CacheSource 'memory' -Settings @{ performance = @{ readPathBudgetMs = @{ memory = 99999999 } } }
 if ($ceilClamped -gt 3600000) { throw "A configured budget above the ceiling must clamp down; got $ceilClamped" }
-$honoured = Get-PortfolioReadBudgetMs -CacheSource 'memory' -Settings @{ performance = @{ readPathBudgetMs = @{ memory = 1500 } } }
+$honoured = Resolve-PortfolioReadBudget -CacheSource 'memory' -Settings @{ performance = @{ readPathBudgetMs = @{ memory = 1500 } } }
 if ($honoured -ne 1500) { throw "A valid configured budget must be honoured; got $honoured" }
-$unparseable = Get-PortfolioReadBudgetMs -CacheSource 'memory' -Settings @{ performance = @{ readPathBudgetMs = @{ memory = 'soon' } } }
+$unparseable = Resolve-PortfolioReadBudget -CacheSource 'memory' -Settings @{ performance = @{ readPathBudgetMs = @{ memory = 'soon' } } }
 if ($unparseable -ne (Get-PortfolioReadBudgetTable)['memory']) { throw 'An unparseable configured budget must fall back to the declared default' }
 
 # The cold-scan budget must sit strictly BELOW the extended request-deadline
@@ -3606,7 +3606,7 @@ if ($unparseable -ne (Get-PortfolioReadBudgetTable)['memory']) { throw 'An unpar
 # regression is the guard killing the host — the outage recorded three times in
 # Lane 0.9. Derived from the deadline classifier, not from a copied number.
 $scanDeadlineMs = (Get-RequestDeadlineSecondsForPath -Path '/api/portfolio/assessment' -DefaultSeconds 180 -ScanSeconds 900) * 1000
-$coldScanBudget = Get-PortfolioReadBudgetMs -CacheSource 'fresh-scan'
+$coldScanBudget = Resolve-PortfolioReadBudget -CacheSource 'fresh-scan'
 if ($coldScanBudget -ge $scanDeadlineMs) {
     throw ("The fresh-scan budget ({0}ms) must be below the extended request deadline ({1}ms), or the budget can only ever be breached by the host dying." -f $coldScanBudget, $scanDeadlineMs)
 }
@@ -3615,7 +3615,7 @@ if ($coldScanBudget -ge $scanDeadlineMs) {
 # carry a declared budget. Derived from the host source, because a
 # hand-maintained list is exactly what drifts (Lane 0.9's tier list did).
 $budgetHostSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1') -Raw -Encoding UTF8
-$declaredClasses = @(Get-PortfolioReadBudgetClasses)
+$declaredClasses = @(Get-PortfolioReadBudgetClass)
 $emittedClasses = @([regex]::Matches($budgetHostSource, "cacheSource\s*=\s*'([^']*)'") |
     ForEach-Object { $_.Groups[1].Value } |
     # '' is the not-available sentinel in Get-OperationsReposPayload; it returns
