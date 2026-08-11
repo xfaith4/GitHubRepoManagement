@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-11 — Roadmap: the active file carries open work only again, and Release 2.7 closes
+
+### Changes
+
+- **`ROADMAP.md` had grown to 2,020 lines, 840 of them completed detail.** Its own validator was saying so — `R010-FILE-LENGTH` and `R013-FUTURE-RELEASE-SIZE` on Release 3.1 — and its own stated rule ("this file now carries open work only") had quietly stopped being true. A roadmap whose job is to answer "what is the next concrete work item?" cannot do that if 42% of it is history. Now **889 lines, and the validator reports 0 errors / 0 warnings** for the first time.
+- **34 completed milestone blocks moved to [`docs/history/completed-releases.md`](docs/history/completed-releases.md) verbatim**, not summarized. The evidence prose is exactly what stops the next agent re-litigating a settled decision, so compressing it would have been the cheaper edit and the wrong one. The archive grew 2,657 → 3,955 lines; every line removed from the roadmap is accounted for there.
+- **Release 2.7 is closed.** It was still marked the *active* release while holding no dispatchable engineering — all four phases complete, and the only things left under it were one elevated Windows install and one recorded non-blocker. That is precisely the "everything is done" reading the implementation-state vocabulary exists to prevent. The two open items were **re-homed to the release that actually gates them** rather than held open under a finished one: the freeze-prevention deploy to Release 2.9 (which exists to batch elevated/hardware/human proofs), the `Dashboard.tsx` non-blocker to Release 3.2 (where the repo-grid virtualization milestone already named it).
+- **Release 3.2 is now the active release** — the only open release whose remaining work an agent can start without an external resource. Promoting it surfaced that it lacked the execution contract the standard requires of an active release, so it gained real Validation plan / Risks / Dependencies / Known issues sections; the risks name the concrete traps (a scale change must keep publishing progress from *inside* its loop or the watchdog restarts a healthy scan; a concurrency cap must not reorder or drop repositories).
+- **Three lanes closed entirely** (0.3 layout follow-ups, 0.4 smoke coverage gaps, 0.6 silent workspace-path failure) and are kept as named headings, because surviving lanes and the completed-release history reference them by name.
+- An **archive rule** is now stated in section 3 next to the checkbox rule, so the drift that produced this cleanup has a written contract to violate rather than only a convention.
+
+### Verification
+
+- `tools/Test-RoadmapStructure.ps1`: **0 errors, 0 warnings** (from 2 warnings, and 5 more that appeared transiently when 3.2 was promoted without its contract sections).
+- Module smoke exit 0; the live-roadmap parser reports `state=pending pending=43 completed=1` — the single remaining `[x]` is the deliberate example inside section 3's fenced code block, which the extractor was fence-aware specifically to avoid touching.
+- Both smokes assert `pendingCount`/`completedCount` **field presence**, not values, and Lane 0.7 already established that no audit rule reads `completedCount` — checked before moving anything, because a split roadmap reports ~0 completed forever.
+
 ## 2026-08-11 — Release 3.2: the portfolio read path has a budget, not just a crash guard
 
 ### Changes
