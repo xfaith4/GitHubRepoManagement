@@ -1,8 +1,8 @@
 # GitHub Repo Management — Active Execution Roadmap
 
 > **Status:** Active
-> **Active release:** **Release 3.2 — Portfolio Scale and Responsiveness**
-> **Next active release:** **Release 2.9 — Operator Field Proof and Mobile Completion**
+> **Active release:** **Release 3.1 — Closed-Loop Delivery**
+> **Next active release:** **Release 3.2 — Portfolio Scale and Responsiveness**
 > **Work ordering:** dependency-driven, not insertion order — see
 > [Execution Order and Dependencies](#execution-order-and-dependencies)
 > **Canonical product direction:** [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md)
@@ -21,20 +21,18 @@ Their full text lives in
 [`docs/history/completed-releases.md`](docs/history/completed-releases.md).
 
 **This file carries open work only.** Every checkbox in it is something still
-to do — if an item is `[x]` here it is a mistake, not a record. That rule had
-drifted: on 2026-08-11 the file had grown to 2,020 lines, 840 of them completed
-detail, and `tools/Test-RoadmapStructure.ps1` was reporting `R010-FILE-LENGTH`
-and `R013-FUTURE-RELEASE-SIZE`. The completed detail moved to the archive
-**verbatim** — the evidence prose is why later agents stop re-litigating
-settled decisions, so it is preserved rather than summarized.
+to do — if an item is `[x]` here it is a mistake, not a record. The 2026-08-11
+archive pass that restored that rule is recorded in `CHANGELOG.md`.
 
 What remains falls into four kinds of work, and they are **not**
 interchangeable — mixing them is what previously made the roadmap read as
 "everything is done" while real gaps sat unlabelled:
 
-1. **Genuinely unbuilt engineering** — Release 3.2's three remaining scale
-   milestones, two mobile surfaces, and the recorded cross-cutting items.
-   This is the only kind an autonomous agent can close on its own.
+1. **Genuinely unbuilt engineering** — Release 3.1's four workflow-completion
+   milestones, Release 3.2's three remaining scale milestones, and the recorded
+   cross-cutting items. This is the only kind an autonomous agent can close on
+   its own. (The two mobile surfaces are also unbuilt engineering, but are
+   deferred by the priority reset below rather than by any gate.)
 2. **Elevated / hardware / human verification** — needs SYSTEM rights, a
    physical Android phone, or an operator sitting at an authenticated
    Claude Code session. No autonomous test can produce these.
@@ -43,31 +41,41 @@ interchangeable — mixing them is what previously made the roadmap read as
 4. **Calendar-gated accrual** — the 7/90-day trend windows fill only as
    time passes with capture running.
 
+**Priority reset — 2026-08-11.** Mobile surfaces are **deferred**; PC
+reliability and one workflow that finishes are the priority. The trigger was
+not a preference. The live portal reported `state=absent, queuedTotal=6,
+strandedCount=6` — six dispatches queued into a room with no runner, none ever
+claimed — while the wizard that queued them kept offering an enabled "Approve
+and create PR task" button. On the same day, that button was found to have been
+incapable of succeeding since Release 3.0 ([PR #119](https://github.com/xfaith4/GitHubRepoManagement/pull/119)).
+A second device form factor cannot be the priority while the first one has a
+workflow that does not complete and does not say so.
+
 **Current focus (next agent actions), in order:**
 
-- [ ] **Release 3.2 — portfolio scale.** The one release with unblocked
-      engineering left, and therefore the default next work. Its performance
-      budget landed 2026-08-11, so the remaining three milestones now have a
-      declared number to beat instead of an untested claim. Independent of 3.1
-      and schedulable in parallel.
-- [ ] **Release 3.1 — closed-loop delivery.** Three of four milestones shipped
-      2026-08-10; the fourth is a **live full-loop proof** that needs an
-      operator session rather than engineering time. Batch it with 2.9's.
-- [ ] **Batch the operator-session work (2.9).** Several proofs share one
-      setup — an elevated shell covers the watchdog _and_ the service
-      installer; one phone session covers 2.5 _and_ 2.6; one authenticated
-      shell covers the `claude` run, the `gh agent-task` run, and 3.1's
-      full-loop proof. Doing them separately wastes the scarcest resource here.
+- [ ] **Release 3.1 — one workflow, proven end to end.** The active release,
+      widened 2026-08-11 from closed-loop delivery: nothing may be queued into
+      an empty room; every surface names whether a rule or a model produced
+      its result; token and cost are measured rather than declared; one full
+      workflow runs to a recorded outcome.
+- [ ] **Release 3.2 — portfolio scale.** Still unblocked and still worth doing,
+      but demoted behind 3.1: a faster portal that strands work is not more
+      reliable. Its performance budget landed 2026-08-11, so the remaining
+      three milestones have a declared number to beat.
+- [ ] **Batch the remaining operator-session work (2.9).** An elevated shell
+      covers the watchdog _and_ the service installer; one authenticated shell
+      covers the `claude` run, the `gh agent-task` run, and the full-loop
+      proof. Doing them separately wastes the scarcest resource here. The
+      phone session is no longer part of this batch — see the deferral below.
 - [ ] **Lane 0.2's two items need an operator action outside this repository**
       — the PAT's `Checks: Read` grant (optional; the `mergeStateStatus` proxy
       is the working contract) and the portal TLS certificate password, whose
       recovery path is exhausted and needs a regeneration in an elevated
       session.
 
-**Forward arc.** Releases 3.0-3.3 were added 2026-08-08 to describe the
-finished product rather than the working one: dispatch that runs (3.0), the
-north-star loop closing end to end (3.1), an 80+ repo portfolio that feels
-immediate (3.2), and unattended operation (3.3).
+**Forward arc.** Releases 3.0-3.3 describe the finished product: dispatch that
+runs (3.0), the loop closing end to end and legibly (3.1), an 80+ repo
+portfolio that feels immediate (3.2), unattended operation (3.3).
 
 ---
 
@@ -126,20 +134,17 @@ checkbox alone is not enough — it does not distinguish "backend exists" from
 | `operator-verified` | Confirmed working end-to-end against the live workspace                      |
 | `done`              | All four of: backend-complete, ui-connected, smoke-tested, operator-verified |
 
-Render the state inline on each milestone in italics, e.g.:
+Render the state inline on each milestone in italics, e.g. `- [x] Add the
+route. _(state: smoke-tested)_`.
 
-```markdown
-- [x] Add `GET /api/portfolio/assessment` route. _(state: smoke-tested)_
-```
-
-**Checkbox rule.** `[x]` means _nothing remains for that item in this
-roadmap_. An item whose engineering is complete but whose proof is still
-outstanding stays `[ ]` and names the resource it waits on.
+**Checkbox rule.** `[x]` means _nothing remains for that item in this roadmap_.
+An item whose engineering is complete but whose proof is still outstanding stays
+`[ ]` and names the resource it waits on.
 
 **Archive rule (2026-08-11).** A completed item does not stay here. Once `[x]`,
 it moves to [the archive](docs/history/completed-releases.md) **verbatim** —
-evidence prose intact, because that is what stops the next agent re-litigating
-a settled decision — and this file keeps at most a one-line pointer. A release
+evidence prose intact, because that is what stops the next agent re-litigating a
+settled decision — and this file keeps at most a one-line pointer. A release
 whose remaining work is only an external-resource proof is closed, and that
 proof re-homed to Release 2.9, rather than held open.
 
@@ -166,15 +171,14 @@ module + verification boundary`.
 | 2.6       | Interface Clarity and Operator Orientation                               | `done` — 2026-07-06; device sign-off tracked in 2.9                                        |
 | 2.7       | Guarded Scheduled Automation (Curated-Subset, Preview-First)             | `done` — closed 2026-08-11; see archive. Live service install re-homed to 2.9              |
 | 2.8       | Local Claude Code Execution (queue + operator runner)                    | `done` (engineering) — 2026-07-15; real `claude` run tracked in 2.9                        |
-| **2.9**   | **Operator Field Proof and Mobile Completion**                           | `planned` — collects every external-resource residual plus the two unbuilt mobile surfaces |
+| **2.9**   | **Operator Field Proof** (mobile completion deferred)                    | `planned` — external-resource residuals only; the two mobile surfaces are deferred         |
 | 3.0       | Operator-Context Execution                                               | `done` (engineering) — 2026-08-09; see archive. Live proof tracked in 2.9                  |
-| **3.1**   | **Closed-Loop Delivery**                                                 | `planned` — rank → dispatch → monitor → Actions → merge readiness → roadmap write-back     |
-| **3.2**   | **Portfolio Scale and Responsiveness**                                   | **active** — promoted 2026-08-11; read-path budget done, 3 scale milestones open           |
+| **3.1**   | **Closed-Loop Delivery**                                                 | **active** — widened 2026-08-11: loop closure plus dead-end removal, engine + cost honesty |
+| **3.2**   | **Portfolio Scale and Responsiveness**                                   | `planned` — demoted 2026-08-11 behind 3.1; read-path budget done, 3 scale milestones open  |
 | **3.3**   | **Steady-State Operation**                                               | `planned` — unattended for months: retention, restore, honest TLS, decision-grade digests  |
 
-> **Note on `.5` numbering.** Release 1.7.5 was a deliberate course-correction
-> release between 1.7 and 1.8. Reserve the `.5` pattern for similar course
-> corrections; default new work to integer minor releases.
+> **Note on `.5` numbering.** Reserve it for course corrections like 1.7.5;
+> default new work to integer minor releases.
 
 ### Execution Order and Dependencies
 
@@ -188,32 +192,38 @@ dispatch runs. No open item is now waiting on another open item — the ordering
 below is therefore about **what kind of resource each item needs**, not about
 prerequisites.
 
-1. **Release 3.2 — the active release, and the only one an agent can advance
-   alone.** Three scale milestones, no external gate.
-2. **Release 2.9 mobile completion** — engineering work with no gates; the
-   responsive foundation shipped in 2.5.
+1. **Release 3.1 — the active release.** Reliability and honesty of the PC
+   workflow: no dead-end controls, engine attribution, measured cost, one
+   workflow that finishes. All unblocked engineering.
+2. **Release 3.2 — portfolio scale.** Also unblocked, and next in line. Demoted
+   behind 3.1 deliberately: latency is a quality of a workflow that works.
 3. **One batched operator session** — an elevated shell covers the watchdog,
-   the service installer and 2.7's freeze-prevention deploy; a phone session
-   covers 2.5 _and_ 2.6; one authenticated shell covers the `claude` run, the
-   `gh agent-task` run and 3.1's full-loop proof. Batching is the whole point:
-   the operator, not the code, is the scarce resource.
+   the service installer and 2.7's freeze-prevention deploy; one authenticated
+   shell covers the `claude` run, the `gh agent-task` run, 3.1's full-loop
+   proof (3.1's last milestone). Batching is the
+   whole point: the operator, not the code, is the scarce resource.
 4. **Release 3.3 — pick-up work.** Every milestone is independent; take one
    whenever the active release is blocked.
 5. **Trend accrual** closes itself as calendar time passes, provided capture
    keeps running.
+6. **Deferred — mobile completion (2.9) and the physical-Android proof.** Not
+   cancelled and not obsolete; the responsive foundation from 2.5 still ships.
+   They resume once a PC workflow runs end to end without an operator having to
+   know which background process must be alive for a button to mean anything.
 
 **Dependency map (open work only):**
 
 | Open item                                            | Depends on                                    | Type                                          |
 | ---------------------------------------------------- | --------------------------------------------- | --------------------------------------------- |
-| Release 3.2 scale and responsiveness                 | —                                             | none — active; deadline + budget both settled |
-| Release 2.9 mobile completion (ergonomics, run list) | —                                             | none — the responsive foundation is shipped   |
+| Release 3.1 workflow completion and UX honesty       | —                                             | none — active; engineering, bar the one proof |
+| Release 3.2 scale and responsiveness                 | —                                             | none — deadline + budget both settled         |
+| Release 2.9 mobile completion (ergonomics, run list) | A priority decision, already taken            | deferred 2026-08-11 — not blocked, deranked   |
 | Release 3.3 steady-state operation                   | —                                             | none — independent milestones, any order      |
 | Lane 0.2 `Checks: Read`; TLS certificate password    | An operator action outside this repository    | hard — external                               |
 | Lane 0.5 tab disclosure; Lane 0.7 archive signal     | A product decision, not engineering time      | hard — design                                 |
 | Release 2.9 freeze-prevention deploy (from 2.7)      | An elevated (SYSTEM) Windows install          | hard — privilege; batch with the two below    |
 | Release 2.9 watchdog + service-installer proof       | An elevated (SYSTEM) session                  | hard — privilege                              |
-| Release 2.9 physical-Android proof (2.5 + 2.6)       | An Android device on the LAN                  | hard — hardware                               |
+| Release 2.9 physical-Android proof (2.5 + 2.6)       | An Android device on the LAN                  | deferred 2026-08-11 — hardware, and deranked  |
 | Release 2.9 real `claude` + `gh agent-task` runs     | An authenticated operator session             | hard — human; one session covers both         |
 | Release 3.1 full-loop proof                          | The same authenticated operator session       | hard — human; batch with the runs above       |
 | Release 2.9 GitHub App installation-token exchange   | A registered GitHub App                       | hard — optional; PAT supersedes               |
@@ -223,31 +233,28 @@ prerequisites.
 
 ## 5. Active Release Snapshot
 
-### Active release detail — 3.2 Portfolio Scale and Responsiveness
+### Active release detail — 3.1 Closed-Loop Delivery
 
-Release 3.2 was promoted 2026-08-11 when Release 2.7 closed. It is the only
-open release whose remaining work an agent can start without an external
-resource — 2.9 needs hardware, elevation or a human; 3.1 needs one operator
-run; 3.3 is independent pick-up work with no ordering of its own.
+Release 3.1 was promoted 2026-08-11, displacing 3.2, on evidence rather than
+preference: the live portal was holding six stranded dispatches behind an
+enabled button that had been incapable of succeeding since Release 3.0.
 
-The full execution contract for the active release — goal, outcomes,
-milestones, acceptance criteria, and out-of-scope — lives in one place,
-[Release 3.2 below](#release-32--portfolio-scale-and-responsiveness),
-per `ROADMAP_TEMPLATE.md`: the release section is the single source of truth
-for its own status. This heading exists so the roadmap validator can resolve
-the active-release pointer; it deliberately restates nothing.
+The full execution contract lives in one place,
+[Release 3.1 below](#release-31--closed-loop-delivery), per
+`ROADMAP_TEMPLATE.md`. This heading exists so the validator can resolve the
+active-release pointer; it deliberately restates nothing.
 
-**Current focus:** bound per-repo git work with a timeout and a concurrency cap.
-Taken next because it is the milestone with the clearest failure mode — seven
-sequential unbounded `git` calls per repo, and one that hangs stalls the sweep
-until the deadline guard destroys the host — and because it reduces the cold
-scan the background-job milestone then has to make observable.
+**Current focus:** nothing may be queued into an empty room. Taken first
+because it is the only milestone that stops the portal actively accumulating
+work nobody will do, and because the data it needs (`Get-RunnerPresence`) is
+already computed on this exact route — just consumed after the queue write
+instead of before it.
 
 ---
 
 ## 6. Open Releases
 
-### Release 2.9 — Operator Field Proof and Mobile Completion
+### Release 2.9 — Operator Field Proof (mobile deferred)
 
 **Status:** planned
 
@@ -257,12 +264,9 @@ two mobile surfaces left incomplete under Release 2.5. No new capability — thi
 closes the honesty gap between "the suite is green" and "this works in the
 field."
 
-**Prerequisites:** the mobile milestones have none. Each field-proof milestone
-names the one external resource it waits on; none block each other, and several
-share a session — one elevated shell covers all three SYSTEM milestones, one
-phone session covers both device milestones, one authenticated shell covers both
-runner milestones and 3.1's full-loop proof. Batch them: the operator, not the
-code, is the scarce resource.
+**Prerequisites:** each field-proof milestone names the one external resource
+it waits on; none block each other, and several share a session. Batch them:
+the operator, not the code, is the scarce resource.
 
 #### Product outcomes
 
@@ -273,77 +277,62 @@ code, is the scarce resource.
 
 #### Engineering milestones
 
-Mobile completion (no gates — build these first):
+**Mobile completion — deferred 2026-08-11**, not cancelled. Both items have no
+technical gate; they were deranked because the PC workflow they would be a
+second front-end for does not yet run to completion, and a second form factor
+multiplies an unreliable workflow rather than adding reach. Resume when Release
+3.1 closes; the Release 2.5 responsive foundation stays shipped, so nothing
+regresses meanwhile.
 
-- [ ] Apply touch ergonomics beyond the Release 2.5 Phase 1 surfaces: ~44px
-      minimum touch targets and a tap equivalent for every hover-only
-      affordance (tooltips, row actions, rationale popovers) across the
-      Phases 2-3 surfaces. _(state: scaffolded — Phase 1 done 2026-07-04;
-      the rest was never built)_
-- [ ] Add the tap-through mobile agent-run list from the agent-activity
-      indicator: status, repo, phase, elapsed time. _(state: planned — the
-      indicator ships and `/api/agent-runs` is reachable; only the view is
-      missing)_
+- [ ] _(deferred)_ Touch ergonomics beyond the Release 2.5 Phase 1 surfaces:
+      ~44px targets and a tap equivalent for every hover-only affordance across
+      the Phases 2-3 surfaces. _(state: scaffolded)_
+- [ ] _(deferred)_ The tap-through mobile agent-run list from the agent-activity
+      indicator. _(state: planned — only the view is missing)_
+- [ ] _(deferred)_ Verify the four Release 2.5 workflows and the Release 2.6
+      clarity affordances on a **physical Android phone**, per
+      [`lan-mobile-setup.md`](docs/reference/lan-mobile-setup.md). _(state: both
+      smoke-tested at an emulated 390px viewport → need real hardware)_
 
-Field proof — elevated (SYSTEM) session, batch together:
+**Field proof — one elevated (SYSTEM) session covers all three:**
 
-- [ ] **Deploy the Release 2.7 Phase D freeze prevention to the live service.**
-      _(state: smoke-tested → needs an elevated Windows install; inherited from
-      Release 2.7 when it closed 2026-08-11)_ All three engineering parts ship —
-      cache-off regression guards, the per-request work timeout, and scheduled
-      `app.db` prune + `VACUUM`. Only the install remains.
+- [ ] Deploy the Release 2.7 Phase D freeze prevention to the live service. All
+      three engineering parts ship; only the install remains. _(state:
+      smoke-tested → needs an elevated Windows install)_
 - [ ] Run the elevated
       [`Install-PortalWatchdog.ps1`](scripts/service/Install-PortalWatchdog.ps1)
-      and confirm a real freeze-and-recover: kill + `Restart-Service
-      RepoMgmtPortal`, the action appended to
-      `output/logs/service-watchdog.jsonl`, and the `execution.failed` webhook
-      fired. _(state: smoke-tested → needs `operator-verified`; decision logic
-      and a dry-run against the actual frozen host are already proven)_
+      and confirm a real freeze-and-recover, with the
+      `output/logs/service-watchdog.jsonl` line and the `execution.failed`
+      webhook to prove it. _(state: smoke-tested → needs `operator-verified`)_
 - [ ] Operator-verify the reworked
       [`Install-RepoManagementService.ps1`](scripts/Install-RepoManagementService.ps1):
-      elevated install / repair / `icacls` / scheduled-task registration, secrets
-      from machine env vars, tracked `settings.json` secret-free. _(state:
-      smoke-tested → needs `operator-verified`)_
+      install / repair / `icacls` / scheduled task, secrets from machine env
+      vars, tracked `settings.json` secret-free. _(state: smoke-tested)_
 
-Field proof — physical Android device on the LAN, batch together:
+**Field proof — one authenticated operator session covers all three:**
 
-- [ ] Verify the four Release 2.5 workflows on a **physical Android phone**
-      (repo health, agent activity, prompt refinement, roadmap dispatch), plus
-      real touch input and home-screen install, then confirm the Release 2.6
-      clarity affordances on the same device: data-source indicator, per-tab
-      subtitles, advanced-filters toggle, orientation overlay. Steps in
-      [`lan-mobile-setup.md`](docs/reference/lan-mobile-setup.md). _(state:
-      both smoke-tested at an emulated 390px viewport → need
-      `operator-verified` on real hardware)_
+- [ ] One real `claude` run through
+      [`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1):
+      claim → branch → run → verify → commit → `awaiting-review`. Closes the
+      Release 2.8 residual. _(state: smoke-tested dry-run E2E)_
+- [ ] One real **copilot** entry through the runner — `gh agent-task create`
+      reaches a live task, URL in the run summary. Closes the Release 3.0
+      residual. _(state: smoke-tested. Requires `gh auth login` and **no**
+      `GH_TOKEN`/`GITHUB_TOKEN` set; gh ignores stored OAuth when one is.)_
+- [ ] **Release 3.1's full-loop proof**, which needs exactly this session.
 
-Field proof — human / credential / calendar:
+**Field proof — credential / calendar:**
 
 - [ ] Operator-verify Release 2.1 against the live workspace and record the
-      sign-off, closing the release formally. _(state: smoke-tested against
-      live data — `output/app.db`, the real 68-repo `F:\Development` scan →
-      needs a recorded human sign-off)_
-- [ ] Execute one real `claude` run through
-      [`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1)
-      in the operator's authenticated session: claim → branch → run →
-      verify → commit → `awaiting-review`. Closes the Release 2.8 residual.
-      _(state: smoke-tested dry-run E2E → needs `operator-verified`)_
-- [ ] Same session: one real **copilot** entry through the runner —
-      `gh agent-task create` reaches a live task, URL in the run summary.
-      Closes the Release 3.0 residual. _(state: smoke-tested → needs
-      `operator-verified`. Requires `gh auth login` and **no**
-      `GH_TOKEN`/`GITHUB_TOKEN` set; gh ignores stored OAuth when one is.)_
-- [ ] Same session: **Release 3.1's full-loop proof** — one real item travelling
-      rank → dispatch → run → PR → merge → write-back, recorded in `evidence/`.
-      It needs exactly the session the two runs above need.
+      sign-off, closing the release formally. _(state: smoke-tested against live
+      data — `output/app.db`, the real 68-repo scan)_
 - [ ] Operator-verify the auth + shared-LAN path so automation runs on a bound,
       authenticated host. _(state: planned — carried over from 2.7 Phase D)_
-- [ ] (Optional) Prove live GitHub App installation-token exchange
-      (`Get-GitHubAppInstallationToken`) + auto-refresh, closing the Release 2.2
-      residual. _(state: planned — not required; the PAT path supersedes it)_
-- [ ] Let the Release 2.3 Phase 2 trend windows accrue: confirm
-      `GET /api/portfolio/trend` reports a real 7-day, then 90-day, window.
-      _(state: smoke-tested — rollup logic is live and `status=history-backed`;
-      only calendar time is missing. Keep
+- [ ] (Optional) Prove live GitHub App installation-token exchange + refresh,
+      closing the Release 2.2 residual. _(state: planned — the PAT supersedes)_
+- [ ] Let the Release 2.3 Phase 2 trend windows accrue: `GET /api/portfolio/trend`
+      reports a real 7-day, then 90-day, window. _(state: smoke-tested — only
+      calendar time is missing. Keep
       [`Invoke-DailyEvidence.ps1`](scripts/Invoke-DailyEvidence.ps1) running.)_
 
 #### Acceptance criteria
@@ -368,77 +357,151 @@ Field proof — human / credential / calendar:
 
 ### Release 3.1 — Closed-Loop Delivery
 
-**Status:** planned — 3 of 4 milestones shipped 2026-08-10 (the work-item
-trace, the completion-edit generator, and the merge-evidence gate). The fourth
-is the live full-loop proof, which needs an operator session rather than
-engineering time; batch it with Release 2.9's. The status token
-stays `planned` because `active` means _the single dispatch target_ and
-Release 2.7 still holds it (section 5); it does not mean "no work has
-started". **[non-blocker]** 2.7's only open item is an elevated Windows
-install, so whether it should still be the active release is a governance
-call for the next roadmap pass, not something this release decides.
+**Status:** active — promoted 2026-08-11, displacing 3.2. 3 of 7 milestones
+shipped 2026-08-10 (the work-item trace, the completion-edit generator, and the
+merge-evidence gate). The release was widened the same day by the priority reset
+in section "Current Status": closing the loop is not enough if the operator
+cannot tell that it closed, which engine acted, or what it cost.
 
 **Goal:** close the north-star loop end to end, repeatedly, with explicit
-operator gates at apply, dispatch, and merge. Today the console can rank work
-and prepare a prompt, and it can read merge readiness, but no single work item
-has ever travelled the whole chain — so the loop's real failure modes are
-unknown.
+operator gates at apply, dispatch, and merge — and make each step legible while
+it happens. Today the console can rank work, prepare a prompt and read merge
+readiness, but no single work item has travelled the whole chain, and the
+surfaces that start the chain do not say whether they can finish it.
 
-**Prerequisites:** all but one are met. Release 2.7 Phase A (the live submit-PR
-proof) and Release 3.0 (a dispatch that runs) both closed 2026-08-09. Only the
-PAT's `Checks: Read` grant (Lane 0.2) is outstanding, and it affects per-check
-merge detail rather than the loop — `mergeStateStatus` already answers the
-merge-readiness question this release gates on.
+**Prerequisites:** met for all engineering. Only the operator-session proof
+waits on a human. Every input the widened milestones need is already computed —
+runner presence (`Get-RunnerPresence`), provider identity (`providerId` on the
+AI preview), and the agent-run metric fields. The gap is data computed and then
+not used, or used on only one of two surfaces.
 
 #### Product outcomes
 
 - One roadmap item is carried from "ranked highest value" to "merged, with the
   managed repo's roadmap updated" without a human stitching the steps.
-- Every stage transition is inspectable after the fact from one trace, rather
-  than reconstructed from four ledgers.
-- Roadmap write-back is preview-first: the console proposes the completion
-  edit and the operator applies it.
+- No enabled control leads to a dead end: if a workflow cannot complete, the
+  operator learns that _before_ investing review effort, not after.
+- An operator can always tell a deterministic rule from a model's proposal, and
+  no cost figure in this product is a number a human typed.
 
 #### Engineering milestones
 
-**Three of four shipped 2026-08-10 and are archived:** the per-work-item trace
+**Three shipped 2026-08-10 and are archived:** the per-work-item trace
 (`GET /api/trace/{id}`, joining all seven stages from any id the chain minted),
 the completion-edit generator behind `POST /api/roadmap/write-back/preview`, and
 the merge-evidence gate that refuses nine shapes which are not completion. Full
 text and evidence:
 [the archive](docs/history/completed-releases.md#closed-2026-08-11-archived-from-roadmapmd).
 
+- [ ] **Nothing may be queued into an empty room.**
+      `POST /api/roadmap/dispatch/execute` already reads `Get-RunnerPresence` —
+      but _after_ writing the queue line, so the response explains the problem
+      the operator now has instead of preventing it. Gate the wizard's approve
+      control on presence, name the unmet precondition inline, surface
+      `strandedCount` where queued work is shown, and triage the six entries
+      already stranded. _(state: planned — the live portal reported
+      `state=absent, queuedTotal=6, strandedCount=6` on 2026-08-11)_
+- [ ] **Every surface names its engine.** The Operations workspace does this
+      well — provider selector, `Provider: <id>` on the preview and every
+      history row, and a warning when it falls back to the offline heuristic.
+      The guided-improvement wizard does not:
+      [`RepositoryImprovement.Workflow.ps1`](backend/modules/docaudit/RepositoryImprovement.Workflow.ps1)
+      is pure deterministic rule evaluation and the modal never says so, then
+      hands the result to an AI agent from the same screen. A rule's finding and
+      a model's proposal must not be indistinguishable. _(state: planned — one
+      surface correct, one silent)_
+- [ ] **Token and cost are measured, not declared.** `tokenUsage` and
+      `apiSpendUsd` exist on the agent-run record, flow through
+      `tokens_reported` in `app.db` and out to analytics — and are **never
+      written by production code**. The Anthropic and OpenAI adapters in
+      [`AiDocImprovement.ps1`](backend/modules/ai/AiDocImprovement.ps1) send
+      `max_tokens` and discard the `usage` block the API returns; the only real
+      value in the repo is a smoke fixture. Capture usage at the call, record it
+      on the improvement-history record (which has no cost field today), and
+      render an unmeasured cost as _unmeasured_ rather than as zero.
+      _(state: planned — plumbing complete end to end, source absent)_
+- [ ] **Enabled means available.** Audit every visible control on the PC
+      surfaces and classify it: always available, available given a
+      precondition, or unavailable in this state. The second class renders
+      disabled with the unmet precondition named, and every terminal screen says
+      what comes next. Lane 0.9 already records three instances — Insights
+      telling you to run an assessment it offers no control for, the bare
+      `Failed to fetch` screen, and the dispatch wizard; close them here rather
+      than separately. _(state: planned — the audit exists to find the ones
+      nobody has reported)_
 - [ ] Record a full-loop proof for one real item in `evidence/`, naming each
-      stage's artifact. _(state: blocked — needs an operator session, not
-      engineering time)_ Every stage is now built and gated, but the proof
-      requires one real item to travel the chain: the operator runner must
-      execute the dispatched task (`claude` or `gh agent-task`, both of which
-      need an authenticated operator session — the same gate Release 2.9 and
-      3.0's live round trips wait on), a PR must open and merge, and the
-      write-back must apply against real merge evidence. Batch it with 2.9's
-      operator session rather than scheduling a separate one.
+      stage's artifact, **manually and once on a schedule**. _(state: blocked —
+      needs an operator session, not engineering time)_ The scheduled path
+      deliberately stops at `pending-approval` (Release 2.7 Phase C), so this
+      milestone states where the approval boundary sits rather than removing it.
+      Batch with 2.9's operator session rather than scheduling a separate one.
 
 #### Acceptance criteria
 
 - A single `runId` resolves to every stage artifact through one route.
-- A write-back attempt with no merge evidence is refused and says why.
+- The approve control cannot be clicked when no runner can claim the result,
+  and a smoke assertion proves the **disabled** state, not the happy path.
+- Every surface displaying a generated document or finding names its engine,
+  asserted from the payload rather than by inspection; a model call that
+  records `null` usage fails a gate.
 - The loop proof exists in `evidence/` with the PR, the Actions result, and
-  the applied roadmap diff.
+  the applied roadmap diff, for both the manual and the scheduled trigger.
 
 #### Out of scope
 
 - Automatic merge — merge stays an explicit operator action after readiness
   passes.
+- Removing the human approval gate on scheduled work.
 - Multi-repo parallel dispatch; one item end to end first.
+
+**Validation plan:** `npm test` (`scripts/Invoke-TestSuite.ps1`, the same
+17-gate list `ci-smoke.yml` invokes), exit 0. Each milestone lands its own gate:
+a disabled-state assertion, an engine-attribution assertion over the payload, a
+usage-not-null assertion on a stubbed provider call, and a recorded evidence
+entry per trigger. The dispatch success-path assertion added 2026-08-11
+([PR #119](https://github.com/xfaith4/GitHubRepoManagement/pull/119)) is the
+pattern: a contract proven only by its refusals is not proven.
+
+**Risks and blockers:**
+
+- **Risk — disabling controls hides capability instead of explaining it.** A
+  greyed button with no reason is worse than a failing one: the operator cannot
+  tell broken from not-yet-applicable. Every disabled state carries its unmet
+  precondition in text.
+- **Risk — a measured token figure gets treated as a budget before it is
+  trustworthy.** Report measured usage separately from the declared work units
+  the quota guard enforces; do not wire the new figure into refusals here.
+- **Risk — the end-to-end proof needs the same scarce operator session** 2.9
+  waits on. Batch them or this milestone stalls alone.
+
+**Dependencies:** `Get-RunnerPresence`
+([`Automation.RunnerPresence.ps1`](backend/modules/automation/Automation.RunnerPresence.ps1)),
+the AI provider adapters
+([`AiDocImprovement.ps1`](backend/modules/ai/AiDocImprovement.ps1)), the
+agent-run ledger ([`AgentRuns.ps1`](backend/modules/agent-runs/AgentRuns.ps1)),
+and the work-item trace shipped earlier in this release.
+
+**Known issues:**
+
+- [ ] Six stranded queue entries exist right now. They are evidence, not
+      cleanup: triage them within milestone 1 and record what happened to each,
+      rather than deleting the file and losing the only record that the failure
+      was real.
+- [ ] The scheduled and operator paths reach dispatch through different writers
+      (`Automation.RoadmapPackaging.ps1` and the dispatch route). The
+      queue-contract tripwire keeps their _shape_ identical; nothing yet keeps
+      their _behaviour_ identical, and only one has an end-to-end test.
 
 ---
 
 ### Release 3.2 — Portfolio Scale and Responsiveness
 
-**Status:** active — promoted 2026-08-11 when Release 2.7 closed. It is the
-only open release with unblocked engineering: 2.9 waits on hardware, elevation
-and human sessions, 3.1 waits on one operator run, and 3.3 is independent
-pick-up work. 1 of 4 milestones shipped (the read-path performance budget).
+**Status:** planned — was active from 2026-08-11, demoted the same day behind
+Release 3.1. Nothing here was found wrong; the ordering was. A portfolio that
+renders faster while queueing work nobody executes is not more reliable, and
+the reliability gap was the one an operator was actually hitting. Resume as the
+active release when 3.1 closes. 1 of 4 milestones shipped (the read-path
+performance budget).
 
 **Goal:** make an 80+ repo portfolio feel immediate. Reads serve from the
 persistent index; a cold full assessment becomes a visible background job
@@ -501,38 +564,23 @@ to beat are now stated and enforced — warm reads at 2-3s, a cold scan at 300s
 - Distributed or multi-machine scanning.
 - Replacing SQLite.
 
-**Validation plan:** run `npm test` (`scripts/Invoke-TestSuite.ps1`, the same
-17-gate list `ci-smoke.yml` invokes) and confirm exit 0. Each milestone must
-additionally land its own gate rather than a claim: the bounded-git work asserts
-that a hung `git` call is abandoned at its timeout instead of stalling the sweep,
-the background-job work asserts progress is observable and a cancel is honored
-mid-scan, and both must keep the read-path budget assertions green — a scale
-change that regresses a warm read has traded the wrong thing.
+**Validation plan (restored in full when 3.2 is active again):** `npm test`,
+exit 0, plus a per-milestone gate — a hung `git` call abandoned at its
+timeout, scan progress observable and a cancel honored mid-scan, and the
+read-path budget assertions still green. A scale change that regresses a warm
+read has traded the wrong thing.
 
-**Risks and blockers:**
+**Risks:** a scale change must keep the progress heartbeat publishing from
+**inside** the loop it describes, or a healthy scan reads as frozen and the
+watchdog restarts it mid-flight (Lane 0.9, three P0 outages); a concurrency
+cap must not reorder or drop repositories — output identical to sequential is
+an assertion, not a hope; a background job must not leave an orphaned
+operation marker when it outlives its request.
 
-- **Risk — a scale change breaks a scan path that has already caused three P0
-  outages.** Lane 0.9 records the pattern: each fix targeted the named instance
-  and the same outage returned through a sibling. Every change here must keep
-  the progress heartbeat publishing from **inside** the loop it describes, or a
-  healthy scan reads as frozen and the watchdog restarts it mid-flight.
-- **Risk — parallelizing git work changes scan output, not just its speed.**
-  A concurrency cap must not reorder or drop repositories; the sweep's result
-  has to be identical to the sequential one, which is an assertion, not a hope.
-- **Risk — a background scan job needs a runspace in a single-threaded host.**
-  The pattern exists already (`Start-RequestDeadlineWatchdog`), but a job that
-  outlives its request must not leave an orphaned operation marker behind —
-  `Complete-PortalOperation` has to run on the failure path too.
-
-**Dependencies:** the persistent index written by
-`Save-PortfolioIndexArtifacts` (1.7.5), the operation heartbeat
-([`OperationHeartbeat.ps1`](backend/api-host/OperationHeartbeat.ps1), Lane 0.9),
-the request-deadline tier classifier
-([`RequestDeadline.ps1`](backend/api-host/RequestDeadline.ps1), Lane 0.4), and
-the read-path budget
-([`PerformanceBudget.ps1`](backend/api-host/PerformanceBudget.ps1), shipped
-2026-08-11) that gives the remaining milestones a number to beat.
-
+**Dependencies:** the persistent index (`Save-PortfolioIndexArtifacts`, 1.7.5),
+the operation heartbeat, the request-deadline tier classifier, and the
+read-path budget ([`PerformanceBudget.ps1`](backend/api-host/PerformanceBudget.ps1))
+that gives the remaining milestones a number to beat.
 **Known issues:**
 
 - [ ] `FailFast` as deadline policy means one slow request destroys every
@@ -596,29 +644,21 @@ window.
 ## 7. Cross-Cutting Engineering Work
 
 Continuous, not release-scoped. **This section carries open work only.**
-Completed cross-cutting items were archived 2026-08-07 — see
-[the archive](docs/history/completed-releases.md#cross-cutting-engineering-work-completed-items) —
-and again 2026-08-08, when Lane 0.1 closed entirely and Lanes 0.2, 0.4, 0.5,
-and 0.6 shed their closed items to
-[the 2026-08-08 batch](docs/history/completed-releases.md#closed-2026-08-08-archived-from-roadmapmd).
+Completed cross-cutting items are in
+[the archive](docs/history/completed-releases.md#cross-cutting-engineering-work-completed-items)
+(2026-08-07) and [the 2026-08-08 batch](docs/history/completed-releases.md#closed-2026-08-08-archived-from-roadmapmd).
 
 ### Lane 0.2 — Credential freshness
 
 - [ ] **Decide the PAT `Checks: Read` grant — it is optional, not required.**
-      _(state: planned — non-blocker; scope audit 2026-08-10)_ The token 403s
-      on `repos/{owner}/{repo}/commits/{ref}/check-runs` and on GraphQL
-      `statusCheckRollup`. **Nothing in the product depends on it**: the
-      merge-readiness feature reads `mergeable_state` from the Pulls API, and
-      the merge loop's `mergeStateStatus` proxy works without it — both
-      verified in code and in practice (six PRs merged 2026-08-10 on the
-      proxy alone, including through required-check branch protection).
-      Granting it adds only development-workflow detail: `gh pr checks <n>
-      --watch` (live per-check names/durations) and direct check-run reads
-      for verifying which check ran on a ref. Read-only, single-repo-scoped,
-      low risk — but under a minimal-permissions policy it is legitimate to
-      **decline permanently** and keep the proxy; if declined, close this
-      item as "decided: proxy is the contract". Metadata, Contents, Pull
-      requests, and Actions reads all pass (verified 2026-08-07).
+      _(state: planned — non-blocker; scope audit 2026-08-10)_ The token 403s on
+      check-runs and GraphQL `statusCheckRollup`, but **nothing in the product
+      depends on it**: merge readiness reads `mergeable_state` from the Pulls
+      API and the merge loop's `mergeStateStatus` proxy works without it (six
+      PRs merged 2026-08-10 on the proxy alone, through required-check branch
+      protection). Granting it only adds `gh pr checks --watch` detail. Under a
+      minimal-permissions policy it is legitimate to **decline permanently**; if
+      declined, close this as "decided: proxy is the contract".
 - [ ] **Regenerate the portal TLS certificate (recovery is dead).** _(state:
       planned — non-blocker; recovery path exhausted 2026-08-10)_
       Machine-scoped `REPO_MGMT_TLS_PFX_PASSWORD` (17 chars) does not open
@@ -637,34 +677,21 @@ and 0.6 shed their closed items to
 
 ### Lanes 0.3, 0.4 and 0.6 — closed entirely
 
-Every item in these three lanes shipped, so they carry no open work and their
-detail moved to
+All three shipped and closed 2026-08-09; detail moved to
 [the archive](docs/history/completed-releases.md#closed-2026-08-11-archived-from-roadmapmd)
-on 2026-08-11. Kept as named headings rather than deleted, because each is
-referenced by name from surviving lanes and from the completed-release history:
-
-- **Lane 0.3 — layout follow-ups** (closed 2026-08-09): machine-specific path
-  defaults, the documented maturity caps the auditor never applied, `CLAUDE.md`'s
-  dangling imports, and the structure linter's own template conformance.
-- **Lane 0.4 — smoke coverage gaps** (closed 2026-08-09): the cold-scan request
-  deadline (the extended-tier decision Release 3.2 inherits) and the root
-  worklog archival convention, now enforced by a tripwire.
-- **Lane 0.6 — silent workspace-path failure** (closed 2026-08-09): the
-  zero-scope action hint now names the missing root instead of telling the
-  operator to scan a workspace they already configured.
+on 2026-08-11. Kept as named headings because surviving lanes and the
+completed-release history reference them by name: **0.3** layout follow-ups,
+**0.4** smoke coverage gaps (the extended deadline tier Release 3.2 inherits),
+**0.6** the silent workspace-path failure.
 
 ### Lane 0.9 — Portal restart loop: the watchdog was killing healthy scans (P0, 2026-08-10)
 
 **The incident closed 2026-08-10 across four passes and is archived.** Two
-guards with different budgets: Lane 0.4 raised the in-process request deadline
-to 900s for scan routes while the external watchdog kept ~180s, so every full
-scan was guaranteed to be force-restarted — 10 times in one stretch. The fix
-made **progress, not liveness or CPU**, the contract. Three of the four passes
-were the same lesson: the first instrumented one route, the second covered the
-routes but not the work inside them, the third found `/api/status` on the wrong
-deadline tier. **Fixing the named instance instead of the pattern is this
-repo's most expensive recurring mistake** — every tripwire here now derives its
-scope from a classifier or the AST rather than a hand-maintained list.
+guards with different budgets meant every full scan was force-restarted; the
+fix made **progress, not liveness or CPU**, the contract. Three of the four
+passes taught one lesson: **fixing the named instance instead of the pattern is
+this repo's most expensive recurring mistake** — every tripwire here now
+derives its scope from a classifier or the AST, never a maintained list.
 
 - [ ] **Insights has no way to run the assessment it tells you to run.**
       _(state: planned — surfaced with the 2026-08-10 bug report)_ Portfolio
@@ -693,20 +720,16 @@ scope from a classifier or the AST rather than a hand-maintained list.
       the host log). Clear the persisted client value and stop a client-supplied
       owner from silently overriding validated configuration.
 - [ ] **Replace the bare `Failed to fetch` screen with an actionable retry
-      state.** _(state: planned — recorded 2026-08-10)_ When the backend stops
-      answering, `Dashboard.tsx`'s top-level `error && repos.length === 0`
-      branch renders the raw exception string and nothing else — no retry, no
-      explanation, no indication the server is the problem. (The Lane 0.5 error
-      boundary does not cover this: it catches render throws, not rejected
-      fetches.) Give it a retry affordance and copy that distinguishes "backend
+      state.** _(state: planned — recorded 2026-08-10)_ `Dashboard.tsx`'s
+      `error && repos.length === 0` branch renders the raw exception string and
+      nothing else — no retry, no explanation. (The Lane 0.5 error boundary
+      catches render throws, not rejected fetches.) Distinguish "backend
       unreachable" from "no repositories configured".
 
 ### Lane 0.5 — Portal UX follow-ups (empty-state audit 2026-08-08)
 
-Three of four items closed 2026-08-10 and are archived: the missing error
-boundary that let one render throw white-screen the whole portal, bulk-scope
-confirmation on mutating actions, and the tab-inversion defect underneath the
-"six tabs is dense" complaint (Insights was rendering _above_ its own tab bar).
+Three of four closed 2026-08-10 and are archived: the missing error boundary,
+bulk-scope confirmation on mutating actions, and the tab-inversion defect.
 
 - [ ] **[non-blocker]** The wider progressive-disclosure question is still
       open, and is now a smaller one. With Insights no longer competing for the
@@ -719,19 +742,14 @@ confirmation on mutating actions, and the tab-inversion defect underneath the
 ### Lane 0.7 — Roadmap-standard fidelity: split-history awareness (2026-08-08)
 
 Does the standard this product applies to 80+ repos account for a roadmap that
-archives completed work to a separate file — the shape this repo uses, and used
-again on 2026-08-11? Partly. The gaps are asymmetric: nothing penalizes a split
-repo, but nothing can tell one apart from a repo that simply deleted its
-history. **The 2026-08-08 survey found zero managed repos using the split
-layout** (32 of 89 have a root `ROADMAP.md`; 15 inline-only, 15 with no history,
-2 in-file), so this repo is the only instance in the estate — which makes the
-**repair path** the live risk, not scoring: repair would push all 32 toward
-in-file history, and would do the same to any repo that later adopts the split.
-The intent is **awareness, not enforcement** — the split keeps an agent's
-context focused, so the standard should recognize and preserve it, never
-"correct" it. (A separate finding, that 28 of 32 repos use no release sections
-at all, is a far larger conformance gap than history placement and the reason so
-many sit at L2. The evaluator-divergence finding closed 2026-08-08.)
+archives completed work to a separate file — the shape this repo uses? Partly.
+Nothing penalizes a split repo, but nothing tells one apart from a repo that
+deleted its history. The 2026-08-08 survey found **zero** managed repos using
+the split layout, so the live risk is the **repair path**, not scoring: repair
+would push all 32 roadmap-bearing repos toward in-file history. The intent is
+**awareness, not enforcement**. (A separate finding — 28 of 32 use no release
+sections at all — is a far larger conformance gap and the reason so many sit at
+L2.)
 
 - [ ] **Record whether a repo externalizes its completion history.**
       _(state: planned)_ The contract carries `completedCount` as a required
@@ -753,15 +771,11 @@ many sit at L2. The evaluator-divergence finding closed 2026-08-08.)
 
 ### Lane 0.8 — Verification gate integrity (CI audit 2026-08-10)
 
-**The gate work closed 2026-08-10 (PRs #102–#107) and is archived.** The audit
-found that a merge was gated on almost nothing — the frontend had no gate
-anywhere, `ci.yml` was a no-op green check that still counted toward `CLEAN`,
-no linter ran, and `main` had no branch protection. All four are fixed:
-`ci-smoke.yml` **invokes `Invoke-TestSuite.ps1` itself** so CI and local are one
-list by construction, both linters fail the build, and `main` requires the
-`smoke` check with `enforce_admins` on. `mergeStateStatus: CLEAN` is
-enforcement now, not convention — proven in anger when PR #107 sat `BLOCKED`
-until its required check reported `success`. Full text:
+**The gate work closed 2026-08-10 (PRs #102–#107) and is archived.** A merge
+had been gated on almost nothing; now `ci-smoke.yml` **invokes
+`Invoke-TestSuite.ps1` itself** so CI and local are one list by construction,
+both linters fail the build, and `main` requires the `smoke` check with
+`enforce_admins` on. Full text:
 [the archive](docs/history/completed-releases.md#closed-2026-08-11-archived-from-roadmapmd).
 
 What remains is the debt the ratchets hold, and it is deliberately not a sweep.
@@ -792,12 +806,10 @@ a lowered `--max-warnings` so the ratchet locks the gain. Priority order:
 - [ ] **P4 — BOM/PS5.1 hazard (60).** Measure first: which BOM-less files
       contain non-ASCII AND can run under Windows PowerShell 5.1; add BOMs to
       that subset only.
-- **Deliberately unscheduled (accepted debt, held at baseline):** naming and
-  style tiers — `UseSingularNouns` 90 / `UseApprovedVerbs` 18 (renames are
-  call-site churn for zero behavior), `UseOutputTypeCorrectly` 136,
-  `UseShouldProcessForStateChangingFunctions` 67,
-  `AvoidUsingPositionalParameters` 34, `UseUsingScopeModifierInNewRunspaces`
-  44, `ReviewUnusedParameter` 26, `ProvideCommentHelp` 18.
+- **Deliberately unscheduled (accepted debt, held at baseline):** the naming
+  and style tiers (`UseSingularNouns` 90, `UseOutputTypeCorrectly` 136,
+  `UseShouldProcessForStateChangingFunctions` 67, and five smaller rules) —
+  renames are call-site churn for zero behavior.
 - **Separate lane, never batched mechanically:** ESLint
   `set-state-in-effect` (31) — every site needs individual behavioral review
   because a "fix" can change real render behavior.
@@ -823,6 +835,8 @@ Headline guardrails for the active release and near-term roadmap:
   into the source data or explanation that produced it.
 - Do not merge automatically; merge must remain an explicit operator action
   after readiness passes.
+- **Do not leave a control enabled that cannot succeed.** A disabled control
+  names its unmet precondition; an enabled one is a promise.
 - **Do not mark an item `[x]` while it still names an outstanding proof.**
   Split it: archive the shipped half, keep the unproven half open.
 
@@ -862,25 +876,22 @@ execution contract.
 
 ## 11. Roadmap Structure Validation
 
-Run the lightweight roadmap validator before handing this file to another
-coding agent:
+Run the validator before handing this file to another coding agent:
 
 ```powershell
 pwsh ./tools/Test-RoadmapStructure.ps1 -Path ./ROADMAP.md
 ```
 
-The check is read-only. It reports release-order warnings, missing release
-sections, active-release pointer/detail mismatches, duplicate headings,
-completed-release detail that belongs in the archive, oversized future release
-sections, file-length drift, and other obvious execution-roadmap issues. Add
-`-JsonOut` / `-CsvOut` for machine-readable output. CI runs the same script
-with `-FailOnError`, so warnings stay advisory while structural errors fail the
-smoke workflow.
+The check is read-only: release order, missing sections, active-release
+pointer/detail mismatches, duplicate headings, archived detail left behind,
+oversized future releases, and file-length drift. `-JsonOut` / `-CsvOut` give
+machine-readable output; CI runs it with `-FailOnError`, so warnings stay
+advisory while structural errors fail the smoke workflow.
 
 **The warnings are load-bearing, not decoration.** `R010-FILE-LENGTH` and
-`R013-FUTURE-RELEASE-SIZE` are what caught this file at 2,020 lines on
-2026-08-11, 840 of them completed detail — a roadmap that had stopped being
-able to answer "what is the next concrete work item?" without a long read.
+`R013-FUTURE-RELEASE-SIZE` caught this file at 2,020 lines on 2026-08-11 — a
+roadmap that could no longer answer "what is the next work item?" without a
+long read.
 
 <!-- Release 2.7 Phase A — live submit-PR evidence.
      This note was written, committed, pushed, and opened as a pull request by
