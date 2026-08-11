@@ -34,7 +34,7 @@ of the governor, not a fixed target.
 
 Get the plumbing working end-to-end with a single agent before any concurrency.
 
-```
+```text
   GOVERNOR LOOP  (checks budget, then assigns next work)
      │  budget OK?  ──no──►  PAUSE until session window cools / retry-after
      │  yes

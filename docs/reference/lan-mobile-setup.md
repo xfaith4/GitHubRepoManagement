@@ -57,7 +57,7 @@ New-NetFirewallRule -DisplayName "RepoManager API 7071" -Direction Inbound `
 
 Find the host machine's LAN IP (`ipconfig` → IPv4). On the phone's browser:
 
-```
+```text
 http://<host-lan-ip>:7071
 ```
 

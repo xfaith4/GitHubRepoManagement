@@ -1,0 +1,27 @@
+// markdownlint-cli2 runner options. Rules live in `.markdownlint.jsonc`, which
+// this tool also reads; this file only says WHICH FILES to lint.
+{
+  // Derive the exclusions from `.gitignore` instead of restating them.
+  //
+  // Every tree worth skipping here is already gitignored: `node_modules/`,
+  // `/output/**` (run evidence and adapter output), `/evidence/**` (permanent
+  // snapshots), `backend/modules/output/**`, and `frontend/dist/`. Several
+  // contain BACKUPS OF OTHER REPOSITORIES' markdown that the portfolio tooling
+  // captured — linting those reports style opinions about files nobody edits
+  // here, and it dominated the result: a bare run walks 541 files and reports
+  // 8,679 findings, of which ~8,400 are in trees this repo does not author.
+  //
+  // A hand-written copy of that list would be a second source of truth that
+  // drifts the first time a generated directory is added. `.gitignore` already
+  // answers "is this ours?", so this defers to it.
+  //
+  // Verified 2026-08-11: identical result to passing the five exclusions as
+  // explicit globs — 56 files, 294 findings.
+  //
+  // No `.markdownlintignore` ships alongside this. One was written and removed:
+  // the editor extension lints OPEN DOCUMENTS, not the tree, so it never had
+  // the node_modules problem this solves — and the ignore file's own `#`
+  // comments parse as ATX headings, so it generated about thirty Problems-panel
+  // warnings about itself. It fixed nothing the panel showed and added noise.
+  "gitignore": true
+}

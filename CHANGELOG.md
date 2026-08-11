@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-11 — markdownlint: the stray one-rule config becomes a justified one, or would have been deleted
+
+### Changes
+
+- **A `.markdownlint.json` appeared in the working tree that neither the operator nor this session authored**, alongside a commit message nobody wrote (`d1f3195 feat(markdown): add markdownlint configuration for sibling headers only`). It contained one rule: `MD024: siblings_only`. It was kept, because measurement said it was **right** — not because it was already there.
+- **The rule earns its place.** `CHANGELOG.md` is one `## <date> — <title>` section per release, each holding `### Changes` and `### Verification`. Those repeat by design and are **not siblings** — each pair sits under a different `##` parent, which is precisely the case `siblings_only` exists for. Measured: **243 findings with the default, 0 with the setting, and 0 genuine same-parent duplicates anywhere in the repo.** It suppresses 243 false positives and hides nothing; a real duplicate inside one release section still fails.
+- **It was not, however, an integrated configuration.** It carried no rationale, addressed 243 of ~2,000 findings, and left the dominant source untouched. `.markdownlint.json` is now replaced by [`.markdownlint.jsonc`](.markdownlint.jsonc) — same decision, plus the reasoning and the measured counts, in a format that permits comments.
+- **`MD013` (line length, default 80) is disabled: 1,665 findings, and it is a convention rather than drift.** CHANGELOG entries are one bullet per narrative unit and are meant to be read rendered; ROADMAP.md and `docs/` wrap near 80 by hand. `.editorconfig` declares no line-length limit, so there is no repo-wide number for the rule to enforce. It is turned **off** rather than raised because any number would silently bless one file's convention and indict the other's.
+- **[`.markdownlint-cli2.jsonc`](.markdownlint-cli2.jsonc) sets `gitignore: true` instead of restating exclusions.** A bare CLI run walked 541 files and reported 8,679 findings — roughly 8,400 of them in `output/`, `evidence/` and `node_modules`, including **backups of other repositories' markdown** that the portfolio tooling captured. Every tree worth skipping is already gitignored, so the config defers to `.gitignore` rather than keeping a second list that drifts.
+- **A `.markdownlintignore` was written and then deleted**, which is worth recording because it looked obviously correct. The editor extension lints **open documents**, not the tree, so it never had the `node_modules` problem the file solved — and the file's own `#` comments parse as ATX headings, so it generated about thirty Problems-panel warnings **about itself**. It fixed nothing the panel showed and added noise.
+- **Two `MD040` offenders were fixed, not configured away** — an ASCII diagram in `execution-orchestrator-design.md` and a URL block in `lan-mobile-setup.md`, both now `text`. That rule states a convention this repo actually holds, so the code moves, not the config.
+
+### Verification
+
+- **`CHANGELOG.md` + `ROADMAP.md`: 730 findings → 0.** The remaining 12 after the config (8 `MD049` emphasis-style, 4 `MD012` blank-line runs, all pre-existing) were fixed rather than suppressed.
+- **Repo-wide: 8,679 findings across 541 files → 282 across the 56 files this repo authors.**
+- **What is left is left on purpose** and is recorded in the config file with counts: `MD049` 178, `MD060` 47, `MD012` 24, `MD032` 16, `MD033` 14, `MD029` 9, `MD025` 3, `MD041` 3. These are authoring work, not configuration; doing them here would have buried the config decision under a thousand-line cosmetic diff.
+- No gate changed: markdownlint is still not in `Invoke-TestSuite.ps1` or CI, and this config is an authoring aid only. Module smoke exit 0.
+
 ## 2026-08-11 — Priority reset: mobile deferred, one PC workflow that finishes promoted
 
 ### Changes
@@ -683,8 +702,6 @@ All notable changes to this project are documented here.
 - Parser check clean. After host restart: `GET /api/status?stale=true` returns 200 in **115 ms** from disk cache (was 45 s); `?refresh=true` full scan completes in 49.2 s and rewrites `status-cache.json`; subsequent warm call answers in **26 ms** from memory; `meta` again carries `statusCache` and `configuredGithubUser`; `GET /` serves the current bundle; `/api/roadmap/index`, `/api/execution/metrics`, `/api/scan/schedule` all 200.
 - **Incident note (2026-07-05 ~00:23–00:25):** the operator's host instance froze hard after the uncached-scan pile-up — flat CPU, listener accepting but never responding, last handled route `execution.metrics` (its `start`-without-`done` log pattern is normal; the freeze evidence is total log silence plus flat CPU). Not reproduced after restart, including 15 rapid sequential metrics calls (11–54 ms each). If it recurs now that status caching is restored, suspect a blocked native call (SQLite bridge) under request pile-up — capture a thread dump before killing the process.
 
-
-
 ## 2026-07-04 — Release 2.5 Phase 1: Mobile responsive foundation
 
 ### Changes
@@ -700,8 +717,6 @@ All notable changes to this project are documented here.
 - **`npm run build`** — passed (fresh `dist/` bundle).
 - **`npx tsc -p frontend/tsconfig.json --noEmit`** — zero errors in every touched file (`RepoGrid.tsx`, `Dashboard.tsx`, `App.tsx`, modal files). Two pre-existing errors remain out of scope: `OperationsWorkspaceView.tsx:1473` (possibly-undefined `selectionSource`) and `RepoGitStatusModal.tsx` `global.JSX.Element` namespace declarations — neither gates the vite build.
 - **Narrow-viewport browser verification** — attempted via Chrome automation at 390×844 but blocked: the Claude-in-Chrome extension has no site permission for `127.0.0.1`, so navigation/screenshots were denied. Tracked as the remaining step before the Phase 1 milestones move past `scaffolded`.
-
-
 
 ## 2026-07-04 — Cleanup cycle: d2cc6cc tool repairs, doc-audit readiness-drift fix, reconcile route restoration
 
@@ -1129,10 +1144,10 @@ All notable changes to this project are documented here.
 ### Testing
 
 - **`scripts/Invoke-ModuleSmokeTest.ps1`** — Added three new smoke steps that directly exercise the new hardening:
-  - _Notification hub URL validation guard_ — verifies that `Register-NotificationWebhook` throws for `file://` URLs.
-  - _Notification hub unknown event type guard_ — verifies that `Register-NotificationWebhook` throws for unrecognized event names.
-  - _Execution ledger case-insensitive duplicate task guard_ — assigns one repo with task text `"Implement feature X"` then confirms the second repo is rejected when using the same text in a different case (`"Implement Feature X"`).
-  - _Roadmap linter oversized content truncation guard_ — lints a 6 000-line roadmap and confirms the `LINT-SIZE` warning finding is present.
+  - *Notification hub URL validation guard* — verifies that `Register-NotificationWebhook` throws for `file://` URLs.
+  - *Notification hub unknown event type guard* — verifies that `Register-NotificationWebhook` throws for unrecognized event names.
+  - *Execution ledger case-insensitive duplicate task guard* — assigns one repo with task text `"Implement feature X"` then confirms the second repo is rejected when using the same text in a different case (`"Implement Feature X"`).
+  - *Roadmap linter oversized content truncation guard* — lints a 6 000-line roadmap and confirms the `LINT-SIZE` warning finding is present.
 
 ---
 
