@@ -1,0 +1,52 @@
+// markdownlint rule configuration.
+//
+// Scope: this is an AUTHORING aid, not a gate. No CI job and no entry in
+// `Invoke-TestSuite.ps1` runs markdownlint; its only consumer is the editor's
+// Problems panel. Rules are therefore turned off only where the repo has a
+// deliberate convention that the rule cannot express — never to hide a defect
+// somebody should fix. Real inconsistencies are left visible on purpose; the
+// counts below were measured with `npx markdownlint-cli2` over the authored
+// markdown (generated trees excluded via `.markdownlintignore`) on 2026-08-11.
+{
+  // MD024 (duplicate headings) — DEFAULT WOULD BE WRONG HERE, not merely noisy.
+  // CHANGELOG.md is one `## <date> — <title>` section per release, each
+  // containing `### Changes` and `### Verification`. Those repeat by design, and
+  // they are not siblings: each pair sits under a different `##` parent.
+  // `siblings_only` is the setting markdownlint provides for exactly this shape.
+  //
+  // Measured: 243 violations with the default, 0 with `siblings_only`, and 0
+  // genuine same-parent duplicates anywhere in the repo. So this suppresses
+  // 243 false positives and hides nothing — a real duplicate inside one release
+  // section still fails.
+  "MD024": { "siblings_only": true },
+
+  // MD013 (line length, default 80) — 1,665 violations across authored
+  // markdown, 673 in CHANGELOG.md and 379 in the completed-release archive.
+  // That is a convention, not drift: CHANGELOG entries are one bullet per
+  // narrative unit and are meant to be read rendered, while ROADMAP.md and the
+  // docs/ tree wrap near 80 by hand. `.editorconfig` declares no line-length
+  // limit, so no repo-wide number exists for this rule to enforce. Rewrapping
+  // ~1,000 lines of settled history to satisfy a style rule would be a large
+  // diff over immutable records for zero reader benefit.
+  //
+  // Turned off rather than raised: any number picked here would silently bless
+  // one file's convention and indict the other's.
+  "MD013": false
+
+  // DELIBERATELY LEFT ON — 294 findings over 56 authored files, all real:
+  //   MD049 emphasis-style      178  mixed `*text*` and `_text_`
+  //   MD060 table-column-style   47  `|---|` instead of `| --- |`
+  //   MD012 no-multiple-blanks   24
+  //   MD032 blanks-around-lists  16
+  //   MD033 no-inline-html       14  (some are legitimate HTML comments)
+  //   MD029 ol-prefix             9
+  //   MD025 single-title          3  (archive files with multiple H1s)
+  //   MD041 first-line-heading    3  (prompt files that open with prose)
+  // Fixing them is authoring work, not configuration, and doing it in the same
+  // change that introduces this file would bury the config decision under a
+  // thousand-line cosmetic diff.
+  //
+  // MD040 (fenced code without a language) had exactly 2 offenders. They were
+  // FIXED rather than configured away — an ASCII diagram and a URL block, both
+  // now `text` — because that rule states a convention this repo actually holds.
+}
