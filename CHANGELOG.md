@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-11 — Release 3.2: the portfolio read path has a budget, not just a crash guard
+
+### Changes
+
+- **Nothing in the repo declared how long a portfolio read is allowed to take**, so a performance regression was invisible until an operator noticed the portal felt slow. The only number bounding a read was the Lane 0.4 request deadline — and that enforces by calling `Environment.FailFast` and destroying every in-flight request. **A target whose only enforcement is an outage is a crash guard, not a budget.** It cannot tell you that a 400ms cache read became 4 seconds, which is the regression that gets felt first.
+- [`PerformanceBudget.ps1`](backend/api-host/PerformanceBudget.ps1) declares a budget per read class (`memory` 2s, `portfolio-index` 3s, `assessment-cache` 3s, `fresh-scan` 300s) and is pure — dot-sourced for the same reason `RequestDeadline.ps1` and `OperationHeartbeat.ps1` are: a helper reachable only by starting the listener is a helper nothing can test.
+- **The budget keys off the same `cacheSource` literal the routes already serve.** There is no second classifier to drift out of step with the first, and both smokes assert `readClass === cacheSource` — the "two figures, one truth" divergence this product exists to catch cannot recur here quietly.
+- **An undeclared read class fails closed.** `declared=false` forces `withinBudget=false`, because an unbudgeted path is *unmeasured*, not fast, and scoring it as passing is precisely how a new slow route stays invisible. Same contract as `Test-PackagingQuota`'s `quota-guard-unavailable` and `Test-RoadmapWriteBackEvidence`'s no-evidence refusal.
+- **The cold-scan budget (300s) sits deliberately far below the 900s scan-tier deadline**, and the module smoke derives that ceiling from `Get-RequestDeadlineSecondsForPath` rather than copying the number. Budgeting a scan at the crash guard would mean the first thing to notice a regression is the guard killing the host — the outage Lane 0.9 records three separate times.
+- **The measured figure is served next to the budget it was judged against** (`data.performance` on `GET /api/portfolio/assessment` and `GET /api/operations/repos`), so a reader never has to go and find the target in a config file to know whether the number in front of them is good. A greppable `portfolio.read-budget` TRACE line uses the shape `Invoke-DailyEvidence.ps1` already parses.
+
+### Verification
+
+- Module smoke: `read-path budget ok: 4 class(es) declared, undeclared fails closed, cold-scan budget 300000ms < deadline 900000ms, 2 route(s) evaluate it`.
+- **Both tripwires adversarially proven.** The drift detector derives the emitted classes from the host source — a hand-maintained list is exactly what drifted in Lane 0.9 — and fired with `The host emits cacheSource 'portfolio-index' but no read-path budget is declared for it` when that budget was deleted. The wiring detector fired with `Route 'GET /api/operations/repos' … never evaluates the read-path budget` when the call was renamed away, because a budget nothing calls is a config file, not a gate.
+- Api-host smoke asserts the block round-trips on both routes, that the class judged is the class served, and that a **breach fails the gate** rather than logging quietly.
+
 ## 2026-08-10 — Release 3.1: the roadmap may only be marked complete by a merge
 
 ### Changes

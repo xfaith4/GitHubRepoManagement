@@ -19,6 +19,14 @@
     "days": 30,
     "maxSnapshotDays": 365
   },
+  "performance": {
+    "readPathBudgetMs": {
+      "memory": 2000,
+      "portfolio-index": 3000,
+      "assessment-cache": 3000,
+      "fresh-scan": 300000
+    }
+  },
   "reconcile": {
     "ownerType": "Auto",
     "retry": {

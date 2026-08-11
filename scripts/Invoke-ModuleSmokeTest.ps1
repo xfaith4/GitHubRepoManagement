@@ -3554,4 +3554,98 @@ Write-Step 'Packaging queue contract — tripwire: the entry shape the runner cl
     Write-Host '  packaging health ok: never-ran/overdue/partial named packaging-specifically, skips are not failures, doc runs cannot mask it' -ForegroundColor DarkGray
 }
 
+Write-Step 'Portfolio read-path performance budget (Release 3.2)'
+# Before this, nothing declared how long a portfolio read may take, so a
+# regression was invisible: the only bound was the Lane 0.4 request deadline,
+# which enforces by calling Environment.FailFast and destroying the host. A
+# target whose only enforcement is an outage is a crash guard, not a budget.
+. (Join-Path $WorkspaceRoot 'backend\api-host\PerformanceBudget.ps1')
+
+$budgetTable = Get-PortfolioReadBudgetTable
+if (@($budgetTable.Keys).Count -eq 0) { throw 'Read-path budget table is empty; the budget gate would be vacuous' }
+
+# Mutating the returned table must not rewrite the contract for later reads.
+$budgetTable['memory'] = 999999
+if ((Get-PortfolioReadBudgetTable)['memory'] -eq 999999) { throw 'Get-PortfolioReadBudgetTable must return a copy, not the live contract' }
+
+$withinResult = New-PortfolioReadBudgetResult -CacheSource 'memory' -MeasuredMs 120
+if (-not $withinResult.withinBudget) { throw 'A 120ms memory-cache read must be within its declared budget' }
+if (-not $withinResult.declared) { throw "'memory' is a declared class and must report declared=true" }
+if ($withinResult.overByMs -ne 0) { throw 'A read inside budget must report overByMs=0' }
+if ($withinResult.budgetMs -le 0) { throw 'A declared class must report the budget it was judged against' }
+
+$overResult = New-PortfolioReadBudgetResult -CacheSource 'memory' -MeasuredMs 9500
+if ($overResult.withinBudget) { throw 'A 9.5s memory-cache read must breach the 2s budget' }
+if ($overResult.overByMs -le 0) { throw 'A breach must report how far over it went, not just that it failed' }
+if ([math]::Round($overResult.measuredMs - $overResult.budgetMs, 1) -ne $overResult.overByMs) { throw 'overByMs must equal measured minus budget' }
+
+# Fail-closed: an unbudgeted read path is an UNMEASURED one. Reporting it as
+# within budget is exactly how a new slow route stays invisible — the same
+# contract Test-PackagingQuota (quota-guard-unavailable) and
+# Test-RoadmapWriteBackEvidence (no evidence is a refusal) apply.
+$unknownResult = New-PortfolioReadBudgetResult -CacheSource 'a-new-cache-source' -MeasuredMs 1
+if ($unknownResult.withinBudget) { throw 'An undeclared read class must never report withinBudget=true, however fast it was' }
+if ($unknownResult.declared) { throw 'An undeclared read class must report declared=false' }
+$emptyResult = New-PortfolioReadBudgetResult -CacheSource '' -MeasuredMs 1
+if ($emptyResult.withinBudget -or $emptyResult.declared) { throw 'An empty read class must fail closed like any other undeclared one' }
+
+# Config overrides are clamped rather than rejected: a typo must degrade to a
+# usable bound, never silently disable the budget (budgetMs=0 reads as
+# undeclared, which would then fail closed on a legitimately configured class).
+$floorClamped = Get-PortfolioReadBudgetMs -CacheSource 'memory' -Settings @{ performance = @{ readPathBudgetMs = @{ memory = 0 } } }
+if ($floorClamped -lt 100) { throw "A zero/negative configured budget must clamp up to the floor; got $floorClamped" }
+$ceilClamped = Get-PortfolioReadBudgetMs -CacheSource 'memory' -Settings @{ performance = @{ readPathBudgetMs = @{ memory = 99999999 } } }
+if ($ceilClamped -gt 3600000) { throw "A configured budget above the ceiling must clamp down; got $ceilClamped" }
+$honoured = Get-PortfolioReadBudgetMs -CacheSource 'memory' -Settings @{ performance = @{ readPathBudgetMs = @{ memory = 1500 } } }
+if ($honoured -ne 1500) { throw "A valid configured budget must be honoured; got $honoured" }
+$unparseable = Get-PortfolioReadBudgetMs -CacheSource 'memory' -Settings @{ performance = @{ readPathBudgetMs = @{ memory = 'soon' } } }
+if ($unparseable -ne (Get-PortfolioReadBudgetTable)['memory']) { throw 'An unparseable configured budget must fall back to the declared default' }
+
+# The cold-scan budget must sit strictly BELOW the extended request-deadline
+# tier. Budgeting a scan at the crash guard means the first thing to notice a
+# regression is the guard killing the host — the outage recorded three times in
+# Lane 0.9. Derived from the deadline classifier, not from a copied number.
+$scanDeadlineMs = (Get-RequestDeadlineSecondsForPath -Path '/api/portfolio/assessment' -DefaultSeconds 180 -ScanSeconds 900) * 1000
+$coldScanBudget = Get-PortfolioReadBudgetMs -CacheSource 'fresh-scan'
+if ($coldScanBudget -ge $scanDeadlineMs) {
+    throw ("The fresh-scan budget ({0}ms) must be below the extended request deadline ({1}ms), or the budget can only ever be breached by the host dying." -f $coldScanBudget, $scanDeadlineMs)
+}
+
+# Drift tripwire — every cacheSource the host can put in a 200 payload must
+# carry a declared budget. Derived from the host source, because a
+# hand-maintained list is exactly what drifts (Lane 0.9's tier list did).
+$budgetHostSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1') -Raw -Encoding UTF8
+$declaredClasses = @(Get-PortfolioReadBudgetClasses)
+$emittedClasses = @([regex]::Matches($budgetHostSource, "cacheSource\s*=\s*'([^']*)'") |
+    ForEach-Object { $_.Groups[1].Value } |
+    # '' is the not-available sentinel in Get-OperationsReposPayload; it returns
+    # available=$false and the route answers 409, so it never reaches a payload.
+    Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+if (@($emittedClasses).Count -eq 0) { throw 'No cacheSource literals found in the host; the budget drift tripwire is vacuous' }
+foreach ($emitted in $emittedClasses) {
+    if ($emitted -notin $declaredClasses) {
+        throw ("The host emits cacheSource '{0}' but no read-path budget is declared for it. Add it to PerformanceBudget.ps1 — an unbudgeted read path fails closed and would break this gate rather than silently going unmeasured." -f $emitted)
+    }
+}
+
+# The routes must actually consult the budget. A budget nothing calls is a
+# config file, not a gate.
+foreach ($budgetRoute in @('GET /api/portfolio/assessment', 'GET /api/operations/repos')) {
+    $routeClause = @($hostFileAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.SwitchStatementAst] }, $true) |
+        ForEach-Object { $_.Clauses } |
+        Where-Object { $_.Item1.Extent.Text.Trim("'`"") -eq $budgetRoute }) | Select-Object -First 1
+    if ($null -eq $routeClause) { throw "Route '$budgetRoute' not found; the read-budget wiring assertion is vacuous" }
+    $routeCommands = @($routeClause.Item2.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true) |
+        ForEach-Object { $_.GetCommandName() } | Where-Object { $_ })
+    if ('New-PortfolioReadBudgetResult' -notin $routeCommands) {
+        throw "Route '$budgetRoute' serves a portfolio read but never evaluates the read-path budget, so a regression on it would be invisible."
+    }
+}
+
+$budgetLogLine = Format-PortfolioReadBudgetLog -Result $withinResult -CorrelationId 'abc123' -Route '/api/portfolio/assessment'
+if ($budgetLogLine -notmatch 'portfolio\.read-budget correlationId=\S+ route=\S+ class=\S+ measuredMs=\S+ budgetMs=\d+ withinBudget=\S+ overByMs=\S+ declared=\S+') {
+    throw "Read-budget log line does not match the greppable contract Invoke-DailyEvidence.ps1 parses: $budgetLogLine"
+}
+Write-Host ("  read-path budget ok: {0} class(es) declared, undeclared fails closed, cold-scan budget {1}ms < deadline {2}ms, {3} route(s) evaluate it" -f @($declaredClasses).Count, $coldScanBudget, $scanDeadlineMs, 2) -ForegroundColor DarkGray
+
 Write-Step 'Smoke test completed'

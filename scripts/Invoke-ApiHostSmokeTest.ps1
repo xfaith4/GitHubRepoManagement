@@ -1911,6 +1911,44 @@ try {
     }
     Write-Host '  scan-budget log ok: per-phase timing (prep=discovery/git/GitHub, assess=audit, indexWrite) emitted' -ForegroundColor DarkGray
 
+    # Release 3.2 — the portfolio read path has a DECLARED budget, and the
+    # measured figure is served next to it. Enforcement is here: a warm read
+    # that breaches its budget, or a read class with no declared budget at all
+    # (which fails closed to withinBudget=false), fails this gate.
+    Write-Host '[STEP] Portfolio read-path performance budget (Release 3.2)' -ForegroundColor Cyan
+    $warmReadResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment"
+    Assert-Not503 -Name '/api/portfolio/assessment (warm)' -Response $warmReadResponse
+    $warmReadData = if ($null -ne $warmReadResponse.Json) { $warmReadResponse.Json.data } else { $null }
+    if ($null -eq $warmReadData) { throw '/api/portfolio/assessment (warm) returned no data payload for the read-budget check' }
+    if (-not ($warmReadData.PSObject.Properties.Name -contains 'performance')) {
+        throw '/api/portfolio/assessment does not report its performance budget. The measured figure must be served next to the budget it was judged against, not left in a log the operator has to go and find.'
+    }
+    $warmBudget = $warmReadData.performance
+    foreach ($budgetField in @('readClass', 'declared', 'budgetMs', 'measuredMs', 'withinBudget', 'overByMs')) {
+        if (-not ($warmBudget.PSObject.Properties.Name -contains $budgetField)) {
+            throw "/api/portfolio/assessment performance block missing '$budgetField'"
+        }
+    }
+    # The class judged and the class served must be the same string. Two
+    # classifiers would be this repo's recurring "two figures, one truth" drift.
+    if ([string]$warmBudget.readClass -ne [string]$warmReadData.cacheSource) {
+        throw ("Read-budget class '{0}' does not match the served cacheSource '{1}'; the budget is judging a different path from the one that ran." -f $warmBudget.readClass, $warmReadData.cacheSource)
+    }
+    if (-not $warmBudget.declared) {
+        throw ("Read class '{0}' has no declared budget, so it is unmeasured rather than fast. Declare it in backend/api-host/PerformanceBudget.ps1." -f $warmBudget.readClass)
+    }
+    if ([int]$warmBudget.budgetMs -le 0) { throw 'A declared read budget must be a positive number of milliseconds' }
+    if (-not $warmBudget.withinBudget) {
+        throw ("Portfolio read-path budget BREACHED: class={0} measuredMs={1} budgetMs={2} overByMs={3}" -f $warmBudget.readClass, $warmBudget.measuredMs, $warmBudget.budgetMs, $warmBudget.overByMs)
+    }
+    if ($hostLogContent -notmatch 'portfolio\.read-budget correlationId=\S+ route=\S+ class=\S+ measuredMs=\S+ budgetMs=\d+ withinBudget=\S+') {
+        $hostLogContent = if (Test-Path -LiteralPath $logPath) { Get-Content -LiteralPath $logPath -Raw -ErrorAction SilentlyContinue } else { '' }
+        if ($hostLogContent -notmatch 'portfolio\.read-budget correlationId=\S+ route=\S+ class=\S+ measuredMs=\S+ budgetMs=\d+ withinBudget=\S+') {
+            throw 'read-budget TRACE line not found in host log after a portfolio read'
+        }
+    }
+    Write-Host ("  read-path budget ok: class={0} measuredMs={1} budgetMs={2} withinBudget=True" -f $warmBudget.readClass, $warmBudget.measuredMs, $warmBudget.budgetMs) -ForegroundColor DarkGray
+
     $portfolioSummaryFieldsOk = $null -ne $portfolioData.summary -and
         ($portfolioData.summary.PSObject.Properties.Name -contains 'totalRepos') -and
         ($portfolioData.summary.PSObject.Properties.Name -contains 'byLifecycle') -and
@@ -2017,6 +2055,22 @@ try {
     if ([string]$operationsReposData.cacheSource -notin @('portfolio-index', 'assessment-cache')) {
         throw '/api/operations/repos returned an unexpected cacheSource value'
     }
+    # Release 3.2 — the other half of the portfolio read path carries the same
+    # budget contract, judged against the class it actually served from.
+    if (-not ($operationsReposData.PSObject.Properties.Name -contains 'performance')) {
+        throw '/api/operations/repos does not report its performance budget alongside the data it served'
+    }
+    $operationsBudget = $operationsReposData.performance
+    if ([string]$operationsBudget.readClass -ne [string]$operationsReposData.cacheSource) {
+        throw ("Read-budget class '{0}' does not match the served cacheSource '{1}' on /api/operations/repos" -f $operationsBudget.readClass, $operationsReposData.cacheSource)
+    }
+    if (-not $operationsBudget.declared) {
+        throw ("/api/operations/repos read class '{0}' has no declared budget; declare it in backend/api-host/PerformanceBudget.ps1" -f $operationsBudget.readClass)
+    }
+    if (-not $operationsBudget.withinBudget) {
+        throw ("/api/operations/repos read-path budget BREACHED: class={0} measuredMs={1} budgetMs={2} overByMs={3}" -f $operationsBudget.readClass, $operationsBudget.measuredMs, $operationsBudget.budgetMs, $operationsBudget.overByMs)
+    }
+    Write-Host ("  /api/operations/repos read-budget ok: class={0} measuredMs={1} budgetMs={2}" -f $operationsBudget.readClass, $operationsBudget.measuredMs, $operationsBudget.budgetMs) -ForegroundColor DarkGray
     if (@($portfolioData.entries).Count -ne @($operationsReposData.entries).Count) {
         throw '/api/operations/repos count did not align with /api/portfolio/assessment for the default workspace scope'
     }

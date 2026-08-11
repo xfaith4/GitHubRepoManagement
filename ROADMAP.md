@@ -1030,15 +1030,20 @@ merge-readiness question this release gates on.
 
 ### Release 3.2 — Portfolio Scale and Responsiveness
 
-**Status:** planned
+**Status:** planned — 1 of 4 milestones shipped 2026-08-11 (the read-path
+performance budget). The status token stays `planned` because `active` means
+_the single dispatch target_ and Release 2.7 still holds it (section 5); it
+does not mean no work has started.
 
 **Goal:** make an 80+ repo portfolio feel immediate. Reads serve from the
 persistent index; a cold full assessment becomes a visible background job
 instead of a synchronous request that can outlive its own deadline.
 
-**Prerequisites:** Lane 0.4's decision on whether the request deadline exempts
-long-running scan routes or the cold scan is bounded — this release implements
-whichever way that lands.
+**Prerequisites:** met. Lane 0.4 settled the deadline question 2026-08-09 — an
+extended 900-second tier rather than an exemption — so this release starts from
+a bounded scan budget it has to beat rather than from an open question. The
+performance milestone landed first deliberately: without a declared target,
+the remaining three milestones would have no way to prove they helped.
 
 #### Product outcomes
 
@@ -1057,9 +1062,44 @@ whichever way that lands.
       75-repo workspace)_
 - [ ] Bound per-repo git work with a timeout and a concurrency cap so one
       pathological repo cannot stall a sweep. _(state: planned)_
-- [ ] Declare and enforce a performance budget for the portfolio read path,
-      with the measured figure reported next to it. _(state: planned — no
-      target exists today, so regressions are invisible)_
+- [x] Declare and enforce a performance budget for the portfolio read path,
+      with the measured figure reported next to it. _(state: smoke-tested —
+      closed 2026-08-11)_ Before this, the only number bounding a portfolio
+      read was the Lane 0.4 request deadline, and that enforces by calling
+      `Environment.FailFast` — **a target whose only enforcement is destroying
+      the host is a crash guard, not a budget.** It cannot report that a 400ms
+      cache read became 4 seconds, which is the regression an operator feels
+      first. [`PerformanceBudget.ps1`](backend/api-host/PerformanceBudget.ps1)
+      declares a budget per read class and is pure, so the whole contract is
+      testable without starting the listener. **The budget keys off the same
+      `cacheSource` literal the routes already serve**, so there is no second
+      classifier to drift out of step with the first, and the api-host smoke
+      asserts `readClass === cacheSource` on both routes — this repo's
+      recurring "two figures, one truth" failure cannot recur here silently.
+      **An undeclared class fails closed** (`declared=false` forces
+      `withinBudget=false`): an unbudgeted read path is unmeasured, not fast,
+      and scoring it as passing is exactly how a new slow route stays
+      invisible — the same contract `Test-PackagingQuota` and
+      `Test-RoadmapWriteBackEvidence` apply. The cold-scan budget is **300s,
+      deliberately far below the 900s scan-tier deadline**, and a module-smoke
+      assertion derives that ceiling from `Get-RequestDeadlineSecondsForPath`
+      rather than copying the number: budgeting a scan at the crash guard would
+      mean the first thing to notice a regression is the guard killing the
+      host, which is the outage Lane 0.9 records three times. The measured
+      figure ships **in the response payload beside its budget**
+      (`data.performance`) and as a greppable `portfolio.read-budget` TRACE
+      line in the shape `Invoke-DailyEvidence.ps1` already parses.
+      **Evidence:** module smoke — `read-path budget ok: 4 class(es) declared,
+      undeclared fails closed, cold-scan budget 300000ms < deadline 900000ms,
+      2 route(s) evaluate it`. Two tripwires, both **adversarially proven**:
+      the drift detector derives the emitted classes from the host source (a
+      hand-maintained list is what drifted in Lane 0.9) and fired on
+      `cacheSource 'portfolio-index'` when its budget was deleted; the wiring
+      detector fired with `Route 'GET /api/operations/repos' … never evaluates
+      the read-path budget` when the call was renamed away. Api-host smoke
+      asserts the block round-trips on both routes, that the class judged is
+      the class served, and that a breach **fails the gate** rather than
+      logging quietly.
 - [ ] Virtualize the repo grid so row count stops driving render cost.
       _(state: planned — pairs with the `Dashboard.tsx` decomposition already
       open in Release 2.7 Phase D)_
