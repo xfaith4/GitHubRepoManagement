@@ -3953,3 +3953,73 @@ Operator-facing behavior is documented in
 
 ---
 
+
+### Release 3.2 — bounded per-repository git work (closed 2026-08-11)
+
+- [x] Bound per-repo git work with a timeout and a concurrency cap so one
+      pathological repo cannot stall a sweep. _(state: smoke-tested — closed
+      2026-08-11)_ The sweep ran seven sequential unbounded `git` calls per
+      repository (~525 process launches on the real 75-repo workspace). One
+      pathological repo — a stale `index.lock`, a disconnected share, a `git`
+      that never returns — stalled the whole sweep, and the only thing that ever
+      ended that wait was the Lane 0.4 request deadline calling
+      `Environment.FailFast`: the guard destroying the host it protects.
+      [`BoundedGit.ps1`](backend/modules/common/BoundedGit.ps1) is
+      dependency-free so it can be loaded into worker runspaces, and PS 5.1
+      compatible deliberately (no `ArgumentList`; output drained with
+      `ReadToEndAsync` **before** waiting, since reading after `WaitForExit`
+      deadlocks once a child fills the pipe buffer — which `git status --short`
+      on a very dirty repo does, turning hang prevention into a new hang).
+      **The per-call timeout alone was not enough, and that is the load-bearing
+      part.** Eight probes at 20s is a 160s worst case for one repository, past
+      the watchdog's 120s no-progress tolerance — and since progress may only be
+      published on real completions (never on a timer, per
+      `OperationHeartbeat.ps1`), one slow repo would have starved the heartbeat
+      and re-created the exact Lane 0.9 restart loop this was meant to protect
+      against. A **whole-repo budget** caps it at ~60s, and the module smoke
+      derives that comparison from the policy rather than asserting a copied
+      number. Workers are collected **as they finish, not in submission order**,
+      for the same reason: waiting on worker[0] would block every progress tick
+      behind the slowest repository.
+      **The milestone named the reconcile inventory; a source sweep found two
+      more portfolio-wide callers** that the named list could never have caught
+      — the differential head-SHA probe in `Adapters.ps1` and the doc-review
+      inventory — and a tripwire now fails on any direct `git` invocation in
+      those three files. Interactive single-repo paths (`Git.StatusDetail.ps1`,
+      `Roadmap.PrSubmitter.ps1`, bulk pull/fetch) are deliberately excluded:
+      bounding an operator-initiated `git pull` at 20s would break legitimate
+      long fetches, which is a different decision from this one.
+      **Evidence:** module smoke — `bounded git ok: timeout fires (7.1s vs 3s
+      bound), 20k-line output drains without deadlock, budget abandons 7
+      probe(s) by name, healthy repo unaffected, spaced paths quoted` and
+      `bounded-git sweep tripwire ok: 3 portfolio sweep file(s), no direct git
+      invocation, all route through the bounded module`. Both bounds are
+      **adversarially proven** against a shim that hangs, because `git` cannot
+      be made to hang on demand and an untested timeout is one that has never
+      fired. **Measured against the real workspace at the depth the host
+      actually uses (3): 57,660ms → 67,015ms — the guarantee costs ~16%** — with
+      output asserted identical (same order, same values, 76 repos x 5 fields),
+      discharging this release's recorded "must not reorder or drop
+      repositories" risk as an assertion rather than a hope. The cost is
+      accepted deliberately: this repo has had three P0 outages from exactly the
+      stall class this removes, and a healthy sweep still finishes far inside
+      the declared 300s cold-scan budget.
+      **Parallel collection was built, benchmarked, and deliberately NOT
+      shipped.** A runspace-pool collector was faster standalone (61.9s → 48.0s
+      at depth 2, output identical) but pathological inside the API host: the
+      walk completed all 75 candidates, then git collection advanced about two
+      repositories in five minutes — roughly 300x slower than the same code
+      outside the host — so the request hit the 900s scan deadline and
+      `Environment.FailFast` killed the process, while the completion-only
+      heartbeat went stale and would have had the watchdog restart a healthy
+      scan. That is the Lane 0.9 outage, re-created by the change meant to
+      prevent stalls. The root cause is **not established** — worker-runspace
+      module discovery was the first hypothesis and was measured and **ruled
+      out** (81ms vs 19ms) — so it is tracked as open Release 3.2 work rather
+      than shipped on a guess. The stall guarantee does not depend on it:
+      the per-call timeout and whole-repo budget hold at any concurrency.
+      **Known limitation, stated not hidden:** `Process.Kill()` on .NET
+      Framework does not kill a process tree, so the effective per-call ceiling
+      is timeout + ~4s when the child has spawned something holding the pipes.
+      That overshoot is why the budget, not the per-call timeout, is what
+      actually bounds a repository.

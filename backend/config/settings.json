@@ -9,6 +9,8 @@
     "gitHubTokenEnvVar": "GITHUB_TOKEN"
   },
   "inventory": {
+    "gitTimeoutSeconds": 20,
+    "gitMaxConcurrency": 4,
     "maxDepth": 3,
     "localRoots": [
       "F:\\Development\\20_Staging"

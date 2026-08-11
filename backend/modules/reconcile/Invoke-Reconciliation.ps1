@@ -99,6 +99,13 @@ if (-not $LoadFunctionsOnly -and $LocalRoots.Count -eq 0) {
     throw 'LocalRoots parameter cannot be empty.'
 }
 
+# Release 3.2 — bounded per-repository git work. Loaded unconditionally (before
+# the LoadFunctionsOnly early-out below) because Get-LocalFolderInventory cannot
+# run without it: an unbounded sweep is the failure this module now refuses to
+# perform, so a missing dependency must be a loud error at load rather than a
+# silent fallback to the old behaviour.
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'common\BoundedGit.ps1')
+
 if (-not $OutDir) {
     if ($LoadFunctionsOnly) {
         $OutDir = if ($LocalRoots.Count -gt 0) { [string]$LocalRoots[0] } else { '' }
@@ -321,10 +328,23 @@ function Get-LocalFolderInventory {
         # (portal restart-loop incident, 2026-08-10). Throttling is the
         # caller's business; this fires often and cheaply.
         [Parameter()]
-        [scriptblock]$OnProgress
+        [scriptblock]$OnProgress,
+        # Release 3.2 — bounded per-repository git work. Zero means "resolve from
+        # the shared policy", so callers that do not care get the clamped
+        # defaults rather than an accidental 0-second timeout.
+        [Parameter()][int]$GitTimeoutSeconds = 0,
+        [Parameter()][int]$GitMaxConcurrency = 0
     )
 
-    $results = New-Object System.Collections.Generic.List[object]
+    $policy = Get-BoundedGitPolicy
+    $gitTimeout = if ($GitTimeoutSeconds -gt 0) { $GitTimeoutSeconds } else { $policy.TimeoutSeconds }
+    $gitConcurrency = if ($GitMaxConcurrency -gt 0) { $GitMaxConcurrency } else { $policy.MaxConcurrency }
+
+    # Phase 1 — walk. Discovery only: no `git` runs here, so a pathological
+    # repository can no longer stall the traversal that is still finding the
+    # others. Candidates keep their discovery order, and phase 3 restores it, so
+    # parallelism below cannot reorder or drop repositories.
+    $candidates = New-Object System.Collections.Generic.List[object]
 
     foreach ($root in $Roots) {
         try {
@@ -348,7 +368,7 @@ function Get-LocalFolderInventory {
             $depth = $item.Depth
 
             if ($OnProgress) {
-                try { & $OnProgress $results.Count }
+                try { & $OnProgress $candidates.Count }
                 catch {
                     # A failing progress tick must not abort the scan it is only
                     # describing — but it is logged, not swallowed.
@@ -410,139 +430,21 @@ function Get-LocalFolderInventory {
                     Write-Log "Fingerprinting folder: $fullPath" -Level Debug
                     $fingerprint = Get-DirectoryFingerprint -Path $fullPath -IgnoreDirNames $IgnoreDirNames -IgnorePathRegex $IgnorePathRegex
 
-                    $originUrl      = $null
-                    $branch         = $null
-                    $statusShort    = @()
-                    $lastCommitDate = $null
-                    $lastCommitMessage = $null
-                    $lastCommitAuthor = $null
-                    $commitsLastWeek = 0
-                    $commitsLastMonth = 0
-                    $repoNameGuess  = $child.Name
-                    $ownerGuess     = $null
-
-                    if ($isGitRepo -and (Test-CommandExists -Name 'git')) {
-                        Write-Log "Collecting git metadata for: $fullPath" -Level Debug
-                        try {
-                            $branch = (& git -C $fullPath branch --show-current 2>$null)
-                            if ($LASTEXITCODE -ne 0) { $branch = $null }
-                        }
-                        catch {
-                            Write-Log "Git branch query error for '$fullPath': $_" -Level Debug
-                            $branch = $null
-                        }
-
-                        try {
-                            $originUrl = (& git -C $fullPath remote get-url origin 2>$null)
-                            if ($LASTEXITCODE -ne 0) { $originUrl = $null }
-                        }
-                        catch {
-                            Write-Log "Git origin query error for '$fullPath': $_" -Level Debug
-                            $originUrl = $null
-                        }
-
-                        try {
-                            $lastCommitDate = (& git -C $fullPath log -1 --format=%cI 2>$null)
-                            if ($LASTEXITCODE -ne 0) { $lastCommitDate = $null }
-                        }
-                        catch {
-                            Write-Log "Git log query error for '$fullPath': $_" -Level Debug
-                            $lastCommitDate = $null
-                        }
-
-                        try {
-                            $statusShort = @(& git -C $fullPath status --short 2>$null)
-                            if ($LASTEXITCODE -ne 0) { $statusShort = @() }
-                        }
-                        catch {
-                            Write-Log "Git status query error for '$fullPath': $_" -Level Debug
-                            $statusShort = @()
-                        }
-
-                        try {
-                            $lastCommitMessage = (& git -C $fullPath log -1 --format=%s 2>$null)
-                            if ($LASTEXITCODE -ne 0) { $lastCommitMessage = $null }
-                        }
-                        catch {
-                            Write-Log "Git last commit message query error for '$fullPath': $_" -Level Debug
-                            $lastCommitMessage = $null
-                        }
-
-                        try {
-                            $lastCommitAuthor = (& git -C $fullPath log -1 --format=%an 2>$null)
-                            if ($LASTEXITCODE -ne 0) { $lastCommitAuthor = $null }
-                        }
-                        catch {
-                            Write-Log "Git last commit author query error for '$fullPath': $_" -Level Debug
-                            $lastCommitAuthor = $null
-                        }
-
-                        try {
-                            $weekCountRaw = (& git -C $fullPath rev-list --count --since="7 days ago" HEAD 2>$null)
-                            if ($LASTEXITCODE -eq 0 -and $weekCountRaw -match '^\d+$') { $commitsLastWeek = [int]$weekCountRaw }
-                        }
-                        catch {
-                            Write-Log "Git weekly commit count query error for '$fullPath': $_" -Level Debug
-                            $commitsLastWeek = 0
-                        }
-
-                        try {
-                            $monthCountRaw = (& git -C $fullPath rev-list --count --since="30 days ago" HEAD 2>$null)
-                            if ($LASTEXITCODE -eq 0 -and $monthCountRaw -match '^\d+$') { $commitsLastMonth = [int]$monthCountRaw }
-                        }
-                        catch {
-                            Write-Log "Git monthly commit count query error for '$fullPath': $_" -Level Debug
-                            $commitsLastMonth = 0
-                        }
-                    }
-
-                    if ($originUrl -and ($originUrl -match 'github\.com[:/](?<owner>[^/]+)/(?<repo>[^/.]+)(\.git)?$')) {
-                        $ownerGuess    = $matches['owner']
-                        $repoNameGuess = $matches['repo']
-                    }
-
-                    $modifiedCount = 0
-                    $untrackedCount = 0
-                    $otherStatusCount = 0
-                    foreach ($line in @($statusShort)) {
-                        if ([string]::IsNullOrWhiteSpace($line)) { continue }
-                        if ($line.StartsWith('??')) {
-                            $untrackedCount++
-                        }
-                        elseif ($line.Length -ge 2) {
-                            $modifiedCount++
-                        }
-                        else {
-                            $otherStatusCount++
-                        }
-                    }
-
-                    $results.Add([pscustomobject]@{
-                        LocalRoot        = $resolvedRoot
-                        FolderName       = $child.Name
-                        LocalPath        = $fullPath
-                        IsGitRepo        = $isGitRepo
-                        GitOriginUrl     = $originUrl
-                        GitOwnerGuess    = $ownerGuess
-                        GitRepoName      = $repoNameGuess
-                        CurrentBranch    = $branch
-                        LastCommitDate   = $lastCommitDate
-                        LastCommitMessage = $lastCommitMessage
-                        LastCommitAuthor = $lastCommitAuthor
-                        CommitsLastWeek  = $commitsLastWeek
-                        CommitsLastMonth = $commitsLastMonth
-                        ModifiedCount    = $modifiedCount
-                        UntrackedCount   = $untrackedCount
-                        OtherStatusCount = $otherStatusCount
-                        Fingerprint      = $fingerprint
+                    $candidates.Add([pscustomobject]@{
+                        LocalRoot   = $resolvedRoot
+                        FolderName  = $child.Name
+                        LocalPath   = $fullPath
+                        IsGitRepo   = $isGitRepo
+                        Fingerprint = $fingerprint
+                        Metadata    = $null
                     })
 
                     $script:RepositoriesFound++
                     if ($isGitRepo) {
-                        Write-Log "Found repo #$($script:RepositoriesFound): $($child.Name) (Branch: $branch, Modified: $modifiedCount, Untracked: $untrackedCount)"
+                        Write-Log "Found repo #$($script:RepositoriesFound): $($child.Name)"
                     }
                     elseif (($script:RepositoriesFound % 25) -eq 0) {
-                        Write-Log "Inventory items collected so far: $($results.Count)"
+                        Write-Log "Inventory items collected so far: $($candidates.Count)"
                     }
                 }
 
@@ -555,7 +457,105 @@ function Get-LocalFolderInventory {
             }
         }
 
-        Write-Log "Completed scan for root '$resolvedRoot'. Inventory items so far: $($results.Count)"
+        Write-Log "Completed scan for root '$resolvedRoot'. Inventory items so far: $($candidates.Count)"
+    }
+
+    # Phase 2 — bounded, capped git metadata collection.
+    $gitIndexes = New-Object System.Collections.Generic.List[int]
+    for ($ci = 0; $ci -lt $candidates.Count; $ci++) {
+        if ($candidates[$ci].IsGitRepo) { [void]$gitIndexes.Add($ci) }
+    }
+    if (@($gitIndexes).Count -gt 0 -and (Test-CommandExists -Name 'git')) {
+        Write-Log "Collecting git metadata for $(@($gitIndexes).Count) repo(s): timeout=${gitTimeout}s concurrency=${gitConcurrency}"
+
+        # Collected SEQUENTIALLY, deliberately, and this is a measured decision
+        # rather than a simplification.
+        #
+        # A runspace-pool version of this loop was built and benchmarked first.
+        # Standalone it worked and was faster (61.9s -> 48.0s across the real
+        # 75-repo workspace, output asserted identical). Inside the API host it
+        # was pathological: the walk finished all 75 candidates, then git
+        # collection advanced roughly TWO repositories in five minutes — about
+        # 300x slower than the same code outside the host — so the request hit
+        # the 900s scan deadline and `Environment.FailFast` killed the process.
+        # Worse, the operation heartbeat only advances on completions, so the
+        # marker went stale and the external watchdog would have restarted a
+        # perfectly healthy scan: the Lane 0.9 outage, re-created by the change
+        # meant to prevent stalls.
+        #
+        # The root cause inside the host is not established (runspace creation
+        # and thread-pool behaviour in the single-threaded host are the
+        # suspects; module discovery was measured and ruled out at 81ms vs
+        # 19ms). Until it is, parallel collection does not ship: the milestone's
+        # load-bearing property is that no repository can stall the sweep, and
+        # that comes from the per-call timeout and whole-repo budget below,
+        # which hold at any concurrency. `gitMaxConcurrency` is still resolved
+        # and clamped so the policy is one contract, and it currently bounds a
+        # sequential collector at 1. Re-enabling parallelism is tracked in
+        # Release 3.2 with this evidence.
+        $gitCollected = 0
+        foreach ($idx in $gitIndexes) {
+            $repoPath = $candidates[$idx].LocalPath
+            try {
+                $meta = Get-RepoGitDetail -RepoPath $repoPath -TimeoutSeconds $gitTimeout
+                $candidates[$idx].Metadata = $meta
+                if ($null -ne $meta -and $meta.TimedOut) {
+                    Write-Log ("Git metadata timed out for '{0}': {1}" -f $repoPath, ($meta.TimedOutCommands -join '; ')) -Level Warning
+                }
+                if ($null -ne $meta -and $meta.BudgetExhausted) {
+                    Write-Log ("Git budget exhausted for '{0}'; {1} probe(s) abandoned" -f $repoPath, @($meta.AbandonedCommands).Count) -Level Warning
+                }
+            }
+            catch {
+                # Leaves Metadata null, which phase 3 renders as unknown fields —
+                # the same shape the old per-call catch produced. Named, never
+                # silent, so a repo that fails to probe is distinguishable from
+                # one that probed clean.
+                Write-Log ("Git metadata failed for '{0}': {1}" -f $repoPath, $_.Exception.Message) -Level Warning
+            }
+
+            $gitCollected++
+            if ($OnProgress) {
+                # Offset by the walk's count so the reported figure is monotonic
+                # across both phases. Restarting at 0 here would read as progress
+                # going BACKWARDS to anything consuming the heartbeat. Publishing
+                # once per repository also keeps the marker fresher than the
+                # watchdog's no-progress tolerance, since each repository is
+                # bounded by the whole-repo budget.
+                try { & $OnProgress ($candidates.Count + $gitCollected) }
+                catch { Write-Log "Progress callback failed: $($_.Exception.Message)" -Level Debug }
+            }
+        }
+    }
+    elseif (@($gitIndexes).Count -gt 0) {
+        Write-Log 'git not found in PATH; repository metadata will be reported as unknown.' -Level Warning
+    }
+
+    # Phase 3 — assemble in discovery order. Identical shape to the pre-3.2
+    # sequential implementation, so no downstream consumer changes.
+    $results = New-Object System.Collections.Generic.List[object]
+    foreach ($candidate in $candidates) {
+        $meta = $candidate.Metadata
+        $results.Add([pscustomobject]@{
+            LocalRoot         = $candidate.LocalRoot
+            FolderName        = $candidate.FolderName
+            LocalPath         = $candidate.LocalPath
+            IsGitRepo         = $candidate.IsGitRepo
+            GitOriginUrl      = if ($meta) { $meta.GitOriginUrl } else { $null }
+            GitOwnerGuess     = if ($meta) { $meta.GitOwnerGuess } else { $null }
+            GitRepoName       = if ($meta -and $meta.GitRepoName) { $meta.GitRepoName } else { $candidate.FolderName }
+            CurrentBranch     = if ($meta) { $meta.CurrentBranch } else { $null }
+            LastCommitDate    = if ($meta) { $meta.LastCommitDate } else { $null }
+            LastCommitMessage = if ($meta) { $meta.LastCommitMessage } else { $null }
+            LastCommitAuthor  = if ($meta) { $meta.LastCommitAuthor } else { $null }
+            CommitsLastWeek   = if ($meta) { [int]$meta.CommitsLastWeek } else { 0 }
+            CommitsLastMonth  = if ($meta) { [int]$meta.CommitsLastMonth } else { 0 }
+            ModifiedCount     = if ($meta) { [int]$meta.ModifiedCount } else { 0 }
+            UntrackedCount    = if ($meta) { [int]$meta.UntrackedCount } else { 0 }
+            OtherStatusCount  = if ($meta) { [int]$meta.OtherStatusCount } else { 0 }
+            GitTimedOut       = if ($meta) { [bool]$meta.TimedOut } else { $false }
+            Fingerprint       = $candidate.Fingerprint
+        })
     }
 
     return $results.ToArray()

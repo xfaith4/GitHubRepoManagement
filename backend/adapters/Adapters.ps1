@@ -4,6 +4,12 @@
 #         Reconcile.Adapter.ps1, DocReview.Adapter.ps1
 # =============================================================================
 
+# Release 3.2 — bounded per-repository git work. Loaded at file scope, not
+# inside a function: Get-LocalRepoHeadCommitSha is defined above the
+# function-scoped dot-sources in Get-StatusAdapterResult, so a load down there
+# would not be visible to it and the sweep would fail at call time.
+. (Join-Path $PSScriptRoot '..\modules\common\BoundedGit.ps1')
+
 # ---------------------------------------------------------------------------
 # Shared response envelope (was Adapter.Common.ps1)
 # ---------------------------------------------------------------------------
@@ -81,10 +87,14 @@ function Get-LocalRepoHeadCommitSha {
     if ([string]::IsNullOrWhiteSpace($RepoPath)) { return '' }
     if (-not (Test-Path -LiteralPath $RepoPath -PathType Container -ErrorAction SilentlyContinue)) { return '' }
 
+    # Release 3.2 — bounded. This runs once per repository during a differential
+    # scan, so it is sweep work: an unbounded rev-parse on one pathological repo
+    # stalls the whole differential pass exactly as the inventory sweep did.
     try {
-        $sha = & git -C $RepoPath rev-parse HEAD 2>$null
-        if ($LASTEXITCODE -ne 0) { return '' }
-        $text = [string]$sha
+        $probe = Invoke-BoundedGit -RepoPath $RepoPath -Arguments @('rev-parse', 'HEAD') `
+            -TimeoutSeconds (Get-BoundedGitPolicy).TimeoutSeconds
+        if (-not $probe.Ok) { return '' }
+        $text = [string]$probe.Stdout
         if ([string]::IsNullOrWhiteSpace($text)) { return '' }
         return $text.Trim()
     } catch {

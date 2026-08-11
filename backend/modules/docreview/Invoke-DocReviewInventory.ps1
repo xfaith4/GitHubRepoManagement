@@ -18,6 +18,10 @@ param(
 Set-StrictMode -Version Latest
 
 $ErrorActionPreference = 'Stop'
+
+# Release 3.2 — bounded per-repository git work. The doc-review inventory is a
+# portfolio sweep, so one repo that never returns holds up every repo behind it.
+. (Join-Path $PSScriptRoot '..\common\BoundedGit.ps1')
 ### BEGIN: Debug Helpers
 function Write-Step {
     param(
@@ -104,24 +108,29 @@ function Get-GitFreshness {
         UncommittedChanges = 0
     }
 
+    # Release 3.2 — bounded. The doc-review inventory is a portfolio sweep, so
+    # each of these three calls carries the same stall risk the reconcile sweep
+    # had: one repo that never returns holds up every repo behind it.
+    $gitTimeout = (Get-BoundedGitPolicy).TimeoutSeconds
+
     try {
-        $raw = & git -C $RepoPath log -1 --format='%ci' 2>$null
-        if ($LASTEXITCODE -eq 0 -and $raw) {
-            $result.LastCommitDate = $raw.Trim()
+        $probe = Invoke-BoundedGit -RepoPath $RepoPath -Arguments @('log', '-1', '--format=%ci') -TimeoutSeconds $gitTimeout
+        if ($probe.Ok -and -not [string]::IsNullOrWhiteSpace($probe.Stdout)) {
+            $result.LastCommitDate = ([string]$probe.Stdout).Trim()
         }
     } catch { }
 
     try {
-        $branch = & git -C $RepoPath branch --show-current 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            $result.CurrentBranch = $branch.Trim()
+        $probe = Invoke-BoundedGit -RepoPath $RepoPath -Arguments @('branch', '--show-current') -TimeoutSeconds $gitTimeout
+        if ($probe.Ok) {
+            $result.CurrentBranch = ([string]$probe.Stdout).Trim()
         }
     } catch { }
 
     try {
-        $statusLines = @(& git -C $RepoPath status --porcelain 2>$null)
-        if ($LASTEXITCODE -eq 0) {
-            $result.UncommittedChanges = $statusLines.Count
+        $probe = Invoke-BoundedGit -RepoPath $RepoPath -Arguments @('status', '--porcelain') -TimeoutSeconds $gitTimeout
+        if ($probe.Ok) {
+            $result.UncommittedChanges = @(([string]$probe.Stdout) -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
         }
     } catch { }
 

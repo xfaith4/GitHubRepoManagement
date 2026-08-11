@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-11 — Release 3.2: one bad repository can no longer stall the whole sweep
+
+### Changes
+
+- **The portfolio sweep ran seven sequential unbounded `git` calls per repository** — roughly 525 process launches across the real 75-repo workspace, one after another. A single pathological repo (stale `index.lock`, disconnected share, a `git` that never returns) stalled the entire sweep, and the only thing that ever ended that wait was the Lane 0.4 request deadline calling `Environment.FailFast`: the guard destroying the host it exists to protect.
+- [`BoundedGit.ps1`](backend/modules/common/BoundedGit.ps1) bounds every probe. Dependency-free so it can be loaded into worker runspaces, and PS 5.1 compatible on purpose: no `ArgumentList`, and output drained with `ReadToEndAsync` **before** waiting for exit — reading after `WaitForExit` deadlocks the moment a child fills the pipe buffer, which `git status --short` on a very dirty repo does, turning hang prevention into a new hang.
+- **The per-call timeout alone was not enough, and this is the load-bearing part.** Eight probes at 20s is a 160s worst case for one repository — past the watchdog's 120s no-progress tolerance. Progress may only be published on real completions (never on a timer, per `OperationHeartbeat.ps1`), so one slow repo would have starved the heartbeat and re-created the exact Lane 0.9 restart loop. A **whole-repo budget** caps it at ~60s; workers are collected **as they finish, not in submission order**, for the same reason.
+- **The milestone named the reconcile inventory; a source sweep found two more portfolio-wide callers** the named list could never have caught — the differential head-SHA probe in `Adapters.ps1` and the doc-review inventory. A tripwire now fails on any direct `git` invocation in those three files. Interactive single-repo paths are deliberately excluded: bounding an operator's `git pull` at 20s would break legitimate long fetches, which is a different decision.
+
+### Verification
+
+- Module smoke: `bounded git ok: timeout fires (7.1s vs 3s bound), 20k-line output drains without deadlock, budget abandons 7 probe(s) by name, healthy repo unaffected, spaced paths quoted`; `bounded-git sweep tripwire ok: 3 portfolio sweep file(s)`.
+- **Both bounds adversarially proven against a shim that hangs** — `git` cannot be made to hang on demand, so `Invoke-BoundedGit`/`Get-RepoGitDetail` take an `-Executable` override purely so the timeout path is testable. An untested timeout is one that has never fired.
+- **Measured on the real workspace at the depth the host uses (3): 57,660ms → 67,015ms — the guarantee costs ~16%** — with output asserted identical (same order, same values, 76 repos x 5 fields), discharging the release's recorded "must not reorder or drop repositories" risk as an assertion rather than a hope. The cost is accepted deliberately: three P0 outages here came from exactly the stall class this removes, and a healthy sweep still finishes far inside the declared 300s cold-scan budget.
+- **Parallel collection was built, benchmarked, and deliberately not shipped.** A runspace-pool collector was faster standalone (61.9s → 48.0s) but pathological inside the API host — collection advanced ~2 repositories in five minutes, ~300x slower than the same code outside it, so the request hit the 900s deadline and `Environment.FailFast` killed the process while the stale heartbeat would have had the watchdog restart a healthy scan. **The root cause is not established** (worker-runspace module discovery was the first hypothesis and was measured and *ruled out*, 81ms vs 19ms), so it is tracked as open Release 3.2 work rather than shipped on a guess. The stall guarantee holds at any concurrency and does not depend on it.
+- **Known limitation, stated not hidden:** `Process.Kill()` does not kill a process tree, so the effective per-call ceiling is timeout + ~4s. That overshoot is precisely why the budget, not the per-call timeout, is what bounds a repository.
+
 ## 2026-08-11 — Roadmap: the active file carries open work only again, and Release 2.7 closes
 
 ### Changes

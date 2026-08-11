@@ -3648,4 +3648,124 @@ if ($budgetLogLine -notmatch 'portfolio\.read-budget correlationId=\S+ route=\S+
 }
 Write-Host ("  read-path budget ok: {0} class(es) declared, undeclared fails closed, cold-scan budget {1}ms < deadline {2}ms, {3} route(s) evaluate it" -f @($declaredClasses).Count, $coldScanBudget, $scanDeadlineMs, 2) -ForegroundColor DarkGray
 
+Write-Step 'Bounded per-repository git work (Release 3.2)'
+# The sweep ran seven sequential unbounded `git` calls per repository — ~525
+# process launches across the real 75-repo workspace. One pathological repo (a
+# stale index.lock, a disconnected share, a git that never returns) stalled the
+# whole sweep, and the only thing that ever ended that wait was the Lane 0.4
+# request deadline calling Environment.FailFast — the guard destroying the host
+# it protects.
+. (Join-Path $WorkspaceRoot 'backend\modules\common\BoundedGit.ps1')
+
+$gitPolicyDefault = Get-BoundedGitPolicy -ProcessorCount 8
+if ($gitPolicyDefault.TimeoutSeconds -le 0) { throw 'Bounded-git timeout must be positive' }
+if ($gitPolicyDefault.MaxConcurrency -le 0) { throw 'Bounded-git concurrency must be positive' }
+
+# Clamps, not rejections: a typo must degrade to a usable bound rather than
+# disabling the protection (a 0-second timeout would report every repo as
+# pathological; an unbounded concurrency would starve the host's request loop).
+if ((Get-BoundedGitPolicy -ProcessorCount 8 -Settings @{ inventory = @{ gitTimeoutSeconds = 0 } }).TimeoutSeconds -lt 2) { throw 'A zero git timeout must clamp up to the floor' }
+if ((Get-BoundedGitPolicy -ProcessorCount 8 -Settings @{ inventory = @{ gitTimeoutSeconds = 99999 } }).TimeoutSeconds -gt 120) { throw 'An oversized git timeout must clamp to the ceiling' }
+if ((Get-BoundedGitPolicy -ProcessorCount 8 -Settings @{ inventory = @{ gitMaxConcurrency = 0 } }).MaxConcurrency -lt 1) { throw 'A zero concurrency cap must clamp up to 1' }
+if ((Get-BoundedGitPolicy -ProcessorCount 8 -Settings @{ inventory = @{ gitMaxConcurrency = 9999 } }).MaxConcurrency -gt 16) { throw 'An oversized concurrency cap must clamp to the ceiling' }
+if ((Get-BoundedGitPolicy -ProcessorCount 8 -Settings @{ inventory = @{ gitTimeoutSeconds = 'soon' } }).TimeoutSeconds -ne $gitPolicyDefault.TimeoutSeconds) { throw 'An unparseable timeout must fall back to the default' }
+
+# The whole-repo budget must stay inside the watchdog's no-progress tolerance.
+# Progress may only be published on real completions (never on a timer, per
+# OperationHeartbeat.ps1), so if one repository can occupy the sweep for longer
+# than the tolerance, the watchdog restarts a HEALTHY scan — the Lane 0.9
+# outage, re-introduced by the very fix meant to prevent stalls.
+$gitWorstCaseSeconds = ($gitPolicyDefault.TimeoutSeconds * 2) + $gitPolicyDefault.TimeoutSeconds
+if ($gitWorstCaseSeconds -ge 120) {
+    throw ("Worst-case per-repo git time ({0}s) must stay below the watchdog's 120s no-progress tolerance, or one slow repo starves the heartbeat." -f $gitWorstCaseSeconds)
+}
+
+$gitShimDir = Join-Path $WorkspaceRoot 'output\smoke\module\bounded-git'
+if (Test-Path -LiteralPath $gitShimDir) { Remove-Item -LiteralPath $gitShimDir -Recurse -Force }
+$null = New-Item -ItemType Directory -Path $gitShimDir -Force
+try {
+    # `git` cannot be made to hang on demand, so the timeout path would be
+    # untestable without substituting an executable that can. An untested
+    # timeout is one that has never fired.
+    $hangShim = Join-Path $gitShimDir 'hang.cmd'
+    Set-Content -LiteralPath $hangShim -Value "@echo off`r`nping -n 60 127.0.0.1 >nul`r`n" -Encoding Ascii
+
+    $hangSw = [System.Diagnostics.Stopwatch]::StartNew()
+    $hangResult = Invoke-BoundedGit -RepoPath $gitShimDir -NoRepoPathArgument -Executable $hangShim -Arguments @('status') -TimeoutSeconds 3
+    $hangSw.Stop()
+    if (-not $hangResult.TimedOut) { throw 'A hanging git call must be reported as TimedOut' }
+    if ($hangResult.Ok) { throw 'A timed-out git call must never report Ok' }
+    if ($hangSw.Elapsed.TotalSeconds -gt 10) { throw ("Timeout fired but took {0:N1}s against a 3s bound" -f $hangSw.Elapsed.TotalSeconds) }
+
+    # Large output must not deadlock. Reading after WaitForExit blocks forever
+    # once the child fills the ~4KB pipe buffer, which `git status --short` on a
+    # very dirty repository does — turning hang prevention into a new hang.
+    $bigResult = Invoke-BoundedGit -RepoPath $gitShimDir -NoRepoPathArgument -Executable 'powershell' `
+        -Arguments @('-NoProfile', '-Command', '1..20000 | ForEach-Object { "line $_ padding-padding" }') -TimeoutSeconds 60
+    if (-not $bigResult.Ok) { throw 'Large-output probe failed; the drain path is broken' }
+    $bigLines = @(([string]$bigResult.Stdout) -split "`r?`n" | Where-Object { $_ -match '^line \d+' }).Count
+    if ($bigLines -lt 20000) { throw "Large-output probe truncated: got $bigLines of 20000 lines" }
+
+    # Budget exhaustion: every probe hangs, so a per-call bound alone would cost
+    # 8 x timeout. The whole-repo budget must stop the loop early and NAME what
+    # it abandoned — a probe that never ran must not be indistinguishable from
+    # one that ran and found nothing.
+    $budgetSw = [System.Diagnostics.Stopwatch]::StartNew()
+    $budgetMeta = Get-RepoGitDetail -RepoPath $gitShimDir -TimeoutSeconds 3 -TotalBudgetSeconds 5 -Executable $hangShim
+    $budgetSw.Stop()
+    if (-not $budgetMeta.BudgetExhausted) { throw 'A repo whose every probe hangs must exhaust its budget' }
+    if (@($budgetMeta.AbandonedCommands).Count -eq 0) { throw 'Budget exhaustion must name the abandoned probes, not skip them silently' }
+    if ($budgetSw.Elapsed.TotalSeconds -gt 15) { throw ("Budget engaged but the silent window was {0:N1}s" -f $budgetSw.Elapsed.TotalSeconds) }
+    if (-not $budgetMeta.TimedOut) { throw 'A repo with hanging probes must report TimedOut' }
+
+    # A healthy repository is untouched by all of the above.
+    $healthyMeta = Get-RepoGitDetail -RepoPath $WorkspaceRoot -TimeoutSeconds 20
+    if ($healthyMeta.BudgetExhausted) { throw 'A healthy repository must not exhaust its git budget' }
+    if ($healthyMeta.TimedOut) { throw 'A healthy repository must not report a git timeout' }
+    if ([string]::IsNullOrWhiteSpace($healthyMeta.CurrentBranch)) { throw 'A healthy repository must still report its branch' }
+
+    # Argument quoting: a repo path with spaces must survive PS 5.1's
+    # ProcessStartInfo, which has no ArgumentList to do it for us.
+    $quoted = ConvertTo-GitArgumentString -Arguments @('-C', 'C:\Program Files\repo', 'status', '--short')
+    if ($quoted -notmatch '"C:\\Program Files\\repo"') { throw "A path with spaces must be quoted; got: $quoted" }
+    if ($quoted -match '"status"') { throw "Arguments without spaces must not be quoted; got: $quoted" }
+    Write-Host ("  bounded git ok: timeout fires ({0:N1}s vs 3s bound), 20k-line output drains without deadlock, budget abandons {1} probe(s) by name, healthy repo unaffected, spaced paths quoted" -f $hangSw.Elapsed.TotalSeconds, @($budgetMeta.AbandonedCommands).Count) -ForegroundColor DarkGray
+}
+finally {
+    Remove-Item -LiteralPath $gitShimDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# Tripwire — the SWEEP paths must contain no direct `git` invocation. This is
+# the pattern, not the instance: the milestone named the reconcile inventory,
+# and a source sweep found two more portfolio-wide callers (the differential
+# head-SHA probe in Adapters.ps1 and the doc-review inventory) that the named
+# list could never have caught. Interactive single-repo paths are deliberately
+# excluded — bounding an operator-initiated `git pull` at 20s would break
+# legitimate long fetches, which is a different decision from this one.
+$sweepGitFiles = @(
+    'backend\modules\reconcile\Invoke-Reconciliation.ps1'
+    'backend\adapters\Adapters.ps1'
+    'backend\modules\docreview\Invoke-DocReviewInventory.ps1'
+)
+$sweepGitChecked = 0
+foreach ($sweepFile in $sweepGitFiles) {
+    $sweepPath = Join-Path $WorkspaceRoot $sweepFile
+    if (-not (Test-Path -LiteralPath $sweepPath)) { throw "Sweep file not found for the bounded-git tripwire: $sweepFile" }
+    $sweepGitChecked++
+    $sweepLines = @(Get-Content -LiteralPath $sweepPath -Encoding UTF8)
+    for ($sl = 0; $sl -lt $sweepLines.Count; $sl++) {
+        $line = $sweepLines[$sl]
+        # Strip comments before matching, per the Lane 0.5 precedent.
+        $code = ($line -replace '#.*$', '')
+        if ($code -match '&\s*git\s') {
+            throw ("Unbounded git invocation in a portfolio sweep: {0}:{1} -> {2}. Route it through Invoke-BoundedGit, or one pathological repository stalls the sweep until the request deadline kills the host." -f $sweepFile, ($sl + 1), $line.Trim())
+        }
+    }
+    if ((Get-Content -LiteralPath $sweepPath -Raw -Encoding UTF8) -notmatch 'BoundedGit\.ps1|Invoke-BoundedGit|Get-BoundedGitPolicy') {
+        throw ("Sweep file '{0}' neither loads nor uses the bounded-git module; its git work would be unbounded." -f $sweepFile)
+    }
+}
+if ($sweepGitChecked -lt 3) { throw 'Bounded-git sweep tripwire covered fewer files than expected; it is vacuous.' }
+Write-Host ("  bounded-git sweep tripwire ok: {0} portfolio sweep file(s), no direct git invocation, all route through the bounded module" -f $sweepGitChecked) -ForegroundColor DarkGray
+
 Write-Step 'Smoke test completed'

@@ -472,11 +472,22 @@ to beat are now stated and enforced — warm reads at 2-3s, a cold scan at 300s
       and a cancel. _(state: planned — a cold scan currently exceeds both the
       smoke's client timeout and the 180s request deadline on the real
       75-repo workspace)_
-- [ ] Bound per-repo git work with a timeout and a concurrency cap so one
-      pathological repo cannot stall a sweep. _(state: planned — seven
-      sequential unbounded `git` calls per repo, ~525 process launches on the
-      real 75-repo workspace; one hung call stalls the sweep until the
-      deadline guard kills the host)_
+**Bounded per-repo git work shipped 2026-08-11 and is archived** — a per-call
+timeout plus a whole-repo budget, so no single repository can stall a sweep. It
+costs ~16% on a healthy portfolio (57,660ms → 67,015ms, output identical),
+accepted deliberately since three P0 outages here came from that stall class.
+[Detail](docs/history/completed-releases.md#closed-2026-08-11-archived-from-roadmapmd).
+
+- [ ] **Re-enable parallel git collection in the sweep.** _(state: built and
+      benchmarked, then deliberately withheld 2026-08-11)_ A runspace-pool
+      collector was faster standalone (61.9s → 48.0s, output identical) but
+      **pathological inside the API host**: ~2 repositories in five minutes
+      (~300x slower), so the request hit the 900s deadline and `FailFast` killed
+      the process while the stale heartbeat would have restarted a healthy scan.
+      **Root cause not established** — worker-runspace module discovery was
+      measured and ruled out (81ms vs 19ms). Do not re-enable without an in-host
+      reproduction; the stall guarantee does not depend on it.
+
 - [ ] Virtualize the repo grid so row count stops driving render cost.
       _(state: planned)_ Pairs with the `Dashboard.tsx` non-blocker below —
       both are render cost on the same screen.
