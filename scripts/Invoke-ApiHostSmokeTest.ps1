@@ -1359,6 +1359,105 @@ try {
     if ([int]$agentRunRefreshMissing.StatusCode -ne 404) { throw "/api/agent-runs/{runId}/refresh for unknown runId expected HTTP 404, got $($agentRunRefreshMissing.StatusCode)" }
     Write-Host ("  /api/agent-runs/does-not-exist/refresh -> HTTP {0}" -f $agentRunRefreshMissing.StatusCode) -ForegroundColor DarkGray
 
+    # The two assertions this suite already made about /api/roadmap/dispatch/execute
+    # were both REFUSALS (quota 409, in-process 409), and both return before the
+    # route reaches the code that actually enqueues. So the path the guided-
+    # improvement wizard uses — the successful one — had no gate at all, and had
+    # been broken since Release 3.0: the route dot-sourced a parameterised script
+    # mid-request, which blanked the $runId it had just minted, and the wizard
+    # died at its final step on "Cannot bind argument to parameter 'RunId'".
+    # A contract proven only by its refusals is not proven.
+    Write-Host '[STEP] Dispatch success path — the route the wizard uses must actually enqueue' -ForegroundColor Cyan
+    $okSettingsPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
+    $okSettingsBackup = if (Test-Path -LiteralPath $okSettingsPath) { Get-Content -LiteralPath $okSettingsPath -Raw -Encoding UTF8 } else { $null }
+    $okRepoRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("dispatch-success-smoke-" + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    $okRepoPath = Join-Path $okRepoRoot 'dispatch-success-smoke'
+    $okRunId = ''
+    try {
+        $null = New-Item -ItemType Directory -Path $okRepoPath -Force
+        & git init "$okRepoPath" *>&1 | Out-Null
+        Set-Content -LiteralPath (Join-Path $okRepoPath 'ROADMAP.md') -Encoding UTF8 `
+            -Value "# Smoke`n`n## Release 1`n`n- [ ] A pending item the dispatch route can plan against`n"
+
+        # Quota is forced generous so this step proves the ENQUEUE, not the guard —
+        # the refusal case is asserted separately below.
+        $okSettingsObject = if ($null -ne $okSettingsBackup -and -not [string]::IsNullOrWhiteSpace($okSettingsBackup)) {
+            $okSettingsBackup | ConvertFrom-Json -Depth 20
+        } else { [pscustomobject]@{} }
+        $okSettingsObject | Add-Member -NotePropertyName budgetLedger -NotePropertyValue ([pscustomobject]@{}) -Force
+        $okSettingsObject.budgetLedger = [pscustomobject]@{
+            period         = (Get-Date).ToUniversalTime().ToString('yyyy-MM')
+            quotaGuard     = [pscustomobject]@{
+                softStopRemainingUnits = 0
+                hardStopRemainingUnits = 0
+                maxUnitsPerPhase       = 10000
+                maxUnitsPerSession     = 10000
+            }
+            defaultProject = [pscustomobject]@{
+                monthlyQuotaBudgetUnits = 100000
+                monthlyBudgetUsd        = 1000
+                priority                = 1
+            }
+        }
+        Set-Content -LiteralPath $okSettingsPath -Value ($okSettingsObject | ConvertTo-Json -Depth 20) -Encoding UTF8
+
+        $okQueuePath = Join-Path $WorkspaceRoot 'output\roadmap-task-queue.jsonl'
+        $okQueueBefore = if (Test-Path -LiteralPath $okQueuePath) { @(Get-Content -LiteralPath $okQueuePath -Encoding UTF8 | Where-Object { $_ -and $_.Trim() }).Count } else { 0 }
+
+        $okResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/dispatch/execute" -Body @{
+            repoName   = 'dispatch-success-smoke'
+            localPath  = $okRepoPath
+            prompt     = 'Smoke-test the successful enqueue path of the dispatch route.'
+            baseBranch = 'smoke-base'
+        }
+        Assert-Not503 -Name '/api/roadmap/dispatch/execute (success)' -Response $okResponse
+        if ([int]$okResponse.StatusCode -ne 200) {
+            throw "/api/roadmap/dispatch/execute success path expected HTTP 200, got $($okResponse.StatusCode). Body=$($okResponse.Content)"
+        }
+        $okJson = $okResponse.Json
+        if ($okJson.success -ne $true) { throw "/api/roadmap/dispatch/execute success path returned success=false. Body=$($okResponse.Content)" }
+        $okRunId = [string]$okJson.data.runId
+        if ([string]::IsNullOrWhiteSpace($okRunId)) {
+            throw '/api/roadmap/dispatch/execute returned an empty runId; the caller has nothing to track the queued task by.'
+        }
+        if ([string]$okJson.data.status -ne 'queued') { throw "Expected status='queued', got '$($okJson.data.status)'" }
+        if ([string]$okJson.data.branch -ne "roadmap/$okRunId") {
+            throw ("Expected branch 'roadmap/{0}', got '{1}'" -f $okRunId, $okJson.data.branch)
+        }
+
+        # The queue line is the artifact the runner claims on. Its runId must be
+        # the one the caller was told, and its baseBranch must be the one the
+        # caller asked for — $baseBranch was clobbered by the same dot-source,
+        # silently, which no status code would have revealed.
+        $okQueueLines = @(Get-Content -LiteralPath $okQueuePath -Encoding UTF8 | Where-Object { $_ -and $_.Trim() })
+        if ($okQueueLines.Count -le $okQueueBefore) { throw 'roadmap-task-queue.jsonl gained no entry after a successful dispatch' }
+        $okEntry = $okQueueLines[-1] | ConvertFrom-Json
+        if ([string]$okEntry.runId -ne $okRunId) { throw ("queue tail runId '{0}' does not match the returned runId '{1}'" -f $okEntry.runId, $okRunId) }
+        if ([string]$okEntry.baseBranch -ne 'smoke-base') { throw ("queue entry lost the requested baseBranch: got '{0}'" -f $okEntry.baseBranch) }
+        if ([string]$okEntry.dispatchTarget -ne 'copilot') { throw ("queue entry dispatchTarget expected 'copilot', got '{0}'" -f $okEntry.dispatchTarget) }
+        if ([string]$okEntry.prompt -notmatch 'Smoke-test the successful enqueue') { throw 'queue entry did not carry the approved prompt' }
+
+        $okSummaryPath = Join-Path $WorkspaceRoot ("output\roadmap-task-history\runs\{0}.summary.json" -f $okRunId)
+        if (-not (Test-Path -LiteralPath $okSummaryPath -PathType Leaf)) {
+            throw "No run summary at $okSummaryPath; a queue line with no summary is a task the runner never claims."
+        }
+        $okSummary = Get-Content -LiteralPath $okSummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ([string]$okSummary.status -ne 'queued') { throw ("run summary status expected 'queued', got '{0}'" -f $okSummary.status) }
+        Write-Host ("  dispatch success path ok: runId={0} branch={1} baseBranch={2} queue+summary written" -f `
+                $okRunId, $okJson.data.branch, $okEntry.baseBranch) -ForegroundColor DarkGray
+    }
+    finally {
+        if ($null -eq $okSettingsBackup) {
+            Remove-Item -LiteralPath $okSettingsPath -Force -ErrorAction SilentlyContinue
+        } else {
+            Set-Content -LiteralPath $okSettingsPath -Value $okSettingsBackup -Encoding UTF8
+        }
+        if (-not [string]::IsNullOrWhiteSpace($okRunId)) {
+            Remove-Item -LiteralPath (Join-Path $WorkspaceRoot ("output\roadmap-task-history\runs\{0}.summary.json" -f $okRunId)) -Force -ErrorAction SilentlyContinue
+        }
+        Remove-Item -LiteralPath $okRepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
     Write-Host '[STEP] Dispatch quota guard contract (Release 2.0 Phase 4)' -ForegroundColor Cyan
     $settingsPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
     $settingsBackup = if (Test-Path -LiteralPath $settingsPath) { Get-Content -LiteralPath $settingsPath -Raw -Encoding UTF8 } else { $null }

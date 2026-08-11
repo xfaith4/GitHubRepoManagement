@@ -39,85 +39,15 @@ if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
     $WorkspaceRoot = Split-Path -Parent $PSScriptRoot
 }
 
-function Get-RoadmapQueuePath {
-    param([Parameter(Mandatory)][string]$WorkspaceRoot)
-    Join-Path $WorkspaceRoot 'output\roadmap-task-queue.jsonl'
-}
-
-function Get-RoadmapDispatchTargets {
-    <# Release 3.0 — the only two execution contexts a queue entry may name.
-       `claude` runs Claude Code in the operator's session; `copilot` runs
-       `gh agent-task create`, which needs the OAuth credential only an operator
-       session holds. Both execute as the operator; neither runs in the service. #>
-    return @('claude', 'copilot')
-}
-
-function Resolve-RoadmapDispatchTarget {
-    <#
-    .SYNOPSIS
-        Pure — normalize a dispatch target, or throw with the allowed set named.
-    .DESCRIPTION
-        Empty resolves to `claude` for backward compatibility: entries written
-        before Release 3.0 carry no dispatchTarget and must keep running as the
-        Claude Code tasks they were queued as. An UNRECOGNIZED value is refused
-        rather than defaulted — silently running an unknown target as `claude`
-        would execute the wrong tool against a real repository.
-    #>
-    param([AllowEmptyString()][string]$DispatchTarget = '')
-
-    if ([string]::IsNullOrWhiteSpace($DispatchTarget)) { return 'claude' }
-    $normalized = $DispatchTarget.Trim().ToLowerInvariant()
-    if ($normalized -notin (Get-RoadmapDispatchTargets)) {
-        throw ("Unknown dispatchTarget '{0}'. Allowed: {1}." -f $DispatchTarget, ((Get-RoadmapDispatchTargets) -join ', '))
-    }
-    return $normalized
-}
-
-function New-RoadmapQueueEntry {
-    <# Pure: build the queue entry object. `status='queued'` is the runner's cue
-       to claim it. `prompt` is the full task text handed to the target tool.
-
-       `dispatchTarget` (Release 3.0) names WHICH tool: the portal enqueues from
-       a LocalSystem service that can hold neither an OAuth credential nor a
-       Claude Code login, so the entry records the intent and the operator-session
-       runner supplies the identity. `baseBranch` is carried because
-       `gh agent-task create --base` needs it and the runner has no other source. #>
-    param(
-        [Parameter(Mandatory)][string]$RunId,
-        [string]$Repository,
-        [Parameter(Mandatory)][string]$LocalRepoPath,
-        [string]$RoadmapPath,
-        [string]$SelectedTask,
-        [Parameter(Mandatory)][string]$TaskDescription,
-        [string]$Branch,
-        [Parameter(Mandatory)][string]$QueuedAt,
-        [AllowEmptyString()][string]$DispatchTarget = 'claude',
-        [AllowEmptyString()][string]$BaseBranch = ''
-    )
-    if ([string]::IsNullOrWhiteSpace($Branch)) { $Branch = "roadmap/$RunId" }
-    return [ordered]@{
-        schemaVersion  = '1'
-        runId          = $RunId
-        status         = 'queued'
-        repository     = $Repository
-        localRepoPath  = $LocalRepoPath
-        roadmapPath    = $RoadmapPath
-        selectedTask   = $SelectedTask
-        branch         = $Branch
-        prompt         = $TaskDescription
-        dispatchTarget = (Resolve-RoadmapDispatchTarget -DispatchTarget $DispatchTarget)
-        baseBranch     = $BaseBranch
-        queuedAt       = $QueuedAt
-    }
-}
-
-function Add-RoadmapQueueEntry {
-    param([Parameter(Mandatory)][string]$QueuePath, [Parameter(Mandatory)][System.Collections.IDictionary]$Entry)
-    $dir = Split-Path -Parent $QueuePath
-    if ($dir -and -not (Test-Path -LiteralPath $dir)) { $null = New-Item -ItemType Directory -Path $dir -Force }
-    $line = ([pscustomobject]$Entry | ConvertTo-Json -Depth 8 -Compress)
-    Add-Content -LiteralPath $QueuePath -Value $line -Encoding UTF8
-}
+# The queue contract lives in a param-less library, deliberately. Callers that
+# only want these functions dot-source something — and dot-sourcing runs the
+# target in the CALLER'S scope, assigning its `param()` variables there too.
+# When those functions lived in this file, the API host's dispatch route
+# dot-sourced it beside its own `$runId` and got the empty string back from this
+# script's `$RunId` parameter, killing the guided-improvement wizard's last step.
+# Resolved from this script's own location, not from -WorkspaceRoot: that
+# parameter names the SCAN TARGET, which need not be this repo.
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\automation\Automation.RoadmapQueue.ps1')
 
 if ($LoadFunctionsOnly) { return }
 

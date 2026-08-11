@@ -2674,7 +2674,15 @@ finally {
 }
 
 Write-Step 'Portal watchdog — smoke: decision logic + ledger/state round-trip (Release 2.7 Phase D)'
+# Watch-PortalHealth.ps1 declares its own $WorkspaceRoot, and a dot-source
+# assigns the target's parameters into THIS scope. It happens to recompute the
+# same repo root from its own location, which is why nothing has failed — but a
+# run given -WorkspaceRoot elsewhere would silently snap back to the real repo
+# here and every later step would assert against the wrong tree. Save/restore,
+# the way Adapters.ps1 and Invoke-Reconciliation.Modular.ps1 already do.
+$smokeCallerWorkspaceRoot = $WorkspaceRoot
 . (Join-Path $WorkspaceRoot 'scripts\service\Watch-PortalHealth.ps1') -LoadFunctionsOnly
+$WorkspaceRoot = $smokeCallerWorkspaceRoot
 
 # Pure decision logic: healthy resets to 0, failures accumulate, reaching the
 # threshold triggers a restart and resets the counter.
@@ -3455,6 +3463,217 @@ Write-Step 'Packaging quota — smoke: over-budget items are skipped and logged,
     finally {
         Remove-Item -LiteralPath $pkgWs -Recurse -Force -ErrorAction SilentlyContinue
     }
+}
+
+Write-Step 'Dot-source scope safety — tripwire: a dot-sourced script must not blank its caller''s variables'
+& {
+    # Dot-sourcing runs the target IN THE CALLER'S SCOPE, and that also assigns
+    # every one of the target's `param()` variables there — unbound ones as ''.
+    # PowerShell variable names are case-insensitive, so a script parameter
+    # named $RunId lands on a caller's $runId.
+    #
+    # This had bitten three places. The API host reached New-RoadmapQueueEntry by
+    # dot-sourcing scripts\Add-RoadmapTaskToQueue.ps1 from inside
+    # POST /api/roadmap/dispatch/execute, which blanked the $runId it had minted
+    # four lines earlier; the next statement died on "Cannot bind argument to
+    # parameter 'RunId' because it is an empty string" and the guided-improvement
+    # wizard's final step had been dead since Release 3.0. Adapters.ps1 hit the
+    # same hazard, noticed it, and hand-restored three of the FOUR variables it
+    # shares with Invoke-Reconciliation.ps1 — the missed one ($LogPath) failed
+    # nothing and so was invisible. This file had it too, on its own
+    # $WorkspaceRoot, harmless only by the coincidence that Watch-PortalHealth.ps1
+    # recomputes the same root.
+    #
+    # Neither check below reads a list someone maintains. Check 1 is a structural
+    # rule over the host's own source; check 2 sweeps every dot-source in the
+    # repository and derives the collisions from both sides.
+    $root = $WorkspaceRoot
+
+    function Get-ScriptParameterName {
+        param([Parameter(Mandatory)][string]$Path)
+        $t = $null; $e = $null
+        $a = [System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$t, [ref]$e)
+        if ($null -eq $a.ParamBlock) { return @() }
+        return @($a.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath })
+    }
+
+    # --- Check 1: every script the API host dot-sources is a param-less library.
+    $hostPath = Join-Path $root 'backend\api-host\Start-RepoManagementApiHost.ps1'
+    $ht = $null; $he = $null
+    $hostAst = [System.Management.Automation.Language.Parser]::ParseFile($hostPath, [ref]$ht, [ref]$he)
+    $hostDotSources = @($hostAst.FindAll({
+                param($n)
+                $n -is [System.Management.Automation.Language.CommandAst] -and $n.InvocationOperator -eq 'Dot'
+            }, $true))
+    if ($hostDotSources.Count -lt 10) {
+        throw "Dot-source tripwire found only $($hostDotSources.Count) dot-source sites in the API host; the AST query is wrong, not the host."
+    }
+
+    $searchRoots = @('backend', 'scripts', 'tools') | ForEach-Object { Join-Path $root $_ }
+    $violations = @()
+    foreach ($ds in $hostDotSources) {
+        $m = [regex]::Match($ds.Extent.Text, "'([^']+\.ps1)'")
+        if (-not $m.Success) {
+            # Fail closed: an unresolvable target cannot be proven safe.
+            throw ("Dot-source tripwire cannot resolve the target of line {0}: {1}" -f $ds.Extent.StartLineNumber, $ds.Extent.Text)
+        }
+        $literal = $m.Groups[1].Value
+        $asRelative = Join-Path $root $literal
+        $candidates = @()
+        if (Test-Path -LiteralPath $asRelative -PathType Leaf) {
+            $candidates = @((Resolve-Path -LiteralPath $asRelative).Path)
+        }
+        else {
+            $candidates = @(Get-ChildItem -Path $searchRoots -Recurse -File -Filter (Split-Path $literal -Leaf) -ErrorAction SilentlyContinue |
+                    ForEach-Object { $_.FullName })
+        }
+        if ($candidates.Count -eq 0) {
+            throw ("Dot-source tripwire could not locate '{0}' (host line {1})." -f $literal, $ds.Extent.StartLineNumber)
+        }
+        # Every candidate must be clean — an ambiguous leaf name is not an excuse.
+        foreach ($c in $candidates) {
+            $p = @(Get-ScriptParameterName -Path $c)
+            if ($p.Count -gt 0) {
+                $violations += ("host line {0} dot-sources {1}, which declares parameters [{2}] that overwrite the route's own variables" -f `
+                        $ds.Extent.StartLineNumber, (Split-Path $c -Leaf), ($p -join ','))
+            }
+        }
+    }
+    if ($violations.Count -gt 0) {
+        throw ("The API host may only dot-source param-less libraries. Move the functions into one (see backend\modules\automation\Automation.RoadmapQueue.ps1):`n  " + ($violations -join "`n  "))
+    }
+
+    # The dispatch route calls New-RoadmapQueueEntry, so the library that defines
+    # it has to be on the host's load list. Without this the route fails with
+    # "not recognized" instead of an empty RunId — a different corpse, same death.
+    $queueLibLoaded = @($hostDotSources | Where-Object { $_.Extent.Text -match 'Automation\.RoadmapQueue\.ps1' }).Count
+    if ($queueLibLoaded -lt 1) {
+        throw 'The API host no longer dot-sources Automation.RoadmapQueue.ps1; POST /api/roadmap/dispatch/execute cannot build a queue entry without it.'
+    }
+
+    # --- Check 2: repo-wide. Anywhere a dot-source CAN clobber a caller variable,
+    # that variable must be restored. This is derived, not listed: for every
+    # dot-source in backend\, scripts\ and tools\, it intersects the target's
+    # parameter names with the names live in the enclosing scope (that scope's
+    # own parameters PLUS anything assigned above the dot-source — the dispatch
+    # route lost a plain local, not a parameter), then requires each collision to
+    # be re-assigned below. Run against the commit before this fix it reports
+    # four sites, including both real defects.
+    #
+    # A dot-source inside `& { ... }` is skipped deliberately: that is a child
+    # scope, so the target's param assignments die with it. `. { ... }` is not
+    # skipped, because a dot-invoked block runs in the caller's scope.
+    function Get-DotSourceEnclosingScopeParam {
+        param($Node, $FileAst)
+        $n = $Node.Parent
+        while ($null -ne $n) {
+            if ($n -is [System.Management.Automation.Language.FunctionDefinitionAst]) {
+                if ($null -eq $n.Body.ParamBlock) { return @() }
+                return @($n.Body.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath })
+            }
+            if ($n -is [System.Management.Automation.Language.ScriptBlockExpressionAst]) {
+                $parent = $n.Parent
+                $dotInvoked = ($parent -is [System.Management.Automation.Language.CommandAst]) -and ($parent.InvocationOperator -eq 'Dot')
+                if (-not $dotInvoked) { return $null }
+            }
+            $n = $n.Parent
+        }
+        if ($null -eq $FileAst.ParamBlock) { return @() }
+        return @($FileAst.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath })
+    }
+
+    $skipDirPattern = [regex]::Escape('\node_modules\')
+    $allScripts = @(Get-ChildItem -Path $searchRoots -Recurse -File -Filter *.ps1 -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch $skipDirPattern })
+    if ($allScripts.Count -lt 50) { throw "Dot-source sweep found only $($allScripts.Count) scripts; the search roots are wrong, not the repo." }
+    $leafIndex = @{}
+    foreach ($s in $allScripts) {
+        if (-not $leafIndex.ContainsKey($s.Name)) { $leafIndex[$s.Name] = @() }
+        $leafIndex[$s.Name] += $s.FullName
+    }
+
+    $paramCache = @{}
+    $clobbers = @()
+    $unresolvable = @()
+    $sweptSites = 0
+    foreach ($f in $allScripts) {
+        $ft = $null; $fe = $null
+        $fAst = [System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$ft, [ref]$fe)
+        if ($fe.Count -gt 0) { continue }
+
+        # 30 of this repo's ~100 dot-sources name their target through a variable
+        # (`. $roadmapParser`). Skipping those would leave a hole in a gate whose
+        # whole value is being exhaustive, so resolve the variable to the literal
+        # it was assigned, and treat anything still unresolvable as a failure
+        # rather than as a pass.
+        $varMap = @{}
+        foreach ($asn in @($fAst.FindAll({
+                        param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst]
+                    }, $true))) {
+            if ($asn.Left -isnot [System.Management.Automation.Language.VariableExpressionAst]) { continue }
+            $rm = [regex]::Match($asn.Right.Extent.Text, "'([^']+\.ps1)'")
+            if ($rm.Success) { $varMap[$asn.Left.VariablePath.UserPath] = $rm.Groups[1].Value }
+        }
+
+        foreach ($ds in @($fAst.FindAll({
+                        param($n)
+                        $n -is [System.Management.Automation.Language.CommandAst] -and $n.InvocationOperator -eq 'Dot'
+                    }, $true))) {
+            $sweptSites++
+            $lm = [regex]::Match($ds.Extent.Text, "'([^']+\.ps1)'")
+            $literal = $null
+            if ($lm.Success) { $literal = $lm.Groups[1].Value }
+            else {
+                $firstElement = $ds.CommandElements[0]
+                if ($firstElement -is [System.Management.Automation.Language.VariableExpressionAst]) {
+                    $varName = $firstElement.VariablePath.UserPath
+                    if ($varMap.ContainsKey($varName)) { $literal = $varMap[$varName] }
+                }
+            }
+            if ($null -eq $literal) {
+                $unresolvable += ("{0}:{1}  {2}" -f ($f.FullName.Replace("$root\", '')), $ds.Extent.StartLineNumber, (($ds.Extent.Text -split "`n")[0].Trim()))
+                continue
+            }
+            $asRel = Join-Path $root $literal
+            $targets = if (Test-Path -LiteralPath $asRel -PathType Leaf) { @((Resolve-Path -LiteralPath $asRel).Path) }
+            else { @($leafIndex[(Split-Path $literal -Leaf)]) | Where-Object { $_ } }
+            foreach ($tPath in $targets) {
+                if (-not $paramCache.ContainsKey($tPath)) { $paramCache[$tPath] = @(Get-ScriptParameterName -Path $tPath) }
+                $targetParams = @($paramCache[$tPath])
+                if ($targetParams.Count -eq 0) { continue }
+                $scopeParams = Get-DotSourceEnclosingScopeParam -Node $ds -FileAst $fAst
+                if ($null -eq $scopeParams) { continue }
+
+                $dsLine = $ds.Extent.StartLineNumber
+                $scopeNode = $ds.Parent
+                while ($null -ne $scopeNode -and -not ($scopeNode -is [System.Management.Automation.Language.FunctionDefinitionAst])) { $scopeNode = $scopeNode.Parent }
+                $scopeAst = if ($null -ne $scopeNode) { $scopeNode } else { $fAst }
+                $assignments = @($scopeAst.FindAll({
+                            param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst]
+                        }, $true) | Where-Object { $_.Left -is [System.Management.Automation.Language.VariableExpressionAst] })
+                $liveBefore = @($assignments | Where-Object { $_.Extent.StartLineNumber -lt $dsLine } | ForEach-Object { $_.Left.VariablePath.UserPath })
+                $scopeVars = @(@($scopeParams) + $liveBefore | Select-Object -Unique)
+                $collisions = @($scopeVars | Where-Object { $targetParams -contains $_ })
+                if ($collisions.Count -eq 0) { continue }
+
+                $restoredAfter = @($assignments | Where-Object { $_.Extent.StartLineNumber -gt $dsLine } | ForEach-Object { $_.Left.VariablePath.UserPath })
+                $unrestored = @($collisions | Where-Object { $restoredAfter -notcontains $_ })
+                if ($unrestored.Count -gt 0) {
+                    $clobbers += ("{0}:{1} dot-sources {2}; [{3}] are blanked and never restored" -f `
+                        ($f.FullName.Replace("$root\", '')), $dsLine, (Split-Path $tPath -Leaf), ($unrestored -join ','))
+                }
+            }
+        }
+    }
+    if ($unresolvable.Count -gt 0) {
+        throw ("The dot-source sweep cannot determine what these sites load, so it cannot prove they are safe. Name the target with a literal path:`n  " + ($unresolvable -join "`n  "))
+    }
+    if ($clobbers.Count -gt 0) {
+        throw ("Dot-sourcing assigns the target's param() variables into the CALLER's scope. These sites lose a value silently:`n  " + ($clobbers -join "`n  "))
+    }
+
+    Write-Host ("  dot-source scope ok: {0} host dot-sources all param-less; {1} site(s) across {2} script(s) resolved and swept, every caller-variable collision restored" -f `
+            $hostDotSources.Count, $sweptSites, $allScripts.Count) -ForegroundColor DarkGray
 }
 
 Write-Step 'Packaging queue contract — tripwire: the entry shape the runner claims must not drift'
