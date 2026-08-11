@@ -171,7 +171,13 @@ function Wait-ForPortfolioIndex {
         # scan caches. Polling operations/repos alone would therefore wait
         # forever: the worker would warm the caches and nothing would ever
         # rebuild the index from them.
-        $null = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment"
+        #
+        # ?refresh=true, not the plain route: the assessment has its own 180s
+        # cache, so the plain call kept replaying a stale one-repo result and
+        # never rewrote the index. refresh=true skips those cache lookups and
+        # rebuilds from the freshest scan caches - which no longer means
+        # scanning inline, only reading what the worker last wrote.
+        $null = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment?refresh=true"
 
         $probe = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/operations/repos"
         $entries = @()
