@@ -161,6 +161,171 @@ if ($definitionsGuardIndex -gt $portSeizeIndex) {
 }
 Write-Host "  inline scans $($inlineScanSites.Count)/$inlineScanBaseline (baseline moves down only); /api/status + /api/portfolio/assessment serve cached and kick the worker; worker runs all 3 scans and writes all 3 caches; definitions-only returns before the port is taken" -ForegroundColor DarkGray
 
+Write-Step 'A background write must beat the memory cache — the cross-process coherence tripwire'
+# Moving the scan out of process is only half a fix. Each of the four caches has
+# a per-process memory entry AND a file, and the memory entry used to win
+# unconditionally - which was safe only while the host was the only writer.
+#
+# It no longer is. The worker's single channel back to the host is the file it
+# writes, so a memory entry is a view of one file version, not an independent
+# copy. Left preferring memory, the host stops freezing and starts serving the
+# first snapshot it ever took, forever: the stale-while-revalidate path reads
+# with -IgnoreTtl and the assessment route reads the other three with
+# ([int]::MaxValue), so age retires nothing.
+#
+# Behavioural, not structural: the assertion writes the cache files the way the
+# worker does and demands the host notice. It caught the defect that failed the
+# api-host smoke on this branch five times, where an AST rule could not have.
+$coherenceProbe = Join-Path ([System.IO.Path]::GetTempPath()) ('cache-coherence-' + [guid]::NewGuid().ToString('n').Substring(0, 8) + '.ps1')
+$coherenceLog = Join-Path ([System.IO.Path]::GetTempPath()) ('cache-coherence-' + [guid]::NewGuid().ToString('n').Substring(0, 8) + '.log')
+# A separate process because the probe dot-sources the host, and the host's
+# param() block would otherwise assign over this script's own $WorkspaceRoot -
+# the Release 3.0 defect from PR #119, which is not worth re-learning here.
+$coherenceProbeBody = @'
+param(
+    [Parameter(Mandatory = $true)][string]$HostScript,
+    [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+    [Parameter(Mandatory = $true)][string]$LogPath
+)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+. $HostScript -WorkspaceRoot $WorkspaceRoot -LogPath $LogPath -LoadDefinitionsOnly
+
+$cacheFiles = @(
+    (Get-StatusCacheFilePath),
+    (Get-RoadmapCacheFilePath),
+    (Get-DocAuditCacheFilePath),
+    (Get-RoadmapAuditCacheFilePath)
+)
+
+# The real cache files, because their paths derive from the workspace root and
+# the host has to load against its own module tree. Restored on every exit
+# path - a smoke test may not leave the developer's portal serving fixtures.
+$backups = @{}
+foreach ($file in $cacheFiles) {
+    if (Test-Path -LiteralPath $file) {
+        $backup = "$file.coherence-backup"
+        Copy-Item -LiteralPath $file -Destination $backup -Force
+        $backups[$file] = $backup
+    }
+}
+
+function Write-ForeignCacheFile {
+    # Rewrites a cache file the way the out-of-process worker does: same format,
+    # one more entry, a later write stamp, and no in-process notification.
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][scriptblock]$Mutate
+    )
+    $document = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    & $Mutate $document
+    ($document | ConvertTo-Json -Depth 25) | Set-Content -LiteralPath $Path -Encoding UTF8
+    [System.IO.File]::SetLastWriteTimeUtc($Path, ((Get-Date).ToUniversalTime().AddSeconds(2)))
+}
+
+$failures = @()
+try {
+    $nowIso = (Get-Date).ToUniversalTime().ToString('o')
+
+    $statusKey = Get-StatusCacheKey -LocalRoots @('c:\cache-coherence-fixture') -MaxDepth 1 -IncludeNonGitFolders $false
+    $seed = [pscustomobject]@{
+        success = $true
+        data    = [pscustomobject]@{
+            repos = @([pscustomobject]@{ name = 'before'; lastCommitAuthor = 'seed'; commitsLastWeek = 0; commitsLastMonth = 0 })
+        }
+    }
+    Save-StatusCache -Key $statusKey -Response $seed
+
+    # An unchanged file must still serve from memory: a fix that made every read
+    # hit the disk would pass the staleness assertion and cost the portal the
+    # cache it was given for a reason.
+    $warm = Get-StatusFromCache -Key $statusKey -TtlSeconds 3600
+    if ($warm.source -ne 'memory') {
+        $failures += "status: an unchanged cache should still be served from memory, got source='$($warm.source)'"
+    }
+
+    Write-ForeignCacheFile -Path (Get-StatusCacheFilePath) -Mutate {
+        param($doc)
+        $doc.response.data.repos = @($doc.response.data.repos) + @([pscustomobject]@{ name = 'after'; lastCommitAuthor = 'worker'; commitsLastWeek = 1; commitsLastMonth = 1 })
+    }
+
+    # -IgnoreTtl is the stale-while-revalidate path both fixed routes take on a
+    # miss, and the one place age can never retire an entry.
+    $after = Get-StatusFromCache -Key $statusKey -TtlSeconds 3600 -IgnoreTtl
+    if (@($after.response.data.repos).Count -ne 2) {
+        $failures += "status: the worker's write was ignored - served $(@($after.response.data.repos).Count) repo(s) from source='$($after.source)', expected 2 from disk"
+    }
+
+    # Three more doors on the same defect. GET /api/portfolio/assessment reads
+    # all three of these with ([int]::MaxValue).
+    Save-RoadmapCache -Entries @([pscustomobject]@{ repoName = 'before' }) -ScannedAt $nowIso
+    $warmRoadmap = Get-RoadmapFromCache -TtlSeconds 3600
+    if ($warmRoadmap.source -ne 'memory') {
+        $failures += "roadmap: an unchanged cache should still be served from memory, got source='$($warmRoadmap.source)'"
+    }
+    Write-ForeignCacheFile -Path (Get-RoadmapCacheFilePath) -Mutate {
+        param($doc) $doc.entries = @($doc.entries) + @([pscustomobject]@{ repoName = 'after' })
+    }
+    $afterRoadmap = Get-RoadmapFromCache -TtlSeconds ([int]::MaxValue)
+    if (@($afterRoadmap.entries).Count -ne 2) {
+        $failures += "roadmap: the worker's write was ignored - served $(@($afterRoadmap.entries).Count) entr(ies) from source='$($afterRoadmap.source)', expected 2 from disk"
+    }
+
+    Save-DocAuditCache -Entries @([pscustomobject]@{ repoName = 'before' }) -AuditedAt $nowIso
+    Write-ForeignCacheFile -Path (Get-DocAuditCacheFilePath) -Mutate {
+        param($doc) $doc.entries = @($doc.entries) + @([pscustomobject]@{ repoName = 'after' })
+    }
+    $afterDoc = Get-DocAuditFromCache -TtlSeconds ([int]::MaxValue)
+    if (@($afterDoc.entries).Count -ne 2) {
+        $failures += "doc-audit: the worker's write was ignored - served $(@($afterDoc.entries).Count) entr(ies) from source='$($afterDoc.source)', expected 2 from disk"
+    }
+
+    Save-RoadmapAuditCache -Entries @([pscustomobject]@{ repoName = 'before' }) -AuditedAt $nowIso
+    Write-ForeignCacheFile -Path (Get-RoadmapAuditCacheFilePath) -Mutate {
+        param($doc) $doc.entries = @($doc.entries) + @([pscustomobject]@{ repoName = 'after' })
+    }
+    $afterAudit = Get-RoadmapAuditFromCache -TtlSeconds ([int]::MaxValue)
+    if (@($afterAudit.entries).Count -ne 2) {
+        $failures += "roadmap-audit: the worker's write was ignored - served $(@($afterAudit.entries).Count) entr(ies) from source='$($afterAudit.source)', expected 2 from disk"
+    }
+}
+finally {
+    foreach ($file in $cacheFiles) {
+        if ($backups.ContainsKey($file)) {
+            Move-Item -LiteralPath $backups[$file] -Destination $file -Force
+        }
+        elseif (Test-Path -LiteralPath $file) {
+            Remove-Item -LiteralPath $file -Force
+        }
+    }
+}
+
+if ($failures.Count -gt 0) {
+    Write-Error ("Cross-process cache coherence failed:`n  " + ($failures -join "`n  "))
+    exit 1
+}
+
+Write-Output 'cache coherence ok: a background write supersedes the memory entry on all four caches; an unchanged file still serves from memory'
+exit 0
+'@
+Set-Content -LiteralPath $coherenceProbe -Value $coherenceProbeBody -Encoding UTF8
+try {
+    # The same executable running this gate, for the reason the host reuses it:
+    # pwsh is not on PATH for a service running as LocalSystem.
+    $psExe = (Get-Process -Id $PID).Path
+    $coherenceOutput = & $psExe -NoProfile -ExecutionPolicy Bypass -File $coherenceProbe `
+        -HostScript $apiHostPath -WorkspaceRoot $WorkspaceRoot -LogPath $coherenceLog 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw ("A background cache refresh must supersede the host's in-memory entry, or the portal serves its first snapshot forever:`n" + (($coherenceOutput | Out-String).Trim()))
+    }
+    Write-Host ("  " + (@($coherenceOutput | Where-Object { $_ -is [string] -and $_ -like 'cache coherence ok*' }) | Select-Object -Last 1)) -ForegroundColor DarkGray
+}
+finally {
+    Remove-Item -LiteralPath $coherenceProbe -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $coherenceLog -Force -ErrorAction SilentlyContinue
+}
+
 Write-Step 'Absent GitHub owner memory — one dead remote must not cost a sweep per request'
 # Measured 2026-08-11 on the live portal: a repo whose origin named a github.com
 # account that does not exist held the host's single request thread while three

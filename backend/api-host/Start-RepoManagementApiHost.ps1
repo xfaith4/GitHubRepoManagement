@@ -2028,6 +2028,59 @@ function Get-StatusCacheFilePath {
     return Join-Path $cacheDir 'status-cache.json'
 }
 
+# ── Cross-process cache coherence ────────────────────────────────────────────
+# Every cache below has two layers: a per-process memory entry and a file. That
+# was safe while the host was the only writer. It is not safe now: the
+# background refresh worker is a SEPARATE PROCESS whose only channel back to
+# the host is the file it writes.
+#
+# A memory entry is therefore a view of one file version, not an independent
+# copy, and it must lose to a newer file. Without that the host serves the
+# snapshot it happened to take first, forever - and the stale-while-revalidate
+# path makes it worse rather than better, because -IgnoreTtl means age never
+# retires the entry either. The portal would stop freezing and start lying.
+
+function Get-CacheFileStamp {
+    <#
+    .SYNOPSIS
+        Last-write time of a cache file, or $null when there is no file.
+    #>
+    param([Parameter(Mandatory = $true)][string]$Path)
+    try {
+        if (-not (Test-Path -LiteralPath $Path)) { return $null }
+        return [System.IO.File]::GetLastWriteTimeUtc($Path)
+    }
+    catch {
+        # Unreadable stamp = cannot prove the memory entry is current, so treat
+        # it as superseded. A slow disk read beats serving stale data blind.
+        return $null
+    }
+}
+
+function Test-MemoryCacheEntryCurrent {
+    <#
+    .SYNOPSIS
+        Whether an in-memory cache entry still describes the file on disk.
+    .DESCRIPTION
+        Identity, not age: the entry records the file version it was built from,
+        so a write by any process invalidates it exactly once. Comparing
+        timestamps for "newer" instead would need a tolerance for the host's own
+        write, and a tolerance is a window in which the bug comes back.
+
+        No file means nothing can have superseded the entry - a memory-only
+        entry (the cache directory is unwritable, say) stays usable.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Entry,
+        [Parameter(Mandatory = $true)][string]$CacheFilePath
+    )
+
+    $fileStamp = Get-CacheFileStamp -Path $CacheFilePath
+    if ($null -eq $fileStamp) { return $true }
+    if (-not $Entry.ContainsKey('FileWriteTimeUtc') -or $null -eq $Entry.FileWriteTimeUtc) { return $false }
+    return ([datetime]$Entry.FileWriteTimeUtc) -eq $fileStamp
+}
+
 # Cross-cutting — stale-cache diagnostics: age + TTL + staleness for one cache
 # file, so the dashboard/operator can see which cached view is fresh vs stale.
 function Get-CacheDiagnosticEntry {
@@ -2184,27 +2237,36 @@ function Get-StatusFromCache {
     )
 
     $nowUtc = (Get-Date).ToUniversalTime()
+    $cacheFile = Get-StatusCacheFilePath
 
     if ($script:StatusCacheMemory.ContainsKey($Key)) {
         $memoryEntry = $script:StatusCacheMemory[$Key]
-        $ageSeconds = (($nowUtc) - [datetime]$memoryEntry.CreatedAtUtc).TotalSeconds
-        if ($IgnoreTtl.IsPresent -or $ageSeconds -le $TtlSeconds) {
-            if (-not (Test-StatusResponseHasActivityMetrics -Response $memoryEntry.Response)) {
-                $script:StatusCacheMemory.Remove($Key)
-                Write-HostLog ("Status cache miss: memory entry missing activity metrics for key '{0}'" -f $Key)
-                return [pscustomobject]@{ hit = $false }
-            }
-            return [pscustomobject]@{
-                hit = $true
-                source = 'memory'
-                ageSeconds = $ageSeconds
-                cachedAt = ([datetime]$memoryEntry.CreatedAtUtc).ToString('o')
-                response = $memoryEntry.Response
+        if (-not (Test-MemoryCacheEntryCurrent -Entry $memoryEntry -CacheFilePath $cacheFile)) {
+            # The background worker finished a scan. Drop the entry and read its
+            # file below; keeping it would pin the host to the first snapshot it
+            # ever took, since -IgnoreTtl never expires one.
+            $script:StatusCacheMemory.Remove($Key)
+            Write-HostLog ("[TRACE] status.cache memory entry superseded by background refresh key='{0}'" -f $Key)
+        }
+        else {
+            $ageSeconds = (($nowUtc) - [datetime]$memoryEntry.CreatedAtUtc).TotalSeconds
+            if ($IgnoreTtl.IsPresent -or $ageSeconds -le $TtlSeconds) {
+                if (-not (Test-StatusResponseHasActivityMetrics -Response $memoryEntry.Response)) {
+                    $script:StatusCacheMemory.Remove($Key)
+                    Write-HostLog ("Status cache miss: memory entry missing activity metrics for key '{0}'" -f $Key)
+                    return [pscustomobject]@{ hit = $false }
+                }
+                return [pscustomobject]@{
+                    hit = $true
+                    source = 'memory'
+                    ageSeconds = $ageSeconds
+                    cachedAt = ([datetime]$memoryEntry.CreatedAtUtc).ToString('o')
+                    response = $memoryEntry.Response
+                }
             }
         }
     }
 
-    $cacheFile = Get-StatusCacheFilePath
     if (-not (Test-Path -LiteralPath $cacheFile)) {
         return [pscustomobject]@{ hit = $false }
     }
@@ -2243,6 +2305,7 @@ function Get-StatusFromCache {
         $script:StatusCacheMemory[$Key] = @{
             CreatedAtUtc = $createdAtUtc
             Response = $diskEntry.response
+            FileWriteTimeUtc = (Get-CacheFileStamp -Path $cacheFile)
         }
 
         return [pscustomobject]@{
@@ -2274,17 +2337,20 @@ function Save-StatusCache {
         response = $Response
     }
 
-    $script:StatusCacheMemory[$Key] = @{
-        CreatedAtUtc = $nowUtc
-        Response = $Response
-    }
-
+    # Written first, stamped after: the memory entry has to name the file
+    # version it matches, and that version does not exist until the write does.
+    $cacheFile = Get-StatusCacheFilePath
     try {
-        $cacheFile = Get-StatusCacheFilePath
         ($entry | ConvertTo-Json -Depth 20) | Set-Content -LiteralPath $cacheFile -Encoding UTF8
     }
     catch {
         Write-HostLog ("Status cache write skipped: {0}" -f $_.Exception.Message)
+    }
+
+    $script:StatusCacheMemory[$Key] = @{
+        CreatedAtUtc = $nowUtc
+        Response = $Response
+        FileWriteTimeUtc = (Get-CacheFileStamp -Path $cacheFile)
     }
 }
 
@@ -3312,16 +3378,23 @@ function Get-RoadmapFromCache {
     param([int]$TtlSeconds)
     $nowUtc = (Get-Date).ToUniversalTime()
     $key = 'roadmap-global'
+    $cacheFile = Get-RoadmapCacheFilePath
 
     if ($script:RoadmapCacheMemory.ContainsKey($key)) {
         $entry = $script:RoadmapCacheMemory[$key]
-        $age = (($nowUtc) - [datetime]$entry.CreatedAtUtc).TotalSeconds
-        if ($age -le $TtlSeconds) {
-            return [pscustomobject]@{ hit = $true; source = 'memory'; ageSeconds = $age; cachedAt = ([datetime]$entry.CreatedAtUtc).ToString('o'); entries = $entry.Entries; scannedAt = $entry.ScannedAt }
+        # The assessment route reads this cache with -TtlSeconds ([int]::MaxValue),
+        # so age can never retire the entry. Only the file version can.
+        if (-not (Test-MemoryCacheEntryCurrent -Entry $entry -CacheFilePath $cacheFile)) {
+            $script:RoadmapCacheMemory.Remove($key)
+        }
+        else {
+            $age = (($nowUtc) - [datetime]$entry.CreatedAtUtc).TotalSeconds
+            if ($age -le $TtlSeconds) {
+                return [pscustomobject]@{ hit = $true; source = 'memory'; ageSeconds = $age; cachedAt = ([datetime]$entry.CreatedAtUtc).ToString('o'); entries = $entry.Entries; scannedAt = $entry.ScannedAt }
+            }
         }
     }
 
-    $cacheFile = Get-RoadmapCacheFilePath
     if (-not (Test-Path -LiteralPath $cacheFile)) { return [pscustomobject]@{ hit = $false } }
 
     try {
@@ -3332,7 +3405,7 @@ function Get-RoadmapFromCache {
         $created = [datetime]$disk.createdAtUtc
         $age = (($nowUtc) - $created).TotalSeconds
         if ($age -gt $TtlSeconds) { return [pscustomobject]@{ hit = $false } }
-        $script:RoadmapCacheMemory[$key] = @{ CreatedAtUtc = $created; Entries = $disk.entries; ScannedAt = [string]$disk.scannedAt }
+        $script:RoadmapCacheMemory[$key] = @{ CreatedAtUtc = $created; Entries = $disk.entries; ScannedAt = [string]$disk.scannedAt; FileWriteTimeUtc = (Get-CacheFileStamp -Path $cacheFile) }
         return [pscustomobject]@{ hit = $true; source = 'disk'; ageSeconds = $age; cachedAt = $created.ToString('o'); entries = $disk.entries; scannedAt = [string]$disk.scannedAt }
     }
     catch { return [pscustomobject]@{ hit = $false } }
@@ -3342,12 +3415,12 @@ function Save-RoadmapCache {
     param([array]$Entries, [string]$ScannedAt)
     $nowUtc = (Get-Date).ToUniversalTime()
     $key = 'roadmap-global'
-    $script:RoadmapCacheMemory[$key] = @{ CreatedAtUtc = $nowUtc; Entries = $Entries; ScannedAt = $ScannedAt }
+    $cacheFile = Get-RoadmapCacheFilePath
     try {
-        $cacheFile = Get-RoadmapCacheFilePath
         (@{ createdAtUtc = $nowUtc.ToString('o'); scannedAt = $ScannedAt; entries = $Entries } | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $cacheFile -Encoding UTF8
     }
     catch { Write-HostLog ("Roadmap cache write skipped: {0}" -f $_.Exception.Message) }
+    $script:RoadmapCacheMemory[$key] = @{ CreatedAtUtc = $nowUtc; Entries = $Entries; ScannedAt = $ScannedAt; FileWriteTimeUtc = (Get-CacheFileStamp -Path $cacheFile) }
 }
 
 function Clear-RoadmapCache {
@@ -3417,16 +3490,21 @@ function Get-RoadmapAuditFromCache {
     param([int]$TtlSeconds)
     $nowUtc = (Get-Date).ToUniversalTime()
     $key = 'roadmap-audit-global'
+    $cacheFile = Get-RoadmapAuditCacheFilePath
 
     if ($script:RoadmapAuditCacheMemory.ContainsKey($key)) {
         $entry = $script:RoadmapAuditCacheMemory[$key]
-        $age = (($nowUtc) - [datetime]$entry.CreatedAtUtc).TotalSeconds
-        if ($age -le $TtlSeconds) {
-            return [pscustomobject]@{ hit = $true; source = 'memory'; ageSeconds = $age; cachedAt = ([datetime]$entry.CreatedAtUtc).ToString('o'); entries = $entry.Entries; auditedAt = $entry.AuditedAt }
+        if (-not (Test-MemoryCacheEntryCurrent -Entry $entry -CacheFilePath $cacheFile)) {
+            $script:RoadmapAuditCacheMemory.Remove($key)
+        }
+        else {
+            $age = (($nowUtc) - [datetime]$entry.CreatedAtUtc).TotalSeconds
+            if ($age -le $TtlSeconds) {
+                return [pscustomobject]@{ hit = $true; source = 'memory'; ageSeconds = $age; cachedAt = ([datetime]$entry.CreatedAtUtc).ToString('o'); entries = $entry.Entries; auditedAt = $entry.AuditedAt }
+            }
         }
     }
 
-    $cacheFile = Get-RoadmapAuditCacheFilePath
     if (-not (Test-Path -LiteralPath $cacheFile)) { return [pscustomobject]@{ hit = $false } }
 
     try {
@@ -3437,7 +3515,7 @@ function Get-RoadmapAuditFromCache {
         $created = [datetime]$disk.createdAtUtc
         $age = (($nowUtc) - $created).TotalSeconds
         if ($age -gt $TtlSeconds) { return [pscustomobject]@{ hit = $false } }
-        $script:RoadmapAuditCacheMemory[$key] = @{ CreatedAtUtc = $created; Entries = $disk.entries; AuditedAt = [string]$disk.auditedAt }
+        $script:RoadmapAuditCacheMemory[$key] = @{ CreatedAtUtc = $created; Entries = $disk.entries; AuditedAt = [string]$disk.auditedAt; FileWriteTimeUtc = (Get-CacheFileStamp -Path $cacheFile) }
         return [pscustomobject]@{ hit = $true; source = 'disk'; ageSeconds = $age; cachedAt = $created.ToString('o'); entries = $disk.entries; auditedAt = [string]$disk.auditedAt }
     }
     catch { return [pscustomobject]@{ hit = $false } }
@@ -3447,12 +3525,12 @@ function Save-RoadmapAuditCache {
     param([array]$Entries, [string]$AuditedAt)
     $nowUtc = (Get-Date).ToUniversalTime()
     $key = 'roadmap-audit-global'
-    $script:RoadmapAuditCacheMemory[$key] = @{ CreatedAtUtc = $nowUtc; Entries = $Entries; AuditedAt = $AuditedAt }
+    $cacheFile = Get-RoadmapAuditCacheFilePath
     try {
-        $cacheFile = Get-RoadmapAuditCacheFilePath
         (@{ createdAtUtc = $nowUtc.ToString('o'); auditedAt = $AuditedAt; entries = $Entries } | ConvertTo-Json -Depth 15) | Set-Content -LiteralPath $cacheFile -Encoding UTF8
     }
     catch { Write-HostLog ("Roadmap audit cache write skipped: {0}" -f $_.Exception.Message) }
+    $script:RoadmapAuditCacheMemory[$key] = @{ CreatedAtUtc = $nowUtc; Entries = $Entries; AuditedAt = $AuditedAt; FileWriteTimeUtc = (Get-CacheFileStamp -Path $cacheFile) }
 }
 
 function Clear-RoadmapAuditCache {
@@ -3824,16 +3902,21 @@ function Get-DocAuditFromCache {
     param([int]$TtlSeconds)
     $nowUtc = (Get-Date).ToUniversalTime()
     $key = 'docaudit-global'
+    $cacheFile = Get-DocAuditCacheFilePath
 
     if ($script:DocAuditCacheMemory.ContainsKey($key)) {
         $entry = $script:DocAuditCacheMemory[$key]
-        $age = (($nowUtc) - [datetime]$entry.CreatedAtUtc).TotalSeconds
-        if ($age -le $TtlSeconds) {
-            return [pscustomobject]@{ hit = $true; source = 'memory'; ageSeconds = $age; cachedAt = ([datetime]$entry.CreatedAtUtc).ToString('o'); entries = $entry.Entries; auditedAt = $entry.AuditedAt }
+        if (-not (Test-MemoryCacheEntryCurrent -Entry $entry -CacheFilePath $cacheFile)) {
+            $script:DocAuditCacheMemory.Remove($key)
+        }
+        else {
+            $age = (($nowUtc) - [datetime]$entry.CreatedAtUtc).TotalSeconds
+            if ($age -le $TtlSeconds) {
+                return [pscustomobject]@{ hit = $true; source = 'memory'; ageSeconds = $age; cachedAt = ([datetime]$entry.CreatedAtUtc).ToString('o'); entries = $entry.Entries; auditedAt = $entry.AuditedAt }
+            }
         }
     }
 
-    $cacheFile = Get-DocAuditCacheFilePath
     if (-not (Test-Path -LiteralPath $cacheFile)) { return [pscustomobject]@{ hit = $false } }
 
     try {
@@ -3844,7 +3927,7 @@ function Get-DocAuditFromCache {
         $created = [datetime]$disk.createdAtUtc
         $age = (($nowUtc) - $created).TotalSeconds
         if ($age -gt $TtlSeconds) { return [pscustomobject]@{ hit = $false } }
-        $script:DocAuditCacheMemory[$key] = @{ CreatedAtUtc = $created; Entries = $disk.entries; AuditedAt = [string]$disk.auditedAt }
+        $script:DocAuditCacheMemory[$key] = @{ CreatedAtUtc = $created; Entries = $disk.entries; AuditedAt = [string]$disk.auditedAt; FileWriteTimeUtc = (Get-CacheFileStamp -Path $cacheFile) }
         return [pscustomobject]@{ hit = $true; source = 'disk'; ageSeconds = $age; cachedAt = $created.ToString('o'); entries = $disk.entries; auditedAt = [string]$disk.auditedAt }
     }
     catch { return [pscustomobject]@{ hit = $false } }
@@ -3854,12 +3937,12 @@ function Save-DocAuditCache {
     param([array]$Entries, [string]$AuditedAt)
     $nowUtc = (Get-Date).ToUniversalTime()
     $key = 'docaudit-global'
-    $script:DocAuditCacheMemory[$key] = @{ CreatedAtUtc = $nowUtc; Entries = $Entries; AuditedAt = $AuditedAt }
+    $cacheFile = Get-DocAuditCacheFilePath
     try {
-        $cacheFile = Get-DocAuditCacheFilePath
         (@{ createdAtUtc = $nowUtc.ToString('o'); auditedAt = $AuditedAt; entries = $Entries } | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $cacheFile -Encoding UTF8
     }
     catch { Write-HostLog ("DocAudit cache write skipped: {0}" -f $_.Exception.Message) }
+    $script:DocAuditCacheMemory[$key] = @{ CreatedAtUtc = $nowUtc; Entries = $Entries; AuditedAt = $AuditedAt; FileWriteTimeUtc = (Get-CacheFileStamp -Path $cacheFile) }
 }
 
 function Get-PortfolioAssessmentCacheTtlSeconds {
