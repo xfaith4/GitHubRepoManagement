@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     # Derived from this script's location rather than a hardcoded drive letter —
     # the previous 'G:\...' default no longer resolves on this machine (same fix
@@ -123,6 +123,102 @@ function Assert-Not503 {
     if ([int]$Response.StatusCode -eq 503) {
         throw "$Name returned HTTP 503"
     }
+}
+
+function Wait-ForPortfolioIndex {
+    <#
+    .SYNOPSIS
+        Waits until the background refresh has indexed the portfolio.
+    .DESCRIPTION
+        No route scans on the request thread any more. A cache miss - including
+        ?refresh=true - answers immediately with what is on disk and kicks an
+        out-of-process worker, because scanning inline froze every other route
+        for the length of the sweep (measured: /health/live at 313.9s).
+
+        Steps that write fixtures to disk and then assert they are indexed must
+        therefore wait for that worker. This is not papering over flakiness: an
+        empty or stale answer is the CORRECT response to the first request, and
+        a real client has to wait for the refresh too. What would be wrong is
+        asserting against a cache nothing has filled yet.
+
+        Fails loudly on timeout, naming the log line to look for, so a worker
+        that never starts is a failure rather than a hang.
+    .PARAMETER RequiredRepoNames
+        Repos that must appear in the index. Empty means "any non-zero index".
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$BaseUrl,
+        [Parameter()]
+        [string[]]$RequiredRepoNames = @(),
+        [Parameter()]
+        [int]$TimeoutSeconds = 300,
+        # The worker reports through Write-HostLog, which writes to the host's
+        # log FILE and never to the console. Without this the CI transcript
+        # shows only "it did not warm" and every diagnosis is a guess.
+        [Parameter()]
+        [string]$HostLogPath = ''
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $missing = @($RequiredRepoNames)
+    $entryCount = 0
+
+    while ((Get-Date) -lt $deadline) {
+        # Two calls, and the order matters. /api/operations/repos serves from the
+        # repos index, and that index is written by the ASSESSMENT route's
+        # index-write step - not by the background worker, which only fills the
+        # scan caches. Polling operations/repos alone would therefore wait
+        # forever: the worker would warm the caches and nothing would ever
+        # rebuild the index from them.
+        #
+        # ?refresh=true, not the plain route: the assessment has its own 180s
+        # cache, so the plain call kept replaying a stale one-repo result and
+        # never rewrote the index. refresh=true skips those cache lookups and
+        # rebuilds from the freshest scan caches - which no longer means
+        # scanning inline, only reading what the worker last wrote.
+        $null = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment?refresh=true"
+
+        $probe = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/operations/repos"
+        $entries = @()
+        if ($null -ne $probe.Json -and $null -ne $probe.Json.data) {
+            $entries = @($probe.Json.data.entries)
+        }
+        $entryCount = @($entries).Count
+
+        if (@($RequiredRepoNames).Count -eq 0) {
+            if ($entryCount -ge 1) { return $entryCount }
+        }
+        else {
+            $present = @($entries | ForEach-Object { [string]$_.repoName })
+            $missing = @($RequiredRepoNames | Where-Object { $present -notcontains $_ })
+            if (@($missing).Count -eq 0) { return $entryCount }
+        }
+
+        Start-Sleep -Seconds 5
+    }
+
+    $detail = if (@($missing).Count -gt 0) { "still missing: $($missing -join ', ')" } else { "index still empty" }
+
+    # Carry the evidence into the failure rather than telling a reader where to
+    # go looking - on a CI runner the log file is gone by the time anyone asks.
+    $evidence = 'no host log path supplied'
+    if (-not [string]::IsNullOrWhiteSpace($HostLogPath)) {
+        if (Test-Path -LiteralPath $HostLogPath) {
+            $refreshLines = @(Get-Content -LiteralPath $HostLogPath -ErrorAction SilentlyContinue |
+                Where-Object { $_ -match 'status\.refresh' } | Select-Object -Last 15)
+            $evidence = if (@($refreshLines).Count -gt 0) {
+                "host log 'status.refresh' lines:`n    " + ($refreshLines -join "`n    ")
+            } else {
+                "host log has NO 'status.refresh' lines at all - the kick never happened, so look at why the miss path did not call Start-BackgroundStatusRefresh"
+            }
+        }
+        else {
+            $evidence = "host log not found at $HostLogPath"
+        }
+    }
+
+    throw "Portfolio index did not warm within ${TimeoutSeconds}s ($detail; $entryCount entr(ies) present).`n  $evidence"
 }
 
 function Wait-ApiHostReady {
@@ -1971,8 +2067,13 @@ try {
     # cache and the on-disk index reflect the fixture repo before the
     # Release 1.7.5 tests run.  Without this, the cache would still hold
     # the zero-entry result from the early warm call at line ~657.
+    # ?refresh=true kicks the background worker and returns; it no longer scans
+    # on the request thread. Wait for the fixture to reach the index, or every
+    # Release 1.7.5 assertion below runs against the zero-entry result this call
+    # was meant to replace.
     $null = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment?refresh=true"
-    Write-Host '  portfolio scan root updated and cache seeded with fixture repo' -ForegroundColor DarkGray
+    $null = Wait-ForPortfolioIndex -BaseUrl $BaseUrl -HostLogPath $logPath
+    Write-Host '  portfolio scan root updated and index seeded with fixture repo' -ForegroundColor DarkGray
 
     # ------------------------------------------------------------------
     # Release 1.7.5 — Portfolio Mission Alignment
@@ -2300,6 +2401,11 @@ try {
     }
 
     Write-Host '[STEP] Differential reuse proof: warm unchanged startup must not reindex (Release 2.3 Phase 5B/5F)' -ForegroundColor Cyan
+    # This proof needs a WARM index; the scan that fills it is now the
+    # background worker's job, not the request's.
+    $warmEntryCount = Wait-ForPortfolioIndex -BaseUrl $BaseUrl -HostLogPath $logPath
+    Write-Host ("  portfolio index warmed by the background worker -> {0} entr(ies)" -f $warmEntryCount) -ForegroundColor DarkGray
+
     $reuseProofResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment?scanMode=differential&includeCuration=true"
     Assert-Not503 -Name '/api/portfolio/assessment?scanMode=differential&includeCuration=true' -Response $reuseProofResponse
     $reuseProofJson = $reuseProofResponse.Json
@@ -2722,7 +2828,11 @@ A release should not be marked `done` unless:
             $fixtureRoadmap = $packagingRoadmapBody.Replace('{NAME}', $fixture.Name).Replace('{PHASEPLAN}', $fixture.PhasePlan)
             Set-Content -LiteralPath (Join-Path $fixtureDir 'ROADMAP.md') -Value $fixtureRoadmap -Encoding UTF8
         }
+        # ?refresh=true no longer scans on the request thread — it kicks the
+        # background worker and returns. Wait for the fixtures to actually land
+        # in the index instead of assuming one round trip did it.
         $null = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment?refresh=true"
+        $null = Wait-ForPortfolioIndex -BaseUrl $BaseUrl -RequiredRepoNames @($packagingRepoName, $packagingOverName) -HostLogPath $logPath
 
         $packagingOpsResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/operations/repos"
         $packagingEntries = @($packagingOpsResponse.Json.data.entries)

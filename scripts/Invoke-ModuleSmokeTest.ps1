@@ -41,6 +41,291 @@ Write-Step 'Validating copied module files exist'
 }
 Write-Host 'All expected module files are present' -ForegroundColor Green
 
+Write-Step 'No HTTP request may run a portfolio scan — the freeze tripwire'
+# Measured on the live portal 2026-08-11: the status cache TTL is 120s and a
+# cold sweep costs 196.7s. Because the host serves requests serially and the
+# miss path scanned INLINE, the refresh interval was shorter than the refresh
+# took — so the portal never reached steady state and spent roughly two thirds
+# of its life unable to answer anything, /health/live included.
+#
+# The rule this enforces: a scan belongs to the background worker, never to a
+# request. Asserted over the host's AST rather than by grep, so a scan moved
+# into a helper still fails.
+$apiHostPath = Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1'
+$statusRefreshWorker = Join-Path $WorkspaceRoot 'scripts\Invoke-StatusCacheRefresh.ps1'
+if (-not (Test-Path -LiteralPath $statusRefreshWorker)) { throw "Background status refresh worker not found at: $statusRefreshWorker" }
+
+$hostParseErrors = $null
+$hostAst = [System.Management.Automation.Language.Parser]::ParseFile($apiHostPath, [ref]$null, [ref]$hostParseErrors)
+if ($hostParseErrors -and $hostParseErrors.Count -gt 0) { throw "API host does not parse: $($hostParseErrors[0].Message)" }
+$apiHostText = Get-Content -LiteralPath $apiHostPath -Raw
+
+# Not offenders:
+#   Invoke-GitOperation      - an operator asked for a pull/sync and is waiting
+#                              on that one action's result.
+#   Invoke-RoadmapAuditScan  - these two ARE the scan implementations; they
+#   Invoke-DocAuditScan        compose Invoke-RoadmapScan rather than adding a
+#                              new place a request can block.
+$scanAllowedInFunctions = @('Invoke-GitOperation', 'Invoke-RoadmapAuditScan', 'Invoke-DocAuditScan')
+
+# Ratchet, not a clean sheet. GET /api/status and GET /api/portfolio/assessment
+# are fixed and asserted below; the remaining routes still scan inline and are
+# tracked in ROADMAP.md. This baseline only moves DOWN - the same discipline the
+# PSScriptAnalyzer gate uses - so the freeze cannot spread back into the routes
+# already cleaned.
+#
+# 18, not 15: the first version of this gate watched three scan commands and
+# counted 15. Adding Invoke-RoadmapAuditScan - which the assessment route called
+# directly, and which alone cost prepMs=27799 after the other three were moved -
+# revealed three further sites that were always there. The number went up
+# because the lens widened, not because the code got worse. Recorded plainly
+# rather than quietly re-baselined, since a baseline nobody can explain is a
+# baseline nobody will lower.
+$inlineScanBaseline = 18
+
+# All three portfolio sweeps, not just the status one. GET
+# /api/portfolio/assessment reported prepMs=40669 from Invoke-RoadmapScan alone
+# after the status scan had already been moved off the request thread — fixing
+# one door and leaving two open is not fixing the freeze.
+# Invoke-RoadmapAuditScan is on this list because the assessment route called it
+# directly. With the other three sweeps moved off the request thread it alone
+# still held the request for prepMs=27799 — an entry point missing from the
+# tripwire is an entry point that comes back.
+$scanCommands = @('Get-StatusAdapterResult', 'Invoke-RoadmapScan', 'Invoke-DocAuditScan', 'Invoke-RoadmapAuditScan')
+
+$scanCallSites = @($hostAst.FindAll({
+    param($node)
+    $node -is [System.Management.Automation.Language.CommandAst] -and
+    $scanCommands -contains $node.GetCommandName()
+}, $true))
+if ($scanCallSites.Count -eq 0) { throw "Expected at least one call to $($scanCommands -join '/'); the tripwire would be vacuous without one" }
+$inlineScanSites = @()
+
+foreach ($callSite in $scanCallSites) {
+    $enclosing = $callSite.Parent
+    while ($null -ne $enclosing -and -not ($enclosing -is [System.Management.Automation.Language.FunctionDefinitionAst])) {
+        $enclosing = $enclosing.Parent
+    }
+    # No enclosing function means it sits in the main script body — which is
+    # where the route switch lives, i.e. on the request thread.
+    $owner = if ($null -ne $enclosing) { $enclosing.Name } else { '<request thread>' }
+    if ($scanAllowedInFunctions -notcontains $owner) {
+        $inlineScanSites += "$($callSite.GetCommandName()) at line $($callSite.Extent.StartLineNumber) in $owner"
+    }
+}
+
+if ($inlineScanSites.Count -gt $inlineScanBaseline) {
+    $added = $inlineScanSites.Count - $inlineScanBaseline
+    throw ("Inline portfolio scans on the request thread rose to $($inlineScanSites.Count) (baseline $inlineScanBaseline, +$added). A scan on the request thread freezes every other route, including /health/live. Kick Start-BackgroundStatusRefresh and serve what is cached. Sites:`n  " + ($inlineScanSites -join "`n  "))
+}
+
+# The two routes fixed here must stay fixed regardless of what the baseline
+# allows elsewhere: a count alone would let a clean route regress while another
+# was cleaned up.
+foreach ($fixedRoute in @('status.cache miss correlationId', 'roadmap-cache miss served', 'doc-audit-cache miss served', 'roadmap-audit-cache miss served')) {
+    if ($apiHostText -notmatch [regex]::Escape($fixedRoute)) {
+        throw "GET /api/status and GET /api/portfolio/assessment must serve cached data on a miss and kick the worker; the '$fixedRoute' path is gone"
+    }
+}
+
+# The worker has to actually perform all three, or moving them off the request
+# thread would just mean they never run.
+$workerText = Get-Content -LiteralPath $statusRefreshWorker -Raw
+foreach ($scanCommand in $scanCommands) {
+    if ($workerText -notmatch [regex]::Escape($scanCommand)) {
+        throw "The background refresh worker must run $scanCommand; a scan removed from the request path and not added here would simply never happen"
+    }
+}
+foreach ($cacheWrite in @('Save-StatusCache', 'Save-RoadmapCache', 'Save-DocAuditCache', 'Save-RoadmapAuditCache')) {
+    if ($workerText -notmatch [regex]::Escape($cacheWrite)) {
+        throw "The background refresh worker must call $cacheWrite; a scan whose result is never cached makes every request pay for it again"
+    }
+}
+
+# The miss paths must actually start the worker, or they would just serve
+# permanently stale data and never refresh.
+$refreshKicks = ([regex]::Matches($apiHostText, 'Start-BackgroundStatusRefresh\s+-LocalRoots')).Count
+if ($refreshKicks -lt 2) {
+    throw "Both GET /api/status and GET /api/portfolio/assessment must kick a background refresh on a cache miss; found $refreshKicks call site(s)"
+}
+
+# -LoadDefinitionsOnly must return BEFORE the host takes the port. One line
+# later and a background worker would terminate the running service, because
+# Stop-PortListeners kills whatever holds the port.
+$definitionsGuardIndex = $apiHostText.IndexOf('if ($LoadDefinitionsOnly) {')
+$portSeizeIndex = $apiHostText.IndexOf('Stop-PortListeners -LocalPort $Port')
+if ($definitionsGuardIndex -lt 0) { throw 'The API host must support -LoadDefinitionsOnly so the refresh worker can reuse its code' }
+if ($portSeizeIndex -lt 0) { throw 'Expected Stop-PortListeners in the API host; the ordering assertion below would be vacuous' }
+if ($definitionsGuardIndex -gt $portSeizeIndex) {
+    throw 'The -LoadDefinitionsOnly early return must come BEFORE Stop-PortListeners, or loading definitions would kill the running service'
+}
+Write-Host "  inline scans $($inlineScanSites.Count)/$inlineScanBaseline (baseline moves down only); /api/status + /api/portfolio/assessment serve cached and kick the worker; worker runs all 3 scans and writes all 3 caches; definitions-only returns before the port is taken" -ForegroundColor DarkGray
+
+Write-Step 'A background write must beat the memory cache — the cross-process coherence tripwire'
+# Moving the scan out of process is only half a fix. Each of the four caches has
+# a per-process memory entry AND a file, and the memory entry used to win
+# unconditionally - which was safe only while the host was the only writer.
+#
+# It no longer is. The worker's single channel back to the host is the file it
+# writes, so a memory entry is a view of one file version, not an independent
+# copy. Left preferring memory, the host stops freezing and starts serving the
+# first snapshot it ever took, forever: the stale-while-revalidate path reads
+# with -IgnoreTtl and the assessment route reads the other three with
+# ([int]::MaxValue), so age retires nothing.
+#
+# Behavioural, not structural: the assertion writes the cache files the way the
+# worker does and demands the host notice. It caught the defect that failed the
+# api-host smoke on this branch five times, where an AST rule could not have.
+$coherenceProbe = Join-Path ([System.IO.Path]::GetTempPath()) ('cache-coherence-' + [guid]::NewGuid().ToString('n').Substring(0, 8) + '.ps1')
+$coherenceLog = Join-Path ([System.IO.Path]::GetTempPath()) ('cache-coherence-' + [guid]::NewGuid().ToString('n').Substring(0, 8) + '.log')
+# A separate process because the probe dot-sources the host, and the host's
+# param() block would otherwise assign over this script's own $WorkspaceRoot -
+# the Release 3.0 defect from PR #119, which is not worth re-learning here.
+$coherenceProbeBody = @'
+param(
+    [Parameter(Mandatory = $true)][string]$HostScript,
+    [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+    [Parameter(Mandatory = $true)][string]$LogPath
+)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+. $HostScript -WorkspaceRoot $WorkspaceRoot -LogPath $LogPath -LoadDefinitionsOnly
+
+$cacheFiles = @(
+    (Get-StatusCacheFilePath),
+    (Get-RoadmapCacheFilePath),
+    (Get-DocAuditCacheFilePath),
+    (Get-RoadmapAuditCacheFilePath)
+)
+
+# The real cache files, because their paths derive from the workspace root and
+# the host has to load against its own module tree. Restored on every exit
+# path - a smoke test may not leave the developer's portal serving fixtures.
+$backups = @{}
+foreach ($file in $cacheFiles) {
+    if (Test-Path -LiteralPath $file) {
+        $backup = "$file.coherence-backup"
+        Copy-Item -LiteralPath $file -Destination $backup -Force
+        $backups[$file] = $backup
+    }
+}
+
+function Write-ForeignCacheFile {
+    # Rewrites a cache file the way the out-of-process worker does: same format,
+    # one more entry, a later write stamp, and no in-process notification.
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][scriptblock]$Mutate
+    )
+    $document = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    & $Mutate $document
+    ($document | ConvertTo-Json -Depth 25) | Set-Content -LiteralPath $Path -Encoding UTF8
+    [System.IO.File]::SetLastWriteTimeUtc($Path, ((Get-Date).ToUniversalTime().AddSeconds(2)))
+}
+
+$failures = @()
+try {
+    $nowIso = (Get-Date).ToUniversalTime().ToString('o')
+
+    $statusKey = Get-StatusCacheKey -LocalRoots @('c:\cache-coherence-fixture') -MaxDepth 1 -IncludeNonGitFolders $false
+    $seed = [pscustomobject]@{
+        success = $true
+        data    = [pscustomobject]@{
+            repos = @([pscustomobject]@{ name = 'before'; lastCommitAuthor = 'seed'; commitsLastWeek = 0; commitsLastMonth = 0 })
+        }
+    }
+    Save-StatusCache -Key $statusKey -Response $seed
+
+    # An unchanged file must still serve from memory: a fix that made every read
+    # hit the disk would pass the staleness assertion and cost the portal the
+    # cache it was given for a reason.
+    $warm = Get-StatusFromCache -Key $statusKey -TtlSeconds 3600
+    if ($warm.source -ne 'memory') {
+        $failures += "status: an unchanged cache should still be served from memory, got source='$($warm.source)'"
+    }
+
+    Write-ForeignCacheFile -Path (Get-StatusCacheFilePath) -Mutate {
+        param($doc)
+        $doc.response.data.repos = @($doc.response.data.repos) + @([pscustomobject]@{ name = 'after'; lastCommitAuthor = 'worker'; commitsLastWeek = 1; commitsLastMonth = 1 })
+    }
+
+    # -IgnoreTtl is the stale-while-revalidate path both fixed routes take on a
+    # miss, and the one place age can never retire an entry.
+    $after = Get-StatusFromCache -Key $statusKey -TtlSeconds 3600 -IgnoreTtl
+    if (@($after.response.data.repos).Count -ne 2) {
+        $failures += "status: the worker's write was ignored - served $(@($after.response.data.repos).Count) repo(s) from source='$($after.source)', expected 2 from disk"
+    }
+
+    # Three more doors on the same defect. GET /api/portfolio/assessment reads
+    # all three of these with ([int]::MaxValue).
+    Save-RoadmapCache -Entries @([pscustomobject]@{ repoName = 'before' }) -ScannedAt $nowIso
+    $warmRoadmap = Get-RoadmapFromCache -TtlSeconds 3600
+    if ($warmRoadmap.source -ne 'memory') {
+        $failures += "roadmap: an unchanged cache should still be served from memory, got source='$($warmRoadmap.source)'"
+    }
+    Write-ForeignCacheFile -Path (Get-RoadmapCacheFilePath) -Mutate {
+        param($doc) $doc.entries = @($doc.entries) + @([pscustomobject]@{ repoName = 'after' })
+    }
+    $afterRoadmap = Get-RoadmapFromCache -TtlSeconds ([int]::MaxValue)
+    if (@($afterRoadmap.entries).Count -ne 2) {
+        $failures += "roadmap: the worker's write was ignored - served $(@($afterRoadmap.entries).Count) entr(ies) from source='$($afterRoadmap.source)', expected 2 from disk"
+    }
+
+    Save-DocAuditCache -Entries @([pscustomobject]@{ repoName = 'before' }) -AuditedAt $nowIso
+    Write-ForeignCacheFile -Path (Get-DocAuditCacheFilePath) -Mutate {
+        param($doc) $doc.entries = @($doc.entries) + @([pscustomobject]@{ repoName = 'after' })
+    }
+    $afterDoc = Get-DocAuditFromCache -TtlSeconds ([int]::MaxValue)
+    if (@($afterDoc.entries).Count -ne 2) {
+        $failures += "doc-audit: the worker's write was ignored - served $(@($afterDoc.entries).Count) entr(ies) from source='$($afterDoc.source)', expected 2 from disk"
+    }
+
+    Save-RoadmapAuditCache -Entries @([pscustomobject]@{ repoName = 'before' }) -AuditedAt $nowIso
+    Write-ForeignCacheFile -Path (Get-RoadmapAuditCacheFilePath) -Mutate {
+        param($doc) $doc.entries = @($doc.entries) + @([pscustomobject]@{ repoName = 'after' })
+    }
+    $afterAudit = Get-RoadmapAuditFromCache -TtlSeconds ([int]::MaxValue)
+    if (@($afterAudit.entries).Count -ne 2) {
+        $failures += "roadmap-audit: the worker's write was ignored - served $(@($afterAudit.entries).Count) entr(ies) from source='$($afterAudit.source)', expected 2 from disk"
+    }
+}
+finally {
+    foreach ($file in $cacheFiles) {
+        if ($backups.ContainsKey($file)) {
+            Move-Item -LiteralPath $backups[$file] -Destination $file -Force
+        }
+        elseif (Test-Path -LiteralPath $file) {
+            Remove-Item -LiteralPath $file -Force
+        }
+    }
+}
+
+if ($failures.Count -gt 0) {
+    Write-Error ("Cross-process cache coherence failed:`n  " + ($failures -join "`n  "))
+    exit 1
+}
+
+Write-Output 'cache coherence ok: a background write supersedes the memory entry on all four caches; an unchanged file still serves from memory'
+exit 0
+'@
+Set-Content -LiteralPath $coherenceProbe -Value $coherenceProbeBody -Encoding UTF8
+try {
+    # The same executable running this gate, for the reason the host reuses it:
+    # pwsh is not on PATH for a service running as LocalSystem.
+    $psExe = (Get-Process -Id $PID).Path
+    $coherenceOutput = & $psExe -NoProfile -ExecutionPolicy Bypass -File $coherenceProbe `
+        -HostScript $apiHostPath -WorkspaceRoot $WorkspaceRoot -LogPath $coherenceLog 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw ("A background cache refresh must supersede the host's in-memory entry, or the portal serves its first snapshot forever:`n" + (($coherenceOutput | Out-String).Trim()))
+    }
+    Write-Host ("  " + (@($coherenceOutput | Where-Object { $_ -is [string] -and $_ -like 'cache coherence ok*' }) | Select-Object -Last 1)) -ForegroundColor DarkGray
+}
+finally {
+    Remove-Item -LiteralPath $coherenceProbe -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $coherenceLog -Force -ErrorAction SilentlyContinue
+}
+
 Write-Step 'Absent GitHub owner memory — one dead remote must not cost a sweep per request'
 # Measured 2026-08-11 on the live portal: a repo whose origin named a github.com
 # account that does not exist held the host's single request thread while three

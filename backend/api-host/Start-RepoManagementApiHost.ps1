@@ -23,7 +23,20 @@ param(
     [int]$RequestTimeoutSeconds = 180,
 
     [Parameter()]
-    [int]$ScanRequestTimeoutSeconds = 900
+    [int]$ScanRequestTimeoutSeconds = 900,
+
+    # Load every function and setting, then return WITHOUT binding the port or
+    # entering the accept loop. The background cache-refresh worker
+    # (scripts\Invoke-StatusCacheRefresh.ps1) uses this so its scan runs the
+    # host's own code rather than a second implementation that could drift.
+    #
+    # Dot-sourcing a script with param() assigns those parameters in the
+    # CALLER's scope - the defect that cost Release 3.0 its dispatch route
+    # (PR #119). The worker therefore passes -WorkspaceRoot and -LogPath through
+    # with the values it already holds, so the assignment is a no-op rather than
+    # a clobber. The module smoke's dot-source sweep asserts that.
+    [Parameter()]
+    [switch]$LoadDefinitionsOnly
 )
 
 Set-StrictMode -Version Latest
@@ -2015,6 +2028,59 @@ function Get-StatusCacheFilePath {
     return Join-Path $cacheDir 'status-cache.json'
 }
 
+# ── Cross-process cache coherence ────────────────────────────────────────────
+# Every cache below has two layers: a per-process memory entry and a file. That
+# was safe while the host was the only writer. It is not safe now: the
+# background refresh worker is a SEPARATE PROCESS whose only channel back to
+# the host is the file it writes.
+#
+# A memory entry is therefore a view of one file version, not an independent
+# copy, and it must lose to a newer file. Without that the host serves the
+# snapshot it happened to take first, forever - and the stale-while-revalidate
+# path makes it worse rather than better, because -IgnoreTtl means age never
+# retires the entry either. The portal would stop freezing and start lying.
+
+function Get-CacheFileStamp {
+    <#
+    .SYNOPSIS
+        Last-write time of a cache file, or $null when there is no file.
+    #>
+    param([Parameter(Mandatory = $true)][string]$Path)
+    try {
+        if (-not (Test-Path -LiteralPath $Path)) { return $null }
+        return [System.IO.File]::GetLastWriteTimeUtc($Path)
+    }
+    catch {
+        # Unreadable stamp = cannot prove the memory entry is current, so treat
+        # it as superseded. A slow disk read beats serving stale data blind.
+        return $null
+    }
+}
+
+function Test-MemoryCacheEntryCurrent {
+    <#
+    .SYNOPSIS
+        Whether an in-memory cache entry still describes the file on disk.
+    .DESCRIPTION
+        Identity, not age: the entry records the file version it was built from,
+        so a write by any process invalidates it exactly once. Comparing
+        timestamps for "newer" instead would need a tolerance for the host's own
+        write, and a tolerance is a window in which the bug comes back.
+
+        No file means nothing can have superseded the entry - a memory-only
+        entry (the cache directory is unwritable, say) stays usable.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Entry,
+        [Parameter(Mandatory = $true)][string]$CacheFilePath
+    )
+
+    $fileStamp = Get-CacheFileStamp -Path $CacheFilePath
+    if ($null -eq $fileStamp) { return $true }
+    if (-not $Entry.ContainsKey('FileWriteTimeUtc') -or $null -eq $Entry.FileWriteTimeUtc) { return $false }
+    return ([datetime]$Entry.FileWriteTimeUtc) -eq $fileStamp
+}
+
 # Cross-cutting — stale-cache diagnostics: age + TTL + staleness for one cache
 # file, so the dashboard/operator can see which cached view is fresh vs stale.
 function Get-CacheDiagnosticEntry {
@@ -2171,27 +2237,36 @@ function Get-StatusFromCache {
     )
 
     $nowUtc = (Get-Date).ToUniversalTime()
+    $cacheFile = Get-StatusCacheFilePath
 
     if ($script:StatusCacheMemory.ContainsKey($Key)) {
         $memoryEntry = $script:StatusCacheMemory[$Key]
-        $ageSeconds = (($nowUtc) - [datetime]$memoryEntry.CreatedAtUtc).TotalSeconds
-        if ($IgnoreTtl.IsPresent -or $ageSeconds -le $TtlSeconds) {
-            if (-not (Test-StatusResponseHasActivityMetrics -Response $memoryEntry.Response)) {
-                $script:StatusCacheMemory.Remove($Key)
-                Write-HostLog ("Status cache miss: memory entry missing activity metrics for key '{0}'" -f $Key)
-                return [pscustomobject]@{ hit = $false }
-            }
-            return [pscustomobject]@{
-                hit = $true
-                source = 'memory'
-                ageSeconds = $ageSeconds
-                cachedAt = ([datetime]$memoryEntry.CreatedAtUtc).ToString('o')
-                response = $memoryEntry.Response
+        if (-not (Test-MemoryCacheEntryCurrent -Entry $memoryEntry -CacheFilePath $cacheFile)) {
+            # The background worker finished a scan. Drop the entry and read its
+            # file below; keeping it would pin the host to the first snapshot it
+            # ever took, since -IgnoreTtl never expires one.
+            $script:StatusCacheMemory.Remove($Key)
+            Write-HostLog ("[TRACE] status.cache memory entry superseded by background refresh key='{0}'" -f $Key)
+        }
+        else {
+            $ageSeconds = (($nowUtc) - [datetime]$memoryEntry.CreatedAtUtc).TotalSeconds
+            if ($IgnoreTtl.IsPresent -or $ageSeconds -le $TtlSeconds) {
+                if (-not (Test-StatusResponseHasActivityMetrics -Response $memoryEntry.Response)) {
+                    $script:StatusCacheMemory.Remove($Key)
+                    Write-HostLog ("Status cache miss: memory entry missing activity metrics for key '{0}'" -f $Key)
+                    return [pscustomobject]@{ hit = $false }
+                }
+                return [pscustomobject]@{
+                    hit = $true
+                    source = 'memory'
+                    ageSeconds = $ageSeconds
+                    cachedAt = ([datetime]$memoryEntry.CreatedAtUtc).ToString('o')
+                    response = $memoryEntry.Response
+                }
             }
         }
     }
 
-    $cacheFile = Get-StatusCacheFilePath
     if (-not (Test-Path -LiteralPath $cacheFile)) {
         return [pscustomobject]@{ hit = $false }
     }
@@ -2230,6 +2305,7 @@ function Get-StatusFromCache {
         $script:StatusCacheMemory[$Key] = @{
             CreatedAtUtc = $createdAtUtc
             Response = $diskEntry.response
+            FileWriteTimeUtc = (Get-CacheFileStamp -Path $cacheFile)
         }
 
         return [pscustomobject]@{
@@ -2261,17 +2337,20 @@ function Save-StatusCache {
         response = $Response
     }
 
-    $script:StatusCacheMemory[$Key] = @{
-        CreatedAtUtc = $nowUtc
-        Response = $Response
-    }
-
+    # Written first, stamped after: the memory entry has to name the file
+    # version it matches, and that version does not exist until the write does.
+    $cacheFile = Get-StatusCacheFilePath
     try {
-        $cacheFile = Get-StatusCacheFilePath
         ($entry | ConvertTo-Json -Depth 20) | Set-Content -LiteralPath $cacheFile -Encoding UTF8
     }
     catch {
         Write-HostLog ("Status cache write skipped: {0}" -f $_.Exception.Message)
+    }
+
+    $script:StatusCacheMemory[$Key] = @{
+        CreatedAtUtc = $nowUtc
+        Response = $Response
+        FileWriteTimeUtc = (Get-CacheFileStamp -Path $cacheFile)
     }
 }
 
@@ -2285,6 +2364,130 @@ function Clear-StatusCache {
     }
     catch {
         Write-HostLog ("Status cache clear skipped: {0}" -f $_.Exception.Message)
+    }
+}
+
+# ── Background status refresh ────────────────────────────────────────────────
+# No HTTP request may run a portfolio scan. Measured 2026-08-11: the sweep costs
+# 196.7s, the status cache TTL is 120s, and the miss path scanned inline on the
+# single request thread - so the portal spent about two thirds of its life
+# unable to answer anything, permanently, because the refresh took longer than
+# the interval that triggered it. A miss now serves what is on disk and kicks
+# this worker instead.
+
+function Get-StatusRefreshLockPath {
+    $cacheDir = Split-Path -Parent (Get-StatusCacheFilePath)
+    return Join-Path $cacheDir 'status-refresh.lock'
+}
+
+function Get-StatusRefreshState {
+    <#
+    .SYNOPSIS
+        Whether a background refresh is in flight, and since when.
+    .DESCRIPTION
+        Liveness is decided by the recorded process, not by the lock file's
+        existence: a worker killed mid-scan (or a host restarted under it)
+        would otherwise leave a lock that suppresses every future refresh and
+        freezes the cache forever. A lock naming a process that is gone is a
+        stale lock, and stale locks are ignored.
+    #>
+    $lockPath = Get-StatusRefreshLockPath
+    if (-not (Test-Path -LiteralPath $lockPath)) {
+        return @{ running = $false; startedAt = $null; processId = $null; stale = $false }
+    }
+
+    $lockPid = 0
+    $startedAt = $null
+    try {
+        $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json
+        $lockPid = [int]$lock.processId
+        $startedAt = [datetime]$lock.startedAt
+    }
+    catch {
+        # An unreadable lock is a stale lock. Treating it as "running" would
+        # wedge the cache permanently on one corrupt write.
+        return @{ running = $false; startedAt = $null; processId = $null; stale = $true }
+    }
+
+    $alive = $false
+    if ($lockPid -gt 0) {
+        $alive = $null -ne (Get-Process -Id $lockPid -ErrorAction Ignore)
+    }
+
+    return @{
+        running   = $alive
+        startedAt = $startedAt
+        processId = $lockPid
+        stale     = (-not $alive)
+    }
+}
+
+function Start-BackgroundStatusRefresh {
+    <#
+    .SYNOPSIS
+        Kicks the out-of-process cache refresh. Returns $true if it started one.
+    #>
+    [CmdletBinding()]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Launches a read-only scan whose only write is the host''s own cache file. It is triggered by an HTTP GET on a cache miss, where no operator is present to answer a -WhatIf prompt.')]
+    param(
+        [Parameter(Mandatory = $true)][string[]]$LocalRoots,
+        [Parameter()][int]$MaxDepth = 2,
+        [Parameter()][switch]$IncludeNonGitFolders
+    )
+
+    $state = Get-StatusRefreshState
+    if ($state.running) {
+        return $false
+    }
+
+    $lockPath = Get-StatusRefreshLockPath
+    $worker = Join-Path $WorkspaceRoot 'scripts\Invoke-StatusCacheRefresh.ps1'
+    if (-not (Test-Path -LiteralPath $worker)) {
+        Write-HostLog ("[ERROR] status.refresh cannot start - worker missing at {0}" -f $worker)
+        return $false
+    }
+
+    try {
+        # This host is running under some PowerShell; reuse the same executable
+        # rather than assuming pwsh is on PATH, which it is not for a service
+        # running as LocalSystem.
+        $psExe = (Get-Process -Id $PID).Path
+
+        $arguments = @(
+            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $worker,
+            '-WorkspaceRoot', $WorkspaceRoot,
+            '-LocalRoots', ($LocalRoots -join ','),
+            '-MaxDepth', $MaxDepth,
+            '-LockPath', $lockPath
+        )
+        if ($IncludeNonGitFolders) { $arguments += '-IncludeNonGitFolders' }
+        if (-not [string]::IsNullOrWhiteSpace($LogPath)) { $arguments += @('-LogPath', $LogPath) }
+
+        $process = Start-Process -FilePath $psExe -ArgumentList $arguments -WindowStyle Hidden -PassThru
+
+        # Written AFTER the process exists so the lock always names a real pid.
+        $lockBody = @{
+            processId = $process.Id
+            startedAt = (Get-Date).ToUniversalTime().ToString('o')
+            roots     = @($LocalRoots)
+        } | ConvertTo-Json -Compress
+        Set-Content -LiteralPath $lockPath -Value $lockBody -Encoding UTF8
+
+        Write-HostLog ("[TRACE] status.refresh started pid={0} roots={1}" -f $process.Id, ($LocalRoots -join ','))
+        return $true
+    }
+    catch {
+        Write-HostLog ("[ERROR] status.refresh failed to start: {0}" -f $_.Exception.Message)
+        try {
+            if (Test-Path -LiteralPath $lockPath) { Remove-Item -LiteralPath $lockPath -Force }
+        }
+        catch {
+            # A lock left behind by a launch that never produced a process would
+            # block refreshes until something clears it by hand.
+            Write-HostLog ("[WARN] status.refresh could not clear lock {0}: {1}" -f $lockPath, $_.Exception.Message)
+        }
+        return $false
     }
 }
 
@@ -3175,16 +3378,23 @@ function Get-RoadmapFromCache {
     param([int]$TtlSeconds)
     $nowUtc = (Get-Date).ToUniversalTime()
     $key = 'roadmap-global'
+    $cacheFile = Get-RoadmapCacheFilePath
 
     if ($script:RoadmapCacheMemory.ContainsKey($key)) {
         $entry = $script:RoadmapCacheMemory[$key]
-        $age = (($nowUtc) - [datetime]$entry.CreatedAtUtc).TotalSeconds
-        if ($age -le $TtlSeconds) {
-            return [pscustomobject]@{ hit = $true; source = 'memory'; ageSeconds = $age; cachedAt = ([datetime]$entry.CreatedAtUtc).ToString('o'); entries = $entry.Entries; scannedAt = $entry.ScannedAt }
+        # The assessment route reads this cache with -TtlSeconds ([int]::MaxValue),
+        # so age can never retire the entry. Only the file version can.
+        if (-not (Test-MemoryCacheEntryCurrent -Entry $entry -CacheFilePath $cacheFile)) {
+            $script:RoadmapCacheMemory.Remove($key)
+        }
+        else {
+            $age = (($nowUtc) - [datetime]$entry.CreatedAtUtc).TotalSeconds
+            if ($age -le $TtlSeconds) {
+                return [pscustomobject]@{ hit = $true; source = 'memory'; ageSeconds = $age; cachedAt = ([datetime]$entry.CreatedAtUtc).ToString('o'); entries = $entry.Entries; scannedAt = $entry.ScannedAt }
+            }
         }
     }
 
-    $cacheFile = Get-RoadmapCacheFilePath
     if (-not (Test-Path -LiteralPath $cacheFile)) { return [pscustomobject]@{ hit = $false } }
 
     try {
@@ -3195,7 +3405,7 @@ function Get-RoadmapFromCache {
         $created = [datetime]$disk.createdAtUtc
         $age = (($nowUtc) - $created).TotalSeconds
         if ($age -gt $TtlSeconds) { return [pscustomobject]@{ hit = $false } }
-        $script:RoadmapCacheMemory[$key] = @{ CreatedAtUtc = $created; Entries = $disk.entries; ScannedAt = [string]$disk.scannedAt }
+        $script:RoadmapCacheMemory[$key] = @{ CreatedAtUtc = $created; Entries = $disk.entries; ScannedAt = [string]$disk.scannedAt; FileWriteTimeUtc = (Get-CacheFileStamp -Path $cacheFile) }
         return [pscustomobject]@{ hit = $true; source = 'disk'; ageSeconds = $age; cachedAt = $created.ToString('o'); entries = $disk.entries; scannedAt = [string]$disk.scannedAt }
     }
     catch { return [pscustomobject]@{ hit = $false } }
@@ -3205,12 +3415,12 @@ function Save-RoadmapCache {
     param([array]$Entries, [string]$ScannedAt)
     $nowUtc = (Get-Date).ToUniversalTime()
     $key = 'roadmap-global'
-    $script:RoadmapCacheMemory[$key] = @{ CreatedAtUtc = $nowUtc; Entries = $Entries; ScannedAt = $ScannedAt }
+    $cacheFile = Get-RoadmapCacheFilePath
     try {
-        $cacheFile = Get-RoadmapCacheFilePath
         (@{ createdAtUtc = $nowUtc.ToString('o'); scannedAt = $ScannedAt; entries = $Entries } | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $cacheFile -Encoding UTF8
     }
     catch { Write-HostLog ("Roadmap cache write skipped: {0}" -f $_.Exception.Message) }
+    $script:RoadmapCacheMemory[$key] = @{ CreatedAtUtc = $nowUtc; Entries = $Entries; ScannedAt = $ScannedAt; FileWriteTimeUtc = (Get-CacheFileStamp -Path $cacheFile) }
 }
 
 function Clear-RoadmapCache {
@@ -3280,16 +3490,21 @@ function Get-RoadmapAuditFromCache {
     param([int]$TtlSeconds)
     $nowUtc = (Get-Date).ToUniversalTime()
     $key = 'roadmap-audit-global'
+    $cacheFile = Get-RoadmapAuditCacheFilePath
 
     if ($script:RoadmapAuditCacheMemory.ContainsKey($key)) {
         $entry = $script:RoadmapAuditCacheMemory[$key]
-        $age = (($nowUtc) - [datetime]$entry.CreatedAtUtc).TotalSeconds
-        if ($age -le $TtlSeconds) {
-            return [pscustomobject]@{ hit = $true; source = 'memory'; ageSeconds = $age; cachedAt = ([datetime]$entry.CreatedAtUtc).ToString('o'); entries = $entry.Entries; auditedAt = $entry.AuditedAt }
+        if (-not (Test-MemoryCacheEntryCurrent -Entry $entry -CacheFilePath $cacheFile)) {
+            $script:RoadmapAuditCacheMemory.Remove($key)
+        }
+        else {
+            $age = (($nowUtc) - [datetime]$entry.CreatedAtUtc).TotalSeconds
+            if ($age -le $TtlSeconds) {
+                return [pscustomobject]@{ hit = $true; source = 'memory'; ageSeconds = $age; cachedAt = ([datetime]$entry.CreatedAtUtc).ToString('o'); entries = $entry.Entries; auditedAt = $entry.AuditedAt }
+            }
         }
     }
 
-    $cacheFile = Get-RoadmapAuditCacheFilePath
     if (-not (Test-Path -LiteralPath $cacheFile)) { return [pscustomobject]@{ hit = $false } }
 
     try {
@@ -3300,7 +3515,7 @@ function Get-RoadmapAuditFromCache {
         $created = [datetime]$disk.createdAtUtc
         $age = (($nowUtc) - $created).TotalSeconds
         if ($age -gt $TtlSeconds) { return [pscustomobject]@{ hit = $false } }
-        $script:RoadmapAuditCacheMemory[$key] = @{ CreatedAtUtc = $created; Entries = $disk.entries; AuditedAt = [string]$disk.auditedAt }
+        $script:RoadmapAuditCacheMemory[$key] = @{ CreatedAtUtc = $created; Entries = $disk.entries; AuditedAt = [string]$disk.auditedAt; FileWriteTimeUtc = (Get-CacheFileStamp -Path $cacheFile) }
         return [pscustomobject]@{ hit = $true; source = 'disk'; ageSeconds = $age; cachedAt = $created.ToString('o'); entries = $disk.entries; auditedAt = [string]$disk.auditedAt }
     }
     catch { return [pscustomobject]@{ hit = $false } }
@@ -3310,12 +3525,12 @@ function Save-RoadmapAuditCache {
     param([array]$Entries, [string]$AuditedAt)
     $nowUtc = (Get-Date).ToUniversalTime()
     $key = 'roadmap-audit-global'
-    $script:RoadmapAuditCacheMemory[$key] = @{ CreatedAtUtc = $nowUtc; Entries = $Entries; AuditedAt = $AuditedAt }
+    $cacheFile = Get-RoadmapAuditCacheFilePath
     try {
-        $cacheFile = Get-RoadmapAuditCacheFilePath
         (@{ createdAtUtc = $nowUtc.ToString('o'); auditedAt = $AuditedAt; entries = $Entries } | ConvertTo-Json -Depth 15) | Set-Content -LiteralPath $cacheFile -Encoding UTF8
     }
     catch { Write-HostLog ("Roadmap audit cache write skipped: {0}" -f $_.Exception.Message) }
+    $script:RoadmapAuditCacheMemory[$key] = @{ CreatedAtUtc = $nowUtc; Entries = $Entries; AuditedAt = $AuditedAt; FileWriteTimeUtc = (Get-CacheFileStamp -Path $cacheFile) }
 }
 
 function Clear-RoadmapAuditCache {
@@ -3687,16 +3902,21 @@ function Get-DocAuditFromCache {
     param([int]$TtlSeconds)
     $nowUtc = (Get-Date).ToUniversalTime()
     $key = 'docaudit-global'
+    $cacheFile = Get-DocAuditCacheFilePath
 
     if ($script:DocAuditCacheMemory.ContainsKey($key)) {
         $entry = $script:DocAuditCacheMemory[$key]
-        $age = (($nowUtc) - [datetime]$entry.CreatedAtUtc).TotalSeconds
-        if ($age -le $TtlSeconds) {
-            return [pscustomobject]@{ hit = $true; source = 'memory'; ageSeconds = $age; cachedAt = ([datetime]$entry.CreatedAtUtc).ToString('o'); entries = $entry.Entries; auditedAt = $entry.AuditedAt }
+        if (-not (Test-MemoryCacheEntryCurrent -Entry $entry -CacheFilePath $cacheFile)) {
+            $script:DocAuditCacheMemory.Remove($key)
+        }
+        else {
+            $age = (($nowUtc) - [datetime]$entry.CreatedAtUtc).TotalSeconds
+            if ($age -le $TtlSeconds) {
+                return [pscustomobject]@{ hit = $true; source = 'memory'; ageSeconds = $age; cachedAt = ([datetime]$entry.CreatedAtUtc).ToString('o'); entries = $entry.Entries; auditedAt = $entry.AuditedAt }
+            }
         }
     }
 
-    $cacheFile = Get-DocAuditCacheFilePath
     if (-not (Test-Path -LiteralPath $cacheFile)) { return [pscustomobject]@{ hit = $false } }
 
     try {
@@ -3707,7 +3927,7 @@ function Get-DocAuditFromCache {
         $created = [datetime]$disk.createdAtUtc
         $age = (($nowUtc) - $created).TotalSeconds
         if ($age -gt $TtlSeconds) { return [pscustomobject]@{ hit = $false } }
-        $script:DocAuditCacheMemory[$key] = @{ CreatedAtUtc = $created; Entries = $disk.entries; AuditedAt = [string]$disk.auditedAt }
+        $script:DocAuditCacheMemory[$key] = @{ CreatedAtUtc = $created; Entries = $disk.entries; AuditedAt = [string]$disk.auditedAt; FileWriteTimeUtc = (Get-CacheFileStamp -Path $cacheFile) }
         return [pscustomobject]@{ hit = $true; source = 'disk'; ageSeconds = $age; cachedAt = $created.ToString('o'); entries = $disk.entries; auditedAt = [string]$disk.auditedAt }
     }
     catch { return [pscustomobject]@{ hit = $false } }
@@ -3717,12 +3937,12 @@ function Save-DocAuditCache {
     param([array]$Entries, [string]$AuditedAt)
     $nowUtc = (Get-Date).ToUniversalTime()
     $key = 'docaudit-global'
-    $script:DocAuditCacheMemory[$key] = @{ CreatedAtUtc = $nowUtc; Entries = $Entries; AuditedAt = $AuditedAt }
+    $cacheFile = Get-DocAuditCacheFilePath
     try {
-        $cacheFile = Get-DocAuditCacheFilePath
         (@{ createdAtUtc = $nowUtc.ToString('o'); auditedAt = $AuditedAt; entries = $Entries } | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $cacheFile -Encoding UTF8
     }
     catch { Write-HostLog ("DocAudit cache write skipped: {0}" -f $_.Exception.Message) }
+    $script:DocAuditCacheMemory[$key] = @{ CreatedAtUtc = $nowUtc; Entries = $Entries; AuditedAt = $AuditedAt; FileWriteTimeUtc = (Get-CacheFileStamp -Path $cacheFile) }
 }
 
 function Get-PortfolioAssessmentCacheTtlSeconds {
@@ -5363,6 +5583,14 @@ try {
         Write-HostLog ("TLS: enabled with certificate '{0}' (subject={1})" -f $pfxPath, $script:TlsCertificate.Subject)
     }
 } catch { Write-HostLog ("WARN TLS: certificate load failed - {0}" -f $_.Exception.Message); $script:TlsCertificate = $null }
+
+# Everything above is definition and configuration; everything below binds the
+# port and takes ownership of it. A caller that only wants the functions must
+# return HERE - one line further and Stop-PortListeners would terminate the
+# running service, which is precisely what a background worker must never do.
+if ($LoadDefinitionsOnly) {
+    return
+}
 
 $listenerAddress = [System.Net.IPAddress]::Parse($BindAddress)
 Stop-PortListeners -LocalPort $Port
@@ -7170,9 +7398,10 @@ try {
                     $ttlSeconds = Get-StatusCacheTtlSeconds -Settings $settings
                     $cacheKey = Get-StatusCacheKey -LocalRoots $localRoots -MaxDepth $maxDepth -IncludeNonGitFolders $includeNonGit
 
+                    # A fresh hit answers immediately and nothing else happens.
                     $result = $null
+                    $cacheHit = $null
                     if (-not $refresh) {
-                        # With stale=true we bypass TTL; otherwise only hit cache when TTL > 0
                         if ($stale -or ($ttlSeconds -gt 0)) {
                             $cacheHit = Get-StatusFromCache -Key $cacheKey -TtlSeconds $ttlSeconds -IgnoreTtl:$stale
                             if ($cacheHit.hit) {
@@ -7182,33 +7411,50 @@ try {
                     }
 
                     if ($null -eq $result) {
-                        $scanCachedAt = (Get-Date).ToUniversalTime().ToString('o')
-                        $statusLogPath = if ($script:OpsLogPath) { $script:OpsLogPath } else { $LogPath }
-                        # This is THE path the watchdog used to kill: a cold
-                        # 75-repository scan outlives the watchdog's ~180s
-                        # patience while the single-threaded host cannot answer
-                        # /health/live. Publishing progress lets the watchdog
-                        # distinguish "working" from "frozen" instead of
-                        # restarting a healthy scan every three minutes.
-                        $scanOp = Start-PortalOperation -WorkspaceRoot $WorkspaceRoot -Operation 'status.scan' -CorrelationId $correlationId -Stage 'inventory'
-                        try {
-                            $result = Get-StatusAdapterResult -LocalRoots $localRoots -MaxDepth $maxDepth -IncludeNonGitFolders:$includeNonGit -LogPath $statusLogPath -OnProgress (Get-ActivePortalOperationTick -Stage 'inventory')
-                            if ($result.success) {
-                                $scanOp = Update-PortalOperationProgress -WorkspaceRoot $WorkspaceRoot -State $scanOp -Stage 'github-metadata' -Force
-                                $result = Add-GitHubMetadataToStatusResult -StatusResult $result -Settings $settings
-                            }
-                            $scanOp = Update-PortalOperationProgress -WorkspaceRoot $WorkspaceRoot -State $scanOp -Stage 'cache-write' -Force
-                            $result = Add-StatusCacheMeta -Result $result -CacheMeta (Get-StatusCacheMeta -Hit $false -Source 'fresh-scan' -TtlSeconds $ttlSeconds -AgeSeconds 0 -BypassRequested:$refresh -CachedAt $scanCachedAt)
-                            if ($result.success -and ($ttlSeconds -gt 0)) {
-                                Save-StatusCache -Key $cacheKey -Response $result
-                            }
+                        # THE fix for the freeze. This used to run the scan
+                        # inline. With a 120s TTL and a 196.7s sweep, that meant
+                        # the single request thread was busy scanning more often
+                        # than not, and every other route - /health/live
+                        # included - queued behind it. The refresh interval was
+                        # shorter than the refresh, so the portal could never
+                        # settle. Measured 2026-08-11.
+                        #
+                        # The request no longer waits. It kicks an out-of-process
+                        # refresh and answers with the best data on hand, saying
+                        # plainly that it is stale and that a refresh is running.
+                        $refreshStarted = Start-BackgroundStatusRefresh -LocalRoots $localRoots -MaxDepth $maxDepth -IncludeNonGitFolders:$includeNonGit
+                        $refreshState = Get-StatusRefreshState
+
+                        # Expired cache still beats no answer: an operator would
+                        # rather see a two-minute-old portfolio labelled stale
+                        # than a spinner for three minutes.
+                        $expired = Get-StatusFromCache -Key $cacheKey -TtlSeconds $ttlSeconds -IgnoreTtl:$true
+                        if ($expired.hit) {
+                            $result = Add-StatusCacheMeta -Result $expired.response -CacheMeta (Get-StatusCacheMeta -Hit $true -Source 'stale-cache' -TtlSeconds $ttlSeconds -AgeSeconds $expired.ageSeconds -BypassRequested:$refresh -CachedAt $expired.cachedAt)
                         }
-                        finally {
-                            # Must clear on the throw path too — a marker left
-                            # active by a failed scan would suppress restarts
-                            # until it aged out.
-                            Complete-PortalOperation -WorkspaceRoot $WorkspaceRoot -State $scanOp -Outcome 'completed' | Out-Null
+                        else {
+                            # Cold start: nothing has ever been scanned. Answer
+                            # 200 with an empty, explicitly-refreshing payload
+                            # rather than 500 - there is no error here, only an
+                            # absence the operator should see named.
+                            $result = [pscustomobject]@{
+                                success = $true
+                                data    = [pscustomobject]@{ repos = @() }
+                            }
+                            $result = Add-StatusCacheMeta -Result $result -CacheMeta (Get-StatusCacheMeta -Hit $false -Source 'awaiting-first-scan' -TtlSeconds $ttlSeconds -AgeSeconds 0 -BypassRequested:$refresh -CachedAt $null)
                         }
+
+                        if ($null -eq $result.meta) {
+                            $result | Add-Member -NotePropertyName meta -NotePropertyValue @{} -Force
+                        }
+                        $result.meta.refreshing = [bool]($refreshStarted -or $refreshState.running)
+                        $result.meta.refreshStartedAt = if ($null -ne $refreshState.startedAt) { ([datetime]$refreshState.startedAt).ToUniversalTime().ToString('o') } else { $null }
+
+                        # meta.statusCache.source, not meta.cacheSource: the
+                        # latter does not exist, and Set-StrictMode -Version
+                        # Latest turns reading a missing key into a terminating
+                        # error rather than $null, so the typo returned 500.
+                        Write-HostLog ("[TRACE] status.cache miss correlationId={0} served={1} refreshing={2}" -f $correlationId, $result.meta.statusCache.source, $result.meta.refreshing)
                     }
 
                     if ($null -eq $result.meta) {
@@ -8197,21 +8443,33 @@ try {
                         }
                     }
                     if ($null -eq $statusResult) {
-                        Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} cold-status-scan localRoots={1} depth={2}" -f $correlationId, ($defaultRoots -join ','), $defaultDepth)
-                        $statusResult = Get-StatusAdapterResult -LocalRoots $defaultRoots -MaxDepth $defaultDepth -IncludeNonGitFolders:$false -LogPath $LogPath -OnProgress (Get-ActivePortalOperationTick -Stage 'cold-status-scan')
-                        if ($null -ne $statusResult -and $statusResult.success) {
-                            $signalSources['status'] = 'fresh-scan'
-                            if ($statusTtl -gt 0) {
-                                Save-StatusCache -Key $statusKey -Response $statusResult
-                            }
-                        } else {
-                            $signalSources['status'] = 'error'
-                            $errMsg = if ($null -ne $statusResult -and $statusResult.PSObject.Properties.Name -contains 'error') { [string]$statusResult.error } else { 'unknown error' }
-                            Write-HostLog ("ERROR portfolio.assessment correlationId={0} status scan failed: {1}" -f $correlationId, $errMsg)
+                        # Same fix as GET /api/status: this route must not run a
+                        # portfolio sweep on the request thread either, or it
+                        # reintroduces the freeze through the other door. Both
+                        # routes read the same cache, so one background worker
+                        # serves both.
+                        $assessmentRefreshStarted = Start-BackgroundStatusRefresh -LocalRoots $defaultRoots -MaxDepth $defaultDepth
+                        $assessmentRefreshState = Get-StatusRefreshState
+
+                        $staleStatus = Get-StatusFromCache -Key $statusKey -TtlSeconds $statusTtl -IgnoreTtl:$true
+                        if ($staleStatus.hit) {
+                            $statusResult = $staleStatus.response
+                            $signalSources['status'] = 'stale-cache'
                         }
+                        else {
+                            $statusResult = $null
+                            $signalSources['status'] = 'awaiting-first-scan'
+                        }
+
+                        $signalSources['statusRefreshing'] = [bool]($assessmentRefreshStarted -or $assessmentRefreshState.running)
+                        Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} status-cache miss served={1} refreshing={2}" -f $correlationId, $signalSources['status'], $signalSources['statusRefreshing'])
                     }
-                    if ($null -ne $statusResult -and $statusResult.success) {
-                        $statusResult = Add-GitHubMetadataToStatusResult -StatusResult $statusResult -Settings $settings
+                    else {
+                        # A cache hit already carries the GitHub metadata the
+                        # worker joined in. Re-joining it here would put those
+                        # sequential API calls back on the request thread - the
+                        # very cost this change removed.
+                        $signalSources['statusRefreshing'] = $false
                     }
                     $localRepos = if ($null -ne $statusResult -and $statusResult.success -and $null -ne $statusResult.data) { @($statusResult.data.repos) } else { @() }
 
@@ -8227,9 +8485,20 @@ try {
                             }
                         }
                         if (@($roadmapEntries).Count -eq 0) {
-                            Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} cold-roadmap-scan" -f $correlationId)
-                            $roadmapEntries = @(Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth)
-                            $signalSources['roadmap'] = 'fresh-scan'
+                            # Was a fresh inline scan measured at prepMs=40669 on
+                            # this workspace - and it never wrote the cache, so
+                            # every request paid it again. The worker owns this
+                            # scan now; serve whatever it last produced.
+                            $null = Start-BackgroundStatusRefresh -LocalRoots $defaultRoots -MaxDepth $defaultDepth
+                            $rmStale = Get-RoadmapFromCache -TtlSeconds ([int]::MaxValue)
+                            if ($rmStale.hit) {
+                                $roadmapEntries = @($rmStale.entries)
+                                $signalSources['roadmap'] = 'stale-cache'
+                            } else {
+                                $roadmapEntries = @()
+                                $signalSources['roadmap'] = 'awaiting-first-scan'
+                            }
+                            Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} roadmap-cache miss served={1}" -f $correlationId, $signalSources['roadmap'])
                         }
                     } else {
                         $signalSources['roadmap'] = 'deferred-differential'
@@ -8247,11 +8516,18 @@ try {
                             }
                         }
                         if (@($docAuditEntries).Count -eq 0) {
-                            Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} cold-doc-audit-scan" -f $correlationId)
-                            $docAuditEntries = @(Invoke-DocAuditScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth)
-                            $signalSources['docAudit'] = 'fresh-scan'
-                            $auditedAt = (Get-Date).ToUniversalTime().ToString('o')
-                            if ($docAuditTtl -gt 0) { Save-DocAuditCache -Entries $docAuditEntries -AuditedAt $auditedAt }
+                            # Same move as the roadmap branch above: the worker
+                            # scans, the request serves.
+                            $null = Start-BackgroundStatusRefresh -LocalRoots $defaultRoots -MaxDepth $defaultDepth
+                            $daStale = Get-DocAuditFromCache -TtlSeconds ([int]::MaxValue)
+                            if ($daStale.hit) {
+                                $docAuditEntries = @($daStale.entries)
+                                $signalSources['docAudit'] = 'stale-cache'
+                            } else {
+                                $docAuditEntries = @()
+                                $signalSources['docAudit'] = 'awaiting-first-scan'
+                            }
+                            Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} doc-audit-cache miss served={1}" -f $correlationId, $signalSources['docAudit'])
                         }
                     } else {
                         $signalSources['docAudit'] = 'deferred-differential'
@@ -8269,11 +8545,19 @@ try {
                             }
                         }
                         if (@($roadmapAuditEntries).Count -eq 0) {
-                            Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} cold-roadmap-audit-scan" -f $correlationId)
-                            $roadmapAuditEntries = @(Invoke-RoadmapAuditScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth)
-                            $signalSources['roadmapAudit'] = 'fresh-scan'
-                            $auditedAt = (Get-Date).ToUniversalTime().ToString('o')
-                            if ($rmAuditTtl -gt 0) { Save-RoadmapAuditCache -Entries $roadmapAuditEntries -AuditedAt $auditedAt }
+                            # The last of the four sweeps this route ran inline.
+                            # With the other three moved, this one alone still
+                            # held the request for prepMs=27799.
+                            $null = Start-BackgroundStatusRefresh -LocalRoots $defaultRoots -MaxDepth $defaultDepth
+                            $raStale = Get-RoadmapAuditFromCache -TtlSeconds ([int]::MaxValue)
+                            if ($raStale.hit) {
+                                $roadmapAuditEntries = @($raStale.entries)
+                                $signalSources['roadmapAudit'] = 'stale-cache'
+                            } else {
+                                $roadmapAuditEntries = @()
+                                $signalSources['roadmapAudit'] = 'awaiting-first-scan'
+                            }
+                            Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} roadmap-audit-cache miss served={1}" -f $correlationId, $signalSources['roadmapAudit'])
                         }
                     } else {
                         $signalSources['roadmapAudit'] = 'deferred-differential'
