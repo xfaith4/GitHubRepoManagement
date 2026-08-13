@@ -60,7 +60,14 @@ foreach ($file in $trackedFiles) {
         $violations.Add("Tracked generated export: $normalized")
     }
 
-    if ($normalized.StartsWith('evidence/', [System.StringComparison]::OrdinalIgnoreCase) -and -not $normalized.EndsWith('/.gitkeep', [System.StringComparison]::OrdinalIgnoreCase)) {
+    # Generated evidence stays untracked; curated proof under evidence/verified/
+    # is tracked deliberately. The roadmap requires a durable evidence entry per
+    # operator-verified milestone, so a blanket ban made its own acceptance
+    # criteria impossible to satisfy in a PR. The carve-out is one directory
+    # wide: run spill under evidence/baseline/ is still a violation.
+    if ($normalized.StartsWith('evidence/', [System.StringComparison]::OrdinalIgnoreCase) -and
+        -not $normalized.StartsWith('evidence/verified/', [System.StringComparison]::OrdinalIgnoreCase) -and
+        -not $normalized.EndsWith('/.gitkeep', [System.StringComparison]::OrdinalIgnoreCase)) {
         $violations.Add("Tracked evidence output: $normalized")
     }
 }

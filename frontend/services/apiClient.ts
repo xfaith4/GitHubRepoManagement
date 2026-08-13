@@ -1082,13 +1082,25 @@ export async function checkRoadmapDispatch(
 export async function executeRoadmapDispatch(
   repoName: string,
   prompt: string,
-  options?: { localPath?: string; baseBranch?: string; follow?: boolean; promptRefinementRunId?: string }
+  options?: {
+    localPath?: string;
+    baseBranch?: string;
+    follow?: boolean;
+    promptRefinementRunId?: string;
+    /**
+     * Release 3.1 — queue deliberately into an empty room. Without it the route
+     * refuses with 409 `runner-absent` and writes nothing, so an omitted flag
+     * can never strand work by accident.
+     */
+    acknowledgeNoRunner?: boolean;
+  }
 ): Promise<DispatchExecuteResult> {
   const body: Record<string, unknown> = { repoName, prompt };
   if (options?.localPath) body.localPath = options.localPath;
   if (options?.baseBranch) body.baseBranch = options.baseBranch;
   if (options?.follow !== undefined) body.follow = options.follow;
   if (options?.promptRefinementRunId) body.promptRefinementRunId = options.promptRefinementRunId;
+  if (options?.acknowledgeNoRunner) body.acknowledgeNoRunner = true;
   const data = await postJson<any>('/roadmap/dispatch/execute', body);
   return (data?.data ?? data ?? {}) as DispatchExecuteResult;
 }

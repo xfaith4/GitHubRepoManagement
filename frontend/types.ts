@@ -934,6 +934,14 @@ export interface DispatchExecuteResult {
   message: string;
   /** Whether a runner is present to pick the queued work up. */
   runner?: import('./lib/runnerPresence').RunnerPresencePayload | null;
+  /**
+   * Release 3.1 — true only when the operator overrode the presence gate with
+   * `acknowledgeNoRunner`. Without that flag the route refuses (409
+   * `runner-absent`) and writes nothing, so this can never be a surprise.
+   */
+  queuedWithoutRunner?: boolean;
+  /** Queued work nothing can claim, counting the task just queued. */
+  strandedCount?: number;
   quota?: DispatchQuotaSummary | null;
   error?: string | null;
 }

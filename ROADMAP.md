@@ -13,7 +13,7 @@
 
 ## Current Status (Agent Context)
 
-**Last updated:** 2026-08-11
+**Last updated:** 2026-08-13
 
 Releases 0.4 through 2.6, 2.8 and 3.0 are **engineering-complete and archived**,
 as is every completed milestone from the releases and lanes still open below.
@@ -244,11 +244,12 @@ The full execution contract lives in one place,
 `ROADMAP_TEMPLATE.md`. This heading exists so the validator can resolve the
 active-release pointer; it deliberately restates nothing.
 
-**Current focus:** nothing may be queued into an empty room. Taken first
-because it is the only milestone that stops the portal actively accumulating
-work nobody will do, and because the data it needs (`Get-RunnerPresence`) is
-already computed on this exact route — just consumed after the queue write
-instead of before it.
+**Current focus:** the empty-room gate shipped 2026-08-13 and the stranded pile
+is triaged and empty, so the portal is no longer accumulating work nobody will
+do. Four milestones remain. Take **"every surface names its engine"** next: like
+the gate, every input it needs is already computed (`providerId` on the AI
+preview), one surface already does it correctly, and the fix is to stop a
+deterministic rule's finding and a model's proposal from looking identical.
 
 ---
 
@@ -358,8 +359,11 @@ regresses meanwhile.
 ### Release 3.1 — Closed-Loop Delivery
 
 **Status:** active — promoted 2026-08-11, displacing 3.2. 3 of 7 milestones
-shipped 2026-08-10 (the work-item trace, the completion-edit generator, and the
-merge-evidence gate). The release was widened the same day by the priority reset
+shipped 2026-08-10 and are archived (the work-item trace, the completion-edit
+generator, and the merge-evidence gate). A fourth — the empty-room gate — is
+engineering-complete and smoke-tested as of 2026-08-13, and stays `[ ]` here
+because its live proof is outstanding, per the checkbox rule. The release was
+widened on promotion day by the priority reset
 in section "Current Status": closing the loop is not enough if the operator
 cannot tell that it closed, which engine acted, or what it cost.
 
@@ -393,14 +397,20 @@ the merge-evidence gate that refuses nine shapes which are not completion. Full
 text and evidence:
 [the archive](docs/history/completed-releases.md#closed-2026-08-11-archived-from-roadmapmd).
 
-- [ ] **Nothing may be queued into an empty room.**
-      `POST /api/roadmap/dispatch/execute` already reads `Get-RunnerPresence` —
-      but _after_ writing the queue line, so the response explains the problem
-      the operator now has instead of preventing it. Gate the wizard's approve
-      control on presence, name the unmet precondition inline, surface
-      `strandedCount` where queued work is shown, and triage the six entries
-      already stranded. _(state: planned — the live portal reported
-      `state=absent, queuedTotal=6, strandedCount=6` on 2026-08-11)_
+- [ ] **Nothing may be queued into an empty room.** The route now refuses with
+      409 `runner-absent` **before** any write, naming the unmet precondition and
+      the remedy command, and carrying `strandedCount` so "no runner" reads
+      differently at 0 queued than at 6. `acknowledgeNoRunner` keeps a deliberate
+      queue-then-start-a-runner possible — the capability is explained, not
+      removed. The approve controls in the dispatch wizard and the packaged-item
+      queue disable on absent presence with the precondition rendered above them,
+      and the queue header shows a stranded badge. The six stranded entries were
+      triaged and cancelled, recorded in
+      [`evidence/verified/stranded-dispatch-triage-2026-08-11.md`](evidence/verified/stranded-dispatch-triage-2026-08-11.md).
+      _(state: smoke-tested — module smoke asserts, through the AST and scoped to
+      this route, that the refusal precedes the queue write and reports
+      `strandedCount`; verified non-vacuous against the pre-gate host. Needs
+      `operator-verified` against the live portal, batched with 2.9's session.)_
 - [ ] **Every surface names its engine.** The Operations workspace does this
       well — provider selector, `Provider: <id>` on the preview and every
       history row, and a warning when it falls back to the offline heuristic.
@@ -483,10 +493,15 @@ and the work-item trace shipped earlier in this release.
 
 **Known issues:**
 
-- [ ] Six stranded queue entries exist right now. They are evidence, not
-      cleanup: triage them within milestone 1 and record what happened to each,
-      rather than deleting the file and losing the only record that the failure
-      was real.
+- [ ] **[non-blocker]** The same item can still be queued twice while a runner
+      _is_ present. The triage found the six stranded entries were **three items,
+      each queued twice** — two pairs seconds apart (double-submit) and one three
+      minutes apart (a retry after nothing appeared to happen). The presence gate
+      removes the cause for the absent-runner case only; nothing makes dispatch
+      idempotent. _(state: planned — recorded 2026-08-13 from
+      [the triage](evidence/verified/stranded-dispatch-triage-2026-08-11.md);
+      pairs with the "enabled means available" milestone, since both are about a
+      control that gives no feedback that it worked.)_
 - [ ] The scheduled and operator paths reach dispatch through different writers
       (`Automation.RoadmapPackaging.ps1` and the dispatch route). The
       queue-contract tripwire keeps their _shape_ identical; nothing yet keeps
