@@ -43,6 +43,18 @@ backend/modules/output/**
 !/evidence/**/
 !/evidence/**/.gitkeep
 
+# Curated proof is not generated evidence, and the difference is load-bearing.
+# ROADMAP.md makes evidence/ the durable record — "an unrecorded proof is
+# indistinguishable from one that never happened" — while every path under it
+# was ignored, so the only tracked file was a .gitkeep. A milestone whose
+# acceptance criterion is an evidence entry could not ship that entry with the
+# PR that earned it, and the proof died with the machine that made it.
+#
+# Run spill (evidence/baseline/**, daily snapshots) stays ignored: it is
+# regenerable and large. Hand-written proof that a human curated goes in
+# evidence/verified/ and is tracked, reviewed in the PR, and permanent.
+!/evidence/verified/**
+
 # Agent worklogs at the repository root. The 2026-07-15 cleanup archived these
 # to docs/history/worklogs/ and they re-accrued within three weeks, so the
 # convention is enforced rather than restated: keep worklogs under
