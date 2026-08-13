@@ -36,7 +36,8 @@ import ErrorBoundary from './ErrorBoundary';
 import PortfolioSummarySection from './PortfolioSummarySection';
 import { type ViewTabBadges } from '../lib/viewTabs';
 import { isRepoNeedsAttention } from '../lib/needsAttention';
-import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getAutomationStatus, getPackagedItems, approvePackagedItem, rejectPackagedItem, getRoadmapDependencies, getPortfolioAssessment, refreshAllPortfolioAssessment, setOperationsRepoCuration, getPortfolioTrend, getOperationsRepos } from '../services/apiClient';
+import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getAutomationStatus, getPackagedItems, approvePackagedItem, rejectPackagedItem, getRoadmapDependencies, getPortfolioAssessment, refreshAllPortfolioAssessment, setOperationsRepoCuration, getPortfolioTrend, getOperationsRepos, getRunnerPresence } from '../services/apiClient';
+import { type RunnerPresencePayload } from '../lib/runnerPresence';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
 import { useHealthPing } from '../hooks/useHealthPing';
@@ -134,6 +135,8 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   const [packagedItemsLoading, setPackagedItemsLoading] = useState(false);
   const [packagedItemsError, setPackagedItemsError] = useState<string | null>(null);
   const [packagedItemsNotice, setPackagedItemsNotice] = useState<string | null>(null);
+  // Release 3.1 — whether anything can claim what this panel queues.
+  const [runnerPresence, setRunnerPresence] = useState<RunnerPresencePayload | null>(null);
   const [packagedItemBusyId, setPackagedItemBusyId] = useState<string | null>(null);
   // Release 3.1 — whichever id the operator clicked Trace on. Any id the chain
   // minted resolves to the same work item, so this holds it verbatim.
@@ -283,6 +286,11 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     } finally {
       setPackagedItemsLoading(false);
     }
+    // Release 3.1 — read presence with the queue, not separately. Approving here
+    // enqueues into the same room the dispatch wizard queues into, so this panel
+    // must be able to say whether anything is in it. getRunnerPresence resolves
+    // null rather than throwing, so a status hiccup cannot break the queue.
+    setRunnerPresence(await getRunnerPresence());
   }, []);
 
   const handleApprovePackagedItem = useCallback(async (packetId: string) => {
@@ -1398,6 +1406,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                 error={packagedItemsError}
                 notice={packagedItemsNotice}
                 busyPacketId={packagedItemBusyId}
+                runner={runnerPresence}
                 onRefresh={() => { refreshPackagedItems(); }}
                 onApprove={handleApprovePackagedItem}
                 onReject={handleRejectPackagedItem}

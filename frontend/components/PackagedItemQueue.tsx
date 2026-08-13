@@ -7,6 +7,10 @@ import {
   sortPackagedItems,
   type PackagedItem,
 } from '../lib/packagedItems';
+import {
+  resolveDispatchGate,
+  type RunnerPresencePayload,
+} from '../lib/runnerPresence';
 
 interface PackagedItemQueueProps {
   items: PackagedItem[];
@@ -24,6 +28,12 @@ interface PackagedItemQueueProps {
    * minted so far; the backend resolves any of them to the same work item.
    */
   onViewTrace: (traceId: string) => void;
+  /**
+   * Release 3.1 — who, if anyone, can claim what this panel queues. Approving
+   * enqueues for the operator runner, so an absent one makes "Approve & queue"
+   * a control that writes work nothing will ever pick up.
+   */
+  runner?: RunnerPresencePayload | null;
 }
 
 const SEVERITY_CLASSES: Record<string, string> = {
@@ -58,9 +68,12 @@ const PackagedItemQueue: React.FC<PackagedItemQueueProps> = ({
   onApprove,
   onReject,
   onViewTrace,
+  runner = null,
 }) => {
   const sorted = sortPackagedItems(items);
   const awaiting = countAwaitingDecision(items);
+  const gate = resolveDispatchGate(runner);
+  const stranded = Number(runner?.strandedCount ?? 0);
 
   return (
     <section
@@ -79,6 +92,18 @@ const PackagedItemQueue: React.FC<PackagedItemQueueProps> = ({
                 {awaiting} awaiting approval
               </span>
             )}
+            {/* Release 3.1 — stranded is not the same fact as queued. With a
+                runner present this is a queue; without one it is a pile, and
+                the operator needs to see which before approving more into it. */}
+            {stranded > 0 && (
+              <span
+                data-testid="packaged-item-stranded-count"
+                className="ml-2 rounded border border-red-600/60 bg-red-900/30 px-1.5 py-0.5 text-[11px] font-semibold text-red-100"
+                title="Queued with no operator runner able to claim it."
+              >
+                {stranded} stranded
+              </span>
+            )}
           </h3>
           <p className="mt-0.5 text-xs text-gray-400">
             Scheduled runs rank each curated repo&apos;s top-value pending item and stop here.
@@ -93,6 +118,19 @@ const PackagedItemQueue: React.FC<PackagedItemQueueProps> = ({
           {loading ? 'Refreshing…' : 'Refresh'}
         </button>
       </header>
+
+      {/* The unmet precondition, in text, above the controls it disables. A
+          greyed button with no reason is worse than a failing one: the operator
+          cannot tell broken from not-yet-applicable. */}
+      {!gate.canQueue && (
+        <div
+          role="alert"
+          data-testid="packaged-item-queue-precondition"
+          className="border-b border-amber-800/50 bg-amber-900/20 px-4 py-2 text-xs text-amber-100"
+        >
+          {gate.unmetPrecondition}
+        </div>
+      )}
 
       {error && (
         <div role="alert" data-testid="packaged-item-queue-error" className="border-b border-red-800/50 bg-red-900/20 px-4 py-2 text-xs text-red-200">
@@ -172,8 +210,10 @@ const PackagedItemQueue: React.FC<PackagedItemQueueProps> = ({
                     <button
                       data-testid="packaged-item-approve"
                       onClick={() => onApprove(item.packetId)}
-                      disabled={busy}
-                      title="Approve and enqueue for the operator runner. Nothing is pushed or merged."
+                      disabled={busy || !gate.canQueue}
+                      title={gate.canQueue
+                        ? 'Approve and enqueue for the operator runner. Nothing is pushed or merged.'
+                        : gate.unmetPrecondition}
                       className="rounded border border-emerald-600/60 bg-emerald-900/30 px-2.5 py-1 text-xs font-semibold text-emerald-100 transition-colors hover:bg-emerald-800/40 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {busy ? 'Working…' : 'Approve & queue'}

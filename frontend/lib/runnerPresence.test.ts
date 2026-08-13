@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveRunnerPresence, runnerStartCommand } from './runnerPresence';
+import { resolveRunnerPresence, resolveDispatchGate, runnerStartCommand } from './runnerPresence';
 
 describe('resolveRunnerPresence', () => {
   it('reports a live runner and does not warn', () => {
@@ -61,5 +61,44 @@ describe('resolveRunnerPresence', () => {
     const view = resolveRunnerPresence({ state: 'something-else' });
     expect(view.severity).toBe('error');
     expect(view.warnBeforeQueueing).toBe(true);
+  });
+});
+
+// Release 3.1 — nothing may be queued into an empty room. Six entries reached
+// `queued` between 2026-08-01 and 2026-08-11 through a control that stayed
+// enabled whatever the runner was doing.
+describe('resolveDispatchGate', () => {
+  it('allows queueing when a runner is alive', () => {
+    const gate = resolveDispatchGate({ state: 'present', present: true });
+    expect(gate.canQueue).toBe(true);
+    expect(gate.unmetPrecondition).toBe('');
+  });
+
+  it('blocks queueing when no runner has reported in, and names the precondition', () => {
+    const gate = resolveDispatchGate({ state: 'absent', present: false });
+    expect(gate.canQueue).toBe(false);
+    // A disabled control with no reason is worse than a failing one: the
+    // operator cannot tell broken from not-yet-applicable.
+    expect(gate.unmetPrecondition).toContain(runnerStartCommand());
+    expect(gate.overrideLabel).not.toBe('');
+  });
+
+  it('blocks queueing when the runner has stalled', () => {
+    expect(resolveDispatchGate({ state: 'stale', present: false }).canQueue).toBe(false);
+  });
+
+  it('counts the existing pile in the precondition', () => {
+    const gate = resolveDispatchGate({ state: 'absent', present: false, strandedCount: 6 });
+    expect(gate.unmetPrecondition).toContain('6 tasks already queued');
+    const one = resolveDispatchGate({ state: 'absent', present: false, strandedCount: 1 });
+    expect(one.unmetPrecondition).toContain('1 task already queued');
+    expect(one.unmetPrecondition).not.toContain('1 tasks');
+  });
+
+  // A failed status call is not evidence that nothing is listening. Blocking on
+  // it would dead-end the operator over a hiccup on a different route — the same
+  // dead end this gate exists to remove, arrived at from the other side.
+  it('does not block when presence could not be read', () => {
+    expect(resolveDispatchGate(null).canQueue).toBe(true);
   });
 });

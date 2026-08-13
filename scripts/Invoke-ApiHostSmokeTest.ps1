@@ -1469,7 +1469,28 @@ try {
     $okRepoRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("dispatch-success-smoke-" + [guid]::NewGuid().ToString('n').Substring(0, 8))
     $okRepoPath = Join-Path $okRepoRoot 'dispatch-success-smoke'
     $okRunId = ''
+    # Release 3.1 — the route now refuses to queue into an empty room, so the
+    # success path has to supply the room. This is the operator's real heartbeat
+    # file (its path derives from the workspace root), hence the backup.
+    $heartbeatPath = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.heartbeat.json'
+    $heartbeatBackup = if (Test-Path -LiteralPath $heartbeatPath) { Get-Content -LiteralPath $heartbeatPath -Raw -Encoding UTF8 } else { $null }
+    # Assigned before the try so the finally can always restore, including when
+    # the step throws on its first line.
+    $okQueuePath = Join-Path $WorkspaceRoot 'output\roadmap-task-queue.jsonl'
+    $okQueueBefore = if (Test-Path -LiteralPath $okQueuePath) { @(Get-Content -LiteralPath $okQueuePath -Encoding UTF8 | Where-Object { $_ -and $_.Trim() }).Count } else { 0 }
     try {
+        $null = New-Item -ItemType Directory -Path (Split-Path -Parent $heartbeatPath) -Force -ErrorAction SilentlyContinue
+        Set-Content -LiteralPath $heartbeatPath -Encoding UTF8 -Value (([ordered]@{
+            schemaVersion   = '1'
+            hostname        = 'smoke-host'
+            user            = 'smoke-operator'
+            pid             = $PID
+            mode            = 'interactive'
+            pollSeconds     = 15
+            claimedCount    = 0
+            lastHeartbeatAt = (Get-Date).ToUniversalTime().ToString('o')
+        }) | ConvertTo-Json -Depth 5)
+
         $null = New-Item -ItemType Directory -Path $okRepoPath -Force
         & git init "$okRepoPath" *>&1 | Out-Null
         Set-Content -LiteralPath (Join-Path $okRepoPath 'ROADMAP.md') -Encoding UTF8 `
@@ -1496,9 +1517,6 @@ try {
             }
         }
         Set-Content -LiteralPath $okSettingsPath -Value ($okSettingsObject | ConvertTo-Json -Depth 20) -Encoding UTF8
-
-        $okQueuePath = Join-Path $WorkspaceRoot 'output\roadmap-task-queue.jsonl'
-        $okQueueBefore = if (Test-Path -LiteralPath $okQueuePath) { @(Get-Content -LiteralPath $okQueuePath -Encoding UTF8 | Where-Object { $_ -and $_.Trim() }).Count } else { 0 }
 
         $okResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/dispatch/execute" -Body @{
             repoName   = 'dispatch-success-smoke'
@@ -1539,8 +1557,81 @@ try {
         }
         $okSummary = Get-Content -LiteralPath $okSummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json
         if ([string]$okSummary.status -ne 'queued') { throw ("run summary status expected 'queued', got '{0}'" -f $okSummary.status) }
-        Write-Host ("  dispatch success path ok: runId={0} branch={1} baseBranch={2} queue+summary written" -f `
+
+        # The response has to agree with the heartbeat it was authorised
+        # against. `queuedWithoutRunner` true here would mean the route queued
+        # into an empty room and called it a success.
+        if ($okJson.data.runner.present -ne $true) {
+            throw ("dispatch success path reported runner.present={0} with a fresh heartbeat on disk" -f $okJson.data.runner.present)
+        }
+        if ([bool]$okJson.data.queuedWithoutRunner) { throw 'dispatch success path reported queuedWithoutRunner=true with a live runner' }
+        Write-Host ("  dispatch success path ok: runId={0} branch={1} baseBranch={2} queue+summary written, runner present" -f `
                 $okRunId, $okJson.data.branch, $okEntry.baseBranch) -ForegroundColor DarkGray
+
+        # ── The refused state, which is the one that matters here ───────────
+        # Release 3.1 acceptance criterion: prove the DISABLED state, not the
+        # happy path. Six entries reached `queued` with nothing able to claim
+        # them because this route answered 200 and explained the problem
+        # afterwards.
+        Remove-Item -LiteralPath $heartbeatPath -Force -ErrorAction SilentlyContinue
+        $strandedBefore = @(Get-Content -LiteralPath $okQueuePath -Encoding UTF8 | Where-Object { $_ -and $_.Trim() }).Count
+
+        $refusedResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/dispatch/execute" -Body @{
+            repoName   = 'dispatch-success-smoke'
+            localPath  = $okRepoPath
+            prompt     = 'Smoke-test the refusal when no runner can claim the work.'
+            baseBranch = 'smoke-base'
+        }
+        Assert-Not503 -Name '/api/roadmap/dispatch/execute (runner absent)' -Response $refusedResponse
+        if ([int]$refusedResponse.StatusCode -ne 409) {
+            throw "/api/roadmap/dispatch/execute with no runner expected HTTP 409, got $($refusedResponse.StatusCode). Body=$($refusedResponse.Content)"
+        }
+        $refusedJson = $refusedResponse.Json
+        if ([string]$refusedJson.category -ne 'runner-absent') {
+            throw ("Expected category='runner-absent', got '{0}'" -f $refusedJson.category)
+        }
+        # The refusal must name the unmet precondition and how to meet it. A
+        # 409 that says only "conflict" is the greyed button with no reason.
+        if ([string]$refusedJson.error -notmatch 'Invoke-RoadmapTaskRunner') {
+            throw ("The runner-absent refusal must name the command that meets the precondition. Got: {0}" -f $refusedJson.error)
+        }
+        if ([string]$refusedJson.data.overrideField -ne 'acknowledgeNoRunner') {
+            throw ("The refusal must name its override field so capability is explained, not removed. Got: '{0}'" -f $refusedJson.data.overrideField)
+        }
+        # Nothing written is the whole point: a refusal that still queued would
+        # be the original defect with a different status code.
+        $strandedAfter = @(Get-Content -LiteralPath $okQueuePath -Encoding UTF8 | Where-Object { $_ -and $_.Trim() }).Count
+        if ($strandedAfter -ne $strandedBefore) {
+            throw ("A refused dispatch wrote {0} queue line(s); a 409 must write nothing." -f ($strandedAfter - $strandedBefore))
+        }
+
+        # ── The deliberate override ─────────────────────────────────────────
+        # Capability explained, not removed: an operator who intends to start a
+        # runner next can still queue, and is told what they just did.
+        $forcedResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/dispatch/execute" -Body @{
+            repoName            = 'dispatch-success-smoke'
+            localPath           = $okRepoPath
+            prompt              = 'Smoke-test the acknowledged queue-into-empty-room path.'
+            baseBranch          = 'smoke-base'
+            acknowledgeNoRunner = $true
+        }
+        Assert-Not503 -Name '/api/roadmap/dispatch/execute (acknowledged)' -Response $forcedResponse
+        if ([int]$forcedResponse.StatusCode -ne 200) {
+            throw "/api/roadmap/dispatch/execute with acknowledgeNoRunner expected HTTP 200, got $($forcedResponse.StatusCode). Body=$($forcedResponse.Content)"
+        }
+        $forcedJson = $forcedResponse.Json
+        $forcedRunId = [string]$forcedJson.data.runId
+        if (-not [bool]$forcedJson.data.queuedWithoutRunner) {
+            throw 'An acknowledged dispatch into an empty room must report queuedWithoutRunner=true, or the operator cannot tell it is stranded.'
+        }
+        if ([int]$forcedJson.data.strandedCount -lt 1) {
+            throw ("An acknowledged dispatch must count itself as stranded; got strandedCount={0}" -f $forcedJson.data.strandedCount)
+        }
+        if (-not [string]::IsNullOrWhiteSpace($forcedRunId)) {
+            Remove-Item -LiteralPath (Join-Path $WorkspaceRoot ("output\roadmap-task-history\runs\{0}.summary.json" -f $forcedRunId)) -Force -ErrorAction SilentlyContinue
+        }
+        Write-Host ("  dispatch presence gate ok: 409 runner-absent wrote nothing and named the precondition; acknowledged override queued with stranded={0}" -f `
+                $forcedJson.data.strandedCount) -ForegroundColor DarkGray
     }
     finally {
         if ($null -eq $okSettingsBackup) {
@@ -1548,8 +1639,28 @@ try {
         } else {
             Set-Content -LiteralPath $okSettingsPath -Value $okSettingsBackup -Encoding UTF8
         }
+        # The operator's own heartbeat, put back exactly as found — this smoke
+        # borrows the live file rather than a fixture path.
+        if ($null -eq $heartbeatBackup) {
+            Remove-Item -LiteralPath $heartbeatPath -Force -ErrorAction SilentlyContinue
+        } else {
+            Set-Content -LiteralPath $heartbeatPath -Value $heartbeatBackup -Encoding UTF8 -NoNewline
+        }
         if (-not [string]::IsNullOrWhiteSpace($okRunId)) {
             Remove-Item -LiteralPath (Join-Path $WorkspaceRoot ("output\roadmap-task-history\runs\{0}.summary.json" -f $okRunId)) -Force -ErrorAction SilentlyContinue
+        }
+        # Fixture dispatches used to be left in the operator's real queue file
+        # forever — this smoke's own entries, indistinguishable from work an
+        # operator asked for. Trim back to what was there before the step.
+        if (Test-Path -LiteralPath $okQueuePath) {
+            $tailLines = @(Get-Content -LiteralPath $okQueuePath -Encoding UTF8)
+            if ($tailLines.Count -gt $okQueueBefore) {
+                if ($okQueueBefore -eq 0) {
+                    Remove-Item -LiteralPath $okQueuePath -Force -ErrorAction SilentlyContinue
+                } else {
+                    Set-Content -LiteralPath $okQueuePath -Value ($tailLines | Select-Object -First $okQueueBefore) -Encoding UTF8
+                }
+            }
         }
         Remove-Item -LiteralPath $okRepoRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -1561,7 +1672,23 @@ try {
     $agentEventsBackup = if (Test-Path -LiteralPath $agentEventsPath) { Get-Content -LiteralPath $agentEventsPath -Raw -Encoding UTF8 } else { $null }
     $quotaRepoRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("dispatch-quota-smoke-" + [guid]::NewGuid().ToString('n').Substring(0, 8))
     $quotaRepoPath = Join-Path $quotaRepoRoot 'quota-dispatch-smoke'
+    # A live heartbeat, so this step still tests the QUOTA guard. Without it the
+    # Release 3.1 presence gate answers first and the assertion below would be
+    # asserting the wrong refusal.
+    $quotaHeartbeatPath = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.heartbeat.json'
+    $quotaHeartbeatBackup = if (Test-Path -LiteralPath $quotaHeartbeatPath) { Get-Content -LiteralPath $quotaHeartbeatPath -Raw -Encoding UTF8 } else { $null }
     try {
+        Set-Content -LiteralPath $quotaHeartbeatPath -Encoding UTF8 -Value (([ordered]@{
+            schemaVersion   = '1'
+            hostname        = 'smoke-host'
+            user            = 'smoke-operator'
+            pid             = $PID
+            mode            = 'interactive'
+            pollSeconds     = 15
+            claimedCount    = 0
+            lastHeartbeatAt = (Get-Date).ToUniversalTime().ToString('o')
+        }) | ConvertTo-Json -Depth 5)
+
         $null = New-Item -ItemType Directory -Path (Join-Path $quotaRepoPath '.git') -Force
         Set-Content -LiteralPath (Join-Path $quotaRepoPath 'ROADMAP.md') -Encoding UTF8 -Value @"
 ## Release 2.0 - Dispatch Budgets
@@ -1627,6 +1754,12 @@ try {
             Remove-Item -LiteralPath $agentEventsPath -Force -ErrorAction SilentlyContinue
         } else {
             Set-Content -LiteralPath $agentEventsPath -Value $agentEventsBackup -Encoding UTF8
+        }
+
+        if ($null -eq $quotaHeartbeatBackup) {
+            Remove-Item -LiteralPath $quotaHeartbeatPath -Force -ErrorAction SilentlyContinue
+        } else {
+            Set-Content -LiteralPath $quotaHeartbeatPath -Value $quotaHeartbeatBackup -Encoding UTF8 -NoNewline
         }
 
         Remove-Item -LiteralPath $quotaRepoRoot -Recurse -Force -ErrorAction SilentlyContinue

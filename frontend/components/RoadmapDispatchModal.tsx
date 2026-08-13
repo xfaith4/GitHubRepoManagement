@@ -7,7 +7,7 @@ import {
   type RoadmapRepairPreview,
 } from '../types';
 import { checkRoadmapDispatch, executeRoadmapDispatch, applyRoadmapRepair, getRunnerPresence } from '../services/apiClient';
-import { resolveRunnerPresence, runnerStartCommand, type RunnerPresencePayload } from '../lib/runnerPresence';
+import { resolveRunnerPresence, resolveDispatchGate, runnerStartCommand, type RunnerPresencePayload } from '../lib/runnerPresence';
 import { SpinnerIcon } from './icons';
 
 const RUNNER_SEVERITY_CLASSES: Record<string, string> = {
@@ -189,12 +189,16 @@ const RoadmapDispatchModal: React.FC<RoadmapDispatchModalProps> = ({
     }
   };
 
-  const handleDispatch = async () => {
+  // Release 3.1 — acknowledgeNoRunner is the operator saying "queue it anyway,
+  // I will start a runner". Without it the route refuses (409 runner-absent)
+  // rather than writing an entry nothing can claim.
+  const handleDispatch = async (options?: { acknowledgeNoRunner?: boolean }) => {
     if (!repoName || !editedPrompt) return;
     setPhase('dispatching');
     try {
       const result = await executeRoadmapDispatch(repoName, editedPrompt, {
         localPath: checkResult?.localPath ?? undefined,
+        acknowledgeNoRunner: options?.acknowledgeNoRunner,
       });
       setDispatchResult(result);
       setPhase('done');
@@ -236,6 +240,9 @@ const RoadmapDispatchModal: React.FC<RoadmapDispatchModalProps> = ({
   // Prefer what the dispatch response reported over the pre-flight read: it is
   // the state at the moment the work was actually queued.
   const runnerView = resolveRunnerPresence(dispatchResult?.runner ?? runnerPresence);
+  // The gate reads the PRE-FLIGHT presence only. Folding in dispatchResult would
+  // evaluate the gate against the state after a dispatch that already happened.
+  const dispatchGate = resolveDispatchGate(runnerPresence);
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
@@ -539,15 +546,41 @@ const RoadmapDispatchModal: React.FC<RoadmapDispatchModalProps> = ({
                 Review Prompt →
               </button>
             )}
-            {/* EDIT PROMPT — Dispatch to Copilot */}
+            {/* EDIT PROMPT — Dispatch to Copilot.
+                Release 3.1: this is the control that used to be enabled into an
+                empty room. It now renders disabled with the unmet precondition
+                named beside it, and the deliberate override sits next to it so
+                capability is explained rather than removed. */}
             {phase === 'edit-prompt' && (
-              <button
-                onClick={handleDispatch}
-                disabled={!editedPrompt.trim()}
-                className="px-4 py-1.5 text-sm bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded border border-indigo-500 transition-colors font-medium"
-              >
-                Dispatch to Copilot
-              </button>
+              <>
+                {!dispatchGate.canQueue && (
+                  <span
+                    data-testid="dispatch-precondition"
+                    className="text-xs text-amber-300/90 max-w-md text-right"
+                  >
+                    {dispatchGate.unmetPrecondition}
+                  </span>
+                )}
+                {!dispatchGate.canQueue && (
+                  <button
+                    onClick={() => handleDispatch({ acknowledgeNoRunner: true })}
+                    disabled={!editedPrompt.trim()}
+                    data-testid="dispatch-override"
+                    className="px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-amber-200 rounded border border-amber-700/50 transition-colors"
+                  >
+                    {dispatchGate.overrideLabel}
+                  </button>
+                )}
+                <button
+                  onClick={() => handleDispatch()}
+                  disabled={!editedPrompt.trim() || !dispatchGate.canQueue}
+                  data-testid="dispatch-submit"
+                  title={dispatchGate.canQueue ? undefined : dispatchGate.unmetPrecondition}
+                  className="px-4 py-1.5 text-sm bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded border border-indigo-500 transition-colors font-medium"
+                >
+                  Dispatch to Copilot
+                </button>
+              </>
             )}
             {/* ERROR — Retry */}
             {phase === 'error' && (

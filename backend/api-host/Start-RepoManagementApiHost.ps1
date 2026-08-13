@@ -9833,6 +9833,63 @@ try {
                         break
                     }
 
+                    # Release 3.1 — nothing may be queued into an empty room.
+                    #
+                    # This route already read Get-RunnerPresence, but AFTER
+                    # writing the queue line, so the response explained the
+                    # problem the operator now had instead of preventing it.
+                    # Six entries sat at `queued` from 2026-08-01 to 2026-08-11
+                    # for exactly that reason: no runner had ever reported in,
+                    # and every one of those dispatches returned 200.
+                    #
+                    # The read moves ahead of every write AND ahead of the
+                    # planning context and quota evaluation below, so the
+                    # refusal costs the operator nothing and arrives before the
+                    # review effort, not after it.
+                    $acknowledgeNoRunner = $false
+                    if ($body.ContainsKey('acknowledgeNoRunner')) { $acknowledgeNoRunner = [bool]$body.acknowledgeNoRunner }
+
+                    $runnerPresence = Get-RunnerPresence -WorkspaceRoot $WorkspaceRoot
+                    $runnerBacklog  = Get-QueuedTaskBacklog -WorkspaceRoot $WorkspaceRoot
+                    # Stranded means queued with nothing able to claim it. With a
+                    # runner present the backlog is a queue; without one it is a
+                    # pile. Same number, different fact - so it is only reported
+                    # as stranded in the second case.
+                    $strandedCount  = if ($runnerPresence.present) { 0 } else { [int]$runnerBacklog.queuedTotal }
+
+                    if (-not $runnerPresence.present -and -not $acknowledgeNoRunner) {
+                        # Refused, not silently accepted. The unmet precondition
+                        # is named in the message rather than left for the
+                        # operator to infer from a control that does nothing:
+                        # a greyed button with no reason is worse than a failing
+                        # one, because broken and not-yet-applicable look alike.
+                        $refusalMessage = ("No operator runner can claim this task, so queueing it would strand it. {0} Start one with: pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1{1}" -f `
+                            [string]$runnerPresence.message,
+                            $(if ($strandedCount -gt 0) { " $strandedCount task(s) are already queued and waiting." } else { '' }))
+                        Write-HostLog ("WARN roadmap.dispatch.execute correlationId={0} refused - runner {1}, stranded={2} (nothing written)" -f $correlationId, $runnerPresence.state, $strandedCount)
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                            success  = $false
+                            error    = $refusalMessage
+                            category = 'runner-absent'
+                            data     = @{
+                                runnerCommand      = 'pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1'
+                                runner             = $runnerPresence
+                                strandedCount      = $strandedCount
+                                queuedTotal        = [int]$runnerBacklog.queuedTotal
+                                queuedClaude       = [int]$runnerBacklog.queuedClaude
+                                queuedCopilot      = [int]$runnerBacklog.queuedCopilot
+                                # Named in the payload so the surface offering
+                                # the override does not have to hardcode it, and
+                                # so a deliberate queue-then-start-a-runner stays
+                                # possible. Capability explained, not removed.
+                                overrideField      = 'acknowledgeNoRunner'
+                                queuedNothing      = $true
+                            }
+                        }
+                        break
+                    }
+
                     $settingsForFallback = Get-HostSettings
                     $roadmapTtl   = Get-RoadmapCacheTtlSeconds -Settings $settingsForFallback
                     $roadmapCache = Get-RoadmapFromCache -TtlSeconds $roadmapTtl
@@ -10008,10 +10065,10 @@ try {
                         queuedBy          = 'release-dispatch-api'
                     } | ConvertTo-Json -Depth 8) | Set-Content -LiteralPath (Join-Path $dispatchRunsDir ("{0}.summary.json" -f $runId)) -Encoding UTF8
 
-                    # Presence is read AFTER queueing, not instead of it. The
-                    # work is recorded either way; what changes is whether the
-                    # response says a runner will pick it up.
-                    $runnerPresence = Get-RunnerPresence -WorkspaceRoot $WorkspaceRoot
+                    # Presence was read BEFORE any of this was written (see the
+                    # gate above), and that same reading is what the response
+                    # reports. Re-reading here would answer a different question
+                    # than the one the write was authorised against.
 
                     if (-not [string]::IsNullOrWhiteSpace($promptRefinementRunId) -and -not [string]::IsNullOrWhiteSpace($runId)) {
                         $null = Write-OperationsPromptDispatchRecord `
@@ -10055,7 +10112,9 @@ try {
                         "Queued for the operator runner on $($runnerPresence.hostname)\$($runnerPresence.user); it will create the GitHub agent task for $githubRepo."
                     }
                     else {
-                        "Queued for $githubRepo, but no operator runner is currently reporting in — nothing will pick this up until one runs. $($runnerPresence.message)"
+                        # Reachable only via acknowledgeNoRunner, so it says what
+                        # the operator chose rather than reporting a surprise.
+                        "Queued for $githubRepo with no runner reporting in, at your explicit request — it will sit at 'queued' until one runs. $($runnerPresence.message)"
                     }
                     if (@($quotaResult.warnings).Count -gt 0) {
                         $dispatchMessage += " Quota warning: $([string]$quotaResult.warnings[0])"
@@ -10075,6 +10134,15 @@ try {
                             branch         = $dispatchBranch
                             startedAt      = $startedAt
                             runner         = $runnerPresence
+                            # True only when the operator overrode the gate, so
+                            # the surface can say "you queued this into an empty
+                            # room" rather than presenting it as ordinary.
+                            queuedWithoutRunner = (-not $runnerPresence.present)
+                            # Counted before this write, so the task just queued
+                            # is added back in. Reporting the pre-write figure
+                            # would under-report the pile by exactly the entry
+                            # the operator is looking at.
+                            strandedCount  = if ($runnerPresence.present) { 0 } else { $strandedCount + 1 }
                             message        = $dispatchMessage
                             quota      = @{
                                 estimatedWorkUnits = [double]$quotaResult.estimatedWorkUnits

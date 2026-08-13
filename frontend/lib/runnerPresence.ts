@@ -108,3 +108,51 @@ export function resolveRunnerPresence(
 export function runnerStartCommand(): string {
   return RUNNER_COMMAND;
 }
+
+export interface DispatchGate {
+  /** False when a control that queues work must render disabled. */
+  canQueue: boolean;
+  /**
+   * The unmet precondition, in the operator's terms. Rendered next to the
+   * disabled control — a greyed button with no reason is worse than a failing
+   * one, because the operator cannot tell broken from not-yet-applicable.
+   */
+  unmetPrecondition: string;
+  /** Label for the deliberate override, empty when no override is offered. */
+  overrideLabel: string;
+}
+
+/**
+ * May this surface queue work right now?
+ *
+ * Release 3.1 — the dispatch wizard's last step used to be enabled whatever the
+ * runner was doing, so the operator spent the refinement work and then queued
+ * into an empty room. Six entries sat at `queued` from 2026-08-01 to 2026-08-11
+ * that way.
+ *
+ * 'unknown' does NOT block. A failed status call is not evidence that nothing
+ * is listening, and blocking on it would dead-end the operator over a hiccup on
+ * a different route — the same dead end from the other direction. The banner
+ * still warns; only a positive absent/stale reading disables the control.
+ */
+export function resolveDispatchGate(
+  payload: RunnerPresencePayload | null | undefined
+): DispatchGate {
+  const view = resolveRunnerPresence(payload);
+  if (view.severity === 'ok' || view.severity === 'unknown') {
+    return { canQueue: true, unmetPrecondition: '', overrideLabel: '' };
+  }
+
+  const stranded = Number(payload?.strandedCount ?? 0);
+  const pile =
+    stranded > 0
+      ? ` ${stranded} task${stranded === 1 ? '' : 's'} already queued with nothing to claim ${stranded === 1 ? 'it' : 'them'}.`
+      : '';
+
+  return {
+    canQueue: false,
+    unmetPrecondition:
+      `${view.label}: nothing would pick this up. Start the operator runner first — ${RUNNER_COMMAND}.${pile}`,
+    overrideLabel: 'Queue anyway',
+  };
+}
