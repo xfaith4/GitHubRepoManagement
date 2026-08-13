@@ -4249,4 +4249,66 @@ if ($budgetLogLine -notmatch 'portfolio\.read-budget correlationId=\S+ route=\S+
 }
 Write-Host ("  read-path budget ok: {0} class(es) declared, undeclared fails closed, cold-scan budget {1}ms < deadline {2}ms, {3} route(s) evaluate it" -f @($declaredClasses).Count, $coldScanBudget, $scanDeadlineMs, 2) -ForegroundColor DarkGray
 
+Write-Step 'Dispatch execute gate — Release 3.1 M1: the runner-absent refusal precedes the queue write'
+& {
+    # The milestone's acceptance criterion is explicit that the *refusal* is
+    # what must be proven, not the happy path: "a smoke assertion proves the
+    # **disabled** state". Six entries were stranded because this route read
+    # Get-RunnerPresence after writing the queue line, so a 200 came back
+    # describing a problem the operator had just created.
+    #
+    # Scoped through the AST to the dispatch-execute switch clause rather than
+    # grepped over the whole file: a gate living in some other route would
+    # satisfy a file-wide search while leaving this one ungated (Lane 0.9 —
+    # derive the scope, never maintain a list).
+    $dispatchRoute = 'POST /api/roadmap/dispatch/execute'
+    $dispatchClause = @($hostAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.SwitchStatementAst] }, $true) |
+        ForEach-Object { $_.Clauses } |
+        Where-Object { $_.Item1.Extent.Text.Trim("'`"") -eq $dispatchRoute }) | Select-Object -First 1
+    if ($null -eq $dispatchClause) {
+        throw "Route '$dispatchRoute' not found in the API host; the dispatch gate-ordering assertion is vacuous."
+    }
+    $clauseBody = $dispatchClause.Item2
+
+    # The refusal: a 409 carrying the named category. Matched on the category
+    # literal because that is the contract the frontend switches on.
+    $absentGate = @($clauseBody.FindAll({
+                param($n)
+                $n -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $n.Value -eq 'runner-absent'
+            }, $true)) | Select-Object -First 1
+    if ($null -eq $absentGate) {
+        throw "Route '$dispatchRoute' never refuses with category 'runner-absent'. Nothing stops a dispatch into an empty room from writing a queue entry nobody can claim."
+    }
+
+    # The write it must precede: the append to output/roadmap-task-queue.jsonl.
+    $queueWrite = @($clauseBody.FindAll({
+                param($n)
+                $n -is [System.Management.Automation.Language.CommandAst] -and
+                $n.GetCommandName() -eq 'Add-Content' -and
+                $n.Extent.Text -match 'dispatchQueuePath'
+            }, $true)) | Select-Object -First 1
+    if ($null -eq $queueWrite) {
+        throw "Route '$dispatchRoute' has no Add-Content write to `$dispatchQueuePath; the gate-ordering assertion is vacuous."
+    }
+
+    if ($absentGate.Extent.StartOffset -gt $queueWrite.Extent.StartOffset) {
+        throw ("The runner-absent refusal (offset {0}) comes AFTER the queue write (offset {1}). An absent runner is warned about, not prevented — that ordering is exactly what stranded six dispatches." -f $absentGate.Extent.StartOffset, $queueWrite.Extent.StartOffset)
+    }
+
+    # A refusal that does not say how much is already piled up understates the
+    # problem: "no runner" reads very differently at 0 queued than at 6.
+    $gateStatement = $clauseBody.FindAll({
+            param($n)
+            $n -is [System.Management.Automation.Language.IfStatementAst] -and
+            $n.Extent.StartOffset -le $absentGate.Extent.StartOffset -and
+            $n.Extent.EndOffset -ge $absentGate.Extent.EndOffset
+        }, $true) | Sort-Object { $_.Extent.EndOffset - $_.Extent.StartOffset } | Select-Object -First 1
+    if ($null -eq $gateStatement -or $gateStatement.Extent.Text -notmatch 'strandedCount') {
+        throw "The runner-absent refusal does not report strandedCount, so the operator cannot tell an empty queue from a pile of work nobody claimed."
+    }
+
+    Write-Host ("  dispatch gate ok: runner-absent 409 (line {0}) precedes the queue write (line {1}) inside '{2}', and reports strandedCount" -f `
+            $absentGate.Extent.StartLineNumber, $queueWrite.Extent.StartLineNumber, $dispatchRoute) -ForegroundColor DarkGray
+}
+
 Write-Step 'Smoke test completed'
