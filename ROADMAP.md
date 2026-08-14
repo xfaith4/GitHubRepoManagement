@@ -244,12 +244,14 @@ The full execution contract lives in one place,
 `ROADMAP_TEMPLATE.md`. This heading exists so the validator can resolve the
 active-release pointer; it deliberately restates nothing.
 
-**Current focus:** the empty-room gate shipped 2026-08-13 and the stranded pile
-is triaged and empty, so the portal is no longer accumulating work nobody will
-do. Four milestones remain. Take **"every surface names its engine"** next: like
-the gate, every input it needs is already computed (`providerId` on the AI
-preview), one surface already does it correctly, and the fix is to stop a
-deterministic rule's finding and a model's proposal from looking identical.
+**Current focus:** the empty-room gate and engine attribution both shipped
+2026-08-13, and dispatch-gate coverage is now enforced by a tripwire rather than
+by whoever remembered to check. Two engineering milestones remain. Take
+**"enabled means available"** next, and treat it as the audit it says it is: the
+gate work found two ungated surfaces that no list had named, so the value here is
+the enumeration, not the individual fixes. **Token and cost are measured** is the
+other, and it is the larger piece of work — the plumbing exists end to end and
+the source does not.
 
 ---
 
@@ -407,19 +409,31 @@ text and evidence:
       and the queue header shows a stranded badge. The six stranded entries were
       triaged and cancelled, recorded in
       [`evidence/verified/stranded-dispatch-triage-2026-08-11.md`](evidence/verified/stranded-dispatch-triage-2026-08-11.md).
+      **Coverage completed 2026-08-13.** The first pass gated two surfaces and
+      missed two, including the one this release is named after — the guided
+      wizard's "Approve and create PR task". A tripwire now derives its scope
+      from the call sites: every component invoking `executeRoadmapDispatch`
+      must consult `resolveDispatchGate`, so a fifth surface cannot be added
+      ungated. All three call sites pass.
       _(state: smoke-tested — module smoke asserts, through the AST and scoped to
       this route, that the refusal precedes the queue write and reports
-      `strandedCount`; verified non-vacuous against the pre-gate host. Needs
-      `operator-verified` against the live portal, batched with 2.9's session.)_
-- [ ] **Every surface names its engine.** The Operations workspace does this
-      well — provider selector, `Provider: <id>` on the preview and every
-      history row, and a warning when it falls back to the offline heuristic.
-      The guided-improvement wizard does not:
-      [`RepositoryImprovement.Workflow.ps1`](backend/modules/docaudit/RepositoryImprovement.Workflow.ps1)
-      is pure deterministic rule evaluation and the modal never says so, then
-      hands the result to an AI agent from the same screen. A rule's finding and
-      a model's proposal must not be indistinguishable. _(state: planned — one
-      surface correct, one silent)_
+      `strandedCount`; verified non-vacuous against the pre-gate host, and the
+      coverage tripwire verified non-vacuous by failing on the two ungated
+      surfaces before they were fixed. Needs `operator-verified` against the
+      live portal, batched with 2.9's session.)_
+- [ ] **Every surface names its engine.** The guided-improvement preview now
+      carries an `engine` block — `kind: deterministic-rules`, the rule sources,
+      what it applies to, and `handoffEngine` naming what acts _after_ approval —
+      and the modal renders it above the findings, with the prompt section
+      stating that Copilot is the first model to see any of it. `providerId` and
+      `modelId` are null for rule engines and populated for model ones, so a
+      consumer branches on the payload rather than on which screen it is.
+      _(state: smoke-tested — asserted from the payload per the acceptance
+      criterion, plus an AST check that the preview reaches no provider, so the
+      label cannot quietly become false. Remaining: the same treatment for
+      surfaces beyond this wizard and the Operations workspace, which the
+      "enabled means available" audit below should enumerate rather than this
+      milestone guessing at.)_
 - [ ] **Token and cost are measured, not declared.** `tokenUsage` and
       `apiSpendUsd` exist on the agent-run record, flow through
       `tokens_reported` in `app.db` and out to analytics — and are **never
@@ -493,6 +507,17 @@ and the work-item trace shipped earlier in this release.
 
 **Known issues:**
 
+- [ ] **[non-blocker]** **No `.gitattributes`, with `core.autocrlf=true`.**
+      Whether a tracked file holds CRLF or LF in the working tree depends on
+      which git operation last materialised it, so any byte-level comparison
+      between two tracked copies is non-deterministic locally while passing in
+      CI's fresh checkout. This surfaced 2026-08-13 when the standards/spec sync
+      gate reported drift between two files with identical content (245 CRLF vs
+      245 LF, same 16,280 characters). That gate now normalises before
+      comparing, but it was the only one audited — the general fix is a
+      `.gitattributes` declaring `text eol=lf`, and the risk until then is a
+      gate that reports drift that is not there, or hides drift that is.
+      _(state: planned — recorded 2026-08-13)_
 - [ ] **[non-blocker]** The same item can still be queued twice while a runner
       _is_ present. The triage found the six stranded entries were **three items,
       each queued twice** — two pairs seconds apart (double-submit) and one three

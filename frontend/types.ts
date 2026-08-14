@@ -364,6 +364,28 @@ export interface RepositoryImprovementPreview {
     pendingCount: number;
   };
   task?: RepositoryImprovementTask | null;
+  engine?: EngineAttribution | null;
+}
+
+/**
+ * Release 3.1 — which engine produced what the operator is looking at.
+ *
+ * A deterministic rule's finding and a model's proposal carry very different
+ * weight, and a surface that renders them identically asks the operator to
+ * trust both the same amount. `providerId` and `modelId` are null for rule
+ * engines and populated for model ones, so a consumer can branch on the data
+ * rather than on the surface it happens to be rendering.
+ */
+export interface EngineAttribution {
+  kind: 'deterministic-rules' | 'model';
+  label: string;
+  detail: string;
+  providerId?: string | null;
+  modelId?: string | null;
+  ruleSources?: string[];
+  appliesTo?: string[];
+  /** The engine that acts *after* this one, when the surface hands off. */
+  handoffEngine?: string | null;
 }
 
 // Release 0.6 — Copilot Task Packaging & Preview Workflow

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { DispatchExecuteResult, DocAuditEntry, RepositoryImprovementPreview } from '../types';
-import { executeRoadmapDispatch, previewRepositoryImprovement } from '../services/apiClient';
+import { executeRoadmapDispatch, getRunnerPresence, previewRepositoryImprovement } from '../services/apiClient';
+import { resolveDispatchGate, type RunnerPresencePayload } from '../lib/runnerPresence';
 import { SpinnerIcon } from './icons';
 
 interface RepositoryImprovementWorkflowModalProps {
@@ -29,6 +30,7 @@ const RepositoryImprovementWorkflowModal: React.FC<RepositoryImprovementWorkflow
   const [prompt, setPrompt] = useState('');
   const [dispatchResult, setDispatchResult] = useState<DispatchExecuteResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [runnerPresence, setRunnerPresence] = useState<RunnerPresencePayload | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -41,12 +43,21 @@ const RepositoryImprovementWorkflowModal: React.FC<RepositoryImprovementWorkflow
     setPrompt('');
     setDispatchResult(null);
     setError(null);
+    // Release 3.1 — this wizard's "Approve and create PR task" button is the one
+    // ROADMAP.md names as the trigger for the release: it stayed enabled while
+    // six dispatches piled up in a room with no runner. Read presence when the
+    // wizard opens so the precondition is known before the operator invests the
+    // scan and the prompt review, not after. Resolves null rather than throwing,
+    // so a failed read leaves the control usable — see resolveDispatchGate.
+    getRunnerPresence().then(setRunnerPresence);
   }, [isOpen, initialRepoName, sortedRepos]);
 
   if (!isOpen) return null;
 
   const selectedRepo = sortedRepos.find(repo => repo.repoName === repoName);
   const activeStep = phase === 'select' ? 0 : phase === 'scanning' ? 1 : phase === 'review' ? 2 : 3;
+  const dispatchGate = resolveDispatchGate(runnerPresence);
+  const engine = preview?.engine ?? null;
 
   const runScan = async () => {
     if (!selectedRepo?.repoPath) return;
@@ -64,12 +75,15 @@ const RepositoryImprovementWorkflowModal: React.FC<RepositoryImprovementWorkflow
     }
   };
 
-  const dispatch = async () => {
+  const dispatch = async (options?: { acknowledgeNoRunner?: boolean }) => {
     if (!preview || !prompt.trim()) return;
     setPhase('dispatching');
     setError(null);
     try {
-      const result = await executeRoadmapDispatch(preview.repoName, prompt.trim(), { localPath: preview.repoPath });
+      const result = await executeRoadmapDispatch(preview.repoName, prompt.trim(), {
+        localPath: preview.repoPath,
+        acknowledgeNoRunner: options?.acknowledgeNoRunner,
+      });
       setDispatchResult(result);
       setPhase('done');
       onDispatchComplete?.(result);
@@ -124,6 +138,27 @@ const RepositoryImprovementWorkflowModal: React.FC<RepositoryImprovementWorkflow
 
           {phase === 'review' && preview && (
             <div className="space-y-5">
+              {/* Release 3.1 — say which engine produced this. These findings are
+                  rule evaluation, and eleven lines below this screen hands the
+                  result to an AI agent. Without the distinction the two read as
+                  one continuous act of judgement, and a rule's finding carries
+                  weight it has not earned (or the model's, weight it has). */}
+              {engine && (
+                <div
+                  data-testid="improvement-engine-attribution"
+                  className="flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-md border border-gray-700 bg-gray-900/60 px-3 py-2 text-xs text-gray-400"
+                >
+                  <span>
+                    Engine: <span className="text-gray-200">{engine.label}</span>
+                    {engine.providerId && <span className="text-gray-500"> ({engine.providerId}{engine.modelId ? `, ${engine.modelId}` : ''})</span>}
+                  </span>
+                  <span className="text-gray-500">{engine.detail}</span>
+                  {engine.ruleSources && engine.ruleSources.length > 0 && (
+                    <span className="text-gray-500">Rules: {engine.ruleSources.join(', ')}.</span>
+                  )}
+                </div>
+              )}
+
               <div className="grid gap-3 sm:grid-cols-2">
                 {[{ label: 'README.md', data: preview.readme }, { label: 'ROADMAP.md', data: preview.roadmap }].map(({ label, data }) => (
                   <div key={label} className="rounded-lg border border-gray-700 bg-gray-950/50 p-4">
@@ -150,7 +185,17 @@ const RepositoryImprovementWorkflowModal: React.FC<RepositoryImprovementWorkflow
               ) : preview.task && (
                 <section>
                   <div className="flex flex-wrap items-end justify-between gap-2">
-                    <div><h3 className="font-semibold text-white">Review improvement task</h3><p className="mt-1 text-sm text-gray-400">Edit the prompt if needed. This exact text is sent to Copilot.</p></div>
+                    <div>
+                      <h3 className="font-semibold text-white">Review improvement task</h3>
+                      {/* Naming the boundary is the point of the milestone: everything
+                          above is rules, everything after approval is a model. */}
+                      <p className="mt-1 text-sm text-gray-400">
+                        Edit the prompt if needed. This exact text is sent to Copilot.
+                        {engine?.kind === 'deterministic-rules' && (
+                          <span className="text-gray-500"> The prompt is assembled from the findings by a fixed template — Copilot is the first model to see any of this, and only after you approve.</span>
+                        )}
+                      </p>
+                    </div>
                     <span className="text-xs text-gray-500">{preview.task.summary}</span>
                   </div>
                   <textarea value={prompt} onChange={event => setPrompt(event.target.value)} rows={15} className="mt-3 w-full rounded-lg border border-gray-600 bg-gray-950 p-3 font-mono text-xs leading-5 text-gray-200 focus:border-indigo-500 focus:outline-none" />
@@ -178,7 +223,42 @@ const RepositoryImprovementWorkflowModal: React.FC<RepositoryImprovementWorkflow
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-700 px-5 py-4">
           <button onClick={onClose} className="rounded border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">{phase === 'done' ? 'Close' : 'Cancel'}</button>
           {phase === 'select' && <button onClick={runScan} disabled={!selectedRepo?.repoPath} className="rounded border border-indigo-500 bg-indigo-700 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-600 disabled:opacity-50">Scan selected repo</button>}
-          {phase === 'review' && preview && <div className="flex gap-2"><button onClick={runScan} className="rounded border border-gray-600 px-3 py-2 text-sm text-gray-200 hover:bg-gray-800">Scan again</button>{preview.needsImprovement && <button onClick={dispatch} disabled={!prompt.trim()} className="rounded border border-emerald-600 bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:opacity-50">Approve and create PR task</button>}</div>}
+          {/* Release 3.1 — "Approve and create PR task" is the control ROADMAP.md
+              names as the trigger for this release: it stayed enabled through six
+              dispatches into a room with no runner. It now renders disabled with
+              the unmet precondition beside it, and the deliberate override sits
+              next to it so the capability is explained rather than removed. */}
+          {phase === 'review' && preview && (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button onClick={runScan} className="rounded border border-gray-600 px-3 py-2 text-sm text-gray-200 hover:bg-gray-800">Scan again</button>
+              {preview.needsImprovement && !dispatchGate.canQueue && (
+                <span data-testid="improvement-dispatch-precondition" className="max-w-md text-right text-xs text-amber-300/90">
+                  {dispatchGate.unmetPrecondition}
+                </span>
+              )}
+              {preview.needsImprovement && !dispatchGate.canQueue && (
+                <button
+                  onClick={() => dispatch({ acknowledgeNoRunner: true })}
+                  disabled={!prompt.trim()}
+                  data-testid="improvement-dispatch-override"
+                  className="rounded border border-amber-700/50 bg-gray-700 px-3 py-2 text-sm text-amber-200 hover:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {dispatchGate.overrideLabel}
+                </button>
+              )}
+              {preview.needsImprovement && (
+                <button
+                  onClick={() => dispatch()}
+                  disabled={!prompt.trim() || !dispatchGate.canQueue}
+                  data-testid="improvement-dispatch-submit"
+                  title={dispatchGate.canQueue ? undefined : dispatchGate.unmetPrecondition}
+                  className="rounded border border-emerald-600 bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Approve and create PR task
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

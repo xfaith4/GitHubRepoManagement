@@ -22,7 +22,8 @@ import {
   type RepoLifecycleState,
   type RoadmapContent,
 } from '../types';
-import { applyAiDocImprovement, evaluateMergeReadiness, executeMergeReadinessMerge, executeRoadmapDispatch, getAgentRuns, getAiDocImprovementHistory, getAiDocTemplates, getMergeReadiness, getOperationsPromptHistory, getOperationsRepoDetail, getReadmeContent, getRoadmapContent, previewAiDocImprovement, refineOperationsPrompt, refreshAgentRun } from '../services/apiClient';
+import { applyAiDocImprovement, evaluateMergeReadiness, executeMergeReadinessMerge, executeRoadmapDispatch, getAgentRuns, getAiDocImprovementHistory, getAiDocTemplates, getMergeReadiness, getOperationsPromptHistory, getOperationsRepoDetail, getReadmeContent, getRoadmapContent, getRunnerPresence, previewAiDocImprovement, refineOperationsPrompt, refreshAgentRun } from '../services/apiClient';
+import { resolveDispatchGate, type RunnerPresencePayload } from '../lib/runnerPresence';
 import { BranchIcon, DatabaseIcon, HealthIcon, PullRequestIcon, RefreshIcon, RoadmapIcon, SpinnerIcon } from './icons';
 
 interface OperationsWorkspaceViewProps {
@@ -257,6 +258,11 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
   const [dispatchLoading, setDispatchLoading] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
   const [dispatchResult, setDispatchResult] = useState<DispatchExecuteResult | null>(null);
+  // Release 3.1 — this surface queues through the same route as the dispatch
+  // wizard, so it needs the same precondition. It had a readiness gate
+  // (dispatchReady && maturityReady) that says the *work* is dispatchable, which
+  // is a different question from whether anything is listening.
+  const [runnerPresence, setRunnerPresence] = useState<RunnerPresencePayload | null>(null);
   const [aiTab, setAiTab] = useState<'improve' | 'history'>('improve');
   const [aiDocType, setAiDocType] = useState<AiDocType>('readme');
   const [aiTemplates, setAiTemplates] = useState<AiDocTemplatesResult | null>(null);
@@ -306,6 +312,14 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
       return left.repoName.localeCompare(right.repoName);
     });
   }, [filterText, operationsRepos]);
+
+  // Release 3.1 — read once on mount. Resolves null rather than throwing, and
+  // resolveDispatchGate treats an unknown reading as "allow": a failed status
+  // call is not evidence that nothing is listening, and blocking on it would
+  // dead-end the operator over a hiccup on a different route.
+  useEffect(() => {
+    getRunnerPresence().then(setRunnerPresence);
+  }, []);
 
   useEffect(() => {
     if (filteredEntries.length === 0) {
@@ -528,6 +542,10 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
     null;
   const dispatchReady = selectedDispatchReadiness === 'ready';
   const maturityReady = selectedEntry?.maturityLevel === 'L3-Contract-Ready' || selectedEntry?.maturityLevel === 'L4-Orchestration-Ready';
+  // Readiness of the *work*: is there a refined prompt for a repo mature enough
+  // to receive it. Deliberately separate from the runner gate below — folding
+  // them together would make the override impossible to offer, and would report
+  // "not ready" for a repo that is perfectly ready with nothing listening.
   const canDispatchRefinedPrompt = Boolean(
     selectedEntry &&
     promptRefineResult?.runId &&
@@ -535,6 +553,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
     dispatchReady &&
     maturityReady,
   );
+  const dispatchGate = resolveDispatchGate(runnerPresence);
   const dispatchBlockedReason = !selectedEntry
     ? 'Select a repo to dispatch.'
     : !promptRefineResult?.runId
@@ -623,7 +642,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
     }
   };
 
-  const handleDispatchRefinedPrompt = async () => {
+  const handleDispatchRefinedPrompt = async (options?: { acknowledgeNoRunner?: boolean }) => {
     if (!selectedEntry || !promptRefineResult?.runId || !canDispatchRefinedPrompt) {
       return;
     }
@@ -635,6 +654,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
       const result = await executeRoadmapDispatch(selectedEntry.repoName, editedPrompt || refinedPrompt, {
         localPath: selectedEntry.localPath || undefined,
         promptRefinementRunId: promptRefineResult.runId,
+        acknowledgeNoRunner: options?.acknowledgeNoRunner,
       });
       setDispatchResult(result);
       setPromptTab('history');
@@ -1511,10 +1531,30 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                         >
                           {refinedPromptCopied ? 'Copied' : 'Copy Prompt'}
                         </button>
+                        {/* Release 3.1 — the work being ready and something being
+                            able to claim it are two different preconditions, and
+                            only the first was checked here. */}
+                        {canDispatchRefinedPrompt && !dispatchGate.canQueue && (
+                          <span data-testid="operations-dispatch-precondition" className="max-w-md text-xs text-amber-300/90">
+                            {dispatchGate.unmetPrecondition}
+                          </span>
+                        )}
+                        {canDispatchRefinedPrompt && !dispatchGate.canQueue && (
+                          <button
+                            onClick={() => handleDispatchRefinedPrompt({ acknowledgeNoRunner: true })}
+                            disabled={dispatchLoading}
+                            data-testid="operations-dispatch-override"
+                            className="rounded-md border border-amber-700/50 bg-gray-800 px-3 py-1.5 text-sm text-amber-200 hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+                          >
+                            {dispatchGate.overrideLabel}
+                          </button>
+                        )}
                         <button
-                          onClick={handleDispatchRefinedPrompt}
-                          disabled={dispatchLoading || !canDispatchRefinedPrompt}
-                          className="inline-flex items-center gap-2 rounded-md border border-emerald-700/50 bg-emerald-950/40 px-3 py-1.5 text-sm text-emerald-100 hover:bg-emerald-900/50 disabled:opacity-50 transition-colors"
+                          onClick={() => handleDispatchRefinedPrompt()}
+                          disabled={dispatchLoading || !canDispatchRefinedPrompt || !dispatchGate.canQueue}
+                          data-testid="operations-dispatch-submit"
+                          title={dispatchGate.canQueue ? undefined : dispatchGate.unmetPrecondition}
+                          className="inline-flex items-center gap-2 rounded-md border border-emerald-700/50 bg-emerald-950/40 px-3 py-1.5 text-sm text-emerald-100 hover:bg-emerald-900/50 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
                         >
                           {dispatchLoading ? <SpinnerIcon className="w-4 h-4" /> : null}
                           {dispatchLoading ? 'Dispatching...' : 'Dispatch to Copilot'}

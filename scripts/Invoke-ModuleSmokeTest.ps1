@@ -1427,9 +1427,16 @@ foreach ($assetName in @('ROADMAP_BUDGET_MODEL.md','ROADMAP_MATURITY_MODEL.md','
     $specAsset      = Join-Path $WorkspaceRoot ("spec\roadmap-contract\{0}" -f $assetName)
     if (-not (Test-Path -LiteralPath $standardsAsset)) { throw "Roadmap standard asset not found: $standardsAsset" }
     if (-not (Test-Path -LiteralPath $specAsset))      { throw "Published spec asset not found: $specAsset" }
-    $standardsHash = (Get-FileHash -LiteralPath $standardsAsset -Algorithm SHA256).Hash
-    $specHash      = (Get-FileHash -LiteralPath $specAsset -Algorithm SHA256).Hash
-    if ($standardsHash -ne $specHash) { $specDrift += $assetName }
+    # Compare CONTENT, not bytes on disk. This repo runs core.autocrlf=true with
+    # no .gitattributes, so whether a given working-tree file holds CRLF or LF
+    # depends on which git operation last materialised it — a stash, a partial
+    # checkout, or a fresh clone each leave a different answer. Hashing raw bytes
+    # made this gate report drift between two files whose content is identical
+    # (245 CRLF vs 245 LF, same 16,280 characters), and would equally hide real
+    # drift if the endings happened to match. Normalise first, then compare.
+    $standardsText = (Get-Content -LiteralPath $standardsAsset -Raw -Encoding UTF8) -replace "`r`n", "`n"
+    $specText      = (Get-Content -LiteralPath $specAsset -Raw -Encoding UTF8) -replace "`r`n", "`n"
+    if ($standardsText.TrimEnd("`n") -ne $specText.TrimEnd("`n")) { $specDrift += $assetName }
 }
 if ($specDrift.Count -gt 0) {
     throw ("standards/roadmap has drifted from spec/roadmap-contract for: {0}. Copy the updated file(s) into spec/roadmap-contract, or document the intended divergence in standards/MANIFEST.md." -f ($specDrift -join ', '))
@@ -4309,6 +4316,107 @@ Write-Step 'Dispatch execute gate — Release 3.1 M1: the runner-absent refusal 
 
     Write-Host ("  dispatch gate ok: runner-absent 409 (line {0}) precedes the queue write (line {1}) inside '{2}', and reports strandedCount" -f `
             $absentGate.Extent.StartLineNumber, $queueWrite.Extent.StartLineNumber, $dispatchRoute) -ForegroundColor DarkGray
+}
+
+Write-Step 'Dispatch gate coverage — every surface that queues work consults the gate'
+& {
+    # Release 3.1 M1 shipped the gate on two surfaces and missed two others,
+    # including the one ROADMAP.md names as the trigger for the whole release
+    # ("Approve and create PR task"). The backend 409 meant nothing could be
+    # stranded, but the operator still reviewed a prompt, clicked an enabled
+    # button, and got an error — the dead end the milestone exists to remove.
+    #
+    # This derives its scope from the call sites rather than a maintained list,
+    # which is the repeatedly-learned lesson here: a list names the instances
+    # somebody remembered. A fifth dispatch surface added tomorrow fails this
+    # check until it consults the gate.
+    $frontendRoot = Join-Path $WorkspaceRoot 'frontend'
+    $dispatchFn = 'executeRoadmapDispatch'
+    $gateFn = 'resolveDispatchGate'
+
+    $sourceFiles = @(Get-ChildItem -Path $frontendRoot -Recurse -File -Include '*.ts', '*.tsx' -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -notmatch '\\node_modules\\|\\dist\\' })
+    if (@($sourceFiles).Count -eq 0) { throw 'No frontend sources found; the dispatch gate-coverage assertion is vacuous.' }
+
+    $callSites = @()
+    foreach ($file in $sourceFiles) {
+        $text = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8
+        if ([string]::IsNullOrEmpty($text)) { continue }
+        # The declaration is not a call site. Everything else that invokes it is.
+        if ($text -match ("(?m)^\s*export\s+async\s+function\s+{0}\s*\(" -f [regex]::Escape($dispatchFn))) { continue }
+        if ($text -notmatch ("{0}\s*\(" -f [regex]::Escape($dispatchFn))) { continue }
+        $callSites += [pscustomobject]@{
+            Path    = $file.FullName.Substring($WorkspaceRoot.Length).TrimStart('\', '/').Replace('\', '/')
+            HasGate = ($text -match [regex]::Escape($gateFn))
+        }
+    }
+
+    if (@($callSites).Count -eq 0) {
+        throw "No caller of $dispatchFn found in frontend/. Either the call was renamed or this assertion has stopped checking anything."
+    }
+
+    $ungated = @($callSites | Where-Object { -not $_.HasGate })
+    if (@($ungated).Count -gt 0) {
+        throw (("{0} surface(s) call {1} without consulting {2}, so each offers an enabled control that the backend will refuse with 409: {3}. " +
+                'Import the gate and disable the control with its unmet precondition named, rather than letting the operator find out after reviewing a prompt.') -f `
+            @($ungated).Count, $dispatchFn, $gateFn, (@($ungated | ForEach-Object { $_.Path }) -join ', '))
+    }
+
+    Write-Host ("  dispatch gate coverage ok: {0} of {0} surface(s) calling {1} consult {2} ({3})" -f `
+            @($callSites).Count, $dispatchFn, $gateFn, ((@($callSites | ForEach-Object { Split-Path $_.Path -Leaf }) | Sort-Object) -join ', ')) -ForegroundColor DarkGray
+}
+
+Write-Step 'Engine attribution — Release 3.1 M2: a rule-produced preview says so'
+& {
+    # "An operator can always tell a deterministic rule from a model's proposal."
+    # The guided-improvement preview is pure rule evaluation and then hands its
+    # result to an AI agent from the same screen, which is exactly where the two
+    # are easiest to confuse. Asserted on the payload rather than by reading the
+    # component, per the acceptance criterion.
+    $improvementPath = Join-Path $WorkspaceRoot 'backend\modules\docaudit\RepositoryImprovement.Workflow.ps1'
+    $improvementErrors = $null
+    $improvementAst = [System.Management.Automation.Language.Parser]::ParseFile($improvementPath, [ref]$null, [ref]$improvementErrors)
+    if ($improvementErrors -and @($improvementErrors).Count -gt 0) {
+        throw "RepositoryImprovement.Workflow.ps1 does not parse: $($improvementErrors[0].Message)"
+    }
+
+    # The preview must not reach a provider. If it ever does, the attribution
+    # below stops being true and this assertion should be the thing that says so.
+    $previewFn = @($improvementAst.FindAll({
+                param($n)
+                $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'New-RepositoryImprovementPreview'
+            }, $true)) | Select-Object -First 1
+    if ($null -eq $previewFn) { throw 'New-RepositoryImprovementPreview not found; the engine-attribution assertion is vacuous.' }
+
+    $providerCalls = @($previewFn.FindAll({
+                param($n)
+                $n -is [System.Management.Automation.Language.CommandAst] -and
+                $n.GetCommandName() -match '^(Invoke-AiDoc|Invoke-RestMethod|Invoke-WebRequest|Invoke-AnthropicCompletion|Invoke-OpenAiCompletion)'
+            }, $true))
+    if (@($providerCalls).Count -gt 0) {
+        throw ("New-RepositoryImprovementPreview calls a provider ({0}), so labelling it deterministic-rules is now false. Update the engine block to report the real provider and model." -f `
+            (@($providerCalls | ForEach-Object { $_.GetCommandName() }) -join ', '))
+    }
+
+    $previewText = $previewFn.Extent.Text
+    foreach ($field in @('engine', 'kind', 'deterministic-rules', 'handoffEngine')) {
+        if ($previewText -notmatch [regex]::Escape($field)) {
+            throw "The improvement preview payload omits '$field'. A surface that renders a rule's finding and a model's proposal identically asks the operator to trust both the same amount."
+        }
+    }
+
+    # And the surface must actually consume it — a payload field nothing renders
+    # is not attribution, it is a field.
+    $modalPath = Join-Path $WorkspaceRoot 'frontend\components\RepositoryImprovementWorkflowModal.tsx'
+    $modalText = Get-Content -LiteralPath $modalPath -Raw -Encoding UTF8
+    if ($modalText -notmatch 'improvement-engine-attribution') {
+        throw 'The guided-improvement modal does not render the engine attribution, so the payload field is invisible to the operator it exists for.'
+    }
+    if ($modalText -notmatch 'engine\.label') {
+        throw 'The guided-improvement modal never renders engine.label; attribution that names no engine is decoration.'
+    }
+
+    Write-Host '  engine attribution ok: preview reaches no provider, payload declares deterministic-rules + handoff, modal renders it' -ForegroundColor DarkGray
 }
 
 Write-Step 'Smoke test completed'
