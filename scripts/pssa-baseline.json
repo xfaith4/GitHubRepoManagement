@@ -12,7 +12,7 @@
   "PSUseApprovedVerbs": 18,
   "PSUseBOMForUnicodeEncodedFile": 59,
   "PSUseDeclaredVarsMoreThanAssignments": 6,
-  "PSUseOutputTypeCorrectly": 136,
+  "PSUseOutputTypeCorrectly": 126,
   "PSUseShouldProcessForStateChangingFunctions": 67,
   "PSUseSingularNouns": 90,
   "PSUseUsingScopeModifierInNewRunspaces": 44

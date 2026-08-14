@@ -5120,4 +5120,283 @@ Write-Step 'Enabled means available — Release 3.1 M4: a disabled control names
     Write-Host '  Lane 0.9 ok: Insights runs the assessment it asks for, the load-failure screen classifies and retries, the dispatch wizard still names its precondition' -ForegroundColor DarkGray
 }
 
+Write-Step 'Stale base — Release 3.1 M5: no write path branches from a clone it has not verified'
+# Every write this product made to a managed repo branched from whatever the
+# local working copy happened to be, and `git fetch` appeared nowhere in
+# backend/ or scripts/. The submit-PR path evaluated nine named refusals and
+# staleness was not among them; the runner branched the same way.
+#
+# The damage is not a conflict. `git add -- <one file>` cannot revert upstream
+# work and GitHub's three-way merge makes a real conflict visible. What nothing
+# caught is that the PROPOSAL was computed from stale content, which merges
+# cleanly and reads as correct in review.
+$freshnessModule = Join-Path $WorkspaceRoot 'backend\modules\git\Git.BaseFreshness.ps1'
+if (-not (Test-Path -LiteralPath $freshnessModule)) { throw "Missing module file: $freshnessModule" }
+. $freshnessModule
+
+& {
+    # --- The decision matrix, pure ------------------------------------------
+    $current = Resolve-BaseFreshness -LocalSha 'abc' -RemoteSha 'abc' -BaseBranch 'main'
+    if ($current.state -ne 'current' -or $current.isStale) { throw 'Identical SHAs must read current and not stale' }
+    if ($current.behindCount -ne 0 -or -not $current.countIsExact) { throw 'A verified-current clone is exactly 0 behind, not unknown' }
+
+    $behind = Resolve-BaseFreshness -LocalSha 'aaa' -RemoteSha 'bbb' -RemoteObjectPresentLocally $true -BehindCount 8 -BaseBranch 'main'
+    if ($behind.state -ne 'behind' -or -not $behind.isStale) { throw 'A clone missing remote commits must read behind' }
+    if ($behind.behindCount -ne 8 -or -not $behind.countIsExact) { throw "The exact count must be carried; got $($behind.behindCount)" }
+    if ($behind.summary -notmatch '8 commit') { throw 'The refusal must say HOW FAR behind, not merely that it is behind' }
+    if ($behind.remedy -notmatch 'pull') { throw 'The refusal must say WHAT TO RUN' }
+
+    # Local work sitting on top of the remote tip is not stale: HEAD already
+    # contains everything upstream has.
+    $ahead = Resolve-BaseFreshness -LocalSha 'aaa' -RemoteSha 'bbb' -RemoteObjectPresentLocally $true -BehindCount 0 -BaseBranch 'main'
+    if ($ahead.state -ne 'current' -or $ahead.isStale) { throw 'A clone that already contains the remote tip must not be refused' }
+
+    $unknownCount = Resolve-BaseFreshness -LocalSha 'aaa' -RemoteSha 'bbb' -RemoteObjectPresentLocally $false -BaseBranch 'main'
+    if ($unknownCount.state -ne 'behind-unknown-count' -or -not $unknownCount.isStale) { throw 'A remote tip absent locally means behind by an unnameable amount' }
+    if ($null -ne $unknownCount.behindCount -or $unknownCount.countIsExact) { throw 'An uncountable behind must report $null, never 0 — the same rule this release applies to unmeasured cost' }
+
+    # Unverifiable is NOT stale. Absence of evidence is not evidence of
+    # divergence — the rule Resolve-RunnerPresence applies to an unreadable
+    # heartbeat, kept consistent so an offline operator is not locked out.
+    $unverified = Resolve-BaseFreshness -LocalSha 'aaa' -ProbeError 'network unreachable' -BaseBranch 'main'
+    if ($unverified.state -ne 'unknown') { throw 'A failed probe must read unknown' }
+    if ($unverified.isStale) { throw 'An unverifiable clone must never be reported as stale' }
+    if ($unverified.probeError -ne 'network unreachable') { throw 'The probe failure must be carried, not swallowed' }
+
+    Write-Host '  matrix ok: current/behind/behind-unknown-count/unknown classified, count exact when knowable and null when not, unverified is never stale' -ForegroundColor DarkGray
+}
+
+& {
+    # --- The real defect, reproduced ----------------------------------------
+    # Git.StatusDetail computes unpulledCommits from `git log HEAD..@{u}`, which
+    # reads the REMOTE-TRACKING REF — a local cache written by the last fetch.
+    # On a clone that has not fetched, that ref predates the divergence and the
+    # count reads zero while the clone sits behind. This builds exactly that
+    # situation with local repos (no network) and asserts the two disagree.
+    $staleTmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gh-stalebase-" + [guid]::NewGuid().ToString('n'))
+    $null = New-Item -ItemType Directory -Path $staleTmp -Force
+    try {
+        $originPath = Join-Path $staleTmp 'origin.git'
+        $authorPath = Join-Path $staleTmp 'author'
+        $stalePath  = Join-Path $staleTmp 'stale'
+        $gitCfg = @('-c', 'user.email=smoke@local', '-c', 'user.name=smoke', '-c', 'commit.gpgsign=false')
+
+        $null = & git init --bare -q --initial-branch=main $originPath 2>&1
+        $null = & git clone -q $originPath $authorPath 2>&1
+        Set-Content -LiteralPath (Join-Path $authorPath 'README.md') -Value "v1`n" -Encoding UTF8
+        $null = & git -C $authorPath add -A 2>&1
+        $null = & git -C $authorPath @gitCfg commit -q -m 'v1' 2>&1
+        $null = & git -C $authorPath push -q origin main 2>&1
+
+        # The clone that will go stale. It fetches once, here, and never again.
+        $null = & git clone -q $originPath $stalePath 2>&1
+
+        # Upstream moves three times. The stale clone is not told.
+        foreach ($n in 2, 3, 4) {
+            Set-Content -LiteralPath (Join-Path $authorPath 'README.md') -Value "v$n`n" -Encoding UTF8
+            $null = & git -C $authorPath add -A 2>&1
+            $null = & git -C $authorPath @gitCfg commit -q -m "v$n" 2>&1
+        }
+        $null = & git -C $authorPath push -q origin main 2>&1
+
+        # What the detector the product already had reports.
+        $oldReading = (& git -C $stalePath rev-list --count 'HEAD..@{u}' 2>&1) | Out-String
+        $oldCount = if ($oldReading.Trim() -match '^\d+$') { [int]$oldReading.Trim() } else { -1 }
+        if ($oldCount -ne 0) {
+            throw ("The stale-ref fixture did not reproduce: `git log HEAD..@{u}` reported $oldCount, so this assertion is no longer testing the defect it was written for.")
+        }
+
+        # What asking the remote reports. A clone that has never fetched does
+        # not hold the upstream objects, so the honest answer is "behind, by an
+        # amount only a fetch can name" — not a number invented from nothing.
+        $reading = Get-RepoBaseFreshness -RepoPath $stalePath -BaseBranch 'main'
+        if (-not $reading.isStale) {
+            throw ("A clone 3 commits behind was reported as fresh (state='{0}'). This is the exact failure that let a PromptPilot clone look current while 8 commits behind." -f $reading.state)
+        }
+        if ($reading.state -ne 'behind-unknown-count') {
+            throw ("A never-fetched clone lacks the upstream objects, so the count is not knowable without a fetch; expected 'behind-unknown-count', got '{0}'." -f $reading.state)
+        }
+        if ($null -ne $reading.behindCount) { throw 'An uncountable behind must report $null rather than a guess' }
+
+        # Fetch without merging: the objects are now local, the working copy is
+        # still behind, and the exact count becomes available. This is the other
+        # half of the matrix and the more common real state.
+        $null = & git -C $stalePath fetch -q origin main 2>&1
+        $afterFetch = Get-RepoBaseFreshness -RepoPath $stalePath -BaseBranch 'main'
+        if (-not $afterFetch.isStale) { throw 'Fetching does not make a clone current — it still has not merged' }
+        if ($afterFetch.behindCount -ne 3 -or -not $afterFetch.countIsExact) {
+            throw ("With the objects local the count must be exact; expected 3, got '{0}'." -f $afterFetch.behindCount)
+        }
+
+        # And a clone that IS current must not be refused — a guard that refuses
+        # everything is not a guard.
+        $freshReading = Get-RepoBaseFreshness -RepoPath $authorPath -BaseBranch 'main'
+        if ($freshReading.isStale) { throw "A clone at the tip of its remote was refused (state='$($freshReading.state)'); the guard would block all work." }
+
+        Write-Host ("  reproduction ok: `git log HEAD..@{{u}}` reports 0 on a clone really {0} behind; ls-remote reports behind before a fetch and exactly {0} after; a current clone is not refused" -f $afterFetch.behindCount) -ForegroundColor DarkGray
+    }
+    finally {
+        # git leaves read-only object files on Windows; clear them or the
+        # cleanup silently fails and leaves fixtures behind.
+        Get-ChildItem -LiteralPath $staleTmp -Recurse -Force -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                try { $_.Attributes = 'Normal' }
+                catch { Write-Verbose ("could not clear attributes on {0}: {1}" -f $_.FullName, $_.Exception.Message) }
+            }
+        Remove-Item -LiteralPath $staleTmp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+& {
+    # --- The refusal is named, and the override is deliberate ---------------
+    $prModule = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.PrSubmitter.ps1'
+    . $prModule
+
+    $staleReading = Resolve-BaseFreshness -LocalSha 'aaa' -RemoteSha 'bbb' -RemoteObjectPresentLocally $true -BehindCount 4 -BaseBranch 'main'
+    $common = @{
+        RepoPath = 'C:\repo'; RoadmapPath = 'C:\repo\ROADMAP.md'; ProposedContent = 'new'
+        CurrentContent = 'old'; Token = 't'; Slug = [pscustomobject]@{ slug = 'o/r' }
+        IsGitRepo = $true; WorkingTreeDirty = $false; BaseBranch = 'main'
+    }
+
+    $refused = Test-RoadmapRepairPrPreconditions @common -BaseFreshness $staleReading
+    if ($refused.ok) { throw 'A verified-stale base must refuse the submit-PR path' }
+    if ($refused.category -ne 'stale-base') { throw "The refusal must be its own named category; got '$($refused.category)'" }
+    if ($refused.reason -notmatch '4 commit') { throw 'The refusal must say how far behind the clone is' }
+    if ($refused.reason -notmatch 'pull') { throw 'The refusal must name what to run' }
+
+    $overridden = Test-RoadmapRepairPrPreconditions @common -BaseFreshness $staleReading -AcknowledgeStaleBase $true
+    if (-not $overridden.ok) { throw 'A deliberate acknowledgement must be able to proceed, as acknowledgeNoRunner does for dispatch' }
+
+    # Unverified must not block: the product has to keep working offline.
+    $unverified = Resolve-BaseFreshness -LocalSha 'aaa' -ProbeError 'offline' -BaseBranch 'main'
+    $allowed = Test-RoadmapRepairPrPreconditions @common -BaseFreshness $unverified
+    if (-not $allowed.ok) { throw 'An unverifiable base must not be refused, or an offline operator can never write' }
+
+    # And the nine refusals that existed before must still fire.
+    $dirty = Test-RoadmapRepairPrPreconditions @common -WorkingTreeDirty $true -BaseFreshness $staleReading
+    if ($dirty.ok -or $dirty.category -ne 'conflict') { throw 'The pre-existing dirty-tree refusal regressed' }
+
+    Write-Host '  refusal ok: stale-base named with distance and remedy, acknowledgement proceeds, unverified allowed, prior refusals intact' -ForegroundColor DarkGray
+}
+
+& {
+    # --- Coverage: scope derived from what actually derives content ---------
+    # Not a list of the paths known today. A managed-repo write is a `git`
+    # invocation against a repo PATH whose subcommand creates a branch or
+    # records a commit — `checkout -b`, `switch -c`, `commit`. Those are the
+    # operations that take the current working copy as their base, which is the
+    # thing that can be stale.
+    #
+    # Deliberately NOT in scope, and this is a decision rather than an
+    # oversight: `push` publishes a branch that already exists (its content was
+    # derived earlier, where the gate sits), and `stash`/`reset`/`checkout --`
+    # are the operator's own working-tree controls in the git-status modal. The
+    # counts for both are reported below so the exemption stays visible.
+    #
+    # `-C` may arrive inside a splatted array — the api-host's approve-push
+    # builds `@('-C', $path)` and splats it. A scope that only recognised a
+    # literal `-C` missed that site entirely while reporting full coverage.
+    $baseDeriving = '^(checkout|switch|commit)$'
+    $publishOnly  = '^(push|fetch|pull|merge|rebase|reset|stash|cherry-pick|revert)$'
+
+    $writeSites = [System.Collections.Generic.List[object]]::new()
+    $publishSites = [System.Collections.Generic.List[object]]::new()
+
+    foreach ($file in Get-ChildItem -LiteralPath $WorkspaceRoot -Recurse -Filter '*.ps1' -File -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.FullName -match '\\(backend|scripts)\\' -and
+            $_.FullName -notmatch '\\node_modules\\' -and
+            # Test and smoke scripts build git fixtures on purpose; they are not
+            # writes to a managed repo.
+            $_.Name -notmatch '(SmokeTest|Test-|\.Tests)\.ps1$'
+        }) {
+
+        $fileErrors = $null
+        $fileAst = [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$null, [ref]$fileErrors)
+        if ($fileErrors -and @($fileErrors).Count -gt 0) { continue }
+
+        foreach ($cmd in $fileAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true)) {
+            if ($cmd.GetCommandName() -ne 'git') { continue }
+            $elements = @($cmd.CommandElements | ForEach-Object { $_.Extent.Text })
+
+            # Targets a repo by path: a literal -C, or a splat that may carry one.
+            $targetsRepoPath = ($elements -contains '-C') -or (@($elements | Where-Object { $_ -match '^@\w' }).Count -gt 0)
+            if (-not $targetsRepoPath) { continue }
+
+            # The subcommand is the first bare word that is not an option, a
+            # value belonging to -C/-c, or the command name itself. Its index is
+            # kept: the flags that matter (-b, -c, --create) belong to the
+            # SUBCOMMAND, and `git -c user.email=…` uses the same letter before
+            # it. Comparisons below are case-sensitive for the same reason —
+            # PowerShell's -eq is not, so `git -C <path>` matched the `-c` of
+            # `switch -c` and flagged the working-tree discard control as a
+            # branch creation.
+            $sub = ''
+            $subIndex = -1
+            for ($i = 1; $i -lt $elements.Count; $i++) {
+                $e = $elements[$i]
+                if ($e -match '^-') { if ($e -ceq '-C' -or $e -ceq '-c') { $i++ }; continue }
+                if ($e -match '^[@$]') { continue }
+                $sub = $e; $subIndex = $i; break
+            }
+            if ([string]::IsNullOrWhiteSpace($sub)) { continue }
+            $subArgs = if ($subIndex -ge 0 -and $subIndex -lt ($elements.Count - 1)) { @($elements[($subIndex + 1)..($elements.Count - 1)]) } else { @() }
+
+            $fnName = '<file scope>'
+            $walk = $cmd
+            while ($null -ne $walk) {
+                if ($walk -is [System.Management.Automation.Language.FunctionDefinitionAst]) { $fnName = $walk.Name; break }
+                $walk = $walk.Parent
+            }
+
+            $record = [pscustomobject]@{
+                File = $file.FullName.Substring($WorkspaceRoot.Length + 1)
+                Line = $cmd.Extent.StartLineNumber
+                Fn   = $fnName
+                Sub  = $sub
+                # The AST node, not its text. A text match on "BaseFreshness"
+                # was satisfied by the parameter name in the pass-through call
+                # even after the probe itself was deleted — the same
+                # presence-not-behaviour hole the token/cost gate had.
+                ScopeAst = $(if ($fnName -eq '<file scope>') { $fileAst } else { $walk })
+            }
+
+            if ($sub -match $baseDeriving) {
+                # `checkout <existing-branch>` and `switch <existing-branch>`
+                # move between refs that already exist; only creating a new one
+                # takes the working copy as its base.
+                $createsBranch = ($sub -ceq 'commit') -or (@($subArgs | Where-Object { $_ -ceq '-b' -or $_ -ceq '-c' -or $_ -ceq '--create' }).Count -gt 0)
+                if ($createsBranch) { $writeSites.Add($record) }
+            }
+            elseif ($sub -match $publishOnly) { $publishSites.Add($record) }
+        }
+    }
+
+    if ($writeSites.Count -lt 2) {
+        throw ("Found only {0} base-deriving git site(s) across backend/ and scripts/. Both the submit-PR path and the task runner create branches and commit, so the scope has been lost and a passing result here would be vacuous." -f $writeSites.Count)
+    }
+
+    $ungated = [System.Collections.Generic.List[object]]::new()
+    foreach ($site in $writeSites) {
+        # The enclosing scope has to CALL the probe, not merely mention it.
+        # Function-level, because the runner gates once at the top and then
+        # branches and commits inside the same function.
+        $probes = @($site.ScopeAst.FindAll({
+                    param($n)
+                    $n -is [System.Management.Automation.Language.CommandAst] -and
+                    $n.GetCommandName() -in @('Get-RepoBaseFreshness', 'Test-RunnerBaseFreshness')
+                }, $true))
+        if (@($probes).Count -eq 0) { $ungated.Add($site) | Out-Null }
+    }
+    if ($ungated.Count -gt 0) {
+        $detail = ($ungated | ForEach-Object { "    {0}:{1}  {2}  (git {3})" -f $_.File, $_.Line, $_.Fn, $_.Sub }) -join "`n"
+        throw ("{0} path(s) create a branch or record a commit in a managed repo without verifying the base is current. An improvement computed from a stale clone merges cleanly and reads as correct in review, which is why it has to be stopped here.`n{1}" -f $ungated.Count, $detail)
+    }
+
+    $writeFiles = @($writeSites | Select-Object -ExpandProperty File -Unique)
+    Write-Host ("  coverage ok: {0} base-deriving site(s) across {1} file(s), all gated ({2}); {3} publish/working-tree site(s) out of scope by design" -f `
+            $writeSites.Count, $writeFiles.Count, ($writeFiles -join ', '), $publishSites.Count) -ForegroundColor DarkGray
+}
+
 Write-Step 'Smoke test completed'

@@ -17,6 +17,22 @@ $ErrorActionPreference = 'Stop'
     failure mode this whole feature exists to remove.
 #>
 
+function _PrSubmitterField {
+    # Read a property off either a hashtable or a PSCustomObject without
+    # tripping StrictMode on an absent name.
+    param([object]$Obj, [string]$Name, [object]$Default = $null)
+    if ($null -eq $Obj) { return $Default }
+    if ($Obj -is [System.Collections.IDictionary]) {
+        if ($Obj.Contains($Name) -and $null -ne $Obj[$Name]) { return $Obj[$Name] }
+        return $Default
+    }
+    if ($null -ne $Obj.PSObject -and ($Obj.PSObject.Properties.Name -contains $Name)) {
+        $v = $Obj.$Name
+        if ($null -ne $v) { return $v }
+    }
+    return $Default
+}
+
 function Get-RoadmapRepairBranchName {
     [CmdletBinding()]
     param(
@@ -71,6 +87,10 @@ function Test-RoadmapRepairPrPreconditions {
             the refusal matrix is unit-testable. The caller gathers the facts.
     #>
     [CmdletBinding()]
+    # Declared rather than inferred: every branch returns a hashtable, and
+    # saying so clears the analyzer findings this function has carried since it
+    # was written instead of adding one more with the stale-base refusal.
+    [OutputType([hashtable])]
     param(
         [AllowEmptyString()][string]$RepoPath = '',
         [AllowEmptyString()][string]$RoadmapPath = '',
@@ -80,7 +100,12 @@ function Test-RoadmapRepairPrPreconditions {
         [AllowNull()][object]$Slug = $null,
         [bool]$IsGitRepo = $false,
         [bool]$WorkingTreeDirty = $false,
-        [AllowEmptyString()][string]$BaseBranch = 'main'
+        [AllowEmptyString()][string]$BaseBranch = 'main',
+        # Release 3.1 — the tenth refusal. A reading from Get-RepoBaseFreshness;
+        # $null means the caller did not check, which is treated as unverified
+        # rather than as fresh.
+        [AllowNull()][object]$BaseFreshness = $null,
+        [bool]$AcknowledgeStaleBase = $false
     )
 
     if ([string]::IsNullOrWhiteSpace($RepoPath)) {
@@ -108,6 +133,26 @@ function Test-RoadmapRepairPrPreconditions {
     # operator edits would put work nobody reviewed into an automated PR.
     if ($WorkingTreeDirty) {
         return @{ ok = $false; category = 'conflict'; reason = 'The working tree has uncommitted changes. Commit or stash them first — refusing to sweep unrelated edits into an automated PR.' }
+    }
+    # A stale base is refused rather than merged: the danger is not a conflict
+    # (git add stages one file, and GitHub's three-way merge makes a real
+    # conflict visible) but that the PROPOSAL was computed from out-of-date
+    # content — re-adding what upstream already fixed, or missing context added
+    # since. That merges cleanly and reads as correct in review, which is why it
+    # has to be stopped before the branch exists rather than caught after.
+    if ($null -ne $BaseFreshness) {
+        $freshnessState = [string](_PrSubmitterField -Obj $BaseFreshness -Name 'state' -Default 'unknown')
+        if ([bool](_PrSubmitterField -Obj $BaseFreshness -Name 'isStale' -Default $false)) {
+            if (-not $AcknowledgeStaleBase) {
+                $count = _PrSubmitterField -Obj $BaseFreshness -Name 'behindCount' -Default $null
+                $howFar = if ($null -ne $count) { "$count commit(s) behind" } else { 'behind by an amount only a fetch can name' }
+                $remedy = [string](_PrSubmitterField -Obj $BaseFreshness -Name 'remedy' -Default '')
+                $branch = [string](_PrSubmitterField -Obj $BaseFreshness -Name 'baseBranch' -Default $BaseBranch)
+                $reason = "This clone is $howFar its remote $branch, so the proposed roadmap was generated from out-of-date content. Refusing to open a PR from a stale base."
+                if (-not [string]::IsNullOrWhiteSpace($remedy)) { $reason += " Run: $remedy" }
+                return @{ ok = $false; category = 'stale-base'; reason = $reason; freshnessState = $freshnessState }
+            }
+        }
     }
     if ([string]::IsNullOrWhiteSpace($BaseBranch)) {
         return @{ ok = $false; category = 'validation'; reason = 'No base branch resolved for the PR.' }
@@ -187,7 +232,12 @@ function Invoke-RoadmapRepairPrSubmission {
         [Parameter()][AllowEmptyString()][string]$Token = '',
         [Parameter()][AllowEmptyString()][string]$BaseBranch = '',
         [Parameter()][AllowEmptyString()][string]$BranchName = '',
-        [Parameter()][hashtable]$ApiHeaders = $null
+        [Parameter()][hashtable]$ApiHeaders = $null,
+        # Release 3.1 — the deliberate override, mirroring -AcknowledgeNoRunner
+        # on the dispatch path. The capability is explained, not removed: an
+        # operator who knows the base is stale and wants the PR anyway can say
+        # so, and the acknowledgement is recorded on the result.
+        [Parameter()][switch]$AcknowledgeStaleBase
     )
 
     $isGitRepo = (-not [string]::IsNullOrWhiteSpace($RepoPath)) -and (Test-Path -LiteralPath (Join-Path $RepoPath '.git'))
@@ -198,13 +248,23 @@ function Invoke-RoadmapRepairPrSubmission {
     $startBranch = if ($isGitRepo) { Get-GitCurrentBranch -RepoPath $RepoPath } else { '' }
     $effectiveBase = if (-not [string]::IsNullOrWhiteSpace($BaseBranch)) { $BaseBranch } elseif (-not [string]::IsNullOrWhiteSpace($startBranch)) { $startBranch } else { 'main' }
 
+    # Ask the remote where the base actually is before anything branches from
+    # it. One ls-remote round trip; never a fetch, and never fatal — an
+    # unreachable remote reads 'unknown', which is not a refusal.
+    $freshness = $null
+    if ($isGitRepo -and (Get-Command -Name 'Get-RepoBaseFreshness' -ErrorAction SilentlyContinue)) {
+        $freshness = Get-RepoBaseFreshness -RepoPath $RepoPath -BaseBranch $effectiveBase
+    }
+
     $check = Test-RoadmapRepairPrPreconditions -RepoPath $RepoPath -RoadmapPath $RoadmapPath `
         -ProposedContent $ProposedContent -CurrentContent $current -Token $Token -Slug $slug `
-        -IsGitRepo $isGitRepo -WorkingTreeDirty $dirty -BaseBranch $effectiveBase
+        -IsGitRepo $isGitRepo -WorkingTreeDirty $dirty -BaseBranch $effectiveBase `
+        -BaseFreshness $freshness -AcknowledgeStaleBase ([bool]$AcknowledgeStaleBase)
     if (-not $check.ok) {
         return [pscustomobject]@{
             created = $false; refused = $true; reason = $check.reason; category = $check.category
             branch = ''; prUrl = $null; prNumber = $null; slug = $(if ($null -ne $slug) { $slug.slug } else { '' })
+            baseFreshness = $freshness
         }
     }
 
@@ -272,6 +332,11 @@ function Invoke-RoadmapRepairPrSubmission {
             branch = $branch; baseBranch = $effectiveBase; slug = $slug.slug
             prUrl = [string]$pr.html_url; prNumber = [int]$pr.number
             commitMessage = $message
+            # The reading travels on success too, so a PR opened over a known
+            # stale base is identifiable afterwards rather than only at the
+            # moment someone clicked through the warning.
+            baseFreshness = $freshness
+            staleBaseAcknowledged = [bool]($AcknowledgeStaleBase -and $null -ne $freshness -and $freshness.isStale)
         }
     }
     finally {

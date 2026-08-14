@@ -1069,18 +1069,55 @@ export async function getRoadmapRepairHistory(limit = 25): Promise<RoadmapRepair
 
 // Release 2.4 — build a PR for a roadmap repair. Dry-run by default (returns the
 // planned branch/title/body); createPr=true is the operator-driven live path.
+/**
+ * Release 3.1 — how far the local clone is behind the remote base it would
+ * branch from. Null counts mean unmeasured, never zero: `behind-unknown-count`
+ * is a clone that is certainly behind by an amount only a fetch can name, and
+ * `unknown` is a clone whose freshness could not be checked at all, which is
+ * reported but never treated as stale.
+ */
+export interface BaseFreshness {
+  state: 'current' | 'behind' | 'behind-unknown-count' | 'unknown';
+  isStale: boolean;
+  basis: string;
+  baseBranch: string;
+  remote: string;
+  behindCount: number | null;
+  countIsExact: boolean;
+  remedy: string | null;
+  probeError: string | null;
+  summary: string;
+}
+
 export interface RoadmapRepairPrResult {
   dryRun: boolean;
   created: boolean;
   prUrl: string | null;
   plan: { repoName: string; previewId: string; branch: string; baseBranch: string; title: string; body: string };
   note: string;
+  baseFreshness?: BaseFreshness | null;
 }
 
-export async function submitRoadmapRepairPr(repoName: string, previewId?: string, createPr = false): Promise<RoadmapRepairPrResult> {
+export async function submitRoadmapRepairPr(
+  repoName: string,
+  previewId?: string,
+  createPr = false,
+  options?: {
+    /**
+     * Proceed even though the clone is verified behind its remote base. Without
+     * it the live route refuses with 409 `stale-base` and writes nothing, so an
+     * omitted flag can never open a PR built from out-of-date content by
+     * accident. Same shape as acknowledgeNoRunner on the dispatch path.
+     */
+    acknowledgeStaleBase?: boolean;
+    repoPath?: string;
+  },
+): Promise<RoadmapRepairPrResult> {
   const body: Record<string, unknown> = { repoName };
   if (previewId) body.previewId = previewId;
   if (createPr) body.createPr = true;
+  if (options?.acknowledgeStaleBase) body.acknowledgeStaleBase = true;
+  if (options?.repoPath) body.repoPath = options.repoPath;
   const data = await postJson<any>('/roadmap/repair/submit-pr', body);
   return (data?.data ?? data) as RoadmapRepairPrResult;
 }

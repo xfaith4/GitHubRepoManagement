@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-14 — Release 3.1: the guard that asks the remote, because the detector was as stale as the thing it detected
+
+### Changes
+
+- **Every write to a managed repo branched from whatever the local working copy happened to be, and `git fetch` appeared nowhere in `backend/` or `scripts/`.** The submit-PR path evaluated nine named refusals — not a git repo, dirty tree, no token, unrecognizable remote, byte-identical no-op, and five more — and staleness was not one of them. The task runner branched the same way.
+- **The damage was never the obvious one.** `git add -- <one file>` cannot revert upstream work, and GitHub's three-way merge turns a genuinely conflicting edit into a visible `DIRTY` state. What nothing caught is that the **proposal itself was computed from stale content** — an improvement generated against an outdated document, re-adding what upstream already fixed or missing context added since. That merges cleanly and reads as correct in review.
+- **The detector the product already had was as stale as the thing it detected.** `Git.StatusDetail.ps1` computes `unpulledCommits` from `git log HEAD..@{u}`, which reads the *remote-tracking ref* — a local cache written by the last fetch. On a clone that last fetched 195 days ago it reports **zero** while the clone sits far behind. Measured across 60 local clones: 49 had upstreams, 11 reported behind, and those same clones last fetched 93, 195, 285, 93, 26, 0, 63, 104, 53, 120 and 16 days ago — one had never fetched. Every count was measured against a ref that was itself stale, so the true figures could only be larger.
+- **[`Git.BaseFreshness.ps1`](backend/modules/git/Git.BaseFreshness.ps1) asks the remote instead.** One `git ls-remote` round trip: no object download, no working-tree mutation, no fetch. Both write paths now refuse with a named `stale-base` category that says **how far behind** and **what to run**, and both take a deliberate override — `acknowledgeStaleBase` on the route, `-AcknowledgeStaleBase` on the runner — exactly as `acknowledgeNoRunner` works for dispatch.
+- **The count is exact when it can be, and null when it cannot.** If the remote tip is already in the local object store the answer is a real number; if the clone never fetched, the honest answer is `behind-unknown-count` with a null count and a remedy naming `fetch`. Never a guess — the same rule this release applied to unmeasured token cost.
+- **A clone that cannot be verified is not treated as stale.** No remote, no network, detached HEAD all read `unknown`, are reported, and are allowed through. That is the rule `Resolve-RunnerPresence` applies to an unreadable heartbeat, kept consistent so an offline operator is not locked out of their own repositories.
+- **The dry-run plan warns before the live call.** The repair modal only ever runs the dry run, so the freshness reading is attached there too: an operator sees "this clone is not current with its base" while deciding whether to submit, rather than as the refusal afterwards.
+
+### Verification
+
+- **The defect is reproduced, not described.** The smoke builds a bare origin, clones it, moves the origin three commits, and asserts `git log HEAD..@{u}` reports **0** on that clone while `ls-remote` reports behind — then fetches without merging and asserts the exact count becomes **3**. It also asserts a current clone is *not* refused, because a guard that refuses everything is not a guard.
+- **Coverage derives from the commands that branch or commit in a managed repo**, as the roadmap entry asked: 4 base-deriving sites across 2 files, all gated, plus 7 publish/working-tree sites reported as deliberately out of scope rather than silently skipped.
+- **Two real defects in the coverage check itself, both found by probing it rather than by reading it.** A managed-repo `push` in the api-host was invisible because its `-C` arrives inside a **splatted array**, and PowerShell's case-insensitive `-eq` matched `git -C` against the `-c` of `switch -c`, flagging the working-tree discard control as a branch creation. Then a third: removing the probe from the submit path still **passed**, because the check matched the word `BaseFreshness` — still present in the parameter pass-through — instead of an actual call. It now requires a `CommandAst` invoking the probe. Re-probed: adding an ungated write path fires, and removing the existing guard fires.
+- **Test suite 16/16 green**; api-host smoke run separately because this change touches the host.
+- **Lint: 587 findings against a 597 baseline — 10 below, and the baseline is rewritten to lock it in.** Declaring `[OutputType([hashtable])]` on the refusal matrix cleared findings it had carried since it was written, rather than adding one more with the new refusal. The two findings this work did introduce were fixed, not baselined: a missing BOM on the new module, and a script parameter read from inside a function that is now hoisted to an explicit script-scoped value.
+
 ## 2026-08-14 — Release 3.1: the number nobody measured, and the button that never said what it wanted
 
 ### Changes

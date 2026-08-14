@@ -68,6 +68,7 @@ $docStdModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\docstandardization
 $gitModuleRoot    = Join-Path $WorkspaceRoot 'backend\modules\git'
 . (Join-Path $gitModuleRoot 'Git.StatusDetail.ps1')
 . (Join-Path $gitModuleRoot 'Git.Staleness.ps1')
+. (Join-Path $gitModuleRoot 'Git.BaseFreshness.ps1')
 $readmeModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\readme'
 . (Join-Path $readmeModuleRoot 'Readme.Generator.ps1')
 . (Join-Path $docStdModuleRoot 'DocStandardization.Previewer.ps1')
@@ -10714,12 +10715,44 @@ try {
                             body       = ("Automated roadmap repair for {0}.{1}" -f $repoName, $(if ($previewId) { " Based on repair preview $previewId." } else { '' }))
                         }
 
+                        # Release 3.1 — the dry run is where an operator decides
+                        # whether to submit at all, so it has to know whether the
+                        # base is stale. Probing here means the warning arrives
+                        # before the live call rather than as its refusal.
+                        $dryRunFreshness = $null
+                        if (-not $createPr) {
+                            # Resolve the clone the same way the live path does —
+                            # explicit repoPath wins, the roadmap cache is the
+                            # fallback. Without the fallback the warning would only
+                            # ever fire for callers that already pass a path, which
+                            # the repair modal does not: a warning that cannot
+                            # appear in the normal flow is not a warning.
+                            $dryRunRepoPath = $submitRepoPathOverride
+                            if ([string]::IsNullOrWhiteSpace($dryRunRepoPath)) {
+                                $dryRunCache = Get-RoadmapFromCache -TtlSeconds (Get-RoadmapCacheTtlSeconds -Settings (Get-HostSettings))
+                                if ($dryRunCache.hit -and $dryRunCache.entries) {
+                                    $dryRunEntry = @($dryRunCache.entries) | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1
+                                    if ($null -ne $dryRunEntry) {
+                                        $dryRunRepoPath = if ($dryRunEntry -is [System.Collections.IDictionary]) {
+                                            [string](Get-ValueOrDefault $dryRunEntry['repoPath'] '')
+                                        } else {
+                                            [string](Get-ValueOrDefault $dryRunEntry.repoPath '')
+                                        }
+                                    }
+                                }
+                            }
+                            if (-not [string]::IsNullOrWhiteSpace($dryRunRepoPath)) {
+                                $dryRunFreshness = Get-RepoBaseFreshness -RepoPath $dryRunRepoPath -BaseBranch ([string]$plan.baseBranch)
+                            }
+                        }
+
                         if (-not $createPr) {
                             Add-MetricCounter -Name 'api_requests_total'
                             Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                                 success = $true
                                 data = @{
                                     dryRun = $true; created = $false; prUrl = $null; plan = $plan
+                                    baseFreshness = $dryRunFreshness
                                     note = 'dry-run: set createPr=true (with proposedContent and a GitHub write token) to open a live PR'
                                 }
                             }
@@ -10758,11 +10791,21 @@ try {
                                 }
                             }
 
+                            # Release 3.1 — the deliberate stale-base override, same
+                            # shape as acknowledgeNoRunner on the dispatch path:
+                            # absent means refuse, and the operator has to say so.
+                            # ContainsKey first: under StrictMode, reading an absent
+                            # property throws before Get-ValueOrDefault can default it,
+                            # which turned this route's 409 refusals into 500s. Every
+                            # other field in this route is read the same way.
+                            $submitAckStale = ($body.ContainsKey('acknowledgeStaleBase') -and [bool]$body.acknowledgeStaleBase)
+
                             $submitResult = Invoke-RoadmapRepairPrSubmission `
                                 -RepoName $repoName -RepoPath $submitRepoPath -RoadmapPath $submitRoadmapPath `
                                 -ProposedContent $submitProposed -PreviewId $previewId -Token $submitToken `
                                 -BaseBranch $submitBase -BranchName $branch `
-                                -ApiHeaders (Get-GitHubApiHeaders -Token $submitToken)
+                                -ApiHeaders (Get-GitHubApiHeaders -Token $submitToken) `
+                                -AcknowledgeStaleBase:$submitAckStale
 
                             Add-MetricCounter -Name 'api_requests_total'
                             if ($submitResult.refused) {
@@ -10773,7 +10816,13 @@ try {
                                     success = $false
                                     error = [string]$submitResult.reason
                                     category = [string]$submitResult.category
-                                    data = @{ dryRun = $false; created = $false; prUrl = $null; plan = $plan }
+                                    data = @{
+                                        dryRun = $false; created = $false; prUrl = $null; plan = $plan
+                                        # A refusal the caller cannot explain to the
+                                        # operator is only half a refusal.
+                                        baseFreshness = (Get-ObjectPropertyValue -InputObject $submitResult -PropertyName 'baseFreshness' -Default $null)
+                                        canAcknowledgeStaleBase = ([string]$submitResult.category -eq 'stale-base')
+                                    }
                                 }
                             }
                             else {

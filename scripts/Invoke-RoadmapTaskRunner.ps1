@@ -31,6 +31,13 @@
     Show what would happen for each queued task without claiming, branching,
     launching claude, or committing. Safe to demo.
 
+.PARAMETER AcknowledgeStaleBase
+    Proceed even when the target clone is verified behind its remote base.
+    Off by default: an agent that reads a stale working copy produces a
+    proposal computed from out-of-date content, which merges cleanly and reads
+    as correct in review. Use this only when you know the base is stale and
+    want the task run against it anyway.
+
 .PARAMETER LoadFunctionsOnly
     Dot-source the pure functions without running (used by the module smoke).
 
@@ -48,6 +55,7 @@ param(
     [string]$PermissionMode = 'acceptEdits',
     [int]$PollSeconds = 15,
     [switch]$DryRun,
+    [switch]$AcknowledgeStaleBase,
     [switch]$LoadFunctionsOnly
 )
 
@@ -57,6 +65,32 @@ $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) { $WorkspaceRoot = Split-Path -Parent $PSScriptRoot }
 if ([string]::IsNullOrWhiteSpace($QueuePath)) { $QueuePath = Join-Path $WorkspaceRoot 'output\roadmap-task-queue.jsonl' }
 $runsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
+
+# Hoisted to an explicit script-scoped value: Invoke-QueuedTask reads it from
+# inside a function, which PowerShell resolves dynamically but leaves invisible
+# to both the analyzer and the next reader.
+$script:AcknowledgeStaleBase = [bool]$AcknowledgeStaleBase
+
+# Release 3.1 — the base-freshness probe lives in the git module so the submit-PR
+# path and this runner share one definition of "stale" rather than each growing
+# its own.
+$script:BaseFreshnessModule = Join-Path $WorkspaceRoot 'backend\modules\git\Git.BaseFreshness.ps1'
+if (Test-Path -LiteralPath $script:BaseFreshnessModule) { . $script:BaseFreshnessModule }
+
+function Test-RunnerBaseFreshness {
+    <#
+        .SYNOPSIS
+            Ask the shared probe whether this clone is current with its remote.
+        .DESCRIPTION
+            Returns $null when the probe is unavailable, which callers treat as
+            "not checked" rather than "fresh". Never throws: the guard must not
+            be the thing that breaks the runner.
+    #>
+    param([Parameter()][AllowEmptyString()][string]$RepoPath = '')
+    if (-not (Get-Command -Name 'Get-RepoBaseFreshness' -ErrorAction SilentlyContinue)) { return $null }
+    try { return Get-RepoBaseFreshness -RepoPath $RepoPath }
+    catch { return $null }
+}
 
 # ── Pure / testable helpers (module smoke covers these; no git, no claude) ────
 function Get-QueueEntries {
@@ -377,6 +411,33 @@ function Invoke-QueuedTask {
     if ($dispatchTarget -eq 'copilot') {
         Invoke-QueuedCopilotTask -Entry $Entry -RunId $runId -SummaryPath $summaryPath
         return
+    }
+
+    # Release 3.1 — verify the base BEFORE branching from it, and before the
+    # dry-run shortcut, so a dry run reports the refusal it would hit. The
+    # runner hands the repo to an agent that reads its files and proposes
+    # changes; on a stale clone that proposal is computed against out-of-date
+    # content and still merges cleanly. Refusing before the claim leaves the
+    # task queued and visible rather than marked running against an unchecked
+    # base.
+    $freshness = Test-RunnerBaseFreshness -RepoPath $repo
+    if ($null -ne $freshness -and $freshness.isStale -and -not $script:AcknowledgeStaleBase) {
+        $msg = ("Refusing to branch from a stale base. {0}{1}" -f $freshness.summary, $(if ($freshness.remedy) { " Run: $($freshness.remedy)" } else { '' }))
+        Write-Host ("  [task] runId={0} refused (stale-base): {1}" -f $runId, $msg) -ForegroundColor Red
+        Write-Host "         Re-run with -AcknowledgeStaleBase to proceed anyway." -ForegroundColor DarkGray
+        if (-not $DryRun) {
+            Update-TaskSummary -SummaryPath $summaryPath -Set @{
+                status = 'refused'; refusalCategory = 'stale-base'; error = $msg
+                baseFreshnessState = [string]$freshness.state
+                runnerCompletedAt = (Get-Date).ToString('o')
+            }
+        }
+        return
+    }
+    if ($null -ne $freshness -and $freshness.state -eq 'unknown') {
+        # Not a refusal — absence of evidence is not evidence of divergence —
+        # but it is said out loud rather than passed over in silence.
+        Write-Host ("  [task] base freshness unverified: {0}" -f $freshness.summary) -ForegroundColor DarkYellow
     }
 
     if ($DryRun) {

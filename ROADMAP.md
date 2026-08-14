@@ -244,24 +244,30 @@ The full execution contract lives in one place,
 `ROADMAP_TEMPLATE.md`. This heading exists so the validator can resolve the
 active-release pointer; it deliberately restates nothing.
 
-**Current focus:** the empty-room gate and engine attribution shipped
-2026-08-13; staleness, token/cost measurement, and the "enabled means available"
-audit shipped 2026-08-14. **One engineering milestone remains.**
+**Current focus:** **every engineering milestone in this release is closed.**
+The empty-room gate and engine attribution shipped 2026-08-13; staleness
+visibility, token/cost measurement, the "enabled means available" audit, and the
+stale-clone write guard shipped 2026-08-14. What remains is the full-loop
+evidence record, which is blocked on an **operator session, not on engineering**
+— batch it with 2.9's session rather than scheduling a separate one. When that
+lands, 3.1 closes and 3.2 resumes as the active release.
 
-**"No write path may act on a stale clone"** is it, and it is the one that can
-produce a wrong artifact rather than a missing or ugly one. It was measured
-rather than reported (11 of 49 clones behind, several last fetched over six
-months ago), and it reuses the refusal-plus-tripwire shape every milestone
-before it established. The remaining item after that is the full-loop evidence
-record, which is blocked on an operator session rather than on engineering.
+Every milestone here was closed by a tripwire that derives its own scope, and
+**each one found something its author was not looking for**:
 
-Every milestone this release has been closed by a tripwire that derives its own
-scope, and each one found something its author had not been looking for: the
-dispatch audit found two ungated surfaces no list had named, the staleness work
-found a metric hardcoded to `$false` behind a shipped UI, and the control audit
-found 11 disabled controls that a lazy regex had been reporting as enabled.
-Scope that is derived rather than enumerated is the pattern worth carrying into
-3.2.
+- the dispatch audit found two ungated surfaces no list had named;
+- the staleness work found a metric hardcoded to `$false` behind a UI that had
+  shipped a column, a filter and a badge bound to it several releases earlier;
+- the control audit found 11 disabled controls a lazy regex had been reporting
+  as enabled, because `<button.*?>` stops at the `>` inside `() =>`;
+- the stale-base coverage check found a managed-repo push in the api-host that
+  an AST scan had missed, because its `-C` arrived inside a splatted array.
+
+Three of the gates written this release **failed their own regression probe on
+the first attempt** — each was satisfied by the presence of a name rather than
+by the behaviour it was meant to require. A gate is not finished when it passes;
+it is finished when it has been shown to fail. That, and scope derived rather
+than enumerated, are the two habits worth carrying into 3.2.
 
 ---
 
@@ -513,18 +519,32 @@ text and evidence:
       - **Most recently modified uncommitted file** needs working-tree stat calls
         per repo; the scan counts `git status --short` lines but never reads
         their timestamps.
-- [ ] **No write path may act on a stale clone.** Every write this product makes
-      to a managed repo branches from whatever the local working copy happens to
-      be, and **`git fetch` appears nowhere in `backend/` or `scripts/`**. The
-      submit-PR path
+- [x] **No write path may act on a stale clone.** **Shipped 2026-08-14.** Every
+      write this product made to a managed repo branched from whatever the local
+      working copy happened to be, and **`git fetch` appeared nowhere in
+      `backend/` or `scripts/`**. The submit-PR path
       ([`Roadmap.PrSubmitter.ps1`](backend/modules/roadmap/Roadmap.PrSubmitter.ps1))
-      evaluates nine refusals — not a git repo, dirty tree, no token,
+      evaluated nine refusals — not a git repo, dirty tree, no token,
       unrecognizable remote, byte-identical no-op, and five more — and staleness
-      is not among them; the task runner
+      was not among them; the task runner
       ([`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1))
-      branches the same way. Refuse with a named `stale-base` category that says
-      how far behind and what to run, and let an operator override deliberately
-      as `acknowledgeNoRunner` does for dispatch.
+      branched the same way.
+
+      [`Git.BaseFreshness.ps1`](backend/modules/git/Git.BaseFreshness.ps1) asks
+      the remote directly with `git ls-remote` — one round trip, no object
+      download, no working-tree mutation. Both write paths now refuse with a
+      named `stale-base` category that says how far behind the clone is and what
+      to run, and both accept a deliberate override (`acknowledgeStaleBase` on
+      the route, `-AcknowledgeStaleBase` on the runner) exactly as
+      `acknowledgeNoRunner` works for dispatch. The count is **exact when the
+      objects are already local** and `null` when only a fetch could name it —
+      never a guess, the same rule this release applies to unmeasured cost.
+
+      **A clone that cannot be verified is not treated as stale.** No remote, no
+      network, detached HEAD all read `unknown`, are reported, and are allowed
+      through — the rule `Resolve-RunnerPresence` applies to an unreadable
+      heartbeat, kept consistent so an offline operator is not locked out of
+      their own repositories.
 
       **The damage is not the obvious one.** `git add -- $RoadmapPath` stages a
       single file, so unrelated upstream work cannot be reverted, and GitHub's
@@ -548,10 +568,14 @@ text and evidence:
       `unpulledCommits` from `git log HEAD..@{u}`, which reports **zero** on a
       clone whose upstream ref predates the divergence — exactly what a
       PromptPilot clone did while sitting 8 commits behind.
-      _(state: planned — recorded 2026-08-14 from a live measurement, not a
-      report. Pairs with the gate-coverage tripwires: the scope should derive
-      from the commands that branch or commit in a managed repo, so the runner
-      path cannot be missed the way `POST /api/roadmap-agent/start` was.)_
+      _(state: smoke-tested — the defect is **reproduced**, not asserted from a
+      description: the smoke builds a bare origin, clones it, moves the origin
+      three commits, and proves `git log HEAD..@{u}` reports **0** on that clone
+      while `ls-remote` reports behind — then fetches without merging and proves
+      the exact count becomes 3. Coverage derives from the commands that branch
+      or commit in a managed repo, as this entry asked: 4 base-deriving sites
+      across 2 files, all gated, with 7 publish/working-tree sites reported as
+      deliberately out of scope rather than silently skipped.)_
 - [x] **Enabled means available.** **Shipped 2026-08-14.** The audit ran as a
       gate rather than as a written list, and the enumeration is the deliverable:
       **82 disabled controls across 22 PC components** — 30 disabled by an
