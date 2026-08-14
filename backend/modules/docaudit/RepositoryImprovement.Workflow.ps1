@@ -153,5 +153,27 @@ function New-RepositoryImprovementPreview {
             findings = @($roadmapFindings)
         }
         task = $task
+        # Release 3.1 — an operator must be able to tell a rule's finding from a
+        # model's proposal. Everything above is deterministic: the findings come
+        # from Invoke-AuditRepoDocumentation and Invoke-AuditRoadmapContract, and
+        # generatedPrompt is a template fill, not a completion. No provider is
+        # contacted anywhere in this function.
+        #
+        # The distinction matters here more than on most surfaces, because the
+        # very next thing this screen does is hand the result to an AI agent —
+        # so without attribution the rule output and the model's work look like
+        # one continuous act of judgement.
+        engine = [pscustomobject]@{
+            kind         = 'deterministic-rules'
+            label        = 'Deterministic rules'
+            detail       = 'Findings and the task prompt are produced by rule evaluation and a fixed template. No language model was consulted.'
+            providerId   = $null
+            modelId      = $null
+            ruleSources  = @('doc-standards.json', 'roadmap audit rules')
+            appliesTo    = @('findings', 'task.generatedPrompt')
+            # What happens after approval is not this engine's work, and saying
+            # so is the point: the handoff is where a model first sees any of it.
+            handoffEngine = 'ai-agent'
+        }
     }
 }
