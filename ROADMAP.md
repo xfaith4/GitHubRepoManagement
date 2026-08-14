@@ -246,12 +246,17 @@ active-release pointer; it deliberately restates nothing.
 
 **Current focus:** the empty-room gate and engine attribution both shipped
 2026-08-13, and dispatch-gate coverage is now enforced by a tripwire rather than
-by whoever remembered to check. Two engineering milestones remain. Take
-**"enabled means available"** next, and treat it as the audit it says it is: the
-gate work found two ungated surfaces that no list had named, so the value here is
-the enumeration, not the individual fixes. **Token and cost are measured** is the
-other, and it is the larger piece of work — the plumbing exists end to end and
-the source does not.
+by whoever remembered to check. Three engineering milestones remain.
+
+Take **"no write path may act on a stale clone"** first. It is the only one of
+the three that can currently produce a wrong artifact rather than a missing or
+ugly one, it was measured rather than reported (11 of 49 clones behind, several
+last fetched over six months ago), and it reuses the refusal-plus-tripwire shape
+the last two milestones established. **"Enabled means available"** is next and
+should be treated as the audit it says it is — the gate work found two ungated
+surfaces no list had named, so the enumeration is the deliverable, not the
+individual fixes. **"Token and cost are measured"** is the largest: the plumbing
+exists end to end and the source does not.
 
 ---
 
@@ -360,12 +365,22 @@ regresses meanwhile.
 
 ### Release 3.1 — Closed-Loop Delivery
 
-**Status:** active — promoted 2026-08-11, displacing 3.2. 3 of 7 milestones
+**Status:** active — promoted 2026-08-11, displacing 3.2. 3 of 8 milestones
 shipped 2026-08-10 and are archived (the work-item trace, the completion-edit
-generator, and the merge-evidence gate). A fourth — the empty-room gate — is
-engineering-complete and smoke-tested as of 2026-08-13, and stays `[ ]` here
-because its live proof is outstanding, per the checkbox rule. The release was
-widened on promotion day by the priority reset
+generator, and the merge-evidence gate). Two more — the empty-room gate and
+engine attribution — are engineering-complete and smoke-tested as of
+2026-08-13, and stay `[ ]` here because their live proof is outstanding, per the
+checkbox rule.
+
+**Widened again 2026-08-14** with the stale-clone guard, deliberately and for
+the second time. The test applied: this release's goal names explicit operator
+gates at **apply**, dispatch, and merge, and the apply gate turned out to have
+no staleness precondition at all. Shipping "the loop closes end to end" while
+its first write path can generate a proposal from a months-old copy would make
+this release's own completion claim false, so it belongs here rather than in a
+later release. The cost is honest — 3.1 now carries three open engineering
+milestones instead of two, and closes later. The release was first widened on
+promotion day by the priority reset
 in section "Current Status": closing the loop is not enough if the operator
 cannot tell that it closed, which engine acted, or what it cost.
 
@@ -444,6 +459,45 @@ text and evidence:
       on the improvement-history record (which has no cost field today), and
       render an unmeasured cost as _unmeasured_ rather than as zero.
       _(state: planned — plumbing complete end to end, source absent)_
+- [ ] **No write path may act on a stale clone.** Every write this product makes
+      to a managed repo branches from whatever the local working copy happens to
+      be, and **`git fetch` appears nowhere in `backend/` or `scripts/`**. The
+      submit-PR path
+      ([`Roadmap.PrSubmitter.ps1`](backend/modules/roadmap/Roadmap.PrSubmitter.ps1))
+      evaluates nine refusals — not a git repo, dirty tree, no token,
+      unrecognizable remote, byte-identical no-op, and five more — and staleness
+      is not among them; the task runner
+      ([`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1))
+      branches the same way. Refuse with a named `stale-base` category that says
+      how far behind and what to run, and let an operator override deliberately
+      as `acknowledgeNoRunner` does for dispatch.
+
+      **The damage is not the obvious one.** `git add -- $RoadmapPath` stages a
+      single file, so unrelated upstream work cannot be reverted, and GitHub's
+      three-way merge turns a genuinely conflicting roadmap edit into a visible
+      `DIRTY` state. What nothing catches is that the **proposal itself was
+      computed from stale content** — an improvement generated against an
+      outdated document, re-adding what upstream already fixed or missing
+      context added since. That merges cleanly and reads as correct in review.
+      A silent wrong artifact on the primary write path costs more than the
+      stranded queue did, because the stranded queue announced itself.
+
+      **Measured 2026-08-14 across the 60 local clones under
+      `F:\Development\20_Staging`:** 49 have upstream tracking branches and
+      **11 report being behind** — 154, 60, 18, 17, 15, 8, 8, 5, 4, 3, 1
+      commits. Every one of those counts is measured against a remote-tracking
+      ref that is itself stale: those same clones last fetched 93, 195, 285, 93,
+      26, 0, 63, 104, 53, 120 and 16 days ago, and one has never fetched. The
+      true figures cannot be known without fetching and can only be larger.
+      The detector the product already has is as stale as the thing it detects:
+      [`Git.StatusDetail.ps1`](backend/modules/git/Git.StatusDetail.ps1) computes
+      `unpulledCommits` from `git log HEAD..@{u}`, which reports **zero** on a
+      clone whose upstream ref predates the divergence — exactly what a
+      PromptPilot clone did while sitting 8 commits behind.
+      _(state: planned — recorded 2026-08-14 from a live measurement, not a
+      report. Pairs with the gate-coverage tripwires: the scope should derive
+      from the commands that branch or commit in a managed repo, so the runner
+      path cannot be missed the way `POST /api/roadmap-agent/start` was.)_
 - [ ] **Enabled means available.** Audit every visible control on the PC
       surfaces and classify it: always available, available given a
       precondition, or unavailable in this state. The second class renders
@@ -468,6 +522,9 @@ text and evidence:
 - Every surface displaying a generated document or finding names its engine,
   asserted from the payload rather than by inspection; a model call that
   records `null` usage fails a gate.
+- No write path branches from a clone it has not verified is current, and the
+  refusal names how far behind it is. A smoke assertion proves the **refusal**
+  against a deliberately-stale fixture clone, not the current-clone happy path.
 - The loop proof exists in `evidence/` with the PR, the Actions result, and
   the applied roadmap diff, for both the manual and the scheduled trigger.
 
