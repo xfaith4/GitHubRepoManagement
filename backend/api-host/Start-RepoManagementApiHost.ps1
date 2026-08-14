@@ -67,6 +67,7 @@ $docStdModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\docstandardization
 . (Join-Path $roadmapModuleRoot 'Roadmap.Dispatcher.ps1')
 $gitModuleRoot    = Join-Path $WorkspaceRoot 'backend\modules\git'
 . (Join-Path $gitModuleRoot 'Git.StatusDetail.ps1')
+. (Join-Path $gitModuleRoot 'Git.Staleness.ps1')
 $readmeModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\readme'
 . (Join-Path $readmeModuleRoot 'Readme.Generator.ps1')
 . (Join-Path $docStdModuleRoot 'DocStandardization.Previewer.ps1')
@@ -2896,6 +2897,12 @@ function ConvertTo-GitHubRepoMetadata {
         pagesUrl = if ([string]::IsNullOrWhiteSpace($pagesUrl)) { $null } else { $pagesUrl }
         createdAt = Get-ObjectPropertyValue -InputObject $RepoItem -PropertyName 'created_at' -Default $null
         updatedAt = Get-ObjectPropertyValue -InputObject $RepoItem -PropertyName 'updated_at' -Default $null
+        # pushed_at, carried separately from updated_at because they answer
+        # different questions: updated_at moves when a description or star count
+        # changes, so a repo nobody has pushed to in a year looks freshly
+        # updated. Only pushed_at tracks actual commits reaching the remote,
+        # which is what staleness is measured against.
+        pushedAt = Get-ObjectPropertyValue -InputObject $RepoItem -PropertyName 'pushed_at' -Default $null
         latestWorkflowRunStatus = $null
         latestWorkflowRunConclusion = $null
         latestWorkflowRunName = $null
@@ -3019,10 +3026,26 @@ function Add-GitHubMetadataToStatusResult {
             }
 
             $metadata = $metadataMap[$repoKey]
-            foreach ($propertyName in @('htmlUrl', 'owner', 'visibility', 'language', 'topics', 'hasPages', 'pagesUrl', 'createdAt', 'updatedAt', 'latestWorkflowRunStatus', 'latestWorkflowRunConclusion', 'latestWorkflowRunName', 'latestWorkflowRunTimestamp')) {
+            foreach ($propertyName in @('htmlUrl', 'owner', 'visibility', 'language', 'topics', 'hasPages', 'pagesUrl', 'createdAt', 'updatedAt', 'pushedAt', 'latestWorkflowRunStatus', 'latestWorkflowRunConclusion', 'latestWorkflowRunName', 'latestWorkflowRunTimestamp')) {
                 $propertyValue = Get-ObjectPropertyValue -InputObject $metadata -PropertyName $propertyName -Default $null
                 $entry.repo | Add-Member -NotePropertyName $propertyName -NotePropertyValue $propertyValue -Force
             }
+
+            # Release 3.1 — the comparison this join always had the parts for and
+            # never made. The local side already carries lastCommitDate from
+            # `git log -1 --format=%cI`; pushedAt arrived one line above. Both
+            # facts are on this object, so the classification costs nothing —
+            # no extra request, no fetch, no clone read.
+            $staleness = Resolve-RepoStaleness `
+                -LocalCommitDate (Get-ObjectPropertyValue -InputObject $entry.repo -PropertyName 'lastCommitDate' -Default $null) `
+                -RemotePushedAt  (Get-ObjectPropertyValue -InputObject $metadata   -PropertyName 'pushedAt'       -Default $null)
+
+            $entry.repo | Add-Member -NotePropertyName 'staleness' -NotePropertyValue $staleness -Force
+            $entry.repo | Add-Member -NotePropertyName 'isStale'   -NotePropertyValue ([bool]$staleness.isStale) -Force
+            # localAhead / remoteAhead stay untouched. Two timestamps cannot
+            # produce a commit count, and writing a plausible-looking zero is
+            # exactly the "unmeasured rendered as measured" failure this release
+            # is fixing elsewhere. The exact tier needs `git ls-remote`.
         }
     }
 
@@ -3157,7 +3180,12 @@ function Get-GitHubReposViaApi {
             commitsLastMonth = $commitCountMonth
             uncommittedChanges = 0
             isArchived = [bool]$_.archived
-            isStale = $false
+            # A GitHub-only listing has no local clone to compare against, so
+            # drift is genuinely unknown rather than absent. Resolved through the
+            # same function as the joined path so both report unknown identically
+            # instead of one of them asserting "not stale" for free.
+            staleness = (Resolve-RepoStaleness -LocalCommitDate $null -RemotePushedAt (Get-ObjectPropertyValue -InputObject $_ -PropertyName 'pushed_at' -Default $null))
+            isStale = [bool](Resolve-RepoStaleness -LocalCommitDate $null -RemotePushedAt (Get-ObjectPropertyValue -InputObject $_ -PropertyName 'pushed_at' -Default $null)).isStale
             localAhead = 0
             remoteAhead = 0
             openPrCount = $repoOpenPrCount
@@ -7830,7 +7858,11 @@ try {
                             commitsLastMonth = 0
                             uncommittedChanges = 0
                             isArchived = [bool]$_.isArchived
-                            isStale = $false
+                            # GitHub-only listing: no local clone, so unknown —
+                            # resolved through the same function as every other
+                            # path rather than asserted as "not stale".
+                            staleness = (Resolve-RepoStaleness -LocalCommitDate $null -RemotePushedAt (Get-ObjectPropertyValue -InputObject $_ -PropertyName 'pushedAt' -Default $null))
+                            isStale = [bool](Resolve-RepoStaleness -LocalCommitDate $null -RemotePushedAt (Get-ObjectPropertyValue -InputObject $_ -PropertyName 'pushedAt' -Default $null)).isStale
                             localAhead = 0
                             remoteAhead = 0
                             openPrCount = $repoOpenPrCount

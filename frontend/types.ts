@@ -1,5 +1,31 @@
 // Fix: Replaced mock data and implementation with proper type exports to resolve circular dependencies and export errors.
 
+/**
+ * Release 3.1 — how far this clone has drifted from its remote, and what that
+ * answer is based on.
+ *
+ * `isStale` alone was a hardcoded `false` in every scan path for several
+ * releases while the dashboard rendered a Stale column from it, so this type
+ * carries the basis and the magnitude rather than a bare boolean: a reader can
+ * tell "measured and current" from "never looked".
+ *
+ * `exactCountsAvailable` is false for the timestamp basis. Two dates cannot
+ * produce a commit count — that needs a ref comparison — so `localAhead` and
+ * `remoteAhead` stay unwritten rather than being filled with a plausible zero.
+ */
+export interface RepoStaleness {
+  state: 'behind' | 'ahead-or-unpushed' | 'current' | 'unknown';
+  isStale: boolean;
+  basis: string;
+  localCommitDate: string | null;
+  remotePushedAt: string | null;
+  driftSeconds: number | null;
+  behindByDays: number | null;
+  toleranceSeconds: number;
+  exactCountsAvailable: boolean;
+  summary: string;
+}
+
 export interface RepoStatus {
   name: string;
   status: 'clean' | 'dirty' | 'ahead' | 'behind' | 'diverged';
@@ -12,6 +38,9 @@ export interface RepoStatus {
   uncommittedChanges: number;
   isArchived: boolean;
   isStale: boolean;
+  staleness?: RepoStaleness | null;
+  /** GitHub `pushed_at` — when the remote default branch last received commits. */
+  remotePushedAt?: string | null;
   hasArtifacts?: boolean;
   lastBuildStatus?: 'success' | 'failure' | 'in_progress' | 'none';
   lastBuildUrl?: string;

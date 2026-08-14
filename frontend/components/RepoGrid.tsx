@@ -989,8 +989,35 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                             {curationCfg.label}
                           </span>
                         )}
-                        {repo.isStale && (
-                          <span title="No commits within the configured staleness threshold." className="inline-flex items-center text-xs px-1.5 py-0.5 rounded border bg-red-900/30 text-red-300 border-red-700/40">Stale</span>
+                        {/* Release 3.1 — this badge rendered from a hardcoded false
+                            for several releases, so it never appeared. It now
+                            reports the measured drift and says what produced it. */}
+                        {repo.staleness?.state === 'behind' && (
+                          <span
+                            data-testid="repo-staleness-behind"
+                            title={repo.staleness.summary}
+                            className="inline-flex items-center text-xs px-1.5 py-0.5 rounded border bg-red-900/30 text-red-300 border-red-700/40"
+                          >
+                            {repo.staleness.behindByDays && repo.staleness.behindByDays >= 1
+                              ? `Behind ~${repo.staleness.behindByDays}d`
+                              : 'Behind remote'}
+                          </span>
+                        )}
+                        {repo.staleness?.state === 'ahead-or-unpushed' && (
+                          <span
+                            title={repo.staleness.summary}
+                            className="inline-flex items-center text-xs px-1.5 py-0.5 rounded border bg-amber-900/30 text-amber-200 border-amber-700/40"
+                          >
+                            Unpushed
+                          </span>
+                        )}
+                        {repo.staleness?.state === 'unknown' && (
+                          <span
+                            title={repo.staleness.summary}
+                            className="inline-flex items-center text-xs px-1.5 py-0.5 rounded border bg-gray-800 text-gray-400 border-gray-600"
+                          >
+                            Drift unknown
+                          </span>
                         )}
                         {repo.uncommittedChanges > 0 && (
                           <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${changesSeverity.className}`}>
@@ -1036,7 +1063,19 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
 
                       <div className="mt-2 text-xs text-gray-400">
                         <span className="text-gray-300">{repo.branch}</span>
-                        {repo.lastCommitDate ? ` · ${new Date(repo.lastCommitDate).toLocaleDateString()}` : ''}
+                        {repo.lastCommitDate ? ` · local ${new Date(repo.lastCommitDate).toLocaleDateString()}` : ''}
+                        {/* Release 3.1 — the remote's own clock, beside the local one.
+                            Seeing both is what makes a drifted clone obvious without
+                            opening anything. */}
+                        {repo.remotePushedAt && (
+                          <span
+                            data-testid="repo-remote-pushed"
+                            className={repo.staleness?.state === 'behind' ? 'text-red-300' : 'text-gray-400'}
+                            title="When the remote default branch last received commits (GitHub pushed_at)."
+                          >
+                            {` · pushed ${new Date(repo.remotePushedAt).toLocaleDateString()}`}
+                          </span>
+                        )}
                         {repo.lastCommitAuthor ? ` · ${repo.lastCommitAuthor}` : ''}
                         {(repo.localAhead > 0 || repo.remoteAhead > 0) && (
                           <span className="text-gray-500">
@@ -1278,10 +1317,35 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                                 })()}
                               </td>
                             <td className="px-4 py-3 whitespace-nowrap align-top">{getStatusBadge(repo.status, repo)}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-300 align-top">{repo.isStale ? 'Yes' : 'No'}</td>
+                            {/* Release 3.1 — "Yes/No" could not distinguish a repo
+                                measured as current from one nothing ever measured,
+                                and for several releases every row said "No". */}
+                            <td className="px-4 py-3 whitespace-nowrap text-sm align-top" title={repo.staleness?.summary}>
+                              {repo.staleness?.state === 'behind' ? (
+                                <span className="text-red-300">
+                                  {repo.staleness.behindByDays && repo.staleness.behindByDays >= 1
+                                    ? `Behind ~${repo.staleness.behindByDays}d`
+                                    : 'Behind'}
+                                </span>
+                              ) : repo.staleness?.state === 'ahead-or-unpushed' ? (
+                                <span className="text-amber-200">Unpushed</span>
+                              ) : repo.staleness?.state === 'current' ? (
+                                <span className="text-gray-400">Current</span>
+                              ) : (
+                                <span className="text-gray-500">Unknown</span>
+                              )}
+                            </td>
                             <td className="truncate px-4 py-3 text-sm text-gray-300 align-top" title={repo.branch}>{repo.branch}</td>
                             <td className="overflow-hidden px-4 py-3 whitespace-nowrap text-sm text-gray-400 align-top" title={repo.lastCommitMessage}>
                               {repo.lastCommitDate ? new Date(repo.lastCommitDate).toLocaleDateString() : 'N/A'}
+                              {repo.remotePushedAt && (
+                                <div
+                                  className={`text-xs truncate max-w-[180px] ${repo.staleness?.state === 'behind' ? 'text-red-300' : 'text-gray-500'}`}
+                                  title="Remote pushed_at"
+                                >
+                                  pushed {new Date(repo.remotePushedAt).toLocaleDateString()}
+                                </div>
+                              )}
                               {repo.lastCommitAuthor && (
                                 <div className="text-xs text-gray-500 truncate max-w-[180px]">{repo.lastCommitAuthor}</div>
                               )}

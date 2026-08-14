@@ -4660,4 +4660,73 @@ Write-Step 'Queue-writer gate coverage — every road to the queue consults pres
             @($writers).Count, @($queueRoutes).Count, ((@($writerScripts) | Sort-Object -Unique) -join ', ')) -ForegroundColor DarkGray
 }
 
+Write-Step 'Repo staleness — Release 3.1: the dashboard metric is computed, not a literal'
+& {
+    # The Stale column, the stale-only filter, the group-by-stale control and
+    # the ahead/behind badge have all shipped for releases, bound to isStale /
+    # localAhead / remoteAhead — every one of which was a hardcoded $false/0/0
+    # in both GitHub scan paths. The column read "No" for all 80+ repos because
+    # nothing ever looked, which is why a clone 8 commits behind could be
+    # written to without a murmur.
+    $stalenessModule = Join-Path $WorkspaceRoot 'backend\modules\git\Git.Staleness.ps1'
+    if (-not (Test-Path -LiteralPath $stalenessModule)) { throw "Missing module file: $stalenessModule" }
+    . $stalenessModule
+
+    $now = [datetime]::UtcNow
+
+    # Behind: the remote moved after this clone's last commit.
+    $behind = Resolve-RepoStaleness -LocalCommitDate $now.AddDays(-30).ToString('o') -RemotePushedAt $now.ToString('o')
+    if ($behind.state -ne 'behind')  { throw "A remote 30 days newer than the local commit must read 'behind'; got '$($behind.state)'" }
+    if (-not $behind.isStale)        { throw 'A behind repo must report isStale=true' }
+    if ($behind.behindByDays -lt 29) { throw "behindByDays must carry the magnitude; got '$($behind.behindByDays)'" }
+
+    # Ahead: local work newer than the last push. Not stale — nothing to pull.
+    $ahead = Resolve-RepoStaleness -LocalCommitDate $now.ToString('o') -RemotePushedAt $now.AddDays(-5).ToString('o')
+    if ($ahead.state -ne 'ahead-or-unpushed') { throw "Local newer than remote must read 'ahead-or-unpushed'; got '$($ahead.state)'" }
+    if ($ahead.isStale) { throw 'Unpushed local work is not staleness — there is nothing to pull.' }
+
+    # Inside tolerance: a freshly-pushed repo must not light up the dashboard.
+    $current = Resolve-RepoStaleness -LocalCommitDate $now.ToString('o') -RemotePushedAt $now.AddSeconds(20).ToString('o')
+    if ($current.state -ne 'current') { throw "A 20s push delay must read 'current'; got '$($current.state)'" }
+    if ($current.isStale) { throw 'Push latency must not be reported as staleness' }
+
+    # Unknown must not masquerade as either answer. Absence of evidence is not
+    # evidence of divergence — the rule Resolve-RunnerPresence already applies.
+    foreach ($case in @(
+            @{ L = $null; R = $now.ToString('o') },
+            @{ L = $now.ToString('o'); R = $null },
+            @{ L = ''; R = '' },
+            @{ L = 'not-a-date'; R = $now.ToString('o') }
+        )) {
+        $unknown = Resolve-RepoStaleness -LocalCommitDate $case.L -RemotePushedAt $case.R
+        if ($unknown.state -ne 'unknown') { throw "A missing or unparsable date must read 'unknown'; got '$($unknown.state)'" }
+        if ($unknown.isStale) { throw 'An unknown reading must never report isStale=true' }
+    }
+
+    # The basis is named and the limitation is declared, so no consumer can
+    # mistake a date delta for a commit count.
+    if ($behind.basis -ne 'remote-push-vs-local-commit') { throw 'Staleness must name the basis that produced it' }
+    if ($behind.exactCountsAvailable -ne $false) { throw 'Two timestamps cannot yield exact ahead/behind counts; the field must say so' }
+
+    # --- The literals must be gone from the scan paths -----------------------
+    # Scoped to the assignments themselves so a comment mentioning them cannot
+    # satisfy this, and so a third scan path added later fails until it computes.
+    $hostText = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1') -Raw -Encoding UTF8
+    $hardcoded = @([regex]::Matches($hostText, '(?m)^\s*isStale\s*=\s*\$false\s*$'))
+    if (@($hardcoded).Count -gt 0) {
+        throw ("{0} scan path(s) still assign isStale = `$false as a literal. The dashboard renders that constant as 'No' for every repository, which is how a clone 8 commits behind looked current." -f @($hardcoded).Count)
+    }
+
+    # And the join must actually carry the remote push time, or the comparison
+    # above has nothing to compare.
+    if ($hostText -notmatch "'pushedAt'") {
+        throw 'The GitHub metadata join does not carry pushedAt, so staleness cannot be computed on the status path.'
+    }
+    if ($hostText -notmatch 'Resolve-RepoStaleness') {
+        throw 'The status path never calls Resolve-RepoStaleness, so isStale is still not computed from anything.'
+    }
+
+    Write-Host ("  staleness ok: behind/ahead/current/unknown all classified, basis named, exact counts declared unavailable, no `$false literal left in the scan paths") -ForegroundColor DarkGray
+}
+
 Write-Step 'Smoke test completed'
