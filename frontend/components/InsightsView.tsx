@@ -151,6 +151,7 @@ const InsightsView: React.FC<InsightsViewProps> = ({
             <button
               onClick={onRefreshExecutionMetrics}
               disabled={executionMetricsLoading || executionMetricsRefreshing}
+              title={executionMetricsLoading || executionMetricsRefreshing ? 'Execution metrics are already being fetched.' : 'Re-fetches execution metrics.'}
               className="px-2.5 py-1 rounded border border-gray-600 bg-gray-700/60 text-gray-200 hover:bg-gray-600/70 disabled:opacity-50 transition-colors"
             >
               Refresh
@@ -291,7 +292,25 @@ const InsightsView: React.FC<InsightsViewProps> = ({
                 </div>
               ) : (
                 <div className="mt-4 rounded-lg border border-amber-700/40 bg-amber-900/20 px-4 py-3 text-sm text-amber-100">
-                  Documentation Health is unavailable until a portfolio assessment succeeds.
+                  {/* Release 3.1 "enabled means available": this panel named a
+                      precondition and offered no way to satisfy it. An instruction
+                      the surface cannot carry out is worse than no instruction. */}
+                  <div>Documentation Health is unavailable until a portfolio assessment succeeds.</div>
+                  {portfolioAssessmentError && (
+                    <div className="mt-1 text-xs text-amber-200/80">Last attempt failed: {portfolioAssessmentError}</div>
+                  )}
+                  <div className="mt-2">
+                    <button
+                      onClick={onRetryAssessment}
+                      disabled={portfolioAssessmentLoading}
+                      data-testid="insights-run-assessment"
+                      title={portfolioAssessmentLoading ? 'An assessment is already running.' : 'Runs a full portfolio assessment and seeds this panel.'}
+                      className="inline-flex items-center gap-1.5 rounded border border-amber-600/60 bg-amber-900/30 px-2.5 py-1 text-xs text-amber-100 hover:bg-amber-900/50 disabled:opacity-50"
+                    >
+                      {portfolioAssessmentLoading && <SpinnerIcon className="w-3 h-3 animate-spin" />}
+                      {portfolioAssessmentLoading ? 'Running assessment…' : 'Run portfolio assessment'}
+                    </button>
+                  </div>
                 </div>
               )}
             </section>
@@ -544,12 +563,26 @@ const InsightsView: React.FC<InsightsViewProps> = ({
             ) : (
               <div className="mt-4 rounded-lg border border-amber-700/40 bg-amber-900/20 px-4 py-3 text-sm text-amber-100">
                 Portfolio analytics are unavailable. {portfolioTrendError ?? 'Refresh the portfolio assessment to seed the Release 2.3 trend view.'}
-                <div className="mt-2">
+                {/* The text told the operator to refresh the assessment while the
+                    only button retried the trend fetch. Both controls now exist,
+                    and each says which of the two things it does. */}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
                   <button
                     onClick={onRetryTrend}
+                    title="Re-fetches the trend series without recomputing the assessment behind it."
                     className="px-2.5 py-1 rounded border border-amber-600/60 bg-amber-900/30 text-xs text-amber-100 hover:bg-amber-900/50"
                   >
-                    Retry
+                    Retry trend fetch
+                  </button>
+                  <button
+                    onClick={onRetryAssessment}
+                    disabled={portfolioAssessmentLoading}
+                    data-testid="insights-trend-run-assessment"
+                    title={portfolioAssessmentLoading ? 'An assessment is already running.' : 'Runs the portfolio assessment that seeds this trend view.'}
+                    className="inline-flex items-center gap-1.5 rounded border border-amber-600/60 bg-amber-900/30 px-2.5 py-1 text-xs text-amber-100 hover:bg-amber-900/50 disabled:opacity-50"
+                  >
+                    {portfolioAssessmentLoading && <SpinnerIcon className="w-3 h-3 animate-spin" />}
+                    {portfolioAssessmentLoading ? 'Running assessment…' : 'Run portfolio assessment'}
                   </button>
                 </div>
               </div>

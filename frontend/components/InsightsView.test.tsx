@@ -69,11 +69,42 @@ describe('InsightsView', () => {
   // The analytics block only mounts once there is assessment context (a
   // mission, a load in flight, or an error); with context but no trend it must
   // say so and offer a retry wired to the TREND loader, not the assessment's.
-  it('offers a wired Retry when portfolio analytics are unavailable', () => {
+  it('offers a wired trend retry when portfolio analytics are unavailable', () => {
     const { onRetryTrend } = renderEmptyInsights({ portfolioAssessmentError: 'assessment failed' });
     const unavailableBox = screen.getByText(/Portfolio analytics are unavailable/);
-    fireEvent.click(within(unavailableBox).getByRole('button', { name: 'Retry' }));
+    fireEvent.click(within(unavailableBox).getByRole('button', { name: 'Retry trend fetch' }));
     expect(onRetryTrend).toHaveBeenCalledTimes(1);
+  });
+
+  // Release 3.1 "enabled means available". This panel told the operator to
+  // refresh the portfolio assessment while its only button re-fetched the
+  // trend — the instruction and the control disagreed, and the button was
+  // named just "Retry", so neither said which of the two it did. Both actions
+  // now exist and each is named for the one thing it does.
+  it('also offers the assessment run its own text tells the operator to do', () => {
+    const { onRetryAssessment, onRetryTrend } = renderEmptyInsights({ portfolioAssessmentError: 'assessment failed' });
+    const unavailableBox = screen.getByText(/Portfolio analytics are unavailable/);
+    fireEvent.click(within(unavailableBox).getByRole('button', { name: 'Run portfolio assessment' }));
+    expect(onRetryAssessment).toHaveBeenCalledTimes(1);
+    expect(onRetryTrend).not.toHaveBeenCalled();
+  });
+
+  // Documentation Health named a precondition and offered nothing that could
+  // satisfy it. An instruction a surface cannot carry out is worse than none.
+  it('gives Documentation Health a control that runs the assessment it waits for', () => {
+    const { onRetryAssessment } = renderEmptyInsights({ portfolioAssessmentError: 'assessment failed' });
+    fireEvent.click(screen.getByTestId('insights-run-assessment'));
+    expect(onRetryAssessment).toHaveBeenCalledTimes(1);
+  });
+
+  // Documentation Health swaps to a spinner while an assessment runs, so its
+  // control has no disabled state to reach. The analytics panel's copy of the
+  // action does, and it must name the reason rather than just grey out.
+  it('disables the analytics assessment control while one is already running, and says so', () => {
+    renderEmptyInsights({ portfolioAssessmentLoading: true, portfolioAssessmentError: 'assessment failed' });
+    const control = screen.getByTestId('insights-trend-run-assessment');
+    expect(control).toBeDisabled();
+    expect(control).toHaveAttribute('title', expect.stringContaining('already running'));
   });
 
   // A failed refresh must degrade to "stale but labeled", never silently

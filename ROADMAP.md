@@ -244,19 +244,24 @@ The full execution contract lives in one place,
 `ROADMAP_TEMPLATE.md`. This heading exists so the validator can resolve the
 active-release pointer; it deliberately restates nothing.
 
-**Current focus:** the empty-room gate and engine attribution both shipped
-2026-08-13, and dispatch-gate coverage is now enforced by a tripwire rather than
-by whoever remembered to check. Three engineering milestones remain.
+**Current focus:** the empty-room gate and engine attribution shipped
+2026-08-13; staleness, token/cost measurement, and the "enabled means available"
+audit shipped 2026-08-14. **One engineering milestone remains.**
 
-Take **"no write path may act on a stale clone"** first. It is the only one of
-the three that can currently produce a wrong artifact rather than a missing or
-ugly one, it was measured rather than reported (11 of 49 clones behind, several
-last fetched over six months ago), and it reuses the refusal-plus-tripwire shape
-the last two milestones established. **"Enabled means available"** is next and
-should be treated as the audit it says it is — the gate work found two ungated
-surfaces no list had named, so the enumeration is the deliverable, not the
-individual fixes. **"Token and cost are measured"** is the largest: the plumbing
-exists end to end and the source does not.
+**"No write path may act on a stale clone"** is it, and it is the one that can
+produce a wrong artifact rather than a missing or ugly one. It was measured
+rather than reported (11 of 49 clones behind, several last fetched over six
+months ago), and it reuses the refusal-plus-tripwire shape every milestone
+before it established. The remaining item after that is the full-loop evidence
+record, which is blocked on an operator session rather than on engineering.
+
+Every milestone this release has been closed by a tripwire that derives its own
+scope, and each one found something its author had not been looking for: the
+dispatch audit found two ungated surfaces no list had named, the staleness work
+found a metric hardcoded to `$false` behind a shipped UI, and the control audit
+found 11 disabled controls that a lazy regex had been reporting as enabled.
+Scope that is derived rather than enumerated is the pattern worth carrying into
+3.2.
 
 ---
 
@@ -449,16 +454,32 @@ text and evidence:
       surfaces beyond this wizard and the Operations workspace, which the
       "enabled means available" audit below should enumerate rather than this
       milestone guessing at.)_
-- [ ] **Token and cost are measured, not declared.** `tokenUsage` and
-      `apiSpendUsd` exist on the agent-run record, flow through
-      `tokens_reported` in `app.db` and out to analytics — and are **never
-      written by production code**. The Anthropic and OpenAI adapters in
-      [`AiDocImprovement.ps1`](backend/modules/ai/AiDocImprovement.ps1) send
-      `max_tokens` and discard the `usage` block the API returns; the only real
-      value in the repo is a smoke fixture. Capture usage at the call, record it
-      on the improvement-history record (which has no cost field today), and
-      render an unmeasured cost as _unmeasured_ rather than as zero.
-      _(state: planned — plumbing complete end to end, source absent)_
+- [x] **Token and cost are measured, not declared.** **Shipped 2026-08-14.**
+      `tokenUsage` and `apiSpendUsd` existed on the agent-run record, flowed
+      through `tokens_reported` in `app.db` and out to analytics — and were
+      **never written by production code**. The Anthropic and OpenAI adapters in
+      [`AiDocImprovement.ps1`](backend/modules/ai/AiDocImprovement.ps1) sent
+      `max_tokens` and discarded the `usage` block the API returned; the only
+      real value in the repo was a smoke fixture.
+
+      Both adapters now read usage off the response into one normalized record.
+      Every count is nullable, and `source` separates the three cases that look
+      identical from outside: `provider-usage` (real counts), `absent` (the
+      model answered and reported nothing — a defect), `call-failed` (the call
+      errored), `not-applicable` (the offline heuristic called no model).
+      `tokenUsage`/`apiSpendUsd` on the improvement-history record deliberately
+      reuse the agent-run metric names so the two series join untranslated.
+
+      **Cost is priced only from operator-supplied rates** under
+      `ai.pricing.<modelId>`, and this repo ships none: published prices change,
+      and a stale rate produces a confidently wrong number, which is worse than
+      an honest blank. Unpriced, `costUsd` stays null, `costBasis` says
+      `no-price-configured`, and the UI renders _unmeasured_ — never `$0.00`.
+      _(state: smoke-tested — both adapters driven over a mocked response;
+      a successful model call recording null usage fails the gate, and an
+      AST check derives its scope from **which functions make an HTTP call**,
+      so a third adapter is covered without editing the assertion. The client
+      hop is asserted not to coerce any usage field with `?? 0`.)_
 - [ ] **Staleness is a visible property of every repo, not a hidden one.**
       **Shipped 2026-08-14 for the free tier.** `isStale`, `localAhead` and
       `remoteAhead` were hardcoded `$false`/`0`/`0` in both GitHub scan paths and
@@ -531,15 +552,34 @@ text and evidence:
       report. Pairs with the gate-coverage tripwires: the scope should derive
       from the commands that branch or commit in a managed repo, so the runner
       path cannot be missed the way `POST /api/roadmap-agent/start` was.)_
-- [ ] **Enabled means available.** Audit every visible control on the PC
-      surfaces and classify it: always available, available given a
-      precondition, or unavailable in this state. The second class renders
-      disabled with the unmet precondition named, and every terminal screen says
-      what comes next. Lane 0.9 already records three instances — Insights
-      telling you to run an assessment it offers no control for, the bare
-      `Failed to fetch` screen, and the dispatch wizard; close them here rather
-      than separately. _(state: planned — the audit exists to find the ones
-      nobody has reported)_
+- [x] **Enabled means available.** **Shipped 2026-08-14.** The audit ran as a
+      gate rather than as a written list, and the enumeration is the deliverable:
+      **82 disabled controls across 22 PC components** — 30 disabled by an
+      operation already in flight (the label and spinner already say why) and
+      **52 by a precondition**, every one of which now names it.
+
+      **The first pass undercounted by more than half, and that is the finding.**
+      A lazy `<button.*?>` regex stops at the `>` inside `onClick={() => …}`,
+      so every control whose first prop is an arrow handler read as ungated: it
+      reported 30 disabled controls and scored `RepoGrid.tsx` as 31 ungated
+      buttons when it holds 6 gated ones. Walking the tag with brace/quote depth
+      instead found 18 unexplained controls where the regex had found 7, in
+      files nobody had reported — pagination, curation state, the two dispatch
+      overrides, the discard-changes control, and a permanently dead
+      `disabled={true}` labelled only "Not Available".
+
+      Lane 0.9's three instances closed here: Insights now offers the
+      assessment run its own text tells the operator to perform (its analytics
+      panel had a button named just `Retry` that re-fetched the trend, not the
+      assessment the sentence beside it named); the bare `Failed to fetch`
+      screen is replaced by a classified state that distinguishes an unreachable
+      backend from an unconfigured portal and offers both a retry and Settings;
+      the dispatch wizard closed under M1.
+      _(state: smoke-tested — the classifier derives its scope from the markup,
+      so a control added later is audited without anyone remembering to add it.
+      It fails closed if it finds fewer than 20 controls, so a broken scanner
+      cannot pass vacuously, and it reports every violation at once rather than
+      the first.)_
 - [ ] Record a full-loop proof for one real item in `evidence/`, naming each
       stage's artifact, **manually and once on a schedule**. _(state: blocked —
       needs an operator session, not engineering time)_ The scheduled path
@@ -860,15 +900,18 @@ passes taught one lesson: **fixing the named instance instead of the pattern is
 this repo's most expensive recurring mistake** — every tripwire here now
 derives its scope from a classifier or the AST, never a maintained list.
 
-- [ ] **Insights has no way to run the assessment it tells you to run.**
-      _(state: planned — surfaced with the 2026-08-10 bug report)_ Portfolio
-      Analytics says "Refresh the portfolio assessment to seed the Release 2.3
-      trend view" and Documentation Health says it is "unavailable until a
-      portfolio assessment succeeds", but the tab offers no control that runs
-      one — `Retry` only re-fetches the existing result. Instructions the
-      surface cannot carry out are worse than no instructions. Give Insights a
-      real "Run assessment" action (or point explicitly at the control that
-      does it).
+- [x] **Insights has no way to run the assessment it tells you to run.**
+      **Closed 2026-08-14** under Release 3.1's "enabled means available".
+      Portfolio Analytics said "Refresh the portfolio assessment to seed the
+      Release 2.3 trend view" and Documentation Health said it was "unavailable
+      until a portfolio assessment succeeds", but the tab offered no control
+      that ran one — Documentation Health had no button at all, and Analytics
+      had one named `Retry` that re-fetched the trend, so the instruction and
+      the control disagreed while the label admitted neither. Both panels now
+      carry a **Run portfolio assessment** action, and the trend button is
+      renamed **Retry trend fetch** so the two are told apart.
+      _(state: smoke-tested — asserted by `InsightsView.test.tsx` on the
+      handler each control actually calls, not on its presence.)_
 - [ ] **Make `/health/live` independently responsive during long operations.**
       _(state: planned — architectural, deliberately out of the incident fix)_
       The heartbeat makes the watchdog correct, but the underlying cause
@@ -886,12 +929,20 @@ derives its scope from a classifier or the AST, never a maintained list.
       it in the request body, and has since **2026-07-07** (116 occurrences in
       the host log). Clear the persisted client value and stop a client-supplied
       owner from silently overriding validated configuration.
-- [ ] **Replace the bare `Failed to fetch` screen with an actionable retry
-      state.** _(state: planned — recorded 2026-08-10)_ `Dashboard.tsx`'s
-      `error && repos.length === 0` branch renders the raw exception string and
-      nothing else — no retry, no explanation. (The Lane 0.5 error boundary
-      catches render throws, not rejected fetches.) Distinguish "backend
-      unreachable" from "no repositories configured".
+- [x] **Replace the bare `Failed to fetch` screen with an actionable retry
+      state.** **Closed 2026-08-14** under Release 3.1's "enabled means
+      available". `Dashboard.tsx`'s `error && repos.length === 0` branch
+      rendered the raw exception string and nothing else — no retry, no
+      explanation. (The Lane 0.5 error boundary catches render throws, not
+      rejected fetches.) [`fetchFailure.ts`](frontend/lib/fetchFailure.ts)
+      classifies the message into backend-unreachable / auth-required /
+      not-configured / backend-error, and the screen renders a headline, the
+      next step, the verbatim original message, a retry, and a route into
+      Settings — the modal is rendered inside the branch, since it returns
+      early and the control would otherwise open nothing.
+      _(state: smoke-tested — the classifier is unit-tested on the two states
+      that need opposite actions, and a tripwire fails if the one-line raw-error
+      return comes back.)_
 
 ### Lane 0.5 — Portal UX follow-ups (empty-state audit 2026-08-08)
 

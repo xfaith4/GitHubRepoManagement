@@ -88,7 +88,7 @@ const InitModal: React.FC<InitModalProps> = ({ isOpen, onClose }) => {
             <button type="button" onClick={onClose} className="py-2 px-4 text-sm font-medium rounded-md text-gray-300 bg-gray-600 hover:bg-gray-500 transition-colors">
               Cancel
             </button>
-            <button type="submit" disabled={true} className="py-2 px-4 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50">
+            <button type="submit" disabled={true} title="Cloning from GitHub is a planned feature and is not implemented in this build. Add existing local repositories under Settings instead." className="py-2 px-4 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50">
               Not Available
             </button>
           </div>

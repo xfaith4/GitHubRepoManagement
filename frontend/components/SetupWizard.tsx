@@ -146,6 +146,7 @@ function SetupWizard({ onComplete }: SetupWizardProps) {
           <button
             onClick={() => setStep((s) => (s > 1 ? (s - 1) as Step : s))}
             disabled={step === 1 || submitting}
+            title={step === 1 ? 'You are on the first step.' : submitting ? 'Setup is running.' : 'Go back a step.'}
             className="px-4 py-2 rounded-md text-sm bg-gray-700 text-gray-300 disabled:opacity-40"
           >
             Back
@@ -154,6 +155,7 @@ function SetupWizard({ onComplete }: SetupWizardProps) {
             <button
               onClick={() => setStep((s) => (s + 1) as Step)}
               disabled={(step === 2 && roots.length === 0)}
+              title={step === 2 && roots.length === 0 ? 'Add at least one repository root before continuing.' : 'Go to the next step.'}
               className="px-4 py-2 rounded-md text-sm bg-indigo-600 text-white disabled:opacity-40"
             >
               Next
@@ -162,6 +164,7 @@ function SetupWizard({ onComplete }: SetupWizardProps) {
             <button
               onClick={handleSubmit}
               disabled={submitting || roots.length === 0}
+              title={roots.length === 0 ? 'Add at least one repository root above before finishing.' : submitting ? 'Setup is running.' : 'Saves these roots and runs the first scan.'}
               className="px-4 py-2 rounded-md text-sm bg-green-600 text-white disabled:opacity-40"
             >
               {submitting ? 'Setting up…' : 'Finish & scan'}

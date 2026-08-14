@@ -260,6 +260,7 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
             <button
               onClick={handlePreviewTask}
               disabled={taskRunning || loading || !repositoryInput.trim()}
+              title={!repositoryInput.trim() ? 'Enter a repository name first.' : taskRunning ? 'A task is already running for this repository.' : loading ? 'The roadmap is still loading.' : 'Builds a task preview without queueing anything.'}
               className="text-xs px-3 py-1.5 rounded bg-indigo-700 hover:bg-indigo-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {taskRunning ? 'Working...' : 'Preview Task'}
@@ -267,6 +268,7 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
             <button
               onClick={handleStartTask}
               disabled={taskRunning || loading || !repositoryInput.trim()}
+              title={!repositoryInput.trim() ? 'Enter a repository name first.' : taskRunning ? 'A task is already running for this repository.' : loading ? 'The roadmap is still loading.' : 'Queues this task for the local runner.'}
               className="text-xs px-3 py-1.5 rounded bg-green-700 hover:bg-green-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Queue Task

@@ -650,6 +650,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                     key={state}
                     onClick={() => { void handleCurationClick(repo, state); }}
                     disabled={isPending || isActive}
+                    title={isActive ? 'This repository is already in this curation state.' : isPending ? 'A curation change is already being saved for this repository.' : `Set curation state to ${label}.`}
                     className={`min-h-9 px-2.5 py-1.5 text-xs rounded border transition-colors disabled:opacity-60 ${isActive
                       ? 'border-blue-500/70 bg-blue-900/50 text-blue-100'
                       : 'border-gray-600 bg-gray-800/60 text-gray-200 hover:bg-gray-700/60'}`}
@@ -765,6 +766,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
           <button
             onClick={() => setPageIndex(prev => Math.max(1, prev - 1))}
             disabled={clampedPage <= 1}
+            title={clampedPage <= 1 ? 'You are on the first page.' : 'Go to the previous page.'}
             className="px-2.5 py-2 rounded border border-gray-600 bg-gray-900 text-xs text-gray-200 disabled:opacity-50"
           >
             Prev
@@ -773,6 +775,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
           <button
             onClick={() => setPageIndex(prev => Math.min(totalPages, prev + 1))}
             disabled={clampedPage >= totalPages}
+            title={clampedPage >= totalPages ? 'You are on the last page.' : 'Go to the next page.'}
             className="px-2.5 py-2 rounded border border-gray-600 bg-gray-900 text-xs text-gray-200 disabled:opacity-50"
           >
             Next
@@ -1129,6 +1132,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                               onClick={() => onViewRoadmap?.(repo.name)}
                               className={`w-full rounded px-2 py-2.5 text-left text-xs ${onViewRoadmap ? 'text-gray-200 hover:bg-gray-800' : 'text-gray-500 cursor-not-allowed'}`}
                               disabled={!onViewRoadmap}
+                              title={!onViewRoadmap ? 'Roadmap viewing is not wired up on this view.' : 'Open this repository’s ROADMAP.md.'}
                             >
                               Roadmap
                             </button>
@@ -1136,6 +1140,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                               onClick={() => onRunRoadmapScan?.(repo.name)}
                               className={`w-full rounded px-2 py-2.5 text-left text-xs ${onRunRoadmapScan ? 'text-gray-200 hover:bg-gray-800' : 'text-gray-500 cursor-not-allowed'}`}
                               disabled={!onRunRoadmapScan}
+                              title={!onRunRoadmapScan ? 'Roadmap scanning is not wired up on this view.' : 'Re-scan this repository’s roadmap.'}
                             >
                               Roadmap scan
                             </button>
@@ -1429,6 +1434,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                                     onClick={() => onViewRoadmap?.(repo.name)}
                                     className={`block w-full rounded px-2 py-1.5 text-left text-xs ${onViewRoadmap ? 'text-gray-200 hover:bg-gray-800' : 'text-gray-500 cursor-not-allowed'}`}
                                     disabled={!onViewRoadmap}
+                                    title={!onViewRoadmap ? 'Roadmap viewing is not wired up on this view.' : 'Open this repository’s ROADMAP.md.'}
                                   >
                                     Roadmap
                                   </button>
@@ -1436,6 +1442,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                                     onClick={() => onRunRoadmapScan?.(repo.name)}
                                     className={`block w-full rounded px-2 py-1.5 text-left text-xs ${onRunRoadmapScan ? 'text-gray-200 hover:bg-gray-800' : 'text-gray-500 cursor-not-allowed'}`}
                                     disabled={!onRunRoadmapScan}
+                                    title={!onRunRoadmapScan ? 'Roadmap scanning is not wired up on this view.' : 'Re-scan this repository’s roadmap.'}
                                   >
                                     Roadmap scan
                                   </button>

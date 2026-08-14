@@ -565,6 +565,7 @@ const RoadmapDispatchModal: React.FC<RoadmapDispatchModalProps> = ({
                   <button
                     onClick={() => handleDispatch({ acknowledgeNoRunner: true })}
                     disabled={!editedPrompt.trim()}
+                    title={!editedPrompt.trim() ? 'The dispatch prompt is empty; there is nothing to queue.' : dispatchGate.unmetPrecondition ?? 'Queue this work anyway.'}
                     data-testid="dispatch-override"
                     className="px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-amber-200 rounded border border-amber-700/50 transition-colors"
                   >

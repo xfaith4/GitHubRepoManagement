@@ -1,4 +1,4 @@
-import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type RepoStatus, type RepoStaleness, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type RepositoryImprovementPreview, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioAssessmentScanSummary, type PortfolioChangeState, type PortfolioScanDecisionReason, type PortfolioScanStatus, type RepoCurationState, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult, type GitHubAuthStatus } from '../types';
+import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type RepoStatus, type RepoStaleness, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type RepositoryImprovementPreview, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioAssessmentScanSummary, type PortfolioChangeState, type PortfolioScanDecisionReason, type PortfolioScanStatus, type RepoCurationState, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocUsage, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult, type GitHubAuthStatus } from '../types';
 import { type AutomationHealthPayload } from '../lib/automationStatus';
 import { type PackagedItem } from '../lib/packagedItems';
 import { type RunnerPresencePayload } from '../lib/runnerPresence';
@@ -2270,6 +2270,38 @@ export async function getAiDocTemplates(): Promise<AiDocTemplatesResult> {
   };
 }
 
+/**
+ * Coerce a token/cost field without inventing a value.
+ *
+ * The `Number(x ?? 0)` shape used for scores elsewhere in this file is wrong for
+ * usage: it turns "nobody measured this" into a confident 0, which renders as a
+ * free run. Null in, null out.
+ */
+function nullableNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+const AI_USAGE_SOURCES = ['provider-usage', 'absent', 'call-failed', 'not-applicable'] as const;
+
+function parseAiUsageSource(value: unknown): AiDocUsage['source'] {
+  return AI_USAGE_SOURCES.includes(value as AiDocUsage['source']) ? (value as AiDocUsage['source']) : 'absent';
+}
+
+function parseAiUsage(raw: unknown): AiDocUsage {
+  const record = (raw ?? {}) as Record<string, unknown>;
+  return {
+    inputTokens: nullableNumber(record.inputTokens),
+    outputTokens: nullableNumber(record.outputTokens),
+    totalTokens: nullableNumber(record.totalTokens),
+    measured: record.measured === true,
+    source: parseAiUsageSource(record.source),
+    costUsd: nullableNumber(record.costUsd),
+    costBasis: String(record.costBasis ?? 'usage-absent'),
+  };
+}
+
 export async function previewAiDocImprovement(request: AiDocImprovePreviewRequest): Promise<AiDocImprovePreviewResult> {
   const repoName = request.repoName.trim();
   if (!repoName) {
@@ -2308,6 +2340,7 @@ export async function previewAiDocImprovement(request: AiDocImprovePreviewReques
       after: Number(preview?.estimatedScore?.after ?? 0),
       delta: Number(preview?.estimatedScore?.delta ?? 0),
     },
+    usage: parseAiUsage(preview?.usage),
     warnings: Array.isArray(preview?.warnings) ? preview.warnings.map((value: unknown) => String(value)) : [],
     generatedAt: String(preview?.generatedAt ?? ''),
   };
@@ -2344,6 +2377,14 @@ export async function getAiDocImprovementHistory(repoName: string, options?: { d
     scoreDelta: Number(item?.scoreDelta ?? 0),
     changeSummary: Array.isArray(item?.changeSummary) ? item.changeSummary.map((value: unknown) => String(value)) : [],
     warningCount: Number(item?.warningCount ?? 0),
+    // Usage stays nullable through the whole hop — see nullableNumber above.
+    inputTokens: nullableNumber(item?.inputTokens),
+    outputTokens: nullableNumber(item?.outputTokens),
+    tokenUsage: nullableNumber(item?.tokenUsage),
+    apiSpendUsd: nullableNumber(item?.apiSpendUsd),
+    usageMeasured: item?.usageMeasured === true,
+    usageSource: parseAiUsageSource(item?.usageSource),
+    costBasis: String(item?.costBasis ?? 'usage-absent'),
     applied: Boolean(item?.applied ?? false),
     recordType: String(item?.recordType ?? '') === 'apply' ? 'apply' : 'preview',
     backupPath: item?.backupPath ? String(item.backupPath) : null,

@@ -24,6 +24,28 @@
     provider), and returns a preview-only record. NOTHING is written to disk —
     apply is a later Release 1.9 phase.
 
+    TOKEN USAGE AND COST (Release 3.1)
+
+    Every provider result carries a `usage` record, and every count in it is
+    nullable: $null means unmeasured and 0 means measured-as-zero. `source`
+    distinguishes the cases that look alike from the outside — a model that
+    reported nothing (`absent`, a defect) from a call that failed
+    (`call-failed`) from the offline provider that called no model at all
+    (`not-applicable`).
+
+    Cost is derived only from operator-supplied rates. Add them to settings as:
+
+        "ai": {
+          "pricing": {
+            "claude-opus-4-8": { "inputPerMillionUsd": 5, "outputPerMillionUsd": 25 }
+          }
+        }
+
+    This repo ships no rates on purpose. Published prices change, and a stale
+    rate produces a confidently wrong number — worse than an honest blank. With
+    no rate configured `costUsd` stays $null, `costBasis` says
+    'no-price-configured', and the UI renders "unmeasured" rather than $0.00.
+
 .NOTES
     Dot-source this file to load the public functions:
         . (Join-Path $aiModuleRoot 'AiDocImprovement.ps1')
@@ -43,6 +65,14 @@ $script:AiDocDefaultAnthropicModel = 'claude-opus-4-8'
 $script:AiDocDefaultOpenAiModel = 'gpt-4o'
 $script:AiDocDefaultMaxTokens = 8000
 $script:AiDocHttpTimeoutSec = 60
+
+# Usage provenance. Every provider result carries one of these, so a consumer
+# can tell "no model was called" apart from "a model was called and told us
+# nothing" — the second is a defect, the first is not.
+$script:AiDocUsageSourceProvider      = 'provider-usage'   # real counts from the API response
+$script:AiDocUsageSourceAbsent        = 'absent'           # call succeeded, response carried no usage block
+$script:AiDocUsageSourceCallFailed    = 'call-failed'      # call errored; usage is unknowable
+$script:AiDocUsageSourceNotApplicable = 'not-applicable'   # no model was called (offline heuristic)
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -160,6 +190,8 @@ function Get-AiDocProviderSettings {
         openAiKeyEnvVar    = [string](_AiGetField -Obj $openai -Name 'apiKeyEnvVar' -Default 'OPENAI_API_KEY')
         openAiModel        = [string](_AiGetField -Obj $openai -Name 'model' -Default $script:AiDocDefaultOpenAiModel)
         openAiMaxTokens    = [int](_AiGetField -Obj $openai -Name 'maxTokens' -Default $script:AiDocDefaultMaxTokens)
+        # Optional, operator-supplied, and empty by default — see Resolve-AiDocUsageCost.
+        pricing            = _AiGetField -Obj $ai -Name 'pricing' -Default $null
     }
 }
 
@@ -207,6 +239,167 @@ function _AiSectionScore {
     $sectionScore = 90.0 * ($present / [double]$sections.Count)
     $titleScore = if ($hasTitle) { 10.0 } else { 0.0 }
     return [int][Math]::Round($sectionScore + $titleScore)
+}
+
+# ---------------------------------------------------------------------------
+# Token usage and cost
+#
+# The rule this section exists to enforce: a number that was never measured is
+# reported as $null with a named reason, never as 0. Zero tokens and zero
+# dollars are real values that mean "this cost nothing" — claiming them for an
+# unmeasured call is the failure mode this milestone was written against.
+# ---------------------------------------------------------------------------
+
+function _AiUsageInt {
+    param([object]$Value)
+    if ($null -eq $Value) { return $null }
+    if ($Value -is [string] -and [string]::IsNullOrWhiteSpace($Value)) { return $null }
+    try {
+        $n = [int]$Value
+        if ($n -lt 0) { return $null }
+        return $n
+    }
+    catch {
+        return $null
+    }
+}
+
+<#
+.SYNOPSIS
+    Build the canonical token-usage record carried by every provider result.
+.DESCRIPTION
+    Normalizes whatever the provider reported into one shape. Counts are $null
+    when unknown — never 0. `measured` is true only when a model actually
+    reported counts, so a consumer never has to infer trust from the numbers.
+
+    `source` is the provenance and is the field a gate should assert on:
+      provider-usage   real counts from the API response
+      absent           the call succeeded and reported nothing (a defect)
+      call-failed      the call errored; usage cannot be known
+      not-applicable   no model was called at all (offline heuristic)
+.OUTPUTS
+    [pscustomobject] with inputTokens, outputTokens, totalTokens, measured,
+    source, costUsd, costBasis.
+#>
+function New-AiDocUsage {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Pure constructor: normalizes reported counts into a record and mutates nothing. -WhatIf plumbing would imply it changes state, which is the opposite of its contract.')]
+    param(
+        [Parameter()][AllowNull()][object]$InputTokens = $null,
+        [Parameter()][AllowNull()][object]$OutputTokens = $null,
+        [Parameter()][AllowNull()][object]$TotalTokens = $null,
+        [Parameter()][ValidateSet('provider-usage', 'absent', 'call-failed', 'not-applicable')]
+        [string]$Source = 'absent'
+    )
+
+    $inTok  = _AiUsageInt -Value $InputTokens
+    $outTok = _AiUsageInt -Value $OutputTokens
+    $total  = _AiUsageInt -Value $TotalTokens
+
+    # Derive a total only from counts that were actually reported. If exactly one
+    # side is present the total is that side plus an unknown, which is not a
+    # total — leave it null rather than understate it.
+    if ($null -eq $total -and $null -ne $inTok -and $null -ne $outTok) {
+        $total = $inTok + $outTok
+    }
+
+    $measured = ($Source -eq $script:AiDocUsageSourceProvider -and $null -ne $total)
+    $effectiveSource = if ($Source -eq $script:AiDocUsageSourceProvider -and -not $measured) {
+        # The adapter asked for a provider reading and got nothing usable. Say so.
+        $script:AiDocUsageSourceAbsent
+    }
+    else { $Source }
+
+    $costBasis = switch ($effectiveSource) {
+        $script:AiDocUsageSourceNotApplicable { 'not-applicable' }
+        $script:AiDocUsageSourceCallFailed    { 'call-failed' }
+        $script:AiDocUsageSourceAbsent        { 'usage-absent' }
+        default                               { 'no-price-configured' }
+    }
+
+    return [pscustomobject]@{
+        inputTokens  = $inTok
+        outputTokens = $outTok
+        totalTokens  = $total
+        measured     = $measured
+        source       = $effectiveSource
+        costUsd      = $null
+        costBasis    = $costBasis
+    }
+}
+
+<#
+.SYNOPSIS
+    Attach a USD cost to a usage record when — and only when — a price is known.
+.DESCRIPTION
+    Prices are operator-supplied under `ai.pricing.<modelId>` as
+    `{ inputPerMillionUsd, outputPerMillionUsd }`. This repo ships no prices:
+    published rates change, and a stale rate produces a confidently wrong
+    number, which is worse than an honest blank. With no price configured the
+    cost stays $null and `costBasis` says why, which is what the UI renders as
+    "unmeasured".
+.OUTPUTS
+    [pscustomobject] usage record with costUsd/costBasis resolved.
+#>
+function Resolve-AiDocUsageCost {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory = $true)][object]$Usage,
+        [Parameter()][AllowNull()][AllowEmptyString()][string]$ModelId = '',
+        [Parameter()][AllowNull()][object]$Pricing = $null
+    )
+
+    $result = [pscustomobject]@{
+        inputTokens  = _AiGetField -Obj $Usage -Name 'inputTokens'  -Default $null
+        outputTokens = _AiGetField -Obj $Usage -Name 'outputTokens' -Default $null
+        totalTokens  = _AiGetField -Obj $Usage -Name 'totalTokens'  -Default $null
+        measured     = [bool](_AiGetField -Obj $Usage -Name 'measured' -Default $false)
+        source       = [string](_AiGetField -Obj $Usage -Name 'source' -Default $script:AiDocUsageSourceAbsent)
+        costUsd      = $null
+        costBasis    = [string](_AiGetField -Obj $Usage -Name 'costBasis' -Default 'no-price-configured')
+    }
+
+    # Nothing measured means nothing to price. The basis already names the reason.
+    if (-not $result.measured) { return $result }
+
+    if ([string]::IsNullOrWhiteSpace($ModelId)) {
+        $result.costBasis = 'no-model-id'
+        return $result
+    }
+
+    $modelPrice = _AiGetField -Obj $Pricing -Name $ModelId -Default $null
+    if ($null -eq $modelPrice) {
+        $result.costBasis = 'no-price-configured'
+        return $result
+    }
+
+    $inPrice  = _AiGetField -Obj $modelPrice -Name 'inputPerMillionUsd'  -Default $null
+    $outPrice = _AiGetField -Obj $modelPrice -Name 'outputPerMillionUsd' -Default $null
+    if ($null -eq $inPrice -or $null -eq $outPrice) {
+        $result.costBasis = 'price-incomplete'
+        return $result
+    }
+
+    # Both sides are needed: a total alone cannot be split across two rates.
+    if ($null -eq $result.inputTokens -or $null -eq $result.outputTokens) {
+        $result.costBasis = 'token-detail-insufficient'
+        return $result
+    }
+
+    try {
+        $cost = ([double]$result.inputTokens / 1000000.0) * [double]$inPrice +
+                ([double]$result.outputTokens / 1000000.0) * [double]$outPrice
+        $result.costUsd = [Math]::Round($cost, 6)
+        $result.costBasis = 'priced-from-settings'
+    }
+    catch {
+        $result.costBasis = 'price-invalid'
+    }
+
+    return $result
 }
 
 # ---------------------------------------------------------------------------
@@ -268,6 +461,9 @@ function Invoke-HeuristicDocProvider {
         changeSummary   = @($changes)
         warnings        = @()
         error           = $null
+        # No model was called, so there is nothing to measure — which is not the
+        # same as measuring zero.
+        usage           = New-AiDocUsage -Source $script:AiDocUsageSourceNotApplicable
     }
 }
 
@@ -388,6 +584,10 @@ function Invoke-AnthropicDocProvider {
             throw 'Anthropic response contained no text content.'
         }
 
+        # The Messages API returns usage alongside the content. Read it here or
+        # it is gone: the response object does not outlive this scope.
+        $rawUsage = _AiGetField -Obj $resp -Name 'usage' -Default $null
+
         return [pscustomobject]@{
             providerId      = 'anthropic'
             modelId         = $Model
@@ -395,6 +595,10 @@ function Invoke-AnthropicDocProvider {
             changeSummary   = @("Document rewritten by Anthropic ($Model).")
             warnings        = @()
             error           = $null
+            usage           = New-AiDocUsage `
+                -InputTokens  (_AiGetField -Obj $rawUsage -Name 'input_tokens'  -Default $null) `
+                -OutputTokens (_AiGetField -Obj $rawUsage -Name 'output_tokens' -Default $null) `
+                -Source       $script:AiDocUsageSourceProvider
         }
     }
     catch {
@@ -405,6 +609,7 @@ function Invoke-AnthropicDocProvider {
             changeSummary   = @()
             warnings        = @()
             error           = "Anthropic provider call failed: $($_.Exception.Message)"
+            usage           = New-AiDocUsage -Source $script:AiDocUsageSourceCallFailed
         }
     }
 }
@@ -449,6 +654,10 @@ function Invoke-OpenAiDocProvider {
             throw 'OpenAI response contained no message content.'
         }
 
+        # Chat Completions reports usage with different field names than the
+        # Messages API; both normalize into the same record.
+        $rawUsage = _AiGetField -Obj $resp -Name 'usage' -Default $null
+
         return [pscustomobject]@{
             providerId      = 'openai'
             modelId         = $Model
@@ -456,6 +665,11 @@ function Invoke-OpenAiDocProvider {
             changeSummary   = @("Document rewritten by OpenAI ($Model).")
             warnings        = @()
             error           = $null
+            usage           = New-AiDocUsage `
+                -InputTokens  (_AiGetField -Obj $rawUsage -Name 'prompt_tokens'     -Default $null) `
+                -OutputTokens (_AiGetField -Obj $rawUsage -Name 'completion_tokens' -Default $null) `
+                -TotalTokens  (_AiGetField -Obj $rawUsage -Name 'total_tokens'      -Default $null) `
+                -Source       $script:AiDocUsageSourceProvider
         }
     }
     catch {
@@ -466,6 +680,7 @@ function Invoke-OpenAiDocProvider {
             changeSummary   = @()
             warnings        = @()
             error           = "OpenAI provider call failed: $($_.Exception.Message)"
+            usage           = New-AiDocUsage -Source $script:AiDocUsageSourceCallFailed
         }
     }
 }
@@ -588,6 +803,17 @@ function Invoke-AiDocImprovePreview {
 
     $proposedContent = [string]$result.proposedContent
 
+    # ---- Token usage and cost ----
+    # An adapter that predates this contract returns no usage at all; treat that
+    # as absent rather than inventing zeros, so the gate sees it.
+    $rawUsage = _AiGetField -Obj $result -Name 'usage' -Default $null
+    $usage = if ($null -eq $rawUsage) { New-AiDocUsage -Source $script:AiDocUsageSourceAbsent } else { $rawUsage }
+    $usage = Resolve-AiDocUsageCost -Usage $usage -ModelId ([string]$result.modelId) -Pricing $providerSettings.pricing
+
+    if ($usage.source -eq $script:AiDocUsageSourceAbsent -and $selected -ne 'heuristic') {
+        $warnings.Add("The $selected provider returned no token usage; cost for this preview is unmeasured.")
+    }
+
     # ---- Estimated score movement ----
     $scoreBefore = _AiSectionScore -Content $currentContent -RequiredSections $requiredSections
     $scoreAfter = _AiSectionScore -Content $proposedContent -RequiredSections $requiredSections
@@ -608,6 +834,7 @@ function Invoke-AiDocImprovePreview {
             after  = $scoreAfter
             delta  = ($scoreAfter - $scoreBefore)
         }
+        usage           = $usage
         warnings        = @($warnings)
         generatedAt     = $now
     }
@@ -645,6 +872,9 @@ function Write-AiDocImprovementHistory {
     if ([string]::IsNullOrWhiteSpace($repoName)) { return $null }
 
     $score = _AiGetField -Obj $Preview -Name 'estimatedScore' -Default $null
+    $usage = _AiGetField -Obj $Preview -Name 'usage' -Default $null
+    if ($null -eq $usage) { $usage = New-AiDocUsage -Source $script:AiDocUsageSourceAbsent }
+
     $record = [ordered]@{
         previewId     = [string](_AiGetField -Obj $Preview -Name 'previewId' -Default '')
         createdAt     = [string](_AiGetField -Obj $Preview -Name 'generatedAt' -Default ((Get-Date).ToUniversalTime().ToString('o')))
@@ -659,6 +889,16 @@ function Write-AiDocImprovementHistory {
         scoreDelta    = [int](_AiGetField -Obj $score -Name 'delta' -Default 0)
         changeSummary = @(_AiGetField -Obj $Preview -Name 'changeSummary' -Default @() | ForEach-Object { [string]$_ })
         warningCount  = @(_AiGetField -Obj $Preview -Name 'warnings' -Default @()).Count
+        # Token and cost, named to match the agent-run metrics vocabulary
+        # (tokenUsage / apiSpendUsd) so the two series join without translation.
+        # Null here means unmeasured; usageSource and costBasis say which kind.
+        inputTokens   = _AiGetField -Obj $usage -Name 'inputTokens'  -Default $null
+        outputTokens  = _AiGetField -Obj $usage -Name 'outputTokens' -Default $null
+        tokenUsage    = _AiGetField -Obj $usage -Name 'totalTokens'  -Default $null
+        usageMeasured = [bool](_AiGetField -Obj $usage -Name 'measured' -Default $false)
+        usageSource   = [string](_AiGetField -Obj $usage -Name 'source' -Default $script:AiDocUsageSourceAbsent)
+        apiSpendUsd   = _AiGetField -Obj $usage -Name 'costUsd'   -Default $null
+        costBasis     = [string](_AiGetField -Obj $usage -Name 'costBasis' -Default 'usage-absent')
         applied       = $false
     }
 

@@ -4729,4 +4729,395 @@ Write-Step 'Repo staleness — Release 3.1: the dashboard metric is computed, no
     Write-Host ("  staleness ok: behind/ahead/current/unknown all classified, basis named, exact counts declared unavailable, no `$false literal left in the scan paths") -ForegroundColor DarkGray
 }
 
+Write-Step 'Token and cost — Release 3.1 M3: a model call that reports nothing fails here'
+# `tokenUsage` and `apiSpendUsd` existed on the agent-run record, flowed through
+# `tokens_reported` in app.db and out to analytics, and were never written by
+# production code: both provider adapters sent `max_tokens` and discarded the
+# `usage` block the API returned. The only real value in the repo was a fixture.
+#
+# The two failures this guards are different. Dropping usage makes cost
+# unknowable; *inventing* it — reporting 0 tokens and $0.00 for a call nobody
+# measured — makes it knowably wrong, and reads as "this was free" on a
+# dashboard. Every assertion below is about telling those apart.
+& {
+    # Shadow the HTTP call inside this block only, so the adapters can be driven
+    # over a known response without a network or a key. Defining the function
+    # here keeps it out of the rest of the suite.
+    $script:MockAiResponse = $null
+    function Invoke-RestMethod {
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidOverwritingBuiltInCmdlets', '',
+            Justification = 'Deliberate, block-scoped test double. Shadowing the HTTP call is what lets the real adapters be driven over a known response with no network and no API key; the definition dies with the enclosing script block.')]
+        param([Parameter(ValueFromRemainingArguments = $true)]$Rest)
+        $null = $Rest
+        return $script:MockAiResponse
+    }
+
+    # --- A model that reports usage has it captured -------------------------
+    $script:MockAiResponse = [pscustomobject]@{
+        content = @([pscustomobject]@{ type = 'text'; text = '# Improved' })
+        usage   = [pscustomobject]@{ input_tokens = 1234; output_tokens = 567 }
+    }
+    $anthropic = Invoke-AnthropicDocProvider -ApiKey 'smoke' -Model 'claude-smoke' -SystemPrompt 's' -UserPrompt 'u'
+    if (-not [string]::IsNullOrWhiteSpace([string]$anthropic.error)) { throw "Anthropic adapter smoke call failed: $($anthropic.error)" }
+    if ($anthropic.usage.inputTokens -ne 1234 -or $anthropic.usage.outputTokens -ne 567) {
+        throw "The Anthropic adapter discarded the usage block the API returned (in=$($anthropic.usage.inputTokens) out=$($anthropic.usage.outputTokens))."
+    }
+    if ($anthropic.usage.totalTokens -ne 1801) { throw "Total tokens must be the sum of both sides; got $($anthropic.usage.totalTokens)" }
+    if (-not $anthropic.usage.measured) { throw 'A call with real counts must report measured=true' }
+
+    $script:MockAiResponse = [pscustomobject]@{
+        choices = @([pscustomobject]@{ message = [pscustomobject]@{ content = '# Improved' } })
+        usage   = [pscustomobject]@{ prompt_tokens = 800; completion_tokens = 200; total_tokens = 1000 }
+    }
+    $openai = Invoke-OpenAiDocProvider -ApiKey 'smoke' -Model 'gpt-smoke' -SystemPrompt 's' -UserPrompt 'u'
+    if (-not [string]::IsNullOrWhiteSpace([string]$openai.error)) { throw "OpenAI adapter smoke call failed: $($openai.error)" }
+    if ($openai.usage.inputTokens -ne 800 -or $openai.usage.outputTokens -ne 200 -or $openai.usage.totalTokens -ne 1000) {
+        throw 'The OpenAI adapter did not normalize prompt/completion/total tokens.'
+    }
+
+    # --- A model call that reports nothing is a defect, and says so ---------
+    # This is the acceptance criterion: null usage on a model path fails a gate.
+    $script:MockAiResponse = [pscustomobject]@{ content = @([pscustomobject]@{ type = 'text'; text = '# Improved' }) }
+    $silent = Invoke-AnthropicDocProvider -ApiKey 'smoke' -Model 'claude-smoke' -SystemPrompt 's' -UserPrompt 'u'
+    if ($silent.usage.source -ne 'absent') { throw "A successful model call with no usage block must record source='absent'; got '$($silent.usage.source)'" }
+    if ($null -ne $silent.usage.totalTokens) { throw 'Unmeasured usage must be $null. Reporting 0 tokens for a call nobody measured is the failure this milestone names.' }
+    if ($silent.usage.measured) { throw 'measured=true with no counts is a false claim' }
+
+    # --- A failed call is unknowable, not zero, and not a reporting defect ---
+    function Invoke-RestMethod {
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidOverwritingBuiltInCmdlets', '',
+            Justification = 'Deliberate, block-scoped test double — see the note on the first one. This variant drives the adapters failure path.')]
+        param([Parameter(ValueFromRemainingArguments = $true)]$Rest)
+        $null = $Rest
+        throw '401 Unauthorized'
+    }
+    $failed = Invoke-OpenAiDocProvider -ApiKey 'bad' -Model 'gpt-smoke' -SystemPrompt 's' -UserPrompt 'u'
+    if ($failed.usage.source -ne 'call-failed') { throw "A failed provider call must record source='call-failed'; got '$($failed.usage.source)'" }
+    if ($null -ne $failed.usage.totalTokens) { throw 'A failed call measured nothing and must report $null' }
+
+    Write-Host '  adapters ok: both providers capture usage, a silent model reads absent, a failed call reads call-failed' -ForegroundColor DarkGray
+}
+
+& {
+    # --- Cost is priced or it is blank; it is never zero by default ---------
+    $measured = New-AiDocUsage -InputTokens 1000 -OutputTokens 2000 -Source 'provider-usage'
+    $unpriced = Resolve-AiDocUsageCost -Usage $measured -ModelId 'claude-smoke' -Pricing $null
+    if ($null -ne $unpriced.costUsd) { throw 'With no price configured the cost must be $null, not a number' }
+    if ($unpriced.costBasis -ne 'no-price-configured') { throw "An unpriced cost must name why; got '$($unpriced.costBasis)'" }
+
+    $pricing = [pscustomobject]@{ 'claude-smoke' = [pscustomobject]@{ inputPerMillionUsd = 3.0; outputPerMillionUsd = 15.0 } }
+    $priced = Resolve-AiDocUsageCost -Usage $measured -ModelId 'claude-smoke' -Pricing $pricing
+    $expected = (1000.0 / 1000000.0) * 3.0 + (2000.0 / 1000000.0) * 15.0
+    if ([Math]::Abs([double]$priced.costUsd - $expected) -gt 1e-9) { throw "Priced cost wrong: expected $expected, got $($priced.costUsd)" }
+    if ($priced.costBasis -ne 'priced-from-settings') { throw 'A priced cost must name the source of the price' }
+
+    # A price for a different model must not be borrowed for this one.
+    $wrongModel = Resolve-AiDocUsageCost -Usage $measured -ModelId 'gpt-smoke' -Pricing $pricing
+    if ($null -ne $wrongModel.costUsd) { throw 'A model with no price of its own must not inherit another model''s rate' }
+
+    # An unmeasured call cannot be priced at all, even with a full price table.
+    $offline = New-AiDocUsage -Source 'not-applicable'
+    $offlinePriced = Resolve-AiDocUsageCost -Usage $offline -ModelId 'claude-smoke' -Pricing $pricing
+    if ($null -ne $offlinePriced.costUsd) { throw 'An unmeasured call must never be assigned a cost' }
+    if ($offlinePriced.costBasis -ne 'not-applicable') { throw 'The offline path is not a measurement defect and must not be reported as one' }
+
+    Write-Host '  cost ok: priced only from configured rates, unmeasured stays null with a named basis, no rate borrowed across models' -ForegroundColor DarkGray
+}
+
+& {
+    # --- The record that reaches disk carries both, and its provenance ------
+    # The milestone's phrasing: the improvement-history record "has no cost
+    # field today". This asserts it does now, and that an offline preview
+    # writes null rather than a confident zero.
+    $usageTmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gh-usage-smoke-" + [guid]::NewGuid().ToString('n'))
+    $null = New-Item -ItemType Directory -Path $usageTmp -Force
+    try {
+        $preview = Invoke-AiDocImprovePreview -WorkspaceRoot $usageTmp -RepoName 'usage-smoke' `
+            -DocType 'readme' -CurrentContent "# usage-smoke`n" -Provider 'heuristic'
+        if ($preview.PSObject.Properties.Name -notcontains 'usage') {
+            throw 'The improvement preview carries no usage record, so nothing downstream can report tokens or cost.'
+        }
+        if ($preview.usage.source -ne 'not-applicable') {
+            throw "An offline heuristic preview called no model and must read 'not-applicable'; got '$($preview.usage.source)'"
+        }
+
+        $record = Write-AiDocImprovementHistory -WorkspaceRoot $usageTmp -Preview $preview
+        foreach ($field in @('tokenUsage', 'apiSpendUsd', 'usageSource', 'usageMeasured', 'costBasis', 'inputTokens', 'outputTokens')) {
+            if ($record.PSObject.Properties.Name -notcontains $field) {
+                throw "The improvement-history record omits '$field'; token and cost stay unmeasurable on the path that persists them."
+            }
+        }
+        if ($null -ne $record.tokenUsage -or $null -ne $record.apiSpendUsd) {
+            throw 'An offline preview must persist null tokens and null cost, never 0 — a zero here reads as "this run was free".'
+        }
+
+        # The field names deliberately match the agent-run metrics vocabulary so
+        # the two series join without translation; assert that stays true.
+        $agentRunsText = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\modules\agent-runs\AgentRuns.ps1') -Raw -Encoding UTF8
+        foreach ($shared in @('tokenUsage', 'apiSpendUsd')) {
+            if ($agentRunsText -notmatch [regex]::Escape($shared)) {
+                throw "The history record uses '$shared' to match the agent-run metric of the same name, but AgentRuns.ps1 no longer uses it."
+            }
+        }
+
+        # Round-trip: the fields must survive JSONL, not just exist in memory.
+        $readBack = @(Get-AiDocImprovementHistory -WorkspaceRoot $usageTmp -RepoName 'usage-smoke')
+        if ($readBack.Count -lt 1) { throw 'The improvement-history record did not persist' }
+        if ($readBack[0].PSObject.Properties.Name -notcontains 'costBasis') {
+            throw 'costBasis did not survive the JSONL round-trip, so a reader cannot tell unmeasured from free.'
+        }
+
+        Write-Host '  history ok: tokens + cost + provenance persist and round-trip; an offline preview writes null, not 0' -ForegroundColor DarkGray
+    }
+    finally {
+        Remove-Item -LiteralPath $usageTmp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+& {
+    # --- Coverage: scope derived from what actually calls a model -----------
+    # Not a list of the two adapters that exist today. Any function in the AI
+    # module that makes an HTTP call is, by definition, a model call, and must
+    # capture usage. A third adapter added later fails here until it does.
+    $aiPath = Join-Path $WorkspaceRoot 'backend\modules\ai\AiDocImprovement.ps1'
+    $aiErrors = $null
+    $aiAst = [System.Management.Automation.Language.Parser]::ParseFile($aiPath, [ref]$null, [ref]$aiErrors)
+    if ($aiErrors -and @($aiErrors).Count -gt 0) { throw "AiDocImprovement.ps1 does not parse: $($aiErrors[0].Message)" }
+
+    $callers = @($aiAst.FindAll({
+                param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst]
+            }, $true) | Where-Object {
+            @($_.Body.FindAll({
+                        param($c)
+                        $c -is [System.Management.Automation.Language.CommandAst] -and
+                        $c.GetCommandName() -match '^Invoke-(RestMethod|WebRequest)$'
+                    }, $true)).Count -gt 0
+        })
+
+    if (@($callers).Count -lt 2) {
+        throw ("Expected at least the two provider adapters to make HTTP calls; found {0}. The coverage check has lost its scope." -f @($callers).Count)
+    }
+
+    foreach ($fn in $callers) {
+        $usageCalls = @($fn.Body.FindAll({
+                    param($c)
+                    $c -is [System.Management.Automation.Language.CommandAst] -and $c.GetCommandName() -eq 'New-AiDocUsage'
+                }, $true))
+        if (@($usageCalls).Count -eq 0) {
+            throw ("$($fn.Name) calls a model over HTTP but never calls New-AiDocUsage. Its token usage is discarded, which is exactly the defect this milestone closed for the other adapters.")
+        }
+
+        # Merely calling New-AiDocUsage is not enough, and this is not a
+        # hypothetical: deleting the success-path capture and keeping only the
+        # catch block's `-Source call-failed` left the presence check green.
+        # An adapter has to pass counts it read off the response, so require a
+        # call that supplies -InputTokens.
+        $readsCounts = @($usageCalls | Where-Object {
+                @($_.CommandElements | Where-Object {
+                        $_ -is [System.Management.Automation.Language.CommandParameterAst] -and
+                        $_.ParameterName -eq 'InputTokens'
+                    }).Count -gt 0
+            }).Count -gt 0
+        if (-not $readsCounts) {
+            throw ("$($fn.Name) constructs a usage record but never passes -InputTokens, so it reports provenance without ever reading the counts off the response. Capture usage on the success path, not only in the catch block.")
+        }
+    }
+
+    # And the orchestrator must forward it, or per-adapter capture is dead code.
+    $previewFn = @($aiAst.FindAll({
+                param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Invoke-AiDocImprovePreview'
+            }, $true))[0]
+    if ($null -eq $previewFn) { throw 'Invoke-AiDocImprovePreview not found; the forwarding assertion is vacuous.' }
+    if ($previewFn.Extent.Text -notmatch 'Resolve-AiDocUsageCost') {
+        throw 'The preview orchestrator never resolves cost, so a configured price would be ignored.'
+    }
+
+    Write-Host ("  coverage ok: all {0} HTTP-calling adapter(s) capture usage; the orchestrator forwards and prices it" -f @($callers).Count) -ForegroundColor DarkGray
+}
+
+& {
+    # --- The client hop must not turn "unmeasured" into zero ----------------
+    # apiClient.ts coerces scores with `Number(x ?? 0)`, which is correct for a
+    # score and wrong for usage: it would render an unmeasured run as free. The
+    # field list is read from the type, not typed out here, so a field added to
+    # the payload later is covered without editing this assertion.
+    $typesPath = Join-Path $WorkspaceRoot 'frontend\types.ts'
+    $typesText = Get-Content -LiteralPath $typesPath -Raw -Encoding UTF8
+    $usageBlock = [regex]::Match($typesText, '(?s)export interface AiDocUsage \{(.*?)\n\}')
+    if (-not $usageBlock.Success) { throw 'AiDocUsage is not declared in frontend/types.ts; the client-hop assertion has no field list to derive from.' }
+    $usageFields = @([regex]::Matches($usageBlock.Groups[1].Value, '(?m)^\s*(\w+)\s*[?]?:') | ForEach-Object { $_.Groups[1].Value })
+    $numericFields = @($usageFields | Where-Object { $_ -match 'Tokens$|^costUsd$' })
+    if (@($numericFields).Count -lt 3) { throw "Expected the usage type to declare several numeric fields; found $(@($numericFields).Count)." }
+
+    $clientPath = Join-Path $WorkspaceRoot 'frontend\services\apiClient.ts'
+    $clientText = Get-Content -LiteralPath $clientPath -Raw -Encoding UTF8
+    foreach ($field in @($numericFields + @('tokenUsage', 'apiSpendUsd'))) {
+        if ($clientText -match ("(?m)\b{0}\s*:\s*Number\([^)]*\?\?\s*0" -f [regex]::Escape($field))) {
+            throw "apiClient.ts coerces '$field' with `?? 0`. That renders a run nobody measured as costing nothing, which is the claim this milestone exists to stop."
+        }
+    }
+    if ($clientText -notmatch 'function nullableNumber') {
+        throw 'apiClient.ts has no nullable coercion for usage, so a missing count cannot survive the hop as null.'
+    }
+
+    # And the surface has to render it, or the payload is invisible.
+    $opsPath = Join-Path $WorkspaceRoot 'frontend\components\OperationsWorkspaceView.tsx'
+    $opsText = Get-Content -LiteralPath $opsPath -Raw -Encoding UTF8
+    if ($opsText -notmatch 'describeUsage') {
+        throw 'The operations workspace never calls describeUsage, so tokens and cost are measured and then not shown.'
+    }
+    foreach ($testId in @('ai-preview-usage', 'ai-history-usage', 'agent-run-cost')) {
+        if ($opsText -notmatch [regex]::Escape($testId)) {
+            throw "The operations workspace no longer renders '$testId'; a token/cost readout was dropped from a surface that had one."
+        }
+    }
+    # The agent-run panel had a cost field on its type and rendered only tokens.
+    if ($opsText -notmatch "apiSpendUsd") {
+        throw 'The agent-run panel does not render apiSpendUsd, so the cost field stays write-only.'
+    }
+
+    $usageLib = Join-Path $WorkspaceRoot 'frontend\lib\aiUsage.ts'
+    if (-not (Test-Path -LiteralPath $usageLib)) { throw 'frontend/lib/aiUsage.ts is missing; the never-zero formatting rule lives there.' }
+    if ((Get-Content -LiteralPath $usageLib -Raw -Encoding UTF8) -notmatch 'unmeasured') {
+        throw 'aiUsage.ts no longer renders the word "unmeasured"; an unmeasured cost has to say so rather than show a number.'
+    }
+
+    Write-Host ("  client hop ok: {0} usage field(s) derived from the type, none coerced to 0; 3 readouts rendered" -f @($numericFields).Count) -ForegroundColor DarkGray
+}
+
+Write-Step 'Enabled means available — Release 3.1 M4: a disabled control names what it is waiting for'
+# The audit this milestone asked for, run as a gate rather than written down as
+# a list. Every <button> on the PC surfaces is classified from its own markup:
+#
+#   ungated      no disabled prop — always available
+#   in-flight    disabled by a single flag naming an operation already running
+#                (loading/saving/applying/...). The label and spinner already
+#                say why, so no further explanation is owed.
+#   state-gated  disabled by anything else — a precondition the operator has to
+#                satisfy. These MUST name it, or the operator is left staring at
+#                a grey button with no way to learn what it wants.
+#
+# The scope is derived from the markup, so a control added later is audited
+# without anyone remembering to add it here. The classifier is deliberately
+# conservative: only a bare in-flight identifier is exempt, because a compound
+# expression almost always hides a real precondition inside it.
+& {
+    $componentRoot = Join-Path $WorkspaceRoot 'frontend\components'
+
+    # A JSX opening tag cannot be matched with a lazy regex: `onClick={() => x}`
+    # contains a '>' that ends the match early and hides every prop after it,
+    # which silently reclassifies a gated control as ungated. Walk the tag
+    # instead, tracking brace depth and quotes, and stop at the '>' that closes
+    # it for real.
+    function Get-JsxOpeningTag {
+        param([string]$Text, [int]$StartIndex)
+        $depth = 0
+        $quote = $null
+        for ($i = $StartIndex; $i -lt $Text.Length; $i++) {
+            $ch = $Text[$i]
+            if ($null -ne $quote) {
+                if ($ch -eq $quote -and $Text[$i - 1] -ne '\') { $quote = $null }
+                continue
+            }
+            switch ($ch) {
+                '"' { $quote = $ch; break }
+                "'" { $quote = $ch; break }
+                '`' { $quote = $ch; break }
+                '{' { $depth++; break }
+                '}' { $depth--; break }
+                '>' { if ($depth -le 0) { return $Text.Substring($StartIndex, $i - $StartIndex) } break }
+            }
+        }
+        return $null
+    }
+
+    # Reads as "an operation is already running", so the control explains itself.
+    $inFlightVocabulary = 'loading|submitting|saving|applying|running|scanning|refreshing|busy|pending|working|inflight|in_flight|connecting|checking|generating|fetching|deleting|dispatching'
+
+    $controls = [System.Collections.Generic.List[object]]::new()
+    foreach ($file in Get-ChildItem -LiteralPath $componentRoot -Filter '*.tsx' |
+        Where-Object { $_.Name -notmatch '\.test\.tsx$' -and $_.Name -ne 'icons.tsx' -and $_.Name -notmatch '^Mobile' }) {
+
+        $text = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8
+        foreach ($m in [regex]::Matches($text, '<button\b')) {
+            $tag = Get-JsxOpeningTag -Text $text -StartIndex $m.Index
+            if ($null -eq $tag) { continue }
+
+            $disabled = [regex]::Match($tag, '(?s)\bdisabled\s*=\s*\{(.*)')
+            if (-not $disabled.Success) { continue }   # ungated: always available
+
+            # Take the balanced contents of the disabled={...} expression.
+            $rest = $disabled.Groups[1].Value
+            $depth = 1
+            $expr = ''
+            for ($i = 0; $i -lt $rest.Length; $i++) {
+                if ($rest[$i] -eq '{') { $depth++ }
+                elseif ($rest[$i] -eq '}') { $depth--; if ($depth -eq 0) { break } }
+                $expr += $rest[$i]
+            }
+            $expr = ($expr -replace '\s+', ' ').Trim()
+
+            # Only a lone in-flight flag is self-explanatory. Anything compound
+            # (||, &&, !, a comparison, a literal) hides a precondition.
+            $inFlightOnly = ($expr -match ('^[A-Za-z_$][\w$]*$')) -and ($expr -match $inFlightVocabulary)
+
+            $controls.Add([pscustomobject]@{
+                    File       = $file.Name
+                    Line       = ($text.Substring(0, $m.Index) -split "`n").Count
+                    Expression = $expr
+                    Class      = if ($inFlightOnly) { 'in-flight' } else { 'state-gated' }
+                    HasTitle   = ($tag -match '(?s)\btitle\s*=')
+                })
+        }
+    }
+
+    if ($controls.Count -lt 20) {
+        throw "The control audit found only $($controls.Count) disabled control(s) across the PC surfaces. The tag scanner has lost its scope; a passing result here would be vacuous."
+    }
+
+    $unexplained = @($controls | Where-Object { $_.Class -eq 'state-gated' -and -not $_.HasTitle })
+    if ($unexplained.Count -gt 0) {
+        $detail = ($unexplained | ForEach-Object { "    {0}:{1}  disabled={{{2}}}" -f $_.File, $_.Line, $_.Expression }) -join "`n"
+        throw ("{0} control(s) are disabled by a precondition the operator is never told about. A greyed button with no reason is worse than a failing one: it offers nothing to act on.`n{1}" -f $unexplained.Count, $detail)
+    }
+
+    $inFlight = @($controls | Where-Object { $_.Class -eq 'in-flight' })
+    $stateGated = @($controls | Where-Object { $_.Class -eq 'state-gated' })
+    Write-Host ("  control audit ok: {0} disabled control(s) across {1} PC component(s) — {2} in-flight, {3} state-gated and all naming their precondition" -f `
+            $controls.Count, @($controls | Select-Object -ExpandProperty File -Unique).Count, $inFlight.Count, $stateGated.Count) -ForegroundColor DarkGray
+}
+
+& {
+    # --- The three instances Lane 0.9 already recorded ----------------------
+    # Named individually because the audit above cannot see them: they are
+    # missing controls and unexplained terminal screens, not disabled buttons.
+    $insights = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'frontend\components\InsightsView.tsx') -Raw -Encoding UTF8
+    if ($insights -notmatch 'insights-run-assessment') {
+        throw 'Insights tells the operator a portfolio assessment must succeed and still offers no control that runs one. Instructions a surface cannot carry out are worse than no instructions.'
+    }
+    if ($insights -notmatch 'insights-trend-run-assessment') {
+        throw 'The portfolio-analytics empty state tells the operator to refresh the assessment while its only button retries the trend fetch. Both controls must exist and say which one they are.'
+    }
+
+    $dashboard = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'frontend\components\Dashboard.tsx') -Raw -Encoding UTF8
+    if ($dashboard -notmatch 'dashboard-load-failure-retry') {
+        throw 'The dashboard load-failure screen offers no retry. A terminal screen has to say what comes next.'
+    }
+    if ($dashboard -match '(?m)^\s*return <div className="text-center p-8 text-red-400">\{error\}</div>;') {
+        throw 'The bare Failed-to-fetch screen is back: the raw exception string with no explanation, no retry, and no way to tell an unreachable backend from an unconfigured portal.'
+    }
+    if ($dashboard -notmatch 'classifyFetchFailure') {
+        throw 'Dashboard.tsx no longer classifies its load failure, so "backend unreachable" and "nothing configured" render identically again.'
+    }
+
+    # The dispatch wizard was the third instance and closed under M1; its
+    # precondition rendering is asserted by the dispatch-gate coverage step.
+    $improvement = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'frontend\components\RepositoryImprovementWorkflowModal.tsx') -Raw -Encoding UTF8
+    if ($improvement -notmatch 'improvement-dispatch-precondition') {
+        throw 'The dispatch wizard no longer names its unmet precondition; the third Lane 0.9 instance has regressed.'
+    }
+
+    Write-Host '  Lane 0.9 ok: Insights runs the assessment it asks for, the load-failure screen classifies and retries, the dispatch wizard still names its precondition' -ForegroundColor DarkGray
+}
+
 Write-Step 'Smoke test completed'

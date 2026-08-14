@@ -327,7 +327,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onSave, 
             <button type="button" onClick={onClose} className="py-2 px-4 text-sm font-medium rounded-md text-gray-300 bg-gray-600 hover:bg-gray-500 transition-colors">
               Cancel
             </button>
-            <button type="submit" disabled={isSaving || Boolean(envVarNameError)} className="py-2 px-4 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50">
+            <button type="submit" disabled={isSaving || Boolean(envVarNameError)} title={envVarNameError ? `Fix the environment variable name first: ${envVarNameError}` : isSaving ? 'Settings are being saved.' : 'Saves these settings.'} className="py-2 px-4 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50">
               {isSaving ? 'Saving...' : 'Save'}
             </button>
           </div>

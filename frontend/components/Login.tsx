@@ -89,6 +89,7 @@ const Login: React.FC<LoginProps> = ({ status, onAuthenticated }) => {
           <button
             type="submit"
             disabled={submitting || value.length === 0}
+            title={value.length === 0 ? 'Enter your portal password to sign in.' : submitting ? 'Signing in.' : 'Signs in to the portal.'}
             className="mt-4 w-full px-4 py-2 rounded-md bg-blue-600 text-white font-medium hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {submitting ? 'Signing in…' : 'Sign in'}

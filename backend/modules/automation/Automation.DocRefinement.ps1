@@ -163,6 +163,7 @@ function Invoke-ScheduledDocRefinement {
                 -Settings $Settings
 
             $estimated = _Auto_GetField -Obj $preview -Name 'estimatedScore' -Default $null
+            $usage = _Auto_GetField -Obj $preview -Name 'usage' -Default $null
             $proposals.Add([pscustomobject]@{
                 repoName    = $repoName
                 docType     = $docType
@@ -171,11 +172,30 @@ function Invoke-ScheduledDocRefinement {
                 scoreDelta  = [int](_Auto_GetField -Obj $estimated -Name 'delta' -Default 0)
                 changeCount = @(_Auto_GetField -Obj $preview -Name 'changeSummary' -Default @()).Count
                 reason      = [string](_Auto_GetField -Obj $t -Name 'reason' -Default '')
+                # Null means unmeasured, never zero — usageSource says which kind.
+                tokenUsage  = _Auto_GetField -Obj $usage -Name 'totalTokens' -Default $null
+                apiSpendUsd = _Auto_GetField -Obj $usage -Name 'costUsd' -Default $null
+                usageSource = [string](_Auto_GetField -Obj $usage -Name 'source' -Default 'absent')
                 applied     = $false
             }) | Out-Null
         } catch {
             $errors.Add([pscustomobject]@{ repoName = $repoName; docType = $docType; error = $_.Exception.Message }) | Out-Null
         }
+    }
+
+    $proposalArray = $proposals.ToArray()
+
+    # Run-level roll-up. A sum over a mix of measured and unmeasured proposals
+    # would read as a total while silently omitting the unmeasured ones, so the
+    # counts travel with the sum and the sum is null when nothing was measured.
+    $measured = @($proposalArray | Where-Object { $null -ne $_.tokenUsage })
+    $priced = @($proposalArray | Where-Object { $null -ne $_.apiSpendUsd })
+    $usageSummary = [pscustomobject]@{
+        measuredProposals   = $measured.Count
+        unmeasuredProposals = ($proposalArray.Count - $measured.Count)
+        totalTokens         = if ($measured.Count -gt 0) { [int](($measured | Measure-Object -Property tokenUsage -Sum).Sum) } else { $null }
+        pricedProposals     = $priced.Count
+        totalCostUsd        = if ($priced.Count -gt 0) { [Math]::Round([double](($priced | Measure-Object -Property apiSpendUsd -Sum).Sum), 6) } else { $null }
     }
 
     return [pscustomobject]@{
@@ -188,7 +208,8 @@ function Invoke-ScheduledDocRefinement {
         proposalCount = $proposals.Count
         appliedCount  = 0   # INVARIANT — preview-first; nothing is ever applied here
         provider      = $Provider
-        proposals     = $proposals.ToArray()
+        usage         = $usageSummary
+        proposals     = $proposalArray
         errors        = $errors.ToArray()
     }
 }

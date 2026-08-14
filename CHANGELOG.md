@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-14 — Release 3.1: the number nobody measured, and the button that never said what it wanted
+
+### Changes
+
+- **Both AI provider adapters read the token usage they had been discarding.** `tokenUsage` and `apiSpendUsd` sat on the agent-run record, flowed through `tokens_reported` in `app.db` and out to analytics, and were **never written by production code**: the Anthropic and OpenAI adapters sent `max_tokens` and threw away the `usage` block the API returned on the way past. The only real value anywhere in the repo was a smoke fixture. Both adapters now normalize what the provider reports into one record.
+- **Null means unmeasured; zero means measured-as-zero, and the two are never confused.** `source` separates the three cases that look identical from outside — `provider-usage` (real counts), `absent` (the model answered and reported nothing, which is a defect), `call-failed` (the call errored, so usage is unknowable), and `not-applicable` (the offline heuristic provider called no model at all). The improvement-history record, which had no cost field, now carries tokens and cost under the **same names the agent-run metrics use**, so the two series join without translation.
+- **Cost is priced only from operator-supplied rates, and this repo ships none.** Rates go under `ai.pricing.<modelId>`. Shipping a default price table was rejected: published prices change, and a stale rate produces a confidently wrong number, which is worse than an honest blank. With no rate configured, `costUsd` stays null, `costBasis` says `no-price-configured`, and every surface renders **unmeasured** — never `$0.00`. Four decimal places, because a single doc rewrite can cost well under a cent and `$0.00` would recreate the exact misreading being avoided.
+- **The audit of "enabled means available" ran as a gate, and the enumeration is the deliverable: 82 disabled controls across 22 PC components** — 30 disabled by an operation already in flight, 52 by a precondition, all 52 now naming it.
+- **The first pass undercounted by more than half, and that is the finding.** A lazy `<button.*?>` regex stops at the `>` inside `onClick={() => …}`, so every control whose first prop is an arrow handler read as ungated: it reported 30 disabled controls and scored `RepoGrid.tsx` as **31 ungated buttons when it holds 6 gated ones**. Walking the tag with brace and quote depth instead found **18 unexplained controls where the regex had found 7** — pagination, curation state, both dispatch overrides, discard-changes, and a permanently dead `disabled={true}` labelled only "Not Available".
+- **Insights now offers the assessment its own text tells you to run.** Documentation Health said it was "unavailable until a portfolio assessment succeeds" and offered no control at all; Portfolio Analytics said "Refresh the portfolio assessment" beside a button named `Retry` that re-fetched the trend instead. Both panels carry **Run portfolio assessment**, and the trend button is renamed **Retry trend fetch** so the two are distinguishable.
+- **The bare `Failed to fetch` screen is gone.** `Dashboard.tsx` rendered the raw exception string, centred, on an empty page — no retry, no explanation, and no way to tell a dead backend from an unconfigured portal. It now classifies the failure, names the next step, keeps the original message verbatim, and offers both a retry and a route into Settings. The settings modal is rendered inside that branch, because it returns early and the control would otherwise open nothing.
+
+### Verification
+
+- **Module smoke exit 0**, with four new gates: adapters capture usage over a mocked response; a successful model call recording null usage fails; cost is priced only from configured rates and no rate is borrowed across models; the client hop coerces no usage field with `?? 0`.
+- **Both token/cost gates were proven to fail on a reverted fix, and the first version of the coverage gate did not.** Deleting the success-path capture while leaving the catch block's `New-AiDocUsage` satisfied a presence-only check — so it now requires a call that passes `-InputTokens`, i.e. counts actually read off the response. Re-probed: deleting the capture fires, and adding a third adapter that ignores usage fires.
+- **The control-audit gate was probed on three regression shapes** — a title removed from a state-gated control, Insights losing its assessment action, the load-failure screen losing its retry. All three fire. It also fails closed below 20 controls, so a broken scanner cannot pass vacuously, and reports every violation at once rather than the first.
+- **Frontend: 222 tests pass** (202 before), including two new pure modules — `aiUsage.ts` (9 tests, including that a genuine zero stays distinguishable from an unmeasured one) and `fetchFailure.ts` (8 tests, including that an unreachable backend and an unconfigured portal get different next steps).
+- **Lint gate: 597 findings, baseline 597** — no new debt. Three findings this work introduced were fixed rather than baselined: `New-AiDocUsage` carries a justified `SuppressMessageAttribute` (a pure constructor gains nothing from `-WhatIf`), and the two block-scoped `Invoke-RestMethod` test doubles are justified in place and consume their parameter.
+- `npx tsc --noEmit` clean.
+
 ## 2026-08-11 — markdownlint: the stray one-rule config becomes a justified one, or would have been deleted
 
 ### Changes
