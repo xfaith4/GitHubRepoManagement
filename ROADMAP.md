@@ -544,9 +544,21 @@ and the work-item trace shipped earlier in this release.
       derives the writer scripts and then the routes that invoke them, so an
       indirect road counts as a road. `POST /api/roadmap-agent/preview` is
       exempt because it passes `-PreviewOnly` and returns before the write, and
-      that ordering is itself asserted rather than trusted. What remains of this
-      issue is the original end-to-end coverage asymmetry, not a behavioural
-      difference.
+      that ordering is itself asserted rather than trusted.
+
+      The frontend check was rebuilt for the same reason, having failed the same
+      way twice: scoped to `executeRoadmapDispatch` it passed while two surfaces
+      sat ungated, and after those were fixed it still passed while
+      `RoadmapViewerModal` queued through `startRoadmapTask` — a different client
+      function, to a different route, to the same queue. It now derives its scope
+      from the backend in two hops: routes that refuse on presence → the
+      `apiClient` functions posting to them → every component calling one. Five
+      surfaces, all gated. A container that forwards presence to the child
+      rendering the control counts as gated; requiring a redundant
+      `resolveDispatchGate` in `Dashboard` would add a call nothing reads.
+
+      What remains of this issue is the original end-to-end coverage asymmetry,
+      not a behavioural difference.
 - [ ] **[non-blocker]** **A deliberate override leaves no durable record.**
       `acknowledgeNoRunner` lets an operator queue into an empty room on
       purpose, and `queuedWithoutRunner` reports it — but only in the HTTP

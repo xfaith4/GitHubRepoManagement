@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem } from '../types';
-import { getRoadmapContent, triggerRoadmapScan, previewRoadmapTask, startRoadmapTask, approveRoadmapTask, getRoadmapTaskHistory } from '../services/apiClient';
+import { getRoadmapContent, triggerRoadmapScan, previewRoadmapTask, startRoadmapTask, approveRoadmapTask, getRoadmapTaskHistory, getRunnerPresence } from '../services/apiClient';
+import { resolveDispatchGate, type RunnerPresencePayload } from '../lib/runnerPresence';
 
 interface RoadmapViewerModalProps {
   isOpen: boolean;
@@ -25,6 +26,10 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
   const [taskHistory, setTaskHistory] = useState<RoadmapTaskHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [approvingRunId, setApprovingRunId] = useState<string | null>(null);
+  // Release 3.1 — "Start task" reaches the runner queue through
+  // /api/roadmap-agent/start, which now refuses when nothing can claim the work.
+  // Without this the button stays enabled and dead-ends on a 409.
+  const [runnerPresence, setRunnerPresence] = useState<RunnerPresencePayload | null>(null);
 
   const loadContent = useCallback(async (name: string) => {
     setLoading(true);
@@ -61,6 +66,10 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
       setTaskPreview(null);
       loadContent(repoName);
       setScanMessage(null);
+      // Resolves null on failure rather than throwing, and resolveDispatchGate
+      // treats an unknown reading as "allow" — only a positive absent/stale
+      // reading disables the control.
+      getRunnerPresence().then(setRunnerPresence);
 
       const owner = (defaultOwner ?? '').trim();
       if (owner) {
@@ -159,6 +168,7 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
 
   const isTaskError = taskMessage !== null && /failed|error|not found|not installed|required/i.test(taskMessage);
   const hasLocalRoadmap = Boolean(content?.path);
+  const dispatchGate = resolveDispatchGate(runnerPresence);
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -188,10 +198,18 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
             >
               Refresh
             </button>
+            {!dispatchGate.canQueue && (
+              <span data-testid="roadmap-viewer-precondition" className="max-w-md text-xs text-amber-300/90">
+                {dispatchGate.unmetPrecondition}
+              </span>
+            )}
             <button
               onClick={handleStartTask}
-              disabled={taskRunning || loading || !repositoryInput.trim()}
-              title="Queue the next roadmap task for the local Claude Code runner"
+              disabled={taskRunning || loading || !repositoryInput.trim() || !dispatchGate.canQueue}
+              data-testid="roadmap-viewer-start-task"
+              title={dispatchGate.canQueue
+                ? 'Queue the next roadmap task for the local Claude Code runner'
+                : dispatchGate.unmetPrecondition}
               className="text-xs px-3 py-1.5 rounded bg-indigo-800 hover:bg-indigo-700 text-indigo-100 border border-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {taskRunning ? 'Working...' : 'Run AI Agent'}

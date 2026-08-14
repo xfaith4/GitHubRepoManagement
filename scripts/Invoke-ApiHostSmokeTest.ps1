@@ -1098,6 +1098,40 @@ try {
     $dispatchQueuePath = Join-Path $WorkspaceRoot 'output\roadmap-task-queue.jsonl'
     $queueLinesBefore = if (Test-Path -LiteralPath $dispatchQueuePath) { @(Get-Content -LiteralPath $dispatchQueuePath -Encoding UTF8 | Where-Object { $_ -and $_.Trim() }).Count } else { 0 }
 
+    # Release 3.1 — this route is the third road to the queue, reaching it
+    # indirectly through Start-RoadmapCopilotTask.ps1 -> Add-RoadmapTaskToQueue.ps1.
+    # Prove the refusal before the happy path: with no heartbeat it must 409 and
+    # add no queue line, or it is a road by which work still strands.
+    # This is the operator's real heartbeat file — the same one the dispatch
+    # section further down is careful to put back exactly as found. Back it up
+    # before removing it, or a smoke run on a machine with a live runner would
+    # silently disrupt that runner.
+    $agentHeartbeatPath = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.heartbeat.json'
+    $agentHeartbeatBackup = if (Test-Path -LiteralPath $agentHeartbeatPath) { Get-Content -LiteralPath $agentHeartbeatPath -Raw -Encoding UTF8 } else { $null }
+    if (Test-Path -LiteralPath $agentHeartbeatPath) { Remove-Item -LiteralPath $agentHeartbeatPath -Force }
+    $dispatchNoRunner = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap-agent/start" -Body @{
+        repository = 'smoke-owner/smoke-dispatch-repo'
+        roadmapPath = $dispatchRoadmapPath
+    }
+    if ([int]$dispatchNoRunner.StatusCode -ne 409) {
+        throw ("/api/roadmap-agent/start with no runner expected 409, got {0}. Body={1}" -f $dispatchNoRunner.StatusCode, $dispatchNoRunner.Content)
+    }
+    if ([string]$dispatchNoRunner.Json.category -ne 'runner-absent') {
+        throw ("/api/roadmap-agent/start refusal expected category runner-absent; got '{0}'" -f $dispatchNoRunner.Json.category)
+    }
+    $queueLinesAfterRefusal = if (Test-Path -LiteralPath $dispatchQueuePath) { @(Get-Content -LiteralPath $dispatchQueuePath -Encoding UTF8 | Where-Object { $_ -and $_.Trim() }).Count } else { 0 }
+    if ($queueLinesAfterRefusal -ne $queueLinesBefore) {
+        throw 'A refused /api/roadmap-agent/start still wrote a queue line; the gate must precede the write.'
+    }
+
+    # A present runner lets the same call through.
+    $agentHeartbeatDir = Split-Path -Parent $agentHeartbeatPath
+    if (-not (Test-Path -LiteralPath $agentHeartbeatDir)) { $null = New-Item -ItemType Directory -Path $agentHeartbeatDir -Force }
+    ([pscustomobject]@{
+            hostname = 'api-host-smoke'; user = 'smoke'; pid = 4242; mode = 'claude'
+            pollSeconds = 5; claimedCount = 0; lastHeartbeatAt = ([datetime]::UtcNow).ToString('o')
+        } | ConvertTo-Json -Depth 5) | Set-Content -LiteralPath $agentHeartbeatPath -Encoding UTF8
+
     $dispatchStartResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap-agent/start" -Body @{
         repository = 'smoke-owner/smoke-dispatch-repo'
         roadmapPath = $dispatchRoadmapPath
@@ -1121,7 +1155,16 @@ try {
     $dispatchSummaryPath = Join-Path $WorkspaceRoot ("output\roadmap-task-history\runs\{0}.summary.json" -f $dispatchRunId)
     $dispatchSummary = Get-Content -LiteralPath $dispatchSummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json
     if ([string]$dispatchSummary.status -ne 'queued') { throw ("run summary status expected 'queued', got '{0}'" -f $dispatchSummary.status) }
-    Write-Host ("  start route enqueued run {0} (queue line + summary proven)" -f $dispatchRunId) -ForegroundColor DarkGray
+    # Put the operator's heartbeat back exactly as found, before anything else
+    # in this suite reads it. The dispatch section below does its own backup and
+    # restore, and it must capture the real file rather than this fixture.
+    if ($null -ne $agentHeartbeatBackup) {
+        Set-Content -LiteralPath $agentHeartbeatPath -Value $agentHeartbeatBackup -Encoding UTF8 -NoNewline
+    }
+    elseif (Test-Path -LiteralPath $agentHeartbeatPath) {
+        Remove-Item -LiteralPath $agentHeartbeatPath -Force
+    }
+    Write-Host ("  start route enqueued run {0} (queue line + summary proven, refusal proven first)" -f $dispatchRunId) -ForegroundColor DarkGray
 
     # approve-push contract gates: 400 (no runId), 404 (unknown run), 409 (wrong
     # state — a 'queued' run must not be pushable).
@@ -3038,6 +3081,7 @@ A release should not be marked `done` unless:
         # only become `dispatched` or `dispatch-failed` — an approval recorded
         # here and then refused would strand the packet permanently.
         $approveHeartbeatPath = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.heartbeat.json'
+        $approveHeartbeatBackup = if (Test-Path -LiteralPath $approveHeartbeatPath) { Get-Content -LiteralPath $approveHeartbeatPath -Raw -Encoding UTF8 } else { $null }
         if (Test-Path -LiteralPath $approveHeartbeatPath) { Remove-Item -LiteralPath $approveHeartbeatPath -Force }
         $queueBeforeRefusal = if (Test-Path -LiteralPath $packagingQueuePath) { Get-Content -LiteralPath $packagingQueuePath -Raw -Encoding UTF8 } else { '' }
         $approveNoRunner = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/automation/packages/approve" -Body @{ packetId = [string]$packagedPacket.packetId; actor = 'api-host-smoke' }
@@ -3066,6 +3110,14 @@ A release should not be marked `done` unless:
         if (-not (Test-Path -LiteralPath $packagingSummaryPath)) { throw 'Approval did not write the run summary the operator runner claims on' }
         if ([string]((Get-Content -LiteralPath $packagingSummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json).status) -ne 'queued') {
             throw 'The dispatched run summary must read status=queued for the runner to claim it'
+        }
+
+        # The operator's heartbeat, put back exactly as found.
+        if ($null -ne $approveHeartbeatBackup) {
+            Set-Content -LiteralPath $approveHeartbeatPath -Value $approveHeartbeatBackup -Encoding UTF8 -NoNewline
+        }
+        elseif (Test-Path -LiteralPath $approveHeartbeatPath) {
+            Remove-Item -LiteralPath $approveHeartbeatPath -Force
         }
 
         # A dispatched packet is terminal: re-approving is a 409, never a second dispatch.

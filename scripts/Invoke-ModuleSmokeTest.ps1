@@ -4356,44 +4356,99 @@ Write-Step 'Dispatch gate coverage — every surface that queues work consults t
     # stranded, but the operator still reviewed a prompt, clicked an enabled
     # button, and got an error — the dead end the milestone exists to remove.
     #
-    # This derives its scope from the call sites rather than a maintained list,
-    # which is the repeatedly-learned lesson here: a list names the instances
-    # somebody remembered. A fifth dispatch surface added tomorrow fails this
-    # check until it consults the gate.
+    # Scope derived from the BACKEND, in two hops, because naming one client
+    # function is what let this miss surfaces twice. The first version watched
+    # `executeRoadmapDispatch` and passed while RepositoryImprovementWorkflowModal
+    # and OperationsWorkspaceView sat ungated; the second still passed while
+    # RoadmapViewerModal called `startRoadmapTask` — a different client function
+    # reaching a different route to the same queue.
+    #
+    # Hop 1: which api-host routes refuse on runner presence.
+    # Hop 2: which apiClient functions post to those routes.
+    # Then: every component calling one of those functions must consult the gate.
     $frontendRoot = Join-Path $WorkspaceRoot 'frontend'
-    $dispatchFn = 'executeRoadmapDispatch'
     $gateFn = 'resolveDispatchGate'
+    $apiClientPath = Join-Path $frontendRoot 'services\apiClient.ts'
+    if (-not (Test-Path -LiteralPath $apiClientPath)) { throw 'frontend/services/apiClient.ts not found; the gate-coverage assertion is vacuous.' }
+    $apiClientText = Get-Content -LiteralPath $apiClientPath -Raw -Encoding UTF8
+
+    $gatedPaths = @()
+    foreach ($clause in @($hostAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.SwitchStatementAst] }, $true) | ForEach-Object { $_.Clauses })) {
+        $routeName = $clause.Item1.Extent.Text.Trim("'`"")
+        if ($routeName -notmatch '^(POST|PUT|PATCH) (?<path>\S+)$') { continue }
+        # Capture before the next -match: PowerShell overwrites $Matches on every
+        # comparison, so reading it after the presence test yields the wrong one.
+        $routePath = $Matches['path']
+        if ($clause.Item2.Extent.Text -notmatch 'Get-RunnerPresence') { continue }
+        $gatedPaths += $routePath
+    }
+    if (@($gatedPaths).Count -eq 0) { throw 'No api-host route refuses on runner presence; the frontend gate-coverage assertion is vacuous.' }
+
+    # Bind each path to the function whose OWN body contains it. Splitting on the
+    # export boundary matters: a fixed-width lookahead spans neighbouring bodies
+    # and produced false positives for getRunnerPresence (which reads presence,
+    # never queues) and submitRoadmapRepairPr (a different route entirely).
+    # apiClient posts to paths without the /api prefix, so match on both forms.
+    $exportMatches = @([regex]::Matches($apiClientText, 'export\s+async\s+function\s+(?<fn>\w+)'))
+    $clientFns = @()
+    for ($i = 0; $i -lt @($exportMatches).Count; $i++) {
+        $start = $exportMatches[$i].Index
+        $end = if ($i + 1 -lt @($exportMatches).Count) { $exportMatches[$i + 1].Index } else { $apiClientText.Length }
+        $bodyText = $apiClientText.Substring($start, $end - $start)
+        foreach ($p in @($gatedPaths | Sort-Object -Unique)) {
+            $short = $p -replace '^/api', ''
+            foreach ($form in @($p, $short)) {
+                if ($bodyText -match ("['`"]" + [regex]::Escape($form) + "['`"]")) {
+                    $clientFns += $exportMatches[$i].Groups['fn'].Value
+                }
+            }
+        }
+    }
+    $clientFns = @($clientFns | Sort-Object -Unique)
+    if (@($clientFns).Count -eq 0) {
+        throw ("No apiClient function was found posting to any gated route ({0}); the frontend gate-coverage assertion is vacuous." -f (@($gatedPaths | Sort-Object -Unique) -join ', '))
+    }
 
     $sourceFiles = @(Get-ChildItem -Path $frontendRoot -Recurse -File -Include '*.ts', '*.tsx' -ErrorAction SilentlyContinue |
-        Where-Object { $_.FullName -notmatch '\\node_modules\\|\\dist\\' })
+        Where-Object { $_.FullName -notmatch '\\node_modules\\|\\dist\\' -and $_.FullName -ne $apiClientPath })
     if (@($sourceFiles).Count -eq 0) { throw 'No frontend sources found; the dispatch gate-coverage assertion is vacuous.' }
 
     $callSites = @()
     foreach ($file in $sourceFiles) {
         $text = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8
         if ([string]::IsNullOrEmpty($text)) { continue }
-        # The declaration is not a call site. Everything else that invokes it is.
-        if ($text -match ("(?m)^\s*export\s+async\s+function\s+{0}\s*\(" -f [regex]::Escape($dispatchFn))) { continue }
-        if ($text -notmatch ("{0}\s*\(" -f [regex]::Escape($dispatchFn))) { continue }
+        $hits = @($clientFns | Where-Object { $text -match ("{0}\s*\(" -f [regex]::Escape($_)) })
+        if (@($hits).Count -eq 0) { continue }
+        # Two shapes both count as gated, because both leave the operator with a
+        # control that names its precondition:
+        #   * the file resolves the gate itself (the control lives here), or
+        #   * the file reads presence and hands it to the child that renders the
+        #     control (Dashboard -> PackagedItemQueue).
+        # Requiring resolveDispatchGate in a container that already forwards
+        # presence would be cargo-cult: it would add a call nothing reads. What
+        # this still catches is the case that matters — a surface that queues
+        # work while ignoring presence entirely.
         $callSites += [pscustomobject]@{
             Path    = $file.FullName.Substring($WorkspaceRoot.Length).TrimStart('\', '/').Replace('\', '/')
-            HasGate = ($text -match [regex]::Escape($gateFn))
+            Calls   = (@($hits) -join '/')
+            HasGate = (($text -match [regex]::Escape($gateFn)) -or ($text -match 'getRunnerPresence'))
         }
     }
 
     if (@($callSites).Count -eq 0) {
-        throw "No caller of $dispatchFn found in frontend/. Either the call was renamed or this assertion has stopped checking anything."
+        throw ("No frontend surface calls any of {0}. Either they were renamed or this assertion has stopped checking anything." -f (@($clientFns) -join ', '))
     }
 
     $ungated = @($callSites | Where-Object { -not $_.HasGate })
     if (@($ungated).Count -gt 0) {
-        throw (("{0} surface(s) call {1} without consulting {2}, so each offers an enabled control that the backend will refuse with 409: {3}. " +
-                'Import the gate and disable the control with its unmet precondition named, rather than letting the operator find out after reviewing a prompt.') -f `
-            @($ungated).Count, $dispatchFn, $gateFn, (@($ungated | ForEach-Object { $_.Path }) -join ', '))
+        throw (("{0} surface(s) queue work while ignoring runner presence entirely, so each offers an enabled control the backend will refuse with 409: {2}. " +
+                "Either resolve {1} here and disable the control with its unmet precondition named, or read getRunnerPresence and pass it to the child that renders the control.") -f `
+            @($ungated).Count, $gateFn, (@($ungated | ForEach-Object { "$($_.Path) [$($_.Calls)]" }) -join ', '))
     }
 
-    Write-Host ("  dispatch gate coverage ok: {0} of {0} surface(s) calling {1} consult {2} ({3})" -f `
-            @($callSites).Count, $dispatchFn, $gateFn, ((@($callSites | ForEach-Object { Split-Path $_.Path -Leaf }) | Sort-Object) -join ', ')) -ForegroundColor DarkGray
+    Write-Host ("  dispatch gate coverage ok: {0} gated route(s) -> {1} client fn(s) -> {2} surface(s), all consulting {3} ({4})" -f `
+            @($gatedPaths | Sort-Object -Unique).Count, @($clientFns).Count, @($callSites).Count, $gateFn,
+            ((@($callSites | ForEach-Object { Split-Path $_.Path -Leaf }) | Sort-Object) -join ', ')) -ForegroundColor DarkGray
 }
 
 Write-Step 'Engine attribution — Release 3.1 M2: a rule-produced preview says so'
