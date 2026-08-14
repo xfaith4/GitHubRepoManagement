@@ -389,6 +389,31 @@ const RoadmapRepairModal: React.FC<RoadmapRepairModalProps> = ({
                     <div><span className="text-gray-500">Branch:</span> <span className="font-mono text-gray-200">{prResult.plan.branch}</span></div>
                     <div><span className="text-gray-500">Base:</span> <span className="font-mono text-gray-200">{prResult.plan.baseBranch}</span></div>
                     <div><span className="text-gray-500">Title:</span> {prResult.plan.title}</div>
+                    {/* Release 3.1 — the base this PR would branch from. The
+                        danger is not a merge conflict: git stages one file and
+                        GitHub's three-way merge makes a real conflict visible.
+                        It is that the PROPOSAL was computed from out-of-date
+                        content, which merges cleanly and reads as correct. */}
+                    {prResult.baseFreshness?.isStale && (
+                      <div
+                        data-testid="repair-pr-stale-base"
+                        className="mt-2 rounded border border-amber-700/50 bg-amber-950/30 px-2.5 py-2 text-amber-200"
+                      >
+                        <div className="font-medium">This clone is not current with its base.</div>
+                        <div className="mt-1 text-amber-200/90">{prResult.baseFreshness.summary}</div>
+                        <div className="mt-1 text-amber-200/70">
+                          A live submit will refuse with <span className="font-mono">stale-base</span> unless it is explicitly acknowledged.
+                        </div>
+                        {prResult.baseFreshness.remedy && (
+                          <div className="mt-1 font-mono text-[11px] text-amber-100/80 break-all">{prResult.baseFreshness.remedy}</div>
+                        )}
+                      </div>
+                    )}
+                    {prResult.baseFreshness && prResult.baseFreshness.state === 'unknown' && (
+                      <div data-testid="repair-pr-freshness-unknown" className="mt-2 text-gray-500">
+                        Base freshness was not verified: {prResult.baseFreshness.summary}
+                      </div>
+                    )}
                     <div className="text-gray-500 italic">{prResult.note}</div>
                   </div>
                 )}
