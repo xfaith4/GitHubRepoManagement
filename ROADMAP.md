@@ -531,16 +531,22 @@ and the work-item trace shipped earlier in this release.
       (`Automation.RoadmapPackaging.ps1` and the dispatch route). The
       queue-contract tripwire keeps their _shape_ identical; nothing yet keeps
       their _behaviour_ identical, and only one has an end-to-end test.
-      **Narrowed 2026-08-13:** the divergence that mattered is closed. A
-      hardening sweep found `Submit-PackagedItemToRunner` — by its own docstring
-      "the only function in the module that makes work runnable" — writing the
-      queue with no presence check at all, so the approve control was gated in
-      the browser only. The gate now lives in the writer rather than its caller,
-      so a future second caller is covered by construction, and a second
-      tripwire derives its scope from the queue filename: any backend function
-      that writes to `roadmap-task-queue.jsonl` must consult
-      `Get-RunnerPresence`. What remains of this issue is the original
-      end-to-end coverage asymmetry, not a behavioural difference.
+      **Narrowed 2026-08-13:** the divergence that mattered is closed. There
+      were **three** roads to the queue, not two, and only one was gated:
+      `POST /api/roadmap/dispatch/execute` wrote it directly and was gated;
+      `POST /api/automation/packages/approve` reached it through
+      `Submit-PackagedItemToRunner` and was not; `POST /api/roadmap-agent/start`
+      reached it through `Start-RoadmapCopilotTask.ps1` →
+      `Add-RoadmapTaskToQueue.ps1` and was not.
+      The third is the instructive one: it never names the queue file, so a
+      tripwire scoped to that filename could not see it — the first version of
+      this check reported full coverage while a road stood open. The check now
+      derives the writer scripts and then the routes that invoke them, so an
+      indirect road counts as a road. `POST /api/roadmap-agent/preview` is
+      exempt because it passes `-PreviewOnly` and returns before the write, and
+      that ordering is itself asserted rather than trusted. What remains of this
+      issue is the original end-to-end coverage asymmetry, not a behavioural
+      difference.
 - [ ] **[non-blocker]** **A deliberate override leaves no durable record.**
       `acknowledgeNoRunner` lets an operator queue into an empty room on
       purpose, and `queuedWithoutRunner` reports it — but only in the HTTP

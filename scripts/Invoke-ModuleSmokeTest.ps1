@@ -4457,15 +4457,14 @@ Write-Step 'Queue-writer gate coverage — every road to the queue consults pres
     # no presence check at all — the approve control was gated in the browser
     # only. A gate that exists on one of two write paths is not a gate.
     #
-    # Scope derived from the queue filename, so a third writer added anywhere
+    # Scope derived from the queue filename, so a new writer added anywhere
     # under backend/ fails this until it consults presence.
     #
-    # Limitation, stated rather than implied: this finds named FUNCTIONS. The
-    # api-host writes its queue line inside a switch clause, not a function, so
-    # it is not counted here — it is covered by the gate-ordering assertion
-    # above, which is AST-scoped to that route. Together the two cover both
-    # roads; neither covers both alone, and a tripwire that overstates its reach
-    # is how the first coverage gap survived review.
+    # This half covers backend FUNCTIONS. The api-host routes are covered by the
+    # second half below, which had to be written after this one found only two of
+    # three roads: POST /api/roadmap-agent/start reaches the same queue through
+    # Start-RoadmapCopilotTask.ps1 -> Add-RoadmapTaskToQueue.ps1 and never names
+    # the queue itself, so nothing scoped to the filename could see it.
     $queueFile = 'roadmap-task-queue.jsonl'
     $writeCommands = @('Add-Content', 'Set-Content', 'Out-File', '_Pack_AppendJsonl', 'Add-RoadmapQueueEntry')
     $backendFiles = @(Get-ChildItem -Path (Join-Path $WorkspaceRoot 'backend') -Recurse -File -Filter '*.ps1' -ErrorAction SilentlyContinue)
@@ -4507,8 +4506,103 @@ Write-Step 'Queue-writer gate coverage — every road to the queue consults pres
             @($ungatedWriters).Count, $queueFile, (@($ungatedWriters | ForEach-Object { "$($_.Name) ($($_.File))" }) -join ', '))
     }
 
-    Write-Host ("  queue-writer gate coverage ok: {0} of {0} backend writer function(s) consult presence ({1}); the api-host route is covered separately by the gate-ordering assertion" -f `
-            @($writers).Count, ((@($writers | ForEach-Object { $_.Name }) | Sort-Object -Unique) -join ', ')) -ForegroundColor DarkGray
+    # ---- Second half: the api-host ROUTES, including the indirect road. -------
+    # A route reaches the queue three ways, and only the first names the file:
+    #   1. writing it directly           (POST /api/roadmap/dispatch/execute)
+    #   2. calling a writer function     (.../packages/approve -> Submit-PackagedItemToRunner)
+    #   3. invoking a writer SCRIPT      (.../roadmap-agent/start -> Start-RoadmapCopilotTask.ps1)
+    # The third is how a road stayed open after the first two were closed, so the
+    # set of writer scripts is derived here rather than listed: any script under
+    # scripts/ that writes the queue, plus any script that invokes one of those.
+    $writerFunctionNames = @($writers | ForEach-Object { $_.Name }) + @('Add-RoadmapQueueEntry')
+    $scriptFiles = @(Get-ChildItem -Path (Join-Path $WorkspaceRoot 'scripts') -File -Filter '*.ps1' -ErrorAction SilentlyContinue)
+    $writerScripts = @()
+    foreach ($s in $scriptFiles) {
+        # Test harnesses write queues in fixture workspaces, never the live one,
+        # and the runner writes status back to entries it already claimed. Neither
+        # is a road by which new work enters the queue, which is what this gates.
+        if ($s.Name -match 'SmokeTest|TestSuite|Invoke-RoadmapTaskRunner') { continue }
+        $text = Get-Content -LiteralPath $s.FullName -Raw -Encoding UTF8
+        if ([string]::IsNullOrEmpty($text)) { continue }
+        if ($text -match [regex]::Escape($queueFile) -and ($writeCommands | Where-Object { $text -match [regex]::Escape($_) })) {
+            $writerScripts += $s.Name
+        }
+    }
+    # One hop out: a script that invokes a writer script is itself a road.
+    foreach ($s in $scriptFiles) {
+        if ($s.Name -in $writerScripts) { continue }
+        if ($s.Name -match 'SmokeTest|TestSuite|Invoke-RoadmapTaskRunner') { continue }
+        $text = Get-Content -LiteralPath $s.FullName -Raw -Encoding UTF8
+        if ([string]::IsNullOrEmpty($text)) { continue }
+        foreach ($w in @($writerScripts)) {
+            if ($text -match [regex]::Escape($w)) { $writerScripts += $s.Name; break }
+        }
+    }
+    if (@($writerScripts).Count -eq 0) { throw 'No queue-writing script found under scripts/; the route-coverage assertion is vacuous.' }
+
+    $queueRoutes = @()
+    foreach ($clause in @($hostAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.SwitchStatementAst] }, $true) | ForEach-Object { $_.Clauses })) {
+        $routeName = $clause.Item1.Extent.Text.Trim("'`"")
+        if ($routeName -notmatch '^(GET|POST|PUT|PATCH|DELETE) ') { continue }
+        $clauseText = $clause.Item2.Extent.Text
+        $reaches = $false
+        if ($clauseText -match [regex]::Escape($queueFile)) { $reaches = $true }
+        foreach ($fnName in @($writerFunctionNames)) { if ($clauseText -match [regex]::Escape($fnName)) { $reaches = $true } }
+        foreach ($scriptName in @($writerScripts)) { if ($clauseText -match [regex]::Escape($scriptName)) { $reaches = $true } }
+        if (-not $reaches) { continue }
+        # A preview is not a road. POST /api/roadmap-agent/preview invokes the
+        # same writer script with -PreviewOnly, which returns before the queue
+        # write — and gating a preview would be its own dead end, since previewing
+        # is exactly what an operator does BEFORE starting a runner. The exemption
+        # is asserted below rather than trusted.
+        if ($clauseText -match '-PreviewOnly') { continue }
+        $queueRoutes += [pscustomobject]@{
+            Route            = $routeName
+            ConsultsPresence = ($clauseText -match 'Get-RunnerPresence')
+        }
+    }
+
+    # The -PreviewOnly exemption is only safe while the script honours it. Assert
+    # the early return precedes the queue-writer invocation; if someone moves the
+    # write above the guard, the exemption above silently stops being true.
+    $writerScriptPath = Join-Path $WorkspaceRoot 'scripts\Start-RoadmapCopilotTask.ps1'
+    if (Test-Path -LiteralPath $writerScriptPath) {
+        $writerErrors = $null
+        $writerAst = [System.Management.Automation.Language.Parser]::ParseFile($writerScriptPath, [ref]$null, [ref]$writerErrors)
+        if (-not ($writerErrors -and @($writerErrors).Count -gt 0)) {
+            $queueRef = @($writerAst.FindAll({
+                        param($n)
+                        $n -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $n.Value -eq 'Add-RoadmapTaskToQueue.ps1'
+                    }, $true)) | Select-Object -First 1
+            $previewReturn = @($writerAst.FindAll({
+                        param($n)
+                        $n -is [System.Management.Automation.Language.IfStatementAst] -and
+                        $n.Extent.Text -match 'PreviewOnly' -and
+                        @($n.FindAll({ param($m) $m -is [System.Management.Automation.Language.ReturnStatementAst] }, $true)).Count -gt 0
+                    }, $true)) | Sort-Object { $_.Extent.StartOffset } | Select-Object -First 1
+            if ($null -eq $queueRef) {
+                throw 'Start-RoadmapCopilotTask.ps1 no longer references Add-RoadmapTaskToQueue.ps1; the -PreviewOnly exemption is asserting nothing.'
+            }
+            if ($null -eq $previewReturn -or $previewReturn.Extent.EndOffset -gt $queueRef.Extent.StartOffset) {
+                throw 'Start-RoadmapCopilotTask.ps1 no longer returns on -PreviewOnly before writing the queue, so exempting POST /api/roadmap-agent/preview from the runner gate is no longer safe.'
+            }
+        }
+    }
+
+    if (@($queueRoutes).Count -lt 3) {
+        throw ("Expected at least 3 api-host routes to reach {0} (dispatch/execute, packages/approve, roadmap-agent/start); found {1}. A road that stopped being detected is a road that stopped being gated." -f `
+            $queueFile, @($queueRoutes).Count)
+    }
+
+    $ungatedRoutes = @($queueRoutes | Where-Object { -not $_.ConsultsPresence })
+    if (@($ungatedRoutes).Count -gt 0) {
+        throw (("{0} api-host route(s) can put work in {1} without consulting Get-RunnerPresence: {2}. " +
+                'Reaching the queue through a script or a helper is still reaching the queue.') -f `
+            @($ungatedRoutes).Count, $queueFile, (@($ungatedRoutes | ForEach-Object { $_.Route }) -join '; '))
+    }
+
+    Write-Host ("  queue-writer gate coverage ok: {0} backend writer function(s) and {1} api-host route(s) consult presence; writer scripts derived: {2}" -f `
+            @($writers).Count, @($queueRoutes).Count, ((@($writerScripts) | Sort-Object -Unique) -join ', ')) -ForegroundColor DarkGray
 }
 
 Write-Step 'Smoke test completed'

@@ -3032,6 +3032,28 @@ A release should not be marked `done` unless:
         if ([int]$approveUnknown.StatusCode -ne 404) { throw "Approving an unknown packet expected 404, got $($approveUnknown.StatusCode)" }
         if ([string]$approveUnknown.Json.category -ne 'packet-not-found') { throw "Expected category packet-not-found; got '$($approveUnknown.Json.category)'" }
 
+        # Release 3.1 — approving into an empty room is refused, and the refusal
+        # must leave NO trace. Prove that before the happy path: with no runner
+        # heartbeat the packet must stay pending-approval, because `approved` may
+        # only become `dispatched` or `dispatch-failed` — an approval recorded
+        # here and then refused would strand the packet permanently.
+        $approveHeartbeatPath = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.heartbeat.json'
+        if (Test-Path -LiteralPath $approveHeartbeatPath) { Remove-Item -LiteralPath $approveHeartbeatPath -Force }
+        $queueBeforeRefusal = if (Test-Path -LiteralPath $packagingQueuePath) { Get-Content -LiteralPath $packagingQueuePath -Raw -Encoding UTF8 } else { '' }
+        $approveNoRunner = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/automation/packages/approve" -Body @{ packetId = [string]$packagedPacket.packetId; actor = 'api-host-smoke' }
+        if ([int]$approveNoRunner.StatusCode -ne 409) { throw "Approving with no runner expected 409, got $($approveNoRunner.StatusCode). Body=$($approveNoRunner.Content)" }
+        if ([string]$approveNoRunner.Json.category -ne 'runner-absent') { throw "Expected category runner-absent; got '$($approveNoRunner.Json.category)'" }
+        if ([string]$approveNoRunner.Json.data.status -ne 'pending-approval') { throw "A refused approval must leave the packet pending-approval so it can be approved again; got '$($approveNoRunner.Json.data.status)'" }
+        $queueAfterRefusal = if (Test-Path -LiteralPath $packagingQueuePath) { Get-Content -LiteralPath $packagingQueuePath -Raw -Encoding UTF8 } else { '' }
+        if ([string]$queueAfterRefusal -ne [string]$queueBeforeRefusal) { throw 'A refused approval wrote to the runner queue; the gate must precede every write.' }
+
+        # A present runner: the same call now goes through, which also proves the
+        # refusal above was the gate and not a broken route.
+        ([pscustomobject]@{
+                hostname = 'api-host-smoke'; user = 'smoke'; pid = 4242; mode = 'copilot'
+                pollSeconds = 5; claimedCount = 0; lastHeartbeatAt = ([datetime]::UtcNow).ToString('o')
+            } | ConvertTo-Json -Depth 5) | Set-Content -LiteralPath $approveHeartbeatPath -Encoding UTF8
+
         # The explicit approval action — the only path to dispatch.
         $approve = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/automation/packages/approve" -Body @{ packetId = [string]$packagedPacket.packetId; actor = 'api-host-smoke' }
         if ([int]$approve.StatusCode -ne 200) { throw "Approving the packet expected 200, got $($approve.StatusCode). Body=$($approve.Content)" }
