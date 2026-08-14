@@ -3647,6 +3647,13 @@ Write-Step 'Loading roadmap-packaging module (Release 2.7 Phase C)'
 $packagingModule = Join-Path $WorkspaceRoot 'backend\modules\automation\Automation.RoadmapPackaging.ps1'
 if (-not (Test-Path -LiteralPath $packagingModule)) { throw "Missing module file: $packagingModule" }
 . $packagingModule
+# Release 3.1 — Submit-PackagedItemToRunner now gates on runner presence and
+# refuses to guess when it cannot evaluate it, so its dependency loads here too.
+# That throw is deliberate: a presence check that silently passes when it cannot
+# run is the shape of guard this repo has been bitten by before.
+$packagingPresenceModule = Join-Path $WorkspaceRoot 'backend\modules\automation\Automation.RunnerPresence.ps1'
+if (-not (Test-Path -LiteralPath $packagingPresenceModule)) { throw "Missing module file: $packagingPresenceModule" }
+. $packagingPresenceModule
 Write-Host '  Roadmap-packaging module loaded successfully' -ForegroundColor DarkGray
 
 Write-Step 'Packaging scope — smoke: every refusal is named, and scope opts in'
@@ -3825,7 +3832,30 @@ Write-Step 'Packaging quota — smoke: over-budget items are skipped and logged,
             schemaVersion = '1'; packetId = $target.packetId; runId = $pkgRun.runId; repoName = 'fav-ready'
             status = 'approved'; recordedAt = (Get-Date).ToUniversalTime().ToString('o'); actor = 'module-smoke'; note = 'approved'
         })
+        # Release 3.1 — prove the REFUSAL first. This is the second road to the
+        # queue, and until 2026-08-13 it had no presence gate at all: the approve
+        # button was disabled in the browser and nothing checked on the server.
+        # With no heartbeat on disk the runner reads absent, so an unacknowledged
+        # approval must write nothing.
+        $pkgQueueProbe = Join-Path $pkgWs 'output\roadmap-task-queue.jsonl'
+        $pkgQueueBefore = if (Test-Path -LiteralPath $pkgQueueProbe) { @(Get-Content -LiteralPath $pkgQueueProbe).Count } else { 0 }
+        $refused = Submit-PackagedItemToRunner -WorkspaceRoot $pkgWs -Packet $target.packet -Actor 'module-smoke'
+        if (-not $refused.refused) { throw 'An approved packet was enqueued with no runner present; the packaging path must refuse like the dispatch route does.' }
+        if ([string]$refused.category -ne 'runner-absent') { throw "Packaging refusal must name its category; got '$($refused.category)'" }
+        $pkgQueueAfterRefusal = if (Test-Path -LiteralPath $pkgQueueProbe) { @(Get-Content -LiteralPath $pkgQueueProbe).Count } else { 0 }
+        if ($pkgQueueAfterRefusal -ne $pkgQueueBefore) { throw 'A refused packaging dispatch still wrote to the queue; the gate must precede the write.' }
+
+        # Now a present runner: same call, and it goes through.
+        $pkgHeartbeatPath = Get-RunnerHeartbeatFilePath -WorkspaceRoot $pkgWs
+        $pkgHeartbeatDir = Split-Path -Parent $pkgHeartbeatPath
+        if (-not (Test-Path -LiteralPath $pkgHeartbeatDir)) { $null = New-Item -ItemType Directory -Path $pkgHeartbeatDir -Force }
+        ([pscustomobject]@{
+                hostname = 'smoke-host'; user = 'smoke'; pid = 4242; mode = 'claude'
+                pollSeconds = 5; claimedCount = 0; lastHeartbeatAt = ([datetime]::UtcNow).ToString('o')
+            } | ConvertTo-Json -Depth 5) | Set-Content -LiteralPath $pkgHeartbeatPath -Encoding UTF8
+
         $dispatch = Submit-PackagedItemToRunner -WorkspaceRoot $pkgWs -Packet $target.packet -Actor 'module-smoke'
+        if ($dispatch.refused) { throw "A present runner must not be refused; got: $($dispatch.message)" }
         if (-not (Test-Path -LiteralPath $dispatch.queuePath)) { throw 'Dispatch did not write the runner queue entry' }
         if (-not (Test-Path -LiteralPath $dispatch.summaryPath)) { throw 'Dispatch did not write the run summary the runner claims on' }
         $summaryStatus = [string]((Get-Content -LiteralPath $dispatch.summaryPath -Raw -Encoding UTF8 | ConvertFrom-Json).status)
@@ -4326,44 +4356,99 @@ Write-Step 'Dispatch gate coverage — every surface that queues work consults t
     # stranded, but the operator still reviewed a prompt, clicked an enabled
     # button, and got an error — the dead end the milestone exists to remove.
     #
-    # This derives its scope from the call sites rather than a maintained list,
-    # which is the repeatedly-learned lesson here: a list names the instances
-    # somebody remembered. A fifth dispatch surface added tomorrow fails this
-    # check until it consults the gate.
+    # Scope derived from the BACKEND, in two hops, because naming one client
+    # function is what let this miss surfaces twice. The first version watched
+    # `executeRoadmapDispatch` and passed while RepositoryImprovementWorkflowModal
+    # and OperationsWorkspaceView sat ungated; the second still passed while
+    # RoadmapViewerModal called `startRoadmapTask` — a different client function
+    # reaching a different route to the same queue.
+    #
+    # Hop 1: which api-host routes refuse on runner presence.
+    # Hop 2: which apiClient functions post to those routes.
+    # Then: every component calling one of those functions must consult the gate.
     $frontendRoot = Join-Path $WorkspaceRoot 'frontend'
-    $dispatchFn = 'executeRoadmapDispatch'
     $gateFn = 'resolveDispatchGate'
+    $apiClientPath = Join-Path $frontendRoot 'services\apiClient.ts'
+    if (-not (Test-Path -LiteralPath $apiClientPath)) { throw 'frontend/services/apiClient.ts not found; the gate-coverage assertion is vacuous.' }
+    $apiClientText = Get-Content -LiteralPath $apiClientPath -Raw -Encoding UTF8
+
+    $gatedPaths = @()
+    foreach ($clause in @($hostAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.SwitchStatementAst] }, $true) | ForEach-Object { $_.Clauses })) {
+        $routeName = $clause.Item1.Extent.Text.Trim("'`"")
+        if ($routeName -notmatch '^(POST|PUT|PATCH) (?<path>\S+)$') { continue }
+        # Capture before the next -match: PowerShell overwrites $Matches on every
+        # comparison, so reading it after the presence test yields the wrong one.
+        $routePath = $Matches['path']
+        if ($clause.Item2.Extent.Text -notmatch 'Get-RunnerPresence') { continue }
+        $gatedPaths += $routePath
+    }
+    if (@($gatedPaths).Count -eq 0) { throw 'No api-host route refuses on runner presence; the frontend gate-coverage assertion is vacuous.' }
+
+    # Bind each path to the function whose OWN body contains it. Splitting on the
+    # export boundary matters: a fixed-width lookahead spans neighbouring bodies
+    # and produced false positives for getRunnerPresence (which reads presence,
+    # never queues) and submitRoadmapRepairPr (a different route entirely).
+    # apiClient posts to paths without the /api prefix, so match on both forms.
+    $exportMatches = @([regex]::Matches($apiClientText, 'export\s+async\s+function\s+(?<fn>\w+)'))
+    $clientFns = @()
+    for ($i = 0; $i -lt @($exportMatches).Count; $i++) {
+        $start = $exportMatches[$i].Index
+        $end = if ($i + 1 -lt @($exportMatches).Count) { $exportMatches[$i + 1].Index } else { $apiClientText.Length }
+        $bodyText = $apiClientText.Substring($start, $end - $start)
+        foreach ($p in @($gatedPaths | Sort-Object -Unique)) {
+            $short = $p -replace '^/api', ''
+            foreach ($form in @($p, $short)) {
+                if ($bodyText -match ("['`"]" + [regex]::Escape($form) + "['`"]")) {
+                    $clientFns += $exportMatches[$i].Groups['fn'].Value
+                }
+            }
+        }
+    }
+    $clientFns = @($clientFns | Sort-Object -Unique)
+    if (@($clientFns).Count -eq 0) {
+        throw ("No apiClient function was found posting to any gated route ({0}); the frontend gate-coverage assertion is vacuous." -f (@($gatedPaths | Sort-Object -Unique) -join ', '))
+    }
 
     $sourceFiles = @(Get-ChildItem -Path $frontendRoot -Recurse -File -Include '*.ts', '*.tsx' -ErrorAction SilentlyContinue |
-        Where-Object { $_.FullName -notmatch '\\node_modules\\|\\dist\\' })
+        Where-Object { $_.FullName -notmatch '\\node_modules\\|\\dist\\' -and $_.FullName -ne $apiClientPath })
     if (@($sourceFiles).Count -eq 0) { throw 'No frontend sources found; the dispatch gate-coverage assertion is vacuous.' }
 
     $callSites = @()
     foreach ($file in $sourceFiles) {
         $text = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8
         if ([string]::IsNullOrEmpty($text)) { continue }
-        # The declaration is not a call site. Everything else that invokes it is.
-        if ($text -match ("(?m)^\s*export\s+async\s+function\s+{0}\s*\(" -f [regex]::Escape($dispatchFn))) { continue }
-        if ($text -notmatch ("{0}\s*\(" -f [regex]::Escape($dispatchFn))) { continue }
+        $hits = @($clientFns | Where-Object { $text -match ("{0}\s*\(" -f [regex]::Escape($_)) })
+        if (@($hits).Count -eq 0) { continue }
+        # Two shapes both count as gated, because both leave the operator with a
+        # control that names its precondition:
+        #   * the file resolves the gate itself (the control lives here), or
+        #   * the file reads presence and hands it to the child that renders the
+        #     control (Dashboard -> PackagedItemQueue).
+        # Requiring resolveDispatchGate in a container that already forwards
+        # presence would be cargo-cult: it would add a call nothing reads. What
+        # this still catches is the case that matters — a surface that queues
+        # work while ignoring presence entirely.
         $callSites += [pscustomobject]@{
             Path    = $file.FullName.Substring($WorkspaceRoot.Length).TrimStart('\', '/').Replace('\', '/')
-            HasGate = ($text -match [regex]::Escape($gateFn))
+            Calls   = (@($hits) -join '/')
+            HasGate = (($text -match [regex]::Escape($gateFn)) -or ($text -match 'getRunnerPresence'))
         }
     }
 
     if (@($callSites).Count -eq 0) {
-        throw "No caller of $dispatchFn found in frontend/. Either the call was renamed or this assertion has stopped checking anything."
+        throw ("No frontend surface calls any of {0}. Either they were renamed or this assertion has stopped checking anything." -f (@($clientFns) -join ', '))
     }
 
     $ungated = @($callSites | Where-Object { -not $_.HasGate })
     if (@($ungated).Count -gt 0) {
-        throw (("{0} surface(s) call {1} without consulting {2}, so each offers an enabled control that the backend will refuse with 409: {3}. " +
-                'Import the gate and disable the control with its unmet precondition named, rather than letting the operator find out after reviewing a prompt.') -f `
-            @($ungated).Count, $dispatchFn, $gateFn, (@($ungated | ForEach-Object { $_.Path }) -join ', '))
+        throw (("{0} surface(s) queue work while ignoring runner presence entirely, so each offers an enabled control the backend will refuse with 409: {2}. " +
+                "Either resolve {1} here and disable the control with its unmet precondition named, or read getRunnerPresence and pass it to the child that renders the control.") -f `
+            @($ungated).Count, $gateFn, (@($ungated | ForEach-Object { "$($_.Path) [$($_.Calls)]" }) -join ', '))
     }
 
-    Write-Host ("  dispatch gate coverage ok: {0} of {0} surface(s) calling {1} consult {2} ({3})" -f `
-            @($callSites).Count, $dispatchFn, $gateFn, ((@($callSites | ForEach-Object { Split-Path $_.Path -Leaf }) | Sort-Object) -join ', ')) -ForegroundColor DarkGray
+    Write-Host ("  dispatch gate coverage ok: {0} gated route(s) -> {1} client fn(s) -> {2} surface(s), all consulting {3} ({4})" -f `
+            @($gatedPaths | Sort-Object -Unique).Count, @($clientFns).Count, @($callSites).Count, $gateFn,
+            ((@($callSites | ForEach-Object { Split-Path $_.Path -Leaf }) | Sort-Object) -join ', ')) -ForegroundColor DarkGray
 }
 
 Write-Step 'Engine attribution — Release 3.1 M2: a rule-produced preview says so'
@@ -4417,6 +4502,162 @@ Write-Step 'Engine attribution — Release 3.1 M2: a rule-produced preview says 
     }
 
     Write-Host '  engine attribution ok: preview reaches no provider, payload declares deterministic-rules + handoff, modal renders it' -ForegroundColor DarkGray
+}
+
+Write-Step 'Queue-writer gate coverage — every road to the queue consults presence'
+& {
+    # The frontend tripwire above covers the surfaces that CALL the dispatch
+    # route. It cannot see the other road: POST /api/automation/packages/approve
+    # reaches the same queue file through Submit-PackagedItemToRunner, which had
+    # no presence check at all — the approve control was gated in the browser
+    # only. A gate that exists on one of two write paths is not a gate.
+    #
+    # Scope derived from the queue filename, so a new writer added anywhere
+    # under backend/ fails this until it consults presence.
+    #
+    # This half covers backend FUNCTIONS. The api-host routes are covered by the
+    # second half below, which had to be written after this one found only two of
+    # three roads: POST /api/roadmap-agent/start reaches the same queue through
+    # Start-RoadmapCopilotTask.ps1 -> Add-RoadmapTaskToQueue.ps1 and never names
+    # the queue itself, so nothing scoped to the filename could see it.
+    $queueFile = 'roadmap-task-queue.jsonl'
+    $writeCommands = @('Add-Content', 'Set-Content', 'Out-File', '_Pack_AppendJsonl', 'Add-RoadmapQueueEntry')
+    $backendFiles = @(Get-ChildItem -Path (Join-Path $WorkspaceRoot 'backend') -Recurse -File -Filter '*.ps1' -ErrorAction SilentlyContinue)
+    if (@($backendFiles).Count -eq 0) { throw 'No backend PowerShell found; the queue-writer assertion is vacuous.' }
+
+    $writers = @()
+    foreach ($file in $backendFiles) {
+        $fileErrors = $null
+        $fileAst = [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$null, [ref]$fileErrors)
+        if ($fileErrors -and @($fileErrors).Count -gt 0) { continue }
+
+        foreach ($fn in @($fileAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true))) {
+            $body = $fn.Extent.Text
+            if ($body -notmatch [regex]::Escape($queueFile)) { continue }
+            # Naming the file is not writing to it — Get-QueuedTaskBacklog and the
+            # trace joiner both read it, and gating a read would be nonsense.
+            $writesHere = @($fn.FindAll({
+                        param($n)
+                        $n -is [System.Management.Automation.Language.CommandAst] -and
+                        $n.GetCommandName() -in $writeCommands
+                    }, $true))
+            if (@($writesHere).Count -eq 0) { continue }
+            $writers += [pscustomobject]@{
+                Name       = $fn.Name
+                File       = $file.FullName.Substring($WorkspaceRoot.Length).TrimStart('\', '/').Replace('\', '/')
+                ConsultsPresence = ($body -match 'Get-RunnerPresence')
+            }
+        }
+    }
+
+    if (@($writers).Count -eq 0) {
+        throw "No function writing to $queueFile was found under backend/. Either the queue moved or this assertion has stopped checking anything."
+    }
+
+    $ungatedWriters = @($writers | Where-Object { -not $_.ConsultsPresence })
+    if (@($ungatedWriters).Count -gt 0) {
+        throw (("{0} function(s) write to {1} without consulting Get-RunnerPresence: {2}. " +
+                'Work queued with nothing able to claim it is stranded whichever road it took, so the gate belongs on the write, not on the surface that offers it.') -f `
+            @($ungatedWriters).Count, $queueFile, (@($ungatedWriters | ForEach-Object { "$($_.Name) ($($_.File))" }) -join ', '))
+    }
+
+    # ---- Second half: the api-host ROUTES, including the indirect road. -------
+    # A route reaches the queue three ways, and only the first names the file:
+    #   1. writing it directly           (POST /api/roadmap/dispatch/execute)
+    #   2. calling a writer function     (.../packages/approve -> Submit-PackagedItemToRunner)
+    #   3. invoking a writer SCRIPT      (.../roadmap-agent/start -> Start-RoadmapCopilotTask.ps1)
+    # The third is how a road stayed open after the first two were closed, so the
+    # set of writer scripts is derived here rather than listed: any script under
+    # scripts/ that writes the queue, plus any script that invokes one of those.
+    $writerFunctionNames = @($writers | ForEach-Object { $_.Name }) + @('Add-RoadmapQueueEntry')
+    $scriptFiles = @(Get-ChildItem -Path (Join-Path $WorkspaceRoot 'scripts') -File -Filter '*.ps1' -ErrorAction SilentlyContinue)
+    $writerScripts = @()
+    foreach ($s in $scriptFiles) {
+        # Test harnesses write queues in fixture workspaces, never the live one,
+        # and the runner writes status back to entries it already claimed. Neither
+        # is a road by which new work enters the queue, which is what this gates.
+        if ($s.Name -match 'SmokeTest|TestSuite|Invoke-RoadmapTaskRunner') { continue }
+        $text = Get-Content -LiteralPath $s.FullName -Raw -Encoding UTF8
+        if ([string]::IsNullOrEmpty($text)) { continue }
+        if ($text -match [regex]::Escape($queueFile) -and ($writeCommands | Where-Object { $text -match [regex]::Escape($_) })) {
+            $writerScripts += $s.Name
+        }
+    }
+    # One hop out: a script that invokes a writer script is itself a road.
+    foreach ($s in $scriptFiles) {
+        if ($s.Name -in $writerScripts) { continue }
+        if ($s.Name -match 'SmokeTest|TestSuite|Invoke-RoadmapTaskRunner') { continue }
+        $text = Get-Content -LiteralPath $s.FullName -Raw -Encoding UTF8
+        if ([string]::IsNullOrEmpty($text)) { continue }
+        foreach ($w in @($writerScripts)) {
+            if ($text -match [regex]::Escape($w)) { $writerScripts += $s.Name; break }
+        }
+    }
+    if (@($writerScripts).Count -eq 0) { throw 'No queue-writing script found under scripts/; the route-coverage assertion is vacuous.' }
+
+    $queueRoutes = @()
+    foreach ($clause in @($hostAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.SwitchStatementAst] }, $true) | ForEach-Object { $_.Clauses })) {
+        $routeName = $clause.Item1.Extent.Text.Trim("'`"")
+        if ($routeName -notmatch '^(GET|POST|PUT|PATCH|DELETE) ') { continue }
+        $clauseText = $clause.Item2.Extent.Text
+        $reaches = $false
+        if ($clauseText -match [regex]::Escape($queueFile)) { $reaches = $true }
+        foreach ($fnName in @($writerFunctionNames)) { if ($clauseText -match [regex]::Escape($fnName)) { $reaches = $true } }
+        foreach ($scriptName in @($writerScripts)) { if ($clauseText -match [regex]::Escape($scriptName)) { $reaches = $true } }
+        if (-not $reaches) { continue }
+        # A preview is not a road. POST /api/roadmap-agent/preview invokes the
+        # same writer script with -PreviewOnly, which returns before the queue
+        # write — and gating a preview would be its own dead end, since previewing
+        # is exactly what an operator does BEFORE starting a runner. The exemption
+        # is asserted below rather than trusted.
+        if ($clauseText -match '-PreviewOnly') { continue }
+        $queueRoutes += [pscustomobject]@{
+            Route            = $routeName
+            ConsultsPresence = ($clauseText -match 'Get-RunnerPresence')
+        }
+    }
+
+    # The -PreviewOnly exemption is only safe while the script honours it. Assert
+    # the early return precedes the queue-writer invocation; if someone moves the
+    # write above the guard, the exemption above silently stops being true.
+    $writerScriptPath = Join-Path $WorkspaceRoot 'scripts\Start-RoadmapCopilotTask.ps1'
+    if (Test-Path -LiteralPath $writerScriptPath) {
+        $writerErrors = $null
+        $writerAst = [System.Management.Automation.Language.Parser]::ParseFile($writerScriptPath, [ref]$null, [ref]$writerErrors)
+        if (-not ($writerErrors -and @($writerErrors).Count -gt 0)) {
+            $queueRef = @($writerAst.FindAll({
+                        param($n)
+                        $n -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $n.Value -eq 'Add-RoadmapTaskToQueue.ps1'
+                    }, $true)) | Select-Object -First 1
+            $previewReturn = @($writerAst.FindAll({
+                        param($n)
+                        $n -is [System.Management.Automation.Language.IfStatementAst] -and
+                        $n.Extent.Text -match 'PreviewOnly' -and
+                        @($n.FindAll({ param($m) $m -is [System.Management.Automation.Language.ReturnStatementAst] }, $true)).Count -gt 0
+                    }, $true)) | Sort-Object { $_.Extent.StartOffset } | Select-Object -First 1
+            if ($null -eq $queueRef) {
+                throw 'Start-RoadmapCopilotTask.ps1 no longer references Add-RoadmapTaskToQueue.ps1; the -PreviewOnly exemption is asserting nothing.'
+            }
+            if ($null -eq $previewReturn -or $previewReturn.Extent.EndOffset -gt $queueRef.Extent.StartOffset) {
+                throw 'Start-RoadmapCopilotTask.ps1 no longer returns on -PreviewOnly before writing the queue, so exempting POST /api/roadmap-agent/preview from the runner gate is no longer safe.'
+            }
+        }
+    }
+
+    if (@($queueRoutes).Count -lt 3) {
+        throw ("Expected at least 3 api-host routes to reach {0} (dispatch/execute, packages/approve, roadmap-agent/start); found {1}. A road that stopped being detected is a road that stopped being gated." -f `
+            $queueFile, @($queueRoutes).Count)
+    }
+
+    $ungatedRoutes = @($queueRoutes | Where-Object { -not $_.ConsultsPresence })
+    if (@($ungatedRoutes).Count -gt 0) {
+        throw (("{0} api-host route(s) can put work in {1} without consulting Get-RunnerPresence: {2}. " +
+                'Reaching the queue through a script or a helper is still reaching the queue.') -f `
+            @($ungatedRoutes).Count, $queueFile, (@($ungatedRoutes | ForEach-Object { $_.Route }) -join '; '))
+    }
+
+    Write-Host ("  queue-writer gate coverage ok: {0} backend writer function(s) and {1} api-host route(s) consult presence; writer scripts derived: {2}" -f `
+            @($writers).Count, @($queueRoutes).Count, ((@($writerScripts) | Sort-Object -Unique) -join ', ')) -ForegroundColor DarkGray
 }
 
 Write-Step 'Smoke test completed'

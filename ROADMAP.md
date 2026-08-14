@@ -531,6 +531,43 @@ and the work-item trace shipped earlier in this release.
       (`Automation.RoadmapPackaging.ps1` and the dispatch route). The
       queue-contract tripwire keeps their _shape_ identical; nothing yet keeps
       their _behaviour_ identical, and only one has an end-to-end test.
+      **Narrowed 2026-08-13:** the divergence that mattered is closed. There
+      were **three** roads to the queue, not two, and only one was gated:
+      `POST /api/roadmap/dispatch/execute` wrote it directly and was gated;
+      `POST /api/automation/packages/approve` reached it through
+      `Submit-PackagedItemToRunner` and was not; `POST /api/roadmap-agent/start`
+      reached it through `Start-RoadmapCopilotTask.ps1` →
+      `Add-RoadmapTaskToQueue.ps1` and was not.
+      The third is the instructive one: it never names the queue file, so a
+      tripwire scoped to that filename could not see it — the first version of
+      this check reported full coverage while a road stood open. The check now
+      derives the writer scripts and then the routes that invoke them, so an
+      indirect road counts as a road. `POST /api/roadmap-agent/preview` is
+      exempt because it passes `-PreviewOnly` and returns before the write, and
+      that ordering is itself asserted rather than trusted.
+
+      The frontend check was rebuilt for the same reason, having failed the same
+      way twice: scoped to `executeRoadmapDispatch` it passed while two surfaces
+      sat ungated, and after those were fixed it still passed while
+      `RoadmapViewerModal` queued through `startRoadmapTask` — a different client
+      function, to a different route, to the same queue. It now derives its scope
+      from the backend in two hops: routes that refuse on presence → the
+      `apiClient` functions posting to them → every component calling one. Five
+      surfaces, all gated. A container that forwards presence to the child
+      rendering the control counts as gated; requiring a redundant
+      `resolveDispatchGate` in `Dashboard` would add a call nothing reads.
+
+      What remains of this issue is the original end-to-end coverage asymmetry,
+      not a behavioural difference.
+- [ ] **[non-blocker]** **A deliberate override leaves no durable record.**
+      `acknowledgeNoRunner` lets an operator queue into an empty room on
+      purpose, and `queuedWithoutRunner` reports it — but only in the HTTP
+      response. Neither the queue entry nor the run summary records it, so the
+      next person triaging a stranded pile cannot tell a deliberate override
+      from a gate that failed. That is precisely the ambiguity the 2026-08-11
+      triage had to reconstruct from timestamps. The queue entry shape is
+      locked by the queue-contract tripwire, so the run summary is the right
+      home for it. _(state: planned — recorded 2026-08-13)_
 
 ---
 
