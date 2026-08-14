@@ -1200,14 +1200,52 @@ function Submit-PackagedItemToRunner {
     .DESCRIPTION
         This is the only function in the module that makes work runnable, and it
         takes an already-approved packet — it never decides approval for itself.
+
+        Release 3.1 — because it is the only such function, it is also where the
+        runner-presence gate belongs. The dispatch route got that gate first, but
+        this is the *other* road to the same queue file, and it had none: the
+        approve button was gated in the browser only, which is the same defect
+        the release exists to fix moved one layer down. Gating the writer rather
+        than its caller means a future second caller is covered by construction.
+    .OUTPUTS
+        On success, an object carrying runId/branch/queuePath/summaryPath.
+        On refusal, an object with `refused = $true` and the named category —
+        NOT an exception. A refusal is a state the caller should report, not a
+        failure it should log as one; throwing here made the route record a
+        `dispatch-failed` packet for work that was never attempted.
     #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
         [Parameter(Mandatory = $true)][object]$Packet,
         [Parameter()][AllowEmptyString()][string]$Actor = '',
-        [Parameter()][AllowEmptyString()][string]$RunId = ''
+        [Parameter()][AllowEmptyString()][string]$RunId = '',
+        # The operator saying "queue it anyway, I am about to start a runner".
+        # Mirrors acknowledgeNoRunner on POST /api/roadmap/dispatch/execute.
+        [Parameter()][switch]$AcknowledgeNoRunner
     )
+
+    # A missing presence function is a wiring defect, not a runtime state, and
+    # must not be read as "no evidence of absence, so proceed". A guard that
+    # passes whenever it cannot run is worse than no guard: it moves the failure
+    # away from its cause and looks like protection in a code review.
+    if (-not (Get-Command -Name 'Get-RunnerPresence' -ErrorAction SilentlyContinue)) {
+        throw 'Submit-PackagedItemToRunner cannot evaluate runner presence: Get-RunnerPresence is not loaded. Dot-source Automation.RunnerPresence.ps1 before making work runnable.'
+    }
+
+    $presence = Get-RunnerPresence -WorkspaceRoot $WorkspaceRoot
+    if (-not $presence.present -and -not $AcknowledgeNoRunner) {
+        $backlog = Get-QueuedTaskBacklog -WorkspaceRoot $WorkspaceRoot
+        return [pscustomobject]@{
+            refused       = $true
+            category      = 'runner-absent'
+            message       = ("No operator runner can claim this packet, so approving it into the queue would strand it. {0} Start one with: pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1" -f [string]$presence.message)
+            runner        = $presence
+            strandedCount = [int]$backlog.queuedTotal
+            overrideField = 'acknowledgeNoRunner'
+            queuedNothing = $true
+        }
+    }
 
     if ([string]::IsNullOrWhiteSpace($RunId)) { $RunId = New-PackagedItemDispatchRunId }
 
@@ -1222,6 +1260,9 @@ function Submit-PackagedItemToRunner {
     ($summary | ConvertTo-Json -Depth 8) | Set-Content -LiteralPath $summaryPath -Encoding UTF8
 
     return [pscustomobject]@{
+        # Uniform with the refusal shape above, so a caller can branch on one
+        # property under StrictMode instead of testing for its existence.
+        refused     = $false
         runId       = $RunId
         branch      = [string]$entry.branch
         queuePath   = $queuePath

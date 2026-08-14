@@ -7183,9 +7183,21 @@ try {
 
                                 $approveDispatchResult = $null
                                 $approveDispatchError = $null
+                                $approveDispatchRefusal = $null
+                                $approveAcknowledgeNoRunner = $false
+                                if ($body.ContainsKey('acknowledgeNoRunner')) { $approveAcknowledgeNoRunner = [bool]$body.acknowledgeNoRunner }
                                 if ($approveDispatch) {
                                     try {
-                                        $approveDispatchResult = Submit-PackagedItemToRunner -WorkspaceRoot $WorkspaceRoot -Packet $approvePacket -Actor $approveActor
+                                        $approveDispatchResult = Submit-PackagedItemToRunner -WorkspaceRoot $WorkspaceRoot -Packet $approvePacket -Actor $approveActor -AcknowledgeNoRunner:$approveAcknowledgeNoRunner
+                                        # Release 3.1 — a refusal is not a failure. The packet stays
+                                        # `approved` and nothing was written, so it is re-dispatchable
+                                        # once a runner is up; recording `dispatch-failed` here would
+                                        # claim an attempt that never happened.
+                                        if ($approveDispatchResult -and $approveDispatchResult.PSObject.Properties.Name -contains 'refused' -and $approveDispatchResult.refused) {
+                                            $approveDispatchRefusal = $approveDispatchResult
+                                            $approveDispatchResult = $null
+                                        }
+                                        else {
                                         $null = Write-PackagedItemRecord -WorkspaceRoot $WorkspaceRoot -Record ([pscustomobject]@{
                                             schemaVersion = '1'
                                             packetId      = $approvePacketId
@@ -7197,6 +7209,7 @@ try {
                                             dispatchRunId = [string]$approveDispatchResult.runId
                                             note          = ("Enqueued for the operator runner as run {0} on branch {1}." -f $approveDispatchResult.runId, $approveDispatchResult.branch)
                                         })
+                                        }
                                     } catch {
                                         $approveDispatchError = $_.Exception.Message
                                         $null = Write-PackagedItemRecord -WorkspaceRoot $WorkspaceRoot -Record ([pscustomobject]@{
@@ -7210,6 +7223,31 @@ try {
                                             note          = ("Dispatch failed: {0}" -f $approveDispatchError)
                                         })
                                     }
+                                }
+
+                                # Release 3.1 — refused before failed: the packet is approved and
+                                # intact, nothing was queued, and the operator needs the precondition
+                                # rather than a 500 that reads like a broken portal.
+                                if ($approveDispatch -and $null -ne $approveDispatchRefusal) {
+                                    Write-HostLog ("WARN automation.packages.approve correlationId={0} packetId={1} refused - runner {2}, stranded={3} (nothing written, packet stays approved)" -f `
+                                            $correlationId, $approvePacketId, $approveDispatchRefusal.runner.state, $approveDispatchRefusal.strandedCount)
+                                    Add-MetricCounter -Name 'api_requests_total'
+                                    Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                                        success  = $false
+                                        error    = [string]$approveDispatchRefusal.message
+                                        category = 'runner-absent'
+                                        data     = @{
+                                            packetId      = $approvePacketId
+                                            status        = 'approved'
+                                            dispatched    = $false
+                                            runnerCommand = 'pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1'
+                                            runner        = $approveDispatchRefusal.runner
+                                            strandedCount = [int]$approveDispatchRefusal.strandedCount
+                                            overrideField = 'acknowledgeNoRunner'
+                                            queuedNothing = $true
+                                        }
+                                    }
+                                    break
                                 }
 
                                 if ($approveDispatch -and $null -eq $approveDispatchResult) {

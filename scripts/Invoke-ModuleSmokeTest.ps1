@@ -3647,6 +3647,13 @@ Write-Step 'Loading roadmap-packaging module (Release 2.7 Phase C)'
 $packagingModule = Join-Path $WorkspaceRoot 'backend\modules\automation\Automation.RoadmapPackaging.ps1'
 if (-not (Test-Path -LiteralPath $packagingModule)) { throw "Missing module file: $packagingModule" }
 . $packagingModule
+# Release 3.1 — Submit-PackagedItemToRunner now gates on runner presence and
+# refuses to guess when it cannot evaluate it, so its dependency loads here too.
+# That throw is deliberate: a presence check that silently passes when it cannot
+# run is the shape of guard this repo has been bitten by before.
+$packagingPresenceModule = Join-Path $WorkspaceRoot 'backend\modules\automation\Automation.RunnerPresence.ps1'
+if (-not (Test-Path -LiteralPath $packagingPresenceModule)) { throw "Missing module file: $packagingPresenceModule" }
+. $packagingPresenceModule
 Write-Host '  Roadmap-packaging module loaded successfully' -ForegroundColor DarkGray
 
 Write-Step 'Packaging scope — smoke: every refusal is named, and scope opts in'
@@ -3825,7 +3832,30 @@ Write-Step 'Packaging quota — smoke: over-budget items are skipped and logged,
             schemaVersion = '1'; packetId = $target.packetId; runId = $pkgRun.runId; repoName = 'fav-ready'
             status = 'approved'; recordedAt = (Get-Date).ToUniversalTime().ToString('o'); actor = 'module-smoke'; note = 'approved'
         })
+        # Release 3.1 — prove the REFUSAL first. This is the second road to the
+        # queue, and until 2026-08-13 it had no presence gate at all: the approve
+        # button was disabled in the browser and nothing checked on the server.
+        # With no heartbeat on disk the runner reads absent, so an unacknowledged
+        # approval must write nothing.
+        $pkgQueueProbe = Join-Path $pkgWs 'output\roadmap-task-queue.jsonl'
+        $pkgQueueBefore = if (Test-Path -LiteralPath $pkgQueueProbe) { @(Get-Content -LiteralPath $pkgQueueProbe).Count } else { 0 }
+        $refused = Submit-PackagedItemToRunner -WorkspaceRoot $pkgWs -Packet $target.packet -Actor 'module-smoke'
+        if (-not $refused.refused) { throw 'An approved packet was enqueued with no runner present; the packaging path must refuse like the dispatch route does.' }
+        if ([string]$refused.category -ne 'runner-absent') { throw "Packaging refusal must name its category; got '$($refused.category)'" }
+        $pkgQueueAfterRefusal = if (Test-Path -LiteralPath $pkgQueueProbe) { @(Get-Content -LiteralPath $pkgQueueProbe).Count } else { 0 }
+        if ($pkgQueueAfterRefusal -ne $pkgQueueBefore) { throw 'A refused packaging dispatch still wrote to the queue; the gate must precede the write.' }
+
+        # Now a present runner: same call, and it goes through.
+        $pkgHeartbeatPath = Get-RunnerHeartbeatFilePath -WorkspaceRoot $pkgWs
+        $pkgHeartbeatDir = Split-Path -Parent $pkgHeartbeatPath
+        if (-not (Test-Path -LiteralPath $pkgHeartbeatDir)) { $null = New-Item -ItemType Directory -Path $pkgHeartbeatDir -Force }
+        ([pscustomobject]@{
+                hostname = 'smoke-host'; user = 'smoke'; pid = 4242; mode = 'claude'
+                pollSeconds = 5; claimedCount = 0; lastHeartbeatAt = ([datetime]::UtcNow).ToString('o')
+            } | ConvertTo-Json -Depth 5) | Set-Content -LiteralPath $pkgHeartbeatPath -Encoding UTF8
+
         $dispatch = Submit-PackagedItemToRunner -WorkspaceRoot $pkgWs -Packet $target.packet -Actor 'module-smoke'
+        if ($dispatch.refused) { throw "A present runner must not be refused; got: $($dispatch.message)" }
         if (-not (Test-Path -LiteralPath $dispatch.queuePath)) { throw 'Dispatch did not write the runner queue entry' }
         if (-not (Test-Path -LiteralPath $dispatch.summaryPath)) { throw 'Dispatch did not write the run summary the runner claims on' }
         $summaryStatus = [string]((Get-Content -LiteralPath $dispatch.summaryPath -Raw -Encoding UTF8 | ConvertFrom-Json).status)
@@ -4417,6 +4447,68 @@ Write-Step 'Engine attribution — Release 3.1 M2: a rule-produced preview says 
     }
 
     Write-Host '  engine attribution ok: preview reaches no provider, payload declares deterministic-rules + handoff, modal renders it' -ForegroundColor DarkGray
+}
+
+Write-Step 'Queue-writer gate coverage — every road to the queue consults presence'
+& {
+    # The frontend tripwire above covers the surfaces that CALL the dispatch
+    # route. It cannot see the other road: POST /api/automation/packages/approve
+    # reaches the same queue file through Submit-PackagedItemToRunner, which had
+    # no presence check at all — the approve control was gated in the browser
+    # only. A gate that exists on one of two write paths is not a gate.
+    #
+    # Scope derived from the queue filename, so a third writer added anywhere
+    # under backend/ fails this until it consults presence.
+    #
+    # Limitation, stated rather than implied: this finds named FUNCTIONS. The
+    # api-host writes its queue line inside a switch clause, not a function, so
+    # it is not counted here — it is covered by the gate-ordering assertion
+    # above, which is AST-scoped to that route. Together the two cover both
+    # roads; neither covers both alone, and a tripwire that overstates its reach
+    # is how the first coverage gap survived review.
+    $queueFile = 'roadmap-task-queue.jsonl'
+    $writeCommands = @('Add-Content', 'Set-Content', 'Out-File', '_Pack_AppendJsonl', 'Add-RoadmapQueueEntry')
+    $backendFiles = @(Get-ChildItem -Path (Join-Path $WorkspaceRoot 'backend') -Recurse -File -Filter '*.ps1' -ErrorAction SilentlyContinue)
+    if (@($backendFiles).Count -eq 0) { throw 'No backend PowerShell found; the queue-writer assertion is vacuous.' }
+
+    $writers = @()
+    foreach ($file in $backendFiles) {
+        $fileErrors = $null
+        $fileAst = [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$null, [ref]$fileErrors)
+        if ($fileErrors -and @($fileErrors).Count -gt 0) { continue }
+
+        foreach ($fn in @($fileAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true))) {
+            $body = $fn.Extent.Text
+            if ($body -notmatch [regex]::Escape($queueFile)) { continue }
+            # Naming the file is not writing to it — Get-QueuedTaskBacklog and the
+            # trace joiner both read it, and gating a read would be nonsense.
+            $writesHere = @($fn.FindAll({
+                        param($n)
+                        $n -is [System.Management.Automation.Language.CommandAst] -and
+                        $n.GetCommandName() -in $writeCommands
+                    }, $true))
+            if (@($writesHere).Count -eq 0) { continue }
+            $writers += [pscustomobject]@{
+                Name       = $fn.Name
+                File       = $file.FullName.Substring($WorkspaceRoot.Length).TrimStart('\', '/').Replace('\', '/')
+                ConsultsPresence = ($body -match 'Get-RunnerPresence')
+            }
+        }
+    }
+
+    if (@($writers).Count -eq 0) {
+        throw "No function writing to $queueFile was found under backend/. Either the queue moved or this assertion has stopped checking anything."
+    }
+
+    $ungatedWriters = @($writers | Where-Object { -not $_.ConsultsPresence })
+    if (@($ungatedWriters).Count -gt 0) {
+        throw (("{0} function(s) write to {1} without consulting Get-RunnerPresence: {2}. " +
+                'Work queued with nothing able to claim it is stranded whichever road it took, so the gate belongs on the write, not on the surface that offers it.') -f `
+            @($ungatedWriters).Count, $queueFile, (@($ungatedWriters | ForEach-Object { "$($_.Name) ($($_.File))" }) -join ', '))
+    }
+
+    Write-Host ("  queue-writer gate coverage ok: {0} of {0} backend writer function(s) consult presence ({1}); the api-host route is covered separately by the gate-ordering assertion" -f `
+            @($writers).Count, ((@($writers | ForEach-Object { $_.Name }) | Sort-Object -Unique) -join ', ')) -ForegroundColor DarkGray
 }
 
 Write-Step 'Smoke test completed'

@@ -531,6 +531,25 @@ and the work-item trace shipped earlier in this release.
       (`Automation.RoadmapPackaging.ps1` and the dispatch route). The
       queue-contract tripwire keeps their _shape_ identical; nothing yet keeps
       their _behaviour_ identical, and only one has an end-to-end test.
+      **Narrowed 2026-08-13:** the divergence that mattered is closed. A
+      hardening sweep found `Submit-PackagedItemToRunner` — by its own docstring
+      "the only function in the module that makes work runnable" — writing the
+      queue with no presence check at all, so the approve control was gated in
+      the browser only. The gate now lives in the writer rather than its caller,
+      so a future second caller is covered by construction, and a second
+      tripwire derives its scope from the queue filename: any backend function
+      that writes to `roadmap-task-queue.jsonl` must consult
+      `Get-RunnerPresence`. What remains of this issue is the original
+      end-to-end coverage asymmetry, not a behavioural difference.
+- [ ] **[non-blocker]** **A deliberate override leaves no durable record.**
+      `acknowledgeNoRunner` lets an operator queue into an empty room on
+      purpose, and `queuedWithoutRunner` reports it — but only in the HTTP
+      response. Neither the queue entry nor the run summary records it, so the
+      next person triaging a stranded pile cannot tell a deliberate override
+      from a gate that failed. That is precisely the ambiguity the 2026-08-11
+      triage had to reconstruct from timestamps. The queue entry shape is
+      locked by the queue-contract tripwire, so the run summary is the right
+      home for it. _(state: planned — recorded 2026-08-13)_
 
 ---
 
