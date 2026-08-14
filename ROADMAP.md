@@ -459,6 +459,39 @@ text and evidence:
       on the improvement-history record (which has no cost field today), and
       render an unmeasured cost as _unmeasured_ rather than as zero.
       _(state: planned — plumbing complete end to end, source absent)_
+- [ ] **Staleness is a visible property of every repo, not a hidden one.**
+      **Shipped 2026-08-14 for the free tier.** `isStale`, `localAhead` and
+      `remoteAhead` were hardcoded `$false`/`0`/`0` in both GitHub scan paths and
+      computed nowhere, while the dashboard had shipped a Stale column, a
+      stale-only quick filter, a group-by-stale control and an ahead/behind badge
+      bound to them for several releases. The column read "No" for all 80+
+      repositories — not because they were current, but because nothing looked.
+      The scan already collected both facts and threw the comparison away: the
+      local side records `git log -1 --format=%cI`, the GitHub side records
+      `pushed_at`, and they meet on the same object in
+      `Add-GitHubMetadataToStatusResult`.
+      [`Git.Staleness.ps1`](backend/modules/git/Git.Staleness.ps1) is that
+      comparison, pure and unit-tested, classifying behind / ahead-or-unpushed /
+      current / unknown with the basis named and the magnitude carried. The grid
+      shows the drift and the remote push date beside the local commit date.
+      _(state: smoke-tested — the matrix is asserted directly and a tripwire
+      fails if any scan path reverts to a literal. `localAhead`/`remoteAhead`
+      remain unwritten rather than zeroed: two dates cannot yield a commit count,
+      and `exactCountsAvailable` says so in the payload.)_
+
+      Remaining, and deliberately not free — both need data the scan does not
+      collect today, so they are scoped separately rather than bundled into a
+      comparison that cost nothing:
+
+      - **Exact ahead/behind counts** need a real ref comparison. `git ls-remote`
+        is the cheaper option (one round trip, no object download) against a
+        fetch per repo; at 80+ repos either is a real charge on Release 3.2's
+        300s cold-scan budget and should be measured before it is adopted.
+      - **Last merged PR** needs a per-repo pulls query (`state=closed` filtered
+        to merged); the scan currently fetches only open-PR counts.
+      - **Most recently modified uncommitted file** needs working-tree stat calls
+        per repo; the scan counts `git status --short` lines but never reads
+        their timestamps.
 - [ ] **No write path may act on a stale clone.** Every write this product makes
       to a managed repo branches from whatever the local working copy happens to
       be, and **`git fetch` appears nowhere in `backend/` or `scripts/`**. The
