@@ -384,6 +384,7 @@ const RepoGitStatusModal = ({ isOpen, repoName, localPath, onClose, onStatusChan
             <button
               onClick={() => { setShowDiscardPanel(prev => !prev); setDiscardConfirmMode(null); }}
               disabled={!hasChanges}
+              title={!hasChanges ? 'The working tree is clean, so there is nothing to discard.' : 'Choose what to discard from the working tree.'}
               className="px-3 py-1.5 text-sm rounded border transition-colors
                 disabled:opacity-40 disabled:cursor-not-allowed
                 border-red-700 text-red-400 hover:bg-red-900/30 hover:text-red-200"

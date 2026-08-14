@@ -36,6 +36,7 @@ import ErrorBoundary from './ErrorBoundary';
 import PortfolioSummarySection from './PortfolioSummarySection';
 import { type ViewTabBadges } from '../lib/viewTabs';
 import { isRepoNeedsAttention } from '../lib/needsAttention';
+import { classifyFetchFailure } from '../lib/fetchFailure';
 import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getAutomationStatus, getPackagedItems, approvePackagedItem, rejectPackagedItem, getRoadmapDependencies, getPortfolioAssessment, refreshAllPortfolioAssessment, setOperationsRepoCuration, getPortfolioTrend, getOperationsRepos, getRunnerPresence } from '../services/apiClient';
 import { type RunnerPresencePayload } from '../lib/runnerPresence';
 import { useSse } from '../hooks/useSse';
@@ -1112,7 +1113,58 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   }, [portfolioAssessment]);
 
   if (error && repos.length === 0) {
-    return <div className="text-center p-8 text-red-400">{error}</div>;
+    // Release 3.1 "enabled means available": every terminal screen says what
+    // comes next. This one used to render the raw exception string alone.
+    const failure = classifyFetchFailure(error, { hasRepos: repos.length > 0 });
+    return (
+      <div className="mx-auto max-w-xl p-8" data-testid="dashboard-load-failure">
+        <div className="rounded-lg border border-red-800/50 bg-red-950/20 px-5 py-4">
+          <div className="text-base font-medium text-red-200">{failure?.headline ?? 'The dashboard could not load.'}</div>
+          <div className="mt-2 text-sm text-gray-300">{failure?.nextStep ?? 'Retry, then check the API host log.'}</div>
+          {failure?.detail && (
+            <div className="mt-3 rounded border border-gray-700 bg-gray-900/60 px-3 py-2 font-mono text-xs text-gray-400 break-all">
+              {failure.detail}
+            </div>
+          )}
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {failure?.retryLabel && (
+              <button
+                onClick={fetchRepoStatus}
+                disabled={loading}
+                data-testid="dashboard-load-failure-retry"
+                title={loading ? 'A load is already in progress.' : 'Re-runs the repository status request.'}
+                className="inline-flex items-center gap-1.5 rounded border border-red-700/60 bg-red-900/30 px-3 py-1.5 text-sm text-red-100 hover:bg-red-900/50 disabled:opacity-50"
+              >
+                {loading && <SpinnerIcon className="w-3.5 h-3.5 animate-spin" />}
+                {loading ? 'Retrying…' : failure.retryLabel}
+              </button>
+            )}
+            <button
+              onClick={() => setIsSettingsModalOpen(true)}
+              disabled={!settings}
+              title={settings
+                ? 'Opens Settings, where local roots and the GitHub owner are configured.'
+                : 'Settings could not be loaded from the backend, so they cannot be edited until the connection is restored.'}
+              className="rounded border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm text-gray-200 hover:bg-gray-700 disabled:opacity-50"
+            >
+              Open Settings
+            </button>
+          </div>
+        </div>
+        {/* This branch returns early, so the modal has to be rendered here too —
+            otherwise the control above opens nothing. */}
+        {settings && (
+          <SettingsModal
+            isOpen={isSettingsModalOpen}
+            onClose={() => setIsSettingsModalOpen(false)}
+            onSave={handleSaveSettings}
+            currentSettings={settings}
+            onConnectGitHub={onConnectGitHub}
+            connectedGitHubUser={connectedGitHubUser}
+          />
+        )}
+      </div>
+    );
   }
 
   const isScanning = loading || isBackgroundRefreshing || settingsLoading;

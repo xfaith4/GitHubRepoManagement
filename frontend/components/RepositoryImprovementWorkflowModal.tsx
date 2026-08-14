@@ -222,7 +222,7 @@ const RepositoryImprovementWorkflowModal: React.FC<RepositoryImprovementWorkflow
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-700 px-5 py-4">
           <button onClick={onClose} className="rounded border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">{phase === 'done' ? 'Close' : 'Cancel'}</button>
-          {phase === 'select' && <button onClick={runScan} disabled={!selectedRepo?.repoPath} className="rounded border border-indigo-500 bg-indigo-700 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-600 disabled:opacity-50">Scan selected repo</button>}
+          {phase === 'select' && <button onClick={runScan} disabled={!selectedRepo?.repoPath} title={!selectedRepo?.repoPath ? 'Select a repository with a local clone — the scan reads files from disk.' : 'Scans the selected repository for improvement opportunities.'} className="rounded border border-indigo-500 bg-indigo-700 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-600 disabled:opacity-50">Scan selected repo</button>}
           {/* Release 3.1 — "Approve and create PR task" is the control ROADMAP.md
               names as the trigger for this release: it stayed enabled through six
               dispatches into a room with no runner. It now renders disabled with
@@ -240,6 +240,7 @@ const RepositoryImprovementWorkflowModal: React.FC<RepositoryImprovementWorkflow
                 <button
                   onClick={() => dispatch({ acknowledgeNoRunner: true })}
                   disabled={!prompt.trim()}
+                  title={!prompt.trim() ? 'The dispatch prompt is empty; there is nothing to queue.' : dispatchGate.unmetPrecondition ?? 'Queue this work anyway.'}
                   data-testid="improvement-dispatch-override"
                   className="rounded border border-amber-700/50 bg-gray-700 px-3 py-2 text-sm text-amber-200 hover:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-40"
                 >

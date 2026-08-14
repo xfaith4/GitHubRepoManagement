@@ -596,6 +596,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
               />
               <button
                 disabled={!newFilterName.trim()}
+                title={!newFilterName.trim() ? 'Name this filter before saving it.' : 'Saves the current filter settings under this name.'}
                 onClick={() => {
                   const entry: SavedFilter = {
                     name: newFilterName.trim(),

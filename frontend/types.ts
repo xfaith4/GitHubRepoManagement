@@ -1452,6 +1452,28 @@ export interface AiDocTemplatesResult {
   roadmapTemplates: AiDocTemplate[];
 }
 
+/**
+ * Token usage and cost for one improvement preview.
+ *
+ * Every count is nullable and null means *unmeasured*, never zero — a zero here
+ * would render as "this run was free", which is a different claim. `source` and
+ * `costBasis` say which kind of blank it is, so a surface can explain itself:
+ *
+ *   source: provider-usage   real counts came back from the model
+ *           absent           the model answered and reported nothing (a defect)
+ *           call-failed      the call errored; usage cannot be known
+ *           not-applicable   no model was called (offline heuristic provider)
+ */
+export interface AiDocUsage {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  measured: boolean;
+  source: 'provider-usage' | 'absent' | 'call-failed' | 'not-applicable';
+  costUsd: number | null;
+  costBasis: string;
+}
+
 export interface AiDocImprovePreviewRequest {
   repoName: string;
   docType: AiDocType;
@@ -1479,6 +1501,7 @@ export interface AiDocImprovePreviewResult {
     after: number;
     delta: number;
   };
+  usage?: AiDocUsage | null;
   warnings: string[];
   generatedAt: string;
 }
@@ -1497,6 +1520,14 @@ export interface AiDocImprovementHistoryItem {
   scoreDelta: number;
   changeSummary: string[];
   warningCount: number;
+  /** Named to match the agent-run metrics of the same name so the two series join without translation. Null = unmeasured. */
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  tokenUsage?: number | null;
+  apiSpendUsd?: number | null;
+  usageMeasured?: boolean;
+  usageSource?: AiDocUsage['source'];
+  costBasis?: string;
   applied: boolean;
   /** 'apply' records are written by the explicit apply action; preview records have no recordType. */
   recordType?: 'preview' | 'apply';

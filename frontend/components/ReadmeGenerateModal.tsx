@@ -256,6 +256,7 @@ export default function ReadmeGenerateModal({
                       <button
                         onClick={() => setShowApplyConfirm(true)}
                         disabled={!editedContent.trim()}
+                        title={!editedContent.trim() ? 'There is no generated README content to apply yet.' : 'Writes this content to README.md in the repository.'}
                         className="px-4 py-2 text-sm bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded transition-colors"
                       >
                         Apply to Repository
@@ -323,6 +324,7 @@ export default function ReadmeGenerateModal({
               onClick={onClose}
               className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
               disabled={phase === 'applying'}
+              title={phase === 'applying' ? 'The README is being written; cancelling now would leave it half-applied.' : 'Closes without applying anything.'}
             >
               {phase === 'applying' ? 'Please wait…' : 'Cancel'}
             </button>

@@ -24,6 +24,7 @@ import {
 } from '../types';
 import { applyAiDocImprovement, evaluateMergeReadiness, executeMergeReadinessMerge, executeRoadmapDispatch, getAgentRuns, getAiDocImprovementHistory, getAiDocTemplates, getMergeReadiness, getOperationsPromptHistory, getOperationsRepoDetail, getReadmeContent, getRoadmapContent, getRunnerPresence, previewAiDocImprovement, refineOperationsPrompt, refreshAgentRun } from '../services/apiClient';
 import { resolveDispatchGate, type RunnerPresencePayload } from '../lib/runnerPresence';
+import { describeUsage } from '../lib/aiUsage';
 import { BranchIcon, DatabaseIcon, HealthIcon, PullRequestIcon, RefreshIcon, RoadmapIcon, SpinnerIcon } from './icons';
 
 interface OperationsWorkspaceViewProps {
@@ -1519,6 +1520,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                         <button
                           onClick={handleRefinePrompt}
                           disabled={refineLoading || !selectedEntry.hasRoadmap}
+                          title={!selectedEntry.hasRoadmap ? 'This repository has no ROADMAP.md, and the refined prompt is built from one.' : refineLoading ? 'A prompt is already being refined.' : 'Builds a refined dispatch prompt from this roadmap.'}
                           className="inline-flex items-center gap-2 rounded-md border border-blue-700/50 bg-blue-950/40 px-3 py-1.5 text-sm text-blue-100 hover:bg-blue-900/50 disabled:opacity-50 transition-colors"
                         >
                           {refineLoading ? <SpinnerIcon className="w-4 h-4" /> : null}
@@ -1527,6 +1529,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                         <button
                           onClick={handleCopyRefinedPrompt}
                           disabled={!(editedPrompt || refinedPrompt)}
+                          title={!(editedPrompt || refinedPrompt) ? 'Generate a refined prompt first — there is nothing to copy yet.' : 'Copies the refined prompt to the clipboard.'}
                           className="rounded-md border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm text-gray-200 hover:bg-gray-700 disabled:opacity-50 transition-colors"
                         >
                           {refinedPromptCopied ? 'Copied' : 'Copy Prompt'}
@@ -1793,6 +1796,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                         <button
                           onClick={handleCopyAiProposed}
                           disabled={!aiPreview?.proposedContent}
+                          title={!aiPreview?.proposedContent ? 'Generate an improvement preview first — there is no proposed document to copy.' : 'Copies the proposed document to the clipboard.'}
                           className="rounded-md border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm text-gray-200 hover:bg-gray-700 disabled:opacity-50 transition-colors"
                         >
                           {aiProposedCopied ? 'Copied' : 'Copy Proposed'}
@@ -1860,6 +1864,19 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                                 ({aiPreview.estimatedScore.delta >= 0 ? '+' : ''}{aiPreview.estimatedScore.delta})
                               </span>
                             </div>
+                            {(() => {
+                              // Tokens and cost, stated only as far as they were
+                              // actually measured — see lib/aiUsage.ts.
+                              const usage = describeUsage(aiPreview.usage);
+                              return (
+                                <div data-testid="ai-preview-usage">
+                                  Tokens: <span className={usage.measured ? 'text-gray-200' : 'text-gray-500'}>{usage.tokensText}</span>
+                                  {usage.tokenBreakdown && <span className="text-gray-500"> ({usage.tokenBreakdown})</span>}
+                                  {' '}• Cost: <span className={usage.costText === 'unmeasured' ? 'text-gray-500' : 'text-gray-200'}>{usage.costText}</span>
+                                  {usage.costCaveat && <span className="text-gray-500"> — {usage.costCaveat}</span>}
+                                </div>
+                              );
+                            })()}
                           </div>
 
                           {aiPreview.warnings.length > 0 && (
@@ -1953,6 +1970,23 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                                     </span>
                                     {' '}• Changes: {item.changeSummary.length} • Warnings: {item.warningCount}
                                   </div>
+                                  {(() => {
+                                    const usage = describeUsage({
+                                      inputTokens: item.inputTokens ?? null,
+                                      outputTokens: item.outputTokens ?? null,
+                                      totalTokens: item.tokenUsage ?? null,
+                                      measured: item.usageMeasured === true,
+                                      source: item.usageSource ?? 'absent',
+                                      costUsd: item.apiSpendUsd ?? null,
+                                      costBasis: item.costBasis ?? 'usage-absent',
+                                    });
+                                    return (
+                                      <div className="text-gray-500" data-testid="ai-history-usage">
+                                        Tokens: {usage.tokensText} • Cost: {usage.costText}
+                                        {usage.costCaveat && <span> — {usage.costCaveat}</span>}
+                                      </div>
+                                    );
+                                  })()}
                                 </>
                               )}
                               {item.customPrompt && (
@@ -2072,7 +2106,14 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                               <span className="text-gray-300">
                                 {run.metrics?.tokenUsage !== null && run.metrics?.tokenUsage !== undefined
                                   ? Number(run.metrics.tokenUsage).toLocaleString()
-                                  : 'n/a'}
+                                  : 'unmeasured'}
+                              </span>
+                              {' '}• Cost:{' '}
+                              <span className="text-gray-300" data-testid="agent-run-cost">
+                                {/* Never $0.00 by default: this run's dispatch engine reports no spend, and a zero would read as "free". */}
+                                {run.metrics?.apiSpendUsd !== null && run.metrics?.apiSpendUsd !== undefined
+                                  ? `$${Number(run.metrics.apiSpendUsd).toFixed(4)}`
+                                  : 'unmeasured'}
                               </span>
                             </div>
                             <div>

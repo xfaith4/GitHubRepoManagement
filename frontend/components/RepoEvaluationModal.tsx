@@ -241,6 +241,7 @@ export const RepoEvaluationModal: React.FC<Props> = ({ repoName, localPath, onCl
                     <button
                       onClick={handleCreateRoadmap}
                       disabled={phase === 'creating' || !roadmapContent.trim()}
+                      title={!roadmapContent.trim() ? 'There is no generated roadmap content to write yet.' : phase === 'creating' ? 'ROADMAP.md is being written.' : 'Writes this content to ROADMAP.md in the repository.'}
                       className="px-4 py-2 bg-green-700 hover:bg-green-600 disabled:bg-gray-700 disabled:text-gray-500 text-white text-sm rounded-lg font-medium transition-colors flex items-center gap-2"
                     >
                       {phase === 'creating' && <SpinnerIcon className="w-4 h-4 animate-spin" />}
