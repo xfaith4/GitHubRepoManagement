@@ -81,7 +81,7 @@ const mainWindowSections = [
   },
   {
     title: 'Curation & Change-Aware Scanning',
-    body: 'Mark repos as Favorite, Portfolio Candidate, or Archived/Ignore from a row\'s Details panel — these labels persist across restarts and never trigger a rescan. Ordinary loads are incremental: unchanged repos are reused from the persisted index (shown as "Index: Reused"), and only changed repos are reindexed. The "Last scan" line under the search box reports how many rows were reused vs reindexed. Use the Badge legend chip to decode every badge, and use Refresh All (with confirmation) only when you want to force a full rescan of everything.',
+    body: 'Mark repos as Favorite, Portfolio Candidate, or Archived/Ignore from a row\'s Details panel — these labels persist across restarts and never trigger a rescan. Ordinary loads are incremental: unchanged repos are reused from the persisted index (shown as "Index: Reused"), and only changed repos are reindexed. The "Last scan" line under the search box reports how many rows were reused vs reindexed. Use the Badge legend chip to decode every badge, and use Rescan all (with confirmation) only when you want to invalidate the index and fully reindex everything.',
   },
   {
     title: 'Operations',

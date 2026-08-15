@@ -390,7 +390,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
             className="px-3 py-1.5 text-sm bg-indigo-700 hover:bg-indigo-600 text-white rounded border border-indigo-600 disabled:opacity-50 flex items-center gap-1.5 transition-colors"
           >
             {isScanning && <SpinnerIcon className="w-3.5 h-3.5 animate-spin" />}
-            {isScanning ? 'Scanning…' : 'Scan All'}
+            {isScanning ? 'Rescanning…' : 'Rescan roadmaps'}
           </button>
         </div>
       </div>
@@ -878,8 +878,11 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                       <button
                         onClick={e => { e.stopPropagation(); onDispatchRelease(entry.repoName); }}
                         disabled={mutatingActionsBlocked}
-                        className={`text-xs px-2 py-1 rounded border border-blue-700/50 bg-blue-900/40 text-blue-300 hover:bg-blue-800/60 transition-colors${disabledActionClass}`}
-                        title={mutatingTitle('Standardize roadmap and dispatch next release to GitHub Copilot')}
+                        // Release 3.5 milestone 7 — an action that queues
+                        // work for an agent does not dress like a read-only
+                        // one. Amber border + the consequence in its title.
+                        className={`text-xs px-2 py-1 rounded border border-amber-600/70 bg-amber-900/30 text-amber-200 hover:bg-amber-800/50 font-semibold transition-colors${disabledActionClass}`}
+                        title={mutatingTitle('DISPATCHES WORK: standardizes the roadmap and queues the next release for an agent. Unlike Audit/Evaluate, this starts something — approval gates still apply downstream.')}
                       >
                         Dispatch Release
                       </button>

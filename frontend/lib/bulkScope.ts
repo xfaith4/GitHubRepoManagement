@@ -73,3 +73,28 @@ export function bulkConfirmationMessage(action: BulkActionKind, repoCount: numbe
   const noun = repoCount === 1 ? 'repository' : 'repositories';
   return `No repositories are selected, so this will run ${label} on all ${repoCount} ${noun} in the current filter.\n\nContinue?`;
 }
+
+/**
+ * Release 3.5 milestone 7 — empty selection no longer means "everything".
+ *
+ * The review called the old default a footgun, and it was: with nothing
+ * selected, one confirm dialog stood between a click and bulk git across the
+ * whole filtered portfolio, and a confirm is exactly the dialog people learn
+ * to click through. The rule now: a MUTATING bulk action with no selection is
+ * DISABLED, with the reason naming the existing select-all control in the
+ * grid header. Read-only actions keep the whole-filter default — a report
+ * over everything is the point of a report.
+ *
+ * Returns null when the action may run, else the reason to render on the
+ * disabled control (Release 3.1: a disabled control names its precondition).
+ */
+export function bulkActionDisabledReason(
+  action: BulkActionKind,
+  selectionCount: number,
+  repoCount: number
+): string | null {
+  if (!isMutatingBulkAction(action)) return null;
+  if (selectionCount > 0) return null;
+  const label = ACTION_LABELS[action] ?? 'this action';
+  return `Select repositories first — ${label} writes to working trees, so an empty selection no longer means "all ${repoCount}". The header checkbox selects the whole filter explicitly.`;
+}

@@ -814,9 +814,9 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                 onClick={() => setRefreshAllConfirmOpen(true)}
                 disabled={Boolean(refreshAllInProgress)}
                 className="px-2.5 py-2 rounded border border-gray-600 bg-gray-900 text-xs text-gray-200 hover:bg-gray-800 disabled:opacity-50"
-                title="Ordinary loads reuse unchanged repositories from the index. Refresh All bypasses that and fully reindexes everything."
+                title="Rescan all: invalidates the persisted index and fully reindexes every repository from disk — expect minutes, not seconds. Ordinary Refresh reuses unchanged repositories and costs seconds."
               >
-                {refreshAllInProgress ? 'Refreshing all…' : 'Refresh All'}
+                {refreshAllInProgress ? 'Rescanning…' : 'Rescan all'}
               </button>
             )}
           </div>
@@ -913,7 +913,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                 <div><span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded border bg-amber-900/30 text-amber-300 border-amber-700/40">Index: Metadata Changed</span> — docs/PR/Actions signals changed without new commits.</div>
                 <div><span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded border bg-violet-900/30 text-violet-300 border-violet-700/40">Index: Rescanned</span> — no usable cache row (new repo, first scan, or forced refresh).</div>
                 <div><span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded border bg-rose-900/30 text-rose-300 border-rose-700/40">Index: Scan Failed</span> — the last probe or scan errored; check the badge tooltip.</div>
-                <div className="text-gray-500">Hover any Index badge for the scan decision, HEAD vs indexed commit, and errors. Use Refresh All to force a full rescan.</div>
+                <div className="text-gray-500">Hover any Index badge for the scan decision, HEAD vs indexed commit, and errors. Use Rescan all to force a full reindex.</div>
               </div>
             </div>
             <div>
@@ -1127,7 +1127,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                           Details
                         </button>
                         <details className="relative">
-                          <summary className="list-none min-h-11 h-full flex items-center cursor-pointer rounded-md border border-gray-600 bg-gray-800 px-3.5 text-sm text-gray-200">
+                          <summary aria-label={`More actions for ${repo.name}`} title={`More actions for ${repo.name}`} className="list-none min-h-11 h-full flex items-center cursor-pointer rounded-md border border-gray-600 bg-gray-800 px-3.5 text-sm text-gray-200">
                             ⋯
                           </summary>
                           <div className="absolute right-0 bottom-full mb-1 w-44 rounded border border-gray-700 bg-gray-900 shadow-lg z-30 p-1">
@@ -1206,7 +1206,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                 <tr>
                 <th scope="col" className="px-2 py-3">
                   <span className="sr-only">Select all repositories</span>
-                  <input type="checkbox" ref={selectAllCheckboxRef} onChange={handleSelectAll} className="h-4 w-4 rounded bg-gray-700 border-gray-500 text-blue-500 focus:ring-blue-500"/>
+                  <input type="checkbox" ref={selectAllCheckboxRef} onChange={handleSelectAll} aria-label="Select all repositories in the current filter" className="h-4 w-4 rounded bg-gray-700 border-gray-500 text-blue-500 focus:ring-blue-500"/>
                 </th>
                 <th scope="col" onClick={() => handleSort('name')} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer">
                   <span className="inline-flex items-center gap-1">Repository {sortIndicator('name')}</span>
@@ -1259,7 +1259,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                         return (
                         <React.Fragment key={repo.localPath ?? repo.name}>
                           <tr className={`hover:bg-gray-800/50 ${selectedRepos.has(repoId) ? 'bg-blue-900/30' : ''}`}>
-                            <td className="px-2 py-3 align-top"><input type="checkbox" checked={selectedRepos.has(repoId)} onChange={() => handleSelectRepo(repoId)} className="h-4 w-4 rounded bg-gray-700 border-gray-500 text-blue-500 focus:ring-blue-500" /></td>
+                            <td className="px-2 py-3 align-top"><input type="checkbox" checked={selectedRepos.has(repoId)} onChange={() => handleSelectRepo(repoId)} aria-label={`Select ${repo.name}`} className="h-4 w-4 rounded bg-gray-700 border-gray-500 text-blue-500 focus:ring-blue-500" /></td>
                             <td className="min-w-0 overflow-hidden px-4 py-3 align-top">
                                 {repoUrl ? (
                                   <a href={repoUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-400 hover:text-blue-300 hover:underline">

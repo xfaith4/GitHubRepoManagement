@@ -2012,7 +2012,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                       className="inline-flex items-center gap-2 rounded-md border border-gray-600 bg-gray-800 px-3 py-1.5 text-xs text-gray-200 hover:bg-gray-700 disabled:opacity-50 transition-colors"
                     >
                       {agentRunsLoading ? <SpinnerIcon className="w-3.5 h-3.5" /> : <RefreshIcon className="w-3.5 h-3.5" />}
-                      Reload List
+                      Refresh
                     </button>
                   </div>
                   <div className="mt-2 text-xs text-gray-500">

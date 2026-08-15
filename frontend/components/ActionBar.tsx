@@ -2,7 +2,7 @@ import React from 'react';
 import { InitIcon, UpdateIcon, SyncIcon, ExportIcon, ArchiveIcon, RefreshIcon, SpinnerIcon, DocReviewIcon, RoadmapIcon, ApiDocsIcon, HelpIcon } from './icons';
 import { type OperationType, type AppSettings } from '../types';
 import { canRunRepoActions, repoActionsBlockedReason } from '../lib/dataProvenance';
-import { bulkConfirmationMessage, requiresBulkConfirmation, type BulkActionKind } from '../lib/bulkScope';
+import { bulkActionDisabledReason, type BulkActionKind } from '../lib/bulkScope';
 
 interface ActionBarProps {
   onAction: (operation: OperationType, repoNames?: string[]) => void;
@@ -94,16 +94,14 @@ const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, on
     // small tag — never mixed into the label text (Release 2.6 Phase 4).
     const actionLabel = (text: string) => <span className="hidden sm:inline">{text}</span>;
 
-    // ROADMAP Lane 0.5. With nothing selected these apply to the entire filtered
-    // set, and the amber banner alone still let one click run bulk git across
-    // the whole portfolio. Mutating actions now gate on an explicit confirm
-    // naming the count; read-only ones (Report, Doc Review, Roadmap Scan) keep
-    // their single click — see lib/bulkScope.ts for why the line sits there.
+    // Release 3.5 milestone 7 (supersedes the Lane 0.5 confirm dialog):
+    // a MUTATING bulk action with no selection is DISABLED, not confirmed —
+    // a confirm without a selection is the dialog people learn to click
+    // through. The header checkbox is the explicit "select all" control.
+    const pullDisabledReason = bulkActionDisabledReason('update', selectionCount, repoCount);
+    const fetchDisabledReason = bulkActionDisabledReason('sync', selectionCount, repoCount);
     const runBulkAction = (action: BulkActionKind, run: () => void) => {
-        if (requiresBulkConfirmation(action, selectionCount, repoCount)
-            && !window.confirm(bulkConfirmationMessage(action, repoCount))) {
-            return;
-        }
+        if (bulkActionDisabledReason(action, selectionCount, repoCount) != null) return;
         run();
     };
 
@@ -156,10 +154,10 @@ const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, on
                  <ActionButton onClick={onInitClick} disabled={isActionRunning || !cloneImplemented} isLoading={currentOperation === 'init'} ariaLabel="Clone" statusTag={cloneImplemented ? undefined : 'Planned'} title={cloneImplemented ? "Clone repositories from GitHub into a local workspace (git clone via local backend)." : "Planned: clone repositories from GitHub into a local workspace (not implemented in this build)."} icon={<InitIcon className="w-4 h-4" />}>
                     {actionLabel('Clone')}
                 </ActionButton>
-                <ActionButton onClick={handleUpdate} disabled={!repoActionsEnabled} isLoading={currentOperation === 'update'} ariaLabel="Pull" count={selectionCount} title={actionTitle(`Run 'git pull' on ${selectionCount > 0 ? selectionCount + ' selected' : 'all active'} repositories.`)} icon={<UpdateIcon className="w-4 h-4" />}>
+                <ActionButton onClick={handleUpdate} disabled={!repoActionsEnabled || pullDisabledReason != null} isLoading={currentOperation === 'update'} ariaLabel="Pull" count={selectionCount} title={actionTitle(pullDisabledReason ?? `Run 'git pull' on ${selectionCount} selected repositories.`)} icon={<UpdateIcon className="w-4 h-4" />}>
                     {actionLabel('Pull')}
                 </ActionButton>
-                <ActionButton onClick={handleSync} disabled={!repoActionsEnabled} isLoading={currentOperation === 'sync'} ariaLabel="Fetch" count={selectionCount} title={actionTitle(`Run 'git fetch --all --prune' on ${selectionCount > 0 ? selectionCount + ' selected' : 'all'} repositories.`)} icon={<SyncIcon className="w-4 h-4" />}>
+                <ActionButton onClick={handleSync} disabled={!repoActionsEnabled || fetchDisabledReason != null} isLoading={currentOperation === 'sync'} ariaLabel="Fetch" count={selectionCount} title={actionTitle(fetchDisabledReason ?? `Run 'git fetch --all --prune' on ${selectionCount} selected repositories.`)} icon={<SyncIcon className="w-4 h-4" />}>
                     {actionLabel('Fetch')}
                 </ActionButton>
                 <ActionButton onClick={onExport} disabled={!repoActionsEnabled} isLoading={currentOperation === 'export'} ariaLabel="Report" count={selectionCount} title={actionTitle(`Generate a timestamped collection status report in the repo-local reports folder and open the HTML report in a new tab for ${selectionCount > 0 ? selectionCount + ' selected' : 'all'} repositories.`)} icon={<ExportIcon className="w-4 h-4" />}>
