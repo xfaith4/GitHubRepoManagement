@@ -3953,3 +3953,65 @@ Operator-facing behavior is documented in
 
 ---
 
+
+## Closed 2026-08-15 (archived from ROADMAP.md)
+
+Moved out of the active roadmap on 2026-08-15 under the archive rule, after
+Release 3.4 reached its `R013-FUTURE-RELEASE-SIZE` cap of 120 lines. Both items
+below shipped and are **verbatim** as they stood in `ROADMAP.md`.
+
+Worth preserving alongside them: these two milestones were **recorded as
+`planned` for a full day after they shipped** ([PR #134](https://github.com/xfaith4/GitHubRepoManagement/pull/134)
+shipped the code and updated no milestone state), and the next agent to read the
+roadmap was one step away from reimplementing a tested 306-line module. The
+correction landed in [PR #136](https://github.com/xfaith4/GitHubRepoManagement/pull/136).
+That is the origin of the section 8 guardrail requiring milestone state and
+delivery documentation to move in the same pull request as the capability.
+
+### Release 3.4 — The Delivery Loop Closes (first two milestones)
+
+- [x] **Syncing `main` is a capability, not just a refusal.** **Operation shipped
+      2026-08-14** ([PR #134](https://github.com/xfaith4/GitHubRepoManagement/pull/134));
+      **step 10 and the operator surface shipped 2026-08-15.**
+      [`Git.DefaultBranchSync.ps1`](../../backend/modules/git/Git.DefaultBranchSync.ps1)
+      is the road behind 3.1's stop sign: fetch and fast-forward are separate
+      explicit commands, never `git pull`, so a repo-local `pull.rebase` cannot
+      turn a sync into a history rewrite, and `--ff-only` — the one git operation
+      incapable of authoring a commit — is the only merge. Only `behind`
+      fast-forwards; `ahead` refuses as `default-branch-ahead`, `diverged`
+      refuses because a fast-forward is impossible, and dirty tree, detached
+      HEAD, an unverifiable reading and an unapproved transition each refuse by
+      name.
+
+      **The residue was a door, not an operation.** For a day the module was
+      reachable only from the task runner, because the api-host **never
+      dot-sourced it** — so no control an operator could click could reach a
+      capability that was already built, already tested, and already shipped.
+      `POST /api/git/sync-default-branch` is that door, and it adds no policy of
+      its own: refusals are the module's own category, reason and remedy
+      forwarded verbatim as a 409, the same shape `runner-absent` and
+      `stale-base` already use. Approval remains an **input** to the operation,
+      so an omitted flag refuses as `approval-required` rather than meaning yes.
+      The control lives in the per-repo git status modal rather than on every
+      grid row — the 2026-08-14 UI review found nine equal-weight buttons per row
+      already, and Release 3.5 is scheduled to reduce that, not add to it.
+      _(state: smoke-tested — the decision matrix and the operation itself
+      against real fixture clones (module smoke), the route's refusal, 404 and
+      validation contracts over a live host
+      ([`ApiHost.Contract.Tests.ps1`](../../backend/api-host/ApiHost.Contract.Tests.ps1)),
+      and the control's refusal rendering
+      ([`DefaultBranchSyncButton.test.tsx`](../../frontend/components/DefaultBranchSyncButton.test.tsx)).
+      All four route assertions were **run against the pre-route host and failed
+      there** — the refusal case is the load-bearing one, because it is the only
+      assertion that distinguishes "the route exists" from "the route exists AND
+      the module is loaded in this host", which was the entire defect.)_
+
+- [x] **Ahead and behind are both real, and divergence is named.** **Shipped
+      2026-08-14** (PR #134). [`Git.BaseFreshness.ps1`](../../backend/modules/git/Git.BaseFreshness.ps1)
+      computed `HEAD..remote` and never the reverse, so a clone 5 behind _and_
+      carrying local commits reported "behind 5" and said nothing about the local
+      side — the exact state where a fast-forward refuses. Both directions now
+      come from one `rev-list --left-right --count` walk, and `diverged` is its
+      own state with its own remedy. _(state: smoke-tested)_
+
+---

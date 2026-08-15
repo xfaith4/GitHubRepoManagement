@@ -916,13 +916,12 @@ refuse on.
 
 The target workflow, the layer model, and the evidence per gap live in
 [`docs/product/delivery-loop.md`](docs/product/delivery-loop.md). Measured
-2026-08-14, re-measured 2026-08-15: **nine of twelve steps are built and three
-are missing — every missing one still at a boundary.** Step 2 closed with the
-sync below; step 7 is the push-to-PR handoff, where the product says _"Open the
-PR from GitHub when ready"_ and the operator leaves; step 10 has the operation
-but no caller, and step 11 does not exist. The loop is still an arc, not a
-circle — nothing returns local `main` to the tip, so "behind" stays the resting
-state.
+2026-08-14, re-measured 2026-08-15: **ten of twelve steps are built and two are
+missing — both at a boundary.** Steps 2 and 10 closed with the archived sync
+milestone, step 10 operator-invoked rather than automatic. What remains is step
+7, the push-to-PR handoff where the product says _"Open the PR from GitHub when
+ready"_ and the operator leaves, and step 11, which does not exist. The loop can
+now be closed by hand at both ends; it does not yet close itself.
 
 #### Product outcomes
 
@@ -943,26 +942,10 @@ required, so it moves a pointer and cannot author a commit.
 
 #### Engineering milestones
 
-- [ ] **Syncing `main` is a capability, not just a refusal.** **Shipped
-      2026-08-14 for step 2** ([PR #134](https://github.com/xfaith4/GitHubRepoManagement/pull/134)).
-      [`Git.DefaultBranchSync.ps1`](backend/modules/git/Git.DefaultBranchSync.ps1)
-      is the road behind 3.1's stop sign: fetch and fast-forward are separate
-      explicit commands, never `git pull`, so a repo-local `pull.rebase` cannot
-      turn a sync into a history rewrite, and `--ff-only` — the one git operation
-      incapable of authoring a commit — is the only merge. Only `behind`
-      fast-forwards; `ahead`, `diverged`, dirty tree, detached HEAD and an
-      unapproved transition each refuse by name. _(state: smoke-tested against
-      real fixture clones. **Stays `[ ]` — the milestone asks for one operation
-      used by step 2 and step 10, and only step 2 is wired**: `-SyncMain` on the
-      runner, opt-in. Step 10 has no caller and no route exposes it.)_
-
-- [x] **Ahead and behind are both real, and divergence is named.** **Shipped
-      2026-08-14** (PR #134). [`Git.BaseFreshness.ps1`](backend/modules/git/Git.BaseFreshness.ps1)
-      computed `HEAD..remote` and never the reverse, so a clone 5 behind _and_
-      carrying local commits reported "behind 5" and said nothing about the local
-      side — the exact state where a fast-forward refuses. Both directions now
-      come from one `rev-list --left-right --count` walk, and `diverged` is its
-      own state with its own remedy. _(state: smoke-tested)_
+**Two milestones shipped and are archived:** the default-branch sync operation
+plus its step-10 route and operator control (2026-08-14 / 2026-08-15), and
+both-direction ahead/behind with `diverged` named (2026-08-14). Full text and
+evidence: [the archive](docs/history/completed-releases.md#closed-2026-08-15-archived-from-roadmapmd).
 
 - [ ] **A pushed branch does not end at "open the PR from GitHub when ready."**
       [`Roadmap.PrSubmitter.ps1`](backend/modules/roadmap/Roadmap.PrSubmitter.ps1)
@@ -1357,6 +1340,14 @@ Headline guardrails for the active release and near-term roadmap:
   names its unmet precondition; an enabled one is a promise.
 - **Do not mark an item `[x]` while it still names an outstanding proof.**
   Split it: archive the shipped half, keep the unproven half open.
+- **A pull request that ships a capability updates the milestone that claims it,
+  in the same pull request.** Recorded 2026-08-15 after
+  [PR #134](https://github.com/xfaith4/GitHubRepoManagement/pull/134) shipped a
+  tested 306-line module and left all six of its release's milestones reading
+  `planned` — the next agent to read the roadmap was one step from rebuilding it.
+  Enforced by `Test-RoadmapCapabilityRecord.ps1`, which fails a commit whose
+  message claims a release and whose diff touches `backend/` or `scripts/`
+  without touching `ROADMAP.md`. A stated rule drifts; a derived one does not.
 
 ---
 

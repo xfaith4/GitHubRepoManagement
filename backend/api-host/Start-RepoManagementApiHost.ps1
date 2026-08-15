@@ -69,6 +69,10 @@ $gitModuleRoot    = Join-Path $WorkspaceRoot 'backend\modules\git'
 . (Join-Path $gitModuleRoot 'Git.StatusDetail.ps1')
 . (Join-Path $gitModuleRoot 'Git.Staleness.ps1')
 . (Join-Path $gitModuleRoot 'Git.BaseFreshness.ps1')
+# Release 3.4 — must load AFTER Git.BaseFreshness.ps1: Sync-RepoDefaultBranch
+# calls Get-RepoBaseFreshness through Get-Command, so an unloaded freshness
+# module degrades the sync to "unverifiable" rather than failing loudly.
+. (Join-Path $gitModuleRoot 'Git.DefaultBranchSync.ps1')
 $readmeModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\readme'
 . (Join-Path $readmeModuleRoot 'Readme.Generator.ps1')
 . (Join-Path $docStdModuleRoot 'DocStandardization.Previewer.ps1')
@@ -7743,6 +7747,105 @@ try {
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data = $result
+                    }
+                }
+                'POST /api/git/sync-default-branch' {
+                    # Release 3.4 milestone 1, step 10 — the operator-facing door to
+                    # Sync-RepoDefaultBranch. The operation and its refusal matrix
+                    # shipped in PR #134 and were reachable only from the task
+                    # runner: this host did not even dot-source the module, so no
+                    # control an operator could click could reach it.
+                    #
+                    # This route adds NO policy. Every refusal below is the module's
+                    # own decision, forwarded verbatim — only `behind` fast-forwards,
+                    # `ahead` refuses as `default-branch-ahead`, `diverged` refuses
+                    # because a fast-forward is impossible, and dirty tree, detached
+                    # HEAD, unverifiable reading and an unapproved transition each
+                    # refuse by name. Adding a second opinion here is exactly how the
+                    # two would drift apart.
+                    Write-HostLog ("[TRACE] git.sync-default-branch correlationId={0} start" -f $correlationId)
+                    try {
+                        $body = Parse-JsonBody -Body $req.Body
+                        Add-MetricCounter -Name 'api_requests_total'
+                        $syncRepoName = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'repoName' -Default '')
+                        $syncRepoPath = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'repoPath' -Default '')
+                        $syncBranch   = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'branch' -Default '')
+                        $syncRemote   = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'remote' -Default 'origin')
+                        # Approval is an INPUT on the operation, so it stays an input
+                        # here. The route never approves on the caller's behalf, and
+                        # an absent flag refuses as `approval-required` rather than
+                        # defaulting to yes — the same shape as acknowledgeNoRunner
+                        # and acknowledgeStaleBase.
+                        $syncApproved = ($body.ContainsKey('approved') -and [bool]$body.approved)
+
+                        if ([string]::IsNullOrWhiteSpace($syncRepoPath) -and [string]::IsNullOrWhiteSpace($syncRepoName)) {
+                            throw 'repoName or repoPath is required for /api/git/sync-default-branch'
+                        }
+
+                        # An explicit repoPath wins; the roadmap cache is the
+                        # fallback, resolved exactly as the submit-PR path does.
+                        # Cache entries rehydrate as hashtables from disk and arrive
+                        # as PSCustomObjects from a fresh scan; reading only the
+                        # object form yields an empty path on a warm cache.
+                        if ([string]::IsNullOrWhiteSpace($syncRepoPath)) {
+                            $syncSettings = Get-HostSettings
+                            $syncCache = Get-RoadmapFromCache -TtlSeconds (Get-RoadmapCacheTtlSeconds -Settings $syncSettings)
+                            if ($syncCache.hit -and $syncCache.entries) {
+                                $syncEntry = @($syncCache.entries) | Where-Object { [string]$_.repoName -eq $syncRepoName } | Select-Object -First 1
+                                if ($null -ne $syncEntry) {
+                                    $syncRepoPath = if ($syncEntry -is [System.Collections.IDictionary]) {
+                                        [string](Get-ValueOrDefault $syncEntry['repoPath'] '')
+                                    } else {
+                                        [string](Get-ValueOrDefault $syncEntry.repoPath '')
+                                    }
+                                }
+                            }
+                        }
+
+                        if ([string]::IsNullOrWhiteSpace($syncRepoPath)) {
+                            Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{
+                                success  = $false
+                                error    = ("No local checkout is known for '{0}'. Run a scan first, or pass repoPath." -f $syncRepoName)
+                                category = 'repo-not-found'
+                            }
+                        }
+                        else {
+                            $syncResult = Sync-RepoDefaultBranch -RepoPath $syncRepoPath -BranchName $syncBranch `
+                                -Remote $syncRemote -Approved $syncApproved
+                            $syncPayload = @{
+                                synced   = [bool]$syncResult.synced
+                                refused  = [bool]$syncResult.refused
+                                category = [string]$syncResult.category
+                                reason   = [string]$syncResult.reason
+                                remedy   = [string]$syncResult.remedy
+                                state    = [string]$syncResult.state
+                                branch   = [string]$syncResult.branch
+                                remote   = [string]$syncResult.remote
+                                fromSha  = $syncResult.fromSha
+                                toSha    = $syncResult.toSha
+                                repoPath = $syncRepoPath
+                            }
+                            if ($syncResult.refused) {
+                                # 409, same as the dispatch and stale-base refusals:
+                                # the request was well-formed and the state says no.
+                                Write-HostLog ("[TRACE] git.sync-default-branch correlationId={0} repo={1} REFUSED category={2}" -f $correlationId, $syncRepoName, $syncResult.category)
+                                Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                                    success  = $false
+                                    error    = [string]$syncResult.reason
+                                    category = [string]$syncResult.category
+                                    data     = $syncPayload
+                                }
+                            }
+                            else {
+                                Write-HostLog ("[TRACE] git.sync-default-branch correlationId={0} repo={1} state={2} from={3} to={4}" -f $correlationId, $syncRepoName, $syncResult.state, $syncResult.fromSha, $syncResult.toSha)
+                                Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                                    success = $true
+                                    data    = $syncPayload
+                                }
+                            }
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 400 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'git.sync-default-branch'
                     }
                 }
                 'POST /api/export' {

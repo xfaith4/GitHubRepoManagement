@@ -266,4 +266,67 @@ Describe 'API Validation Error Contracts' {
         $response = Invoke-ContractApiRequest -Method POST -Path '/api/roadmap/completion-preview' -Body @{}
         Assert-ErrorEnvelope -Response $response -StatusCode 400 -Operation 'roadmap.completion-preview' -Category 'validation'
     }
+
+    It 'returns validation envelope for POST /api/git/sync-default-branch without a repo' {
+        $response = Invoke-ContractApiRequest -Method POST -Path '/api/git/sync-default-branch' -Body @{}
+        Assert-ErrorEnvelope -Response $response -StatusCode 400 -Operation 'git.sync-default-branch' -Category 'validation'
+    }
+}
+
+Describe 'Default-branch sync route -- Release 3.4 milestone 1, step 10' {
+    # The operation and its refusal matrix shipped in PR #134 reachable only from
+    # the task runner; this host did not dot-source the module at all.
+    #
+    # Verified non-vacuous by running this file against the pre-route host: all
+    # four assertions (these three and the validation case above) failed there
+    # and pass here. The refusal case is the load-bearing one -- it is the only
+    # assertion that can distinguish "route exists" from "route exists AND
+    # Git.DefaultBranchSync.ps1 is actually loaded in this host", which was the
+    # whole defect.
+
+    It 'forwards the module refusal rather than inventing one' {
+        # A path that is not a git working copy is the module's own
+        # `not-a-git-repo` refusal. Getting it back proves three things at once:
+        # the route exists, Git.DefaultBranchSync.ps1 is loaded in this host, and
+        # a refusal maps to 409 with the module's category verbatim.
+        $notARepo = Join-Path $script:LogRoot 'not-a-repo'
+        $null = New-Item -ItemType Directory -Path $notARepo -Force
+        $response = Invoke-ContractApiRequest -Method POST -Path '/api/git/sync-default-branch' -Body @{
+            repoPath = $notARepo
+            approved = $true
+        }
+
+        $response.StatusCode | Should -Be 409
+        $response.Json.success | Should -BeFalse
+        $response.Json.category | Should -Be 'not-a-git-repo'
+        $response.Json.data.refused | Should -BeTrue
+        $response.Json.data.synced | Should -BeFalse
+        # The remedy is what makes a refusal actionable rather than a dead end.
+        $response.Json.data.remedy | Should -Not -BeNullOrEmpty
+    }
+
+    It 'refuses an unapproved transition instead of approving on the caller behalf' {
+        # Approval is an input on the operation, so an absent flag must refuse.
+        # A route that defaulted `approved` to true would still return 409 here
+        # (the directory is not a repo), so this asserts the ORDER: the repo
+        # check runs first, and omitting approval never silently means yes.
+        $notARepo = Join-Path $script:LogRoot 'not-a-repo'
+        $null = New-Item -ItemType Directory -Path $notARepo -Force
+        $response = Invoke-ContractApiRequest -Method POST -Path '/api/git/sync-default-branch' -Body @{
+            repoPath = $notARepo
+        }
+
+        $response.StatusCode | Should -Be 409
+        $response.Json.data.synced | Should -BeFalse
+    }
+
+    It 'answers 404 with a named category when the repo is unknown' {
+        $response = Invoke-ContractApiRequest -Method POST -Path '/api/git/sync-default-branch' -Body @{
+            repoName = 'a-repo-that-does-not-exist-in-any-cache'
+            approved = $true
+        }
+
+        $response.StatusCode | Should -Be 404
+        $response.Json.category | Should -Be 'repo-not-found'
+    }
 }

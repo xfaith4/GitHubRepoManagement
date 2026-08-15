@@ -327,6 +327,72 @@ export async function startSync(repoNames?: string[], repoPaths?: string[]): Pro
   return response?.data as OperationResult;
 }
 
+/**
+ * Release 3.4 milestone 1, step 10 — fetch and fast-forward one repo's default
+ * branch through `Sync-RepoDefaultBranch`.
+ *
+ * Distinct from `startSync` above, which is the bulk multi-repo git operation.
+ * This one is narrow on purpose: only `behind` fast-forwards, and `--ff-only`
+ * is the sole merge, which is what makes it incapable of authoring a commit on
+ * a default branch.
+ *
+ * Unlike `postWriteBack`, a refusal is RETURNED rather than thrown. A refused
+ * write-back is an exceptional outcome; a refused sync is the primary thing the
+ * operator asked about — "why can't my clone fast-forward" — and its category,
+ * reason and remedy are the answer. The route emits the same `data` shape on
+ * both paths precisely so the caller can branch on `refused` instead of on a
+ * status code. Transport failures still throw.
+ */
+export interface DefaultBranchSyncResult {
+  synced: boolean;
+  refused: boolean;
+  category: string;
+  reason: string;
+  remedy: string;
+  state: 'current' | 'behind' | 'ahead' | 'diverged' | 'unknown' | string;
+  branch: string;
+  remote: string;
+  fromSha: string | null;
+  toSha: string | null;
+  repoPath: string;
+}
+
+interface DefaultBranchSyncResponse {
+  success?: boolean;
+  // A refusal envelope carries `error` as a plain string; the generic
+  // Send-ErrorJson envelope nests it under `.message`. Typed as the union rather
+  // than `any` so the ratchet in `npm run lint` keeps moving down.
+  error?: string | { message?: string };
+  category?: string;
+  data?: DefaultBranchSyncResult;
+}
+
+export async function syncDefaultBranch(
+  target: { repoName?: string; repoPath?: string; branch?: string; remote?: string },
+  approved: boolean,
+): Promise<DefaultBranchSyncResult> {
+  const response = await fetch(`${API_BASE_URL}/git/sync-default-branch`, withAuthHeaders({
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    // `approved` is an input on the operation, never defaulted here: omitting it
+    // must refuse as `approval-required`, not silently mean yes.
+    body: JSON.stringify({ ...target, approved }),
+  }));
+  const text = await response.text();
+  let payload: DefaultBranchSyncResponse | null;
+  try { payload = text ? (JSON.parse(text) as DefaultBranchSyncResponse) : null; } catch { payload = null; }
+
+  if (payload?.data) {
+    return payload.data;
+  }
+  // No `data` means the request never reached the operation — a 404 for an
+  // unknown repo, a validation envelope, or a transport failure. Those are
+  // genuine errors, not sync states, so they throw.
+  const err = payload?.error;
+  const message = typeof err === 'string' ? err : err?.message;
+  throw new Error(message ?? `Sync request failed with HTTP ${response.status}`);
+}
+
 function buildMockReportHtml(repos: RepoStatus[], sourceLabel: string, generatedAt: string): string {
   const rows = repos.map((repo) => `
     <tr>

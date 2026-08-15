@@ -28,7 +28,7 @@ CI / verification
      |
 merge PR on GitHub
      |
-pull main locally             <- step 10  (missing)
+pull main locally             <- step 10  (built, operator-invoked)
      |
 delete branch                 <- step 11  (missing)
      |
@@ -63,8 +63,8 @@ local main  <----------- pull -------- remote main
 
 Measured 2026-08-14 against the twelve steps, re-measured 2026-08-15 after
 [PR #134](https://github.com/xfaith4/GitHubRepoManagement/pull/134) shipped the
-sync operation. Nine are built; three are missing, and **every missing one still
-sits at a boundary**.
+sync operation and its operator surface. Ten are built; two are missing, and
+**both sit at a boundary**.
 
 | # | Step | State |
 | --- | --- | --- |
@@ -77,22 +77,24 @@ sits at a boundary**.
 | 7 | **Open the pull request** | **missing** for agent runs |
 | 8 | CI / verification | built — `MergeReadiness.ps1`, including a `merge-conflicts` blocker |
 | 9 | Merge on GitHub | built, explicit operator action |
-| 10 | **Sync local `main`** | **missing** — the operation exists; nothing calls it here, and no route exposes it |
+| 10 | Sync local `main` | built — `POST /api/git/sync-default-branch` and the control in the per-repo git status modal; operator-invoked, not automatic after merge |
 | 11 | **Delete the feature branch** | **missing** |
 | 12 | Record completion | built, but **ordered wrongly** — see below |
 
-Steps 2 and 10 are the two points where the loop touches local `main`. Step 2 now
-syncs, but **only from the runner and only when an operator passes `-SyncMain`** —
-there is no route, so the portal cannot ask for a sync. Step 7 is the handoff from
-push to pull request: `POST /api/roadmap-agent/{id}/approve` pushes the branch and
+Steps 2 and 10 are the two points where the loop touches local `main`, and both
+now sync: step 2 from the runner via `-SyncMain`, step 10 from the portal via
+`POST /api/git/sync-default-branch`. Neither is automatic — the operator asks, and
+the module's refusal matrix answers. Step 7 is the handoff from push to pull
+request: `POST /api/roadmap-agent/{id}/approve` pushes the branch and
 returns the message _"Open the PR from GitHub when ready"_, at which point the
 operator leaves the product. Step 11 has no implementation of any kind.
 
-**The loop is therefore still an arc rather than a circle, and that is why the
-stale-clone defect stayed invisible for so long.** Nothing returns local `main` to
-the remote tip after a merge, so "behind" remains the resting state rather than an
-anomaly worth reporting — closing step 2 narrowed the window without closing the
-circle.
+**The loop can now be closed by hand at both ends, but it does not close itself.**
+The stale-clone defect stayed invisible for so long because nothing returned local
+`main` to the remote tip, making "behind" the resting state rather than an anomaly.
+An operator can now fix that in one click at either end; what remains is that
+nothing does it for them, and steps 7 and 11 still hand the operator out of the
+product entirely.
 
 ## Layered architecture
 
