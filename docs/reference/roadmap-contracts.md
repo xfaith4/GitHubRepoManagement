@@ -276,6 +276,43 @@ Legacy wording is normalized automatically: `pending` → `planned`,
 
 ---
 
+## Completion History and the External Archive
+
+By default, completed work that leaves the Release Roadmap survives inside the
+roadmap itself, in the template's "Recently Completed" section (Section 6).
+
+A repository may instead **externalize** that history: completed release
+sections and checked items move **verbatim** to a separate history file —
+conventionally `docs/history/completed-releases.md` — and `ROADMAP.md` carries
+open work only. This split layout is a **supported shape of the standard**,
+not a deviation, provided the roadmap is self-describing about it:
+
+- **Pointer line (required).** The roadmap's header blockquote must carry a
+  link line naming the archive file:
+
+  ```markdown
+  > **Completed-release archive:** [`docs/history/completed-releases.md`](docs/history/completed-releases.md)
+  ```
+
+- **Verbatim moves only.** Archived sections and `- [x]` items keep their
+  wording, checklist syntax, and absolute completion dates unchanged.
+- **No penalty, no invisibility.** Nothing in the audit rules penalizes a
+  split repo, but without the pointer line an external archive is
+  indistinguishable from deleted history. The pointer is what marks in-file
+  completion counts (e.g. the contract's `completedCount`) as "archived
+  elsewhere" rather than "never done" — expect them to sit near zero in a
+  split repo.
+- **Repair must respect the split.** A roadmap repair must preserve the
+  pointer line and must never copy archived history back into the roadmap,
+  just as it must never delete in-file completion history.
+
+This repository is itself the reference example of the split layout: its
+`ROADMAP.md` carries open work only, and the header pointer links to
+[`docs/history/completed-releases.md`](../history/completed-releases.md),
+which holds the full text of every completed release.
+
+---
+
 ## Roadmap Repair
 
 If a repo's roadmap is at L1 or L2, the **Roadmap Repair** preview workflow can propose a

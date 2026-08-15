@@ -1243,7 +1243,7 @@ L2.)
       to [`roadmap-contract.schema.json`](standards/roadmap/roadmap-contract.schema.json),
       set from a pointer link in the roadmap, and surface it in the audit
       payload.
-- [ ] **Sanction the external-archive pattern in the standard.** _(state:
+- [x] **Sanction the external-archive pattern in the standard.** _(state:
       planned — documentation)_ `ROADMAP_TEMPLATE.md` Section 6 anticipates
       release sections being "archived or removed" but assumes the surviving
       history stays **in** the roadmap; no part of the standard, schema, or
