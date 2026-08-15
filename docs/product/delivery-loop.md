@@ -10,7 +10,7 @@ behind the four gaps.
 ```text
 ROADMAP ITEM
      |
-sync main                     <- step 2   (missing)
+sync main                     <- step 2   (built, runner opt-in)
      |
 create feature branch
      |
@@ -61,13 +61,15 @@ local main  <----------- pull -------- remote main
 
 ## What is built, and what is missing
 
-Measured 2026-08-14 against the twelve steps. Eight are built; four are
-missing, and **every missing one sits at a boundary**.
+Measured 2026-08-14 against the twelve steps, re-measured 2026-08-15 after
+[PR #134](https://github.com/xfaith4/GitHubRepoManagement/pull/134) shipped the
+sync operation. Nine are built; three are missing, and **every missing one still
+sits at a boundary**.
 
 | # | Step | State |
 | --- | --- | --- |
 | 1 | Agent receives roadmap task | built — queue, dispatch, prompt refinement, approval state machine |
-| 2 | **Sync local `main`** | **missing** |
+| 2 | Sync local `main` | built — `Sync-RepoDefaultBranch`, opt-in via `-SyncMain` on the runner, ahead of the freshness gate |
 | 3 | Create feature branch | built — `git switch -c` in the runner, `checkout -b` in the PR submitter |
 | 4 | Implement, test, document | built — runner launches Claude; `Resolve-VerifyCommand` runs the repo's own suite |
 | 5 | Commit locally | built |
@@ -75,20 +77,22 @@ missing, and **every missing one sits at a boundary**.
 | 7 | **Open the pull request** | **missing** for agent runs |
 | 8 | CI / verification | built — `MergeReadiness.ps1`, including a `merge-conflicts` blocker |
 | 9 | Merge on GitHub | built, explicit operator action |
-| 10 | **Sync local `main`** | **missing** |
+| 10 | **Sync local `main`** | **missing** — the operation exists; nothing calls it here, and no route exposes it |
 | 11 | **Delete the feature branch** | **missing** |
 | 12 | Record completion | built, but **ordered wrongly** — see below |
 
-Steps 2 and 10 are the two points where the loop touches local `main`. Step 7 is
-the handoff from push to pull request: `POST /api/roadmap-agent/{id}/approve`
-pushes the branch and returns the message _"Open the PR from GitHub when
-ready"_, at which point the operator leaves the product. Step 11 has no
-implementation of any kind.
+Steps 2 and 10 are the two points where the loop touches local `main`. Step 2 now
+syncs, but **only from the runner and only when an operator passes `-SyncMain`** —
+there is no route, so the portal cannot ask for a sync. Step 7 is the handoff from
+push to pull request: `POST /api/roadmap-agent/{id}/approve` pushes the branch and
+returns the message _"Open the PR from GitHub when ready"_, at which point the
+operator leaves the product. Step 11 has no implementation of any kind.
 
-**The loop is therefore an arc rather than a circle, and that is why the
-stale-clone defect stayed invisible for so long.** Nothing ever returned local
-`main` to the remote tip, so "behind" was the resting state rather than an
-anomaly worth reporting.
+**The loop is therefore still an arc rather than a circle, and that is why the
+stale-clone defect stayed invisible for so long.** Nothing returns local `main` to
+the remote tip after a merge, so "behind" remains the resting state rather than an
+anomaly worth reporting — closing step 2 narrowed the window without closing the
+circle.
 
 ## Layered architecture
 

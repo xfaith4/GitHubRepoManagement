@@ -916,12 +916,12 @@ refuse on.
 
 The target workflow, the layer model, and the evidence per gap live in
 [`docs/product/delivery-loop.md`](docs/product/delivery-loop.md). Measured
-2026-08-14: **eight of twelve steps are built and four are missing — every
-missing one at a boundary.** Steps 2 and 10 are where the loop touches local
-`main`; step 7 is the push-to-PR handoff, where the product says _"Open the PR
-from GitHub when ready"_ and the operator leaves; step 11 does not exist. The
-loop is an arc, not a circle — which is why the stale-clone defect stayed
-invisible: nothing returned local `main` to the tip, so "behind" was the resting
+2026-08-14, re-measured 2026-08-15: **nine of twelve steps are built and three
+are missing — every missing one still at a boundary.** Step 2 closed with the
+sync below; step 7 is the push-to-PR handoff, where the product says _"Open the
+PR from GitHub when ready"_ and the operator leaves; step 10 has the operation
+but no caller, and step 11 does not exist. The loop is still an arc, not a
+circle — nothing returns local `main` to the tip, so "behind" stays the resting
 state.
 
 #### Product outcomes
@@ -943,26 +943,26 @@ required, so it moves a pointer and cannot author a commit.
 
 #### Engineering milestones
 
-- [ ] **Syncing `main` is a capability, not just a refusal.** `git fetch` and
-      `git pull` appear nowhere in `backend/` or `scripts/`; 3.1 shipped a guard
-      that refuses to branch from a stale base — a stop sign with no road behind
-      it. Add one operation, used by both step 2 and step 10, that fetches and
-      fast-forwards the default branch. **Only `behind` may fast-forward.**
-      `current` is a no-op; **`ahead` refuses as `default-branch-ahead`**,
-      because local commits on a default branch are the invariant violation this
-      release exists to prevent and must be reported rather than carried;
-      `diverged` refuses because a fast-forward is impossible. Dirty tree, no
-      upstream, and detached HEAD each refuse with their own reason. Never a
-      merge, never a rebase, never a force. _(state: planned)_
+- [ ] **Syncing `main` is a capability, not just a refusal.** **Shipped
+      2026-08-14 for step 2** ([PR #134](https://github.com/xfaith4/GitHubRepoManagement/pull/134)).
+      [`Git.DefaultBranchSync.ps1`](backend/modules/git/Git.DefaultBranchSync.ps1)
+      is the road behind 3.1's stop sign: fetch and fast-forward are separate
+      explicit commands, never `git pull`, so a repo-local `pull.rebase` cannot
+      turn a sync into a history rewrite, and `--ff-only` — the one git operation
+      incapable of authoring a commit — is the only merge. Only `behind`
+      fast-forwards; `ahead`, `diverged`, dirty tree, detached HEAD and an
+      unapproved transition each refuse by name. _(state: smoke-tested against
+      real fixture clones. **Stays `[ ]` — the milestone asks for one operation
+      used by step 2 and step 10, and only step 2 is wired**: `-SyncMain` on the
+      runner, opt-in. Step 10 has no caller and no route exposes it.)_
 
-- [ ] **Ahead and behind are both real, and divergence is named.**
-      [`Git.BaseFreshness.ps1`](backend/modules/git/Git.BaseFreshness.ps1)
-      computes `HEAD..remote` and never the reverse, so a clone 5 behind _and_
-      carrying local commits reports "behind 5" and says nothing about the local
-      side — the exact state where a fast-forward refuses. Compute both
-      directions; classify `diverged` as its own state with its own remedy.
-      _(state: planned — a known limitation of the 2026-08-14 implementation,
-      recorded rather than left to be rediscovered)_
+- [x] **Ahead and behind are both real, and divergence is named.** **Shipped
+      2026-08-14** (PR #134). [`Git.BaseFreshness.ps1`](backend/modules/git/Git.BaseFreshness.ps1)
+      computed `HEAD..remote` and never the reverse, so a clone 5 behind _and_
+      carrying local commits reported "behind 5" and said nothing about the local
+      side — the exact state where a fast-forward refuses. Both directions now
+      come from one `rev-list --left-right --count` walk, and `diverged` is its
+      own state with its own remedy. _(state: smoke-tested)_
 
 - [ ] **A pushed branch does not end at "open the PR from GitHub when ready."**
       [`Roadmap.PrSubmitter.ps1`](backend/modules/roadmap/Roadmap.PrSubmitter.ps1)
