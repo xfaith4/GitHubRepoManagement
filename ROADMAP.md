@@ -58,6 +58,12 @@ workflow that does not complete and does not say so.
       an empty room; every surface names whether a rule or a model produced
       its result; token and cost are measured rather than declared; one full
       workflow runs to a recorded outcome.
+- [ ] **Release 3.5 — trustworthy surfaces.** Added 2026-08-15 from an
+      adversarial UI review, triaged against the source rather than the
+      screenshots: nine cross-tab contradictions reproduced in code, five with an
+      identified root-cause line, and no exclusion policy anywhere in the scan
+      path — so every percentage is computed over a set that includes temp,
+      archived and vendored clones.
 - [ ] **Release 3.2 — portfolio scale.** Still unblocked and still worth doing,
       but demoted behind 3.1: a faster portal that strands work is not more
       reliable. Its performance budget landed 2026-08-11, so the remaining
@@ -73,9 +79,10 @@ workflow that does not complete and does not say so.
       recovery path is exhausted and needs a regeneration in an elevated
       session.
 
-**Forward arc.** Releases 3.0-3.3 describe the finished product: dispatch that
-runs (3.0), the loop closing end to end and legibly (3.1), an 80+ repo
-portfolio that feels immediate (3.2), unattended operation (3.3).
+**Forward arc.** Releases 3.0-3.5 describe the finished product: dispatch that
+runs (3.0), the loop closing end to end and legibly (3.1), the delivery loop
+closing without a hand-off (3.4), numbers an operator can act on (3.5), an 80+
+repo portfolio that feels immediate (3.2), unattended operation (3.3).
 
 ---
 
@@ -177,6 +184,7 @@ module + verification boundary`.
 | **3.2**   | **Portfolio Scale and Responsiveness**                                   | `planned` — demoted 2026-08-11 behind 3.1; read-path budget done, 3 scale milestones open  |
 | **3.3**   | **Steady-State Operation**                                               | `planned` — unattended for months: retention, restore, honest TLS, decision-grade digests  |
 | **3.4**   | **The Delivery Loop Closes**                                             | `planned` — sequenced ahead of 3.2: sync, PR-open, cleanup, and completion-through-the-PR  |
+| **3.5**   | **Trustworthy Surfaces (UI Quality)**                                    | `planned` — ahead of 3.2: one snapshot, one clock, one scope; disagreement fails CI        |
 
 > **Note on `.5` numbering.** Reserve it for course corrections like 1.7.5;
 > default new work to integer minor releases.
@@ -202,19 +210,27 @@ prerequisites.
    close is not more reliable. 3.1 taught the product to refuse unsafe writes;
    3.4 gives it the actions those refusals currently leave the operator to
    perform by hand.
-3. **Release 3.2 — portfolio scale.** Also unblocked. Demoted behind 3.1
-   deliberately, and now behind 3.4 for the same reason: latency is a quality of
-   a workflow that works.
-4. **One batched operator session** — an elevated shell covers the watchdog,
+3. **Release 3.5 — trustworthy surfaces.** Unblocked, and **ahead of 3.2** on the
+   reasoning that has now demoted 3.2 twice: a portfolio that renders faster while
+   one screen reports four different repository counts is not more reliable. 3.1
+   made every control honest about what it can do; 3.5 does the same for the
+   numbers. Two of its milestones — the day-grouped `SUM` inflating the trend axis
+   and the dead `staleThreshold` setting — have identified root causes and no
+   dependency on the snapshot contract, so they can be pulled forward whenever the
+   active release is blocked.
+4. **Release 3.2 — portfolio scale.** Also unblocked. Demoted behind 3.1
+   deliberately, and now behind 3.4 and 3.5 for the same reason: latency is a
+   quality of a workflow that works, and of numbers worth waiting for.
+5. **One batched operator session** — an elevated shell covers the watchdog,
    the service installer and 2.7's freeze-prevention deploy; one authenticated
    shell covers the `claude` run, the `gh agent-task` run, 3.1's full-loop
    proof (3.1's last milestone). Batching is the
    whole point: the operator, not the code, is the scarce resource.
-5. **Release 3.3 — pick-up work.** Every milestone is independent; take one
+6. **Release 3.3 — pick-up work.** Every milestone is independent; take one
    whenever the active release is blocked.
-6. **Trend accrual** closes itself as calendar time passes, provided capture
+7. **Trend accrual** closes itself as calendar time passes, provided capture
    keeps running.
-7. **Deferred — mobile completion (2.9) and the physical-Android proof.** Not
+8. **Deferred — mobile completion (2.9) and the physical-Android proof.** Not
    cancelled and not obsolete; the responsive foundation from 2.5 still ships.
    They resume once a PC workflow runs end to end without an operator having to
    know which background process must be alive for a button to mean anything.
@@ -224,7 +240,8 @@ prerequisites.
 | Open item                                            | Depends on                                    | Type                                          |
 | ---------------------------------------------------- | --------------------------------------------- | --------------------------------------------- |
 | Release 3.1 workflow completion and UX honesty       | —                                             | none — active; engineering, bar the one proof |
-| Release 3.4 delivery-loop closure                     | —                                             | none — 3.1's guards are the prerequisite      |
+| Release 3.4 delivery-loop closure                    | —                                             | none — 3.1's guards are the prerequisite      |
+| Release 3.5 trustworthy surfaces (UI quality)        | —                                             | none — root causes identified, engineering    |
 | Release 3.2 scale and responsiveness                 | —                                             | none — deadline + budget both settled         |
 | Release 2.9 mobile completion (ergonomics, run list) | A priority decision, already taken            | deferred 2026-08-11 — not blocked, deranked   |
 | Release 3.3 steady-state operation                   | —                                             | none — independent milestones, any order      |
@@ -1001,6 +1018,126 @@ to run smoothly first; constraints and the engine decision are in the same doc.
 
 ---
 
+### Release 3.5 — Trustworthy Surfaces (UI Quality)
+
+**Status:** planned — sequenced **after 3.4, ahead of 3.2**, on the reasoning this
+roadmap has now applied twice: a portfolio that renders faster while its own numbers
+contradict each other is not more reliable. 3.1 made every _control_ honest about
+what it can do; 3.5 makes every _number_ honest about what it counted.
+
+**Goal:** every figure the portal displays states what it counted, over which set,
+as of when, and from which source — and two views can no longer disagree without
+failing the build. Four producers (live scan, portfolio index, execution ledger,
+`app.db`) each render through whichever component owns them, so one screen reports
+76, 75, 52 and 27 repositories, each right about its own source.
+
+**Prerequisites:** met — all engineering, no external resource. Evidence base: the
+2026-08-14 adversarial review, triaged against the source in
+[`docs/reference/2026-08-15-ui-review-triage.md`](docs/reference/2026-08-15-ui-review-triage.md)
+— nine contradictions reproduced in code, five with a root-cause line, three of the
+review's own conclusions corrected.
+
+#### Product outcomes
+
+- An operator who checks one number against another finds them consistent, or finds
+  a stated reason they differ.
+- No portfolio metric is computed over a set the operator cannot name.
+- A panel that cannot answer says so, carrying its last known value and its age.
+- Nothing is deleted to make a metric look better; out-of-scope repositories are
+  reclassified and stay visible.
+
+#### Engineering milestones
+
+- [ ] **Every portfolio metric becomes an object, and no component computes one.**
+      Introduce one `portfolio-snapshot` contract built per scan and read by every
+      view: `value`, `unit`, `basis{numerator,denominator}`, `asOf`, `source`,
+      `coverage{assessed,total}`, `confidence`, `definition`, plus `schemaVersion`
+      and a `degraded[]` naming any source that returned stale or failed. Timestamps
+      UTC at rest, formatted once at the render boundary. An uncomputable metric
+      renders `—` with its reason, never `0`. _(state: planned — the tripwire derives
+      its scope from the components that render a portfolio-level number, not from a
+      maintained list)_
+- [ ] **Make cross-view disagreement fail the build.** Add an invariant suite over
+      live API responses: one canonical repo denominator behind every view;
+      ready-queue depth identical across all five endpoints reporting it; every
+      percentage within 0-100 and every count within portfolio size; one timezone
+      basis per payload. Land each assertion **with** its fix and prove it
+      non-vacuous against the pre-fix host — `main` requires `ci-smoke` green, so a
+      deliberately-red suite is not available as a definition of done.
+      _(state: planned)_
+- [ ] **Exclude what is not the portfolio, visibly.** Add a scope policy to
+      `backend/config/settings.json`, which today carries `inventory.maxDepth: 3` and
+      no exclusion of any kind: exclude `**/.tmp*/**`, `**/Archive/**`,
+      `**/*.worktrees/**`; classify repos outside the configured owner set as
+      `vendored` and keep them behind a toggle rather than dropping them; deduplicate
+      by `(remote_url, root_commit_sha)` instead of folder name. Every tile states
+      its scope; all portfolio math recomputes over the in-scope set.
+      _(state: planned — reproduce the reported `Genesys.Core_AuditLogsApp` →
+      `xfaith4/Genesys.Core` mis-mapping first; it is the one claim needing live data)_
+- [ ] **Fix the four measured metric defects, each reproduced before it is fixed.**
+      (a) `ready_repo_count` is a `SUM` grouped by `captured_day` over a table
+      holding one row **per repo per capture**, so every capture that day adds its
+      ready repos again — the sibling column uses `AVG`, which is why Avg Maturity
+      read 20% while Ready Repos read 1592 on a 76-repo portfolio. (b)
+      `Get-PortfolioTrendPayload` builds its tiles from passed-in assessments then
+      replaces its series from `app.db`, so one card renders two data paths. (c)
+      `_GetPortfolioAnalyticsAverage` skips nulls, so headline scores rise as
+      unscored repos accumulate. (d) `settings.staleThreshold` is consumed nowhere in
+      `backend/` while 3.1 redefined `isStale` as remote drift — wire the threshold
+      or retire the control, but two concepts may not share one word.
+      _(state: planned)_
+- [ ] **Replace every ad-hoc spinner with one async state machine.** States
+      `idle | loading | success | empty | stale | error | degraded`; hard 10s timeout
+      resolving to `error` with the failing endpoint, its status and a retry; on
+      refresh failure render the last good value greyed with its age. `empty` must
+      distinguish _computed and found nothing_ from _not computed_ — the Dependencies
+      panel renders one message for both and drops the `scannedAt` its own scanner
+      already emits. _(state: planned — five permanent spinners located)_
+- [ ] **Put runner health above the fold, and make the stranded count count what
+      renders.** 3.1 shipped the presence gate, the disabled approve controls and the
+      stranded badge; delivery is what is missing. Add a runner indicator beside
+      `Backend: Online`, make `6 active` name what is active, move the stalled-runner
+      banner above the fold with a copy affordance for its remedy command, group
+      queue entries by `(repo, task_id)` behind an "N earlier attempts" expander, and
+      escalate any task unclaimed > 24h. _(state: planned — display-side only; queue
+      idempotency stays the open 3.1 non-blocker)_
+- [ ] **One status vocabulary, two refresh verbs, and a surface that states its
+      consequence.** Map the grid chips, Operations lifecycle states and maturity
+      levels into one documented model — a repo currently reads `Ready` on one tab and
+      `blocked / L0-Absent` on another in the same session. Consolidate the seven
+      refresh verbs to at most two, each naming what it invalidates. Give irreversible
+      actions styling distinct from read-only ones, change bulk default scope from
+      "all filtered repos" to an explicit select-all, and close the accessibility
+      gaps: accessible names on `⋯` menus and row checkboxes, `aria-live` for scan
+      progress, the truncated Needs Attention label, plurals from data.
+      _(state: planned)_
+
+#### Acceptance criteria
+
+- Every portfolio-level number resolves to one `portfolio-snapshot` field, asserted
+  from the payload, and a component computing its own metric fails a scoped gate.
+- The invariant suite runs in CI, and each assertion has been **shown to fail**
+  against the pre-fix host before it was accepted.
+- Every reproduced metric defect has a fixture that fails without the fix, including
+  a multi-capture day proving `ready_repo_count` no longer inflates.
+- No metric renders `0` where the answer is "not computed", and no tile states a
+  percentage without its `basis` and `coverage`.
+- Every scope exclusion is stated in config, visible in the UI, and reversible; no
+  repository is removed from the portfolio by any of them.
+- `docs/reference/trust-report.md` records, per numbered review finding, the before
+  value, the after value, and fixed / not-fixed with a reason — so `Stale: 0 → 31`
+  reads as the fix it is rather than as a regression.
+
+#### Out of scope
+
+- A ranked `Today` landing view, the density question, and the nine-button row: one
+  product decision, owned by Lane 0.5 — 3.5 supplies the numbers it will render.
+- Scan progress and cancellation — an open Release 3.2 milestone.
+- Dispatch idempotency — an open Release 3.1 non-blocker; 3.5 dedupes the **display**.
+- New portfolio metrics. Make the existing ones true, scoped and explained.
+
+---
+
 ## 7. Cross-Cutting Engineering Work
 
 Continuous, not release-scoped. **This section carries open work only.**
@@ -1109,6 +1246,16 @@ bulk-scope confirmation on mutating actions, and the tab-inversion defect.
       or regrouping the six peers into three. _(state: planned — design
       -dependent; deliberately not decided while fixing the defect underneath
       it, since the density judgement changes once the layout is honest.)_
+
+      **Three inputs arrived 2026-08-15** from the adversarial UI review, all
+      arguing the same decision from different angles and all routed here rather
+      than scheduled as engineering: a ranked `Today` landing view (the value
+      score and work-unit estimate already exist and are three clicks deep), a
+      sortable table instead of ~120px cards for a 76-repo triage screen, and a
+      single primary action per row instead of nine equal-weight buttons. Release
+      3.5 supplies the trustworthy numbers any of them would render; the choice
+      of surface stays here. See
+      [the triage](docs/reference/2026-08-15-ui-review-triage.md).
 
 ### Lane 0.7 — Roadmap-standard fidelity: split-history awareness (2026-08-08)
 
