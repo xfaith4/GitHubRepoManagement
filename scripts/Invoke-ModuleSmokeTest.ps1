@@ -5667,64 +5667,233 @@ if (-not (Test-Path -LiteralPath $syncModule)) { throw "Missing module file: $sy
     }
 }
 
+Write-Step 'Branch cleanup — Release 3.4 milestone 5: deletion requires proof of the merge it follows'
+# Every state reproduced against real repositories, per the release acceptance
+# criteria. The proof is the merged PR's head SHA: a tip that advanced past it
+# refuses, a checkout refuses, a default branch refuses, and no SHA means no
+# deletion at all.
+. (Join-Path $WorkspaceRoot 'backend\modules\git\Git.BranchCleanup.ps1')
+& {
+    $cleanTmp = Join-Path $WorkspaceRoot 'output\smoke\module\branch-cleanup'
+    if (Test-Path -LiteralPath $cleanTmp) { Remove-Item -LiteralPath $cleanTmp -Recurse -Force }
+    $null = New-Item -ItemType Directory -Path $cleanTmp -Force
+    $bare = Join-Path $cleanTmp 'origin.git'
+    $clone = Join-Path $cleanTmp 'clone'
+    & git init --bare -b main $bare --quiet 2>&1 | Out-Null
+    & git clone $bare $clone --quiet 2>&1 | Out-Null
+    & git -C $clone config user.email 'smoke@local' 2>&1 | Out-Null
+    & git -C $clone config user.name 'smoke' 2>&1 | Out-Null
+    Set-Content -LiteralPath (Join-Path $clone 'a.txt') -Value 'base' -Encoding UTF8
+    & git -C $clone add -A 2>&1 | Out-Null
+    & git -C $clone commit -m 'base' --quiet 2>&1 | Out-Null
+    & git -C $clone push -u origin main --quiet 2>&1 | Out-Null
+
+    # A merged feature branch: its tip SHA stands in for the PR's merged head.
+    & git -C $clone switch -c 'roadmap/done-run' --quiet 2>&1 | Out-Null
+    Set-Content -LiteralPath (Join-Path $clone 'b.txt') -Value 'work' -Encoding UTF8
+    & git -C $clone add -A 2>&1 | Out-Null
+    & git -C $clone commit -m 'work' --quiet 2>&1 | Out-Null
+    & git -C $clone push -u origin 'roadmap/done-run' --quiet 2>&1 | Out-Null
+    $mergedSha = ((& git -C $clone rev-parse 'roadmap/done-run') | Out-String).Trim()
+
+    # Checked out: the branch is the current checkout — refuse before git has to.
+    $r = Remove-MergedRepoBranch -RepoPath $clone -Branch 'roadmap/done-run' -MergedHeadSha $mergedSha -Approved $true
+    if ($r.deleted -or $r.category -ne 'checked-out') { throw "Deleting the checked-out branch must refuse as 'checked-out', got deleted=$($r.deleted) category='$($r.category)'" }
+
+    & git -C $clone switch main --quiet 2>&1 | Out-Null
+
+    # Unapproved: everything valid, approval absent — refuse by name.
+    $r = Remove-MergedRepoBranch -RepoPath $clone -Branch 'roadmap/done-run' -MergedHeadSha $mergedSha -Approved $false
+    if ($r.deleted -or $r.category -ne 'approval-required') { throw "An unapproved deletion must refuse as 'approval-required', got '$($r.category)'" }
+
+    # No merge evidence: no SHA, no deletion — this is the milestone's point.
+    $r = Remove-MergedRepoBranch -RepoPath $clone -Branch 'roadmap/done-run' -Approved $true
+    if ($r.deleted -or $r.category -ne 'no-merge-evidence') { throw "A deletion without a merged head SHA must refuse as 'no-merge-evidence', got '$($r.category)'" }
+
+    # Default branch: never, merged or not.
+    $r = Remove-MergedRepoBranch -RepoPath $clone -Branch 'main' -MergedHeadSha $mergedSha -Approved $true
+    if ($r.deleted -or $r.category -ne 'default-branch') { throw "Deleting 'main' must refuse as 'default-branch', got '$($r.category)'" }
+
+    # Tip advanced past the merged head: those commits are not in main;
+    # deleting the branch would destroy them.
+    & git -C $clone switch 'roadmap/done-run' --quiet 2>&1 | Out-Null
+    Set-Content -LiteralPath (Join-Path $clone 'c.txt') -Value 'late work' -Encoding UTF8
+    & git -C $clone add -A 2>&1 | Out-Null
+    & git -C $clone commit -m 'after the merge' --quiet 2>&1 | Out-Null
+    & git -C $clone switch main --quiet 2>&1 | Out-Null
+    $r = Remove-MergedRepoBranch -RepoPath $clone -Branch 'roadmap/done-run' -MergedHeadSha $mergedSha -Approved $true
+    if ($r.deleted -or $r.category -ne 'tip-advanced') { throw "A tip advanced past the merged head must refuse as 'tip-advanced', got '$($r.category)'" }
+    $null = & git -C $clone rev-parse --verify --quiet 'refs/heads/roadmap/done-run' 2>&1
+    if ($LASTEXITCODE -ne 0) { throw 'The tip-advanced refusal must leave the branch intact' }
+
+    # Checked out in a LINKED worktree — the other half of the checked-out rule.
+    & git -C $clone branch 'roadmap/wt-run' $mergedSha 2>&1 | Out-Null
+    $wtPath = Join-Path $cleanTmp 'wt'
+    & git -C $clone worktree add $wtPath 'roadmap/wt-run' 2>&1 | Out-Null
+    $r = Remove-MergedRepoBranch -RepoPath $clone -Branch 'roadmap/wt-run' -MergedHeadSha $mergedSha -Approved $true
+    if ($r.deleted -or $r.category -ne 'checked-out') { throw "A branch checked out in a linked worktree must refuse as 'checked-out', got '$($r.category)'" }
+    & git -C $clone worktree remove $wtPath --force 2>&1 | Out-Null
+
+    # The happy path: tip equals the merged head — deleted locally AND on the
+    # remote, proven by the remote ref disappearing from the bare origin.
+    $r = Remove-MergedRepoBranch -RepoPath $clone -Branch 'roadmap/wt-run' -MergedHeadSha $mergedSha -DeleteRemote $true -Approved $true
+    if (-not $r.deleted) { throw "A proven-merged branch must delete, got category='$($r.category)' reason='$($r.reason)'" }
+    $null = & git -C $clone rev-parse --verify --quiet 'refs/heads/roadmap/wt-run' 2>&1
+    if ($LASTEXITCODE -eq 0) { throw 'The branch must be gone locally after deletion' }
+    # wt-run was never pushed, so its remote delete legitimately reports failure;
+    # the proven-remote case uses done-run's pushed ref instead: reset its tip
+    # back to the merged head, then delete both sides.
+    & git -C $clone branch -f 'roadmap/done-run' $mergedSha 2>&1 | Out-Null
+    $r = Remove-MergedRepoBranch -RepoPath $clone -Branch 'roadmap/done-run' -MergedHeadSha $mergedSha -DeleteRemote $true -Approved $true
+    if (-not $r.deleted -or -not $r.remoteDeleted) { throw "The pushed branch must delete on both sides, got deleted=$($r.deleted) remoteDeleted=$($r.remoteDeleted) ($($r.remoteResult))" }
+    $remoteRefs = ((& git -C $clone ls-remote origin 'refs/heads/roadmap/done-run') | Out-String).Trim()
+    if (-not [string]::IsNullOrWhiteSpace($remoteRefs)) { throw 'The remote branch must be gone from the origin after remote deletion' }
+
+    Remove-Item -LiteralPath $cleanTmp -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host '  cleanup ok: checked-out (current + linked worktree), unapproved, no-evidence, default-branch and tip-advanced all refused by name; proven merge deleted locally and on the remote' -ForegroundColor DarkGray
+}
+
 & {
     # --- The governing invariant, enforced rather than stated ----------------
-    # "Agents may commit freely to feature branches. They may never merge or
-    # push to a default branch." Scope derives from the git commands themselves,
-    # the same way the stale-base coverage check does, so a new write path is
-    # audited without anyone remembering to add it here.
+    # Release 3.4 milestone 6. "Agents may commit freely to feature branches.
+    # They may never merge or push to a default branch." Scope derives from the
+    # git commands themselves, the same way the stale-base coverage check does,
+    # so a new write path is audited without anyone remembering to add it here.
+    #
+    # Widened 2026-08-15 from push-only to the full invariant, once the last
+    # write path (branch cleanup) existed to validate: commits may only happen
+    # in a scope that creates a feature branch or refuses a default one, every
+    # merge must be --ff-only, and the checker proves ITSELF against a
+    # deliberately violating fixture before it is trusted on the real tree —
+    # three gates in this repo's history passed vacuously on their first
+    # attempt, and this one is not allowed to be the fourth.
     $defaultBranchNames = @('main', 'master', 'trunk', 'develop')
-    $pushSites = [System.Collections.Generic.List[object]]::new()
-    $violations = [System.Collections.Generic.List[object]]::new()
 
-    foreach ($file in Get-ChildItem -LiteralPath $WorkspaceRoot -Recurse -Filter '*.ps1' -File -ErrorAction SilentlyContinue |
+    function Get-DefaultBranchInvariantReport {
+        param([Parameter(Mandatory)][object[]]$Files)
+
+        $report = [pscustomobject]@{
+            PushSites   = [System.Collections.Generic.List[object]]::new()
+            CommitSites = [System.Collections.Generic.List[object]]::new()
+            MergeSites  = [System.Collections.Generic.List[object]]::new()
+            Violations  = [System.Collections.Generic.List[object]]::new()
+        }
+
+        foreach ($file in $Files) {
+            $fileErrors = $null
+            $fileAst = [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$null, [ref]$fileErrors)
+            if ($fileErrors -and @($fileErrors).Count -gt 0) { continue }
+
+            foreach ($cmd in $fileAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true)) {
+                if ($cmd.GetCommandName() -ne 'git') { continue }
+                $elements = @($cmd.CommandElements | ForEach-Object { $_.Extent.Text })
+                $site = [pscustomobject]@{
+                    File = $file.FullName
+                    Line = $cmd.Extent.StartLineNumber
+                    Text = ($cmd.Extent.Text -replace '\s+', ' ')
+                }
+
+                if (@($elements | Where-Object { $_ -ceq 'push' }).Count -gt 0) {
+                    $report.PushSites.Add($site) | Out-Null
+                    # A literal default-branch ref as a push target is the
+                    # invariant violation stated outright.
+                    foreach ($e in $elements) {
+                        $bare = $e.Trim("'", '"')
+                        if ($defaultBranchNames -contains $bare.ToLowerInvariant()) {
+                            $report.Violations.Add([pscustomobject]@{ Site = $site; Why = "pushes to the literal default branch '$bare'" }) | Out-Null
+                        }
+                    }
+                    # A force push can rewrite whatever it lands on, so it is
+                    # refused everywhere rather than only on default branches.
+                    foreach ($e in $elements) {
+                        if ($e -ceq '--force' -or $e -ceq '-f' -or $e -ceq '--force-with-lease') {
+                            $report.Violations.Add([pscustomobject]@{ Site = $site; Why = "force-pushes ($e)" }) | Out-Null
+                        }
+                    }
+                }
+
+                if (@($elements | Where-Object { $_ -ceq 'merge' }).Count -gt 0) {
+                    $report.MergeSites.Add($site) | Out-Null
+                    # The only merge this product may perform is one that cannot
+                    # author a commit.
+                    if (@($elements | Where-Object { $_ -ceq '--ff-only' }).Count -eq 0) {
+                        $report.Violations.Add([pscustomobject]@{ Site = $site; Why = 'merges without --ff-only, which can author a commit on whatever branch is checked out' }) | Out-Null
+                    }
+                }
+
+                if (@($elements | Where-Object { $_ -ceq 'commit' }).Count -gt 0) {
+                    # Only commits aimed at a managed repo count: a literal -C
+                    # or a splat that may carry one, same rule as the
+                    # stale-base coverage walker.
+                    $targetsRepo = ($elements -contains '-C') -or (@($elements | Where-Object { $_ -match '^@\w' }).Count -gt 0)
+                    if (-not $targetsRepo) { continue }
+                    $report.CommitSites.Add($site) | Out-Null
+
+                    # The enclosing function must either create the feature
+                    # branch it commits to (switch -c / checkout -b) or refuse
+                    # a default branch by name. The refusal string is only a
+                    # classifier here — its BEHAVIOUR is proven by the
+                    # completion-commit fixture above, which watches the
+                    # on-default-branch refusal leave the file untouched.
+                    $scope = $cmd
+                    while ($null -ne $scope -and $scope -isnot [System.Management.Automation.Language.FunctionDefinitionAst]) { $scope = $scope.Parent }
+                    $scopeText = if ($null -ne $scope) { $scope.Extent.Text } else { $fileAst.Extent.Text }
+                    $createsBranch = ($scopeText -match 'switch\s+-c\b') -or ($scopeText -match 'checkout\s+-b\b')
+                    $refusesDefault = ($scopeText -match 'on-default-branch')
+                    if (-not $createsBranch -and -not $refusesDefault) {
+                        $report.Violations.Add([pscustomobject]@{ Site = $site; Why = 'commits in a scope that neither creates a feature branch nor refuses a default one — this commit lands on whatever branch is checked out' }) | Out-Null
+                    }
+                }
+            }
+        }
+        return $report
+    }
+
+    # The checker proves itself first: a fixture that pushes to main, merges
+    # without --ff-only, and commits with no branch discipline must produce
+    # exactly those violations, or the sweep below would be trusting a checker
+    # nobody has seen fail.
+    $invFixtureDir = Join-Path $WorkspaceRoot 'output\smoke\module\invariant-fixture'
+    if (Test-Path -LiteralPath $invFixtureDir) { Remove-Item -LiteralPath $invFixtureDir -Recurse -Force }
+    $null = New-Item -ItemType Directory -Path $invFixtureDir -Force
+    Set-Content -LiteralPath (Join-Path $invFixtureDir 'violating.ps1') -Encoding UTF8 -Value @'
+function Invoke-BadPush { param($RepoPath) & git -C $RepoPath push origin main --force }
+function Invoke-BadMerge { param($RepoPath) & git -C $RepoPath merge FETCH_HEAD }
+function Invoke-BadCommit { param($RepoPath) & git -C $RepoPath commit -m 'lands wherever' }
+'@
+    $selfTest = Get-DefaultBranchInvariantReport -Files @(Get-ChildItem -LiteralPath $invFixtureDir -Filter '*.ps1' -File)
+    $selfWhys = @($selfTest.Violations | ForEach-Object { $_.Why }) -join ' | '
+    if (@($selfTest.Violations).Count -lt 4) {
+        throw ("The invariant checker failed its own violation fixture: expected >=4 violations (default-branch push, force, bare merge, undisciplined commit), found {0}: {1}" -f @($selfTest.Violations).Count, $selfWhys)
+    }
+    if ($selfWhys -notmatch 'literal default branch' -or $selfWhys -notmatch 'force' -or $selfWhys -notmatch 'ff-only' -or $selfWhys -notmatch 'neither creates') {
+        throw ("The invariant checker missed a violation class on its own fixture: {0}" -f $selfWhys)
+    }
+    Remove-Item -LiteralPath $invFixtureDir -Recurse -Force -ErrorAction SilentlyContinue
+
+    # Now the real tree — and the floors fail closed: fewer sites than are
+    # known to exist means the walker lost its scope, not that the tree got
+    # cleaner.
+    $realFiles = @(Get-ChildItem -LiteralPath $WorkspaceRoot -Recurse -Filter '*.ps1' -File -ErrorAction SilentlyContinue |
         Where-Object {
             $_.FullName -match '\\(backend|scripts)\\' -and
             $_.FullName -notmatch '\\node_modules\\' -and
             $_.Name -notmatch '(SmokeTest|Test-|\.Tests)\.ps1$'
-        }) {
+        })
+    $inv = Get-DefaultBranchInvariantReport -Files $realFiles
 
-        $fileErrors = $null
-        $fileAst = [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$null, [ref]$fileErrors)
-        if ($fileErrors -and @($fileErrors).Count -gt 0) { continue }
-
-        foreach ($cmd in $fileAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true)) {
-            if ($cmd.GetCommandName() -ne 'git') { continue }
-            $elements = @($cmd.CommandElements | ForEach-Object { $_.Extent.Text })
-            $isPush = @($elements | Where-Object { $_ -ceq 'push' }).Count -gt 0
-            if (-not $isPush) { continue }
-
-            $site = [pscustomobject]@{
-                File = $file.FullName.Substring($WorkspaceRoot.Length + 1)
-                Line = $cmd.Extent.StartLineNumber
-                Text = ($cmd.Extent.Text -replace '\s+', ' ')
-            }
-            $pushSites.Add($site) | Out-Null
-
-            # A literal default-branch ref as a push target is the invariant
-            # violation stated outright.
-            foreach ($e in $elements) {
-                $bare = $e.Trim("'", '"')
-                if ($defaultBranchNames -contains $bare.ToLowerInvariant()) {
-                    $violations.Add([pscustomobject]@{ Site = $site; Why = "pushes to the literal default branch '$bare'" }) | Out-Null
-                }
-            }
-            # A force push can rewrite whatever it lands on, so it is refused
-            # everywhere rather than only on default branches.
-            foreach ($e in $elements) {
-                if ($e -ceq '--force' -or $e -ceq '-f' -or $e -ceq '--force-with-lease') {
-                    $violations.Add([pscustomobject]@{ Site = $site; Why = "force-pushes ($e)" }) | Out-Null
-                }
-            }
-        }
+    if (@($inv.PushSites).Count -lt 3) {
+        throw ("Found only {0} git push site(s); the PR submitter, the approve-push route and branch cleanup all push, so the walker has lost its scope." -f @($inv.PushSites).Count)
     }
-
-    if ($pushSites.Count -lt 1) {
-        throw 'Found no git push sites at all across backend/ and scripts/. The invariant check has lost its scope and would pass vacuously.'
+    if (@($inv.CommitSites).Count -lt 3) {
+        throw ("Found only {0} repo-targeted git commit site(s); the PR submitter, the task runner and the completion commit all commit, so the walker has lost its scope." -f @($inv.CommitSites).Count)
     }
-    if ($violations.Count -gt 0) {
-        $detail = ($violations | ForEach-Object { "    {0}:{1} {2}`n      {3}" -f $_.Site.File, $_.Site.Line, $_.Why, $_.Site.Text }) -join "`n"
-        throw ("{0} write path(s) violate the default-branch invariant. Agents may commit freely to feature branches and reach a default branch only through a pull request.`n{1}" -f $violations.Count, $detail)
+    if (@($inv.MergeSites).Count -lt 1) {
+        throw 'Found no git merge sites; the default-branch sync merges --ff-only, so the walker has lost its scope.'
+    }
+    if (@($inv.Violations).Count -gt 0) {
+        $detail = ($inv.Violations | ForEach-Object { "    {0}:{1} {2}`n      {3}" -f $_.Site.File.Substring($WorkspaceRoot.Length + 1), $_.Site.Line, $_.Why, $_.Site.Text }) -join "`n"
+        throw ("{0} write path(s) violate the default-branch invariant. Agents may commit freely to feature branches and reach a default branch only through a pull request.`n{1}" -f @($inv.Violations).Count, $detail)
     }
 
     # And the sync path itself must stay a fast-forward. A plain merge or a
@@ -5736,7 +5905,7 @@ if (-not (Test-Path -LiteralPath $syncModule)) { throw "Missing module file: $sy
         if ($syncText -match $forbidden) { throw "The sync path contains '$forbidden', which can rewrite a default branch." }
     }
 
-    Write-Host ("  invariant ok: {0} push site(s) checked, none targeting a default branch or forcing; sync remains fast-forward-only" -f $pushSites.Count) -ForegroundColor DarkGray
+    Write-Host ("  invariant ok: checker failed its own violating fixture first; {0} push, {1} commit and {2} merge site(s) checked — none reach a default branch, none force, every merge --ff-only" -f @($inv.PushSites).Count, @($inv.CommitSites).Count, @($inv.MergeSites).Count) -ForegroundColor DarkGray
 }
 
 Write-Step 'Smoke test completed'

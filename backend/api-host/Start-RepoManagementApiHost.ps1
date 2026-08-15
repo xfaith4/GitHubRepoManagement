@@ -73,6 +73,8 @@ $gitModuleRoot    = Join-Path $WorkspaceRoot 'backend\modules\git'
 # calls Get-RepoBaseFreshness through Get-Command, so an unloaded freshness
 # module degrades the sync to "unverifiable" rather than failing loudly.
 . (Join-Path $gitModuleRoot 'Git.DefaultBranchSync.ps1')
+# Release 3.4 milestone 5 — branch cleanup with proof of the merge it follows.
+. (Join-Path $gitModuleRoot 'Git.BranchCleanup.ps1')
 $readmeModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\readme'
 . (Join-Path $readmeModuleRoot 'Readme.Generator.ps1')
 . (Join-Path $docStdModuleRoot 'DocStandardization.Previewer.ps1')
@@ -7846,6 +7848,90 @@ try {
                         }
                     } catch {
                         Send-ErrorJson -Stream $req.Stream -StatusCode 400 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'git.sync-default-branch'
+                    }
+                }
+                'POST /api/git/cleanup-branch' {
+                    # Release 3.4 milestone 5 — the operator-facing door to
+                    # Remove-MergedRepoBranch, same contract as the sync route
+                    # above: the route adds NO policy, refusals are the module's
+                    # own category/reason/remedy forwarded verbatim as 409, and
+                    # approval is an input that an absent flag refuses on.
+                    Write-HostLog ("[TRACE] git.cleanup-branch correlationId={0} start" -f $correlationId)
+                    try {
+                        $body = Parse-JsonBody -Body $req.Body
+                        Add-MetricCounter -Name 'api_requests_total'
+                        $cbRepoName = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'repoName' -Default '')
+                        $cbRepoPath = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'repoPath' -Default '')
+                        $cbBranch   = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'branch' -Default '')
+                        $cbMergedHeadSha = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'mergedHeadSha' -Default '')
+                        $cbDeleteRemote = ($body.ContainsKey('deleteRemote') -and (Parse-Bool -Value $body.deleteRemote -Default $false))
+                        $cbApproved = ($body.ContainsKey('approved') -and [bool]$body.approved)
+
+                        if ([string]::IsNullOrWhiteSpace($cbRepoPath) -and [string]::IsNullOrWhiteSpace($cbRepoName)) {
+                            throw 'repoName or repoPath is required for /api/git/cleanup-branch'
+                        }
+                        if ([string]::IsNullOrWhiteSpace($cbBranch)) {
+                            throw 'branch is required for /api/git/cleanup-branch'
+                        }
+
+                        if ([string]::IsNullOrWhiteSpace($cbRepoPath)) {
+                            $cbSettings = Get-HostSettings
+                            $cbCache = Get-RoadmapFromCache -TtlSeconds (Get-RoadmapCacheTtlSeconds -Settings $cbSettings)
+                            if ($cbCache.hit -and $cbCache.entries) {
+                                $cbEntry = @($cbCache.entries) | Where-Object { [string]$_.repoName -eq $cbRepoName } | Select-Object -First 1
+                                if ($null -ne $cbEntry) {
+                                    $cbRepoPath = if ($cbEntry -is [System.Collections.IDictionary]) {
+                                        [string](Get-ValueOrDefault $cbEntry['repoPath'] '')
+                                    } else {
+                                        [string](Get-ValueOrDefault $cbEntry.repoPath '')
+                                    }
+                                }
+                            }
+                        }
+
+                        if ([string]::IsNullOrWhiteSpace($cbRepoPath)) {
+                            Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{
+                                success  = $false
+                                error    = ("No local checkout is known for '{0}'. Run a scan first, or pass repoPath." -f $cbRepoName)
+                                category = 'repo-not-found'
+                            }
+                        }
+                        else {
+                            $cbToken = Get-ConfiguredGitHubToken -Settings (Get-HostSettings)
+                            $cbResult = Remove-MergedRepoBranch -RepoPath $cbRepoPath -Branch $cbBranch `
+                                -MergedHeadSha $cbMergedHeadSha -DeleteRemote $cbDeleteRemote `
+                                -Token $cbToken -Approved $cbApproved
+                            $cbPayload = @{
+                                deleted       = [bool]$cbResult.deleted
+                                refused       = [bool]$cbResult.refused
+                                category      = [string]$cbResult.category
+                                reason        = [string]$cbResult.reason
+                                remedy        = [string]$cbResult.remedy
+                                branch        = [string]$cbResult.branch
+                                tipSha        = $cbResult.tipSha
+                                remoteDeleted = [bool]$cbResult.remoteDeleted
+                                remoteResult  = [string]$cbResult.remoteResult
+                                repoPath      = $cbRepoPath
+                            }
+                            if ($cbResult.refused) {
+                                Write-HostLog ("[TRACE] git.cleanup-branch correlationId={0} repo={1} branch={2} REFUSED category={3}" -f $correlationId, $cbRepoName, $cbBranch, $cbResult.category)
+                                Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                                    success  = $false
+                                    error    = [string]$cbResult.reason
+                                    category = [string]$cbResult.category
+                                    data     = $cbPayload
+                                }
+                            }
+                            else {
+                                Write-HostLog ("[TRACE] git.cleanup-branch correlationId={0} repo={1} branch={2} deleted remote={3}" -f $correlationId, $cbRepoName, $cbBranch, $cbResult.remoteDeleted)
+                                Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                                    success = $true
+                                    data    = $cbPayload
+                                }
+                            }
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 400 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'git.cleanup-branch'
                     }
                 }
                 'POST /api/export' {

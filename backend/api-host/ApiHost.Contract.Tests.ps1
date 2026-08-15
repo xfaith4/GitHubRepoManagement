@@ -330,3 +330,45 @@ Describe 'Default-branch sync route -- Release 3.4 milestone 1, step 10' {
         $response.Json.category | Should -Be 'repo-not-found'
     }
 }
+
+Describe 'Branch cleanup route - Release 3.4 milestone 5' {
+    # Same contract as the sync route: refusals are the module's own category,
+    # reason and remedy forwarded verbatim as 409, and the refusal case is the
+    # assertion that distinguishes "route exists" from "route exists AND
+    # Git.BranchCleanup.ps1 is loaded in this host". Verified non-vacuous by
+    # running against the pre-route host: all three failed there.
+
+    It 'returns validation envelope without a repo or branch' {
+        $response = Invoke-ContractApiRequest -Method POST -Path '/api/git/cleanup-branch' -Body @{}
+        Assert-ErrorEnvelope -Response $response -StatusCode 400 -Operation 'git.cleanup-branch' -Category 'validation'
+    }
+
+    It 'forwards the module refusal rather than inventing one' {
+        $notARepo = Join-Path $script:LogRoot 'not-a-repo-cleanup'
+        $null = New-Item -ItemType Directory -Path $notARepo -Force
+        $response = Invoke-ContractApiRequest -Method POST -Path '/api/git/cleanup-branch' -Body @{
+            repoPath = $notARepo
+            branch = 'roadmap/some-run'
+            mergedHeadSha = 'abc123'
+            approved = $true
+        }
+
+        $response.StatusCode | Should -Be 409
+        $response.Json.success | Should -BeFalse
+        $response.Json.category | Should -Be 'not-a-git-repo'
+        $response.Json.data.refused | Should -BeTrue
+        $response.Json.data.deleted | Should -BeFalse
+        $response.Json.data.remedy | Should -Not -BeNullOrEmpty
+    }
+
+    It 'answers 404 with a named category when the repo is unknown' {
+        $response = Invoke-ContractApiRequest -Method POST -Path '/api/git/cleanup-branch' -Body @{
+            repoName = 'a-repo-that-does-not-exist-in-any-cache'
+            branch = 'roadmap/some-run'
+            approved = $true
+        }
+
+        $response.StatusCode | Should -Be 404
+        $response.Json.category | Should -Be 'repo-not-found'
+    }
+}

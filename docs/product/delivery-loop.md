@@ -30,7 +30,7 @@ merge PR on GitHub
      |
 pull main locally             <- step 10  (built, operator-invoked)
      |
-delete branch                 <- step 11  (missing)
+delete branch                 <- step 11  (built, proof-gated)
      |
 record completion as verified
      |
@@ -59,12 +59,12 @@ main
 local main  <----------- pull -------- remote main
 ```
 
-## What is built, and what is missing
+## What is built
 
 Measured 2026-08-14 against the twelve steps, re-measured 2026-08-15 after
 [PR #134](https://github.com/xfaith4/GitHubRepoManagement/pull/134) shipped the
-sync operation and its operator surface, then again after milestones 3 and 4
-landed. Eleven are built; one is missing.
+sync operation and its operator surface, then again as milestones 3-6 landed.
+**All twelve are built as of 2026-08-15.**
 
 | # | Step | State |
 | --- | --- | --- |
@@ -78,7 +78,7 @@ landed. Eleven are built; one is missing.
 | 8 | CI / verification | built — `MergeReadiness.ps1`, including a `merge-conflicts` blocker |
 | 9 | Merge on GitHub | built, explicit operator action |
 | 10 | Sync local `main` | built — `POST /api/git/sync-default-branch` and the control in the per-repo git status modal; operator-invoked, not automatic after merge |
-| 11 | **Delete the feature branch** | **missing** |
+| 11 | Delete the feature branch | built — `Remove-MergedRepoBranch` requires the merged PR's head SHA; `tip-advanced`, `checked-out`, `default-branch` and `no-merge-evidence` refuse by name; `POST /api/git/cleanup-branch` is the door |
 | 12 | Record completion | built — the runner commits the completion edit on the feature branch; the write-back gate verifies the merged result and records `verified-merged`, writing nothing |
 
 Steps 2 and 10 are the two points where the loop touches local `main`, and both
@@ -87,14 +87,15 @@ now sync: step 2 from the runner via `-SyncMain`, step 10 from the portal via
 the module's refusal matrix answers. Step 7 closed 2026-08-15: approve-push now
 opens the run's pull request itself through `Open-RepoBranchPullRequest` — the
 message that used to send the operator to GitHub now carries the PR URL. Step 11
-has no implementation of any kind.
+closed the same day: deletion requires the merged PR's head SHA, so cleanup is
+the last step of a proven merge rather than a tidiness action.
 
-**The loop now runs to a merged PR without the operator leaving the product;
-what it leaves behind is branches.** The stale-clone defect stayed invisible for
-so long because nothing returned local `main` to the remote tip, making "behind"
-the resting state rather than an anomaly. Sync is one click at either end, the PR
-opens on approval, and completion rides the branch — step 11 (delete the merged
-branch, proving it is the branch that merged) is the one remaining gap.
+**The loop is a circle in code.** The stale-clone defect stayed invisible for so
+long because nothing returned local `main` to the remote tip, making "behind" the
+resting state rather than an anomaly. Sync is one click at either end, the PR
+opens on approval, completion rides the branch it reviews, and cleanup proves the
+merge it follows. What no one has yet done is drive one real item around the
+circle end to end — that proof is batched with the Release 2.9 operator session.
 
 ## Layered architecture
 
