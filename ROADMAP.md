@@ -176,6 +176,7 @@ module + verification boundary`.
 | **3.1**   | **Closed-Loop Delivery**                                                 | **active** — widened 2026-08-11: loop closure plus dead-end removal, engine + cost honesty |
 | **3.2**   | **Portfolio Scale and Responsiveness**                                   | `planned` — demoted 2026-08-11 behind 3.1; read-path budget done, 3 scale milestones open  |
 | **3.3**   | **Steady-State Operation**                                               | `planned` — unattended for months: retention, restore, honest TLS, decision-grade digests  |
+| **3.4**   | **The Delivery Loop Closes**                                             | `planned` — sequenced ahead of 3.2: sync, PR-open, cleanup, and completion-through-the-PR  |
 
 > **Note on `.5` numbering.** Reserve it for course corrections like 1.7.5;
 > default new work to integer minor releases.
@@ -195,18 +196,25 @@ prerequisites.
 1. **Release 3.1 — the active release.** Reliability and honesty of the PC
    workflow: no dead-end controls, engine attribution, measured cost, one
    workflow that finishes. All unblocked engineering.
-2. **Release 3.2 — portfolio scale.** Also unblocked, and next in line. Demoted
-   behind 3.1 deliberately: latency is a quality of a workflow that works.
-3. **One batched operator session** — an elevated shell covers the watchdog,
+2. **Release 3.4 — the delivery loop closes.** Unblocked, and next in line
+   after 3.1. Sequenced **ahead of 3.2** on the same reasoning that demoted 3.2
+   behind 3.1: a portfolio that renders faster while the delivery loop cannot
+   close is not more reliable. 3.1 taught the product to refuse unsafe writes;
+   3.4 gives it the actions those refusals currently leave the operator to
+   perform by hand.
+3. **Release 3.2 — portfolio scale.** Also unblocked. Demoted behind 3.1
+   deliberately, and now behind 3.4 for the same reason: latency is a quality of
+   a workflow that works.
+4. **One batched operator session** — an elevated shell covers the watchdog,
    the service installer and 2.7's freeze-prevention deploy; one authenticated
    shell covers the `claude` run, the `gh agent-task` run, 3.1's full-loop
    proof (3.1's last milestone). Batching is the
    whole point: the operator, not the code, is the scarce resource.
-4. **Release 3.3 — pick-up work.** Every milestone is independent; take one
+5. **Release 3.3 — pick-up work.** Every milestone is independent; take one
    whenever the active release is blocked.
-5. **Trend accrual** closes itself as calendar time passes, provided capture
+6. **Trend accrual** closes itself as calendar time passes, provided capture
    keeps running.
-6. **Deferred — mobile completion (2.9) and the physical-Android proof.** Not
+7. **Deferred — mobile completion (2.9) and the physical-Android proof.** Not
    cancelled and not obsolete; the responsive foundation from 2.5 still ships.
    They resume once a PC workflow runs end to end without an operator having to
    know which background process must be alive for a button to mean anything.
@@ -216,6 +224,7 @@ prerequisites.
 | Open item                                            | Depends on                                    | Type                                          |
 | ---------------------------------------------------- | --------------------------------------------- | --------------------------------------------- |
 | Release 3.1 workflow completion and UX honesty       | —                                             | none — active; engineering, bar the one proof |
+| Release 3.4 delivery-loop closure                     | —                                             | none — 3.1's guards are the prerequisite      |
 | Release 3.2 scale and responsiveness                 | —                                             | none — deadline + budget both settled         |
 | Release 2.9 mobile completion (ergonomics, run list) | A priority decision, already taken            | deferred 2026-08-11 — not blocked, deranked   |
 | Release 3.3 steady-state operation                   | —                                             | none — independent milestones, any order      |
@@ -869,6 +878,126 @@ window.
 
 - Multi-tenant or hosted operation.
 - Log shipping to an external observability platform.
+
+---
+
+### Release 3.4 — The Delivery Loop Closes
+
+**Status:** planned — sequenced **ahead of 3.2**. The reasoning that demoted 3.2
+behind 3.1 applies again unchanged: a portfolio that renders faster while the
+delivery loop cannot close is not more reliable.
+
+**Goal:** the agent executes the full delivery loop end to end — sync, branch,
+implement, test, commit, push, PR, CI, merge, sync, clean up, mark complete —
+without the operator leaving the product to finish a step by hand.
+
+**Prerequisites:** met. Release 3.1 closed the honesty gaps this depends on:
+nothing queues into an empty room, every dispatch surface is gated, staleness is
+computed rather than asserted, and no write path branches from a clone it has
+not verified. This release adds the _actions_ those guards can currently only
+refuse on.
+
+The target workflow, the layer model, and the evidence per gap live in
+[`docs/product/delivery-loop.md`](docs/product/delivery-loop.md). Measured
+2026-08-14: **eight of twelve steps are built and four are missing — every
+missing one at a boundary.** Steps 2 and 10 are where the loop touches local
+`main`; step 7 is the push-to-PR handoff, where the product says _"Open the PR
+from GitHub when ready"_ and the operator leaves; step 11 does not exist. The
+loop is an arc, not a circle — which is why the stale-clone defect stayed
+invisible: nothing returned local `main` to the tip, so "behind" was the resting
+state.
+
+#### Product outcomes
+
+- A roadmap item travels the whole loop with the operator approving each
+  transition rather than performing it.
+- Local `main` is returned to the remote tip by the product, not by hand.
+- Completion is recorded through the same pull request as the work it describes.
+- No branch is left behind on either side once an item is done.
+
+#### Governing invariant
+
+**Agents may commit freely to feature branches. They may never merge or push to
+a default branch. Changes reach `main` only through a passing pull request.**
+This is already how every write path behaves; this release encodes it as a gate
+rather than a statement, and no milestone below relaxes it. `pull --ff-only` is
+not an exception — fast-forward-only refuses outright when a merge would be
+required, so it moves a pointer and cannot author a commit.
+
+#### Engineering milestones
+
+- [ ] **Syncing `main` is a capability, not just a refusal.** `git fetch` and
+      `git pull` appear nowhere in `backend/` or `scripts/`; 3.1 shipped a guard
+      that refuses to branch from a stale base — a stop sign with no road behind
+      it. Add one operation, used by both step 2 and step 10, that fetches and
+      fast-forwards the default branch. **Only `behind` may fast-forward.**
+      `current` is a no-op; **`ahead` refuses as `default-branch-ahead`**,
+      because local commits on a default branch are the invariant violation this
+      release exists to prevent and must be reported rather than carried;
+      `diverged` refuses because a fast-forward is impossible. Dirty tree, no
+      upstream, and detached HEAD each refuse with their own reason. Never a
+      merge, never a rebase, never a force. _(state: planned)_
+
+- [ ] **Ahead and behind are both real, and divergence is named.**
+      [`Git.BaseFreshness.ps1`](backend/modules/git/Git.BaseFreshness.ps1)
+      computes `HEAD..remote` and never the reverse, so a clone 5 behind _and_
+      carrying local commits reports "behind 5" and says nothing about the local
+      side — the exact state where a fast-forward refuses. Compute both
+      directions; classify `diverged` as its own state with its own remedy.
+      _(state: planned — a known limitation of the 2026-08-14 implementation,
+      recorded rather than left to be rediscovered)_
+
+- [ ] **A pushed branch does not end at "open the PR from GitHub when ready."**
+      [`Roadmap.PrSubmitter.ps1`](backend/modules/roadmap/Roadmap.PrSubmitter.ps1)
+      already opens pull requests with ten named refusals, proven live in 2.7
+      Phase A — but only for roadmap repairs, because branch-and-PR logic is
+      entangled with commit-the-roadmap-file logic. Separate them so any agent run
+      that pushed a branch opens its PR through the same refusal matrix.
+      _(state: planned — reachable from exactly one caller)_
+
+- [ ] **Roadmap completion travels through the pull request, never after it.**
+      **Re-verified 2026-08-14; the ordering is wrong today.**
+      `POST /api/roadmap/write-back/apply` is gated on merge evidence, so it runs
+      _after_ the merge, and its write is a bare `Set-Content` to the roadmap on
+      whatever branch is checked out — `main` at that point. No branch, no
+      commit, no pull request in that path. Move the edit into the feature
+      branch's own commit so the merge makes it authoritative; the merge-evidence
+      gate then guards **recording completion as verified** in the ledger rather
+      than writing the checkbox. _(state: planned — confirmed in code)_
+
+- [ ] **A merged branch is cleaned up, and cleanup proves it is the branch that
+      merged.** No deletion of any kind exists, so every completed item leaves
+      two branches behind. Deletion requires **both** a confirmed merged pull
+      request **and** the branch tip still equalling that pull request's merged
+      head SHA. Refuse if the tip advanced after the merge — those commits are
+      not in `main` and deleting the branch destroys them — and refuse if the
+      branch is checked out in another worktree. _(state: planned)_
+
+- [ ] **The default-branch invariant is enforced, not stated.** 3.1's stale-base
+      tripwire already derives every command in `backend/` and `scripts/` that
+      branches or commits in a managed repo. Extend that scope to assert no write
+      path can commit onto, or push to, a default branch. A stated rule drifts; a
+      derived one does not. _(state: planned)_
+
+**Automated conflict resolution is deliberately deferred** — the manual loop has
+to run smoothly first; constraints and the engine decision are in the same doc.
+
+#### Acceptance criteria
+
+- A roadmap item travels all twelve steps with the operator **approving** each
+  transition, never **performing** it.
+- Sync classifies `current`, `behind`, `ahead` and `diverged`; **only `behind`
+  fast-forwards**, `ahead` refuses as `default-branch-ahead`, every refusal names
+  its remedy, and a smoke assertion proves the **refusals**, not the happy path.
+- Roadmap completion appears in the feature branch's commit; no path writes a
+  completion edit to a default branch.
+- No command in `backend/` or `scripts/` can commit onto or push to a default
+  branch. The assertion derives its scope from the commands themselves and fails
+  closed when it finds fewer sites than exist.
+- Branch deletion refuses a tip advanced past the merged head, and a branch
+  checked out in another worktree. A completed item leaves no branch behind.
+- Every state above is **reproduced in a fixture**, not asserted from a
+  description.
 
 ---
 

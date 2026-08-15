@@ -5399,4 +5399,227 @@ if (-not (Test-Path -LiteralPath $freshnessModule)) { throw "Missing module file
             $writeSites.Count, $writeFiles.Count, ($writeFiles -join ', '), $publishSites.Count) -ForegroundColor DarkGray
 }
 
+Write-Step 'Default-branch sync — Release 3.4: only "behind" may fast-forward'
+# Release 3.1 shipped a guard that refuses to branch from a stale clone while
+# `git fetch` and `git pull` appeared nowhere in backend/ or scripts/ — a stop
+# sign with no road behind it. This is the road, and the whole point is that it
+# is a narrow one: a fast-forward is the only git operation that cannot author a
+# commit, because --ff-only refuses outright when a merge would be required.
+$syncModule = Join-Path $WorkspaceRoot 'backend\modules\git\Git.DefaultBranchSync.ps1'
+if (-not (Test-Path -LiteralPath $syncModule)) { throw "Missing module file: $syncModule" }
+. $syncModule
+
+& {
+    # --- Four states, not two -----------------------------------------------
+    # Computing only the behind side reported a clone that was behind AND
+    # carrying local commits as merely "behind", which is the exact state where
+    # a fast-forward refuses. Both directions or neither.
+    $current  = Resolve-BaseFreshness -LocalSha 'a' -RemoteSha 'a' -BaseBranch 'main'
+    $behind   = Resolve-BaseFreshness -LocalSha 'a' -RemoteSha 'b' -RemoteObjectPresentLocally $true -BehindCount 5 -AheadCount 0 -BaseBranch 'main'
+    $ahead    = Resolve-BaseFreshness -LocalSha 'a' -RemoteSha 'b' -RemoteObjectPresentLocally $true -BehindCount 0 -AheadCount 2 -BaseBranch 'main'
+    $diverged = Resolve-BaseFreshness -LocalSha 'a' -RemoteSha 'b' -RemoteObjectPresentLocally $true -BehindCount 5 -AheadCount 2 -BaseBranch 'main'
+
+    if ($current.state -ne 'current' -or $current.aheadCount -ne 0) { throw 'A clone at the tip is current and exactly 0 ahead' }
+    if ($behind.state -ne 'behind' -or -not $behind.isStale) { throw "Behind must classify as behind and be stale; got '$($behind.state)'" }
+    if ($ahead.state -ne 'ahead') { throw "Local commits with nothing upstream missing is 'ahead', not '$($ahead.state)'" }
+    if ($ahead.isStale) { throw 'A clone that is only ahead holds everything upstream has, so it is not stale' }
+    if ($ahead.aheadCount -ne 2) { throw "The ahead count must be carried; got '$($ahead.aheadCount)'" }
+    if ($diverged.state -ne 'diverged' -or -not $diverged.isStale) { throw "Both sides moved: that is 'diverged', got '$($diverged.state)'" }
+    if ($diverged.summary -notmatch '5 commit' -or $diverged.summary -notmatch '2 ahead') {
+        throw 'A diverged reading must name BOTH directions, or the operator cannot tell why a fast-forward is impossible.'
+    }
+
+    # --- The decision matrix -------------------------------------------------
+    $d = Resolve-DefaultBranchSyncDecision -Freshness $behind -BranchName 'main'
+    if (-not $d.allowed -or $d.action -ne 'fast-forward') { throw 'Behind is the one state that may fast-forward' }
+
+    $d = Resolve-DefaultBranchSyncDecision -Freshness $current -BranchName 'main'
+    if (-not $d.allowed -or $d.action -ne 'none') { throw 'Already current is an allowed no-op, never a refusal' }
+
+    $d = Resolve-DefaultBranchSyncDecision -Freshness $ahead -BranchName 'main'
+    if ($d.allowed) { throw 'A default branch carrying local commits must never be fast-forwarded over' }
+    if ($d.category -ne 'default-branch-ahead') { throw "The ahead refusal needs its own name; got '$($d.category)'" }
+    if ($d.reason -notmatch 'pull request') { throw 'The ahead refusal must name the invariant it is protecting' }
+
+    $d = Resolve-DefaultBranchSyncDecision -Freshness $diverged -BranchName 'main'
+    if ($d.allowed -or $d.category -ne 'diverged') { throw "Diverged must refuse under its own name; got '$($d.category)'" }
+    if ($d.reason -notmatch 'fast-forward is impossible') { throw 'The diverged refusal must say why it cannot proceed' }
+
+    # Both are checked against a clone that IS behind, so the refusal is coming
+    # from the working-tree state rather than from having nothing to do.
+    $r = Resolve-DefaultBranchSyncDecision -Freshness $behind -BranchName 'main' -WorkingTreeDirty $true
+    if ($r.allowed) { throw 'A dirty clone must refuse even when it is behind' }
+    if ($r.category -ne 'working-tree-dirty') { throw "Expected working-tree-dirty; got '$($r.category)'" }
+
+    $r = Resolve-DefaultBranchSyncDecision -Freshness $behind -BranchName 'main' -IsDetachedHead $true
+    if ($r.allowed) { throw 'A detached HEAD has no branch to move and must refuse' }
+    if ($r.category -ne 'detached-head') { throw "Expected detached-head; got '$($r.category)'" }
+
+    # Unverifiable must refuse HERE, unlike the stale-base guard which lets an
+    # unverified clone through. The asymmetry is deliberate: refusing to branch
+    # blocks work, while refusing to move a ref costs nothing.
+    $unknown = Resolve-BaseFreshness -LocalSha 'a' -ProbeError 'offline' -BaseBranch 'main'
+    $d = Resolve-DefaultBranchSyncDecision -Freshness $unknown -BranchName 'main'
+    if ($d.allowed) { throw 'Refusing to move a default branch on an unverified reading' }
+    $d = Resolve-DefaultBranchSyncDecision -Freshness $null -BranchName 'main'
+    if ($d.allowed) { throw 'A missing reading must not be treated as fresh' }
+
+    Write-Host '  decision ok: only behind fast-forwards; ahead refuses as default-branch-ahead, diverged/dirty/detached/unverified each refuse by name' -ForegroundColor DarkGray
+}
+
+& {
+    # --- Every state, reproduced against real repositories -------------------
+    $syncTmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gh-sync-" + [guid]::NewGuid().ToString('n'))
+    $null = New-Item -ItemType Directory -Path $syncTmp -Force
+    try {
+        $originPath = Join-Path $syncTmp 'origin.git'
+        $authorPath = Join-Path $syncTmp 'author'
+        $clonePath  = Join-Path $syncTmp 'clone'
+        $gitCfg = @('-c', 'user.email=smoke@local', '-c', 'user.name=smoke', '-c', 'commit.gpgsign=false')
+
+        $null = & git init --bare -q --initial-branch=main $originPath 2>&1
+        $null = & git clone -q $originPath $authorPath 2>&1
+        Set-Content -LiteralPath (Join-Path $authorPath 'f.txt') -Value "v1`n" -Encoding UTF8
+        $null = & git -C $authorPath add -A 2>&1
+        $null = & git -C $authorPath @gitCfg commit -q -m 'v1' 2>&1
+        $null = & git -C $authorPath push -q origin main 2>&1
+        $null = & git clone -q $originPath $clonePath 2>&1
+
+        # current -> allowed no-op, and nothing moves.
+        $shaBefore = ((& git -C $clonePath rev-parse HEAD 2>&1) | Out-String).Trim()
+        $r = Sync-RepoDefaultBranch -RepoPath $clonePath -Approved $true
+        if (-not $r.synced -or $r.refused) { throw "A clone already at the tip must succeed as a no-op; got refused=$($r.refused) reason='$($r.reason)'" }
+        $shaAfter = ((& git -C $clonePath rev-parse HEAD 2>&1) | Out-String).Trim()
+        if ($shaBefore -ne $shaAfter) { throw 'A no-op sync moved HEAD' }
+
+        # behind -> fast-forwards, and HEAD actually reaches the remote tip.
+        Set-Content -LiteralPath (Join-Path $authorPath 'f.txt') -Value "v2`n" -Encoding UTF8
+        $null = & git -C $authorPath add -A 2>&1
+        $null = & git -C $authorPath @gitCfg commit -q -m 'v2' 2>&1
+        $null = & git -C $authorPath push -q origin main 2>&1
+        $remoteTip = ((& git -C $authorPath rev-parse HEAD 2>&1) | Out-String).Trim()
+
+        $r = Sync-RepoDefaultBranch -RepoPath $clonePath -Approved $true
+        if (-not $r.synced) { throw "A behind clone must fast-forward; got '$($r.category)' - $($r.reason)" }
+        $nowSha = ((& git -C $clonePath rev-parse HEAD 2>&1) | Out-String).Trim()
+        if ($nowSha -ne $remoteTip) { throw 'The fast-forward did not reach the remote tip' }
+
+        # approval is an INPUT: the same safe state refuses without it.
+        Set-Content -LiteralPath (Join-Path $authorPath 'f.txt') -Value "v3`n" -Encoding UTF8
+        $null = & git -C $authorPath add -A 2>&1
+        $null = & git -C $authorPath @gitCfg commit -q -m 'v3' 2>&1
+        $null = & git -C $authorPath push -q origin main 2>&1
+        $r = Sync-RepoDefaultBranch -RepoPath $clonePath -Approved $false
+        if ($r.synced -or $r.category -ne 'approval-required') {
+            throw "An unapproved transition must refuse as 'approval-required'; got synced=$($r.synced) category='$($r.category)'"
+        }
+        $null = Sync-RepoDefaultBranch -RepoPath $clonePath -Approved $true
+
+        # ahead -> the invariant violation. A local commit on the default branch.
+        Set-Content -LiteralPath (Join-Path $clonePath 'local.txt') -Value "local`n" -Encoding UTF8
+        $null = & git -C $clonePath add -A 2>&1
+        $null = & git -C $clonePath @gitCfg commit -q -m 'local-only' 2>&1
+        $r = Sync-RepoDefaultBranch -RepoPath $clonePath -Approved $true
+        if ($r.synced) { throw 'A default branch carrying a local commit must not be fast-forwarded over' }
+        if ($r.category -ne 'default-branch-ahead') { throw "Expected default-branch-ahead; got '$($r.category)'" }
+
+        # diverged -> both moved. Still refused, and named differently.
+        Set-Content -LiteralPath (Join-Path $authorPath 'f.txt') -Value "v4`n" -Encoding UTF8
+        $null = & git -C $authorPath add -A 2>&1
+        $null = & git -C $authorPath @gitCfg commit -q -m 'v4' 2>&1
+        $null = & git -C $authorPath push -q origin main 2>&1
+        $r = Sync-RepoDefaultBranch -RepoPath $clonePath -Approved $true
+        if ($r.synced) { throw 'A diverged default branch must not be synced' }
+        if ($r.category -ne 'diverged') { throw "Expected diverged; got '$($r.category)' - $($r.reason)" }
+
+        # dirty -> refused before anything touches the repository.
+        $null = & git -C $clonePath @gitCfg reset -q --hard HEAD~1 2>&1
+        Set-Content -LiteralPath (Join-Path $clonePath 'f.txt') -Value "uncommitted`n" -Encoding UTF8
+        $r = Sync-RepoDefaultBranch -RepoPath $clonePath -Approved $true
+        if ($r.synced -or $r.category -ne 'working-tree-dirty') { throw "Expected working-tree-dirty; got '$($r.category)'" }
+
+        Write-Host '  live ok: no-op/fast-forward/ahead/diverged/dirty and unapproved all reproduced against real repositories' -ForegroundColor DarkGray
+    }
+    finally {
+        Get-ChildItem -LiteralPath $syncTmp -Recurse -Force -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                try { $_.Attributes = 'Normal' }
+                catch { Write-Verbose ("could not clear attributes on {0}: {1}" -f $_.FullName, $_.Exception.Message) }
+            }
+        Remove-Item -LiteralPath $syncTmp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+& {
+    # --- The governing invariant, enforced rather than stated ----------------
+    # "Agents may commit freely to feature branches. They may never merge or
+    # push to a default branch." Scope derives from the git commands themselves,
+    # the same way the stale-base coverage check does, so a new write path is
+    # audited without anyone remembering to add it here.
+    $defaultBranchNames = @('main', 'master', 'trunk', 'develop')
+    $pushSites = [System.Collections.Generic.List[object]]::new()
+    $violations = [System.Collections.Generic.List[object]]::new()
+
+    foreach ($file in Get-ChildItem -LiteralPath $WorkspaceRoot -Recurse -Filter '*.ps1' -File -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.FullName -match '\\(backend|scripts)\\' -and
+            $_.FullName -notmatch '\\node_modules\\' -and
+            $_.Name -notmatch '(SmokeTest|Test-|\.Tests)\.ps1$'
+        }) {
+
+        $fileErrors = $null
+        $fileAst = [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$null, [ref]$fileErrors)
+        if ($fileErrors -and @($fileErrors).Count -gt 0) { continue }
+
+        foreach ($cmd in $fileAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true)) {
+            if ($cmd.GetCommandName() -ne 'git') { continue }
+            $elements = @($cmd.CommandElements | ForEach-Object { $_.Extent.Text })
+            $isPush = @($elements | Where-Object { $_ -ceq 'push' }).Count -gt 0
+            if (-not $isPush) { continue }
+
+            $site = [pscustomobject]@{
+                File = $file.FullName.Substring($WorkspaceRoot.Length + 1)
+                Line = $cmd.Extent.StartLineNumber
+                Text = ($cmd.Extent.Text -replace '\s+', ' ')
+            }
+            $pushSites.Add($site) | Out-Null
+
+            # A literal default-branch ref as a push target is the invariant
+            # violation stated outright.
+            foreach ($e in $elements) {
+                $bare = $e.Trim("'", '"')
+                if ($defaultBranchNames -contains $bare.ToLowerInvariant()) {
+                    $violations.Add([pscustomobject]@{ Site = $site; Why = "pushes to the literal default branch '$bare'" }) | Out-Null
+                }
+            }
+            # A force push can rewrite whatever it lands on, so it is refused
+            # everywhere rather than only on default branches.
+            foreach ($e in $elements) {
+                if ($e -ceq '--force' -or $e -ceq '-f' -or $e -ceq '--force-with-lease') {
+                    $violations.Add([pscustomobject]@{ Site = $site; Why = "force-pushes ($e)" }) | Out-Null
+                }
+            }
+        }
+    }
+
+    if ($pushSites.Count -lt 1) {
+        throw 'Found no git push sites at all across backend/ and scripts/. The invariant check has lost its scope and would pass vacuously.'
+    }
+    if ($violations.Count -gt 0) {
+        $detail = ($violations | ForEach-Object { "    {0}:{1} {2}`n      {3}" -f $_.Site.File, $_.Site.Line, $_.Why, $_.Site.Text }) -join "`n"
+        throw ("{0} write path(s) violate the default-branch invariant. Agents may commit freely to feature branches and reach a default branch only through a pull request.`n{1}" -f $violations.Count, $detail)
+    }
+
+    # And the sync path itself must stay a fast-forward. A plain merge or a
+    # rebase here would author or rewrite commits on a default branch, which is
+    # the exact thing every refusal above exists to prevent.
+    $syncText = Get-Content -LiteralPath $syncModule -Raw -Encoding UTF8
+    if ($syncText -notmatch 'merge --ff-only') { throw 'The sync path no longer uses merge --ff-only, so it can now author a commit on a default branch.' }
+    foreach ($forbidden in @('git -C \$RepoPath rebase', 'reset --hard', '--no-ff')) {
+        if ($syncText -match $forbidden) { throw "The sync path contains '$forbidden', which can rewrite a default branch." }
+    }
+
+    Write-Host ("  invariant ok: {0} push site(s) checked, none targeting a default branch or forcing; sync remains fast-forward-only" -f $pushSites.Count) -ForegroundColor DarkGray
+}
+
 Write-Step 'Smoke test completed'

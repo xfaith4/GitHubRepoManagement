@@ -63,12 +63,20 @@ function Resolve-BaseFreshness {
         shape as Test-RoadmapRepairPrPreconditions.
     .PARAMETER RemoteObjectPresentLocally
         Whether the remote tip commit already exists in the local object store.
-        $true means an exact behind-count could be computed; $false means the
-        clone genuinely lacks upstream commits; $null means it was not checked.
+        $true means exact counts could be computed; $false means the clone
+        genuinely lacks upstream commits; $null means it was not checked.
+    .PARAMETER AheadCount
+        Commits the clone has that the remote does not. Release 3.4 — computing
+        only the behind side reported a clone that was 5 behind AND carrying
+        local commits as merely "behind 5", which is the exact state where a
+        fast-forward refuses. Both directions or neither.
     .OUTPUTS
-        state:    current | behind | behind-unknown-count | unknown
-        isStale is true ONLY for the two 'behind' states. 'unknown' is never
-        stale — see the module note on absence of evidence.
+        state:    current | behind | ahead | diverged | behind-unknown-count | unknown
+        isStale is true when the remote holds commits this clone does not:
+        behind, diverged, and behind-unknown-count. 'ahead' is NOT stale — the
+        clone already contains everything upstream has — though it is still a
+        refusal for the sync path, which is a different question. 'unknown' is
+        never stale; see the module note on absence of evidence.
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -77,6 +85,7 @@ function Resolve-BaseFreshness {
         [Parameter()][AllowNull()][AllowEmptyString()][string]$RemoteSha = '',
         [Parameter()][AllowNull()][object]$RemoteObjectPresentLocally = $null,
         [Parameter()][AllowNull()][object]$BehindCount = $null,
+        [Parameter()][AllowNull()][object]$AheadCount = $null,
         [Parameter()][AllowEmptyString()][string]$BaseBranch = '',
         [Parameter()][AllowEmptyString()][string]$Remote = 'origin',
         [Parameter()][AllowEmptyString()][string]$ProbeError = ''
@@ -96,6 +105,7 @@ function Resolve-BaseFreshness {
         localSha       = if ([string]::IsNullOrWhiteSpace($LocalSha)) { $null } else { $LocalSha }
         remoteSha      = if ([string]::IsNullOrWhiteSpace($RemoteSha)) { $null } else { $RemoteSha }
         behindCount    = $null
+        aheadCount     = $null
         countIsExact   = $false
         remedy         = $null
         probeError     = if ([string]::IsNullOrWhiteSpace($ProbeError)) { $null } else { $ProbeError }
@@ -111,37 +121,59 @@ function Resolve-BaseFreshness {
     }
 
     if ($LocalSha -eq $RemoteSha) {
-        $result.state       = 'current'
-        $result.behindCount = 0
+        $result.state        = 'current'
+        $result.behindCount  = 0
+        $result.aheadCount   = 0
         $result.countIsExact = $true
-        $result.summary     = "This clone is at the tip of $branchLabel."
+        $result.summary      = "This clone is at the tip of $branchLabel."
         return [pscustomobject]$result
     }
 
-    # The remote tip is already in the local object store, so an exact count is
-    # available without fetching anything.
+    # The remote tip is already in the local object store, so exact counts are
+    # available in both directions without fetching anything.
     if ($RemoteObjectPresentLocally -eq $true) {
-        $count = $null
-        if ($null -ne $BehindCount) {
-            try { $count = [int]$BehindCount } catch { $count = $null }
-        }
+        $behind = $null
+        $ahead = $null
+        if ($null -ne $BehindCount) { try { $behind = [int]$BehindCount } catch { $behind = $null } }
+        if ($null -ne $AheadCount) { try { $ahead = [int]$AheadCount } catch { $ahead = $null } }
 
-        if ($null -ne $count -and $count -le 0) {
-            # HEAD already contains the remote tip: local work sits on top of it.
-            $result.state       = 'current'
-            $result.behindCount = 0
+        if ($null -ne $behind) {
+            # Ahead is only reported when it was actually measured. A caller
+            # that supplied no ahead-count gets $null rather than an implied 0.
+            $result.behindCount  = $behind
+            $result.aheadCount   = $ahead
             $result.countIsExact = $true
-            $result.summary     = "This clone already contains the tip of $branchLabel."
-            return [pscustomobject]$result
-        }
 
-        if ($null -ne $count) {
-            $result.state        = 'behind'
-            $result.isStale      = $true
-            $result.behindCount  = $count
-            $result.countIsExact = $true
-            $result.remedy       = "git -C <repo> pull --ff-only $Remote $BaseBranch"
-            $result.summary      = "This clone is $count commit(s) behind $branchLabel. Anything generated from it was computed against out-of-date content."
+            if ($behind -le 0 -and ($null -eq $ahead -or $ahead -le 0)) {
+                $result.state   = 'current'
+                $result.summary = "This clone already contains the tip of $branchLabel."
+                return [pscustomobject]$result
+            }
+
+            if ($behind -le 0) {
+                # Nothing upstream is missing here, so this is not stale — but
+                # on a default branch it is still an invariant violation, and
+                # the sync layer refuses it as `default-branch-ahead`.
+                $result.state   = 'ahead'
+                $result.remedy  = "Move these commits to a feature branch and open a pull request; nothing reaches $branchLabel except through one."
+                $result.summary = "This clone has $ahead commit(s) that $branchLabel does not."
+                return [pscustomobject]$result
+            }
+
+            if ($null -ne $ahead -and $ahead -gt 0) {
+                # Both sides moved. A fast-forward is impossible from here, so
+                # this is called out separately rather than reported as behind.
+                $result.state   = 'diverged'
+                $result.isStale = $true
+                $result.remedy  = "git -C <repo> fetch $Remote, then move the $ahead local commit(s) to a feature branch — $branchLabel cannot fast-forward while it carries them."
+                $result.summary = "This clone is $behind commit(s) behind $branchLabel and $ahead ahead of it. The histories have diverged."
+                return [pscustomobject]$result
+            }
+
+            $result.state   = 'behind'
+            $result.isStale = $true
+            $result.remedy  = "git -C <repo> pull --ff-only $Remote $BaseBranch"
+            $result.summary = "This clone is $behind commit(s) behind $branchLabel. Anything generated from it was computed against out-of-date content."
             return [pscustomobject]$result
         }
     }
@@ -223,18 +255,26 @@ function Get-RepoBaseFreshness {
         return Resolve-BaseFreshness -LocalSha $localSha -BaseBranch $branch -Remote $Remote -ProbeError $probeError
     }
 
-    # Is the remote tip already in the local object store? If so an exact count
-    # is available with no network and no fetch.
+    # Is the remote tip already in the local object store? If so exact counts are
+    # available with no network and no fetch.
     $present = $false
     $behind = $null
+    $ahead = $null
     $null = (& git -C $RepoPath cat-file -e ("{0}^{{commit}}" -f $remoteSha) 2>&1)
     if ($LASTEXITCODE -eq 0) {
         $present = $true
-        $countOut = (& git -C $RepoPath rev-list --count ("HEAD..{0}" -f $remoteSha) 2>&1) | Out-String
-        if ($LASTEXITCODE -eq 0 -and $countOut.Trim() -match '^\d+$') { $behind = [int]$countOut.Trim() }
+        # `--left-right --count A...B` reports both sides from one walk: left is
+        # what HEAD has and the remote does not (ahead), right is the reverse
+        # (behind). Two separate rev-list calls would answer the same question
+        # twice and could disagree if a ref moved between them.
+        $countOut = (& git -C $RepoPath rev-list --left-right --count ("HEAD...{0}" -f $remoteSha) 2>&1) | Out-String
+        if ($LASTEXITCODE -eq 0 -and $countOut.Trim() -match '^(\d+)\s+(\d+)$') {
+            $ahead = [int]$Matches[1]
+            $behind = [int]$Matches[2]
+        }
     }
 
     return Resolve-BaseFreshness -LocalSha $localSha -RemoteSha $remoteSha `
-        -RemoteObjectPresentLocally $present -BehindCount $behind `
+        -RemoteObjectPresentLocally $present -BehindCount $behind -AheadCount $ahead `
         -BaseBranch $branch -Remote $Remote
 }
