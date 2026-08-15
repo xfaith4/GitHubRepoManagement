@@ -104,7 +104,7 @@ const mainWindowSections = [
 const popupSections = [
   {
     title: 'Settings',
-    body: 'Choose the local workspace path, scan depth, stale threshold, and GitHub user settings.',
+    body: 'Choose the local workspace path, scan depth, and GitHub user settings.',
   },
   {
     title: 'Operation Log',

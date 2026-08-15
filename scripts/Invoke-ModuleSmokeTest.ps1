@@ -3068,6 +3068,61 @@ if (-not $sqliteCap.available) {
         if ((Get-AppDbMaintenanceRetentionDays -Settings $null) -ne 365) { throw 'Missing settings must fall back to the 365-day default' }
 
         Write-Host ("  app.db maintenance ok: report={0} aged, removed={1}, VACUUM ran, 180-day floor protected trend rows, ops_log untouched" -f $reportSignals, $maintRun.totalRowsRemoved) -ForegroundColor DarkGray
+
+        Write-Step 'Trend history math — Release 3.5 milestone 4: a day counts each repo once'
+        # `maturity_history` holds one row per repo PER CAPTURE. The old
+        # day-grouped SUM counted a thrice-captured ready repo three times —
+        # `Ready Repos … High 1592` on a 76-repo portfolio — and the AVG
+        # weighted it threefold. Reproduced here with a three-capture day, and
+        # asserted against the milestone-2 invariant: no day's ready count may
+        # exceed the number of distinct repos. Verified red first: the old SQL
+        # returns ready=3 over 2 repos against this exact fixture.
+        . (Join-Path $WorkspaceRoot 'backend\modules\portfolio\Portfolio.Analytics.ps1')
+        foreach ($mh in @(
+            @{ repo = 'trend-repo-a'; at = '2026-08-10T00:00:00.0000000Z'; level = 'L1-Informal';            score = 40; pending = 2 }
+            @{ repo = 'trend-repo-a'; at = '2026-08-10T06:00:00.0000000Z'; level = 'L3-Contract-Ready';      score = 60; pending = 2 }
+            @{ repo = 'trend-repo-a'; at = '2026-08-10T12:00:00.0000000Z'; level = 'L3-Contract-Ready';      score = 80; pending = 1 }
+            @{ repo = 'trend-repo-b'; at = '2026-08-10T00:30:00.0000000Z'; level = 'L4-Orchestration-Ready'; score = 30; pending = 3 }
+        )) {
+            $null = Invoke-AppDbNonQuery -DatabasePath $appDbInit.databasePath `
+                -Sql 'INSERT INTO maturity_history (repo_name, maturity_level, maturity_score, pending_count, captured_at) VALUES (@r, @l, @s, @p, @t)' `
+                -Parameters @{ r = $mh.repo; l = $mh.level; s = $mh.score; p = $mh.pending; t = $mh.at }
+        }
+
+        $trendRows = @(_GetPortfolioTrendHistoryRows -DatabasePath $appDbInit.databasePath -StartUtc ([datetime]'2026-08-01T00:00:00Z'))
+        $trendDay = @($trendRows | Where-Object { [string]$_.captured_day -eq '2026-08-10' })[0]
+        if ($null -eq $trendDay) { throw 'The fixture day did not appear in the trend history rows' }
+        $distinctRepoCount = [long](Invoke-AppDbQuery -DatabasePath $appDbInit.databasePath -Sql "SELECT COUNT(DISTINCT repo_name) AS n FROM maturity_history WHERE substr(captured_at,1,10)='2026-08-10'")[0].n
+        # The milestone-2 invariant, asserted directly against the store.
+        if ([long]$trendDay.ready_repo_count -gt $distinctRepoCount) {
+            throw "ready_repo_count ($($trendDay.ready_repo_count)) exceeds the distinct repo count ($distinctRepoCount) — a day is counting captures, not repos"
+        }
+        if ([long]$trendDay.ready_repo_count -ne 2) { throw "Expected ready=2 (latest capture of each repo), got $($trendDay.ready_repo_count)" }
+        if ([double]$trendDay.avg_maturity_score -ne 55.0) { throw "Expected avg=55 ((80+30)/2, latest captures only), got $($trendDay.avg_maturity_score)" }
+        if ([long]$trendDay.repo_samples -ne 2) { throw "Expected repo_samples=2 (one per repo), got $($trendDay.repo_samples)" }
+
+        # The per-repo sparkline follows the same rule: a day's point is the
+        # latest capture, not an average over however many captures ran.
+        $sparkPoints = @(_GetPortfolioTrendRepoHistoryPoints -DatabasePath $appDbInit.databasePath -RepoName 'trend-repo-a' -StartUtc ([datetime]'2026-08-01T00:00:00Z') -FallbackDay '2026-08-10' -FallbackScore 0)
+        if ([double]$sparkPoints[0].value -ne 80.0) { throw "Sparkline day value must be the latest capture (80), got $($sparkPoints[0].value)" }
+
+        # Milestone 4c — "not computed" and "zero" may not share a value.
+        if ($null -ne (_GetPortfolioAnalyticsAverage -Entries @() -PropertyName 'maturityScore')) { throw 'An average over nothing must be null, not 0' }
+        $avgPartial = _GetPortfolioAnalyticsAverage -Entries @([pscustomobject]@{ maturityScore = 50 }, [pscustomobject]@{ maturityScore = $null }) -PropertyName 'maturityScore'
+        if ($avgPartial -ne 50) { throw "A partial average must still compute over the assessed entries, got '$avgPartial'" }
+        if ((_GetPortfolioAnalyticsAssessedCount -Entries @([pscustomobject]@{ maturityScore = 50 }, [pscustomobject]@{ maturityScore = $null }) -PropertyName 'maturityScore') -ne 1) { throw 'The assessed count must count only entries that carried a value' }
+
+        # Milestone 4b — one card, one data path. With NO live assessments and
+        # history present, the tiles must come from the latest history day —
+        # the same source as the trend rows beneath them — and docs health,
+        # which has no history column, must read null (not computed), never 0.
+        $trendPayload = Get-PortfolioTrendPayload -Assessments @() -Summary $null -GeneratedAt ((Get-Date).ToUniversalTime().ToString('o')) -SeedSource 'portfolio-index' -WorkspaceRoot $appDbWorkspace
+        if ([string]$trendPayload.trendStatus -ne 'history-backed') { throw "Expected a history-backed trend from the fixture db, got '$($trendPayload.trendStatus)'" }
+        if ([int]$trendPayload.summary.averageMaturityScore -ne 55) { throw "Tiles must read the latest history day (avg 55), got '$($trendPayload.summary.averageMaturityScore)'" }
+        if ([int]$trendPayload.summary.readyForWorkCount -ne 2) { throw "Tiles must read the latest history day (ready 2), got '$($trendPayload.summary.readyForWorkCount)'" }
+        if ($null -ne $trendPayload.summary.averageDocumentationHealthScore) { throw 'Docs health has no history column and must be null (not computed), never 0' }
+
+        Write-Host '  trend math ok: ready<=distinct repos (2 of 2, was 3 pre-fix), avg from latest captures (55), sparkline latest-not-average, empty average null, history-backed tiles match their own rows' -ForegroundColor DarkGray
     }
     finally {
         Remove-Item -LiteralPath $appDbWorkspace -Recurse -Force -ErrorAction SilentlyContinue

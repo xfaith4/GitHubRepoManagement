@@ -592,18 +592,13 @@ review's own conclusions corrected.
       its scope; all portfolio math recomputes over the in-scope set.
       _(state: planned — reproduce the reported `Genesys.Core_AuditLogsApp` →
       `xfaith4/Genesys.Core` mis-mapping first; it is the one claim needing live data)_
-- [ ] **Fix the four measured metric defects, each reproduced before it is fixed.**
-      (a) `ready_repo_count` is a `SUM` grouped by `captured_day` over a table
-      holding one row **per repo per capture**, so every capture that day adds its
-      ready repos again — the sibling column uses `AVG`, which is why Avg Maturity
-      read 20% while Ready Repos read 1592 on a 76-repo portfolio. (b)
-      `Get-PortfolioTrendPayload` builds its tiles from passed-in assessments then
-      replaces its series from `app.db`, so one card renders two data paths. (c)
-      `_GetPortfolioAnalyticsAverage` skips nulls, so headline scores rise as
-      unscored repos accumulate. (d) `settings.staleThreshold` is consumed nowhere in
-      `backend/` while 3.1 redefined `isStale` as remote drift — wire the threshold
-      or retire the control, but two concepts may not share one word.
-      _(state: planned)_
+**Milestone 4 shipped 2026-08-15 and is archived:** all four measured metric
+defects fixed, each reproduced red against the pre-fix code first — the
+latest-capture-per-repo-per-day join (the `1592` axis), the one-card-two-paths
+tiles, null-not-zero averages with assessed-count coverage, and the retirement
+of the dead `staleThreshold` control. Full text and evidence:
+[the archive](docs/history/completed-releases.md#closed-2026-08-15-archived-from-roadmapmd).
+
 - [ ] **Replace every ad-hoc spinner with one async state machine.** States
       `idle | loading | success | empty | stale | error | degraded`; hard 10s timeout
       resolving to `error` with the failing endpoint, its status and a retry; on

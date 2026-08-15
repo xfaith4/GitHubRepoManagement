@@ -168,14 +168,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onSave, 
                 </p>
               </div>
 
-              <div>
-                <label htmlFor="staleThreshold" className="block text-sm font-medium text-gray-300">Stale Threshold (days)</label>
-                <input type="number" name="staleThreshold" id="staleThreshold" value={settings.staleThreshold} onChange={handleChange} className={fieldClass} />
-                <p className="mt-1 text-xs text-gray-500">
-                  A repository with no commits in this many days is counted as stale.
-                </p>
-              </div>
-
               {/* ── GitHub connection ─────────────────────────────────────────
                   Consolidated here from the former standalone "GitHub API"
                   dialog: the owner, the token variable, its live resolution, and

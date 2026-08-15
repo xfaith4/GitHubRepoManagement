@@ -88,7 +88,6 @@ export interface RepoStatus {
 export interface AppSettings {
   basePath: string;
   reportPath: string;
-  staleThreshold: number;
   daysInactive: number;
   zipArchive: boolean;
   scanDepth: number;
@@ -1220,8 +1219,17 @@ export interface PortfolioTrendSummary {
   runningCount: number;
   blockedCount: number;
   completedCount: number;
-  averageMaturityScore: number;
-  averageDocumentationHealthScore: number;
+  /**
+   * Release 3.5 milestone 4c — null means NOT COMPUTED, and the tile renders
+   * an em dash. Coercing these to 0 at any hop recreates the defect this
+   * release exists to remove: a portfolio with nothing assessed reading
+   * `0% Avg Maturity` as though it had been measured.
+   */
+  averageMaturityScore: number | null;
+  averageDocumentationHealthScore: number | null;
+  /** How many repos the averages were computed over — "of N assessed". */
+  maturityAssessedCount: number;
+  docsHealthAssessedCount: number;
   improvedThisWeek: number;
 }
 
