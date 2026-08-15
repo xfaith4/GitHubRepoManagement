@@ -3,6 +3,7 @@ import Dashboard from './components/Dashboard';
 import SetupWizard from './components/SetupWizard';
 import Login from './components/Login';
 import AgentActivityIndicator from './components/AgentActivityIndicator';
+import RunnerHealthIndicator from './components/RunnerHealthIndicator';
 import MobileRepoHealth from './components/MobileRepoHealth';
 import OrientationOverlay, { hasSeenOrientation } from './components/OrientationOverlay';
 import { getStatus, getGithubRepoInsights, getSetupStatus, getAuthStatus, logout, type AuthStatus } from './services/apiClient';
@@ -369,6 +370,9 @@ function App() {
               <h1 className="text-lg sm:text-xl font-bold text-gray-100 truncate">GitHub Repo Manager</h1>
             </div>
             <div className="flex items-center gap-2">
+                {/* Release 3.5 milestone 6 — runner health above the fold,
+                    beside the agent-activity pill, on every tab. */}
+                <RunnerHealthIndicator />
                 <AgentActivityIndicator />
                 <span className="inline-flex">{renderDataSourceLabel()}</span>
                 {isBackgroundRefreshing && (

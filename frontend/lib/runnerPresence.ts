@@ -31,6 +31,8 @@ export interface RunnerPresencePayload {
   queuedCopilot?: number;
   /** Queued tasks with no runner to pick them up. Zero when one is present. */
   strandedCount?: number;
+  /** Oldest still-queued entry's timestamp (ISO) — the queue-age alarm's raw fact. */
+  oldestQueuedAt?: string | null;
 }
 
 export type RunnerSeverity = 'ok' | 'warning' | 'error' | 'unknown';
@@ -43,9 +45,28 @@ export interface RunnerPresenceView {
   needsAttention: boolean;
   /** True when a dispatch surface should warn that nothing will pick this up. */
   warnBeforeQueueing: boolean;
+  /**
+   * Release 3.5 milestone 6 — hours the oldest queued task has sat unclaimed,
+   * when that exceeds a day. Non-null escalates the header indicator to an
+   * alarm regardless of presence: a present runner that claims nothing is the
+   * same operator problem as an absent one.
+   */
+  queueAgeAlarmHours: number | null;
 }
 
 const RUNNER_COMMAND = 'pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1';
+
+const QUEUE_AGE_ALARM_MS = 24 * 60 * 60 * 1000;
+
+function computeQueueAgeAlarmHours(payload: RunnerPresencePayload | null | undefined, nowMs: number): number | null {
+  const raw = payload?.oldestQueuedAt;
+  if (!raw) return null;
+  const queuedMs = Date.parse(raw);
+  if (Number.isNaN(queuedMs)) return null;
+  const ageMs = nowMs - queuedMs;
+  if (ageMs <= QUEUE_AGE_ALARM_MS) return null;
+  return Math.floor(ageMs / (60 * 60 * 1000));
+}
 
 /**
  * Classify runner presence into one renderable state.
@@ -56,7 +77,8 @@ const RUNNER_COMMAND = 'pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1';
  * costs the operator a wizard's worth of refinement work.
  */
 export function resolveRunnerPresence(
-  payload: RunnerPresencePayload | null | undefined
+  payload: RunnerPresencePayload | null | undefined,
+  nowMs: number = Date.now()
 ): RunnerPresenceView {
   if (!payload) {
     return {
@@ -65,8 +87,11 @@ export function resolveRunnerPresence(
       detail: `Could not read runner status. If no runner is running, queued work will wait: ${RUNNER_COMMAND}`,
       needsAttention: false,
       warnBeforeQueueing: true,
+      queueAgeAlarmHours: null,
     };
   }
+
+  const queueAgeAlarmHours = computeQueueAgeAlarmHours(payload, nowMs);
 
   const stranded = Number(payload.strandedCount ?? 0);
   const strandedSuffix =
@@ -75,11 +100,16 @@ export function resolveRunnerPresence(
   if (payload.state === 'present' || payload.present === true) {
     const host = [payload.hostname, payload.user].filter(Boolean).join('\\');
     return {
-      severity: 'ok',
-      label: 'Runner ready',
-      detail: host ? `Operator runner alive on ${host}.` : 'Operator runner alive.',
-      needsAttention: false,
-      warnBeforeQueueing: false,
+      // A present runner with day-old queued work has stopped claiming -- the
+      // same operator problem as an absent one, escalated the same way.
+      severity: queueAgeAlarmHours != null ? 'warning' : 'ok',
+      label: queueAgeAlarmHours != null ? 'Queue stalled' : 'Runner ready',
+      detail: queueAgeAlarmHours != null
+        ? `Runner alive but the oldest queued task has waited ${queueAgeAlarmHours}h unclaimed.`
+        : host ? `Operator runner alive on ${host}.` : 'Operator runner alive.',
+      needsAttention: queueAgeAlarmHours != null,
+      warnBeforeQueueing: queueAgeAlarmHours != null,
+      queueAgeAlarmHours,
     };
   }
 
@@ -91,6 +121,7 @@ export function resolveRunnerPresence(
         (payload.message ?? 'The runner has stopped reporting in.') + strandedSuffix,
       needsAttention: true,
       warnBeforeQueueing: true,
+      queueAgeAlarmHours,
     };
   }
 
@@ -99,8 +130,9 @@ export function resolveRunnerPresence(
     label: 'No runner',
     detail:
       `Nothing will execute queued work until a runner runs: ${RUNNER_COMMAND}` + strandedSuffix,
-    needsAttention: stranded > 0,
+    needsAttention: stranded > 0 || queueAgeAlarmHours != null,
     warnBeforeQueueing: true,
+    queueAgeAlarmHours,
   };
 }
 

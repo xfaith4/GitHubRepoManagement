@@ -4,7 +4,7 @@ import {
   canReject,
   countAwaitingDecision,
   describePackagedItemStatus,
-  sortPackagedItems,
+  groupPackagedItemAttempts,
   type PackagedItem,
 } from '../lib/packagedItems';
 import {
@@ -70,7 +70,9 @@ const PackagedItemQueue: React.FC<PackagedItemQueueProps> = ({
   onViewTrace,
   runner = null,
 }) => {
-  const sorted = sortPackagedItems(items);
+  // Release 3.5 milestone 6 -- a retry loop renders as one piece of work
+  // with an attempt count, not as a backlog. The badge and the rows agree.
+  const attemptGroups = groupPackagedItemAttempts(items);
   const awaiting = countAwaitingDecision(items);
   const gate = resolveDispatchGate(runner);
   const stranded = Number(runner?.strandedCount ?? 0);
@@ -144,7 +146,7 @@ const PackagedItemQueue: React.FC<PackagedItemQueueProps> = ({
         </div>
       )}
 
-      {!error && sorted.length === 0 && (
+      {!error && attemptGroups.length === 0 && (
         <p data-testid="packaged-item-queue-empty" className="px-4 py-4 text-xs text-gray-400">
           {loading
             ? 'Loading the approval queue…'
@@ -153,7 +155,8 @@ const PackagedItemQueue: React.FC<PackagedItemQueueProps> = ({
       )}
 
       <ul className="divide-y divide-gray-800">
-        {sorted.map(item => {
+        {attemptGroups.map(group => {
+          const item = group.latest;
           const packet = item.packet ?? {};
           const view = describePackagedItemStatus(item.status);
           const busy = busyPacketId === item.packetId;
@@ -232,6 +235,24 @@ const PackagedItemQueue: React.FC<PackagedItemQueueProps> = ({
                   )}
                 </div>
               </div>
+              {group.earlierAttempts.length > 0 && (
+                <details className="mt-2">
+                  <summary
+                    data-testid="packaged-item-earlier-attempts"
+                    className="cursor-pointer text-[11px] text-gray-400 hover:text-gray-200 select-none"
+                  >
+                    {group.earlierAttempts.length} earlier attempt{group.earlierAttempts.length === 1 ? '' : 's'} for this item
+                  </summary>
+                  <ul className="mt-1 space-y-0.5 pl-4 border-l border-gray-700">
+                    {group.earlierAttempts.map(earlier => (
+                      <li key={earlier.packetId} className="text-[11px] text-gray-500">
+                        {earlier.packagedAt ? new Date(earlier.packagedAt).toLocaleString() : 'unknown time'} · {describePackagedItemStatus(earlier.status).label}
+                        {earlier.note ? ` — ${earlier.note}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
             </li>
           );
         })}

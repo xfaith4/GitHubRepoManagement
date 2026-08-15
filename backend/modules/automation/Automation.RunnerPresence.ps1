@@ -260,6 +260,7 @@ function Get-QueuedTaskBacklog {
     $runsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
     $claude = 0
     $copilot = 0
+    $oldestQueuedAt = $null
 
     if (Test-Path -LiteralPath $queuePath -PathType Leaf) {
         foreach ($line in @(Get-Content -LiteralPath $queuePath -Encoding UTF8)) {
@@ -280,13 +281,26 @@ function Get-QueuedTaskBacklog {
             $target = [string](_Runner_GetField -Obj $entry -Name 'dispatchTarget' -Default 'claude')
             if ([string]::IsNullOrWhiteSpace($target)) { $target = 'claude' }
             if ($target.ToLowerInvariant() -eq 'copilot') { $copilot++ } else { $claude++ }
+
+            # Release 3.5 milestone 6 -- the queue-age alarm's raw fact. The
+            # oldest still-queued entry's timestamp travels on the payload, so
+            # the header can escalate work sitting unclaimed past a day.
+            $queuedAtRaw = [string](_Runner_GetField -Obj $entry -Name 'queuedAt' -Default '')
+            if (-not [string]::IsNullOrWhiteSpace($queuedAtRaw)) {
+                $parsedQueuedAt = [datetime]::MinValue
+                $qaStyles = [System.Globalization.DateTimeStyles]::AdjustToUniversal -bor [System.Globalization.DateTimeStyles]::AssumeUniversal
+                if ([datetime]::TryParse($queuedAtRaw, [System.Globalization.CultureInfo]::InvariantCulture, $qaStyles, [ref]$parsedQueuedAt)) {
+                    if ($null -eq $oldestQueuedAt -or $parsedQueuedAt -lt $oldestQueuedAt) { $oldestQueuedAt = $parsedQueuedAt }
+                }
+            }
         }
     }
 
     return [pscustomobject]@{
-        queuedTotal   = ($claude + $copilot)
-        queuedClaude  = $claude
-        queuedCopilot = $copilot
-        queuePath     = $queuePath
+        queuedTotal    = ($claude + $copilot)
+        queuedClaude   = $claude
+        queuedCopilot  = $copilot
+        queuePath      = $queuePath
+        oldestQueuedAt = $(if ($null -ne $oldestQueuedAt) { $oldestQueuedAt.ToUniversalTime().ToString('o') } else { $null })
     }
 }

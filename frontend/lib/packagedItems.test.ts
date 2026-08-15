@@ -6,6 +6,7 @@ import {
   countAwaitingDecision,
   describePackagedItemStatus,
   sortPackagedItems,
+  groupPackagedItemAttempts,
   type PackagedItem,
 } from './packagedItems';
 
@@ -124,5 +125,47 @@ describe('countAwaitingDecision', () => {
 
   it('is zero for an empty queue', () => {
     expect(countAwaitingDecision([])).toBe(0);
+  });
+});
+
+// Release 3.5 milestone 6 — a retry loop renders as one piece of work with an
+// attempt count, not as a backlog of thirteen.
+describe('groupPackagedItemAttempts', () => {
+  const attempt = (packetId: string, repoName: string, itemText: string, packagedAt: string, status = 'pending-approval'): PackagedItem => ({
+    packetId,
+    repoName,
+    status,
+    packagedAt,
+    packet: { repoName, itemText },
+  });
+
+  it('collapses same-work attempts behind the newest and counts the rest', () => {
+    const groups = groupPackagedItemAttempts([
+      attempt('p1', 'RepoA', 'Add the export route', '2026-08-09T08:00:00Z'),
+      attempt('p2', 'RepoA', 'Add the export route', '2026-08-10T08:00:00Z'),
+      attempt('p3', 'RepoA', 'Add the export route', '2026-08-11T08:00:00Z'),
+      attempt('p4', 'RepoB', 'Different work', '2026-08-11T09:00:00Z'),
+    ]);
+    expect(groups).toHaveLength(2);
+    const repoA = groups.find(g => g.latest.repoName === 'RepoA')!;
+    expect(repoA.latest.packetId).toBe('p3'); // newest is the face
+    expect(repoA.earlierAttempts.map(a => a.packetId)).toEqual(['p2', 'p1']);
+  });
+
+  it('never merges without an item text — no work identity, no guessing', () => {
+    const a = attempt('p1', 'RepoA', '', '2026-08-09T08:00:00Z');
+    const b = attempt('p2', 'RepoA', '', '2026-08-10T08:00:00Z');
+    expect(groupPackagedItemAttempts([a, b])).toHaveLength(2);
+  });
+
+  it('actionable status still leads even when an older attempt is newer by time', () => {
+    const groups = groupPackagedItemAttempts([
+      attempt('old-pending', 'RepoA', 'Work', '2026-08-09T08:00:00Z', 'pending-approval'),
+      attempt('new-dispatched', 'RepoA', 'Work', '2026-08-11T08:00:00Z', 'dispatched'),
+    ]);
+    expect(groups).toHaveLength(1);
+    // sortPackagedItems ranks pending-approval first; the face is the row the
+    // operator can act on.
+    expect(groups[0].latest.packetId).toBe('old-pending');
   });
 });

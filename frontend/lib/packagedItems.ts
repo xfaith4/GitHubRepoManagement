@@ -177,3 +177,42 @@ export function sortPackagedItems(items: readonly PackagedItem[]): PackagedItem[
 export function countAwaitingDecision(items: readonly PackagedItem[]): number {
   return items.filter(item => canApprove(item)).length;
 }
+
+/**
+ * Release 3.5 milestone 6 — a retry loop is not a backlog.
+ *
+ * The review found a `4 stranded` badge above THIRTEEN rendered entries: the
+ * same repo, the same item text, queued once a day for five days by the
+ * scheduler's retry loop, presented as thirteen separate pieces of work.
+ * Grouping is by (repoName, itemText) — the work identity — with the newest
+ * attempt as the face and earlier attempts behind an expander, so the list
+ * counts WORK, and the badge and the rows can finally agree.
+ */
+export interface PackagedItemAttemptGroup {
+  /** The newest attempt — the row that renders. */
+  latest: PackagedItem;
+  /** Older attempts for the same work, newest first. */
+  earlierAttempts: PackagedItem[];
+}
+
+export function groupPackagedItemAttempts(items: readonly PackagedItem[]): PackagedItemAttemptGroup[] {
+  const sorted = sortPackagedItems(items);
+  const groups = new Map<string, PackagedItemAttemptGroup>();
+  const order: string[] = [];
+  for (const item of sorted) {
+    const repo = (item.repoName ?? item.packet?.repoName ?? '').toLowerCase();
+    const itemText = (item.packet?.itemText ?? '').trim().toLowerCase();
+    // No item text means no work identity to merge on — never guess.
+    const key = itemText ? `${repo}::${itemText}` : `packet::${item.packetId}`;
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, { latest: item, earlierAttempts: [] });
+      order.push(key);
+    } else {
+      // sortPackagedItems puts actionable-then-newest first, so the first
+      // sighting is the face and everything after is an earlier attempt.
+      existing.earlierAttempts.push(item);
+    }
+  }
+  return order.map(k => groups.get(k) as PackagedItemAttemptGroup);
+}
