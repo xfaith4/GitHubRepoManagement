@@ -1,7 +1,7 @@
 # GitHub Repo Management — Active Execution Roadmap
 
 > **Status:** Active
-> **Active release:** **Release 3.1 — Closed-Loop Delivery**
+> **Active release:** **Release 3.5 — Trustworthy Surfaces (UI Quality)**
 > **Next active release:** **Release 3.2 — Portfolio Scale and Responsiveness**
 > **Work ordering:** dependency-driven, not insertion order — see
 > [Execution Order and Dependencies](#execution-order-and-dependencies)
@@ -13,7 +13,7 @@
 
 ## Current Status (Agent Context)
 
-**Last updated:** 2026-08-13
+**Last updated:** 2026-08-15
 
 Releases 0.4 through 2.6, 2.8 and 3.0 are **engineering-complete and archived**,
 as is every completed milestone from the releases and lanes still open below.
@@ -28,7 +28,7 @@ What remains falls into four kinds of work, and they are **not**
 interchangeable — mixing them is what previously made the roadmap read as
 "everything is done" while real gaps sat unlabelled:
 
-1. **Genuinely unbuilt engineering** — Release 3.1's four workflow-completion
+1. **Genuinely unbuilt engineering** — Release 3.5's seven trustworthy-surfaces
    milestones, Release 3.2's three remaining scale milestones, and the recorded
    cross-cutting items. This is the only kind an autonomous agent can close on
    its own. (The two mobile surfaces are also unbuilt engineering, but are
@@ -53,21 +53,18 @@ workflow that does not complete and does not say so.
 
 **Current focus (next agent actions), in order:**
 
-- [ ] **Release 3.1 — one workflow, proven end to end.** The active release,
-      widened 2026-08-11 from closed-loop delivery: nothing may be queued into
-      an empty room; every surface names whether a rule or a model produced
-      its result; token and cost are measured rather than declared; one full
-      workflow runs to a recorded outcome.
-- [ ] **Release 3.5 — trustworthy surfaces.** Added 2026-08-15 from an
-      adversarial UI review, triaged against the source rather than the
-      screenshots: nine cross-tab contradictions reproduced in code, five with an
-      identified root-cause line, and no exclusion policy anywhere in the scan
-      path — so every percentage is computed over a set that includes temp,
-      archived and vendored clones.
+- [ ] **Release 3.5 — trustworthy surfaces.** The active release, promoted
+      2026-08-15 when 3.4 closed with its live loop proof and 3.1 closed under
+      the external-resource rule. Source: the adversarial UI review, triaged
+      against the code — nine cross-tab contradictions reproduced, five
+      root-caused to a line, and no scan-path exclusion policy, so every
+      percentage is computed over a set that includes temp, archived and
+      vendored clones. Start with milestone 4's four root-caused metric
+      defects, each landing with its invariant assertion proven red first.
 - [ ] **Release 3.2 — portfolio scale.** Still unblocked and still worth doing,
-      but demoted behind 3.1: a faster portal that strands work is not more
-      reliable. Its performance budget landed 2026-08-11, so the remaining
-      three milestones have a declared number to beat.
+      demoted behind 3.5 by the standing ordering: latency is a quality of
+      numbers worth waiting for. Its performance budget landed 2026-08-11, so
+      the remaining three milestones have a declared number to beat.
 - [ ] **Batch the remaining operator-session work (2.9).** An elevated shell
       covers the watchdog _and_ the service installer; one authenticated shell
       covers the `claude` run, the `gh agent-task` run, and the full-loop
@@ -180,11 +177,11 @@ module + verification boundary`.
 | 2.8       | Local Claude Code Execution (queue + operator runner)                    | `done` (engineering) — 2026-07-15; real `claude` run tracked in 2.9                        |
 | **2.9**   | **Operator Field Proof** (mobile completion deferred)                    | `planned` — external-resource residuals only; the two mobile surfaces are deferred         |
 | 3.0       | Operator-Context Execution                                               | `done` (engineering) — 2026-08-09; see archive. Live proof tracked in 2.9                  |
-| **3.1**   | **Closed-Loop Delivery**                                                 | **active** — widened 2026-08-11: loop closure plus dead-end removal, engine + cost honesty |
+| 3.1       | Closed-Loop Delivery                                                     | `done` 2026-08-15 — manual loop proof recorded; portal + scheduled proofs re-homed to 2.9  |
 | **3.2**   | **Portfolio Scale and Responsiveness**                                   | `planned` — demoted 2026-08-11 behind 3.1; read-path budget done, 3 scale milestones open  |
 | **3.3**   | **Steady-State Operation**                                               | `planned` — unattended for months: retention, restore, honest TLS, decision-grade digests  |
 | **3.4**   | **The Delivery Loop Closes**                                             | `done` 2026-08-15 — six milestones + the full-loop proof, driven live and operator-verified |
-| **3.5**   | **Trustworthy Surfaces (UI Quality)**                                    | `planned` — ahead of 3.2: one snapshot, one clock, one scope; disagreement fails CI        |
+| **3.5**   | **Trustworthy Surfaces (UI Quality)**                                    | **active** — promoted 2026-08-15: one snapshot, one clock, one scope; disagreement fails CI |
 
 > **Note on `.5` numbering.** Reserve it for course corrections like 1.7.5;
 > default new work to integer minor releases.
@@ -201,30 +198,25 @@ dispatch runs. No open item is now waiting on another open item — the ordering
 below is therefore about **what kind of resource each item needs**, not about
 prerequisites.
 
-1. **Release 3.1 — the active release.** Reliability and honesty of the PC
-   workflow: no dead-end controls, engine attribution, measured cost, one
-   workflow that finishes. All unblocked engineering.
+1. **Release 3.5 — the active release.** Trustworthy surfaces: the four
+   root-caused metric defects first (each with its invariant assertion), then
+   the snapshot contract and scope policy as the structural core, then the
+   async state machine, runner-health delivery, and the vocabulary and
+   accessibility pass.
 2. **Release 3.4 — the delivery loop closes.** Engineering complete
    2026-08-15: all twelve steps of the loop are built, each behind its own
    refusal matrix, and the default-branch invariant is a derived tripwire that
    proves itself before sweeping. What remains is driving one real item around
    the circle — batched with the operator session below, alongside 3.1's proof.
-3. **Release 3.5 — trustworthy surfaces.** Unblocked, and **ahead of 3.2** on the
-   reasoning that has now demoted 3.2 twice: a portfolio that renders faster while
-   one screen reports four different repository counts is not more reliable. 3.1
-   made every control honest about what it can do; 3.5 does the same for the
-   numbers. Two of its milestones — the day-grouped `SUM` inflating the trend axis
-   and the dead `staleThreshold` setting — have identified root causes and no
-   dependency on the snapshot contract, so they can be pulled forward whenever the
-   active release is blocked.
-4. **Release 3.2 — portfolio scale.** Also unblocked. Demoted behind 3.1
-   deliberately, and now behind 3.4 and 3.5 for the same reason: latency is a
-   quality of a workflow that works, and of numbers worth waiting for.
+3. **Release 3.2 — portfolio scale.** Also unblocked. Demoted behind 3.5 by
+   the standing ordering: latency is a quality of a workflow that works, and
+   of numbers worth waiting for.
 5. **One batched operator session** — an elevated shell covers the watchdog,
    the service installer and 2.7's freeze-prevention deploy; one authenticated
-   shell covers the `claude` run, the `gh agent-task` run, 3.1's full-loop
-   proof (3.1's last milestone). Batching is the
-   whole point: the operator, not the code, is the scarce resource.
+   shell covers the `claude` run, the `gh agent-task` run, the 3.1 live-portal
+   proofs and the scheduled-trigger loop proof (all re-homed to 2.9 on 3.1's
+   closure). Batching is the whole point: the operator, not the code, is the
+   scarce resource.
 6. **Release 3.3 — pick-up work.** Every milestone is independent; take one
    whenever the active release is blocked.
 7. **Trend accrual** closes itself as calendar time passes, provided capture
@@ -238,7 +230,7 @@ prerequisites.
 
 | Open item                                            | Depends on                                    | Type                                          |
 | ---------------------------------------------------- | --------------------------------------------- | --------------------------------------------- |
-| Release 3.1 workflow completion and UX honesty       | —                                             | none — active; engineering, bar the one proof |
+| Release 3.5 trustworthy surfaces (active)            | —                                             | none — root-caused engineering                |
 | Release 3.4 full-loop proof (engineering done)       | The same authenticated operator session       | hard — human; batch with 3.1's proof          |
 | Release 3.5 trustworthy surfaces (UI quality)        | —                                             | none — root causes identified, engineering    |
 | Release 3.2 scale and responsiveness                 | —                                             | none — deadline + budget both settled         |
@@ -250,7 +242,7 @@ prerequisites.
 | Release 2.9 watchdog + service-installer proof       | An elevated (SYSTEM) session                  | hard — privilege                              |
 | Release 2.9 physical-Android proof (2.5 + 2.6)       | An Android device on the LAN                  | deferred 2026-08-11 — hardware, and deranked  |
 | Release 2.9 real `claude` + `gh agent-task` runs     | An authenticated operator session             | hard — human; one session covers both         |
-| Release 3.1 full-loop proof                          | The same authenticated operator session       | hard — human; batch with the runs above       |
+| Release 2.9 re-homed 3.1 proofs (portal + schedule)  | The same authenticated operator session       | hard — human; batch with the runs above       |
 | Release 2.9 GitHub App installation-token exchange   | A registered GitHub App                       | hard — optional; PAT supersedes               |
 | Release 2.9 trend accrual (2.3 Ph2)                  | Days of live capture                          | hard, time-gated                              |
 
@@ -258,41 +250,28 @@ prerequisites.
 
 ## 5. Active Release Snapshot
 
-### Active release detail — 3.1 Closed-Loop Delivery
+### Active release detail — 3.5 Trustworthy Surfaces (UI Quality)
 
-Release 3.1 was promoted 2026-08-11, displacing 3.2, on evidence rather than
-preference: the live portal was holding six stranded dispatches behind an
-enabled button that had been incapable of succeeding since Release 3.0.
+Release 3.5 became the active release 2026-08-15, the same day Release 3.4
+closed with its live full-loop proof and Release 3.1 closed under the
+external-resource rule — its engineering is complete, and its remaining live
+proofs are re-homed to Release 2.9's operator session.
 
 The full execution contract lives in one place,
-[Release 3.1 below](#release-31--closed-loop-delivery), per
+[Release 3.5 below](#release-35--trustworthy-surfaces-ui-quality), per
 `ROADMAP_TEMPLATE.md`. This heading exists so the validator can resolve the
 active-release pointer; it deliberately restates nothing.
 
-**Current focus:** **every engineering milestone in this release is closed.**
-The empty-room gate and engine attribution shipped 2026-08-13; staleness
-visibility, token/cost measurement, the "enabled means available" audit, and the
-stale-clone write guard shipped 2026-08-14. What remains is the full-loop
-evidence record, which is blocked on an **operator session, not on engineering**
-— batch it with 2.9's session rather than scheduling a separate one. When that
-lands, 3.1 closes and 3.2 resumes as the active release.
+**Current focus: the four measured metric defects (milestone 4), first.** They
+are root-caused to specific lines, independent of the snapshot contract, and
+each lands with the invariant assertion (milestone 2) that keeps it fixed —
+reproduced red against the pre-fix code, per this repo's gate discipline. The
+snapshot contract (milestone 1) and scope policy (milestone 3) follow as the
+structural core; the async state machine, runner-health delivery, and the
+vocabulary/accessibility pass complete the release.
 
-Every milestone here was closed by a tripwire that derives its own scope, and
-**each one found something its author was not looking for**:
-
-- the dispatch audit found two ungated surfaces no list had named;
-- the staleness work found a metric hardcoded to `$false` behind a UI that had
-  shipped a column, a filter and a badge bound to it several releases earlier;
-- the control audit found 11 disabled controls a lazy regex had been reporting
-  as enabled, because `<button.*?>` stops at the `>` inside `() =>`;
-- the stale-base coverage check found a managed-repo push in the api-host that
-  an AST scan had missed, because its `-C` arrived inside a splatted array.
-
-Three of the gates written this release **failed their own regression probe on
-the first attempt** — each was satisfied by the presence of a name rather than
-by the behaviour it was meant to require. A gate is not finished when it passes;
-it is finished when it has been shown to fail. That, and scope derived rather
-than enumerated, are the two habits worth carrying into 3.2.
+The habit carried in from 3.1 and 3.4 stands: a gate is not finished when it
+passes; it is finished when it has been shown to fail.
 
 ---
 
@@ -363,7 +342,17 @@ regresses meanwhile.
       reaches a live task, URL in the run summary. Closes the Release 3.0
       residual. _(state: smoke-tested. Requires `gh auth login` and **no**
       `GH_TOKEN`/`GITHUB_TOKEN` set; gh ignores stored OAuth when one is.)_
-- [ ] **Release 3.1's full-loop proof**, which needs exactly this session.
+- [ ] **Release 3.1's scheduled-trigger loop proof** — the manual half is
+      operator-verified 2026-08-15
+      ([evidence](evidence/verified/full-loop-proof-2026-08-15.md)); this
+      session records a scheduled packaging run approved through to the same
+      outcome. _(re-homed from 3.1 on closure, 2026-08-15)_
+- [ ] Operator-verify the Release 3.1 empty-room gate against the live portal
+      (the refusal, the disabled approve controls, the stranded badge).
+      _(state: smoke-tested; re-homed from 3.1 on closure)_
+- [ ] Operator-verify Release 3.1 engine attribution on the live portal (the
+      `engine` block above the findings, `providerId` null for rule engines).
+      _(state: smoke-tested; re-homed from 3.1 on closure)_
 
 **Field proof — credential / calendar:**
 
@@ -396,360 +385,6 @@ regresses meanwhile.
 #### Out of scope
 
 - New product capability; remote (non-LAN) mobile access; native apps.
-
----
-
-### Release 3.1 — Closed-Loop Delivery
-
-**Status:** active — promoted 2026-08-11, displacing 3.2. 3 of 8 milestones
-shipped 2026-08-10 and are archived (the work-item trace, the completion-edit
-generator, and the merge-evidence gate). Two more — the empty-room gate and
-engine attribution — are engineering-complete and smoke-tested as of
-2026-08-13, and stay `[ ]` here because their live proof is outstanding, per the
-checkbox rule.
-
-**Widened again 2026-08-14** with the stale-clone guard, deliberately and for
-the second time. The test applied: this release's goal names explicit operator
-gates at **apply**, dispatch, and merge, and the apply gate turned out to have
-no staleness precondition at all. Shipping "the loop closes end to end" while
-its first write path can generate a proposal from a months-old copy would make
-this release's own completion claim false, so it belongs here rather than in a
-later release. The cost is honest — 3.1 now carries three open engineering
-milestones instead of two, and closes later. The release was first widened on
-promotion day by the priority reset
-in section "Current Status": closing the loop is not enough if the operator
-cannot tell that it closed, which engine acted, or what it cost.
-
-**Goal:** close the north-star loop end to end, repeatedly, with explicit
-operator gates at apply, dispatch, and merge — and make each step legible while
-it happens. Today the console can rank work, prepare a prompt and read merge
-readiness, but no single work item has travelled the whole chain, and the
-surfaces that start the chain do not say whether they can finish it.
-
-**Prerequisites:** met for all engineering. Only the operator-session proof
-waits on a human. Every input the widened milestones need is already computed —
-runner presence (`Get-RunnerPresence`), provider identity (`providerId` on the
-AI preview), and the agent-run metric fields. The gap is data computed and then
-not used, or used on only one of two surfaces.
-
-#### Product outcomes
-
-- One roadmap item is carried from "ranked highest value" to "merged, with the
-  managed repo's roadmap updated" without a human stitching the steps.
-- No enabled control leads to a dead end: if a workflow cannot complete, the
-  operator learns that _before_ investing review effort, not after.
-- An operator can always tell a deterministic rule from a model's proposal, and
-  no cost figure in this product is a number a human typed.
-
-#### Engineering milestones
-
-**Three shipped 2026-08-10 and are archived:** the per-work-item trace
-(`GET /api/trace/{id}`, joining all seven stages from any id the chain minted),
-the completion-edit generator behind `POST /api/roadmap/write-back/preview`, and
-the merge-evidence gate that refuses nine shapes which are not completion. Full
-text and evidence:
-[the archive](docs/history/completed-releases.md#closed-2026-08-11-archived-from-roadmapmd).
-
-- [ ] **Nothing may be queued into an empty room.** The route now refuses with
-      409 `runner-absent` **before** any write, naming the unmet precondition and
-      the remedy command, and carrying `strandedCount` so "no runner" reads
-      differently at 0 queued than at 6. `acknowledgeNoRunner` keeps a deliberate
-      queue-then-start-a-runner possible — the capability is explained, not
-      removed. The approve controls in the dispatch wizard and the packaged-item
-      queue disable on absent presence with the precondition rendered above them,
-      and the queue header shows a stranded badge. The six stranded entries were
-      triaged and cancelled, recorded in
-      [`evidence/verified/stranded-dispatch-triage-2026-08-11.md`](evidence/verified/stranded-dispatch-triage-2026-08-11.md).
-      **Coverage completed 2026-08-13.** The first pass gated two surfaces and
-      missed two, including the one this release is named after — the guided
-      wizard's "Approve and create PR task". A tripwire now derives its scope
-      from the call sites: every component invoking `executeRoadmapDispatch`
-      must consult `resolveDispatchGate`, so a fifth surface cannot be added
-      ungated. All three call sites pass.
-      _(state: smoke-tested — module smoke asserts, through the AST and scoped to
-      this route, that the refusal precedes the queue write and reports
-      `strandedCount`; verified non-vacuous against the pre-gate host, and the
-      coverage tripwire verified non-vacuous by failing on the two ungated
-      surfaces before they were fixed. Needs `operator-verified` against the
-      live portal, batched with 2.9's session.)_
-- [ ] **Every surface names its engine.** The guided-improvement preview now
-      carries an `engine` block — `kind: deterministic-rules`, the rule sources,
-      what it applies to, and `handoffEngine` naming what acts _after_ approval —
-      and the modal renders it above the findings, with the prompt section
-      stating that Copilot is the first model to see any of it. `providerId` and
-      `modelId` are null for rule engines and populated for model ones, so a
-      consumer branches on the payload rather than on which screen it is.
-      _(state: smoke-tested — asserted from the payload per the acceptance
-      criterion, plus an AST check that the preview reaches no provider, so the
-      label cannot quietly become false. Remaining: the same treatment for
-      surfaces beyond this wizard and the Operations workspace, which the
-      "enabled means available" audit below should enumerate rather than this
-      milestone guessing at.)_
-- [x] **Token and cost are measured, not declared.** **Shipped 2026-08-14.**
-      `tokenUsage` and `apiSpendUsd` existed on the agent-run record, flowed
-      through `tokens_reported` in `app.db` and out to analytics — and were
-      **never written by production code**. The Anthropic and OpenAI adapters in
-      [`AiDocImprovement.ps1`](backend/modules/ai/AiDocImprovement.ps1) sent
-      `max_tokens` and discarded the `usage` block the API returned; the only
-      real value in the repo was a smoke fixture.
-
-      Both adapters now read usage off the response into one normalized record.
-      Every count is nullable, and `source` separates the three cases that look
-      identical from outside: `provider-usage` (real counts), `absent` (the
-      model answered and reported nothing — a defect), `call-failed` (the call
-      errored), `not-applicable` (the offline heuristic called no model).
-      `tokenUsage`/`apiSpendUsd` on the improvement-history record deliberately
-      reuse the agent-run metric names so the two series join untranslated.
-
-      **Cost is priced only from operator-supplied rates** under
-      `ai.pricing.<modelId>`, and this repo ships none: published prices change,
-      and a stale rate produces a confidently wrong number, which is worse than
-      an honest blank. Unpriced, `costUsd` stays null, `costBasis` says
-      `no-price-configured`, and the UI renders _unmeasured_ — never `$0.00`.
-      _(state: smoke-tested — both adapters driven over a mocked response;
-      a successful model call recording null usage fails the gate, and an
-      AST check derives its scope from **which functions make an HTTP call**,
-      so a third adapter is covered without editing the assertion. The client
-      hop is asserted not to coerce any usage field with `?? 0`.)_
-- [ ] **Staleness is a visible property of every repo, not a hidden one.**
-      **Shipped 2026-08-14 for the free tier.** `isStale`, `localAhead` and
-      `remoteAhead` were hardcoded `$false`/`0`/`0` in both GitHub scan paths and
-      computed nowhere, while the dashboard had shipped a Stale column, a
-      stale-only quick filter, a group-by-stale control and an ahead/behind badge
-      bound to them for several releases. The column read "No" for all 80+
-      repositories — not because they were current, but because nothing looked.
-      The scan already collected both facts and threw the comparison away: the
-      local side records `git log -1 --format=%cI`, the GitHub side records
-      `pushed_at`, and they meet on the same object in
-      `Add-GitHubMetadataToStatusResult`.
-      [`Git.Staleness.ps1`](backend/modules/git/Git.Staleness.ps1) is that
-      comparison, pure and unit-tested, classifying behind / ahead-or-unpushed /
-      current / unknown with the basis named and the magnitude carried. The grid
-      shows the drift and the remote push date beside the local commit date.
-      _(state: smoke-tested — the matrix is asserted directly and a tripwire
-      fails if any scan path reverts to a literal. `localAhead`/`remoteAhead`
-      remain unwritten rather than zeroed: two dates cannot yield a commit count,
-      and `exactCountsAvailable` says so in the payload.)_
-
-      Remaining, and deliberately not free — both need data the scan does not
-      collect today, so they are scoped separately rather than bundled into a
-      comparison that cost nothing:
-
-      - **Exact ahead/behind counts** need a real ref comparison. `git ls-remote`
-        is the cheaper option (one round trip, no object download) against a
-        fetch per repo; at 80+ repos either is a real charge on Release 3.2's
-        300s cold-scan budget and should be measured before it is adopted.
-      - **Last merged PR** needs a per-repo pulls query (`state=closed` filtered
-        to merged); the scan currently fetches only open-PR counts.
-      - **Most recently modified uncommitted file** needs working-tree stat calls
-        per repo; the scan counts `git status --short` lines but never reads
-        their timestamps.
-- [x] **No write path may act on a stale clone.** **Shipped 2026-08-14.** Every
-      write this product made to a managed repo branched from whatever the local
-      working copy happened to be, and **`git fetch` appeared nowhere in
-      `backend/` or `scripts/`**. The submit-PR path
-      ([`Roadmap.PrSubmitter.ps1`](backend/modules/roadmap/Roadmap.PrSubmitter.ps1))
-      evaluated nine refusals — not a git repo, dirty tree, no token,
-      unrecognizable remote, byte-identical no-op, and five more — and staleness
-      was not among them; the task runner
-      ([`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1))
-      branched the same way.
-
-      [`Git.BaseFreshness.ps1`](backend/modules/git/Git.BaseFreshness.ps1) asks
-      the remote directly with `git ls-remote` — one round trip, no object
-      download, no working-tree mutation. Both write paths now refuse with a
-      named `stale-base` category that says how far behind the clone is and what
-      to run, and both accept a deliberate override (`acknowledgeStaleBase` on
-      the route, `-AcknowledgeStaleBase` on the runner) exactly as
-      `acknowledgeNoRunner` works for dispatch. The count is **exact when the
-      objects are already local** and `null` when only a fetch could name it —
-      never a guess, the same rule this release applies to unmeasured cost.
-
-      **A clone that cannot be verified is not treated as stale.** No remote, no
-      network, detached HEAD all read `unknown`, are reported, and are allowed
-      through — the rule `Resolve-RunnerPresence` applies to an unreadable
-      heartbeat, kept consistent so an offline operator is not locked out of
-      their own repositories.
-
-      **The damage is not the obvious one.** `git add -- $RoadmapPath` stages a
-      single file, so unrelated upstream work cannot be reverted, and GitHub's
-      three-way merge turns a genuinely conflicting roadmap edit into a visible
-      `DIRTY` state. What nothing catches is that the **proposal itself was
-      computed from stale content** — an improvement generated against an
-      outdated document, re-adding what upstream already fixed or missing
-      context added since. That merges cleanly and reads as correct in review.
-      A silent wrong artifact on the primary write path costs more than the
-      stranded queue did, because the stranded queue announced itself.
-
-      **Measured 2026-08-14 across the 60 local clones under
-      `F:\Development\20_Staging`:** 49 have upstream tracking branches and
-      **11 report being behind** — 154, 60, 18, 17, 15, 8, 8, 5, 4, 3, 1
-      commits. Every one of those counts is measured against a remote-tracking
-      ref that is itself stale: those same clones last fetched 93, 195, 285, 93,
-      26, 0, 63, 104, 53, 120 and 16 days ago, and one has never fetched. The
-      true figures cannot be known without fetching and can only be larger.
-      The detector the product already has is as stale as the thing it detects:
-      [`Git.StatusDetail.ps1`](backend/modules/git/Git.StatusDetail.ps1) computes
-      `unpulledCommits` from `git log HEAD..@{u}`, which reports **zero** on a
-      clone whose upstream ref predates the divergence — exactly what a
-      PromptPilot clone did while sitting 8 commits behind.
-      _(state: smoke-tested — the defect is **reproduced**, not asserted from a
-      description: the smoke builds a bare origin, clones it, moves the origin
-      three commits, and proves `git log HEAD..@{u}` reports **0** on that clone
-      while `ls-remote` reports behind — then fetches without merging and proves
-      the exact count becomes 3. Coverage derives from the commands that branch
-      or commit in a managed repo, as this entry asked: 4 base-deriving sites
-      across 2 files, all gated, with 7 publish/working-tree sites reported as
-      deliberately out of scope rather than silently skipped.)_
-- [x] **Enabled means available.** **Shipped 2026-08-14.** The audit ran as a
-      gate rather than as a written list, and the enumeration is the deliverable:
-      **82 disabled controls across 22 PC components** — 30 disabled by an
-      operation already in flight (the label and spinner already say why) and
-      **52 by a precondition**, every one of which now names it.
-
-      **The first pass undercounted by more than half, and that is the finding.**
-      A lazy `<button.*?>` regex stops at the `>` inside `onClick={() => …}`,
-      so every control whose first prop is an arrow handler read as ungated: it
-      reported 30 disabled controls and scored `RepoGrid.tsx` as 31 ungated
-      buttons when it holds 6 gated ones. Walking the tag with brace/quote depth
-      instead found 18 unexplained controls where the regex had found 7, in
-      files nobody had reported — pagination, curation state, the two dispatch
-      overrides, the discard-changes control, and a permanently dead
-      `disabled={true}` labelled only "Not Available".
-
-      Lane 0.9's three instances closed here: Insights now offers the
-      assessment run its own text tells the operator to perform (its analytics
-      panel had a button named just `Retry` that re-fetched the trend, not the
-      assessment the sentence beside it named); the bare `Failed to fetch`
-      screen is replaced by a classified state that distinguishes an unreachable
-      backend from an unconfigured portal and offers both a retry and Settings;
-      the dispatch wizard closed under M1.
-      _(state: smoke-tested — the classifier derives its scope from the markup,
-      so a control added later is audited without anyone remembering to add it.
-      It fails closed if it finds fewer than 20 controls, so a broken scanner
-      cannot pass vacuously, and it reports every violation at once rather than
-      the first.)_
-- [ ] Record a full-loop proof for one real item in `evidence/`, naming each
-      stage's artifact, **manually and once on a schedule**. _(state: the
-      **manual half is operator-verified 2026-08-15** — PR #142, all twelve
-      steps, recorded in
-      [`evidence/verified/full-loop-proof-2026-08-15.md`](evidence/verified/full-loop-proof-2026-08-15.md).
-      What remains is the scheduled trigger: a scheduled packaging run whose
-      packet an operator approves through to the same recorded outcome.)_ The
-      scheduled path deliberately stops at `pending-approval` (Release 2.7
-      Phase C), so this
-
-#### Acceptance criteria
-
-- A single `runId` resolves to every stage artifact through one route.
-- The approve control cannot be clicked when no runner can claim the result,
-  and a smoke assertion proves the **disabled** state, not the happy path.
-- Every surface displaying a generated document or finding names its engine,
-  asserted from the payload rather than by inspection; a model call that
-  records `null` usage fails a gate.
-- No write path branches from a clone it has not verified is current, and the
-  refusal names how far behind it is. A smoke assertion proves the **refusal**
-  against a deliberately-stale fixture clone, not the current-clone happy path.
-- The loop proof exists in `evidence/` with the PR, the Actions result, and
-  the applied roadmap diff, for both the manual and the scheduled trigger.
-
-#### Out of scope
-
-- Automatic merge — merge stays an explicit operator action after readiness
-  passes.
-- Removing the human approval gate on scheduled work.
-- Multi-repo parallel dispatch; one item end to end first.
-
-**Validation plan:** `npm test` (`scripts/Invoke-TestSuite.ps1`, the same
-17-gate list `ci-smoke.yml` invokes), exit 0. Each milestone lands its own gate:
-a disabled-state assertion, an engine-attribution assertion over the payload, a
-usage-not-null assertion on a stubbed provider call, and a recorded evidence
-entry per trigger. The dispatch success-path assertion added 2026-08-11
-([PR #119](https://github.com/xfaith4/GitHubRepoManagement/pull/119)) is the
-pattern: a contract proven only by its refusals is not proven.
-
-**Risks and blockers:**
-
-- **Risk — disabling controls hides capability instead of explaining it.** A
-  greyed button with no reason is worse than a failing one: the operator cannot
-  tell broken from not-yet-applicable. Every disabled state carries its unmet
-  precondition in text.
-- **Risk — a measured token figure gets treated as a budget before it is
-  trustworthy.** Report measured usage separately from the declared work units
-  the quota guard enforces; do not wire the new figure into refusals here.
-- **Risk — the end-to-end proof needs the same scarce operator session** 2.9
-  waits on. Batch them or this milestone stalls alone.
-
-**Dependencies:** `Get-RunnerPresence`
-([`Automation.RunnerPresence.ps1`](backend/modules/automation/Automation.RunnerPresence.ps1)),
-the AI provider adapters
-([`AiDocImprovement.ps1`](backend/modules/ai/AiDocImprovement.ps1)), the
-agent-run ledger ([`AgentRuns.ps1`](backend/modules/agent-runs/AgentRuns.ps1)),
-and the work-item trace shipped earlier in this release.
-
-**Known issues:**
-
-- [ ] **[non-blocker]** **No `.gitattributes`, with `core.autocrlf=true`.**
-      Whether a tracked file holds CRLF or LF in the working tree depends on
-      which git operation last materialised it, so any byte-level comparison
-      between two tracked copies is non-deterministic locally while passing in
-      CI's fresh checkout. This surfaced 2026-08-13 when the standards/spec sync
-      gate reported drift between two files with identical content (245 CRLF vs
-      245 LF, same 16,280 characters). That gate now normalises before
-      comparing, but it was the only one audited — the general fix is a
-      `.gitattributes` declaring `text eol=lf`, and the risk until then is a
-      gate that reports drift that is not there, or hides drift that is.
-      _(state: planned — recorded 2026-08-13)_
-- [ ] **[non-blocker]** The same item can still be queued twice while a runner
-      _is_ present. The triage found the six stranded entries were **three items,
-      each queued twice** — two pairs seconds apart (double-submit) and one three
-      minutes apart (a retry after nothing appeared to happen). The presence gate
-      removes the cause for the absent-runner case only; nothing makes dispatch
-      idempotent. _(state: planned — recorded 2026-08-13 from
-      [the triage](evidence/verified/stranded-dispatch-triage-2026-08-11.md);
-      pairs with the "enabled means available" milestone, since both are about a
-      control that gives no feedback that it worked.)_
-- [ ] The scheduled and operator paths reach dispatch through different writers
-      (`Automation.RoadmapPackaging.ps1` and the dispatch route). The
-      queue-contract tripwire keeps their _shape_ identical; nothing yet keeps
-      their _behaviour_ identical, and only one has an end-to-end test.
-      **Narrowed 2026-08-13:** the divergence that mattered is closed. There
-      were **three** roads to the queue, not two, and only one was gated:
-      `POST /api/roadmap/dispatch/execute` wrote it directly and was gated;
-      `POST /api/automation/packages/approve` reached it through
-      `Submit-PackagedItemToRunner` and was not; `POST /api/roadmap-agent/start`
-      reached it through `Start-RoadmapCopilotTask.ps1` →
-      `Add-RoadmapTaskToQueue.ps1` and was not.
-      The third is the instructive one: it never names the queue file, so a
-      tripwire scoped to that filename could not see it — the first version of
-      this check reported full coverage while a road stood open. The check now
-      derives the writer scripts and then the routes that invoke them, so an
-      indirect road counts as a road. `POST /api/roadmap-agent/preview` is
-      exempt because it passes `-PreviewOnly` and returns before the write, and
-      that ordering is itself asserted rather than trusted.
-
-      The frontend check was rebuilt for the same reason, having failed the same
-      way twice: scoped to `executeRoadmapDispatch` it passed while two surfaces
-      sat ungated, and after those were fixed it still passed while
-      `RoadmapViewerModal` queued through `startRoadmapTask` — a different client
-      function, to a different route, to the same queue. It now derives its scope
-      from the backend in two hops: routes that refuse on presence → the
-      `apiClient` functions posting to them → every component calling one. Five
-      surfaces, all gated. A container that forwards presence to the child
-      rendering the control counts as gated; requiring a redundant
-      `resolveDispatchGate` in `Dashboard` would add a call nothing reads.
-
-      What remains of this issue is the original end-to-end coverage asymmetry,
-      not a behavioural difference.
-- [ ] **[non-blocker]** **A deliberate override leaves no durable record.**
-      `acknowledgeNoRunner` lets an operator queue into an empty room on
-      purpose, and `queuedWithoutRunner` reports it — but only in the HTTP
-      response. Neither the queue entry nor the run summary records it, so the
-      next person triaging a stranded pile cannot tell a deliberate override
-      from a gate that failed. That is precisely the ambiguity the 2026-08-11
-      triage had to reconstruct from timestamps. The queue entry shape is
-      locked by the queue-contract tripwire, so the run summary is the right
-      home for it. _(state: planned — recorded 2026-08-13)_
 
 ---
 
@@ -902,10 +537,11 @@ window.
 
 ### Release 3.5 — Trustworthy Surfaces (UI Quality)
 
-**Status:** planned — sequenced **after 3.4, ahead of 3.2**, on the reasoning this
-roadmap has now applied twice: a portfolio that renders faster while its own numbers
-contradict each other is not more reliable. 3.1 made every _control_ honest about
-what it can do; 3.5 makes every _number_ honest about what it counted.
+**Status:** active — promoted 2026-08-15 when Release 3.4 closed, sequenced
+ahead of 3.2 on the reasoning this roadmap has now applied twice: a portfolio
+that renders faster while its own numbers contradict each other is not more
+reliable. 3.1 made every _control_ honest about what it can do; 3.5 makes every
+_number_ honest about what it counted.
 
 **Goal:** every figure the portal displays states what it counted, over which set,
 as of when, and from which source — and two views can no longer disagree without
@@ -1015,8 +651,58 @@ review's own conclusions corrected.
 - A ranked `Today` landing view, the density question, and the nine-button row: one
   product decision, owned by Lane 0.5 — 3.5 supplies the numbers it will render.
 - Scan progress and cancellation — an open Release 3.2 milestone.
-- Dispatch idempotency — an open Release 3.1 non-blocker; 3.5 dedupes the **display**.
+- Dispatch idempotency (the queue writer) — carried in this release's known issues; milestone 6 dedupes the **display** only.
 - New portfolio metrics. Make the existing ones true, scoped and explained.
+
+**Validation plan:** `npm test` (the same 17-gate list `ci-smoke.yml` invokes),
+exit 0. Each milestone lands its own gate, proven non-vacuous against the
+pre-fix code: a multi-capture-day fixture that fails on the `ready_repo_count`
+inflation, a null-average fixture distinguishing "not computed" from zero, the
+cross-view invariant assertions run against the pre-fix host, and a
+scope-derived tripwire for components computing their own portfolio metrics.
+A gate is not finished when it passes; it is finished when it has been shown
+to fail.
+
+**Risks and blockers:**
+
+- **Risk — corrected numbers read as regressions.** `Stale: 0 → 31` is a fix;
+  the trust-report requirement (before/after per finding, with the reason)
+  exists so a reader cannot mistake honesty for decay.
+- **Risk — the snapshot contract turns into a rewrite.** Milestone 1 replaces
+  where numbers are *computed*, not how views render; a component keeps its
+  layout and loses its arithmetic. Scope-derived tripwire, not a big-bang
+  refactor.
+- **Risk — the scope policy silently shrinks the portfolio.** Every exclusion
+  is stated in config, visible in the UI, reversible; nothing is deleted.
+- **Blocker (one milestone, partial) — the `Genesys.Core_AuditLogsApp`
+  identity mis-mapping needs the live workspace to reproduce before the
+  dedupe-by-`(remote_url, root_commit_sha)` fix is trusted.
+
+**Dependencies:** the 2026-08-15 triage
+([`docs/reference/2026-08-15-ui-review-triage.md`](docs/reference/2026-08-15-ui-review-triage.md))
+as the evidence base; `Portfolio.Analytics.ps1` and `maturity_history` in
+`app.db` (milestone 4a-c); `Git.Staleness.ps1`'s `toleranceSeconds`
+(milestone 4d's wire-or-retire decision); the roadmap cache and operations
+index for scope recomputation (milestone 3); `runnerPresence.ts` and the
+queue summaries (milestone 6).
+
+**Known issues:**
+
+- [ ] **[non-blocker]** The same item can still be queued twice while a runner
+      is present — nothing makes dispatch idempotent. Recorded in 3.1 from the
+      2026-08-11 triage (three items, each queued twice), carried here on 3.1's
+      closure. Milestone 6 dedupes the **display** by `(repo, task_id)`; the
+      writer-side idempotency is the open half.
+- [ ] **[non-blocker]** A deliberate `acknowledgeNoRunner` override leaves no
+      durable record — only the HTTP response reports it, so a stranded-pile
+      triage cannot tell a deliberate override from a failed gate. Carried from
+      3.1 on its closure; the run summary is the right home for it.
+- [ ] **[non-blocker]** `POST /api/roadmap/dispatch/execute` hardcodes
+      `dispatchTarget: 'copilot'`; the wizard's local-claude enqueue has no
+      one-call route and goes through the queue-writer script. Found live
+      during the 2026-08-15 full-loop drive. Pairs with milestone 6's runner
+      surface work but is a dispatch-surface gap, recorded here so it is not
+      lost.
 
 ---
 
@@ -1170,6 +856,22 @@ L2.)
       self-describing rather than merely unpenalized.
 
 ### Lane 0.8 — Verification gate integrity (CI audit 2026-08-10)
+
+**Re-homed from Release 3.1 on its closure (2026-08-15):**
+
+- [ ] **[non-blocker]** **No `.gitattributes`, with `core.autocrlf=true`.**
+      Byte-level comparisons between tracked copies are non-deterministic
+      locally while passing in CI's fresh checkout (surfaced 2026-08-13: 245
+      CRLF vs 245 LF, same characters, reported as drift). The sync gate now
+      normalises before comparing, but it was the only gate audited; the
+      general fix is a `.gitattributes` declaring `text eol=lf`, and the risk
+      until then is a gate that reports drift that is not there, or hides
+      drift that is. _(state: planned)_
+- [ ] **[non-blocker]** The scheduled and operator dispatch paths reach the
+      queue through different writers with only one end-to-end test. The
+      behavioural divergence was closed in 3.1 (three roads, all gated, scope
+      derived); what remains is the coverage asymmetry itself.
+      _(state: planned)_
 
 **The gate work closed 2026-08-10 (PRs #102–#107) and is archived.** A merge
 had been gated on almost nothing; now `ci-smoke.yml` **invokes
