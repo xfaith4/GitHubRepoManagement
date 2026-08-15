@@ -896,7 +896,17 @@ export async function startRoadmapTask(request: RoadmapTaskRequest): Promise<{ m
   };
 }
 
-export async function approveRoadmapTask(runId: string): Promise<{ message: string; branch: string; pushed: boolean }> {
+export async function approveRoadmapTask(runId: string): Promise<{
+  message: string;
+  branch: string;
+  pushed: boolean;
+  // Release 3.4 milestone 3 — the approval opens the PR through the product.
+  // Null when opening was disabled or refused; the refusal, when present,
+  // names why so the operator is never left with a silently PR-less push.
+  prUrl: string | null;
+  prNumber: number | null;
+  prRefusal: { category: string; reason: string } | null;
+}> {
   const data = await postJson<any>('/roadmap-agent/approve-push', { runId });
   if (!data?.success) {
     throw new Error(data?.error?.message ?? 'Roadmap task approve & push failed.');
@@ -904,7 +914,12 @@ export async function approveRoadmapTask(runId: string): Promise<{ message: stri
   return {
     message: String(data?.data?.message ?? 'Branch pushed.'),
     branch: String(data?.data?.branch ?? ''),
-    pushed: Boolean(data?.data?.pushed)
+    pushed: Boolean(data?.data?.pushed),
+    prUrl: data?.data?.prUrl ? String(data.data.prUrl) : null,
+    prNumber: data?.data?.prNumber != null ? Number(data.data.prNumber) : null,
+    prRefusal: data?.data?.prRefusal
+      ? { category: String(data.data.prRefusal.category ?? ''), reason: String(data.data.prRefusal.reason ?? '') }
+      : null,
   };
 }
 

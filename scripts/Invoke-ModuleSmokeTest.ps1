@@ -1244,6 +1244,108 @@ foreach ($empty in @(
 }
 Write-Host '  submit-PR ok: 4 remote forms parsed, 4 non-GitHub refused, 8 refusal categories named, 3 empty-input refusals returned (not thrown), token not in cleartext' -ForegroundColor DarkGray
 
+Write-Step 'Branch-PR open — Release 3.4 milestone 3: one refusal matrix for any pushed branch'
+# Open-RepoBranchPullRequest is the branch-and-PR half of the repair submission,
+# extracted so an agent run's approve-push reaches GitHub through the same
+# refusals. These assertions cover the matrix and the return-don't-throw
+# contract; the network call itself is out of smoke's reach by design — every
+# refusal below fires before any push or API request could happen.
+$branchPrOk = @{
+    RepoPath = 'C:\repo'; Branch = 'roadmap/run-1'; BaseBranch = 'main'
+    Token = 'tok'; Slug = $okSlug; IsGitRepo = $true; BranchExists = $true
+}
+if (-not (Test-RepoBranchPrReadiness @branchPrOk).ok) { throw 'A fully valid branch-PR request must pass preconditions' }
+foreach ($refusal in @(
+    @{ name = 'no repo path';       override = @{ RepoPath = '' };        category = 'validation' }
+    @{ name = 'not a git repo';     override = @{ IsGitRepo = $false };   category = 'validation' }
+    @{ name = 'no branch';          override = @{ Branch = '' };          category = 'validation' }
+    @{ name = 'branch missing';     override = @{ BranchExists = $false }; category = 'validation' }
+    @{ name = 'no base branch';     override = @{ BaseBranch = '' };      category = 'validation' }
+    @{ name = 'branch equals base'; override = @{ Branch = 'main' };      category = 'validation' }
+    @{ name = 'no token';           override = @{ Token = '' };           category = 'auth' }
+    @{ name = 'non-GitHub remote';  override = @{ Slug = $null };         category = 'validation' }
+)) {
+    $caseArgs = @{} + $branchPrOk
+    foreach ($k in $refusal.override.Keys) { $caseArgs[$k] = $refusal.override[$k] }
+    $verdict = Test-RepoBranchPrReadiness @caseArgs
+    if ($verdict.ok) { throw "branch-PR must refuse '$($refusal.name)' but it passed preconditions" }
+    if ($verdict.category -ne $refusal.category) { throw "branch-PR refusal '$($refusal.name)' expected category '$($refusal.category)', got '$($verdict.category)'" }
+    if ([string]::IsNullOrWhiteSpace($verdict.reason)) { throw "branch-PR refusal '$($refusal.name)' must carry a named reason" }
+}
+
+# The impure entry point RETURNS refusals, never throws on expected conditions,
+# and refuses a tokenless call before anything could reach the network.
+$branchPrFixture = Join-Path $WorkspaceRoot 'output\smoke\module\branch-pr-fixture'
+if (Test-Path -LiteralPath $branchPrFixture) { Remove-Item -LiteralPath $branchPrFixture -Recurse -Force }
+$null = New-Item -ItemType Directory -Path $branchPrFixture -Force
+& git -C $branchPrFixture init -b main --quiet 2>&1 | Out-Null
+& git -C $branchPrFixture config user.email 'smoke@local' 2>&1 | Out-Null
+& git -C $branchPrFixture config user.name 'smoke' 2>&1 | Out-Null
+Set-Content -LiteralPath (Join-Path $branchPrFixture 'a.txt') -Value 'x' -Encoding UTF8
+& git -C $branchPrFixture add -A 2>&1 | Out-Null
+& git -C $branchPrFixture commit -m 'init' --quiet 2>&1 | Out-Null
+& git -C $branchPrFixture switch -c 'roadmap/smoke-1' --quiet 2>&1 | Out-Null
+& git -C $branchPrFixture remote add origin 'https://github.com/smoke/fixture.git' 2>&1 | Out-Null
+$branchPrOutcome = $null
+try { $branchPrOutcome = Open-RepoBranchPullRequest -RepoName 'fixture' -RepoPath $branchPrFixture -Branch 'roadmap/smoke-1' -BaseBranch 'main' -Token '' }
+catch { throw "Open-RepoBranchPullRequest must RETURN a tokenless refusal, not throw: $($_.Exception.Message)" }
+if (-not $branchPrOutcome.refused -or $branchPrOutcome.category -ne 'auth') { throw "Tokenless branch-PR open must refuse as 'auth', got '$($branchPrOutcome.category)'" }
+$branchPrMissing = Open-RepoBranchPullRequest -RepoName 'fixture' -RepoPath $branchPrFixture -Branch 'no-such-branch' -BaseBranch 'main' -Token 'tok'
+if (-not $branchPrMissing.refused -or $branchPrMissing.category -ne 'validation') { throw "A nonexistent branch must refuse as 'validation', got '$($branchPrMissing.category)'" }
+Write-Host '  branch-PR ok: valid facts pass, 8 refusal categories named, tokenless and missing-branch refusals returned (not thrown)' -ForegroundColor DarkGray
+
+Write-Step 'Completion commit — Release 3.4 milestone 4: the edit rides the feature branch, never a default one'
+# Reproduced in a fixture, per the release acceptance criteria: a real repo, a
+# real branch, a real commit — not an assertion about a description.
+. (Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.WriteBack.ps1')
+$completionFixture = Join-Path $WorkspaceRoot 'output\smoke\module\completion-commit-fixture'
+if (Test-Path -LiteralPath $completionFixture) { Remove-Item -LiteralPath $completionFixture -Recurse -Force }
+$null = New-Item -ItemType Directory -Path $completionFixture -Force
+& git -C $completionFixture init -b main --quiet 2>&1 | Out-Null
+& git -C $completionFixture config user.email 'smoke@local' 2>&1 | Out-Null
+& git -C $completionFixture config user.name 'smoke' 2>&1 | Out-Null
+$completionRoadmap = Join-Path $completionFixture 'ROADMAP.md'
+Set-Content -LiteralPath $completionRoadmap -Value "# Roadmap`n`n- [ ] Ship the widget`n- [ ] Other work`n" -Encoding UTF8
+& git -C $completionFixture add -A 2>&1 | Out-Null
+& git -C $completionFixture commit -m 'roadmap' --quiet 2>&1 | Out-Null
+
+# On the DEFAULT branch: refuse by name, and write nothing.
+$onMain = Add-RoadmapCompletionCommit -RepoPath $completionFixture -ItemText 'Ship the widget' -RunId 'smoke-run'
+if ($onMain.committed -or $onMain.category -ne 'on-default-branch') { throw "Completion commit on main must refuse as 'on-default-branch', got committed=$($onMain.committed) category='$($onMain.category)'" }
+if ((Get-Content -LiteralPath $completionRoadmap -Raw) -match '\[x\]') { throw 'The on-default-branch refusal must leave the roadmap untouched' }
+
+# On a feature branch: flip the box, commit only the roadmap, leave the tree clean.
+& git -C $completionFixture switch -c 'roadmap/smoke-run' --quiet 2>&1 | Out-Null
+$headBefore = ((& git -C $completionFixture rev-parse HEAD) | Out-String).Trim()
+$onBranch = Add-RoadmapCompletionCommit -RepoPath $completionFixture -ItemText 'Ship the widget' -RunId 'smoke-run'
+if (-not $onBranch.committed) { throw "Completion commit on a feature branch must commit, got category='$($onBranch.category)' reason='$($onBranch.reason)'" }
+$headAfter = ((& git -C $completionFixture rev-parse HEAD) | Out-String).Trim()
+if ($headBefore -eq $headAfter) { throw 'Completion commit reported committed=true but HEAD did not move' }
+if ((Get-Content -LiteralPath $completionRoadmap -Raw) -notmatch '- \[x\] Ship the widget') { throw 'The completion commit did not flip the checkbox' }
+if ((Get-Content -LiteralPath $completionRoadmap -Raw) -notmatch '- \[ \] Other work') { throw 'The completion commit must touch only its own item' }
+if (-not [string]::IsNullOrWhiteSpace(((& git -C $completionFixture status --porcelain) | Out-String).Trim())) { throw 'The completion commit must leave the working tree clean' }
+
+# Idempotent: a second call reports already-complete and does not commit again.
+$again = Add-RoadmapCompletionCommit -RepoPath $completionFixture -ItemText 'Ship the widget' -RunId 'smoke-run'
+if ($again.committed -or -not $again.alreadyComplete) { throw 'A second completion commit must report alreadyComplete without committing' }
+if (((& git -C $completionFixture rev-parse HEAD) | Out-String).Trim() -ne $headAfter) { throw 'already-complete must not move HEAD' }
+
+# Unknown item: reported by name, nothing written.
+$missing = Add-RoadmapCompletionCommit -RepoPath $completionFixture -ItemText 'An item that is not there' -RunId 'smoke-run'
+if ($missing.committed -or $missing.category -ne 'item-not-found') { throw "An unknown item must refuse as 'item-not-found', got '$($missing.category)'" }
+
+# The apply route may no longer write the file: completion is verified behind
+# the merge-evidence gate, never written by it. Scoped to the route's own block
+# — from its label to the next route label — so the assertion cannot be
+# satisfied or broken by unrelated code.
+$hostSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1') -Raw -Encoding UTF8
+$applyBlockMatch = [regex]::Match($hostSource, "(?s)'POST /api/roadmap/write-back/apply'(.*?)'[A-Z]+ /api/")
+if (-not $applyBlockMatch.Success) { throw 'Could not locate the write-back apply route block — the tripwire scope is broken, which must fail rather than pass vacuously' }
+if ($applyBlockMatch.Groups[1].Value -match 'Set-Content\s+-LiteralPath\s+\$wbaCtx\.roadmapPath') {
+    throw 'The write-back apply route writes the roadmap file again. Completion travels through the pull request (Release 3.4 milestone 4); the gate verifies, it does not write.'
+}
+Write-Host '  completion commit ok: default-branch refusal proven, feature-branch commit proven (HEAD moved, box flipped, tree clean), idempotent, unknown item named, apply route writes nothing' -ForegroundColor DarkGray
+
 Write-Step 'Roadmap structure linter — smoke: R013/RQ001 relaxations still detect real violations'
 $structureLinter = Join-Path $WorkspaceRoot 'tools\Test-RoadmapStructure.ps1'
 if (-not (Test-Path -LiteralPath $structureLinter)) { throw "Test-RoadmapStructure.ps1 not found at: $structureLinter" }
@@ -2710,12 +2812,27 @@ $wbWriteSites = @(0..($wbHostLines.Count - 1) | Where-Object {
         foreach ($v in $wbEditVars) { if ($line -match ('\$' + [regex]::Escape($v) + '\.proposedContent')) { $hit = $true } }
         return $hit
     })
-if ($wbWriteSites.Count -eq 0) { throw 'No completion-edit write site found in the API host; the write-back apply route is missing.' }
-foreach ($wbSite in $wbWriteSites) {
+# Release 3.4 milestone 4 INVERTED this assertion, and the old one failed
+# red against the new host before it was rewritten — which is the proof the
+# behavior really changed. Until 2026-08-15 the rule was "the completion
+# edit reaches disk only behind the gate"; the rule is now "the completion
+# edit reaches disk in the HOST not at all". It rides the feature branch via
+# Add-RoadmapCompletionCommit (runner-side), and the gate verifies the
+# merged result instead of writing it — a write site here would be a write
+# to whatever branch is checked out, which at apply time is the default
+# branch, the exact defect this milestone closes.
+if ($wbWriteSites.Count -gt 0) {
+    throw ("The API host writes a completion edit to disk at line {0}. Completion travels through the pull request (Release 3.4 milestone 4): the runner commits it on the feature branch, and the apply route only verifies and records." -f (@($wbWriteSites)[0] + 1))
+}
+# The verified-merged record must still be gate-guarded: recording completion
+# without merge evidence would launder an unmerged item into a verified one.
+$wbVerifySites = @(0..($wbHostLines.Count - 1) | Where-Object { $wbHostLines[$_] -match "-Action\s+'verified-merged'" })
+if ($wbVerifySites.Count -eq 0) { throw "The apply route never records a 'verified-merged' completion; the verification path is missing." }
+foreach ($wbSite in $wbVerifySites) {
     $wbWindowStart = [Math]::Max(0, $wbSite - 60)
     $wbWindow = ($wbHostLines[$wbWindowStart..$wbSite] -join "`n")
     if ($wbWindow -notmatch 'gate\.allowed') {
-        throw ("A completion edit is written to disk at host line {0} without an enclosing merge-evidence gate check." -f ($wbSite + 1))
+        throw ("A verified-merged completion is recorded at host line {0} without an enclosing merge-evidence gate check." -f ($wbSite + 1))
     }
 }
 if ($traceHostSource -notmatch [regex]::Escape("'POST /api/roadmap/write-back/preview'")) { throw 'The API host no longer routes POST /api/roadmap/write-back/preview' }

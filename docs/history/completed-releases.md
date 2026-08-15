@@ -4015,3 +4015,58 @@ delivery documentation to move in the same pull request as the capability.
       own state with its own remedy. _(state: smoke-tested)_
 
 ---
+
+### Release 3.4 — The Delivery Loop Closes (milestones 3 and 4, closed 2026-08-15)
+
+- [x] **A pushed branch does not end at "open the PR from GitHub when ready."**
+      **Shipped 2026-08-15.**
+      [`Roadmap.PrSubmitter.ps1`](../../backend/modules/roadmap/Roadmap.PrSubmitter.ps1)
+      already opened pull requests with ten named refusals, proven live in 2.7
+      Phase A — but only for roadmap repairs, because branch-and-PR logic was
+      entangled with commit-the-roadmap-file logic in one function.
+      `Open-RepoBranchPullRequest` is the separation: push (never force, never
+      the base branch) and PR-open for ANY committed branch, behind its own
+      eight-refusal matrix (`Test-RepoBranchPrPreconditions`), with a PR that
+      already exists returned as `alreadyExisted` rather than surfaced as a raw
+      422 — approving twice is idempotent, not an error. The repair submission
+      now routes through it, so the two callers cannot drift; and
+      `POST /api/roadmap-agent/approve-push` opens the run's PR after its
+      proven push. A PR refusal after a successful push is reported as a
+      partial success with the refusal named — an operator without a token
+      still gets the push, plus the reason no PR appeared.
+      _(state: smoke-tested — the matrix's eight categories asserted
+      individually; the impure entry point proven to RETURN refusals rather
+      than throw, against a real fixture repo, for the tokenless and
+      missing-branch cases, both firing before anything could reach the
+      network.)_
+
+- [x] **Roadmap completion travels through the pull request, never after it.**
+      **Shipped 2026-08-15.** `POST /api/roadmap/write-back/apply` was gated on
+      merge evidence and then wrote the checkbox with a bare `Set-Content` on
+      whatever branch was checked out — `main`, at that point in the loop.
+      `Add-RoadmapCompletionCommit`
+      ([`Roadmap.WriteBack.ps1`](../../backend/modules/roadmap/Roadmap.WriteBack.ps1))
+      now commits the completion edit on the feature branch during the run —
+      refusing BY NAME on a default branch, which is the acceptance criterion
+      made executable — and the runner records the outcome
+      (`committed` / `already-complete` / `item-not-found` / refusal) in the
+      run summary rather than dying on it. The apply route inverted: a
+      checkbox already `[x]` after the merge is the SUCCESS (the PR carried
+      it; recorded as `action: verified-merged` in the append-only ledger,
+      still behind the gate), and one still open refuses as
+      `completion-not-merged`. The route writes no file content at all.
+      The base-freshness reading travels ON the completion record rather than
+      gating it: the runner already refused a stale base before the branch
+      existed, and after that the PR merge is the arbiter — what the
+      2026-08-11 triage lacked was evidence, not another refusal.
+      _(state: smoke-tested — reproduced in a fixture: the default-branch
+      refusal proven with the file untouched, the feature-branch commit proven
+      by HEAD moving with only its own checkbox flipped and a clean tree,
+      idempotency proven, unknown item named. The 3.1-era tripwire that
+      REQUIRED a gated write site in the host was inverted and **failed red
+      against the new host before it was rewritten** — the proof the behavior
+      change is real. Its replacement asserts the host writes no completion
+      edit anywhere and that the `verified-merged` record stays inside the
+      merge-evidence gate.)_
+
+---

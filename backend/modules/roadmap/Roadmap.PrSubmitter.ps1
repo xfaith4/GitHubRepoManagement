@@ -184,6 +184,166 @@ function Get-GitCurrentBranch {
     return $out.Trim()
 }
 
+function Test-RepoBranchPrReadiness {
+    <#
+        .SYNOPSIS
+            Every reason opening a PR for an existing branch must refuse.
+        .DESCRIPTION
+            Release 3.4 milestone 3. The refusal matrix for opening a pull
+            request from a branch that ALREADY carries its commits — the half of
+            Invoke-RoadmapRepairPrSubmission that has nothing to do with writing
+            a roadmap file. Pure, same contract as
+            Test-RoadmapRepairPrPreconditions: facts in, named verdict out.
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [AllowEmptyString()][string]$RepoPath = '',
+        [AllowEmptyString()][string]$Branch = '',
+        [AllowEmptyString()][string]$BaseBranch = '',
+        [AllowEmptyString()][string]$Token = '',
+        [AllowNull()][object]$Slug = $null,
+        [bool]$IsGitRepo = $false,
+        [bool]$BranchExists = $false
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RepoPath)) {
+        return @{ ok = $false; category = 'validation'; reason = 'No local repo path was provided, so there is no checkout to open a PR from.' }
+    }
+    if (-not $IsGitRepo) {
+        return @{ ok = $false; category = 'validation'; reason = ("'{0}' is not a git working copy." -f $RepoPath) }
+    }
+    if ([string]::IsNullOrWhiteSpace($Branch)) {
+        return @{ ok = $false; category = 'validation'; reason = 'No branch name was provided — there is nothing to open a PR for.' }
+    }
+    if (-not $BranchExists) {
+        return @{ ok = $false; category = 'validation'; reason = ("Branch '{0}' does not exist in this checkout, so there is nothing to push or open." -f $Branch) }
+    }
+    if ([string]::IsNullOrWhiteSpace($BaseBranch)) {
+        return @{ ok = $false; category = 'validation'; reason = 'No base branch resolved for the PR.' }
+    }
+    if ($Branch -eq $BaseBranch) {
+        return @{ ok = $false; category = 'validation'; reason = ("Branch and base are both '{0}' — a PR from a branch onto itself is meaningless, and the invariant forbids treating the base branch as a work branch." -f $Branch) }
+    }
+    if ([string]::IsNullOrWhiteSpace($Token)) {
+        return @{ ok = $false; category = 'auth'; reason = 'No GitHub token resolved. Set the configured token environment variable (Contents+PullRequests write access) — a PR cannot be opened without one.' }
+    }
+    if ($null -eq $Slug) {
+        return @{ ok = $false; category = 'validation'; reason = "The repo's origin remote is not a recognizable GitHub URL, so there is no target to open a PR against." }
+    }
+    return @{ ok = $true; category = ''; reason = '' }
+}
+
+function Open-RepoBranchPullRequest {
+    <#
+        .SYNOPSIS
+            Push (optionally) and open a pull request for an existing branch.
+        .DESCRIPTION
+            Release 3.4 milestone 3 — the branch-and-PR half of
+            Invoke-RoadmapRepairPrSubmission, extracted so ANY caller with a
+            committed branch reaches GitHub through one refusal matrix. Before
+            this function, that logic was reachable from exactly one caller
+            (the roadmap-repair submit), because it was entangled with writing
+            the roadmap file — which is why an agent run ended at "Open the PR
+            from GitHub when ready".
+
+            Guarantees, same as the parent:
+              - never force-pushes, never pushes the base branch
+              - refuses with a NAMED reason rather than doing nothing silently
+              - a PR that already exists for the branch is returned as
+                `alreadyExisted = $true`, not surfaced as a raw 422 — approving
+                twice must be idempotent, not an error.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][string]$RepoName,
+        [Parameter()][AllowEmptyString()][string]$RepoPath = '',
+        [Parameter()][AllowEmptyString()][string]$Branch = '',
+        [Parameter()][AllowEmptyString()][string]$BaseBranch = '',
+        [Parameter()][AllowEmptyString()][string]$Title = '',
+        [Parameter()][AllowEmptyString()][string]$Body = '',
+        [Parameter()][AllowEmptyString()][string]$Token = '',
+        [Parameter()][hashtable]$ApiHeaders = $null,
+        # Push before opening. Off when the caller has already pushed (the
+        # approve-push route proves its push by exit code before calling here).
+        [Parameter()][switch]$PushFirst
+    )
+
+    $isGitRepo = (-not [string]::IsNullOrWhiteSpace($RepoPath)) -and (Test-Path -LiteralPath (Join-Path $RepoPath '.git'))
+    $remoteUrl = if ($isGitRepo) { Get-GitRemoteUrl -RepoPath $RepoPath } else { '' }
+    $slug      = Resolve-GitHubRepoSlug -RemoteUrl $remoteUrl
+
+    $branchExists = $false
+    if ($isGitRepo -and -not [string]::IsNullOrWhiteSpace($Branch)) {
+        & git -C $RepoPath rev-parse --verify --quiet ("refs/heads/{0}" -f $Branch) 2>&1 | Out-Null
+        $branchExists = ($LASTEXITCODE -eq 0)
+    }
+
+    $effectiveBase = if (-not [string]::IsNullOrWhiteSpace($BaseBranch)) { $BaseBranch } else { 'main' }
+
+    $check = Test-RepoBranchPrReadiness -RepoPath $RepoPath -Branch $Branch -BaseBranch $effectiveBase `
+        -Token $Token -Slug $slug -IsGitRepo $isGitRepo -BranchExists $branchExists
+    if (-not $check.ok) {
+        return [pscustomobject]@{
+            created = $false; refused = $true; reason = $check.reason; category = $check.category
+            branch = $Branch; baseBranch = $effectiveBase; prUrl = $null; prNumber = $null
+            slug = $(if ($null -ne $slug) { $slug.slug } else { '' }); alreadyExisted = $false
+        }
+    }
+
+    if (-not $PSCmdlet.ShouldProcess(("{0} ({1})" -f $RepoName, $slug.slug), ("open PR from branch '{0}' onto '{1}'" -f $Branch, $effectiveBase))) {
+        return [pscustomobject]@{
+            created = $false; refused = $true; category = 'whatif'
+            reason = 'WhatIf: nothing pushed, no PR opened.'
+            branch = $Branch; baseBranch = $effectiveBase; prUrl = $null; prNumber = $null
+            slug = $slug.slug; alreadyExisted = $false
+        }
+    }
+
+    if ($PushFirst) {
+        $pushArgs = Get-GitTokenPushArgs -Token $Token
+        # -u origin <branch>, never --force: an automated path must not be able
+        # to overwrite a branch someone else is using.
+        $push = (& git -C $RepoPath @pushArgs push -u origin $Branch 2>&1) | Out-String
+        if ($LASTEXITCODE -ne 0) { throw ("git push failed for '{0}': {1}" -f $Branch, $push.Trim()) }
+    }
+
+    $headers = if ($null -ne $ApiHeaders) { $ApiHeaders } else { @{ Authorization = ("Bearer {0}" -f $Token); 'User-Agent' = 'GitHubRepoManagement'; Accept = 'application/vnd.github+json' } }
+    $effectiveTitle = if (-not [string]::IsNullOrWhiteSpace($Title)) { $Title } else { ("{0}: {1}" -f $RepoName, $Branch) }
+    $prPayload = @{ title = $effectiveTitle; head = $Branch; base = $effectiveBase; body = [string]$Body } | ConvertTo-Json -Depth 5
+    $prUri = ("https://api.github.com/repos/{0}/{1}/pulls" -f $slug.owner, $slug.repo)
+
+    try {
+        $pr = Invoke-RestMethod -Uri $prUri -Headers $headers -Method Post -Body $prPayload -ContentType 'application/json'
+        return [pscustomobject]@{
+            created = $true; refused = $false; reason = ''; category = ''
+            branch = $Branch; baseBranch = $effectiveBase; slug = $slug.slug
+            prUrl = [string]$pr.html_url; prNumber = [int]$pr.number; alreadyExisted = $false
+        }
+    }
+    catch {
+        # GitHub answers 422 when a PR already exists for this head. That is a
+        # success from the operator's point of view — the branch HAS its PR —
+        # so look it up and return it rather than failing the approval.
+        $statusCode = $null
+        try { $statusCode = [int]$_.Exception.Response.StatusCode } catch { $statusCode = $null }
+        if ($statusCode -eq 422) {
+            $listUri = ("https://api.github.com/repos/{0}/{1}/pulls?head={2}:{3}&state=open" -f $slug.owner, $slug.repo, $slug.owner, $Branch)
+            $existing = @(Invoke-RestMethod -Uri $listUri -Headers $headers -Method Get)
+            if (@($existing).Count -gt 0) {
+                $found = $existing[0]
+                return [pscustomobject]@{
+                    created = $false; refused = $false; reason = ("A pull request already exists for '{0}'." -f $Branch); category = ''
+                    branch = $Branch; baseBranch = $effectiveBase; slug = $slug.slug
+                    prUrl = [string]$found.html_url; prNumber = [int]$found.number; alreadyExisted = $true
+                }
+            }
+        }
+        throw
+    }
+}
+
 function Get-GitTokenPushArgs {
     <#
         .SYNOPSIS
@@ -285,7 +445,6 @@ function Invoke-RoadmapRepairPrSubmission {
         }
     }
 
-    $pushArgs = Get-GitTokenPushArgs -Token $Token
     $restoreBranch = $startBranch
     try {
         $co = (& git -C $RepoPath checkout -b $branch 2>&1) | Out-String
@@ -310,27 +469,23 @@ function Invoke-RoadmapRepairPrSubmission {
         $commit = (& git -C $RepoPath commit -m $message 2>&1) | Out-String
         if ($LASTEXITCODE -ne 0) { throw ("git commit failed: {0}" -f $commit.Trim()) }
 
-        # -u origin <branch>, never --force: an automated path must not be able
-        # to overwrite a branch someone else is using.
-        $push = (& git -C $RepoPath @pushArgs push -u origin $branch 2>&1) | Out-String
-        if ($LASTEXITCODE -ne 0) { throw ("git push failed for '{0}': {1}" -f $branch, $push.Trim()) }
-
-        $headers = if ($null -ne $ApiHeaders) { $ApiHeaders } else { @{ Authorization = ("Bearer {0}" -f $Token); 'User-Agent' = 'GitHubRepoManagement'; Accept = 'application/vnd.github+json' } }
-        $prBody = @{
-            title = ("Roadmap repair: {0}" -f $RepoName)
-            head  = $branch
-            base  = $effectiveBase
-            body  = ("Automated roadmap repair for **{0}**.{1}`n`nGenerated by GitHubRepoManagement (Release 2.7 Phase A). Review the diff before merging — nothing here has been applied to {2}." -f `
+        # Release 3.4 milestone 3 — the push and PR-open now go through the
+        # shared branch-PR path, so this caller and the agent-run approval
+        # cannot drift apart. This function's own preconditions already passed,
+        # so a refusal here would be a genuine surprise and is surfaced as one.
+        $prResult = Open-RepoBranchPullRequest -RepoName $RepoName -RepoPath $RepoPath -Branch $branch `
+            -BaseBranch $effectiveBase -Token $Token -ApiHeaders $ApiHeaders -PushFirst `
+            -Title ("Roadmap repair: {0}" -f $RepoName) `
+            -Body ("Automated roadmap repair for **{0}**.{1}`n`nGenerated by GitHubRepoManagement (Release 2.7 Phase A). Review the diff before merging — nothing here has been applied to {2}." -f `
                         $RepoName, $(if ($PreviewId) { " Based on repair preview ``$PreviewId``." } else { '' }), $effectiveBase)
-        } | ConvertTo-Json -Depth 5
-
-        $prUri = ("https://api.github.com/repos/{0}/{1}/pulls" -f $slug.owner, $slug.repo)
-        $pr = Invoke-RestMethod -Uri $prUri -Headers $headers -Method Post -Body $prBody -ContentType 'application/json'
+        if ($prResult.refused) {
+            throw ("PR could not be opened for '{0}' after the branch was committed: [{1}] {2}" -f $branch, $prResult.category, $prResult.reason)
+        }
 
         return [pscustomobject]@{
             created = $true; refused = $false; reason = ''; category = ''
             branch = $branch; baseBranch = $effectiveBase; slug = $slug.slug
-            prUrl = [string]$pr.html_url; prNumber = [int]$pr.number
+            prUrl = [string]$prResult.prUrl; prNumber = [int]$prResult.prNumber
             commitMessage = $message
             # The reading travels on success too, so a PR opened over a known
             # stale base is identifiable afterwards rather than only at the

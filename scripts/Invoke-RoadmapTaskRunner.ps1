@@ -90,6 +90,12 @@ if (Test-Path -LiteralPath $script:BaseFreshnessModule) { . $script:BaseFreshnes
 $script:DefaultBranchSyncModule = Join-Path $WorkspaceRoot 'backend\modules\git\Git.DefaultBranchSync.ps1'
 if (Test-Path -LiteralPath $script:DefaultBranchSyncModule) { . $script:DefaultBranchSyncModule }
 
+# Release 3.4 milestone 4 — completion travels through the pull request. The
+# completion-edit builder and the feature-branch commit live in the write-back
+# module so the runner and the apply route share one definition of "complete".
+$script:WriteBackModule = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.WriteBack.ps1'
+if (Test-Path -LiteralPath $script:WriteBackModule) { . $script:WriteBackModule }
+
 function Test-RunnerBaseFreshness {
     <#
         .SYNOPSIS
@@ -516,6 +522,35 @@ function Invoke-QueuedTask {
             & git -C $repo add -A
             & git -C $repo commit -m (New-TaskCommitMessage -SelectedTask ([string]$Entry.selectedTask) -RunId $runId) | Out-Null
         }
+
+        # Release 3.4 milestone 4 — the completion edit rides the feature
+        # branch as its own commit, so the merge is what makes it
+        # authoritative. Any refusal (item not found, default branch, git
+        # failure) is RECORDED rather than fatal: the work is still good, and
+        # the missing edit surfaces by name at the write-back gate instead of
+        # silently at review.
+        $completionStatus = 'skipped'
+        $completionSha = $null
+        $completionDetail = ''
+        if ((Get-Command -Name 'Add-RoadmapCompletionCommit' -ErrorAction SilentlyContinue) -and -not [string]::IsNullOrWhiteSpace([string]$Entry.selectedTask)) {
+            $entryRoadmapPath = if ($Entry.PSObject.Properties.Name -contains 'roadmapPath' -and $Entry.roadmapPath) { [string]$Entry.roadmapPath } else { '' }
+            $completion = Add-RoadmapCompletionCommit -RepoPath $repo -RoadmapPath $entryRoadmapPath `
+                -ItemText ([string]$Entry.selectedTask) -RunId $runId
+            $completionDetail = [string]$completion.reason
+            if ($completion.committed) {
+                $completionStatus = 'committed'
+                $completionSha = [string]$completion.commitSha
+                Write-Host ("  [completion] {0}" -f $completion.reason) -ForegroundColor DarkGray
+            }
+            elseif ($completion.alreadyComplete) {
+                $completionStatus = 'already-complete'
+                Write-Host ("  [completion] {0}" -f $completion.reason) -ForegroundColor DarkGray
+            }
+            else {
+                $completionStatus = [string]$completion.category
+                Write-Host ("  [completion] not committed ({0}): {1}" -f $completion.category, $completion.reason) -ForegroundColor DarkYellow
+            }
+        }
         $commitSha = (& git -C $repo rev-parse --short HEAD 2>$null)
 
         Update-TaskSummary -SummaryPath $summaryPath -Set @{
@@ -524,10 +559,13 @@ function Invoke-QueuedTask {
             commitSha       = "$commitSha"
             filesChanged    = $filesChanged
             verifyResult    = $verifyResult
+            completionEditStatus = $completionStatus
+            completionCommitSha  = $completionSha
+            completionEditDetail = $completionDetail
             runnerCompletedAt = (Get-Date).ToString('o')
         }
-        Write-Host ("  [awaiting-review] branch={0} commit={1} files={2} verify={3}" -f $branch, $commitSha, $filesChanged, $verifyResult) -ForegroundColor Green
-        Write-Host "  Review the branch, then push / open a PR yourself." -ForegroundColor DarkGray
+        Write-Host ("  [awaiting-review] branch={0} commit={1} files={2} verify={3} completion={4}" -f $branch, $commitSha, $filesChanged, $verifyResult, $completionStatus) -ForegroundColor Green
+        Write-Host "  Review the branch, then approve the push - the PR opens through the product." -ForegroundColor DarkGray
     }
     catch {
         Update-TaskSummary -SummaryPath $summaryPath -Set @{ status = 'failed'; error = $_.Exception.Message; runnerCompletedAt = (Get-Date).ToString('o') }
