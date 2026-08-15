@@ -22,7 +22,7 @@ commit  (including the roadmap completion edit)
      |
 push branch
      |
-open PR                       <- step 7   (missing)
+open PR                       <- step 7   (built, opens on approve-push)
      |
 CI / verification
      |
@@ -63,8 +63,8 @@ local main  <----------- pull -------- remote main
 
 Measured 2026-08-14 against the twelve steps, re-measured 2026-08-15 after
 [PR #134](https://github.com/xfaith4/GitHubRepoManagement/pull/134) shipped the
-sync operation and its operator surface. Ten are built; two are missing, and
-**both sit at a boundary**.
+sync operation and its operator surface, then again after milestones 3 and 4
+landed. Eleven are built; one is missing.
 
 | # | Step | State |
 | --- | --- | --- |
@@ -74,27 +74,27 @@ sync operation and its operator surface. Ten are built; two are missing, and
 | 4 | Implement, test, document | built — runner launches Claude; `Resolve-VerifyCommand` runs the repo's own suite |
 | 5 | Commit locally | built |
 | 6 | Push feature branch | built, operator-gated |
-| 7 | **Open the pull request** | **missing** for agent runs |
+| 7 | Open the pull request | built — approve-push opens the PR through `Open-RepoBranchPullRequest`, the same refusal matrix as the roadmap repair; a PR refusal after a proven push reports as partial success by name |
 | 8 | CI / verification | built — `MergeReadiness.ps1`, including a `merge-conflicts` blocker |
 | 9 | Merge on GitHub | built, explicit operator action |
 | 10 | Sync local `main` | built — `POST /api/git/sync-default-branch` and the control in the per-repo git status modal; operator-invoked, not automatic after merge |
 | 11 | **Delete the feature branch** | **missing** |
-| 12 | Record completion | built, but **ordered wrongly** — see below |
+| 12 | Record completion | built — the runner commits the completion edit on the feature branch; the write-back gate verifies the merged result and records `verified-merged`, writing nothing |
 
 Steps 2 and 10 are the two points where the loop touches local `main`, and both
 now sync: step 2 from the runner via `-SyncMain`, step 10 from the portal via
 `POST /api/git/sync-default-branch`. Neither is automatic — the operator asks, and
-the module's refusal matrix answers. Step 7 is the handoff from push to pull
-request: `POST /api/roadmap-agent/{id}/approve` pushes the branch and
-returns the message _"Open the PR from GitHub when ready"_, at which point the
-operator leaves the product. Step 11 has no implementation of any kind.
+the module's refusal matrix answers. Step 7 closed 2026-08-15: approve-push now
+opens the run's pull request itself through `Open-RepoBranchPullRequest` — the
+message that used to send the operator to GitHub now carries the PR URL. Step 11
+has no implementation of any kind.
 
-**The loop can now be closed by hand at both ends, but it does not close itself.**
-The stale-clone defect stayed invisible for so long because nothing returned local
-`main` to the remote tip, making "behind" the resting state rather than an anomaly.
-An operator can now fix that in one click at either end; what remains is that
-nothing does it for them, and steps 7 and 11 still hand the operator out of the
-product entirely.
+**The loop now runs to a merged PR without the operator leaving the product;
+what it leaves behind is branches.** The stale-clone defect stayed invisible for
+so long because nothing returned local `main` to the remote tip, making "behind"
+the resting state rather than an anomaly. Sync is one click at either end, the PR
+opens on approval, and completion rides the branch — step 11 (delete the merged
+branch, proving it is the branch that merged) is the one remaining gap.
 
 ## Layered architecture
 

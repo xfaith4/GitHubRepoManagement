@@ -339,6 +339,152 @@ function New-RoadmapCompletionEdit {
     }
 }
 
+function Add-RoadmapCompletionCommit {
+    <#
+        .SYNOPSIS
+            Commit the completion edit for one roadmap item onto the CURRENT
+            feature branch, so the merge makes it authoritative.
+        .DESCRIPTION
+            Release 3.4 milestone 4. Until this function, the completion edit
+            was written by POST /api/roadmap/write-back/apply AFTER the merge,
+            as a bare Set-Content on whatever branch was checked out — main at
+            that point in the loop. Completion now travels through the pull
+            request: the runner calls this after the work commit, and the
+            merge-evidence gate downstream verifies rather than writes.
+
+            Refuses BY NAME on a default branch. That is the acceptance
+            criterion made executable: no path writes a completion edit to a
+            default branch, this one included.
+
+            Never throws for an expected condition — the caller is a runner in
+            the middle of a task; a completion edit it cannot make is a
+            recorded outcome, not a crashed run.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoPath,
+        [Parameter()][AllowEmptyString()][string]$RoadmapPath = '',
+        [Parameter(Mandatory = $true)][string]$ItemText,
+        [Parameter()][AllowEmptyString()][string]$RunId = ''
+    )
+
+    $result = [ordered]@{
+        committed = $false; category = ''; reason = ''
+        alreadyComplete = $false; itemFound = $true
+        branch = ''; commitSha = $null; roadmapPath = $RoadmapPath
+    }
+
+    if (-not (Test-Path -LiteralPath (Join-Path $RepoPath '.git'))) {
+        $result.category = 'not-a-git-repo'
+        $result.reason = ("'{0}' is not a git working copy." -f $RepoPath)
+        return [pscustomobject]$result
+    }
+
+    if ([string]::IsNullOrWhiteSpace($RoadmapPath)) { $RoadmapPath = Join-Path $RepoPath 'ROADMAP.md' }
+    $result.roadmapPath = $RoadmapPath
+    if (-not (Test-Path -LiteralPath $RoadmapPath -PathType Leaf)) {
+        $result.category = 'roadmap-not-found'
+        $result.reason = ("No roadmap file at '{0}', so there is no checkbox to mark." -f $RoadmapPath)
+        return [pscustomobject]$result
+    }
+
+    $branchOut = (& git -C $RepoPath rev-parse --abbrev-ref HEAD 2>&1) | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        $result.category = 'branch-unreadable'
+        $result.reason = 'Could not read the current branch (detached HEAD?). A completion commit needs a named feature branch.'
+        return [pscustomobject]$result
+    }
+    $branch = $branchOut.Trim()
+    $result.branch = $branch
+
+    # The default branch may not receive a completion edit from any path. The
+    # remote's HEAD names it when known; 'main'/'master' cover a clone whose
+    # origin/HEAD was never set. Refusal, not silence — the caller records it.
+    $defaultNames = @('main', 'master')
+    $originDefaultName = ''
+    $originHead = (& git -C $RepoPath symbolic-ref --quiet --short 'refs/remotes/origin/HEAD' 2>&1) | Out-String
+    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($originHead)) {
+        $originDefaultName = ($originHead.Trim() -replace '^origin/', '')
+        $defaultNames += $originDefaultName
+    }
+    if ($branch -in $defaultNames) {
+        $result.category = 'on-default-branch'
+        $result.reason = ("Refusing to commit a completion edit on '{0}': completion travels through a pull request, never directly onto a default branch." -f $branch)
+        return [pscustomobject]$result
+    }
+
+    # The base state travels ON the record rather than gating it. The runner
+    # already refused a stale base before the branch existed (Release 3.1), and
+    # after that the pull request's own merge is the arbiter — refusing here
+    # would strand finished work over drift the PR will surface anyway. What the
+    # 2026-08-11 stranded-queue triage actually lacked was EVIDENCE of the base
+    # state at each step, so this reading is recorded, reported when stale, and
+    # never a refusal.
+    $result.baseFreshness = $null
+    $result.baseStaleAtCompletion = $false
+    if (Get-Command -Name 'Get-RepoBaseFreshness' -ErrorAction SilentlyContinue) {
+        $baseName = if (-not [string]::IsNullOrWhiteSpace($originDefaultName)) { $originDefaultName } else { 'main' }
+        $freshness = Get-RepoBaseFreshness -RepoPath $RepoPath -BaseBranch $baseName
+        $result.baseFreshness = $freshness
+        $result.baseStaleAtCompletion = ($null -ne $freshness -and [bool](_WriteBack_GetField -Obj $freshness -Name 'isStale' -Default $false))
+    }
+
+    $content = Get-Content -LiteralPath $RoadmapPath -Raw -Encoding UTF8
+    if ($null -eq $content) { $content = '' }
+    $edit = New-RoadmapCompletionEdit -Content $content -ItemTexts @($ItemText)
+
+    if (@($edit.alreadyComplete).Count -gt 0) {
+        # The agent may have flipped the box itself during the run. That is the
+        # desired end state, already reached — success, nothing to commit.
+        $result.alreadyComplete = $true
+        $result.reason = ("'{0}' is already marked complete on this branch." -f $ItemText)
+        return [pscustomobject]$result
+    }
+    if (-not $edit.changed) {
+        $result.itemFound = $false
+        $result.category = 'item-not-found'
+        $result.reason = ("No open checkbox matching '{0}' exists in {1} — the completion edit cannot be generated." -f $ItemText, $RoadmapPath)
+        return [pscustomobject]$result
+    }
+
+    if (-not $PSCmdlet.ShouldProcess($RoadmapPath, ("commit completion edit for '{0}' on branch '{1}'" -f $ItemText, $branch))) {
+        $result.category = 'whatif'
+        $result.reason = 'WhatIf: nothing written, nothing committed.'
+        return [pscustomobject]$result
+    }
+
+    # Preserve the trailing newline, same rule as the PR submitter: only ADD
+    # one, never strip or double it.
+    $toWrite = [string]$edit.proposedContent
+    if (-not $toWrite.EndsWith("`n")) { $toWrite += "`n" }
+    Set-Content -LiteralPath $RoadmapPath -Value $toWrite -Encoding UTF8 -NoNewline
+
+    $add = (& git -C $RepoPath add -- $RoadmapPath 2>&1) | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        $result.category = 'git-add-failed'
+        $result.reason = ("git add failed: {0}" -f $add.Trim())
+        return [pscustomobject]$result
+    }
+    $message = if ([string]::IsNullOrWhiteSpace($RunId)) {
+        ("docs(roadmap): record completion — {0}" -f $ItemText)
+    } else {
+        ("docs(roadmap): record completion — {0} (run {1})" -f $ItemText, $RunId)
+    }
+    $commit = (& git -C $RepoPath commit -m $message -- $RoadmapPath 2>&1) | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        $result.category = 'git-commit-failed'
+        $result.reason = ("git commit failed: {0}" -f $commit.Trim())
+        return [pscustomobject]$result
+    }
+
+    $sha = ((& git -C $RepoPath rev-parse --short HEAD 2>&1) | Out-String).Trim()
+    $result.committed = $true
+    $result.commitSha = $sha
+    $result.reason = ("Completion edit committed on '{0}' ({1})." -f $branch, $sha)
+    return [pscustomobject]$result
+}
+
 function Get-RoadmapWriteBackHistoryPath {
     param([Parameter(Mandatory = $true)][string]$WorkspaceRoot)
     return (Join-Path $WorkspaceRoot $script:RoadmapWriteBackRelPath)
@@ -368,7 +514,12 @@ function Write-RoadmapWriteBackRecord {
         [Parameter()][object]$Evidence = $null,
         [Parameter()][object]$Gate = $null,
         [Parameter()][AllowEmptyString()][string]$Actor = '',
-        [Parameter()][AllowEmptyString()][string]$PreviewId = ''
+        [Parameter()][AllowEmptyString()][string]$PreviewId = '',
+        # Release 3.4 milestone 4 — what the applied record MEANS. 'applied-edit'
+        # is the legacy shape (the route wrote the checkbox itself);
+        # 'verified-merged' records that the merge already carried the edit and
+        # the gate verified it. The default keeps old records' meaning intact.
+        [Parameter()][ValidateSet('applied-edit', 'verified-merged')][string]$Action = 'applied-edit'
     )
 
     if ($Applied.IsPresent) {
@@ -388,6 +539,7 @@ function Write-RoadmapWriteBackRecord {
         roadmapPath   = $RoadmapPath
         itemText      = $ItemText
         applied       = [bool]$Applied.IsPresent
+        action        = $Action
         markedCount   = $MarkedCount
         actor         = $Actor
         evidence      = $Evidence

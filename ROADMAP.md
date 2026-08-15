@@ -916,12 +916,12 @@ refuse on.
 
 The target workflow, the layer model, and the evidence per gap live in
 [`docs/product/delivery-loop.md`](docs/product/delivery-loop.md). Measured
-2026-08-14, re-measured 2026-08-15: **ten of twelve steps are built and two are
-missing — both at a boundary.** Steps 2 and 10 closed with the archived sync
-milestone, step 10 operator-invoked rather than automatic. What remains is step
-7, the push-to-PR handoff where the product says _"Open the PR from GitHub when
-ready"_ and the operator leaves, and step 11, which does not exist. The loop can
-now be closed by hand at both ends; it does not yet close itself.
+2026-08-14, re-measured twice 2026-08-15: **eleven of twelve steps are built and
+one is missing.** Steps 2 and 10 closed with the sync milestone; step 7 closed
+when approve-push began opening the run's pull request itself; step 12's
+ordering was fixed when completion moved into the feature branch's own commit.
+What remains is step 11 — branch cleanup, which has no implementation of any
+kind — and the derived invariant tripwire that locks the finished surface.
 
 #### Product outcomes
 
@@ -942,28 +942,15 @@ required, so it moves a pointer and cannot author a commit.
 
 #### Engineering milestones
 
-**Two milestones shipped and are archived:** the default-branch sync operation
-plus its step-10 route and operator control (2026-08-14 / 2026-08-15), and
-both-direction ahead/behind with `diverged` named (2026-08-14). Full text and
-evidence: [the archive](docs/history/completed-releases.md#closed-2026-08-15-archived-from-roadmapmd).
-
-- [ ] **A pushed branch does not end at "open the PR from GitHub when ready."**
-      [`Roadmap.PrSubmitter.ps1`](backend/modules/roadmap/Roadmap.PrSubmitter.ps1)
-      already opens pull requests with ten named refusals, proven live in 2.7
-      Phase A — but only for roadmap repairs, because branch-and-PR logic is
-      entangled with commit-the-roadmap-file logic. Separate them so any agent run
-      that pushed a branch opens its PR through the same refusal matrix.
-      _(state: planned — reachable from exactly one caller)_
-
-- [ ] **Roadmap completion travels through the pull request, never after it.**
-      **Re-verified 2026-08-14; the ordering is wrong today.**
-      `POST /api/roadmap/write-back/apply` is gated on merge evidence, so it runs
-      _after_ the merge, and its write is a bare `Set-Content` to the roadmap on
-      whatever branch is checked out — `main` at that point. No branch, no
-      commit, no pull request in that path. Move the edit into the feature
-      branch's own commit so the merge makes it authoritative; the merge-evidence
-      gate then guards **recording completion as verified** in the ledger rather
-      than writing the checkbox. _(state: planned — confirmed in code)_
+**Four milestones shipped and are archived:** the default-branch sync operation
+plus its step-10 route and operator control (2026-08-14 / 2026-08-15);
+both-direction ahead/behind with `diverged` named (2026-08-14); the branch-PR
+separation, so an agent run's approve-push opens its pull request through the
+same refusal matrix as the roadmap repair (2026-08-15); and completion
+travelling through the pull request — committed on the feature branch by the
+runner, verified rather than written by the gate, with the host proven to write
+no completion edit at all (2026-08-15). Full text and evidence:
+[the archive](docs/history/completed-releases.md#closed-2026-08-15-archived-from-roadmapmd).
 
 - [ ] **A merged branch is cleaned up, and cleanup proves it is the branch that
       merged.** No deletion of any kind exists, so every completed item leaves
