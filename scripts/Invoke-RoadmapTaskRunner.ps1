@@ -38,6 +38,14 @@
     as correct in review. Use this only when you know the base is stale and
     want the task run against it anyway.
 
+.PARAMETER SyncMain
+    Release 3.4, step 2 of the delivery loop: fast-forward the repository's
+    default branch to its remote tip before branching from it. Off by default,
+    because moving a ref in someone's working copy is an action, not a read.
+    Only a clone that is strictly BEHIND is moved; a default branch carrying
+    local commits refuses as `default-branch-ahead`, and a diverged one refuses
+    outright. Never a merge, never a rebase, never a force.
+
 .PARAMETER LoadFunctionsOnly
     Dot-source the pure functions without running (used by the module smoke).
 
@@ -56,6 +64,7 @@ param(
     [int]$PollSeconds = 15,
     [switch]$DryRun,
     [switch]$AcknowledgeStaleBase,
+    [switch]$SyncMain,
     [switch]$LoadFunctionsOnly
 )
 
@@ -70,12 +79,16 @@ $runsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
 # inside a function, which PowerShell resolves dynamically but leaves invisible
 # to both the analyzer and the next reader.
 $script:AcknowledgeStaleBase = [bool]$AcknowledgeStaleBase
+$script:SyncMain = [bool]$SyncMain
 
 # Release 3.1 — the base-freshness probe lives in the git module so the submit-PR
 # path and this runner share one definition of "stale" rather than each growing
 # its own.
 $script:BaseFreshnessModule = Join-Path $WorkspaceRoot 'backend\modules\git\Git.BaseFreshness.ps1'
 if (Test-Path -LiteralPath $script:BaseFreshnessModule) { . $script:BaseFreshnessModule }
+
+$script:DefaultBranchSyncModule = Join-Path $WorkspaceRoot 'backend\modules\git\Git.DefaultBranchSync.ps1'
+if (Test-Path -LiteralPath $script:DefaultBranchSyncModule) { . $script:DefaultBranchSyncModule }
 
 function Test-RunnerBaseFreshness {
     <#
@@ -420,6 +433,24 @@ function Invoke-QueuedTask {
     # content and still merges cleanly. Refusing before the claim leaves the
     # task queued and visible rather than marked running against an unchecked
     # base.
+    # Release 3.4 step 2 — bring the default branch to the remote tip BEFORE the
+    # freshness gate reads it, so an operator who asked for a sync is not
+    # refused for a staleness the sync would have fixed. Opt-in, approved by
+    # the presence of the switch: approval is an input here, not a prompt.
+    if ($script:SyncMain -and (Get-Command -Name 'Sync-RepoDefaultBranch' -ErrorAction SilentlyContinue)) {
+        $sync = Sync-RepoDefaultBranch -RepoPath $repo -Approved $true
+        if ($sync.synced) {
+            Write-Host ("  [task] {0}" -f $sync.reason) -ForegroundColor DarkGray
+        }
+        else {
+            # Not fatal: the staleness gate below decides whether the run may
+            # proceed. A failed sync that still leaves a current clone is not a
+            # reason to refuse work.
+            Write-Host ("  [task] sync refused ({0}): {1}" -f $sync.category, $sync.reason) -ForegroundColor DarkYellow
+            if ($sync.remedy) { Write-Host ("         {0}" -f $sync.remedy) -ForegroundColor DarkGray }
+        }
+    }
+
     $freshness = Test-RunnerBaseFreshness -RepoPath $repo
     if ($null -ne $freshness -and $freshness.isStale -and -not $script:AcknowledgeStaleBase) {
         $msg = ("Refusing to branch from a stale base. {0}{1}" -f $freshness.summary, $(if ($freshness.remedy) { " Run: $($freshness.remedy)" } else { '' }))
