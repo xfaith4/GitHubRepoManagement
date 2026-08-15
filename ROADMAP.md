@@ -1267,11 +1267,17 @@ controlled debt, not a cleanup backlog — **no blanket lint sweep.** Work lands
 as small, behaviorally coherent batches, each ending with `-UpdateBaseline` /
 a lowered `--max-warnings` so the ratchet locks the gain. Priority order:
 
-- [ ] **P1 — PSSA correctness micro-batch (12 findings, low risk).**
+- [x] **P1 — PSSA correctness micro-batch (12 findings, low risk).**
       `PossibleIncorrectComparisonWithNull` 1, `AvoidAssignmentToAutomatic
       Variable` 3, `UseDeclaredVarsMoreThanAssignments` 6,
       `AvoidOverwritingBuiltInCmdlets` 1, `AvoidUsingInvokeExpression` 1.
-      Mechanical, each a latent-bug class, one PR.
+      Mechanical, each a latent-bug class, one PR. _(done 2026-08-15: all 12
+      fixed — `$Event`→`-RepairEvent`/`-EventName`, `$args`→`$refusalArgs`,
+      `Write-Log`→`Write-ReconcileLog`, `Invoke-Expression` replaced by an
+      exe+args contract on `Resolve-VerifyCommand` with a smoke assertion,
+      null flipped left, six dead assignments discarded. Evidence: lint gate
+      PASS at 575/587 then baseline rewritten with the five rules removed —
+      each now gates at zero; module smoke and api-host smoke exit 0.)_
 - [ ] **E1 — ESLint `exhaustive-deps` review (8 findings).** Behavioral, not
       mechanical: each missing dep is either a real staleness bug or a
       deliberate omission that earns a comment. Small enough for one PR.

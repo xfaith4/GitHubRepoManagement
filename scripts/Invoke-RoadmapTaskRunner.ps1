@@ -131,21 +131,23 @@ function New-TaskCommitMessage {
 }
 
 function Resolve-VerifyCommand {
-    <# Best-effort detection of a per-repo check. Returns a scriptblock-friendly
-       command string or $null. Non-blocking — a failing verify is recorded, not
-       fatal. #>
+    <# Best-effort detection of a per-repo check. Returns an executable plus
+       argument list (invoked with the call operator — never string-evaluated)
+       or $null. Non-blocking — a failing verify is recorded, not fatal. #>
     param([Parameter(Mandatory)][string]$RepoPath)
     $pkg = Join-Path $RepoPath 'package.json'
     if (Test-Path -LiteralPath $pkg) {
         try {
             $j = Get-Content -LiteralPath $pkg -Raw -Encoding UTF8 | ConvertFrom-Json
             if ($j.PSObject.Properties.Name -contains 'scripts' -and $j.scripts.PSObject.Properties.Name -contains 'test') {
-                return 'npm test'
+                return [pscustomobject]@{ Display = 'npm test'; Exe = 'npm'; Arguments = @('test') }
             }
         }
         catch { }
     }
-    if (Test-Path -LiteralPath (Join-Path $RepoPath 'scripts\Invoke-TestSuite.ps1')) { return 'pwsh -NoProfile -File scripts/Invoke-TestSuite.ps1' }
+    if (Test-Path -LiteralPath (Join-Path $RepoPath 'scripts\Invoke-TestSuite.ps1')) {
+        return [pscustomobject]@{ Display = 'pwsh -NoProfile -File scripts/Invoke-TestSuite.ps1'; Exe = 'pwsh'; Arguments = @('-NoProfile', '-File', 'scripts/Invoke-TestSuite.ps1') }
+    }
     return $null
 }
 
@@ -508,9 +510,9 @@ function Invoke-QueuedTask {
         $verifyResult = 'skipped'
         $verifyCmd = Resolve-VerifyCommand -RepoPath $repo
         if ($verifyCmd) {
-            Write-Host ("  verify: {0}" -f $verifyCmd) -ForegroundColor DarkGray
+            Write-Host ("  verify: {0}" -f $verifyCmd.Display) -ForegroundColor DarkGray
             Push-Location $repo
-            try { Invoke-Expression $verifyCmd | Out-Null; $verifyResult = if ($LASTEXITCODE -eq 0) { 'passed' } else { 'failed' } }
+            try { & $verifyCmd.Exe $verifyCmd.Arguments | Out-Null; $verifyResult = if ($LASTEXITCODE -eq 0) { 'passed' } else { 'failed' } }
             catch { $verifyResult = 'error' }
             finally { Pop-Location }
         }

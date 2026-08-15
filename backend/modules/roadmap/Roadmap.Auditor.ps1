@@ -495,7 +495,6 @@ function Invoke-AuditRoadmapContract {
         $severity   = [string]$rule.severity
         $message    = [string]$rule.message
         $recommended = if ($rule.PSObject.Properties.Name -contains 'recommendedAction') { [string]$rule.recommendedAction } else { $null }
-        $condStr    = [string]$rule.failCondition
 
         # Evaluate fail condition against the contract values
         $failed = $false

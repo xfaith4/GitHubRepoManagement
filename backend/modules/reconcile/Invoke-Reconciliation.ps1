@@ -126,7 +126,7 @@ $script:ExecutionStopwatch                 = [System.Diagnostics.Stopwatch]::Sta
 $script:ScannedDirectoryCount              = 0
 $script:RepositoriesFound                  = 0
 
-function Write-Log {
+function Write-ReconcileLog {
     param(
         [Parameter(Mandatory = $true)]
         [AllowEmptyString()]
@@ -182,7 +182,7 @@ function Test-RegexPattern {
         return $true
     }
     catch {
-        Write-Log "Invalid regex pattern '$Pattern': $_" -Level Warning
+        Write-ReconcileLog "Invalid regex pattern '$Pattern': $_" -Level Warning
         return $false
     }
 }
@@ -216,7 +216,7 @@ function Test-IgnoredPath {
             }
         }
         catch {
-            Write-Log "Regex match error with pattern '$rx' on '$Path': $_" -Level Debug
+            Write-ReconcileLog "Regex match error with pattern '$rx' on '$Path': $_" -Level Debug
         }
     }
 
@@ -295,7 +295,7 @@ function Get-DirectoryFingerprint {
         }
     }
     catch {
-        Write-Log "Error generating fingerprint for '$Path': $_" -Level Warning
+        Write-ReconcileLog "Error generating fingerprint for '$Path': $_" -Level Warning
         return [pscustomobject]@{
             SampleFileCount = 0
             TotalFileBytes  = [int64]0
@@ -331,16 +331,16 @@ function Get-LocalFolderInventory {
             $resolvedRoot = Get-NormalizedExistingPath -Path $root
         }
         catch {
-            Write-Log "Skipping invalid root '$root': $_" -Level Warning
+            Write-ReconcileLog "Skipping invalid root '$root': $_" -Level Warning
             continue
         }
 
-        Write-Log "Scanning local root: $resolvedRoot"
-        Write-Log "Scan settings for '$resolvedRoot': MaxDepth=$MaxDepth, IncludeNonGitFolders=$($IncludeNonGitFolders.IsPresent), IgnoreDirNames=$($IgnoreDirNames.Count), IgnorePathRegex=$($IgnorePathRegex.Count)"
+        Write-ReconcileLog "Scanning local root: $resolvedRoot"
+        Write-ReconcileLog "Scan settings for '$resolvedRoot': MaxDepth=$MaxDepth, IncludeNonGitFolders=$($IncludeNonGitFolders.IsPresent), IgnoreDirNames=$($IgnoreDirNames.Count), IgnorePathRegex=$($IgnorePathRegex.Count)"
 
         $queue = New-Object System.Collections.Generic.Queue[object]
         $queue.Enqueue([pscustomobject]@{ Path = $resolvedRoot; Depth = 0 })
-        Write-Log "Root queued for traversal: $resolvedRoot"
+        Write-ReconcileLog "Root queued for traversal: $resolvedRoot"
 
         while ($queue.Count -gt 0) {
             $item = $queue.Dequeue()
@@ -352,47 +352,47 @@ function Get-LocalFolderInventory {
                 catch {
                     # A failing progress tick must not abort the scan it is only
                     # describing — but it is logged, not swallowed.
-                    Write-Log "Progress callback failed: $($_.Exception.Message)" -Level Debug
+                    Write-ReconcileLog "Progress callback failed: $($_.Exception.Message)" -Level Debug
                 }
             }
 
             if ($depth -gt $MaxDepth) {
-                Write-Log "Skipping path beyond MaxDepth ($MaxDepth): $currentPath" -Level Debug
+                Write-ReconcileLog "Skipping path beyond MaxDepth ($MaxDepth): $currentPath" -Level Debug
                 continue
             }
             if (Test-IgnoredPath -Path $currentPath -RegexList $IgnorePathRegex) {
-                Write-Log "Skipping ignored path: $currentPath" -Level Debug
+                Write-ReconcileLog "Skipping ignored path: $currentPath" -Level Debug
                 continue
             }
 
             if ($depth -le 1) {
-                Write-Log "Inspecting depth $depth path: $currentPath"
+                Write-ReconcileLog "Inspecting depth $depth path: $currentPath"
             }
 
             try {
                 $childDirs = @(Get-ChildItem -LiteralPath $currentPath -Directory -Force -ErrorAction SilentlyContinue)
             }
             catch {
-                Write-Log "Error reading directory '$currentPath': $_" -Level Debug
+                Write-ReconcileLog "Error reading directory '$currentPath': $_" -Level Debug
                 continue
             }
 
-            Write-Log "Found $($childDirs.Count) child directories under '$currentPath'" -Level Debug
+            Write-ReconcileLog "Found $($childDirs.Count) child directories under '$currentPath'" -Level Debug
 
             foreach ($child in $childDirs) {
                 if ($IgnoreDirNames -contains $child.Name) {
-                    Write-Log "Skipping ignored directory name '$($child.Name)' at '$($child.FullName)'" -Level Debug
+                    Write-ReconcileLog "Skipping ignored directory name '$($child.Name)' at '$($child.FullName)'" -Level Debug
                     continue
                 }
 
                 $script:ScannedDirectoryCount++
                 if (($script:ScannedDirectoryCount % 50) -eq 0) {
-                    Write-Log "Scanned $($script:ScannedDirectoryCount) directories so far... queue remaining: $($queue.Count)"
+                    Write-ReconcileLog "Scanned $($script:ScannedDirectoryCount) directories so far... queue remaining: $($queue.Count)"
                 }
 
                 $fullPath = $child.FullName
                 if (Test-IgnoredPath -Path $fullPath -RegexList $IgnorePathRegex) {
-                    Write-Log "Skipping ignored child path: $fullPath" -Level Debug
+                    Write-ReconcileLog "Skipping ignored child path: $fullPath" -Level Debug
                     continue
                 }
 
@@ -401,13 +401,13 @@ function Get-LocalFolderInventory {
 
                 if ($isGitRepo -or $IncludeNonGitFolders) {
                     if ($isGitRepo) {
-                        Write-Log "Repository candidate detected: $fullPath"
+                        Write-ReconcileLog "Repository candidate detected: $fullPath"
                     }
                     else {
-                        Write-Log "Including non-git folder for inventory: $fullPath" -Level Debug
+                        Write-ReconcileLog "Including non-git folder for inventory: $fullPath" -Level Debug
                     }
 
-                    Write-Log "Fingerprinting folder: $fullPath" -Level Debug
+                    Write-ReconcileLog "Fingerprinting folder: $fullPath" -Level Debug
                     $fingerprint = Get-DirectoryFingerprint -Path $fullPath -IgnoreDirNames $IgnoreDirNames -IgnorePathRegex $IgnorePathRegex
 
                     $originUrl      = $null
@@ -422,13 +422,13 @@ function Get-LocalFolderInventory {
                     $ownerGuess     = $null
 
                     if ($isGitRepo -and (Test-CommandExists -Name 'git')) {
-                        Write-Log "Collecting git metadata for: $fullPath" -Level Debug
+                        Write-ReconcileLog "Collecting git metadata for: $fullPath" -Level Debug
                         try {
                             $branch = (& git -C $fullPath branch --show-current 2>$null)
                             if ($LASTEXITCODE -ne 0) { $branch = $null }
                         }
                         catch {
-                            Write-Log "Git branch query error for '$fullPath': $_" -Level Debug
+                            Write-ReconcileLog "Git branch query error for '$fullPath': $_" -Level Debug
                             $branch = $null
                         }
 
@@ -437,7 +437,7 @@ function Get-LocalFolderInventory {
                             if ($LASTEXITCODE -ne 0) { $originUrl = $null }
                         }
                         catch {
-                            Write-Log "Git origin query error for '$fullPath': $_" -Level Debug
+                            Write-ReconcileLog "Git origin query error for '$fullPath': $_" -Level Debug
                             $originUrl = $null
                         }
 
@@ -446,7 +446,7 @@ function Get-LocalFolderInventory {
                             if ($LASTEXITCODE -ne 0) { $lastCommitDate = $null }
                         }
                         catch {
-                            Write-Log "Git log query error for '$fullPath': $_" -Level Debug
+                            Write-ReconcileLog "Git log query error for '$fullPath': $_" -Level Debug
                             $lastCommitDate = $null
                         }
 
@@ -455,7 +455,7 @@ function Get-LocalFolderInventory {
                             if ($LASTEXITCODE -ne 0) { $statusShort = @() }
                         }
                         catch {
-                            Write-Log "Git status query error for '$fullPath': $_" -Level Debug
+                            Write-ReconcileLog "Git status query error for '$fullPath': $_" -Level Debug
                             $statusShort = @()
                         }
 
@@ -464,7 +464,7 @@ function Get-LocalFolderInventory {
                             if ($LASTEXITCODE -ne 0) { $lastCommitMessage = $null }
                         }
                         catch {
-                            Write-Log "Git last commit message query error for '$fullPath': $_" -Level Debug
+                            Write-ReconcileLog "Git last commit message query error for '$fullPath': $_" -Level Debug
                             $lastCommitMessage = $null
                         }
 
@@ -473,7 +473,7 @@ function Get-LocalFolderInventory {
                             if ($LASTEXITCODE -ne 0) { $lastCommitAuthor = $null }
                         }
                         catch {
-                            Write-Log "Git last commit author query error for '$fullPath': $_" -Level Debug
+                            Write-ReconcileLog "Git last commit author query error for '$fullPath': $_" -Level Debug
                             $lastCommitAuthor = $null
                         }
 
@@ -482,7 +482,7 @@ function Get-LocalFolderInventory {
                             if ($LASTEXITCODE -eq 0 -and $weekCountRaw -match '^\d+$') { $commitsLastWeek = [int]$weekCountRaw }
                         }
                         catch {
-                            Write-Log "Git weekly commit count query error for '$fullPath': $_" -Level Debug
+                            Write-ReconcileLog "Git weekly commit count query error for '$fullPath': $_" -Level Debug
                             $commitsLastWeek = 0
                         }
 
@@ -491,7 +491,7 @@ function Get-LocalFolderInventory {
                             if ($LASTEXITCODE -eq 0 -and $monthCountRaw -match '^\d+$') { $commitsLastMonth = [int]$monthCountRaw }
                         }
                         catch {
-                            Write-Log "Git monthly commit count query error for '$fullPath': $_" -Level Debug
+                            Write-ReconcileLog "Git monthly commit count query error for '$fullPath': $_" -Level Debug
                             $commitsLastMonth = 0
                         }
                     }
@@ -539,23 +539,23 @@ function Get-LocalFolderInventory {
 
                     $script:RepositoriesFound++
                     if ($isGitRepo) {
-                        Write-Log "Found repo #$($script:RepositoriesFound): $($child.Name) (Branch: $branch, Modified: $modifiedCount, Untracked: $untrackedCount)"
+                        Write-ReconcileLog "Found repo #$($script:RepositoriesFound): $($child.Name) (Branch: $branch, Modified: $modifiedCount, Untracked: $untrackedCount)"
                     }
                     elseif (($script:RepositoriesFound % 25) -eq 0) {
-                        Write-Log "Inventory items collected so far: $($results.Count)"
+                        Write-ReconcileLog "Inventory items collected so far: $($results.Count)"
                     }
                 }
 
                 if ($depth + 1 -le $MaxDepth) {
                     $queue.Enqueue([pscustomobject]@{ Path = $fullPath; Depth = ($depth + 1) })
                     if ($depth -lt 1) {
-                        Write-Log "Queued child path for depth $($depth + 1): $fullPath" -Level Debug
+                        Write-ReconcileLog "Queued child path for depth $($depth + 1): $fullPath" -Level Debug
                     }
                 }
             }
         }
 
-        Write-Log "Completed scan for root '$resolvedRoot'. Inventory items so far: $($results.Count)"
+        Write-ReconcileLog "Completed scan for root '$resolvedRoot'. Inventory items so far: $($results.Count)"
     }
 
     return $results.ToArray()
@@ -572,7 +572,7 @@ function Get-GitHubRepoInventory {
     )
 
     if (-not $Owner) {
-        Write-Log 'GitHub owner not specified; skipping GitHub inventory.'
+        Write-ReconcileLog 'GitHub owner not specified; skipping GitHub inventory.'
         return @()
     }
 
@@ -582,7 +582,7 @@ function Get-GitHubRepoInventory {
         throw 'GitHub CLI (gh) not found in PATH. Install gh or omit -GitHubOwner.'
     }
 
-    Write-Log "Querying GitHub for owner: $Owner"
+    Write-ReconcileLog "Querying GitHub for owner: $Owner"
 
     $repoList = @()
     $jsonFields = 'name,nameWithOwner,isPrivate,isArchived,defaultBranchRef,updatedAt,url,description,sshUrl'
@@ -609,10 +609,10 @@ function Get-GitHubRepoInventory {
         }
         catch {
             if ($OwnerType -eq 'User') {
-                Write-Log "Failed to query GitHub user repos for '$Owner': $_" -Level Error
+                Write-ReconcileLog "Failed to query GitHub user repos for '$Owner': $_" -Level Error
                 throw
             }
-            Write-Log "User repo query failed for '$Owner'; will try org mode. $_" -Level Debug
+            Write-ReconcileLog "User repo query failed for '$Owner'; will try org mode. $_" -Level Debug
         }
     }
 
@@ -621,7 +621,7 @@ function Get-GitHubRepoInventory {
             $repoList = Invoke-GhRepoList -OwnerValue $Owner
         }
         catch {
-            Write-Log "Failed to query GitHub repos for '$Owner': $_" -Level Warning
+            Write-ReconcileLog "Failed to query GitHub repos for '$Owner': $_" -Level Warning
             return @()
         }
     }
@@ -930,49 +930,49 @@ $(ConvertTo-HtmlTable -Data $Duplicates -Columns @('Confidence','DuplicateType',
 "@
 
     Set-Content -LiteralPath $Path -Value $html -Encoding UTF8
-    Write-Log "HTML report written to: $Path"
+    Write-ReconcileLog "HTML report written to: $Path"
 }
 
 if ($LoadFunctionsOnly) {
-    Write-Log 'LoadFunctionsOnly specified; skipping scan execution.' -Level Debug
+    Write-ReconcileLog 'LoadFunctionsOnly specified; skipping scan execution.' -Level Debug
     return
 }
 
 try {
     $null = New-Item -ItemType Directory -Path $OutDir -Force -ErrorAction Stop
-    Write-Log "Output directory ready: $OutDir"
+    Write-ReconcileLog "Output directory ready: $OutDir"
 
     if ($script:LogFile) {
         $logParent = Split-Path -Path $script:LogFile -Parent
         if ($logParent -and -not (Test-Path -LiteralPath $logParent)) {
             $null = New-Item -ItemType Directory -Path $logParent -Force -ErrorAction Stop
         }
-        Write-Log "Logging to: $($script:LogFile)"
+        Write-ReconcileLog "Logging to: $($script:LogFile)"
     }
 
     $validRegexPatterns = @($IgnorePathRegex | Where-Object { Test-RegexPattern -Pattern $_ })
     if ($validRegexPatterns.Count -ne $IgnorePathRegex.Count) {
-        Write-Log 'Some invalid ignore regex patterns were skipped.' -Level Warning
+        Write-ReconcileLog 'Some invalid ignore regex patterns were skipped.' -Level Warning
     }
     $IgnorePathRegex = $validRegexPatterns
 
-    Write-Log 'Starting repository inventory scan...'
+    Write-ReconcileLog 'Starting repository inventory scan...'
     $localItems = Get-LocalFolderInventory -Roots $LocalRoots -IgnoreDirNames $IgnoreDirNames -IgnorePathRegex $IgnorePathRegex -MaxDepth $MaxDepth -IncludeNonGitFolders:$IncludeNonGitFolders
-    Write-Log "Local inventory complete: $(@($localItems).Count) items found"
+    Write-ReconcileLog "Local inventory complete: $(@($localItems).Count) items found"
 
     $gitHubItems = @()
     if ($GitHubOwner) {
         try {
             $gitHubItems = Get-GitHubRepoInventory -Owner $GitHubOwner -OwnerType $OwnerType
-            Write-Log "GitHub inventory complete: $(@($gitHubItems).Count) items found"
+            Write-ReconcileLog "GitHub inventory complete: $(@($gitHubItems).Count) items found"
         }
         catch {
-            Write-Log "GitHub inventory failed: $_" -Level Error
-            Write-Log 'Continuing with local-only reconciliation...' -Level Warning
+            Write-ReconcileLog "GitHub inventory failed: $_" -Level Error
+            Write-ReconcileLog 'Continuing with local-only reconciliation...' -Level Warning
         }
     }
 
-    Write-Log 'Performing repository comparison...'
+    Write-ReconcileLog 'Performing repository comparison...'
     $comparison = Compare-LocalAndGitHub -LocalItems $localItems -GitHubItems $gitHubItems
     $duplicates = Get-PotentialLocalDuplicates -LocalItems $localItems
 
@@ -1002,73 +1002,73 @@ try {
             Comparison          = @($comparison)
             PotentialDuplicates = @($duplicates)
         } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $jsonPath -Encoding UTF8
-        Write-Log "JSON report exported: $jsonPath"
+        Write-ReconcileLog "JSON report exported: $jsonPath"
     }
     catch {
-        Write-Log "Failed to export JSON report: $_" -Level Error
+        Write-ReconcileLog "Failed to export JSON report: $_" -Level Error
     }
 
     try {
         $comparison | Export-Csv -LiteralPath $csvPath -NoTypeInformation -Encoding UTF8
-        Write-Log "CSV report exported: $csvPath"
+        Write-ReconcileLog "CSV report exported: $csvPath"
     }
     catch {
-        Write-Log "Failed to export CSV report: $_" -Level Error
+        Write-ReconcileLog "Failed to export CSV report: $_" -Level Error
     }
 
     try {
         $duplicates | Export-Csv -LiteralPath $dupesCsvPath -NoTypeInformation -Encoding UTF8
-        Write-Log "Duplicates CSV exported: $dupesCsvPath"
+        Write-ReconcileLog "Duplicates CSV exported: $dupesCsvPath"
     }
     catch {
-        Write-Log "Failed to export duplicates CSV: $_" -Level Error
+        Write-ReconcileLog "Failed to export duplicates CSV: $_" -Level Error
     }
 
     try {
         New-HtmlReport -Path $htmlPath -Comparison $comparison -Duplicates $duplicates -LocalItems $localItems -GitHubItems $gitHubItems
     }
     catch {
-        Write-Log "Failed to generate HTML report: $_" -Level Error
+        Write-ReconcileLog "Failed to generate HTML report: $_" -Level Error
     }
 
-    Write-Log ''
-    Write-Log 'Repo reconciliation complete.'
-    Write-Log 'Summary:'
-    Write-Log "  Local folders scanned : $(@($localItems).Count)"
-    Write-Log "  GitHub repos found    : $(@($gitHubItems).Count)"
-    Write-Log "  Matched               : $(($comparison | Where-Object { $_.Status -eq 'Matched' } | Measure-Object).Count)"
-    Write-Log "  Local only            : $(($comparison | Where-Object { $_.Status -eq 'LocalOnly' } | Measure-Object).Count)"
-    Write-Log "  GitHub only           : $(($comparison | Where-Object { $_.Status -eq 'GitHubOnly' } | Measure-Object).Count)"
-    Write-Log "  Potential duplicates  : $(@($duplicates).Count) (High: $(@($duplicates | Where-Object { $_.Confidence -eq 'High' }).Count), Medium: $(@($duplicates | Where-Object { $_.Confidence -eq 'Medium' }).Count), Low: $(@($duplicates | Where-Object { $_.Confidence -eq 'Low' }).Count))"
-    Write-Log "  Execution time        : $(Get-ElapsedTimeString)"
-    Write-Log ''
-    Write-Log 'Output files:'
-    Write-Log "  JSON      : $jsonPath"
-    Write-Log "  CSV       : $csvPath"
-    Write-Log "  Duplicates: $dupesCsvPath"
-    Write-Log "  Dashboard : $htmlPath"
+    Write-ReconcileLog ''
+    Write-ReconcileLog 'Repo reconciliation complete.'
+    Write-ReconcileLog 'Summary:'
+    Write-ReconcileLog "  Local folders scanned : $(@($localItems).Count)"
+    Write-ReconcileLog "  GitHub repos found    : $(@($gitHubItems).Count)"
+    Write-ReconcileLog "  Matched               : $(($comparison | Where-Object { $_.Status -eq 'Matched' } | Measure-Object).Count)"
+    Write-ReconcileLog "  Local only            : $(($comparison | Where-Object { $_.Status -eq 'LocalOnly' } | Measure-Object).Count)"
+    Write-ReconcileLog "  GitHub only           : $(($comparison | Where-Object { $_.Status -eq 'GitHubOnly' } | Measure-Object).Count)"
+    Write-ReconcileLog "  Potential duplicates  : $(@($duplicates).Count) (High: $(@($duplicates | Where-Object { $_.Confidence -eq 'High' }).Count), Medium: $(@($duplicates | Where-Object { $_.Confidence -eq 'Medium' }).Count), Low: $(@($duplicates | Where-Object { $_.Confidence -eq 'Low' }).Count))"
+    Write-ReconcileLog "  Execution time        : $(Get-ElapsedTimeString)"
+    Write-ReconcileLog ''
+    Write-ReconcileLog 'Output files:'
+    Write-ReconcileLog "  JSON      : $jsonPath"
+    Write-ReconcileLog "  CSV       : $csvPath"
+    Write-ReconcileLog "  Duplicates: $dupesCsvPath"
+    Write-ReconcileLog "  Dashboard : $htmlPath"
 
     if ($OpenHtmlReport) {
         try {
             if (Test-Path -LiteralPath $htmlPath) {
                 Invoke-Item -LiteralPath $htmlPath
-                Write-Log 'HTML report opened in default browser.'
+                Write-ReconcileLog 'HTML report opened in default browser.'
             }
             else {
-                Write-Log "HTML report file not found: $htmlPath" -Level Warning
+                Write-ReconcileLog "HTML report file not found: $htmlPath" -Level Warning
             }
         }
         catch {
-            Write-Log "Failed to open HTML report: $_" -Level Warning
+            Write-ReconcileLog "Failed to open HTML report: $_" -Level Warning
         }
     }
 
-    Write-Log 'Execution completed successfully.'
+    Write-ReconcileLog 'Execution completed successfully.'
 }
 catch {
-    Write-Log "Fatal error during execution: $_" -Level Error
-    Write-Log "Execution time before failure: $(Get-ElapsedTimeString)" -Level Error
-    Write-Log "Stack trace: $($_.ScriptStackTrace)" -Level Debug
+    Write-ReconcileLog "Fatal error during execution: $_" -Level Error
+    Write-ReconcileLog "Execution time before failure: $(Get-ElapsedTimeString)" -Level Error
+    Write-ReconcileLog "Stack trace: $($_.ScriptStackTrace)" -Level Debug
     exit 1
 }
 ### END FILE: Repo-Reconciliati

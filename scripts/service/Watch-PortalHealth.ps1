@@ -202,11 +202,11 @@ function Set-WatchdogState {
 }
 
 function Write-WatchdogLedger {
-    param([string]$Path, [string]$Event, [hashtable]$Data)
+    param([string]$Path, [string]$EventName, [hashtable]$Data)
     if (-not $Path) { return }
     $dir = Split-Path -Parent $Path
     if ($dir -and -not (Test-Path -LiteralPath $dir)) { $null = New-Item -ItemType Directory -Path $dir -Force }
-    $record = [ordered]@{ timestamp = (Get-Date).ToString('o'); event = $Event }
+    $record = [ordered]@{ timestamp = (Get-Date).ToString('o'); event = $EventName }
     if ($Data) { foreach ($k in $Data.Keys) { $record[$k] = $Data[$k] } }
     $line = ($record | ConvertTo-Json -Depth 6 -Compress)
     Add-Content -LiteralPath $Path -Value $line -Encoding UTF8
@@ -320,7 +320,7 @@ if ($null -ne $operationState) {
 $invariant = Test-WatchdogToleranceInvariant -ToleranceSeconds $NoProgressToleranceSeconds -HeartbeatIntervalSeconds $declaredHeartbeat
 $effectiveTolerance = $invariant.EffectiveSeconds
 if (-not $invariant.Valid) {
-    Write-WatchdogLedger -Path $LedgerPath -Event 'config-invalid' -Data @{
+    Write-WatchdogLedger -Path $LedgerPath -EventName 'config-invalid' -Data @{
         reason = $invariant.Reason; configuredTolerance = $NoProgressToleranceSeconds; effectiveTolerance = $effectiveTolerance
     }
 }
@@ -352,20 +352,20 @@ $decision = Resolve-WatchdogAction -Healthy $probe.Healthy -PriorFailures $prior
     -ProgressAgeSeconds $progressAge -OperationName $operationName `
     -NoProgressToleranceSeconds $effectiveTolerance -CpuAdvanced $cpuAdvanced
 
-Write-WatchdogLedger -Path $LedgerPath -Event $(if ($probe.Healthy) { 'probe-ok' } else { 'probe-fail' }) -Data @{
+Write-WatchdogLedger -Path $LedgerPath -EventName $(if ($probe.Healthy) { 'probe-ok' } else { 'probe-fail' }) -Data @{
     statusCode = $probe.StatusCode; detail = $probe.Detail; priorFailures = $prior; decision = $decision.Action; reason = $decision.Reason; dryRun = [bool]$DryRun
     operation = $operationName; progressAgeSeconds = $progressAge; suppressed = [bool]$decision.Suppressed
     noProgressToleranceSeconds = $effectiveTolerance; cpuAdvanced = $cpuAdvanced; cpuSampleError = $cpuSampleError
 }
 
 if ($decision.Action -eq 'restart') {
-    Write-WatchdogLedger -Path $LedgerPath -Event 'restart-triggered' -Data @{ reason = $decision.Reason; dryRun = [bool]$DryRun }
+    Write-WatchdogLedger -Path $LedgerPath -EventName 'restart-triggered' -Data @{ reason = $decision.Reason; dryRun = [bool]$DryRun }
     if ($DryRun) {
         Write-Host ("[DRYRUN] would force-kill port {0} and Restart-Service {1} ({2})" -f $Port, $ServiceName, $decision.Reason) -ForegroundColor Yellow
     }
     else {
         $restart = Invoke-PortalRestart -Port $Port -ServiceName $ServiceName
-        Write-WatchdogLedger -Path $LedgerPath -Event $(if ($restart.serviceRestarted) { 'restart-done' } else { 'restart-failed' }) -Data @{
+        Write-WatchdogLedger -Path $LedgerPath -EventName $(if ($restart.serviceRestarted) { 'restart-done' } else { 'restart-failed' }) -Data @{
             killedPids = $restart.killedPids; serviceRestarted = $restart.serviceRestarted; errors = $restart.errors
         }
         Send-WatchdogAlert -WebhookUrl $WebhookUrl -Payload @{
