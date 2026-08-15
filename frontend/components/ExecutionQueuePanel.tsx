@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { withPanelTimeout } from '../lib/asyncPanel';
 import { type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type ExecutionState } from '../types';
 import { SpinnerIcon } from './icons';
 import { getExecutionQueue, syncExecutionQueue, assignExecutionLane, completeExecutionTask, cancelExecutionTask, requeueExecution } from '../services/apiClient';
@@ -254,7 +255,9 @@ const ExecutionQueuePanel: React.FC<ExecutionQueuePanelProps> = ({ onDispatchPre
 
   const loadQueue = useCallback(async () => {
     try {
-      const data = await getExecutionQueue();
+      // Release 3.5 milestone 5 — a hung fetch becomes an error at 10s
+      // instead of a spinner that outlives the request behind it.
+      const data = await withPanelTimeout(getExecutionQueue(), '/api/execution/queue');
       setQueueData(data);
       setError(null);
     } catch (err) {
@@ -433,6 +436,21 @@ const ExecutionQueuePanel: React.FC<ExecutionQueuePanelProps> = ({ onDispatchPre
           <div className="flex items-center justify-center py-12 text-gray-500 gap-2">
             <SpinnerIcon className="w-4 h-4" />
             <span>Loading execution queue...</span>
+          </div>
+        )}
+
+        {/* Release 3.5 milestone 5 — a failure names its endpoint and offers
+            retry; it must never be mistaken for an empty queue. */}
+        {!loading && !queueData && error && (
+          <div className="text-center py-12 text-sm" data-testid="execution-queue-error-state">
+            <p className="mb-1 text-red-300">Execution queue failed to load.</p>
+            <p className="text-gray-500 text-xs mb-3">{error}</p>
+            <button
+              onClick={() => { setLoading(true); void loadQueue(); }}
+              className="px-4 py-2 rounded border border-gray-600 bg-gray-700 hover:bg-gray-600 text-gray-200 text-sm transition-colors"
+            >
+              Retry
+            </button>
           </div>
         )}
 

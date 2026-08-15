@@ -625,13 +625,25 @@ tiles, null-not-zero averages with assessed-count coverage, and the retirement
 of the dead `staleThreshold` control. Full text and evidence:
 [the archive](docs/history/completed-releases.md#closed-2026-08-15-archived-from-roadmapmd).
 
-- [ ] **Replace every ad-hoc spinner with one async state machine.** States
-      `idle | loading | success | empty | stale | error | degraded`; hard 10s timeout
-      resolving to `error` with the failing endpoint, its status and a retry; on
-      refresh failure render the last good value greyed with its age. `empty` must
-      distinguish _computed and found nothing_ from _not computed_ — the Dependencies
-      panel renders one message for both and drops the `scannedAt` its own scanner
-      already emits. _(state: planned — five permanent spinners located)_
+- [ ] **Replace every ad-hoc spinner with one async state machine.** **Model
+      shipped 2026-08-15.** [`asyncPanel.ts`](frontend/lib/asyncPanel.ts) is
+      the shared state model — `idle | loading | success | empty | stale |
+      error` with pure, unit-tested transitions: a hung fetch becomes an
+      `error` naming its endpoint at the 10s deadline; a refresh failure after
+      a success keeps the last good value with its age (`stale`); `empty` is
+      only reachable **through** a success, so it always carries its
+      computed-at stamp. The worst offender is rewired: the Dependencies panel
+      swallowed fetch failures with `.catch(() => {})` and rendered them as
+      "No cross-repo dependencies detected" — a detection failure posing as a
+      clean bill of health. It now renders error-with-retry, computed-empty
+      with the scanner's own `scannedAt`, and a stale banner over the last
+      good graph. The execution queue gained the timeout and a named
+      error-with-retry state.
+      _(state: smoke-tested — transitions unit-tested including the
+      fake-timer timeout; the 3.1 control audit caught and fixed the new
+      Refresh button's unexplained disabled state in the same change.
+      **Residues:** the three OperationsWorkspaceView spinners and the
+      Insights refresh indicator still run their ad-hoc booleans.)_
 - [ ] **Put runner health above the fold, and make the stranded count count what
       renders.** 3.1 shipped the presence gate, the disabled approve controls and the
       stranded badge; delivery is what is missing. Add a runner indicator beside
