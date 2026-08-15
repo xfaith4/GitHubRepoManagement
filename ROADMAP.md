@@ -567,22 +567,37 @@ review's own conclusions corrected.
 #### Engineering milestones
 
 - [ ] **Every portfolio metric becomes an object, and no component computes one.**
-      Introduce one `portfolio-snapshot` contract built per scan and read by every
-      view: `value`, `unit`, `basis{numerator,denominator}`, `asOf`, `source`,
-      `coverage{assessed,total}`, `confidence`, `definition`, plus `schemaVersion`
-      and a `degraded[]` naming any source that returned stale or failed. Timestamps
-      UTC at rest, formatted once at the render boundary. An uncomputable metric
-      renders `—` with its reason, never `0`. _(state: planned — the tripwire derives
-      its scope from the components that render a portfolio-level number, not from a
-      maintained list)_
+      **Contract core shipped 2026-08-15.**
+      [`Portfolio.Snapshot.ps1`](backend/modules/portfolio/Portfolio.Snapshot.ps1)
+      is the reconciliation layer: every metric an object (`value`, `unit`,
+      `basis`, `asOf` UTC at rest, `source`, `coverage`, derived `confidence`,
+      `definition`), and **the constructor refuses to build a lying metric** —
+      a percent outside 0-100, an inverted basis, a value with no source, or a
+      null without a reason throws in the producer's stack frame instead of
+      rendering three tabs later. Finding 1.5's `High 1592` axis could not have
+      been constructed under this contract. `GET /api/portfolio/snapshot`
+      serves it with `degraded[]` naming every absent source; "ready" is
+      deliberately **three** metrics (execution / dispatch / maturity) because
+      finding 1.3's `21 / 0 / 0` was three semantics wearing one label, and
+      forcing them equal would be a second lie.
+      _(state: smoke-tested — 7 constructor refusals, the all-sources-absent
+      snapshot proven to degrade by name with zero guessed values, denominators
+      cohering over the in-scope set. **Residues:** the views still compute
+      their own numbers — consumer wiring plus the markup-derived tripwire are
+      the open half.)_
 - [ ] **Make cross-view disagreement fail the build.** Add an invariant suite over
       live API responses: one canonical repo denominator behind every view;
-      ready-queue depth identical across all five endpoints reporting it; every
-      percentage within 0-100 and every count within portfolio size; one timezone
-      basis per payload. Land each assertion **with** its fix and prove it
-      non-vacuous against the pre-fix host — `main` requires `ci-smoke` green, so a
-      deliberately-red suite is not available as a definition of done.
-      _(state: planned)_
+      each endpoint's readiness figure equal to ITS snapshot metric (three named
+      semantics, not one forced number); every percentage within 0-100 and every
+      count within portfolio size; one timezone basis per payload. Land each
+      assertion **with** its fix and prove it non-vacuous against the pre-fix
+      host — `main` requires `ci-smoke` green, so a deliberately-red suite is
+      not available as a definition of done.
+      _(state: seeded 2026-08-15 — the store-level day-invariant shipped with
+      milestone 4, and the **generic metric walk now runs against the live
+      snapshot route** in the contract tests, auditing every metric without
+      naming one. The cross-endpoint equality assertions land as each view
+      moves onto the snapshot.)_
 - [ ] **Exclude what is not the portfolio, visibly.** **Core shipped
       2026-08-15.** The live claim reproduced first — and it is cleaner than
       the review guessed: `Genesys.Core_AuditLogsApp` is a genuine **second

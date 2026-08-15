@@ -1233,6 +1233,85 @@ Write-Step 'Portfolio scope — Release 3.5 milestone 3: classified, never delet
     Write-Host '  scope ok: 7 classifier cases (tmp/archive/worktrees/vendored/owned/no-remote/precedence), no-owner and disabled policies stay whole, summary counts, identity groups two real clones of one origin and leaves the unrelated repo out' -ForegroundColor DarkGray
 }
 
+Write-Step 'Portfolio snapshot — Release 3.5 milestone 1: the constructor refuses to build a lying metric'
+. (Join-Path $WorkspaceRoot 'backend\modules\portfolio\Portfolio.Snapshot.ps1')
+& {
+    $now = (Get-Date).ToUniversalTime().ToString('o')
+
+    # The teeth: impossible numbers throw in the producer's stack frame
+    # instead of rendering three tabs later. Finding 1.5's `High 1592` axis
+    # could not have been CONSTRUCTED under this contract.
+    foreach ($bad in @(
+        @{ name = 'percent above 100';        args = @{ Id = 'x'; Value = 150; Unit = 'percent'; AsOfUtc = $now; Source = 's'; Definition = 'd' } }
+        @{ name = 'negative count';           args = @{ Id = 'x'; Value = -1; AsOfUtc = $now; Source = 's'; Definition = 'd' } }
+        @{ name = 'numerator over denominator'; args = @{ Id = 'x'; Value = 5; Numerator = 5; Denominator = 3; AsOfUtc = $now; Source = 's'; Definition = 'd' } }
+        @{ name = 'assessed over total';      args = @{ Id = 'x'; Value = 5; Assessed = 10; Total = 5; AsOfUtc = $now; Source = 's'; Definition = 'd' } }
+        @{ name = 'null without reason';      args = @{ Id = 'x'; AsOfUtc = $now; Definition = 'd' } }
+        @{ name = 'value without source';     args = @{ Id = 'x'; Value = 5; AsOfUtc = $now; Definition = 'd' } }
+        @{ name = 'unparseable asOf';         args = @{ Id = 'x'; Value = 5; AsOfUtc = 'not a time'; Source = 's'; Definition = 'd' } }
+    )) {
+        $threw = $false
+        $badArgs = $bad.args
+        try { $null = New-PortfolioMetric @badArgs } catch { $threw = $true }
+        if (-not $threw) { throw "New-PortfolioMetric must refuse '$($bad.name)'" }
+    }
+
+    $notComputed = New-PortfolioMetric -Id 'nc' -AsOfUtc $now -Definition 'd' -Reason 'no scan yet'
+    if ($null -ne $notComputed.value -or $notComputed.confidence -ne 'none') { throw 'A not-computed metric must carry null value and confidence none' }
+    $partial = New-PortfolioMetric -Id 'p' -Value 50 -Unit percent -AsOfUtc $now -Source 's' -Assessed 5 -Total 10 -Definition 'd'
+    if ($partial.confidence -ne 'partial') { throw 'Coverage below total must derive confidence partial' }
+
+    # All sources absent: every metric reads null-with-reason, degraded[]
+    # names each missing source, and NOTHING is a guessed zero.
+    $emptySnap = Build-PortfolioSnapshot -GeneratedAtUtc $now
+    foreach ($m in @($emptySnap.metrics.PSObject.Properties)) {
+        if ($null -ne $m.Value.value) { throw "With no sources, metric '$($m.Name)' must be not-computed, got '$($m.Value.value)'" }
+        if ([string]::IsNullOrWhiteSpace([string]$m.Value.reason)) { throw "Not-computed metric '$($m.Name)' must carry its reason" }
+    }
+    if (@($emptySnap.degraded).Count -lt 3) { throw "An empty snapshot must name its missing sources; got $(@($emptySnap.degraded).Count)" }
+
+    # A populated snapshot: denominators cohere, the three readinesses stay
+    # DISTINCT metrics (finding 1.3 was three semantics wearing one label,
+    # and forcing them equal would be a second lie).
+    $snapRepos = @(
+        [pscustomobject]@{ name = 'a'; status = 'dirty'; dirtyCount = 2; isStale = $true;  scope = [pscustomobject]@{ inScope = $true } }
+        [pscustomobject]@{ name = 'b'; status = 'clean'; dirtyCount = 0; isStale = $false; scope = [pscustomobject]@{ inScope = $true } }
+        [pscustomobject]@{ name = 'v'; status = 'clean'; dirtyCount = 0; isStale = $true;  scope = [pscustomobject]@{ inScope = $false } }
+    )
+    $snap = Build-PortfolioSnapshot -GeneratedAtUtc $now -StatusAsOfUtc $now `
+        -StatusData ([pscustomobject]@{ repos = $snapRepos }) `
+        -ExecutionMetrics ([pscustomobject]@{ stateCounts = [pscustomobject]@{ ready = 4 } }) `
+        -AuditEntries @([pscustomobject]@{ dispatchReadiness = 'ready' }, [pscustomobject]@{ dispatchReadiness = 'blocked' }) `
+        -AssessmentSummary ([pscustomobject]@{ readyForWorkCount = 7; totalRepos = 9 })
+    if ($snap.metrics.repoCount.value -ne 3) { throw "repoCount must be the scanned set (3), got $($snap.metrics.repoCount.value)" }
+    if ($snap.metrics.inScopeRepoCount.value -ne 2) { throw "inScopeRepoCount must exclude out-of-scope (2), got $($snap.metrics.inScopeRepoCount.value)" }
+    if ($snap.metrics.staleRepoCount.value -ne 1) { throw "staleRepoCount must count IN-SCOPE stale only (1 - the vendored stale repo does not count), got $($snap.metrics.staleRepoCount.value)" }
+    if ($snap.metrics.executionReadyCount.value -ne 4 -or $snap.metrics.dispatchReadyCount.value -ne 1 -or $snap.metrics.maturityReadyCount.value -ne 7) {
+        throw 'The three readiness metrics must each carry their own source value - they are different measurements, not one number'
+    }
+
+    # The generic invariant walk - the milestone-2 seed, written once here and
+    # reused against the live route by the contract tests: every metric in ANY
+    # snapshot satisfies the contract without naming metrics individually.
+    foreach ($m in @($snap.metrics.PSObject.Properties)) {
+        $metric = $m.Value
+        if ($null -ne $metric.value -and $metric.unit -eq 'percent') {
+            if ([double]$metric.value -lt 0 -or [double]$metric.value -gt 100) { throw "Invariant: '$($m.Name)' percent out of bounds" }
+        }
+        if ($null -ne $metric.basis -and $null -ne $metric.basis.numerator -and $null -ne $metric.basis.denominator) {
+            if ([double]$metric.basis.numerator -gt [double]$metric.basis.denominator) { throw "Invariant: '$($m.Name)' basis inverted" }
+        }
+        $parsedProbe = [datetime]::MinValue
+        if (-not [datetime]::TryParse([string]$metric.asOf, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal -bor [System.Globalization.DateTimeStyles]::AssumeUniversal, [ref]$parsedProbe)) {
+            throw "Invariant: '$($m.Name)' asOf does not parse"
+        }
+        if ($null -eq $metric.value -and [string]::IsNullOrWhiteSpace([string]$metric.reason)) { throw "Invariant: '$($m.Name)' null without reason" }
+        if ([string]::IsNullOrWhiteSpace([string]$metric.definition)) { throw "Invariant: '$($m.Name)' has no definition" }
+    }
+
+    Write-Host '  snapshot ok: 7 constructor refusals, not-computed carries reason and confidence none, empty snapshot degrades by name with zero guessed values, denominators cohere over the in-scope set, three readinesses stay distinct, generic invariant walk green' -ForegroundColor DarkGray
+}
+
 Write-Step 'Roadmap submit-PR — smoke: slug parsing and the refusal matrix'
 . (Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.PrSubmitter.ps1')
 
