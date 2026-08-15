@@ -321,6 +321,15 @@ function Join-WorkItemTrace {
     $prUrl = _Trace_Str -Obj $PrRecord -Name 'prUrl'
     if (-not (_Trace_HasText $prUrl)) { $prUrl = _Trace_Str -Obj $AgentRun -Name 'prUrl' }
     if (-not (_Trace_HasText $prUrl)) { $prUrl = _Trace_Str -Obj $MergeReadiness -Name 'prUrl' }
+    # The run SUMMARY is a source too — found live 2026-08-15 on the first real
+    # drive around the delivery loop. approve-push records the PR it opened in
+    # the run summary (Release 3.4 milestone 3), but this join read only the
+    # submit-PR record, the agent-run ledger and the merge-readiness snapshot —
+    # all artifacts of the 2.4 agent-run flow. A queue-runner item that went
+    # push -> PR -> merge entirely through the product still traced as
+    # "no pull request", and the write-back gate refused its completion for
+    # want of evidence that existed one file away.
+    if (-not (_Trace_HasText $prUrl)) { $prUrl = _Trace_Str -Obj $RunSummary -Name 'prUrl' }
 
     $agentEvidence = [ordered]@{
         runnerStatus  = if (_Trace_HasText $runStatus) { $runStatus } else { $null }
