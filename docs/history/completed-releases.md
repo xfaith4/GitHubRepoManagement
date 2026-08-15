@@ -4115,3 +4115,103 @@ delivery documentation to move in the same pull request as the capability.
       commit, 1 merge site, none reaching a default branch.)_
 
 ---
+
+## Release 3.4 — The Delivery Loop Closes (closed 2026-08-15, archived from ROADMAP.md)
+
+Moved out of the active roadmap on 2026-08-15 under the archive rule when the
+release closed — six engineering milestones plus the live full-loop proof, all
+in one day. Verbatim as it stood:
+
+### Release 3.4 — The Delivery Loop Closes
+
+**Status:** done — all six engineering milestones shipped and archived
+2026-08-14 / 2026-08-15, and the live full-loop proof recorded 2026-08-15
+(manual trigger, operator-verified):
+[`evidence/verified/full-loop-proof-2026-08-15.md`](evidence/verified/full-loop-proof-2026-08-15.md).
+
+**Goal:** the agent executes the full delivery loop end to end — sync, branch,
+implement, test, commit, push, PR, CI, merge, sync, clean up, mark complete —
+without the operator leaving the product to finish a step by hand.
+
+**Prerequisites:** met. Release 3.1 closed the honesty gaps this depends on:
+nothing queues into an empty room, every dispatch surface is gated, staleness is
+computed rather than asserted, and no write path branches from a clone it has
+not verified. This release adds the _actions_ those guards can currently only
+refuse on.
+
+The target workflow, the layer model, and the evidence per step live in
+[`docs/product/delivery-loop.md`](docs/product/delivery-loop.md). Measured
+2026-08-14 at eight of twelve steps built; **all twelve are built as of
+2026-08-15**, each landing with the tripwire that keeps it honest. The loop is
+a circle in code; what no one has yet done is drive one real item around it.
+
+#### Product outcomes
+
+- A roadmap item travels the whole loop with the operator approving each
+  transition rather than performing it.
+- Local `main` is returned to the remote tip by the product, not by hand.
+- Completion is recorded through the same pull request as the work it describes.
+- No branch is left behind on either side once an item is done.
+
+#### Governing invariant
+
+**Agents may commit freely to feature branches. They may never merge or push to
+a default branch. Changes reach `main` only through a passing pull request.**
+This is already how every write path behaves; this release encodes it as a gate
+rather than a statement, and no milestone below relaxes it. `pull --ff-only` is
+not an exception — fast-forward-only refuses outright when a merge would be
+required, so it moves a pointer and cannot author a commit.
+
+#### Engineering milestones
+
+**All six engineering milestones shipped and are archived:** the default-branch
+sync operation plus its step-10 route and operator control (2026-08-14 /
+2026-08-15); both-direction ahead/behind with `diverged` named (2026-08-14); the
+branch-PR separation, so approve-push opens the run's pull request through the
+same refusal matrix as the roadmap repair (2026-08-15); completion travelling
+through the pull request — committed on the feature branch, verified rather than
+written by the gate (2026-08-15); branch cleanup that requires the merged PR's
+head SHA and refuses `tip-advanced`, `checked-out`, `default-branch` and
+`no-merge-evidence` by name (2026-08-15); and the default-branch invariant as a
+derived tripwire that proves itself against a violating fixture before sweeping
+the real tree (2026-08-15). Full text and evidence:
+[the archive](docs/history/completed-releases.md#closed-2026-08-15-archived-from-roadmapmd).
+
+- [x] **Drive one real roadmap item around the full circle** — **done
+      2026-08-15, manual trigger.** Run `20260815-060711-b3853924` (Lane 0.7's
+      external-archive documentation item): sync `current`, branch, implement,
+      verify passed, completion committed on the branch by
+      `Add-RoadmapCompletionCommit`, **PR #142 opened by approve-push**, CI
+      green, merged `CLEAN`, **sync route fast-forwarded `main` from behind**,
+      **cleanup route deleted both branches at the merged head** `312ec823`,
+      and the item reads `[x]` on `main` through the merge. Each step's
+      artifact:
+      [`evidence/verified/full-loop-proof-2026-08-15.md`](evidence/verified/full-loop-proof-2026-08-15.md),
+      including run 1 (PR #140), whose overeager nested agent proved the
+      on-default-branch completion guard live, and the two same-day fixes the
+      drive produced (PR #141; the stale-queue triage).
+      _(state: operator-verified — manual trigger. The scheduled-trigger half
+      belongs to Release 3.1's proof item and stays open there.)_
+
+
+**Automated conflict resolution is deliberately deferred** — the manual loop has
+to run smoothly first; constraints and the engine decision are in the same doc.
+
+#### Acceptance criteria
+
+- A roadmap item travels all twelve steps with the operator **approving** each
+  transition, never **performing** it.
+- Sync classifies `current`, `behind`, `ahead` and `diverged`; **only `behind`
+  fast-forwards**, `ahead` refuses as `default-branch-ahead`, every refusal names
+  its remedy, and a smoke assertion proves the **refusals**, not the happy path.
+- Roadmap completion appears in the feature branch's commit; no path writes a
+  completion edit to a default branch.
+- No command in `backend/` or `scripts/` can commit onto or push to a default
+  branch. The assertion derives its scope from the commands themselves and fails
+  closed when it finds fewer sites than exist.
+- Branch deletion refuses a tip advanced past the merged head, and a branch
+  checked out in another worktree. A completed item leaves no branch behind.
+- Every state above is **reproduced in a fixture**, not asserted from a
+  description.
+
+---
