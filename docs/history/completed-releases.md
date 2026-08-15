@@ -4070,3 +4070,48 @@ delivery documentation to move in the same pull request as the capability.
       merge-evidence gate.)_
 
 ---
+
+### Release 3.4 — The Delivery Loop Closes (milestones 5 and 6, closed 2026-08-15)
+
+- [x] **A merged branch is cleaned up, and cleanup proves it is the branch that
+      merged.** **Shipped 2026-08-15.** No deletion of any kind existed, so every
+      completed item left two branches behind.
+      [`Git.BranchCleanup.ps1`](../../backend/modules/git/Git.BranchCleanup.ps1)
+      requires **both** a merged pull request's head SHA **and** the branch tip
+      still equalling it — deliberately stricter than `git branch -d`, whose
+      merged check proves neither *which* merge nor squash merges at all.
+      `tip-advanced` refuses because commits past the merged head are not in the
+      default branch and deleting the branch would destroy them; `checked-out`
+      refuses for the current checkout and linked worktrees alike, before git
+      has to; `default-branch` refuses always; `no-merge-evidence` refuses when
+      no SHA is presented, because deletion is not tidiness — it is the last
+      step of a proven merge, and the proof travels as the SHA. Remote deletion
+      is optional, never forced, and a remote failure does not undo the proven
+      local deletion — it reports as its own outcome.
+      `POST /api/git/cleanup-branch` is the operator door, adding no policy.
+      _(state: smoke-tested — every refusal reproduced against real
+      repositories: a bare origin, a clone, a linked worktree; the happy path
+      proven by the local ref disappearing AND `ls-remote` showing the remote
+      ref gone. The route's refusal/404/validation contracts verified
+      non-vacuous against the pre-route host: all three failed there.)_
+
+- [x] **The default-branch invariant is enforced, not stated.** **Shipped
+      2026-08-15**, deliberately last, so the derived tripwire validates the
+      finished surface rather than being revised around each new write path.
+      The module-smoke invariant sweep widened from push-only to the full rule:
+      every repo-targeted `git commit` must sit in a scope that creates a
+      feature branch (`switch -c` / `checkout -b`) or refuses a default one by
+      name; every `git push` is checked for literal default-branch targets and
+      force flags; every `git merge` must carry `--ff-only` — the one merge
+      that cannot author a commit. Floors fail closed: fewer than the known 3
+      commit, 3 push and 1 merge sites means the walker lost its scope, not
+      that the tree got cleaner. **The checker proves itself against a
+      deliberately violating fixture before it is trusted on the real tree** —
+      a fixture that pushes to `main --force`, merges bare, and commits with no
+      branch discipline must produce all four violation classes, or the sweep
+      throws. Three gates in this repo's history passed vacuously on their
+      first attempt; this one carries its own refutation.
+      _(state: smoke-tested — self-proof plus the clean sweep: 4 push, 3
+      commit, 1 merge site, none reaching a default branch.)_
+
+---

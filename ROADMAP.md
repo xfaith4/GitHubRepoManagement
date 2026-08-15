@@ -183,7 +183,7 @@ module + verification boundary`.
 | **3.1**   | **Closed-Loop Delivery**                                                 | **active** — widened 2026-08-11: loop closure plus dead-end removal, engine + cost honesty |
 | **3.2**   | **Portfolio Scale and Responsiveness**                                   | `planned` — demoted 2026-08-11 behind 3.1; read-path budget done, 3 scale milestones open  |
 | **3.3**   | **Steady-State Operation**                                               | `planned` — unattended for months: retention, restore, honest TLS, decision-grade digests  |
-| **3.4**   | **The Delivery Loop Closes**                                             | `planned` — sequenced ahead of 3.2: sync, PR-open, cleanup, and completion-through-the-PR  |
+| **3.4**   | **The Delivery Loop Closes**                                             | engineering `done` 2026-08-15 — all six milestones shipped; live proof batched with 2.9    |
 | **3.5**   | **Trustworthy Surfaces (UI Quality)**                                    | `planned` — ahead of 3.2: one snapshot, one clock, one scope; disagreement fails CI        |
 
 > **Note on `.5` numbering.** Reserve it for course corrections like 1.7.5;
@@ -204,12 +204,11 @@ prerequisites.
 1. **Release 3.1 — the active release.** Reliability and honesty of the PC
    workflow: no dead-end controls, engine attribution, measured cost, one
    workflow that finishes. All unblocked engineering.
-2. **Release 3.4 — the delivery loop closes.** Unblocked, and next in line
-   after 3.1. Sequenced **ahead of 3.2** on the same reasoning that demoted 3.2
-   behind 3.1: a portfolio that renders faster while the delivery loop cannot
-   close is not more reliable. 3.1 taught the product to refuse unsafe writes;
-   3.4 gives it the actions those refusals currently leave the operator to
-   perform by hand.
+2. **Release 3.4 — the delivery loop closes.** Engineering complete
+   2026-08-15: all twelve steps of the loop are built, each behind its own
+   refusal matrix, and the default-branch invariant is a derived tripwire that
+   proves itself before sweeping. What remains is driving one real item around
+   the circle — batched with the operator session below, alongside 3.1's proof.
 3. **Release 3.5 — trustworthy surfaces.** Unblocked, and **ahead of 3.2** on the
    reasoning that has now demoted 3.2 twice: a portfolio that renders faster while
    one screen reports four different repository counts is not more reliable. 3.1
@@ -240,7 +239,7 @@ prerequisites.
 | Open item                                            | Depends on                                    | Type                                          |
 | ---------------------------------------------------- | --------------------------------------------- | --------------------------------------------- |
 | Release 3.1 workflow completion and UX honesty       | —                                             | none — active; engineering, bar the one proof |
-| Release 3.4 delivery-loop closure                    | —                                             | none — 3.1's guards are the prerequisite      |
+| Release 3.4 full-loop proof (engineering done)       | The same authenticated operator session       | hard — human; batch with 3.1's proof          |
 | Release 3.5 trustworthy surfaces (UI quality)        | —                                             | none — root causes identified, engineering    |
 | Release 3.2 scale and responsiveness                 | —                                             | none — deadline + budget both settled         |
 | Release 2.9 mobile completion (ergonomics, run list) | A priority decision, already taken            | deferred 2026-08-11 — not blocked, deranked   |
@@ -900,9 +899,10 @@ window.
 
 ### Release 3.4 — The Delivery Loop Closes
 
-**Status:** planned — sequenced **ahead of 3.2**. The reasoning that demoted 3.2
-behind 3.1 applies again unchanged: a portfolio that renders faster while the
-delivery loop cannot close is not more reliable.
+**Status:** validation — all six engineering milestones shipped and archived
+2026-08-14 / 2026-08-15. What remains is the live full-loop proof, which needs
+an operator session, not engineering time — batch it with 2.9's session
+alongside Release 3.1's proof, since both drive the same loop.
 
 **Goal:** the agent executes the full delivery loop end to end — sync, branch,
 implement, test, commit, push, PR, CI, merge, sync, clean up, mark complete —
@@ -914,14 +914,11 @@ computed rather than asserted, and no write path branches from a clone it has
 not verified. This release adds the _actions_ those guards can currently only
 refuse on.
 
-The target workflow, the layer model, and the evidence per gap live in
+The target workflow, the layer model, and the evidence per step live in
 [`docs/product/delivery-loop.md`](docs/product/delivery-loop.md). Measured
-2026-08-14, re-measured twice 2026-08-15: **eleven of twelve steps are built and
-one is missing.** Steps 2 and 10 closed with the sync milestone; step 7 closed
-when approve-push began opening the run's pull request itself; step 12's
-ordering was fixed when completion moved into the feature branch's own commit.
-What remains is step 11 — branch cleanup, which has no implementation of any
-kind — and the derived invariant tripwire that locks the finished surface.
+2026-08-14 at eight of twelve steps built; **all twelve are built as of
+2026-08-15**, each landing with the tripwire that keeps it honest. The loop is
+a circle in code; what no one has yet done is drive one real item around it.
 
 #### Product outcomes
 
@@ -942,29 +939,26 @@ required, so it moves a pointer and cannot author a commit.
 
 #### Engineering milestones
 
-**Four milestones shipped and are archived:** the default-branch sync operation
-plus its step-10 route and operator control (2026-08-14 / 2026-08-15);
-both-direction ahead/behind with `diverged` named (2026-08-14); the branch-PR
-separation, so an agent run's approve-push opens its pull request through the
-same refusal matrix as the roadmap repair (2026-08-15); and completion
-travelling through the pull request — committed on the feature branch by the
-runner, verified rather than written by the gate, with the host proven to write
-no completion edit at all (2026-08-15). Full text and evidence:
+**All six engineering milestones shipped and are archived:** the default-branch
+sync operation plus its step-10 route and operator control (2026-08-14 /
+2026-08-15); both-direction ahead/behind with `diverged` named (2026-08-14); the
+branch-PR separation, so approve-push opens the run's pull request through the
+same refusal matrix as the roadmap repair (2026-08-15); completion travelling
+through the pull request — committed on the feature branch, verified rather than
+written by the gate (2026-08-15); branch cleanup that requires the merged PR's
+head SHA and refuses `tip-advanced`, `checked-out`, `default-branch` and
+`no-merge-evidence` by name (2026-08-15); and the default-branch invariant as a
+derived tripwire that proves itself against a violating fixture before sweeping
+the real tree (2026-08-15). Full text and evidence:
 [the archive](docs/history/completed-releases.md#closed-2026-08-15-archived-from-roadmapmd).
 
-- [ ] **A merged branch is cleaned up, and cleanup proves it is the branch that
-      merged.** No deletion of any kind exists, so every completed item leaves
-      two branches behind. Deletion requires **both** a confirmed merged pull
-      request **and** the branch tip still equalling that pull request's merged
-      head SHA. Refuse if the tip advanced after the merge — those commits are
-      not in `main` and deleting the branch destroys them — and refuse if the
-      branch is checked out in another worktree. _(state: planned)_
+- [ ] **Drive one real roadmap item around the full circle** — sync, branch,
+      implement, verify, completion commit, push, PR opened by approve-push,
+      CI, merge on `CLEAN`, sync `main`, cleanup with the merged head SHA — and
+      record each step's artifact in `evidence/`. _(state: blocked — needs the
+      same authenticated operator session as Release 3.1's full-loop proof;
+      batch them, they are one drive around one loop.)_
 
-- [ ] **The default-branch invariant is enforced, not stated.** 3.1's stale-base
-      tripwire already derives every command in `backend/` and `scripts/` that
-      branches or commits in a managed repo. Extend that scope to assert no write
-      path can commit onto, or push to, a default branch. A stated rule drifts; a
-      derived one does not. _(state: planned)_
 
 **Automated conflict resolution is deliberately deferred** — the manual loop has
 to run smoothly first; constraints and the engine decision are in the same doc.
