@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { type RepoGitStatusDetail, type GitStatusFile, type GitCommitRef } from '../types';
 import { getRepoGitStatusDetail, stashRepoChanges, discardRepoChanges, startUpdate } from '../services/apiClient';
 import { SpinnerIcon } from './icons';
+import DefaultBranchSyncButton from './DefaultBranchSyncButton';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -399,6 +400,17 @@ const RepoGitStatusModal = ({ isOpen, repoName, localPath, onClose, onStatusChan
             >
               ↺
             </button>
+
+            {/* Release 3.4 step 10 — the remedy belongs next to the diagnosis.
+                Placed here rather than on every grid row deliberately: the
+                2026-08-14 UI review found nine equal-weight buttons per row
+                already, and Release 3.5 is scheduled to reduce that, not add
+                to it. */}
+            <DefaultBranchSyncButton
+              repoName={repoName ?? undefined}
+              repoPath={localPath ?? undefined}
+              onSynced={() => { load(); onStatusChanged?.(); }}
+            />
 
             <button
               onClick={onClose}

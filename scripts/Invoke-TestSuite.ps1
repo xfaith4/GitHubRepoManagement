@@ -262,6 +262,13 @@ Invoke-InProcessGate -Name 'roadmap-audit-action package (Release 2.3 Phase 3)' 
 
 Invoke-ScriptGate -Name 'Roadmap structure lint' -ScriptPath (Join-Path $toolsDir 'Test-RoadmapStructure.ps1') -ScriptArgs @('-Path', (Join-Path $WorkspaceRoot 'ROADMAP.md'), '-FailOnError')
 
+# Release 3.4, recorded 2026-08-15. PR #134 shipped a tested 306-line module and
+# left all six of its release's milestones reading `planned`; the next agent to
+# read the roadmap was one step from rebuilding it. This gate refuses a commit
+# that claims a release, ships capability code, and does not advance a milestone.
+# Verified non-vacuous by running it against 17dc1db, which it fails.
+Invoke-ScriptGate -Name 'Roadmap capability record' -ScriptPath (Join-Path $toolsDir 'Test-RoadmapCapabilityRecord.ps1') -ScriptArgs @('-FailOnError')
+
 # ── Summary ────────────────────────────────────────────────────────────────
 Write-Host ''
 Write-Host '===== Test suite summary =====' -ForegroundColor White
