@@ -158,8 +158,11 @@ describe('buildTrendSummaryCards', () => {
   const trend = {
     availableDays: 14,
     summary: {
+      totalRepos: 10,
       averageMaturityScore: 66.6,
       averageDocumentationHealthScore: 71.2,
+      maturityAssessedCount: 10,
+      docsHealthAssessedCount: 10,
       readyForWorkCount: 4,
       improvedThisWeek: 2,
     },
@@ -176,5 +179,36 @@ describe('buildTrendSummaryCards', () => {
   it('renders nothing when no trend is loaded', () => {
     expect(buildTrendSummaryCards(null)).toEqual([]);
     expect(buildTrendSummaryCards(undefined)).toEqual([]);
+  });
+
+  // Release 3.5 milestone 4c — "not computed" and "zero" may not share a
+  // rendering. A null average is an em dash, never `0%`: the review's
+  // `0% Avg Maturity · 0% Docs Health` tiles were unmeasured values posing as
+  // measurements.
+  it('renders an em dash, not 0%, when a metric was never computed', () => {
+    const cards = buildTrendSummaryCards({
+      ...trend,
+      summary: { ...trend.summary, averageMaturityScore: null, averageDocumentationHealthScore: null },
+    } as PortfolioTrendResult);
+    expect(cards[0]).toMatchObject({ label: 'Avg Maturity', value: '—', hint: 'not yet assessed' });
+    expect(cards[1]).toMatchObject({ label: 'Docs Health', value: '—', hint: 'not yet assessed' });
+  });
+
+  it('states its coverage when computed over a partial sample', () => {
+    const cards = buildTrendSummaryCards({
+      ...trend,
+      summary: { ...trend.summary, maturityAssessedCount: 6, totalRepos: 10 },
+    } as PortfolioTrendResult);
+    expect(cards[0]).toMatchObject({ value: '67%', hint: 'of 6 assessed' });
+    // Full coverage needs no caveat.
+    expect(cards[1].hint).toBeUndefined();
+  });
+
+  it('a measured zero still renders as 0%, not an em dash', () => {
+    const cards = buildTrendSummaryCards({
+      ...trend,
+      summary: { ...trend.summary, averageMaturityScore: 0 },
+    } as PortfolioTrendResult);
+    expect(cards[0]).toMatchObject({ value: '0%' });
   });
 });

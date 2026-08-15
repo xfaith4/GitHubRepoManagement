@@ -66,10 +66,35 @@ function _GetPortfolioAnalyticsAverage {
     }
 
     if ($values.Count -eq 0) {
-        return 0
+        # Release 3.5 milestone 4c -- "not computed" and "zero" may not share a
+        # value. Returning 0 here is what let a portfolio with no assessed
+        # repos render `0% Avg Maturity` as though it had been measured; null
+        # renders as an em dash at the boundary instead.
+        return $null
     }
 
     return [int][math]::Round(($values | Measure-Object -Average).Average, 0)
+}
+
+function _GetPortfolioAnalyticsAssessedCount {
+    # Release 3.5 milestone 4c -- the average's denominator, carried beside it.
+    # The null-skipping average is legitimate arithmetic; what made it a lie
+    # was presenting a partial sample as the portfolio headline. The assessed
+    # count is what lets the UI say "of N assessed" instead.
+    param(
+        [Parameter()][AllowEmptyCollection()][object[]]$Entries = @(),
+        [Parameter(Mandatory = $true)][string]$PropertyName
+    )
+
+    $count = 0
+    foreach ($entry in @($Entries)) {
+        if ($null -eq $entry) { continue }
+        $raw = _GetPortfolioAnalyticsField -InputObject $entry -PropertyName $PropertyName -Default $null
+        if ($null -eq $raw) { continue }
+        $number = 0.0
+        if ([double]::TryParse([string]$raw, [ref]$number)) { $count++ }
+    }
+    return $count
 }
 
 function _NewPortfolioTrendPoint {
@@ -113,15 +138,29 @@ function _GetPortfolioTrendHistoryRows {
         [Parameter(Mandatory = $true)][datetime]$StartUtc
     )
 
+    # Release 3.5 milestone 4a. `maturity_history` holds one row per repo PER
+    # CAPTURE, and the old query aggregated over every capture in a day: a day
+    # with three captures counted each ready repo three times (`Ready Repos ...
+    # High 1592` on a 76-repo portfolio) and weighted a thrice-captured repo
+    # threefold in the average -- the AVG merely hid the same defect the SUM
+    # displayed. Each day now contributes each repo exactly once, at its
+    # latest capture that day, so no day's ready count can exceed the number
+    # of distinct repos.
     return @(Invoke-AppDbQuery -DatabasePath $DatabasePath -Sql @'
 SELECT
-  substr(captured_at, 1, 10) AS captured_day,
-  ROUND(AVG(COALESCE(maturity_score, 0)), 1) AS avg_maturity_score,
-  SUM(CASE WHEN maturity_level IN ('L3-Contract-Ready', 'L4-Orchestration-Ready') AND COALESCE(pending_count, 0) > 0 THEN 1 ELSE 0 END) AS ready_repo_count,
+  latest.captured_day AS captured_day,
+  ROUND(AVG(COALESCE(m.maturity_score, 0)), 1) AS avg_maturity_score,
+  SUM(CASE WHEN m.maturity_level IN ('L3-Contract-Ready', 'L4-Orchestration-Ready') AND COALESCE(m.pending_count, 0) > 0 THEN 1 ELSE 0 END) AS ready_repo_count,
   COUNT(*) AS repo_samples
-FROM maturity_history
-WHERE captured_at >= @start_utc
-GROUP BY substr(captured_at, 1, 10)
+FROM maturity_history m
+JOIN (
+  SELECT substr(captured_at, 1, 10) AS captured_day, repo_name, MAX(captured_at) AS latest_capture
+  FROM maturity_history
+  WHERE captured_at >= @start_utc
+  GROUP BY substr(captured_at, 1, 10), repo_name
+) latest
+  ON m.repo_name = latest.repo_name AND m.captured_at = latest.latest_capture
+GROUP BY latest.captured_day
 ORDER BY captured_day
 '@ -Parameters @{
         '@start_utc' = $StartUtc.ToString('o')
@@ -137,14 +176,21 @@ function _GetPortfolioTrendRepoHistoryPoints {
         [Parameter()][int]$FallbackScore = 0
     )
 
+    # Same latest-capture-per-day rule as the portfolio series (milestone 4a):
+    # a day's point is the repo's latest capture that day, not an average over
+    # however many captures happened to run.
     $rows = @(Invoke-AppDbQuery -DatabasePath $DatabasePath -Sql @'
 SELECT
   substr(captured_at, 1, 10) AS captured_day,
-  ROUND(AVG(COALESCE(maturity_score, 0)), 1) AS maturity_score
-FROM maturity_history
+  ROUND(COALESCE(maturity_score, 0), 1) AS maturity_score
+FROM maturity_history m
 WHERE repo_name = @repo_name
   AND captured_at >= @start_utc
-GROUP BY substr(captured_at, 1, 10)
+  AND captured_at = (
+    SELECT MAX(captured_at) FROM maturity_history
+    WHERE repo_name = m.repo_name
+      AND substr(captured_at, 1, 10) = substr(m.captured_at, 1, 10)
+  )
 ORDER BY captured_day
 '@ -Parameters @{
         '@repo_name' = $RepoName
@@ -237,8 +283,13 @@ function Get-PortfolioTrendPayload {
         runningCount                     = [int](_GetPortfolioAnalyticsField -InputObject $Summary -PropertyName 'runningCount' -Default 0)
         blockedCount                     = [int](_GetPortfolioAnalyticsField -InputObject $Summary -PropertyName 'blockedCount' -Default 0)
         completedCount                   = $completedCount
+        # Nullable, deliberately (milestone 4c): null means "not computed",
+        # and the render boundary shows an em dash. The assessed counts are
+        # the denominators that let a partial sample say so.
         averageMaturityScore             = $averageMaturityScore
         averageDocumentationHealthScore  = $averageDocumentationHealthScore
+        maturityAssessedCount            = (_GetPortfolioAnalyticsAssessedCount -Entries $entryList -PropertyName 'maturityScore')
+        docsHealthAssessedCount          = (_GetPortfolioAnalyticsAssessedCount -Entries $entryList -PropertyName 'documentationHealthScore')
         improvedThisWeek                 = 0
     }
 
@@ -247,7 +298,11 @@ function Get-PortfolioTrendPayload {
         key    = 'avgMaturityScore'
         label  = 'Avg Maturity'
         color  = 'emerald'
-        points = @(_NewPortfolioTrendPoint -Date $today -Value $summaryPayload.averageMaturityScore)
+        # The scaffold point needs a number; the TILE stays honest via the
+        # nullable summary above. A 0-point in a 1-day scaffold series is
+        # chart filler, not a headline. (No null-coalescing operator: this
+        # module keeps the repo's PowerShell 5.1 contract.)
+        points = @(_NewPortfolioTrendPoint -Date $today -Value ([double]$(if ($null -ne $summaryPayload.averageMaturityScore) { $summaryPayload.averageMaturityScore } else { 0 })))
     }) | Out-Null
     $series.Add([pscustomobject]@{
         key    = 'readyRepos'
@@ -314,6 +369,25 @@ function Get-PortfolioTrendPayload {
         if (@($historyRows).Count -gt 0) {
             $trendStatus = 'history-backed'
             $availableDays = @($historyRows | Select-Object -ExpandProperty captured_day -Unique).Count
+
+            # Release 3.5 milestone 4b -- one card, one data path. The tiles
+            # were built from the passed-in assessments while the series below
+            # is rebuilt from history, so an index-only read rendered
+            # `0% Avg Maturity / 0 Ready Now` above trend rows reading 20% and
+            # 22 -- in the same card. When no live assessments were supplied,
+            # the tiles now take the latest history day, the same source the
+            # rows come from. (Docs health has no history column; it stays
+            # null and renders as "not computed" rather than 0%.)
+            if ($entryList.Count -eq 0) {
+                $latestHistoryRow = @($historyRows)[-1]
+                $summaryPayload.averageMaturityScore = [int][math]::Round([double]$latestHistoryRow.avg_maturity_score, 0)
+                $summaryPayload.readyForWorkCount = [int]$latestHistoryRow.ready_repo_count
+                $summaryPayload.maturityAssessedCount = [int]$latestHistoryRow.repo_samples
+                if ([int]$summaryPayload.totalRepos -eq 0) {
+                    $summaryPayload.totalRepos = [int]$latestHistoryRow.repo_samples
+                }
+            }
+
             $series = [System.Collections.Generic.List[object]]::new()
             $series.Add([pscustomobject]@{
                 key    = 'avgMaturityScore'

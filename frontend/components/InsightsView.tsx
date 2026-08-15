@@ -344,6 +344,9 @@ const InsightsView: React.FC<InsightsViewProps> = ({
                     <div key={metric.label} className="rounded-lg border border-gray-700 bg-gray-900/50 px-3 py-3">
                       <div className={`text-lg font-semibold ${metric.accent}`}>{metric.value}</div>
                       <div className="mt-1 text-xs text-gray-400">{metric.label}</div>
+                      {/* Release 3.5 — a partial sample says so; "not yet
+                          assessed" replaces the 0% that posed as a measurement. */}
+                      {metric.hint && <div className="text-[10px] text-gray-500">{metric.hint}</div>}
                     </div>
                   ))}
                 </div>

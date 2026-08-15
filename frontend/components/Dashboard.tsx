@@ -846,7 +846,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   const handleSaveSettings = (newSettings: AppSettings) => {
     setSettings(newSettings);
     setIsSettingsModalOpen(false);
-    fetchRepoStatus(); // Refresh, as some settings might affect repo status (e.g. stale threshold)
+    fetchRepoStatus(); // Refresh, as some settings might affect repo status (e.g. scan depth)
   };
 
   const handleInit = async (githubUser: string, cloneOwned: boolean, basePath?: string) => {

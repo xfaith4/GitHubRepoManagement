@@ -196,7 +196,6 @@ function settingsFromApi(data: any): AppSettings {
   return {
     basePath: (root?.inventory?.localRoots?.[0] as string | undefined) ?? 'G:\\Development',
     reportPath: 'reports',
-    staleThreshold: 14,
     daysInactive: Number(root?.retention?.days ?? 30),
     zipArchive: true,
     scanDepth: Number(root?.inventory?.maxDepth ?? 3),
@@ -777,7 +776,6 @@ export async function getGithubRepoInsights(request: GithubStatusRequest): Promi
 const mockSettings: AppSettings = {
   basePath: 'G:\\Development',
   reportPath: 'reports',
-  staleThreshold: 14,
   daysInactive: 30,
   zipArchive: true,
   scanDepth: 3,
@@ -2037,7 +2035,7 @@ export async function getPortfolioTrend(options: { days?: number } = {}): Promis
     const today = new Date().toISOString().slice(0, 10);
     const averageMaturityScore = entries.length > 0
       ? Math.round(entries.reduce((sum, entry) => sum + Number(entry.maturityScore ?? 0), 0) / entries.length)
-      : 0;
+      : null;
     const readyForWorkCount = entries.filter(entry => entry.lifecycleState === 'ready-for-work').length;
 
     const series: PortfolioTrendSeries[] = [
@@ -2045,7 +2043,9 @@ export async function getPortfolioTrend(options: { days?: number } = {}): Promis
         key: 'avgMaturityScore',
         label: 'Avg Maturity',
         color: 'emerald',
-        points: [{ date: today, value: averageMaturityScore }],
+        // Chart scaffold needs a number; the TILE stays honest via the
+        // nullable summary (same rule as the backend scaffold point).
+        points: [{ date: today, value: averageMaturityScore ?? 0 }],
       },
       {
         key: 'readyRepos',
@@ -2095,9 +2095,12 @@ export async function getPortfolioTrend(options: { days?: number } = {}): Promis
         blockedCount: entries.filter(entry => ['needs-readme', 'needs-roadmap', 'needs-roadmap-repair', 'needs-structure', 'parse-error'].includes(entry.lifecycleState)).length,
         completedCount: entries.filter(entry => entry.lifecycleState === 'completed').length,
         averageMaturityScore,
+        // Mock mirrors the real contract: null when nothing was assessed.
         averageDocumentationHealthScore: entries.length > 0
           ? Math.round(entries.reduce((sum, entry) => sum + Number(entry.documentationHealthScore ?? 0), 0) / entries.length)
-          : 0,
+          : null,
+        maturityAssessedCount: entries.length,
+        docsHealthAssessedCount: entries.length,
         improvedThisWeek: 0,
       },
       series,
@@ -2126,8 +2129,12 @@ export async function getPortfolioTrend(options: { days?: number } = {}): Promis
       runningCount: Number(d.summary?.runningCount ?? 0),
       blockedCount: Number(d.summary?.blockedCount ?? 0),
       completedCount: Number(d.summary?.completedCount ?? 0),
-      averageMaturityScore: Number(d.summary?.averageMaturityScore ?? 0),
-      averageDocumentationHealthScore: Number(d.summary?.averageDocumentationHealthScore ?? 0),
+      // null is preserved, never coerced: `?? 0` here would launder "not
+      // computed" into a confident 0% — the exact defect milestone 4c removes.
+      averageMaturityScore: d.summary?.averageMaturityScore == null ? null : Number(d.summary.averageMaturityScore),
+      averageDocumentationHealthScore: d.summary?.averageDocumentationHealthScore == null ? null : Number(d.summary.averageDocumentationHealthScore),
+      maturityAssessedCount: Number(d.summary?.maturityAssessedCount ?? 0),
+      docsHealthAssessedCount: Number(d.summary?.docsHealthAssessedCount ?? 0),
       improvedThisWeek: Number(d.summary?.improvedThisWeek ?? 0),
     },
     series: Array.isArray(d.series)

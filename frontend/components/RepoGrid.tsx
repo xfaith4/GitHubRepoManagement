@@ -65,7 +65,7 @@ const ADVANCED_QUICK_FILTERS: Array<[QuickFilter, string, string]> = [
   ['candidatesOnly', '◆ Candidates', 'Show only repos marked as portfolio candidates (being evaluated for active work).'],
   ['hideIgnored', 'Hide ignored', 'Hide repos you have parked as archived/ignore.'],
   ['hasUncommitted', 'Has uncommitted changes', 'Show only repos with uncommitted changes in the working tree.'],
-  ['staleOnly', 'Stale', 'Show only repos with no commits within the staleness threshold.'],
+  ['staleOnly', 'Stale', 'Show only repos whose local default branch is behind its remote. Staleness is remote drift computed by the scan (Release 3.1) — not commit age.'],
   ['buildProblem', 'No builds / failed builds', 'Show only repos whose latest CI run failed or that have no CI configured.'],
   ['roadmapFlagged', 'ROADMAP flagged', 'Show only repos whose ROADMAP is missing, unparseable, or needs repair.'],
   ['duplicates', 'Duplicates', 'Show only repos detected as duplicates of another entry (same identity).'],

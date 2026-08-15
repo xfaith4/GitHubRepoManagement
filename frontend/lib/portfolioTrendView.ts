@@ -204,16 +204,38 @@ export interface TrendSummaryCard {
   label: string;
   value: string;
   accent: string;
+  /**
+   * Coverage note rendered under the value ("of 52 assessed"). Present only
+   * when the metric was computed over fewer repos than the portfolio holds —
+   * a partial sample must say so rather than pose as the whole (Release 3.5).
+   */
+  hint?: string;
+}
+
+/**
+ * A percentage tile's text. null means the metric was never computed, and the
+ * honest render is an em dash — a `0%` here is indistinguishable from a
+ * measured zero, which is the Release 3.5 milestone 4c defect.
+ */
+function formatPercentTile(value: number | null): string {
+  return value == null ? '—' : `${Math.round(value)}%`;
+}
+
+function coverageHint(assessed: number, total: number, value: number | null): string | undefined {
+  if (value == null) return 'not yet assessed';
+  if (assessed > 0 && total > 0 && assessed < total) return `of ${assessed} assessed`;
+  return undefined;
 }
 
 /** The five KPI tiles above the trend charts. Empty when no trend is loaded. */
 export function buildTrendSummaryCards(trend: PortfolioTrendResult | null | undefined): TrendSummaryCard[] {
   if (!trend) return [];
+  const s = trend.summary;
   return [
-    { label: 'Avg Maturity', value: `${Math.round(trend.summary.averageMaturityScore)}%`, accent: 'text-emerald-200' },
-    { label: 'Docs Health', value: `${Math.round(trend.summary.averageDocumentationHealthScore)}%`, accent: 'text-sky-200' },
-    { label: 'Ready Now', value: trend.summary.readyForWorkCount.toString(), accent: 'text-blue-200' },
-    { label: 'Improved This Week', value: trend.summary.improvedThisWeek.toString(), accent: 'text-cyan-200' },
+    { label: 'Avg Maturity', value: formatPercentTile(s.averageMaturityScore), accent: 'text-emerald-200', hint: coverageHint(s.maturityAssessedCount, s.totalRepos, s.averageMaturityScore) },
+    { label: 'Docs Health', value: formatPercentTile(s.averageDocumentationHealthScore), accent: 'text-sky-200', hint: coverageHint(s.docsHealthAssessedCount, s.totalRepos, s.averageDocumentationHealthScore) },
+    { label: 'Ready Now', value: s.readyForWorkCount.toString(), accent: 'text-blue-200' },
+    { label: 'Improved This Week', value: s.improvedThisWeek.toString(), accent: 'text-cyan-200' },
     { label: 'Visible Window', value: `${trend.availableDays}d`, accent: 'text-amber-200' },
   ];
 }

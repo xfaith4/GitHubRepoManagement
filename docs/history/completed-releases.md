@@ -4584,3 +4584,42 @@ and the work-item trace shipped earlier in this release.
       home for it. _(state: planned — recorded 2026-08-13)_
 
 ---
+
+### Release 3.5 — Trustworthy Surfaces (milestone 4, closed 2026-08-15)
+
+- [x] **Fix the four measured metric defects, each reproduced before it is
+      fixed.** **Shipped 2026-08-15.**
+      **(a)** `maturity_history` holds one row per repo PER CAPTURE, and the
+      day-grouped `SUM` counted a thrice-captured ready repo three times —
+      `Ready Repos … High 1592` on a 76-repo portfolio — while the sibling
+      `AVG` weighted it threefold, merely hiding the same defect. Both queries
+      (portfolio series and per-repo sparkline) now take each repo's latest
+      capture per day, so no day's ready count can exceed the distinct-repo
+      count — which is asserted directly against the store as the release's
+      first cross-view invariant.
+      **(b)** `Get-PortfolioTrendPayload` built its tiles from the passed-in
+      assessments and replaced its series from `app.db`, so an index-only read
+      rendered `0% / 0 Ready` above rows reading 20% and 22 in the same card.
+      History-backed reads with no live assessments now take the tiles from
+      the latest history day — the same source as the rows beneath them.
+      **(c)** `_GetPortfolioAnalyticsAverage` returned `0` for an empty set
+      and silently skipped nulls. It now returns `null` for "not computed"
+      (rendered as an em dash, never `0%`), and `maturityAssessedCount` /
+      `docsHealthAssessedCount` travel beside the averages so a partial sample
+      says "of N assessed" instead of posing as the portfolio. The client
+      mapper preserves null rather than laundering it with `?? 0`.
+      **(d)** `settings.staleThreshold` was consumed nowhere in `backend/`
+      while Release 3.1 redefined `isStale` as remote drift — two concepts
+      sharing one word, one of them a dead control. **Retired**: wiring
+      days into the 300-second drift tolerance would have blanked 3.1's
+      staleness column, so the Settings input, the type field, the client
+      defaults and every stale-threshold help text are gone, and the grid's
+      stale-filter tooltip now states the drift definition.
+      _(state: smoke-tested — a three-capture-day fixture in a real SQLite
+      `app.db` proves ready<=distinct-repos (the pre-fix SQL returns 3 over 2
+      repos against the same fixture, verified red), latest-capture averages,
+      sparkline latest-not-average, null-for-empty, and history-backed tiles
+      equal to their own rows; four frontend unit tests cover the em-dash,
+      coverage-hint, and measured-zero renderings.)_
+
+---
