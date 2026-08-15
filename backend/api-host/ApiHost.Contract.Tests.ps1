@@ -331,6 +331,58 @@ Describe 'Default-branch sync route -- Release 3.4 milestone 1, step 10' {
     }
 }
 
+Describe 'Portfolio snapshot route - Release 3.5 milestones 1+2' {
+    # The reconciliation layer, asserted over a LIVE host response. The walk
+    # is generic - it names no metric - so a metric added later is audited the
+    # day it ships without anyone editing this file. This is the milestone-2
+    # invariant suite's live seed; the cross-endpoint equality assertions
+    # join it as the consumers move onto the snapshot.
+
+    It 'serves a snapshot whose every metric honors the contract' {
+        $response = Invoke-ContractApiRequest -Method GET -Path '/api/portfolio/snapshot'
+        $response.StatusCode | Should -Be 200
+        $response.Json.success | Should -BeTrue
+        $snapshot = $response.Json.data
+        $snapshot.schemaVersion | Should -Be '1'
+        $snapshot.generatedAt | Should -Not -BeNullOrEmpty
+        @($snapshot.metrics.PSObject.Properties).Count | Should -BeGreaterThan 4
+
+        foreach ($property in @($snapshot.metrics.PSObject.Properties)) {
+            $metric = $property.Value
+            $metric.definition | Should -Not -BeNullOrEmpty
+            # One clock: every asOf parses, and stays UTC ISO at rest.
+            { [datetime]::Parse([string]$metric.asOf, [System.Globalization.CultureInfo]::InvariantCulture) } | Should -Not -Throw
+            if ($null -eq $metric.value) {
+                # Not computed says WHY - never a guessed zero.
+                $metric.reason | Should -Not -BeNullOrEmpty
+                $metric.confidence | Should -Be 'none'
+            }
+            else {
+                $metric.source | Should -Not -BeNullOrEmpty
+                if ($metric.unit -eq 'percent') {
+                    [double]$metric.value | Should -BeGreaterOrEqual 0
+                    [double]$metric.value | Should -BeLessOrEqual 100
+                }
+                if ($metric.unit -eq 'count') {
+                    [double]$metric.value | Should -BeGreaterOrEqual 0
+                }
+            }
+            if ($null -ne $metric.basis -and $null -ne $metric.basis.numerator -and $null -ne $metric.basis.denominator) {
+                [double]$metric.basis.numerator | Should -BeLessOrEqual ([double]$metric.basis.denominator)
+            }
+        }
+    }
+
+    It 'names every degraded source rather than silently zeroing its metrics' {
+        $response = Invoke-ContractApiRequest -Method GET -Path '/api/portfolio/snapshot'
+        $snapshot = $response.Json.data
+        foreach ($entry in @($snapshot.degraded)) {
+            $entry.source | Should -Not -BeNullOrEmpty
+            $entry.reason | Should -Not -BeNullOrEmpty
+        }
+    }
+}
+
 Describe 'Branch cleanup route - Release 3.4 milestone 5' {
     # Same contract as the sync route: refusals are the module's own category,
     # reason and remedy forwarded verbatim as 409, and the refusal case is the

@@ -84,6 +84,9 @@ $portfolioModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\portfolio'
 . (Join-Path $portfolioModuleRoot 'Portfolio.Analytics.ps1')
 . (Join-Path $portfolioModuleRoot 'Portfolio.Report.ps1')
 . (Join-Path $portfolioModuleRoot 'Portfolio.Curation.ps1')
+# Release 3.5 milestone 1 -- the reconciliation layer every view reads.
+. (Join-Path $portfolioModuleRoot 'Portfolio.Scope.ps1')
+. (Join-Path $portfolioModuleRoot 'Portfolio.Snapshot.ps1')
 $aiModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\ai'
 . (Join-Path $aiModuleRoot 'AiDocImprovement.ps1')
 $automationModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\automation'
@@ -9380,6 +9383,67 @@ try {
                             scanSummary     = $scanSummary
                             performance     = $readBudget
                         }
+                    }
+                }
+                'GET /api/portfolio/snapshot' {
+                    # Release 3.5 milestone 1 -- one snapshot, one clock, one
+                    # provenance. This route GATHERS; Build-PortfolioSnapshot
+                    # JUDGES. Every metric is an object carrying value, basis,
+                    # asOf, source, coverage and definition, an absent source
+                    # lands in degraded[] by name, and an uncomputable metric
+                    # is null-with-reason -- never a guessed 0.
+                    Write-HostLog ("[TRACE] portfolio.snapshot correlationId={0} start" -f $correlationId)
+                    try {
+                        $snapSettings = Get-HostSettings
+                        $snapRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $snapSettings
+                        $snapDepth = if ($snapSettings.ContainsKey('inventory') -and $snapSettings.inventory.ContainsKey('maxDepth') -and $snapSettings.inventory.maxDepth) { [int]$snapSettings.inventory.maxDepth } else { 3 }
+                        $snapKey = Get-StatusCacheKey -LocalRoots $snapRoots -MaxDepth $snapDepth -IncludeNonGitFolders $false
+                        # Last known scan regardless of TTL: a stale truth with
+                        # its age stated beats refusing to answer (the async
+                        # state machine renders the age).
+                        $snapStatus = Get-StatusFromCache -Key $snapKey -TtlSeconds 3600 -IgnoreTtl
+                        $snapStatusData = $null
+                        $snapStatusAsOf = ''
+                        if ($null -ne $snapStatus -and $snapStatus.hit) {
+                            $snapStatusData = [pscustomobject]@{ repos = @($snapStatus.entries) }
+                            $snapStatusAsOf = [string]$snapStatus.scannedAt
+                        }
+
+                        $snapExecution = $null
+                        try {
+                            $snapLedger = Read-ExecutionLedger -WorkspaceRoot $WorkspaceRoot
+                            $snapStateCounts = @{}
+                            foreach ($st in @('idle', 'ready', 'running', 'blocked', 'complete')) {
+                                $snapStateCounts[$st] = @($snapLedger.entries | Where-Object { $_.executionState -eq $st }).Count
+                            }
+                            $snapExecution = [pscustomobject]@{ stateCounts = [pscustomobject]$snapStateCounts }
+                        } catch { $snapExecution = $null }
+
+                        $snapAuditEntries = $null
+                        try {
+                            $snapAudit = Get-DocAuditFromCache -TtlSeconds (Get-DocAuditCacheTtlSeconds -Settings $snapSettings)
+                            if ($snapAudit.hit -and $snapAudit.entries) { $snapAuditEntries = @($snapAudit.entries) }
+                        } catch { $snapAuditEntries = $null }
+
+                        $snapAssessmentSummary = $null
+                        try {
+                            $snapAssessment = Get-PortfolioAssessmentFromCache -TtlSeconds (Get-PortfolioAssessmentCacheTtlSeconds -Settings $snapSettings)
+                            if ($snapAssessment.hit) { $snapAssessmentSummary = $snapAssessment.summary }
+                        } catch { $snapAssessmentSummary = $null }
+
+                        $snapshot = Build-PortfolioSnapshot -StatusData $snapStatusData -ExecutionMetrics $snapExecution `
+                            -AuditEntries $snapAuditEntries -AssessmentSummary $snapAssessmentSummary `
+                            -StatusAsOfUtc $snapStatusAsOf -GeneratedAtUtc ((Get-Date).ToUniversalTime().ToString('o'))
+
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                        Write-HostLog ("[TRACE] portfolio.snapshot correlationId={0} done degraded={1}" -f $correlationId, @($snapshot.degraded).Count)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = $snapshot
+                        }
+                    } catch {
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'portfolio.snapshot'
                     }
                 }
                 'GET /api/portfolio/trend' {
