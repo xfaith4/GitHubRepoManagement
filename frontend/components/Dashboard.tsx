@@ -1010,28 +1010,46 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   }, [repos, roadmapEntries, docsAuditIndex, portfolioAssessment]);
 
   const summary = useMemo(() => {
-    const total = reposWithRoadmap.length;
-    const dirty = reposWithRoadmap.filter(r => r.status === 'dirty' || r.uncommittedChanges > 0).length;
-    const stale = reposWithRoadmap.filter(r => r.isStale).length;
-    const commitsThisWeek = reposWithRoadmap.reduce((sum, r) => sum + (r.commitsLastWeek ?? 0), 0);
-    const commitsThisMonth = reposWithRoadmap.reduce((sum, r) => sum + (r.commitsLastMonth ?? 0), 0);
+    // Release 3.5 milestone 3 -- portfolio math runs over the in-scope set.
+    // Absent classification (older cached payloads) reads in-scope, so a
+    // missing policy cannot shrink the portfolio.
+    const inScopeRepos = reposWithRoadmap.filter(r => r.scope?.inScope !== false);
+    const total = inScopeRepos.length;
+    const dirty = inScopeRepos.filter(r => r.status === 'dirty' || r.uncommittedChanges > 0).length;
+    const stale = inScopeRepos.filter(r => r.isStale).length;
+    const commitsThisWeek = inScopeRepos.reduce((sum, r) => sum + (r.commitsLastWeek ?? 0), 0);
+    const commitsThisMonth = inScopeRepos.reduce((sum, r) => sum + (r.commitsLastMonth ?? 0), 0);
     // "Needs Attention" = repos with an ACTIONABLE problem, not the ambient
     // baseline (Release 2.6 Phase 1). Shared pure predicate — see
     // frontend/lib/needsAttention.ts (Release 2.7 Phase D dedup).
-    const needsAttention = reposWithRoadmap.filter(r => isRepoNeedsAttention(r)).length;
+    const needsAttention = inScopeRepos.filter(r => isRepoNeedsAttention(r)).length;
 
-    // Extended metrics
-    const totalIssues = reposWithRoadmap.reduce((sum, r) => sum + (r.extended?.openIssuesCount || 0), 0);
-    const totalProjects = reposWithRoadmap.reduce((sum, r) => sum + (r.extended?.projectsCount || 0), 0);
-    const totalStaleBranches = reposWithRoadmap.reduce((sum, r) => sum + (r.extended?.staleBranches || 0), 0);
-    const reposWithVulnerabilities = reposWithRoadmap.filter(r => (r.extended?.vulnerabilitiesCount || 0) > 0).length;
-    const avgHealthScore = reposWithRoadmap.length > 0
-      ? Math.round(reposWithRoadmap.reduce((sum, r) => sum + (r.extended?.healthScore || 0), 0) / reposWithRoadmap.length)
+    // Extended metrics -- same in-scope set as the headline counts.
+    const totalIssues = inScopeRepos.reduce((sum, r) => sum + (r.extended?.openIssuesCount || 0), 0);
+    const totalProjects = inScopeRepos.reduce((sum, r) => sum + (r.extended?.projectsCount || 0), 0);
+    const totalStaleBranches = inScopeRepos.reduce((sum, r) => sum + (r.extended?.staleBranches || 0), 0);
+    const reposWithVulnerabilities = inScopeRepos.filter(r => (r.extended?.vulnerabilitiesCount || 0) > 0).length;
+    const avgHealthScore = inScopeRepos.length > 0
+      ? Math.round(inScopeRepos.reduce((sum, r) => sum + (r.extended?.healthScore || 0), 0) / inScopeRepos.length)
       : 0;
 
     return {
       total, dirty, stale, commitsThisWeek, commitsThisMonth, needsAttention,
       totalIssues, totalProjects, totalStaleBranches, reposWithVulnerabilities, avgHealthScore
+    };
+  }, [reposWithRoadmap]);
+
+  // Release 3.5 milestone 3 -- the scope statement under the KPI row. Derived
+  // from the per-repo classifications the scan attached, so the statement and
+  // the counts cannot disagree about which set was counted.
+  const scopeCounts = useMemo(() => {
+    const excluded = reposWithRoadmap.filter(r => r.scope && !r.scope.inScope);
+    if (excluded.length === 0) return null;
+    return {
+      inScope: reposWithRoadmap.length - excluded.length,
+      vendored: excluded.filter(r => r.scope?.classification === 'vendored').length,
+      archived: excluded.filter(r => r.scope?.classification === 'archived').length,
+      excludedPath: excluded.filter(r => r.scope?.classification === 'excluded-path').length,
     };
   }, [reposWithRoadmap]);
 
@@ -1328,6 +1346,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
         dataLastUpdated={dataLastUpdated}
         rateLimit={dataSource?.source === 'github' ? insightsMeta?.rateLimit ?? null : null}
         summary={summary}
+        scope={scopeCounts}
       />
 
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">

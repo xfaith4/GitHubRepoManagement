@@ -583,15 +583,26 @@ review's own conclusions corrected.
       non-vacuous against the pre-fix host — `main` requires `ci-smoke` green, so a
       deliberately-red suite is not available as a definition of done.
       _(state: planned)_
-- [ ] **Exclude what is not the portfolio, visibly.** Add a scope policy to
-      `backend/config/settings.json`, which today carries `inventory.maxDepth: 3` and
-      no exclusion of any kind: exclude `**/.tmp*/**`, `**/Archive/**`,
-      `**/*.worktrees/**`; classify repos outside the configured owner set as
-      `vendored` and keep them behind a toggle rather than dropping them; deduplicate
-      by `(remote_url, root_commit_sha)` instead of folder name. Every tile states
-      its scope; all portfolio math recomputes over the in-scope set.
-      _(state: planned — reproduce the reported `Genesys.Core_AuditLogsApp` →
-      `xfaith4/Genesys.Core` mis-mapping first; it is the one claim needing live data)_
+- [ ] **Exclude what is not the portfolio, visibly.** **Core shipped
+      2026-08-15.** The live claim reproduced first — and it is cleaner than
+      the review guessed: `Genesys.Core_AuditLogsApp` is a genuine **second
+      clone** of `xfaith4/Genesys.Core` (same remote, same root commit
+      `d884af1`), not a mislabel.
+      [`Portfolio.Scope.ps1`](backend/modules/portfolio/Portfolio.Scope.ps1)
+      classifies at the scan producer (temp/`Archive`/worktree paths, vendored
+      by owner set, path rules beating ownership), so every consumer inherits
+      one classification; **nothing is dropped** — excluded repos sit behind
+      the grid's `Hide out-of-scope` chip with the reason on each row, an
+      empty owner set disables vendor classification rather than guessing,
+      and identity dedupe groups by normalized remote URL subdivided by
+      root-commit SHA paid only inside colliding groups. The KPI row computes
+      over the in-scope set and states its scope beneath the tiles.
+      _(state: smoke-tested — 7 classifier cases from the live reproduction,
+      no-owner/disabled-policy whole-portfolio proofs, and identity grouping
+      against two real clones of one bare origin with an unrelated repo left
+      out. **Residues:** the assessment/operations path still counts all
+      scanned repos — its recompute rides milestone 1's snapshot, as do the
+      per-tab tile scope statements beyond the KPI row.)_
 **Milestone 4 shipped 2026-08-15 and is archived:** all four measured metric
 defects fixed, each reproduced red against the pre-fix code first — the
 latest-capture-per-repo-per-day join (the `1592` axis), the one-card-two-paths

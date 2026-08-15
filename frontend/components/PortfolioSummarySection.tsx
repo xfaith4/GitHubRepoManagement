@@ -9,6 +9,14 @@ export interface PortfolioSummaryCounts {
   commitsThisWeek: number;
 }
 
+/** Release 3.5 milestone 3 -- the scope these counts were computed over. */
+export interface PortfolioScopeCounts {
+  inScope: number;
+  vendored: number;
+  archived: number;
+  excludedPath: number;
+}
+
 interface PortfolioSummarySectionProps {
   /** What the numbers below describe — the live scan or an indexed source. */
   sourceLabel: string;
@@ -18,6 +26,8 @@ interface PortfolioSummarySectionProps {
   /** GitHub API budget; only shown for a GitHub-backed source. */
   rateLimit?: { remaining: number; limit: number } | null;
   summary: PortfolioSummaryCounts;
+  /** When present, the tile row states its scope beneath the counts. */
+  scope?: PortfolioScopeCounts | null;
 }
 
 /**
@@ -31,6 +41,7 @@ const PortfolioSummarySection: React.FC<PortfolioSummarySectionProps> = ({
   dataLastUpdated,
   rateLimit,
   summary,
+  scope,
 }) => (
   <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-6">
     <section className="rounded-lg border border-gray-700 bg-gray-800/60 px-4 py-4">
@@ -64,6 +75,16 @@ const PortfolioSummarySection: React.FC<PortfolioSummarySectionProps> = ({
         <SummaryCard title="Stale Repositories" value={summary.stale} color="red" />
         <SummaryCard title="Commits This Week" value={summary.commitsThisWeek} color="green" />
       </div>
+      {/* Release 3.5 milestone 3 -- every count above states its scope. A
+          number computed over a set the operator cannot name is the defect
+          this release exists to remove. */}
+      {scope && (scope.vendored + scope.archived + scope.excludedPath) > 0 && (
+        <p className="mt-2 text-xs text-gray-400" data-testid="scope-statement">
+          Counts cover <strong>{scope.inScope} in-scope</strong> repositories · {scope.vendored + scope.archived + scope.excludedPath} excluded from portfolio math
+          ({[scope.vendored > 0 ? `${scope.vendored} vendored` : null, scope.archived > 0 ? `${scope.archived} archived` : null, scope.excludedPath > 0 ? `${scope.excludedPath} temp/worktree` : null].filter(Boolean).join(' · ')})
+          — visible in the grid via the "Hide out-of-scope" toggle.
+        </p>
+      )}
     </section>
   </div>
 );

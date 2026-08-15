@@ -26,6 +26,27 @@ export interface RepoStaleness {
   summary: string;
 }
 
+/**
+ * Release 3.5 milestone 3 — why a scanned repo is or is not portfolio.
+ * Nothing is deleted: an excluded repo stays visible behind a toggle, and
+ * every exclusion carries the reason a tile can state.
+ */
+export interface RepoScopeClassification {
+  classification: 'in-scope' | 'excluded-path' | 'archived' | 'vendored';
+  inScope: boolean;
+  reason: string;
+}
+
+/** The counts a tile needs to state its scope ("52 in-scope · 24 excluded"). */
+export interface RepoScopeSummary {
+  total: number;
+  inScope: number;
+  excluded: number;
+  vendored: number;
+  archived: number;
+  excludedPath: number;
+}
+
 export interface RepoStatus {
   name: string;
   status: 'clean' | 'dirty' | 'ahead' | 'behind' | 'diverged';
@@ -38,6 +59,7 @@ export interface RepoStatus {
   uncommittedChanges: number;
   isArchived: boolean;
   isStale: boolean;
+  scope?: RepoScopeClassification | null;
   staleness?: RepoStaleness | null;
   /** GitHub `pushed_at` — when the remote default branch last received commits. */
   remotePushedAt?: string | null;
