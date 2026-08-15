@@ -183,7 +183,7 @@ module + verification boundary`.
 | **3.1**   | **Closed-Loop Delivery**                                                 | **active** — widened 2026-08-11: loop closure plus dead-end removal, engine + cost honesty |
 | **3.2**   | **Portfolio Scale and Responsiveness**                                   | `planned` — demoted 2026-08-11 behind 3.1; read-path budget done, 3 scale milestones open  |
 | **3.3**   | **Steady-State Operation**                                               | `planned` — unattended for months: retention, restore, honest TLS, decision-grade digests  |
-| **3.4**   | **The Delivery Loop Closes**                                             | engineering `done` 2026-08-15 — all six milestones shipped; live proof batched with 2.9    |
+| **3.4**   | **The Delivery Loop Closes**                                             | `done` 2026-08-15 — six milestones + the full-loop proof, driven live and operator-verified |
 | **3.5**   | **Trustworthy Surfaces (UI Quality)**                                    | `planned` — ahead of 3.2: one snapshot, one clock, one scope; disagreement fails CI        |
 
 > **Note on `.5` numbering.** Reserve it for course corrections like 1.7.5;
@@ -630,11 +630,14 @@ text and evidence:
       cannot pass vacuously, and it reports every violation at once rather than
       the first.)_
 - [ ] Record a full-loop proof for one real item in `evidence/`, naming each
-      stage's artifact, **manually and once on a schedule**. _(state: blocked —
-      needs an operator session, not engineering time)_ The scheduled path
-      deliberately stops at `pending-approval` (Release 2.7 Phase C), so this
-      milestone states where the approval boundary sits rather than removing it.
-      Batch with 2.9's operator session rather than scheduling a separate one.
+      stage's artifact, **manually and once on a schedule**. _(state: the
+      **manual half is operator-verified 2026-08-15** — PR #142, all twelve
+      steps, recorded in
+      [`evidence/verified/full-loop-proof-2026-08-15.md`](evidence/verified/full-loop-proof-2026-08-15.md).
+      What remains is the scheduled trigger: a scheduled packaging run whose
+      packet an operator approves through to the same recorded outcome.)_ The
+      scheduled path deliberately stops at `pending-approval` (Release 2.7
+      Phase C), so this
 
 #### Acceptance criteria
 
@@ -894,91 +897,6 @@ window.
 
 - Multi-tenant or hosted operation.
 - Log shipping to an external observability platform.
-
----
-
-### Release 3.4 — The Delivery Loop Closes
-
-**Status:** validation — all six engineering milestones shipped and archived
-2026-08-14 / 2026-08-15. What remains is the live full-loop proof, which needs
-an operator session, not engineering time — batch it with 2.9's session
-alongside Release 3.1's proof, since both drive the same loop.
-
-**Goal:** the agent executes the full delivery loop end to end — sync, branch,
-implement, test, commit, push, PR, CI, merge, sync, clean up, mark complete —
-without the operator leaving the product to finish a step by hand.
-
-**Prerequisites:** met. Release 3.1 closed the honesty gaps this depends on:
-nothing queues into an empty room, every dispatch surface is gated, staleness is
-computed rather than asserted, and no write path branches from a clone it has
-not verified. This release adds the _actions_ those guards can currently only
-refuse on.
-
-The target workflow, the layer model, and the evidence per step live in
-[`docs/product/delivery-loop.md`](docs/product/delivery-loop.md). Measured
-2026-08-14 at eight of twelve steps built; **all twelve are built as of
-2026-08-15**, each landing with the tripwire that keeps it honest. The loop is
-a circle in code; what no one has yet done is drive one real item around it.
-
-#### Product outcomes
-
-- A roadmap item travels the whole loop with the operator approving each
-  transition rather than performing it.
-- Local `main` is returned to the remote tip by the product, not by hand.
-- Completion is recorded through the same pull request as the work it describes.
-- No branch is left behind on either side once an item is done.
-
-#### Governing invariant
-
-**Agents may commit freely to feature branches. They may never merge or push to
-a default branch. Changes reach `main` only through a passing pull request.**
-This is already how every write path behaves; this release encodes it as a gate
-rather than a statement, and no milestone below relaxes it. `pull --ff-only` is
-not an exception — fast-forward-only refuses outright when a merge would be
-required, so it moves a pointer and cannot author a commit.
-
-#### Engineering milestones
-
-**All six engineering milestones shipped and are archived:** the default-branch
-sync operation plus its step-10 route and operator control (2026-08-14 /
-2026-08-15); both-direction ahead/behind with `diverged` named (2026-08-14); the
-branch-PR separation, so approve-push opens the run's pull request through the
-same refusal matrix as the roadmap repair (2026-08-15); completion travelling
-through the pull request — committed on the feature branch, verified rather than
-written by the gate (2026-08-15); branch cleanup that requires the merged PR's
-head SHA and refuses `tip-advanced`, `checked-out`, `default-branch` and
-`no-merge-evidence` by name (2026-08-15); and the default-branch invariant as a
-derived tripwire that proves itself against a violating fixture before sweeping
-the real tree (2026-08-15). Full text and evidence:
-[the archive](docs/history/completed-releases.md#closed-2026-08-15-archived-from-roadmapmd).
-
-- [ ] **Drive one real roadmap item around the full circle** — sync, branch,
-      implement, verify, completion commit, push, PR opened by approve-push,
-      CI, merge on `CLEAN`, sync `main`, cleanup with the merged head SHA — and
-      record each step's artifact in `evidence/`. _(state: blocked — needs the
-      same authenticated operator session as Release 3.1's full-loop proof;
-      batch them, they are one drive around one loop.)_
-
-
-**Automated conflict resolution is deliberately deferred** — the manual loop has
-to run smoothly first; constraints and the engine decision are in the same doc.
-
-#### Acceptance criteria
-
-- A roadmap item travels all twelve steps with the operator **approving** each
-  transition, never **performing** it.
-- Sync classifies `current`, `behind`, `ahead` and `diverged`; **only `behind`
-  fast-forwards**, `ahead` refuses as `default-branch-ahead`, every refusal names
-  its remedy, and a smoke assertion proves the **refusals**, not the happy path.
-- Roadmap completion appears in the feature branch's commit; no path writes a
-  completion edit to a default branch.
-- No command in `backend/` or `scripts/` can commit onto or push to a default
-  branch. The assertion derives its scope from the commands themselves and fails
-  closed when it finds fewer sites than exist.
-- Branch deletion refuses a tip advanced past the merged head, and a branch
-  checked out in another worktree. A completed item leaves no branch behind.
-- Every state above is **reproduced in a fixture**, not asserted from a
-  description.
 
 ---
 
