@@ -35,6 +35,7 @@ import DashboardViewTabs from './DashboardViewTabs';
 import ErrorBoundary from './ErrorBoundary';
 import PortfolioSummarySection from './PortfolioSummarySection';
 import { type ViewTabBadges } from '../lib/viewTabs';
+import { useAsyncPanel } from '../lib/asyncPanel';
 import { isRepoNeedsAttention } from '../lib/needsAttention';
 import { classifyFetchFailure } from '../lib/fetchFailure';
 import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getAutomationStatus, getPackagedItems, approvePackagedItem, rejectPackagedItem, getRoadmapDependencies, getPortfolioAssessment, refreshAllPortfolioAssessment, setOperationsRepoCuration, getPortfolioTrend, getOperationsRepos, getRunnerPresence } from '../services/apiClient';
@@ -142,9 +143,16 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   // Release 3.1 — whichever id the operator clicked Trace on. Any id the chain
   // minted resolves to the same work item, so this holds it verbatim.
   const [traceModalId, setTraceModalId] = useState<string | null>(null);
-  const [dependencyGraph, setDependencyGraph] = useState<RoadmapDependencyGraph | null>(null);
-  const [dependencyGraphLoading, setDependencyGraphLoading] = useState(false);
-  const [hasAttemptedDepsLoad, setHasAttemptedDepsLoad] = useState(false);
+  // Release 3.5 milestone 5 -- the dependency panel runs on the shared async
+  // state model. Its old wiring swallowed fetch failures into the empty state
+  // (a detection failure posing as a clean bill of health) and dropped the
+  // scannedAt its own scanner emits.
+  const fetchDependencyGraph = useCallback(() => getRoadmapDependencies(true), []);
+  const dependencyGraphIsEmpty = useCallback((g: RoadmapDependencyGraph) => g.summary.length === 0, []);
+  const { state: depsPanel, load: loadDependencyGraph } = useAsyncPanel<RoadmapDependencyGraph>(
+    fetchDependencyGraph, '/api/roadmap/dependencies', dependencyGraphIsEmpty,
+  );
+  const dependencyGraph = depsPanel.data;
   const [portfolioAssessment, setPortfolioAssessment] = useState<PortfolioAssessmentResult | null>(null);
   const [portfolioAssessmentLoading, setPortfolioAssessmentLoading] = useState(false);
   const [portfolioAssessmentError, setPortfolioAssessmentError] = useState<string | null>(null);
@@ -435,16 +443,13 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     return () => window.clearInterval(intervalId);
   }, [refreshExecutionMetrics]);
 
-  // Release 1.2 — load dependency graph when Dependencies tab is first opened
+  // Release 1.2 — load dependency graph when Dependencies tab is first opened.
+  // (Release 3.5: through the async panel — a failure is an error with a
+  // retry, never a silent empty state.)
   useEffect(() => {
-    if (activeView !== 'dependencies' || hasAttemptedDepsLoad) return;
-    setHasAttemptedDepsLoad(true);
-    setDependencyGraphLoading(true);
-    getRoadmapDependencies()
-      .then(setDependencyGraph)
-      .catch(() => {/* silent — panel shows empty state */})
-      .finally(() => setDependencyGraphLoading(false));
-  }, [activeView, hasAttemptedDepsLoad]);
+    if (activeView !== 'dependencies' || depsPanel.phase !== 'idle') return;
+    void loadDependencyGraph();
+  }, [activeView, depsPanel.phase, loadDependencyGraph]);
 
   useEffect(() => {
     if (activeView !== 'operations' || hasAttemptedOperationsLoad) {
@@ -1534,32 +1539,50 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                     </p>
                   </div>
                   <button
-                    onClick={() => {
-                      setHasAttemptedDepsLoad(false);
-                      setDependencyGraph(null);
-                    }}
-                    disabled={dependencyGraphLoading}
+                    onClick={() => { void loadDependencyGraph(); }}
+                    disabled={depsPanel.phase === 'loading'}
+                    title={depsPanel.phase === 'loading' ? 'A dependency scan is already running.' : 'Re-scan portfolio roadmaps for cross-repo references.'}
                     className="px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 text-gray-200 rounded border border-gray-600 disabled:opacity-50 transition-colors"
                   >
-                    Refresh
+                    {depsPanel.phase === 'loading' ? 'Scanning…' : depsPanel.phase === 'empty' ? 'Compute now' : 'Refresh'}
                   </button>
                 </div>
 
-                {dependencyGraphLoading && (
+                {depsPanel.phase === 'loading' && !dependencyGraph && (
                   <div className="flex items-center gap-3 py-8 text-gray-400 justify-center">
                     <SpinnerIcon className="w-5 h-5 animate-spin" />
                     <span>Scanning roadmaps for dependencies…</span>
                   </div>
                 )}
 
-                {!dependencyGraphLoading && (!dependencyGraph || dependencyGraph.summary.length === 0) && (
+                {/* Release 3.5 milestone 5 — a fetch failure is an ERROR with
+                    its endpoint and a retry, never a clean-looking empty
+                    state. The old wiring swallowed it silently. */}
+                {depsPanel.phase === 'error' && (
+                  <div className="text-center py-10 text-sm" data-testid="dependencies-error-state">
+                    <p className="mb-1 text-red-300">Dependency scan failed — this is not an empty result.</p>
+                    <p className="text-gray-500 text-xs mb-3">{depsPanel.error?.endpoint}: {depsPanel.error?.message}</p>
+                    <button onClick={() => { void loadDependencyGraph(); }} className="px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 text-gray-200 rounded border border-gray-600 transition-colors">Retry</button>
+                  </div>
+                )}
+
+                {/* empty = COMPUTED and found nothing, with the computed-at
+                    stamp the scanner has always emitted and the old empty
+                    state dropped. */}
+                {depsPanel.phase === 'empty' && dependencyGraph && (
                   <div className="text-center py-10 text-gray-500 text-sm" data-testid="dependencies-empty-state">
-                    <p className="mb-1">No cross-repo dependencies detected.</p>
+                    <p className="mb-1">No cross-repo dependencies detected — scanned {new Date(dependencyGraph.scannedAt).toLocaleTimeString()}.</p>
                     <p className="text-gray-600 text-xs">Dependencies are found via GitHub URLs, <code>RepoName#42</code> refs, and keywords like "depends on" in roadmap files.</p>
                   </div>
                 )}
 
-                {!dependencyGraphLoading && dependencyGraph && dependencyGraph.summary.length > 0 && (
+                {depsPanel.phase === 'stale' && dependencyGraph && (
+                  <p className="mb-3 rounded border border-amber-800/50 bg-amber-900/20 px-3 py-2 text-xs text-amber-200" data-testid="dependencies-stale-banner">
+                    Showing the graph as of {depsPanel.lastGoodAt ? new Date(depsPanel.lastGoodAt).toLocaleTimeString() : '—'} — the refresh at {depsPanel.failedAt ? new Date(depsPanel.failedAt).toLocaleTimeString() : '—'} failed ({depsPanel.error?.message}).
+                  </p>
+                )}
+
+                {(depsPanel.phase === 'success' || depsPanel.phase === 'stale' || (depsPanel.phase === 'loading' && !!dependencyGraph)) && dependencyGraph && dependencyGraph.summary.length > 0 && (
                   <div className="space-y-2">
                     {dependencyGraph.summary.map(entry => (
                       <div key={entry.repoName} className="border border-gray-700 rounded-lg bg-gray-800/40 px-4 py-3">
