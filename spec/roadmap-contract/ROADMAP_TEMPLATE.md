@@ -39,6 +39,10 @@ AUTHORING RULES (not rendered as a section; parsers and agents should still read
    they are. Section 6 only holds completed work whose original release
    section has since been archived or removed from Section 5, so that
    history survives even after the section that produced it is gone.
+   Alternatively, that surviving history may live in a separate archive file
+   instead of Section 6 — a supported layout, not a deviation. See the
+   "External archive option" under Section 6 for the required pointer
+   convention that makes the split self-describing.
 
 6. "Dispatch readiness" in the Release Index (Section 4) is a computed field
    (derived from `normalizedStatus` + open audit findings), not something to
@@ -180,6 +184,35 @@ See `standards/roadmap/ROADMAP_BUDGET_MODEL.md` for the full model.
 {History preserved from release sections that have since been archived or removed from Section 5. Do not delete. Every completed item carries an absolute completion date so the roadmap doubles as a project timeline. Do not duplicate items still visible inline in Section 5 — they belong there, not here.}
 
 - [x] {Completed milestone or feature — short, verifiable description} *(completed: {YYYY-MM-DD}, from Release {X.Y})*
+
+### External archive option
+
+A repository MAY keep this history in a separate archive file instead of in
+this section — for example `docs/history/completed-releases.md`. The split
+layout is a **supported** shape of this standard, not a deviation. Using it
+requires all three of the following, so an external archive stays
+distinguishable from deleted history:
+
+1. **Pointer line (required).** The roadmap's header blockquote carries a link
+   line naming the archive file, so the split is self-describing:
+
+   ```markdown
+   > **Completed-release archive:** [`docs/history/completed-releases.md`](docs/history/completed-releases.md)
+   ```
+
+2. **Verbatim moves only.** Completed release sections and `- [x]` items move
+   to the archive unchanged — same wording, same checklist syntax, same
+   absolute completion dates. Archiving is never a license to rewrite or
+   summarize history, exactly as with in-file history above.
+
+3. **This section defers to the archive.** Replace the item list here with a
+   one-line reference to the archive file rather than maintaining history in
+   two places.
+
+Under the split layout, low in-file completed counts are expected and carry no
+penalty; the pointer line is what marks history as archived rather than lost.
+A roadmap repair must preserve the pointer line and must not copy archived
+history back into the roadmap.
 
 ---
 
