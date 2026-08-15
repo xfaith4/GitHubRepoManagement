@@ -1154,6 +1154,85 @@ Write-Host '  blockquote status form detected (activeReleaseCount=1, no ROADMAP-
 # returned created=false even with createPr=true, so "no PR appeared" was
 # indistinguishable from success. Every refusal now carries a NAMED reason, and
 # these assertions are what stop it regressing to a silent no-op.
+Write-Step 'Portfolio scope — Release 3.5 milestone 3: classified, never deleted'
+# The classifier cases mirror what the 2026-08-15 live-workspace reproduction
+# found admitted as first-class portfolio repos: a .tmp_compare folder inside
+# another repo, Archive/ trees, a .worktrees container, and vendored
+# third-party clones. Nothing is dropped: every exclusion carries a named
+# reason, and an empty owner set disables vendor classification entirely --
+# absence of configuration must not shrink the portfolio.
+. (Join-Path $WorkspaceRoot 'backend\modules\portfolio\Portfolio.Scope.ps1')
+& {
+    $policy = Get-RepoScopePolicy -Settings @{ reconcile = @{ gitHubOwner = 'xfaith4' } }
+    if (@($policy.owners) -ne @('xfaith4')) { throw "Policy must fall back to reconcile.gitHubOwner, got '$(@($policy.owners) -join ',')'" }
+
+    foreach ($case in @(
+        @{ name = 'tmp-compare dir';    path = 'F:\dev\Genesys.Core_AuditLogsApp\.tmp_compare\genesys-cloud-mcp-server'; url = 'https://github.com/purecloudlabs/genesys-cloud-mcp-server.git'; expect = 'excluded-path' }
+        @{ name = 'archive tree';       path = 'F:\dev\Archive\MusicLibrary';                    url = 'https://github.com/xfaith4/MusicLibrary.git';    expect = 'archived' }
+        @{ name = 'worktree container'; path = 'F:\dev\Genesys.Core.worktrees\feature-x';        url = 'https://github.com/xfaith4/Genesys.Core.git';    expect = 'excluded-path' }
+        @{ name = 'vendored clone';     path = 'F:\dev\gemini-cli';                              url = 'https://github.com/google-gemini/gemini-cli.git'; expect = 'vendored' }
+        @{ name = 'owned repo';         path = 'F:\dev\GitHubRepoManagement';                    url = 'https://github.com/xfaith4/GitHubRepoManagement.git'; expect = 'in-scope' }
+        @{ name = 'no-remote local';    path = 'F:\dev\scratch-project';                         url = '';                                                expect = 'in-scope' }
+        @{ name = 'vendored in archive';path = 'F:\dev\Archive\gemini-cli';                      url = 'https://github.com/google-gemini/gemini-cli.git'; expect = 'archived' }
+    )) {
+        $c = Get-RepoScopeClassification -LocalPath $case.path -OriginUrl $case.url -Policy $policy
+        if ([string]$c.classification -ne $case.expect) { throw "Scope case '$($case.name)' expected '$($case.expect)', got '$($c.classification)'" }
+        if (-not $c.inScope -and [string]::IsNullOrWhiteSpace([string]$c.reason)) { throw "Exclusion '$($case.name)' must carry a named reason" }
+    }
+
+    # No owner set anywhere: vendor classification must disable, not guess.
+    $noOwnerPolicy = Get-RepoScopePolicy -Settings @{}
+    $foreign = Get-RepoScopeClassification -LocalPath 'F:\dev\gemini-cli' -OriginUrl 'https://github.com/google-gemini/gemini-cli.git' -Policy $noOwnerPolicy
+    if (-not $foreign.inScope) { throw 'With no configured owner set, a foreign remote must stay in scope - no basis to call anything vendored' }
+
+    # Disabled policy: everything in scope.
+    $disabled = Get-RepoScopeClassification -LocalPath 'F:\dev\Archive\x' -OriginUrl '' -Policy (Get-RepoScopePolicy -Settings @{ scope = @{ enabled = $false } })
+    if (-not $disabled.inScope) { throw 'A disabled scope policy must classify everything in scope' }
+
+    $scopeSummary = Get-RepoScopeSummary -Classifications @(
+        (Get-RepoScopeClassification -LocalPath 'F:\dev\a' -OriginUrl '' -Policy $policy),
+        (Get-RepoScopeClassification -LocalPath 'F:\dev\Archive\b' -OriginUrl '' -Policy $policy),
+        (Get-RepoScopeClassification -LocalPath 'F:\dev\c' -OriginUrl 'https://github.com/other/c.git' -Policy $policy)
+    )
+    if ($scopeSummary.total -ne 3 -or $scopeSummary.inScope -ne 1 -or $scopeSummary.archived -ne 1 -or $scopeSummary.vendored -ne 1) {
+        throw "Scope summary miscounted: total=$($scopeSummary.total) inScope=$($scopeSummary.inScope) archived=$($scopeSummary.archived) vendored=$($scopeSummary.vendored)"
+    }
+
+    # Identity: two clones of one origin are ONE repository -- the live
+    # Genesys.Core / Genesys.Core_AuditLogsApp case, reproduced with real
+    # repositories. A third repo with the same folder-name shape but its own
+    # origin must NOT join the group.
+    $idTmp = Join-Path $WorkspaceRoot 'output\smoke\module\scope-identity'
+    if (Test-Path -LiteralPath $idTmp) { Remove-Item -LiteralPath $idTmp -Recurse -Force }
+    $null = New-Item -ItemType Directory -Path $idTmp -Force
+    $bareA = Join-Path $idTmp 'origin-a.git'
+    & git init --bare -b main $bareA --quiet 2>&1 | Out-Null
+    $cloneOne = Join-Path $idTmp 'repo'
+    $cloneTwo = Join-Path $idTmp 'repo_secondcopy'
+    & git clone $bareA $cloneOne --quiet 2>&1 | Out-Null
+    & git -C $cloneOne config user.email 's@l' 2>&1 | Out-Null; & git -C $cloneOne config user.name 's' 2>&1 | Out-Null
+    Set-Content -LiteralPath (Join-Path $cloneOne 'f.txt') -Value 'x' -Encoding UTF8
+    & git -C $cloneOne add -A 2>&1 | Out-Null; & git -C $cloneOne commit -m 'root' --quiet 2>&1 | Out-Null
+    & git -C $cloneOne push origin main --quiet 2>&1 | Out-Null
+    & git clone $bareA $cloneTwo --quiet 2>&1 | Out-Null
+    $bareB = Join-Path $idTmp 'origin-b.git'
+    & git init --bare -b main $bareB --quiet 2>&1 | Out-Null
+    $cloneThree = Join-Path $idTmp 'unrelated'
+    & git clone $bareB $cloneThree --quiet 2>&1 | Out-Null
+
+    $identityGroups = @(Group-RepoByRemoteIdentity -Repos @(
+        [pscustomobject]@{ name = 'repo';            path = $cloneOne;   originUrl = $bareA }
+        [pscustomobject]@{ name = 'repo_secondcopy'; path = $cloneTwo;   originUrl = ($bareA + '/') }
+        [pscustomobject]@{ name = 'unrelated';       path = $cloneThree; originUrl = $bareB }
+    ))
+    if (@($identityGroups).Count -ne 1) { throw "Expected exactly 1 duplicate-identity group, got $(@($identityGroups).Count)" }
+    if (@($identityGroups[0].paths).Count -ne 2) { throw 'The identity group must hold both clones of the shared origin' }
+    if ([string]::IsNullOrWhiteSpace([string]$identityGroups[0].rootCommitSha)) { throw 'Colliding clones must be subdivided by a real root-commit SHA' }
+    Remove-Item -LiteralPath $idTmp -Recurse -Force -ErrorAction SilentlyContinue
+
+    Write-Host '  scope ok: 7 classifier cases (tmp/archive/worktrees/vendored/owned/no-remote/precedence), no-owner and disabled policies stay whole, summary counts, identity groups two real clones of one origin and leaves the unrelated repo out' -ForegroundColor DarkGray
+}
+
 Write-Step 'Roadmap submit-PR — smoke: slug parsing and the refusal matrix'
 . (Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.PrSubmitter.ps1')
 

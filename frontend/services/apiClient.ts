@@ -1,4 +1,4 @@
-import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type RepoStatus, type RepoStaleness, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type RepositoryImprovementPreview, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioAssessmentScanSummary, type PortfolioChangeState, type PortfolioScanDecisionReason, type PortfolioScanStatus, type RepoCurationState, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocUsage, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult, type GitHubAuthStatus } from '../types';
+import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type RepoStatus, type RepoScopeClassification, type RepoScopeSummary, type RepoStaleness, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type RepositoryImprovementPreview, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioAssessmentScanSummary, type PortfolioChangeState, type PortfolioScanDecisionReason, type PortfolioScanStatus, type RepoCurationState, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocUsage, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult, type GitHubAuthStatus } from '../types';
 import { type AutomationHealthPayload } from '../lib/automationStatus';
 import { type PackagedItem } from '../lib/packagedItems';
 import { type RunnerPresencePayload } from '../lib/runnerPresence';
@@ -173,6 +173,16 @@ function normalizeRepo(repo: any): RepoStatus {
         }
       : null,
     remotePushedAt: repo?.pushedAt ?? repo?.staleness?.remotePushedAt ?? null,
+    // Release 3.5 milestone 3 — the scope classification rides the scan.
+    // Absent (older cached payloads) means in-scope: a missing policy must
+    // not shrink the portfolio.
+    scope: repo?.scope
+      ? {
+          classification: String(repo.scope.classification ?? 'in-scope') as RepoScopeClassification['classification'],
+          inScope: Boolean(repo.scope.inScope ?? true),
+          reason: String(repo.scope.reason ?? ''),
+        }
+      : null,
     hasArtifacts: Boolean(repo?.hasArtifacts ?? false),
     lastBuildStatus: 'none',
     openPrCount: Number(repo?.openPrCount ?? 0),
@@ -204,7 +214,7 @@ function settingsFromApi(data: any): AppSettings {
   };
 }
 
-export async function getStatus(options?: { stale?: boolean; refresh?: boolean; timeoutMs?: number }): Promise<{ repos: RepoStatus[]; source: 'sample' | 'local'; workspacePath?: string; configuredGithubUser?: string | null; repoCount?: number; scanDurationMs?: number; missingRoots?: string[]; dataLastUpdated?: string; cacheSource?: string; cacheAgeSeconds?: number; fromCache: boolean; }> {
+export async function getStatus(options?: { stale?: boolean; refresh?: boolean; timeoutMs?: number }): Promise<{ repos: RepoStatus[]; source: 'sample' | 'local'; workspacePath?: string; configuredGithubUser?: string | null; repoCount?: number; scanDurationMs?: number; missingRoots?: string[]; dataLastUpdated?: string; cacheSource?: string; cacheAgeSeconds?: number; fromCache: boolean; scopeSummary?: RepoScopeSummary | null; }> {
   if (USE_MOCK_API) {
     const sample = getMockRepos();
     return { repos: sample, source: 'sample', configuredGithubUser: null, workspacePath: undefined, repoCount: sample.length, missingRoots: [], dataLastUpdated: new Date().toISOString(), cacheSource: 'fresh-scan', cacheAgeSeconds: 0, fromCache: false };
@@ -264,7 +274,19 @@ export async function getStatus(options?: { stale?: boolean; refresh?: boolean; 
     dataLastUpdated: cacheMeta?.cachedAt ?? new Date().toISOString(),
     cacheSource: cacheMeta?.source ?? 'fresh-scan',
     cacheAgeSeconds: cacheMeta?.ageSeconds != null ? Number(cacheMeta.ageSeconds) : 0,
-    fromCache: cacheMeta?.source === 'memory' || cacheMeta?.source === 'disk'
+    fromCache: cacheMeta?.source === 'memory' || cacheMeta?.source === 'disk',
+    // Release 3.5 milestone 3 — the scope counts a tile needs. Null on older
+    // cached payloads that predate the policy.
+    scopeSummary: data?.data?.scopeSummary
+      ? {
+          total: Number(data.data.scopeSummary.total ?? 0),
+          inScope: Number(data.data.scopeSummary.inScope ?? 0),
+          excluded: Number(data.data.scopeSummary.excluded ?? 0),
+          vendored: Number(data.data.scopeSummary.vendored ?? 0),
+          archived: Number(data.data.scopeSummary.archived ?? 0),
+          excludedPath: Number(data.data.scopeSummary.excludedPath ?? 0),
+        }
+      : null,
   };
 }
 

@@ -145,6 +145,9 @@ function Get-StatusAdapterResult {
 
         . (Join-Path $PSScriptRoot '..\modules\common\Logging.ps1')
         . (Join-Path $PSScriptRoot '..\modules\reconcile\Invoke-Reconciliation.ps1') -LoadFunctionsOnly
+        # Release 3.5 milestone 3 -- the scope classifier rides the producer, so
+        # every consumer of this scan inherits the same classification.
+        . (Join-Path $PSScriptRoot '..\modules\portfolio\Portfolio.Scope.ps1')
 
         # Restore caller values after dot-sourcing legacy script with overlapping params.
         $LocalRoots = $callerLocalRoots
@@ -203,10 +206,34 @@ function Get-StatusAdapterResult {
             }
         )
 
-        Write-StructuredLog -Level Info -Component adapter.status -Operation $operation -CorrelationId $correlationId -Message 'Status scan adapter call completed' -Details @{ RepoCount = @($repos).Count; ItemCount = @($items).Count } -LogPath $LogPath
+        # Release 3.5 milestone 3 -- classify every repo against the scope
+        # policy at the producer, and never drop one: an out-of-scope repo is
+        # visible behind a toggle, because a scan that silently removes
+        # repositories is the same class of lie as a metric that silently
+        # counts them. The policy reads from the application settings beside
+        # this backend; absent settings fall back to shipped defaults.
+        $scopeSettingsPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'config\settings.json'
+        $scopeSettings = $null
+        if (Test-Path -LiteralPath $scopeSettingsPath) {
+            try { $scopeSettings = Get-Content -LiteralPath $scopeSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $scopeSettings = $null }
+        }
+        $scopePolicy = Get-RepoScopePolicy -Settings $scopeSettings
+        $scopeClassifications = [System.Collections.Generic.List[object]]::new()
+        foreach ($repoRecord in @($repos)) {
+            $classification = Get-RepoScopeClassification -LocalPath ([string]$repoRecord.path) -OriginUrl ([string]$repoRecord.originUrl) -Policy $scopePolicy
+            $repoRecord | Add-Member -NotePropertyName 'scope' -NotePropertyValue $classification -Force
+            $scopeClassifications.Add($classification) | Out-Null
+        }
+        $scopeSummary = Get-RepoScopeSummary -Classifications @($scopeClassifications)
+        # Same repository, several checkouts: reproduced live 2026-08-15 as
+        # Genesys.Core + Genesys.Core_AuditLogsApp (one remote, one root
+        # commit). The root-sha subdivision is paid only by colliding groups.
+        $duplicateIdentities = @(Group-RepoByRemoteIdentity -Repos @($repos))
+
+        Write-StructuredLog -Level Info -Component adapter.status -Operation $operation -CorrelationId $correlationId -Message 'Status scan adapter call completed' -Details @{ RepoCount = @($repos).Count; ItemCount = @($items).Count; InScope = $scopeSummary.inScope; Excluded = $scopeSummary.excluded } -LogPath $LogPath
 
         $scanDurationMs = [math]::Round(((Get-Date) - $scanStartedAt).TotalMilliseconds, 0)
-        return New-AdapterResponse -Operation $operation -CorrelationId $correlationId -Success $true -Data ([pscustomobject]@{ repos = $repos }) -Meta @{ localRoots = $LocalRoots; maxDepth = $MaxDepth; repoCount = @($repos).Count; itemCount = @($items).Count; scanDurationMs = $scanDurationMs; missingRoots = $missingRoots }
+        return New-AdapterResponse -Operation $operation -CorrelationId $correlationId -Success $true -Data ([pscustomobject]@{ repos = $repos; scopeSummary = $scopeSummary; duplicateIdentities = $duplicateIdentities }) -Meta @{ localRoots = $LocalRoots; maxDepth = $MaxDepth; repoCount = @($repos).Count; itemCount = @($items).Count; scanDurationMs = $scanDurationMs; missingRoots = $missingRoots }
     }
     catch {
         $errorMessage = $_.Exception.Message

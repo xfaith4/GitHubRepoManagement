@@ -32,7 +32,7 @@ type SortKey = 'priority' | 'name' | 'status' | 'branch' | 'lastCommitDate' | 'u
 type SortOrder = 'asc' | 'desc';
 
 type DuplicateGroup = { groupKey: string; items: RepoStatus[] };
-type QuickFilter = 'favoritesOnly' | 'candidatesOnly' | 'hideIgnored' | 'dirtyOnly' | 'hasUncommitted' | 'staleOnly' | 'needsAttention' | 'hasOpenPrs' | 'buildProblem' | 'roadmapFlagged' | 'duplicates';
+type QuickFilter = 'favoritesOnly' | 'candidatesOnly' | 'hideIgnored' | 'hideExcluded' | 'dirtyOnly' | 'hasUncommitted' | 'staleOnly' | 'needsAttention' | 'hasOpenPrs' | 'buildProblem' | 'roadmapFlagged' | 'duplicates';
 
 const DEFAULT_QUICK_FILTERS: Record<QuickFilter, boolean> = {
   favoritesOnly: false,
@@ -40,6 +40,11 @@ const DEFAULT_QUICK_FILTERS: Record<QuickFilter, boolean> = {
   // Archived/Ignore exists to suppress repos the operator has parked, so the
   // default view honors it; the active chip keeps the suppression visible.
   hideIgnored: true,
+  // Release 3.5 milestone 3 -- out-of-scope repos (temp dirs, Archive/ trees,
+  // vendored clones) are hidden from the working portfolio by default, and
+  // NEVER dropped: this chip is the toggle that reveals them, so the
+  // suppression stays visible and reversible.
+  hideExcluded: true,
   dirtyOnly: false,
   hasUncommitted: false,
   staleOnly: false,
@@ -64,6 +69,7 @@ const ADVANCED_QUICK_FILTERS: Array<[QuickFilter, string, string]> = [
   ['favoritesOnly', '★ Favorites', 'Show only repos you have marked as favorites (operator curation).'],
   ['candidatesOnly', '◆ Candidates', 'Show only repos marked as portfolio candidates (being evaluated for active work).'],
   ['hideIgnored', 'Hide ignored', 'Hide repos you have parked as archived/ignore.'],
+  ['hideExcluded', 'Hide out-of-scope', 'Hide repos the scope policy excludes from portfolio math: temp/compare folders, Archive/ trees, worktree containers, and vendored third-party clones. Toggle off to see them - they are classified, never deleted.'],
   ['hasUncommitted', 'Has uncommitted changes', 'Show only repos with uncommitted changes in the working tree.'],
   ['staleOnly', 'Stale', 'Show only repos whose local default branch is behind its remote. Staleness is remote drift computed by the scan (Release 3.1) — not commit age.'],
   ['buildProblem', 'No builds / failed builds', 'Show only repos whose latest CI run failed or that have no CI configured.'],
@@ -286,8 +292,11 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
       const matchesRoadmapFlag = !quickFilters.roadmapFlagged || isRoadmapFlagged(repo);
       const matchesDuplicates = !quickFilters.duplicates || duplicateRepoIds.has(repoId);
       const matchesCuration = matchesCurationFilters(repo.curationState, quickFilters);
+      // Scope: absent classification (older cached payloads) reads in-scope --
+      // a missing policy must not shrink the portfolio.
+      const matchesScope = !quickFilters.hideExcluded || repo.scope?.inScope !== false;
 
-      return matchesSearch && matchesReadiness && matchesDirtyOnly && matchesUncommitted && matchesStale && matchesAttention && matchesOpenPrs && matchesBuildProblem && matchesRoadmapFlag && matchesDuplicates && matchesCuration;
+      return matchesSearch && matchesReadiness && matchesDirtyOnly && matchesUncommitted && matchesStale && matchesAttention && matchesOpenPrs && matchesBuildProblem && matchesRoadmapFlag && matchesDuplicates && matchesCuration && matchesScope;
     });
 
     const valueForSort = (repo: RepoStatus): string | number => {
@@ -1012,6 +1021,14 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                             className="inline-flex items-center text-xs px-1.5 py-0.5 rounded border bg-amber-900/30 text-amber-200 border-amber-700/40"
                           >
                             Unpushed
+                          </span>
+                        )}
+                        {repo.scope && !repo.scope.inScope && (
+                          <span
+                            title={repo.scope.reason}
+                            className="inline-flex items-center text-xs px-1.5 py-0.5 rounded border bg-purple-900/30 text-purple-200 border-purple-700/40"
+                          >
+                            {repo.scope.classification === 'vendored' ? 'Vendored' : repo.scope.classification === 'archived' ? 'Archived path' : 'Out of scope'}
                           </span>
                         )}
                         {repo.staleness?.state === 'unknown' && (
