@@ -2576,7 +2576,35 @@ try {
     }
     if ($null -ne (Get-WorkItemTrace -WorkspaceRoot $traceWorkspace -Id 'no-such-id')) { throw 'An unknown id must produce no trace, not an empty one' }
 
-    Write-Host ("  trace: {0} stage cases, {1} ids resolve to one trace, 7/7 stages joined from disk, every stage can report a gap" -f $traceCases.Count, $traceFromDiskIds.Count) -ForegroundColor DarkGray
+    # The run summary is a prUrl source of its own. Found live 2026-08-15 on the
+    # first real drive around the delivery loop: approve-push records the PR it
+    # opened in the run SUMMARY (Release 3.4 milestone 3), but the trace joined
+    # prUrl only from the submit-PR record, the agent-run ledger and the
+    # merge-readiness snapshot — so a queue-runner item whose PR came from
+    # approve-push traced as "no pull request" and the write-back gate refused
+    # completion for want of evidence sitting one file away. Reproduced here: a
+    # run whose ONLY PR evidence is the summary field must still join it.
+    $traceSummaryOnly = [ordered]@{
+        runId = '20260815-999999-summary1'; status = 'pushed'
+        repository = 'o/trace-smoke'; localRepoPath = 'C:\trace-smoke'
+        selectedTask = 'Ship the summary-only case'; branch = 'roadmap/20260815-999999-summary1'
+        prUrl = 'https://github.com/o/trace-smoke/pull/9'; prNumber = 9
+    }
+    $traceSummaryOnlyQueue = [ordered]@{
+        schemaVersion = '1'; runId = '20260815-999999-summary1'; status = 'queued'
+        repository = 'o/trace-smoke'; localRepoPath = 'C:\trace-smoke'; roadmapPath = 'C:\trace-smoke\ROADMAP.md'
+        selectedTask = 'Ship the summary-only case'; branch = 'roadmap/20260815-999999-summary1'
+        prompt = 'x'; dispatchTarget = 'claude'; baseBranch = 'main'; queuedAt = '2026-08-15T00:00:00Z'
+    }
+    Add-Content -LiteralPath (Join-Path $traceWorkspace 'output\roadmap-task-queue.jsonl') -Value (ConvertTo-Json -InputObject $traceSummaryOnlyQueue -Compress -Depth 8) -Encoding UTF8
+    (ConvertTo-Json -InputObject $traceSummaryOnly -Depth 8) | Set-Content -LiteralPath (Join-Path $traceWorkspace 'output\roadmap-task-history\runs\20260815-999999-summary1.summary.json') -Encoding UTF8
+    $traceSummaryTrace = Get-WorkItemTrace -WorkspaceRoot $traceWorkspace -Id '20260815-999999-summary1'
+    if ($null -eq $traceSummaryTrace) { throw 'The summary-only run must still produce a trace' }
+    if ([string]$traceSummaryTrace.identity.prUrl -ne 'https://github.com/o/trace-smoke/pull/9') {
+        throw "A prUrl recorded only in the run summary must join the trace; got '$($traceSummaryTrace.identity.prUrl)'"
+    }
+
+    Write-Host ("  trace: {0} stage cases, {1} ids resolve to one trace, 7/7 stages joined from disk, every stage can report a gap; summary-only prUrl joins" -f $traceCases.Count, $traceFromDiskIds.Count) -ForegroundColor DarkGray
 }
 finally {
     Remove-Item -LiteralPath $traceWorkspace -Recurse -Force -ErrorAction SilentlyContinue
