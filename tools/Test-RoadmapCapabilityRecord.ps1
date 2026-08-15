@@ -75,6 +75,9 @@ $ErrorActionPreference = 'Stop'
 # work landed.
 $script:ReleaseClaimPattern = '^\s*\w+\((?:release|phase)[-\s]?[0-9]'
 
+# Where completed milestones go under the roadmap's archive rule.
+$script:ArchivePath = 'docs/history/completed-releases.md'
+
 # Paths whose change constitutes shipping a capability. Tests and docs are
 # excluded: a test-only commit is not a capability claim, and this check must not
 # punish someone adding coverage to work already recorded.
@@ -88,22 +91,28 @@ function Test-IsCapabilityPath {
     return $true
 }
 
-# Did this commit move a milestone FORWARD in ROADMAP.md? Adding milestones that
-# read `planned` is recording intent, not shipping -- #134 did exactly that and
-# the first version of this check waved it through.
-function Test-RoadmapAdvanced {
-    param([Parameter(Mandatory = $true)][string]$Sha)
+# Did this commit move a milestone FORWARD? Adding milestones that read `planned`
+# is recording intent, not shipping -- #134 did exactly that and the first
+# version of this check waved it through.
+function Get-AddedLine {
+    param(
+        [Parameter(Mandatory = $true)][string]$Sha,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
 
     # The `--` goes AFTER the rev. With it before, git reads $Sha as a pathspec
     # and diffs HEAD instead -- which made this function report on the working
     # commit rather than the one under test, and it passed everything.
-    $diff = (& git -C $WorkspaceRoot show --format='' --unified=0 $Sha -- 'ROADMAP.md' 2>&1) | Out-String
-    if ($LASTEXITCODE -ne 0) { return $false }
+    $diff = (& git -C $WorkspaceRoot show --format='' --unified=0 $Sha -- $Path 2>&1) | Out-String
+    if ($LASTEXITCODE -ne 0) { return @() }
 
-    foreach ($line in ($diff -split "`n")) {
-        if ($line -notmatch '^\+') { continue }
-        if ($line -match '^\+\+\+') { continue }
+    return @($diff -split "`n" | Where-Object { $_ -match '^\+' -and $_ -notmatch '^\+\+\+' })
+}
 
+function Test-RoadmapAdvanced {
+    param([Parameter(Mandatory = $true)][string]$Sha)
+
+    foreach ($line in (Get-AddedLine -Sha $Sha -Path 'ROADMAP.md')) {
         # A checked box is unambiguous advancement.
         if ($line -match '^\+\s*-\s*\[x\]') { return $true }
 
@@ -111,6 +120,17 @@ function Test-RoadmapAdvanced {
         if ($line -match '\(state:\s*([a-z\-]+)') {
             if ($Matches[1] -ne 'planned') { return $true }
         }
+    }
+
+    # ARCHIVING is advancement too, and this check failed its own commit for
+    # missing it. The roadmap's archive rule says a completed item does not stay
+    # in ROADMAP.md: it moves to docs/history/completed-releases.md verbatim and
+    # leaves a pointer. A commit that does that correctly REMOVES the milestone
+    # from the roadmap, so the roadmap's added lines carry no `[x]` at all -- the
+    # advancement landed in the archive. Reading only ROADMAP.md would punish
+    # exactly the behaviour the roadmap asks for.
+    foreach ($line in (Get-AddedLine -Sha $Sha -Path $script:ArchivePath)) {
+        if ($line -match '^\+\s*-\s*\[x\]') { return $true }
     }
 
     return $false
@@ -166,7 +186,7 @@ foreach ($sha in Get-CommitsInRange -Range $Range) {
         Subject         = $subject
         CapabilityFiles = @($capabilityFiles)
         Reason          = if ($touchedRoadmap) {
-            'ROADMAP.md changed, but no milestone advanced -- every added state line still reads `planned`.'
+            'ROADMAP.md changed, but no milestone advanced -- no box checked, no state past `planned`, and nothing archived as complete.'
         } else {
             'ROADMAP.md was not touched at all.'
         }
