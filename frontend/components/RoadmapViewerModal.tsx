@@ -188,7 +188,7 @@ const RoadmapViewerModal: React.FC<RoadmapViewerModalProps> = ({ isOpen, repoNam
               title="Re-scan all repos for ROADMAP files"
               className="text-xs px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {scanning ? 'Scanning...' : 'Scan All ROADMAPs'}
+              {scanning ? 'Rescanning…' : 'Rescan all ROADMAPs'}
             </button>
             <button
               onClick={() => repoName && loadContent(repoName)}

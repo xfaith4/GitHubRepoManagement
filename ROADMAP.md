@@ -664,15 +664,31 @@ of the dead `staleThreshold` control. Full text and evidence:
       no-identity-no-merge rule. Display-side only; queue idempotency stays
       the open known issue.)_
 - [ ] **One status vocabulary, two refresh verbs, and a surface that states its
-      consequence.** Map the grid chips, Operations lifecycle states and maturity
-      levels into one documented model — a repo currently reads `Ready` on one tab and
-      `blocked / L0-Absent` on another in the same session. Consolidate the seven
-      refresh verbs to at most two, each naming what it invalidates. Give irreversible
-      actions styling distinct from read-only ones, change bulk default scope from
-      "all filtered repos" to an explicit select-all, and close the accessibility
-      gaps: accessible names on `⋯` menus and row checkboxes, `aria-live` for scan
-      progress, the truncated Needs Attention label, plurals from data.
-      _(state: planned)_
+      consequence.** **Core shipped 2026-08-15.**
+      [`docs/reference/status-vocabulary.md`](docs/reference/status-vocabulary.md)
+      is the mapping table: five independent dimensions (working tree, remote
+      drift, dispatch readiness, roadmap maturity, execution lane), no two
+      sharing a word — the `Genesys.Core` Ready-vs-blocked/L0 collision decoded
+      as three true answers to three different questions; the three "ready"
+      snapshot metrics get their UI names (Claimable lanes / Dispatch-ready /
+      Work-ready L3+). The seven refresh verbs collapsed to two with stated
+      contracts — **Refresh** (re-read, seconds) and **Rescan** (invalidate +
+      reindex, minutes, the control says so) — renamed across the grid, Work
+      Queue, roadmap modal, Operations and Help. **Bulk default scope
+      inverted**: a mutating action with nothing selected is now *disabled
+      naming its precondition*, not confirmed — a confirm without a selection
+      is the dialog people learn to click through; the header checkbox is the
+      explicit select-all. Dispatch Release wears consequence styling (amber,
+      "DISPATCHES WORK" title) instead of dressing like Audit. Accessibility:
+      names on both `⋯` menus and every row checkbox, the select-all named,
+      `role="status"`/`aria-live` on the background-refresh indicator, and the
+      activity sentence pluralizes from data.
+      _(state: smoke-tested — the bulk inversion proven in DOM tests (disabled
+      + no dialog + named precondition; explicit selection runs clean;
+      read-only stays one click); the ActionBar and bulkScope suites reworked
+      to the new contract. **Residues:** UI adoption of the three readiness
+      names beyond the doc, and an `aria-live` announcement on scan
+      *completion* as opposed to progress.)_
 
 #### Acceptance criteria
 

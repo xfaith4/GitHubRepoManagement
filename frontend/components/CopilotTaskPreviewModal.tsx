@@ -174,7 +174,7 @@ const CopilotTaskPreviewModal: React.FC<CopilotTaskPreviewModalProps> = ({
               <div className="font-semibold mb-1">Failed to build task packet</div>
               <div className="text-red-400/80">{error}</div>
               <div className="mt-2 text-xs text-red-400/60">
-                Ensure a roadmap scan has been run (Work Queue → Scan All) and this repository has pending roadmap items.
+                Ensure a roadmap scan has been run (Work Queue → Rescan roadmaps) and this repository has pending roadmap items.
               </div>
             </div>
           )}

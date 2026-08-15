@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// DOM tests for the implicit-bulk confirmation flow (ROADMAP Lane 0.8).
+// DOM tests for the bulk-scope rules (Lane 0.8, reworked by Release 3.5 M7).
 // lib/bulkScope.test.ts proves the RULE; these prove the WIRING — that the
 // component actually consults the rule, shows the dialog, and that "Cancel"
 // really stops the action. A component that never calls the guard passes every
@@ -40,28 +40,31 @@ function renderActionBar(overrides: Partial<React.ComponentProps<typeof ActionBa
   return handlers;
 }
 
-describe('ActionBar implicit-bulk confirmation', () => {
-  it('confirms before an implicit-scope Pull and names the count', () => {
+describe('ActionBar bulk scope (Release 3.5 milestone 7)', () => {
+  // Supersedes the Lane 0.5 confirm dialog: a mutating bulk action with no
+  // selection is DISABLED, not confirmed. A confirm without a selection is
+  // the dialog people learn to click through, and the review called the old
+  // default the footgun it was.
+  it('disables Pull and Fetch with nothing selected, and no dialog appears', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { onAction } = renderActionBar();
-    fireEvent.click(screen.getByRole('button', { name: 'Pull' }));
-    expect(confirm).toHaveBeenCalledTimes(1);
-    expect(confirm.mock.calls[0][0]).toContain('git pull');
-    expect(confirm.mock.calls[0][0]).toContain('75 repositories');
-    expect(onAction).toHaveBeenCalledWith('update', undefined);
-  });
-
-  // The half that pure-logic tests cannot see: a dismissed dialog must stop
-  // the action, not merely have been shown.
-  it('does NOT run the action when the operator cancels', () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
-    const { onAction } = renderActionBar();
-    fireEvent.click(screen.getByRole('button', { name: 'Pull' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Fetch' }));
+    const pull = screen.getByRole('button', { name: 'Pull' });
+    const fetch = screen.getByRole('button', { name: 'Fetch' });
+    expect(pull).toBeDisabled();
+    expect(fetch).toBeDisabled();
+    fireEvent.click(pull);
+    fireEvent.click(fetch);
+    expect(confirm).not.toHaveBeenCalled();
     expect(onAction).not.toHaveBeenCalled();
   });
 
-  it('skips the dialog when the operator selected repos explicitly', () => {
+  it('the disabled mutating action names its precondition (select first)', () => {
+    renderActionBar();
+    const pull = screen.getByRole('button', { name: 'Pull' });
+    expect(pull).toHaveAttribute('title', expect.stringContaining('Select repositories first'));
+  });
+
+  it('runs immediately on an explicit selection, no dialog', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const { onAction } = renderActionBar({ selectedRepos: new Set(['repo-a', 'repo-b']) });
     fireEvent.click(screen.getByRole('button', { name: 'Pull' }));
@@ -69,8 +72,9 @@ describe('ActionBar implicit-bulk confirmation', () => {
     expect(onAction).toHaveBeenCalledWith('update', ['repo-a', 'repo-b']);
   });
 
-  // Settled 2026-08-10: read-only stays one click, however large the scope.
-  it('runs the read-only Report without a dialog', () => {
+  // Settled 2026-08-10 and unchanged: read-only stays one click over the
+  // whole filter, however large - a report over everything is the point.
+  it('runs the read-only Report without a dialog or a selection', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const { onExport } = renderActionBar({ repoCount: 999 });
     fireEvent.click(screen.getByRole('button', { name: 'Report' }));

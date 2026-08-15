@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  bulkActionDisabledReason,
   bulkConfirmationMessage,
   isMutatingBulkAction,
   requiresBulkConfirmation,
@@ -76,5 +77,23 @@ describe('bulkConfirmationMessage', () => {
     for (const action of ['update', 'sync'] as BulkActionKind[]) {
       expect(bulkConfirmationMessage(action, 8)).toMatch(/\b8\b/);
     }
+  });
+});
+
+// Release 3.5 milestone 7 - empty selection no longer means "everything".
+describe('bulkActionDisabledReason', () => {
+  it('disables a mutating action with no selection, naming the remedy', () => {
+    const reason = bulkActionDisabledReason('update', 0, 75);
+    expect(reason).toContain('Select repositories first');
+    expect(reason).toContain('git pull');
+  });
+
+  it('allows a mutating action once anything is selected', () => {
+    expect(bulkActionDisabledReason('sync', 1, 75)).toBeNull();
+  });
+
+  it('never disables read-only actions', () => {
+    expect(bulkActionDisabledReason('export', 0, 75)).toBeNull();
+    expect(bulkActionDisabledReason('roadmap-scan', 0, 75)).toBeNull();
   });
 });

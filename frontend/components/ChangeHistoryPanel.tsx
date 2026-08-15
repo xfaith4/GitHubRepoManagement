@@ -233,7 +233,7 @@ const ChangeHistoryPanel: React.FC<ChangeHistoryPanelProps> = ({ repos }) => {
           <div className="text-sm text-gray-300">
             <strong className="text-blue-400">Executive Summary:</strong> 
             {activityMetrics.totalCommitsWeek > 0 ? (
-              <span> Your team has made <strong>{activityMetrics.totalCommitsWeek}</strong> commits across <strong>{displayActiveReposWeek}</strong> repositories in the last 7 days, with <strong>{activityMetrics.activeContributorsWeek}</strong> active contributors. This month, there have been <strong>{activityMetrics.totalCommitsMonth}</strong> total commits.</span>
+              <span> Your team has made <strong>{activityMetrics.totalCommitsWeek}</strong> commit{activityMetrics.totalCommitsWeek === 1 ? '' : 's'} across <strong>{displayActiveReposWeek}</strong> repositor{displayActiveReposWeek === 1 ? 'y' : 'ies'} in the last 7 days, with <strong>{activityMetrics.activeContributorsWeek}</strong> active contributor{activityMetrics.activeContributorsWeek === 1 ? '' : 's'}. This month, there have been <strong>{activityMetrics.totalCommitsMonth}</strong> total commit{activityMetrics.totalCommitsMonth === 1 ? '' : 's'}.</span>
             ) : activityMetrics.commitMetricsUnavailableWeek || activityMetrics.commitMetricsUnavailableMonth ? (
               <span> Recent repository updates were detected, but commit-count activity metrics are unavailable in the current status payload. Restart the API host from this repo checkout or clear the status cache to rebuild those metrics.</span>
             ) : (
