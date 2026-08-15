@@ -51,7 +51,7 @@ function Ensure-DocReviewBranch {
         [string]$BranchName
     )
 
-    $verifyOutput = (& git -C $RepoPath rev-parse --verify --quiet ("refs/heads/{0}" -f $BranchName) 2>&1) | Out-String
+    $null = (& git -C $RepoPath rev-parse --verify --quiet ("refs/heads/{0}" -f $BranchName) 2>&1) | Out-String
     $exists = ($LASTEXITCODE -eq 0)
 
     if ($exists) {

@@ -283,7 +283,7 @@ function Send-NotificationEvent {
         $result = [pscustomobject]@{ webhookId = $webhook.id; success = $false; error = $null }
 
         try {
-            $response = Invoke-RestMethod `
+            $null = Invoke-RestMethod `
                 -Uri         $webhook.url `
                 -Method      Post `
                 -Body        $body `

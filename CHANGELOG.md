@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-15 — Lane 0.8 P1: twelve latent bugs fixed, five rule classes ratcheted to zero
+
+### Changes
+
+- **The PSSA correctness micro-batch from the warning-debt plan (ROADMAP Lane 0.8) is done: all 12 findings across the five latent-bug rule classes, one PR, no behavior change.** Each class is a way a script can be wrong while appearing to work, which is why these went first and the naming/style tiers stay parked at baseline.
+- **Two functions declared a `$Event` parameter, silently shadowing PowerShell's automatic eventing variable.** The api-host's repair-history writer now takes `-RepairEvent` and the watchdog ledger takes `-EventName`, with every call site updated — including the two in the module smoke. The third automatic-variable assignment was a `$args` hashtable in the smoke's refusal loop, renamed `$refusalArgs`; the built-in `$args` array it was clobbering is exactly the kind of thing that fails far from the assignment.
+- **The reconcile module's `Write-Log` collided with a built-in cmdlet name and is now `Write-ReconcileLog`** (79 call sites, all internal to `Invoke-Reconciliation.ps1` — nothing outside the file calls it, verified by search before the rename).
+- **`Invoke-Expression` is gone from the task runner's verify step — removed, not wrapped.** `Resolve-VerifyCommand` returned a command *string* that the runner string-evaluated; it now returns the executable and argument list, invoked with the call operator, plus a `Display` string for the log line. No path from repo content to evaluated code remains, and the smoke now asserts the exe+args contract so a future "convenient" string return fails the gate.
+- **One `-ne $null` comparison put `$null` on the right**, where a collection result would filter instead of test; flipped to the `$null -ne` form.
+- **Six assigned-but-never-read variables no longer pretend to be data flow.** Three discarded `Sync-LedgerFromAudit` results (the api-host execution-sync route and two smoke sites), a webhook `Invoke-RestMethod` response where only success/failure matters, a `git rev-parse` capture read only through `$LASTEXITCODE`, and a dead `$condStr` in the roadmap auditor are now explicit `$null =` discards or deleted.
+- **The ratchet locks all of it: the five rules are removed from [`pssa-baseline.json`](scripts/pssa-baseline.json) entirely** (587 → 575), and a rule absent from the baseline gates at zero — a single recurrence of any of these classes now fails the build.
+
+### Verification
+
+- **Lint gate before the baseline rewrite: PASS with all five rules below baseline** (575 findings against 587, exactly the 12 fixed, no rule above baseline anywhere — so the batch introduced no new debt in any category). Baseline then rewritten via `-UpdateBaseline` and committed.
+- **Module smoke exit 0**, including the updated `Resolve-VerifyCommand` assertion (detects `npm test`, and the result carries `Exe`/`Arguments` for call-operator invocation).
+- **API host smoke exit 0** on a non-default port — run because the host script was touched (parameter rename on the repair-history writer and an explicit discard on the execution-sync route).
+
 ## 2026-08-14 — Release 3.1: the guard that asks the remote, because the detector was as stale as the thing it detected
 
 ### Changes

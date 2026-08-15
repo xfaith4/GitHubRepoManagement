@@ -3679,7 +3679,7 @@ function Save-RoadmapRepairHistoryEntry {
         [string]$RoadmapPath,
         [string]$PreviewState,
         [string]$OriginalMaturityLevel,
-        [string]$Event,        # 'preview', 'apply', or 'submit-pr'
+        [string]$RepairEvent,  # 'preview', 'apply', or 'submit-pr'
         [string]$AppliedAt     = '',
         # Release 2.7 Phase A — a live submit-PR records the PR it opened here,
         # in the same append-only stream as preview/apply, so a repair's whole
@@ -3698,7 +3698,7 @@ function Save-RoadmapRepairHistoryEntry {
             roadmapPath          = $RoadmapPath
             previewState         = $PreviewState
             originalMaturityLevel = $OriginalMaturityLevel
-            event                = $Event
+            event                = $RepairEvent
             timestamp            = (Get-Date).ToUniversalTime().ToString('o')
         }
         if (-not [string]::IsNullOrWhiteSpace($AppliedAt)) {
@@ -3819,7 +3819,7 @@ function Build-RoadmapRepairPreview {
         -RoadmapPath          $effectiveRoadmapPath `
         -PreviewState         $preview.previewState `
         -OriginalMaturityLevel $contract.maturityLevel `
-        -Event                'preview'
+        -RepairEvent          'preview'
 
     return $preview
 }
@@ -3895,7 +3895,7 @@ function Apply-RoadmapRepair {
         -RoadmapPath          $effectiveRoadmapPath `
         -PreviewState         'applied' `
         -OriginalMaturityLevel $OriginalMaturityLevel `
-        -Event                'apply' `
+        -RepairEvent          'apply' `
         -AppliedAt            $appliedAt
 
     Write-HostLog ("[TRACE] roadmap.repair.apply done repoName={0} appliedAt={1}" -f $RepoName, $appliedAt)
@@ -11055,7 +11055,7 @@ try {
                             else {
                                 Save-RoadmapRepairHistoryEntry -PreviewId $previewId -RepoName $repoName `
                                     -RoadmapPath $submitRoadmapPath -PreviewState 'submitted' -OriginalMaturityLevel '' `
-                                    -Event 'submit-pr' -PrUrl ([string]$submitResult.prUrl) `
+                                    -RepairEvent 'submit-pr' -PrUrl ([string]$submitResult.prUrl) `
                                     -PrNumber ([string]$submitResult.prNumber) -Branch ([string]$submitResult.branch) `
                                     -RepoSlug ([string]$submitResult.slug)
                                 Write-HostLog ("[TRACE] roadmap.repair.submit-pr correlationId={0} repoName={1} created=true pr={2}" -f $correlationId, $repoName, $submitResult.prUrl)
@@ -11218,7 +11218,7 @@ try {
                             }
                         }
 
-                        $syncedLedger = Sync-LedgerFromAudit -WorkspaceRoot $WorkspaceRoot -DocAuditEntries $docEntries -RoadmapAuditEntries $roadmapAuditEntries
+                        $null = Sync-LedgerFromAudit -WorkspaceRoot $WorkspaceRoot -DocAuditEntries $docEntries -RoadmapAuditEntries $roadmapAuditEntries
                         $queueSummary = Get-ExecutionQueueSummary -WorkspaceRoot $WorkspaceRoot
 
                         Add-MetricCounter -Name 'api_requests_total'

@@ -716,7 +716,7 @@ Write-Step 'Roadmap parser — smoke: complete roadmap'
 $completeResult = Invoke-ParseRoadmapContent -Content "## Done`n- [x] Item one`n- [X] Item two"
 if ($completeResult.roadmapState -ne 'complete')  { throw "Expected state=complete, got $($completeResult.roadmapState)" }
 if ($completeResult.pendingCount -ne 0)            { throw "Expected pendingCount=0, got $($completeResult.pendingCount)" }
-if ($completeResult.nextPendingItem -ne $null)     { throw "Expected nextPendingItem=null for complete roadmap" }
+if ($null -ne $completeResult.nextPendingItem)     { throw "Expected nextPendingItem=null for complete roadmap" }
 Write-Host '  complete roadmap parsed correctly' -ForegroundColor DarkGray
 
 Write-Step 'Roadmap parser — smoke: parse-error (no checkboxes)'
@@ -1192,9 +1192,9 @@ foreach ($refusal in @(
     @{ name = 'non-GitHub remote';  override = @{ Slug = $null };                               category = 'validation' }
     @{ name = 'dirty tree';         override = @{ WorkingTreeDirty = $true };                   category = 'conflict' }
 )) {
-    $args = @{} + $baseArgs
-    foreach ($k in $refusal.override.Keys) { $args[$k] = $refusal.override[$k] }
-    $verdict = Test-RoadmapRepairPrPreconditions @args
+    $refusalArgs = @{} + $baseArgs
+    foreach ($k in $refusal.override.Keys) { $refusalArgs[$k] = $refusal.override[$k] }
+    $verdict = Test-RoadmapRepairPrPreconditions @refusalArgs
     if ($verdict.ok) { throw "submit-PR must refuse '$($refusal.name)' but it passed preconditions" }
     if ($verdict.category -ne $refusal.category) { throw "submit-PR refusal '$($refusal.name)' expected category '$($refusal.category)', got '$($verdict.category)'" }
     if ([string]::IsNullOrWhiteSpace($verdict.reason)) { throw "submit-PR refusal '$($refusal.name)' must carry a named reason, not an empty string" }
@@ -1773,7 +1773,7 @@ Write-Host '  complete task -> state=complete correctly' -ForegroundColor DarkGr
 
 Write-Step 'Execution ledger — smoke: cancel task and verify retry count'
 # Re-sync to get the ready repo back
-$smokedLedger2 = Sync-LedgerFromAudit -WorkspaceRoot $smokeWs -DocAuditEntries $smokeDocEntries -RoadmapAuditEntries $smokeRoadmapEntries
+$null = Sync-LedgerFromAudit -WorkspaceRoot $smokeWs -DocAuditEntries $smokeDocEntries -RoadmapAuditEntries $smokeRoadmapEntries
 $null = Invoke-AssignLane -WorkspaceRoot $smokeWs -RepoName 'smoke-repo-ready'
 $cancelResult = Invoke-CancelTask -WorkspaceRoot $smokeWs -RepoName 'smoke-repo-ready' -Reason 'test-cancel' -MaxRetries 3
 if (-not $cancelResult.success) { throw "Expected cancel to succeed, got error: $($cancelResult.error)" }
@@ -1933,7 +1933,7 @@ $ciDedupDocs = @(
     [pscustomobject]@{ repoName = 'ci-repo-a'; repoPath = '/tmp/ci-a'; dispatchReadiness = 'ready'; nextPendingRoadmapItem = 'Implement feature X' },
     [pscustomobject]@{ repoName = 'ci-repo-b'; repoPath = '/tmp/ci-b'; dispatchReadiness = 'ready'; nextPendingRoadmapItem = 'Implement Feature X' }
 )
-$ciDedupLedger = Sync-LedgerFromAudit -WorkspaceRoot $ciDedupWs -DocAuditEntries $ciDedupDocs
+$null = Sync-LedgerFromAudit -WorkspaceRoot $ciDedupWs -DocAuditEntries $ciDedupDocs
 $assignCiA = Invoke-AssignLane -WorkspaceRoot $ciDedupWs -RepoName 'ci-repo-a' -TaskText 'Implement feature X'
 if (-not $assignCiA.success) { throw "Expected ci-repo-a lane assignment to succeed: $($assignCiA.error)" }
 $assignCiB = Invoke-AssignLane -WorkspaceRoot $ciDedupWs -RepoName 'ci-repo-b' -TaskText 'Implement Feature X'
@@ -3442,8 +3442,8 @@ try {
     Set-WatchdogState -Path $wdState -ConsecutiveFailures 2 -LastAction 'none'
     if ((Get-WatchdogState -Path $wdState) -ne 2) { throw 'Watchdog state did not round-trip (expected 2)' }
 
-    Write-WatchdogLedger -Path $wdLedger -Event 'probe-fail' -Data @{ priorFailures = 1; decision = 'none' }
-    Write-WatchdogLedger -Path $wdLedger -Event 'restart-triggered' -Data @{ reason = 'test' }
+    Write-WatchdogLedger -Path $wdLedger -EventName 'probe-fail' -Data @{ priorFailures = 1; decision = 'none' }
+    Write-WatchdogLedger -Path $wdLedger -EventName 'restart-triggered' -Data @{ reason = 'test' }
     $wdRecords = @(Get-Content -LiteralPath $wdLedger -Encoding UTF8 | ForEach-Object { $_ | ConvertFrom-Json })
     if ($wdRecords.Count -ne 2) { throw "Watchdog ledger expected 2 append-only records, got $($wdRecords.Count)" }
     if ($wdRecords[0].event -ne 'probe-fail' -or $wdRecords[1].event -ne 'restart-triggered') { throw 'Watchdog ledger records out of order or mislabeled' }
@@ -3546,7 +3546,9 @@ Write-Step 'Local Claude Code dispatch — smoke: queue writer + runner logic (R
         # commit-message truncation + best-effort verify detection
         if (((New-TaskCommitMessage -SelectedTask ('x' * 120) -RunId 'r1') -split "`n")[0].Length -gt ('roadmap: '.Length + 68)) { throw 'commit subject not truncated' }
         '{ "scripts": { "test": "vitest" } }' | Set-Content -LiteralPath (Join-Path $dispTmp 'package.json') -Encoding UTF8
-        if ((Resolve-VerifyCommand -RepoPath $dispTmp) -ne 'npm test') { throw 'verify detection (npm test) failed' }
+        $verifyDetected = Resolve-VerifyCommand -RepoPath $dispTmp
+        if ($null -eq $verifyDetected -or $verifyDetected.Display -ne 'npm test') { throw 'verify detection (npm test) failed' }
+        if ($verifyDetected.Exe -ne 'npm' -or @($verifyDetected.Arguments) -join ' ' -ne 'test') { throw 'verify detection must carry exe+args for call-operator invocation (no string evaluation)' }
 
         Write-Host ("  claude dispatch ok: queue round-trip ({0} entries), status transitions, commit-msg truncation, verify detection" -f $read.Count) -ForegroundColor DarkGray
 
