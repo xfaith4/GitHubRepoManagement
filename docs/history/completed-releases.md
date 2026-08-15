@@ -4215,3 +4215,372 @@ to run smoothly first; constraints and the engine decision are in the same doc.
   description.
 
 ---
+
+## Release 3.1 — Closed-Loop Delivery (closed 2026-08-15, archived from ROADMAP.md)
+
+Closed under the external-resource rule: every engineering milestone shipped,
+the manual full-loop proof is operator-verified
+(`evidence/verified/full-loop-proof-2026-08-15.md`), and the remaining live
+proofs (empty-room gate, engine attribution, the scheduled-trigger loop half)
+are re-homed to Release 2.9's authenticated operator session. The
+`.gitattributes` and writer-coverage non-blockers re-homed to Lane 0.8;
+queue idempotency and the override durable record are carried in Release 3.5's
+known issues. Verbatim as it stood:
+
+### Release 3.1 — Closed-Loop Delivery
+
+**Status:** validation — engineering complete; moved out of `active` 2026-08-15
+when Release 3.5 was promoted. The manual full-loop proof is
+operator-verified ([evidence](evidence/verified/full-loop-proof-2026-08-15.md));
+what remains is the scheduled-trigger half, batched with 2.9's operator
+session. Originally promoted 2026-08-11, displacing 3.2. 3 of 8 milestones
+shipped 2026-08-10 and are archived (the work-item trace, the completion-edit
+generator, and the merge-evidence gate). Two more — the empty-room gate and
+engine attribution — are engineering-complete and smoke-tested as of
+2026-08-13, and stay `[ ]` here because their live proof is outstanding, per the
+checkbox rule.
+
+**Widened again 2026-08-14** with the stale-clone guard, deliberately and for
+the second time. The test applied: this release's goal names explicit operator
+gates at **apply**, dispatch, and merge, and the apply gate turned out to have
+no staleness precondition at all. Shipping "the loop closes end to end" while
+its first write path can generate a proposal from a months-old copy would make
+this release's own completion claim false, so it belongs here rather than in a
+later release. The cost is honest — 3.1 now carries three open engineering
+milestones instead of two, and closes later. The release was first widened on
+promotion day by the priority reset
+in section "Current Status": closing the loop is not enough if the operator
+cannot tell that it closed, which engine acted, or what it cost.
+
+**Goal:** close the north-star loop end to end, repeatedly, with explicit
+operator gates at apply, dispatch, and merge — and make each step legible while
+it happens. Today the console can rank work, prepare a prompt and read merge
+readiness, but no single work item has travelled the whole chain, and the
+surfaces that start the chain do not say whether they can finish it.
+
+**Prerequisites:** met for all engineering. Only the operator-session proof
+waits on a human. Every input the widened milestones need is already computed —
+runner presence (`Get-RunnerPresence`), provider identity (`providerId` on the
+AI preview), and the agent-run metric fields. The gap is data computed and then
+not used, or used on only one of two surfaces.
+
+#### Product outcomes
+
+- One roadmap item is carried from "ranked highest value" to "merged, with the
+  managed repo's roadmap updated" without a human stitching the steps.
+- No enabled control leads to a dead end: if a workflow cannot complete, the
+  operator learns that _before_ investing review effort, not after.
+- An operator can always tell a deterministic rule from a model's proposal, and
+  no cost figure in this product is a number a human typed.
+
+#### Engineering milestones
+
+**Three shipped 2026-08-10 and are archived:** the per-work-item trace
+(`GET /api/trace/{id}`, joining all seven stages from any id the chain minted),
+the completion-edit generator behind `POST /api/roadmap/write-back/preview`, and
+the merge-evidence gate that refuses nine shapes which are not completion. Full
+text and evidence:
+[the archive](docs/history/completed-releases.md#closed-2026-08-11-archived-from-roadmapmd).
+
+- [ ] **Nothing may be queued into an empty room.** The route now refuses with
+      409 `runner-absent` **before** any write, naming the unmet precondition and
+      the remedy command, and carrying `strandedCount` so "no runner" reads
+      differently at 0 queued than at 6. `acknowledgeNoRunner` keeps a deliberate
+      queue-then-start-a-runner possible — the capability is explained, not
+      removed. The approve controls in the dispatch wizard and the packaged-item
+      queue disable on absent presence with the precondition rendered above them,
+      and the queue header shows a stranded badge. The six stranded entries were
+      triaged and cancelled, recorded in
+      [`evidence/verified/stranded-dispatch-triage-2026-08-11.md`](evidence/verified/stranded-dispatch-triage-2026-08-11.md).
+      **Coverage completed 2026-08-13.** The first pass gated two surfaces and
+      missed two, including the one this release is named after — the guided
+      wizard's "Approve and create PR task". A tripwire now derives its scope
+      from the call sites: every component invoking `executeRoadmapDispatch`
+      must consult `resolveDispatchGate`, so a fifth surface cannot be added
+      ungated. All three call sites pass.
+      _(state: smoke-tested — module smoke asserts, through the AST and scoped to
+      this route, that the refusal precedes the queue write and reports
+      `strandedCount`; verified non-vacuous against the pre-gate host, and the
+      coverage tripwire verified non-vacuous by failing on the two ungated
+      surfaces before they were fixed. Needs `operator-verified` against the
+      live portal, batched with 2.9's session.)_
+- [ ] **Every surface names its engine.** The guided-improvement preview now
+      carries an `engine` block — `kind: deterministic-rules`, the rule sources,
+      what it applies to, and `handoffEngine` naming what acts _after_ approval —
+      and the modal renders it above the findings, with the prompt section
+      stating that Copilot is the first model to see any of it. `providerId` and
+      `modelId` are null for rule engines and populated for model ones, so a
+      consumer branches on the payload rather than on which screen it is.
+      _(state: smoke-tested — asserted from the payload per the acceptance
+      criterion, plus an AST check that the preview reaches no provider, so the
+      label cannot quietly become false. Remaining: the same treatment for
+      surfaces beyond this wizard and the Operations workspace, which the
+      "enabled means available" audit below should enumerate rather than this
+      milestone guessing at.)_
+- [x] **Token and cost are measured, not declared.** **Shipped 2026-08-14.**
+      `tokenUsage` and `apiSpendUsd` existed on the agent-run record, flowed
+      through `tokens_reported` in `app.db` and out to analytics — and were
+      **never written by production code**. The Anthropic and OpenAI adapters in
+      [`AiDocImprovement.ps1`](backend/modules/ai/AiDocImprovement.ps1) sent
+      `max_tokens` and discarded the `usage` block the API returned; the only
+      real value in the repo was a smoke fixture.
+
+      Both adapters now read usage off the response into one normalized record.
+      Every count is nullable, and `source` separates the three cases that look
+      identical from outside: `provider-usage` (real counts), `absent` (the
+      model answered and reported nothing — a defect), `call-failed` (the call
+      errored), `not-applicable` (the offline heuristic called no model).
+      `tokenUsage`/`apiSpendUsd` on the improvement-history record deliberately
+      reuse the agent-run metric names so the two series join untranslated.
+
+      **Cost is priced only from operator-supplied rates** under
+      `ai.pricing.<modelId>`, and this repo ships none: published prices change,
+      and a stale rate produces a confidently wrong number, which is worse than
+      an honest blank. Unpriced, `costUsd` stays null, `costBasis` says
+      `no-price-configured`, and the UI renders _unmeasured_ — never `$0.00`.
+      _(state: smoke-tested — both adapters driven over a mocked response;
+      a successful model call recording null usage fails the gate, and an
+      AST check derives its scope from **which functions make an HTTP call**,
+      so a third adapter is covered without editing the assertion. The client
+      hop is asserted not to coerce any usage field with `?? 0`.)_
+- [ ] **Staleness is a visible property of every repo, not a hidden one.**
+      **Shipped 2026-08-14 for the free tier.** `isStale`, `localAhead` and
+      `remoteAhead` were hardcoded `$false`/`0`/`0` in both GitHub scan paths and
+      computed nowhere, while the dashboard had shipped a Stale column, a
+      stale-only quick filter, a group-by-stale control and an ahead/behind badge
+      bound to them for several releases. The column read "No" for all 80+
+      repositories — not because they were current, but because nothing looked.
+      The scan already collected both facts and threw the comparison away: the
+      local side records `git log -1 --format=%cI`, the GitHub side records
+      `pushed_at`, and they meet on the same object in
+      `Add-GitHubMetadataToStatusResult`.
+      [`Git.Staleness.ps1`](backend/modules/git/Git.Staleness.ps1) is that
+      comparison, pure and unit-tested, classifying behind / ahead-or-unpushed /
+      current / unknown with the basis named and the magnitude carried. The grid
+      shows the drift and the remote push date beside the local commit date.
+      _(state: smoke-tested — the matrix is asserted directly and a tripwire
+      fails if any scan path reverts to a literal. `localAhead`/`remoteAhead`
+      remain unwritten rather than zeroed: two dates cannot yield a commit count,
+      and `exactCountsAvailable` says so in the payload.)_
+
+      Remaining, and deliberately not free — both need data the scan does not
+      collect today, so they are scoped separately rather than bundled into a
+      comparison that cost nothing:
+
+      - **Exact ahead/behind counts** need a real ref comparison. `git ls-remote`
+        is the cheaper option (one round trip, no object download) against a
+        fetch per repo; at 80+ repos either is a real charge on Release 3.2's
+        300s cold-scan budget and should be measured before it is adopted.
+      - **Last merged PR** needs a per-repo pulls query (`state=closed` filtered
+        to merged); the scan currently fetches only open-PR counts.
+      - **Most recently modified uncommitted file** needs working-tree stat calls
+        per repo; the scan counts `git status --short` lines but never reads
+        their timestamps.
+- [x] **No write path may act on a stale clone.** **Shipped 2026-08-14.** Every
+      write this product made to a managed repo branched from whatever the local
+      working copy happened to be, and **`git fetch` appeared nowhere in
+      `backend/` or `scripts/`**. The submit-PR path
+      ([`Roadmap.PrSubmitter.ps1`](backend/modules/roadmap/Roadmap.PrSubmitter.ps1))
+      evaluated nine refusals — not a git repo, dirty tree, no token,
+      unrecognizable remote, byte-identical no-op, and five more — and staleness
+      was not among them; the task runner
+      ([`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1))
+      branched the same way.
+
+      [`Git.BaseFreshness.ps1`](backend/modules/git/Git.BaseFreshness.ps1) asks
+      the remote directly with `git ls-remote` — one round trip, no object
+      download, no working-tree mutation. Both write paths now refuse with a
+      named `stale-base` category that says how far behind the clone is and what
+      to run, and both accept a deliberate override (`acknowledgeStaleBase` on
+      the route, `-AcknowledgeStaleBase` on the runner) exactly as
+      `acknowledgeNoRunner` works for dispatch. The count is **exact when the
+      objects are already local** and `null` when only a fetch could name it —
+      never a guess, the same rule this release applies to unmeasured cost.
+
+      **A clone that cannot be verified is not treated as stale.** No remote, no
+      network, detached HEAD all read `unknown`, are reported, and are allowed
+      through — the rule `Resolve-RunnerPresence` applies to an unreadable
+      heartbeat, kept consistent so an offline operator is not locked out of
+      their own repositories.
+
+      **The damage is not the obvious one.** `git add -- $RoadmapPath` stages a
+      single file, so unrelated upstream work cannot be reverted, and GitHub's
+      three-way merge turns a genuinely conflicting roadmap edit into a visible
+      `DIRTY` state. What nothing catches is that the **proposal itself was
+      computed from stale content** — an improvement generated against an
+      outdated document, re-adding what upstream already fixed or missing
+      context added since. That merges cleanly and reads as correct in review.
+      A silent wrong artifact on the primary write path costs more than the
+      stranded queue did, because the stranded queue announced itself.
+
+      **Measured 2026-08-14 across the 60 local clones under
+      `F:\Development\20_Staging`:** 49 have upstream tracking branches and
+      **11 report being behind** — 154, 60, 18, 17, 15, 8, 8, 5, 4, 3, 1
+      commits. Every one of those counts is measured against a remote-tracking
+      ref that is itself stale: those same clones last fetched 93, 195, 285, 93,
+      26, 0, 63, 104, 53, 120 and 16 days ago, and one has never fetched. The
+      true figures cannot be known without fetching and can only be larger.
+      The detector the product already has is as stale as the thing it detects:
+      [`Git.StatusDetail.ps1`](backend/modules/git/Git.StatusDetail.ps1) computes
+      `unpulledCommits` from `git log HEAD..@{u}`, which reports **zero** on a
+      clone whose upstream ref predates the divergence — exactly what a
+      PromptPilot clone did while sitting 8 commits behind.
+      _(state: smoke-tested — the defect is **reproduced**, not asserted from a
+      description: the smoke builds a bare origin, clones it, moves the origin
+      three commits, and proves `git log HEAD..@{u}` reports **0** on that clone
+      while `ls-remote` reports behind — then fetches without merging and proves
+      the exact count becomes 3. Coverage derives from the commands that branch
+      or commit in a managed repo, as this entry asked: 4 base-deriving sites
+      across 2 files, all gated, with 7 publish/working-tree sites reported as
+      deliberately out of scope rather than silently skipped.)_
+- [x] **Enabled means available.** **Shipped 2026-08-14.** The audit ran as a
+      gate rather than as a written list, and the enumeration is the deliverable:
+      **82 disabled controls across 22 PC components** — 30 disabled by an
+      operation already in flight (the label and spinner already say why) and
+      **52 by a precondition**, every one of which now names it.
+
+      **The first pass undercounted by more than half, and that is the finding.**
+      A lazy `<button.*?>` regex stops at the `>` inside `onClick={() => …}`,
+      so every control whose first prop is an arrow handler read as ungated: it
+      reported 30 disabled controls and scored `RepoGrid.tsx` as 31 ungated
+      buttons when it holds 6 gated ones. Walking the tag with brace/quote depth
+      instead found 18 unexplained controls where the regex had found 7, in
+      files nobody had reported — pagination, curation state, the two dispatch
+      overrides, the discard-changes control, and a permanently dead
+      `disabled={true}` labelled only "Not Available".
+
+      Lane 0.9's three instances closed here: Insights now offers the
+      assessment run its own text tells the operator to perform (its analytics
+      panel had a button named just `Retry` that re-fetched the trend, not the
+      assessment the sentence beside it named); the bare `Failed to fetch`
+      screen is replaced by a classified state that distinguishes an unreachable
+      backend from an unconfigured portal and offers both a retry and Settings;
+      the dispatch wizard closed under M1.
+      _(state: smoke-tested — the classifier derives its scope from the markup,
+      so a control added later is audited without anyone remembering to add it.
+      It fails closed if it finds fewer than 20 controls, so a broken scanner
+      cannot pass vacuously, and it reports every violation at once rather than
+      the first.)_
+- [ ] Record a full-loop proof for one real item in `evidence/`, naming each
+      stage's artifact, **manually and once on a schedule**. _(state: the
+      **manual half is operator-verified 2026-08-15** — PR #142, all twelve
+      steps, recorded in
+      [`evidence/verified/full-loop-proof-2026-08-15.md`](evidence/verified/full-loop-proof-2026-08-15.md).
+      What remains is the scheduled trigger: a scheduled packaging run whose
+      packet an operator approves through to the same recorded outcome.)_ The
+      scheduled path deliberately stops at `pending-approval` (Release 2.7
+      Phase C), so this
+
+#### Acceptance criteria
+
+- A single `runId` resolves to every stage artifact through one route.
+- The approve control cannot be clicked when no runner can claim the result,
+  and a smoke assertion proves the **disabled** state, not the happy path.
+- Every surface displaying a generated document or finding names its engine,
+  asserted from the payload rather than by inspection; a model call that
+  records `null` usage fails a gate.
+- No write path branches from a clone it has not verified is current, and the
+  refusal names how far behind it is. A smoke assertion proves the **refusal**
+  against a deliberately-stale fixture clone, not the current-clone happy path.
+- The loop proof exists in `evidence/` with the PR, the Actions result, and
+  the applied roadmap diff, for both the manual and the scheduled trigger.
+
+#### Out of scope
+
+- Automatic merge — merge stays an explicit operator action after readiness
+  passes.
+- Removing the human approval gate on scheduled work.
+- Multi-repo parallel dispatch; one item end to end first.
+
+**Validation plan:** `npm test` (`scripts/Invoke-TestSuite.ps1`, the same
+17-gate list `ci-smoke.yml` invokes), exit 0. Each milestone lands its own gate:
+a disabled-state assertion, an engine-attribution assertion over the payload, a
+usage-not-null assertion on a stubbed provider call, and a recorded evidence
+entry per trigger. The dispatch success-path assertion added 2026-08-11
+([PR #119](https://github.com/xfaith4/GitHubRepoManagement/pull/119)) is the
+pattern: a contract proven only by its refusals is not proven.
+
+**Risks and blockers:**
+
+- **Risk — disabling controls hides capability instead of explaining it.** A
+  greyed button with no reason is worse than a failing one: the operator cannot
+  tell broken from not-yet-applicable. Every disabled state carries its unmet
+  precondition in text.
+- **Risk — a measured token figure gets treated as a budget before it is
+  trustworthy.** Report measured usage separately from the declared work units
+  the quota guard enforces; do not wire the new figure into refusals here.
+- **Risk — the end-to-end proof needs the same scarce operator session** 2.9
+  waits on. Batch them or this milestone stalls alone.
+
+**Dependencies:** `Get-RunnerPresence`
+([`Automation.RunnerPresence.ps1`](backend/modules/automation/Automation.RunnerPresence.ps1)),
+the AI provider adapters
+([`AiDocImprovement.ps1`](backend/modules/ai/AiDocImprovement.ps1)), the
+agent-run ledger ([`AgentRuns.ps1`](backend/modules/agent-runs/AgentRuns.ps1)),
+and the work-item trace shipped earlier in this release.
+
+**Known issues:**
+
+- [ ] **[non-blocker]** **No `.gitattributes`, with `core.autocrlf=true`.**
+      Whether a tracked file holds CRLF or LF in the working tree depends on
+      which git operation last materialised it, so any byte-level comparison
+      between two tracked copies is non-deterministic locally while passing in
+      CI's fresh checkout. This surfaced 2026-08-13 when the standards/spec sync
+      gate reported drift between two files with identical content (245 CRLF vs
+      245 LF, same 16,280 characters). That gate now normalises before
+      comparing, but it was the only one audited — the general fix is a
+      `.gitattributes` declaring `text eol=lf`, and the risk until then is a
+      gate that reports drift that is not there, or hides drift that is.
+      _(state: planned — recorded 2026-08-13)_
+- [ ] **[non-blocker]** The same item can still be queued twice while a runner
+      _is_ present. The triage found the six stranded entries were **three items,
+      each queued twice** — two pairs seconds apart (double-submit) and one three
+      minutes apart (a retry after nothing appeared to happen). The presence gate
+      removes the cause for the absent-runner case only; nothing makes dispatch
+      idempotent. _(state: planned — recorded 2026-08-13 from
+      [the triage](evidence/verified/stranded-dispatch-triage-2026-08-11.md);
+      pairs with the "enabled means available" milestone, since both are about a
+      control that gives no feedback that it worked.)_
+- [ ] The scheduled and operator paths reach dispatch through different writers
+      (`Automation.RoadmapPackaging.ps1` and the dispatch route). The
+      queue-contract tripwire keeps their _shape_ identical; nothing yet keeps
+      their _behaviour_ identical, and only one has an end-to-end test.
+      **Narrowed 2026-08-13:** the divergence that mattered is closed. There
+      were **three** roads to the queue, not two, and only one was gated:
+      `POST /api/roadmap/dispatch/execute` wrote it directly and was gated;
+      `POST /api/automation/packages/approve` reached it through
+      `Submit-PackagedItemToRunner` and was not; `POST /api/roadmap-agent/start`
+      reached it through `Start-RoadmapCopilotTask.ps1` →
+      `Add-RoadmapTaskToQueue.ps1` and was not.
+      The third is the instructive one: it never names the queue file, so a
+      tripwire scoped to that filename could not see it — the first version of
+      this check reported full coverage while a road stood open. The check now
+      derives the writer scripts and then the routes that invoke them, so an
+      indirect road counts as a road. `POST /api/roadmap-agent/preview` is
+      exempt because it passes `-PreviewOnly` and returns before the write, and
+      that ordering is itself asserted rather than trusted.
+
+      The frontend check was rebuilt for the same reason, having failed the same
+      way twice: scoped to `executeRoadmapDispatch` it passed while two surfaces
+      sat ungated, and after those were fixed it still passed while
+      `RoadmapViewerModal` queued through `startRoadmapTask` — a different client
+      function, to a different route, to the same queue. It now derives its scope
+      from the backend in two hops: routes that refuse on presence → the
+      `apiClient` functions posting to them → every component calling one. Five
+      surfaces, all gated. A container that forwards presence to the child
+      rendering the control counts as gated; requiring a redundant
+      `resolveDispatchGate` in `Dashboard` would add a call nothing reads.
+
+      What remains of this issue is the original end-to-end coverage asymmetry,
+      not a behavioural difference.
+- [ ] **[non-blocker]** **A deliberate override leaves no durable record.**
+      `acknowledgeNoRunner` lets an operator queue into an empty room on
+      purpose, and `queuedWithoutRunner` reports it — but only in the HTTP
+      response. Neither the queue entry nor the run summary records it, so the
+      next person triaging a stranded pile cannot tell a deliberate override
+      from a gate that failed. That is precisely the ambiguity the 2026-08-11
+      triage had to reconstruct from timestamps. The queue entry shape is
+      locked by the queue-contract tripwire, so the run summary is the right
+      home for it. _(state: planned — recorded 2026-08-13)_
+
+---
