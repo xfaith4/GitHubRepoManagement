@@ -645,13 +645,24 @@ of the dead `staleThreshold` control. Full text and evidence:
       **Residues:** the three OperationsWorkspaceView spinners and the
       Insights refresh indicator still run their ad-hoc booleans.)_
 - [ ] **Put runner health above the fold, and make the stranded count count what
-      renders.** 3.1 shipped the presence gate, the disabled approve controls and the
-      stranded badge; delivery is what is missing. Add a runner indicator beside
-      `Backend: Online`, make `6 active` name what is active, move the stalled-runner
-      banner above the fold with a copy affordance for its remedy command, group
-      queue entries by `(repo, task_id)` behind an "N earlier attempts" expander, and
-      escalate any task unclaimed > 24h. _(state: planned — display-side only; queue
-      idempotency stays the open 3.1 non-blocker)_
+      renders.** **Core shipped 2026-08-15.** The header now carries a
+      severity-colored runner pill on every tab
+      ([`RunnerHealthIndicator`](frontend/components/RunnerHealthIndicator.tsx))
+      — one click from the remedy command with a copy button; `6 active`
+      became `6 agent runs` with the runs named in its tooltip; the
+      **queue-age alarm** escalates the pill when the oldest queued task has
+      waited past 24h **even when the runner is present** — a present runner
+      that claims nothing is the same operator problem as an absent one
+      (`oldestQueuedAt` now travels on the presence payload). And a retry loop
+      renders as one piece of work: packaged items group by
+      `(repo, itemText)` with the newest attempt as the face and an
+      "N earlier attempts" expander — the review's 13-entry pile becomes one
+      row that agrees with its badge.
+      _(state: smoke-tested — the alarm's threshold, present-runner
+      escalation, and unparseable-timestamp quiet proven in unit tests; the
+      grouping proven including the actionable-status-leads case and the
+      no-identity-no-merge rule. Display-side only; queue idempotency stays
+      the open known issue.)_
 - [ ] **One status vocabulary, two refresh verbs, and a surface that states its
       consequence.** Map the grid chips, Operations lifecycle states and maturity
       levels into one documented model — a repo currently reads `Ready` on one tab and

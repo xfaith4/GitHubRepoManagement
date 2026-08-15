@@ -102,3 +102,45 @@ describe('resolveDispatchGate', () => {
     expect(resolveDispatchGate(null).canQueue).toBe(true);
   });
 });
+
+// Release 3.5 milestone 6 — the queue-age alarm. A task unclaimed past a day
+// escalates the header regardless of presence: a present runner that claims
+// nothing is the same operator problem as an absent one.
+describe('queue-age alarm', () => {
+  const now = Date.parse('2026-08-15T12:00:00Z');
+
+  it('escalates a PRESENT runner whose oldest queued task has waited past a day', () => {
+    const view = resolveRunnerPresence(
+      { state: 'present', present: true, oldestQueuedAt: '2026-08-13T10:00:00Z' },
+      now,
+    );
+    expect(view.severity).toBe('warning');
+    expect(view.label).toBe('Queue stalled');
+    expect(view.queueAgeAlarmHours).toBe(50);
+    expect(view.needsAttention).toBe(true);
+  });
+
+  it('stays quiet under the 24h threshold', () => {
+    const view = resolveRunnerPresence(
+      { state: 'present', present: true, oldestQueuedAt: '2026-08-15T02:00:00Z' },
+      now,
+    );
+    expect(view.severity).toBe('ok');
+    expect(view.queueAgeAlarmHours).toBeNull();
+  });
+
+  it('carries the alarm on an absent runner too', () => {
+    const view = resolveRunnerPresence(
+      { state: 'absent', strandedCount: 0, oldestQueuedAt: '2026-08-13T10:00:00Z' },
+      now,
+    );
+    expect(view.severity).toBe('error');
+    expect(view.queueAgeAlarmHours).toBe(50);
+    expect(view.needsAttention).toBe(true);
+  });
+
+  it('an unparseable or absent timestamp never alarms', () => {
+    expect(resolveRunnerPresence({ state: 'present', present: true, oldestQueuedAt: 'garbage' }, now).queueAgeAlarmHours).toBeNull();
+    expect(resolveRunnerPresence({ state: 'present', present: true }, now).queueAgeAlarmHours).toBeNull();
+  });
+});
