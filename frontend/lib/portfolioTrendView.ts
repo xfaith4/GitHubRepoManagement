@@ -234,7 +234,7 @@ export function buildTrendSummaryCards(trend: PortfolioTrendResult | null | unde
   return [
     { label: 'Avg Maturity', value: formatPercentTile(s.averageMaturityScore), accent: 'text-emerald-200', hint: coverageHint(s.maturityAssessedCount, s.totalRepos, s.averageMaturityScore) },
     { label: 'Docs Health', value: formatPercentTile(s.averageDocumentationHealthScore), accent: 'text-sky-200', hint: coverageHint(s.docsHealthAssessedCount, s.totalRepos, s.averageDocumentationHealthScore) },
-    { label: 'Ready Now', value: s.readyForWorkCount.toString(), accent: 'text-blue-200' },
+    { label: 'Work-ready (L3+)', value: s.readyForWorkCount.toString(), accent: 'text-blue-200', hint: 'maturity readiness' },
     { label: 'Improved This Week', value: s.improvedThisWeek.toString(), accent: 'text-cyan-200' },
     { label: 'Visible Window', value: `${trend.availableDays}d`, accent: 'text-amber-200' },
   ];

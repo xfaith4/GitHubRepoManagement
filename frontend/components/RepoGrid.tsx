@@ -575,7 +575,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
 
   const readinessFilterOptions: { value: DispatchReadiness | 'all'; label: string }[] = [
     { value: 'all', label: 'All' },
-    { value: 'ready', label: 'Ready' },
+    { value: 'ready', label: 'Dispatch-ready' },
     { value: 'needs-doc-standardization', label: 'Needs Docs' },
     { value: 'missing-roadmap', label: 'No Roadmap' },
     { value: 'roadmap-complete', label: 'Roadmap Complete' },

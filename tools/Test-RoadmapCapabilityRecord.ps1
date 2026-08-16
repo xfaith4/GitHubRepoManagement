@@ -167,28 +167,46 @@ if ($Range -eq 'auto') { $Range = Resolve-AutoRange }
 $violations = [System.Collections.Generic.List[object]]::new()
 $examined = 0
 
+# THE UNIT IS THE RANGE, NOT THE COMMIT -- corrected 2026-08-16 after the
+# gate's first false positive (PR #152). This repo squash-merges, so what
+# lands on main is the range's combined diff, and the stated rule is
+# "milestone state moves in the same PR as the capability". A branch whose
+# first commit ships code and whose second moves the record is compliant --
+# and #134 remains caught, because its range contained no advance at all.
+$claimingCommits = [System.Collections.Generic.List[object]]::new()
+$rangeCapabilityFiles = [System.Collections.Generic.List[string]]::new()
+$rangeTouchedRoadmap = $false
+$rangeAdvanced = $false
+
 foreach ($sha in Get-CommitsInRange -Range $Range) {
     $subject = ((& git -C $WorkspaceRoot log -1 --format='%s' $sha) | Out-String).Trim()
-    if ($subject -notmatch $script:ReleaseClaimPattern) { continue }
-
-    $examined++
     $files = @(((& git -C $WorkspaceRoot show --name-only --format='' $sha) | Out-String) -split "`n" |
         ForEach-Object { $_.Trim() } | Where-Object { $_ })
 
+    if (@($files | Where-Object { ($_ -replace '\\', '/') -eq 'ROADMAP.md' }).Count -gt 0) { $rangeTouchedRoadmap = $true }
+    if (Test-RoadmapAdvanced -Sha $sha) { $rangeAdvanced = $true }
+
+    if ($subject -notmatch $script:ReleaseClaimPattern) { continue }
+    $examined++
     $capabilityFiles = @($files | Where-Object { Test-IsCapabilityPath -Path $_ })
     if (@($capabilityFiles).Count -eq 0) { continue }
 
-    $touchedRoadmap = @($files | Where-Object { ($_ -replace '\\', '/') -eq 'ROADMAP.md' }).Count -gt 0
-    if ($touchedRoadmap -and (Test-RoadmapAdvanced -Sha $sha)) { continue }
+    $claimingCommits.Add([pscustomobject]@{
+        Sha     = $sha.Substring(0, [Math]::Min(8, $sha.Length))
+        Subject = $subject
+    }) | Out-Null
+    foreach ($f in $capabilityFiles) { $rangeCapabilityFiles.Add($f) | Out-Null }
+}
 
+if ($claimingCommits.Count -gt 0 -and -not $rangeAdvanced) {
     $violations.Add([pscustomobject]@{
-        Sha             = $sha.Substring(0, [Math]::Min(8, $sha.Length))
-        Subject         = $subject
-        CapabilityFiles = @($capabilityFiles)
-        Reason          = if ($touchedRoadmap) {
-            'ROADMAP.md changed, but no milestone advanced -- no box checked, no state past `planned`, and nothing archived as complete.'
+        Sha             = $claimingCommits[0].Sha
+        Subject         = $claimingCommits[0].Subject
+        CapabilityFiles = @($rangeCapabilityFiles | Sort-Object -Unique)
+        Reason          = if ($rangeTouchedRoadmap) {
+            'ROADMAP.md changed somewhere in this range, but no milestone advanced -- no box checked, no state past `planned`, and nothing archived as complete.'
         } else {
-            'ROADMAP.md was not touched at all.'
+            'ROADMAP.md was not touched anywhere in this range.'
         }
     }) | Out-Null
 }
