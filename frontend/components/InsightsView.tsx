@@ -9,6 +9,7 @@ import {
 import SummaryCard from './SummaryCard';
 import ProvenanceNotice from './ProvenanceNotice';
 import PortfolioMissionSection, { type PortfolioMission } from './PortfolioMissionSection';
+import type { PortfolioSnapshot } from '../types';
 import ChangeHistoryPanel from './ChangeHistoryPanel';
 import { SpinnerIcon, IssuesIcon, ProjectsIcon, BranchIcon, HealthIcon } from './icons';
 import {
@@ -60,6 +61,8 @@ interface InsightsViewProps {
   extendedSummary: InsightsExtendedSummary;
 
   executionMetrics: ExecutionMetrics | null;
+  /** Release 3.5 milestone 1 — the shared snapshot; views read, never compute. */
+  portfolioSnapshot?: PortfolioSnapshot | null;
   executionMetricsLoading: boolean;
   executionMetricsRefreshing: boolean;
   executionMetricsError: string | null;
@@ -96,6 +99,7 @@ const InsightsView: React.FC<InsightsViewProps> = ({
   isLocalSource,
   extendedSummary,
   executionMetrics,
+  portfolioSnapshot = null,
   executionMetricsLoading,
   executionMetricsRefreshing,
   executionMetricsError,
@@ -183,8 +187,15 @@ const InsightsView: React.FC<InsightsViewProps> = ({
                 <div className="text-xs uppercase tracking-wide text-indigo-200/80">Running Now</div>
                 <div className="mt-1 text-2xl font-semibold text-indigo-200">{metrics.stateCounts.running}</div>
               </div>
-              <div className="rounded-lg border border-yellow-700/30 bg-yellow-900/10 px-3 py-3">
-                <div className="text-xs uppercase tracking-wide text-yellow-200/80">Ready Queue</div>
+              <div
+                className="rounded-lg border border-yellow-700/30 bg-yellow-900/10 px-3 py-3"
+                title={portfolioSnapshot?.metrics?.executionReadyCount?.definition ?? 'Execution-lane entries in the ready state: work assigned and claimable right now.'}
+              >
+                {/* Release 3.5 milestone 7 vocabulary — this is EXECUTION-lane
+                    readiness, one of three distinct "ready" measurements. The
+                    old label "Ready Queue" collided with dispatch and maturity
+                    readiness across tabs (finding 1.3's 21/0/0). */}
+                <div className="text-xs uppercase tracking-wide text-yellow-200/80">Claimable Lanes</div>
                 <div className="mt-1 text-2xl font-semibold text-yellow-200">{metrics.stateCounts.ready}</div>
               </div>
               <div className="rounded-lg border border-red-700/30 bg-red-900/10 px-3 py-3">
@@ -242,6 +253,7 @@ const InsightsView: React.FC<InsightsViewProps> = ({
           <div className="grid grid-cols-1 xl:grid-cols-[1.5fr,1fr] gap-4">
             <PortfolioMissionSection
               mission={portfolioMission}
+              scanTotalMetric={portfolioSnapshot?.metrics?.repoCount ?? null}
               loading={portfolioAssessmentLoading}
               error={portfolioAssessmentError}
               onRetry={onRetryAssessment}

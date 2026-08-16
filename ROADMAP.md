@@ -580,11 +580,15 @@ review's own conclusions corrected.
       deliberately **three** metrics (execution / dispatch / maturity) because
       finding 1.3's `21 / 0 / 0` was three semantics wearing one label, and
       forcing them equal would be a second lie.
-      _(state: smoke-tested — 7 constructor refusals, the all-sources-absent
-      snapshot proven to degrade by name with zero guessed values, denominators
-      cohering over the in-scope set. **Residues:** the views still compute
-      their own numbers — consumer wiring plus the markup-derived tripwire are
-      the open half.)_
+      _(state: ui-connected 2026-08-16 — the Dashboard fetches the snapshot
+      with each repo-list refresh (one "as of" instant), the mission panel's
+      `Total` became `Assessed (of N scanned)` reading the snapshot's
+      denominator, Insights' execution tile carries the snapshot definition,
+      and the header names its dimension (`N scanned · M in-scope`).
+      **Residues:** Operations/Doc-Readiness counts and the KPI row still
+      derive client-side from the same scan payload — consistent by
+      construction but not yet reading the snapshot object — and the
+      markup-derived tripwire is still open.)_
 - [ ] **Make cross-view disagreement fail the build.** Add an invariant suite over
       live API responses: one canonical repo denominator behind every view;
       each endpoint's readiness figure equal to ITS snapshot metric (three named
@@ -593,11 +597,14 @@ review's own conclusions corrected.
       assertion **with** its fix and prove it non-vacuous against the pre-fix
       host — `main` requires `ci-smoke` green, so a deliberately-red suite is
       not available as a definition of done.
-      _(state: seeded 2026-08-15 — the store-level day-invariant shipped with
-      milestone 4, and the **generic metric walk now runs against the live
-      snapshot route** in the contract tests, auditing every metric without
-      naming one. The cross-endpoint equality assertions land as each view
-      moves onto the snapshot.)_
+      _(state: ui-connected 2026-08-16 — the first **cross-endpoint equality
+      invariants run live** in the contract tests: execution readiness must
+      equal the execution-metrics endpoint (same source, same number) or
+      degrade by name, and the scan denominator must carry a real basis
+      (`inScope ≤ scanned`, denominator matching) or name `status-scan` in
+      `degraded[]` — "skipped" and "passed" cannot look alike. Remaining:
+      dispatch/maturity equalities as those views wire on, and the timezone
+      single-basis walk.)_
 - [ ] **Exclude what is not the portfolio, visibly.** **Core shipped
       2026-08-15.** The live claim reproduced first — and it is cleaner than
       the review guessed: `Genesys.Core_AuditLogsApp` is a genuine **second

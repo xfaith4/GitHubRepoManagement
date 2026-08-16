@@ -36,6 +36,8 @@ import ErrorBoundary from './ErrorBoundary';
 import PortfolioSummarySection from './PortfolioSummarySection';
 import { type ViewTabBadges } from '../lib/viewTabs';
 import { useAsyncPanel } from '../lib/asyncPanel';
+import { getPortfolioSnapshot } from '../services/apiClient';
+import type { PortfolioSnapshot } from '../types';
 import { isRepoNeedsAttention } from '../lib/needsAttention';
 import { classifyFetchFailure } from '../lib/fetchFailure';
 import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getAutomationStatus, getPackagedItems, approvePackagedItem, rejectPackagedItem, getRoadmapDependencies, getPortfolioAssessment, refreshAllPortfolioAssessment, setOperationsRepoCuration, getPortfolioTrend, getOperationsRepos, getRunnerPresence } from '../services/apiClient';
@@ -143,6 +145,16 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   // Release 3.1 — whichever id the operator clicked Trace on. Any id the chain
   // minted resolves to the same work item, so this holds it verbatim.
   const [traceModalId, setTraceModalId] = useState<string | null>(null);
+  // Release 3.5 milestone 1 -- the one snapshot every view reads. Fetched
+  // whenever the repo list lands, so the header, mission and insights figures
+  // share one "as of" instant with the grid they sit above.
+  const [portfolioSnapshot, setPortfolioSnapshot] = useState<PortfolioSnapshot | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getPortfolioSnapshot().then(snap => { if (!cancelled) setPortfolioSnapshot(snap); });
+    return () => { cancelled = true; };
+  }, [repos]);
+
   // Release 3.5 milestone 5 -- the dependency panel runs on the shared async
   // state model. Its old wiring swallowed fetch failures into the empty state
   // (a detection failure posing as a clean bill of health) and dropped the
@@ -1252,7 +1264,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   const scanMetaLabel = dataSource?.source === 'local' && typeof dataSource.repoCount === 'number'
     // At zero, "0 repos" alone reads as a broken tool when index-backed panels
     // below still show figures; name it as a property of *this* scan.
-    ? `${dataSource.repoCount === 0 ? 'No repos in this scan' : `${dataSource.repoCount} repos`}${typeof dataSource.scanDurationMs === 'number' ? ` · ${(dataSource.scanDurationMs / 1000).toFixed(1)}s scan` : ''}`
+    ? `${dataSource.repoCount === 0 ? 'No repos in this scan' : `${dataSource.repoCount} scanned${scopeCounts ? ` · ${scopeCounts.inScope} in-scope` : ''}`}${typeof dataSource.scanDurationMs === 'number' ? ` · ${(dataSource.scanDurationMs / 1000).toFixed(1)}s scan` : ''}`
     : dataSource?.source === 'github' && insightsMeta
       ? `Showing ${insightsMeta.fetchedRepos} of ${insightsMeta.totalRepos} GitHub repositories`
       : null;
@@ -1441,6 +1453,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                   refreshExecutionMetrics({ background: executionMetrics !== null }).catch(() => {/* surfaced in-card */});
                 }}
                 portfolioMission={portfolioMission}
+                portfolioSnapshot={portfolioSnapshot}
                 portfolioAssessment={portfolioAssessment}
                 portfolioAssessmentLoading={portfolioAssessmentLoading}
                 portfolioAssessmentError={portfolioAssessmentError}
