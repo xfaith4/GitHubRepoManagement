@@ -418,7 +418,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
         <div className="flex flex-wrap gap-3 mb-4">
           <div className="px-3 py-2 bg-green-900/20 border border-green-700/40 rounded-lg text-sm">
             <span className="text-green-300 font-semibold">{readyCount}</span>
-            <span className="text-green-400/80 ml-1.5">ready for dispatch</span>
+            <span className="text-green-400/80 ml-1.5" title="Dispatch readiness: audited repos whose docs can receive agent work — one of three distinct readiness measures (see status vocabulary).">dispatch-ready</span>
           </div>
           <div className="px-3 py-2 bg-yellow-900/20 border border-yellow-700/40 rounded-lg text-sm">
             <span className="text-yellow-300 font-semibold">{needsDocsCount}</span>

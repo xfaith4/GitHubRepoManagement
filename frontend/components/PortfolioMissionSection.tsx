@@ -146,7 +146,7 @@ const PortfolioMissionSection: React.FC<PortfolioMissionSectionProps> = ({
             { label: 'Missing ROADMAP', value: mission.missingRoadmap, accent: 'text-amber-300' },
             { label: 'Missing README', value: mission.missingReadme, accent: 'text-amber-300' },
             { label: 'Weak ROADMAP', value: mission.weakRoadmap, accent: 'text-orange-300' },
-            { label: 'Ready', value: mission.ready, accent: 'text-emerald-300' },
+            { label: 'Work-ready (L3+)', value: mission.ready, accent: 'text-emerald-300' },
             { label: 'Running', value: mission.running, accent: 'text-blue-300' },
             { label: 'Blocked', value: mission.blocked, accent: 'text-red-300' },
             { label: 'Completed', value: mission.completed, accent: 'text-violet-300' },

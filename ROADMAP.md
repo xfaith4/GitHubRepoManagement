@@ -649,8 +649,12 @@ of the dead `staleThreshold` control. Full text and evidence:
       _(state: smoke-tested — transitions unit-tested including the
       fake-timer timeout; the 3.1 control audit caught and fixed the new
       Refresh button's unexplained disabled state in the same change.
-      **Residues:** the three OperationsWorkspaceView spinners and the
-      Insights refresh indicator still run their ad-hoc booleans.)_
+      **Closed 2026-08-16:** the three OperationsWorkspaceView fetches and
+      the Insights metrics refresh now carry the shared 10s deadline — every
+      spinner the review named resolves to a named error or its data. What
+      remains of the full state-machine adoption is stale-keeps-last-good on
+      the Operations panels, worth doing with their eventual refactor rather
+      than inside the 119KB component.)_
 - [ ] **Put runner health above the fold, and make the stranded count count what
       renders.** **Core shipped 2026-08-15.** The header now carries a
       severity-colored runner pill on every tab

@@ -35,7 +35,7 @@ import DashboardViewTabs from './DashboardViewTabs';
 import ErrorBoundary from './ErrorBoundary';
 import PortfolioSummarySection from './PortfolioSummarySection';
 import { type ViewTabBadges } from '../lib/viewTabs';
-import { useAsyncPanel } from '../lib/asyncPanel';
+import { useAsyncPanel, withPanelTimeout } from '../lib/asyncPanel';
 import { getPortfolioSnapshot } from '../services/apiClient';
 import type { PortfolioSnapshot } from '../types';
 import { isRepoNeedsAttention } from '../lib/needsAttention';
@@ -275,7 +275,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     }
 
     try {
-      const result = await getExecutionMetrics();
+      // Release 3.5 milestone 5 — the Insights refresh indicator's fetch gets
+      // the shared 10s deadline.
+      const result = await withPanelTimeout(getExecutionMetrics(), '/api/execution/metrics');
       setExecutionMetrics(result);
       setExecutionMetricsError(null);
       setExecutionMetricsUpdatedAt(new Date().toISOString());

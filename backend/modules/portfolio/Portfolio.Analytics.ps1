@@ -306,7 +306,7 @@ function Get-PortfolioTrendPayload {
     }) | Out-Null
     $series.Add([pscustomobject]@{
         key    = 'readyRepos'
-        label  = 'Ready Repos'
+        label  = 'Work-ready (L3+)'
         color  = 'sky'
         points = @(_NewPortfolioTrendPoint -Date $today -Value $summaryPayload.readyForWorkCount)
     }) | Out-Null
@@ -399,7 +399,7 @@ function Get-PortfolioTrendPayload {
             }) | Out-Null
             $series.Add([pscustomobject]@{
                 key    = 'readyRepos'
-                label  = 'Ready Repos'
+                label  = 'Work-ready (L3+)'
                 color  = 'sky'
                 points = @($historyRows | ForEach-Object {
                     _NewPortfolioTrendPoint -Date ([string]$_.captured_day) -Value ([double]$_.ready_repo_count)

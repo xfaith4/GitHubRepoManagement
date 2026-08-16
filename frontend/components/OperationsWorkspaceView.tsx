@@ -24,6 +24,7 @@ import {
 } from '../types';
 import { applyAiDocImprovement, evaluateMergeReadiness, executeMergeReadinessMerge, executeRoadmapDispatch, getAgentRuns, getAiDocImprovementHistory, getAiDocTemplates, getMergeReadiness, getOperationsPromptHistory, getOperationsRepoDetail, getReadmeContent, getRoadmapContent, getRunnerPresence, previewAiDocImprovement, refineOperationsPrompt, refreshAgentRun } from '../services/apiClient';
 import { resolveDispatchGate, type RunnerPresencePayload } from '../lib/runnerPresence';
+import { withPanelTimeout } from '../lib/asyncPanel';
 import { describeUsage } from '../lib/aiUsage';
 import { BranchIcon, DatabaseIcon, HealthIcon, PullRequestIcon, RefreshIcon, RoadmapIcon, SpinnerIcon } from './icons';
 
@@ -389,10 +390,12 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
     setDetailLoading(true);
     setDetailError(null);
 
+    // Release 3.5 milestone 5 — a hung fetch becomes a named error at 10s
+    // instead of 'Loading repository documents…' forever.
     Promise.allSettled([
-      getOperationsRepoDetail(selectedEntry.repoId),
-      selectedEntry.hasReadme ? getReadmeContent(selectedEntry.repoName) : Promise.resolve(null),
-      selectedEntry.hasRoadmap ? getRoadmapContent(selectedEntry.repoName) : Promise.resolve(null),
+      withPanelTimeout(getOperationsRepoDetail(selectedEntry.repoId), '/api/operations/repos/{id}'),
+      selectedEntry.hasReadme ? withPanelTimeout(getReadmeContent(selectedEntry.repoName), '/api/readme/content') : Promise.resolve(null),
+      selectedEntry.hasRoadmap ? withPanelTimeout(getRoadmapContent(selectedEntry.repoName), '/api/roadmap/content') : Promise.resolve(null),
     ])
       .then(([detailResult, readmeResult, roadmapResult]) => {
         if (cancelled) return;
@@ -488,7 +491,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
 
     let cancelled = false;
     setAgentRunsLoading(true);
-    getAgentRuns({ repoName, limit: 10 })
+    withPanelTimeout(getAgentRuns({ repoName, limit: 10 }), '/api/agent-runs')
       .then(result => {
         if (!cancelled) setAgentRuns(result.items);
       })
