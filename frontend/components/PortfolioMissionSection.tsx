@@ -65,8 +65,17 @@ export interface PortfolioMission {
   failingActions: number;
 }
 
+import type { PortfolioMetric } from '../types';
+
 interface PortfolioMissionSectionProps {
   mission: PortfolioMission | null;
+  /**
+   * Release 3.5 milestone 1 — the snapshot's scanned-repo count, so the
+   * "Assessed" tile can state its coverage against the real denominator
+   * instead of presenting the assessment subset as the portfolio (the
+   * review's "Total 27" on a 76-repo workspace).
+   */
+  scanTotalMetric?: PortfolioMetric | null;
   loading: boolean;
   error?: string | null;
   onRetry: () => void;
@@ -83,6 +92,7 @@ interface PortfolioMissionSectionProps {
  */
 const PortfolioMissionSection: React.FC<PortfolioMissionSectionProps> = ({
   mission,
+  scanTotalMetric = null,
   loading,
   error,
   onRetry,
@@ -127,7 +137,9 @@ const PortfolioMissionSection: React.FC<PortfolioMissionSectionProps> = ({
 
         <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3 mt-4">
           {[
-            { label: 'Total', value: mission.totalRepos, accent: 'text-white' },
+            // Release 3.5 — this is the ASSESSED set, and it says so. The
+            // scanned total comes from the snapshot when available.
+            { label: scanTotalMetric?.value != null ? `Assessed (of ${scanTotalMetric.value} scanned)` : 'Assessed', value: mission.totalRepos, accent: 'text-white' },
             { label: 'Local Only', value: mission.localOnly, accent: 'text-slate-200' },
             { label: 'Linked', value: mission.linked, accent: 'text-emerald-300' },
             { label: 'GitHub Only', value: mission.githubOnly, accent: 'text-indigo-300' },

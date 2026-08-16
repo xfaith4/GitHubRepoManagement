@@ -381,6 +381,44 @@ Describe 'Portfolio snapshot route - Release 3.5 milestones 1+2' {
             $entry.reason | Should -Not -BeNullOrEmpty
         }
     }
+
+    # Release 3.5 milestone 2 - cross-endpoint equality, live. Each endpoint
+    # must equal ITS snapshot metric: same source, same number, no exceptions.
+    # When the snapshot legitimately could not compute a metric (cold host, no
+    # cache), the DEGRADED contract is asserted instead - null with a reason -
+    # because "skipped" and "passed" must not look alike.
+    It 'execution readiness equals the execution-metrics endpoint, or degrades by name' {
+        $snapResponse = Invoke-ContractApiRequest -Method GET -Path '/api/portfolio/snapshot'
+        $execResponse = Invoke-ContractApiRequest -Method GET -Path '/api/execution/metrics'
+        $snapMetric = $snapResponse.Json.data.metrics.executionReadyCount
+        if ($null -ne $snapMetric.value) {
+            $execResponse.StatusCode | Should -Be 200
+            [int]$snapMetric.value | Should -Be ([int]$execResponse.Json.data.stateCounts.ready)
+            $snapMetric.source | Should -Be 'execution-ledger'
+        }
+        else {
+            $snapMetric.reason | Should -Not -BeNullOrEmpty
+        }
+    }
+
+    It 'the scan denominator is either a real count with a basis or degraded by name' {
+        # A cold contract host has no scan cache; the snapshot must then say
+        # so - the review's four-denominators defect began as exactly this
+        # state rendered as a confident number.
+        $response = Invoke-ContractApiRequest -Method GET -Path '/api/portfolio/snapshot'
+        $repoCount = $response.Json.data.metrics.repoCount
+        $inScope = $response.Json.data.metrics.inScopeRepoCount
+        if ($null -ne $repoCount.value) {
+            $repoCount.source | Should -Be 'status-scan'
+            if ($null -ne $inScope.value) {
+                [int]$inScope.value | Should -BeLessOrEqual ([int]$repoCount.value)
+                $inScope.basis.denominator | Should -Be $repoCount.value
+            }
+        }
+        else {
+            @($response.Json.data.degraded | Where-Object { $_.source -eq 'status-scan' }).Count | Should -BeGreaterThan 0
+        }
+    }
 }
 
 Describe 'Branch cleanup route - Release 3.4 milestone 5' {

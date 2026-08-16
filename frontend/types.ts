@@ -31,6 +31,31 @@ export interface RepoStaleness {
  * Nothing is deleted: an excluded repo stays visible behind a toggle, and
  * every exclusion carries the reason a tile can state.
  */
+/**
+ * Release 3.5 milestone 1 — one snapshot metric, as served by
+ * GET /api/portfolio/snapshot. Null value means NOT COMPUTED and carries a
+ * reason; the render boundary shows an em dash, never 0.
+ */
+export interface PortfolioMetric {
+  id: string;
+  value: number | null;
+  unit: 'count' | 'percent' | 'seconds';
+  basis: { numerator: number | null; denominator: number | null } | null;
+  asOf: string;
+  source: string | null;
+  coverage: { assessed: number | null; total: number | null } | null;
+  confidence: 'full' | 'partial' | 'none';
+  definition: string;
+  reason: string | null;
+}
+
+export interface PortfolioSnapshot {
+  schemaVersion: string;
+  generatedAt: string;
+  degraded: Array<{ source: string; reason: string }>;
+  metrics: Record<string, PortfolioMetric>;
+}
+
 export interface RepoScopeClassification {
   classification: 'in-scope' | 'excluded-path' | 'archived' | 'vendored';
   inScope: boolean;
