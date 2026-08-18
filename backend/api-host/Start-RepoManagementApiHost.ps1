@@ -1318,7 +1318,9 @@ function New-RepoStatusHtmlContent {
     $openPrTotal = ($repoList | Measure-Object -Property openPrCount -Sum).Sum
     $weeklyCommitTotal = ($repoList | Measure-Object -Property commitsLastWeek -Sum).Sum
     $monthlyCommitTotal = ($repoList | Measure-Object -Property commitsLastMonth -Sum).Sum
-    $generatedDisplay = $GeneratedAt.ToString('yyyy-MM-dd HH:mm:ss')
+    # One clock (Release 3.5): a rendered timestamp names its basis. A naive
+    # local string in a static artifact is unreadable a week later.
+    $generatedDisplay = $GeneratedAt.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') + ' UTC'
     $sourceDisplay = if ([string]::IsNullOrWhiteSpace($SourceLabel)) { 'Repository dashboard export' } else { $SourceLabel }
 
     $rowMarkup = foreach ($repo in $repoList) {
@@ -8814,6 +8816,19 @@ try {
                         $signalSources['statusRefreshing'] = $false
                     }
                     $localRepos = if ($null -ne $statusResult -and $statusResult.success -and $null -ne $statusResult.data) { @($statusResult.data.repos) } else { @() }
+                    # Release 3.5 milestone 3 (assessment recompute) -- the
+                    # assessment, the doc-readiness queue and the value ranking
+                    # all derive from this list, and until now they counted
+                    # every scanned repo: the review found a .tmp_compare
+                    # nested clone RANKED in the Doc Readiness queue. Out-of-
+                    # scope repos stay visible in the grid behind their toggle;
+                    # they do not receive assessments, rankings, or dispatch
+                    # eligibility. Absent classification reads in-scope, so a
+                    # missing policy cannot shrink the portfolio.
+                    $localRepos = @($localRepos | Where-Object {
+                        $repoScope = Get-ObjectPropertyValue -InputObject $_ -PropertyName 'scope' -Default $null
+                        $null -eq $repoScope -or [bool](Get-ObjectPropertyValue -InputObject $repoScope -PropertyName 'inScope' -Default $true)
+                    })
 
                     # 2) Roadmap entries
                     $roadmapTtl     = Get-RoadmapCacheTtlSeconds -Settings $settings

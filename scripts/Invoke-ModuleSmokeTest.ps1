@@ -1230,6 +1230,19 @@ Write-Step 'Portfolio scope — Release 3.5 milestone 3: classified, never delet
     if ([string]::IsNullOrWhiteSpace([string]$identityGroups[0].rootCommitSha)) { throw 'Colliding clones must be subdivided by a real root-commit SHA' }
     Remove-Item -LiteralPath $idTmp -Recurse -Force -ErrorAction SilentlyContinue
 
+    # The assessment intake must filter to the in-scope set (milestone 3's
+    # recompute residue, closed 2026-08-17): the review found a .tmp_compare
+    # nested clone RANKED in the Doc Readiness queue because the assessment
+    # counted every scanned repo. Scoped to the host's own source between the
+    # localRepos materialization and its first assessment consumer, so the
+    # assertion cannot be satisfied by a filter somewhere unrelated.
+    $scopeHostSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1') -Raw -Encoding UTF8
+    $scopeIntake = [regex]::Match($scopeHostSource, "(?s)\`$localRepos = if \(\`$null -ne \`$statusResult.{0,20000}?localReposForAssessment")
+    if (-not $scopeIntake.Success) { throw 'Could not locate the assessment intake window - the scope-filter tripwire lost its anchor and must fail rather than pass vacuously' }
+    if ($scopeIntake.Value -notmatch 'inScope') {
+        throw 'The assessment intake no longer filters to in-scope repos: out-of-scope clones would re-enter the Doc Readiness queue and the value ranking.'
+    }
+
     Write-Host '  scope ok: 7 classifier cases (tmp/archive/worktrees/vendored/owned/no-remote/precedence), no-owner and disabled policies stay whole, summary counts, identity groups two real clones of one origin and leaves the unrelated repo out' -ForegroundColor DarkGray
 }
 

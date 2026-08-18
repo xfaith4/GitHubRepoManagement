@@ -206,7 +206,8 @@ function New-PortfolioCollectionStatusHtmlContent {
 
     $entryList = @($Entries)
     $summaryObject = if ($null -ne $Summary) { $Summary } else { _GetPortfolioCollectionReportSummary -Entries $entryList }
-    $generatedDisplay = $GeneratedAt.ToString('yyyy-MM-dd HH:mm:ss')
+    # One clock (Release 3.5): a rendered timestamp names its basis.
+    $generatedDisplay = $GeneratedAt.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') + ' UTC'
 
     $sortedEntries = @(
         $entryList |
