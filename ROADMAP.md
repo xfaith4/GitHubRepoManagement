@@ -1,8 +1,8 @@
 # GitHub Repo Management — Active Execution Roadmap
 
 > **Status:** Active
-> **Active release:** **Release 3.5 — Trustworthy Surfaces (UI Quality)**
-> **Next active release:** **Release 3.2 — Portfolio Scale and Responsiveness**
+> **Active release:** **Release 3.2 — Portfolio Scale and Responsiveness**
+> **Next active release:** **Release 3.3 — Steady-State Operation**
 > **Work ordering:** dependency-driven, not insertion order — see
 > [Execution Order and Dependencies](#execution-order-and-dependencies)
 > **Canonical product direction:** [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md)
@@ -53,18 +53,11 @@ workflow that does not complete and does not say so.
 
 **Current focus (next agent actions), in order:**
 
-- [ ] **Release 3.5 — trustworthy surfaces.** The active release, promoted
-      2026-08-15 when 3.4 closed with its live loop proof and 3.1 closed under
-      the external-resource rule. Source: the adversarial UI review, triaged
-      against the code — nine cross-tab contradictions reproduced, five
-      root-caused to a line, and no scan-path exclusion policy, so every
-      percentage is computed over a set that includes temp, archived and
-      vendored clones. Start with milestone 4's four root-caused metric
-      defects, each landing with its invariant assertion proven red first.
-- [ ] **Release 3.2 — portfolio scale.** Still unblocked and still worth doing,
-      demoted behind 3.5 by the standing ordering: latency is a quality of
-      numbers worth waiting for. Its performance budget landed 2026-08-11, so
-      the remaining three milestones have a declared number to beat.
+- [ ] **Release 3.2 — portfolio scale.** The active release, resumed
+      2026-08-17 when 3.5 closed with its trust report
+      ([per-finding before/after](docs/reference/trust-report.md)). Its
+      performance budget landed 2026-08-11, so the three remaining milestones
+      have a declared number to beat: warm reads 2-3s, cold scan 300s.
 - [ ] **Batch the remaining operator-session work (2.9).** An elevated shell
       covers the watchdog _and_ the service installer; one authenticated shell
       covers the `claude` run, the `gh agent-task` run, and the full-loop
@@ -178,10 +171,10 @@ module + verification boundary`.
 | **2.9**   | **Operator Field Proof** (mobile completion deferred)                    | `planned` — external-resource residuals only; the two mobile surfaces are deferred         |
 | 3.0       | Operator-Context Execution                                               | `done` (engineering) — 2026-08-09; see archive. Live proof tracked in 2.9                  |
 | 3.1       | Closed-Loop Delivery                                                     | `done` 2026-08-15 — manual loop proof recorded; portal + scheduled proofs re-homed to 2.9  |
-| **3.2**   | **Portfolio Scale and Responsiveness**                                   | `planned` — demoted 2026-08-11 behind 3.1; read-path budget done, 3 scale milestones open  |
+| **3.2**   | **Portfolio Scale and Responsiveness**                                   | **active** — resumed 2026-08-17 when 3.5 closed; read-path budget done, 3 milestones open  |
 | **3.3**   | **Steady-State Operation**                                               | `planned` — unattended for months: retention, restore, honest TLS, decision-grade digests  |
 | **3.4**   | **The Delivery Loop Closes**                                             | `done` 2026-08-15 — six milestones + the full-loop proof, driven live and operator-verified |
-| **3.5**   | **Trustworthy Surfaces (UI Quality)**                                    | **active** — promoted 2026-08-15: one snapshot, one clock, one scope; disagreement fails CI |
+| 3.5       | Trustworthy Surfaces (UI Quality)                                        | `done` 2026-08-17 — all seven milestones; trust-report per finding; operator sign-off in 2.9 |
 
 > **Note on `.5` numbering.** Reserve it for course corrections like 1.7.5;
 > default new work to integer minor releases.
@@ -198,19 +191,16 @@ dispatch runs. No open item is now waiting on another open item — the ordering
 below is therefore about **what kind of resource each item needs**, not about
 prerequisites.
 
-1. **Release 3.5 — the active release.** Trustworthy surfaces: the four
-   root-caused metric defects first (each with its invariant assertion), then
-   the snapshot contract and scope policy as the structural core, then the
-   async state machine, runner-health delivery, and the vocabulary and
-   accessibility pass.
+1. **Release 3.2 — the active release.** Portfolio scale, resumed on 3.5's
+   closure: the background-job cold scan, bounded per-repo git work, and grid
+   virtualization — each against the budget shipped 2026-08-11.
 2. **Release 3.4 — the delivery loop closes.** Engineering complete
    2026-08-15: all twelve steps of the loop are built, each behind its own
    refusal matrix, and the default-branch invariant is a derived tripwire that
    proves itself before sweeping. What remains is driving one real item around
    the circle — batched with the operator session below, alongside 3.1's proof.
-3. **Release 3.2 — portfolio scale.** Also unblocked. Demoted behind 3.5 by
-   the standing ordering: latency is a quality of a workflow that works, and
-   of numbers worth waiting for.
+3. **Release 3.3 — steady-state operation.** Next after 3.2; independent
+   milestones, any order.
 5. **One batched operator session** — an elevated shell covers the watchdog,
    the service installer and 2.7's freeze-prevention deploy; one authenticated
    shell covers the `claude` run, the `gh agent-task` run, the 3.1 live-portal
@@ -230,10 +220,9 @@ prerequisites.
 
 | Open item                                            | Depends on                                    | Type                                          |
 | ---------------------------------------------------- | --------------------------------------------- | --------------------------------------------- |
-| Release 3.5 trustworthy surfaces (active)            | —                                             | none — root-caused engineering                |
+| Release 3.2 scale and responsiveness (active)        | —                                             | none — budget declared, three milestones open |
 | Release 3.4 full-loop proof (engineering done)       | The same authenticated operator session       | hard — human; batch with 3.1's proof          |
 | Release 3.5 trustworthy surfaces (UI quality)        | —                                             | none — root causes identified, engineering    |
-| Release 3.2 scale and responsiveness                 | —                                             | none — deadline + budget both settled         |
 | Release 2.9 mobile completion (ergonomics, run list) | A priority decision, already taken            | deferred 2026-08-11 — not blocked, deranked   |
 | Release 3.3 steady-state operation                   | —                                             | none — independent milestones, any order      |
 | Lane 0.2 `Checks: Read`; TLS certificate password    | An operator action outside this repository    | hard — external                               |
@@ -250,29 +239,22 @@ prerequisites.
 
 ## 5. Active Release Snapshot
 
-### Active release detail — 3.5 Trustworthy Surfaces (UI Quality)
+### Active release detail — 3.2 Portfolio Scale and Responsiveness
 
-Release 3.5 became the active release 2026-08-15, the same day Release 3.4
-closed with its live full-loop proof and Release 3.1 closed under the
-external-resource rule — its engineering is complete, and its remaining live
-proofs are re-homed to Release 2.9's operator session.
+Release 3.2 resumed as the active release 2026-08-17, when Release 3.5 closed
+with its trust report — the ordering settled 2026-08-11 finally arriving at
+the release it deferred: latency was a quality of a workflow that works and of
+numbers worth waiting for, and both now exist.
 
 The full execution contract lives in one place,
-[Release 3.5 below](#release-35--trustworthy-surfaces-ui-quality), per
+[Release 3.2 below](#release-32--portfolio-scale-and-responsiveness), per
 `ROADMAP_TEMPLATE.md`. This heading exists so the validator can resolve the
 active-release pointer; it deliberately restates nothing.
 
-**Current focus: the four measured metric defects (milestone 4), first.** They
-are root-caused to specific lines, independent of the snapshot contract, and
-each lands with the invariant assertion (milestone 2) that keeps it fixed —
-reproduced red against the pre-fix code, per this repo's gate discipline. The
-snapshot contract (milestone 1) and scope policy (milestone 3) follow as the
-structural core; the async state machine, runner-health delivery, and the
-vocabulary/accessibility pass complete the release.
-
-The habit carried in from 3.1 and 3.4 stands: a gate is not finished when it
-passes; it is finished when it has been shown to fail.
-
+**Current focus:** the cold full assessment becomes a visible background job
+with progress and a cancel; per-repo git work gets a timeout and a
+concurrency cap; the grid virtualizes. The declared numbers to beat shipped
+2026-08-11: warm reads 2-3s, cold scan 300s.
 ---
 
 ## 6. Open Releases
@@ -353,6 +335,10 @@ regresses meanwhile.
 - [ ] Operator-verify Release 3.1 engine attribution on the live portal (the
       `engine` block above the findings, `providerId` null for rule engines).
       _(state: smoke-tested; re-homed from 3.1 on closure)_
+- [ ] Operator-verify Release 3.5 on the live portal — the before/after
+      screenshots of every tab the trust report describes, the scope toggle,
+      the runner pill, and the async panels under a real slow backend.
+      _(state: smoke-tested; re-homed from 3.5 on closure 2026-08-17)_
 
 **Field proof — credential / calendar:**
 
@@ -441,8 +427,10 @@ to beat are now stated and enforced — warm reads at 2-3s, a cold scan at 300s
       the Phase D extractions → 1,752 on 2026-08-10, when the ~600-line Insights
       block became [`InsightsView.tsx`](frontend/components/InsightsView.tsx)).
       What remains is ~1,000 lines of hooks and handlers above the return — a
-      different shape of problem from the JSX blocks already extracted, and one
-      with no user-visible symptom driving it. _(state: planned — inherited from
+      different shape of problem from the JSX blocks already extracted.
+      **Gained a driver 2026-08-17:** Release 3.5 deferred the Operations
+      panels' full stale-keeps-last-good rendering to this refactor rather
+      than threading it through the current component shape. _(state: planned — inherited from
       Release 2.7 Phase D when that release closed 2026-08-11; worth doing, not
       worth blocking on.)_
 
@@ -534,248 +522,6 @@ window.
 - Log shipping to an external observability platform.
 
 ---
-
-### Release 3.5 — Trustworthy Surfaces (UI Quality)
-
-**Status:** active — promoted 2026-08-15 when Release 3.4 closed, sequenced
-ahead of 3.2 on the reasoning this roadmap has now applied twice: a portfolio
-that renders faster while its own numbers contradict each other is not more
-reliable. 3.1 made every _control_ honest about what it can do; 3.5 makes every
-_number_ honest about what it counted.
-
-**Goal:** every figure the portal displays states what it counted, over which set,
-as of when, and from which source — and two views can no longer disagree without
-failing the build. Four producers (live scan, portfolio index, execution ledger,
-`app.db`) each render through whichever component owns them, so one screen reports
-76, 75, 52 and 27 repositories, each right about its own source.
-
-**Prerequisites:** met — all engineering, no external resource. Evidence base: the
-2026-08-14 adversarial review, triaged against the source in
-[`docs/reference/2026-08-15-ui-review-triage.md`](docs/reference/2026-08-15-ui-review-triage.md)
-— nine contradictions reproduced in code, five with a root-cause line, three of the
-review's own conclusions corrected.
-
-#### Product outcomes
-
-- An operator who checks one number against another finds them consistent, or finds
-  a stated reason they differ.
-- No portfolio metric is computed over a set the operator cannot name.
-- A panel that cannot answer says so, carrying its last known value and its age.
-- Nothing is deleted to make a metric look better; out-of-scope repositories are
-  reclassified and stay visible.
-
-#### Engineering milestones
-
-- [ ] **Every portfolio metric becomes an object, and no component computes one.**
-      **Contract core shipped 2026-08-15.**
-      [`Portfolio.Snapshot.ps1`](backend/modules/portfolio/Portfolio.Snapshot.ps1)
-      is the reconciliation layer: every metric an object (`value`, `unit`,
-      `basis`, `asOf` UTC at rest, `source`, `coverage`, derived `confidence`,
-      `definition`), and **the constructor refuses to build a lying metric** —
-      a percent outside 0-100, an inverted basis, a value with no source, or a
-      null without a reason throws in the producer's stack frame instead of
-      rendering three tabs later. Finding 1.5's `High 1592` axis could not have
-      been constructed under this contract. `GET /api/portfolio/snapshot`
-      serves it with `degraded[]` naming every absent source; "ready" is
-      deliberately **three** metrics (execution / dispatch / maturity) because
-      finding 1.3's `21 / 0 / 0` was three semantics wearing one label, and
-      forcing them equal would be a second lie.
-      _(state: ui-connected 2026-08-16 — the Dashboard fetches the snapshot
-      with each repo-list refresh (one "as of" instant), the mission panel's
-      `Total` became `Assessed (of N scanned)` reading the snapshot's
-      denominator, Insights' execution tile carries the snapshot definition,
-      and the header names its dimension (`N scanned · M in-scope`).
-      **Residues:** Operations/Doc-Readiness counts and the KPI row still
-      derive client-side from the same scan payload — consistent by
-      construction but not yet reading the snapshot object — and the
-      markup-derived tripwire is still open.)_
-- [ ] **Make cross-view disagreement fail the build.** Add an invariant suite over
-      live API responses: one canonical repo denominator behind every view;
-      each endpoint's readiness figure equal to ITS snapshot metric (three named
-      semantics, not one forced number); every percentage within 0-100 and every
-      count within portfolio size; one timezone basis per payload. Land each
-      assertion **with** its fix and prove it non-vacuous against the pre-fix
-      host — `main` requires `ci-smoke` green, so a deliberately-red suite is
-      not available as a definition of done.
-      _(state: ui-connected 2026-08-16 — the first **cross-endpoint equality
-      invariants run live** in the contract tests: execution readiness must
-      equal the execution-metrics endpoint (same source, same number) or
-      degrade by name, and the scan denominator must carry a real basis
-      (`inScope ≤ scanned`, denominator matching) or name `status-scan` in
-      `degraded[]` — "skipped" and "passed" cannot look alike. Remaining:
-      dispatch/maturity equalities as those views wire on, and the timezone
-      single-basis walk.)_
-- [ ] **Exclude what is not the portfolio, visibly.** **Core shipped
-      2026-08-15.** The live claim reproduced first — and it is cleaner than
-      the review guessed: `Genesys.Core_AuditLogsApp` is a genuine **second
-      clone** of `xfaith4/Genesys.Core` (same remote, same root commit
-      `d884af1`), not a mislabel.
-      [`Portfolio.Scope.ps1`](backend/modules/portfolio/Portfolio.Scope.ps1)
-      classifies at the scan producer (temp/`Archive`/worktree paths, vendored
-      by owner set, path rules beating ownership), so every consumer inherits
-      one classification; **nothing is dropped** — excluded repos sit behind
-      the grid's `Hide out-of-scope` chip with the reason on each row, an
-      empty owner set disables vendor classification rather than guessing,
-      and identity dedupe groups by normalized remote URL subdivided by
-      root-commit SHA paid only inside colliding groups. The KPI row computes
-      over the in-scope set and states its scope beneath the tiles.
-      _(state: smoke-tested — 7 classifier cases from the live reproduction,
-      no-owner/disabled-policy whole-portfolio proofs, and identity grouping
-      against two real clones of one bare origin with an unrelated repo left
-      out. **Residues:** the assessment/operations path still counts all
-      scanned repos — its recompute rides milestone 1's snapshot, as do the
-      per-tab tile scope statements beyond the KPI row.)_
-**Milestone 4 shipped 2026-08-15 and is archived:** all four measured metric
-defects fixed, each reproduced red against the pre-fix code first — the
-latest-capture-per-repo-per-day join (the `1592` axis), the one-card-two-paths
-tiles, null-not-zero averages with assessed-count coverage, and the retirement
-of the dead `staleThreshold` control. Full text and evidence:
-[the archive](docs/history/completed-releases.md#closed-2026-08-15-archived-from-roadmapmd).
-
-- [ ] **Replace every ad-hoc spinner with one async state machine.** **Model
-      shipped 2026-08-15.** [`asyncPanel.ts`](frontend/lib/asyncPanel.ts) is
-      the shared state model — `idle | loading | success | empty | stale |
-      error` with pure, unit-tested transitions: a hung fetch becomes an
-      `error` naming its endpoint at the 10s deadline; a refresh failure after
-      a success keeps the last good value with its age (`stale`); `empty` is
-      only reachable **through** a success, so it always carries its
-      computed-at stamp. The worst offender is rewired: the Dependencies panel
-      swallowed fetch failures with `.catch(() => {})` and rendered them as
-      "No cross-repo dependencies detected" — a detection failure posing as a
-      clean bill of health. It now renders error-with-retry, computed-empty
-      with the scanner's own `scannedAt`, and a stale banner over the last
-      good graph. The execution queue gained the timeout and a named
-      error-with-retry state.
-      _(state: ui-connected 2026-08-16 — all five spinner surfaces the review
-      named now resolve within the 10s deadline; transitions unit-tested
-      including the fake-timer timeout; the 3.1 control audit caught and fixed
-      the new Refresh button's unexplained disabled state in the same change.
-      **Closed 2026-08-16:** the three OperationsWorkspaceView fetches and
-      the Insights metrics refresh now carry the shared 10s deadline — every
-      spinner the review named resolves to a named error or its data. What
-      remains of the full state-machine adoption is stale-keeps-last-good on
-      the Operations panels, worth doing with their eventual refactor rather
-      than inside the 119KB component.)_
-- [ ] **Put runner health above the fold, and make the stranded count count what
-      renders.** **Core shipped 2026-08-15.** The header now carries a
-      severity-colored runner pill on every tab
-      ([`RunnerHealthIndicator`](frontend/components/RunnerHealthIndicator.tsx))
-      — one click from the remedy command with a copy button; `6 active`
-      became `6 agent runs` with the runs named in its tooltip; the
-      **queue-age alarm** escalates the pill when the oldest queued task has
-      waited past 24h **even when the runner is present** — a present runner
-      that claims nothing is the same operator problem as an absent one
-      (`oldestQueuedAt` now travels on the presence payload). And a retry loop
-      renders as one piece of work: packaged items group by
-      `(repo, itemText)` with the newest attempt as the face and an
-      "N earlier attempts" expander — the review's 13-entry pile becomes one
-      row that agrees with its badge.
-      _(state: smoke-tested — the alarm's threshold, present-runner
-      escalation, and unparseable-timestamp quiet proven in unit tests; the
-      grouping proven including the actionable-status-leads case and the
-      no-identity-no-merge rule. Display-side only; queue idempotency stays
-      the open known issue.)_
-- [ ] **One status vocabulary, two refresh verbs, and a surface that states its
-      consequence.** **Core shipped 2026-08-15.**
-      [`docs/reference/status-vocabulary.md`](docs/reference/status-vocabulary.md)
-      is the mapping table: five independent dimensions (working tree, remote
-      drift, dispatch readiness, roadmap maturity, execution lane), no two
-      sharing a word — the `Genesys.Core` Ready-vs-blocked/L0 collision decoded
-      as three true answers to three different questions; the three "ready"
-      snapshot metrics get their UI names (Claimable lanes / Dispatch-ready /
-      Work-ready L3+). The seven refresh verbs collapsed to two with stated
-      contracts — **Refresh** (re-read, seconds) and **Rescan** (invalidate +
-      reindex, minutes, the control says so) — renamed across the grid, Work
-      Queue, roadmap modal, Operations and Help. **Bulk default scope
-      inverted**: a mutating action with nothing selected is now *disabled
-      naming its precondition*, not confirmed — a confirm without a selection
-      is the dialog people learn to click through; the header checkbox is the
-      explicit select-all. Dispatch Release wears consequence styling (amber,
-      "DISPATCHES WORK" title) instead of dressing like Audit. Accessibility:
-      names on both `⋯` menus and every row checkbox, the select-all named,
-      `role="status"`/`aria-live` on the background-refresh indicator, and the
-      activity sentence pluralizes from data.
-      _(state: ui-connected 2026-08-16 — all three readiness names live in
-      their views; the bulk inversion proven in DOM tests (disabled + no
-      dialog + named precondition; explicit selection runs clean; read-only
-      stays one click); the ActionBar and bulkScope suites reworked to the new
-      contract. **Residues:** UI adoption of the three readiness
-      names beyond the doc, and an `aria-live` announcement on scan
-      *completion* as opposed to progress.)_
-
-#### Acceptance criteria
-
-- Every portfolio-level number resolves to one `portfolio-snapshot` field, asserted
-  from the payload, and a component computing its own metric fails a scoped gate.
-- The invariant suite runs in CI, and each assertion has been **shown to fail**
-  against the pre-fix host before it was accepted.
-- Every reproduced metric defect has a fixture that fails without the fix, including
-  a multi-capture day proving `ready_repo_count` no longer inflates.
-- No metric renders `0` where the answer is "not computed", and no tile states a
-  percentage without its `basis` and `coverage`.
-- Every scope exclusion is stated in config, visible in the UI, and reversible; no
-  repository is removed from the portfolio by any of them.
-- `docs/reference/trust-report.md` records, per numbered review finding, the before
-  value, the after value, and fixed / not-fixed with a reason — so `Stale: 0 → 31`
-  reads as the fix it is rather than as a regression.
-
-#### Out of scope
-
-- A ranked `Today` landing view, the density question, and the nine-button row: one
-  product decision, owned by Lane 0.5 — 3.5 supplies the numbers it will render.
-- Scan progress and cancellation — an open Release 3.2 milestone.
-- Dispatch idempotency (the queue writer) — carried in this release's known issues; milestone 6 dedupes the **display** only.
-- New portfolio metrics. Make the existing ones true, scoped and explained.
-
-**Validation plan:** `npm test` (the same 17-gate list `ci-smoke.yml` invokes),
-exit 0. Each milestone lands its own gate, proven non-vacuous against the
-pre-fix code: a multi-capture-day fixture that fails on the `ready_repo_count`
-inflation, a null-average fixture distinguishing "not computed" from zero, the
-cross-view invariant assertions run against the pre-fix host, and a
-scope-derived tripwire for components computing their own portfolio metrics.
-A gate is not finished when it passes; it is finished when it has been shown
-to fail.
-
-**Risks and blockers:**
-
-- **Risk — corrected numbers read as regressions.** `Stale: 0 → 31` is a fix;
-  the trust-report requirement (before/after per finding, with the reason)
-  exists so a reader cannot mistake honesty for decay.
-- **Risk — the snapshot contract turns into a rewrite.** Milestone 1 replaces
-  where numbers are *computed*, not how views render; a component keeps its
-  layout and loses its arithmetic. Scope-derived tripwire, not a big-bang
-  refactor.
-- **Risk — the scope policy silently shrinks the portfolio.** Every exclusion
-  is stated in config, visible in the UI, reversible; nothing is deleted.
-- **Blocker (one milestone, partial) — the `Genesys.Core_AuditLogsApp`
-  identity mis-mapping needs the live workspace to reproduce before the
-  dedupe-by-`(remote_url, root_commit_sha)` fix is trusted.
-
-**Dependencies:** the 2026-08-15 triage
-([`docs/reference/2026-08-15-ui-review-triage.md`](docs/reference/2026-08-15-ui-review-triage.md))
-as the evidence base; `Portfolio.Analytics.ps1` and `maturity_history` in
-`app.db` (milestone 4a-c); `Git.Staleness.ps1`'s `toleranceSeconds`
-(milestone 4d's wire-or-retire decision); the roadmap cache and operations
-index for scope recomputation (milestone 3); `runnerPresence.ts` and the
-queue summaries (milestone 6).
-
-**Known issues:**
-
-- [ ] **[non-blocker]** The same item can still be queued twice while a runner
-      is present — nothing makes dispatch idempotent. Recorded in 3.1 from the
-      2026-08-11 triage (three items, each queued twice), carried here on 3.1's
-      closure. Milestone 6 dedupes the **display** by `(repo, task_id)`; the
-      writer-side idempotency is the open half.
-- [ ] **[non-blocker]** A deliberate `acknowledgeNoRunner` override leaves no
-      durable record — only the HTTP response reports it, so a stranded-pile
-      triage cannot tell a deliberate override from a failed gate. Carried from
-      3.1 on its closure; the run summary is the right home for it.
-- [ ] **[non-blocker]** `POST /api/roadmap/dispatch/execute` hardcodes
-      `dispatchTarget: 'copilot'`; the wizard's local-claude enqueue has no
-      one-call route and goes through the queue-writer script. Found live
-      during the 2026-08-15 full-loop drive. Pairs with milestone 6's runner
-      surface work but is a dispatch-surface gap, recorded here so it is not
-      lost.
 
 ---
 

@@ -75,6 +75,14 @@ const PortfolioSummarySection: React.FC<PortfolioSummarySectionProps> = ({
         <SummaryCard title="Stale Repositories" value={summary.stale} color="red" />
         <SummaryCard title="Commits This Week" value={summary.commitsThisWeek} color="green" />
       </div>
+      {/* Release 3.5 milestone 7 -- scan completion is announced to screen
+          readers, not just painted. The region re-renders when a scan lands
+          (dataLastUpdated changes), and aria-live announces the change. */}
+      {dataLastUpdated && (
+        <span className="sr-only" role="status" aria-live="polite" data-testid="scan-completion-announcement">
+          Scan complete: {summary.total} repositories as of {dataLastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
+        </span>
+      )}
       {/* Release 3.5 milestone 3 -- every count above states its scope. A
           number computed over a set the operator cannot name is the defect
           this release exists to remove. */}
