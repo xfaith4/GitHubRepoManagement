@@ -5311,3 +5311,167 @@ that gives the remaining milestones a number to beat.
 ---
 
 ---
+
+## Release 3.3 — Steady-State Operation (closed 2026-08-19, archived from ROADMAP.md)
+
+**Release closed 2026-08-19.** All four milestones in one day: ledger
+retention (archive-then-trim; the 12 MB watchdog ledger bounded without
+destroying a line, and its derived scope tripwire caught an undeclared
+ledger on its first run), app.db backup/restore (VACUUM INTO snapshots with
+manifests, a restore the gate REHEARSES end to end, and a stated schema
+window), transport honesty (three states where one silence used to be --
+and the discovery that only the HTTPS half was gated on Lane 0.2, not the
+telling-the-truth half), and the decision-grade export contract (whose
+constructor immediately refused a fabricated coverage ratio the author had
+just written). Three non-blockers carry forward to Release 2.9: the runner
+stop mechanism, the Dashboard.tsx refactor, and the PR #155 CI watch item.
+
+Verbatim as it stood at closure:
+
+### Release 3.3 — Steady-State Operation
+
+**Status:** ACTIVE — promoted 2026-08-19 when Release 3.2 closed.
+
+**Goal:** run unattended for months without an operator babysitting it — bounded
+storage, honest transport, a restore path, and reports that state their own data
+window.
+
+**Prerequisites:** none; each milestone is independent.
+
+#### Product outcomes
+
+- Append-only evidence stays append-only without growing without bound.
+- What the portal claims about its own transport and credentials matches what
+  it is actually doing.
+- A lost or corrupted `app.db` is recoverable from evidence already on disk.
+- Every export and digest states its data window, units, headline finding, and
+  recommended next action.
+
+#### Engineering milestones
+
+- [x] Add retention and compaction for the JSONL ledgers and `app.db`, with the
+      policy stated in config and the pruned range logged. _(state: smoke-tested
+      2026-08-19 — the `app.db` half already existed (2.7 Phase D maintenance,
+      floor 180d, VACUUM). The JSONL half is
+      [`Ledger.Retention.ps1`](backend/modules/persistence/Ledger.Retention.ps1):
+      **archive-then-trim** — pruned lines append verbatim to year-bucketed
+      archives under `output/archive/ledgers/` (the append-only contract's
+      intent is that evidence is never destroyed, not that a probe log grows
+      forever — the watchdog ledger hit 12 MB), survivors swap in atomically,
+      the pruned range is logged and reported. Undateable lines are kept, the
+      newest `minKeepLines` survive regardless of age, nothing outside
+      `output/` is reachable. Scope is derived: 6 targets + 4 named
+      exclusions, and the module-smoke tripwire fails any undeclared ledger —
+      it caught `automation-runs.jsonl` on its first run. Config knob
+      `retention.ledgers` in settings.json; routes mirror the database
+      maintenance pair; `Invoke-DailyEvidence.ps1` applies it daily.)_
+- [x] Add a documented backup and restore path for `app.db`, including a schema
+      migration story. _(state: smoke-tested 2026-08-19 —
+      [`Persistence.Backup.ps1`](backend/modules/persistence/Persistence.Backup.ps1):
+      `VACUUM INTO` snapshots of the live database (no shutdown, no partial
+      pages), each with a manifest (schema version, table counts) and
+      keep-newest-7 retention; `POST /api/maintenance/backup` +
+      `GET /api/maintenance/backups`, taken daily by `Invoke-DailyEvidence`.
+      Restore is deliberately operator-only with the host stopped
+      ([`Restore-AppDb.ps1`](scripts/Restore-AppDb.ps1)): verified before
+      anything moves, the existing database moves aside rather than dying,
+      verified again after. Schema story stated: any version >= 1 replays its
+      idempotent migrations forward on next boot; newer-than-code is refused
+      by name. The module smoke REHEARSES the loop — snapshot, mutate,
+      restore, query the restored history through the provider, prove the
+      mutated original survived aside. Docs:
+      [appdb-backup-restore.md](docs/reference/appdb-backup-restore.md).)_
+- [x] Make the portal's self-reported transport match reality, closing behind
+      Lane 0.2's certificate recovery. _(state: smoke-tested 2026-08-19 — the
+      HONESTY half needed no certificate and shipped without one; the
+      certificate itself only flips the state from `degraded` to `enabled`.
+      Three states now exist where one silence used to: `disabled` (no cert
+      configured, plain HTTP by design), `enabled`, and **`degraded`** — a
+      cert WAS configured and cannot be used, so the host serves plain HTTP.
+      The old code hit `degraded` twice (missing file; load failure) and both
+      times fell through to plain HTTP with at most a WARN line. The startup
+      banner hardcoded `http://` for a whole release, including while serving
+      TLS. `Get-PortalTransportState` now derives the answer from the loaded
+      certificate — never from config, which is the thing being checked — and
+      the degradation reaches `/api/auth/status`, `/health/dependencies` (as
+      a dependency failure) and **the login screen**, which says "Not
+      encrypted" where credentials are typed. Gate: the hardcoded-scheme
+      detector fails the old banner line first; both degraded paths asserted;
+      the report is proven never to touch the password.)_
+      **Remaining and genuinely gated:** actually serving HTTPS needs Lane
+      0.2's certificate regeneration (elevated; the PFX password is
+      unrecoverable). Until then this machine reports `degraded` truthfully —
+      which is the point.
+- [x] Bring every export and digest up to the decision-grade contract: data
+      window, units, headline finding, recommended next action.
+      _(state: smoke-tested 2026-08-19 —
+      [`DecisionGrade.ps1`](backend/modules/common/DecisionGrade.ps1) defines
+      the envelope once and refuses the omissions that make a report
+      undecidable (blank headline/units/next action, impossible coverage,
+      0% over an empty set). All four producers carry it: the operations
+      digest, the repo-status export, the collection export, and the two
+      automation digests — the automation ones over the RUN's window, not the
+      moment someone asked. The tripwire is derived: it regex-finds every
+      `New-/Get-/Export-*Digest|Report|Export*` producer across the four
+      files and fails any that neither carries the contract nor is named
+      exempt with a reason (6 found, 11 exemptions named). It refused a wrong
+      denominator on its first live run — the packaging digest's
+      `candidateCount` is not the denominator for packets+skipped, so that
+      digest carries no coverage rather than a fabricated ratio.)_
+
+#### Acceptance criteria
+
+- Ledger growth is bounded by a stated policy, and pruning is itself logged.
+- A restore from backup produces a working portal with its history intact.
+- The transport the portal reports is the transport it serves.
+- Every export names its window, units, headline, and next action.
+
+#### Out of scope
+
+- Multi-tenant or hosted operation.
+- Log shipping to an external observability platform.
+
+**Validation plan:** each milestone lands with its gate proven able to fail.
+Retention: a fixture ledger over policy is pruned, the pruned range is
+logged, and surviving lines are byte-identical to their originals (pruning an
+append-only ledger must never rewrite what it keeps). Backup/restore: a
+restore into a scratch workspace is REHEARSED by the gate — it boots the
+host against the restored `app.db` and queries history through it; a restore
+path that has never run is a hope, not a path. Transport: the smoke asserts
+the transport the portal reports equals the transport it serves (closes
+behind Lane 0.2). Exports: every digest/export payload is walked for the
+four decision-grade fields — data window, units, headline, next action.
+
+**Risks:** retention must not touch `evidence/baseline/` (permanent by
+contract) or prune ranges any open baseline references; compaction must be
+copy-forward with an atomic swap so a crash mid-prune leaves the original
+ledger, never a truncated one; a schema migration story that only migrates
+forward one version will strand the oldest backups silently — state the
+supported restore window instead.
+
+**Dependencies:** the persistence store (`app.db`, schema v2 on the native
+provider), the JSONL ledgers under `output/`, and — for the transport
+milestone only — Lane 0.2's certificate recovery (elevated, on Ben's list).
+
+**Known issues:**
+
+- [ ] **[non-blocker]** The headless task runner has no stop mechanism — a
+      detached `while ($true)` poll loop survives its session (proven
+      2026-08-19: a 17-hour orphan runner raced the api-host smoke's dispatch
+      fixture; only the repo-root guard kept the orphaned session's commit
+      out of the real working tree, PR #157). Fits this release's theme
+      exactly: unattended operation needs a stop-file like the api-host's
+      shutdown signal, and the smoke should enqueue into an isolated queue.
+      _(re-homed from 3.2 on closure)_
+- [ ] **[non-blocker]** `Dashboard.tsx` is ~1,750 lines of hooks and handlers
+      above the return; Release 3.5 deferred the Operations panels' full
+      stale-keeps-last-good rendering to this refactor. Worth doing, not
+      worth blocking on. _(inherited 2.7 → 3.2 → here on 3.2's closure)_
+- [ ] **[non-blocker]** Watch item: PR #155's first CI run failed with a
+      packaging fixture auditing `L0-Absent`; unreproduced locally or on
+      rerun. The maturity assertion now prints the host-log audit trail on
+      failure, so a recurrence names its cause. _(re-homed from 3.2)_
+
+---
+
+---
