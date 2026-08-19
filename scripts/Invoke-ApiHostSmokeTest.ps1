@@ -3016,7 +3016,21 @@ A release should not be marked `done` unless:
             $entry = @($packagingEntries) | Where-Object { [string]$_.repoName -eq $name } | Select-Object -First 1
             if ($null -eq $entry) { throw "Packaging fixture '$name' was not indexed by /api/operations/repos" }
             if ([string]$entry.maturityLevel -notin @('L3-Contract-Ready', 'L4-Orchestration-Ready')) {
-                throw "Packaging fixture '$name' audits to $($entry.maturityLevel); the packaging gate needs L3+. Fix the fixture roadmap, not the gate."
+                # A fixture auditing to L0-Absent means the per-repo audit threw
+                # (parse-error catch) or never saw the roadmap. Name the cause
+                # from the host log before failing -- CI keeps no host-log
+                # artifact, so this excerpt is the only diagnostic that leaves
+                # the runner (first seen: PR #155, L0-Absent in CI only).
+                if (Test-Path -LiteralPath $logPath) {
+                    $auditTrail = @(Select-String -LiteralPath $logPath -Pattern 'audit-rule-failure|roadmap\.audit\.scan' -ErrorAction SilentlyContinue | Select-Object -Last 12)
+                    if (@($auditTrail).Count -gt 0) {
+                        Write-Host '  host-log audit trail (last 12 matching lines):' -ForegroundColor Yellow
+                        foreach ($auditTrailLine in $auditTrail) { Write-Host ("    {0}" -f $auditTrailLine.Line) -ForegroundColor Yellow }
+                    }
+                }
+                $entryStateDetail = ''
+                try { $entryStateDetail = " roadmapState=$($entry.roadmapState)" } catch { $entryStateDetail = '' }
+                throw "Packaging fixture '$name' audits to $($entry.maturityLevel)$entryStateDetail; the packaging gate needs L3+. Fix the fixture roadmap, not the gate."
             }
             $curateResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/operations/repos/$([uri]::EscapeDataString([string]$entry.repoId))/curation" -Body @{ curationState = 'favorite'; reason = 'api-host smoke (Phase C)' }
             if ($curateResponse.StatusCode -ne 200) { throw "Curating '$name' failed: HTTP $($curateResponse.StatusCode)" }
