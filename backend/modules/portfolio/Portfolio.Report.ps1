@@ -831,6 +831,20 @@ function Export-PortfolioCollectionStatusReport {
     Set-Content -LiteralPath $htmlPath -Value $htmlContent -Encoding UTF8
     Set-Content -LiteralPath $csvPath -Value $csvContent -Encoding UTF8
 
+    # Release 3.3 milestone 4 -- decision-grade framing on the collection
+    # export: the counts already exist in $summary; what was missing is what
+    # a reader should conclude and do.
+    if (-not (Get-Command New-DecisionGradeEnvelope -ErrorAction SilentlyContinue)) {
+        . (Join-Path $PSScriptRoot '..\common\DecisionGrade.ps1')
+    }
+    $readyForWork = [int](_GetPortfolioReportField -InputObject $summary -PropertyName 'readyForWorkCount' -Default 0)
+    $missingRoadmap = [int](_GetPortfolioReportField -InputObject $summary -PropertyName 'missingRoadmapCount' -Default 0)
+    $collectionEnvelope = New-DecisionGradeEnvelope -Units 'repositories' `
+        -Headline $(if (@($Entries).Count -eq 0) { 'No repositories in this collection export.' } else { "$readyForWork of $(@($Entries).Count) repositories are ready for work; $missingRoadmap have no roadmap." }) `
+        -NextAction $(if ($missingRoadmap -gt 0) { "Add a ROADMAP.md to the $missingRoadmap repositories without one -- no repository can be packaged for dispatch until it has one." } elseif ($readyForWork -gt 0) { 'Package the highest-value ready repository for dispatch.' } else { 'Run a portfolio assessment to refresh readiness before acting on this export.' }) `
+        -WindowFrom $generatedAt.ToUniversalTime().ToString('o') -WindowTo $generatedAt.ToUniversalTime().ToString('o') `
+        -AssessedCount (@($Entries).Count) -TotalCount (@($Entries).Count)
+
     return [pscustomobject]@{
         generatedAt = $generatedAt.ToString('o')
         repoCount = @($Entries).Count
@@ -840,5 +854,10 @@ function Export-PortfolioCollectionStatusReport {
         reportUrl = "/api/reports/$([System.Uri]::EscapeDataString($htmlFileName))"
         csvFileName = $csvFileName
         csvPath = $csvPath
+        dataWindow = $collectionEnvelope.dataWindow
+        units = $collectionEnvelope.units
+        headline = $collectionEnvelope.headline
+        nextAction = $collectionEnvelope.nextAction
+        coverage = $collectionEnvelope.coverage
     }
 }

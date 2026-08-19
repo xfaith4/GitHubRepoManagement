@@ -456,10 +456,29 @@ function New-AutomationDigestPayload {
     param([Parameter(Mandatory = $true)][object]$Run)
 
     $proposals = @(_Auto_GetField -Obj $Run -Name 'proposals' -Default @())
+
+    # Release 3.3 milestone 4 -- decision-grade framing. The window is the
+    # RUN's, not the digest's: a reader needs to know when the work happened,
+    # not when someone asked about it.
+    if (-not (Get-Command New-DecisionGradeEnvelope -ErrorAction SilentlyContinue)) {
+        . (Join-Path $PSScriptRoot '..\common\DecisionGrade.ps1')
+    }
+    $runStarted = [string](_Auto_GetField -Obj $Run -Name 'startedAt' -Default '')
+    $runFinished = [string](_Auto_GetField -Obj $Run -Name 'finishedAt' -Default '')
+    $docEnvelope = New-DecisionGradeEnvelope -Units 'documentation proposals' `
+        -Headline $(if (@($proposals).Count -eq 0) { 'No documentation proposals in this run.' } else { "$(@($proposals).Count) documentation proposals await approval; none were applied." }) `
+        -NextAction $(if (@($proposals).Count -eq 0) { 'Nothing to review from this run.' } else { 'Open the AI Docs panel and approve or reject each proposal; nothing changes until you do.' }) `
+        -WindowFrom $runStarted -WindowTo $runFinished
+
     return [pscustomobject]@{
         runId         = [string](_Auto_GetField -Obj $Run -Name 'runId' -Default '')
         kind          = [string](_Auto_GetField -Obj $Run -Name 'kind' -Default 'doc-refinement')
         generatedAt   = (Get-Date).ToUniversalTime().ToString('o')
+        dataWindow    = $docEnvelope.dataWindow
+        units         = $docEnvelope.units
+        headline      = $docEnvelope.headline
+        nextAction    = $docEnvelope.nextAction
+        coverage      = $docEnvelope.coverage
         proposalCount = @($proposals).Count
         appliedCount  = 0
         note          = 'Preview-only. Approve each proposal from the AI Docs panel to apply; nothing was changed automatically.'

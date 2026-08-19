@@ -436,9 +436,22 @@ window.
       Lane 0.2's certificate recovery. _(state: planned — the host degrades to
       plain HTTP on a certificate it cannot open, while config still claims
       TLS)_
-- [ ] Bring every export and digest up to the decision-grade contract: data
+- [x] Bring every export and digest up to the decision-grade contract: data
       window, units, headline finding, recommended next action.
-      _(state: planned — the digest payload ships; the framing does not)_
+      _(state: smoke-tested 2026-08-19 —
+      [`DecisionGrade.ps1`](backend/modules/common/DecisionGrade.ps1) defines
+      the envelope once and refuses the omissions that make a report
+      undecidable (blank headline/units/next action, impossible coverage,
+      0% over an empty set). All four producers carry it: the operations
+      digest, the repo-status export, the collection export, and the two
+      automation digests — the automation ones over the RUN's window, not the
+      moment someone asked. The tripwire is derived: it regex-finds every
+      `New-/Get-/Export-*Digest|Report|Export*` producer across the four
+      files and fails any that neither carries the contract nor is named
+      exempt with a reason (6 found, 11 exemptions named). It refused a wrong
+      denominator on its first live run — the packaging digest's
+      `candidateCount` is not the denominator for packets+skipped, so that
+      digest carries no coverage rather than a fabricated ratio.)_
 
 #### Acceptance criteria
 
