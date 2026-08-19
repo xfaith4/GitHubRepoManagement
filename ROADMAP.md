@@ -500,6 +500,13 @@ that gives the remaining milestones a number to beat.
       900s-tier requests (forced reassessment recompute, automation runs)
       still hold the single request thread while they run — that is the
       FailFast blast-radius question above, not a scan problem.
+- [ ] **[non-blocker]** The headless task runner has no stop mechanism — a
+      detached `while ($true)` poll loop survives its session (a 17-hour-old
+      runner raced the api-host smoke's dispatch fixture 2026-08-19, claiming
+      it in the ~1s enqueue-to-cancel window; only the repo-root guard kept
+      the orphaned session's commit out of the real working tree). Needs a
+      stop-file like the api-host's shutdown signal, and the smoke should
+      enqueue into an isolated queue rather than the operator's real one.
 - [ ] **[non-blocker]** PR #155's first CI run failed with a packaging
       fixture auditing `L0-Absent`; not reproduced locally or on rerun (the
       audit's per-repo catch maps any throw to `parse-error`/L0). The

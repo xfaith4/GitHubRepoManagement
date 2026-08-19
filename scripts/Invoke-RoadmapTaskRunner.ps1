@@ -506,6 +506,20 @@ function Invoke-QueuedTask {
         }
         finally { Pop-Location }
 
+        # The session can outlive the repo it was handed: the api-host smoke
+        # cleans up its dispatch fixture while a racing claim is still inside
+        # it (run 20260819-145958-7bc51ee2). Once `.git` is gone, every
+        # `git -C $repo` below resolves upward to the nearest enclosing
+        # repository, and the add/commit lands in the PARENT working tree on
+        # whatever branch it happens to have checked out. Re-verify the root
+        # before touching git; the throw records the run as 'failed'.
+        $topLevel = & git -C $repo rev-parse --show-toplevel 2>$null
+        $topLevelFull = if ($LASTEXITCODE -eq 0 -and $topLevel) { [System.IO.Path]::GetFullPath([string]$topLevel) } else { $null }
+        $repoFull = [System.IO.Path]::GetFullPath($repo).TrimEnd('\')
+        if (-not $topLevelFull -or -not [string]::Equals($topLevelFull.TrimEnd('\'), $repoFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Repo vanished mid-run: '$repo' is no longer the root of a git working tree (git resolved: '$topLevel')."
+        }
+
         # Best-effort verify.
         $verifyResult = 'skipped'
         $verifyCmd = Resolve-VerifyCommand -RepoPath $repo
