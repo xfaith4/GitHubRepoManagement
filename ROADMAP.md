@@ -400,9 +400,22 @@ window.
 
 #### Engineering milestones
 
-- [ ] Add retention and compaction for the JSONL ledgers and `app.db`, with the
-      policy stated in config and the pruned range logged. _(state: planned —
-      `service-watchdog.jsonl` reached 6.9 MB from one-minute probes)_
+- [x] Add retention and compaction for the JSONL ledgers and `app.db`, with the
+      policy stated in config and the pruned range logged. _(state: smoke-tested
+      2026-08-19 — the `app.db` half already existed (2.7 Phase D maintenance,
+      floor 180d, VACUUM). The JSONL half is
+      [`Ledger.Retention.ps1`](backend/modules/persistence/Ledger.Retention.ps1):
+      **archive-then-trim** — pruned lines append verbatim to year-bucketed
+      archives under `output/archive/ledgers/` (the append-only contract's
+      intent is that evidence is never destroyed, not that a probe log grows
+      forever — the watchdog ledger hit 12 MB), survivors swap in atomically,
+      the pruned range is logged and reported. Undateable lines are kept, the
+      newest `minKeepLines` survive regardless of age, nothing outside
+      `output/` is reachable. Scope is derived: 6 targets + 4 named
+      exclusions, and the module-smoke tripwire fails any undeclared ledger —
+      it caught `automation-runs.jsonl` on its first run. Config knob
+      `retention.ledgers` in settings.json; routes mirror the database
+      maintenance pair; `Invoke-DailyEvidence.ps1` applies it daily.)_
 - [ ] Add a documented backup and restore path for `app.db`, including a schema
       migration story. _(state: planned)_
 - [ ] Make the portal's self-reported transport match reality, closing behind

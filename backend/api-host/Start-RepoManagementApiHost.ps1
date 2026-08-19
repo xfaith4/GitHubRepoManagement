@@ -113,6 +113,7 @@ $agentRunsModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\agent-runs'
 . (Join-Path $executionModuleRoot 'Execution.Trace.ps1')
 $persistenceModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\persistence'
 . (Join-Path $persistenceModuleRoot 'Persistence.Store.ps1')
+. (Join-Path $persistenceModuleRoot 'Ledger.Retention.ps1')
 . (Join-Path $commonRoot 'NotificationHub.ps1')
 . (Join-Path $PSScriptRoot 'ApiHost.ErrorHandling.ps1')
 . (Join-Path $PSScriptRoot 'RequestDeadline.ps1')
@@ -162,6 +163,7 @@ $script:OpsLogMaxLines   = 5000    # default; overridden from retention.maxOpsLo
 # GET /api/maintenance/database so an operator can see whether the scheduled
 # prune is actually running rather than only that it is configured.
 $script:LastDbMaintenance = $null
+$script:LastLedgerRetention = $null
 
 # Auto-scan shared state — thread-safe; written by background runspace, read by main loop
 $script:AutoScanState = [hashtable]::Synchronized(@{
@@ -6810,6 +6812,43 @@ try {
                     Send-HttpJson -Stream $req.Stream -StatusCode $maintStatus -CorrelationId $correlationId -Payload @{
                         success = [bool]$maintResult.success
                         data    = $maintResult
+                    }
+                }
+                'GET /api/maintenance/ledgers' {
+                    # Release 3.3 milestone 1 -- report-only preview: what the
+                    # policy WOULD prune, per ledger, with the range named.
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $ledgerPolicy = Get-LedgerRetentionPolicy -Settings (Get-HostSettings) -WorkspaceRoot $WorkspaceRoot
+                    $ledgerPreview = Invoke-LedgerRetention -Policy $ledgerPolicy -WhatIf
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = @{
+                            policy  = @{
+                                enabled      = [bool]$ledgerPolicy.Enabled
+                                keepDays     = [int]$ledgerPolicy.KeepDays
+                                minKeepLines = [int]$ledgerPolicy.MinKeepLines
+                                archiveDir   = [string]$ledgerPolicy.ArchiveDir
+                                exclusions   = @($ledgerPolicy.Exclusions)
+                            }
+                            lastRun = $script:LastLedgerRetention
+                            preview = $ledgerPreview
+                        }
+                    }
+                }
+                'POST /api/maintenance/ledgers' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $ledgerPolicy = Get-LedgerRetentionPolicy -Settings (Get-HostSettings) -WorkspaceRoot $WorkspaceRoot
+                    $ledgerResult = Invoke-LedgerRetention -Policy $ledgerPolicy -Confirm:$false
+                    $script:LastLedgerRetention = $ledgerResult
+                    foreach ($ledgerReport in @($ledgerResult.reports)) {
+                        if ([int]$ledgerReport.pruned -gt 0) {
+                            Write-HostLog ("maintenance.ledgers name={0} pruned={1} kept={2} range={3}..{4} archive={5} bytes={6}->{7} correlationId={8}" -f `
+                                    $ledgerReport.name, $ledgerReport.pruned, $ledgerReport.kept, $ledgerReport.prunedFrom, $ledgerReport.prunedTo, $ledgerReport.archivePath, $ledgerReport.bytesBefore, $ledgerReport.bytesAfter, $correlationId)
+                        }
+                    }
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = $ledgerResult
                     }
                 }
                 # ── Release 2.2/2.7 — auth status, login, logout ────────────────

@@ -2911,6 +2911,32 @@ try {
     Write-Host ("  maintenance ok: report-only GET, POST removed={0} vacuumed={1} floor={2}d, lastRun surfaced" -f `
             $maintPost.Json.data.totalRowsRemoved, $maintPost.Json.data.vacuumed, $maturityTable[0].retentionDays) -ForegroundColor DarkGray
 
+    Write-Host '[STEP] Ledger retention routes (Release 3.3 M1)' -ForegroundColor Cyan
+    # The prune behavior itself is proven in the module smoke against
+    # fixtures; this step proves the operator surface: a report-only GET that
+    # states the policy and its named exclusions, a POST that applies it, and
+    # a lastRun the next GET can see.
+    $ledgerGet = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/maintenance/ledgers"
+    Assert-Not503 -Name '/api/maintenance/ledgers (GET)' -Response $ledgerGet
+    if ($null -eq $ledgerGet.Json -or -not $ledgerGet.Json.success) {
+        throw "GET /api/maintenance/ledgers returned success=false. HTTP $($ledgerGet.StatusCode). Body=$($ledgerGet.Content)"
+    }
+    if ([int]$ledgerGet.Json.data.policy.keepDays -le 0) { throw 'Ledger retention policy must state keepDays.' }
+    if (@($ledgerGet.Json.data.policy.exclusions).Count -lt 1) { throw 'Ledger retention policy must name its exclusions; an empty exclusion list means the scope tripwire is not covering anything.' }
+    if (@($ledgerGet.Json.data.preview.reports).Count -lt 1) { throw 'Ledger retention preview must report per-target, even when targets are absent on this workspace.' }
+
+    $ledgerPost = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/maintenance/ledgers" -Body @{}
+    Assert-Not503 -Name '/api/maintenance/ledgers (POST)' -Response $ledgerPost
+    if ($null -eq $ledgerPost.Json -or -not $ledgerPost.Json.success) {
+        throw "POST /api/maintenance/ledgers returned success=false. HTTP $($ledgerPost.StatusCode). Body=$($ledgerPost.Content)"
+    }
+    $ledgerGet2 = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/maintenance/ledgers"
+    if ($null -eq $ledgerGet2.Json.data.lastRun) {
+        throw 'GET /api/maintenance/ledgers must report lastRun after a POST.'
+    }
+    Write-Host ("  ledger retention ok: policy keepDays={0} with {1} named exclusion(s), preview reports {2} target(s), POST applied, lastRun surfaced" -f `
+            $ledgerGet.Json.data.policy.keepDays, @($ledgerGet.Json.data.policy.exclusions).Count, @($ledgerGet.Json.data.preview.reports).Count) -ForegroundColor DarkGray
+
     Write-Host '[STEP] Automation status route (Release 2.7 Phase D)' -ForegroundColor Cyan
     $automationStatusOk = $false
     $autoStatus = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/automation/status"
