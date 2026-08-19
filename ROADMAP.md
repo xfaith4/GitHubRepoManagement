@@ -1,8 +1,8 @@
 # GitHub Repo Management — Active Execution Roadmap
 
 > **Status:** Active
-> **Active release:** **Release 3.3 — Steady-State Operation**
-> **Next active release:** the Release 2.9 operator batch, then the deferred mobile completion
+> **Active release:** **Release 2.9 — Operator Field Proof + Mobile Completion**
+> **Next active release:** none scheduled — every engineering release is closed; what remains is operator-gated or newly proposed
 > **Work ordering:** dependency-driven, not insertion order — see
 > [Execution Order and Dependencies](#execution-order-and-dependencies)
 > **Canonical product direction:** [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md)
@@ -168,11 +168,11 @@ module + verification boundary`.
 | 2.6       | Interface Clarity and Operator Orientation                               | `done` — 2026-07-06; device sign-off tracked in 2.9                                        |
 | 2.7       | Guarded Scheduled Automation (Curated-Subset, Preview-First)             | `done` — closed 2026-08-11; see archive. Live service install re-homed to 2.9              |
 | 2.8       | Local Claude Code Execution (queue + operator runner)                    | `done` (engineering) — 2026-07-15; real `claude` run tracked in 2.9                        |
-| **2.9**   | **Operator Field Proof** (mobile completion deferred)                    | `planned` — external-resource residuals only; the two mobile surfaces are deferred         |
+| **2.9**   | **Operator Field Proof + Mobile Completion**                             | **active** — promoted 2026-08-19; mobile UN-DEFERRED (its resume condition was met)        |
 | 3.0       | Operator-Context Execution                                               | `done` (engineering) — 2026-08-09; see archive. Live proof tracked in 2.9                  |
 | 3.1       | Closed-Loop Delivery                                                     | `done` 2026-08-15 — manual loop proof recorded; portal + scheduled proofs re-homed to 2.9  |
 | 3.2       | Portfolio Scale and Responsiveness                                       | `done` 2026-08-19 — budget + bounded sweep + observable/cancellable scan + render bound    |
-| **3.3**   | **Steady-State Operation**                                               | `planned` — unattended for months: retention, restore, honest TLS, decision-grade digests  |
+| 3.3       | Steady-State Operation                                                   | `done` 2026-08-19 — retention, rehearsed restore, honest transport, decision-grade exports |
 | **3.4**   | **The Delivery Loop Closes**                                             | `done` 2026-08-15 — six milestones + the full-loop proof, driven live and operator-verified |
 | 3.5       | Trustworthy Surfaces (UI Quality)                                        | `done` 2026-08-17 — all seven milestones; trust-report per finding; operator sign-off in 2.9 |
 
@@ -191,17 +191,17 @@ dispatch runs. No open item is now waiting on another open item — the ordering
 below is therefore about **what kind of resource each item needs**, not about
 prerequisites.
 
-1. **Release 3.3 — the active release.** Steady-state operation: retention
-   and compaction first, then backup/restore; the transport milestone waits
-   on Lane 0.2, the export contract interleaves anywhere.
+1. **Release 2.9 — the active release.** Its mobile half is unblocked
+   engineering (touch ergonomics, the agent-run list); its operator half is
+   batched and waiting on Ben's presence at the machine.
 2. **Release 3.4 — the delivery loop closes.** Engineering complete
    2026-08-15: all twelve steps of the loop are built, each behind its own
    refusal matrix, and the default-branch invariant is a derived tripwire that
    proves itself before sweeping. What remains is driving one real item around
    the circle — batched with the operator session below, alongside 3.1's proof.
-3. **Release 2.9 operator batch and the mobile resumption.** The operator
-   items wait on Ben's presence; mobile's resume condition (a PC workflow
-   that finishes) has been met since 2026-08-15.
+3. **No engineering release remains scheduled.** Every release from 1.x
+   through 3.5 is closed. New work should be proposed as a release with its
+   own execution contract rather than appended to a closed one.
 5. **One batched operator session** — an elevated shell covers the watchdog,
    the service installer and 2.7's freeze-prevention deploy; one authenticated
    shell covers the `claude` run, the `gh agent-task` run, the 3.1 live-portal
@@ -221,15 +221,14 @@ prerequisites.
 
 | Open item                                            | Depends on                                    | Type                                          |
 | ---------------------------------------------------- | --------------------------------------------- | --------------------------------------------- |
-| Release 3.3 steady-state operation (active)          | — (transport milestone: Lane 0.2 certificate) | none — independent milestones, any order      |
+| Release 2.9 mobile completion (active)               | —                                             | none — un-deferred 2026-08-19, engineering    |
 | Release 3.4 full-loop proof (engineering done)       | The same authenticated operator session       | hard — human; batch with 3.1's proof          |
 | Release 3.5 trustworthy surfaces (UI quality)        | —                                             | none — root causes identified, engineering    |
-| Release 2.9 mobile completion (ergonomics, run list) | A priority decision, already taken            | deferred 2026-08-11 — not blocked, deranked   |
 | Lane 0.2 `Checks: Read`; TLS certificate password    | An operator action outside this repository    | hard — external                               |
 | Lane 0.5 tab disclosure; Lane 0.7 archive signal     | A product decision, not engineering time      | hard — design                                 |
 | Release 2.9 freeze-prevention deploy (from 2.7)      | An elevated (SYSTEM) Windows install          | hard — privilege; batch with the two below    |
 | Release 2.9 watchdog + service-installer proof       | An elevated (SYSTEM) session                  | hard — privilege                              |
-| Release 2.9 physical-Android proof (2.5 + 2.6)       | An Android device on the LAN                  | deferred 2026-08-11 — hardware, and deranked  |
+| Release 2.9 physical-Android proof (2.5 + 2.6)       | The operator's Galaxy S24 Ultra on the LAN    | hard — hardware; the software is ready for it |
 | Release 2.9 real `claude` + `gh agent-task` runs     | An authenticated operator session             | hard — human; one session covers both         |
 | Release 2.9 re-homed 3.1 proofs (portal + schedule)  | The same authenticated operator session       | hard — human; batch with the runs above       |
 | Release 2.9 GitHub App installation-token exchange   | A registered GitHub App                       | hard — optional; PAT supersedes               |
@@ -239,29 +238,44 @@ prerequisites.
 
 ## 5. Active Release Snapshot
 
-### Active release detail — 3.3 Steady-State Operation
+### Active release detail — 2.9 Operator Field Proof + Mobile Completion
 
-Release 3.3 became the active release 2026-08-19, when Release 3.2 closed
-with all four milestones and the scan you can watch and stop. The theme
-shifts from making the portfolio fast to letting it run unattended: bounded
-storage, honest transport, a restore path, decision-grade exports.
+Release 2.9 became the active release 2026-08-19, when Release 3.3 closed and
+left no unblocked engineering release behind it. Its two halves have opposite
+shapes.
+
+**The operator half waits on Ben, and cannot be advanced by an agent.** Every
+item needs SYSTEM rights, a physical device, a browser with human eyes, or an
+interactive credential prompt. They are listed, batched, and ready.
+
+**The mobile half is UN-DEFERRED as of 2026-08-19.** The 2026-08-11 deferral
+was explicit about its resume condition: "resume once a PC workflow runs end
+to end without an operator having to know which background process must be
+alive for a button to mean anything." That condition is met and then some —
+the full delivery loop has been driven three times (two manual, one
+scheduled), the runner reports its own presence, disabled controls state
+their reasons, and every metric names its source. Two of the three mobile
+items are ordinary front-end engineering with no external gate; the third
+needs the operator's Galaxy S24 Ultra on the LAN.
 
 The full execution contract lives in one place,
-[Release 3.3 below](#release-33--steady-state-operation), per
+[Release 2.9 below](#release-29--operator-field-proof--mobile-completion), per
 `ROADMAP_TEMPLATE.md`. This heading exists so the validator can resolve the
 active-release pointer; it deliberately restates nothing.
 
-**Current focus:** ledger retention/compaction first (the watchdog ledger
-reached 6.9 MB from one-minute probes), then the `app.db` backup/restore
-path. The transport milestone stays gated behind Lane 0.2's certificate
-recovery; the export contract milestone is independent and can interleave.
+**Current focus:** the two unblocked mobile surfaces — touch ergonomics
+across the Phase 2-3 screens, and the tap-through agent-run list. The
+operator batch rides Ben's next session at the machine.
 ---
 
 ## 6. Open Releases
 
-### Release 2.9 — Operator Field Proof (mobile deferred)
+### Release 2.9 — Operator Field Proof + Mobile Completion
 
-**Status:** planned
+**Status:** ACTIVE — promoted 2026-08-19 when Release 3.3 closed and left no
+unblocked engineering release behind it. Mobile completion is **un-deferred**
+in the same move: its 2026-08-11 resume condition (a PC workflow that runs to
+completion) has been met three times over.
 
 **Goal:** convert every surface that is `smoke-tested` but still waits on an
 external resource into `operator-verified` with durable evidence, and finish the
@@ -282,19 +296,21 @@ the operator, not the code, is the scarce resource.
 
 #### Engineering milestones
 
-**Mobile completion — deferred 2026-08-11**, not cancelled. Both items have no
-technical gate; they were deranked because the PC workflow they would be a
-second front-end for does not yet run to completion, and a second form factor
-multiplies an unreliable workflow rather than adding reach. Resume when Release
-3.1 closes; the Release 2.5 responsive foundation stays shipped, so nothing
-regresses meanwhile.
+**Mobile completion — UN-DEFERRED 2026-08-19.** The 2026-08-11 deferral named
+its own resume condition: the PC workflow these would be a second front-end
+for had to run to completion first, because a second form factor multiplies an
+unreliable workflow rather than adding reach. That condition is met — the
+delivery loop has run end to end three times (PRs #140, #142, and the
+scheduled INcendiary#7), the runner reports its own presence, and Releases
+3.2/3.3 closed the scale and steady-state work behind it. The two engineering
+items resume now; the third needs the operator's device on the LAN.
 
-- [ ] _(deferred)_ Touch ergonomics beyond the Release 2.5 Phase 1 surfaces:
+- [ ] Touch ergonomics beyond the Release 2.5 Phase 1 surfaces:
       ~44px targets and a tap equivalent for every hover-only affordance across
       the Phases 2-3 surfaces. _(state: scaffolded)_
-- [ ] _(deferred)_ The tap-through mobile agent-run list from the agent-activity
+- [ ] The tap-through mobile agent-run list from the agent-activity
       indicator. _(state: planned — only the view is missing)_
-- [ ] _(deferred)_ Verify the four Release 2.5 workflows and the Release 2.6
+- [ ] Verify the four Release 2.5 workflows and the Release 2.6
       clarity affordances on a **physical Android phone**, per
       [`lan-mobile-setup.md`](docs/reference/lan-mobile-setup.md). _(state: both
       smoke-tested at an emulated 390px viewport → need real hardware)_
@@ -377,153 +393,53 @@ regresses meanwhile.
 
 - New product capability; remote (non-LAN) mobile access; native apps.
 
----
+**Validation plan:** the two halves are verified differently, deliberately.
+The mobile engineering lands under `npm run test:unit` (exit 0) at an
+emulated 390px viewport, plus a derived tripwire in the module smoke test
+sweeping the Phase 2-3 surfaces: every hover-only affordance must have a tap
+equivalent, every interactive target must meet the ~44px minimum, and the
+sweep must FIND its screens rather than read a maintained list that drifts.
+`npm run typecheck`, `npm run lint` and the PSScriptAnalyzer ratchet stay at
+baseline; CI is the arbiter. The operator half is verified by the operator —
+on the device, at the elevated prompt, with eyes on the surface — and
+recorded in `evidence/operator-verification-log.jsonl` with the surface id
+and what was observed. No agent may mark an operator item verified.
 
-### Release 3.3 — Steady-State Operation
+**Risks:** a touch-target sweep that measures declared Tailwind classes
+rather than rendered geometry can pass while the button is still 32px, so it
+must assert on what the test renderer computes; the physical-device proof
+must run against the LAN-bound host, not loopback, or it proves nothing about
+the setup it is meant to prove; and an operator item marked verified from a
+green suite rather than from eyes on the surface would reintroduce exactly
+the honesty gap this release exists to close.
 
-**Status:** ACTIVE — promoted 2026-08-19 when Release 3.2 closed.
-
-**Goal:** run unattended for months without an operator babysitting it — bounded
-storage, honest transport, a restore path, and reports that state their own data
-window.
-
-**Prerequisites:** none; each milestone is independent.
-
-#### Product outcomes
-
-- Append-only evidence stays append-only without growing without bound.
-- What the portal claims about its own transport and credentials matches what
-  it is actually doing.
-- A lost or corrupted `app.db` is recoverable from evidence already on disk.
-- Every export and digest states its data window, units, headline finding, and
-  recommended next action.
-
-#### Engineering milestones
-
-- [x] Add retention and compaction for the JSONL ledgers and `app.db`, with the
-      policy stated in config and the pruned range logged. _(state: smoke-tested
-      2026-08-19 — the `app.db` half already existed (2.7 Phase D maintenance,
-      floor 180d, VACUUM). The JSONL half is
-      [`Ledger.Retention.ps1`](backend/modules/persistence/Ledger.Retention.ps1):
-      **archive-then-trim** — pruned lines append verbatim to year-bucketed
-      archives under `output/archive/ledgers/` (the append-only contract's
-      intent is that evidence is never destroyed, not that a probe log grows
-      forever — the watchdog ledger hit 12 MB), survivors swap in atomically,
-      the pruned range is logged and reported. Undateable lines are kept, the
-      newest `minKeepLines` survive regardless of age, nothing outside
-      `output/` is reachable. Scope is derived: 6 targets + 4 named
-      exclusions, and the module-smoke tripwire fails any undeclared ledger —
-      it caught `automation-runs.jsonl` on its first run. Config knob
-      `retention.ledgers` in settings.json; routes mirror the database
-      maintenance pair; `Invoke-DailyEvidence.ps1` applies it daily.)_
-- [x] Add a documented backup and restore path for `app.db`, including a schema
-      migration story. _(state: smoke-tested 2026-08-19 —
-      [`Persistence.Backup.ps1`](backend/modules/persistence/Persistence.Backup.ps1):
-      `VACUUM INTO` snapshots of the live database (no shutdown, no partial
-      pages), each with a manifest (schema version, table counts) and
-      keep-newest-7 retention; `POST /api/maintenance/backup` +
-      `GET /api/maintenance/backups`, taken daily by `Invoke-DailyEvidence`.
-      Restore is deliberately operator-only with the host stopped
-      ([`Restore-AppDb.ps1`](scripts/Restore-AppDb.ps1)): verified before
-      anything moves, the existing database moves aside rather than dying,
-      verified again after. Schema story stated: any version >= 1 replays its
-      idempotent migrations forward on next boot; newer-than-code is refused
-      by name. The module smoke REHEARSES the loop — snapshot, mutate,
-      restore, query the restored history through the provider, prove the
-      mutated original survived aside. Docs:
-      [appdb-backup-restore.md](docs/reference/appdb-backup-restore.md).)_
-- [x] Make the portal's self-reported transport match reality, closing behind
-      Lane 0.2's certificate recovery. _(state: smoke-tested 2026-08-19 — the
-      HONESTY half needed no certificate and shipped without one; the
-      certificate itself only flips the state from `degraded` to `enabled`.
-      Three states now exist where one silence used to: `disabled` (no cert
-      configured, plain HTTP by design), `enabled`, and **`degraded`** — a
-      cert WAS configured and cannot be used, so the host serves plain HTTP.
-      The old code hit `degraded` twice (missing file; load failure) and both
-      times fell through to plain HTTP with at most a WARN line. The startup
-      banner hardcoded `http://` for a whole release, including while serving
-      TLS. `Get-PortalTransportState` now derives the answer from the loaded
-      certificate — never from config, which is the thing being checked — and
-      the degradation reaches `/api/auth/status`, `/health/dependencies` (as
-      a dependency failure) and **the login screen**, which says "Not
-      encrypted" where credentials are typed. Gate: the hardcoded-scheme
-      detector fails the old banner line first; both degraded paths asserted;
-      the report is proven never to touch the password.)_
-      **Remaining and genuinely gated:** actually serving HTTPS needs Lane
-      0.2's certificate regeneration (elevated; the PFX password is
-      unrecoverable). Until then this machine reports `degraded` truthfully —
-      which is the point.
-- [x] Bring every export and digest up to the decision-grade contract: data
-      window, units, headline finding, recommended next action.
-      _(state: smoke-tested 2026-08-19 —
-      [`DecisionGrade.ps1`](backend/modules/common/DecisionGrade.ps1) defines
-      the envelope once and refuses the omissions that make a report
-      undecidable (blank headline/units/next action, impossible coverage,
-      0% over an empty set). All four producers carry it: the operations
-      digest, the repo-status export, the collection export, and the two
-      automation digests — the automation ones over the RUN's window, not the
-      moment someone asked. The tripwire is derived: it regex-finds every
-      `New-/Get-/Export-*Digest|Report|Export*` producer across the four
-      files and fails any that neither carries the contract nor is named
-      exempt with a reason (6 found, 11 exemptions named). It refused a wrong
-      denominator on its first live run — the packaging digest's
-      `candidateCount` is not the denominator for packets+skipped, so that
-      digest carries no coverage rather than a fabricated ratio.)_
-
-#### Acceptance criteria
-
-- Ledger growth is bounded by a stated policy, and pruning is itself logged.
-- A restore from backup produces a working portal with its history intact.
-- The transport the portal reports is the transport it serves.
-- Every export names its window, units, headline, and next action.
-
-#### Out of scope
-
-- Multi-tenant or hosted operation.
-- Log shipping to an external observability platform.
-
-**Validation plan:** each milestone lands with its gate proven able to fail.
-Retention: a fixture ledger over policy is pruned, the pruned range is
-logged, and surviving lines are byte-identical to their originals (pruning an
-append-only ledger must never rewrite what it keeps). Backup/restore: a
-restore into a scratch workspace is REHEARSED by the gate — it boots the
-host against the restored `app.db` and queries history through it; a restore
-path that has never run is a hope, not a path. Transport: the smoke asserts
-the transport the portal reports equals the transport it serves (closes
-behind Lane 0.2). Exports: every digest/export payload is walked for the
-four decision-grade fields — data window, units, headline, next action.
-
-**Risks:** retention must not touch `evidence/baseline/` (permanent by
-contract) or prune ranges any open baseline references; compaction must be
-copy-forward with an atomic swap so a crash mid-prune leaves the original
-ledger, never a truncated one; a schema migration story that only migrates
-forward one version will strand the oldest backups silently — state the
-supported restore window instead.
-
-**Dependencies:** the persistence store (`app.db`, schema v2 on the native
-provider), the JSONL ledgers under `output/`, and — for the transport
-milestone only — Lane 0.2's certificate recovery (elevated, on Ben's list).
+**Dependencies:** the operator's presence at the machine (elevated session,
+authenticated `gh`, browser), a Galaxy S24 Ultra on the same LAN
+([`lan-mobile-setup.md`](docs/reference/lan-mobile-setup.md)), and Lane 0.2's
+certificate regeneration for the TLS-dependent portal proofs. The mobile
+engineering half depends on none of these.
 
 **Known issues:**
 
 - [ ] **[non-blocker]** The headless task runner has no stop mechanism — a
-      detached `while ($true)` poll loop survives its session (proven
-      2026-08-19: a 17-hour orphan runner raced the api-host smoke's dispatch
-      fixture; only the repo-root guard kept the orphaned session's commit
-      out of the real working tree, PR #157). Fits this release's theme
-      exactly: unattended operation needs a stop-file like the api-host's
-      shutdown signal, and the smoke should enqueue into an isolated queue.
-      _(re-homed from 3.2 on closure)_
+      detached `while ($true)` poll loop survives its session. Proven twice
+      on 2026-08-19: a 17-hour orphan runner raced the api-host smoke's
+      dispatch fixture, and later committed in-flight work onto local `main`
+      (recovered; `origin/main` untouched, PR #157 added the repo-root
+      guard). Needs a stop-file like the api-host's shutdown signal, and the
+      smoke should enqueue into an isolated queue rather than the operator's.
+      _(re-homed from 3.2 → 3.3 → here)_
 - [ ] **[non-blocker]** `Dashboard.tsx` is ~1,750 lines of hooks and handlers
       above the return; Release 3.5 deferred the Operations panels' full
-      stale-keeps-last-good rendering to this refactor. Worth doing, not
-      worth blocking on. _(inherited 2.7 → 3.2 → here on 3.2's closure)_
+      stale-keeps-last-good rendering to this refactor. _(inherited 2.7 →
+      3.2 → 3.3 → here)_
 - [ ] **[non-blocker]** Watch item: PR #155's first CI run failed with a
       packaging fixture auditing `L0-Absent`; unreproduced locally or on
       rerun. The maturity assertion now prints the host-log audit trail on
-      failure, so a recurrence names its cause. _(re-homed from 3.2)_
+      failure, so a recurrence names its cause. _(re-homed from 3.2 → 3.3)_
 
 ---
+
 
 ---
 
