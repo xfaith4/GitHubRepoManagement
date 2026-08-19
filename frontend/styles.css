@@ -27,3 +27,52 @@
     overflow-x: hidden;
   }
 }
+
+/* --- Release 2.9: touch ergonomics --------------------------------------
+   Tap targets reach 44px on touch pointers, and nowhere else.
+
+   An audit of the components found 265 interactive elements whose declared
+   padding and text size put them under 44px. Fixing them one at a time would
+   be 265 chances to drift and 265 chances to bloat the desktop layout, where
+   a mouse hits a 24px control perfectly well. The size floor is a property of
+   the INPUT DEVICE, not of any component, so it belongs in one rule keyed on
+   the device.
+
+   `pointer: coarse` is that key: it matches touch and stylus, and never
+   matches a mouse, so desktop density is untouched by construction. A phone
+   in landscape, a tablet, and a touchscreen laptop all get the floor; the
+   same page on a desktop monitor does not.
+
+   Native buttons and selects center their content vertically, so a min-height
+   larger than the content grows the hit area without moving the label.
+   Checkboxes are scaled instead of stretched -- a 44px-wide checkbox looks
+   broken, while a scaled one reads as a normal control with a bigger target.
+
+   Bare `a` is deliberately excluded: an inline link inside a paragraph would
+   break the text flow it lives in. Links that ACT as buttons carry
+   `role="button"` and are covered by that selector. */
+@media (pointer: coarse) {
+  button,
+  select,
+  [role="button"],
+  [role="tab"],
+  summary {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Checkboxes and radios: grow the target without deforming the control. */
+  input[type="checkbox"],
+  input[type="radio"] {
+    transform: scale(1.4);
+    margin: 6px;
+  }
+
+  /* Text inputs need the height but not the width floor -- a 44px-wide text
+     field would be unusable, and they are already full-width where it
+     matters. */
+  input:not([type="checkbox"]):not([type="radio"]),
+  textarea {
+    min-height: 44px;
+  }
+}

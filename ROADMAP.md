@@ -305,9 +305,35 @@ scheduled INcendiary#7), the runner reports its own presence, and Releases
 3.2/3.3 closed the scale and steady-state work behind it. The two engineering
 items resume now; the third needs the operator's device on the LAN.
 
-- [ ] Touch ergonomics beyond the Release 2.5 Phase 1 surfaces:
+- [x] Touch ergonomics beyond the Release 2.5 Phase 1 surfaces:
       ~44px targets and a tap equivalent for every hover-only affordance across
-      the Phases 2-3 surfaces. _(state: scaffolded)_
+      the Phases 2-3 surfaces. _(state: smoke-tested 2026-08-19 — an audit
+      found **265** interactive elements whose declared padding and text size
+      put them under 44px, and fixing 265 call sites would be 265 chances to
+      drift and 265 chances to bloat the desktop. A size floor is a property
+      of the INPUT DEVICE, so it is one rule keyed on the device:
+      `@media (pointer: coarse)` in `styles.css`, which never matches a mouse
+      — desktop density is untouched by construction. Checkboxes are grown by
+      transform, not stretched to 44px wide, because a stretched checkbox
+      reads as a broken control. Hover-only definitions (a `title` never
+      appears on touch, so those definitions were absent, not subtle) got a
+      tap path via [`DefinitionHint`](frontend/components/DefinitionHint.tsx),
+      which ADDS the disclosure without removing the desktop hover. Gate: the
+      tap-size detector rejects a 32px fixture first, the floor is asserted to
+      exist inside the coarse-pointer query and NOWHERE else, and both
+      consumer surfaces are asserted to use the hint.)_
+
+      **Plan correction, recorded rather than quietly dropped:** this
+      release's validation plan promised a sweep asserting "what the test
+      renderer computes". It cannot: jsdom has no layout engine and this repo
+      has no Playwright, so rendered geometry is unavailable to any gate here.
+      The static audit that stood in for it reported 265 of 265 elements
+      failing — a measurement that says everything is broken is a broken
+      measurement, and it is exactly the risk this release wrote down. The
+      device-level CSS rule sidesteps the measurement problem instead of
+      faking it: there is nothing per-element to measure when the floor is
+      global. **True rendered-geometry verification is the physical-device
+      item below**, which is where it always belonged.
 - [ ] The tap-through mobile agent-run list from the agent-activity
       indicator. _(state: planned — only the view is missing)_
 - [ ] Verify the four Release 2.5 workflows and the Release 2.6

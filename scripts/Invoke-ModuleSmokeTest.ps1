@@ -6720,4 +6720,74 @@ Write-Step 'Transport honesty - Release 3.3 milestone 3: the reported transport 
     Write-Host '  transport ok: hardcoded-scheme detector failed the old banner line first; state derived from the loaded certificate (never from config, never near the password); missing-file AND load-failure both reach degraded; degradation surfaces on auth-status, dependency health and the login screen by name' -ForegroundColor DarkGray
 }
 
+Write-Step 'Touch ergonomics - Release 2.9: the tap-target floor is a device rule, and it is not overridden'
+& {
+    $touchCss = Join-Path $WorkspaceRoot 'frontend\styles.css'
+    if (-not (Test-Path -LiteralPath $touchCss)) { throw "Missing $touchCss" }
+    $touchCssText = Get-Content -LiteralPath $touchCss -Raw -Encoding UTF8
+
+    # --- The floor exists, keyed on the DEVICE, at the right size. --------
+    # Why a device rule and not 265 component fixes: the audit found 265
+    # interactive elements under 44px. A size floor is a property of the input
+    # device, not of any component, so one `pointer: coarse` rule covers them
+    # all and cannot drift -- while leaving mouse density untouched, because
+    # `pointer: coarse` never matches a mouse.
+    # `\r?\n` throughout, and no trailing-newline requirement: this file is LF
+    # in the working tree and CRLF on a CI checkout, and a gate that only
+    # matches one of them fails on the runner while passing locally.
+    $touchBlock = [regex]::Match($touchCssText, '(?s)@media \(pointer: coarse\) \{.*?\r?\n\}')
+    if (-not $touchBlock.Success) {
+        throw 'No @media (pointer: coarse) block in styles.css; the tap-target floor does not exist.'
+    }
+    $touchBlockText = $touchBlock.Value
+
+    # The detector must be able to fail: a block with a 32px floor is a
+    # violation, and the same regex has to catch it.
+    $touchViolatingFixture = '@media (pointer: coarse) { button { min-height: 32px; } }'
+    $touchSizePattern = 'min-height:\s*44px'
+    if ($touchViolatingFixture -match $touchSizePattern) { throw 'Tap-size detector matched a 32px fixture; the assertion below is vacuous.' }
+    if ($touchBlockText -notmatch $touchSizePattern) { throw 'The coarse-pointer block does not set a 44px min-height; a smaller floor is not a tap target.' }
+
+    foreach ($touchSelector in @('button', 'select', '\[role="button"\]')) {
+        if ($touchBlockText -notmatch $touchSelector) {
+            throw ("The coarse-pointer block does not cover '{0}'; that control keeps its mouse-sized target on a phone." -f ($touchSelector -replace '\\', ''))
+        }
+    }
+    # Checkboxes must be grown, not stretched -- a 44px-wide checkbox reads as
+    # a broken control, so the rule uses a transform instead.
+    if ($touchBlockText -notmatch 'input\[type="checkbox"\]') { throw 'Checkboxes are not covered by the touch rule.' }
+    if ($touchBlockText -match '(?s)input\[type="checkbox"\][^}]*min-width:\s*44px') {
+        throw 'The touch rule stretches checkboxes to 44px wide; grow the target with a transform instead of deforming the control.'
+    }
+
+    # --- Desktop density must be untouched. -------------------------------
+    # A floor applied outside a coarse-pointer query would bloat every mouse
+    # layout in the product. The rule must live ONLY inside the media query.
+    $touchOutsideBlock = $touchCssText.Replace($touchBlockText, '')
+    if ($touchOutsideBlock -match $touchSizePattern) {
+        throw 'A 44px floor is declared outside the coarse-pointer query; it would resize the desktop layout, where a mouse hits a 24px control fine.'
+    }
+
+    # --- The tap equivalent for hover-only definitions exists and is used. -
+    # A `title` is a mouse affordance: on touch it never appears, so a
+    # definition living only there is absent, not subtle.
+    $touchHintPath = Join-Path $WorkspaceRoot 'frontend\components\DefinitionHint.tsx'
+    if (-not (Test-Path -LiteralPath $touchHintPath)) { throw 'DefinitionHint.tsx is missing; hover-only definitions have no tap equivalent.' }
+    $touchHintText = Get-Content -LiteralPath $touchHintPath -Raw -Encoding UTF8
+    foreach ($touchHintRequirement in @('onClick', 'aria-expanded', 'aria-controls', 'title=\{definition\}')) {
+        if ($touchHintText -notmatch $touchHintRequirement) {
+            throw ("DefinitionHint is missing '{0}': the disclosure must be activatable, announced, and must KEEP the desktop hover path." -f ($touchHintRequirement -replace '\\', ''))
+        }
+    }
+    $touchConsumers = @('RepoGrid.tsx', 'WorkQueueView.tsx')
+    foreach ($touchConsumer in $touchConsumers) {
+        $touchConsumerText = Get-Content -LiteralPath (Join-Path $WorkspaceRoot ('frontend\components\' + $touchConsumer)) -Raw -Encoding UTF8
+        if ($touchConsumerText -notmatch 'DefinitionHint') {
+            throw ("{0} defines terms by hover alone; its definitions are unreachable on a phone." -f $touchConsumer)
+        }
+    }
+
+    Write-Host ("  touch ok: 44px floor exists under @media (pointer: coarse) and NOWHERE else (detector rejects a 32px fixture); button/select/role=button covered; checkboxes grown by transform, not stretched; DefinitionHint gives hover-only definitions a tap path while keeping the title, used on {0} surface(s)" -f @($touchConsumers).Count) -ForegroundColor DarkGray
+}
+
 Write-Step 'Smoke test completed'
