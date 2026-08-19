@@ -263,6 +263,26 @@ function Wait-ApiHostReady {
 $shutdownSignalPath = Join-Path $smokeRoot 'api-host-shutdown.signal'
 Remove-Item -LiteralPath $shutdownSignalPath -Force -ErrorAction SilentlyContinue
 
+# This smoke's dispatch section enqueues into the operator's REAL task queue
+# and cancels ~1s later. A live headless runner polling that queue can claim
+# the fixture inside that window and then have the fixture deleted out from
+# under its claude session -- proven 2026-08-19 (run 20260819-145958-7bc51ee2),
+# where only the runner's repo-root guard kept the orphaned session's commit
+# out of the real working tree. Warn loudly; CI has no runner and stays quiet.
+$runnerHeartbeatPath = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.heartbeat.json'
+if (Test-Path -LiteralPath $runnerHeartbeatPath) {
+    try {
+        $runnerHeartbeat = Get-Content -LiteralPath $runnerHeartbeatPath -Raw | ConvertFrom-Json
+        $runnerHeartbeatPid = [int]$runnerHeartbeat.processId
+        if ($runnerHeartbeatPid -gt 0 -and $null -ne (Get-Process -Id $runnerHeartbeatPid -ErrorAction Ignore)) {
+            Write-Host ("[WARN] A live task runner (pid {0}) is polling the real queue this smoke enqueues into. It can claim the dispatch fixture mid-test. Stop the runner before running this smoke on an operator machine." -f $runnerHeartbeatPid) -ForegroundColor Yellow
+        }
+    }
+    catch {
+        Write-Host ("[WARN] Runner heartbeat at {0} is unreadable; if a runner is alive it can race this smoke's dispatch fixture." -f $runnerHeartbeatPath) -ForegroundColor Yellow
+    }
+}
+
 $job = Start-Job -ScriptBlock {
     param($ScriptPath, $Root, $Log, $ListenPort, $SignalPath)
     & $ScriptPath -WorkspaceRoot $Root -BindAddress '127.0.0.1' -Port $ListenPort -LogPath $Log -ShutdownSignalPath $SignalPath
