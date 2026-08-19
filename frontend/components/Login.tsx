@@ -106,9 +106,28 @@ const Login: React.FC<LoginProps> = ({ status, onAuthenticated }) => {
           )}
         </form>
 
-        <p className="mt-4 text-center text-xs text-gray-600">
-          {status.isLoopbackBind ? 'Local access' : `Serving ${status.bindAddress ?? ''}`}
-        </p>
+        {/*
+          Release 3.3 milestone 3 — this is where credentials get typed, so
+          it states the transport it actually has. A configured-but-unusable
+          certificate ('degraded') means this page is plain HTTP while config
+          claims otherwise; that reads as a warning, not as a footnote.
+        */}
+        {status.transport?.tlsState === 'degraded' ? (
+          <p className="mt-4 text-center text-xs text-amber-500" role="status" title={status.transport.detail}>
+            Not encrypted — TLS is configured but unavailable, so this connection is plain HTTP.
+          </p>
+        ) : (
+          <p className="mt-4 text-center text-xs text-gray-600">
+            {status.isLoopbackBind ? 'Local access' : `Serving ${status.bindAddress ?? ''}`}
+            {status.transport
+              ? status.transport.encryptedInTransit
+                ? ' · encrypted (HTTPS)'
+                : status.isLoopbackBind
+                  ? ' · not encrypted (loopback only)'
+                  : ' · not encrypted (HTTP)'
+              : ''}
+          </p>
+        )}
       </div>
     </div>
   );

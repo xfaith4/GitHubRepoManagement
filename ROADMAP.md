@@ -432,10 +432,27 @@ window.
       restore, query the restored history through the provider, prove the
       mutated original survived aside. Docs:
       [appdb-backup-restore.md](docs/reference/appdb-backup-restore.md).)_
-- [ ] Make the portal's self-reported transport match reality, closing behind
-      Lane 0.2's certificate recovery. _(state: planned — the host degrades to
-      plain HTTP on a certificate it cannot open, while config still claims
-      TLS)_
+- [x] Make the portal's self-reported transport match reality, closing behind
+      Lane 0.2's certificate recovery. _(state: smoke-tested 2026-08-19 — the
+      HONESTY half needed no certificate and shipped without one; the
+      certificate itself only flips the state from `degraded` to `enabled`.
+      Three states now exist where one silence used to: `disabled` (no cert
+      configured, plain HTTP by design), `enabled`, and **`degraded`** — a
+      cert WAS configured and cannot be used, so the host serves plain HTTP.
+      The old code hit `degraded` twice (missing file; load failure) and both
+      times fell through to plain HTTP with at most a WARN line. The startup
+      banner hardcoded `http://` for a whole release, including while serving
+      TLS. `Get-PortalTransportState` now derives the answer from the loaded
+      certificate — never from config, which is the thing being checked — and
+      the degradation reaches `/api/auth/status`, `/health/dependencies` (as
+      a dependency failure) and **the login screen**, which says "Not
+      encrypted" where credentials are typed. Gate: the hardcoded-scheme
+      detector fails the old banner line first; both degraded paths asserted;
+      the report is proven never to touch the password.)_
+      **Remaining and genuinely gated:** actually serving HTTPS needs Lane
+      0.2's certificate regeneration (elevated; the PFX password is
+      unrecoverable). Until then this machine reports `degraded` truthfully —
+      which is the point.
 - [x] Bring every export and digest up to the decision-grade contract: data
       window, units, headline finding, recommended next action.
       _(state: smoke-tested 2026-08-19 —

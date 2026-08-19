@@ -123,6 +123,22 @@ export interface AuthStatus {
   keyEnvVar?: string;
   bindAddress?: string;
   isLoopbackBind?: boolean;
+  /**
+   * Release 3.3 milestone 3 - what the host is ACTUALLY serving, not what it
+   * was configured to serve. `tlsState: 'degraded'` means TLS was configured
+   * and could not be used, so this connection is plain HTTP.
+   */
+  transport?: PortalTransportState;
+}
+
+export interface PortalTransportState {
+  scheme: 'http' | 'https';
+  tlsState: 'disabled' | 'enabled' | 'degraded';
+  detail: string;
+  configuredPath?: string;
+  encryptedInTransit: boolean;
+  certificateSubject?: string | null;
+  certificateNotAfter?: string | null;
 }
 
 export async function getAuthStatus(): Promise<AuthStatus> {
