@@ -5147,3 +5147,167 @@ queue summaries (milestone 6).
       lost.
 
 ---
+
+## Release 3.2 — Portfolio Scale and Responsiveness (closed 2026-08-19, archived from ROADMAP.md)
+
+**Release closed 2026-08-19.** All four milestones: the read-path performance
+budget (2026-08-11, PR #117), the bounded git sweep (PR #155 — nine unbounded
+calls counted where the record said seven, all ten sites bounded, cap-1/cap-4
+output asserted identical), the observable cancellable background scan
+(PR #156 — progress from inside the loops, cancel at phase boundaries,
+`/health/live` proven answerable DURING a scan, closing the Lane 0.9 item),
+and the grid render bound (closed by measurement: pagination already bounds
+both render modes; the new gate proves a 500-repo portfolio renders one page).
+Residues re-homed to Release 3.3: the `Dashboard.tsx` refactor non-blocker,
+the runner stop-mechanism gap (the 17-hour orphan runner incident of
+2026-08-19), and the PR #155 CI-transient watch item. The FailFast
+blast-radius question stays with Lane 0.9, where it was already recorded.
+
+Verbatim as it stood at closure:
+
+### Release 3.2 — Portfolio Scale and Responsiveness
+
+**Status:** ACTIVE — resumed 2026-08-17 when Release 3.5 closed. (Demoted
+2026-08-11 behind 3.1: a portfolio that renders faster while queueing work
+nobody executes is not more reliable.) Performance budget 2026-08-11; the
+bounded git sweep and the observable, cancellable background scan both
+landed 2026-08-19. Remaining: grid virtualization and the `Dashboard.tsx`
+non-blocker it pairs with.
+
+**Goal:** make an 80+ repo portfolio feel immediate. Reads serve from the
+persistent index; a cold full assessment becomes a visible background job
+instead of a synchronous request that can outlive its own deadline.
+
+**Prerequisites:** met. Lane 0.4 settled the deadline question 2026-08-09 — an
+extended 900-second tier rather than an exemption — so this release starts from
+a bounded scan budget it has to beat rather than from an open question. The
+performance milestone landed first deliberately: without a declared target,
+the remaining three milestones would have no way to prove they helped.
+
+#### Product outcomes
+
+- No portal action can trip the freeze guard that exists to protect it.
+- Portfolio reads are served from `app.db` and refreshed incrementally, so
+  repeated views cost nothing.
+- Scan progress is visible while it runs, rather than a spinner that may or may
+  not still be alive.
+
+#### Engineering milestones
+
+**The read-path performance budget shipped 2026-08-11
+([PR #117](https://github.com/xfaith4/GitHubRepoManagement/pull/117)) and is
+archived.** It landed first deliberately: without a declared target, the three
+milestones below would have no way to prove they helped. The numbers they have
+to beat are now stated and enforced — warm reads at 2-3s, a cold scan at 300s
+(against the 900s deadline), measured figure served beside its budget.
+
+- [x] Serve portfolio assessment from the persistent index with incremental
+      refresh; make a cold full scan an explicit background job with progress
+      and a cancel. _(state: smoke-tested 2026-08-19 — the serving half was
+      already true (index reuse 2.3 5B/5F; all four sweeps moved to the
+      out-of-process worker when the freeze tripwire landed) but the job was
+      a black box: `statusRefreshing: true` was its entire observable
+      surface. Now the worker writes a progress file (phase, repos, heartbeat)
+      from inside its loops, honors a cancel marker at phase boundaries
+      (never inside the callbacks that swallow exceptions by design), and
+      three routes expose it: `GET /api/portfolio/scan/status`,
+      `POST /api/portfolio/scan`, `POST /api/portfolio/scan/cancel`
+      (idle cancel = named 409). The portal renders it as a live-region chip
+      with a cancel that states its phase-boundary semantics. Gates: api-host
+      smoke proves route start → `/health/live` 200 DURING the scan → cancel
+      ends `cancelled` with phases kept, plus a delayed-worker control pair
+      (completed 4/4 vs cancelled early, marker consumed, lock removed);
+      `ScanProgressChip.test.tsx` proves the operator sees it.)_
+- [x] Bound per-repo git work with a timeout and a concurrency cap so one
+      pathological repo cannot stall a sweep. _(state: smoke-tested —
+      counting found NINE unbounded calls per repo (~675 launches on the real
+      75-repo workspace), not the seven this item recorded. All ten bare call
+      sites (eight in the inventory walk, the head-SHA read, the root-commit
+      identity read) now go through
+      [`Git.BoundedSweep.ps1`](backend/modules/git/Git.BoundedSweep.ps1):
+      per-command timeout with kill-on-expiry, a hung repo short-circuits
+      after two timeouts, repos fan out on a runspace pool capped at 4, and
+      the heartbeat ticks per completed repo from inside the sweep. Output
+      asserted identical to sequential, order included; the bare-git tripwire
+      failed its own violating fixture first. Gate: module smoke "Bounded git
+      sweep".)_
+- [x] Virtualize the repo grid so row count stops driving render cost.
+      _(state: smoke-tested 2026-08-19 — closed by measurement, not by
+      windowing. Both render modes (mobile cards, desktop table) already draw
+      from `pagedRepos` (default 50/page, max 100), so render cost is
+      O(pageSize), not O(portfolio) — the milestone's intent, satisfied
+      without a virtualization dependency. What was missing was the assertion
+      that keeps it true: `RepoGrid.test.tsx` renders a 500-repo portfolio
+      and proves the DOM stays bounded at one page while the pager accounts
+      for all 500 — a future change that maps the full list again fails the
+      gate, not the operator's browser. If the portfolio outgrows pagination
+      UX, windowing is the successor, behind the same tests.)_
+- [ ] **[non-blocker]** `Dashboard.tsx` is **1,752 lines** (2,519 → 2,308 after
+      the Phase D extractions → 1,752 on 2026-08-10, when the ~600-line Insights
+      block became [`InsightsView.tsx`](frontend/components/InsightsView.tsx)).
+      What remains is ~1,000 lines of hooks and handlers above the return — a
+      different shape of problem from the JSX blocks already extracted.
+      **Gained a driver 2026-08-17:** Release 3.5 deferred the Operations
+      panels' full stale-keeps-last-good rendering to this refactor rather
+      than threading it through the current component shape. _(state: planned — inherited from
+      Release 2.7 Phase D when that release closed 2026-08-11; worth doing, not
+      worth blocking on.)_
+
+#### Acceptance criteria
+
+- A cold full-portfolio assessment completes without tripping the request
+  deadline, and its progress is observable while it runs.
+- Repeated portfolio reads after a warm index are served without a rescan.
+- The performance budget is stated in the repo and checked by smoke.
+
+#### Out of scope
+
+- Distributed or multi-machine scanning.
+- Replacing SQLite.
+
+**Validation plan:** `npm test`,
+exit 0, plus a per-milestone gate — a hung `git` call abandoned at its
+timeout, scan progress observable and a cancel honored mid-scan, and the
+read-path budget assertions still green. A scale change that regresses a warm
+read has traded the wrong thing.
+
+**Risks:** a scale change must keep the progress heartbeat publishing from
+**inside** the loop it describes, or a healthy scan reads as frozen and the
+watchdog restarts it mid-flight (Lane 0.9, three P0 outages); a concurrency
+cap must not reorder or drop repositories — output identical to sequential is
+an assertion, not a hope; a background job must not leave an orphaned
+operation marker when it outlives its request.
+
+**Dependencies:** the persistent index (`Save-PortfolioIndexArtifacts`, 1.7.5),
+the operation heartbeat, the request-deadline tier classifier, and the
+read-path budget ([`PerformanceBudget.ps1`](backend/api-host/PerformanceBudget.ps1))
+that gives the remaining milestones a number to beat.
+**Known issues:**
+
+- [ ] `FailFast` as deadline policy means one slow request destroys every
+      in-flight request. Recorded as a Lane 0.9 non-blocker; the blast radius is
+      a design question this release touches but does not by itself settle.
+- [x] `/health/live` is unanswerable while a scan runs — **resolved by
+      architecture, proven 2026-08-19**: scans run out of process, and the
+      api-host smoke now asserts `/health/live` answers 200 while
+      `scan/status` reports a running scan. Residual truth, named: non-scan
+      900s-tier requests (forced reassessment recompute, automation runs)
+      still hold the single request thread while they run — that is the
+      FailFast blast-radius question above, not a scan problem.
+- [ ] **[non-blocker]** The headless task runner has no stop mechanism — a
+      detached `while ($true)` poll loop survives its session (a 17-hour-old
+      runner raced the api-host smoke's dispatch fixture 2026-08-19, claiming
+      it in the ~1s enqueue-to-cancel window; only the repo-root guard kept
+      the orphaned session's commit out of the real working tree). Needs a
+      stop-file like the api-host's shutdown signal, and the smoke should
+      enqueue into an isolated queue rather than the operator's real one.
+- [ ] **[non-blocker]** PR #155's first CI run failed with a packaging
+      fixture auditing `L0-Absent`; not reproduced locally or on rerun (the
+      audit's per-repo catch maps any throw to `parse-error`/L0). The
+      maturity assertion now prints the host-log audit trail and the entry's
+      `roadmapState` on failure, so a recurrence names its cause instead of
+      hiding on the runner.
+
+---
+
+---
