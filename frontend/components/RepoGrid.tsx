@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { type RepoStatus, type DispatchReadiness, type RepoCurationState, type PortfolioAssessmentScanSummary } from '../types';
 import { BuildSuccessIcon, BuildFailureIcon, BuildInProgressIcon, PullRequestIcon, NoBuildsIcon, ChevronDownIcon, ChevronRightIcon } from './icons';
 import { isRepoNeedsAttention } from '../lib/needsAttention';
+import DefinitionHint from './DefinitionHint';
 import { getCurationBadgeConfig, getCurationRank, matchesCurationFilters } from '../lib/curationScope';
 
 interface RepoGridProps {
@@ -723,8 +724,11 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
             {sortKey === 'priority' ? ' · priority order: favorites → candidates → recently changed → unchanged' : ''}
           </div>
           {scanSummary && (
-            <div className="text-xs text-gray-500" title="Change-aware indexing: unchanged repositories are reused from the persisted index instead of being rescanned.">
-              Last scan: <span className="text-emerald-400">{scanSummary.reused} reused</span>
+            <div className="text-xs text-gray-500">
+              <DefinitionHint
+                definition="Change-aware indexing: unchanged repositories are reused from the persisted index instead of being rescanned."
+                data-testid="scan-summary-definition"
+              >Last scan:</DefinitionHint>{' '}<span className="text-emerald-400">{scanSummary.reused} reused</span>
               {' · '}<span className="text-cyan-400">{scanSummary.reindexed} reindexed</span>
               {scanSummary.failed > 0 ? <>{' · '}<span className="text-rose-400">{scanSummary.failed} failed</span></> : ''}
               {` · ${(scanSummary.durationMs / 1000).toFixed(1)}s`}
