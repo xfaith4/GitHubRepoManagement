@@ -6421,6 +6421,9 @@ Write-Step 'Ledger retention - Release 3.3 milestone 1: archive-then-trim, bound
             return $undeclared
         }
         $retPlanted = Join-Path $WorkspaceRoot 'output\logs\smoke-undeclared-ledger.jsonl'
+        # A fresh CI checkout has no output\logs\ (output/ is gitignored); the
+        # planted fixture must create its own home.
+        $null = New-Item -ItemType Directory -Path (Split-Path -Parent $retPlanted) -Force
         Set-Content -LiteralPath $retPlanted -Value '{"timestamp":"2026-01-01T00:00:00Z"}'
         try {
             $retRedResult = @(& $retFindUndeclared $retLedgerHomes $declaredPaths)
