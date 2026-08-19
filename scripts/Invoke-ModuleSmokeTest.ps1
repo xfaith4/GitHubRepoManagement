@@ -6732,7 +6732,10 @@ Write-Step 'Touch ergonomics - Release 2.9: the tap-target floor is a device rul
     # device, not of any component, so one `pointer: coarse` rule covers them
     # all and cannot drift -- while leaving mouse density untouched, because
     # `pointer: coarse` never matches a mouse.
-    $touchBlock = [regex]::Match($touchCssText, '(?s)@media \(pointer: coarse\) \{.*?\n\}\n')
+    # `\r?\n` throughout, and no trailing-newline requirement: this file is LF
+    # in the working tree and CRLF on a CI checkout, and a gate that only
+    # matches one of them fails on the runner while passing locally.
+    $touchBlock = [regex]::Match($touchCssText, '(?s)@media \(pointer: coarse\) \{.*?\r?\n\}')
     if (-not $touchBlock.Success) {
         throw 'No @media (pointer: coarse) block in styles.css; the tap-target floor does not exist.'
     }
