@@ -334,8 +334,21 @@ items resume now; the third needs the operator's device on the LAN.
       faking it: there is nothing per-element to measure when the floor is
       global. **True rendered-geometry verification is the physical-device
       item below**, which is where it always belonged.
-- [ ] The tap-through mobile agent-run list from the agent-activity
-      indicator. _(state: planned — only the view is missing)_
+- [x] The tap-through mobile agent-run list from the agent-activity
+      indicator. _(state: smoke-tested 2026-08-19 — the indicator has said
+      "3 agent runs" since Release 2.5 while the answer to *which three* lived
+      only in a hover title, and the pill itself was a `<span>`: visible,
+      countable, and dead to a finger. It is now a button that opens
+      [`AgentRunSheet`](frontend/components/AgentRunSheet.tsx), reusing the
+      2.5 `mobile-sheet` class so a phone gets the whole viewport and a
+      desktop gets an ordinary dialog. Each run names its repository, state,
+      requested task, branch and pull request; empty, error and loading are
+      three distinct states, because a list that cannot tell them apart reads
+      as broken. Read-only by design — a sheet opened from a status pill is a
+      place to look, not a place to dispatch from. Gate: the dead-end
+      detector rejects a handler-less span fixture first, then asserts the
+      button, the dialog announcement, the mobile-sheet class and all three
+      states.)_
 - [ ] Verify the four Release 2.5 workflows and the Release 2.6
       clarity affordances on a **physical Android phone**, per
       [`lan-mobile-setup.md`](docs/reference/lan-mobile-setup.md). _(state: both
