@@ -116,6 +116,7 @@ $persistenceModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\persistence'
 . (Join-Path $persistenceModuleRoot 'Ledger.Retention.ps1')
 . (Join-Path $persistenceModuleRoot 'Persistence.Backup.ps1')
 . (Join-Path $commonRoot 'NotificationHub.ps1')
+. (Join-Path $commonRoot 'DecisionGrade.ps1')
 . (Join-Path $PSScriptRoot 'ApiHost.ErrorHandling.ps1')
 . (Join-Path $PSScriptRoot 'RequestDeadline.ps1')
 . (Join-Path $PSScriptRoot 'GitHubRateLimit.ps1')
@@ -1700,6 +1701,20 @@ function Export-RepoStatusReports {
     Set-Content -LiteralPath $htmlPath -Value $htmlContent -Encoding UTF8
     Set-Content -LiteralPath $csvPath -Value $csvContent -Encoding UTF8
 
+    # Release 3.3 milestone 4 -- an export states its own window, units,
+    # headline and next action, so the file is decidable away from the portal
+    # that produced it.
+    $dirtyRepoCount = @($Repos | Where-Object {
+            $modified = [int](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'modifiedCount' -Default 0)
+            $untracked = [int](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'untrackedCount' -Default 0)
+            ($modified + $untracked) -gt 0
+        }).Count
+    $exportEnvelope = New-DecisionGradeEnvelope -Units 'repositories' `
+        -Headline $(if (@($Repos).Count -eq 0) { 'No repositories in this export.' } else { "$(@($Repos).Count) repositories captured; $dirtyRepoCount have uncommitted work." }) `
+        -NextAction $(if ($dirtyRepoCount -gt 0) { "Review the $dirtyRepoCount repositories with uncommitted work before the next sync; uncommitted trees refuse default-branch sync." } else { 'No uncommitted work outstanding; the portfolio is safe to sync.' }) `
+        -WindowFrom $generatedAt.ToUniversalTime().ToString('o') -WindowTo $generatedAt.ToUniversalTime().ToString('o') `
+        -AssessedCount (@($Repos).Count) -TotalCount (@($Repos).Count)
+
     return [pscustomobject]@{
         generatedAt = $generatedAt.ToString('o')
         repoCount = @($Repos).Count
@@ -1709,6 +1724,11 @@ function Export-RepoStatusReports {
         reportUrl = "/api/reports/$([System.Uri]::EscapeDataString($htmlFileName))"
         csvFileName = $csvFileName
         csvPath = $csvPath
+        dataWindow = $exportEnvelope.dataWindow
+        units = $exportEnvelope.units
+        headline = $exportEnvelope.headline
+        nextAction = $exportEnvelope.nextAction
+        coverage = $exportEnvelope.coverage
     }
 }
 
@@ -2007,12 +2027,43 @@ function Get-DigestPayload {
         ForEach-Object { [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '') } |
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
         Select-Object -First 5)
+    # Release 3.3 milestone 4 -- decision-grade framing. `ready: 3` makes a
+    # reader decide for themselves whether that is good and what to do; the
+    # headline and next action say it once, the same way, for everyone.
+    $readyCount = if ($byLevel.ContainsKey('ready')) { [int]$byLevel['ready'] } else { 0 }
+    $blockedCount = if ($byLevel.ContainsKey('blocked')) { [int]$byLevel['blocked'] } else { 0 }
+    $headline = if (@($entries).Count -eq 0) {
+        'No repositories in scope for this digest.'
+    }
+    elseif ($readyCount -gt 0) {
+        "$readyCount of $(@($entries).Count) repositories are dispatch-ready; $blockedCount are blocked."
+    }
+    else {
+        "No repositories are dispatch-ready; $blockedCount of $(@($entries).Count) are blocked."
+    }
+    $nextAction = if ($readyCount -gt 0) {
+        "Package the top dispatch-ready repository (POST /api/automation/package-run), then approve the packet to dispatch it."
+    }
+    elseif ($blockedCount -gt 0) {
+        "Open the Work Queue and clear the top blocker; nothing can be dispatched until one repository reaches ready."
+    }
+    else {
+        'Run a portfolio assessment to populate dispatch readiness.'
+    }
+    $envelope = New-DecisionGradeEnvelope -Units 'repositories' -Headline $headline -NextAction $nextAction `
+        -AssessedCount (@($entries).Count) -TotalCount (@($entries).Count)
+
     return @{
         totalRepos       = @($entries).Count
         byLevel          = $byLevel
         improvedThisWeek = [int]$ImprovedThisWeek
         topCandidates    = @($topCandidates)
         generatedAt      = (Get-Date).ToUniversalTime().ToString('o')
+        dataWindow       = $envelope.dataWindow
+        units            = $envelope.units
+        headline         = $envelope.headline
+        nextAction       = $envelope.nextAction
+        coverage         = $envelope.coverage
     }
 }
 

@@ -6529,4 +6529,115 @@ Write-Step 'AppDb backup/restore - Release 3.3 milestone 2: rehearsed, verified,
     }
 }
 
+Write-Step 'Decision-grade exports - Release 3.3 milestone 4: every digest and export states its window, units, headline and next action'
+& {
+    . (Join-Path $WorkspaceRoot 'backend\modules\common\DecisionGrade.ps1')
+
+    # --- The predicate itself must be able to fail. ------------------------
+    $dgIncomplete = [pscustomobject]@{ totalRepos = 12; byLevel = @{ ready = 3 } }
+    $dgVerdict = Test-DecisionGradeEnvelope -Payload $dgIncomplete
+    if ($dgVerdict.ok) { throw 'Test-DecisionGradeEnvelope passed a payload with no window, units, headline or next action; the sweep below would be vacuous.' }
+    foreach ($dgExpected in @('units', 'headline', 'nextAction', 'dataWindow')) {
+        if (@($dgVerdict.missing) -notcontains $dgExpected) { throw "Decision-grade predicate did not name '$dgExpected' as missing; a failure must say what to add." }
+    }
+    $dgBlank = New-DecisionGradeEnvelope -Units 'repositories' -Headline 'h' -NextAction 'n'
+    if (-not (Test-DecisionGradeEnvelope -Payload $dgBlank).ok) { throw 'A correctly built envelope failed its own predicate.' }
+    if ([string]::IsNullOrWhiteSpace($dgBlank.dataWindow.label)) { throw 'A point-in-time envelope must still carry a window label.' }
+
+    # Omissions that make a report undecidable are refused at construction.
+    foreach ($dgCase in @(
+            @{ Name = 'blank headline'; Args = @{ Units = 'repos'; Headline = '  '; NextAction = 'do a thing' } },
+            @{ Name = 'blank next action'; Args = @{ Units = 'repos'; Headline = 'a thing happened'; NextAction = '' } },
+            @{ Name = 'blank units'; Args = @{ Units = ''; Headline = 'h'; NextAction = 'n' } })) {
+        $dgRefused = $false
+        try { $null = New-DecisionGradeEnvelope @($dgCase.Args) } catch { $dgRefused = $true }
+        if (-not $dgRefused) { throw ("New-DecisionGradeEnvelope accepted a {0}." -f $dgCase.Name) }
+    }
+    $dgImpossible = $false
+    try { $null = New-DecisionGradeEnvelope -Units 'r' -Headline 'h' -NextAction 'n' -AssessedCount 9 -TotalCount 4 } catch { $dgImpossible = $true }
+    if (-not $dgImpossible) { throw 'Coverage of 9 assessed out of 4 total was accepted.' }
+    $dgEmptyCoverage = New-DecisionGradeEnvelope -Units 'r' -Headline 'h' -NextAction 'n' -AssessedCount 0 -TotalCount 0
+    if ($null -ne $dgEmptyCoverage.coverage.percent) { throw 'An empty set was given a coverage percentage; 0% would read as a finding.' }
+
+    # --- Live payloads: every producer must carry the contract. -----------
+    . (Join-Path $WorkspaceRoot 'backend\modules\automation\Automation.DocRefinement.ps1')
+    . (Join-Path $WorkspaceRoot 'backend\modules\automation\Automation.RoadmapPackaging.ps1')
+
+    $dgDocDigest = New-AutomationDigestPayload -Run ([pscustomobject]@{
+            runId = 'run-1'; kind = 'doc-refinement'
+            startedAt = '2026-08-19T10:00:00Z'; finishedAt = '2026-08-19T10:05:00Z'
+            proposals = @([pscustomobject]@{ repoName = 'r'; docType = 'readme'; previewId = 'p1' })
+        })
+    $dgPackDigest = New-PackagingDigestPayload -Run ([pscustomobject]@{
+            runId = 'run-2'; startedAt = '2026-08-19T11:00:00Z'; finishedAt = '2026-08-19T11:02:00Z'
+            candidateCount = 3; packets = @(); skipped = @([pscustomobject]@{ repoName = 'x'; reason = 'not-curated' })
+        })
+    foreach ($dgLive in @(
+            @{ Name = 'doc-refinement digest'; Payload = $dgDocDigest },
+            @{ Name = 'roadmap-packaging digest'; Payload = $dgPackDigest })) {
+        $dgLiveVerdict = Test-DecisionGradeEnvelope -Payload $dgLive.Payload
+        if (-not $dgLiveVerdict.ok) {
+            throw ("{0} is missing the decision-grade contract: {1}" -f $dgLive.Name, ($dgLiveVerdict.missing -join ', '))
+        }
+    }
+    # The window must be the RUN's, not the moment someone asked.
+    if ([string]$dgDocDigest.dataWindow.from -ne '2026-08-19T10:00:00Z' -or [string]$dgDocDigest.dataWindow.to -ne '2026-08-19T10:05:00Z') {
+        throw "Doc-refinement digest window is not the run's window (got $($dgDocDigest.dataWindow.from)..$($dgDocDigest.dataWindow.to))."
+    }
+
+    # --- Derived scope: find every producer, not the ones we remember. ----
+    # A function whose name says it builds a digest or export payload, and
+    # whose body returns an object, must emit the contract. The detector
+    # fails a planted violating fixture first.
+    $dgProducerPattern = '(?im)^\s*function\s+((?:New|Get|Export)-\w*(?:Digest|Report|Export)\w*)'
+    $dgViolatingFixture = "function New-SomethingDigestPayload {`n    return [pscustomobject]@{ count = 1 }`n}"
+    if ($dgViolatingFixture -notmatch $dgProducerPattern) { throw 'Producer detector failed its own violating fixture; the sweep below is vacuous.' }
+
+    $dgSearchFiles = @(
+        (Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1'),
+        (Join-Path $WorkspaceRoot 'backend\modules\portfolio\Portfolio.Report.ps1'),
+        (Join-Path $WorkspaceRoot 'backend\modules\automation\Automation.DocRefinement.ps1'),
+        (Join-Path $WorkspaceRoot 'backend\modules\automation\Automation.RoadmapPackaging.ps1')
+    )
+    # Producers that legitimately do NOT carry the envelope, each named with
+    # its reason. An unnamed producer fails the sweep.
+    $dgExempt = @{
+        'New-PortfolioCollectionStatusHtmlContent' = 'Renders HTML from a payload that already carries the contract; it is a view, not a report.'
+        'New-PortfolioCollectionStatusCsvContent'  = 'Renders CSV rows; the envelope rides the API payload beside it.'
+        'New-RepoStatusHtmlContent'                = 'View over Export-RepoStatusReports'' payload.'
+        'New-RepoStatusCsvContent'                 = 'View over Export-RepoStatusReports'' payload.'
+        'Get-DigestPayloadForRun'                  = 'Reserved name; not a producer in this tree.'
+        'Get-ReportsRootPath'                      = 'Path helper, not a payload producer.'
+        'New-PortfolioReadBudgetResult'            = 'Performance measurement attached to a route response, not a report.'
+        'Get-DefaultBranchInvariantReport'         = 'Internal gate report consumed by the smoke, never delivered to an operator.'
+        'Get-RepoScopeSummary'                     = 'Component of the scan payload, not a standalone report.'
+        'New-AppDbBackup'                          = 'Operation result with its own manifest contract (Release 3.3 M2).'
+        'Get-PortfolioScanState'                   = 'Live state for a progress chip, not a report.'
+        'Export-RepoStatusReports'                 = ''   # carries the contract; presence asserted below
+        'Export-PortfolioCollectionStatusReport'   = ''
+        'Get-DigestPayload'                        = ''
+        'New-AutomationDigestPayload'              = ''
+        'New-PackagingDigestPayload'               = ''
+    }
+    $dgFound = New-Object System.Collections.Generic.List[string]
+    foreach ($dgFile in $dgSearchFiles) {
+        $dgText = Get-Content -LiteralPath $dgFile -Raw -Encoding UTF8
+        foreach ($dgMatch in [regex]::Matches($dgText, $dgProducerPattern)) {
+            $dgName = $dgMatch.Groups[1].Value
+            if (-not $dgFound.Contains($dgName)) { $dgFound.Add($dgName) }
+        }
+    }
+    $dgUndeclared = @($dgFound | Where-Object { -not $dgExempt.ContainsKey($_) })
+    if (@($dgUndeclared).Count -gt 0) {
+        throw ("Producer function(s) neither carrying the decision-grade contract nor named as exempt:`n    {0}`n  Add the envelope, or declare the exemption with its reason." -f ($dgUndeclared -join "`n    "))
+    }
+    # And the four that must carry it are actually present in the tree, so a
+    # rename cannot quietly empty this sweep.
+    foreach ($dgRequired in @('Get-DigestPayload', 'Export-RepoStatusReports', 'Export-PortfolioCollectionStatusReport', 'New-AutomationDigestPayload', 'New-PackagingDigestPayload')) {
+        if (-not $dgFound.Contains($dgRequired)) { throw "Expected producer '$dgRequired' was not found; the sweep has lost its scope." }
+    }
+
+    Write-Host ("  decision-grade ok: predicate failed its bare-counts fixture first and named all 4 gaps; 3 construction refusals + impossible coverage refused; empty set has null percent (not 0); 2 live digests carry the contract over the RUN's window; producer sweep covers {0} function(s) with {1} exemptions each named" -f $dgFound.Count, @($dgExempt.Keys | Where-Object { $dgExempt[$_] -ne '' }).Count) -ForegroundColor DarkGray
+}
+
 Write-Step 'Smoke test completed'

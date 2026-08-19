@@ -667,10 +667,30 @@ function New-PackagingDigestPayload {
     $packets = @(_Pack_GetField -Obj $Run -Name 'packets' -Default @())
     $skipped = @(_Pack_GetField -Obj $Run -Name 'skipped' -Default @())
 
+    # Release 3.3 milestone 4 -- decision-grade framing over the RUN's window.
+    if (-not (Get-Command New-DecisionGradeEnvelope -ErrorAction SilentlyContinue)) {
+        . (Join-Path $PSScriptRoot '..\common\DecisionGrade.ps1')
+    }
+    $packEnvelope = New-DecisionGradeEnvelope -Units 'roadmap packets' `
+        -Headline $(if (@($packets).Count -eq 0) { "Nothing packaged; $(@($skipped).Count) candidates were skipped with a named reason." } else { "$(@($packets).Count) packets await approval; $(@($skipped).Count) candidates skipped." }) `
+        -NextAction $(if (@($packets).Count -eq 0) { 'Review the skip reasons below; each names what would make that repository packageable.' } else { 'Approve a packet (POST /api/automation/packages/approve) to dispatch it to the operator runner.' }) `
+        -WindowFrom ([string](_Pack_GetField -Obj $Run -Name 'startedAt' -Default '')) `
+        -WindowTo ([string](_Pack_GetField -Obj $Run -Name 'finishedAt' -Default ''))
+    # No coverage on this digest, deliberately: `candidateCount` counts repos
+    # that passed curation, while `skipped` also holds repos refused BEFORE
+    # candidacy, so neither is a denominator for the other. The constructor
+    # caught the mismatch (9 assessed of 2) rather than letting a wrong ratio
+    # ship -- which is the whole point of it refusing impossible metrics.
+
     return [pscustomobject]@{
         runId           = [string](_Pack_GetField -Obj $Run -Name 'runId' -Default '')
         kind            = 'roadmap-packaging'
         generatedAt     = (_Pack_UtcNow)
+        dataWindow      = $packEnvelope.dataWindow
+        units           = $packEnvelope.units
+        headline        = $packEnvelope.headline
+        nextAction      = $packEnvelope.nextAction
+        coverage        = $packEnvelope.coverage
         packagedCount   = @($packets).Count
         skippedCount    = @($skipped).Count
         dispatchedCount = 0
