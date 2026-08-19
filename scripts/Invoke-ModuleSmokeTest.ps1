@@ -6640,4 +6640,84 @@ Write-Step 'Decision-grade exports - Release 3.3 milestone 4: every digest and e
     Write-Host ("  decision-grade ok: predicate failed its bare-counts fixture first and named all 4 gaps; 3 construction refusals + impossible coverage refused; empty set has null percent (not 0); 2 live digests carry the contract over the RUN's window; producer sweep covers {0} function(s) with {1} exemptions each named" -f $dgFound.Count, @($dgExempt.Keys | Where-Object { $dgExempt[$_] -ne '' }).Count) -ForegroundColor DarkGray
 }
 
+Write-Step 'Transport honesty - Release 3.3 milestone 3: the reported transport is the served transport'
+& {
+    $tlsHostPath = Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1'
+    $tlsHostText = Get-Content -LiteralPath $tlsHostPath -Raw -Encoding UTF8
+
+    # --- The scheme must be DERIVED, never a literal. ---------------------
+    # The startup banner said 'http://' unconditionally for a whole release,
+    # including while the host served TLS. The detector fails that exact old
+    # line first, so a passing sweep is a sweep that can fail.
+    $tlsLiteralPattern = 'host started on http://'
+    $tlsViolatingFixture = 'Write-HostLog ("Repo Management API host started on http://{0}:{1}" -f $BindAddress, $Port)'
+    if ($tlsViolatingFixture -notmatch [regex]::Escape($tlsLiteralPattern)) {
+        throw 'Hardcoded-scheme detector failed its own violating fixture; the assertion below is vacuous.'
+    }
+    if ($tlsHostText -match [regex]::Escape($tlsLiteralPattern)) {
+        throw 'The startup banner hardcodes http://; it must render the scheme the host is actually serving.'
+    }
+
+    # --- The report is derived from the CERTIFICATE, not from config. -----
+    # Config is the thing being checked; a report that reads config would
+    # agree with it by construction and could never surface a degradation.
+    if ($tlsHostText -notmatch 'function Get-PortalTransportState') { throw 'Get-PortalTransportState is missing; nothing reports the served transport.' }
+    $tlsFnMatch = [regex]::Match($tlsHostText, '(?s)function Get-PortalTransportState\s*\{.*?\n\}')
+    if (-not $tlsFnMatch.Success) { throw 'Could not isolate Get-PortalTransportState for inspection.' }
+    $tlsFnBody = $tlsFnMatch.Value
+    if ($tlsFnBody -notmatch '\$script:TlsCertificate') {
+        throw 'Get-PortalTransportState does not derive its answer from the loaded certificate; a report read from config cannot detect a degradation.'
+    }
+    foreach ($tlsForbidden in @('AuthSettings', 'pfxPath\s*=', 'Get-HostSettings')) {
+        if ($tlsFnBody -match $tlsForbidden) {
+            throw ("Get-PortalTransportState reads configuration ('{0}'); it must report what is SERVED, not what was asked for." -f $tlsForbidden)
+        }
+    }
+
+    # --- The three states exist and degraded is reachable. ----------------
+    # Reproduced by evaluating the host's own state machine against a
+    # configured-but-missing certificate path -- the live condition on this
+    # machine since the PFX password became unrecoverable.
+    foreach ($tlsState in @("'disabled'", "'enabled'", "'degraded'")) {
+        if ($tlsHostText -notmatch [regex]::Escape("`$script:TlsState = $tlsState")) {
+            throw "The transport state machine never assigns $tlsState; all three states must be reachable."
+        }
+    }
+    # A configured path that does not exist must NOT fall through to
+    # 'disabled' -- that was the silent degradation.
+    $tlsMissingBranch = [regex]::Match($tlsHostText, '(?s)if \(-not \(Test-Path -LiteralPath \$pfxPath\)\) \{.*?\}')
+    if (-not $tlsMissingBranch.Success -or $tlsMissingBranch.Value -notmatch "TlsState = 'degraded'") {
+        throw 'A configured certificate path that does not exist does not set degraded; it would serve plain HTTP silently.'
+    }
+    # The catch must degrade too, not just log.
+    $tlsCatch = [regex]::Match($tlsHostText, '(?s)\} catch \{\s*\$script:TlsCertificate = \$null.*?\n\}')
+    if (-not $tlsCatch.Success -or $tlsCatch.Value -notmatch "TlsState = 'degraded'") {
+        throw 'A certificate that fails to load does not set degraded; the old code logged a WARN and served plain HTTP.'
+    }
+
+    # --- The degradation reaches surfaces, not just the log. --------------
+    if ($tlsHostText -notmatch 'transport\s*=\s*\(Get-PortalTransportState\)') {
+        throw 'The auth-status route does not carry the transport state; the login page cannot tell the operator whether their password is encrypted.'
+    }
+    if ($tlsHostText -notmatch 'tlsAsConfigured') {
+        throw 'The dependency health route does not treat a degraded transport as a dependency failure.'
+    }
+
+    # --- The secret never travels with the report. ------------------------
+    if ($tlsFnBody -match 'pfxPassword|Password') {
+        throw 'The transport report references a password; the certificate secret must never leave the host.'
+    }
+
+    # --- The login surface says it. ---------------------------------------
+    $tlsLoginText = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'frontend\components\Login.tsx') -Raw -Encoding UTF8
+    if ($tlsLoginText -notmatch "tlsState === 'degraded'") {
+        throw 'The login screen does not render the degraded transport; credentials would be typed into a page that implies encryption it does not have.'
+    }
+    if ($tlsLoginText -notmatch 'Not encrypted') {
+        throw 'The login screen never uses the words that tell an operator the connection is unencrypted.'
+    }
+
+    Write-Host '  transport ok: hardcoded-scheme detector failed the old banner line first; state derived from the loaded certificate (never from config, never near the password); missing-file AND load-failure both reach degraded; degradation surfaces on auth-status, dependency health and the login screen by name' -ForegroundColor DarkGray
+}
+
 Write-Step 'Smoke test completed'

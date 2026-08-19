@@ -5755,6 +5755,19 @@ Write-HostLog ("Network: corsOrigin='{0}' rateLimitEnabled={1} max={2}/{3}s" -f 
 # accept loop wraps each connection in an SslStream. Off by default; when no
 # certificate is configured the request path is unchanged (plain NetworkStream).
 $script:TlsCertificate = $null
+# Release 3.3 milestone 3 -- the transport the portal REPORTS must be the
+# transport it SERVES. Three states, never conflated:
+#   disabled  - no certificate configured; plain HTTP is the intended setup
+#   enabled   - certificate loaded; connections are wrapped in an SslStream
+#   degraded  - a certificate WAS configured and could not be used, so this
+#               host is serving plain HTTP while config claims TLS
+# 'degraded' used to be a single WARN log line and nothing else: an operator
+# who configured TLS got HTTP and no surface said so. It is now carried on
+# every transport report with the reason, because a credential typed into a
+# page that believes it is encrypted is the harm this milestone exists for.
+$script:TlsState = 'disabled'
+$script:TlsDetail = 'No certificate configured; serving plain HTTP by design.'
+$script:TlsConfiguredPath = ''
 try {
     $pfxPath = ''
     $pfxPassword = ''
@@ -5768,11 +5781,58 @@ try {
     if (-not [string]::IsNullOrWhiteSpace($envPfx)) { $pfxPath = $envPfx }
     $envPfxPw = [System.Environment]::GetEnvironmentVariable('REPO_MGMT_TLS_PFX_PASSWORD')
     if ($null -ne $envPfxPw) { $pfxPassword = $envPfxPw }
-    if (-not [string]::IsNullOrWhiteSpace($pfxPath) -and (Test-Path -LiteralPath $pfxPath)) {
-        $script:TlsCertificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($pfxPath, $pfxPassword)
-        Write-HostLog ("TLS: enabled with certificate '{0}' (subject={1})" -f $pfxPath, $script:TlsCertificate.Subject)
+    $script:TlsConfiguredPath = $pfxPath
+
+    if (-not [string]::IsNullOrWhiteSpace($pfxPath)) {
+        if (-not (Test-Path -LiteralPath $pfxPath)) {
+            # Configured and missing is DEGRADED, not disabled. The old code
+            # fell through this branch silently into plain HTTP.
+            $script:TlsState = 'degraded'
+            $script:TlsDetail = ("TLS is configured ('{0}') but the certificate file does not exist; serving plain HTTP." -f $pfxPath)
+        }
+        else {
+            $script:TlsCertificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($pfxPath, $pfxPassword)
+            $script:TlsState = 'enabled'
+            $script:TlsDetail = ("Serving HTTPS with certificate '{0}' (subject={1})." -f $pfxPath, $script:TlsCertificate.Subject)
+        }
     }
-} catch { Write-HostLog ("WARN TLS: certificate load failed - {0}" -f $_.Exception.Message); $script:TlsCertificate = $null }
+} catch {
+    $script:TlsCertificate = $null
+    $script:TlsState = 'degraded'
+    # The exception text can name the certificate path but never its password:
+    # the message is surfaced to the portal.
+    $script:TlsDetail = ("TLS is configured ('{0}') but the certificate could not be loaded ({1}); serving plain HTTP." -f $script:TlsConfiguredPath, $_.Exception.Message)
+}
+Write-HostLog ("TLS: state={0} - {1}" -f $script:TlsState, $script:TlsDetail)
+if ($script:TlsState -eq 'degraded') {
+    Write-HostLog 'WARN TLS: DEGRADED - configuration claims TLS and this host is serving plain HTTP. Credentials typed into this portal are not encrypted in transit.'
+}
+
+function Get-PortalTransportState {
+    <#
+    .SYNOPSIS
+        What this host is ACTUALLY serving, beside what it was asked to serve.
+    .DESCRIPTION
+        Release 3.3 milestone 3. `scheme` is derived from the loaded
+        certificate -- the same object the accept loop tests before wrapping a
+        connection -- so the report cannot drift from the behavior. It is not
+        read from config, because config is the thing being checked.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param()
+
+    $servingTls = ($null -ne $script:TlsCertificate)
+    return [pscustomobject]@{
+        scheme          = $(if ($servingTls) { 'https' } else { 'http' })
+        tlsState        = $script:TlsState
+        detail          = $script:TlsDetail
+        configuredPath  = $script:TlsConfiguredPath
+        encryptedInTransit = $servingTls
+        certificateSubject = $(if ($servingTls) { [string]$script:TlsCertificate.Subject } else { $null })
+        certificateNotAfter = $(if ($servingTls) { $script:TlsCertificate.NotAfter.ToUniversalTime().ToString('o') } else { $null })
+    }
+}
 
 # Everything above is definition and configuration; everything below binds the
 # port and takes ownership of it. A caller that only wants the functions must
@@ -5786,7 +5846,11 @@ $listenerAddress = [System.Net.IPAddress]::Parse($BindAddress)
 Stop-PortListeners -LocalPort $Port
 $listener = [System.Net.Sockets.TcpListener]::new($listenerAddress, $Port)
 $listener.Start()
-Write-HostLog ("Repo Management API host started on http://{0}:{1}" -f $BindAddress, $Port)
+# The scheme comes from the transport state, not from a literal: this line
+# claimed http:// even while the host served TLS, and claimed nothing at all
+# when a configured certificate had failed.
+$startupTransport = Get-PortalTransportState
+Write-HostLog ("Repo Management API host started on {0}://{1}:{2}" -f $startupTransport.scheme, $BindAddress, $Port)
 Write-HostLog ("Auth: {0}" -f $(if ($script:AuthEnforced) { 'API key required on /api routes' } else { 'open (loopback; no API key required)' }))
 Write-HostLog ("Ops log: {0}" -f (Get-ValueOrDefault $script:OpsLogPath '(none)'))
 $requestTimeoutLogPath = Join-Path $WorkspaceRoot 'output\logs\request-timeouts.jsonl'
@@ -6794,11 +6858,20 @@ try {
                         $depChecks.outputWritable = $false
                     }
 
+                    # Release 3.3 milestone 3 -- a host serving plain HTTP
+                    # while its config claims TLS is DEGRADED, and this is the
+                    # route the watchdog and operator read. A configured
+                    # certificate that cannot be used is a dependency failure
+                    # like any other missing dependency.
+                    $depTransport = Get-PortalTransportState
+                    $depChecks.tlsAsConfigured = ($depTransport.tlsState -ne 'degraded')
+
                     $healthy = -not ($depChecks.Values -contains $false)
                     Add-MetricCounter -Name 'api_requests_total'
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         status = if ($healthy) { 'healthy' } else { 'degraded' }
                         dependencies = $depChecks
+                        transport = $depTransport
                     }
                 }
                 'GET /metrics' {
@@ -6970,6 +7043,10 @@ try {
                             keyEnvVar       = (Get-AuthApiKeyEnvVarName -Settings $script:AuthSettings)
                             bindAddress     = $BindAddress
                             isLoopbackBind  = [bool](Test-IsLoopbackAddress -Address $BindAddress)
+                            # Release 3.3 milestone 3 -- the login screen is
+                            # where credentials are typed; it must be able to
+                            # say whether this connection is encrypted.
+                            transport       = (Get-PortalTransportState)
                         }
                     }
                 }
