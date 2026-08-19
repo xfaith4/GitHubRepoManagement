@@ -316,19 +316,21 @@ regresses meanwhile.
 
 **Field proof — one authenticated operator session covers all three:**
 
-- [ ] One real `claude` run through
+- [x] One real `claude` run through
       [`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1):
       claim → branch → run → verify → commit → `awaiting-review`. Closes the
-      Release 2.8 residual. _(state: smoke-tested dry-run E2E)_
+      Release 2.8 residual. _(state: operator-verified — proven three times:
+      manual 2026-08-15 (PRs #140/#142) and scheduled 2026-08-18, above.)_
 - [ ] One real **copilot** entry through the runner — `gh agent-task create`
       reaches a live task, URL in the run summary. Closes the Release 3.0
       residual. _(state: smoke-tested. Requires `gh auth login` and **no**
       `GH_TOKEN`/`GITHUB_TOKEN` set; gh ignores stored OAuth when one is.)_
-- [ ] **Release 3.1's scheduled-trigger loop proof** — the manual half is
-      operator-verified 2026-08-15
-      ([evidence](evidence/verified/full-loop-proof-2026-08-15.md)); this
-      session records a scheduled packaging run approved through to the same
-      outcome. _(re-homed from 3.1 on closure, 2026-08-15)_
+- [x] **Release 3.1's scheduled-trigger loop proof** — operator-verified
+      2026-08-18: package-run → approve with dispatch → runner → `claude` →
+      PR [xfaith4/INcendiary#7](https://github.com/xfaith4/INcendiary/pull/7)
+      `OPEN CLEAN`; merge deliberately the operator's click.
+      [Evidence](evidence/verified/scheduled-loop-proof-2026-08-18.md) links
+      both halves of the full-loop proof.
 - [ ] Operator-verify the Release 3.1 empty-room gate against the live portal
       (the refusal, the disabled approve controls, the stranded badge).
       _(state: smoke-tested; re-homed from 3.1 on closure)_
@@ -342,16 +344,19 @@ regresses meanwhile.
 
 **Field proof — credential / calendar:**
 
-- [ ] Operator-verify Release 2.1 against the live workspace and record the
-      sign-off, closing the release formally. _(state: smoke-tested against live
-      data — `output/app.db`, the real 68-repo scan)_
+- [x] Operator-verify Release 2.1 against the live workspace and record the
+      sign-off, closing the release formally. _(state: operator-verified
+      2026-08-18 — 20,147 maturity rows / 20 captured days / schema v2 on the
+      native provider, queried against the live `output/app.db`; recorded in
+      `evidence/operator-verification-log.jsonl`.)_
 - [ ] Operator-verify the auth + shared-LAN path so automation runs on a bound,
       authenticated host. _(state: planned — carried over from 2.7 Phase D)_
 - [ ] (Optional) Prove live GitHub App installation-token exchange + refresh,
       closing the Release 2.2 residual. _(state: planned — the PAT supersedes)_
 - [ ] Let the Release 2.3 Phase 2 trend windows accrue: `GET /api/portfolio/trend`
-      reports a real 7-day, then 90-day, window. _(state: smoke-tested — only
-      calendar time is missing. Keep
+      reports a real 7-day, then 90-day, window. _(state: 7-day closed by
+      accrual 2026-08-18, `availableDays: 20`, verified live; 90-day filling
+      (20/90) — keep
       [`Invoke-DailyEvidence.ps1`](scripts/Invoke-DailyEvidence.ps1) running.)_
 
 #### Acceptance criteria
