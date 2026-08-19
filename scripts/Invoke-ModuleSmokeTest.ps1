@@ -6444,4 +6444,89 @@ Write-Step 'Ledger retention - Release 3.3 milestone 1: archive-then-trim, bound
     }
 }
 
+Write-Step 'AppDb backup/restore - Release 3.3 milestone 2: rehearsed, verified, never destructive'
+& {
+    . (Join-Path $WorkspaceRoot 'backend\modules\persistence\Persistence.Store.ps1')
+    . (Join-Path $WorkspaceRoot 'backend\modules\persistence\Persistence.Backup.ps1')
+
+    $bakCapability = Get-SqliteCapability
+    if (-not $bakCapability.available) {
+        # Same degraded contract the persistence smoke accepts: no provider,
+        # no rehearsal -- said loudly, never silently green.
+        Write-Host ("  [WARN] no SQLite provider on this machine ({0}); backup/restore rehearsal skipped -- the api-host smoke's route step carries the same degraded contract" -f $bakCapability.providerDetail) -ForegroundColor Yellow
+        return
+    }
+
+    $bakFixture = Join-Path $env:TEMP ('smoke-appdbbak-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    $bakWorkspace = Join-Path $bakFixture 'ws'
+    $null = New-Item -ItemType Directory -Path $bakWorkspace -Force
+    try {
+        $bakInit = Initialize-AppDatabase -WorkspaceRoot $bakWorkspace
+        if (-not $bakInit.success) { throw "Fixture database init failed: $($bakInit.providerDetail)" }
+        $bakDbPath = Get-AppDatabasePath -WorkspaceRoot $bakWorkspace
+
+        # Seed rows the rehearsal can count through the restored file.
+        $null = Invoke-AppDbNonQuery -DatabasePath $bakDbPath -Sql 'CREATE TABLE IF NOT EXISTS smoke_seed (id INTEGER PRIMARY KEY, note TEXT)'
+        $null = Invoke-AppDbNonQuery -DatabasePath $bakDbPath -Sql "INSERT INTO smoke_seed (note) VALUES ('one')"
+        $null = Invoke-AppDbNonQuery -DatabasePath $bakDbPath -Sql "INSERT INTO smoke_seed (note) VALUES ('two')"
+
+        # WhatIf must create nothing.
+        $bakWhatIf = New-AppDbBackup -WorkspaceRoot $bakWorkspace -WhatIf
+        $bakDir = Get-AppDbBackupDir -WorkspaceRoot $bakWorkspace
+        if ((Test-Path -LiteralPath $bakDir) -and @(Get-ChildItem -LiteralPath $bakDir -Filter 'app-*.db' -File).Count -gt 0) {
+            throw 'New-AppDbBackup -WhatIf wrote a snapshot; a preview must touch nothing.'
+        }
+        if ($bakWhatIf.reason -ne 'what-if') { throw "WhatIf backup did not report itself as what-if (reason=$($bakWhatIf.reason))." }
+
+        # Snapshot, then mutate the live database past it.
+        $bakResult = New-AppDbBackup -WorkspaceRoot $bakWorkspace -Confirm:$false
+        if (-not $bakResult.success) { throw "Backup failed: $($bakResult.reason)" }
+        if (-not (Test-Path -LiteralPath $bakResult.manifestPath)) { throw 'Backup wrote no manifest; a snapshot nobody can judge is a snapshot nobody can trust.' }
+        if ([long]$bakResult.schemaVersion -lt 1) { throw "Backup manifest carries no schema version." }
+        $null = Invoke-AppDbNonQuery -DatabasePath $bakDbPath -Sql "INSERT INTO smoke_seed (note) VALUES ('three-after-snapshot')"
+
+        # THE REHEARSAL: restore, then query history through the restored
+        # file with the same provider the host uses. A restore path that has
+        # never run is a hope, not a path.
+        $bakRestore = Restore-AppDbBackup -BackupPath $bakResult.backupPath -WorkspaceRoot $bakWorkspace -Confirm:$false
+        if (-not $bakRestore.success) { throw "Restore failed: $($bakRestore.reason)" }
+        $bakRestoredCount = [long](@(Invoke-AppDbQuery -DatabasePath $bakDbPath -Sql 'SELECT COUNT(*) AS c FROM smoke_seed')[0].c)
+        if ($bakRestoredCount -ne 2) { throw "Restored database has $bakRestoredCount seed rows; the snapshot held 2 -- the restore did not restore." }
+
+        # Nothing destroyed: the mutated pre-restore database moved aside and
+        # still carries its third row.
+        if ([string]::IsNullOrWhiteSpace([string]$bakRestore.preRestoreSnapshot) -or -not (Test-Path -LiteralPath $bakRestore.preRestoreSnapshot)) {
+            throw 'Restore destroyed the existing database instead of moving it aside.'
+        }
+        $bakPreCount = [long](@(Invoke-AppDbQuery -DatabasePath $bakRestore.preRestoreSnapshot -Sql 'SELECT COUNT(*) AS c FROM smoke_seed')[0].c)
+        if ($bakPreCount -ne 3) { throw "Pre-restore snapshot has $bakPreCount rows; expected the mutated 3 -- the wrong file moved aside." }
+
+        # Forward-compat refusal: a snapshot claiming a FUTURE schema version
+        # is refused by name, before any file moves.
+        $bakFuture = Join-Path $bakFixture 'future.db'
+        Copy-Item -LiteralPath $bakResult.backupPath -Destination $bakFuture
+        $null = Invoke-AppDbNonQuery -DatabasePath $bakFuture -Sql "INSERT INTO schema_migrations (version, description, applied_at) VALUES (99, 'from-the-future', '2099-01-01T00:00:00Z')"
+        $bakFutureVerdict = Test-AppDbBackup -BackupPath $bakFuture
+        if ($bakFutureVerdict.ok -or @($bakFutureVerdict.issues | Where-Object { $_ -like 'schema-newer-than-code*' }).Count -eq 0) {
+            throw 'A future-schema snapshot was not refused by name; restoring it would hand the migrations a database they cannot parse.'
+        }
+        $bakFutureRestore = Restore-AppDbBackup -BackupPath $bakFuture -WorkspaceRoot $bakWorkspace -Confirm:$false
+        if ($bakFutureRestore.success) { throw 'Restore accepted a future-schema snapshot.' }
+
+        # Retention: three snapshots under KeepCount 2 keep the newest two.
+        Start-Sleep -Seconds 1
+        $null = New-AppDbBackup -WorkspaceRoot $bakWorkspace -KeepCount 2 -Confirm:$false
+        Start-Sleep -Seconds 1
+        $bakThird = New-AppDbBackup -WorkspaceRoot $bakWorkspace -KeepCount 2 -Confirm:$false
+        if (@($bakThird.prunedBackups).Count -lt 1) { throw 'Third snapshot under KeepCount 2 pruned nothing; backups would grow without bound.' }
+        $bakRemaining = @(Get-ChildItem -LiteralPath $bakDir -Filter 'app-*.db' -File)
+        if ($bakRemaining.Count -ne 2) { throw "Expected 2 snapshots after retention; found $($bakRemaining.Count)." }
+
+        Write-Host ("  backup/restore ok: WhatIf inert; snapshot v{0} with manifest; RESTORE REHEARSED (2 rows back, mutated original kept aside with 3); future-schema snapshot refused by name; retention kept newest 2 of 3" -f $bakResult.schemaVersion) -ForegroundColor DarkGray
+    }
+    finally {
+        Remove-Item -Recurse -Force $bakFixture -ErrorAction SilentlyContinue
+    }
+}
+
 Write-Step 'Smoke test completed'
