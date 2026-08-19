@@ -90,6 +90,14 @@ param(
 #Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Release 3.2: the git metadata sweep is bounded (per-command timeout,
+# concurrency cap) by Git.BoundedSweep.ps1. Dot-sourced here so every consumer
+# of Get-LocalFolderInventory -- the API host, the status-refresh child
+# process, and the direct test loaders -- gets it without knowing about it.
+if (-not (Get-Command Invoke-BoundedGitCommand -ErrorAction SilentlyContinue)) {
+    . (Join-Path $PSScriptRoot '..\git\Git.BoundedSweep.ps1')
+}
+
 # -LoadFunctionsOnly dot-sources this file purely to import its functions, so it
 # has no scan to configure and must not require a root. Adapters.ps1 does
 # exactly that, and it used to satisfy this check only by accident: the removed
@@ -321,10 +329,28 @@ function Get-LocalFolderInventory {
         # (portal restart-loop incident, 2026-08-10). Throttling is the
         # caller's business; this fires often and cheaply.
         [Parameter()]
-        [scriptblock]$OnProgress
+        [scriptblock]$OnProgress,
+
+        # Release 3.2: bounds for the git metadata pass. One pathological repo
+        # -- hung object store, dead network mapping -- must not stall the
+        # sweep; a timed-out command is abandoned and its fact recorded as
+        # unavailable, exactly as a failed call always was.
+        [Parameter()]
+        [ValidateRange(1, 600)]
+        [int]$GitCommandTimeoutSeconds = 20,
+
+        [Parameter()]
+        [ValidateRange(1, 16)]
+        [int]$GitSweepMaxConcurrency = 4
     )
 
     $results = New-Object System.Collections.Generic.List[object]
+
+    # Git repos found during the walk; their metadata is gathered afterwards in
+    # one bounded sweep (Git.BoundedSweep.ps1) instead of inline, so the walk
+    # itself never blocks on a git call. Index pairs each target back to its
+    # placeholder entry in $results.
+    $gitFactTargets = New-Object System.Collections.Generic.List[object]
 
     foreach ($root in $Roots) {
         try {
@@ -412,7 +438,6 @@ function Get-LocalFolderInventory {
 
                     $originUrl      = $null
                     $branch         = $null
-                    $statusShort    = @()
                     $lastCommitDate = $null
                     $lastCommitMessage = $null
                     $lastCommitAuthor = $null
@@ -421,101 +446,12 @@ function Get-LocalFolderInventory {
                     $repoNameGuess  = $child.Name
                     $ownerGuess     = $null
 
-                    if ($isGitRepo -and (Test-CommandExists -Name 'git')) {
-                        Write-ReconcileLog "Collecting git metadata for: $fullPath" -Level Debug
-                        try {
-                            $branch = (& git -C $fullPath branch --show-current 2>$null)
-                            if ($LASTEXITCODE -ne 0) { $branch = $null }
-                        }
-                        catch {
-                            Write-ReconcileLog "Git branch query error for '$fullPath': $_" -Level Debug
-                            $branch = $null
-                        }
-
-                        try {
-                            $originUrl = (& git -C $fullPath remote get-url origin 2>$null)
-                            if ($LASTEXITCODE -ne 0) { $originUrl = $null }
-                        }
-                        catch {
-                            Write-ReconcileLog "Git origin query error for '$fullPath': $_" -Level Debug
-                            $originUrl = $null
-                        }
-
-                        try {
-                            $lastCommitDate = (& git -C $fullPath log -1 --format=%cI 2>$null)
-                            if ($LASTEXITCODE -ne 0) { $lastCommitDate = $null }
-                        }
-                        catch {
-                            Write-ReconcileLog "Git log query error for '$fullPath': $_" -Level Debug
-                            $lastCommitDate = $null
-                        }
-
-                        try {
-                            $statusShort = @(& git -C $fullPath status --short 2>$null)
-                            if ($LASTEXITCODE -ne 0) { $statusShort = @() }
-                        }
-                        catch {
-                            Write-ReconcileLog "Git status query error for '$fullPath': $_" -Level Debug
-                            $statusShort = @()
-                        }
-
-                        try {
-                            $lastCommitMessage = (& git -C $fullPath log -1 --format=%s 2>$null)
-                            if ($LASTEXITCODE -ne 0) { $lastCommitMessage = $null }
-                        }
-                        catch {
-                            Write-ReconcileLog "Git last commit message query error for '$fullPath': $_" -Level Debug
-                            $lastCommitMessage = $null
-                        }
-
-                        try {
-                            $lastCommitAuthor = (& git -C $fullPath log -1 --format=%an 2>$null)
-                            if ($LASTEXITCODE -ne 0) { $lastCommitAuthor = $null }
-                        }
-                        catch {
-                            Write-ReconcileLog "Git last commit author query error for '$fullPath': $_" -Level Debug
-                            $lastCommitAuthor = $null
-                        }
-
-                        try {
-                            $weekCountRaw = (& git -C $fullPath rev-list --count --since="7 days ago" HEAD 2>$null)
-                            if ($LASTEXITCODE -eq 0 -and $weekCountRaw -match '^\d+$') { $commitsLastWeek = [int]$weekCountRaw }
-                        }
-                        catch {
-                            Write-ReconcileLog "Git weekly commit count query error for '$fullPath': $_" -Level Debug
-                            $commitsLastWeek = 0
-                        }
-
-                        try {
-                            $monthCountRaw = (& git -C $fullPath rev-list --count --since="30 days ago" HEAD 2>$null)
-                            if ($LASTEXITCODE -eq 0 -and $monthCountRaw -match '^\d+$') { $commitsLastMonth = [int]$monthCountRaw }
-                        }
-                        catch {
-                            Write-ReconcileLog "Git monthly commit count query error for '$fullPath': $_" -Level Debug
-                            $commitsLastMonth = 0
-                        }
-                    }
-
-                    if ($originUrl -and ($originUrl -match 'github\.com[:/](?<owner>[^/]+)/(?<repo>[^/.]+)(\.git)?$')) {
-                        $ownerGuess    = $matches['owner']
-                        $repoNameGuess = $matches['repo']
-                    }
-
+                    # Release 3.2: no git calls here. The walk records the repo
+                    # as a fact-sweep target and moves on; metadata arrives in
+                    # the bounded sweep after the walk, patched in place.
                     $modifiedCount = 0
                     $untrackedCount = 0
                     $otherStatusCount = 0
-                    foreach ($line in @($statusShort)) {
-                        if ([string]::IsNullOrWhiteSpace($line)) { continue }
-                        if ($line.StartsWith('??')) {
-                            $untrackedCount++
-                        }
-                        elseif ($line.Length -ge 2) {
-                            $modifiedCount++
-                        }
-                        else {
-                            $otherStatusCount++
-                        }
-                    }
 
                     $results.Add([pscustomobject]@{
                         LocalRoot        = $resolvedRoot
@@ -537,9 +473,16 @@ function Get-LocalFolderInventory {
                         Fingerprint      = $fingerprint
                     })
 
+                    if ($isGitRepo -and (Test-CommandExists -Name 'git')) {
+                        $gitFactTargets.Add([pscustomobject]@{
+                            Index = $results.Count - 1
+                            Path  = $fullPath
+                        })
+                    }
+
                     $script:RepositoriesFound++
                     if ($isGitRepo) {
-                        Write-ReconcileLog "Found repo #$($script:RepositoriesFound): $($child.Name) (Branch: $branch, Modified: $modifiedCount, Untracked: $untrackedCount)"
+                        Write-ReconcileLog "Found repo #$($script:RepositoriesFound): $($child.Name) (git metadata deferred to the bounded sweep)"
                     }
                     elseif (($script:RepositoriesFound % 25) -eq 0) {
                         Write-ReconcileLog "Inventory items collected so far: $($results.Count)"
@@ -556,6 +499,83 @@ function Get-LocalFolderInventory {
         }
 
         Write-ReconcileLog "Completed scan for root '$resolvedRoot'. Inventory items so far: $($results.Count)"
+    }
+
+    # Release 3.2: one bounded sweep gathers git metadata for every repo the
+    # walk found -- per-command timeout, capped concurrency, input order
+    # preserved -- and patches the placeholder entries in place. Output is
+    # identical in shape and order to the old inline-sequential collection;
+    # the module smoke asserts that equivalence rather than hoping for it.
+    if ($gitFactTargets.Count -gt 0) {
+        Write-ReconcileLog "Collecting git metadata for $($gitFactTargets.Count) repositories (timeout ${GitCommandTimeoutSeconds}s per command, concurrency cap $GitSweepMaxConcurrency)"
+
+        $factTick = $null
+        if ($OnProgress) {
+            # Ticks fire on this thread as each repo's facts complete, so the
+            # operation heartbeat stays fresh from inside the sweep it
+            # describes (Lane 0.9: a quiet loop reads as a frozen host).
+            $factTick = {
+                try { & $OnProgress $results.Count }
+                catch { Write-ReconcileLog "Progress callback failed: $($_.Exception.Message)" -Level Debug }
+            }.GetNewClosure()
+        }
+
+        $factResults = Invoke-BoundedRepoFactSweep `
+            -RepoPathList @($gitFactTargets | ForEach-Object { $_.Path }) `
+            -TimeoutSeconds $GitCommandTimeoutSeconds `
+            -MaxConcurrency $GitSweepMaxConcurrency `
+            -OnRepoComplete $factTick
+
+        for ($targetIndex = 0; $targetIndex -lt $gitFactTargets.Count; $targetIndex++) {
+            $target = $gitFactTargets[$targetIndex]
+            $entry = $results[$target.Index]
+            $facts = $factResults[$targetIndex]
+
+            if ($null -eq $facts) {
+                Write-ReconcileLog "Git metadata worker failed for '$($target.Path)'; facts recorded as unavailable" -Level Warning
+                continue
+            }
+            if (@($facts.TimedOutCommandNames).Count -gt 0) {
+                $shortCircuitNote = ''
+                if ($facts.ShortCircuited) { $shortCircuitNote = '; remaining facts skipped (repo is hung, not slow)' }
+                Write-ReconcileLog "Git command(s) abandoned at the ${GitCommandTimeoutSeconds}s timeout for '$($target.Path)': $($facts.TimedOutCommandNames -join ', ')$shortCircuitNote" -Level Warning
+            }
+
+            $entry.CurrentBranch     = $facts.Branch
+            $entry.GitOriginUrl      = $facts.OriginUrl
+            $entry.LastCommitDate    = $facts.LastCommitDate
+            $entry.LastCommitMessage = $facts.LastCommitMessage
+            $entry.LastCommitAuthor  = $facts.LastCommitAuthor
+
+            if ($facts.OriginUrl -and ($facts.OriginUrl -match 'github\.com[:/](?<owner>[^/]+)/(?<repo>[^/.]+)(\.git)?$')) {
+                $entry.GitOwnerGuess = $matches['owner']
+                $entry.GitRepoName   = $matches['repo']
+            }
+
+            if ($facts.WeekCountRaw -match '^\d+$') { $entry.CommitsLastWeek = [int]$facts.WeekCountRaw }
+            if ($facts.MonthCountRaw -match '^\d+$') { $entry.CommitsLastMonth = [int]$facts.MonthCountRaw }
+
+            $modifiedCount = 0
+            $untrackedCount = 0
+            $otherStatusCount = 0
+            foreach ($line in @($facts.StatusLines)) {
+                if ([string]::IsNullOrWhiteSpace($line)) { continue }
+                if ($line.StartsWith('??')) {
+                    $untrackedCount++
+                }
+                elseif ($line.Length -ge 2) {
+                    $modifiedCount++
+                }
+                else {
+                    $otherStatusCount++
+                }
+            }
+            $entry.ModifiedCount    = $modifiedCount
+            $entry.UntrackedCount   = $untrackedCount
+            $entry.OtherStatusCount = $otherStatusCount
+
+            Write-ReconcileLog "Git metadata for '$($entry.FolderName)': Branch=$($facts.Branch), Modified=$modifiedCount, Untracked=$untrackedCount" -Level Debug
+        }
     }
 
     return $results.ToArray()

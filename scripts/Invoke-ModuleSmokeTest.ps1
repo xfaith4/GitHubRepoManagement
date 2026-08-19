@@ -6164,4 +6164,148 @@ function Invoke-BadCommit { param($RepoPath) & git -C $RepoPath commit -m 'lands
     Write-Host ("  invariant ok: checker failed its own violating fixture first; {0} push, {1} commit and {2} merge site(s) checked — none reach a default branch, none force, every merge --ff-only" -f @($inv.PushSites).Count, @($inv.CommitSites).Count, @($inv.MergeSites).Count) -ForegroundColor DarkGray
 }
 
+Write-Step 'Bounded git sweep - Release 3.2: timeout honored, cap honored, order preserved'
+& {
+    $sweepModule = Join-Path $WorkspaceRoot 'backend\modules\git\Git.BoundedSweep.ps1'
+    if (-not (Test-Path -LiteralPath $sweepModule)) { throw "Missing $sweepModule" }
+    . $sweepModule
+    # The top-of-script reconcile load uses the call operator, so its functions
+    # died with that invocation's scope; this gate needs them live.
+    . $reconcile -LoadFunctionsOnly
+
+    # --- Tripwire: no bare git invocation may return to the sweep path. -----
+    # Derived scope: the three files whose ten bare '& git -C' calls this
+    # release removed. The detector must fail its own violating fixture first,
+    # so a passing run is a run that proved it can fail.
+    $bareGitPattern = '&\s+git\s+-C'
+    $violatingFixture = '$branch = (& git -C $fullPath branch --show-current 2>$null)'
+    if ($violatingFixture -notmatch $bareGitPattern) {
+        throw 'Bare-git detector failed its own violating fixture; the tripwire below is vacuous.'
+    }
+    foreach ($sweepPathFile in @(
+            'backend\modules\reconcile\Invoke-Reconciliation.ps1',
+            'backend\adapters\Adapters.ps1',
+            'backend\modules\portfolio\Portfolio.Scope.ps1')) {
+        $sweepPathText = Get-Content -LiteralPath (Join-Path $WorkspaceRoot $sweepPathFile) -Raw -Encoding UTF8
+        $bareMatches = @([regex]::Matches($sweepPathText, $bareGitPattern))
+        if ($bareMatches.Count -gt 0) {
+            throw ("{0} contains {1} bare '& git -C' invocation(s); every sweep git call must go through Invoke-BoundedGitCommand so a hung repo is abandoned at its timeout." -f $sweepPathFile, $bareMatches.Count)
+        }
+    }
+
+    # --- Fixtures: three real repos and a plain folder. ---------------------
+    $sweepFixtureRoot = Join-Path $env:TEMP ('smoke-boundedsweep-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    $sweepScanRoot = Join-Path $sweepFixtureRoot 'root'
+    New-Item -ItemType Directory -Path $sweepScanRoot -Force | Out-Null
+    try {
+        foreach ($sweepRepoName in 'alpha', 'bravo', 'charlie') {
+            $sweepRepoPath = Join-Path $sweepScanRoot $sweepRepoName
+            New-Item -ItemType Directory -Path $sweepRepoPath | Out-Null
+            & git -C $sweepRepoPath init -q -b main
+            & git -C $sweepRepoPath config user.email 'smoke@example.com'
+            & git -C $sweepRepoPath config user.name 'Smoke'
+            Set-Content -Path (Join-Path $sweepRepoPath 'readme.txt') -Value "hello from $sweepRepoName"
+            & git -C $sweepRepoPath add -A
+            & git -C $sweepRepoPath commit -q -m "initial commit in $sweepRepoName"
+        }
+        & git -C (Join-Path $sweepScanRoot 'alpha') remote add origin 'https://github.com/smokeowner/alpha-repo.git'
+        Set-Content -Path (Join-Path $sweepScanRoot 'bravo\untracked.txt') -Value 'dirty'
+        Set-Content -Path (Join-Path $sweepScanRoot 'charlie\readme.txt') -Value 'modified'
+        New-Item -ItemType Directory -Path (Join-Path $sweepScanRoot 'plainfolder') | Out-Null
+
+        # --- Concurrency must not change the answer. ------------------------
+        # Identical JSON, UNSORTED, so this asserts order as well as content:
+        # a cap that reorders or drops a repository fails here, not in prod.
+        $sweepIgnoreRegex = @('[/\\]\.git([/\\]|$)')
+        $sweepInvSequential = Get-LocalFolderInventory -Roots @($sweepScanRoot) -IgnoreDirNames @('node_modules') -IgnorePathRegex $sweepIgnoreRegex -MaxDepth 2 -IncludeNonGitFolders -GitSweepMaxConcurrency 1
+        $sweepInvParallel = Get-LocalFolderInventory -Roots @($sweepScanRoot) -IgnoreDirNames @('node_modules') -IgnorePathRegex $sweepIgnoreRegex -MaxDepth 2 -IncludeNonGitFolders -GitSweepMaxConcurrency 4
+        $sweepJsonSequential = $sweepInvSequential | ConvertTo-Json -Depth 8
+        $sweepJsonParallel = $sweepInvParallel | ConvertTo-Json -Depth 8
+        if ($sweepJsonSequential -ne $sweepJsonParallel) {
+            throw 'Parallel sweep (cap 4) output differs from sequential (cap 1); the concurrency cap reordered, dropped or changed a repository.'
+        }
+        $sweepAlpha = @($sweepInvParallel | Where-Object { $_.FolderName -eq 'alpha' })[0]
+        $sweepBravo = @($sweepInvParallel | Where-Object { $_.FolderName -eq 'bravo' })[0]
+        if ($sweepAlpha.CurrentBranch -ne 'main' -or $sweepAlpha.GitOwnerGuess -ne 'smokeowner' -or $sweepAlpha.GitRepoName -ne 'alpha-repo' -or [int]$sweepAlpha.CommitsLastWeek -lt 1) {
+            throw ("Sweep facts wrong for alpha: branch={0} owner={1} name={2} week={3}" -f $sweepAlpha.CurrentBranch, $sweepAlpha.GitOwnerGuess, $sweepAlpha.GitRepoName, $sweepAlpha.CommitsLastWeek)
+        }
+        if ([int]$sweepBravo.UntrackedCount -ne 1 -or [int]$sweepBravo.ModifiedCount -ne 0) {
+            throw ("Sweep dirty counts wrong for bravo: untracked={0} modified={1}" -f $sweepBravo.UntrackedCount, $sweepBravo.ModifiedCount)
+        }
+
+        # --- A hung git call is abandoned at its timeout. -------------------
+        # The shim hangs 30 seconds; the bound is 2. Anything under 15s proves
+        # abandonment (timeout + bounded kill/drain), anything near 30 means
+        # the sweep waited the hang out and the bound is fiction.
+        $sweepHangShim = Join-Path $sweepFixtureRoot 'hang.cmd'
+        Set-Content -Path $sweepHangShim -Value "@echo off`r`nping -n 31 127.0.0.1 >nul"
+        $sweepHangWatch = [System.Diagnostics.Stopwatch]::StartNew()
+        $sweepHangResult = Invoke-BoundedGitCommand -RepoPath $sweepScanRoot -GitArgumentList @('status') -FileName $sweepHangShim -TimeoutSeconds 2
+        $sweepHangWatch.Stop()
+        if (-not $sweepHangResult.TimedOut) { throw 'Hanging shim did not report TimedOut; the timeout is not being applied.' }
+        if ($sweepHangWatch.ElapsedMilliseconds -ge 15000) {
+            throw ("Hanging shim took {0}ms against a 2s bound; the process was not abandoned." -f $sweepHangWatch.ElapsedMilliseconds)
+        }
+
+        # --- A hung REPO short-circuits after two timeouts. -----------------
+        $sweepHungFacts = Get-RepoGitFactSet -RepoPath $sweepScanRoot -FileName $sweepHangShim -TimeoutSeconds 1
+        if (@($sweepHungFacts.TimedOutCommandNames).Count -ne 2 -or -not $sweepHungFacts.ShortCircuited) {
+            throw ("Hung repo did not short-circuit: {0} timeouts recorded, ShortCircuited={1} (expected exactly 2, then skip)." -f @($sweepHungFacts.TimedOutCommandNames).Count, $sweepHungFacts.ShortCircuited)
+        }
+        if ($null -ne $sweepHungFacts.Branch -or @($sweepHungFacts.StatusLines).Count -ne 0) {
+            throw 'Hung repo returned facts; unavailable facts must be null/empty, never stale or invented.'
+        }
+
+        # --- The cap is real, and so is the parallelism. --------------------
+        # Marker shim: every invocation writes its own start/end tick file;
+        # sweep-line overlap over those intervals measures true concurrency.
+        $sweepMarkerDir = Join-Path $sweepFixtureRoot 'markers'
+        New-Item -ItemType Directory -Path $sweepMarkerDir | Out-Null
+        $sweepMarkerScript = Join-Path $sweepFixtureRoot 'marker.ps1'
+        Set-Content -Path $sweepMarkerScript -Value @'
+$f = Join-Path $env:SMOKE_SWEEP_MARKER_DIR ([guid]::NewGuid().ToString('n') + '.txt')
+$s = [datetime]::UtcNow.Ticks
+Start-Sleep -Milliseconds 250
+Set-Content -Path $f -Value ($s.ToString() + ' ' + [datetime]::UtcNow.Ticks.ToString())
+'@
+        $sweepMarkerShim = Join-Path $sweepFixtureRoot 'marker.cmd'
+        Set-Content -Path $sweepMarkerShim -Value ("@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"$sweepMarkerScript`"")
+        $env:SMOKE_SWEEP_MARKER_DIR = $sweepMarkerDir
+        try {
+            $sweepFakeRepoPaths = @(1..4 | ForEach-Object {
+                    $p = Join-Path $sweepFixtureRoot "fake$_"
+                    New-Item -ItemType Directory -Path $p | Out-Null
+                    $p
+                })
+            $script:sweepTickCount = 0
+            $sweepCapResults = Invoke-BoundedRepoFactSweep -RepoPathList $sweepFakeRepoPaths -TimeoutSeconds 30 -MaxConcurrency 2 -FileName $sweepMarkerShim -OnRepoComplete { $script:sweepTickCount++ }
+            if (@($sweepCapResults).Count -ne 4) { throw ("Sweep returned {0} results for 4 repos; results must align index-for-index with input." -f @($sweepCapResults).Count) }
+            if ($script:sweepTickCount -ne 4) { throw ("OnRepoComplete fired {0} times for 4 repos; the heartbeat tick must fire once per completed repo, from inside the sweep." -f $script:sweepTickCount) }
+
+            $sweepIntervals = @(Get-ChildItem -LiteralPath $sweepMarkerDir -Filter '*.txt' | ForEach-Object {
+                    $parts = (Get-Content -LiteralPath $_.FullName -Raw).Trim() -split '\s+'
+                    if ($parts.Count -eq 2) { [pscustomobject]@{ Start = [long]$parts[0]; End = [long]$parts[1] } }
+                })
+            if (@($sweepIntervals).Count -lt 24) { throw ("Only {0} marker intervals recorded; expected 32 (8 calls x 4 repos, minus at most a few short-circuits)." -f @($sweepIntervals).Count) }
+            $sweepEvents = @($sweepIntervals | ForEach-Object { [pscustomobject]@{ T = $_.Start; D = 1 }; [pscustomobject]@{ T = $_.End; D = -1 } }) | Sort-Object -Property T, D
+            $sweepConcurrent = 0
+            $sweepMaxConcurrent = 0
+            foreach ($sweepEvent in $sweepEvents) {
+                $sweepConcurrent += $sweepEvent.D
+                if ($sweepConcurrent -gt $sweepMaxConcurrent) { $sweepMaxConcurrent = $sweepConcurrent }
+            }
+            if ($sweepMaxConcurrent -gt 2) { throw ("Observed {0} concurrent git calls under a cap of 2; the concurrency cap is not being honored." -f $sweepMaxConcurrent) }
+            if ($sweepMaxConcurrent -lt 2) { throw ("Observed max concurrency {0} under a cap of 2 across 32 calls; the pool is not actually parallel." -f $sweepMaxConcurrent) }
+        }
+        finally {
+            Remove-Item Env:SMOKE_SWEEP_MARKER_DIR -ErrorAction SilentlyContinue
+        }
+
+        Write-Host ("  sweep ok: detector failed its violating fixture first; 3 files bare-git free; cap1/cap4 output identical (order included); hung call abandoned at {0}ms against a 30s hang; hung repo short-circuited after 2 timeouts; max observed concurrency 2 under cap 2 with per-repo heartbeat ticks" -f $sweepHangWatch.ElapsedMilliseconds) -ForegroundColor DarkGray
+    }
+    finally {
+        Remove-Item -Recurse -Force $sweepFixtureRoot -ErrorAction SilentlyContinue
+    }
+}
+
 Write-Step 'Smoke test completed'
