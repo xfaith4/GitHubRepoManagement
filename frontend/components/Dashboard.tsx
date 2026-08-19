@@ -37,6 +37,7 @@ import PortfolioSummarySection from './PortfolioSummarySection';
 import { type ViewTabBadges } from '../lib/viewTabs';
 import { useAsyncPanel, withPanelTimeout } from '../lib/asyncPanel';
 import { getPortfolioSnapshot } from '../services/apiClient';
+import ScanProgressChip from './ScanProgressChip';
 import type { PortfolioSnapshot } from '../types';
 import { isRepoNeedsAttention } from '../lib/needsAttention';
 import { classifyFetchFailure } from '../lib/fetchFailure';
@@ -1275,6 +1276,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     <div className="pb-20 md:pb-0">
       {/* Backend connectivity badge + auto-scan schedule */}
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-3 flex justify-end items-center gap-4">
+        <ScanProgressChip />
         {scanSchedule && (
           <span className="inline-flex items-center gap-1.5 text-xs text-gray-500" title={scanSchedule.nextScanAt ? `Next scan: ${new Date(scanSchedule.nextScanAt).toLocaleTimeString()}` : 'Auto-scan disabled'}>
             <span className={`inline-block w-1.5 h-1.5 rounded-full ${scanSchedule.enabled ? 'bg-indigo-400' : 'bg-gray-600'}`} />

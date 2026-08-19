@@ -383,9 +383,10 @@ regresses meanwhile.
 
 **Status:** ACTIVE — resumed 2026-08-17 when Release 3.5 closed. (Demoted
 2026-08-11 behind 3.1: a portfolio that renders faster while queueing work
-nobody executes is not more reliable. Nothing here was found wrong; the
-ordering was.) The read-path performance budget shipped 2026-08-11; the
-bounded git sweep landed 2026-08-19.
+nobody executes is not more reliable.) Performance budget 2026-08-11; the
+bounded git sweep and the observable, cancellable background scan both
+landed 2026-08-19. Remaining: grid virtualization and the `Dashboard.tsx`
+non-blocker it pairs with.
 
 **Goal:** make an 80+ repo portfolio feel immediate. Reads serve from the
 persistent index; a cold full assessment becomes a visible background job
@@ -414,11 +415,23 @@ milestones below would have no way to prove they helped. The numbers they have
 to beat are now stated and enforced — warm reads at 2-3s, a cold scan at 300s
 (against the 900s deadline), measured figure served beside its budget.
 
-- [ ] Serve portfolio assessment from the persistent index with incremental
+- [x] Serve portfolio assessment from the persistent index with incremental
       refresh; make a cold full scan an explicit background job with progress
-      and a cancel. _(state: planned — a cold scan currently exceeds both the
-      smoke's client timeout and the 180s request deadline on the real
-      75-repo workspace)_
+      and a cancel. _(state: smoke-tested 2026-08-19 — the serving half was
+      already true (index reuse 2.3 5B/5F; all four sweeps moved to the
+      out-of-process worker when the freeze tripwire landed) but the job was
+      a black box: `statusRefreshing: true` was its entire observable
+      surface. Now the worker writes a progress file (phase, repos, heartbeat)
+      from inside its loops, honors a cancel marker at phase boundaries
+      (never inside the callbacks that swallow exceptions by design), and
+      three routes expose it: `GET /api/portfolio/scan/status`,
+      `POST /api/portfolio/scan`, `POST /api/portfolio/scan/cancel`
+      (idle cancel = named 409). The portal renders it as a live-region chip
+      with a cancel that states its phase-boundary semantics. Gates: api-host
+      smoke proves route start → `/health/live` 200 DURING the scan → cancel
+      ends `cancelled` with phases kept, plus a delayed-worker control pair
+      (completed 4/4 vs cancelled early, marker consumed, lock removed);
+      `ScanProgressChip.test.tsx` proves the operator sees it.)_
 - [x] Bound per-repo git work with a timeout and a concurrency cap so one
       pathological repo cannot stall a sweep. _(state: smoke-tested —
       counting found NINE unbounded calls per repo (~675 launches on the real
@@ -480,10 +493,19 @@ that gives the remaining milestones a number to beat.
 - [ ] `FailFast` as deadline policy means one slow request destroys every
       in-flight request. Recorded as a Lane 0.9 non-blocker; the blast radius is
       a design question this release touches but does not by itself settle.
-- [ ] `/health/live` is unanswerable while a scan runs, because the host is
-      single-threaded. The background-job milestone is the first real
-      opportunity to fix that rather than tolerate it — see the open Lane 0.9
-      item, which this release should close or explicitly hand back.
+- [x] `/health/live` is unanswerable while a scan runs — **resolved by
+      architecture, proven 2026-08-19**: scans run out of process, and the
+      api-host smoke now asserts `/health/live` answers 200 while
+      `scan/status` reports a running scan. Residual truth, named: non-scan
+      900s-tier requests (forced reassessment recompute, automation runs)
+      still hold the single request thread while they run — that is the
+      FailFast blast-radius question above, not a scan problem.
+- [ ] **[non-blocker]** PR #155's first CI run failed with a packaging
+      fixture auditing `L0-Absent`; not reproduced locally or on rerun (the
+      audit's per-repo catch maps any throw to `parse-error`/L0). The
+      maturity assertion now prints the host-log audit trail and the entry's
+      `roadmapState` on failure, so a recurrence names its cause instead of
+      hiding on the runner.
 
 ---
 
@@ -601,15 +623,14 @@ derives its scope from a classifier or the AST, never a maintained list.
       renamed **Retry trend fetch** so the two are told apart.
       _(state: smoke-tested — asserted by `InsightsView.test.tsx` on the
       handler each control actually calls, not on its presence.)_
-- [ ] **Make `/health/live` independently responsive during long operations.**
-      _(state: planned — architectural, deliberately out of the incident fix)_
-      The heartbeat makes the watchdog correct, but the underlying cause
-      remains: a single-threaded host cannot answer liveness while working, so
-      the portal is genuinely unresponsive to the operator for the duration of
-      a scan. Options to weigh: a dedicated listener thread/runspace for
-      `/health/*`, moving scans to a background runspace with a job handle the
-      UI polls, or a small always-available status surface. This is a design
-      decision, not a patch.
+- [x] **Make `/health/live` independently responsive during long operations.**
+      **Closed 2026-08-19** under Release 3.2 M1. The design decision landed
+      as "the scan is not the host's job": all four sweeps run in the
+      out-of-process worker, and the api-host smoke asserts `/health/live`
+      answers 200 while `scan/status` reports running. The residual —
+      non-scan 900s-tier requests still occupy the single thread — is the
+      Lane 0.9 FailFast blast-radius item, tracked in Release 3.2's known
+      issues.
 - [ ] **Clear and harden the stale browser-persisted GitHub owner.** _(state:
       planned — recorded 2026-08-10, not bundled into the watchdog fix)_ Every
       scan queries GitHub for owner `Benjamin-Fuhr_genesys`, which 404s/422s
