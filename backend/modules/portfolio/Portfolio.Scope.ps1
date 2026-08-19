@@ -24,6 +24,12 @@
 
 Set-StrictMode -Version Latest
 
+# Release 3.2: the root-commit identity call is bounded like every other sweep
+# git call -- one unreadable clone must not stall duplicate grouping.
+if (-not (Get-Command Invoke-BoundedGitCommand -ErrorAction SilentlyContinue)) {
+    . (Join-Path $PSScriptRoot '..\git\Git.BoundedSweep.ps1')
+}
+
 function Get-RepoScopePolicy {
     <#
     .SYNOPSIS
@@ -171,10 +177,12 @@ function Get-LocalRepoRootCommitSha {
     [OutputType([string])]
     param([Parameter(Mandatory = $true)][string]$RepoPath)
 
-    $out = (& git -C $RepoPath rev-list --max-parents=0 HEAD 2>&1) | Out-String
-    if ($LASTEXITCODE -ne 0) { return '' }
+    $result = Invoke-BoundedGitCommand -RepoPath $RepoPath -GitArgumentList @('rev-list', '--max-parents=0', 'HEAD')
+    if ($result.TimedOut -or $result.ExitCode -ne 0) { return '' }
     # A repo grafted from multiple roots reports several; the first is stable.
-    return @($out -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })[0]
+    $shas = @(@($result.Lines) | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    if ($shas.Count -eq 0) { return '' }
+    return $shas[0]
 }
 
 function Group-RepoByRemoteIdentity {

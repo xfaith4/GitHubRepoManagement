@@ -4,6 +4,12 @@
 #         Reconcile.Adapter.ps1, DocReview.Adapter.ps1
 # =============================================================================
 
+# Release 3.2: every adapter git call goes through the bounded invoker -- a
+# hung git process is abandoned at its timeout instead of stalling the host.
+if (-not (Get-Command Invoke-BoundedGitCommand -ErrorAction SilentlyContinue)) {
+    . (Join-Path $PSScriptRoot '..\modules\git\Git.BoundedSweep.ps1')
+}
+
 # ---------------------------------------------------------------------------
 # Shared response envelope (was Adapter.Common.ps1)
 # ---------------------------------------------------------------------------
@@ -82,9 +88,9 @@ function Get-LocalRepoHeadCommitSha {
     if (-not (Test-Path -LiteralPath $RepoPath -PathType Container -ErrorAction SilentlyContinue)) { return '' }
 
     try {
-        $sha = & git -C $RepoPath rev-parse HEAD 2>$null
-        if ($LASTEXITCODE -ne 0) { return '' }
-        $text = [string]$sha
+        $result = Invoke-BoundedGitCommand -RepoPath $RepoPath -GitArgumentList @('rev-parse', 'HEAD')
+        if ($result.TimedOut -or $result.ExitCode -ne 0) { return '' }
+        $text = [string]$result.Value
         if ([string]::IsNullOrWhiteSpace($text)) { return '' }
         return $text.Trim()
     } catch {

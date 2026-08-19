@@ -381,12 +381,11 @@ regresses meanwhile.
 
 ### Release 3.2 — Portfolio Scale and Responsiveness
 
-**Status:** planned — was active from 2026-08-11, demoted the same day behind
-Release 3.1. Nothing here was found wrong; the ordering was. A portfolio that
-renders faster while queueing work nobody executes is not more reliable, and
-the reliability gap was the one an operator was actually hitting. Resume as the
-active release when 3.1 closes. 1 of 4 milestones shipped (the read-path
-performance budget).
+**Status:** ACTIVE — resumed 2026-08-17 when Release 3.5 closed. (Demoted
+2026-08-11 behind 3.1: a portfolio that renders faster while queueing work
+nobody executes is not more reliable. Nothing here was found wrong; the
+ordering was.) The read-path performance budget shipped 2026-08-11; the
+bounded git sweep landed 2026-08-19.
 
 **Goal:** make an 80+ repo portfolio feel immediate. Reads serve from the
 persistent index; a cold full assessment becomes a visible background job
@@ -420,11 +419,19 @@ to beat are now stated and enforced — warm reads at 2-3s, a cold scan at 300s
       and a cancel. _(state: planned — a cold scan currently exceeds both the
       smoke's client timeout and the 180s request deadline on the real
       75-repo workspace)_
-- [ ] Bound per-repo git work with a timeout and a concurrency cap so one
-      pathological repo cannot stall a sweep. _(state: planned — seven
-      sequential unbounded `git` calls per repo, ~525 process launches on the
-      real 75-repo workspace; one hung call stalls the sweep until the
-      deadline guard kills the host)_
+- [x] Bound per-repo git work with a timeout and a concurrency cap so one
+      pathological repo cannot stall a sweep. _(state: smoke-tested —
+      counting found NINE unbounded calls per repo (~675 launches on the real
+      75-repo workspace), not the seven this item recorded. All ten bare call
+      sites (eight in the inventory walk, the head-SHA read, the root-commit
+      identity read) now go through
+      [`Git.BoundedSweep.ps1`](backend/modules/git/Git.BoundedSweep.ps1):
+      per-command timeout with kill-on-expiry, a hung repo short-circuits
+      after two timeouts, repos fan out on a runspace pool capped at 4, and
+      the heartbeat ticks per completed repo from inside the sweep. Output
+      asserted identical to sequential, order included; the bare-git tripwire
+      failed its own violating fixture first. Gate: module smoke "Bounded git
+      sweep".)_
 - [ ] Virtualize the repo grid so row count stops driving render cost.
       _(state: planned)_ Pairs with the `Dashboard.tsx` non-blocker below —
       both are render cost on the same screen.
@@ -451,7 +458,7 @@ to beat are now stated and enforced — warm reads at 2-3s, a cold scan at 300s
 - Distributed or multi-machine scanning.
 - Replacing SQLite.
 
-**Validation plan (restored in full when 3.2 is active again):** `npm test`,
+**Validation plan:** `npm test`,
 exit 0, plus a per-milestone gate — a hung `git` call abandoned at its
 timeout, scan progress observable and a cancel honored mid-scan, and the
 read-path budget assertions still green. A scale change that regresses a warm
