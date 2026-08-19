@@ -1,39 +1,45 @@
 {
+  "inventory": {
+    "localRoots": [
+      "F:\\Development\\GitHubRepoManagement\\output\\smoke\\api-host\\portfolio-fixture-repos"
+    ],
+    "includeNonGitFolders": false,
+    "maxDepth": 3
+  },
   "docReview": {
     "generateQueue": true,
     "maxDepth": 3,
     "generateBatchPlan": true
   },
+  "performance": {
+    "readPathBudgetMs": {
+      "fresh-scan": 300000,
+      "portfolio-index": 3000,
+      "assessment-cache": 3000,
+      "memory": 2000
+    }
+  },
   "schemaVersion": "v1",
+  "reconcile": {
+    "gitHubOwner": "xfaith4",
+    "retry": {
+      "baseDelayMs": 300,
+      "maxDelayMs": 2000,
+      "maxAttempts": 3
+    },
+    "ownerType": "Auto"
+  },
   "secrets": {
     "gitHubTokenEnvVar": "GITHUB_TOKEN"
   },
-  "inventory": {
-    "maxDepth": 3,
-    "localRoots": [
-      "F:\\Development\\20_Staging"
-    ],
-    "includeNonGitFolders": false
-  },
   "retention": {
+    "ledgers": {
+      "enabled": true,
+      "archiveDir": "output\\archive\\ledgers",
+      "minKeepLines": 500,
+      "keepDays": 90
+    },
     "days": 30,
     "maxSnapshotDays": 365
-  },
-  "performance": {
-    "readPathBudgetMs": {
-      "memory": 2000,
-      "portfolio-index": 3000,
-      "assessment-cache": 3000,
-      "fresh-scan": 300000
-    }
-  },
-  "reconcile": {
-    "ownerType": "Auto",
-    "retry": {
-      "maxAttempts": 3,
-      "maxDelayMs": 2000,
-      "baseDelayMs": 300
-    },
-    "gitHubOwner": "xfaith4"
   }
 }
