@@ -114,6 +114,7 @@ $agentRunsModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\agent-runs'
 $persistenceModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\persistence'
 . (Join-Path $persistenceModuleRoot 'Persistence.Store.ps1')
 . (Join-Path $persistenceModuleRoot 'Ledger.Retention.ps1')
+. (Join-Path $persistenceModuleRoot 'Persistence.Backup.ps1')
 . (Join-Path $commonRoot 'NotificationHub.ps1')
 . (Join-Path $PSScriptRoot 'ApiHost.ErrorHandling.ps1')
 . (Join-Path $PSScriptRoot 'RequestDeadline.ps1')
@@ -6849,6 +6850,54 @@ try {
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data    = $ledgerResult
+                    }
+                }
+                'GET /api/maintenance/backups' {
+                    # Release 3.3 milestone 2 -- list the snapshots with their
+                    # manifests, so a backup can be judged without opening it.
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $backupDir = Get-AppDbBackupDir -WorkspaceRoot $WorkspaceRoot
+                    $backupList = @()
+                    if (Test-Path -LiteralPath $backupDir) {
+                        foreach ($backupFile in @(Get-ChildItem -LiteralPath $backupDir -Filter 'app-*.db' -File | Sort-Object -Property Name -Descending)) {
+                            $manifestFile = [System.IO.Path]::ChangeExtension($backupFile.FullName, '.manifest.json')
+                            $manifestData = $null
+                            if (Test-Path -LiteralPath $manifestFile) {
+                                try { $manifestData = Get-Content -LiteralPath $manifestFile -Raw | ConvertFrom-Json } catch { $manifestData = $null }
+                            }
+                            $backupList += [pscustomobject]@{
+                                name      = $backupFile.Name
+                                path      = $backupFile.FullName
+                                sizeBytes = $backupFile.Length
+                                manifest  = $manifestData
+                            }
+                        }
+                    }
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = @{
+                            backupDir = $backupDir
+                            count     = @($backupList).Count
+                            backups   = $backupList
+                            restoreNote = 'Restore is operator-only, with the host stopped: scripts\Restore-AppDb.ps1 -BackupPath <snapshot>. Older schema versions replay their migrations forward on the next boot; newer-than-code snapshots are refused.'
+                        }
+                    }
+                }
+                'POST /api/maintenance/backup' {
+                    # Release 3.3 milestone 2 -- VACUUM INTO snapshot of the
+                    # live database; no shutdown, no partial pages. Restore is
+                    # deliberately NOT a route: the host holds the database it
+                    # would be overwriting.
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $backupResult = New-AppDbBackup -WorkspaceRoot $WorkspaceRoot -Confirm:$false
+                    if ($backupResult.success -and $null -ne $backupResult.backupPath) {
+                        Write-HostLog ("maintenance.backup path={0} sizeBytes={1} schemaVersion={2} pruned={3} correlationId={4}" -f `
+                                $backupResult.backupPath, $backupResult.sizeBytes, $backupResult.schemaVersion, (@($backupResult.prunedBackups) -join ','), $correlationId)
+                    }
+                    $backupStatus = if ($backupResult.success) { 200 } else { 500 }
+                    Send-HttpJson -Stream $req.Stream -StatusCode $backupStatus -CorrelationId $correlationId -Payload @{
+                        success = [bool]$backupResult.success
+                        data    = $backupResult
                     }
                 }
                 # ── Release 2.2/2.7 — auth status, login, logout ────────────────

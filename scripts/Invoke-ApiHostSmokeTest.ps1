@@ -2937,6 +2937,32 @@ try {
     Write-Host ("  ledger retention ok: policy keepDays={0} with {1} named exclusion(s), preview reports {2} target(s), POST applied, lastRun surfaced" -f `
             $ledgerGet.Json.data.policy.keepDays, @($ledgerGet.Json.data.policy.exclusions).Count, @($ledgerGet.Json.data.preview.reports).Count) -ForegroundColor DarkGray
 
+    Write-Host '[STEP] AppDb backup routes (Release 3.3 M2)' -ForegroundColor Cyan
+    # The rehearsed restore lives in the module smoke; this step proves the
+    # operator surface: a POST that snapshots the live database, and a GET
+    # that lists judgeable snapshots (manifest included). Restore is
+    # deliberately not a route -- the host holds the database it would
+    # overwrite -- so the GET carries the documented operator path instead.
+    $bakPost = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/maintenance/backup" -Body @{}
+    Assert-Not503 -Name '/api/maintenance/backup (POST)' -Response $bakPost
+    if ($bakPost.StatusCode -eq 200 -and $bakPost.Json.success) {
+        if ([string]::IsNullOrWhiteSpace([string]$bakPost.Json.data.backupPath)) { throw 'Backup succeeded without a backupPath.' }
+        $bakGet = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/maintenance/backups"
+        if ($null -eq $bakGet.Json -or -not $bakGet.Json.success) { throw "GET /api/maintenance/backups failed. Body=$($bakGet.Content)" }
+        if ([int]$bakGet.Json.data.count -lt 1) { throw 'Backup list is empty right after a successful POST.' }
+        if ([string]::IsNullOrWhiteSpace([string]$bakGet.Json.data.restoreNote)) { throw 'Backup list must carry the documented restore path.' }
+        Write-Host ("  appdb backup ok: snapshot {0} ({1} bytes, schema v{2}); list shows {3} with manifests and the restore note" -f `
+                (Split-Path -Leaf ([string]$bakPost.Json.data.backupPath)), $bakPost.Json.data.sizeBytes, $bakPost.Json.data.schemaVersion, $bakGet.Json.data.count) -ForegroundColor DarkGray
+    }
+    elseif ([string]$bakPost.Json.data.reason -eq 'source-missing') {
+        # No app.db on this workspace (no SQLite provider): the same degraded
+        # contract the persistence step accepts, said loudly.
+        Write-Host '  appdb backup: no app.db on this workspace (degraded contract accepted; the module smoke rehearses backup/restore where a provider exists)' -ForegroundColor Yellow
+    }
+    else {
+        throw "POST /api/maintenance/backup failed unexpectedly: HTTP $($bakPost.StatusCode). Body=$($bakPost.Content)"
+    }
+
     Write-Host '[STEP] Automation status route (Release 2.7 Phase D)' -ForegroundColor Cyan
     $automationStatusOk = $false
     $autoStatus = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/automation/status"

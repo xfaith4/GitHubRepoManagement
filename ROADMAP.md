@@ -416,8 +416,22 @@ window.
       it caught `automation-runs.jsonl` on its first run. Config knob
       `retention.ledgers` in settings.json; routes mirror the database
       maintenance pair; `Invoke-DailyEvidence.ps1` applies it daily.)_
-- [ ] Add a documented backup and restore path for `app.db`, including a schema
-      migration story. _(state: planned)_
+- [x] Add a documented backup and restore path for `app.db`, including a schema
+      migration story. _(state: smoke-tested 2026-08-19 —
+      [`Persistence.Backup.ps1`](backend/modules/persistence/Persistence.Backup.ps1):
+      `VACUUM INTO` snapshots of the live database (no shutdown, no partial
+      pages), each with a manifest (schema version, table counts) and
+      keep-newest-7 retention; `POST /api/maintenance/backup` +
+      `GET /api/maintenance/backups`, taken daily by `Invoke-DailyEvidence`.
+      Restore is deliberately operator-only with the host stopped
+      ([`Restore-AppDb.ps1`](scripts/Restore-AppDb.ps1)): verified before
+      anything moves, the existing database moves aside rather than dying,
+      verified again after. Schema story stated: any version >= 1 replays its
+      idempotent migrations forward on next boot; newer-than-code is refused
+      by name. The module smoke REHEARSES the loop — snapshot, mutate,
+      restore, query the restored history through the provider, prove the
+      mutated original survived aside. Docs:
+      [appdb-backup-restore.md](docs/reference/appdb-backup-restore.md).)_
 - [ ] Make the portal's self-reported transport match reality, closing behind
       Lane 0.2's certificate recovery. _(state: planned — the host degrades to
       plain HTTP on a certificate it cannot open, while config still claims

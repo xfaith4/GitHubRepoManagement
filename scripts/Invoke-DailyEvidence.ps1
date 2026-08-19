@@ -460,6 +460,26 @@ try {
             Write-Host ("  ledger retention: prunedTotal={0} ({1})" -f $scan.ledgerRetention.prunedTotal, ($scan.ledgerRetention.ledgers -join ', ')) -ForegroundColor DarkGray
             if (-not $ledgerOk) { $notes.Add(("ledger retention did not succeed (HTTP {0}) — see host.log" -f $ledgerMaint.StatusCode)) }
 
+            # Release 3.3 milestone 2 — daily app.db snapshot (VACUUM INTO,
+            # keep newest 7). A backup that exists only when someone remembers
+            # to take one is not a backup path; it is a hope.
+            Write-Host '  running app.db backup (VACUUM INTO snapshot)...' -ForegroundColor DarkGray
+            $dbBackup = Invoke-Req -Method Post -Uri "$baseUrl/api/maintenance/backup" -Body '{}'
+            $dbBackupOk = ($dbBackup.Ok -and $dbBackup.StatusCode -eq 200 -and $null -ne $dbBackup.Json -and $dbBackup.Json.success -eq $true)
+            $scan.appDbBackup = if ($dbBackupOk) {
+                [ordered]@{
+                    httpStatus    = $dbBackup.StatusCode
+                    backupPath    = $dbBackup.Json.data.backupPath
+                    sizeBytes     = $dbBackup.Json.data.sizeBytes
+                    schemaVersion = $dbBackup.Json.data.schemaVersion
+                    pruned        = @($dbBackup.Json.data.prunedBackups)
+                }
+            } else {
+                [ordered]@{ httpStatus = $dbBackup.StatusCode; backupPath = $null; sizeBytes = $null; schemaVersion = $null; pruned = @() }
+            }
+            Write-Host ("  app.db backup: {0} ({1} bytes, schema v{2})" -f $scan.appDbBackup.backupPath, $scan.appDbBackup.sizeBytes, $scan.appDbBackup.schemaVersion) -ForegroundColor DarkGray
+            if (-not $dbBackupOk) { $notes.Add(("app.db backup did not succeed (HTTP {0}) — see host.log" -f $dbBackup.StatusCode)) }
+
             Write-Host ("  health live/ready/deps: {0}/{1}/{2}" -f $live.StatusCode, $readyResp.StatusCode, $deps.StatusCode) -ForegroundColor DarkGray
             Write-Host ("  persistence: available={0} enabled={1} tables={2} agentRunEvents={3}" -f $scan.persistence.available, $scan.persistence.enabled, $scan.persistence.tables, $scan.persistence.agentRunEventCount) -ForegroundColor DarkGray
             Write-Host ("  scan: mode={0} reused={1} reindexed={2} failed={3} durationMs={4}" -f $scanMetrics.mode, $scanMetrics.reused, $scanMetrics.reindexed, $scanMetrics.failed, $scanMetrics.durationMs) -ForegroundColor DarkGray
