@@ -440,6 +440,26 @@ try {
                     $scan.maintenance.rowsRemoved, $scan.maintenance.vacuumed, $scan.maintenance.reclaimedBytes, $scan.maintenance.sizeAfterBytes) -ForegroundColor DarkGray
             if (-not $maintOk) { $notes.Add(("app.db maintenance did not succeed (HTTP {0}) — see host.log" -f $maint.StatusCode)) }
 
+            # Release 3.3 milestone 1 — scheduled ledger retention. Same shape
+            # as the app.db pass: driven through the host's route, running
+            # daily so the append-only ledgers stay bounded unattended. The
+            # pruned lines are archived verbatim, never destroyed.
+            Write-Host '  running ledger retention (archive-then-trim)...' -ForegroundColor DarkGray
+            $ledgerMaint = Invoke-Req -Method Post -Uri "$baseUrl/api/maintenance/ledgers" -Body '{}'
+            $ledgerOk = ($ledgerMaint.Ok -and $ledgerMaint.StatusCode -eq 200 -and $null -ne $ledgerMaint.Json -and $ledgerMaint.Json.success -eq $true)
+            $scan.ledgerRetention = if ($ledgerOk) {
+                $ledgerReports = @($ledgerMaint.Json.data.reports)
+                [ordered]@{
+                    httpStatus  = $ledgerMaint.StatusCode
+                    prunedTotal = [int](@($ledgerReports | ForEach-Object { [int]$_.pruned } | Measure-Object -Sum).Sum)
+                    ledgers     = @($ledgerReports | Where-Object { [int]$_.pruned -gt 0 } | ForEach-Object { "{0}:{1}" -f $_.name, $_.pruned })
+                }
+            } else {
+                [ordered]@{ httpStatus = $ledgerMaint.StatusCode; prunedTotal = $null; ledgers = @() }
+            }
+            Write-Host ("  ledger retention: prunedTotal={0} ({1})" -f $scan.ledgerRetention.prunedTotal, ($scan.ledgerRetention.ledgers -join ', ')) -ForegroundColor DarkGray
+            if (-not $ledgerOk) { $notes.Add(("ledger retention did not succeed (HTTP {0}) — see host.log" -f $ledgerMaint.StatusCode)) }
+
             Write-Host ("  health live/ready/deps: {0}/{1}/{2}" -f $live.StatusCode, $readyResp.StatusCode, $deps.StatusCode) -ForegroundColor DarkGray
             Write-Host ("  persistence: available={0} enabled={1} tables={2} agentRunEvents={3}" -f $scan.persistence.available, $scan.persistence.enabled, $scan.persistence.tables, $scan.persistence.agentRunEventCount) -ForegroundColor DarkGray
             Write-Host ("  scan: mode={0} reused={1} reindexed={2} failed={3} durationMs={4}" -f $scanMetrics.mode, $scanMetrics.reused, $scanMetrics.reindexed, $scanMetrics.failed, $scanMetrics.durationMs) -ForegroundColor DarkGray

@@ -3657,7 +3657,12 @@ Write-Host ("  network-loop progress ok: {0} per-item GitHub loop(s) all tick fr
 # GET /api/status (timeoutSeconds=180)". Membership of the extended tier is not
 # a list to maintain by hand — derive it from what the handler actually calls.
 . (Join-Path $WorkspaceRoot 'backend\api-host\RequestDeadline.ps1')
-$scanEngineFunctions = @('Get-StatusAdapterResult', 'Invoke-PortfolioAssessment', 'Get-OperationsReposPayload')
+# Invoke-GitOperation is a one-level wrapper whose body runs
+# Get-StatusAdapterResult over the whole workspace — the indirection hid
+# POST /api/update and /api/sync from this tripwire until 2026-08-19, when the
+# smoke's git step timed out at the CLIENT's default 180s while a background
+# scan competed for the same disk. A wrapper that scans is a scan.
+$scanEngineFunctions = @('Get-StatusAdapterResult', 'Invoke-PortfolioAssessment', 'Get-OperationsReposPayload', 'Invoke-GitOperation')
 $scanRoutesChecked = 0
 foreach ($switchAst in @($hostFileAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.SwitchStatementAst] }, $true))) {
     foreach ($clause in $switchAst.Clauses) {
@@ -6305,6 +6310,137 @@ Set-Content -Path $f -Value ($s.ToString() + ' ' + [datetime]::UtcNow.Ticks.ToSt
     }
     finally {
         Remove-Item -Recurse -Force $sweepFixtureRoot -ErrorAction SilentlyContinue
+    }
+}
+
+Write-Step 'Ledger retention - Release 3.3 milestone 1: archive-then-trim, bounded and honest'
+& {
+    $retentionModule = Join-Path $WorkspaceRoot 'backend\modules\persistence\Ledger.Retention.ps1'
+    if (-not (Test-Path -LiteralPath $retentionModule)) { throw "Missing $retentionModule" }
+    . $retentionModule
+
+    $retFixture = Join-Path $env:TEMP ('smoke-ledgerret-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    $retWorkspace = Join-Path $retFixture 'ws'
+    $null = New-Item -ItemType Directory -Path (Join-Path $retWorkspace 'output\logs') -Force
+    try {
+        # A policy that reaches outside output\ must be refused outright.
+        $retBadSettings = @{ retention = @{ ledgers = @{ archiveDir = '..\evidence\baseline' } } }
+        $retRefused = $false
+        try { $null = Get-LedgerRetentionPolicy -Settings $retBadSettings -WorkspaceRoot $retWorkspace }
+        catch { $retRefused = $true }
+        if (-not $retRefused) { throw 'A policy pointing its archive outside output\ was accepted; evidence\ must be unreachable.' }
+
+        $retPolicy = Get-LedgerRetentionPolicy -Settings @{} -WorkspaceRoot $retWorkspace
+        if ([int]$retPolicy.KeepDays -ne 90 -or -not $retPolicy.Enabled) { throw "Default policy wrong: keepDays=$($retPolicy.KeepDays) enabled=$($retPolicy.Enabled)" }
+
+        # Fixture ledger: three old lines, two fresh, one unparseable, one
+        # old-but-floor-protected candidate. Timestamps are explicit so the
+        # cutoff maths is deterministic.
+        $retLedger = Join-Path $retWorkspace 'output\logs\service-watchdog.jsonl'
+        $retNow = [datetime]::UtcNow
+        $retOld = ($retNow.AddDays(-120)).ToString('o')
+        $retFresh = ($retNow.AddDays(-5)).ToString('o')
+        $retLines = @(
+            ('{"timestamp":"' + $retOld + '","event":"old-1"}'),
+            ('{"timestamp":"' + $retOld + '","event":"old-2"}'),
+            ('{"event":"no-timestamp-must-survive"}'),
+            ('{"timestamp":"' + $retOld + '","event":"old-3"}'),
+            ('{"timestamp":"' + $retFresh + '","event":"fresh-1"}'),
+            ('{"timestamp":"' + $retFresh + '","event":"fresh-2"}')
+        )
+        [System.IO.File]::WriteAllLines($retLedger, [string[]]$retLines)
+        $retBytesBefore = (Get-Item -LiteralPath $retLedger).Length
+
+        # -WhatIf must report and touch nothing.
+        $retFloorPolicy = [pscustomobject]@{
+            Enabled = $true; KeepDays = 90; MinKeepLines = 0
+            ArchiveDir = (Join-Path $retWorkspace 'output\archive\ledgers')
+            Targets = @([pscustomobject]@{ Name = 'service-watchdog'; Path = $retLedger; TimestampField = 'timestamp' })
+            Exclusions = @()
+        }
+        $retPreview = Invoke-LedgerRetention -Policy $retFloorPolicy -WhatIf
+        $retPreviewReport = @($retPreview.reports)[0]
+        if ([int]$retPreviewReport.pruned -ne 3) { throw "WhatIf preview expected 3 prunable lines, reported $($retPreviewReport.pruned)." }
+        if ((Get-Item -LiteralPath $retLedger).Length -ne $retBytesBefore) { throw 'WhatIf modified the ledger; a preview must touch nothing.' }
+        if (Test-Path -LiteralPath $retFloorPolicy.ArchiveDir) { throw 'WhatIf created the archive dir; a preview must touch nothing.' }
+
+        # Apply: the three old lines move to the archive VERBATIM; the fresh
+        # pair and the undateable line survive byte-identical.
+        $retResult = Invoke-LedgerRetention -Policy $retFloorPolicy -Confirm:$false
+        $retReport = @($retResult.reports)[0]
+        if ([int]$retReport.pruned -ne 3 -or [int]$retReport.kept -ne 3) { throw "Apply expected pruned=3 kept=3; got pruned=$($retReport.pruned) kept=$($retReport.kept)." }
+        if ([string]::IsNullOrWhiteSpace([string]$retReport.prunedFrom) -or [string]::IsNullOrWhiteSpace([string]$retReport.prunedTo)) { throw 'Pruned range not reported; a prune nobody can see happened is a silent rewrite.' }
+        $retSurvivors = @([System.IO.File]::ReadAllLines($retLedger))
+        $retExpectedSurvivors = @($retLines[2], $retLines[4], $retLines[5])
+        if (($retSurvivors -join "`n") -ne ($retExpectedSurvivors -join "`n")) { throw 'Survivors are not byte-identical to their originals (undateable line must be kept).' }
+        $retArchived = @([System.IO.File]::ReadAllLines([string]$retReport.archivePath))
+        $retExpectedArchived = @($retLines[0], $retLines[1], $retLines[3])
+        if (($retArchived -join "`n") -ne ($retExpectedArchived -join "`n")) { throw 'Archived lines are not the pruned originals verbatim.' }
+
+        # The floor: with minKeepLines=2 on an ALL-OLD ledger, the newest two
+        # survive regardless of age.
+        $retAllOld = Join-Path $retWorkspace 'output\logs\all-old.jsonl'
+        [System.IO.File]::WriteAllLines($retAllOld, [string[]]@(
+                ('{"timestamp":"' + $retOld + '","event":"ancient-1"}'),
+                ('{"timestamp":"' + $retOld + '","event":"ancient-2"}'),
+                ('{"timestamp":"' + $retOld + '","event":"ancient-3"}')
+            ))
+        $retFloorPolicy2 = [pscustomobject]@{
+            Enabled = $true; KeepDays = 90; MinKeepLines = 2
+            ArchiveDir = (Join-Path $retWorkspace 'output\archive\ledgers')
+            Targets = @([pscustomobject]@{ Name = 'all-old'; Path = $retAllOld; TimestampField = 'timestamp' })
+            Exclusions = @()
+        }
+        $retFloorResult = Invoke-LedgerRetention -Policy $retFloorPolicy2 -Confirm:$false
+        $retFloorReport = @($retFloorResult.reports)[0]
+        if ([int]$retFloorReport.kept -ne 2 -or [int]$retFloorReport.pruned -ne 1) { throw "Floor expected kept=2 pruned=1; got kept=$($retFloorReport.kept) pruned=$($retFloorReport.pruned)." }
+
+        # Derived scope: every .jsonl in the ledger homes must be a declared
+        # target or a named exclusion. The detector fails a planted undeclared
+        # ledger first, so a passing sweep is a sweep that can fail.
+        $realPolicy = Get-LedgerRetentionPolicy -Settings @{} -WorkspaceRoot $WorkspaceRoot
+        $declaredPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($t in @($realPolicy.Targets)) { $null = $declaredPaths.Add($t.Path) }
+        foreach ($e in @($realPolicy.Exclusions)) { $null = $declaredPaths.Add($e.Path) }
+        $retLedgerHomes = @(
+            (Join-Path $WorkspaceRoot 'output'),
+            (Join-Path $WorkspaceRoot 'output\logs'),
+            (Join-Path $WorkspaceRoot 'output\automation'),
+            (Join-Path $WorkspaceRoot 'output\roadmap-task-history'),
+            (Join-Path $WorkspaceRoot 'output\agent-runs')
+        )
+        $retFindUndeclared = {
+            param($Homes, $Declared)
+            $undeclared = @()
+            foreach ($ledgerHome in $Homes) {
+                if (-not (Test-Path -LiteralPath $ledgerHome)) { continue }
+                foreach ($file in @(Get-ChildItem -LiteralPath $ledgerHome -Filter '*.jsonl' -File -ErrorAction SilentlyContinue)) {
+                    if (-not $Declared.Contains($file.FullName)) { $undeclared += $file.FullName }
+                }
+            }
+            return $undeclared
+        }
+        $retPlanted = Join-Path $WorkspaceRoot 'output\logs\smoke-undeclared-ledger.jsonl'
+        # A fresh CI checkout has no output\logs\ (output/ is gitignored); the
+        # planted fixture must create its own home.
+        $null = New-Item -ItemType Directory -Path (Split-Path -Parent $retPlanted) -Force
+        Set-Content -LiteralPath $retPlanted -Value '{"timestamp":"2026-01-01T00:00:00Z"}'
+        try {
+            $retRedResult = @(& $retFindUndeclared $retLedgerHomes $declaredPaths)
+            if (@($retRedResult | Where-Object { $_ -eq $retPlanted }).Count -eq 0) { throw 'Scope detector missed the planted undeclared ledger; the sweep below is vacuous.' }
+        }
+        finally {
+            Remove-Item -LiteralPath $retPlanted -Force -ErrorAction SilentlyContinue
+        }
+        $retUndeclared = @(& $retFindUndeclared $retLedgerHomes $declaredPaths)
+        if (@($retUndeclared).Count -gt 0) {
+            throw ("Undeclared ledger(s) in the ledger homes -- declare each as a retention target or a named exclusion:`n    {0}" -f ($retUndeclared -join "`n    "))
+        }
+
+        Write-Host ("  retention ok: outside-output refused; WhatIf inert; 3 pruned to archive verbatim + undateable line kept; floor held 2 of 3 ancient lines; scope detector failed its planted fixture first, {0} target(s) + {1} exclusion(s) cover the ledger homes" -f @($realPolicy.Targets).Count, @($realPolicy.Exclusions).Count) -ForegroundColor DarkGray
+    }
+    finally {
+        Remove-Item -Recurse -Force $retFixture -ErrorAction SilentlyContinue
     }
 }
 

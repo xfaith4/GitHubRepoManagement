@@ -50,6 +50,13 @@ function Get-LongRunningScanRoutePattern {
         '/api/portfolio/assessment/*'
         '/api/operations/repos'
         '/api/operations/repos/*'
+        # POST /api/update and /api/sync run Get-StatusAdapterResult over the
+        # whole workspace through the Invoke-GitOperation wrapper -- the same
+        # class of work as /api/status, hidden from the derived tripwire by
+        # one level of indirection until 2026-08-19, when the smoke's client
+        # timed the step out at 180s while a background scan shared the disk.
+        '/api/update'
+        '/api/sync'
         '/api/automation/run'
         '/api/automation/package-run'
         '/api/digest/preview'

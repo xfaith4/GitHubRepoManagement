@@ -17,7 +17,13 @@
   },
   "retention": {
     "days": 30,
-    "maxSnapshotDays": 365
+    "maxSnapshotDays": 365,
+    "ledgers": {
+      "enabled": true,
+      "keepDays": 90,
+      "minKeepLines": 500,
+      "archiveDir": "output\\archive\\ledgers"
+    }
   },
   "performance": {
     "readPathBudgetMs": {
