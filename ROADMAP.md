@@ -1,8 +1,8 @@
 # GitHub Repo Management — Active Execution Roadmap
 
 > **Status:** Active
-> **Active release:** **Release 3.2 — Portfolio Scale and Responsiveness**
-> **Next active release:** **Release 3.3 — Steady-State Operation**
+> **Active release:** **Release 3.3 — Steady-State Operation**
+> **Next active release:** the Release 2.9 operator batch, then the deferred mobile completion
 > **Work ordering:** dependency-driven, not insertion order — see
 > [Execution Order and Dependencies](#execution-order-and-dependencies)
 > **Canonical product direction:** [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md)
@@ -171,7 +171,7 @@ module + verification boundary`.
 | **2.9**   | **Operator Field Proof** (mobile completion deferred)                    | `planned` — external-resource residuals only; the two mobile surfaces are deferred         |
 | 3.0       | Operator-Context Execution                                               | `done` (engineering) — 2026-08-09; see archive. Live proof tracked in 2.9                  |
 | 3.1       | Closed-Loop Delivery                                                     | `done` 2026-08-15 — manual loop proof recorded; portal + scheduled proofs re-homed to 2.9  |
-| **3.2**   | **Portfolio Scale and Responsiveness**                                   | **active** — resumed 2026-08-17 when 3.5 closed; read-path budget done, 3 milestones open  |
+| 3.2       | Portfolio Scale and Responsiveness                                       | `done` 2026-08-19 — budget + bounded sweep + observable/cancellable scan + render bound    |
 | **3.3**   | **Steady-State Operation**                                               | `planned` — unattended for months: retention, restore, honest TLS, decision-grade digests  |
 | **3.4**   | **The Delivery Loop Closes**                                             | `done` 2026-08-15 — six milestones + the full-loop proof, driven live and operator-verified |
 | 3.5       | Trustworthy Surfaces (UI Quality)                                        | `done` 2026-08-17 — all seven milestones; trust-report per finding; operator sign-off in 2.9 |
@@ -191,16 +191,17 @@ dispatch runs. No open item is now waiting on another open item — the ordering
 below is therefore about **what kind of resource each item needs**, not about
 prerequisites.
 
-1. **Release 3.2 — the active release.** Portfolio scale, resumed on 3.5's
-   closure: the background-job cold scan, bounded per-repo git work, and grid
-   virtualization — each against the budget shipped 2026-08-11.
+1. **Release 3.3 — the active release.** Steady-state operation: retention
+   and compaction first, then backup/restore; the transport milestone waits
+   on Lane 0.2, the export contract interleaves anywhere.
 2. **Release 3.4 — the delivery loop closes.** Engineering complete
    2026-08-15: all twelve steps of the loop are built, each behind its own
    refusal matrix, and the default-branch invariant is a derived tripwire that
    proves itself before sweeping. What remains is driving one real item around
    the circle — batched with the operator session below, alongside 3.1's proof.
-3. **Release 3.3 — steady-state operation.** Next after 3.2; independent
-   milestones, any order.
+3. **Release 2.9 operator batch and the mobile resumption.** The operator
+   items wait on Ben's presence; mobile's resume condition (a PC workflow
+   that finishes) has been met since 2026-08-15.
 5. **One batched operator session** — an elevated shell covers the watchdog,
    the service installer and 2.7's freeze-prevention deploy; one authenticated
    shell covers the `claude` run, the `gh agent-task` run, the 3.1 live-portal
@@ -220,11 +221,10 @@ prerequisites.
 
 | Open item                                            | Depends on                                    | Type                                          |
 | ---------------------------------------------------- | --------------------------------------------- | --------------------------------------------- |
-| Release 3.2 scale and responsiveness (active)        | —                                             | none — budget declared, three milestones open |
+| Release 3.3 steady-state operation (active)          | — (transport milestone: Lane 0.2 certificate) | none — independent milestones, any order      |
 | Release 3.4 full-loop proof (engineering done)       | The same authenticated operator session       | hard — human; batch with 3.1's proof          |
 | Release 3.5 trustworthy surfaces (UI quality)        | —                                             | none — root causes identified, engineering    |
 | Release 2.9 mobile completion (ergonomics, run list) | A priority decision, already taken            | deferred 2026-08-11 — not blocked, deranked   |
-| Release 3.3 steady-state operation                   | —                                             | none — independent milestones, any order      |
 | Lane 0.2 `Checks: Read`; TLS certificate password    | An operator action outside this repository    | hard — external                               |
 | Lane 0.5 tab disclosure; Lane 0.7 archive signal     | A product decision, not engineering time      | hard — design                                 |
 | Release 2.9 freeze-prevention deploy (from 2.7)      | An elevated (SYSTEM) Windows install          | hard — privilege; batch with the two below    |
@@ -239,22 +239,22 @@ prerequisites.
 
 ## 5. Active Release Snapshot
 
-### Active release detail — 3.2 Portfolio Scale and Responsiveness
+### Active release detail — 3.3 Steady-State Operation
 
-Release 3.2 resumed as the active release 2026-08-17, when Release 3.5 closed
-with its trust report — the ordering settled 2026-08-11 finally arriving at
-the release it deferred: latency was a quality of a workflow that works and of
-numbers worth waiting for, and both now exist.
+Release 3.3 became the active release 2026-08-19, when Release 3.2 closed
+with all four milestones and the scan you can watch and stop. The theme
+shifts from making the portfolio fast to letting it run unattended: bounded
+storage, honest transport, a restore path, decision-grade exports.
 
 The full execution contract lives in one place,
-[Release 3.2 below](#release-32--portfolio-scale-and-responsiveness), per
+[Release 3.3 below](#release-33--steady-state-operation), per
 `ROADMAP_TEMPLATE.md`. This heading exists so the validator can resolve the
 active-release pointer; it deliberately restates nothing.
 
-**Current focus:** the cold full assessment becomes a visible background job
-with progress and a cancel; per-repo git work gets a timeout and a
-concurrency cap; the grid virtualizes. The declared numbers to beat shipped
-2026-08-11: warm reads 2-3s, cold scan 300s.
+**Current focus:** ledger retention/compaction first (the watchdog ledger
+reached 6.9 MB from one-minute probes), then the `app.db` backup/restore
+path. The transport milestone stays gated behind Lane 0.2's certificate
+recovery; the export contract milestone is independent and can interleave.
 ---
 
 ## 6. Open Releases
@@ -379,146 +379,9 @@ regresses meanwhile.
 
 ---
 
-### Release 3.2 — Portfolio Scale and Responsiveness
-
-**Status:** ACTIVE — resumed 2026-08-17 when Release 3.5 closed. (Demoted
-2026-08-11 behind 3.1: a portfolio that renders faster while queueing work
-nobody executes is not more reliable.) Performance budget 2026-08-11; the
-bounded git sweep and the observable, cancellable background scan both
-landed 2026-08-19. Remaining: grid virtualization and the `Dashboard.tsx`
-non-blocker it pairs with.
-
-**Goal:** make an 80+ repo portfolio feel immediate. Reads serve from the
-persistent index; a cold full assessment becomes a visible background job
-instead of a synchronous request that can outlive its own deadline.
-
-**Prerequisites:** met. Lane 0.4 settled the deadline question 2026-08-09 — an
-extended 900-second tier rather than an exemption — so this release starts from
-a bounded scan budget it has to beat rather than from an open question. The
-performance milestone landed first deliberately: without a declared target,
-the remaining three milestones would have no way to prove they helped.
-
-#### Product outcomes
-
-- No portal action can trip the freeze guard that exists to protect it.
-- Portfolio reads are served from `app.db` and refreshed incrementally, so
-  repeated views cost nothing.
-- Scan progress is visible while it runs, rather than a spinner that may or may
-  not still be alive.
-
-#### Engineering milestones
-
-**The read-path performance budget shipped 2026-08-11
-([PR #117](https://github.com/xfaith4/GitHubRepoManagement/pull/117)) and is
-archived.** It landed first deliberately: without a declared target, the three
-milestones below would have no way to prove they helped. The numbers they have
-to beat are now stated and enforced — warm reads at 2-3s, a cold scan at 300s
-(against the 900s deadline), measured figure served beside its budget.
-
-- [x] Serve portfolio assessment from the persistent index with incremental
-      refresh; make a cold full scan an explicit background job with progress
-      and a cancel. _(state: smoke-tested 2026-08-19 — the serving half was
-      already true (index reuse 2.3 5B/5F; all four sweeps moved to the
-      out-of-process worker when the freeze tripwire landed) but the job was
-      a black box: `statusRefreshing: true` was its entire observable
-      surface. Now the worker writes a progress file (phase, repos, heartbeat)
-      from inside its loops, honors a cancel marker at phase boundaries
-      (never inside the callbacks that swallow exceptions by design), and
-      three routes expose it: `GET /api/portfolio/scan/status`,
-      `POST /api/portfolio/scan`, `POST /api/portfolio/scan/cancel`
-      (idle cancel = named 409). The portal renders it as a live-region chip
-      with a cancel that states its phase-boundary semantics. Gates: api-host
-      smoke proves route start → `/health/live` 200 DURING the scan → cancel
-      ends `cancelled` with phases kept, plus a delayed-worker control pair
-      (completed 4/4 vs cancelled early, marker consumed, lock removed);
-      `ScanProgressChip.test.tsx` proves the operator sees it.)_
-- [x] Bound per-repo git work with a timeout and a concurrency cap so one
-      pathological repo cannot stall a sweep. _(state: smoke-tested —
-      counting found NINE unbounded calls per repo (~675 launches on the real
-      75-repo workspace), not the seven this item recorded. All ten bare call
-      sites (eight in the inventory walk, the head-SHA read, the root-commit
-      identity read) now go through
-      [`Git.BoundedSweep.ps1`](backend/modules/git/Git.BoundedSweep.ps1):
-      per-command timeout with kill-on-expiry, a hung repo short-circuits
-      after two timeouts, repos fan out on a runspace pool capped at 4, and
-      the heartbeat ticks per completed repo from inside the sweep. Output
-      asserted identical to sequential, order included; the bare-git tripwire
-      failed its own violating fixture first. Gate: module smoke "Bounded git
-      sweep".)_
-- [ ] Virtualize the repo grid so row count stops driving render cost.
-      _(state: planned)_ Pairs with the `Dashboard.tsx` non-blocker below —
-      both are render cost on the same screen.
-- [ ] **[non-blocker]** `Dashboard.tsx` is **1,752 lines** (2,519 → 2,308 after
-      the Phase D extractions → 1,752 on 2026-08-10, when the ~600-line Insights
-      block became [`InsightsView.tsx`](frontend/components/InsightsView.tsx)).
-      What remains is ~1,000 lines of hooks and handlers above the return — a
-      different shape of problem from the JSX blocks already extracted.
-      **Gained a driver 2026-08-17:** Release 3.5 deferred the Operations
-      panels' full stale-keeps-last-good rendering to this refactor rather
-      than threading it through the current component shape. _(state: planned — inherited from
-      Release 2.7 Phase D when that release closed 2026-08-11; worth doing, not
-      worth blocking on.)_
-
-#### Acceptance criteria
-
-- A cold full-portfolio assessment completes without tripping the request
-  deadline, and its progress is observable while it runs.
-- Repeated portfolio reads after a warm index are served without a rescan.
-- The performance budget is stated in the repo and checked by smoke.
-
-#### Out of scope
-
-- Distributed or multi-machine scanning.
-- Replacing SQLite.
-
-**Validation plan:** `npm test`,
-exit 0, plus a per-milestone gate — a hung `git` call abandoned at its
-timeout, scan progress observable and a cancel honored mid-scan, and the
-read-path budget assertions still green. A scale change that regresses a warm
-read has traded the wrong thing.
-
-**Risks:** a scale change must keep the progress heartbeat publishing from
-**inside** the loop it describes, or a healthy scan reads as frozen and the
-watchdog restarts it mid-flight (Lane 0.9, three P0 outages); a concurrency
-cap must not reorder or drop repositories — output identical to sequential is
-an assertion, not a hope; a background job must not leave an orphaned
-operation marker when it outlives its request.
-
-**Dependencies:** the persistent index (`Save-PortfolioIndexArtifacts`, 1.7.5),
-the operation heartbeat, the request-deadline tier classifier, and the
-read-path budget ([`PerformanceBudget.ps1`](backend/api-host/PerformanceBudget.ps1))
-that gives the remaining milestones a number to beat.
-**Known issues:**
-
-- [ ] `FailFast` as deadline policy means one slow request destroys every
-      in-flight request. Recorded as a Lane 0.9 non-blocker; the blast radius is
-      a design question this release touches but does not by itself settle.
-- [x] `/health/live` is unanswerable while a scan runs — **resolved by
-      architecture, proven 2026-08-19**: scans run out of process, and the
-      api-host smoke now asserts `/health/live` answers 200 while
-      `scan/status` reports a running scan. Residual truth, named: non-scan
-      900s-tier requests (forced reassessment recompute, automation runs)
-      still hold the single request thread while they run — that is the
-      FailFast blast-radius question above, not a scan problem.
-- [ ] **[non-blocker]** The headless task runner has no stop mechanism — a
-      detached `while ($true)` poll loop survives its session (a 17-hour-old
-      runner raced the api-host smoke's dispatch fixture 2026-08-19, claiming
-      it in the ~1s enqueue-to-cancel window; only the repo-root guard kept
-      the orphaned session's commit out of the real working tree). Needs a
-      stop-file like the api-host's shutdown signal, and the smoke should
-      enqueue into an isolated queue rather than the operator's real one.
-- [ ] **[non-blocker]** PR #155's first CI run failed with a packaging
-      fixture auditing `L0-Absent`; not reproduced locally or on rerun (the
-      audit's per-repo catch maps any throw to `parse-error`/L0). The
-      maturity assertion now prints the host-log audit trail and the entry's
-      `roadmapState` on failure, so a recurrence names its cause instead of
-      hiding on the runner.
-
----
-
 ### Release 3.3 — Steady-State Operation
 
-**Status:** planned
+**Status:** ACTIVE — promoted 2026-08-19 when Release 3.2 closed.
 
 **Goal:** run unattended for months without an operator babysitting it — bounded
 storage, honest transport, a restore path, and reports that state their own data
@@ -561,6 +424,47 @@ window.
 
 - Multi-tenant or hosted operation.
 - Log shipping to an external observability platform.
+
+**Validation plan:** each milestone lands with its gate proven able to fail.
+Retention: a fixture ledger over policy is pruned, the pruned range is
+logged, and surviving lines are byte-identical to their originals (pruning an
+append-only ledger must never rewrite what it keeps). Backup/restore: a
+restore into a scratch workspace is REHEARSED by the gate — it boots the
+host against the restored `app.db` and queries history through it; a restore
+path that has never run is a hope, not a path. Transport: the smoke asserts
+the transport the portal reports equals the transport it serves (closes
+behind Lane 0.2). Exports: every digest/export payload is walked for the
+four decision-grade fields — data window, units, headline, next action.
+
+**Risks:** retention must not touch `evidence/baseline/` (permanent by
+contract) or prune ranges any open baseline references; compaction must be
+copy-forward with an atomic swap so a crash mid-prune leaves the original
+ledger, never a truncated one; a schema migration story that only migrates
+forward one version will strand the oldest backups silently — state the
+supported restore window instead.
+
+**Dependencies:** the persistence store (`app.db`, schema v2 on the native
+provider), the JSONL ledgers under `output/`, and — for the transport
+milestone only — Lane 0.2's certificate recovery (elevated, on Ben's list).
+
+**Known issues:**
+
+- [ ] **[non-blocker]** The headless task runner has no stop mechanism — a
+      detached `while ($true)` poll loop survives its session (proven
+      2026-08-19: a 17-hour orphan runner raced the api-host smoke's dispatch
+      fixture; only the repo-root guard kept the orphaned session's commit
+      out of the real working tree, PR #157). Fits this release's theme
+      exactly: unattended operation needs a stop-file like the api-host's
+      shutdown signal, and the smoke should enqueue into an isolated queue.
+      _(re-homed from 3.2 on closure)_
+- [ ] **[non-blocker]** `Dashboard.tsx` is ~1,750 lines of hooks and handlers
+      above the return; Release 3.5 deferred the Operations panels' full
+      stale-keeps-last-good rendering to this refactor. Worth doing, not
+      worth blocking on. _(inherited 2.7 → 3.2 → here on 3.2's closure)_
+- [ ] **[non-blocker]** Watch item: PR #155's first CI run failed with a
+      packaging fixture auditing `L0-Absent`; unreproduced locally or on
+      rerun. The maturity assertion now prints the host-log audit trail on
+      failure, so a recurrence names its cause. _(re-homed from 3.2)_
 
 ---
 
