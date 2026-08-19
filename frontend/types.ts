@@ -1743,3 +1743,22 @@ export interface MergeReadinessMergeResult {
   runId: string;
   evaluation: MergeReadinessResult;
 }
+
+/**
+ * Release 3.2 milestone 1 — the background portfolio scan's observable state.
+ * `aborted` is a scan whose worker died without a terminal write; it is
+ * surfaced, never silently re-labelled. `never-run` renders nothing.
+ */
+export interface BackgroundScanStatus {
+  state: 'running' | 'completed' | 'failed' | 'cancelled' | 'aborted' | 'never-run';
+  phase: string | null;
+  phasesDone: number;
+  phaseTotal: number;
+  reposDone: number | null;
+  reposTotal: number | null;
+  startedAt: string | null;
+  updatedAt: string | null;
+  processId: number | null;
+  cancelRequested: boolean;
+  error: string | null;
+}

@@ -2393,6 +2393,91 @@ function Get-StatusRefreshLockPath {
     return Join-Path $cacheDir 'status-refresh.lock'
 }
 
+function Get-ScanProgressFilePath {
+    $cacheDir = Split-Path -Parent (Get-StatusCacheFilePath)
+    return Join-Path $cacheDir 'status-refresh-progress.json'
+}
+
+function Get-ScanCancelFilePath {
+    $cacheDir = Split-Path -Parent (Get-StatusCacheFilePath)
+    return Join-Path $cacheDir 'status-refresh-cancel.marker'
+}
+
+function Get-PortfolioScanState {
+    <#
+    .SYNOPSIS
+        The background scan's observable state: lock liveness joined with the
+        worker's progress file.
+    .DESCRIPTION
+        Release 3.2 milestone 1. Liveness comes from the lock's recorded pid
+        (the same rule Get-StatusRefreshState applies); detail comes from the
+        progress file the worker writes. The two are joined by processId so a
+        fresh scan is never narrated with the previous run's progress, and a
+        progress file claiming 'running' with no live process is surfaced as
+        'aborted' rather than left to read as a scan that never ends.
+    #>
+    $lockState = Get-StatusRefreshState
+
+    $progress = $null
+    $progressPath = Get-ScanProgressFilePath
+    if (Test-Path -LiteralPath $progressPath) {
+        try { $progress = Get-Content -LiteralPath $progressPath -Raw | ConvertFrom-Json }
+        catch { $progress = $null }
+    }
+
+    $progressPid = 0
+    if ($null -ne $progress) {
+        try { $progressPid = [int]$progress.processId } catch { $progressPid = 0 }
+    }
+
+    if ($lockState.running) {
+        $detail = $null
+        if ($null -ne $progress -and $progressPid -eq [int]$lockState.processId) { $detail = $progress }
+        return [pscustomobject]@{
+            state           = 'running'
+            phase           = $(if ($null -ne $detail) { [string]$detail.phase } else { 'starting' })
+            phasesDone      = $(if ($null -ne $detail) { [int]$detail.phasesDone } else { 0 })
+            phaseTotal      = 4
+            reposDone       = $(if ($null -ne $detail) { $detail.reposDone } else { $null })
+            reposTotal      = $(if ($null -ne $detail) { $detail.reposTotal } else { $null })
+            startedAt       = $(if ($null -ne $detail) { [string]$detail.startedAt } else { $lockState.startedAt })
+            updatedAt       = $(if ($null -ne $detail) { [string]$detail.updatedAt } else { $null })
+            processId       = [int]$lockState.processId
+            cancelRequested = (Test-Path -LiteralPath (Get-ScanCancelFilePath))
+            error           = $null
+        }
+    }
+
+    if ($null -eq $progress) {
+        return [pscustomobject]@{
+            state = 'never-run'; phase = $null; phasesDone = 0; phaseTotal = 4
+            reposDone = $null; reposTotal = $null; startedAt = $null; updatedAt = $null
+            processId = $null; cancelRequested = $false; error = $null
+        }
+    }
+
+    $terminalState = [string]$progress.state
+    if ($terminalState -eq 'running') {
+        # The file says running but no recorded process is alive: the worker
+        # died without reaching a terminal write. Say so; do not invent one.
+        $terminalState = 'aborted'
+    }
+
+    return [pscustomobject]@{
+        state           = $terminalState
+        phase           = [string]$progress.phase
+        phasesDone      = [int]$progress.phasesDone
+        phaseTotal      = 4
+        reposDone       = $progress.reposDone
+        reposTotal      = $progress.reposTotal
+        startedAt       = [string]$progress.startedAt
+        updatedAt       = [string]$progress.updatedAt
+        processId       = $progressPid
+        cancelRequested = $false
+        error           = $(try { $progress.error } catch { $null })
+    }
+}
+
 function Get-StatusRefreshState {
     <#
     .SYNOPSIS
@@ -2467,12 +2552,23 @@ function Start-BackgroundStatusRefresh {
         # running as LocalSystem.
         $psExe = (Get-Process -Id $PID).Path
 
+        # A cancel marker left over from a previous run must not cancel this
+        # one at its first phase gate. The worker consumes its own marker on
+        # exit; this clear covers the worker that died before its finally.
+        $staleCancelPath = Get-ScanCancelFilePath
+        if (Test-Path -LiteralPath $staleCancelPath) {
+            try { Remove-Item -LiteralPath $staleCancelPath -Force }
+            catch { Write-HostLog ("[WARN] status.refresh could not clear stale cancel marker {0}: {1}" -f $staleCancelPath, $_.Exception.Message) }
+        }
+
         $arguments = @(
             '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $worker,
             '-WorkspaceRoot', $WorkspaceRoot,
             '-LocalRoots', ($LocalRoots -join ','),
             '-MaxDepth', $MaxDepth,
-            '-LockPath', $lockPath
+            '-LockPath', $lockPath,
+            '-ProgressPath', (Get-ScanProgressFilePath),
+            '-CancelPath', (Get-ScanCancelFilePath)
         )
         if ($IncludeNonGitFolders) { $arguments += '-IncludeNonGitFolders' }
         if (-not [string]::IsNullOrWhiteSpace($LogPath)) { $arguments += @('-LogPath', $LogPath) }
@@ -9400,6 +9496,74 @@ try {
                         }
                     }
                 }
+                'GET /api/portfolio/scan/status' {
+                    # Release 3.2 milestone 1 -- the background scan is
+                    # observable: lock liveness joined with the worker's
+                    # progress file, aborted runs surfaced as aborted.
+                    $scanState = Get-PortfolioScanState
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = $scanState
+                    }
+                    break
+                }
+
+                'POST /api/portfolio/scan' {
+                    # Release 3.2 milestone 1 -- the explicit verb for a full
+                    # background scan. Idempotent against an in-flight run:
+                    # starting while one runs reports alreadyRunning rather
+                    # than failing or double-scanning (the lock enforces the
+                    # single-flight either way).
+                    $scanSettings = Get-HostSettings
+                    $scanRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $scanSettings
+                    $scanDepth = if ($scanSettings.ContainsKey('inventory') -and $scanSettings.inventory.ContainsKey('maxDepth') -and $scanSettings.inventory.maxDepth) { [int]$scanSettings.inventory.maxDepth } else { 3 }
+                    $scanStartedNow = Start-BackgroundStatusRefresh -LocalRoots $scanRoots -MaxDepth $scanDepth
+                    $scanState = Get-PortfolioScanState
+                    Write-HostLog ("[TRACE] portfolio.scan correlationId={0} started={1} state={2}" -f $correlationId, $scanStartedNow, $scanState.state)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = @{
+                            started        = [bool]$scanStartedNow
+                            alreadyRunning = [bool](-not $scanStartedNow -and $scanState.state -eq 'running')
+                            scan           = $scanState
+                        }
+                    }
+                    break
+                }
+
+                'POST /api/portfolio/scan/cancel' {
+                    # Release 3.2 milestone 1 -- cancel is honored at the
+                    # worker's next phase gate. Refusal is returned, named,
+                    # when there is nothing to cancel: acknowledging a cancel
+                    # of nothing would be the same false-green as reporting a
+                    # runner that is not there.
+                    $scanState = Get-PortfolioScanState
+                    if ($scanState.state -ne 'running') {
+                        Send-HttpJson -Stream $req.Stream -StatusCode 409 -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error   = @{
+                                category = 'validation'
+                                code     = 'no-scan-running'
+                                message  = ("No scan is running to cancel (state: {0})." -f $scanState.state)
+                            }
+                            data    = @{ scan = $scanState }
+                        }
+                        break
+                    }
+                    $cancelPath = Get-ScanCancelFilePath
+                    Set-Content -LiteralPath $cancelPath -Value ((Get-Date).ToUniversalTime().ToString('o')) -Encoding UTF8
+                    Write-HostLog ("[TRACE] portfolio.scan.cancel correlationId={0} pid={1} marker={2}" -f $correlationId, $scanState.processId, $cancelPath)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = @{
+                            cancelRequested = $true
+                            processId       = $scanState.processId
+                            note            = 'Honored at the next phase boundary; poll /api/portfolio/scan/status for the cancelled state.'
+                        }
+                    }
+                    break
+                }
+
                 'GET /api/portfolio/snapshot' {
                     # Release 3.5 milestone 1 -- one snapshot, one clock, one
                     # provenance. This route GATHERS; Build-PortfolioSnapshot

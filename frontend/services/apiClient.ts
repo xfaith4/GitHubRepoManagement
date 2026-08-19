@@ -1,4 +1,4 @@
-import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type PortfolioSnapshot, type RepoStatus, type RepoScopeClassification, type RepoScopeSummary, type RepoStaleness, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type RepositoryImprovementPreview, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioAssessmentScanSummary, type PortfolioChangeState, type PortfolioScanDecisionReason, type PortfolioScanStatus, type RepoCurationState, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocUsage, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult, type GitHubAuthStatus } from '../types';
+import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type BackgroundScanStatus, type PortfolioSnapshot, type RepoStatus, type RepoScopeClassification, type RepoScopeSummary, type RepoStaleness, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type RepositoryImprovementPreview, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioAssessmentScanSummary, type PortfolioChangeState, type PortfolioScanDecisionReason, type PortfolioScanStatus, type RepoCurationState, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocUsage, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult, type GitHubAuthStatus } from '../types';
 import { type AutomationHealthPayload } from '../lib/automationStatus';
 import { type PackagedItem } from '../lib/packagedItems';
 import { type RunnerPresencePayload } from '../lib/runnerPresence';
@@ -2691,4 +2691,50 @@ export async function refreshAgentRun(runId: string): Promise<AgentRunRefreshRes
     validationEvent: payload?.validationEvent ? String(payload.validationEvent) : null,
     refreshedAt: String(payload?.refreshedAt ?? ''),
   };
+}
+
+// ── Release 3.2 milestone 1 — background scan: status, start, cancel ─────────
+
+type RawBackgroundScanStatus = Partial<Record<keyof BackgroundScanStatus, unknown>>;
+
+function normalizeBackgroundScanStatus(raw: RawBackgroundScanStatus | null | undefined): BackgroundScanStatus {
+  const d = raw ?? {};
+  const knownStates = ['running', 'completed', 'failed', 'cancelled', 'aborted', 'never-run'];
+  return {
+    state: knownStates.includes(String(d.state)) ? (d.state as BackgroundScanStatus['state']) : 'never-run',
+    phase: d.phase != null ? String(d.phase) : null,
+    phasesDone: Number(d.phasesDone ?? 0),
+    phaseTotal: Number(d.phaseTotal ?? 4),
+    reposDone: d.reposDone != null ? Number(d.reposDone) : null,
+    reposTotal: d.reposTotal != null ? Number(d.reposTotal) : null,
+    startedAt: d.startedAt != null ? String(d.startedAt) : null,
+    updatedAt: d.updatedAt != null ? String(d.updatedAt) : null,
+    processId: d.processId != null ? Number(d.processId) : null,
+    cancelRequested: Boolean(d.cancelRequested),
+    error: d.error != null ? String(d.error) : null,
+  };
+}
+
+export async function getPortfolioScanStatus(): Promise<BackgroundScanStatus> {
+  const data = await fetchJson<{ success?: boolean; data?: RawBackgroundScanStatus | null }>(`${API_BASE_URL}/portfolio/scan/status`);
+  return normalizeBackgroundScanStatus(data?.data);
+}
+
+export async function startPortfolioScan(): Promise<{ started: boolean; alreadyRunning: boolean; scan: BackgroundScanStatus }> {
+  const data = await postJson<{ data?: { started?: unknown; alreadyRunning?: unknown; scan?: RawBackgroundScanStatus } | null }>('/portfolio/scan', {});
+  const d = data?.data ?? {};
+  return {
+    started: Boolean(d.started),
+    alreadyRunning: Boolean(d.alreadyRunning),
+    scan: normalizeBackgroundScanStatus(d.scan),
+  };
+}
+
+/**
+ * Throws on the named `no-scan-running` refusal (HTTP 409); callers treat that
+ * as "the scan already ended", not as a failure to report.
+ */
+export async function cancelPortfolioScan(): Promise<{ cancelRequested: boolean }> {
+  const data = await postJson<{ data?: { cancelRequested?: unknown } | null }>('/portfolio/scan/cancel', {});
+  return { cancelRequested: Boolean(data?.data?.cancelRequested) };
 }

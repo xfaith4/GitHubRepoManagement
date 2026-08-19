@@ -282,6 +282,122 @@ try {
     $ready = $readyResponse.Json
     $deps = $depsResponse.Json
 
+    Write-Host '[STEP] Background scan: observable progress + cancel honored mid-scan (Release 3.2 M1)' -ForegroundColor Cyan
+    $scanKnownStates = @('running', 'completed', 'failed', 'cancelled', 'aborted', 'never-run')
+
+    # Route contract first: status always answers with a legal state.
+    $scanStatusResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/scan/status"
+    if ($scanStatusResponse.StatusCode -ne 200 -or $scanStatusResponse.Json.success -ne $true) {
+        throw "GET /api/portfolio/scan/status failed: HTTP $($scanStatusResponse.StatusCode). Body=$($scanStatusResponse.Content)"
+    }
+    $scanInitialState = [string]$scanStatusResponse.Json.data.state
+    if ($scanInitialState -notin $scanKnownStates) {
+        throw "scan/status returned unknown state '$scanInitialState'; the UI can only render the declared vocabulary."
+    }
+
+    # If some earlier request already kicked a refresh, let it settle so the
+    # start/cancel choreography below owns the single-flight lock.
+    $scanSettleDeadline = (Get-Date).AddSeconds(240)
+    while ($scanInitialState -eq 'running') {
+        if ((Get-Date) -gt $scanSettleDeadline) { throw 'A pre-existing background scan did not settle within 240s.' }
+        Start-Sleep -Seconds 3
+        $scanInitialState = [string](Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/scan/status").Json.data.state
+    }
+
+    # Start through the route, then cancel through the route. The cancel lands
+    # at the worker's next phase boundary, so the terminal state must be
+    # 'cancelled' with fewer than all phases done -- a cancel that reports
+    # success while the scan runs to completion would be a false-affordance.
+    $scanStartResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/portfolio/scan" -Body @{}
+    if ($scanStartResponse.StatusCode -ne 200 -or $scanStartResponse.Json.success -ne $true) {
+        throw "POST /api/portfolio/scan failed: HTTP $($scanStartResponse.StatusCode). Body=$($scanStartResponse.Content)"
+    }
+    if (-not [bool]$scanStartResponse.Json.data.started) {
+        throw "POST /api/portfolio/scan reported started=false on a settled host. Body=$($scanStartResponse.Content)"
+    }
+
+    # The host must stay answerable while its scan runs out of process --
+    # the Lane 0.9 closure this architecture exists for.
+    $scanLiveDuring = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/health/live"
+    if ($scanLiveDuring.StatusCode -ne 200) {
+        throw "/health/live answered HTTP $($scanLiveDuring.StatusCode) while a background scan was starting; liveness must not depend on scan state."
+    }
+
+    $scanCancelResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/portfolio/scan/cancel" -Body @{}
+    if ($scanCancelResponse.StatusCode -ne 200 -or -not [bool]$scanCancelResponse.Json.data.cancelRequested) {
+        throw "POST /api/portfolio/scan/cancel on a running scan failed: HTTP $($scanCancelResponse.StatusCode). Body=$($scanCancelResponse.Content)"
+    }
+
+    # The cancel is honored at the NEXT phase gate, so it waits out the phase
+    # it lands in -- on the real workspace that is the bounded (M2) inventory.
+    $scanTerminalDeadline = (Get-Date).AddSeconds(360)
+    $scanFinal = $null
+    while ($true) {
+        $scanFinal = (Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/scan/status").Json.data
+        if ([string]$scanFinal.state -ne 'running') { break }
+        if ((Get-Date) -gt $scanTerminalDeadline) { throw 'Cancelled scan did not reach a terminal state within 360s.' }
+        Start-Sleep -Seconds 3
+    }
+    if ([string]$scanFinal.state -ne 'cancelled') {
+        throw "Cancelled scan ended '$($scanFinal.state)' (phases $($scanFinal.phasesDone)/$($scanFinal.phaseTotal)); expected 'cancelled'."
+    }
+    if ([int]$scanFinal.phasesDone -ge [int]$scanFinal.phaseTotal) {
+        throw "Cancel reported success but all $($scanFinal.phaseTotal) phases completed; the cancel changed nothing."
+    }
+
+    # With nothing running, cancel must be a NAMED refusal, not a polite 200.
+    $scanCancelIdle = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/portfolio/scan/cancel" -Body @{}
+    if ($scanCancelIdle.StatusCode -ne 409 -or [string]$scanCancelIdle.Json.error.code -ne 'no-scan-running') {
+        throw "Cancel with no scan running must refuse 409/no-scan-running; got HTTP $($scanCancelIdle.StatusCode). Body=$($scanCancelIdle.Content)"
+    }
+    Write-Host ("  scan route ok: started via route, /health/live 200 during scan, cancelled at phase boundary ({0}/{1} phases kept), idle cancel refused by name" -f $scanFinal.phasesDone, $scanFinal.phaseTotal) -ForegroundColor DarkGray
+
+    # Worker-level determinism: the same worker script the host launches,
+    # driven directly with a stretched phase delay so the mid-scan cancel is
+    # race-free, plus a control run proving the delay alone changes nothing.
+    $scanWorkerScript = Join-Path $WorkspaceRoot 'scripts\Invoke-StatusCacheRefresh.ps1'
+    $scanFixtureDir = Join-Path $smokeRoot 'scan-cancel-fixture'
+    $scanFixtureRepo = Join-Path $scanFixtureDir 'probe-repo'
+    if (-not (Test-Path -LiteralPath $scanFixtureRepo)) {
+        $null = New-Item -ItemType Directory -Path $scanFixtureRepo -Force
+        & git init -q -b main "$scanFixtureRepo" 2>$null
+        Set-Content -LiteralPath (Join-Path $scanFixtureRepo 'README.md') -Value '# scan cancel fixture'
+    }
+    $scanWorkerLock = Join-Path $scanFixtureDir 'worker.lock'
+    $scanWorkerProgress = Join-Path $scanFixtureDir 'worker-progress.json'
+    $scanWorkerCancel = Join-Path $scanFixtureDir 'worker-cancel.marker'
+    $scanPsExe = (Get-Process -Id $PID).Path
+
+    $scanControl = Start-Process -FilePath $scanPsExe -ArgumentList @(
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $scanWorkerScript,
+        '-WorkspaceRoot', $WorkspaceRoot, '-LocalRoots', $scanFixtureDir, '-MaxDepth', '2',
+        '-LockPath', $scanWorkerLock, '-ProgressPath', $scanWorkerProgress, '-CancelPath', $scanWorkerCancel,
+        '-PhaseDelayMs', '300', '-LogPath', $logPath
+    ) -WindowStyle Hidden -PassThru
+    if (-not $scanControl.WaitForExit(180000)) { throw 'Control worker run did not finish within 180s.' }
+    $scanControlFinal = Get-Content -LiteralPath $scanWorkerProgress -Raw | ConvertFrom-Json
+    if ($scanControl.ExitCode -ne 0 -or [string]$scanControlFinal.state -ne 'completed' -or [int]$scanControlFinal.phasesDone -ne 4) {
+        throw "Control worker run: exit=$($scanControl.ExitCode) state=$($scanControlFinal.state) phases=$($scanControlFinal.phasesDone); expected exit 0, completed, 4/4."
+    }
+
+    $scanCancelRun = Start-Process -FilePath $scanPsExe -ArgumentList @(
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $scanWorkerScript,
+        '-WorkspaceRoot', $WorkspaceRoot, '-LocalRoots', $scanFixtureDir, '-MaxDepth', '2',
+        '-LockPath', $scanWorkerLock, '-ProgressPath', $scanWorkerProgress, '-CancelPath', $scanWorkerCancel,
+        '-PhaseDelayMs', '4000', '-LogPath', $logPath
+    ) -WindowStyle Hidden -PassThru
+    Start-Sleep -Seconds 6
+    Set-Content -LiteralPath $scanWorkerCancel -Value 'cancel'
+    if (-not $scanCancelRun.WaitForExit(180000)) { throw 'Cancel worker run did not finish within 180s.' }
+    $scanCancelFinal = Get-Content -LiteralPath $scanWorkerProgress -Raw | ConvertFrom-Json
+    if ($scanCancelRun.ExitCode -ne 0) { throw "Cancelled worker must exit 0 (operator action, not failure); got $($scanCancelRun.ExitCode)." }
+    if ([string]$scanCancelFinal.state -ne 'cancelled' -or [int]$scanCancelFinal.phasesDone -ge 4) {
+        throw "Cancel worker run: state=$($scanCancelFinal.state) phases=$($scanCancelFinal.phasesDone); expected cancelled with fewer than 4 phases."
+    }
+    if (Test-Path -LiteralPath $scanWorkerCancel) { throw 'Cancel marker survived the worker; a leftover marker would cancel the next scan at its first gate.' }
+    if (Test-Path -LiteralPath $scanWorkerLock) { throw 'Worker lock survived the run; a leftover lock suppresses every future refresh.' }
+    Write-Host ("  scan worker ok: control completed 4/4; delayed run cancelled at {0}/4 with exit 0, marker consumed, lock removed" -f $scanCancelFinal.phasesDone) -ForegroundColor DarkGray
+
     Write-Host '[STEP] Persistence status route (Release 2.1 Phase 1)' -ForegroundColor Cyan
     $persistenceStatusResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/persistence/status"
     Assert-Not503 -Name '/api/persistence/status' -Response $persistenceStatusResponse
