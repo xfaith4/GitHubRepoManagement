@@ -6787,7 +6787,29 @@ Write-Step 'Touch ergonomics - Release 2.9: the tap-target floor is a device rul
         }
     }
 
-    Write-Host ("  touch ok: 44px floor exists under @media (pointer: coarse) and NOWHERE else (detector rejects a 32px fixture); button/select/role=button covered; checkboxes grown by transform, not stretched; DefinitionHint gives hover-only definitions a tap path while keeping the title, used on {0} surface(s)" -f @($touchConsumers).Count) -ForegroundColor DarkGray
+    # --- The agent-run count must be tappable through to its list. --------
+    # The indicator was a <span> from Release 2.5 through 3.5: visible,
+    # countable, and dead to a finger, with the answer to "which runs?" living
+    # only in a hover title. A count with no way through is a dead end on the
+    # device most likely to be holding it.
+    $touchIndicatorText = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'frontend\components\AgentActivityIndicator.tsx') -Raw -Encoding UTF8
+    $touchDeadEndFixture = '<span data-testid="agent-activity-indicator" title="3 runs">3 agent runs</span>'
+    if ($touchDeadEndFixture -match 'onClick') { throw 'Tap-through detector matched a fixture with no handler; the assertion below is vacuous.' }
+    if ($touchIndicatorText -notmatch 'onClick') { throw 'The agent-activity indicator has no activation handler; the run count is a dead end on touch.' }
+    if ($touchIndicatorText -notmatch '<button') { throw 'The agent-activity indicator is not a button; a span cannot be focused, activated, or announced as interactive.' }
+    if ($touchIndicatorText -notmatch 'aria-haspopup="dialog"') { throw 'The indicator does not announce that it opens a dialog.' }
+
+    $touchSheetPath = Join-Path $WorkspaceRoot 'frontend\components\AgentRunSheet.tsx'
+    if (-not (Test-Path -LiteralPath $touchSheetPath)) { throw 'AgentRunSheet.tsx is missing; the indicator taps through to nothing.' }
+    $touchSheetText = Get-Content -LiteralPath $touchSheetPath -Raw -Encoding UTF8
+    if ($touchSheetText -notmatch 'mobile-sheet') { throw 'The run sheet does not use the mobile-sheet class; on a phone it would render as a cramped centered dialog instead of taking the viewport.' }
+    foreach ($touchSheetState in @('agent-run-sheet-empty', 'agent-run-sheet-error', 'agent-run-sheet-loading')) {
+        if ($touchSheetText -notmatch $touchSheetState) {
+            throw ("The run sheet has no '{0}' state; a list that cannot distinguish empty from failed from loading reads as broken." -f $touchSheetState)
+        }
+    }
+
+    Write-Host ("  touch ok: 44px floor exists under @media (pointer: coarse) and NOWHERE else (detector rejects a 32px fixture); button/select/role=button covered; checkboxes grown by transform, not stretched; DefinitionHint gives hover-only definitions a tap path while keeping the title, used on {0} surface(s); the agent-run count taps through to a mobile-sheet list with distinct empty/error/loading states" -f @($touchConsumers).Count) -ForegroundColor DarkGray
 }
 
 Write-Step 'Smoke test completed'

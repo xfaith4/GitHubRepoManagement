@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getAgentRuns } from '../services/apiClient';
+import AgentRunSheet from './AgentRunSheet';
 
 // Release 2.5 Phase 2 — always-visible agent-activity indicator. Shows within
 // one screen whether any agent run is currently in progress; polls the ledger
@@ -10,6 +11,10 @@ function AgentActivityIndicator() {
   const [activeCount, setActiveCount] = useState<number>(0);
   const [activeSummary, setActiveSummary] = useState<string>('');
   const [loaded, setLoaded] = useState(false);
+  // Release 2.9 — the list behind the pill. Until now the only way to learn
+  // WHICH runs were active was to hover the title, which does nothing on a
+  // phone.
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -33,18 +38,29 @@ function AgentActivityIndicator() {
   }, []);
 
   const isActive = activeCount > 0;
+  const label = isActive ? `${activeCount} agent run${activeCount === 1 ? '' : 's'}` : 'Agents idle';
+  const detail = loaded
+    ? (isActive ? `${activeCount} agent run(s) in progress${activeSummary ? ` — ${activeSummary}` : ''}` : 'No agent runs active')
+    : 'Checking agent activity…';
+
   return (
-    <span
-      data-testid="agent-activity-indicator"
-      className={`inline-flex items-center gap-1.5 min-h-[44px] sm:min-h-0 px-2.5 py-1 rounded-full text-xs font-medium ${
-        isActive ? 'bg-green-900/50 text-green-300 border border-green-700' : 'bg-gray-700 text-gray-400'
-      }`}
-      title={loaded ? (isActive ? `${activeCount} agent run(s) in progress${activeSummary ? ` — ${activeSummary}` : ''}` : 'No agent runs active') : 'Checking agent activity…'}
-      aria-live="polite"
-    >
-      <span className={`inline-block w-2 h-2 rounded-full ${isActive ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`} />
-      {isActive ? `${activeCount} agent run${activeCount === 1 ? '' : 's'}` : 'Agents idle'}
-    </span>
+    <>
+      <button
+        type="button"
+        onClick={() => setSheetOpen(true)}
+        data-testid="agent-activity-indicator"
+        className={`inline-flex items-center gap-1.5 min-h-[44px] sm:min-h-0 px-2.5 py-1 rounded-full text-xs font-medium ${
+          isActive ? 'bg-green-900/50 text-green-300 border border-green-700' : 'bg-gray-700 text-gray-400'
+        }`}
+        title={detail}
+        aria-label={`${label}. Open the agent run list.`}
+        aria-haspopup="dialog"
+      >
+        <span className={`inline-block w-2 h-2 rounded-full ${isActive ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`} />
+        <span aria-live="polite">{label}</span>
+      </button>
+      {sheetOpen && <AgentRunSheet onClose={() => setSheetOpen(false)} />}
+    </>
   );
 }
 
