@@ -472,10 +472,18 @@ engineering half depends on none of these.
       above the return; Release 3.5 deferred the Operations panels' full
       stale-keeps-last-good rendering to this refactor. _(inherited 2.7 →
       3.2 → 3.3 → here)_
-- [ ] **[non-blocker]** Watch item: PR #155's first CI run failed with a
-      packaging fixture auditing `L0-Absent`; unreproduced locally or on
-      rerun. The maturity assertion now prints the host-log audit trail on
-      failure, so a recurrence names its cause. _(re-homed from 3.2 → 3.3)_
+- [x] **[non-blocker]** Watch item: the intermittent `L0-Absent` packaging
+      failure — **root-caused and fixed 2026-08-19 (PR #167)**. It recurred on
+      `main` and diagnosed itself, because the failure message added in #156
+      printed `L0-Absent roadmapState=pending`: the fixture had PARSED fine
+      and simply was not audited yet. `roadmapState` comes from the roadmap
+      cache while `maturityLevel` comes from the roadmap-audit cache, and the
+      operations payload falls back to the `L0-Absent` default when the audit
+      entry is missing — so `Wait-ForPortfolioIndex` returning on the repo's
+      NAME was a weaker condition than the L3+ assertion that followed it.
+      The wait now takes `-RequireAuditedMaturity`, and its timeout message
+      distinguishes "still missing" from "indexed but not yet audited". The
+      instrumentation paid for itself within hours of being written.
 
 ---
 
