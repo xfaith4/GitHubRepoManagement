@@ -493,14 +493,18 @@ engineering half depends on none of these.
       marker, and asserts exit 0, marker consumed, and that a stale marker
       does NOT kill a fresh runner.
       _(re-homed from 3.2 → 3.3 → here)_
-- [ ] **[non-blocker]** The api-host smoke still enqueues into the operator's
-      REAL `output/roadmap-task-queue.jsonl` rather than an isolated fixture
-      queue — the other half of the same 2026-08-19 race. The runner already
-      accepts `-QueuePath`; the host side resolves it in four places, only one
-      of which is the canonical
-      [`Automation.RoadmapQueue.ps1`](backend/modules/automation/Automation.RoadmapQueue.ps1)
-      resolver. Route all four through it, then the smoke can point at a
-      fixture. _(state: scaffolded — resolver exists, callers bypass it)_
+- [x] **[non-blocker]** The api-host smoke enqueued into the operator's REAL
+      queue — **fixed 2026-08-20**, the other half of the 2026-08-19 race.
+      Four sites rebuilt the path inline (one directly beside the resolver);
+      all now go through
+      [`Get-RoadmapQueuePath`](backend/modules/automation/Automation.RoadmapQueue.ps1),
+      which honors `REPO_MGMT_QUEUE_PATH`. The smoke sets it on the host job
+      — not the parent — so a crashed run cannot leave the operator
+      redirected. Gates: a derived sweep fails any inline rebuild under
+      `backend/` (detector rejects its own fixture first), and the override is
+      proven to redirect and to clear. The existing queue-writer coverage gate
+      caught the refactor itself: keyed on the literal filename, it found ZERO
+      writers and refused to pass — it now follows the resolver too.
 - [ ] **[non-blocker]** `Dashboard.tsx` is ~1,750 lines of hooks and handlers
       above the return; Release 3.5 deferred the Operations panels' full
       stale-keeps-last-good rendering to this refactor. _(inherited 2.7 →

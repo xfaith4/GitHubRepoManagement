@@ -10,5 +10,5 @@
   "PSUseOutputTypeCorrectly": 126,
   "PSUseShouldProcessForStateChangingFunctions": 67,
   "PSUseSingularNouns": 90,
-  "PSUseUsingScopeModifierInNewRunspaces": 44
+  "PSUseUsingScopeModifierInNewRunspaces": 40
 }

@@ -4911,7 +4911,12 @@ Write-Step 'Queue-writer gate coverage — every road to the queue consults pres
 
         foreach ($fn in @($fileAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true))) {
             $body = $fn.Extent.Text
-            if ($body -notmatch [regex]::Escape($queueFile)) { continue }
+            # Release 2.9: the queue path moved behind Get-RoadmapQueuePath, so
+            # a function reaching the queue may never name the file. Keying on
+            # the literal alone made this gate find ZERO writers and refuse to
+            # pass -- which is the gate working, and the reason it is now
+            # scoped to the resolver as well as the filename.
+            if ($body -notmatch [regex]::Escape($queueFile) -and $body -notmatch 'Get-RoadmapQueuePath') { continue }
             # Naming the file is not writing to it — Get-QueuedTaskBacklog and the
             # trace joiner both read it, and gating a read would be nonsense.
             $writesHere = @($fn.FindAll({
@@ -4929,7 +4934,7 @@ Write-Step 'Queue-writer gate coverage — every road to the queue consults pres
     }
 
     if (@($writers).Count -eq 0) {
-        throw "No function writing to $queueFile was found under backend/. Either the queue moved or this assertion has stopped checking anything."
+        throw "No function writing to $queueFile (by name or via Get-RoadmapQueuePath) was found under backend/. Either the queue moved again or this assertion has stopped checking anything."
     }
 
     $ungatedWriters = @($writers | Where-Object { -not $_.ConsultsPresence })
@@ -6877,6 +6882,67 @@ Write-Step 'Agent contract mirror - the portable contract reaches every tool, an
     }
 
     Write-Host ("  contract ok: AGENTS.md is canonical ({0} lines); the copilot mirror matches it (drift detector rejected a one-word mutation first); CLAUDE.md points at it and stays a {1}-line pointer; the roadmap-reading rules are present" -f @((Get-Content -LiteralPath $contractSource -Encoding UTF8)).Count, $contractPointerLines) -ForegroundColor DarkGray
+}
+
+Write-Step 'Queue path resolver - Release 2.9: one definition, so the smoke cannot land in the operator queue'
+& {
+    # Four call sites used to rebuild this path inline, one of them directly
+    # beside the resolver. That is how the api-host smoke came to enqueue its
+    # dispatch fixture into the OPERATOR'S real queue: on 2026-08-19 a live
+    # runner claimed it inside the ~1s enqueue-to-cancel window, and the smoke
+    # then deleted the fixture out from under the claimed claude session.
+    # With one resolver, redirecting the queue is one decision instead of four
+    # edits that can disagree.
+    $queuePathResolver = Join-Path $WorkspaceRoot 'backend\modules\automation\Automation.RoadmapQueue.ps1'
+    if (-not (Test-Path -LiteralPath $queuePathResolver)) { throw "Missing $queuePathResolver" }
+
+    # Derived scope: any .ps1 under backend/ that builds the path itself is a
+    # bypass. The resolver is the one allowed definition; the trace module's
+    # relative-path constant is named as documentation of the artifact and is
+    # allowed only because it no longer resolves the read.
+    $queuePathPattern = "roadmap-task-queue\.jsonl'"
+    $queuePathViolatingFixture = "`$queuePath = Join-Path `$WorkspaceRoot 'output\roadmap-task-queue.jsonl'"
+    if ($queuePathViolatingFixture -notmatch $queuePathPattern) {
+        throw 'Queue-path detector failed its own violating fixture; the sweep below is vacuous.'
+    }
+
+    $queuePathBypasses = New-Object System.Collections.Generic.List[string]
+    foreach ($queuePathFile in @(Get-ChildItem -LiteralPath (Join-Path $WorkspaceRoot 'backend') -Filter '*.ps1' -Recurse -File)) {
+        if ($queuePathFile.FullName -eq (Resolve-Path -LiteralPath $queuePathResolver).Path) { continue }
+        $queuePathText = Get-Content -LiteralPath $queuePathFile.FullName -Raw -Encoding UTF8
+        foreach ($queuePathLine in ($queuePathText -split "`r?`n")) {
+            if ($queuePathLine -match '^\s*#') { continue }
+            if ($queuePathLine -notmatch $queuePathPattern) { continue }
+            # A `Join-Path` building it is a bypass; a comment or a documented
+            # artifact name is not.
+            if ($queuePathLine -match 'Join-Path') {
+                $queuePathBypasses.Add(("{0}: {1}" -f $queuePathFile.Name, $queuePathLine.Trim())) | Out-Null
+            }
+        }
+    }
+    if ($queuePathBypasses.Count -gt 0) {
+        throw ("Queue path built inline instead of via Get-RoadmapQueuePath:`n    {0}`n  One resolver, or the smoke lands in the operator's real queue again." -f ($queuePathBypasses -join "`n    "))
+    }
+
+    # The override must actually redirect, or the smoke cannot isolate itself.
+    . $queuePathResolver
+    $queuePathDefault = Get-RoadmapQueuePath -WorkspaceRoot 'C:\fixture-ws'
+    if ($queuePathDefault -notmatch 'roadmap-task-queue\.jsonl$') { throw "Default queue path is wrong: $queuePathDefault" }
+    $env:REPO_MGMT_QUEUE_PATH = 'C:\fixture-ws\isolated-queue.jsonl'
+    try {
+        $queuePathOverridden = Get-RoadmapQueuePath -WorkspaceRoot 'C:\fixture-ws'
+        if ($queuePathOverridden -ne 'C:\fixture-ws\isolated-queue.jsonl') {
+            throw "REPO_MGMT_QUEUE_PATH did not redirect the resolver (got $queuePathOverridden); the smoke cannot isolate its fixtures."
+        }
+    }
+    finally {
+        Remove-Item Env:REPO_MGMT_QUEUE_PATH -ErrorAction SilentlyContinue
+    }
+    if ((Get-RoadmapQueuePath -WorkspaceRoot 'C:\fixture-ws') -ne $queuePathDefault) {
+        throw 'The resolver did not return to its default after the override was cleared.'
+    }
+
+    Write-Host '  queue path ok: detector rejected its own inline fixture first; no bypass under backend/; REPO_MGMT_QUEUE_PATH redirects and clears cleanly' -ForegroundColor DarkGray
 }
 
 Write-Step 'Runner stop mechanism - Release 2.9: a detached runner can be stopped without hunting a PID'

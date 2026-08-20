@@ -1270,7 +1270,10 @@ function Submit-PackagedItemToRunner {
     if ([string]::IsNullOrWhiteSpace($RunId)) { $RunId = New-PackagedItemDispatchRunId }
 
     $entry = New-PackagedItemQueueEntry -RunId $RunId -Packet $Packet
-    $queuePath = Join-Path $WorkspaceRoot 'output\roadmap-task-queue.jsonl'
+    if (-not (Get-Command Get-RoadmapQueuePath -ErrorAction SilentlyContinue)) {
+        . (Join-Path $PSScriptRoot 'Automation.RoadmapQueue.ps1')
+    }
+    $queuePath = Get-RoadmapQueuePath -WorkspaceRoot $WorkspaceRoot
     $null = _Pack_AppendJsonl -Path $queuePath -Record ([pscustomobject]$entry)
 
     $summary = New-PackagedItemRunSummary -RunId $RunId -Packet $Packet -Actor $Actor
