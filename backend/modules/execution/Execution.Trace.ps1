@@ -698,7 +698,12 @@ function Get-WorkItemTrace {
         try { $packagedItems = @(Get-PackagedItemQueue -WorkspaceRoot $WorkspaceRoot -Limit 0) } catch { $packagedItems = @() }
     }
 
-    $queueEntries = @(_Trace_ReadJsonl -Path (Join-Path $WorkspaceRoot $script:WorkItemTraceQueueRelPath))
+    # Release 2.9 -- through the one resolver, so a redirected queue (the
+    # smoke's fixture) is traced from the same file it was written to.
+    if (-not (Get-Command Get-RoadmapQueuePath -ErrorAction SilentlyContinue)) {
+        . (Join-Path $PSScriptRoot '..\automation\Automation.RoadmapQueue.ps1')
+    }
+    $queueEntries = @(_Trace_ReadJsonl -Path (Get-RoadmapQueuePath -WorkspaceRoot $WorkspaceRoot))
 
     $agentRunsDir = Join-Path $WorkspaceRoot $script:WorkItemTraceAgentRunsRelDir
     $agentRuns = @(

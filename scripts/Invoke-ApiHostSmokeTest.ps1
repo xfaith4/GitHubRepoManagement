@@ -309,10 +309,22 @@ if (Test-Path -LiteralPath $runnerHeartbeatPath) {
     }
 }
 
+# Release 2.9 -- this smoke enqueues dispatch fixtures and cancels them ~1s
+# later. Until now it wrote into the OPERATOR'S real queue, and on 2026-08-19 a
+# live runner claimed a fixture inside that window before the smoke deleted it
+# out from under the claimed session. The host resolves the queue through
+# Get-RoadmapQueuePath, which honors REPO_MGMT_QUEUE_PATH, so the fixtures now
+# land somewhere only this test looks. Set on the job, not the parent, so a
+# crashed smoke cannot leave the operator's environment redirected.
+$smokeQueuePath = Join-Path $smokeRoot 'roadmap-task-queue.jsonl'
+Remove-Item -LiteralPath $smokeQueuePath -Force -ErrorAction SilentlyContinue
+Write-Host ("  queue isolated to {0} (the operator's real queue is untouched)" -f $smokeQueuePath) -ForegroundColor DarkGray
+
 $job = Start-Job -ScriptBlock {
-    param($ScriptPath, $Root, $Log, $ListenPort, $SignalPath)
+    param($ScriptPath, $Root, $Log, $ListenPort, $SignalPath, $QueuePath)
+    $env:REPO_MGMT_QUEUE_PATH = $QueuePath
     & $ScriptPath -WorkspaceRoot $Root -BindAddress '127.0.0.1' -Port $ListenPort -LogPath $Log -ShutdownSignalPath $SignalPath
-} -ArgumentList $hostScript, $WorkspaceRoot, $logPath, $Port, $shutdownSignalPath
+} -ArgumentList $hostScript, $WorkspaceRoot, $logPath, $Port, $shutdownSignalPath, $smokeQueuePath
 
 try {
     Wait-ApiHostReady -Uri "$BaseUrl/health/live" -Job $job
@@ -1257,7 +1269,7 @@ try {
     Set-Content -LiteralPath $dispatchRoadmapPath `
         -Value "# Smoke Dispatch Roadmap`n`n## Release 1`n`n- [ ] Pending dispatch fixture item`n" -Encoding UTF8
 
-    $dispatchQueuePath = Join-Path $WorkspaceRoot 'output\roadmap-task-queue.jsonl'
+    $dispatchQueuePath = $smokeQueuePath  # Release 2.9: the isolated queue, not the operator's
     $queueLinesBefore = if (Test-Path -LiteralPath $dispatchQueuePath) { @(Get-Content -LiteralPath $dispatchQueuePath -Encoding UTF8 | Where-Object { $_ -and $_.Trim() }).Count } else { 0 }
 
     # Release 3.1 — this route is the third road to the queue, reaching it
@@ -1681,7 +1693,7 @@ try {
     $heartbeatBackup = if (Test-Path -LiteralPath $heartbeatPath) { Get-Content -LiteralPath $heartbeatPath -Raw -Encoding UTF8 } else { $null }
     # Assigned before the try so the finally can always restore, including when
     # the step throws on its first line.
-    $okQueuePath = Join-Path $WorkspaceRoot 'output\roadmap-task-queue.jsonl'
+    $okQueuePath = $smokeQueuePath  # Release 2.9: the isolated queue, not the operator's
     $okQueueBefore = if (Test-Path -LiteralPath $okQueuePath) { @(Get-Content -LiteralPath $okQueuePath -Encoding UTF8 | Where-Object { $_ -and $_.Trim() }).Count } else { 0 }
     try {
         $null = New-Item -ItemType Directory -Path (Split-Path -Parent $heartbeatPath) -Force -ErrorAction SilentlyContinue
@@ -3045,7 +3057,7 @@ try {
     $packagingOk = $false
     $packagingRepoName = 'smoke-packaging-repo'
     $packagingOverName = 'smoke-packaging-overbudget'
-    $packagingQueuePath = Join-Path $WorkspaceRoot 'output\roadmap-task-queue.jsonl'
+    $packagingQueuePath = $smokeQueuePath  # Release 2.9: the isolated queue, not the operator's
     $packagingQueueBackup = if (Test-Path -LiteralPath $packagingQueuePath) { Get-Content -LiteralPath $packagingQueuePath -Raw -Encoding UTF8 } else { $null }
     $packagingCuratedIds = [System.Collections.Generic.List[string]]::new()
     $packagingDispatchRunId = ''

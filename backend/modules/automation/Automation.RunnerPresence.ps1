@@ -256,7 +256,10 @@ function Get-QueuedTaskBacklog {
     [OutputType([pscustomobject])]
     param([Parameter(Mandatory = $true)][string]$WorkspaceRoot)
 
-    $queuePath = Join-Path $WorkspaceRoot 'output\roadmap-task-queue.jsonl'
+    if (-not (Get-Command Get-RoadmapQueuePath -ErrorAction SilentlyContinue)) {
+        . (Join-Path $PSScriptRoot 'Automation.RoadmapQueue.ps1')
+    }
+    $queuePath = Get-RoadmapQueuePath -WorkspaceRoot $WorkspaceRoot
     $runsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
     $claude = 0
     $copilot = 0

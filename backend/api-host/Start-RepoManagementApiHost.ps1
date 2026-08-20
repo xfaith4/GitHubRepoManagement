@@ -10842,7 +10842,7 @@ try {
                         -QueuedAt $startedAt `
                         -DispatchTarget 'copilot' `
                         -BaseBranch $baseBranch
-                    $dispatchQueuePath = Join-Path $WorkspaceRoot 'output\roadmap-task-queue.jsonl'
+                    $dispatchQueuePath = Get-RoadmapQueuePath -WorkspaceRoot $WorkspaceRoot
                     $dispatchQueueDir = Split-Path -Parent $dispatchQueuePath
                     if (-not (Test-Path -LiteralPath $dispatchQueueDir)) { $null = New-Item -ItemType Directory -Path $dispatchQueueDir -Force }
                     Add-Content -LiteralPath $dispatchQueuePath -Value ([pscustomobject]$queueEntry | ConvertTo-Json -Depth 8 -Compress) -Encoding UTF8

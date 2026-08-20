@@ -38,7 +38,27 @@
 # (plural noun, ShouldProcess) would have moved from "existing debt" to "new".
 
 function Get-RoadmapQueuePath {
+    <#
+    .SYNOPSIS
+        The one place the task-queue path is decided.
+    .DESCRIPTION
+        Release 2.9. Four call sites used to rebuild this path inline beside
+        this resolver, which is how the api-host smoke came to enqueue its
+        dispatch fixture into the OPERATOR'S real queue: a live runner claimed
+        it in the ~1s enqueue-to-cancel window on 2026-08-19, then the smoke
+        deleted the fixture out from under the claimed session. With one
+        resolver, redirecting the queue is a single decision instead of four
+        edits that can disagree.
+
+        REPO_MGMT_QUEUE_PATH overrides it, matching the REPO_MGMT_* convention
+        the timeout and TLS settings already use. The smoke sets it so its
+        fixtures never touch the operator's queue; nothing in production does.
+    #>
     param([Parameter(Mandatory)][string]$WorkspaceRoot)
+
+    $override = [System.Environment]::GetEnvironmentVariable('REPO_MGMT_QUEUE_PATH')
+    if (-not [string]::IsNullOrWhiteSpace($override)) { return $override }
+
     Join-Path $WorkspaceRoot 'output\roadmap-task-queue.jsonl'
 }
 
