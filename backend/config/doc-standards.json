@@ -35,14 +35,15 @@
   ],
   "readmeStandards": {
     "minLengthChars": 300,
-    "minLengthSeverity": "warning",
+    "minLengthSeverity": "critical",
     "minLengthRecommendedAction": "Expand README.md to at least 300 characters with meaningful project information.",
     "sectionPolicy": {
       "description": "Severity applied per missing section. Which sections are 'expected' comes from the canonical templates, not from a list here. A missing universal section is a warning; a missing profile-specific (non-universal) section is info.",
       "missingUniversalSectionSeverity": "warning",
       "missingProfileSectionSeverity": "info",
       "recommendedActionTemplate": "Add a {section} section as required by the {profile} README profile."
-    }
+    },
+    "minLengthSeverityRationale": "Critical, not warning, since 2026-08-20. A README below the minimum is not untidy - it is insufficient CONTEXT for an agent, which the product direction names as a standing risk (\"README quality may be insufficient for meaningful Copilot context\"). It therefore belongs with a MISSING README as a dispatch blocker, and apart from doc-hygiene warnings like a missing LICENSE, which say nothing about whether an agent can work the roadmap safely. This distinction is the reason the severity gate can block on critical alone without letting context-poor repositories through."
   },
   "dispatchReadinessRules": {
     "readyRequires": [
@@ -52,6 +53,16 @@
     ],
     "blockedWhen": [
       "README.md missing"
-    ]
+    ],
+    "docFindingSeverityGate": {
+      "blocks": [
+        "critical"
+      ],
+      "informs": [
+        "warning",
+        "info"
+      ],
+      "rationale": "Which doc-finding severities may FREEZE dispatch, declared here because until 2026-08-20 the rule lived only in code and contradicted this file: the scanner blocked on any warning OR critical, while these rules named only a missing README. The effect on the real portfolio was that seven repositories with contract-quality roadmaps and real pending work were undispatchable because they lacked a LICENSE file - a warning with no bearing on whether an agent can safely do roadmap work. Criticals still block; warnings and info are reported on the repo and do not gate. Widen `blocks` to re-tighten without a code change."
+    }
   }
 }

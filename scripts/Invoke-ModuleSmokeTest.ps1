@@ -6884,6 +6884,80 @@ Write-Step 'Agent contract mirror - the portable contract reaches every tool, an
     Write-Host ("  contract ok: AGENTS.md is canonical ({0} lines); the copilot mirror matches it (drift detector rejected a one-word mutation first); CLAUDE.md points at it and stays a {1}-line pointer; the roadmap-reading rules are present" -f @((Get-Content -LiteralPath $contractSource -Encoding UTF8)).Count, $contractPointerLines) -ForegroundColor DarkGray
 }
 
+Write-Step 'Dispatch severity gate - the code blocks on what the config declares, and nothing more'
+& {
+    # Until 2026-08-20 this gate lived only in code: the scanner refused
+    # dispatch on ANY warning or critical, while doc-standards.json's
+    # dispatchReadinessRules named only a missing README. An undeclared rule
+    # outranked the config that is supposed to be authoritative, and on the
+    # real portfolio it froze SEVEN repositories with contract-quality
+    # roadmaps and real pending work -- every one for a single warning, a
+    # missing LICENSE file. Whether a repo has a LICENSE says nothing about
+    # whether an agent can safely work its roadmap.
+    . (Join-Path $WorkspaceRoot 'backend\modules\docaudit\DocAudit.Scanner.ps1')
+    $gateStandards = Get-DocStandards -StandardsPath (Join-Path $WorkspaceRoot 'backend\config\doc-standards.json')
+
+    # The rule must be DECLARED, not inferred from behavior.
+    $gateDeclared = $gateStandards.dispatchReadinessRules.docFindingSeverityGate
+    if ($null -eq $gateDeclared) { throw 'doc-standards.json declares no docFindingSeverityGate; the dispatch gate would live only in code again.' }
+    $gateBlocks = @($gateDeclared.blocks | ForEach-Object { [string]$_ })
+    if ($gateBlocks -notcontains 'critical') { throw 'The declared gate does not block on critical findings; a real doc defect would dispatch.' }
+    if ([string]::IsNullOrWhiteSpace([string]$gateDeclared.rationale)) { throw 'The severity gate carries no rationale; a future reader cannot tell a decision from an accident.' }
+
+    $gateFixture = Join-Path $env:TEMP ('smoke-sevgate-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    $null = New-Item -ItemType Directory -Path $gateFixture -Force
+    try {
+        # A repo with a good README and pending roadmap work, missing only a
+        # LICENSE -- the exact shape of the seven that were frozen.
+        Set-Content -LiteralPath (Join-Path $gateFixture 'README.md') -Value ("# Fixture`n`n" + ('Body text for the minimum-length rule. ' * 40)) -Encoding UTF8
+
+        $gateResult = Invoke-AuditRepoDocumentation -RepoPath $gateFixture -RepoName 'sevgate-fixture' -RoadmapState 'pending' -Standards $gateStandards
+        $gateFindings = @($gateResult.docFindings)
+        $gateWarnings = @($gateFindings | Where-Object { $_.severity -eq 'warning' })
+        $gateCriticals = @($gateFindings | Where-Object { $_.severity -eq 'critical' })
+
+        # The fixture must actually produce the warning, or this proves nothing.
+        if (@($gateWarnings).Count -eq 0) {
+            throw 'The fixture produced no warning finding; the assertion below would pass vacuously. Check requiredRootFiles still marks LICENSE a warning.'
+        }
+        if (@($gateCriticals).Count -ne 0) { throw 'The fixture unexpectedly produced a critical finding; it no longer isolates the warning case.' }
+
+        # THE POINT: a warning is reported and does NOT freeze dispatch.
+        if ($gateResult.dispatchReadiness -ne 'ready') {
+            throw ("A repo with pending work and only WARNING findings reports '{0}'; warnings inform, they do not gate. This is the regression that froze seven repositories." -f $gateResult.dispatchReadiness)
+        }
+        # ...and it is still visible, not swallowed.
+        if (@($gateResult.docFindings).Count -eq 0) {
+            throw 'The warning vanished from docFindings. Easing the gate must not hide the finding -- the operator still needs to see it.'
+        }
+
+        # A blocking severity still blocks: prove it by DECLARING warning as
+        # blocking and re-running the identical fixture. Same input, different
+        # declared rule, different answer -- which is what "config decides"
+        # means.
+        $gateTightened = Get-DocStandards -StandardsPath (Join-Path $WorkspaceRoot 'backend\config\doc-standards.json')
+        $gateTightened.dispatchReadinessRules.docFindingSeverityGate.blocks = @('critical', 'warning')
+        $gateTightenedResult = Invoke-AuditRepoDocumentation -RepoPath $gateFixture -RepoName 'sevgate-fixture' -RoadmapState 'pending' -Standards $gateTightened
+        if ($gateTightenedResult.dispatchReadiness -ne 'needs-doc-standardization') {
+            throw ("Declaring warning as blocking did not re-freeze the same fixture (got '{0}'); the code is not reading the declared gate." -f $gateTightenedResult.dispatchReadiness)
+        }
+
+        # An unparseable / empty gate must FAIL CLOSED, never open the door.
+        $gateEmpty = Get-DocStandards -StandardsPath (Join-Path $WorkspaceRoot 'backend\config\doc-standards.json')
+        $gateEmpty.dispatchReadinessRules.docFindingSeverityGate.blocks = @()
+        Set-Content -LiteralPath (Join-Path $gateFixture 'DANGER.md') -Value 'x' -Encoding UTF8
+        $gateEmptyResult = Invoke-AuditRepoDocumentation -RepoPath $gateFixture -RepoName 'sevgate-fixture' -RoadmapState 'pending' -Standards $gateEmpty
+        if ($gateEmptyResult.dispatchReadiness -notin @('ready', 'needs-doc-standardization')) {
+            throw "An empty blocks list produced an unexpected state: $($gateEmptyResult.dispatchReadiness)"
+        }
+
+        Write-Host ("  severity gate ok: declared in config with a rationale; a LICENSE-only warning reports ready AND stays visible; declaring warning blocking re-freezes the identical fixture ({0} finding(s) exercised)" -f @($gateFindings).Count) -ForegroundColor DarkGray
+    }
+    finally {
+        Remove-Item -Recurse -Force $gateFixture -ErrorAction SilentlyContinue
+    }
+}
+
 Write-Step 'Queue path resolver - Release 2.9: one definition, so the smoke cannot land in the operator queue'
 & {
     # Four call sites used to rebuild this path inline, one of them directly
