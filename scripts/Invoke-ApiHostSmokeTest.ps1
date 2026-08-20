@@ -157,11 +157,22 @@ function Wait-ForPortfolioIndex {
         # log FILE and never to the console. Without this the CI transcript
         # shows only "it did not warm" and every diagnosis is a guess.
         [Parameter()]
-        [string]$HostLogPath = ''
+        [string]$HostLogPath = '',
+        # Wait for the repos to be AUDITED, not merely indexed. `roadmapState`
+        # comes from the roadmap cache while `maturityLevel` comes from the
+        # roadmap-AUDIT cache, and the background worker fills those in
+        # sequence -- so a repo can be present, parsed, and still carry the
+        # L0-Absent default because its audit entry does not exist yet.
+        # Callers that go on to require a maturity level must wait for the
+        # cache that produces one. (Diagnosed 2026-08-19 from a CI-only
+        # failure whose message read `L0-Absent roadmapState=pending`: parsed
+        # fine, audited not yet.)
+        [switch]$RequireAuditedMaturity
     )
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     $missing = @($RequiredRepoNames)
+    $unaudited = @()
     $entryCount = 0
 
     while ((Get-Date) -lt $deadline) {
@@ -192,13 +203,28 @@ function Wait-ForPortfolioIndex {
         else {
             $present = @($entries | ForEach-Object { [string]$_.repoName })
             $missing = @($RequiredRepoNames | Where-Object { $present -notcontains $_ })
-            if (@($missing).Count -eq 0) { return $entryCount }
+            $unaudited = @()
+            if (@($missing).Count -eq 0 -and $RequireAuditedMaturity) {
+                # An explicit loop, not nested Where-Object: the inner pipeline
+                # rebinds $_ to the entry, so the outer repo name has to be
+                # held in a variable of its own to be comparable at all.
+                foreach ($waitName in @($RequiredRepoNames)) {
+                    $waitEntry = @($entries | Where-Object { [string]$_.repoName -eq $waitName }) | Select-Object -First 1
+                    $waitLevel = if ($null -ne $waitEntry) { [string]$waitEntry.maturityLevel } else { '' }
+                    if ([string]::IsNullOrWhiteSpace($waitLevel) -or $waitLevel -eq 'L0-Absent') {
+                        $unaudited += $waitName
+                    }
+                }
+            }
+            if (@($missing).Count -eq 0 -and @($unaudited).Count -eq 0) { return $entryCount }
         }
 
         Start-Sleep -Seconds 5
     }
 
-    $detail = if (@($missing).Count -gt 0) { "still missing: $($missing -join ', ')" } else { "index still empty" }
+    $detail = if (@($missing).Count -gt 0) { "still missing: $($missing -join ', ')" }
+        elseif (@($unaudited).Count -gt 0) { "indexed but not yet audited (maturity still L0-Absent): $($unaudited -join ', ')" }
+        else { "index still empty" }
 
     # Carry the evidence into the failure rather than telling a reader where to
     # go looking - on a CI runner the log file is gone by the time anyone asks.
@@ -3196,7 +3222,10 @@ A release should not be marked `done` unless:
         # background worker and returns. Wait for the fixtures to actually land
         # in the index instead of assuming one round trip did it.
         $null = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment?refresh=true"
-        $null = Wait-ForPortfolioIndex -BaseUrl $BaseUrl -RequiredRepoNames @($packagingRepoName, $packagingOverName) -HostLogPath $logPath
+        # -RequireAuditedMaturity: the assertion below needs L3+, which only
+        # exists once the roadmap-audit cache has an entry. Waiting only for
+        # the name made this step race the worker.
+        $null = Wait-ForPortfolioIndex -BaseUrl $BaseUrl -RequiredRepoNames @($packagingRepoName, $packagingOverName) -HostLogPath $logPath -RequireAuditedMaturity
 
         $packagingOpsResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/operations/repos"
         $packagingEntries = @($packagingOpsResponse.Json.data.entries)
