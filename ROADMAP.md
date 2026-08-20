@@ -474,6 +474,40 @@ engineering half depends on none of these.
 
 **Known issues:**
 
+- [ ] **The console cannot answer its own Question 6.** The product direction
+      promises "which repos have a clearly actionable next pending work item";
+      the roadmap audit computes it (INcendiary: `pendingCount` 71,
+      `nextPendingItem` = "Phase 23 - Event History Archive"), but the
+      assessment payload the dashboard renders carries **neither field** -
+      absent, not null, on **0 of 58** entries. Measured end to end
+      2026-08-20. The join between
+      [`DocAudit.Scanner.ps1`](backend/modules/docaudit/DocAudit.Scanner.ps1)
+      output and the assessment entry drops them, so 34 repos with roadmaps
+      show no next step on the surface an operator actually opens. Highest-
+      value remaining fix now that dispatch is unfrozen. _(state: scaffolded -
+      the data exists one route away)_
+- [ ] **Two gates disagree about the same repo.** The console's
+      `dispatchReadiness` and the packaging path enforce different standards:
+      packaging gates on L3+ maturity, the console on doc findings. On
+      2026-08-19 the product packaged and dispatched INcendiary while the
+      console reported it not ready. The guardrail "do not auto-dispatch
+      without a visible readiness model" is only half true while the visible
+      model and the enforced model differ. Decide which is authoritative and
+      make the other consult it. What exists:
+      [`Automation.RoadmapPackaging.ps1`](backend/modules/automation/Automation.RoadmapPackaging.ps1)
+      (maturity gate) and
+      [`DocAudit.Scanner.ps1`](backend/modules/docaudit/DocAudit.Scanner.ps1)
+      (readiness gate). _(state: scaffolded - both gates exist and are
+      individually correct)_
+- [ ] **26 of 34 roadmap repos are below L3 and cannot be dispatched.** The
+      maturity gate is correct - a weak roadmap yields an ambiguous task - but
+      the product's own answer for those repos is step 5 (preview-first
+      roadmap/README repair), which is what would raise them. Confirm that
+      path is reachable for an L1/L2 repo, since raising maturity is the only
+      route from "assessed" to "helped" for most of the portfolio.
+      _(state: planned - repair workflows exist; their reachability at L1/L2
+      is unverified)_
+
 - [x] **[non-blocker]** The headless task runner has no stop mechanism —
       **fixed 2026-08-20.** A detached `while ($true)` loop survives its
       session; on 2026-08-19 one ran 17 hours, raced the api-host smoke twice
