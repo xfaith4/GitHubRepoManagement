@@ -6884,6 +6884,63 @@ Write-Step 'Agent contract mirror - the portable contract reaches every tool, an
     Write-Host ("  contract ok: AGENTS.md is canonical ({0} lines); the copilot mirror matches it (drift detector rejected a one-word mutation first); CLAUDE.md points at it and stays a {1}-line pointer; the roadmap-reading rules are present" -f @((Get-Content -LiteralPath $contractSource -Encoding UTF8)).Count, $contractPointerLines) -ForegroundColor DarkGray
 }
 
+Write-Step 'Live-service currency check - derived routes, and the SPA-fallback trap'
+& {
+    # A health check proves the service is UP, not CURRENT. On 2026-08-20 the
+    # live service had been running while main moved 20 PRs ahead and nothing
+    # said so -- /health/live answered 200 throughout.
+    $currencyScript = Join-Path $WorkspaceRoot 'scripts\Test-LiveServiceCurrency.ps1'
+    if (-not (Test-Path -LiteralPath $currencyScript)) { throw "Missing $currencyScript" }
+    $currencyText = Get-Content -LiteralPath $currencyScript -Raw -Encoding UTF8
+
+    # THE TRAP: unmatched routes do not 404 here -- the host serves the SPA's
+    # index.html, so an absent route answers 200 text/html. A check written
+    # against status codes calls every missing route present. This asserts the
+    # script keys on content type instead.
+    if ($currencyText -notmatch 'application/json') {
+        throw 'The currency check does not test content type. Unmatched routes return 200 text/html from the SPA fallback, so a status-code check would report every missing route as present.'
+    }
+
+    # Derived scope: the route list must come from the source, not a literal
+    # list that drifts the moment someone adds a route.
+    . $currencyScript -BaseUrl 'http://127.0.0.1:1' -WorkspaceRoot $WorkspaceRoot -TimeoutSeconds 1 -ErrorAction SilentlyContinue *> $null
+    if (-not (Get-Command Get-DeclaredGetRoute -ErrorAction SilentlyContinue)) {
+        throw 'Get-DeclaredGetRoute did not load; the currency check cannot derive its scope.'
+    }
+    $currencyRoutes = @(Get-DeclaredGetRoute -HostScriptPath (Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1'))
+    if (@($currencyRoutes).Count -lt 20) {
+        throw ("Derived only {0} GET route(s) from the host source; the route syntax changed or the deriver has stopped finding them." -f @($currencyRoutes).Count)
+    }
+    foreach ($currencyExpected in @('/health/live', '/api/portfolio/snapshot')) {
+        if ($currencyRoutes -notcontains $currencyExpected) {
+            throw ("The deriver missed the known route '{0}'; its scope is wrong." -f $currencyExpected)
+        }
+    }
+    # Parameterised and wildcard routes must be excluded -- a 404 for a
+    # made-up id proves nothing about whether the code is present.
+    foreach ($currencyRoute in $currencyRoutes) {
+        if ($currencyRoute -match '\{|\*') { throw ("Deriver returned a parameterised route '{0}'; probing it would prove nothing." -f $currencyRoute) }
+    }
+
+    # The deriver must fail loudly on source it cannot read, rather than
+    # reporting a healthy zero.
+    $currencyEmptyFixture = Join-Path $env:TEMP ('smoke-currency-' + [guid]::NewGuid().ToString('n').Substring(0, 8) + '.ps1')
+    Set-Content -LiteralPath $currencyEmptyFixture -Value '# no routes here' -Encoding UTF8
+    try {
+        $currencyEmpty = @(Get-DeclaredGetRoute -HostScriptPath $currencyEmptyFixture)
+        if (@($currencyEmpty).Count -ne 0) { throw 'The deriver invented routes from a source with none.' }
+        # The SCRIPT (not the function) must treat zero as fatal.
+        if ($currencyText -notmatch 'Derived zero GET routes') {
+            throw 'The currency check does not fail on a zero-route derivation; it would report currency it never established.'
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $currencyEmptyFixture -Force -ErrorAction SilentlyContinue
+    }
+
+    Write-Host ("  currency ok: {0} GET route(s) derived from source (no parameterised or wildcard), content-type keyed so the SPA fallback cannot fake presence, zero-derivation fails loudly" -f @($currencyRoutes).Count) -ForegroundColor DarkGray
+}
+
 Write-Step 'Dispatch severity gate - the code blocks on what the config declares, and nothing more'
 & {
     # Until 2026-08-20 this gate lived only in code: the scanner refused
