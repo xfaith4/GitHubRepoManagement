@@ -6879,4 +6879,84 @@ Write-Step 'Agent contract mirror - the portable contract reaches every tool, an
     Write-Host ("  contract ok: AGENTS.md is canonical ({0} lines); the copilot mirror matches it (drift detector rejected a one-word mutation first); CLAUDE.md points at it and stays a {1}-line pointer; the roadmap-reading rules are present" -f @((Get-Content -LiteralPath $contractSource -Encoding UTF8)).Count, $contractPointerLines) -ForegroundColor DarkGray
 }
 
+Write-Step 'Runner stop mechanism - Release 2.9: a detached runner can be stopped without hunting a PID'
+& {
+    # A headless runner is launched DETACHED so a tool timeout cannot strand a
+    # claimed task -- which means it outlives its session. On 2026-08-19 one
+    # survived 17 hours, raced the api-host smoke twice, and committed
+    # in-flight work onto local main before the repo-root guard existed.
+    # Stopping it required Stop-Process on a PID an operator had to look up.
+    # This proves the graceful path works against a REAL detached process,
+    # because a stop mechanism that has only been read is not a stop mechanism.
+    $stopRunnerScript = Join-Path $WorkspaceRoot 'scripts\Invoke-RoadmapTaskRunner.ps1'
+    $stopFrontDoor = Join-Path $WorkspaceRoot 'scripts\Stop-RoadmapTaskRunner.ps1'
+    foreach ($stopFile in @($stopRunnerScript, $stopFrontDoor)) {
+        if (-not (Test-Path -LiteralPath $stopFile)) { throw "Missing $stopFile" }
+    }
+
+    $stopFixture = Join-Path $env:TEMP ('smoke-runnerstop-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    $null = New-Item -ItemType Directory -Path (Join-Path $stopFixture 'output\roadmap-task-history\runs') -Force
+    try {
+        $stopQueue = Join-Path $stopFixture 'output\roadmap-task-queue.jsonl'
+        Set-Content -LiteralPath $stopQueue -Value '' -Encoding UTF8
+        $stopMarker = Join-Path $stopFixture 'output\roadmap-task-runner.stop'
+        $stopPsExe = (Get-Process -Id $PID).Path
+
+        # --- The marker stops a live loop. --------------------------------
+        # An empty queue means the loop parks in its idle branch, which is the
+        # state a stranded runner is actually in.
+        $stopProc = Start-Process -FilePath $stopPsExe -ArgumentList @(
+            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $stopRunnerScript,
+            '-WorkspaceRoot', $stopFixture, '-QueuePath', $stopQueue,
+            '-StopFilePath', $stopMarker, '-PollSeconds', '2', '-DryRun'
+        ) -WindowStyle Hidden -PassThru
+
+        Start-Sleep -Seconds 6
+        if ($stopProc.HasExited) { throw "Fixture runner exited before the stop was requested (exit $($stopProc.ExitCode)); the test proves nothing." }
+
+        Set-Content -LiteralPath $stopMarker -Value 'stop' -Encoding UTF8
+        if (-not $stopProc.WaitForExit(60000)) {
+            try { $stopProc.Kill() } catch { $null = $_ }
+            throw 'The runner did not exit within 60s of the stop marker appearing; the loop does not honor it.'
+        }
+        if ($stopProc.ExitCode -ne 0) { throw "A stopped runner must exit 0 (operator action, not failure); got $($stopProc.ExitCode)." }
+
+        # --- The marker is consumed, or it kills the NEXT runner. ---------
+        if (Test-Path -LiteralPath $stopMarker) {
+            throw 'The stop marker survived the runner. A leftover marker stops the next runner at its first poll, which reads as "the runner will not start".'
+        }
+
+        # --- A stale marker must not stop a fresh runner. -----------------
+        # Startup clears it; this proves that, by planting one first.
+        Set-Content -LiteralPath $stopMarker -Value 'stale' -Encoding UTF8
+        $stopProc2 = Start-Process -FilePath $stopPsExe -ArgumentList @(
+            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $stopRunnerScript,
+            '-WorkspaceRoot', $stopFixture, '-QueuePath', $stopQueue,
+            '-StopFilePath', $stopMarker, '-PollSeconds', '2', '-DryRun'
+        ) -WindowStyle Hidden -PassThru
+        Start-Sleep -Seconds 8
+        $survivedStaleMarker = -not $stopProc2.HasExited
+        Set-Content -LiteralPath $stopMarker -Value 'stop' -Encoding UTF8
+        $null = $stopProc2.WaitForExit(60000)
+        if (-not $stopProc2.HasExited) { try { $stopProc2.Kill() } catch { $null = $_ } }
+        if (-not $survivedStaleMarker) {
+            throw 'A stale stop marker killed a freshly started runner; startup must clear it or the runner appears unable to start.'
+        }
+
+        # --- The heartbeat carries the stop path. -------------------------
+        # Whoever finds the heartbeat is exactly whoever needs to stop it, so
+        # the instructions travel with the evidence.
+        . $stopRunnerScript -LoadFunctionsOnly
+        $stopBeat = New-RunnerHeartbeat -QueuePath $stopQueue -StopFilePath $stopMarker
+        if (-not $stopBeat.Contains('stopFilePath') -or [string]$stopBeat['stopFilePath'] -ne $stopMarker) {
+            throw 'The runner heartbeat does not carry stopFilePath; an operator who finds a runner still has to read source to stop it.'
+        }
+
+        Write-Host '  runner stop ok: a real detached runner exited 0 within seconds of the marker and consumed it; a stale marker did NOT kill a fresh runner; the heartbeat carries the stop path' -ForegroundColor DarkGray
+    }
+    finally {
+        Remove-Item -Recurse -Force $stopFixture -ErrorAction SilentlyContinue
+    }
+}
+
 Write-Step 'Smoke test completed'
