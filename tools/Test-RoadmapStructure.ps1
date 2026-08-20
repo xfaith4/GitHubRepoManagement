@@ -1404,6 +1404,88 @@ function Invoke-RuleAcceptanceCriteriaQuality {
 }
 
 # RQ006 — active/validation blocks should carry traceability signals.
+# RQ014 — an OPEN item that claims work already exists must name where it is.
+#
+# The capability-record gate (tools/Test-RoadmapCapabilityRecord.ps1) closes one
+# direction of roadmap drift: code shipped while the record still said
+# `planned`. This closes the other, and it is the direction that wastes work
+# rather than merely misreporting it.
+#
+# An item that reads `- [ ] ... (state: smoke-tested)` is asserting two things
+# at once: this is NOT done, and something already exists. A reader who takes
+# the checkbox at face value rebuilds what the state clause already promised.
+# That is not hypothetical -- PR #134's aftermath is recorded in the
+# capability-record gate's own docstring as "one step away from rebuilding a
+# module that already existed and already passed its tests", and a scheduled
+# instruction fired against completed work on 2026-08-19 for the same reason:
+# an instruction that names no artifact cannot be checked before it is obeyed.
+#
+# The requirement is deliberately mechanical, because it has to hold for any
+# reader -- a different model, a different tool, or a human. An item past
+# `planned` must name a verifiable artifact: a markdown link, a backticked
+# path, or a backticked command/gate name. Then "is this still true?" is one
+# command instead of a judgement call, and it costs seconds.
+#
+# `planned` items are exempt by design: nothing exists yet, so there is nothing
+# to point at, and demanding a citation would teach people to invent one.
+function Invoke-RuleOpenItemNamesArtifact {
+    param(
+        [Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Releases
+    )
+
+    foreach ($r in $Releases) {
+        $releaseLines = @($r.rawText -split "`r?`n")
+
+        for ($i = 0; $i -lt $releaseLines.Count; $i++) {
+            # Open items only. A checked item is a record, not an instruction.
+            if ($releaseLines[$i] -notmatch '^\s*-\s*\[ \]') { continue }
+
+            # Gather the WHOLE item. In this roadmap the `(state: ...)` clause
+            # routinely lands two to four continuation lines below the
+            # checkbox, so a line-by-line scan judges nothing at all -- the
+            # first draft of this rule passed the real file by examining zero
+            # items, which is the failure mode every gate here exists to avoid.
+            # An item ends at the next list item, a heading, or a blank line
+            # that is not inside the item's own indented continuation.
+            $itemLines = [System.Collections.Generic.List[string]]::new()
+            $itemLines.Add($releaseLines[$i]) | Out-Null
+            for ($j = $i + 1; $j -lt $releaseLines.Count; $j++) {
+                $next = $releaseLines[$j]
+                if ($next -match '^\s*-\s*\[[ x]\]') { break }
+                if ($next -match '^\s*#{1,6}\s') { break }
+                if ($next -match '^\s*$') { break }
+                if ($next -notmatch '^\s+\S') { break }
+                $itemLines.Add($next) | Out-Null
+            }
+            $item = ($itemLines -join ' ')
+
+            # Only items claiming a state past `planned` assert that something
+            # already exists. A `planned` item has nothing to point at, and
+            # demanding a citation would only teach people to invent one.
+            $stateMatch = [regex]::Match($item, '\(state:\s*([a-z][a-z\-]*)')
+            if (-not $stateMatch.Success) { continue }
+            $state = $stateMatch.Groups[1].Value
+            if ($state -eq 'planned') { continue }
+
+            # A verifiable artifact: a markdown link, a backticked path or
+            # file, or a backticked command/gate name.
+            $hasLink = $item -match '\]\([^)]+\)'
+            $hasBacktickedPath = $item -match '`[^`]*[\\/][^`]*`'
+            $hasBacktickedName = $item -match '`[A-Za-z0-9_.\-]+\.(ps1|ts|tsx|json|md|css)`'
+            $hasCommand = $item -match '`(npm|pwsh|git|gh|npx)\s'
+            if ($hasLink -or $hasBacktickedPath -or $hasBacktickedName -or $hasCommand) { continue }
+
+            $itemText = ($item -replace '^\s*-\s*\[ \]\s*', '').Trim()
+            if ($itemText.Length -gt 90) { $itemText = $itemText.Substring(0, 90) + '...' }
+
+            Add-Finding -Severity 'warning' -Code 'RQ014-OPEN-ITEM-NO-ARTIFACT' -Category 'quality' -Rule 'open-item-artifact' `
+                -Message ("Open item in release " + $r.version + " claims state '" + $state + "' but names no verifiable artifact: " + $itemText) `
+                -Release $r.version -Line ($r.startLine + 1) -Section 'Engineering milestones' `
+                -RecommendedAction 'Name what already exists — a linked path, a backticked file, or the gate that covers it — so any reader (or any model) can verify what is left before rebuilding what is not.'
+        }
+    }
+}
+
 function Invoke-RuleTraceability {
     param([Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$StatusBlocks)
 
@@ -1616,6 +1698,7 @@ Invoke-RulePipelineFeedback        -StatusBlocks $statusBlocks -Cfg $script:Acti
 Invoke-RuleBlockedReleaseHasBlocker -StatusBlocks $statusBlocks
 Invoke-RuleDoneReleaseCompletion   -StatusBlocks $statusBlocks -Cfg $script:ActiveConfig
 Invoke-RulePlannedReleaseRecommendations -Releases $releases -Cfg $script:ActiveConfig
+Invoke-RuleOpenItemNamesArtifact   -Releases $releases
 
 # Pretty-print release sequence summary so the operator sees what was parsed.
 Write-Host ''

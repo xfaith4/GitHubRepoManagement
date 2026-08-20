@@ -6812,4 +6812,71 @@ Write-Step 'Touch ergonomics - Release 2.9: the tap-target floor is a device rul
     Write-Host ("  touch ok: 44px floor exists under @media (pointer: coarse) and NOWHERE else (detector rejects a 32px fixture); button/select/role=button covered; checkboxes grown by transform, not stretched; DefinitionHint gives hover-only definitions a tap path while keeping the title, used on {0} surface(s); the agent-run count taps through to a mobile-sheet list with distinct empty/error/loading states" -f @($touchConsumers).Count) -ForegroundColor DarkGray
 }
 
+Write-Step 'Agent contract mirror - the portable contract reaches every tool, and the copies cannot drift'
+& {
+    # The operating contract used to live only in CLAUDE.md, which no other
+    # tool reads. A Copilot or GPT-based agent working this repo saw none of
+    # the config-authority rules, none of the archive rule, and none of
+    # "never mark a milestone complete without evidence" -- so the discipline
+    # silently stopped applying the moment a different model touched the code.
+    #
+    # AGENTS.md is now the canonical contract. CLAUDE.md points at it (Claude
+    # Code follows a pointer reliably); .github/copilot-instructions.md
+    # carries a full copy because Copilot reads that file literally. A copy is
+    # only safe if something fails when it diverges -- that is this gate.
+    $contractSource = Join-Path $WorkspaceRoot 'AGENTS.md'
+    $contractMirror = Join-Path $WorkspaceRoot '.github\copilot-instructions.md'
+    $contractPointer = Join-Path $WorkspaceRoot 'CLAUDE.md'
+    foreach ($contractFile in @($contractSource, $contractMirror, $contractPointer)) {
+        if (-not (Test-Path -LiteralPath $contractFile)) { throw "Missing agent-contract file: $contractFile" }
+    }
+
+    # Compare on normalized line endings: the working tree is LF and a CI
+    # checkout is CRLF, so a byte comparison would fail on the runner for a
+    # reason that has nothing to do with drift.
+    $contractSourceText = (Get-Content -LiteralPath $contractSource -Raw -Encoding UTF8) -replace "`r`n", "`n"
+    $contractMirrorText = (Get-Content -LiteralPath $contractMirror -Raw -Encoding UTF8) -replace "`r`n", "`n"
+
+    # The detector must fail a real divergence before a match is worth
+    # anything: a mirror missing one sentence is exactly the drift that makes
+    # a stale copy worse than no copy at all.
+    $contractDriftFixture = $contractMirrorText -replace 'decision-grade', 'decision grade'
+    if ($contractDriftFixture.EndsWith($contractSourceText)) {
+        throw 'Contract drift detector accepted a mutated mirror; the comparison below is vacuous.'
+    }
+
+    if (-not $contractMirrorText.EndsWith($contractSourceText)) {
+        throw ('.github\copilot-instructions.md has drifted from AGENTS.md. It is a generated mirror: edit AGENTS.md, regenerate the mirror, and re-run. A stale contract is worse than none, because it reads as authoritative.')
+    }
+    if ($contractMirrorText -notmatch 'GENERATED MIRROR') {
+        throw 'The copilot mirror does not declare itself generated; someone will edit it by hand.'
+    }
+
+    # The pointer must actually point, and must not grow rules of its own --
+    # a rule that lives only in CLAUDE.md is invisible to every other tool,
+    # which is the failure this whole arrangement exists to prevent.
+    $contractPointerText = Get-Content -LiteralPath $contractPointer -Raw -Encoding UTF8
+    if ($contractPointerText -notmatch 'AGENTS\.md') {
+        throw 'CLAUDE.md does not point at AGENTS.md; a Claude session would never find the contract.'
+    }
+    $contractPointerLines = @((Get-Content -LiteralPath $contractPointer -Encoding UTF8)).Count
+    if ($contractPointerLines -gt 60) {
+        throw ("CLAUDE.md is {0} lines. It is a pointer plus Claude-specific notes; anything longer is repo-wide policy hiding where only one tool can see it -- move it to AGENTS.md." -f $contractPointerLines)
+    }
+
+    # The contract must carry the roadmap-reading discipline, because that is
+    # the rule a fresh agent most needs and least intuits.
+    # Match on markup-independent phrases: an earlier version of this list
+    # keyed on '- [ ] checkbox' and failed because the prose wraps the
+    # checkbox in backticks. A gate that breaks when a sentence is reworded
+    # teaches people to delete the gate.
+    foreach ($contractRequired in @('checkbox means', 'Verify before you build', 'completed-releases\.md', 'RQ014-OPEN-ITEM-NO-ARTIFACT')) {
+        if ($contractSourceText -notmatch $contractRequired) {
+            throw ("AGENTS.md is missing the roadmap-reading rule '{0}'; an agent reading an open item would rebuild what already exists." -f ($contractRequired -replace '\\', ''))
+        }
+    }
+
+    Write-Host ("  contract ok: AGENTS.md is canonical ({0} lines); the copilot mirror matches it (drift detector rejected a one-word mutation first); CLAUDE.md points at it and stays a {1}-line pointer; the roadmap-reading rules are present" -f @((Get-Content -LiteralPath $contractSource -Encoding UTF8)).Count, $contractPointerLines) -ForegroundColor DarkGray
+}
+
 Write-Step 'Smoke test completed'

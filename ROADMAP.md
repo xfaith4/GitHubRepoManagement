@@ -357,7 +357,11 @@ items resume now; the third needs the operator's device on the LAN.
 **Field proof — one elevated (SYSTEM) session covers all three:**
 
 - [ ] Deploy the Release 2.7 Phase D freeze prevention to the live service. All
-      three engineering parts ship; only the install remains. _(state:
+      three engineering parts ship; only the install remains. What exists:
+      [`Install-RepoManagementService.ps1`](scripts/Install-RepoManagementService.ps1),
+      [`Install-PortalWatchdog.ps1`](scripts/service/Install-PortalWatchdog.ps1)
+      and [`Watch-PortalHealth.ps1`](scripts/service/Watch-PortalHealth.ps1),
+      covered by the module smoke's installer and watchdog gates. _(state:
       smoke-tested → needs an elevated Windows install)_
 - [ ] Run the elevated
       [`Install-PortalWatchdog.ps1`](scripts/service/Install-PortalWatchdog.ps1)
@@ -387,14 +391,24 @@ items resume now; the third needs the operator's device on the LAN.
       [Evidence](evidence/verified/scheduled-loop-proof-2026-08-18.md) links
       both halves of the full-loop proof.
 - [ ] Operator-verify the Release 3.1 empty-room gate against the live portal
-      (the refusal, the disabled approve controls, the stranded badge).
+      (the refusal, the disabled approve controls, the stranded badge). What
+      exists:
+      [`Automation.RunnerPresence.ps1`](backend/modules/automation/Automation.RunnerPresence.ps1)
+      and [`runnerPresence.ts`](frontend/lib/runnerPresence.ts), both gated.
+      Only eyes on the live portal remain.
       _(state: smoke-tested; re-homed from 3.1 on closure)_
 - [ ] Operator-verify Release 3.1 engine attribution on the live portal (the
       `engine` block above the findings, `providerId` null for rule engines).
+      What exists:
+      [`RepositoryImprovement.Workflow.ps1`](backend/modules/docaudit/RepositoryImprovement.Workflow.ps1)
+      and [`AiDocImprovement.ps1`](backend/modules/ai/AiDocImprovement.ps1).
       _(state: smoke-tested; re-homed from 3.1 on closure)_
 - [ ] Operator-verify Release 3.5 on the live portal — the before/after
       screenshots of every tab the trust report describes, the scope toggle,
-      the runner pill, and the async panels under a real slow backend.
+      the runner pill, and the async panels under a real slow backend. The
+      per-finding record of what shipped is
+      [`trust-report.md`](docs/reference/trust-report.md); this item is the
+      eyes-on half.
       _(state: smoke-tested; re-homed from 3.5 on closure 2026-08-17)_
 
 **Field proof — credential / calendar:**
