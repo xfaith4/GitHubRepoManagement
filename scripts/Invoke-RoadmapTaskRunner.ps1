@@ -46,6 +46,23 @@
     local commits refuses as `default-branch-ahead`, and a diverged one refuses
     outright. Never a merge, never a rebase, never a force.
 
+.PARAMETER StopFilePath
+    Release 2.9 — a way to stop a detached runner without hunting for its PID.
+    A headless runner is launched detached so a tool timeout cannot strand a
+    claim mid-run, which means it OUTLIVES the session that started it: one
+    survived 17 hours on 2026-08-19, raced the api-host smoke twice, and
+    committed in-flight work onto local `main` before the repo-root guard
+    existed. Killing it needed `Stop-Process`, which an agent may not be
+    permitted to call and an operator has to look up a PID for.
+
+    Same shape as the api-host's `-ShutdownSignalPath`: create this file and
+    the loop exits at its next poll boundary — between tasks, never mid-task,
+    because abandoning a running `claude` session would leave a claimed item
+    with no owner. Defaults to `output/roadmap-task-runner.stop`, is cleared
+    at startup so a stale marker cannot kill a fresh runner, and is consumed
+    when honored. `scripts/Stop-RoadmapTaskRunner.ps1` is the friendly front
+    door.
+
 .PARAMETER LoadFunctionsOnly
     Dot-source the pure functions without running (used by the module smoke).
 
@@ -65,6 +82,7 @@ param(
     [switch]$DryRun,
     [switch]$AcknowledgeStaleBase,
     [switch]$SyncMain,
+    [string]$StopFilePath,
     [switch]$LoadFunctionsOnly
 )
 
@@ -73,6 +91,7 @@ $ErrorActionPreference = 'Stop'
 
 if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) { $WorkspaceRoot = Split-Path -Parent $PSScriptRoot }
 if ([string]::IsNullOrWhiteSpace($QueuePath)) { $QueuePath = Join-Path $WorkspaceRoot 'output\roadmap-task-queue.jsonl' }
+if ([string]::IsNullOrWhiteSpace($StopFilePath)) { $StopFilePath = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.stop' }
 $runsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
 
 # Hoisted to an explicit script-scoped value: Invoke-QueuedTask reads it from
@@ -280,7 +299,8 @@ function New-RunnerHeartbeat {
         [int]$PollSeconds = 15,
         [int]$ClaimedCount = 0,
         [AllowEmptyString()][string]$Mode = 'interactive',
-        [AllowEmptyString()][string]$BeatAt = ''
+        [AllowEmptyString()][string]$BeatAt = '',
+        [AllowEmptyString()][string]$StopFilePath = ''
     )
 
     if ([string]::IsNullOrWhiteSpace($BeatAt)) { $BeatAt = (Get-Date).ToUniversalTime().ToString('o') }
@@ -296,12 +316,53 @@ function New-RunnerHeartbeat {
         claimedCount     = $ClaimedCount
         queuePath        = $QueuePath
         lastHeartbeatAt  = $BeatAt
+        # How to stop this runner, carried WITH the evidence that it exists.
+        # Whoever finds the heartbeat is exactly whoever needs to stop it.
+        stopFilePath     = $StopFilePath
     }
 }
 
 function Get-RunnerHeartbeatPath {
     param([Parameter(Mandatory)][string]$WorkspaceRoot)
     return (Join-Path $WorkspaceRoot 'output\roadmap-task-runner.heartbeat.json')
+}
+
+function Get-RunnerStopFilePath {
+    param([Parameter(Mandatory)][string]$WorkspaceRoot)
+    return (Join-Path $WorkspaceRoot 'output\roadmap-task-runner.stop')
+}
+
+function Test-RunnerStopRequested {
+    <#
+    .SYNOPSIS
+        Has an operator asked this runner to stop?
+    .DESCRIPTION
+        Checked at poll boundaries and between claims -- never mid-task. A
+        stop that abandoned a running `claude` session would leave a claimed
+        item with no owner and a half-written branch, which is the state this
+        whole subsystem exists to avoid. Stopping between units of work costs
+        at most one task's remaining time and leaves the queue coherent.
+    #>
+    param([Parameter(Mandatory)][string]$StopFilePath)
+    if ([string]::IsNullOrWhiteSpace($StopFilePath)) { return $false }
+    return (Test-Path -LiteralPath $StopFilePath)
+}
+
+function Clear-RunnerStopFile {
+    <#
+    .SYNOPSIS
+        Consume the stop marker so it cannot kill the NEXT runner.
+    .DESCRIPTION
+        A marker left behind would stop a freshly started runner at its first
+        poll, which reads as "the runner will not start" and sends the
+        operator hunting for a fault that is a leftover file. Cleared both at
+        startup and on honored stop.
+    #>
+    param([Parameter(Mandatory)][string]$StopFilePath)
+    if ([string]::IsNullOrWhiteSpace($StopFilePath)) { return }
+    if (-not (Test-Path -LiteralPath $StopFilePath)) { return }
+    try { Remove-Item -LiteralPath $StopFilePath -Force -ErrorAction Stop }
+    catch { Write-Warning ("Could not consume the runner stop file '{0}': {1}. Remove it by hand or the next runner will stop at its first poll." -f $StopFilePath, $_.Exception.Message) }
 }
 
 function Write-RunnerHeartbeat {
@@ -595,8 +656,17 @@ $heartbeatPath = Get-RunnerHeartbeatPath -WorkspaceRoot $WorkspaceRoot
 Write-Host ("Roadmap task runner — queue: {0}" -f $QueuePath) -ForegroundColor White
 Write-Host ("  mode: {0}{1}  permission: {2}" -f $runnerMode, $(if ($DryRun) { ' (dry-run)' } else { '' }), $PermissionMode) -ForegroundColor DarkGray
 Write-Host ("  heartbeat: {0}" -f $heartbeatPath) -ForegroundColor DarkGray
+# A marker left by a previous run would stop this one at its first poll.
+Clear-RunnerStopFile -StopFilePath $StopFilePath
+Write-Host ("  stop with: New-Item -ItemType File '{0}'  (honored at the next poll boundary)" -f $StopFilePath) -ForegroundColor DarkGray
 
 do {
+    if (Test-RunnerStopRequested -StopFilePath $StopFilePath) {
+        Write-Host ("Stop requested ({0}); exiting before claiming anything." -f $StopFilePath) -ForegroundColor Yellow
+        Clear-RunnerStopFile -StopFilePath $StopFilePath
+        break
+    }
+
     $claimable = @(Get-QueueEntries -QueuePath $QueuePath | Where-Object {
             (Get-TaskSummaryStatus -SummaryPath (Join-Path $runsDir ("{0}.summary.json" -f $_.runId))) -eq 'queued'
         })
@@ -605,14 +675,26 @@ do {
     # itself while working would look absent exactly when the portal most needs
     # to know it is there — before queueing anything.
     Write-RunnerHeartbeat -Path $heartbeatPath -Heartbeat (New-RunnerHeartbeat `
-            -QueuePath $QueuePath -PollSeconds $PollSeconds -ClaimedCount $claimable.Count -Mode $runnerMode)
+            -QueuePath $QueuePath -PollSeconds $PollSeconds -ClaimedCount $claimable.Count -Mode $runnerMode -StopFilePath $StopFilePath)
 
     if ($claimable.Count -eq 0) {
         if ($Once) { Write-Host 'No queued tasks.' -ForegroundColor DarkGray; break }
         Start-Sleep -Seconds $PollSeconds
         continue
     }
-    foreach ($entry in $claimable) { Invoke-QueuedTask -Entry $entry }
+    foreach ($entry in $claimable) {
+        # Between tasks, never mid-task: abandoning a running claude session
+        # would leave a claimed item with no owner and a half-written branch.
+        if (Test-RunnerStopRequested -StopFilePath $StopFilePath) {
+            Write-Host ("Stop requested ({0}); finishing between tasks with {1} still queued." -f $StopFilePath, @($claimable).Count) -ForegroundColor Yellow
+            break
+        }
+        Invoke-QueuedTask -Entry $entry
+    }
+    if (Test-RunnerStopRequested -StopFilePath $StopFilePath) {
+        Clear-RunnerStopFile -StopFilePath $StopFilePath
+        break
+    }
     if ($Once) { break }
     Start-Sleep -Seconds $PollSeconds
 } while ($true)

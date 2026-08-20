@@ -474,14 +474,33 @@ engineering half depends on none of these.
 
 **Known issues:**
 
-- [ ] **[non-blocker]** The headless task runner has no stop mechanism — a
-      detached `while ($true)` poll loop survives its session. Proven twice
-      on 2026-08-19: a 17-hour orphan runner raced the api-host smoke's
-      dispatch fixture, and later committed in-flight work onto local `main`
-      (recovered; `origin/main` untouched, PR #157 added the repo-root
-      guard). Needs a stop-file like the api-host's shutdown signal, and the
-      smoke should enqueue into an isolated queue rather than the operator's.
+- [x] **[non-blocker]** The headless task runner has no stop mechanism —
+      **fixed 2026-08-20.** A detached `while ($true)` loop survives its
+      session; on 2026-08-19 one ran 17 hours, raced the api-host smoke twice
+      and committed in-flight work onto local `main` (recovered, `origin/main`
+      untouched; PR #157 added the repo-root guard). Stopping it required a
+      PID and `Stop-Process` — which an agent may not be permitted to call.
+      Now [`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1)
+      watches a stop marker (same shape as the api-host's
+      `-ShutdownSignalPath`), honored at a poll boundary **between tasks** so a
+      running `claude` session is never abandoned mid-work; the marker is
+      cleared at startup and consumed when honored, so it cannot kill the next
+      runner; and the heartbeat carries `stopFilePath`, because whoever finds
+      a runner is whoever needs to stop it.
+      [`Stop-RoadmapTaskRunner.ps1`](scripts/Stop-RoadmapTaskRunner.ps1) is
+      the front door and WAITS for the exit rather than assuming it. Gate:
+      the module smoke starts a real detached runner, stops it with the
+      marker, and asserts exit 0, marker consumed, and that a stale marker
+      does NOT kill a fresh runner.
       _(re-homed from 3.2 → 3.3 → here)_
+- [ ] **[non-blocker]** The api-host smoke still enqueues into the operator's
+      REAL `output/roadmap-task-queue.jsonl` rather than an isolated fixture
+      queue — the other half of the same 2026-08-19 race. The runner already
+      accepts `-QueuePath`; the host side resolves it in four places, only one
+      of which is the canonical
+      [`Automation.RoadmapQueue.ps1`](backend/modules/automation/Automation.RoadmapQueue.ps1)
+      resolver. Route all four through it, then the smoke can point at a
+      fixture. _(state: scaffolded — resolver exists, callers bypass it)_
 - [ ] **[non-blocker]** `Dashboard.tsx` is ~1,750 lines of hooks and handlers
       above the return; Release 3.5 deferred the Operations panels' full
       stale-keeps-last-good rendering to this refactor. _(inherited 2.7 →
