@@ -357,7 +357,15 @@ items resume now; the third needs the operator's device on the LAN.
 **Field proof — one elevated (SYSTEM) session covers all three:**
 
 - [ ] Deploy the Release 2.7 Phase D freeze prevention to the live service. All
-      three engineering parts ship; only the install remains. What exists:
+      three engineering parts ship; only the install remains.
+      **Measured 2026-08-20:** the running service is missing **4 of 52**
+      declared GET routes (`/api/maintenance/ledgers`, `/api/maintenance/backups`,
+      `/api/portfolio/scan/status`, `/api/portfolio/snapshot`) - it predates
+      Release 3.5. One elevated command upgrades it
+      (`Install-RepoManagementService.ps1 -Action Repair`), and
+      [`Test-LiveServiceCurrency.ps1`](scripts/Test-LiveServiceCurrency.ps1)
+      proves whether it landed rather than trusting a health check, which
+      answered 200 the entire time the service was weeks behind. What exists:
       [`Install-RepoManagementService.ps1`](scripts/Install-RepoManagementService.ps1),
       [`Install-PortalWatchdog.ps1`](scripts/service/Install-PortalWatchdog.ps1)
       and [`Watch-PortalHealth.ps1`](scripts/service/Watch-PortalHealth.ps1),
