@@ -237,6 +237,31 @@ function Invoke-AuditRepoDocumentation {
     $warningCount  = @($findings | Where-Object { $_.severity -eq 'warning'  }).Count
     $infoCount     = @($findings | Where-Object { $_.severity -eq 'info'     }).Count
 
+    # Which severities may FREEZE dispatch is declared in doc-standards.json,
+    # not decided here. Until 2026-08-20 this code blocked on any warning OR
+    # critical while `dispatchReadinessRules` named only a missing README -- an
+    # undeclared gate that outranked the config meant to be authoritative. On
+    # the real portfolio it froze SEVEN repositories that had contract-quality
+    # roadmaps and real pending work, every one of them for a single warning:
+    # a missing LICENSE file. Whether a repo has a LICENSE has no bearing on
+    # whether an agent can safely work its roadmap.
+    #
+    # Criticals still block. Warnings and info are reported on the repo and are
+    # visible in docFindings; they no longer gate. Re-tightening is a config
+    # edit (`blocks`), not a code change.
+    $blockingSeverities = @('critical')
+    $gateConfig = Get-DocAuditObjectValue -InputObject $Standards -PropertyName 'dispatchReadinessRules' -Default $null
+    if ($null -ne $gateConfig) {
+        $severityGate = Get-DocAuditObjectValue -InputObject $gateConfig -PropertyName 'docFindingSeverityGate' -Default $null
+        if ($null -ne $severityGate) {
+            $declaredBlocks = @(Get-DocAuditObjectValue -InputObject $severityGate -PropertyName 'blocks' -Default @())
+            # An EMPTY list is not a licence to gate on nothing by accident --
+            # a config that failed to parse must not silently open the gate.
+            if (@($declaredBlocks).Count -gt 0) { $blockingSeverities = @($declaredBlocks | ForEach-Object { [string]$_ }) }
+        }
+    }
+    $blockingFindingCount = @($findings | Where-Object { [string]$_.severity -in $blockingSeverities }).Count
+
     # --- Compute DispatchReadiness ---
     $readiness = switch ($RoadmapState) {
         'missing' {
@@ -253,7 +278,7 @@ function Invoke-AuditRepoDocumentation {
         }
         'pending' {
             if (-not $hasReadme) { 'blocked' }
-            elseif ($criticalCount -gt 0 -or $warningCount -gt 0) { 'needs-doc-standardization' }
+            elseif ($blockingFindingCount -gt 0) { 'needs-doc-standardization' }
             else { 'ready' }
         }
         default {
