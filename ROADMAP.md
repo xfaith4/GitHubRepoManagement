@@ -482,18 +482,30 @@ engineering half depends on none of these.
 
 **Known issues:**
 
-- [ ] **The console cannot answer its own Question 6.** The product direction
-      promises "which repos have a clearly actionable next pending work item";
-      the roadmap audit computes it (INcendiary: `pendingCount` 71,
-      `nextPendingItem` = "Phase 23 - Event History Archive"), but the
-      assessment payload the dashboard renders carries **neither field** -
-      absent, not null, on **0 of 58** entries. Measured end to end
-      2026-08-20. The join between
-      [`DocAudit.Scanner.ps1`](backend/modules/docaudit/DocAudit.Scanner.ps1)
-      output and the assessment entry drops them, so 34 repos with roadmaps
-      show no next step on the surface an operator actually opens. Highest-
-      value remaining fix now that dispatch is unfrozen. _(state: scaffolded -
-      the data exists one route away)_
+- [x] ~~**The console cannot answer its own Question 6.**~~ **RETRACTED
+      2026-08-20 - the finding was wrong and the capability exists.** The
+      assessment payload carries `pendingItemCount`, `nextPendingItemText`, a
+      value-scored `topValueItem` and the full `pendingItems` list on 18 of 58
+      entries, and
+      [`InsightsView.tsx`](frontend/components/InsightsView.tsx) renders it as
+      "Next focus:" while
+      [`OperationsWorkspaceView.tsx`](frontend/components/OperationsWorkspaceView.tsx)
+      pre-fills the dispatch task from it. The review grepped the payload for
+      `pendingCount`/`nextPendingItem` - the names `/api/roadmap/audit` uses -
+      and read their absence as absent data. **The real defect, much smaller:**
+      the two routes name the same concepts differently, which is what made a
+      careful check reach a false conclusion. Worth aligning, not rebuilding.
+      _(state: done - capability verified end to end; naming drift recorded
+      below)_
+- [ ] **Two routes name the same concepts differently.** `/api/roadmap/audit`
+      emits `pendingCount`/`nextPendingItem`; `/api/portfolio/assessment` emits
+      `pendingItemCount`/`nextPendingItemText` for the same ideas. Both are
+      correct in isolation; together they cost a reviewer a false defect on
+      2026-08-20. Align the names, or document the mapping where both are
+      consumed. What exists:
+      [`Portfolio.Assessment.ps1`](backend/modules/portfolio/Portfolio.Assessment.ps1)
+      and [`DocAudit.Scanner.ps1`](backend/modules/docaudit/DocAudit.Scanner.ps1).
+      _(state: scaffolded - both payloads ship; only the naming differs)_
 - [ ] **Two gates disagree about the same repo.** The console's
       `dispatchReadiness` and the packaging path enforce different standards:
       packaging gates on L3+ maturity, the console on doc findings. On
