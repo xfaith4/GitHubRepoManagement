@@ -1259,7 +1259,7 @@ function Submit-PackagedItemToRunner {
         return [pscustomobject]@{
             refused       = $true
             category      = 'runner-absent'
-            message       = ("No operator runner can claim this packet, so approving it into the queue would strand it. {0} Start one with: pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1" -f [string]$presence.message)
+            message       = ("No operator runner can claim this packet, so approving it into the queue would strand it. {0} Start one with: {1}" -f [string]$presence.message, [string]$presence.startCommand)
             runner        = $presence
             strandedCount = [int]$backlog.queuedTotal
             overrideField = 'acknowledgeNoRunner'

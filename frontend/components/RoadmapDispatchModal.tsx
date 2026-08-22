@@ -497,7 +497,7 @@ const RoadmapDispatchModal: React.FC<RoadmapDispatchModalProps> = ({
               {runnerView.warnBeforeQueueing && (
                 <p className="text-xs text-amber-300/80">
                   Start the runner to release this task:{' '}
-                  <code className="rounded bg-gray-800 px-1 py-0.5">{runnerStartCommand()}</code>
+                  <code className="rounded bg-gray-800 px-1 py-0.5">{runnerStartCommand(dispatchResult?.runner ?? runnerPresence)}</code>
                 </p>
               )}
             </div>

@@ -3486,10 +3486,16 @@ A release should not be marked `done` unless:
     if ($null -eq $runnerResp.Json -or -not $runnerResp.Json.success) {
         throw "GET /api/roadmap/runner returned success=false. HTTP $($runnerResp.StatusCode). Body=$($runnerResp.Content)"
     }
-    foreach ($runnerField in @('state', 'present', 'message', 'queuedTotal', 'queuedClaude', 'queuedCopilot', 'strandedCount')) {
+    foreach ($runnerField in @('state', 'present', 'message', 'queuedTotal', 'queuedClaude', 'queuedCopilot', 'strandedCount', 'startCommand')) {
         if (-not ($runnerResp.Json.data.PSObject.Properties.Name -contains $runnerField)) {
             throw "GET /api/roadmap/runner missing '$runnerField'. Body=$($runnerResp.Content)"
         }
+    }
+    # The header's Copy button hands startCommand to the operator verbatim; a
+    # relative path fails from any terminal that did not open inside the repo.
+    $runnerStartCmd = [string]$runnerResp.Json.data.startCommand
+    if ($runnerStartCmd -notmatch '^pwsh -File "(.+)"$' -or -not [System.IO.Path]::IsPathRooted($Matches[1])) {
+        throw "GET /api/roadmap/runner startCommand must be a quoted, absolute -File path; got '$runnerStartCmd'"
     }
     if ([string]$runnerResp.Json.data.state -notin @('present', 'stale', 'absent')) {
         throw "Runner state must be present/stale/absent; got '$($runnerResp.Json.data.state)'"

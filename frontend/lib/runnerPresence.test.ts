@@ -144,3 +144,29 @@ describe('queue-age alarm', () => {
     expect(resolveRunnerPresence({ state: 'present', present: true }, now).queueAgeAlarmHours).toBeNull();
   });
 });
+
+// The header's Copy button handed `pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1`
+// to an elevated terminal that opened in the user profile, and pwsh answered
+// "not recognized as the name of a script file". The host knows the workspace
+// root; the operator should never have to supply it.
+describe('runnerStartCommand', () => {
+  const absolute = 'pwsh -File "F:\\Development\\GitHubRepoManagement\\scripts\\Invoke-RoadmapTaskRunner.ps1"';
+  const relative = 'pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1';
+
+  it('prefers the absolute command the host built from its workspace root', () => {
+    expect(runnerStartCommand({ state: 'absent', startCommand: absolute })).toBe(absolute);
+  });
+
+  it('carries the absolute command into every surface that names the remedy', () => {
+    const payload = { state: 'absent', present: false, startCommand: absolute };
+    expect(resolveRunnerPresence(payload).detail).toContain(absolute);
+    expect(resolveRunnerPresence(payload).detail).not.toContain(relative);
+    expect(resolveDispatchGate(payload).unmetPrecondition).toContain(absolute);
+  });
+
+  it('falls back to the relative form only when the host did not say where the repo is', () => {
+    expect(runnerStartCommand(null)).toBe(relative);
+    expect(runnerStartCommand({ state: 'absent' })).toBe(relative);
+    expect(runnerStartCommand({ state: 'absent', startCommand: '   ' })).toBe(relative);
+  });
+});

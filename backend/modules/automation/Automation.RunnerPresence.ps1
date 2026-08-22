@@ -56,6 +56,33 @@ function Get-RunnerHeartbeatFilePath {
     return (Join-Path $WorkspaceRoot 'output\roadmap-task-runner.heartbeat.json')
 }
 
+function Get-RunnerStartCommand {
+    <#
+    .SYNOPSIS
+        The command an operator pastes to start the runner — with the script's
+        ABSOLUTE path, so it works from whatever directory the terminal opened in.
+    .DESCRIPTION
+        The header's "No runner" popover copies this verbatim. Its relative form
+        (`pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1`) was pasted into an
+        elevated terminal that opened in the user profile, and pwsh answered
+        "not recognized as the name of a script file" — the host had known the
+        workspace root the whole time and withheld it. Always quoted, so a root
+        with spaces survives the paste unchanged.
+
+        Pure readers with no root (Resolve-RunnerPresence, the in-host refusal)
+        fall back to the relative form; anything that knows the root must use
+        this, and the module smoke fails any host/module payload that hard-codes
+        the relative form again.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][string]$WorkspaceRoot)
+
+    $root = [System.IO.Path]::GetFullPath($WorkspaceRoot)
+    $scriptPath = Join-Path (Join-Path $root 'scripts') 'Invoke-RoadmapTaskRunner.ps1'
+    return ('pwsh -File "{0}"' -f $scriptPath)
+}
+
 function Resolve-RunnerPresence {
     <#
     .SYNOPSIS
@@ -79,6 +106,11 @@ function Resolve-RunnerPresence {
     .PARAMETER MinimumStaleSeconds
         Floor on the staleness budget, so a 1-second poll interval does not make
         every reader race the writer.
+    .PARAMETER StartCommand
+        The command that fixes an absent runner, named in the absent message and
+        carried on the payload as `startCommand`. Defaults to the relative form
+        because this reader is pure and has no workspace root; Get-RunnerPresence
+        passes the absolute one from Get-RunnerStartCommand.
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -86,7 +118,8 @@ function Resolve-RunnerPresence {
         [Parameter()][object]$Heartbeat = $null,
         [Parameter()][datetime]$Now = [datetime]::UtcNow,
         [Parameter()][double]$GraceFactor = 3.0,
-        [Parameter()][int]$MinimumStaleSeconds = 60
+        [Parameter()][int]$MinimumStaleSeconds = 60,
+        [Parameter()][string]$StartCommand = 'pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1'
     )
 
     $nowUtc = _Runner_ToUtc -Value $Now
@@ -105,8 +138,8 @@ function Resolve-RunnerPresence {
             lastHeartbeatAt  = $null
             secondsSinceBeat = $null
             staleAfterSeconds = $MinimumStaleSeconds
-            message          = ('No operator runner has ever reported in. Queued work will sit at "queued" until one runs: ' +
-                                'pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1')
+            message          = ('No operator runner has ever reported in. Queued work will sit at "queued" until one runs: ' + $StartCommand)
+            startCommand     = $StartCommand
             evaluatedAt      = $nowUtc.ToString('o')
         }
     }
@@ -130,6 +163,7 @@ function Resolve-RunnerPresence {
             secondsSinceBeat = $null
             staleAfterSeconds = $staleAfter
             message          = 'A runner heartbeat exists but carries no readable timestamp, so its liveness cannot be confirmed. Treating it as absent.'
+            startCommand     = $StartCommand
             evaluatedAt      = $nowUtc.ToString('o')
         }
     }
@@ -162,6 +196,7 @@ function Resolve-RunnerPresence {
         secondsSinceBeat = $secondsSince
         staleAfterSeconds = $staleAfter
         message          = $message
+        startCommand     = $StartCommand
         evaluatedAt      = $nowUtc.ToString('o')
     }
 }
@@ -192,7 +227,11 @@ function Get-RunnerPresence {
         catch { $heartbeat = $null }
     }
 
-    $presence = Resolve-RunnerPresence -Heartbeat $heartbeat -Now $Now
+    # This reader knows the workspace root, so the command it names is the
+    # absolute one: it is what the header's Copy button and every runner-absent
+    # 409 hand the operator, from a terminal that may have opened anywhere.
+    $startCommand = Get-RunnerStartCommand -WorkspaceRoot $WorkspaceRoot
+    $presence = Resolve-RunnerPresence -Heartbeat $heartbeat -Now $Now -StartCommand $startCommand
     $presence | Add-Member -NotePropertyName 'heartbeatPath' -NotePropertyValue $path -Force
     return $presence
 }
