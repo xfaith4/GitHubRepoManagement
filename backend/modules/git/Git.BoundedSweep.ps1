@@ -74,10 +74,19 @@ function Invoke-BoundedGitCommand {
     $psi.CreateNoWindow = $true
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
+    # stdin is redirected and closed right after start -- never inherited.
+    # When the calling process's own stdin is a pipe (a Start-Job child, a
+    # host launched with piped handles) an inherited stdin made every git
+    # call here hang until this timeout killed it: the api-host smoke's
+    # update/sync step went from 4.4s to ~250s in CI and every fact came
+    # back unavailable. None of these reads need stdin; an empty, closed
+    # one is also what keeps a credential prompt from ever blocking.
+    $psi.RedirectStandardInput = $true
 
     $process = $null
     try {
         $process = [System.Diagnostics.Process]::Start($psi)
+        try { $process.StandardInput.Close() } catch { $null = $_ }
     }
     catch {
         $stopwatch.Stop()
@@ -100,9 +109,17 @@ function Invoke-BoundedGitCommand {
 
         if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
             $timedOut = $true
-            # Kill can race a process that exited between the wait and here;
-            # either way the outcome we need (process gone) holds.
-            try { $process.Kill() } catch { $null = $_ }
+            # Kill the whole tree where the runtime has it (.NET Core 3+):
+            # git's cmd wrapper launches the real git.exe and a shim launches
+            # its own child; an orphaned grandchild keeps the stdout pipe open
+            # and the drain below waits out its full backstop. Windows
+            # PowerShell 5.1 has only Kill(), hence the fallback. Either can
+            # race a process that exited between the wait and here; the
+            # outcome we need (process gone) holds regardless.
+            try { $process.Kill($true) }
+            catch {
+                try { $process.Kill() } catch { $null = $_ }
+            }
             $null = $process.WaitForExit(5000)
         }
 

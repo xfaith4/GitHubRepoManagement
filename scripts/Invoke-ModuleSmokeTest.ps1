@@ -6288,6 +6288,42 @@ Write-Step 'Bounded git sweep - Release 3.2: timeout honored, cap honored, order
             throw 'Hung repo returned facts; unavailable facts must be null/empty, never stale or invented.'
         }
 
+        # --- stdin is never inherited. -------------------------------------
+        # Reproduces the CI regression of 2026-08-19..22: the api-host smoke
+        # runs the host inside a Start-Job child, whose stdin is the job
+        # transport pipe. A git process that inherited that stdin hung until
+        # the 20s timeout killed it -- every read, every repo -- so
+        # /api/update and /api/sync cost ~250s per CI run and returned no git
+        # facts at all. It is git-specific (cmd.exe and where.exe complete in
+        # the same handle shape) and it needs a real job child: a plain pwsh
+        # child with a piped stdin does NOT reproduce it, so this probe runs
+        # under Start-Job and nothing lighter. Shown red against the inheriting
+        # invoker (TimedOut after 15s) before stdin was redirected and closed.
+        $sweepStdinWatch = [System.Diagnostics.Stopwatch]::StartNew()
+        $sweepStdinJob = Start-Job -ScriptBlock {
+            param($Root, $RepoPath)
+            # Literal target path: the dot-source scope gate resolves what every
+            # site loads and refuses a bare variable it cannot follow.
+            . (Join-Path $Root 'backend\modules\git\Git.BoundedSweep.ps1')
+            $probe = Invoke-BoundedGitCommand -RepoPath $RepoPath -GitArgumentList @('--version') -TimeoutSeconds 10
+            [pscustomobject]@{ TimedOut = [bool]$probe.TimedOut; ExitCode = [int]$probe.ExitCode; Value = [string]$probe.Value }
+        } -ArgumentList $WorkspaceRoot, $sweepScanRoot
+        try {
+            if (-not (Wait-Job -Job $sweepStdinJob -Timeout 90)) {
+                throw 'stdin probe job did not finish within 90s; the bounded invoker hangs inside a job child.'
+            }
+            $sweepStdinResults = @(Receive-Job -Job $sweepStdinJob -ErrorAction Stop)
+        }
+        finally {
+            try { Remove-Job -Job $sweepStdinJob -Force } catch { $null = $_ }
+        }
+        $sweepStdinWatch.Stop()
+        if ($sweepStdinResults.Count -lt 1) { throw 'stdin probe job returned nothing; the probe failed before the invoker ran.' }
+        $sweepStdinProbe = $sweepStdinResults[-1]
+        if ($sweepStdinProbe.TimedOut -or $sweepStdinProbe.ExitCode -ne 0 -or $sweepStdinProbe.Value -notmatch '^git version') {
+            throw ("Inside a job child the bounded git call did not complete: timedOut={0} exit={1} value='{2}' after {3}ms. The invoker must redirect and close stdin, never inherit it." -f $sweepStdinProbe.TimedOut, $sweepStdinProbe.ExitCode, $sweepStdinProbe.Value, $sweepStdinWatch.ElapsedMilliseconds)
+        }
+
         # --- The cap is real, and so is the parallelism. --------------------
         # Marker shim: every invocation writes its own start/end tick file;
         # sweep-line overlap over those intervals measures true concurrency.
@@ -6333,7 +6369,7 @@ Set-Content -Path $f -Value ($s.ToString() + ' ' + [datetime]::UtcNow.Ticks.ToSt
             Remove-Item Env:SMOKE_SWEEP_MARKER_DIR -ErrorAction SilentlyContinue
         }
 
-        Write-Host ("  sweep ok: detector failed its violating fixture first; 3 files bare-git free; cap1/cap4 output identical (order included); hung call abandoned at {0}ms against a 30s hang; hung repo short-circuited after 2 timeouts; max observed concurrency 2 under cap 2 with per-repo heartbeat ticks" -f $sweepHangWatch.ElapsedMilliseconds) -ForegroundColor DarkGray
+        Write-Host ("  sweep ok: detector failed its violating fixture first; 3 files bare-git free; cap1/cap4 output identical (order included); hung call abandoned at {0}ms against a 30s hang; hung repo short-circuited after 2 timeouts; git completed under a piped stdin in {1}ms (stdin redirected+closed, never inherited); max observed concurrency 2 under cap 2 with per-repo heartbeat ticks" -f $sweepHangWatch.ElapsedMilliseconds, $sweepStdinWatch.ElapsedMilliseconds) -ForegroundColor DarkGray
     }
     finally {
         Remove-Item -Recurse -Force $sweepFixtureRoot -ErrorAction SilentlyContinue
