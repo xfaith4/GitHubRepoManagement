@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-22 — The "No runner" Copy button hands over a command that works from any terminal
+
+### Changes
+
+- **`pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1` was pasted from the header's Copy button into an elevated terminal that opened in the user profile, and pwsh answered "not recognized as the name of a script file".** The indicator knew the runner was absent and offered the remedy, but the remedy was a relative path that only works from a shell already inside the repo — while the host had known its `-WorkspaceRoot` the whole time. `GET /api/roadmap/runner` now carries `startCommand`, built by the new `Get-RunnerStartCommand` in [`Automation.RunnerPresence.ps1`](backend/modules/automation/Automation.RunnerPresence.ps1) with the script path absolute and quoted, and every surface that names the remedy reads it instead of a constant: the header popover and its Copy button, the dispatch wizard's warning, the improvement-workflow modal, the absent-runner message, the local-queue success message, and the `runnerCommand` field of every `runner-absent` 409. The relative form survives only as the UI's fallback for a status call that failed.
+- **Gates:** the module smoke asserts the command is rooted, quoted, points at the workspace's own script, and travels on the presence payload — and a tripwire fails the build if the api-host or the packaging module hard-codes the relative command into a payload again (shown red against the pre-fix host source). The API-host smoke requires `startCommand` on the route and checks it is absolute; the frontend tests cover the host-first preference and the fallback.
+
 ## 2026-08-15 — Lane 0.8 P1: twelve latent bugs fixed, five rule classes ratcheted to zero
 
 ### Changes

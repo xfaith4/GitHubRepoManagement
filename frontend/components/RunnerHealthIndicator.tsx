@@ -39,16 +39,18 @@ function RunnerHealthIndicator() {
 
   const view = resolveRunnerPresence(payload);
 
+  // The host's absolute form, so the paste works from an elevated terminal
+  // that opened in the user profile — not only from a shell already in the repo.
   const copyCommand = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(runnerStartCommand());
+      await navigator.clipboard.writeText(runnerStartCommand(payload));
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
       // Clipboard can be unavailable (permissions, non-secure context); the
       // command stays visible as selectable text either way.
     }
-  }, []);
+  }, [payload]);
 
   const palette: Record<string, { pill: string; dot: string }> = {
     ok: { pill: 'bg-emerald-900/50 text-emerald-300 border border-emerald-700', dot: 'bg-emerald-400' },
@@ -84,7 +86,7 @@ function RunnerHealthIndicator() {
           <p className="text-xs text-gray-200 mb-2">{view.detail}</p>
           {view.severity !== 'ok' && (
             <div className="rounded border border-gray-600 bg-gray-900 px-2 py-1.5 flex items-center justify-between gap-2">
-              <code className="text-[11px] text-gray-300 break-all select-all">{runnerStartCommand()}</code>
+              <code className="text-[11px] text-gray-300 break-all select-all">{runnerStartCommand(payload)}</code>
               <button
                 type="button"
                 onClick={() => { void copyCommand(); }}

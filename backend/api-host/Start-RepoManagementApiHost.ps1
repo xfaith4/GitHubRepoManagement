@@ -7550,13 +7550,13 @@ try {
                                     Add-MetricCounter -Name 'api_requests_total'
                                     Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
                                         success  = $false
-                                        error    = ("No operator runner can claim this packet, so approving it would strand it. {0} Start one with: pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1" -f [string]$approvePresence.message)
+                                        error    = ("No operator runner can claim this packet, so approving it would strand it. {0} Start one with: {1}" -f [string]$approvePresence.message, [string]$approvePresence.startCommand)
                                         category = 'runner-absent'
                                         data     = @{
                                             packetId      = $approvePacketId
                                             status        = 'pending-approval'
                                             dispatched    = $false
-                                            runnerCommand = 'pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1'
+                                            runnerCommand = [string]$approvePresence.startCommand
                                             runner        = $approvePresence
                                             strandedCount = [int]$approveBacklog.queuedTotal
                                             overrideField = 'acknowledgeNoRunner'
@@ -8488,10 +8488,10 @@ try {
                         Add-MetricCounter -Name 'api_requests_total'
                         Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
                             success  = $false
-                            error    = ("No operator runner can claim this task, so queueing it would strand it. {0} Start one with: pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1" -f [string]$agentPresence.message)
+                            error    = ("No operator runner can claim this task, so queueing it would strand it. {0} Start one with: {1}" -f [string]$agentPresence.message, [string]$agentPresence.startCommand)
                             category = 'runner-absent'
                             data     = @{
-                                runnerCommand = 'pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1'
+                                runnerCommand = [string]$agentPresence.startCommand
                                 runner        = $agentPresence
                                 strandedCount = [int]$agentBacklog.queuedTotal
                                 overrideField = 'acknowledgeNoRunner'
@@ -8521,7 +8521,7 @@ try {
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data = @{
-                            message = 'Task queued for the local Claude Code runner. Run scripts/Invoke-RoadmapTaskRunner.ps1 (as yourself) to execute it on the local repo.'
+                            message = ('Task queued for the local Claude Code runner. Run {0} (as yourself) to execute it on the local repo.' -f (Get-RunnerStartCommand -WorkspaceRoot $WorkspaceRoot))
                             output = $runResult.Output
                             latestHistory = $latest
                         }
@@ -10624,7 +10624,7 @@ try {
                             error    = [string]$inProcessVerdict.message
                             category = [string]$inProcessVerdict.code
                             data     = @{
-                                runnerCommand = 'pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1'
+                                runnerCommand = (Get-RunnerStartCommand -WorkspaceRoot $WorkspaceRoot)
                                 runner        = (Get-RunnerPresence -WorkspaceRoot $WorkspaceRoot)
                             }
                         }
@@ -10661,8 +10661,9 @@ try {
                         # operator to infer from a control that does nothing:
                         # a greyed button with no reason is worse than a failing
                         # one, because broken and not-yet-applicable look alike.
-                        $refusalMessage = ("No operator runner can claim this task, so queueing it would strand it. {0} Start one with: pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1{1}" -f `
+                        $refusalMessage = ("No operator runner can claim this task, so queueing it would strand it. {0} Start one with: {1}{2}" -f `
                             [string]$runnerPresence.message,
+                            [string]$runnerPresence.startCommand,
                             $(if ($strandedCount -gt 0) { " $strandedCount task(s) are already queued and waiting." } else { '' }))
                         Write-HostLog ("WARN roadmap.dispatch.execute correlationId={0} refused - runner {1}, stranded={2} (nothing written)" -f $correlationId, $runnerPresence.state, $strandedCount)
                         Add-MetricCounter -Name 'api_requests_total'
@@ -10671,7 +10672,7 @@ try {
                             error    = $refusalMessage
                             category = 'runner-absent'
                             data     = @{
-                                runnerCommand      = 'pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1'
+                                runnerCommand      = [string]$runnerPresence.startCommand
                                 runner             = $runnerPresence
                                 strandedCount      = $strandedCount
                                 queuedTotal        = [int]$runnerBacklog.queuedTotal

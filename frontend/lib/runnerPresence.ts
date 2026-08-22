@@ -33,6 +33,12 @@ export interface RunnerPresencePayload {
   strandedCount?: number;
   /** Oldest still-queued entry's timestamp (ISO) — the queue-age alarm's raw fact. */
   oldestQueuedAt?: string | null;
+  /**
+   * The command that starts a runner, with the script's ABSOLUTE path, built by
+   * the host from its workspace root. The relative form only works from a shell
+   * already inside the repo — an elevated terminal opens in the user profile.
+   */
+  startCommand?: string;
 }
 
 export type RunnerSeverity = 'ok' | 'warning' | 'error' | 'unknown';
@@ -54,7 +60,13 @@ export interface RunnerPresenceView {
   queueAgeAlarmHours: number | null;
 }
 
-const RUNNER_COMMAND = 'pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1';
+/**
+ * Fallback for when the host has not said where the repo is (status call
+ * failed). Relative, so it only works from a shell already inside the repo —
+ * which is why every surface prefers the host's absolute form through
+ * runnerStartCommand(payload).
+ */
+const RUNNER_COMMAND_FALLBACK = 'pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1';
 
 const QUEUE_AGE_ALARM_MS = 24 * 60 * 60 * 1000;
 
@@ -84,7 +96,7 @@ export function resolveRunnerPresence(
     return {
       severity: 'unknown',
       label: 'Runner unknown',
-      detail: `Could not read runner status. If no runner is running, queued work will wait: ${RUNNER_COMMAND}`,
+      detail: `Could not read runner status. If no runner is running, queued work will wait: ${runnerStartCommand(null)}`,
       needsAttention: false,
       warnBeforeQueueing: true,
       queueAgeAlarmHours: null,
@@ -129,16 +141,25 @@ export function resolveRunnerPresence(
     severity: 'error',
     label: 'No runner',
     detail:
-      `Nothing will execute queued work until a runner runs: ${RUNNER_COMMAND}` + strandedSuffix,
+      `Nothing will execute queued work until a runner runs: ${runnerStartCommand(payload)}` + strandedSuffix,
     needsAttention: stranded > 0 || queueAgeAlarmHours != null,
     warnBeforeQueueing: true,
     queueAgeAlarmHours,
   };
 }
 
-/** The command an operator runs to fix an absent runner. */
-export function runnerStartCommand(): string {
-  return RUNNER_COMMAND;
+/**
+ * The command an operator runs to fix an absent runner.
+ *
+ * Prefers the host's absolute form. The header's Copy button handed the
+ * relative form to an elevated terminal that opened in the user profile, and
+ * pwsh answered "not recognized as the name of a script file" — the host knew
+ * the workspace root the whole time. The operator should never have to supply
+ * it; the relative form survives only for a status call that failed.
+ */
+export function runnerStartCommand(payload?: RunnerPresencePayload | null): string {
+  const fromHost = typeof payload?.startCommand === 'string' ? payload.startCommand.trim() : '';
+  return fromHost.length > 0 ? fromHost : RUNNER_COMMAND_FALLBACK;
 }
 
 export interface DispatchGate {
@@ -184,7 +205,7 @@ export function resolveDispatchGate(
   return {
     canQueue: false,
     unmetPrecondition:
-      `${view.label}: nothing would pick this up. Start the operator runner first — ${RUNNER_COMMAND}.${pile}`,
+      `${view.label}: nothing would pick this up. Start the operator runner first — ${runnerStartCommand(payload)}.${pile}`,
     overrideLabel: 'Queue anyway',
   };
 }

@@ -3951,6 +3951,28 @@ Write-Step 'Runner presence — smoke: queueing into an empty room is visible (R
     'not json at all' | Set-Content -LiteralPath (Get-RunnerHeartbeatFilePath -WorkspaceRoot $backlogWs) -Encoding UTF8
     if ((Get-RunnerPresence -WorkspaceRoot $backlogWs -Now $presenceNow).present) { throw 'A corrupt heartbeat file must report absent, not present' }
 
+    # The command the header's Copy button hands the operator must be rooted.
+    # The relative form was pasted into an elevated terminal that opened in the
+    # user profile and pwsh answered "not recognized as the name of a script
+    # file" — while the host had known the workspace root all along.
+    $startCmd = Get-RunnerStartCommand -WorkspaceRoot $backlogWs
+    if ($startCmd -notmatch '^pwsh -File "(.+)"$') { throw "Get-RunnerStartCommand must return a quoted -File path; got '$startCmd'" }
+    $startCmdPath = $Matches[1]
+    if (-not [System.IO.Path]::IsPathRooted($startCmdPath)) { throw "The runner start command must carry an absolute script path; got '$startCmdPath'" }
+    $expectedRunnerScript = Join-Path (Join-Path ([System.IO.Path]::GetFullPath($backlogWs)) 'scripts') 'Invoke-RoadmapTaskRunner.ps1'
+    if ($startCmdPath -ne $expectedRunnerScript) { throw "The runner start command must point at the workspace's own runner script; got '$startCmdPath', expected '$expectedRunnerScript'" }
+    if ([string]$diskPresence.startCommand -ne $startCmd) { throw 'Get-RunnerPresence must carry the absolute start command on the payload — it is what every runner-absent 409 and the header Copy button hand the operator' }
+    if ([string]$diskPresence.message -notmatch [regex]::Escape($startCmd)) { throw 'The absent message from a root-aware read must name the absolute start command, not the relative one' }
+    if ([string](Resolve-RunnerPresence -Heartbeat $staleBeat -Now $presenceNow).startCommand -ne 'pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1') { throw 'The pure reader has no root and must fall back to the relative command, never an empty string' }
+    # Tripwire: the presence reader is the one place that knows the root, so no
+    # host or module payload may hard-code the relative command again.
+    foreach ($surface in @('backend\api-host\Start-RepoManagementApiHost.ps1', 'backend\modules\automation\Automation.RoadmapPackaging.ps1')) {
+        $surfaceText = Get-Content -LiteralPath (Join-Path $root $surface) -Raw -Encoding UTF8
+        if ($surfaceText -match "runnerCommand\s*=\s*'pwsh -File scripts/" -or $surfaceText -match 'Start one with: pwsh -File scripts/') {
+            throw "$surface hard-codes the relative runner command into a payload; use the presence object's startCommand (or Get-RunnerStartCommand) so the operator is handed an absolute path"
+        }
+    }
+
     # The one dispatch model: the HOST never runs cloud dispatch itself, in
     # either service or interactive mode. Allowing it when the service check
     # happens to be false brings the failure straight back.
