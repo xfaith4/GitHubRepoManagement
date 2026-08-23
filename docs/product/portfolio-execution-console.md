@@ -33,6 +33,10 @@ product's purpose should be obvious from the first interaction (what it
 evaluates, what problems it uncovers, how its findings strengthen a
 portfolio), and discovery → remediation should read as one informative
 workflow that says what was found, why it matters, and what can be improved.
+The admission rule for any roadmap item follows from this: **one hour spent
+on this product must save more than one hour across the portfolio it
+manages.** An item that only makes the product better at managing,
+validating, or describing itself is maintenance, not roadmap work.
 
 ---
 
@@ -186,7 +190,13 @@ repairs in step 5.
 - Preserve genuine completion history when rewriting roadmaps.
 - Treat roadmap audit failures as first-class findings, not hidden parser
   trivia.
-- Enforce L3+ roadmap maturity as a gate before any Copilot dispatch.
+- Require a **sufficient execution contract** before any dispatch — scope,
+  acceptance criteria, and a verification an agent can run — with the
+  required contract sized to repository kind and task scope. A mature (L3+)
+  roadmap is how a large application supplies it; a one-task utility may
+  supply it in the task itself. (Replaced the blanket "L3+ before any
+  dispatch" rule on 2026-08-23; maturity stays the default way
+  roadmap-sourced work meets the bar, not a universal precondition.)
 - Cap Copilot lane parallelism at two; never blend lanes within a single
   repo.
 - Do not prescribe a destination. A conclusion of **appropriate as-is** is a
