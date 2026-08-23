@@ -23,6 +23,17 @@ roadmaps and documentation, ranks the next best work by value, packages clean
 Copilot Agent prompts, and reports progress without duplicate effort or
 hidden ambiguity.
 
+**Central principle (2026-08-23).** The product does not prescribe what a
+repository should become. It identifies and strengthens the foundations that
+allow each repository to succeed at what it is intended to be. Every
+repository in the portfolio ends with an **explainable conclusion** — and a
+next action only where improvement is warranted. Remaining roadmap work is
+prioritized on **operational efficiency and actionable improvement**: the
+product's purpose should be obvious from the first interaction (what it
+evaluates, what problems it uncovers, how its findings strengthen a
+portfolio), and discovery → remediation should read as one informative
+workflow that says what was found, why it matters, and what can be improved.
+
 ---
 
 ## Ten Core Questions the Product Must Answer
@@ -46,6 +57,46 @@ hidden ambiguity.
 
 ---
 
+## Foundation Domains
+
+The product evaluates repositories against **foundation domains** — the
+building blocks that make virtually any repository stronger regardless of
+purpose, technology, maturity level, or operating model. Five are the
+starting set:
+
+| Domain | The question it answers | Where it shows today |
+| --- | --- | --- |
+| **Documentation** | Can a newcomer understand and use this repository from what is written down? | README contract (`ai-doc-templates.json` → `readmeContract`), `doc-standards.json` findings |
+| **Purpose** | Is it clear what this repository is for and who it serves? | README Overview / Usage contract; the portfolio scope classifier |
+| **Planning** | Is there a credible plan or roadmap for what comes next? | Roadmap contract audit, maturity L0–L4, pending work and next item |
+| **Structure** | Is the layout maintainable and navigable by intent? | `repo-structure-standards.json` presence audit |
+| **Intentional engineering** | Is there evidence the work is deliberate — tests, CI, releases, conventions? | Partial today (Actions and merge-readiness checks); to be defined before it is scored |
+
+These are **domains, not a fixed scoring taxonomy.** The product should
+refine them — split, merge, add, or re-weight — as it meets new repository
+types and operating models. The implementation of each domain varies by
+repository; the principle behind it does not. Standards stay flexible enough
+for a library, a script collection, a service, an archived experiment, and a
+minimal utility each to be judged on what it is intended to be.
+
+**An outcome is not necessarily a repair.** For every repository the product
+must reach one of three conclusions:
+
+- **Strengthen** — a domain is missing, weak, or unclear, and a preview-first
+  next action is offered (repair the README, roadmap, or structure, or
+  package a task).
+- **Appropriate as-is** — the repository is healthy, intentionally minimal,
+  externally managed, archived, or out of scope, and the product can say so
+  and say why.
+- **Insufficiently understood** — the product cannot yet reach a conclusion
+  and names what it would need (a classifier gap, an unreadable roadmap, a
+  remote it cannot see). This is a finding about the product, not the repo.
+
+The requirement in every case is an explainable conclusion grounded in
+visible repository state.
+
+---
+
 ## Product Principles
 
 - **Roadmap-first workflow** — roadmap files are a primary source of truth
@@ -62,6 +113,15 @@ hidden ambiguity.
   and dashboard foundations rather than rebuilding from scratch.
 - **Continuous improvement of roadmap quality** — roadmap format itself
   should improve over time to support better parsing and safer automation.
+- **Foundations, not destinations** — the product does not prescribe what a
+  repository should become; it identifies and strengthens the foundations
+  that allow each repository to succeed at what it is intended to be.
+- **Every repository reaches an explainable conclusion** — strengthen,
+  appropriate as-is, or insufficiently understood. "Not applicable" and "not
+  dispatchable" are never a repository's final word.
+- **Flexible standards, constant principles** — the foundation domains are
+  refined as the product meets new repository types and operating models;
+  implementation varies, the principle holds.
 
 ---
 
@@ -95,6 +155,11 @@ Every feature in the product should serve one of these ten ordered steps:
 Anything that does not serve one of these steps is out of scope for the
 product direction.
 
+Step 3's "recommended next action" may be **none — appropriate as-is**. That
+is a complete outcome, not a gap: a repository the product understands well
+enough to leave alone has been served by steps 1–4 as fully as one it
+repairs in step 5.
+
 ---
 
 ## Risks
@@ -124,6 +189,13 @@ product direction.
 - Enforce L3+ roadmap maturity as a gate before any Copilot dispatch.
 - Cap Copilot lane parallelism at two; never blend lanes within a single
   repo.
+- Do not prescribe a destination. A conclusion of **appropriate as-is** is a
+  valid, recorded outcome and must be explainable from visible repo state.
+- A gate's refusal (for example, below L3 maturity) is never a repository's
+  final word: the refusal must name the foundation to strengthen, or the
+  conclusion that the repository is appropriate as-is.
+- Treat the foundation domains as refinable data, not as a scoring taxonomy a
+  repository must be forced to fit.
 
 ---
 
@@ -142,3 +214,13 @@ The product is moving in the right direction when:
 - a single normalized lifecycle state per repo answers "what is the state of
   my collection, and what should I work on next?" without opening individual
   files
+- every repository in the portfolio carries an explainable conclusion —
+  strengthen, appropriate as-is, or insufficiently understood — and none
+  reads as merely "not applicable" or "not dispatchable"
+- each finding states what was found, why it matters, and what can be
+  improved, and a newcomer can tell from the first screen what the product
+  evaluates and what its findings are for
+- foundation coverage is measurable over time, so a quarter's work is visible
+  as foundations gained rather than features shipped
+- standards flex by repository kind without the principle behind them
+  changing
