@@ -5475,3 +5475,192 @@ milestone only — Lane 0.2's certificate recovery (elevated, on Ben's list).
 ---
 
 ---
+
+## Release 2.9 — completed items (archived 2026-08-23 from ROADMAP.md)
+
+Moved verbatim on 2026-08-23 when Release 2.9 was resequenced under the
+product lens (ROADMAP §2). Release 2.9 itself stays open; only its `[x]`
+items — which the archive rule says must not remain in `ROADMAP.md` — live
+here now, evidence prose intact.
+
+- [x] Touch ergonomics beyond the Release 2.5 Phase 1 surfaces:
+      ~44px targets and a tap equivalent for every hover-only affordance across
+      the Phases 2-3 surfaces. _(state: smoke-tested 2026-08-19 — an audit
+      found **265** interactive elements whose declared padding and text size
+      put them under 44px, and fixing 265 call sites would be 265 chances to
+      drift and 265 chances to bloat the desktop. A size floor is a property
+      of the INPUT DEVICE, so it is one rule keyed on the device:
+      `@media (pointer: coarse)` in `styles.css`, which never matches a mouse
+      — desktop density is untouched by construction. Checkboxes are grown by
+      transform, not stretched to 44px wide, because a stretched checkbox
+      reads as a broken control. Hover-only definitions (a `title` never
+      appears on touch, so those definitions were absent, not subtle) got a
+      tap path via [`DefinitionHint`](frontend/components/DefinitionHint.tsx),
+      which ADDS the disclosure without removing the desktop hover. Gate: the
+      tap-size detector rejects a 32px fixture first, the floor is asserted to
+      exist inside the coarse-pointer query and NOWHERE else, and both
+      consumer surfaces are asserted to use the hint.)_
+
+      **Plan correction, recorded rather than quietly dropped:** this
+      release's validation plan promised a sweep asserting "what the test
+      renderer computes". It cannot: jsdom has no layout engine and this repo
+      has no Playwright, so rendered geometry is unavailable to any gate here.
+      The static audit that stood in for it reported 265 of 265 elements
+      failing — a measurement that says everything is broken is a broken
+      measurement, and it is exactly the risk this release wrote down. The
+      device-level CSS rule sidesteps the measurement problem instead of
+      faking it: there is nothing per-element to measure when the floor is
+      global. **True rendered-geometry verification is the physical-device
+      item below**, which is where it always belonged.
+- [x] The tap-through mobile agent-run list from the agent-activity
+      indicator. _(state: smoke-tested 2026-08-19 — the indicator has said
+      "3 agent runs" since Release 2.5 while the answer to *which three* lived
+      only in a hover title, and the pill itself was a `<span>`: visible,
+      countable, and dead to a finger. It is now a button that opens
+      [`AgentRunSheet`](frontend/components/AgentRunSheet.tsx), reusing the
+      2.5 `mobile-sheet` class so a phone gets the whole viewport and a
+      desktop gets an ordinary dialog. Each run names its repository, state,
+      requested task, branch and pull request; empty, error and loading are
+      three distinct states, because a list that cannot tell them apart reads
+      as broken. Read-only by design — a sheet opened from a status pill is a
+      place to look, not a place to dispatch from. Gate: the dead-end
+      detector rejects a handler-less span fixture first, then asserts the
+      button, the dialog announcement, the mobile-sheet class and all three
+      states.)_
+
+- [x] One real `claude` run through
+      [`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1):
+      claim → branch → run → verify → commit → `awaiting-review`. Closes the
+      Release 2.8 residual. _(state: operator-verified — proven three times:
+      manual 2026-08-15 (PRs #140/#142) and scheduled 2026-08-18, above.)_
+
+- [x] **Release 3.1's scheduled-trigger loop proof** — operator-verified
+      2026-08-18: package-run → approve with dispatch → runner → `claude` →
+      PR [xfaith4/INcendiary#7](https://github.com/xfaith4/INcendiary/pull/7)
+      `OPEN CLEAN`; merge deliberately the operator's click.
+      [Evidence](evidence/verified/scheduled-loop-proof-2026-08-18.md) links
+      both halves of the full-loop proof.
+
+- [x] Operator-verify Release 2.1 against the live workspace and record the
+      sign-off, closing the release formally. _(state: operator-verified
+      2026-08-18 — 20,147 maturity rows / 20 captured days / schema v2 on the
+      native provider, queried against the live `output/app.db`; recorded in
+      `evidence/operator-verification-log.jsonl`.)_
+
+- [x] ~~**The console cannot answer its own Question 6.**~~ **RETRACTED
+      2026-08-20 - the finding was wrong and the capability exists.** The
+      assessment payload carries `pendingItemCount`, `nextPendingItemText`, a
+      value-scored `topValueItem` and the full `pendingItems` list on 18 of 58
+      entries, and
+      [`InsightsView.tsx`](frontend/components/InsightsView.tsx) renders it as
+      "Next focus:" while
+      [`OperationsWorkspaceView.tsx`](frontend/components/OperationsWorkspaceView.tsx)
+      pre-fills the dispatch task from it. The review grepped the payload for
+      `pendingCount`/`nextPendingItem` - the names `/api/roadmap/audit` uses -
+      and read their absence as absent data. **The real defect, much smaller:**
+      the two routes name the same concepts differently, which is what made a
+      careful check reach a false conclusion. Worth aligning, not rebuilding.
+      _(state: done - capability verified end to end; naming drift recorded
+      below)_
+
+- [x] **[non-blocker]** The headless task runner has no stop mechanism —
+      **fixed 2026-08-20.** A detached `while ($true)` loop survives its
+      session; on 2026-08-19 one ran 17 hours, raced the api-host smoke twice
+      and committed in-flight work onto local `main` (recovered, `origin/main`
+      untouched; PR #157 added the repo-root guard). Stopping it required a
+      PID and `Stop-Process` — which an agent may not be permitted to call.
+      Now [`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1)
+      watches a stop marker (same shape as the api-host's
+      `-ShutdownSignalPath`), honored at a poll boundary **between tasks** so a
+      running `claude` session is never abandoned mid-work; the marker is
+      cleared at startup and consumed when honored, so it cannot kill the next
+      runner; and the heartbeat carries `stopFilePath`, because whoever finds
+      a runner is whoever needs to stop it.
+      [`Stop-RoadmapTaskRunner.ps1`](scripts/Stop-RoadmapTaskRunner.ps1) is
+      the front door and WAITS for the exit rather than assuming it. Gate:
+      the module smoke starts a real detached runner, stops it with the
+      marker, and asserts exit 0, marker consumed, and that a stale marker
+      does NOT kill a fresh runner.
+      _(re-homed from 3.2 → 3.3 → here)_
+- [x] **[non-blocker]** The api-host smoke enqueued into the operator's REAL
+      queue — **fixed 2026-08-20**, the other half of the 2026-08-19 race.
+      Four sites rebuilt the path inline (one directly beside the resolver);
+      all now go through
+      [`Get-RoadmapQueuePath`](backend/modules/automation/Automation.RoadmapQueue.ps1),
+      which honors `REPO_MGMT_QUEUE_PATH`. The smoke sets it on the host job
+      — not the parent — so a crashed run cannot leave the operator
+      redirected. Gates: a derived sweep fails any inline rebuild under
+      `backend/` (detector rejects its own fixture first), and the override is
+      proven to redirect and to clear. The existing queue-writer coverage gate
+      caught the refactor itself: keyed on the literal filename, it found ZERO
+      writers and refused to pass — it now follows the resolver too.
+
+- [x] **[non-blocker]** Watch item: the intermittent `L0-Absent` packaging
+      failure — **root-caused and fixed 2026-08-19 (PR #167)**. It recurred on
+      `main` and diagnosed itself, because the failure message added in #156
+      printed `L0-Absent roadmapState=pending`: the fixture had PARSED fine
+      and simply was not audited yet. `roadmapState` comes from the roadmap
+      cache while `maturityLevel` comes from the roadmap-audit cache, and the
+      operations payload falls back to the `L0-Absent` default when the audit
+      entry is missing — so `Wait-ForPortfolioIndex` returning on the repo's
+      NAME was a weaker condition than the L3+ assertion that followed it.
+      The wait now takes `-RequireAuditedMaturity`, and its timeout message
+      distinguishes "still missing" from "indexed but not yet audited". The
+      instrumentation paid for itself within hours of being written.
+
+### Current Status narrative — priority reset 2026-08-11 (archived 2026-08-23 from ROADMAP.md)
+
+Superseded when the reset's own resume condition was met and mobile was
+un-deferred on 2026-08-19; moved here verbatim on 2026-08-23.
+
+**Priority reset — 2026-08-11.** Mobile surfaces are **deferred**; PC
+reliability and one workflow that finishes are the priority. The trigger was
+not a preference. The live portal reported `state=absent, queuedTotal=6,
+strandedCount=6` — six dispatches queued into a room with no runner, none ever
+claimed — while the wizard that queued them kept offering an enabled "Approve
+and create PR task" button. On the same day, that button was found to have been
+incapable of succeeding since Release 3.0 ([PR #119](https://github.com/xfaith4/GitHubRepoManagement/pull/119)).
+A second device form factor cannot be the priority while the first one has a
+workflow that does not complete and does not say so.
+
+### Lane 0.9 — completed items (archived 2026-08-23 from ROADMAP.md)
+
+Moved verbatim on 2026-08-23; the lane's one open item (the stale
+browser-persisted GitHub owner) stays in `ROADMAP.md`.
+
+- [x] **Insights has no way to run the assessment it tells you to run.**
+      **Closed 2026-08-14** under Release 3.1's "enabled means available".
+      Portfolio Analytics said "Refresh the portfolio assessment to seed the
+      Release 2.3 trend view" and Documentation Health said it was "unavailable
+      until a portfolio assessment succeeds", but the tab offered no control
+      that ran one — Documentation Health had no button at all, and Analytics
+      had one named `Retry` that re-fetched the trend, so the instruction and
+      the control disagreed while the label admitted neither. Both panels now
+      carry a **Run portfolio assessment** action, and the trend button is
+      renamed **Retry trend fetch** so the two are told apart.
+      _(state: smoke-tested — asserted by `InsightsView.test.tsx` on the
+      handler each control actually calls, not on its presence.)_
+
+- [x] **Make `/health/live` independently responsive during long operations.**
+      **Closed 2026-08-19** under Release 3.2 M1. The design decision landed
+      as "the scan is not the host's job": all four sweeps run in the
+      out-of-process worker, and the api-host smoke asserts `/health/live`
+      answers 200 while `scan/status` reports running. The residual —
+      non-scan 900s-tier requests still occupy the single thread — is the
+      Lane 0.9 FailFast blast-radius item, tracked in Release 3.2's known
+      issues.
+
+- [x] **Replace the bare `Failed to fetch` screen with an actionable retry
+      state.** **Closed 2026-08-14** under Release 3.1's "enabled means
+      available". `Dashboard.tsx`'s `error && repos.length === 0` branch
+      rendered the raw exception string and nothing else — no retry, no
+      explanation. (The Lane 0.5 error boundary catches render throws, not
+      rejected fetches.) [`fetchFailure.ts`](frontend/lib/fetchFailure.ts)
+      classifies the message into backend-unreachable / auth-required /
+      not-configured / backend-error, and the screen renders a headline, the
+      next step, the verbatim original message, a retry, and a route into
+      Settings — the modal is rendered inside the branch, since it returns
+      early and the control would otherwise open nothing.
+      _(state: smoke-tested — the classifier is unit-tested on the two states
+      that need opposite actions, and a tripwire fails if the one-line raw-error
+      return comes back.)_

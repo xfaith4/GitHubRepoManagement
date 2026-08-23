@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-23 — The product lens: foundations, not destinations; every repository gets an outcome
+
+### Changes
+
+- **The central principle is now written where every tool reads it.** [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md) gains the principle verbatim — _the product does not prescribe what a repository should become; it identifies and strengthens the foundations that allow each repository to succeed at what it is intended to be_ — plus a new **Foundation Domains** section (documentation, purpose, planning, structure, evidence of intentional engineering, explicitly refinable and never a fixed scoring taxonomy), three new product principles, three new guardrails, and four new lines in _Definition of Useful Product Progress_. **An outcome is not necessarily a repair:** every repository must reach _strengthen_, _appropriate as-is_ (healthy, intentionally minimal, externally managed, archived, out of scope), or _insufficiently understood_ — an explainable conclusion, with a next action only where improvement is warranted. `ROADMAP.md` §2 and _Current Status_ carry the same lens.
+- **Release 2.9 resequenced.** The three findings-shaped items that had sat under _Known issues_ — the console's visible readiness model and the packaging path's enforced one disagreeing about the same repo; `/api/roadmap/audit` and `/api/portfolio/assessment` naming one concept two ways; the 26 of 34 roadmap repos below L3 with no verified L1/L2 repair path — now lead the release's engineering milestones as _Foundations first_, and its acceptance criteria name them. Its stale narrative (the 2026-08-11 priority reset, the un-deferral prose, the mobile-only validation plan and risk) is compressed or archived.
+- **Release 3.6 — Every Repository Gets an Outcome** is defined (`planned`) as the next engineering release: a per-repo conclusion model composed from existing signals with domains as data (`foundation-domains.json`), an outcome card, a first-interaction orientation with tabs that pose their question, per-kind applicability so _appropriate as-is_ is first-class and evidenced, and a foundation-coverage trend. It starts when 2.9's three items close — they are its preconditions in substance.
+- **Archive pass, because the file demanded it.** Release 2.9 still carried seven `[x]` items and Lane 0.9 three more; all ten moved **verbatim** to [`docs/history/completed-releases.md`](docs/history/completed-releases.md) (new heading _Release 2.9 — completed items (archived 2026-08-23 from ROADMAP.md)_, sub-heading for Lane 0.9) with one-line pointers left behind. Stale Execution-Order entries for closed Releases 3.4/3.3 and stale dependency rows for 3.4/3.5 are gone. `ROADMAP.md` went 890 → 881 lines while gaining a 107-line release contract; two pre-existing `[x]` items in Lanes 0.7 and 0.8 are untouched and still owed to the archive.
+
+### Verification
+
+- `tools/Test-RoadmapStructure.ps1`: **0 errors, 0 warnings, 0 info** (two releases found, 2.9 active and 3.6 planned; `R010-FILE-LENGTH` cleared by the archive pass, not by trimming the new contract).
+- `Invoke-TestSuite.ps1 -SkipApiHost`: module smoke, roadmap structure lint, roadmap capability record, PowerShell lint ratchet and every frontend gate green. The API contract gate fails 7 snapshot-route assertions (HTTP 500) on this machine — **pre-existing local state**, identical with and without these docs-only changes, green in CI.
+- Markdown: added lines scanned for MD049 (underscore emphasis), MD060 (aligned table pipes) and MD022 (heading spacing) — clean.
+
 ## 2026-08-22 — The "No runner" Copy button hands over a command that works from any terminal
 
 ### Changes
