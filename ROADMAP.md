@@ -2,7 +2,7 @@
 
 > **Status:** Active
 > **Active release:** **Release 2.9 — Operator Field Proof + Mobile Completion**
-> **Next active release:** **Release 3.6 — Every Repository Gets an Outcome** (`planned`, defined 2026-08-23 under the product lens in §2) — it starts when Release 2.9's three foundations-first engineering items close; 2.9's operator half keeps riding Ben's next session
+> **Next active release:** **Release 3.6 — Every Repository Gets an Outcome** (`planned`, defined 2026-08-23 under the product lens in §2) — it starts when Release 2.9's three foundations-first engineering items close; 2.9's operator half keeps riding Ben's next session — then **Release 3.7 — Portfolio Value Proof**, where ten real repositories decide the 80+ rollout
 > **Work ordering:** dependency-driven, not insertion order — see
 > [Execution Order and Dependencies](#execution-order-and-dependencies)
 > **Canonical product direction:** [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md)
@@ -21,54 +21,51 @@ Their full text lives in
 [`docs/history/completed-releases.md`](docs/history/completed-releases.md).
 
 **This file carries open work only.** Every checkbox in it is something still
-to do — if an item is `[x]` here it is a mistake, not a record. The 2026-08-11
-archive pass that restored that rule is recorded in `CHANGELOG.md`.
+to do — if an item is `[x]` here it is a mistake, not a record (rule restored
+by the 2026-08-11 archive pass, recorded in `CHANGELOG.md`).
 
-What remains falls into four kinds of work, and they are **not**
-interchangeable — mixing them is what previously made the roadmap read as
-"everything is done" while real gaps sat unlabelled:
+What remains falls into four kinds of work that are **not** interchangeable —
+mixing them once made the roadmap read "everything is done" over real gaps:
 
 1. **Genuinely unbuilt engineering** — Release 2.9's three foundations-first
    items (resequenced 2026-08-23), Release 3.6's milestones once those close,
    and the recorded cross-cutting items. This is the only kind an autonomous
    agent can close on its own.
-2. **Elevated / hardware / human verification** — needs SYSTEM rights, a
-   physical Android phone, or an operator sitting at an authenticated
-   Claude Code session. No autonomous test can produce these.
+2. **Elevated / hardware / human verification** — SYSTEM rights, a physical
+   Android phone, or an operator at an authenticated session; no autonomous
+   test can produce these.
 3. **Product / design decisions** — waiting on a judgement, not on time or
    engineering (progressive disclosure; the `Checks: Read` grant).
 4. **Calendar-gated accrual** — the 7/90-day trend windows fill only as
    time passes with capture running.
 
 **Priority reset — 2026-08-11** (mobile deferred until a PC workflow ran to
-completion) was satisfied and lifted 2026-08-19; its narrative is
-[archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
+completion) was satisfied and lifted 2026-08-19 — narrative [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
 
-**Product lens — 2026-08-23.** Every remaining roadmap-worthy idea is ranked
-on operational efficiency and actionable improvement, under one principle:
-**the product does not prescribe what a repository should become; it
-identifies and strengthens the foundations that allow each repository to
-succeed at what it is intended to be.** Full statement in §2 and the
-[thesis doc](docs/product/portfolio-execution-console.md#foundation-domains);
-it resequenced Release 2.9 and defined Release 3.6 the same day.
+**Product lens — 2026-08-23.** Every remaining item is ranked on operational
+efficiency and actionable improvement, under one principle: **the product does
+not prescribe what a repository should become; it identifies and strengthens
+the foundations that allow each repository to succeed at what it is intended
+to be.** Full statement and admission rule in §2; it resequenced Release 2.9
+and defined Releases 3.6 and 3.7.
 
 **Current focus (next agent actions), in order:**
 
 - [ ] **Release 2.9 — foundations first (resequenced 2026-08-23).** The
-      three engineering items that make findings explainable now lead the
-      release's milestones: the two readiness gates that disagree about the
-      same repo, the two routes that name one concept two ways, and the L1/L2
-      repair path for the 26 of 34 roadmap repos below L3. Close these before
-      anything in 3.6.
+      three items that make findings explainable lead the release's
+      milestones: the disagreeing readiness models, the two routes that name
+      one concept two ways, and the L1/L2 repair path for the 26 of 34
+      roadmap repos below L3. Close these before anything in 3.6.
 - [ ] **Release 3.6 — Every Repository Gets an Outcome** is defined in §6 as
       the next engineering release (`planned`). Start it when 2.9's three
       items close — not earlier, to manufacture momentum.
+- [ ] **Release 3.7 — Portfolio Value Proof** follows 3.6 (defined,
+      `planned`): ten representative repositories, chosen by kind, decide the
+      80+ rollout with recorded leverage numbers.
 - [ ] **Batch the remaining operator-session work (2.9).** An elevated shell
       covers the watchdog _and_ the service installer; one authenticated shell
-      covers the `gh agent-task` run and the re-homed live-portal proofs.
-      Doing them separately wastes the scarcest resource here. The phone
-      session is its own item and rides the same visit when the device is on
-      the LAN.
+      covers the `gh agent-task` run and the re-homed live-portal proofs; the
+      phone proof rides the same visit when the device is on the LAN.
 - [ ] **Lane 0.2's two items need an operator action outside this repository**
       — the PAT's `Checks: Read` grant (optional; the `mergeStateStatus` proxy
       is the working contract) and the portal TLS certificate password, whose
@@ -76,12 +73,11 @@ it resequenced Release 2.9 and defined Release 3.6 the same day.
       session.
 
 **Forward arc.** Releases 3.0-3.5 describe the finished product: dispatch that
-runs (3.0), the loop closing end to end and legibly (3.1), the delivery loop
-closing without a hand-off (3.4), numbers an operator can act on (3.5), an 80+
-repo portfolio that feels immediate (3.2), unattended operation (3.3).
-Release 3.6 extends the arc from "the loop runs" to "every repository ends
-with an explainable conclusion, and a next action only where one is
-warranted."
+runs, the loop closing legibly and without a hand-off, numbers an operator can
+act on, an 80+ repo portfolio that feels immediate, unattended operation.
+Release 3.6 extends it to "every repository ends with an explainable
+conclusion"; Release 3.7 makes the product prove, on ten real repositories,
+that it returns more time than it takes.
 
 ---
 
@@ -96,9 +92,8 @@ for any operator or coding agent:
 Long-form product direction (thesis, principles, north-star workflow, risks,
 guardrails) lives in
 [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md)
-and is summarized below in section 2. The full text of every completed
-release (0.4 through 2.6, plus 2.8) lives in
-[`docs/history/completed-releases.md`](docs/history/completed-releases.md);
+and is summarized below in section 2. Every completed release lives, verbatim,
+in [`docs/history/completed-releases.md`](docs/history/completed-releases.md);
 this document references them by version + status only.
 
 ---
@@ -132,7 +127,10 @@ _insufficiently understood_ (naming what the product would need). Remaining
 work is prioritized on operational efficiency and actionable improvement:
 purpose obvious from the first interaction, and discovery → remediation as
 one workflow that says what was found, why it matters, and what can be
-improved.
+improved. **Admission rule for every item below: one hour spent on this
+product must save more than one hour across the portfolio it manages.** An
+item that only makes the product better at managing, validating, or
+describing itself is maintenance, not roadmap work.
 
 For the full thesis, ten core questions, foundation domains, principles,
 risks, and guardrails, see
@@ -201,6 +199,7 @@ module + verification boundary`.
 | **3.4**   | **The Delivery Loop Closes**                                             | `done` 2026-08-15 — six milestones + the full-loop proof, driven live and operator-verified |
 | 3.5       | Trustworthy Surfaces (UI Quality)                                        | `done` 2026-08-17 — all seven milestones; trust-report per finding; operator sign-off in 2.9 |
 | **3.6**   | **Every Repository Gets an Outcome**                                     | **`planned`** 2026-08-23 — product lens (§2); after 2.9's foundations-first items          |
+| **3.7**   | **Portfolio Value Proof**                                                | **`planned`** 2026-08-23 — follows 3.6; ten real repositories decide the 80+ rollout       |
 
 > **Note on `.5` numbering.** Reserve it for course corrections like 1.7.5;
 > default new work to integer minor releases.
@@ -211,11 +210,9 @@ Release numbers identify scope — they do not dictate sequence. Work through
 open items in the order below, and update this section whenever a lane
 closes or a new dependency appears.
 
-**Everything that once blocked something else has landed.** Step 0's
-unblockers closed 2026-08-08; Release 2.7's two lanes closed 2026-08-09; 3.0's
-dispatch runs. No open item is now waiting on another open item — the ordering
-below is therefore about **what kind of resource each item needs**, not about
-prerequisites.
+**Everything that once blocked something else has landed.** No open item waits
+on another open item — the ordering below is about **what kind of resource
+each item needs**, not about prerequisites.
 
 1. **Release 2.9 — the active release.** Its engineering half is now the
    three foundations-first items (resequenced 2026-08-23: the disagreeing
@@ -228,14 +225,18 @@ prerequisites.
    trusted while the visible and the enforced readiness models disagree.
    Every release from 1.x through 3.5 is closed; new work is still proposed
    as a release with its own contract, never appended to a closed one.
-3. **One batched operator session** — an elevated shell covers the watchdog,
+3. **Release 3.7 — Portfolio Value Proof** follows 3.6 (`planned`, contract
+   in §6): ten representative repositories, chosen by kind, decide the full
+   80+ rollout with recorded leverage numbers. The product earns its next
+   release there, not by improving itself further.
+4. **One batched operator session** — an elevated shell covers the watchdog,
    the service installer and 2.7's freeze-prevention deploy; one authenticated
    shell covers the `gh agent-task` run and the re-homed 3.1/3.5 live-portal
    proofs. Batching is the whole point: the operator, not the code, is the
    scarce resource.
-4. **Trend accrual** closes itself as calendar time passes, provided capture
+5. **Trend accrual** closes itself as calendar time passes, provided capture
    keeps running.
-5. **Mobile completion (2.9)** — un-deferred 2026-08-19 when its resume
+6. **Mobile completion (2.9)** — un-deferred 2026-08-19 when its resume
    condition was met; both engineering items shipped the same day (archived),
    and the physical-Android proof rides the operator batch above.
 
@@ -245,6 +246,7 @@ prerequisites.
 | ---------------------------------------------------- | --------------------------------------------- | --------------------------------------------- |
 | Release 2.9 foundations-first items (active)         | —                                             | none — engineering; resequenced 2026-08-23    |
 | Release 3.6 Every Repository Gets an Outcome         | Release 2.9's three foundations-first items   | soft — substance, not sequence; engineering   |
+| Release 3.7 Portfolio Value Proof                    | Release 3.6; operator approvals               | soft — sequence; engineering + operator       |
 | Lane 0.2 `Checks: Read`; TLS certificate password    | An operator action outside this repository    | hard — external                               |
 | Lane 0.5 tab disclosure; Lane 0.7 archive signal     | A product decision, not engineering time      | hard — design                                 |
 | Release 2.9 freeze-prevention deploy (from 2.7)      | An elevated (SYSTEM) Windows install          | hard — privilege; batch with the two below    |
@@ -261,19 +263,16 @@ prerequisites.
 
 ### Active release detail — 2.9 Operator Field Proof + Mobile Completion
 
-Release 2.9 became the active release 2026-08-19, when Release 3.3 closed and
-left no unblocked engineering release behind it. Its two halves have opposite
+Release 2.9 became the active release 2026-08-19. Its two halves have opposite
 shapes: **the operator half waits on Ben and cannot be advanced by an agent**
-(SYSTEM rights, a physical device, a browser with human eyes, an interactive
-credential prompt — listed, batched, and ready), and **the engineering half is
-now the three foundations-first items** resequenced 2026-08-23 (the two mobile
-engineering items shipped 2026-08-19 and are archived; the physical-device
-proof rides the operator batch).
+(SYSTEM rights, a physical device, eyes on a browser, an interactive
+credential prompt — listed, batched, ready), and **the engineering half is the
+three foundations-first items** resequenced 2026-08-23 (the two mobile
+engineering items shipped 2026-08-19 and are archived).
 
 The full execution contract lives in one place,
-[Release 2.9 below](#release-29--operator-field-proof--mobile-completion), per
-`ROADMAP_TEMPLATE.md`. This heading exists so the validator can resolve the
-active-release pointer; it deliberately restates nothing.
+[Release 2.9 below](#release-29--operator-field-proof--mobile-completion); this
+heading exists so the validator can resolve the active-release pointer.
 
 **Current focus (resequenced 2026-08-23):** the three foundations-first
 engineering items at the top of the release's milestones — the two readiness
@@ -294,28 +293,25 @@ in the same move: its 2026-08-11 resume condition (a PC workflow that runs to
 completion) has been met three times over.
 
 **Goal:** convert every surface that is `smoke-tested` but still waits on an
-external resource into `operator-verified` with durable evidence, and finish the
-two mobile surfaces left incomplete under Release 2.5. No new capability — this
-closes the honesty gap between "the suite is green" and "this works in the
-field."
+external resource into `operator-verified` with durable evidence, and close
+the three foundations-first items. No new capability — this closes the
+honesty gap between "the suite is green" and "this works in the field."
 
 **Prerequisites:** each field-proof milestone names the one external resource
 it waits on; none block each other, and several share a session. Batch them:
 the operator, not the code, is the scarce resource.
 
 **Resequenced 2026-08-23 under the product lens (§2).** Three items that had
-sat under _Known issues_ lead the engineering milestones below: they are what
-makes a finding explainable — the visible and enforced readiness models must
-agree, one concept must carry one name, and a repo below L3 must leave the
-console with a reachable next action or a stated conclusion. They are the
-preconditions, in substance, for Release 3.6.
+sat under _Known issues_ now lead the engineering milestones: they are what
+makes a finding explainable, and the preconditions in substance for Release
+3.6.
 
 #### Product outcomes
 
 - No milestone is marked complete on an automated suite alone when what it
-  claims needs hardware, elevation, credentials, or a human.
-- `evidence/` carries a durable record for each proof, so the next agent reads
-  the evidence instead of re-litigating whether something works.
+  claims needs hardware, elevation, credentials, or a human; `evidence/`
+  carries a durable record for each proof, so the next agent reads it instead
+  of re-litigating whether something works.
 
 #### Engineering milestones
 
@@ -329,7 +325,12 @@ under the product lens (§2); close these before anything in Release 3.6.
       console reported it not ready. The guardrail "do not auto-dispatch
       without a visible readiness model" is only half true while the visible
       model and the enforced model differ. Decide which is authoritative and
-      make the other consult it. What exists:
+      make the other consult it. **Resolution direction (2026-08-23):** the
+      enforced model becomes _sufficiency of the execution contract_ — scope,
+      acceptance criteria, a runnable verification, sized to repository kind
+      and task scope — and the visible model displays that same judgement;
+      L3+ maturity stays the default way roadmap-sourced work meets it, not a
+      universal precondition. What exists:
       [`Automation.RoadmapPackaging.ps1`](backend/modules/automation/Automation.RoadmapPackaging.ps1)
       (maturity gate) and
       [`DocAudit.Scanner.ps1`](backend/modules/docaudit/DocAudit.Scanner.ps1)
@@ -370,19 +371,17 @@ operator's device on the LAN.
 
 **Field proof — one elevated (SYSTEM) session covers all three:**
 
-- [ ] Deploy the Release 2.7 Phase D freeze prevention to the live service. All
-      three engineering parts ship; only the install remains.
-      **Measured 2026-08-20:** the running service is missing **4 of 52**
-      declared GET routes (`/api/maintenance/ledgers`, `/api/maintenance/backups`,
-      `/api/portfolio/scan/status`, `/api/portfolio/snapshot`) - it predates
-      Release 3.5. One elevated command upgrades it
-      (`Install-RepoManagementService.ps1 -Action Repair`), and
+- [ ] Deploy the Release 2.7 Phase D freeze prevention to the live service —
+      only the install remains. **Measured 2026-08-20:** the running service
+      is missing **4 of 52** declared GET routes (it predates Release 3.5);
+      one elevated command upgrades it
+      (`Install-RepoManagementService.ps1 -Action Repair`) and
       [`Test-LiveServiceCurrency.ps1`](scripts/Test-LiveServiceCurrency.ps1)
-      proves whether it landed rather than trusting a health check, which
-      answered 200 the entire time the service was weeks behind. What exists:
+      proves whether it landed rather than trusting a health check. What
+      exists:
       [`Install-RepoManagementService.ps1`](scripts/Install-RepoManagementService.ps1),
-      [`Install-PortalWatchdog.ps1`](scripts/service/Install-PortalWatchdog.ps1)
-      and [`Watch-PortalHealth.ps1`](scripts/service/Watch-PortalHealth.ps1),
+      [`Install-PortalWatchdog.ps1`](scripts/service/Install-PortalWatchdog.ps1),
+      [`Watch-PortalHealth.ps1`](scripts/service/Watch-PortalHealth.ps1),
       covered by the module smoke's installer and watchdog gates. _(state:
       smoke-tested → needs an elevated Windows install)_
 - [ ] Run the elevated
@@ -447,38 +446,33 @@ operator's device on the LAN.
   watchdog without intervention, with the ledger line to prove it.
 - All four mobile workflows complete on a physical Android phone; the app
   installs to the home screen; every hover-only affordance taps at 390px.
-- The visible and the enforced readiness models agree for every repo, one
-  concept carries one name across `/api/roadmap/audit` and
-  `/api/portfolio/assessment`, and an L1/L2 fixture repo reaches a
-  preview-first repair or a stated conclusion — each proven by a gate shown
-  red first.
+- The visible and enforced readiness models agree for every repo, one concept
+  carries one name across `/api/roadmap/audit` and `/api/portfolio/assessment`,
+  and an L1/L2 fixture repo reaches a preview-first repair or a stated
+  conclusion — each proven by a gate shown red first.
 
 #### Out of scope
 
 - New product capability; remote (non-LAN) mobile access; native apps.
 
 **Validation plan:** the two halves are verified differently, deliberately.
-The engineering half (the foundations-first items; the shipped mobile items
-before them) lands under the module smoke and api-host smoke with a gate
-shown red first, `npm run test:unit` at an emulated 390px viewport where a
-surface is touched, and `npm run typecheck` / `npm run lint` / the
-PSScriptAnalyzer ratchet at baseline; CI is the arbiter. The operator half is
-verified by the operator — on the device, at the elevated prompt, with eyes on
-the surface — and recorded in `evidence/operator-verification-log.jsonl` with
-the surface id and what was observed. No agent may mark an operator item
-verified.
+The engineering half lands under the module smoke and api-host smoke with a
+gate shown red first, `npm run test:unit` where a surface is touched, and
+`npm run typecheck` / `npm run lint` / the PSScriptAnalyzer ratchet at
+baseline; CI is the arbiter. The operator half is verified by the operator —
+on the device, at the elevated prompt, with eyes on the surface — and recorded
+in `evidence/operator-verification-log.jsonl`. No agent may mark an operator
+item verified.
 
 **Risks:** the physical-device proof must run against the LAN-bound host, not
-loopback, or it proves nothing about the setup it is meant to prove; and an
-operator item marked verified from a green suite rather than from eyes on the
-surface would reintroduce exactly the honesty gap this release exists to
-close.
+loopback; an operator item marked verified from a green suite rather than eyes
+on the surface would reintroduce the honesty gap this release exists to close.
 
 **Dependencies:** the operator's presence at the machine (elevated session,
-authenticated `gh`, browser), a Galaxy S24 Ultra on the same LAN
+authenticated `gh`, browser), a Galaxy S24 Ultra on the LAN
 ([`lan-mobile-setup.md`](docs/reference/lan-mobile-setup.md)), and Lane 0.2's
-certificate regeneration for the TLS-dependent portal proofs. The mobile
-engineering half depends on none of these.
+certificate regeneration for the TLS-dependent portal proofs. The engineering
+half depends on none of these.
 
 **Known issues:**
 
@@ -522,18 +516,16 @@ wherever it is not.
 
 #### Engineering milestones
 
-- [ ] **Conclusion model (backend).** One per-repo conclusion object —
-      `conclusion` (strengthen | appropriate-as-is | insufficiently-understood),
-      `reason`, per-domain `{domain, status: present|weak|missing|not-applicable,
-      evidence, nextAction?}`, `basis` — derived from signals that already
+- [ ] **Conclusion model (backend).** One per-repo object — `conclusion`
+      (strengthen | appropriate-as-is | insufficiently-understood), `reason`,
+      per-domain `{domain, status: present|weak|missing|not-applicable,
+      evidence, nextAction?}`, `basis` — composed from signals that already
       exist (README contract, doc findings, roadmap audit and maturity,
-      structure audit, the scope classifier) and served by
-      `GET /api/portfolio/conclusions` and per repo. Domains and their
-      per-kind applicability live in `backend/config/foundation-domains.json`
-      (`schemaVersion: "v1"`), so refining a domain is a data change. The
-      _intentional engineering_ domain ships `not-scored` until its evidence
-      is defined. What exists:
-      [`Portfolio.Assessment.ps1`](backend/modules/portfolio/Portfolio.Assessment.ps1),
+      structure audit, scope classifier), served by
+      `GET /api/portfolio/conclusions` and per repo. Domains and per-kind
+      applicability live in `backend/config/foundation-domains.json`
+      (`schemaVersion: "v1"`), so refining a domain is a data change. What
+      exists: [`Portfolio.Assessment.ps1`](backend/modules/portfolio/Portfolio.Assessment.ps1),
       [`DocAudit.Scanner.ps1`](backend/modules/docaudit/DocAudit.Scanner.ps1),
       [`Portfolio.Scope.ps1`](backend/modules/portfolio/Portfolio.Scope.ps1).
       _(state: planned)_
@@ -542,64 +534,140 @@ wherever it is not.
       preview-first repair and packaging flows; repos without a roadmap show
       a conclusion, not `L0-Absent`; _appropriate as-is_ renders and filters
       like any other outcome. What exists:
-      [`RepoEvaluationModal.tsx`](frontend/components/RepoEvaluationModal.tsx),
-      [`InsightsView.tsx`](frontend/components/InsightsView.tsx).
+      [`RepoEvaluationModal.tsx`](frontend/components/RepoEvaluationModal.tsx).
       _(state: planned)_
-- [ ] **First interaction.** A portfolio-level orientation (what this
-      evaluates, what it uncovers, how findings strengthen a portfolio) and
-      tab labels that pose the question each view answers, with the Release
-      2.6 per-view subtitle as the second line. What exists:
-      [`DashboardViewTabs.tsx`](frontend/components/DashboardViewTabs.tsx).
+- [ ] **First interaction — the ranked `Today` landing.** The default view is
+      a ranked table with _why now_, one primary next action per row, and
+      effort (the value score and work-unit estimate already exist, three
+      clicks deep) under a one-paragraph orientation; tab labels pose the
+      question each view answers, with the Release 2.6 subtitle second.
+      Decides the Lane 0.5 question (2026-08-23). What exists:
+      [`DashboardViewTabs.tsx`](frontend/components/DashboardViewTabs.tsx),
+      [`RepoGrid.tsx`](frontend/components/RepoGrid.tsx), the value scorer.
       _(state: planned)_
 - [ ] **Flexible standards.** Per-kind applicability in
       `foundation-domains.json` (library, service, script collection,
       archived, minimal, externally managed) so a domain can be
       `not-applicable` with a stated reason; `L0-Absent` reads as "no plan
-      recorded" with the smallest credible plan offered, and the 2.9 L1/L2
-      repair path is the default next action at L1/L2. _(state: planned)_
-- [ ] **Measure.** `GET /api/portfolio/trend` gains a foundation-coverage
-      series (per domain: present / weak / missing / not-applicable counts),
-      captured by
-      [`Invoke-DailyEvidence.ps1`](scripts/Invoke-DailyEvidence.ps1) and
-      rendered in Insights as foundations gained over the window.
-      _(state: planned)_
+      recorded" with the smallest credible plan offered. _(state: planned)_
+- [ ] **Measure — coverage and leverage.** `GET /api/portfolio/trend` gains a
+      foundation-coverage series (per domain: present / weak / missing /
+      not-applicable) captured by
+      [`Invoke-DailyEvidence.ps1`](scripts/Invoke-DailyEvidence.ps1), and a
+      leverage family derived from ledgers the product already keeps
+      (agent-run metrics, execution metrics, queue summaries, the
+      operator-verification log): finding → accepted action, action → merged
+      improvement, operator minutes per completed task, agent PR first-pass
+      success, recommendations accepted vs rejected (the one new capture),
+      repositories concluded appropriate-as-is or archived. Insights renders
+      foundations gained and hours returned over the window. _(state: planned)_
+- [ ] **Define the intentional-engineering evidence model — define, not
+      score.** Name the evidence per sub-area (test, architecture,
+      operational, maintenance, delivery health), how each is read from a
+      repository, which are cheap from existing signals (Actions results,
+      merge readiness, PR state) and which need a detector; record it in
+      `foundation-domains.json` as `not-scored`, so Release 3.7's ten
+      repositories decide which evidence earns a detector. _(state: planned)_
 
 #### Acceptance criteria
 
-- 100% of indexed repositories carry a conclusion with a non-empty reason;
-  zero repositories present `L0-Absent` or "not applicable" as their only
-  state — asserted over the live index and a fixture set that includes a
-  no-roadmap repo, an archived repo, a vendored repo, and a minimal utility.
-- Every `strengthen` conclusion names a next action whose route exists and
-  returns `application/json` with HTTP 200 for the fixture repo.
-- Every `appropriate-as-is` conclusion cites its evidence (classifier result,
-  archive marker, explicit repo declaration) — never an absence of findings.
+- 100% of indexed repositories carry a conclusion with a non-empty reason and
+  none presents `L0-Absent` or "not applicable" as its only state — asserted
+  over the live index and a fixture set (no-roadmap, archived, vendored,
+  minimal utility).
+- Every `strengthen` conclusion names a next action whose route returns
+  `application/json` with HTTP 200 for the fixture repo; every
+  `appropriate-as-is` conclusion cites its evidence — never an absence of
+  findings.
 - Adding a domain or a per-kind applicability rule is a JSON-only change,
   covered by the config-integrity gate and a module-smoke fixture.
-- The first screen states what the product evaluates; every tab label poses
-  its question (unit test).
-- `GET /api/portfolio/trend` reports foundation coverage for the window, and
-  Insights renders it.
+- The default landing is the ranked `Today` table — orientation paragraph,
+  one primary action per row, effort — and every tab label poses its
+  question (unit test).
+- `GET /api/portfolio/trend` reports foundation coverage and the leverage
+  family for the window, each metric with its basis, and Insights renders
+  both.
 
 #### Out of scope
 
-- New detectors beyond composing existing signals; prescribing a target
-  architecture for any repository; auto-applying repairs; mobile surfaces.
+- New detectors beyond composing existing signals; scoring intentional
+  engineering (defined only); prescribing a target architecture for any
+  repository; auto-applying repairs; mobile surfaces.
 
 **Validation plan:** module smoke — the conclusion model over the fixture
-set, with the detector shown red first against a fixture whose reason is
-blank; api-host smoke — the conclusions and trend routes return JSON (the
-SPA fallback makes status alone meaningless); `npm run test:unit` — outcome
-card and orientation copy; the config-integrity gate for
-`foundation-domains.json`; CI Smoke is the arbiter.
+set, detector shown red first against a blank-reason fixture; api-host smoke
+— the conclusions and trend routes return JSON (the SPA fallback makes status
+alone meaningless); `npm run test:unit` — Today landing and outcome card; the
+config-integrity gate for `foundation-domains.json`; CI Smoke is the arbiter.
 
-**Risks:** domains hardening into a taxonomy (mitigated by data-defined
-domains and the explicit refinement rule); _appropriate as-is_ becoming a
-dumping ground (every such conclusion must cite evidence); scoring the
-intentional-engineering domain before it is defined (it ships `not-scored`).
+**Risks:** domains hardening into a taxonomy (data-defined, with an explicit
+refinement rule); _appropriate as-is_ becoming a dumping ground (every such
+conclusion must cite evidence); scoring intentional engineering before it is
+defined (it ships `not-scored`).
 
 **Dependencies:** Release 2.9's three foundations-first items; the existing
 assessment, audit, classifier, and trend modules. No external resource.
+
+---
+
+### Release 3.7 — Portfolio Value Proof
+
+**Status:** planned — defined 2026-08-23; follows Release 3.6. Its job is to
+make the product earn its next release against the real portfolio, not itself.
+
+**Goal:** ten representative repositories — chosen by kind, not for
+conformance — each receive a credible conclusion and, where warranted, a next
+action; at least five are materially improved through the existing preview →
+approve → execute → validate workflow with operator effort and outcome quality
+recorded; the result decides the full 80+ rollout.
+
+#### Product outcomes
+
+- "Is this product making the portfolio better, faster?" is answered with
+  recorded numbers, not impressions; false positives and bad recommendations
+  are found on ten repositories before they are found on eighty.
+
+#### Engineering milestones
+
+- [ ] **Select the ten by rule** — one each: mature active application, weak
+      active application, small utility, experiment, abandoned project,
+      repository without a roadmap, library, externally managed project,
+      nearly finished repository, messy repository — recording why each was
+      chosen. _(state: planned)_
+- [ ] **Run the conclusion model over the ten**, recording per repository:
+      what it is, whether it still matters, its state, what limits its value,
+      the highest-value next action, and whether the product can execute or
+      facilitate it. _(state: planned)_
+- [ ] **Execute at least five improvements** through preview → approve →
+      execute → validate, recording operator minutes, agent first-pass
+      result, and whether the repository is materially stronger afterwards —
+      appropriate-as-is or archive counts as an outcome. _(state: planned)_
+- [ ] **Adjust and decide** — fix the false positives and bad recommendations
+      the ten expose; record the go/no-go for the full rollout and the
+      leverage numbers behind it. _(state: planned)_
+
+#### Acceptance criteria
+
+- Ten repositories selected by the rule, none for conformance, each with a
+  recorded conclusion and reason.
+- At least five materially improved through the product's own workflow, with
+  operator minutes, outcome quality, and agent first-pass result recorded per
+  repository in `evidence/`; a recorded rollout decision with the numbers.
+
+#### Out of scope
+
+- New product capability; finishing every repository; improvements made outside the product's workflow.
+
+**Validation plan:** conclusions, actions, and outcomes recorded in `evidence/`
+via [`Add-OperatorVerification.ps1`](scripts/Add-OperatorVerification.ps1) and
+the agent-run ledgers; module smoke and api-host smoke stay green; CI is the
+arbiter for any product fix the ten expose.
+
+**Risks:** choosing repositories that flatter the product (the selection rule
+prevents it); counting a repair as an improvement when the repository is not
+stronger (outcome quality is recorded, not assumed).
+
+**Dependencies:** Release 3.6; the operator's time for approvals and effort.
 
 ---
 
@@ -648,12 +716,10 @@ completed-release history reference them by name: **0.3** layout follow-ups,
 
 ### Lane 0.9 — Portal restart loop: the watchdog was killing healthy scans (P0, 2026-08-10)
 
-**The incident closed 2026-08-10 across four passes and is archived.** Two
-guards with different budgets meant every full scan was force-restarted; the
-fix made **progress, not liveness or CPU**, the contract. Three of the four
-passes taught one lesson: **fixing the named instance instead of the pattern is
-this repo's most expensive recurring mistake** — every tripwire here now
-derives its scope from a classifier or the AST, never a maintained list.
+**The incident closed 2026-08-10 across four passes and is archived** — the
+fix made progress, not liveness or CPU, the contract, and taught the rule every
+tripwire here now follows: derive scope from a classifier or the AST, never a
+maintained list.
 
 - Insights panels that told you to run an assessment but offered no control — **closed 2026-08-14** under Release 3.1; [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
 - `/health/live` independently responsive during long operations — **closed 2026-08-19** under Release 3.2 M1 (the scan is not the host's job); [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
@@ -669,38 +735,17 @@ derives its scope from a classifier or the AST, never a maintained list.
 
 ### Lane 0.5 — Portal UX follow-ups (empty-state audit 2026-08-08)
 
-Three of four closed 2026-08-10 and are archived: the missing error boundary,
-bulk-scope confirmation on mutating actions, and the tab-inversion defect.
+Three of four closed 2026-08-10 and are archived (error boundary, bulk-scope confirmation, tab inversion).
 
-- [ ] **[non-blocker]** The wider progressive-disclosure question is still
-      open, and is now a smaller one. With Insights no longer competing for the
-      same vertical space as the tab strip, the remaining candidates are a
-      triage-first default view with drill-down, collapsible advanced sections,
-      or regrouping the six peers into three. _(state: planned — design
-      -dependent; deliberately not decided while fixing the defect underneath
-      it, since the density judgement changes once the layout is honest.)_
-
-      **Three inputs arrived 2026-08-15** from the adversarial UI review, all
-      arguing the same decision from different angles and all routed here rather
-      than scheduled as engineering: a ranked `Today` landing view (the value
-      score and work-unit estimate already exist and are three clicks deep), a
-      sortable table instead of ~120px cards for a 76-repo triage screen, and a
-      single primary action per row instead of nine equal-weight buttons. Release
-      3.5 supplies the trustworthy numbers any of them would render; the choice
-      of surface stays here. See
-      [the triage](docs/reference/2026-08-15-ui-review-triage.md).
+- The progressive-disclosure question — **decided 2026-08-23**: the ranked `Today` landing with one primary action per row is Release 3.6's first-interaction milestone, and collapsible sections / regrouping the six peers resolve inside it; the three 2026-08-15 review inputs are [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
 
 ### Lane 0.7 — Roadmap-standard fidelity: split-history awareness (2026-08-08)
 
-Does the standard this product applies to 80+ repos account for a roadmap that
-archives completed work to a separate file — the shape this repo uses? Partly.
-Nothing penalizes a split repo, but nothing tells one apart from a repo that
-deleted its history. The 2026-08-08 survey found **zero** managed repos using
-the split layout, so the live risk is the **repair path**, not scoring: repair
-would push all 32 roadmap-bearing repos toward in-file history. The intent is
-**awareness, not enforcement**. (A separate finding — 28 of 32 use no release
-sections at all — is a far larger conformance gap and the reason so many sit at
-L2.)
+Nothing penalizes a roadmap that archives completed work to a separate file
+(this repo's shape), but nothing tells one apart from a repo that deleted its
+history; the 2026-08-08 survey found zero managed repos using the split layout,
+so the live risk is the repair path pushing 32 repos toward in-file history.
+Intent: **awareness, not enforcement.**
 
 - [ ] **Record whether a repo externalizes its completion history.**
       _(state: planned)_ The contract carries `completedCount` as a required
@@ -712,57 +757,33 @@ L2.)
       to [`roadmap-contract.schema.json`](standards/roadmap/roadmap-contract.schema.json),
       set from a pointer link in the roadmap, and surface it in the audit
       payload.
-- [x] **Sanction the external-archive pattern in the standard.** _(state:
-      planned — documentation)_ `ROADMAP_TEMPLATE.md` Section 6 anticipates
-      release sections being "archived or removed" but assumes the surviving
-      history stays **in** the roadmap; no part of the standard, schema, or
-      the 12 audit rules mentions an external archive file. Document it as a
-      supported option with a required pointer convention, so a split repo is
-      self-describing rather than merely unpenalized.
+- Sanction the external-archive pattern in the standard — done (`ROADMAP_TEMPLATE.md` §6 "External archive option"); [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
 
 ### Lane 0.8 — Verification gate integrity (CI audit 2026-08-10)
 
 **Re-homed from Release 3.1 on its closure (2026-08-15):**
 
 - [ ] **[non-blocker]** **No `.gitattributes`, with `core.autocrlf=true`.**
-      Byte-level comparisons between tracked copies are non-deterministic
-      locally while passing in CI's fresh checkout (surfaced 2026-08-13: 245
-      CRLF vs 245 LF, same characters, reported as drift). The sync gate now
-      normalises before comparing, but it was the only gate audited; the
-      general fix is a `.gitattributes` declaring `text eol=lf`, and the risk
-      until then is a gate that reports drift that is not there, or hides
-      drift that is. _(state: planned)_
+      Byte-level comparisons are non-deterministic locally while passing in
+      CI's fresh checkout (2026-08-13: 245 CRLF vs 245 LF read as drift); the
+      sync gate normalises, but it was the only gate audited. Fix: a
+      `.gitattributes` declaring `text eol=lf`. _(state: planned)_
 - [ ] **[non-blocker]** The scheduled and operator dispatch paths reach the
-      queue through different writers with only one end-to-end test. The
-      behavioural divergence was closed in 3.1 (three roads, all gated, scope
-      derived); what remains is the coverage asymmetry itself.
+      queue through different writers with only one end-to-end test; the
+      behavioural divergence closed in 3.1, the coverage asymmetry remains.
       _(state: planned)_
 
-**The gate work closed 2026-08-10 (PRs #102–#107) and is archived.** A merge
-had been gated on almost nothing; now `ci-smoke.yml` **invokes
-`Invoke-TestSuite.ps1` itself** so CI and local are one list by construction,
-both linters fail the build, and `main` requires the `smoke` check with
-`enforce_admins` on. Full text:
-[the archive](docs/history/completed-releases.md#closed-2026-08-11-archived-from-roadmapmd).
-
-What remains is the debt the ratchets hold, and it is deliberately not a sweep.
+**The gate work closed 2026-08-10 (PRs #102–#107) and is
+[archived](docs/history/completed-releases.md#closed-2026-08-11-archived-from-roadmapmd):**
+`ci-smoke.yml` invokes `Invoke-TestSuite.ps1` itself, both linters fail the
+build, `main` requires `smoke` with `enforce_admins` on. What remains is the
+debt the ratchets hold, and it is deliberately not a sweep.
 
 **Warning-debt reduction plan (decided 2026-08-10).** The baselines are
-controlled debt, not a cleanup backlog — **no blanket lint sweep.** Work lands
-as small, behaviorally coherent batches, each ending with `-UpdateBaseline` /
-a lowered `--max-warnings` so the ratchet locks the gain. Priority order:
+controlled debt — **no blanket lint sweep.** Small, behaviorally coherent
+batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
 
-- [x] **P1 — PSSA correctness micro-batch (12 findings, low risk).**
-      `PossibleIncorrectComparisonWithNull` 1, `AvoidAssignmentToAutomatic
-      Variable` 3, `UseDeclaredVarsMoreThanAssignments` 6,
-      `AvoidOverwritingBuiltInCmdlets` 1, `AvoidUsingInvokeExpression` 1.
-      Mechanical, each a latent-bug class, one PR. _(done 2026-08-15: all 12
-      fixed — `$Event`→`-RepairEvent`/`-EventName`, `$args`→`$refusalArgs`,
-      `Write-Log`→`Write-ReconcileLog`, `Invoke-Expression` replaced by an
-      exe+args contract on `Resolve-VerifyCommand` with a smoke assertion,
-      null flipped left, six dead assignments discarded. Evidence: lint gate
-      PASS at 575/587 then baseline rewritten with the five rules removed —
-      each now gates at zero; module smoke and api-host smoke exit 0.)_
+- P1 — PSSA correctness micro-batch — **done 2026-08-15**, all 12 fixed and five rules now gate at zero; [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
 - [ ] **E1 — ESLint `exhaustive-deps` review (8 findings).** Behavioral, not
       mechanical: each missing dep is either a real staleness bug or a
       deliberate omission that earns a comment. Small enough for one PR.
@@ -781,25 +802,26 @@ a lowered `--max-warnings` so the ratchet locks the gain. Priority order:
       that subset only.
 - **Deliberately unscheduled (accepted debt, held at baseline):** the naming
   and style tiers (`UseSingularNouns` 90, `UseOutputTypeCorrectly` 136,
-  `UseShouldProcessForStateChangingFunctions` 67, and five smaller rules) —
-  renames are call-site churn for zero behavior.
-- **Separate lane, never batched mechanically:** ESLint
-  `set-state-in-effect` (31) — every site needs individual behavioral review
-  because a "fix" can change real render behavior.
+  `UseShouldProcessForStateChangingFunctions` 67, five smaller) — churn for
+  zero behavior.
+- **Separate lane, never batched mechanically:** ESLint `set-state-in-effect`
+  (31) — every site needs behavioral review; a "fix" can change rendering.
 
 ---
 
 ## 8. Risks and Guardrails
 
-The full list lives in
-[`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md).
-Headline guardrails for the active release and near-term roadmap:
+Full list in [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md);
+headline guardrails for the active release and near-term roadmap:
 
 - Do not auto-dispatch tasks without a visible readiness model.
 - Do not silently mark roadmap items complete based only on code churn.
 - Prefer preview-first workflows before write-back or autonomous mutation.
 - Preserve genuine completion history when rewriting roadmaps.
-- Enforce L3+ roadmap maturity before any dispatch.
+- Require a sufficient execution contract before any dispatch — scope,
+  acceptance criteria, a runnable verification — sized to repository kind and
+  task scope; L3+ roadmap maturity is how roadmap-sourced work supplies it,
+  not a universal precondition (changed 2026-08-23).
 - Do not treat an AI-improved README or ROADMAP as accepted until the
   operator reviews the side-by-side diff and explicitly applies it.
 - Do not show merge readiness unless the app can identify the PR, latest
@@ -813,25 +835,22 @@ Headline guardrails for the active release and near-term roadmap:
 - **Do not mark an item `[x]` while it still names an outstanding proof.**
   Split it: archive the shipped half, keep the unproven half open.
 - **A pull request that ships a capability updates the milestone that claims it,
-  in the same pull request.** Recorded 2026-08-15 after
-  [PR #134](https://github.com/xfaith4/GitHubRepoManagement/pull/134) shipped a
-  tested 306-line module and left all six of its release's milestones reading
-  `planned` — the next agent to read the roadmap was one step from rebuilding it.
-  Enforced by `Test-RoadmapCapabilityRecord.ps1`, which fails a commit whose
-  message claims a release and whose diff touches `backend/` or `scripts/`
-  without touching `ROADMAP.md`. A stated rule drifts; a derived one does not.
+  in the same pull request** (recorded 2026-08-15 after
+  [PR #134](https://github.com/xfaith4/GitHubRepoManagement/pull/134) left six
+  shipped milestones reading `planned`). Enforced by
+  `Test-RoadmapCapabilityRecord.ps1`: a stated rule drifts; a derived one does
+  not.
 
 ---
 
 ## 9. Roadmap Contract Standard for Managed Repos
 
-The full Roadmap Contract Standard is documented in
-[`docs/reference/roadmap-contracts.md`](docs/reference/roadmap-contracts.md)
-and shipped as a package under
-[`standards/roadmap/`](standards/roadmap/) (template, schema, audit rules,
-maturity model, repair prompt), with the publishable copy under
-[`spec/roadmap-contract/`](spec/roadmap-contract/). Managed repos should
-converge toward the release-oriented format described there.
+The full standard is documented in
+[`docs/reference/roadmap-contracts.md`](docs/reference/roadmap-contracts.md),
+shipped under [`standards/roadmap/`](standards/roadmap/) (template, schema,
+audit rules, maturity model, repair prompt) with the publishable copy under
+[`spec/roadmap-contract/`](spec/roadmap-contract/); managed repos converge
+toward it.
 
 ---
 
@@ -865,9 +884,8 @@ pwsh ./tools/Test-RoadmapStructure.ps1 -Path ./ROADMAP.md
 
 The check is read-only: release order, missing sections, active-release
 pointer/detail mismatches, duplicate headings, archived detail left behind,
-oversized future releases, and file-length drift. `-JsonOut` / `-CsvOut` give
-machine-readable output; CI runs it with `-FailOnError`, so warnings stay
-advisory while structural errors fail the smoke workflow.
+oversized future releases, file-length drift. CI runs it with `-FailOnError`:
+warnings stay advisory, structural errors fail the smoke workflow.
 
 **The warnings are load-bearing, not decoration.** `R010-FILE-LENGTH` and
 `R013-FUTURE-RELEASE-SIZE` caught this file at 2,020 lines on 2026-08-11 — a

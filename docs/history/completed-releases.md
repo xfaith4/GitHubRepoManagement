@@ -5664,3 +5664,47 @@ browser-persisted GitHub owner) stays in `ROADMAP.md`.
       _(state: smoke-tested — the classifier is unit-tested on the two states
       that need opposite actions, and a tripwire fails if the one-line raw-error
       return comes back.)_
+
+### Lanes 0.5, 0.7 and 0.8 — items decided or closed (archived 2026-08-23 from ROADMAP.md)
+
+Moved verbatim on 2026-08-23. Lane 0.5's disclosure question was decided the
+same day — the ranked `Today` landing became Release 3.6's first-interaction
+milestone; the other two were already `[x]` and owed to this archive.
+
+- [ ] **[non-blocker]** The wider progressive-disclosure question is still
+      open, and is now a smaller one. With Insights no longer competing for the
+      same vertical space as the tab strip, the remaining candidates are a
+      triage-first default view with drill-down, collapsible advanced sections,
+      or regrouping the six peers into three. _(state: planned — design
+      -dependent; deliberately not decided while fixing the defect underneath
+      it, since the density judgement changes once the layout is honest.)_
+
+      **Three inputs arrived 2026-08-15** from the adversarial UI review, all
+      arguing the same decision from different angles and all routed here rather
+      than scheduled as engineering: a ranked `Today` landing view (the value
+      score and work-unit estimate already exist and are three clicks deep), a
+      sortable table instead of ~120px cards for a 76-repo triage screen, and a
+      single primary action per row instead of nine equal-weight buttons. Release
+      3.5 supplies the trustworthy numbers any of them would render; the choice
+      of surface stays here. See
+      [the triage](docs/reference/2026-08-15-ui-review-triage.md).
+
+- [x] **Sanction the external-archive pattern in the standard.** _(state:
+      planned — documentation)_ `ROADMAP_TEMPLATE.md` Section 6 anticipates
+      release sections being "archived or removed" but assumes the surviving
+      history stays **in** the roadmap; no part of the standard, schema, or
+      the 12 audit rules mentions an external archive file. Document it as a
+      supported option with a required pointer convention, so a split repo is
+      self-describing rather than merely unpenalized.
+
+- [x] **P1 — PSSA correctness micro-batch (12 findings, low risk).**
+      `PossibleIncorrectComparisonWithNull` 1, `AvoidAssignmentToAutomatic
+      Variable` 3, `UseDeclaredVarsMoreThanAssignments` 6,
+      `AvoidOverwritingBuiltInCmdlets` 1, `AvoidUsingInvokeExpression` 1.
+      Mechanical, each a latent-bug class, one PR. _(done 2026-08-15: all 12
+      fixed — `$Event`→`-RepairEvent`/`-EventName`, `$args`→`$refusalArgs`,
+      `Write-Log`→`Write-ReconcileLog`, `Invoke-Expression` replaced by an
+      exe+args contract on `Resolve-VerifyCommand` with a smoke assertion,
+      null flipped left, six dead assignments discarded. Evidence: lint gate
+      PASS at 575/587 then baseline rewritten with the five rules removed —
+      each now gates at zero; module smoke and api-host smoke exit 0.)_
