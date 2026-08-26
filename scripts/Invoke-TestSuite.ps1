@@ -214,6 +214,54 @@ Invoke-InProcessGate -Name 'roadmap standard assets integrity' -Action {
     Write-Host ("  roadmap standard assets valid: {0} audit rules" -f @($rules.rules).Count) -ForegroundColor DarkGray
 }
 
+# Release 3.6 milestone 1 -- the foundation domains are data. Adding a domain
+# or a per-kind applicability rule is a JSON-only change, so this gate is what
+# keeps that JSON honest: versioned, complete, and never scoring what the
+# roadmap says is defined-only.
+Invoke-InProcessGate -Name 'foundation-domains.json integrity (Release 3.6)' -Action {
+    $path = Join-Path $WorkspaceRoot 'backend/config/foundation-domains.json'
+    if (-not (Test-Path -LiteralPath $path)) { throw "foundation-domains.json not found at $path" }
+    $parsed = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $path -Raw -Encoding UTF8)
+    if ([string]$parsed.schemaVersion -ne 'v1') { throw "foundation-domains.json schemaVersion must be 'v1', got '$($parsed.schemaVersion)'" }
+    foreach ($key in @('principle', 'refinementRule', 'conclusions', 'domainStatuses', 'domains', 'kinds', 'kindDetection')) {
+        if ($null -eq $parsed.$key) { throw "foundation-domains.json missing '$key'" }
+    }
+    foreach ($c in @('strengthen', 'appropriate-as-is', 'insufficiently-understood')) {
+        if ($null -eq $parsed.conclusions.$c) { throw "foundation-domains.json conclusions missing '$c'" }
+    }
+    foreach ($s in @('present', 'weak', 'missing', 'not-applicable')) {
+        if ($s -notin @($parsed.domainStatuses)) { throw "foundation-domains.json domainStatuses missing '$s'" }
+    }
+    if (@($parsed.domains).Count -lt 5) { throw "foundation-domains.json must carry the five starting-set domains, found $(@($parsed.domains).Count)" }
+    foreach ($d in @($parsed.domains)) {
+        foreach ($key in @('id', 'title', 'question')) {
+            if ([string]::IsNullOrWhiteSpace([string]$d.$key)) { throw "foundation-domains.json domain missing '$key'" }
+        }
+        $isScored = if ($null -eq $d.PSObject.Properties['scored']) { $true } else { [bool]$d.scored }
+        if ($isScored) {
+            if ($null -eq $d.nextAction -or [string]::IsNullOrWhiteSpace([string]$d.nextAction.route)) { throw "scored domain '$($d.id)' names no next-action route; a strengthen verdict could not offer one" }
+        } else {
+            if ([string]$d.status -ne 'not-scored') { throw "unscored domain '$($d.id)' must declare status 'not-scored'" }
+            if ($null -eq $d.evidenceModel -or @($d.evidenceModel.subAreas).Count -eq 0) { throw "unscored domain '$($d.id)' must define its evidence model (subAreas)" }
+        }
+    }
+    $domainIds = @($parsed.domains | ForEach-Object { [string]$_.id })
+    if (@($parsed.kinds).Count -lt 6) { throw "foundation-domains.json must carry the six repository kinds, found $(@($parsed.kinds).Count)" }
+    foreach ($k in @($parsed.kinds)) {
+        if ([string]::IsNullOrWhiteSpace([string]$k.id)) { throw 'foundation-domains.json kind missing id' }
+        if ($null -eq $k.applicability) { throw "kind '$($k.id)' missing applicability (use {} when every domain applies)" }
+        foreach ($p in $k.applicability.PSObject.Properties) {
+            if ($p.Name -notin $domainIds) { throw "kind '$($k.id)' marks unknown domain '$($p.Name)' not-applicable" }
+            if ([string]::IsNullOrWhiteSpace([string]$p.Value)) { throw "kind '$($k.id)' marks '$($p.Name)' not-applicable without a stated reason" }
+        }
+    }
+    foreach ($r in @($parsed.kindDetection.rules)) {
+        if ([string]$r.kind -notin @($parsed.kinds | ForEach-Object { [string]$_.id })) { throw "kindDetection rule names unknown kind '$($r.kind)'" }
+        if ($null -eq $r.when) { throw "kindDetection rule for '$($r.kind)' has no 'when'" }
+    }
+    Write-Host ("  foundation-domains.json valid: {0} domains ({1} scored), {2} kinds, {3} detection rule(s)" -f @($parsed.domains).Count, @($parsed.domains | Where-Object { $null -eq $_.PSObject.Properties['scored'] -or $_.scored }).Count, @($parsed.kinds).Count, @($parsed.kindDetection.rules).Count) -ForegroundColor DarkGray
+}
+
 Invoke-InProcessGate -Name 'Agent API OpenAPI spec (Release 2.4)' -Action {
     $specPath = Join-Path $WorkspaceRoot 'docs/reference/agent-api.yaml'
     if (-not (Test-Path -LiteralPath $specPath)) { throw "agent-api.yaml not found at $specPath" }

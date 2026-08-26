@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     # Derived from this script's location rather than a hardcoded drive letter —
     # the previous 'G:\...' default no longer resolved on this machine, so the
@@ -29,13 +29,15 @@ $roadmapPrSubmitterPath = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Road
 $docAuditScanner = Join-Path $WorkspaceRoot 'backend\modules\docaudit\DocAudit.Scanner.ps1'
 $docStandards = Join-Path $WorkspaceRoot 'backend\config\doc-standards.json'
 $agentBudgetModule = Join-Path $WorkspaceRoot 'backend\modules\agent-runs\BudgetLedger.ps1'
+$portfolioConclusionModule = Join-Path $WorkspaceRoot 'backend\modules\portfolio\Portfolio.Conclusion.ps1'
+$foundationDomainsConfig = Join-Path $WorkspaceRoot 'backend\config\foundation-domains.json'
 
 Write-Step 'Loading reconciliation module functions only'
 & $reconcile -LoadFunctionsOnly
 Write-Host 'Loaded reconciliation module successfully' -ForegroundColor Green
 
 Write-Step 'Validating copied module files exist'
-@($docInventory, $docQueue, $docBatch, $reconcile, $reconcileModular, $reconcileTests, $roadmapParser, $roadmapExecutionContract, $roadmapAuditor, $roadmapEvaluatorPath, $roadmapRepairerPath, $roadmapPrSubmitterPath, $docAuditScanner, $docStandards, $agentBudgetModule) | ForEach-Object {
+@($docInventory, $docQueue, $docBatch, $reconcile, $reconcileModular, $reconcileTests, $roadmapParser, $roadmapExecutionContract, $roadmapAuditor, $roadmapEvaluatorPath, $roadmapRepairerPath, $roadmapPrSubmitterPath, $docAuditScanner, $docStandards, $agentBudgetModule, $portfolioConclusionModule, $foundationDomainsConfig) | ForEach-Object {
     if (-not (Test-Path -LiteralPath $_)) {
         throw "Missing module file: $_"
     }
@@ -2249,6 +2251,114 @@ $bothAssess = Invoke-PortfolioAssessment -LocalRepos $bothRepos -GitHubRepos $bo
 if (@($bothAssess).Count -ne 1)                  { throw "Expected single dedupe-merged assessment, got $(@($bothAssess).Count)" }
 if ($bothAssess[0].sourceCoverage -ne 'local+github') { throw "Expected sourceCoverage=local+github, got '$($bothAssess[0].sourceCoverage)'" }
 Write-Host '  local+github source coverage correct' -ForegroundColor DarkGray
+
+Write-Step 'Foundation conclusions — Release 3.6 M1: every repository leaves with an explainable conclusion'
+& {
+    . $portfolioConclusionModule
+    $fdConfig = Get-FoundationDomainsConfig -ConfigPath $foundationDomainsConfig
+    if ($null -eq $fdConfig) { throw 'foundation-domains.json did not load (schemaVersion v1 with a non-empty domains array is required)' }
+    $fdDomainIds = @($fdConfig.domains | ForEach-Object { [string]$_.id })
+    foreach ($required in @('documentation', 'purpose', 'planning', 'structure', 'intentional-engineering')) {
+        if ($required -notin $fdDomainIds) { throw "foundation-domains.json is missing the starting-set domain '$required'" }
+    }
+    $fdUnscored = @($fdConfig.domains | Where-Object { [string]$_.id -eq 'intentional-engineering' })[0]
+    if ($fdUnscored.scored -ne $false -or [string]$fdUnscored.status -ne 'not-scored') { throw 'intentional-engineering must ship defined-not-scored (scored=false, status=not-scored) until Release 3.7 decides its detectors' }
+    if (@($fdUnscored.evidenceModel.subAreas).Count -lt 5) { throw 'intentional-engineering evidence model must name its sub-areas (test, architecture, operational, maintenance, delivery health)' }
+    $fdKindIds = @($fdConfig.kinds | ForEach-Object { [string]$_.id })
+    foreach ($required in @('library', 'service', 'script-collection', 'archived', 'minimal', 'externally-managed')) {
+        if ($required -notin $fdKindIds) { throw "foundation-domains.json is missing the repository kind '$required'" }
+    }
+
+    # Fixture set the acceptance criteria name: no roadmap, archived, minimal
+    # utility, plus the L1/L3, GitHub-only, parse-error and structure-gap shapes.
+    function ConvertTo-FdEntry([hashtable]$Overrides) {
+        $base = @{ repoId = 'repo:x'; repoName = 'x'; sourceCoverage = 'local'; localPath = (Join-Path $WorkspaceRoot 'output\smoke\module\fd-x'); lastScanStatus = 'ok'
+            lifecycleState = 'discovered'; curationState = 'none'; hasReadme = $false; readmeScore = 0; docFindingCount = 0; hasRoadmap = $false; roadmapState = 'missing'
+            maturityLevel = 'L0-Absent'; pendingCount = 0; repoType = 'other'; structureFindings = @(); hasCiSignal = $false; hasTestSignal = $false
+            latestWorkflowRunConclusion = $null; localCommitsLastMonth = 0 }
+        foreach ($k in $Overrides.Keys) { $base[$k] = $Overrides[$k] }
+        $base['repoId'] = 'repo:' + [string]$base['repoName']
+        return [pscustomobject]$base
+    }
+    $fdFixtures = @(
+        (ConvertTo-FdEntry @{ repoName = 'no-roadmap'; hasReadme = $true; readmeScore = 80 }),
+        (ConvertTo-FdEntry @{ repoName = 'archived'; lifecycleState = 'archived'; hasReadme = $true; readmeScore = 40 }),
+        (ConvertTo-FdEntry @{ repoName = 'curated-archive'; curationState = 'archived-ignore'; hasReadme = $true; readmeScore = 20 }),
+        (ConvertTo-FdEntry @{ repoName = 'minimal-utility'; hasReadme = $true; readmeScore = 72; hasRoadmap = $true; roadmapState = 'complete'; maturityLevel = 'L3-Contract-Ready'; pendingCount = 0 }),
+        (ConvertTo-FdEntry @{ repoName = 'l1-roadmap'; hasReadme = $true; readmeScore = 75; hasRoadmap = $true; roadmapState = 'pending'; maturityLevel = 'L1-Informal'; pendingCount = 3 }),
+        (ConvertTo-FdEntry @{ repoName = 'healthy-l3'; hasReadme = $true; readmeScore = 90; hasRoadmap = $true; roadmapState = 'pending'; maturityLevel = 'L3-Contract-Ready'; pendingCount = 4; hasCiSignal = $true; hasTestSignal = $true; repoType = 'node' }),
+        (ConvertTo-FdEntry @{ repoName = 'github-only'; sourceCoverage = 'github'; localPath = '' }),
+        (ConvertTo-FdEntry @{ repoName = 'parse-error'; hasReadme = $true; readmeScore = 70; hasRoadmap = $true; roadmapState = 'parse-error' }),
+        (ConvertTo-FdEntry @{ repoName = 'struct-gap'; hasReadme = $true; readmeScore = 85; hasRoadmap = $true; roadmapState = 'pending'; maturityLevel = 'L4-Orchestration-Ready'; repoType = 'python'; structureFindings = @([pscustomobject]@{ kind = 'missing-root-file'; target = 'LICENSE'; severity = 'critical'; category = 'root'; recommendedAction = 'add' }) })
+    )
+
+    # Red first: the validator must reject a blank reason and a strengthen
+    # verdict with no route before its green verdict means anything.
+    $fdBad = Get-RepositoryFoundationConclusion -Entry $fdFixtures[0] -Config $fdConfig
+    $fdBad.reason = ''
+    $fdBad.nextAction = $null
+    $fdRed = @(Test-FoundationConclusion -Conclusion $fdBad -Config $fdConfig)
+    if ($fdRed.Count -lt 2 -or -not ($fdRed -join ' ').Contains('empty reason') -or -not ($fdRed -join ' ').Contains('no next-action route')) {
+        throw "Foundation-conclusion validator did not go red on the blank-reason / no-route fixture (violations: $($fdRed -join '; '))"
+    }
+    $fdBare = Get-RepositoryFoundationConclusion -Entry $fdFixtures[0] -Config $fdConfig
+    $fdBare.reason = 'L0-Absent'
+    if (@(Test-FoundationConclusion -Conclusion $fdBare -Config $fdConfig).Count -eq 0) { throw "Validator accepted 'L0-Absent' as a whole reason" }
+
+    $fdPayload = Get-PortfolioConclusionsPayload -Entries $fdFixtures -Config $fdConfig
+    if ([int]$fdPayload.count -ne $fdFixtures.Count) { throw "Expected $($fdFixtures.Count) conclusions, got $($fdPayload.count)" }
+    if (-not $fdPayload.contract.holds) { throw "Conclusion contract violated on the fixture set: $($fdPayload.contract.violations -join '; ')" }
+    $fdByName = @{}
+    foreach ($item in $fdPayload.items) { $fdByName[[string]$item.repoName] = $item }
+    $fdExpect = @{
+        'no-roadmap' = 'strengthen'; 'archived' = 'appropriate-as-is'; 'curated-archive' = 'appropriate-as-is'; 'minimal-utility' = 'appropriate-as-is'
+        'l1-roadmap' = 'strengthen'; 'healthy-l3' = 'appropriate-as-is'; 'github-only' = 'insufficiently-understood'; 'parse-error' = 'insufficiently-understood'; 'struct-gap' = 'strengthen'
+    }
+    foreach ($name in $fdExpect.Keys) {
+        $actual = [string]$fdByName[$name].conclusion
+        if ($actual -ne $fdExpect[$name]) { throw "Fixture '$name' expected conclusion '$($fdExpect[$name])', got '$actual' ($($fdByName[$name].reason))" }
+    }
+    $fdKnownRoutes = @('/api/readme/standardize/preview', '/api/roadmap/repair/preview', '/api/repository-improvement/preview')
+    foreach ($item in $fdPayload.items) {
+        if ([string]::IsNullOrWhiteSpace([string]$item.reason)) { throw "Fixture '$($item.repoName)' has no reason" }
+        if ([string]$item.conclusion -eq 'strengthen' -and [string]$item.nextAction.route -notin $fdKnownRoutes) { throw "Fixture '$($item.repoName)' strengthen names an unknown route '$($item.nextAction.route)'" }
+        foreach ($d in @($item.domains)) { if (@($d.evidence).Count -eq 0) { throw "Fixture '$($item.repoName)' domain '$($d.domain)' carries no evidence" } }
+    }
+    if ([string]$fdByName['no-roadmap'].nextAction.route -ne '/api/roadmap/repair/preview') { throw 'A missing roadmap must offer the smallest credible plan (roadmap repair preview)' }
+    if ([string]$fdByName['struct-gap'].nextAction.route -ne '/api/repository-improvement/preview') { throw 'A critical structure gap must offer the structure repair preview' }
+    if ([string]$fdByName['parse-error'].nextAction.route -ne '/api/roadmap/repair/preview') { throw 'An unparseable roadmap must still offer the repair preview' }
+    if ([string]$fdByName['archived'].kind -ne 'archived' -or [string]$fdByName['curated-archive'].kind -ne 'archived') { throw 'lifecycleState=archived and curationState=archived-ignore must both resolve kind=archived' }
+    $fdArchivedPlanning = @($fdByName['archived'].domains | Where-Object { $_.domain -eq 'planning' })[0]
+    if ([string]$fdArchivedPlanning.status -ne 'not-applicable') { throw "Archived planning must be not-applicable, got '$($fdArchivedPlanning.status)'" }
+    $fdNoRoadmapPlanning = @($fdByName['no-roadmap'].domains | Where-Object { $_.domain -eq 'planning' })[0]
+    if (([string]$fdNoRoadmapPlanning.evidence[0]) -notmatch 'no plan recorded') { throw "A missing roadmap must read as 'no plan recorded', not L0-Absent (got '$($fdNoRoadmapPlanning.evidence[0])')" }
+    if ([string]$fdByName['github-only'].reason -notmatch 'local clone') { throw 'A GitHub-only entry must name the local clone the product needs' }
+    # Coverage reconciles: every domain's status counts sum to the item count.
+    foreach ($id in $fdDomainIds) {
+        $row = $fdPayload.coverage.$id
+        $sum = 0; foreach ($p in $row.PSObject.Properties) { $sum += [int]$p.Value }
+        if ($sum -ne $fdFixtures.Count) { throw "Coverage for '$id' sums to $sum, not $($fdFixtures.Count)" }
+    }
+    $fdConclusionSum = 0; foreach ($p in $fdPayload.byConclusion.PSObject.Properties) { $fdConclusionSum += [int]$p.Value }
+    if ($fdConclusionSum -ne $fdFixtures.Count) { throw "byConclusion sums to $fdConclusionSum, not $($fdFixtures.Count)" }
+    # The route serializes this payload; a shape that dies in ConvertTo-Json is not shippable.
+    $fdRoundTrip = ConvertFrom-Json -InputObject (ConvertTo-Json -InputObject $fdPayload -Depth 12)
+    if (-not $fdRoundTrip.contract.holds -or @($fdRoundTrip.items).Count -ne $fdFixtures.Count) { throw 'Conclusions payload did not survive a JSON round trip' }
+
+    # Refinement is a data change: a new detection rule + kind applicability,
+    # applied to a cloned config object, changes the conclusion with no code.
+    $fdRefined = ConvertFrom-Json -InputObject (ConvertTo-Json -InputObject $fdConfig -Depth 12)
+    $fdRefined.kindDetection.rules += [pscustomobject]@{ kind = 'minimal'; when = [pscustomobject]@{ lifecycleState = 'completed' }; basis = 'smoke: completed reads as minimal' }
+    $fdMinimalEntry = ConvertTo-FdEntry @{ repoName = 'done-utility'; lifecycleState = 'completed'; hasReadme = $true; readmeScore = 75 }
+    $fdBefore = Get-RepositoryFoundationConclusion -Entry $fdMinimalEntry -Config $fdConfig
+    $fdAfter = Get-RepositoryFoundationConclusion -Entry $fdMinimalEntry -Config $fdRefined
+    if ([string]$fdBefore.conclusion -ne 'strengthen' -or [string]$fdAfter.conclusion -ne 'appropriate-as-is' -or [string]$fdAfter.kind -ne 'minimal') {
+        throw "A JSON-only refinement did not change the conclusion (before=$($fdBefore.conclusion) after=$($fdAfter.conclusion) kind=$($fdAfter.kind))"
+    }
+    if (@(Test-FoundationConclusion -Conclusion $fdAfter -Config $fdRefined).Count -ne 0) { throw 'The refined conclusion broke the contract' }
+
+    Write-Host ("  foundation conclusions ok: {0} domains, {1} kinds; validator red on blank reason + no route + bare L0-Absent; {2} fixtures all concluded ({3}); coverage and byConclusion reconcile; JSON round trip holds; a JSON-only kind rule flipped a conclusion" -f $fdDomainIds.Count, $fdKindIds.Count, $fdFixtures.Count, (($fdPayload.byConclusion.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join ' ')) -ForegroundColor DarkGray
+}
 
 Write-Step 'Portfolio value scoring — smoke: security/test work ranks above generic chores'
 $highValue = Invoke-PortfolioValueScore `
@@ -4746,7 +4856,7 @@ foreach ($emitted in $emittedClasses) {
 
 # The routes must actually consult the budget. A budget nothing calls is a
 # config file, not a gate.
-foreach ($budgetRoute in @('GET /api/portfolio/assessment', 'GET /api/operations/repos')) {
+foreach ($budgetRoute in @('GET /api/portfolio/assessment', 'GET /api/operations/repos', 'GET /api/portfolio/conclusions')) {
     $routeClause = @($hostFileAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.SwitchStatementAst] }, $true) |
         ForEach-Object { $_.Clauses } |
         Where-Object { $_.Item1.Extent.Text.Trim("'`"") -eq $budgetRoute }) | Select-Object -First 1

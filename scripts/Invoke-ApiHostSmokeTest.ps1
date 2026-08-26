@@ -2702,6 +2702,78 @@ try {
     }
     Write-Host ("  /api/operations/repos -> count={0} source={1}" -f $operationsReposData.count, [string]$operationsReposData.cacheSource) -ForegroundColor DarkGray
 
+    # Release 3.6 milestone 1 — every indexed repository leaves with an
+    # explainable conclusion. Content type is asserted first: the SPA fallback
+    # answers 200 text/html for a route that does not exist.
+    Write-Host '[STEP] Portfolio conclusions route (Release 3.6 M1) — every indexed repo leaves with a conclusion' -ForegroundColor Cyan
+    $conclusionsResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/conclusions"
+    Assert-Not503 -Name '/api/portfolio/conclusions' -Response $conclusionsResponse
+    if ([string]$conclusionsResponse.ContentType -notlike 'application/json*') {
+        throw "/api/portfolio/conclusions did not return JSON (HTTP $($conclusionsResponse.StatusCode), Content-Type=$($conclusionsResponse.ContentType)) — the SPA fallback is shadowing it"
+    }
+    if ($conclusionsResponse.StatusCode -ne 200) { throw "/api/portfolio/conclusions expected HTTP 200, got $($conclusionsResponse.StatusCode). Body=$($conclusionsResponse.Content)" }
+    $conclusionsJson = $conclusionsResponse.Json
+    if ($null -eq $conclusionsJson -or $conclusionsJson.success -ne $true -or $null -eq $conclusionsJson.data) { throw "/api/portfolio/conclusions did not return success=true with data. Body=$($conclusionsResponse.Content)" }
+    $conclusionsData = $conclusionsJson.data
+    foreach ($field in @('schemaVersion', 'model', 'generatedAt', 'count', 'totalCount', 'byConclusion', 'byKind', 'coverage', 'contract', 'items', 'cacheSource', 'performance')) {
+        if (-not ($conclusionsData.PSObject.Properties.Name -contains $field)) { throw "/api/portfolio/conclusions response missing '$field'" }
+    }
+    if ([string]$conclusionsData.schemaVersion -ne 'v1') { throw "/api/portfolio/conclusions schemaVersion expected v1, got '$($conclusionsData.schemaVersion)'" }
+    if ([int]$conclusionsData.totalCount -ne @($operationsReposData.entries).Count) {
+        throw "/api/portfolio/conclusions covered $($conclusionsData.totalCount) repositories but the index holds $(@($operationsReposData.entries).Count) — a repository left without a conclusion"
+    }
+    if ([int]$conclusionsData.count -ne @($conclusionsData.items).Count) { throw '/api/portfolio/conclusions count did not match the number of items returned' }
+    if ($conclusionsData.contract.holds -ne $true) {
+        throw "/api/portfolio/conclusions contract violated on the live index: $(@($conclusionsData.contract.violations) -join '; ')"
+    }
+    $conclusionSet = @('strengthen', 'appropriate-as-is', 'insufficiently-understood')
+    foreach ($item in @($conclusionsData.items)) {
+        if ([string]::IsNullOrWhiteSpace([string]$item.reason)) { throw "Conclusion for '$($item.repoName)' has an empty reason" }
+        if ([string]$item.conclusion -notin $conclusionSet) { throw "Conclusion for '$($item.repoName)' is '$($item.conclusion)', outside the set" }
+        if (@($item.domains).Count -lt 5) { throw "Conclusion for '$($item.repoName)' carries $(@($item.domains).Count) domain records; the starting set is five" }
+        if ([string]$item.conclusion -eq 'strengthen' -and [string]::IsNullOrWhiteSpace([string]$item.nextAction.route)) { throw "Conclusion for '$($item.repoName)' is strengthen but names no next action" }
+    }
+    # Release 3.2 read budget, judged against the class the index was served from.
+    $conclusionsBudget = $conclusionsData.performance
+    if ([string]$conclusionsBudget.readClass -ne [string]$conclusionsData.cacheSource) { throw ("Read-budget class '{0}' does not match the served cacheSource '{1}' on /api/portfolio/conclusions" -f $conclusionsBudget.readClass, $conclusionsData.cacheSource) }
+    if (-not $conclusionsBudget.declared) { throw ("/api/portfolio/conclusions read class '{0}' has no declared budget" -f $conclusionsBudget.readClass) }
+    if (-not $conclusionsBudget.withinBudget) { throw ("/api/portfolio/conclusions read-path budget BREACHED: class={0} measuredMs={1} budgetMs={2}" -f $conclusionsBudget.readClass, $conclusionsBudget.measuredMs, $conclusionsBudget.budgetMs) }
+
+    $fixtureConclusion = @($conclusionsData.items | Where-Object { [string]$_.repoName -eq 'smoke-managed-repo' } | Select-Object -First 1)
+    if ($fixtureConclusion.Count -eq 0) { throw "The seeded fixture 'smoke-managed-repo' has no conclusion" }
+    $fixtureConclusion = $fixtureConclusion[0]
+
+    # One repository, by the same four-way id the operations detail route accepts.
+    $encodedConclusionRepoId = [uri]::EscapeDataString([string]$fixtureConclusion.repoId)
+    $conclusionDetail = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/conclusions/$encodedConclusionRepoId"
+    if ([string]$conclusionDetail.ContentType -notlike 'application/json*' -or $conclusionDetail.StatusCode -ne 200) { throw "/api/portfolio/conclusions/{repoId} expected 200 JSON, got HTTP $($conclusionDetail.StatusCode) $($conclusionDetail.ContentType)" }
+    if ($conclusionDetail.Json.success -ne $true -or [string]$conclusionDetail.Json.data.conclusion.repoId -ne [string]$fixtureConclusion.repoId) { throw '/api/portfolio/conclusions/{repoId} returned a mismatched or unsuccessful payload' }
+    if ($conclusionDetail.Json.data.contract.holds -ne $true) { throw "/api/portfolio/conclusions/{repoId} contract violated: $(@($conclusionDetail.Json.data.contract.violations) -join '; ')" }
+    $conclusionMissing = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/conclusions/does-not-exist-$([guid]::NewGuid().ToString('n').Substring(0,8))"
+    if ($conclusionMissing.StatusCode -ne 404 -or [string]$conclusionMissing.ContentType -notlike 'application/json*') { throw "/api/portfolio/conclusions/{unknown} expected 404 JSON, got HTTP $($conclusionMissing.StatusCode) $($conclusionMissing.ContentType)" }
+
+    # The filter is a first-class view: appropriate-as-is must be as filterable as strengthen.
+    $conclusionFiltered = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/conclusions?conclusion=$([uri]::EscapeDataString([string]$fixtureConclusion.conclusion))"
+    if ($conclusionFiltered.StatusCode -ne 200 -or $null -eq $conclusionFiltered.Json) { throw '/api/portfolio/conclusions?conclusion= did not return 200 JSON' }
+    if (@($conclusionFiltered.Json.data.items | Where-Object { [string]$_.conclusion -ne [string]$fixtureConclusion.conclusion }).Count -ne 0) { throw '/api/portfolio/conclusions?conclusion= returned items outside the filter' }
+    if ([int]$conclusionFiltered.Json.data.count -lt 1 -or [int]$conclusionFiltered.Json.data.totalCount -ne [int]$conclusionsData.totalCount) { throw '/api/portfolio/conclusions?conclusion= count/totalCount did not reconcile' }
+
+    # Acceptance: a strengthen conclusion's next action is a route the console
+    # can actually run — it must answer JSON 200 for the fixture repo.
+    if ([string]$fixtureConclusion.conclusion -eq 'strengthen') {
+        $fixtureAction = $fixtureConclusion.nextAction
+        $fixtureActionBody = @{}
+        foreach ($p in $fixtureAction.body.PSObject.Properties) { $fixtureActionBody[[string]$p.Name] = [string]$p.Value }
+        $fixtureActionResponse = Invoke-ApiRequest -Method ([string]$fixtureAction.method) -Uri "$BaseUrl$($fixtureAction.route)" -Body $fixtureActionBody
+        if ([string]$fixtureActionResponse.ContentType -notlike 'application/json*' -or $fixtureActionResponse.StatusCode -ne 200) {
+            throw ("The fixture's next action {0} {1} answered HTTP {2} {3}; a strengthen conclusion must name an action the console can run. Body={4}" -f $fixtureAction.method, $fixtureAction.route, $fixtureActionResponse.StatusCode, $fixtureActionResponse.ContentType, $fixtureActionResponse.Content)
+        }
+        Write-Host ("  fixture next action {0} {1} -> HTTP 200 JSON" -f $fixtureAction.method, $fixtureAction.route) -ForegroundColor DarkGray
+    }
+    Write-Host ("  /api/portfolio/conclusions -> total={0} {1}; fixture '{2}' -> {3} (kind={4}); detail 200, unknown 404 JSON, filter reconciles; read-budget class={5} measuredMs={6}" -f `
+            $conclusionsData.totalCount, (($conclusionsData.byConclusion.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join ' '), `
+            $fixtureConclusion.repoName, $fixtureConclusion.conclusion, $fixtureConclusion.kind, $conclusionsBudget.readClass, $conclusionsBudget.measuredMs) -ForegroundColor DarkGray
+
     Write-Host '[STEP] README content route (Release 1.8)' -ForegroundColor Cyan
     $readmeContentOk = $true
     if (@($operationsReposData.entries).Count -gt 0) {
@@ -3578,6 +3650,9 @@ A release should not be marked `done` unless:
         '/api/execution/queue', '/api/notifications/webhooks', '/api/roadmap/drift',
         '/api/analytics/cost', '/api/roadmap/maturity-history', '/api/agent-runs',
         '/api/report/artifacts', '/api/status/cache', '/api/log/tail',
+        # Release 3.6 M1 — every repository's conclusion; a deleted route would
+        # answer 200 text/html here and the whole product outcome would vanish.
+        '/api/portfolio/conclusions',
         # Release 3.1. The census asserts content-type, not status, so an
         # id that matches nothing still proves the route exists: its 404 is
         # JSON, whereas a deleted route would answer 200 text/html.

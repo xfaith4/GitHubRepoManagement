@@ -497,7 +497,19 @@ wherever it is not.
       exists: [`Portfolio.Assessment.ps1`](backend/modules/portfolio/Portfolio.Assessment.ps1),
       [`DocAudit.Scanner.ps1`](backend/modules/docaudit/DocAudit.Scanner.ps1),
       [`Portfolio.Scope.ps1`](backend/modules/portfolio/Portfolio.Scope.ps1).
-      _(state: planned)_
+      _(state: smoke-tested 2026-08-26 —
+      [`Portfolio.Conclusion.ps1`](backend/modules/portfolio/Portfolio.Conclusion.ps1)
+      composes the conclusion from the cached index only; `not-scored` joins
+      the domain statuses for the defined-only domain; `GET
+      /api/portfolio/conclusions` (+ `?conclusion=` filter) and
+      `/api/portfolio/conclusions/{repoId}` serve it under the Release 3.2
+      read budget. Gates: module smoke shows the validator red on a blank
+      reason, no route and bare `L0-Absent` before nine fixtures all conclude
+      and coverage reconciles; api-host smoke proves 100% of the live index
+      concludes, the fixture's `strengthen` next action answers JSON 200, and
+      the route census guards the route; the config-integrity gate versions
+      the JSON. CI Smoke is the arbiter. No UI consumer yet — that is the
+      outcome card.)_
 - [ ] **Outcome card (UI).** Per repository: the conclusion, why, each
       domain's status and evidence, and the next action wired to the existing
       preview-first repair and packaging flows; repos without a roadmap show
@@ -518,7 +530,15 @@ wherever it is not.
       `foundation-domains.json` (library, service, script collection,
       archived, minimal, externally managed) so a domain can be
       `not-applicable` with a stated reason; `L0-Absent` reads as "no plan
-      recorded" with the smallest credible plan offered. _(state: planned)_
+      recorded" with the smallest credible plan offered. _(state:
+      backend-complete 2026-08-26 — the six kinds and their applicability
+      reasons are data in `foundation-domains.json`; `archived` is detected
+      from `lifecycleState` / `curationState=archived-ignore`, the rest await
+      a kind signal and read as `unknown` (every domain applies) rather than
+      guessed; a missing roadmap reads "no plan recorded" and offers the
+      roadmap repair preview. The module smoke proves a JSON-only detection
+      rule flips a conclusion with no code change. Rendering is the outcome
+      card's.)_
 - [ ] **Measure — coverage and leverage.** `GET /api/portfolio/trend` gains a
       foundation-coverage series (per domain: present / weak / missing /
       not-applicable) captured by
@@ -536,7 +556,13 @@ wherever it is not.
       repository, which are cheap from existing signals (Actions results,
       merge readiness, PR state) and which need a detector; record it in
       `foundation-domains.json` as `not-scored`, so Release 3.7's ten
-      repositories decide which evidence earns a detector. _(state: planned)_
+      repositories decide which evidence earns a detector. _(state:
+      smoke-tested 2026-08-26 — recorded as the `intentional-engineering`
+      domain with `scored: false`, `status: not-scored` and six sub-areas
+      (test, operational, delivery-health, maintenance: cheap from existing
+      signals; architecture, release: need a detector). The config-integrity
+      gate refuses a scored status on it; the conclusion reports what it
+      observes for the domain, "observed, not judged".)_
 
 #### Acceptance criteria
 

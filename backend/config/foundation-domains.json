@@ -1,0 +1,135 @@
+{
+  "schemaVersion": "v1",
+  "model": "foundation-domains",
+  "principle": "The product does not prescribe what a repository should become; it identifies and strengthens the foundations that allow each repository to succeed at what it is intended to be.",
+  "refinementRule": "Domains and kinds are data, not a taxonomy. Add, split, merge or re-weight one here; every change stays covered by the foundation-domains.json integrity gate and the module-smoke fixture set. Never add a domain the product cannot evidence from visible repository state, and never let a conclusion cite the absence of findings as evidence.",
+  "conclusions": {
+    "strengthen": "A domain is missing, weak or unclear, and a preview-first next action is offered.",
+    "appropriate-as-is": "Every applicable domain is present, or the repository is archived, intentionally minimal or externally managed - and the evidence says why.",
+    "insufficiently-understood": "The product cannot reach a conclusion and names what it would need. A finding about the product, not the repository."
+  },
+  "domainStatuses": ["present", "weak", "missing", "not-applicable", "not-scored"],
+  "domains": [
+    {
+      "id": "documentation",
+      "title": "Documentation",
+      "question": "Can a newcomer understand and use this repository from what is written down?",
+      "signals": ["hasReadme", "readmeScore", "docFindingCount", "documentationHealthScore"],
+      "thresholds": { "presentReadmeScore": 70, "weakReadmeScore": 30 },
+      "nextAction": {
+        "kind": "readme-standardize-preview",
+        "label": "Preview a standardized README",
+        "method": "POST",
+        "route": "/api/readme/standardize/preview",
+        "bodyKeys": ["repoName"]
+      },
+      "scored": true
+    },
+    {
+      "id": "purpose",
+      "title": "Purpose",
+      "question": "Is it clear what this repository is for and who it serves?",
+      "signals": ["hasReadme", "readmeScore"],
+      "thresholds": { "presentReadmeScore": 50 },
+      "note": "The README contract's Overview/Usage section check is skipped under the doc-standards v1 schema, so purpose reads from readmeScore until the section check surfaces as its own signal.",
+      "nextAction": {
+        "kind": "readme-standardize-preview",
+        "label": "Preview a README that states the purpose",
+        "method": "POST",
+        "route": "/api/readme/standardize/preview",
+        "bodyKeys": ["repoName"]
+      },
+      "scored": true
+    },
+    {
+      "id": "planning",
+      "title": "Planning",
+      "question": "Is there a credible plan or roadmap for what comes next?",
+      "signals": ["hasRoadmap", "roadmapState", "maturityLevel", "pendingCount"],
+      "thresholds": {
+        "presentMaturity": ["L3-Contract-Ready", "L4-Orchestration-Ready"],
+        "weakMaturity": ["L1-Informal", "L2-Structured"]
+      },
+      "absentReadsAs": "no plan recorded",
+      "nextAction": {
+        "kind": "roadmap-repair-preview",
+        "label": "Preview the smallest credible plan",
+        "method": "POST",
+        "route": "/api/roadmap/repair/preview",
+        "bodyKeys": ["repoName"]
+      },
+      "scored": true
+    },
+    {
+      "id": "structure",
+      "title": "Structure",
+      "question": "Is the layout maintainable and navigable by intent?",
+      "signals": ["structureFindings", "repoType", "hasCiSignal", "hasTestSignal"],
+      "nextAction": {
+        "kind": "repository-improvement-preview",
+        "label": "Preview the structure repairs",
+        "method": "POST",
+        "route": "/api/repository-improvement/preview",
+        "bodyKeys": ["repoName", "repoPath"]
+      },
+      "scored": true
+    },
+    {
+      "id": "intentional-engineering",
+      "title": "Intentional engineering",
+      "question": "Is there evidence the work is deliberate - tests, CI, releases, conventions?",
+      "scored": false,
+      "status": "not-scored",
+      "evidenceModel": {
+        "decision": "Defined, not scored. Release 3.7's ten repositories decide which evidence earns a detector; until then the domain reports what it observes without judging it.",
+        "subAreas": [
+          { "id": "test", "evidence": "A test tree or test-runner configuration exists.", "readFrom": "structure audit hasTestSignal", "cost": "cheap-existing" },
+          { "id": "operational", "evidence": "A CI workflow or pipeline definition exists.", "readFrom": "structure audit hasCiSignal", "cost": "cheap-existing" },
+          { "id": "delivery-health", "evidence": "The latest Actions run concluded successfully; pull requests are not piling up unreviewed.", "readFrom": "index latestWorkflowRunConclusion, openPrCount, pendingReviewPrCount", "cost": "cheap-existing" },
+          { "id": "maintenance", "evidence": "Recent commits; a clean tree; work on the default branch or a named branch.", "readFrom": "index localCommitsLastMonth, localDirtyCount, currentBranch, defaultBranch", "cost": "cheap-existing" },
+          { "id": "architecture", "evidence": "Conventions written down (CONTRIBUTING, lint and format configuration) and a layering the tree makes visible.", "readFrom": "needs a detector", "cost": "needs-detector" },
+          { "id": "release", "evidence": "Tags or releases and a changelog that names them.", "readFrom": "needs a detector (git tags, CHANGELOG.md)", "cost": "needs-detector" }
+        ]
+      }
+    }
+  ],
+  "kinds": [
+    { "id": "unknown", "title": "Not yet classified", "applicability": {}, "note": "No kind signal; every scored domain applies. A curation or classifier signal refines this." },
+    { "id": "service", "title": "Service or application", "applicability": {} },
+    { "id": "library", "title": "Library", "applicability": {} },
+    { "id": "script-collection", "title": "Script collection", "applicability": {} },
+    {
+      "id": "minimal",
+      "title": "Minimal utility",
+      "applicability": { "planning": "A minimal utility with no pending work needs no roadmap." }
+    },
+    {
+      "id": "externally-managed",
+      "title": "Externally managed",
+      "applicability": {
+        "planning": "Plans live with the upstream owner.",
+        "structure": "Layout is dictated upstream."
+      },
+      "conclusion": "appropriate-as-is",
+      "reason": "Externally managed: the upstream owner decides its plan and layout."
+    },
+    {
+      "id": "archived",
+      "title": "Archived",
+      "applicability": {
+        "planning": "An archived repository plans no further work.",
+        "structure": "An archived repository is not reorganized.",
+        "intentional-engineering": "An archived repository is not judged on ongoing engineering."
+      },
+      "conclusion": "appropriate-as-is",
+      "reason": "Archived: intentionally closed, kept for reference."
+    }
+  ],
+  "kindDetection": {
+    "note": "Only signals the index already carries. Anything undetected is 'unknown' - honest, and every scored domain applies.",
+    "rules": [
+      { "kind": "archived", "when": { "lifecycleState": "archived" }, "basis": "lifecycleState=archived" },
+      { "kind": "archived", "when": { "curationState": "archived-ignore" }, "basis": "curationState=archived-ignore" }
+    ]
+  }
+}
