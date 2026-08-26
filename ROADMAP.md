@@ -2,7 +2,7 @@
 
 > **Status:** Active
 > **Active release:** **Release 2.9 — Operator Field Proof + Mobile Completion**
-> **Next active release:** **Release 3.6 — Every Repository Gets an Outcome** (`planned`, defined 2026-08-23 under the product lens in §2) — it starts when Release 2.9's three foundations-first engineering items close; 2.9's operator half keeps riding Ben's next session — then **Release 3.7 — Portfolio Value Proof**, where ten real repositories decide the 80+ rollout
+> **Next active release:** **Release 3.6 — Every Repository Gets an Outcome** (`planned`, defined 2026-08-23 under the product lens in §2) — its precondition, Release 2.9's three foundations-first engineering items, closed 2026-08-26 and its conclusion model is underway; 2.9's operator half keeps riding Ben's next session — then **Release 3.7 — Portfolio Value Proof**, where ten real repositories decide the 80+ rollout
 > **Work ordering:** dependency-driven, not insertion order — see
 > [Execution Order and Dependencies](#execution-order-and-dependencies)
 > **Canonical product direction:** [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md)
@@ -13,7 +13,7 @@
 
 ## Current Status (Agent Context)
 
-**Last updated:** 2026-08-23
+**Last updated:** 2026-08-26
 
 Releases 0.4 through 2.6, 2.8 and 3.0 are **engineering-complete and archived**,
 as is every completed milestone from the releases and lanes still open below.
@@ -27,10 +27,10 @@ by the 2026-08-11 archive pass, recorded in `CHANGELOG.md`).
 What remains falls into four kinds of work that are **not** interchangeable —
 mixing them once made the roadmap read "everything is done" over real gaps:
 
-1. **Genuinely unbuilt engineering** — Release 2.9's three foundations-first
-   items (resequenced 2026-08-23), Release 3.6's milestones once those close,
-   and the recorded cross-cutting items. This is the only kind an autonomous
-   agent can close on its own.
+1. **Genuinely unbuilt engineering** — Release 3.6's milestones (its
+   precondition, Release 2.9's three foundations-first items, closed
+   2026-08-26) and the recorded cross-cutting items. This is the only kind an
+   autonomous agent can close on its own.
 2. **Elevated / hardware / human verification** — SYSTEM rights, a physical
    Android phone, or an operator at an authenticated session; no autonomous
    test can produce these.
@@ -51,14 +51,15 @@ and defined Releases 3.6 and 3.7.
 
 **Current focus (next agent actions), in order:**
 
-- [ ] **Release 2.9 — foundations first (resequenced 2026-08-23).** The
-      three items that make findings explainable lead the release's
-      milestones: the disagreeing readiness models, the two routes that name
-      one concept two ways, and the L1/L2 repair path for the 26 of 34
-      roadmap repos below L3. Close these before anything in 3.6.
-- [ ] **Release 3.6 — Every Repository Gets an Outcome** is defined in §6 as
-      the next engineering release (`planned`). Start it when 2.9's three
-      items close — not earlier, to manufacture momentum.
+- [ ] **Release 3.6 — Every Repository Gets an Outcome** is the next
+      engineering release (§6). Its precondition — Release 2.9's three
+      foundations-first items — closed 2026-08-26 when CI Smoke proved the
+      canonical module and api-host smoke green on the shipped code
+      ([evidence](evidence/verified/release-2.9-foundations-closed-2026-08-26.md),
+      [archived](docs/history/completed-releases.md#foundations-first-items--closed-2026-08-26)).
+      Start with the **conclusion model (backend)**: the other four
+      milestones compose on it. It stays `planned` in the index while 2.9
+      holds the single `active` slot (ROADMAP-011) for its operator half.
 - [ ] **Release 3.7 — Portfolio Value Proof** follows 3.6 (defined,
       `planned`): ten representative repositories, chosen by kind, decide the
       80+ rollout with recorded leverage numbers.
@@ -198,7 +199,7 @@ module + verification boundary`.
 | 3.3       | Steady-State Operation                                                   | `done` 2026-08-19 — retention, rehearsed restore, honest transport, decision-grade exports |
 | **3.4**   | **The Delivery Loop Closes**                                             | `done` 2026-08-15 — six milestones + the full-loop proof, driven live and operator-verified |
 | 3.5       | Trustworthy Surfaces (UI Quality)                                        | `done` 2026-08-17 — all seven milestones; trust-report per finding; operator sign-off in 2.9 |
-| **3.6**   | **Every Repository Gets an Outcome**                                     | **`planned`** 2026-08-23 — product lens (§2); after 2.9's foundations-first items          |
+| **3.6**   | **Every Repository Gets an Outcome**                                     | **`planned`** 2026-08-23 — product lens (§2); precondition closed 2026-08-26; underway     |
 | **3.7**   | **Portfolio Value Proof**                                                | **`planned`** 2026-08-23 — follows 3.6; ten real repositories decide the 80+ rollout       |
 
 > **Note on `.5` numbering.** Reserve it for course corrections like 1.7.5;
@@ -214,17 +215,18 @@ closes or a new dependency appears.
 on another open item — the ordering below is about **what kind of resource
 each item needs**, not about prerequisites.
 
-1. **Release 2.9 — the active release.** Its engineering half is now the
-   three foundations-first items (resequenced 2026-08-23: the disagreeing
-   readiness gates, the two-names-one-concept routes, the L1/L2 repair path);
-   its operator half is batched and waiting on Ben's presence at the machine.
-2. **Release 3.6 — Every Repository Gets an Outcome** is the next engineering
-   release (`planned`, defined 2026-08-23; execution contract in §6). It
-   starts when 2.9's three foundations-first items close — they are its
-   preconditions in substance, not merely in order: a conclusion cannot be
-   trusted while the visible and the enforced readiness models disagree.
-   Every release from 1.x through 3.5 is closed; new work is still proposed
-   as a release with its own contract, never appended to a closed one.
+1. **Release 3.6 — Every Repository Gets an Outcome** is the next engineering
+   release (execution contract in §6). Its preconditions — Release 2.9's three
+   foundations-first items — closed 2026-08-26
+   ([evidence](evidence/verified/release-2.9-foundations-closed-2026-08-26.md)):
+   the visible and the enforced readiness models now agree, so a conclusion
+   built on them can be trusted. It stays `planned` in the index while 2.9
+   holds the single `active` slot. Every release from 1.x through 3.5 is
+   closed; new work is still proposed as a release with its own contract,
+   never appended to a closed one.
+2. **Release 2.9 — the active release.** Its engineering half closed
+   2026-08-26 (archived); what remains is the operator half, batched and
+   waiting on Ben's presence at the machine.
 3. **Release 3.7 — Portfolio Value Proof** follows 3.6 (`planned`, contract
    in §6): ten representative repositories, chosen by kind, decide the full
    80+ rollout with recorded leverage numbers. The product earns its next
@@ -244,8 +246,7 @@ each item needs**, not about prerequisites.
 
 | Open item                                            | Depends on                                    | Type                                          |
 | ---------------------------------------------------- | --------------------------------------------- | --------------------------------------------- |
-| Release 2.9 foundations-first items (active)         | —                                             | none — engineering; resequenced 2026-08-23    |
-| Release 3.6 Every Repository Gets an Outcome         | Release 2.9's three foundations-first items   | soft — substance, not sequence; engineering   |
+| Release 3.6 Every Repository Gets an Outcome         | — (2.9 foundations closed 2026-08-26)         | none — engineering; conclusion model first    |
 | Release 3.7 Portfolio Value Proof                    | Release 3.6; operator approvals               | soft — sequence; engineering + operator       |
 | Lane 0.2 `Checks: Read`; TLS certificate password    | An operator action outside this repository    | hard — external                               |
 | Lane 0.5 tab disclosure; Lane 0.7 archive signal     | A product decision, not engineering time      | hard — design                                 |
@@ -266,20 +267,21 @@ each item needs**, not about prerequisites.
 Release 2.9 became the active release 2026-08-19. Its two halves have opposite
 shapes: **the operator half waits on Ben and cannot be advanced by an agent**
 (SYSTEM rights, a physical device, eyes on a browser, an interactive
-credential prompt — listed, batched, ready), and **the engineering half is the
-three foundations-first items** resequenced 2026-08-23 (the two mobile
-engineering items shipped 2026-08-19 and are archived).
+credential prompt — listed, batched, ready), and **the engineering half is
+closed** — the three foundations-first items resequenced 2026-08-23 closed
+2026-08-26 (archived), as did the two mobile engineering items on 2026-08-19.
 
 The full execution contract lives in one place,
 [Release 2.9 below](#release-29--operator-field-proof--mobile-completion); this
 heading exists so the validator can resolve the active-release pointer.
 
-**Current focus (resequenced 2026-08-23):** the three foundations-first
-engineering items at the top of the release's milestones — the two readiness
-gates that disagree about the same repo, the two routes that name one concept
-two ways, and the L1/L2 repair path for the 26 of 34 roadmap repos below L3.
-The two mobile engineering items shipped 2026-08-19 (archived); the operator
-batch rides Ben's next session at the machine.
+**Current focus:** the operator batch — it rides Ben's next session at the
+machine. The engineering half is closed: the three foundations-first items
+(the two readiness gates that disagreed about the same repo, the two routes
+that named one concept two ways, the L1/L2 repair path) closed 2026-08-26
+([evidence](evidence/verified/release-2.9-foundations-closed-2026-08-26.md));
+the two mobile engineering items shipped 2026-08-19. Engineering attention
+moves to Release 3.6.
 
 ---
 
@@ -293,18 +295,21 @@ in the same move: its 2026-08-11 resume condition (a PC workflow that runs to
 completion) has been met three times over.
 
 **Goal:** convert every surface that is `smoke-tested` but still waits on an
-external resource into `operator-verified` with durable evidence, and close
-the three foundations-first items. No new capability — this closes the
-honesty gap between "the suite is green" and "this works in the field."
+external resource into `operator-verified` with durable evidence. (The three
+foundations-first engineering items closed 2026-08-26.) No new capability —
+this closes the honesty gap between "the suite is green" and "this works in
+the field."
 
 **Prerequisites:** each field-proof milestone names the one external resource
 it waits on; none block each other, and several share a session. Batch them:
 the operator, not the code, is the scarce resource.
 
-**Resequenced 2026-08-23 under the product lens (§2).** Three items that had
-sat under _Known issues_ now lead the engineering milestones: they are what
-makes a finding explainable, and the preconditions in substance for Release
-3.6.
+**Resequenced 2026-08-23 under the product lens (§2), closed 2026-08-26.**
+Three items that had sat under _Known issues_ led the engineering milestones
+because they are what makes a finding explainable — the preconditions in
+substance for Release 3.6. They shipped in PR #184 and closed when CI Smoke
+proved the canonical module and api-host smoke green; archived
+[here](docs/history/completed-releases.md#foundations-first-items--closed-2026-08-26).
 
 #### Product outcomes
 
@@ -315,59 +320,12 @@ makes a finding explainable, and the preconditions in substance for Release
 
 #### Engineering milestones
 
-**Foundations first — resequenced 2026-08-23.** Moved up from _Known issues_
-under the product lens (§2); close these before anything in Release 3.6.
-
-- [ ] **Two gates disagree about the same repo.** The console's
-      `dispatchReadiness` and the packaging path enforce different standards:
-      packaging gates on L3+ maturity, the console on doc findings. On
-      2026-08-19 the product packaged and dispatched INcendiary while the
-      console reported it not ready. The guardrail "do not auto-dispatch
-      without a visible readiness model" is only half true while the visible
-      model and the enforced model differ. Decide which is authoritative and
-      make the other consult it. **Resolution direction (2026-08-23):** the
-      enforced model becomes _sufficiency of the execution contract_ — scope,
-      acceptance criteria, a runnable verification, sized to repository kind
-      and task scope — and the visible model displays that same judgement;
-      L3+ maturity stays the default way roadmap-sourced work meets it, not a
-      universal precondition. What exists:
-      [`Automation.RoadmapPackaging.ps1`](backend/modules/automation/Automation.RoadmapPackaging.ps1)
-      (shared verdict consumer),
-      [`DocAudit.Scanner.ps1`](backend/modules/docaudit/DocAudit.Scanner.ps1)
-      (documentation signal), and
-      [`Roadmap.ExecutionContract.ps1`](backend/modules/roadmap/Roadmap.ExecutionContract.ps1)
-      (authority). Focused red/green and live-route proof:
-      [`execution-contract-readiness-2026-08-25.md`](evidence/verified/execution-contract-readiness-2026-08-25.md).
-      _(state: ui-connected - shared backend and visible verdict ship; canonical
-      module/api-host smoke exit 0 remains pending)_
-- [ ] **Two routes name the same concepts differently.** `/api/roadmap/audit`
-      emits `pendingCount`/`nextPendingItem`; `/api/portfolio/assessment` emits
-      `pendingItemCount`/`nextPendingItemText` for the same ideas. Both are
-      correct in isolation; together they cost a reviewer a false defect on
-      2026-08-20. Align the names, or document the mapping where both are
-      consumed. What exists:
-      [`Portfolio.Assessment.ps1`](backend/modules/portfolio/Portfolio.Assessment.ps1)
-      and [`apiClient.ts`](frontend/services/apiClient.ts). Canonical fields and
-      compatibility aliases are gate-covered in
-      [`Invoke-ApiHostSmokeTest.ps1`](scripts/Invoke-ApiHostSmokeTest.ps1).
-      _(state: ui-connected - canonical names flow through backend, index, and
-      frontend normalization; canonical api-host smoke exit 0 remains pending)_
-- [ ] **26 of 34 roadmap repos are below L3 and cannot be dispatched.** The
-      maturity gate is correct - a weak roadmap yields an ambiguous task - but
-      the product's own answer for those repos is step 5 (preview-first
-      roadmap/README repair), which is what would raise them. Confirm that
-      path is reachable for an L1/L2 repo, since raising maturity is the only
-      route from "assessed" to "helped" for most of the portfolio. Under the
-      2026-08-23 lens this is the first "every repository gets an outcome"
-      item: an L1/L2 repo must leave the console with a reachable
-      preview-first repair **or** an explainable appropriate-as-is
-      conclusion — never only "not dispatchable".
-      [`Invoke-ModuleSmokeTest.ps1`](scripts/Invoke-ModuleSmokeTest.ps1) proves
-      the L1 preview and the bounded-L2 red/green path; the modal renders the
-      named verdict and repair in
-      [`RoadmapDispatchModal.test.tsx`](frontend/components/RoadmapDispatchModal.test.tsx).
-      _(state: ui-connected - preview-first repair is reachable and named at
-      L1/L2; canonical module/api-host smoke exit 0 remains pending)_
+**Foundations first — resequenced 2026-08-23, closed 2026-08-26.** The
+disagreeing readiness gates, the two-names-one-concept routes, and the L1/L2
+repair path all shipped in PR #184 (`ba8ffc7`) and closed `smoke-tested`
+when CI Smoke run 32949331713 proved the canonical module and api-host smoke
+green; [archived](docs/history/completed-releases.md#foundations-first-items--closed-2026-08-26),
+[evidence](evidence/verified/release-2.9-foundations-closed-2026-08-26.md).
 
 **Mobile completion — un-deferred 2026-08-19** once the delivery loop had run
 end to end three times (PRs #140, #142, scheduled INcendiary#7). The two
@@ -503,8 +461,8 @@ half depends on none of these.
 
 ### Release 3.6 — Every Repository Gets an Outcome
 
-**Status:** planned — defined 2026-08-23 under the product lens (§2); it
-starts when Release 2.9's three foundations-first items close.
+**Status:** planned — defined 2026-08-23 (§2). Precondition closed 2026-08-26;
+engineering underway. Stays `planned` while 2.9 holds the one `active` slot.
 
 **Goal:** every repository in the portfolio — including the ~50 with no
 roadmap — leaves the console with an explainable conclusion (_strengthen_,

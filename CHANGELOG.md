@@ -2,6 +2,33 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-26 — Release 2.9's foundations close; Release 3.6 may start
+
+### Changes
+
+- **The three foundations-first items of Release 2.9 are closed** and archived
+  verbatim in [`docs/history/completed-releases.md`](docs/history/completed-releases.md#foundations-first-items--closed-2026-08-26).
+  They shipped in PR #184 (`ba8ffc7`) — one execution-contract verdict
+  (`Roadmap.ExecutionContract.ps1`) consulted by packaging, the dispatch check
+  and the portfolio lifecycle; canonical `pendingCount` / `nextPendingItem`
+  names with compatibility aliases; a reachable, named preview-first repair
+  for L1/L2 roadmaps. Their one remaining condition — canonical module and
+  api-host smoke exit 0 — was met by CI Smoke run 32949331713 on the PR and
+  run 32949908469 on `main`; record in
+  [`evidence/verified/release-2.9-foundations-closed-2026-08-26.md`](evidence/verified/release-2.9-foundations-closed-2026-08-26.md).
+  Nothing is claimed `operator-verified`.
+- **Release 3.6 — Every Repository Gets an Outcome — may start.** Its stated
+  precondition is met; the roadmap's current focus, execution order,
+  dependency map and active-release snapshot say so. It stays `planned` in
+  the index because ROADMAP-011 allows one `active` release and 2.9 holds
+  that slot for its operator half. Engineering begins with the conclusion
+  model (backend), on which the other four milestones compose.
+- Also landed today, outside the roadmap: PR #185 (no secret is ever inlined
+  into the frontend bundle; `.env` ignore rules; a secret-`define` tripwire
+  in the repository-structure gate) and PR #186 (Vite 6.4 → 8.2 on Rolldown,
+  every frontend dependency current except TypeScript, which
+  `typescript-eslint` pins below 6.1).
+
 ## 2026-08-23 — The product lens: foundations, not destinations; every repository gets an outcome
 
 ### Changes

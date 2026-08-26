@@ -5708,3 +5708,66 @@ milestone; the other two were already `[x]` and owed to this archive.
       null flipped left, six dead assignments discarded. Evidence: lint gate
       PASS at 575/587 then baseline rewritten with the five rules removed —
       each now gates at zero; module smoke and api-host smoke exit 0.)_
+
+### Foundations-first items — closed 2026-08-26
+
+Moved verbatim on 2026-08-26 when the three foundations-first engineering
+items closed. Their pending condition — canonical module and api-host smoke
+exit 0 in the supported Windows environment — was met by CI Smoke on PR #184
+(run 32949331713) and on `main` (run 32949908469); record in
+[`evidence/verified/release-2.9-foundations-closed-2026-08-26.md`](../../evidence/verified/release-2.9-foundations-closed-2026-08-26.md).
+Release 2.9 stays open for its operator half.
+
+- [x] **Two gates disagree about the same repo.** The console's
+      `dispatchReadiness` and the packaging path enforce different standards:
+      packaging gates on L3+ maturity, the console on doc findings. On
+      2026-08-19 the product packaged and dispatched INcendiary while the
+      console reported it not ready. The guardrail "do not auto-dispatch
+      without a visible readiness model" is only half true while the visible
+      model and the enforced model differ. Decide which is authoritative and
+      make the other consult it. **Resolution direction (2026-08-23):** the
+      enforced model becomes _sufficiency of the execution contract_ — scope,
+      acceptance criteria, a runnable verification, sized to repository kind
+      and task scope — and the visible model displays that same judgement;
+      L3+ maturity stays the default way roadmap-sourced work meets it, not a
+      universal precondition. What exists:
+      [`Automation.RoadmapPackaging.ps1`](../../backend/modules/automation/Automation.RoadmapPackaging.ps1)
+      (shared verdict consumer),
+      [`DocAudit.Scanner.ps1`](../../backend/modules/docaudit/DocAudit.Scanner.ps1)
+      (documentation signal), and
+      [`Roadmap.ExecutionContract.ps1`](../../backend/modules/roadmap/Roadmap.ExecutionContract.ps1)
+      (authority). Focused red/green and live-route proof:
+      [`execution-contract-readiness-2026-08-25.md`](../../evidence/verified/execution-contract-readiness-2026-08-25.md).
+      _(state: smoke-tested 2026-08-26 — shared backend and visible verdict
+      shipped in PR #184; canonical module and api-host smoke exit 0 in CI
+      Smoke run 32949331713.)_
+- [x] **Two routes name the same concepts differently.** `/api/roadmap/audit`
+      emits `pendingCount`/`nextPendingItem`; `/api/portfolio/assessment` emits
+      `pendingItemCount`/`nextPendingItemText` for the same ideas. Both are
+      correct in isolation; together they cost a reviewer a false defect on
+      2026-08-20. Align the names, or document the mapping where both are
+      consumed. What exists:
+      [`Portfolio.Assessment.ps1`](../../backend/modules/portfolio/Portfolio.Assessment.ps1)
+      and [`apiClient.ts`](../../frontend/services/apiClient.ts). Canonical fields and
+      compatibility aliases are gate-covered in
+      [`Invoke-ApiHostSmokeTest.ps1`](../../scripts/Invoke-ApiHostSmokeTest.ps1).
+      _(state: smoke-tested 2026-08-26 — canonical names flow through backend,
+      index, and frontend normalization; canonical api-host smoke exit 0 in CI
+      Smoke run 32949331713.)_
+- [x] **26 of 34 roadmap repos are below L3 and cannot be dispatched.** The
+      maturity gate is correct - a weak roadmap yields an ambiguous task - but
+      the product's own answer for those repos is step 5 (preview-first
+      roadmap/README repair), which is what would raise them. Confirm that
+      path is reachable for an L1/L2 repo, since raising maturity is the only
+      route from "assessed" to "helped" for most of the portfolio. Under the
+      2026-08-23 lens this is the first "every repository gets an outcome"
+      item: an L1/L2 repo must leave the console with a reachable
+      preview-first repair **or** an explainable appropriate-as-is
+      conclusion — never only "not dispatchable".
+      [`Invoke-ModuleSmokeTest.ps1`](../../scripts/Invoke-ModuleSmokeTest.ps1) proves
+      the L1 preview and the bounded-L2 red/green path; the modal renders the
+      named verdict and repair in
+      [`RoadmapDispatchModal.test.tsx`](../../frontend/components/RoadmapDispatchModal.test.tsx).
+      _(state: smoke-tested 2026-08-26 — preview-first repair is reachable and
+      named at L1/L2; canonical module and api-host smoke exit 0 in CI Smoke
+      run 32949331713.)_
