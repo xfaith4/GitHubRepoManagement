@@ -68,3 +68,8 @@ backend/modules/output/**
 /reports/**
 !/reports/**/
 !/reports/**/.gitkeep
+
+# Environment files (may hold keys) — commit only the example
+.env
+.env.*
+!.env.example
