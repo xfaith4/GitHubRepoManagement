@@ -295,16 +295,24 @@ const RoadmapDispatchModal: React.FC<RoadmapDispatchModalProps> = ({
           {/* REPAIR NEEDED */}
           {phase === 'repair-needed' && checkResult && (
             <div className="space-y-4">
-              {/* Maturity warning */}
-              <div className="bg-orange-900/20 border border-orange-700/40 rounded-lg px-4 py-3">
+              {/* Shared visible/enforced execution-contract verdict */}
+              <div data-testid="execution-contract-verdict" className="bg-orange-900/20 border border-orange-700/40 rounded-lg px-4 py-3">
                 <div className="flex items-center gap-3 mb-1">
-                  <span className="text-orange-400 font-semibold text-sm">Roadmap needs standardization</span>
+                  <span className="text-orange-400 font-semibold text-sm">Execution contract needs repair</span>
                   <MaturityBadge level={checkResult.maturityLevel} />
                   <span className="text-gray-500 text-xs">(score {checkResult.maturityScore}/100)</span>
                 </div>
                 <p className="text-xs text-orange-300/80">
-                  Dispatch requires L3-Contract-Ready or higher. Apply the repair below to standardize this roadmap, then dispatch.
+                  {checkResult.executionContract?.explanation
+                    ?? 'Dispatch readiness could not be established. Apply the preview-first repair, then re-check.'}
                 </p>
+                {checkResult.executionContract?.checks?.some(check => !check.passed) && (
+                  <ul className="mt-2 space-y-1 text-xs text-orange-200/80">
+                    {checkResult.executionContract.checks.filter(check => !check.passed).map(check => (
+                      <li key={check.name}>• {check.explanation}</li>
+                    ))}
+                  </ul>
+                )}
               </div>
 
               {repair && repair.previewState === 'repair-preview-ready' && repair.proposedContent ? (

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Portfolio assessment — combines git, doc audit, roadmap state, roadmap maturity,
     structure audit, and execution state into one operator-facing record per repo.
@@ -237,9 +237,9 @@ function Invoke-RepoStructureAudit {
 #   running             execution state == running
 #   needs-readme        README missing (any structure finding kind=missing-root-file target=README.md)
 #   needs-roadmap       no roadmap on disk
-#   needs-roadmap-repair  roadmap maturity below L3
+#   needs-roadmap-repair  execution contract is insufficient
 #   needs-structure     critical/warning structure findings remain (other than README which was caught above)
-#   ready-for-work      dispatch readiness == ready  AND maturity >= L3  AND has pending items
+#   ready-for-work      shared execution contract is sufficient and has pending items
 #   completed           roadmap state == complete
 #   monitored           none of the above (clean, stable, no pending work)
 #   discovered          fallback when signals were missing
@@ -261,6 +261,7 @@ function _ResolveLifecycleState {
         [bool]$HasReadme,
         [bool]$HasRoadmap,
         [int]$PendingItemCount,
+        [object]$ExecutionContract = $null,
         [object[]]$StructureFindings = @()
     )
 
@@ -282,8 +283,6 @@ function _ResolveLifecycleState {
         $tgt = if ($_.PSObject.Properties.Name -contains 'target')   { [string]$_.target }   else { '' }
         $sev -eq 'warning' -and $tgt -ne 'README.md'
     })
-
-    $maturityIsAtLeastL3 = $MaturityLevel -in @('L3-Contract-Ready', 'L4-Orchestration-Ready')
 
     if ($IsArchived) {
         $state = 'archived'
@@ -315,10 +314,11 @@ function _ResolveLifecycleState {
         $blocking.Add('No ROADMAP.md found.') | Out-Null
         return @{ state = $state; recommendedAction = $action; blockingReasons = @($blocking) }
     }
-    if (-not $maturityIsAtLeastL3 -and $RoadmapState -ne 'complete') {
+    $executionSufficient = ($null -ne $ExecutionContract -and [bool](_GetField -Obj $ExecutionContract -Name 'sufficient' -Default $false))
+    if (-not $executionSufficient -and $RoadmapState -ne 'complete') {
         $state = 'needs-roadmap-repair'
-        $action = "Open the Roadmap Repair preview — current maturity $MaturityLevel is below L3."
-        $blocking.Add("Roadmap maturity is $MaturityLevel; L3-Contract-Ready or higher required for dispatch.") | Out-Null
+        $action = 'Open the Roadmap Repair preview and complete the named execution-contract gap.'
+        $blocking.Add([string](_GetField -Obj $ExecutionContract -Name 'explanation' -Default 'Execution-contract sufficiency could not be established.')) | Out-Null
         return @{ state = $state; recommendedAction = $action; blockingReasons = @($blocking) }
     }
     if ($criticalStruct.Count -gt 0 -or $warningStruct.Count -gt 0) {
@@ -336,11 +336,10 @@ function _ResolveLifecycleState {
         $blocking.Add(("Dispatch readiness is '{0}'." -f $DispatchReadiness)) | Out-Null
         return @{ state = $state; recommendedAction = $action; blockingReasons = @($blocking) }
     }
-    if ($maturityIsAtLeastL3 -and $PendingItemCount -gt 0) {
-        # Roadmap audit + pending items are authoritative for dispatchability.
-        # dispatchReadiness from doc-audit is treated as a softer signal: if it
-        # disagrees here it usually means the doc-audit cache is stale relative
-        # to the roadmap audit, not that the repo is actually un-dispatchable.
+    if ($executionSufficient -and $PendingItemCount -gt 0) {
+        # The same execution-contract verdict is consumed by interactive
+        # dispatch and scheduled packaging. Doc-audit remains a supporting
+        # signal rather than a second private readiness model.
         $state = 'ready-for-work'
         $action = 'Dispatch the next pending roadmap item to Copilot.'
         return @{ state = $state; recommendedAction = $action; blockingReasons = @() }
@@ -581,6 +580,26 @@ function Invoke-PortfolioAssessment {
         $structFindings = if ($null -ne $structAudit) { @($structAudit.findings) } else { @() }
         $repoType = if ($null -ne $structAudit) { [string]$structAudit.repoType } else { 'other' }
 
+        $roadmapExecutionContext = if ($null -ne $activeRelease) { $activeRelease } else { $roadmapEntry }
+        $executionContract = if (($null -ne (Get-Command -Name 'Test-RoadmapExecutionContract' -ErrorAction SilentlyContinue)) -and $null -ne $roadmapExecutionContext) {
+            Test-RoadmapExecutionContract `
+                -RoadmapContext $roadmapExecutionContext `
+                -MaturityLevel $maturityLevel `
+                -RepoType $repoType
+        } else {
+            [pscustomobject]@{
+                schemaVersion = '1.0'
+                model = 'execution-contract-sufficiency'
+                sufficient = $false
+                code = 'execution-contract-evaluator-unavailable'
+                explanation = 'Execution-contract sufficiency could not be evaluated.'
+                maturityLevel = $maturityLevel
+                repoType = $repoType
+                selectedTask = $null
+                checks = @()
+            }
+        }
+
         $githubRepo = if ($githubMap.ContainsKey($key)) { $githubMap[$key] } else { $null }
 
         # Source coverage
@@ -599,6 +618,7 @@ function Invoke-PortfolioAssessment {
             -HasReadme $hasReadme `
             -HasRoadmap $hasRoadmap `
             -PendingItemCount $pendingCount `
+            -ExecutionContract $executionContract `
             -StructureFindings $structFindings
 
         $dispatchReadiness = _Get-EffectiveDispatchReadiness `
@@ -663,6 +683,8 @@ function Invoke-PortfolioAssessment {
             roadmapState        = $roadmapState
             roadmapPath         = $roadmapPath
             hasRoadmap          = [bool]$hasRoadmap
+            pendingCount        = $pendingCount
+            nextPendingItem     = $nextItemRaw
             pendingItemCount    = $pendingCount
             nextPendingItemText = $nextItemText
             pendingItems        = @($scoredPendingItems)
@@ -674,6 +696,7 @@ function Invoke-PortfolioAssessment {
             maturityLevel       = $maturityLevel
             maturityScore       = $maturityScore
             dispatchReadiness   = $dispatchReadiness
+            executionContract   = $executionContract
             executionState      = $execState
             hasReadme           = [bool]$hasReadme
             readmeScore         = $readmeScore
@@ -720,6 +743,8 @@ function Invoke-PortfolioAssessment {
             roadmapState        = 'missing'
             roadmapPath         = ''
             hasRoadmap          = $false
+            pendingCount        = 0
+            nextPendingItem     = $null
             pendingItemCount    = 0
             nextPendingItemText = ''
             pendingItems        = @()
@@ -731,6 +756,7 @@ function Invoke-PortfolioAssessment {
             maturityLevel       = 'L0-Absent'
             maturityScore       = 0
             dispatchReadiness   = 'missing-roadmap'
+            executionContract   = $null
             executionState      = 'idle'
             hasReadme           = $false
             readmeScore         = 0
@@ -1271,6 +1297,8 @@ function New-PortfolioIndexPayload {
             readmeScore         = [int](_GetField -Obj $assessment -Name 'readmeScore' -Default 0)
             roadmapScore        = [int](_GetField -Obj $assessment -Name 'roadmapScore' -Default 0)
             documentationHealthScore = [int](_GetField -Obj $assessment -Name 'documentationHealthScore' -Default 0)
+            pendingCount        = [int](_GetField -Obj $assessment -Name 'pendingCount' -Default (_GetField -Obj $assessment -Name 'pendingItemCount' -Default 0))
+            nextPendingItem     = _GetField -Obj $assessment -Name 'nextPendingItem' -Default $null
             pendingItemCount    = [int](_GetField -Obj $assessment -Name 'pendingItemCount' -Default 0)
             nextPendingItemText = [string](_GetField -Obj $assessment -Name 'nextPendingItemText' -Default '')
             topValueItem        = _GetField -Obj $assessment -Name 'topValueItem' -Default $null
@@ -1281,6 +1309,7 @@ function New-PortfolioIndexPayload {
             maturityLevel       = [string](_GetField -Obj $assessment -Name 'maturityLevel' -Default 'L0-Absent')
             maturityScore       = [int](_GetField -Obj $assessment -Name 'maturityScore' -Default 0)
             dispatchReadiness   = [string](_GetField -Obj $assessment -Name 'dispatchReadiness' -Default 'missing-roadmap')
+            executionContract   = _GetField -Obj $assessment -Name 'executionContract' -Default $null
             dispatchReadinessExplanation = [string](_GetField -Obj $assessment -Name 'dispatchReadinessExplanation' -Default '')
             executionState      = [string](_GetField -Obj $assessment -Name 'executionState' -Default 'idle')
             gitStatus           = [string](_GetField -Obj $assessment -Name 'gitStatus' -Default 'unknown')
@@ -1402,6 +1431,8 @@ function Convert-PortfolioIndexReposToAssessments {
             roadmapState        = [string](_GetField -Obj $repo -Name 'roadmapState' -Default 'missing')
             roadmapPath         = [string](_GetField -Obj $repo -Name 'roadmapPath' -Default '')
             hasRoadmap          = [bool](_GetField -Obj $repo -Name 'hasRoadmap' -Default $false)
+            pendingCount        = [int](_GetField -Obj $repo -Name 'pendingCount' -Default (_GetField -Obj $repo -Name 'pendingItemCount' -Default 0))
+            nextPendingItem     = _GetField -Obj $repo -Name 'nextPendingItem' -Default $null
             pendingItemCount    = [int](_GetField -Obj $repo -Name 'pendingItemCount' -Default 0)
             nextPendingItemText = [string](_GetField -Obj $repo -Name 'nextPendingItemText' -Default '')
             pendingItems        = @()
@@ -1413,6 +1444,7 @@ function Convert-PortfolioIndexReposToAssessments {
             maturityLevel       = [string](_GetField -Obj $repo -Name 'maturityLevel' -Default 'L0-Absent')
             maturityScore       = [int](_GetField -Obj $repo -Name 'maturityScore' -Default 0)
             dispatchReadiness   = [string](_GetField -Obj $repo -Name 'dispatchReadiness' -Default 'missing-roadmap')
+            executionContract   = _GetField -Obj $repo -Name 'executionContract' -Default $null
             executionState      = [string](_GetField -Obj $repo -Name 'executionState' -Default 'idle')
             hasReadme           = [bool](_GetField -Obj $repo -Name 'hasReadme' -Default $false)
             readmeScore         = [int](_GetField -Obj $repo -Name 'readmeScore' -Default 0)

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Roadmap repair planner and preview generator.
 .DESCRIPTION
@@ -320,7 +320,8 @@ function _BuildReleaseSection {
         [string]$ReleaseTitle,
         [array]$PendingItems,
         [bool]$AddAcceptanceCriteria,
-        [bool]$AddOutOfScope
+        [bool]$AddOutOfScope,
+        [string]$VerificationCommand = 'git diff --check'
     )
     $lines = [System.Collections.Generic.List[string]]::new()
     $lines.Add("## $ReleaseId - $ReleaseTitle")
@@ -351,6 +352,10 @@ function _BuildReleaseSection {
         $lines.Add('- Unreviewed automatic mutations of repository files.')
         $lines.Add('')
     }
+    $lines.Add('### Validation plan')
+    $lines.Add('')
+    $lines.Add("- Run ``$VerificationCommand`` and confirm it exits successfully.")
+    $lines.Add('')
     $lines.Add('---')
     return $lines -join "`n"
 }
@@ -397,7 +402,10 @@ function Invoke-GenerateRepairPreview {
         [string]$RawContent = '',
 
         [Parameter(Mandatory = $true)]
-        [string]$RepoName
+        [string]$RepoName,
+
+        [Parameter()]
+        [string]$VerificationCommand = 'git diff --check'
     )
 
     $generatedAt = (Get-Date).ToUniversalTime().ToString('o')
@@ -516,7 +524,8 @@ function Invoke-GenerateRepairPreview {
                 -ReleaseTitle   $sec.name `
                 -PendingItems   @($sec.pendingItems) `
                 -AddAcceptanceCriteria $addAcceptance `
-                -AddOutOfScope  $addOutOfScope
+                -AddOutOfScope  $addOutOfScope `
+                -VerificationCommand $VerificationCommand
             # Remove the leading ## since we already added Section header line
             $sectionContent = $sectionContent -replace '^## ', ''
             $output.Add("## $($sectionContent.TrimStart())")
@@ -554,6 +563,10 @@ function Invoke-GenerateRepairPreview {
                 $output.Add('- Work items not listed in the Engineering milestones above.')
                 $output.Add('')
             }
+            $output.Add('### Validation plan')
+            $output.Add('')
+            $output.Add("- Run ``$VerificationCommand`` and confirm it exits successfully.")
+            $output.Add('')
             $output.Add('---')
             $output.Add('')
         } elseif ($releaseSections.Count -eq 0 -and $allPendingItems.Count -gt 0) {
@@ -580,6 +593,10 @@ function Invoke-GenerateRepairPreview {
                 $output.Add('- Work items not listed above.')
                 $output.Add('')
             }
+            $output.Add('### Validation plan')
+            $output.Add('')
+            $output.Add("- Run ``$VerificationCommand`` and confirm it exits successfully.")
+            $output.Add('')
             $output.Add('---')
             $output.Add('')
         }

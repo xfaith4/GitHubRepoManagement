@@ -21,6 +21,7 @@ $reconcile = Join-Path $WorkspaceRoot 'backend\modules\reconcile\Invoke-Reconcil
 $reconcileModular = Join-Path $WorkspaceRoot 'backend\modules\reconcile\Invoke-Reconciliation.Modular.ps1'
 $reconcileTests = Join-Path $WorkspaceRoot 'backend\modules\reconcile\repo_reconciliation.Tests.ps1'
 $roadmapParser = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Parser.ps1'
+$roadmapExecutionContract = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.ExecutionContract.ps1'
 $roadmapAuditor = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Auditor.ps1'
 $roadmapEvaluatorPath = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Evaluator.ps1'
 $roadmapRepairerPath = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Repairer.ps1'
@@ -34,7 +35,7 @@ Write-Step 'Loading reconciliation module functions only'
 Write-Host 'Loaded reconciliation module successfully' -ForegroundColor Green
 
 Write-Step 'Validating copied module files exist'
-@($docInventory, $docQueue, $docBatch, $reconcile, $reconcileModular, $reconcileTests, $roadmapParser, $roadmapAuditor, $roadmapEvaluatorPath, $roadmapRepairerPath, $roadmapPrSubmitterPath, $docAuditScanner, $docStandards, $agentBudgetModule) | ForEach-Object {
+@($docInventory, $docQueue, $docBatch, $reconcile, $reconcileModular, $reconcileTests, $roadmapParser, $roadmapExecutionContract, $roadmapAuditor, $roadmapEvaluatorPath, $roadmapRepairerPath, $roadmapPrSubmitterPath, $docAuditScanner, $docStandards, $agentBudgetModule) | ForEach-Object {
     if (-not (Test-Path -LiteralPath $_)) {
         throw "Missing module file: $_"
     }
@@ -701,7 +702,42 @@ if (Test-Path -LiteralPath $trackedSettingsPath) {
 
 Write-Step 'Loading roadmap parser module'
 . $roadmapParser
+. $roadmapExecutionContract
 Write-Host 'Roadmap parser module loaded successfully' -ForegroundColor Green
+
+Write-Step 'Execution-contract authority — smoke: violating fixture is red before sufficient fixture is green'
+$executionBase = [pscustomobject]@{
+    releaseGoal = 'Ship a bounded operator workflow.'
+    pendingMilestones = @('Wire the workflow to the API.')
+    acceptanceCriteria = @('The workflow returns a successful response for the fixture.')
+    outOfScope = @('Unrelated dashboard redesign.')
+    validationPlan = @()
+    activePhasePlan = [pscustomobject]@{ scope = 'One API workflow'; workUnitsEstimated = 3 }
+    budgetGuardrail = [pscustomobject]@{ maxUnitsPerPhase = 5 }
+}
+$executionRed = Test-RoadmapExecutionContract -RoadmapContext $executionBase -MaturityLevel 'L2-Structured' -RepoType 'node'
+if ($executionRed.sufficient -or [string]$executionRed.code -ne 'execution-contract-verification-missing') {
+    throw "The violating execution-contract fixture did not go red on missing runnable verification (code=$($executionRed.code))."
+}
+$executionBase.validationPlan = @('Run `npm test` and confirm it exits successfully.')
+$executionGreen = Test-RoadmapExecutionContract -RoadmapContext $executionBase -MaturityLevel 'L2-Structured' -RepoType 'node'
+if (-not $executionGreen.sufficient -or [string]$executionGreen.code -ne 'execution-contract-sufficient') {
+    throw "A bounded L2 execution contract should pass without using maturity as a universal gate (code=$($executionGreen.code))."
+}
+$executionOversized = [pscustomobject]@{
+    releaseGoal = $executionBase.releaseGoal
+    pendingMilestones = $executionBase.pendingMilestones
+    acceptanceCriteria = $executionBase.acceptanceCriteria
+    outOfScope = $executionBase.outOfScope
+    validationPlan = $executionBase.validationPlan
+    activePhasePlan = [pscustomobject]@{ scope = 'One API workflow'; workUnitsEstimated = 8 }
+    budgetGuardrail = [pscustomobject]@{ maxUnitsPerPhase = 5 }
+}
+$executionSizeRed = Test-RoadmapExecutionContract -RoadmapContext $executionOversized -MaturityLevel 'L2-Structured' -RepoType 'node'
+if ($executionSizeRed.sufficient -or [string]$executionSizeRed.code -ne 'execution-contract-sizing-missing') {
+    throw "An L2 phase above its declared cap must go red on sizing (code=$($executionSizeRed.code))."
+}
+Write-Host '  shared verdict red/green proven: missing verification refused; bounded L2 admitted; over-cap L2 refused' -ForegroundColor DarkGray
 
 Write-Step 'Roadmap parser — smoke: pending roadmap'
 $pendingResult = Invoke-ParseRoadmapContent -Content "## Now`n- [ ] First task`n- [x] Done task`n## Next`n- [ ] Another task"
@@ -753,6 +789,18 @@ $annotatedRoadmap = @"
 - [ ] Add quota guard
 - [x] Add agent-run ledger
 
+### Acceptance criteria
+
+- Quota checks refuse an over-budget task.
+
+### Out of scope
+
+- Changes to provider authentication.
+
+### Validation plan
+
+- Run ``scripts/Invoke-ModuleSmokeTest.ps1`` and confirm it exits successfully.
+
 ### Phase plan
 
 | Phase | Scope | Status | Completed | Token usage | Work units (est -> actual) |
@@ -775,6 +823,9 @@ if ([double]$annotatedResult.activePhasePlan.workUnitsEstimated -ne 8) { throw "
 if ($null -eq $annotatedResult.budgetGuardrail) { throw 'Expected budgetGuardrail metadata for annotated roadmap' }
 if ([double]$annotatedResult.budgetGuardrail.estimatedReleaseWorkUnits -ne 18) { throw "Expected estimatedReleaseWorkUnits=18, got '$($annotatedResult.budgetGuardrail.estimatedReleaseWorkUnits)'" }
 if ([double]$annotatedResult.budgetGuardrail.maxUnitsPerPhase -ne 10) { throw "Expected maxUnitsPerPhase=10, got '$($annotatedResult.budgetGuardrail.maxUnitsPerPhase)'" }
+if (@($annotatedResult.activeRelease.validationPlan).Count -ne 1 -or [string]$annotatedResult.activeRelease.validationPlan[0] -notmatch 'Invoke-ModuleSmokeTest') {
+    throw 'Expected the active release validation plan to carry its runnable command.'
+}
 Write-Host '  phase-plan and budget-guardrail annotations parsed correctly' -ForegroundColor DarkGray
 
 Write-Step 'Loading doc audit scanner module'
@@ -890,7 +941,11 @@ $cachedRoadmapJson = @"
   }
 ]
 "@
-$cachedRoadmapEntries = @($cachedRoadmapJson | ConvertFrom-Json)
+# Windows PowerShell 5.1 returns a JSON root array as one nested Object[] when
+# ConvertFrom-Json feeds an array expression directly. Re-enumerate explicitly
+# so this fixture has the same entry shape under PS 5.1 and pwsh.
+$cachedRoadmapParsed = ConvertFrom-Json -InputObject $cachedRoadmapJson
+$cachedRoadmapEntries = @($cachedRoadmapParsed | ForEach-Object { $_ })
 try {
     $cachedScanResults = Invoke-AuditRepoScan -LocalRoots @($tmpScanRoot) -MaxDepth 2 -RoadmapEntries $cachedRoadmapEntries -Standards $standards
     if (@($cachedScanResults).Count -ne 1) { throw "Expected 1 repo from cached roadmap scan, got $(@($cachedScanResults).Count)" }
@@ -2238,7 +2293,16 @@ $readyRoadmap = @([pscustomobject]@{
     roadmapState = 'pending'
     pendingCount = 5
     nextPendingItem = [pscustomobject]@{ text = 'next thing' }
-    activeRelease = [pscustomobject]@{ releaseName = 'Release 2.0 — Dispatch Budgets'; releaseVersion = '2.0'; releaseTitle = 'Dispatch Budgets' }
+    activeRelease = [pscustomobject]@{
+        releaseName = 'Release 2.0 — Dispatch Budgets'; releaseVersion = '2.0'; releaseTitle = 'Dispatch Budgets'
+        releaseGoal = 'Ship bounded dispatch budgets.'
+        pendingMilestones = @('Add API authentication and contract smoke tests for dispatch endpoints')
+        acceptanceCriteria = @('The dispatch budget is enforced for every queued task.')
+        outOfScope = @('Unrelated runner changes.')
+        validationPlan = @('Run `scripts/Invoke-ModuleSmokeTest.ps1` and confirm it exits successfully.')
+        activePhasePlan = [pscustomobject]@{ phaseName = 'Phase 2: Quota guard'; scope = 'Quota guard'; workUnitsEstimated = 8 }
+        budgetGuardrail = [pscustomobject]@{ maxUnitsPerPhase = 10 }
+    }
     activePhasePlan = [pscustomobject]@{ phaseName = 'Phase 2: Quota guard'; workUnitsEstimated = 8 }
     budgetGuardrail = [pscustomobject]@{ estimatedReleaseWorkUnits = 18; maxUnitsPerPhase = 10; present = $true }
     estimatedSessionWorkUnits = 8
@@ -4060,14 +4124,28 @@ Write-Step 'Packaging scope — smoke: every refusal is named, and scope opts in
 $pkgItemHigh = [pscustomobject]@{ text = 'Add the merge-readiness route'; section = 'Release 1.0'; roadmapOrder = 3; valueScore = 88; valueTier = 'highest'; valueRationale = @('unblocks dispatch') }
 $pkgItemLow  = [pscustomobject]@{ text = 'Tidy the changelog';           section = 'Release 1.0'; roadmapOrder = 1; valueScore = 40; valueTier = 'low';     valueRationale = @('cosmetic') }
 $pkgItemTie  = [pscustomobject]@{ text = 'Earlier item, same score';     section = 'Release 1.0'; roadmapOrder = 2; valueScore = 88; valueTier = 'highest'; valueRationale = @('tie-break probe') }
+$pkgExecutionContext = [pscustomobject]@{
+    releaseGoal = 'Ship the next bounded portfolio improvement.'
+    pendingMilestones = @('Add the merge-readiness route')
+    acceptanceCriteria = @('The selected task satisfies its named acceptance checks.')
+    outOfScope = @('Unselected roadmap work.')
+    validationPlan = @('Run `scripts/Invoke-ModuleSmokeTest.ps1` and confirm it exits successfully.')
+}
+$pkgInvalidExecutionContext = [pscustomobject]@{
+    releaseGoal = $pkgExecutionContext.releaseGoal
+    pendingMilestones = $pkgExecutionContext.pendingMilestones
+    acceptanceCriteria = $pkgExecutionContext.acceptanceCriteria
+    outOfScope = $pkgExecutionContext.outOfScope
+    validationPlan = @()
+}
 
 $pkgEntries = @(
-    [pscustomobject]@{ repoId = 'fav-ready';    repoName = 'fav-ready';    curationState = 'favorite';             maturityLevel = 'L3-Contract-Ready';      pendingItemCount = 3; localPath = 'C:\repos\fav-ready';    roadmapPath = 'C:\repos\fav-ready\ROADMAP.md';    githubFullName = 'owner/fav-ready'; defaultBranch = 'main'; estimatedSessionWorkUnits = 4; valueRankedItems = @($pkgItemLow, $pkgItemHigh, $pkgItemTie) }
-    [pscustomobject]@{ repoId = 'cand-ready';   repoName = 'cand-ready';   curationState = 'portfolio-candidate';  maturityLevel = 'L4-Orchestration-Ready'; pendingItemCount = 1; localPath = 'C:\repos\cand-ready';   roadmapPath = 'C:\repos\cand-ready\ROADMAP.md';   topValueItem = $pkgItemHigh }
+    [pscustomobject]@{ repoId = 'fav-ready';    repoName = 'fav-ready';    curationState = 'favorite';             maturityLevel = 'L2-Structured';          pendingItemCount = 3; localPath = 'C:\repos\fav-ready';    roadmapPath = 'C:\repos\fav-ready\ROADMAP.md';    githubFullName = 'owner/fav-ready'; defaultBranch = 'main'; estimatedSessionWorkUnits = 4; valueRankedItems = @($pkgItemLow, $pkgItemHigh, $pkgItemTie); activeRelease = $pkgExecutionContext }
+    [pscustomobject]@{ repoId = 'cand-ready';   repoName = 'cand-ready';   curationState = 'portfolio-candidate';  maturityLevel = 'L4-Orchestration-Ready'; pendingItemCount = 1; localPath = 'C:\repos\cand-ready';   roadmapPath = 'C:\repos\cand-ready\ROADMAP.md';   topValueItem = $pkgItemHigh; activeRelease = $pkgExecutionContext }
     [pscustomobject]@{ repoId = 'ignored';      repoName = 'ignored';      curationState = 'archived-ignore';      maturityLevel = 'L4-Orchestration-Ready'; pendingItemCount = 9; localPath = 'C:\repos\ignored';      topValueItem = $pkgItemHigh }
     [pscustomobject]@{ repoId = 'uncurated';    repoName = 'uncurated';    curationState = '';                     maturityLevel = 'L3-Contract-Ready';      pendingItemCount = 9; localPath = 'C:\repos\uncurated';    topValueItem = $pkgItemHigh }
     [pscustomobject]@{ repoId = 'weird-state';  repoName = 'weird-state';  curationState = 'some-future-state';    maturityLevel = 'L3-Contract-Ready';      pendingItemCount = 9; localPath = 'C:\repos\weird';        topValueItem = $pkgItemHigh }
-    [pscustomobject]@{ repoId = 'fav-l2';       repoName = 'fav-l2';       curationState = 'favorite';             maturityLevel = 'L2-Structured';          pendingItemCount = 9; localPath = 'C:\repos\fav-l2';       topValueItem = $pkgItemHigh }
+    [pscustomobject]@{ repoId = 'fav-l2';       repoName = 'fav-l2';       curationState = 'favorite';             maturityLevel = 'L2-Structured';          pendingItemCount = 9; localPath = 'C:\repos\fav-l2';       topValueItem = $pkgItemHigh; activeRelease = $pkgInvalidExecutionContext }
     [pscustomobject]@{ repoId = 'fav-done';     repoName = 'fav-done';     curationState = 'favorite';             maturityLevel = 'L3-Contract-Ready';      pendingItemCount = 0; localPath = 'C:\repos\fav-done';     topValueItem = $pkgItemHigh }
     [pscustomobject]@{ repoId = 'fav-unscored'; repoName = 'fav-unscored'; curationState = 'favorite';             maturityLevel = 'L3-Contract-Ready';      pendingItemCount = 2; localPath = 'C:\repos\fav-unscored' }
     [pscustomobject]@{ repoId = 'fav-nopath';   repoName = 'fav-nopath';   curationState = 'favorite';             maturityLevel = 'L3-Contract-Ready';      pendingItemCount = 2; topValueItem = $pkgItemHigh }
@@ -4080,7 +4158,7 @@ $pkgExpectedRefusals = @{
     'ignored'      = 'archived-ignore'
     'uncurated'    = 'not-curated'
     'weird-state'  = 'not-curated'      # scope opts IN — an unknown state is excluded, never admitted
-    'fav-l2'       = 'roadmap-not-ready'
+    'fav-l2'       = 'execution-contract-verification-missing'
     'fav-done'     = 'no-pending-work'
     'fav-unscored' = 'no-scored-item'
     'fav-nopath'   = 'missing-local-path'
@@ -4097,7 +4175,7 @@ $pkgSelected = @($pkgDecisions | Where-Object { $_.selected } | ForEach-Object {
 if (($pkgSelected -join ',') -ne 'cand-ready,fav-ready') {
     throw "Packaging scope: expected [cand-ready, fav-ready]; got [$($pkgSelected -join ', ')]"
 }
-Write-Host ("  packaging scope ok: {0} selected, {1} refusals each named (archived-ignore, not-curated x2, roadmap-not-ready, no-pending-work, no-scored-item, missing-local-path)" -f $pkgSelected.Count, $pkgExpectedRefusals.Count) -ForegroundColor DarkGray
+Write-Host ("  packaging scope ok: {0} selected, {1} refusals each named (archived-ignore, not-curated x2, execution-contract gap, no-pending-work, no-scored-item, missing-local-path)" -f $pkgSelected.Count, $pkgExpectedRefusals.Count) -ForegroundColor DarkGray
 
 Write-Step 'Packaging rank — smoke: highest value wins, ties break on roadmap order'
 $pkgTop = Select-TopValueRoadmapItem -Entry $pkgEntries[0]
@@ -5710,8 +5788,8 @@ if (-not (Test-Path -LiteralPath $freshnessModule)) { throw "Missing module file
 
     foreach ($file in Get-ChildItem -LiteralPath $WorkspaceRoot -Recurse -Filter '*.ps1' -File -ErrorAction SilentlyContinue |
         Where-Object {
-            $_.FullName -match '\\(backend|scripts)\\' -and
-            $_.FullName -notmatch '\\node_modules\\' -and
+            $_.FullName -match '[\\/](backend|scripts)[\\/]' -and
+            $_.FullName -notmatch '[\\/]node_modules[\\/]' -and
             # Test and smoke scripts build git fixtures on purpose; they are not
             # writes to a managed repo.
             $_.Name -notmatch '(SmokeTest|Test-|\.Tests)\.ps1$'
@@ -6164,8 +6242,8 @@ function Invoke-BadCommit { param($RepoPath) & git -C $RepoPath commit -m 'lands
     # cleaner.
     $realFiles = @(Get-ChildItem -LiteralPath $WorkspaceRoot -Recurse -Filter '*.ps1' -File -ErrorAction SilentlyContinue |
         Where-Object {
-            $_.FullName -match '\\(backend|scripts)\\' -and
-            $_.FullName -notmatch '\\node_modules\\' -and
+            $_.FullName -match '[\\/](backend|scripts)[\\/]' -and
+            $_.FullName -notmatch '[\\/]node_modules[\\/]' -and
             $_.Name -notmatch '(SmokeTest|Test-|\.Tests)\.ps1$'
         })
     $inv = Get-DefaultBranchInvariantReport -Files $realFiles
@@ -6269,8 +6347,15 @@ Write-Step 'Bounded git sweep - Release 3.2: timeout honored, cap honored, order
         # The shim hangs 30 seconds; the bound is 2. Anything under 15s proves
         # abandonment (timeout + bounded kill/drain), anything near 30 means
         # the sweep waited the hang out and the bound is fiction.
-        $sweepHangShim = Join-Path $sweepFixtureRoot 'hang.cmd'
-        Set-Content -Path $sweepHangShim -Value "@echo off`r`nping -n 31 127.0.0.1 >nul"
+        $sweepIsWindows = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+        $sweepHangShim = Join-Path $sweepFixtureRoot $(if ($sweepIsWindows) { 'hang.cmd' } else { 'hang.sh' })
+        if ($sweepIsWindows) {
+            Set-Content -Path $sweepHangShim -Value "@echo off`r`nping -n 31 127.0.0.1 >nul"
+        } else {
+            Set-Content -Path $sweepHangShim -Value "#!/bin/sh`nsleep 30"
+            & chmod +x $sweepHangShim
+            if ($LASTEXITCODE -ne 0) { throw "Could not make the bounded-sweep hang fixture executable: $sweepHangShim" }
+        }
         $sweepHangWatch = [System.Diagnostics.Stopwatch]::StartNew()
         $sweepHangResult = Invoke-BoundedGitCommand -RepoPath $sweepScanRoot -GitArgumentList @('status') -FileName $sweepHangShim -TimeoutSeconds 2
         $sweepHangWatch.Stop()

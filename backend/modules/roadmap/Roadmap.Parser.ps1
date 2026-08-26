@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Structured roadmap parser for ROADMAP.md files.
 .DESCRIPTION
@@ -77,10 +77,12 @@ function _RoadmapParserExtractSubsectionLines {
 
     $results = [System.Collections.Generic.List[string]]::new()
     $inSection = $false
+    $headingDepth = 0
 
     foreach ($line in @($Lines)) {
-        if ($line -match "^\s*###\s+$HeadingPattern") {
+        if ($line -match "^\s*(#{3,6})\s+$HeadingPattern") {
             $inSection = $true
+            $headingDepth = $matches[1].Length
             continue
         }
 
@@ -88,8 +90,9 @@ function _RoadmapParserExtractSubsectionLines {
             continue
         }
 
-        if ($line -match '^\s*###\s+' -or $line -match '^\s*##\s+') {
-            break
+        if ($line -match '^\s*(#{1,6})\s+') {
+            if ($matches[1].Length -le $headingDepth) { break }
+            continue
         }
 
         if ($line -match '^\s*-\s+(.+)$') {
@@ -114,6 +117,29 @@ function _RoadmapParserExtractGoal {
     }
 
     return ''
+}
+
+function _RoadmapParserExtractValidationLines {
+    param([string[]]$Lines)
+
+    $headingLines = @(_RoadmapParserExtractSubsectionLines -Lines $Lines -HeadingPattern '(?:Validation|Test)\s+plan')
+    if ($headingLines.Count -gt 0) { return @($headingLines) }
+
+    $results = [System.Collections.Generic.List[string]]::new()
+    $inSection = $false
+    foreach ($line in @($Lines)) {
+        if ($line -match '^\s*\*\*(?:Validation|Test)\s+plan:\*\*\s*(.*)$') {
+            $inSection = $true
+            $inline = [string]$matches[1]
+            if (-not [string]::IsNullOrWhiteSpace($inline)) { $results.Add($inline.Trim()) | Out-Null }
+            continue
+        }
+        if (-not $inSection) { continue }
+        if ($line -match '^\s*#{1,6}\s+' -or $line -match '^\s*\*\*[^*]+:\*\*') { break }
+        $text = ([string]$line).Trim() -replace '^[-*]\s+', ''
+        if (-not [string]::IsNullOrWhiteSpace($text)) { $results.Add($text) | Out-Null }
+    }
+    return @($results)
 }
 
 function _RoadmapParserConvertTableLineToCells {
@@ -424,6 +450,7 @@ function Get-RoadmapReleaseContexts {
             completedMilestones       = @($completedMilestones)
             acceptanceCriteria        = @(_RoadmapParserExtractSubsectionLines -Lines $blockLines -HeadingPattern 'Acceptance\s+criteria')
             outOfScope                = @(_RoadmapParserExtractSubsectionLines -Lines $blockLines -HeadingPattern 'Out\s+of\s+scope')
+            validationPlan            = @(_RoadmapParserExtractValidationLines -Lines $blockLines)
             phasePlan                 = @($phasePlan)
             activePhasePlan           = $activePhasePlan
             budgetGuardrail           = $budgetGuardrail
@@ -457,6 +484,7 @@ function Get-RoadmapSelectedReleaseContext {
         completedMilestones       = @()
         acceptanceCriteria        = @()
         outOfScope                = @()
+        validationPlan            = @()
         phasePlan                 = @()
         activePhasePlan           = $null
         budgetGuardrail           = $null

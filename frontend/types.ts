@@ -949,9 +949,29 @@ export interface PendingRelease {
   completedMilestones: string[];
   acceptanceCriteria: string[];
   outOfScope: string[];
+  validationPlan: string[];
   milestoneCount: number;
   pendingCount: number;
   completedCount: number;
+}
+
+export interface ExecutionContractCheck {
+  name: 'scope' | 'acceptance' | 'verification' | 'sizing';
+  passed: boolean;
+  code: string;
+  explanation: string;
+}
+
+export interface RoadmapExecutionContract {
+  schemaVersion: string;
+  model: 'execution-contract-sufficiency';
+  sufficient: boolean;
+  code: string;
+  explanation: string;
+  maturityLevel: RoadmapMaturityLevel;
+  repoType: string;
+  selectedTask?: string | null;
+  checks: ExecutionContractCheck[];
 }
 
 export interface ReleaseDispatchPacket {
@@ -967,6 +987,8 @@ export interface ReleaseDispatchPacket {
   pendingMilestones: string[];
   acceptanceCriteria: string[];
   outOfScope: string[];
+  validationPlan: string[];
+  executionContract?: RoadmapExecutionContract | null;
   generatedPrompt: string;
   maturityLevel: RoadmapMaturityLevel;
   maturityScore: number;
@@ -977,6 +999,7 @@ export interface ReleaseDispatchCheck {
   maturityLevel: RoadmapMaturityLevel;
   maturityScore: number;
   dispatchReady: boolean;
+  executionContract: RoadmapExecutionContract;
   localPath?: string | null;
   roadmapPath?: string | null;
   repairPreview?: RoadmapRepairPreview | null;
@@ -1158,6 +1181,8 @@ export interface PortfolioAssessmentEntry {
   readmeScore?: number;
   roadmapScore?: number;
   documentationHealthScore?: number;
+  pendingCount: number;
+  nextPendingItem?: { text: string; section?: string; tags?: string[] } | null;
   pendingItemCount: number;
   nextPendingItemText: string;
   pendingItems: PortfolioPendingItemValue[];
@@ -1165,6 +1190,7 @@ export interface PortfolioAssessmentEntry {
   maturityLevel: RoadmapMaturityLevel;
   maturityScore: number;
   dispatchReadiness: DispatchReadiness;
+  executionContract?: RoadmapExecutionContract | null;
   dispatchReadinessExplanation?: string;
   executionState: ExecutionState;
   hasReadme: boolean;
@@ -1359,12 +1385,15 @@ export interface OperationsRepoEntry {
   readmeScore: number;
   roadmapScore: number;
   documentationHealthScore: number;
+  pendingCount: number;
+  nextPendingItem?: { text: string; section?: string; tags?: string[] } | null;
   pendingItemCount: number;
   nextPendingItemText: string;
   topValueItem: PortfolioPendingItemValue | null;
   maturityLevel: RoadmapMaturityLevel;
   maturityScore: number;
   dispatchReadiness: DispatchReadiness;
+  executionContract?: RoadmapExecutionContract | null;
   dispatchReadinessExplanation?: string | null;
   executionState: ExecutionState;
   gitStatus: string;
