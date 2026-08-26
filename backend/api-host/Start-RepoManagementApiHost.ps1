@@ -3930,7 +3930,10 @@ function Build-RoadmapRepairPreview {
         [string]$RepoName,
 
         [Parameter()]
-        [string]$RoadmapPath = ''
+        [string]$RoadmapPath = '',
+
+        [Parameter()]
+        [string]$VerificationCommand = ''
     )
 
     # Resolve roadmap path
@@ -3964,14 +3967,8 @@ function Build-RoadmapRepairPreview {
     if ([string]::IsNullOrWhiteSpace($repoPath) -and -not [string]::IsNullOrWhiteSpace($effectiveRoadmapPath)) {
         $repoPath = Split-Path -Parent $effectiveRoadmapPath
     }
-    $verificationCommand = 'git diff --check'
-    if (-not [string]::IsNullOrWhiteSpace($repoPath) -and (Test-Path -LiteralPath $repoPath -PathType Container)) {
-        if (Test-Path -LiteralPath (Join-Path $repoPath 'package.json') -PathType Leaf) { $verificationCommand = 'npm test' }
-        elseif (@(Get-ChildItem -LiteralPath $repoPath -File -Filter '*.sln' -ErrorAction SilentlyContinue).Count -gt 0 -or @(Get-ChildItem -LiteralPath $repoPath -File -Filter '*.csproj' -ErrorAction SilentlyContinue).Count -gt 0) { $verificationCommand = 'dotnet test' }
-        elseif (Test-Path -LiteralPath (Join-Path $repoPath 'pyproject.toml') -PathType Leaf) { $verificationCommand = 'pytest' }
-        elseif (Test-Path -LiteralPath (Join-Path $repoPath 'Cargo.toml') -PathType Leaf) { $verificationCommand = 'cargo test' }
-        elseif (Test-Path -LiteralPath (Join-Path $repoPath 'go.mod') -PathType Leaf) { $verificationCommand = 'go test ./...' }
-        elseif (@(Get-ChildItem -LiteralPath $repoPath -File -Filter '*.psd1' -ErrorAction SilentlyContinue).Count -gt 0 -or @(Get-ChildItem -LiteralPath $repoPath -File -Filter '*.psm1' -ErrorAction SilentlyContinue).Count -gt 0) { $verificationCommand = 'Invoke-Pester' }
+    if ([string]::IsNullOrWhiteSpace($VerificationCommand)) {
+        $VerificationCommand = Resolve-VerificationCommandForRepoPath -RepoPath $repoPath
     }
     $auditRules = Get-RoadmapStandard
     $contract = Invoke-NormalizeRoadmapContract `
@@ -3997,7 +3994,7 @@ function Build-RoadmapRepairPreview {
         -RepairPlan  $repairPlan `
         -RawContent  $rawContent `
         -RepoName    $RepoName `
-        -VerificationCommand $verificationCommand
+        -VerificationCommand $VerificationCommand
 
     # Attach extra context
     $preview | Add-Member -NotePropertyName 'repoName'             -NotePropertyValue $RepoName               -Force
@@ -4703,6 +4700,26 @@ function Resolve-RoadmapPathForRepo {
     }
 
     return ''
+}
+
+function Resolve-VerificationCommandForRepoPath {
+    param(
+        [Parameter()]
+        [string]$RepoPath = ''
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RepoPath) -or -not (Test-Path -LiteralPath $RepoPath -PathType Container)) {
+        return 'git diff --check'
+    }
+
+    if (Test-Path -LiteralPath (Join-Path $RepoPath 'package.json') -PathType Leaf) { return 'npm test' }
+    if (@(Get-ChildItem -LiteralPath $RepoPath -File -Filter '*.sln' -ErrorAction SilentlyContinue).Count -gt 0 -or @(Get-ChildItem -LiteralPath $RepoPath -File -Filter '*.csproj' -ErrorAction SilentlyContinue).Count -gt 0) { return 'dotnet test' }
+    if (Test-Path -LiteralPath (Join-Path $RepoPath 'pyproject.toml') -PathType Leaf) { return 'pytest' }
+    if (Test-Path -LiteralPath (Join-Path $RepoPath 'Cargo.toml') -PathType Leaf) { return 'cargo test' }
+    if (Test-Path -LiteralPath (Join-Path $RepoPath 'go.mod') -PathType Leaf) { return 'go test ./...' }
+    if (@(Get-ChildItem -LiteralPath $RepoPath -File -Filter '*.psd1' -ErrorAction SilentlyContinue).Count -gt 0 -or @(Get-ChildItem -LiteralPath $RepoPath -File -Filter '*.psm1' -ErrorAction SilentlyContinue).Count -gt 0) { return 'Invoke-Pester' }
+
+    return 'git diff --check'
 }
 
 function Get-DispatchPlanningContext {
@@ -10649,7 +10666,10 @@ try {
                     if (-not $dispatchReady) {
                         # Insufficient contract — the same preview-first repair
                         # path is reachable at L1/L2 and for any named contract gap.
-                        $repairPreview = Build-RoadmapRepairPreview -RepoName $repoName -RoadmapPath $effectiveRoadmapPath
+                        $repairPreview = Build-RoadmapRepairPreview `
+                            -RepoName $repoName `
+                            -RoadmapPath $effectiveRoadmapPath `
+                            -VerificationCommand (Resolve-VerificationCommandForRepoPath -RepoPath $localPath)
                     } else {
                         # Sufficient contract — build release packet (no GitHub slug at check-time).
                         $releasePacket = Build-ReleaseDispatchPacket `
