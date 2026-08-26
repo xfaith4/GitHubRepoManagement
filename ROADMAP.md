@@ -332,10 +332,14 @@ under the product lens (§2); close these before anything in Release 3.6.
       L3+ maturity stays the default way roadmap-sourced work meets it, not a
       universal precondition. What exists:
       [`Automation.RoadmapPackaging.ps1`](backend/modules/automation/Automation.RoadmapPackaging.ps1)
-      (maturity gate) and
+      (shared verdict consumer),
       [`DocAudit.Scanner.ps1`](backend/modules/docaudit/DocAudit.Scanner.ps1)
-      (readiness gate). _(state: scaffolded - both gates exist and are
-      individually correct)_
+      (documentation signal), and
+      [`Roadmap.ExecutionContract.ps1`](backend/modules/roadmap/Roadmap.ExecutionContract.ps1)
+      (authority). Focused red/green and live-route proof:
+      [`execution-contract-readiness-2026-08-25.md`](evidence/verified/execution-contract-readiness-2026-08-25.md).
+      _(state: ui-connected - shared backend and visible verdict ship; canonical
+      module/api-host smoke exit 0 remains pending)_
 - [ ] **Two routes name the same concepts differently.** `/api/roadmap/audit`
       emits `pendingCount`/`nextPendingItem`; `/api/portfolio/assessment` emits
       `pendingItemCount`/`nextPendingItemText` for the same ideas. Both are
@@ -343,8 +347,11 @@ under the product lens (§2); close these before anything in Release 3.6.
       2026-08-20. Align the names, or document the mapping where both are
       consumed. What exists:
       [`Portfolio.Assessment.ps1`](backend/modules/portfolio/Portfolio.Assessment.ps1)
-      and [`DocAudit.Scanner.ps1`](backend/modules/docaudit/DocAudit.Scanner.ps1).
-      _(state: scaffolded - both payloads ship; only the naming differs)_
+      and [`apiClient.ts`](frontend/services/apiClient.ts). Canonical fields and
+      compatibility aliases are gate-covered in
+      [`Invoke-ApiHostSmokeTest.ps1`](scripts/Invoke-ApiHostSmokeTest.ps1).
+      _(state: ui-connected - canonical names flow through backend, index, and
+      frontend normalization; canonical api-host smoke exit 0 remains pending)_
 - [ ] **26 of 34 roadmap repos are below L3 and cannot be dispatched.** The
       maturity gate is correct - a weak roadmap yields an ambiguous task - but
       the product's own answer for those repos is step 5 (preview-first
@@ -355,8 +362,12 @@ under the product lens (§2); close these before anything in Release 3.6.
       item: an L1/L2 repo must leave the console with a reachable
       preview-first repair **or** an explainable appropriate-as-is
       conclusion — never only "not dispatchable".
-      _(state: planned - repair workflows exist; their reachability at L1/L2
-      is unverified)_
+      [`Invoke-ModuleSmokeTest.ps1`](scripts/Invoke-ModuleSmokeTest.ps1) proves
+      the L1 preview and the bounded-L2 red/green path; the modal renders the
+      named verdict and repair in
+      [`RoadmapDispatchModal.test.tsx`](frontend/components/RoadmapDispatchModal.test.tsx).
+      _(state: ui-connected - preview-first repair is reachable and named at
+      L1/L2; canonical module/api-host smoke exit 0 remains pending)_
 
 **Mobile completion — un-deferred 2026-08-19** once the delivery loop had run
 end to end three times (PRs #140, #142, scheduled INcendiary#7). The two

@@ -26,6 +26,7 @@ param(
     [string]$SelectedTask,
     [string]$TaskDescription,
     [string]$Branch,
+    [string]$QueuePath,
     [ValidateSet('claude', 'copilot')]
     [string]$DispatchTarget = 'claude',
     [string]$BaseBranch,
@@ -66,11 +67,14 @@ $entry = New-RoadmapQueueEntry -RunId $RunId -Repository $Repository -LocalRepoP
     -RoadmapPath $RoadmapPath -SelectedTask $SelectedTask -TaskDescription $TaskDescription `
     -Branch $Branch -QueuedAt ((Get-Date).ToString('o')) -DispatchTarget $DispatchTarget -BaseBranch $BaseBranch
 
-$queuePath = Get-RoadmapQueuePath -WorkspaceRoot $WorkspaceRoot
-Add-RoadmapQueueEntry -QueuePath $queuePath -Entry $entry
+$effectiveQueuePath = $QueuePath
+if ([string]::IsNullOrWhiteSpace($effectiveQueuePath)) {
+    $effectiveQueuePath = Get-RoadmapQueuePath -WorkspaceRoot $WorkspaceRoot
+}
+Add-RoadmapQueueEntry -QueuePath $effectiveQueuePath -Entry $entry
 
 Write-Host ("[queued] runId={0} repo={1} branch={2} target={3}" -f $entry.runId, $entry.repository, $entry.branch, $entry.dispatchTarget) -ForegroundColor Green
 Write-Host ("  local repo: {0}" -f $entry.localRepoPath) -ForegroundColor DarkGray
-Write-Host ("  queue     : {0}" -f $queuePath) -ForegroundColor DarkGray
+Write-Host ("  queue     : {0}" -f $effectiveQueuePath) -ForegroundColor DarkGray
 Write-Host '  Run the local runner (as yourself) to execute it:' -ForegroundColor DarkGray
 Write-Host '    pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1 -Once' -ForegroundColor DarkGray

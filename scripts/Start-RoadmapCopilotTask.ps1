@@ -22,6 +22,12 @@ param(
     [Parameter()]
     [string]$RoadmapPath = "",
 
+    # Forward an explicit queue location to the writer. The API-host smoke
+    # uses this so a nested PowerShell launch cannot fall back to the live
+    # operator queue when process-environment inheritance is unavailable.
+    [Parameter()]
+    [string]$QueuePath = "",
+
     [Parameter()]
     [string[]]$RoadmapPathCandidates = @(
         "ROADMAP.md",
@@ -506,7 +512,8 @@ try {
         }
         & $queueScript -WorkspaceRoot (Split-Path -Parent $PSScriptRoot) -RunId $historyStore.RunId `
             -Repository $Repository -LocalRepoPath $localRepoPath -RoadmapPath $resolvedRoadmap.Path `
-            -SelectedTask $nextTask.TaskText -TaskDescription ($taskDescription -join "`n") -Branch $branch
+            -SelectedTask $nextTask.TaskText -TaskDescription ($taskDescription -join "`n") -Branch $branch `
+            -QueuePath $QueuePath
         $summary = [ordered]@{
             runId             = $historyStore.RunId
             status            = 'queued'

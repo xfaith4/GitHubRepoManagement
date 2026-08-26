@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Release-level roadmap dispatch helpers for GitHub Copilot agent tasks.
 .DESCRIPTION
@@ -45,17 +45,19 @@ function _ExtractSubsectionLines {
 
     $results = [System.Collections.Generic.List[string]]::new()
     $inSection = $false
+    $headingDepth = 0
 
     foreach ($line in $Lines) {
-        if ($line -match "^\s*###\s+$HeadingPattern") {
+        if ($line -match "^\s*(#{3,6})\s+$HeadingPattern") {
             $inSection = $true
+            $headingDepth = $matches[1].Length
             continue
         }
 
         if ($inSection) {
-            # Stop at the next ### heading
-            if ($line -match '^\s*###\s+') {
-                break
+            if ($line -match '^\s*(#{1,6})\s+') {
+                if ($matches[1].Length -le $headingDepth) { break }
+                continue
             }
             # Collect non-empty bullet lines
             if ($line -match '^\s*-\s+(.+)$') {
@@ -124,9 +126,8 @@ function Get-NextPendingRelease {
         }
     }
 
-    # Split content into release blocks. Each block starts at a ## Release heading.
-    # Pattern: ## Release 1.6 — Title  (supports em dash, en dash, or plain hyphen)
-    $releaseHeadingRx = [regex]'(?im)^## Release (\d+[\d\.]*)\s*[—–-]+\s*(.+?)$'
+    # Releases may be nested under a parent such as "Open Releases".
+    $releaseHeadingRx = [regex]'(?im)^#{2,6}\s+Release (\d+[\d\.]*)\s*[—–-]+\s*(.+?)$'
     $headingMatches = $releaseHeadingRx.Matches($RoadmapContent)
 
     if ($headingMatches.Count -eq 0) {
@@ -174,6 +175,11 @@ function Get-NextPendingRelease {
         $goal              = _ExtractGoal -Lines $blockLines
         $acceptanceCriteria = _ExtractSubsectionLines -Lines $blockLines -HeadingPattern 'Acceptance\s+criteria'
         $outOfScope        = _ExtractSubsectionLines -Lines $blockLines -HeadingPattern 'Out\s+of\s+scope'
+        $validationPlan    = if ($null -ne (Get-Command -Name '_RoadmapParserExtractValidationLines' -ErrorAction SilentlyContinue)) {
+            @(_RoadmapParserExtractValidationLines -Lines $blockLines)
+        } else {
+            @(_ExtractSubsectionLines -Lines $blockLines -HeadingPattern '(?:Validation|Test)\s+plan')
+        }
 
         $releaseName = "Release $($block.version) — $($block.title)"
 
@@ -187,6 +193,7 @@ function Get-NextPendingRelease {
             completedMilestones = @($completedMilestones)
             acceptanceCriteria  = @($acceptanceCriteria)
             outOfScope          = @($outOfScope)
+            validationPlan      = @($validationPlan)
             milestoneCount      = $pendingMilestones.Count + $completedMilestones.Count
             pendingCount        = $pendingMilestones.Count
             completedCount      = $completedMilestones.Count
@@ -245,7 +252,11 @@ function Build-ReleaseDispatchPacket {
 
         [Parameter()]
         [AllowNull()]
-        [pscustomobject]$AuditContract = $null
+        [pscustomobject]$AuditContract = $null,
+
+        [Parameter()]
+        [AllowNull()]
+        [pscustomobject]$ExecutionContract = $null
     )
 
     $release = Get-NextPendingRelease -RoadmapContent $RoadmapContent
@@ -278,6 +289,8 @@ function Build-ReleaseDispatchPacket {
         pendingMilestones  = @($release.pendingMilestones)
         acceptanceCriteria = @($release.acceptanceCriteria)
         outOfScope         = @($release.outOfScope)
+        validationPlan     = @($release.validationPlan)
+        executionContract  = $ExecutionContract
         generatedPrompt    = $generatedPrompt
         maturityLevel      = $maturityLevel
         maturityScore      = $maturityScore
@@ -344,6 +357,15 @@ function _BuildDispatchPrompt {
         $lines.Add('')
         foreach ($o in $Release.outOfScope) {
             $lines.Add("- $o")
+        }
+    }
+
+    if ($Release.validationPlan.Count -gt 0) {
+        $lines.Add('')
+        $lines.Add('## Required Verification')
+        $lines.Add('')
+        foreach ($verification in $Release.validationPlan) {
+            $lines.Add("- $verification")
         }
     }
 

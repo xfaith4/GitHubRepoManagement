@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Release 2.7 Phase C — scheduled roadmap-item packaging.
 
@@ -125,7 +125,8 @@ function Get-RoadmapPackagingScopeStates {
 }
 
 function Get-RoadmapPackagingReadyMaturityLevels {
-    # Dispatch readiness gate, identical to POST /api/roadmap/dispatch/check.
+    # Compatibility metadata only. Test-RoadmapExecutionContract is the gate;
+    # these levels are its default sizing signal, not universal admission.
     return @('L3-Contract-Ready', 'L4-Orchestration-Ready')
 }
 
@@ -195,6 +196,7 @@ function Test-RoadmapPackagingCandidate {
         roadmapPath        = $roadmapPath
         curationState      = $curationState
         maturityLevel      = $maturityLevel
+        executionContract  = $null
         selected           = $false
         reason             = ''
         item               = $null
@@ -213,10 +215,6 @@ function Test-RoadmapPackagingCandidate {
         $decision.reason = 'not-curated'
         return $decision
     }
-    if ($maturityLevel -notin $ReadyMaturityLevels) {
-        $decision.reason = 'roadmap-not-ready'
-        return $decision
-    }
     if ([int](_Pack_GetField -Obj $Entry -Name 'pendingItemCount' -Default 0) -le 0) {
         $decision.reason = 'no-pending-work'
         return $decision
@@ -233,9 +231,27 @@ function Test-RoadmapPackagingCandidate {
         return $decision
     }
 
+    if ($null -eq (Get-Command -Name 'Test-RoadmapExecutionContract' -ErrorAction SilentlyContinue)) {
+        $decision.reason = 'execution-contract-evaluator-unavailable'
+        return $decision
+    }
+
+    $roadmapExecutionContext = _Pack_GetField -Obj $Entry -Name 'activeRelease' -Default $Entry
+    if ($null -eq $roadmapExecutionContext) { $roadmapExecutionContext = $Entry }
+    $executionContract = Test-RoadmapExecutionContract `
+        -RoadmapContext $roadmapExecutionContext `
+        -MaturityLevel $maturityLevel `
+        -RepoType ([string](_Pack_GetField -Obj $Entry -Name 'repoType' -Default 'other')) `
+        -SelectedTask ([string](_Pack_GetField -Obj $item -Name 'text' -Default ''))
+    $decision.executionContract = $executionContract
+    if (-not $executionContract.sufficient) {
+        $decision.reason = [string]$executionContract.code
+        return $decision
+    }
+
     $decision.item = $item
     $decision.selected = $true
-    $decision.reason = ("curated={0} maturity={1} topValue={2}" -f $curationState, $maturityLevel, [int](_Pack_GetField -Obj $item -Name 'valueScore' -Default 0))
+    $decision.reason = ("curated={0} executionContract={1} maturity={2} topValue={3}" -f $curationState, $executionContract.code, $maturityLevel, [int](_Pack_GetField -Obj $item -Name 'valueScore' -Default 0))
     return $decision
 }
 

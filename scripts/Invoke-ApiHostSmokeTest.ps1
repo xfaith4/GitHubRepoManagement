@@ -323,7 +323,7 @@ Write-Host ("  queue isolated to {0} (the operator's real queue is untouched)" -
 $job = Start-Job -ScriptBlock {
     param($ScriptPath, $Root, $Log, $ListenPort, $SignalPath, $QueuePath)
     $env:REPO_MGMT_QUEUE_PATH = $QueuePath
-    & $ScriptPath -WorkspaceRoot $Root -BindAddress '127.0.0.1' -Port $ListenPort -LogPath $Log -ShutdownSignalPath $SignalPath
+    & $ScriptPath -WorkspaceRoot $Root -BindAddress '127.0.0.1' -Port $ListenPort -LogPath $Log -ShutdownSignalPath $SignalPath -QueuePath $QueuePath
 } -ArgumentList $hostScript, $WorkspaceRoot, $logPath, $Port, $shutdownSignalPath, $smokeQueuePath
 
 try {
@@ -1322,6 +1322,10 @@ try {
 
     # Deterministic enqueue evidence: the queue ledger gained a line whose runId
     # matches the started run, and that run's summary is status='queued'.
+    $dispatchOutput = [string]$dispatchStartResponse.Json.data.output
+    if ($dispatchOutput -notmatch [regex]::Escape($dispatchQueuePath)) {
+        throw ("/api/roadmap-agent/start did not pass the isolated queue to its nested writer. Output={0}" -f $dispatchOutput)
+    }
     $dispatchQueueLines = @(Get-Content -LiteralPath $dispatchQueuePath -Encoding UTF8 | Where-Object { $_ -and $_.Trim() })
     if ($dispatchQueueLines.Count -le $queueLinesBefore) { throw 'roadmap-task-queue.jsonl did not gain an entry after /api/roadmap-agent/start' }
     $dispatchQueueEntry = $dispatchQueueLines[-1] | ConvertFrom-Json
@@ -2068,6 +2072,29 @@ try {
         if ($repairPreviewFieldsOk) {
             Write-Host ("  /api/roadmap/repair/preview -> repo={0} previewState={1} actions={2}" -f $repairPreviewData.repoName, $repairPreviewData.previewState, @($repairPreviewData.repairActions).Count) -ForegroundColor DarkGray
         }
+
+        $dispatchCheckResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/dispatch/check" -Body @{ repoName = $repairTestRepoName }
+        Assert-Not503 -Name '/api/roadmap/dispatch/check' -Response $dispatchCheckResponse
+        if ([int]$dispatchCheckResponse.StatusCode -ne 200 -or -not $dispatchCheckResponse.Json.success) {
+            throw "/api/roadmap/dispatch/check failed for '$repairTestRepoName'. HTTP=$($dispatchCheckResponse.StatusCode) Body=$($dispatchCheckResponse.Content)"
+        }
+        $dispatchCheck = $dispatchCheckResponse.Json.data
+        if ($null -eq $dispatchCheck.executionContract) { throw '/api/roadmap/dispatch/check missing shared executionContract verdict' }
+        foreach ($field in @('model','sufficient','code','explanation','checks')) {
+            if (-not ($dispatchCheck.executionContract.PSObject.Properties.Name -contains $field)) {
+                throw "/api/roadmap/dispatch/check executionContract missing '$field'"
+            }
+        }
+        if ([bool]$dispatchCheck.dispatchReady -ne [bool]$dispatchCheck.executionContract.sufficient) {
+            throw '/api/roadmap/dispatch/check dispatchReady disagrees with the visible executionContract verdict'
+        }
+        if (-not $dispatchCheck.dispatchReady -and $null -eq $dispatchCheck.repairPreview) {
+            throw '/api/roadmap/dispatch/check refused the contract without returning preview-first repair'
+        }
+        if ($dispatchCheck.dispatchReady -and ($null -eq $dispatchCheck.releasePacket -or -not $dispatchCheck.releasePacket.executionContract.sufficient)) {
+            throw '/api/roadmap/dispatch/check admitted work without carrying the sufficient verdict into its release packet'
+        }
+        Write-Host ("  /api/roadmap/dispatch/check -> ready={0} verdict={1}" -f $dispatchCheck.dispatchReady, $dispatchCheck.executionContract.code) -ForegroundColor DarkGray
     } else {
         Write-Host '  /api/roadmap/repair/preview skipped (no audited repos available)' -ForegroundColor Yellow
         $repairPreviewFieldsOk = $true
@@ -2515,9 +2542,18 @@ try {
             ($first.PSObject.Properties.Name -contains 'sourceCoverage') -and
             ($first.PSObject.Properties.Name -contains 'recommendedAction') -and
             ($first.PSObject.Properties.Name -contains 'blockingReasons') -and
+            ($first.PSObject.Properties.Name -contains 'pendingCount') -and
+            ($first.PSObject.Properties.Name -contains 'nextPendingItem') -and
+            ($first.PSObject.Properties.Name -contains 'executionContract') -and
             ($first.PSObject.Properties.Name -contains 'pendingItems') -and
             ($first.PSObject.Properties.Name -contains 'topValueItem')
-        if (-not $portfolioEntryFieldsOk) { throw '/api/portfolio/assessment first entry missing expected fields (lifecycleState, sourceCoverage, recommendedAction, blockingReasons, pendingItems, topValueItem)' }
+        if (-not $portfolioEntryFieldsOk) { throw '/api/portfolio/assessment first entry missing canonical readiness fields' }
+        if ([int]$first.pendingCount -ne [int]$first.pendingItemCount) {
+            throw "/api/portfolio/assessment naming aliases disagree: pendingCount=$($first.pendingCount), pendingItemCount=$($first.pendingItemCount)"
+        }
+        if ($null -ne $first.nextPendingItem -and [string]$first.nextPendingItem.text -ne [string]$first.nextPendingItemText) {
+            throw '/api/portfolio/assessment naming aliases disagree: nextPendingItem.text differs from nextPendingItemText'
+        }
     }
 
     Write-Host ("  /api/portfolio/assessment -> count={0} ready={1} blocked={2} cacheSource={3}" -f $portfolioData.count, $portfolioData.summary.readyForWorkCount, $portfolioData.summary.blockedCount, $portfolioData.cacheSource) -ForegroundColor DarkGray

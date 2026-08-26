@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter()]
     [string]$BindAddress = '127.0.0.1',
@@ -18,6 +18,12 @@ param(
 
     [Parameter()]
     [string]$ShutdownSignalPath,
+
+    # An explicit per-host queue path keeps smoke dispatch fixtures out of the
+    # operator queue even when a nested PowerShell process does not inherit the
+    # host environment. Production leaves this unset.
+    [Parameter()]
+    [string]$QueuePath,
 
     [Parameter()]
     [int]$RequestTimeoutSeconds = 180,
@@ -42,6 +48,14 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Preserve the host's explicit override before any dot-sourced module can
+# introduce a same-named variable. Nested task launchers receive this value as
+# an argument; environment inheritance is only a compatibility path.
+$script:HostQueuePathOverride = $QueuePath
+if (-not [string]::IsNullOrWhiteSpace($QueuePath)) {
+    [System.Environment]::SetEnvironmentVariable('REPO_MGMT_QUEUE_PATH', $QueuePath, 'Process')
+}
+
 $adapterRoot = Join-Path $WorkspaceRoot 'backend\adapters'
 $commonRoot = Join-Path $WorkspaceRoot 'backend\modules\common'
 $roadmapModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\roadmap'
@@ -50,6 +64,7 @@ $executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 . (Join-Path $commonRoot 'Metrics.ps1')
 . (Join-Path $adapterRoot 'Adapters.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.Parser.ps1')
+. (Join-Path $roadmapModuleRoot 'Roadmap.ExecutionContract.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.Auditor.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.Repairer.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.PrSubmitter.ps1')
@@ -2627,7 +2642,18 @@ function Start-BackgroundStatusRefresh {
         if ($IncludeNonGitFolders) { $arguments += '-IncludeNonGitFolders' }
         if (-not [string]::IsNullOrWhiteSpace($LogPath)) { $arguments += @('-LogPath', $LogPath) }
 
-        $process = Start-Process -FilePath $psExe -ArgumentList $arguments -WindowStyle Hidden -PassThru
+        $startProcessArgs = @{
+            FilePath     = $psExe
+            ArgumentList = $arguments
+            PassThru     = $true
+        }
+        # WindowStyle is Windows-only in PowerShell Core. Omitting it on Unix
+        # preserves the same detached worker lifecycle without making the
+        # background-scan route fail before a process exists.
+        if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+            $startProcessArgs.WindowStyle = 'Hidden'
+        }
+        $process = Start-Process @startProcessArgs
 
         # Written AFTER the process exists so the lock always names a real pid.
         $lockBody = @{
@@ -3935,6 +3961,18 @@ function Build-RoadmapRepairPreview {
     if ($null -ne $roadmapEntry) {
         $repoPath = if ($roadmapEntry -is [System.Collections.IDictionary]) { [string](Get-ValueOrDefault $roadmapEntry['repoPath'] '') } else { [string](Get-ValueOrDefault $roadmapEntry.repoPath '') }
     }
+    if ([string]::IsNullOrWhiteSpace($repoPath) -and -not [string]::IsNullOrWhiteSpace($effectiveRoadmapPath)) {
+        $repoPath = Split-Path -Parent $effectiveRoadmapPath
+    }
+    $verificationCommand = 'git diff --check'
+    if (-not [string]::IsNullOrWhiteSpace($repoPath) -and (Test-Path -LiteralPath $repoPath -PathType Container)) {
+        if (Test-Path -LiteralPath (Join-Path $repoPath 'package.json') -PathType Leaf) { $verificationCommand = 'npm test' }
+        elseif (@(Get-ChildItem -LiteralPath $repoPath -File -Filter '*.sln' -ErrorAction SilentlyContinue).Count -gt 0 -or @(Get-ChildItem -LiteralPath $repoPath -File -Filter '*.csproj' -ErrorAction SilentlyContinue).Count -gt 0) { $verificationCommand = 'dotnet test' }
+        elseif (Test-Path -LiteralPath (Join-Path $repoPath 'pyproject.toml') -PathType Leaf) { $verificationCommand = 'pytest' }
+        elseif (Test-Path -LiteralPath (Join-Path $repoPath 'Cargo.toml') -PathType Leaf) { $verificationCommand = 'cargo test' }
+        elseif (Test-Path -LiteralPath (Join-Path $repoPath 'go.mod') -PathType Leaf) { $verificationCommand = 'go test ./...' }
+        elseif (@(Get-ChildItem -LiteralPath $repoPath -File -Filter '*.psd1' -ErrorAction SilentlyContinue).Count -gt 0 -or @(Get-ChildItem -LiteralPath $repoPath -File -Filter '*.psm1' -ErrorAction SilentlyContinue).Count -gt 0) { $verificationCommand = 'Invoke-Pester' }
+    }
     $auditRules = Get-RoadmapStandard
     $contract = Invoke-NormalizeRoadmapContract `
         -ParsedResult $parsedResult `
@@ -3958,7 +3996,8 @@ function Build-RoadmapRepairPreview {
         -Contract    $contract `
         -RepairPlan  $repairPlan `
         -RawContent  $rawContent `
-        -RepoName    $RepoName
+        -RepoName    $RepoName `
+        -VerificationCommand $verificationCommand
 
     # Attach extra context
     $preview | Add-Member -NotePropertyName 'repoName'             -NotePropertyValue $RepoName               -Force
@@ -8508,6 +8547,11 @@ try {
 
                     $scriptPath = Join-Path $WorkspaceRoot 'scripts\Start-RoadmapCopilotTask.ps1'
                     $scriptArgs = @('-Repository', $repository)
+                    $effectiveQueuePath = $script:HostQueuePathOverride
+                    if ([string]::IsNullOrWhiteSpace($effectiveQueuePath)) {
+                        $effectiveQueuePath = Get-RoadmapQueuePath -WorkspaceRoot $WorkspaceRoot
+                    }
+                    if (-not [string]::IsNullOrWhiteSpace($effectiveQueuePath)) { $scriptArgs += @('-QueuePath', $effectiveQueuePath) }
                     if (-not [string]::IsNullOrWhiteSpace($baseBranch)) { $scriptArgs += @('-BaseBranch', $baseBranch) }
                     if (-not [string]::IsNullOrWhiteSpace($customAgent)) { $scriptArgs += @('-CustomAgent', $customAgent) }
                     if (-not [string]::IsNullOrWhiteSpace($roadmapPath)) { $scriptArgs += @('-RoadmapPath', $roadmapPath) }
@@ -10554,22 +10598,35 @@ try {
 
                     Write-HostLog ("[TRACE] roadmap.dispatch.check correlationId={0} repoName={1} maturity={2}" -f $correlationId, $repoName, $contract.maturityLevel)
 
-                    # Maturity gate: L3+ required for dispatch
-                    $dispatchReady   = $contract.maturityLevel -in @('L3-Contract-Ready', 'L4-Orchestration-Ready')
+                    # One authority for both visible and enforced readiness.
+                    # Maturity is a sizing signal inside this verdict, not the
+                    # universal gate itself.
+                    $roadmapExecutionContext = if ($null -ne $parsedResult.activeRelease) {
+                        $parsedResult.activeRelease
+                    } else {
+                        [pscustomobject]@{ nextPendingItem = $parsedResult.nextPendingItem }
+                    }
+                    $executionContract = Test-RoadmapExecutionContract `
+                        -RoadmapContext $roadmapExecutionContext `
+                        -MaturityLevel ([string]$contract.maturityLevel) `
+                        -RepoType 'other'
+                    $dispatchReady   = [bool]$executionContract.sufficient
                     $repairPreview   = $null
                     $releasePacket   = $null
 
                     if (-not $dispatchReady) {
-                        # Below L3 — generate repair preview so the UI can surface it
+                        # Insufficient contract — the same preview-first repair
+                        # path is reachable at L1/L2 and for any named contract gap.
                         $repairPreview = Build-RoadmapRepairPreview -RepoName $repoName -RoadmapPath $effectiveRoadmapPath
                     } else {
-                        # L3+ — build release dispatch packet (no GitHub slug at check-time)
+                        # Sufficient contract — build release packet (no GitHub slug at check-time).
                         $releasePacket = Build-ReleaseDispatchPacket `
                             -RepoName     $repoName `
                             -RoadmapContent $rawContent `
                             -RoadmapPath  $effectiveRoadmapPath `
                             -GitHubRepo   '' `
-                            -AuditContract $contract
+                            -AuditContract $contract `
+                            -ExecutionContract $executionContract
                     }
 
                     Add-MetricCounter -Name 'api_requests_total'
@@ -10582,6 +10639,7 @@ try {
                             maturityLevel = [string]$contract.maturityLevel
                             maturityScore = [int]$contract.maturityScore
                             dispatchReady = $dispatchReady
+                            executionContract = $executionContract
                             localPath     = $localPath
                             roadmapPath   = $effectiveRoadmapPath
                             repairPreview = $repairPreview
