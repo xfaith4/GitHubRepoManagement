@@ -10655,10 +10655,16 @@ try {
                     } else {
                         [pscustomobject]@{ nextPendingItem = $parsedResult.nextPendingItem }
                     }
+                    $repoType = if (($null -ne (Get-Command -Name '_DetectRepoTypeForStructure' -ErrorAction SilentlyContinue)) -and
+                        -not [string]::IsNullOrWhiteSpace($localPath)) {
+                        _DetectRepoTypeForStructure -LocalPath $localPath
+                    } else {
+                        'other'
+                    }
                     $executionContract = Test-RoadmapExecutionContract `
                         -RoadmapContext $roadmapExecutionContext `
                         -MaturityLevel ([string]$contract.maturityLevel) `
-                        -RepoType 'other'
+                        -RepoType ([string]$repoType)
                     $dispatchReady   = [bool]$executionContract.sufficient
                     $repairPreview   = $null
                     $releasePacket   = $null
