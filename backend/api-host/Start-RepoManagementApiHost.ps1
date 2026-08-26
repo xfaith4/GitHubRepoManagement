@@ -10655,11 +10655,14 @@ try {
                     } else {
                         [pscustomobject]@{ nextPendingItem = $parsedResult.nextPendingItem }
                     }
-                    $repoType = if (($null -ne (Get-Command -Name '_DetectRepoTypeForStructure' -ErrorAction SilentlyContinue)) -and
+                    $repoType = [string](Get-ObjectPropertyValue -InputObject $roadmapEntry -PropertyName 'repoType' -Default '')
+                    if ([string]::IsNullOrWhiteSpace($repoType) -and
+                        ($null -ne (Get-Command -Name '_DetectRepoTypeForStructure' -ErrorAction SilentlyContinue)) -and
                         -not [string]::IsNullOrWhiteSpace($localPath)) {
-                        _DetectRepoTypeForStructure -LocalPath $localPath
-                    } else {
-                        'other'
+                        $repoType = [string](_DetectRepoTypeForStructure -LocalPath $localPath)
+                    }
+                    if ([string]::IsNullOrWhiteSpace($repoType)) {
+                        $repoType = 'other'
                     }
                     $executionContract = Test-RoadmapExecutionContract `
                         -RoadmapContext $roadmapExecutionContext `
