@@ -4,10 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "ensure:rollup": "node ./scripts/ensure-rollup-native.mjs",
-    "dev": "npm run ensure:rollup && vite",
-    "build": "npm run ensure:rollup && vite build",
-    "preview": "npm run ensure:rollup && vite preview",
+    "ensure:rolldown": "node ./scripts/ensure-rolldown-native.mjs",
+    "dev": "npm run ensure:rolldown && vite",
+    "build": "npm run ensure:rolldown && vite build",
+    "preview": "npm run ensure:rolldown && vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint . --max-warnings 161",
     "test:unit": "vitest run"
@@ -25,7 +25,7 @@
     "@types/node": "^26.1.0",
     "@types/react": "^19.2.16",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^5.1.4",
+    "@vitejs/plugin-react": "^6.1.0",
     "autoprefixer": "^10.5.3",
     "eslint": "^10.8.1",
     "eslint-plugin-react-hooks": "^7.1.1",
@@ -36,7 +36,7 @@
     "tailwindcss": "^4.3.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.66.0",
-    "vite": "^6.4.1",
+    "vite": "^8.2.2",
     "vitest": "^4.1.10"
   }
 }
