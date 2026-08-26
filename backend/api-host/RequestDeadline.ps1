@@ -50,6 +50,10 @@ function Get-LongRunningScanRoutePattern {
         '/api/portfolio/assessment/*'
         '/api/operations/repos'
         '/api/operations/repos/*'
+        # Release 3.6 M1 -- the conclusions route composes from the same index
+        # accessor (Get-OperationsReposPayload), so a cold cache rebuilds it here too.
+        '/api/portfolio/conclusions'
+        '/api/portfolio/conclusions/*'
         # POST /api/update and /api/sync run Get-StatusAdapterResult over the
         # whole workspace through the Invoke-GitOperation wrapper -- the same
         # class of work as /api/status, hidden from the derived tripwire by

@@ -96,6 +96,9 @@ $readmeModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\readme'
 $portfolioModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\portfolio'
 . (Join-Path $portfolioModuleRoot 'Portfolio.ValueScorer.ps1')
 . (Join-Path $portfolioModuleRoot 'Portfolio.Assessment.ps1')
+# Release 3.6 milestone 1 -- one explainable conclusion per repository, composed
+# from the cached index only. Loads after Assessment (it reads the same entries).
+. (Join-Path $portfolioModuleRoot 'Portfolio.Conclusion.ps1')
 . (Join-Path $portfolioModuleRoot 'Portfolio.Analytics.ps1')
 . (Join-Path $portfolioModuleRoot 'Portfolio.Report.ps1')
 . (Join-Path $portfolioModuleRoot 'Portfolio.Curation.ps1')
@@ -6771,6 +6774,85 @@ try {
                 continue
             }
 
+            # Release 3.6 milestone 1 -- one repository's explainable conclusion.
+            # An `if` block, not a switch clause: a clause cannot match a path
+            # segment. Same four-way id match as /api/operations/repos/{repoId}.
+            if ($req.Method -eq 'GET' -and $path -like '/api/portfolio/conclusions/*' -and $path -ne '/api/portfolio/conclusions') {
+                $conclusionRepoId = [System.Uri]::UnescapeDataString($path.Substring('/api/portfolio/conclusions/'.Length))
+                if ([string]::IsNullOrWhiteSpace($conclusionRepoId)) {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        error = 'repoId is required in /api/portfolio/conclusions/{repoId}.'
+                    }
+                    $client.Close()
+                    continue
+                }
+
+                Write-HostLog ("[TRACE] portfolio.conclusion correlationId={0} repoId={1} start" -f $correlationId, $conclusionRepoId)
+                $settings = Get-HostSettings
+                $conclusionConfig = Get-FoundationDomainsConfig -ConfigPath (Join-Path $WorkspaceRoot 'backend\config\foundation-domains.json')
+                if ($null -eq $conclusionConfig) {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 500 -StatusText 'Internal Server Error' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        error = 'backend/config/foundation-domains.json is missing or invalid; no conclusion can be reached.'
+                    }
+                    $client.Close()
+                    continue
+                }
+                $opsPayload = Get-OperationsReposPayload -Settings $settings
+                if (-not $opsPayload.available) {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        error = $opsPayload.error
+                    }
+                    $client.Close()
+                    continue
+                }
+
+                $conclusionEntry = @($opsPayload.entries | Where-Object {
+                    $candidateRepoId = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoId' -Default '')
+                    $candidateRepoName = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '')
+                    $candidateLocalPath = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'localPath' -Default '')
+                    $candidateGithubFullName = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'githubFullName' -Default '')
+                    $candidateRepoId -eq $conclusionRepoId -or
+                    $candidateRepoName -eq $conclusionRepoId -or
+                    $candidateLocalPath -eq $conclusionRepoId -or
+                    $candidateGithubFullName -eq $conclusionRepoId
+                } | Select-Object -First 1)
+                if ($conclusionEntry.Count -eq 0 -or $null -eq $conclusionEntry[0]) {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        error = "No indexed repository matches '$conclusionRepoId'."
+                    }
+                    $client.Close()
+                    continue
+                }
+
+                $conclusion = Get-RepositoryFoundationConclusion -Entry $conclusionEntry[0] -Config $conclusionConfig
+                $conclusionViolations = @(Test-FoundationConclusion -Conclusion $conclusion -Config $conclusionConfig)
+                Add-MetricCounter -Name 'api_requests_total'
+                Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                Write-HostLog ("[TRACE] portfolio.conclusion correlationId={0} repoId={1} done conclusion={2} kind={3} holds={4} durationMs={5}" -f $correlationId, $conclusionRepoId, $conclusion.conclusion, $conclusion.kind, ($conclusionViolations.Count -eq 0), [int]((Get-Date) - $requestStart).TotalMilliseconds)
+                Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                    success = $true
+                    data = @{
+                        repoId = $conclusion.repoId
+                        conclusion = $conclusion
+                        contract = @{
+                            holds = ($conclusionViolations.Count -eq 0)
+                            violations = @($conclusionViolations)
+                        }
+                        cacheSource = $opsPayload.cacheSource
+                    }
+                }
+                $client.Close()
+                continue
+            }
+
             if ($req.Method -eq 'GET' -and $path -like '/api/operations/repos/*' -and $path -ne '/api/operations/repos') {
                 $repoId = [System.Uri]::UnescapeDataString($path.Substring('/api/operations/repos/'.Length))
                 if ([string]::IsNullOrWhiteSpace($repoId)) {
@@ -9974,6 +10056,69 @@ try {
                         }
                     } catch {
                         Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'portfolio.trend'
+                    }
+                }
+                'GET /api/portfolio/conclusions' {
+                    # Release 3.6 milestone 1 -- every indexed repository leaves with an
+                    # explainable conclusion. Reads the cached index only (no scan on
+                    # the request thread); the read-path budget is judged against the
+                    # class the index was actually served from.
+                    Write-HostLog ("[TRACE] portfolio.conclusions correlationId={0} start" -f $correlationId)
+
+                    $settings = Get-HostSettings
+                    $conclusionConfig = Get-FoundationDomainsConfig -ConfigPath (Join-Path $WorkspaceRoot 'backend\config\foundation-domains.json')
+                    if ($null -eq $conclusionConfig) {
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 500 -StatusText 'Internal Server Error' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error = 'backend/config/foundation-domains.json is missing or invalid; no conclusion can be reached.'
+                        }
+                        break
+                    }
+                    $opsPayload = Get-OperationsReposPayload -Settings $settings
+                    if (-not $opsPayload.available) {
+                        Write-HostLog ("WARN portfolio.conclusions correlationId={0} index unavailable and no cached assessment was found" -f $correlationId)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error = $opsPayload.error
+                        }
+                        break
+                    }
+
+                    $conclusionQuery = Parse-QueryString -Query $req.Query
+                    $conclusionFilter = if ($conclusionQuery.ContainsKey('conclusion')) { [string]$conclusionQuery['conclusion'] } else { '' }
+                    $conclusionsPayload = Get-PortfolioConclusionsPayload -Entries @($opsPayload.entries) -Config $conclusionConfig -GeneratedAt ([string]$opsPayload.generatedAt)
+                    $conclusionItems = @($conclusionsPayload.items)
+                    if (-not [string]::IsNullOrWhiteSpace($conclusionFilter)) {
+                        $conclusionItems = @($conclusionItems | Where-Object { [string]$_.conclusion -eq $conclusionFilter })
+                    }
+
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Write-HostLog ("[TRACE] portfolio.conclusions correlationId={0} done source={1} count={2} holds={3} durationMs={4}" -f $correlationId, $opsPayload.cacheSource, $conclusionsPayload.count, $conclusionsPayload.contract.holds, [int]((Get-Date) - $requestStart).TotalMilliseconds)
+                    $readBudget = New-PortfolioReadBudgetResult -CacheSource ([string]$opsPayload.cacheSource) `
+                        -MeasuredMs ([double]((Get-Date) - $requestStart).TotalMilliseconds) -Settings $settings
+                    Write-HostLog (Format-PortfolioReadBudgetLog -Result $readBudget -CorrelationId $correlationId -Route '/api/portfolio/conclusions')
+                    if (-not $readBudget.withinBudget) {
+                        Write-HostLog ("WARN portfolio.conclusions read budget exceeded correlationId={0} class={1} measuredMs={2} budgetMs={3} overByMs={4}" -f $correlationId, $readBudget.readClass, $readBudget.measuredMs, $readBudget.budgetMs, $readBudget.overByMs)
+                    }
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = @{
+                            schemaVersion = $conclusionsPayload.schemaVersion
+                            model = $conclusionsPayload.model
+                            generatedAt = $conclusionsPayload.generatedAt
+                            count = $conclusionItems.Count
+                            totalCount = $conclusionsPayload.count
+                            filter = if ([string]::IsNullOrWhiteSpace($conclusionFilter)) { $null } else { $conclusionFilter }
+                            byConclusion = $conclusionsPayload.byConclusion
+                            byKind = $conclusionsPayload.byKind
+                            coverage = $conclusionsPayload.coverage
+                            contract = $conclusionsPayload.contract
+                            items = $conclusionItems
+                            cacheSource = $opsPayload.cacheSource
+                            performance = $readBudget
+                        }
                     }
                 }
                 'GET /api/operations/repos' {

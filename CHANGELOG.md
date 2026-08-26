@@ -2,6 +2,48 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-26 — Release 3.6 begins: every repository gets a conclusion (milestone 1)
+
+### Changes
+
+- **Conclusion model (backend) — `smoke-tested`.**
+  [`Portfolio.Conclusion.ps1`](backend/modules/portfolio/Portfolio.Conclusion.ps1)
+  composes one explainable conclusion per indexed repository — `strengthen`
+  (with a preview-first next action), `appropriate-as-is` (citing evidence,
+  never an absence of findings), or `insufficiently-understood` (naming what
+  the product needs) — from signals the index already carries: README score
+  and doc-finding count, roadmap state and maturity, the structure audit,
+  lifecycle and curation. Per-domain records carry
+  `present | weak | missing | not-applicable | not-scored` with evidence.
+  Served by `GET /api/portfolio/conclusions` (`?conclusion=` filter, counts by
+  conclusion and kind, per-domain coverage, a contract block that says whether
+  every item holds) and `GET /api/portfolio/conclusions/{repoId}`; both read
+  the cached index only, sit on the extended request-deadline tier, and report
+  the Release 3.2 read budget.
+- **Foundation domains are data.**
+  [`backend/config/foundation-domains.json`](backend/config/foundation-domains.json)
+  (`schemaVersion: "v1"`) carries the five starting-set domains, the statuses,
+  six repository kinds with per-kind applicability reasons (`archived` and
+  `externally-managed` conclude appropriate-as-is by rule), and the detection
+  rules that resolve a kind from index signals — everything else reads as
+  `unknown` with every domain applicable, rather than guessed. A missing
+  roadmap reads "no plan recorded" and offers the roadmap repair preview. The
+  **intentional-engineering** domain ships defined-not-scored: six sub-areas,
+  how each is read, which are cheap today and which need a detector. A new
+  `foundation-domains.json integrity` gate versions and completes the file.
+- **Gates shown red first.** The module smoke rejects a blank reason, a
+  `strengthen` with no route and a bare `L0-Absent` before nine fixtures
+  (no roadmap, archived, curated archive, minimal utility, L1, healthy L3,
+  GitHub-only, parse-error, structure gap) all conclude, coverage and counts
+  reconcile, the payload survives a JSON round trip, and a JSON-only detection
+  rule flips a conclusion with no code change. The api-host smoke proves 100%
+  of the live index concludes, the seeded fixture's `strengthen` next action
+  answers JSON 200, detail and 404 are JSON, the filter reconciles, and the
+  route census guards the route.
+- Roadmap: 3.6 milestone 1 `smoke-tested`, milestone 4 (flexible standards)
+  `backend-complete`, milestone 6 (evidence model) `smoke-tested`; the outcome
+  card and the ranked `Today` landing are next.
+
 ## 2026-08-26 — Release 2.9's foundations close; Release 3.6 may start
 
 ### Changes
