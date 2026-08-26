@@ -3,7 +3,7 @@ import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
-    const env = loadEnv(mode, '.', '');
+    const env = loadEnv(mode, '.', 'VITE_');
     const apiProxyTarget =
       env.VITE_API_PROXY_TARGET || process.env.VITE_API_PROXY_TARGET || 'http://localhost:7071';
     return {
@@ -21,11 +21,9 @@ export default defineConfig(({ mode }) => {
           },
         },
       },
+      // Never `define` a secret here: anything in `define` is inlined into the
+      // public bundle. Server-side keys stay in backend config, never in Vite.
       plugins: [react()],
-      define: {
-        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
-      },
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.'),
