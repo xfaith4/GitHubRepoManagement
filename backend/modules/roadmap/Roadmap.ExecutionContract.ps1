@@ -36,6 +36,7 @@ function _ExecutionContractMeaningfulStrings {
 
 function Test-RoadmapRunnableVerification {
     [CmdletBinding()]
+    [OutputType([bool])]
     param([Parameter()][AllowEmptyCollection()][string[]]$Text = @())
 
     $combined = (_ExecutionContractMeaningfulStrings -Values @($Text)) -join "`n"

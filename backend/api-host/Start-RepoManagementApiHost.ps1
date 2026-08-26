@@ -4666,6 +4666,42 @@ function Resolve-RoadmapPathForRepo {
         }
     }
 
+    $candidateRepoRoots = [System.Collections.Generic.List[string]]::new()
+    if (-not [string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
+        $candidateRepoRoots.Add($WorkspaceRoot) | Out-Null
+    }
+
+    foreach ($root in @(Get-ConfiguredLocalRootsOrWorkspace -Settings (Get-HostSettings))) {
+        if ([string]::IsNullOrWhiteSpace($root) -or -not (Test-Path -LiteralPath $root -PathType Container)) {
+            continue
+        }
+
+        $candidateRepoRoots.Add([string]$root) | Out-Null
+
+        $repoPath = Join-Path $root $RepoName
+        if (Test-Path -LiteralPath $repoPath -PathType Container) {
+            $candidateRepoRoots.Add($repoPath) | Out-Null
+        }
+    }
+
+    foreach ($repoRoot in @($candidateRepoRoots | Select-Object -Unique)) {
+        if ([string]::IsNullOrWhiteSpace($repoRoot) -or -not (Test-Path -LiteralPath $repoRoot -PathType Container)) {
+            continue
+        }
+
+        if ((Split-Path -Path $repoRoot -Leaf) -ne $RepoName -and -not (Test-Path -LiteralPath (Join-Path $repoRoot $RepoName) -PathType Container)) {
+            continue
+        }
+
+        $probeRoot = if ((Split-Path -Path $repoRoot -Leaf) -eq $RepoName) { $repoRoot } else { Join-Path $repoRoot $RepoName }
+        foreach ($candidateName in @('ROADMAP.md', 'Roadmap.md', 'docs\planning\roadmap.md', 'docs\ROADMAP.md', 'roadmap.md')) {
+            $candidatePath = Join-Path $probeRoot $candidateName
+            if (Test-Path -LiteralPath $candidatePath -PathType Leaf) {
+                return $candidatePath
+            }
+        }
+    }
+
     return ''
 }
 
@@ -10561,23 +10597,19 @@ try {
                         $roadmapEntry = @($roadmapCache.entries) | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1
                     }
 
-                    $effectiveRoadmapPath = ''
-                    if ($null -ne $roadmapEntry) {
-                        $rp = if ($roadmapEntry -is [System.Collections.IDictionary]) { $roadmapEntry['roadmapPath'] } else { $roadmapEntry.roadmapPath }
-                        if (-not [string]::IsNullOrWhiteSpace([string]$rp)) { $effectiveRoadmapPath = [string]$rp }
-                    }
-
-                    if ([string]::IsNullOrWhiteSpace($effectiveRoadmapPath) -or -not (Test-Path -LiteralPath $effectiveRoadmapPath)) {
-                        throw "Cannot check dispatch readiness: roadmap file not found for repo '$repoName'. Run a roadmap scan first."
-                    }
-
                     # Resolve localPath
                     if ([string]::IsNullOrWhiteSpace($localPath) -and $null -ne $roadmapEntry) {
                         $rpp = if ($roadmapEntry -is [System.Collections.IDictionary]) { [string]$roadmapEntry['repoPath'] } else { [string]$roadmapEntry.repoPath }
                         if (-not [string]::IsNullOrWhiteSpace($rpp)) { $localPath = $rpp }
-                        elseif (-not [string]::IsNullOrWhiteSpace($effectiveRoadmapPath)) {
-                            $localPath = Split-Path -Path $effectiveRoadmapPath -Parent
-                        }
+                    }
+
+                    $effectiveRoadmapPath = Resolve-RoadmapPathForRepo -RepoName $repoName -LocalPath $localPath -RoadmapEntry $roadmapEntry
+                    if ([string]::IsNullOrWhiteSpace($effectiveRoadmapPath) -or -not (Test-Path -LiteralPath $effectiveRoadmapPath)) {
+                        throw "Cannot check dispatch readiness: roadmap file not found for repo '$repoName'. Run a roadmap scan first."
+                    }
+
+                    if ([string]::IsNullOrWhiteSpace($localPath)) {
+                        $localPath = Split-Path -Path $effectiveRoadmapPath -Parent
                     }
 
                     # Parse, normalize, audit

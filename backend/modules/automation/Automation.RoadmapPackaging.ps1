@@ -174,8 +174,7 @@ function Test-RoadmapPackagingCandidate {
     param(
         [Parameter(Mandatory = $true)][object]$Entry,
         [Parameter()][hashtable]$CurationMap = @{},
-        [Parameter()][string[]]$ScopeStates = @('favorite', 'portfolio-candidate'),
-        [Parameter()][string[]]$ReadyMaturityLevels = @('L3-Contract-Ready', 'L4-Orchestration-Ready')
+        [Parameter()][string[]]$ScopeStates = @('favorite', 'portfolio-candidate')
     )
 
     $repoId = [string](_Pack_GetField -Obj $Entry -Name 'repoId' -Default '')
@@ -264,8 +263,7 @@ function Resolve-AutomationPackagingScope {
     param(
         [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Entries,
         [Parameter()][hashtable]$CurationMap = @{},
-        [Parameter()][string[]]$ScopeStates = @('favorite', 'portfolio-candidate'),
-        [Parameter()][string[]]$ReadyMaturityLevels = @('L3-Contract-Ready', 'L4-Orchestration-Ready')
+        [Parameter()][string[]]$ScopeStates = @('favorite', 'portfolio-candidate')
     )
 
     $decisions = [System.Collections.Generic.List[object]]::new()
@@ -274,8 +272,7 @@ function Resolve-AutomationPackagingScope {
         $decisions.Add((Test-RoadmapPackagingCandidate `
             -Entry $entry `
             -CurationMap $CurationMap `
-            -ScopeStates $ScopeStates `
-            -ReadyMaturityLevels $ReadyMaturityLevels)) | Out-Null
+            -ScopeStates $ScopeStates)) | Out-Null
     }
     return $decisions.ToArray()
 }
