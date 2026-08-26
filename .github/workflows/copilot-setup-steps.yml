@@ -49,23 +49,23 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Install frontend dependencies
         run: npm install
 
       # KNOWN DEFECT: npm's optional-dependency resolution intermittently
-      # drops Rollup's platform-native binary, which breaks `vite build`. This
-      # repo ships `ensure-rollup-native.mjs` (run via the build script) and an
+      # drops Rolldown's platform-native binding, which breaks `vite build`. This
+      # repo ships `ensure-rolldown-native.mjs` (run via the build script) and an
       # `install:frontend` repair path for exactly this. Run the repair
       # explicitly on the cold runner so the agent's first build does not fail
       # for an environment reason unrelated to its code.
-      - name: Repair Rollup native dependency (known cold-install defect)
+      - name: Repair Rolldown native dependency (known cold-install defect)
         run: |
           if npm run | grep -q "install:frontend"; then
             npm run install:frontend
           else
-            node ./scripts/ensure-rollup-native.mjs || node ./ensure-rollup-native.mjs || true
+            node ./frontend/scripts/ensure-rolldown-native.mjs || true
           fi
 
       # Prove the frontend gate is green in this environment before handing

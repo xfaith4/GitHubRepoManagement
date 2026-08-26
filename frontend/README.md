@@ -28,10 +28,16 @@ $env:VITE_API_PROXY_TARGET = 'http://localhost:7071'
 npm run dev
 ```
 
-## Rollup native package recovery
+## Rolldown native package recovery
 
-If npm skips Rollup's optional native dependency on Windows, `npm run dev`, `npm run build`, and `npm run preview` will now install the matching `@rollup/rollup-*` package automatically before starting Vite.
-
+Vite 8 bundles with Rolldown, whose platform-native binding is an optional npm
+dependency (`@rolldown/binding-<platform>-<arch>`). npm intermittently drops
+optional native packages on a cold install, which breaks `vite build`. `npm run
+dev`, `npm run build`, and `npm run preview` therefore run
+`scripts/ensure-rolldown-native.mjs` first: it reads the binding name and
+version from Rolldown's own `package.json`, and installs the missing one with
+`npm install --no-save` beside the hoisted `rolldown` package. When the binding
+is already present it exits silently.
 ## GitHub API auth
 
 The dashboard GitHub inventory view uses this token precedence:
