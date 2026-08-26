@@ -3166,7 +3166,7 @@ The fixture ships a README and this roadmap. One release is active with two pend
 
 ### Validation plan
 
-- Run the api-host smoke and confirm it exits successfully.
+- Run `pwsh -File scripts/Invoke-ApiHostSmokeTest.ps1` and confirm it exits successfully.
 
 ### Risks and blockers
 
@@ -3232,6 +3232,7 @@ The fixture ships a README and this roadmap. One release is active with two pend
 
 - Only one release may carry `Status: active` at a time.
 - This smoke asserts the fixture audits to L3 or higher.
+- The validation plan must name a runnable command in a code span; the execution-contract gate refuses prose-only verification.
 
 ---
 

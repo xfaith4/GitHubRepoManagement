@@ -42,6 +42,11 @@ maturity-only refusal.
   `POST /api/roadmap/dispatch/check`, all four checks passed,
   `dispatchReady` equaled `executionContract.sufficient`, and the release packet
   carried the same `execution-contract-sufficient` verdict.
+- The api-host smoke packaging fixtures (`smoke-packaging-repo` and its
+  over-budget twin) name `pwsh -File scripts/Invoke-ApiHostSmokeTest.ps1` in
+  their validation plan; parsed through `Get-RoadmapSelectedReleaseContext`,
+  both return `execution-contract-sufficient`. Their earlier prose-only plan
+  was refused by this gate in CI as `execution-contract-verification-missing`.
 - `npm run typecheck` exited 0.
 - `npm run lint` exited 0 with the existing 161-warning baseline and no errors.
 - `npm run test:unit -- --run` exited 0: 27 files and 274 tests passed.
