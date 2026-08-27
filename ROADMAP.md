@@ -580,7 +580,29 @@ wherever it is not.
       improvement, operator minutes per completed task, agent PR first-pass
       success, recommendations accepted vs rejected (the one new capture),
       repositories concluded appropriate-as-is or archived. Insights renders
-      foundations gained and hours returned over the window. _(state: planned)_
+      foundations gained and hours returned over the window.
+      _(state: smoke-tested 2026-08-27 — `GET /api/portfolio/trend` gains a
+      `foundationCoverage` series (present as a share of the foundations that
+      APPLY; not-applicable and not-scored excluded from both halves, so an
+      archived repo neither inflates nor dilutes it) plus a `leverage` block.
+      It accrues for real: a `foundation_coverage` table (schema v3, one row
+      per domain per scan, 180-day floor, in the backup manifest) written from
+      the one site that writes maturity history, and read back with the same
+      latest-capture-per-day rule. Leverage derives agent first-pass success,
+      estimate accuracy, time to deliver, tasks completed, repositories
+      needing nothing, and operator-verified surfaces from ledgers already
+      kept; **operator minutes per task and recommendations accepted vs
+      rejected ship `available: false` with the reason they are not
+      captured** — the roadmap names them and the product does not have them,
+      so the gap is on the surface rather than implied to be zero.
+      [`LeveragePanel.tsx`](frontend/components/LeveragePanel.tsx) renders
+      both halves in Insights and shows an em dash, never a 0, for anything
+      unmeasured; `Invoke-DailyEvidence.ps1` records the day's figures in the
+      manifest. Gates: module smoke (coverage math, archived exclusion, empty
+      portfolio null, series present in BOTH builder blocks and inside the
+      frontend palette, leverage contract red on a zeroed fixture first),
+      api-host smoke (series shape and range, every metric states a basis, the
+      two uncaptured ones named and null), and 15 frontend tests.)_
 - [ ] **Define the intentional-engineering evidence model — define, not
       score.** Name the evidence per sub-area (test, architecture,
       operational, maintenance, delivery health), how each is read from a

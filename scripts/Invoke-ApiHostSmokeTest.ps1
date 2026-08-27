@@ -2611,6 +2611,42 @@ try {
 
     Write-Host ("  /api/portfolio/trend -> status={0} availableDays={1} seed={2}" -f [string]$portfolioTrendData.trendStatus, [int]$portfolioTrendData.availableDays, [string]$portfolioTrendData.seedSource) -ForegroundColor DarkGray
 
+    # Release 3.6 M5 - the trend carries foundation coverage and the leverage
+    # family. Both are derived from ledgers; the assertion that matters is that
+    # nothing fabricates a figure nobody measured.
+    Write-Host '[STEP] Trend: foundation coverage + leverage (Release 3.6 M5)' -ForegroundColor Cyan
+    $m5Trend = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/trend?days=30"
+    Assert-Not503 -Name '/api/portfolio/trend (M5)' -Response $m5Trend
+    if ([string]$m5Trend.ContentType -notlike 'application/json*') { throw "/api/portfolio/trend did not return JSON (Content-Type=$($m5Trend.ContentType))" }
+    $m5Data = $m5Trend.Json.data
+    if ($null -eq $m5Data) { throw "/api/portfolio/trend returned no data. Body=$($m5Trend.Content)" }
+    $m5Keys = @($m5Data.series | ForEach-Object { [string]$_.key })
+    if ('foundationCoverage' -notin $m5Keys) { throw "/api/portfolio/trend carries no foundationCoverage series (got: $($m5Keys -join ', '))" }
+    $m5Coverage = @($m5Data.series | Where-Object { [string]$_.key -eq 'foundationCoverage' })[0]
+    if ([string]$m5Coverage.color -notin @('emerald', 'sky', 'amber', 'slate')) { throw "The coverage series color '$($m5Coverage.color)' is outside the palette the frontend accepts" }
+    if (@($m5Coverage.points).Count -lt 1) { throw 'The coverage series carries no points' }
+    foreach ($m5Point in @($m5Coverage.points)) {
+        $m5Value = [double]$m5Point.value
+        if ($m5Value -lt 0 -or $m5Value -gt 100) { throw "Coverage point $m5Value is outside 0-100; it is a percentage" }
+    }
+    if (-not ($m5Data.PSObject.Properties.Name -contains 'leverage') -or $null -eq $m5Data.leverage) { throw '/api/portfolio/trend carries no leverage payload' }
+    $m5Leverage = $m5Data.leverage
+    if (@($m5Leverage.metrics).Count -lt 5) { throw "The leverage family reported $(@($m5Leverage.metrics).Count) metric(s); the family names more than that" }
+    foreach ($m5Metric in @($m5Leverage.metrics)) {
+        if ([string]::IsNullOrWhiteSpace([string]$m5Metric.basis)) { throw "Leverage metric '$($m5Metric.key)' states no basis" }
+        if (-not $m5Metric.available -and $null -ne $m5Metric.value) { throw "Leverage metric '$($m5Metric.key)' is unavailable but carries the value '$($m5Metric.value)'; an unmeasured figure must be null, never a 0" }
+        if ($m5Metric.available -and $null -eq $m5Metric.value) { throw "Leverage metric '$($m5Metric.key)' claims to be available with no value" }
+    }
+    # The two the roadmap names but the product does not capture must be present
+    # and honest - omitting them would let a reader mistake absence for zero.
+    foreach ($m5Declared in @('operatorMinutesPerTask', 'recommendationsAccepted')) {
+        $m5Named = @($m5Leverage.metrics | Where-Object { [string]$_.key -eq $m5Declared })
+        if ($m5Named.Count -ne 1) { throw "The leverage family must name '$m5Declared' even though it is not captured" }
+        if ($m5Named[0].available -ne $false) { throw "'$m5Declared' is not captured yet and must report available=false" }
+    }
+    Write-Host ("  trend M5 ok: foundationCoverage {0}% over {1} point(s) (color={2}); leverage {3} metric(s), {4} derived, uncaptured ones named and null" -f `
+            $m5Coverage.points[-1].value, @($m5Coverage.points).Count, $m5Coverage.color, @($m5Leverage.metrics).Count, [int]$m5Leverage.availableCount) -ForegroundColor DarkGray
+
     Write-Host '[STEP] Operations repo index route (Release 1.8)' -ForegroundColor Cyan
     $operationsReposResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/operations/repos"
     Assert-Not503 -Name '/api/operations/repos' -Response $operationsReposResponse

@@ -1341,7 +1341,12 @@ export interface PortfolioTrendResult {
   series: PortfolioTrendSeries[];
   topCandidates: PortfolioTrendTopCandidate[];
   repoSparklines: PortfolioTrendRepoSparkline[];
+  /** Release 3.6 M5 — the leverage family for this window; null when the host did not compute it. */
+  leverage?: PortfolioLeverage | null;
 }
+
+export type { LeverageMetric, LeverageUnit, PortfolioLeverage } from './lib/portfolioLeverage';
+import type { PortfolioLeverage } from './lib/portfolioLeverage';
 
 // Release 3.6 — Every Repository Gets an Outcome (conclusion model + outcome card)
 export type {

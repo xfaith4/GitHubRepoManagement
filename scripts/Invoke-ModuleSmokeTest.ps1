@@ -2385,6 +2385,100 @@ Write-Step 'Foundation conclusions — Release 3.6 M1: every repository leaves w
     Write-Host ("  foundation conclusions ok: {0} domains, {1} kinds; validator red on blank reason + no route + bare L0-Absent; {2} fixtures all concluded ({3}); coverage and byConclusion reconcile; JSON round trip holds; a JSON-only kind rule flipped a conclusion" -f $fdDomainIds.Count, $fdKindIds.Count, $fdFixtures.Count, (($fdPayload.byConclusion.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join ' ')) -ForegroundColor DarkGray
 }
 
+Write-Step 'Foundation coverage + leverage - Release 3.6 M5: a figure nobody measured is never a zero'
+& {
+    # Each section runs in its own scope block, so the conclusion module has to
+    # be loaded here too -- M1's dot-source does not reach across.
+    . $portfolioConclusionModule
+    . (Join-Path $WorkspaceRoot 'backend\modules\portfolio\Portfolio.Leverage.ps1')
+    . (Join-Path $WorkspaceRoot 'backend\modules\portfolio\Portfolio.Analytics.ps1')
+    $mlConfig = Get-FoundationDomainsConfig -ConfigPath $foundationDomainsConfig
+    if ($null -eq $mlConfig) { throw 'foundation-domains.json did not load for the coverage smoke' }
+
+    function ConvertTo-MlEntry([hashtable]$Overrides) {
+        $base = @{ repoId = 'repo:x'; repoName = 'x'; sourceCoverage = 'local'; localPath = (Join-Path $WorkspaceRoot 'output\smoke\module\ml-x'); lastScanStatus = 'ok'
+            lifecycleState = 'discovered'; curationState = 'none'; hasReadme = $false; readmeScore = 0; docFindingCount = 0; hasRoadmap = $false; roadmapState = 'missing'
+            maturityLevel = 'L0-Absent'; pendingCount = 0; repoType = 'other'; structureFindings = @(); hasCiSignal = $false; hasTestSignal = $false
+            latestWorkflowRunConclusion = $null; localCommitsLastMonth = 0 }
+        foreach ($k in $Overrides.Keys) { $base[$k] = $Overrides[$k] }
+        $base['repoId'] = 'repo:' + [string]$base['repoName']
+        return [pscustomobject]$base
+    }
+
+    # One healthy repo (4 applicable domains present) + one bare repo
+    # (documentation/purpose/planning missing, structure present) => 5 of 8.
+    $mlEntries = @(
+        (ConvertTo-MlEntry @{ repoName = 'healthy'; hasReadme = $true; readmeScore = 90; hasRoadmap = $true; roadmapState = 'pending'; maturityLevel = 'L3-Contract-Ready'; pendingCount = 2; repoType = 'node'; hasCiSignal = $true; hasTestSignal = $true }),
+        (ConvertTo-MlEntry @{ repoName = 'bare' })
+    )
+    $mlCoverage = (Get-PortfolioConclusionsPayload -Entries $mlEntries -Config $mlConfig).coverage
+    $mlPercent = _GetPortfolioTrendCoveragePercent -Coverage $mlCoverage
+    $mlExpected = [math]::Round((5.0 / 8.0) * 100.0, 1)
+    if ($mlPercent -ne $mlExpected) { throw "Foundation coverage expected $mlExpected%, got $mlPercent%" }
+
+    # An excused domain must neither help nor hurt: not-applicable is excluded
+    # from BOTH halves, or an archived repo would silently inflate the figure.
+    $mlWithArchived = @($mlEntries) + @(ConvertTo-MlEntry @{ repoName = 'archived'; lifecycleState = 'archived'; hasReadme = $true; readmeScore = 90 })
+    $mlArchivedPct = _GetPortfolioTrendCoveragePercent -Coverage (Get-PortfolioConclusionsPayload -Entries $mlWithArchived -Config $mlConfig).coverage
+    $mlArchivedExpected = [math]::Round((7.0 / 10.0) * 100.0, 1)
+    if ($mlArchivedPct -ne $mlArchivedExpected) { throw "An archived repo's not-applicable domains must be excluded from both halves: expected $mlArchivedExpected%, got $mlArchivedPct%" }
+
+    # An empty portfolio has no coverage - null, never a 0 that reads as measured.
+    if ($null -ne (_GetPortfolioTrendCoveragePercent -Coverage $null)) { throw 'Coverage over a null must be null, not 0' }
+    if ($null -ne (_GetPortfolioTrendCoveragePercent -Coverage (Get-PortfolioConclusionsPayload -Entries @() -Config $mlConfig).coverage)) { throw 'Coverage over an empty portfolio must be null, not 0' }
+
+    # The series must exist in the scaffold path, in the frontend's palette, and
+    # be absent entirely when no coverage was supplied.
+    $mlSummary = [pscustomobject]@{ totalRepos = 2; readyForWorkCount = 1; byLifecycle = @{} }
+    $mlNow = (Get-Date).ToUniversalTime().ToString('o')
+    $mlTrend = Get-PortfolioTrendPayload -Assessments $mlEntries -Summary $mlSummary -GeneratedAt $mlNow -SeedSource 'portfolio-index' -WorkspaceRoot $WorkspaceRoot -RequestedDays 30 -Coverage $mlCoverage
+    $mlSeries = @($mlTrend.series | Where-Object { $_.key -eq 'foundationCoverage' })
+    if ($mlSeries.Count -ne 1) { throw 'The trend carries no foundationCoverage series in the scaffold path' }
+    if ($mlSeries[0].color -notin @('emerald', 'sky', 'amber', 'slate')) { throw "Series color '$($mlSeries[0].color)' is outside the palette the frontend accepts; it would silently fall back to emerald" }
+    if ([double]$mlSeries[0].points[0].value -ne $mlExpected) { throw 'The series point disagrees with the computed coverage' }
+    $mlNoCoverage = Get-PortfolioTrendPayload -Assessments $mlEntries -Summary $mlSummary -GeneratedAt $mlNow -SeedSource 'portfolio-index' -WorkspaceRoot $WorkspaceRoot -RequestedDays 30
+    if ('foundationCoverage' -in @($mlNoCoverage.series | ForEach-Object { $_.key })) { throw 'A null coverage must produce no series at all, not a zero line' }
+
+    # Both series-building blocks must know the key. The history-backed block
+    # re-news the list, so a series added to only one of them vanishes the
+    # moment the other applies - the classic defect in this file.
+    $mlAnalyticsSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\modules\portfolio\Portfolio.Analytics.ps1') -Raw -Encoding UTF8
+    $mlSeriesBlocks = @([regex]::Matches($mlAnalyticsSource, "key\s*=\s*'foundationCoverage'"))
+    if ($mlSeriesBlocks.Count -lt 2) { throw "foundationCoverage appears in $($mlSeriesBlocks.Count) series block(s); it must be in both the scaffold and the history-backed block or it disappears when history arrives" }
+
+    # Leverage: red first - a metric that reports 0 for something unmeasured.
+    $mlBad = [pscustomobject]@{ metrics = @(
+        [pscustomobject]@{ key = 'fake'; label = 'Fake'; value = 0; unit = 'percent'; available = $false; basis = 'not captured'; sampleSize = 0 }
+        [pscustomobject]@{ key = 'nobasis'; label = 'No basis'; value = 5; unit = 'count'; available = $true; basis = ''; sampleSize = 1 }
+    ) }
+    $mlRed = @(Test-LeverageMetricContract -Payload $mlBad)
+    if ($mlRed.Count -lt 2) { throw "The leverage contract check did not go red on its violating fixture (violations: $($mlRed -join '; '))" }
+    if (-not (($mlRed -join ' ') -match 'must be null')) { throw 'The contract must reject a zero standing in for an unmeasured figure by name' }
+
+    $mlRuns = @(
+        [pscustomobject]@{ status = 'completed'; retryCount = 0; workUnitsEstimated = 4; workUnitsActual = 5; timeToDeliverSeconds = 1800 }
+        [pscustomobject]@{ status = 'completed'; retryCount = 2; workUnitsEstimated = 3; workUnitsActual = 3; timeToDeliverSeconds = 3600 }
+    )
+    $mlLeverage = Get-PortfolioLeverage -AgentRuns $mlRuns -ExecutionMetrics ([pscustomobject]@{ completedThisWeek = 4 }) -Conclusions (Get-PortfolioConclusionsPayload -Entries $mlEntries -Config $mlConfig) -OperatorVerifications @(1, 2, 3) -WindowDays 30
+    $mlGreen = @(Test-LeverageMetricContract -Payload $mlLeverage)
+    if ($mlGreen.Count -ne 0) { throw "The derived leverage payload broke its own contract: $($mlGreen -join '; ')" }
+    $mlFirstPass = @($mlLeverage.metrics | Where-Object { $_.key -eq 'agentFirstPassSuccess' })[0]
+    if ([double]$mlFirstPass.value -ne 50) { throw "First-pass success expected 50%, got $($mlFirstPass.value)" }
+    foreach ($mlDeclared in @('operatorMinutesPerTask', 'recommendationsAccepted')) {
+        $mlMetric = @($mlLeverage.metrics | Where-Object { $_.key -eq $mlDeclared })[0]
+        if ($null -eq $mlMetric) { throw "The leverage family must name '$mlDeclared' even though it is not captured" }
+        if ($mlMetric.available -or $null -ne $mlMetric.value) { throw "'$mlDeclared' is not captured and must be null, not a number" }
+        if ($mlMetric.basis -notmatch 'Not captured') { throw "'$mlDeclared' must say it is not captured" }
+    }
+    # With no ledgers at all, nothing may fabricate a figure.
+    $mlEmpty = Get-PortfolioLeverage -WindowDays 30
+    $mlFabricated = @($mlEmpty.metrics | Where-Object { -not $_.available -and $null -ne $_.value })
+    if ($mlFabricated.Count -gt 0) { throw "Unavailable metrics carrying values: $(@($mlFabricated | ForEach-Object { $_.key }) -join ', ')" }
+
+    Write-Host ("  coverage + leverage ok: {0}% over 8 applicable foundation(s), archived excluded from both halves ({1}%), empty portfolio null; series in both blocks and inside the palette; leverage red on a zeroed fixture first, then {2} metric(s) with {3} derived and 2 named-but-uncaptured" -f `
+            $mlPercent, $mlArchivedPct, $mlLeverage.metricCount, $mlLeverage.availableCount) -ForegroundColor DarkGray
+}
+
 Write-Step 'Portfolio value scoring — smoke: security/test work ranks above generic chores'
 $highValue = Invoke-PortfolioValueScore `
     -ItemText 'Add API authentication and contract smoke tests for dispatch endpoints' `
@@ -3272,7 +3366,8 @@ if (-not $sqliteCap.available) {
         $expectedAppDbTables = @(
             'schema_migrations', 'execution_ledger', 'execution_history', 'maturity_history',
             'ops_log', 'portfolio_index_history', 'repo_signals', 'differential_scans',
-            'merge_readiness_snapshots', 'agent_runs', 'agent_run_events', 'quota_burn_snapshots'
+            'merge_readiness_snapshots', 'agent_runs', 'agent_run_events', 'quota_burn_snapshots',
+            'foundation_coverage'
         )
         foreach ($tableName in $expectedAppDbTables) {
             if ($tableName -notin @($appDbInit.tables)) { throw "Missing expected table '$tableName' (got: $(@($appDbInit.tables) -join ', '))" }
@@ -3282,7 +3377,7 @@ if (-not $sqliteCap.available) {
         $migrationRows = Invoke-AppDbQuery -DatabasePath $appDbInit.databasePath -Sql 'SELECT COUNT(*) AS n FROM schema_migrations'
         if ([long]$migrationRows[0].n -ne 1) { throw "Expected exactly 1 schema migration row after re-init, got $($migrationRows[0].n)" }
         $migrationVersion = Invoke-AppDbQuery -DatabasePath $appDbInit.databasePath -Sql 'SELECT MAX(version) AS v FROM schema_migrations'
-        if ([long]$migrationVersion[0].v -ne 2) { throw "Expected schema version 2 (Phase 3), got $($migrationVersion[0].v)" }
+        if ([long]$migrationVersion[0].v -ne 3) { throw "Expected schema version 3 (Release 3.6 M5 added foundation_coverage), got $($migrationVersion[0].v)" }
         Write-Host ("  app.db created with {0} tables; re-init idempotent" -f @($appDbInit.tables).Count) -ForegroundColor DarkGray
 
         Write-Step 'App database repeated writes + parameter binding (Release 2.1 Phase 1)'

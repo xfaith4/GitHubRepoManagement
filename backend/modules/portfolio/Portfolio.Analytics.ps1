@@ -109,6 +109,82 @@ function _NewPortfolioTrendPoint {
     }
 }
 
+function _GetPortfolioTrendCoveragePercent {
+    <#
+        Release 3.6 M5 -- one number for "how much of the portfolio's
+        foundations are in place": present as a share of the foundations that
+        actually APPLY. `not-applicable` and `not-scored` are excluded from
+        both halves, so a repository excused from a domain neither helps nor
+        hurts the figure, and the defined-but-unscored domain cannot dilute it.
+
+        Returns $null when nothing applies -- an honest absence, not a 0.
+    #>
+    param([object]$Coverage)
+
+    if ($null -eq $Coverage) { return $null }
+    $domainNames = if ($Coverage -is [System.Collections.IDictionary]) {
+        @($Coverage.Keys | ForEach-Object { [string]$_ })
+    } else {
+        @($Coverage.PSObject.Properties | ForEach-Object { [string]$_.Name })
+    }
+
+    $present = 0.0
+    $applicable = 0.0
+    foreach ($domainId in $domainNames) {
+        $row = if ($Coverage -is [System.Collections.IDictionary]) { $Coverage[$domainId] } else { $Coverage.$domainId }
+        if ($null -eq $row) { continue }
+        foreach ($status in @('present', 'weak', 'missing')) {
+            $value = if ($row -is [System.Collections.IDictionary]) {
+                if ($row.Contains($status)) { $row[$status] } else { 0 }
+            } elseif ($null -ne $row.PSObject -and ($row.PSObject.Properties.Name -contains $status)) {
+                $row.$status
+            } else { 0 }
+            if ($null -eq $value) { $value = 0 }
+            $applicable += [double]$value
+            if ($status -eq 'present') { $present += [double]$value }
+        }
+    }
+
+    if ($applicable -le 0) { return $null }
+    return [math]::Round(($present / $applicable) * 100.0, 1)
+}
+
+function _GetPortfolioTrendCoverageRows {
+    <#
+        Daily coverage percentage from the foundation_coverage table. Returns
+        an empty array when the reader is unavailable, so the caller falls back
+        to the single-point scaffold rather than failing the whole trend.
+    #>
+    param([int]$Days = 30)
+
+    if ($null -eq (Get-Command -Name 'Get-AppDbFoundationCoverageHistory' -ErrorAction SilentlyContinue)) { return @() }
+    $history = Get-AppDbFoundationCoverageHistory -Days $Days
+    if ($null -eq $history -or -not $history.available) { return @() }
+
+    $byDay = [ordered]@{}
+    foreach ($row in @($history.entries)) {
+        $day = [string]$row.captured_day
+        if ([string]::IsNullOrWhiteSpace($day)) { continue }
+        if (-not $byDay.Contains($day)) { $byDay[$day] = @{ present = 0.0; applicable = 0.0 } }
+        $present = [double]$(if ($null -ne $row.present_count) { $row.present_count } else { 0 })
+        $weak = [double]$(if ($null -ne $row.weak_count) { $row.weak_count } else { 0 })
+        $missing = [double]$(if ($null -ne $row.missing_count) { $row.missing_count } else { 0 })
+        $byDay[$day].present += $present
+        $byDay[$day].applicable += ($present + $weak + $missing)
+    }
+
+    $result = [System.Collections.Generic.List[object]]::new()
+    foreach ($day in $byDay.Keys) {
+        $bucket = $byDay[$day]
+        if ($bucket.applicable -le 0) { continue }
+        $result.Add([pscustomobject]@{
+            captured_day = [string]$day
+            coverage_pct = [math]::Round(($bucket.present / $bucket.applicable) * 100.0, 1)
+        }) | Out-Null
+    }
+    return @($result)
+}
+
 function _GetPortfolioTrendTopCandidates {
     param(
         [Parameter()][AllowEmptyCollection()][object[]]$Assessments = @(),
@@ -261,7 +337,10 @@ function Get-PortfolioTrendPayload {
         [Parameter(Mandatory = $true)][string]$GeneratedAt,
         [Parameter(Mandatory = $true)][ValidateSet('portfolio-index', 'assessment-cache')][string]$SeedSource,
         [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
-        [Parameter()][int]$RequestedDays = 90
+        [Parameter()][int]$RequestedDays = 90,
+        # Release 3.6 M5 -- per-domain coverage for TODAY, computed by the caller
+        # (Portfolio.Conclusion owns the model; this module owns the chart).
+        [Parameter()][object]$Coverage = $null
     )
 
     if ($RequestedDays -lt 7) { $RequestedDays = 7 }
@@ -310,6 +389,18 @@ function Get-PortfolioTrendPayload {
         color  = 'sky'
         points = @(_NewPortfolioTrendPoint -Date $today -Value $summaryPayload.readyForWorkCount)
     }) | Out-Null
+    # Release 3.6 M5 -- foundation coverage. Added in BOTH this scaffold block
+    # and the history-backed block below: the history block re-news $series, so
+    # a series added to only one of them vanishes the moment the other applies.
+    $coveragePercentToday = _GetPortfolioTrendCoveragePercent -Coverage $Coverage
+    if ($null -ne $coveragePercentToday) {
+        $series.Add([pscustomobject]@{
+            key    = 'foundationCoverage'
+            label  = 'Foundations in place'
+            color  = 'amber'
+            points = @(_NewPortfolioTrendPoint -Date $today -Value ([double]$coveragePercentToday))
+        }) | Out-Null
+    }
 
     $topAssessments = @(_GetPortfolioTrendTopCandidates -Assessments $entryList -Limit 5)
     $topCandidates = [System.Collections.Generic.List[object]]::new()
@@ -405,6 +496,29 @@ function Get-PortfolioTrendPayload {
                     _NewPortfolioTrendPoint -Date ([string]$_.captured_day) -Value ([double]$_.ready_repo_count)
                 })
             }) | Out-Null
+            # Release 3.6 M5 -- the history-backed twin of the coverage series
+            # added to the scaffold above. Coverage has its own capture table,
+            # so it accrues on its own clock: it falls back to today's single
+            # point when nothing has been recorded yet.
+            $coverageRows = @(_GetPortfolioTrendCoverageRows -Days $RequestedDays)
+            if ($coverageRows.Count -gt 0) {
+                $series.Add([pscustomobject]@{
+                    key    = 'foundationCoverage'
+                    label  = 'Foundations in place'
+                    color  = 'amber'
+                    points = @($coverageRows | ForEach-Object {
+                        _NewPortfolioTrendPoint -Date ([string]$_.captured_day) -Value ([double]$_.coverage_pct)
+                    })
+                }) | Out-Null
+            }
+            elseif ($null -ne $coveragePercentToday) {
+                $series.Add([pscustomobject]@{
+                    key    = 'foundationCoverage'
+                    label  = 'Foundations in place'
+                    color  = 'amber'
+                    points = @(_NewPortfolioTrendPoint -Date $today -Value ([double]$coveragePercentToday))
+                }) | Out-Null
+            }
 
             $summaryPayload.improvedThisWeek = _GetPortfolioTrendImprovedThisWeek -DatabasePath $dbPath -WeekStartUtc ($nowUtc.Date.AddDays(-6))
 

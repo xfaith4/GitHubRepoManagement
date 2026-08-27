@@ -3,6 +3,7 @@ import { type AutomationHealthPayload } from '../lib/automationStatus';
 import { type PackagedItem } from '../lib/packagedItems';
 import { type RunnerPresencePayload } from '../lib/runnerPresence';
 import { type WorkItemTrace, type WriteBackPreview, type WriteBackRefusal } from '../lib/workItemTrace';
+import { normalizePortfolioLeverage } from '../lib/portfolioLeverage';
 import {
   type FoundationConclusionKind,
   type FoundationNextAction,
@@ -2262,6 +2263,9 @@ export async function getPortfolioTrend(options: { days?: number } = {}): Promis
           recommendedAction: String(sparkline?.recommendedAction ?? ''),
         }))
       : [],
+    // Release 3.6 M5 — null when the host did not compute it, so the panel can
+    // say so rather than render an empty scorecard.
+    leverage: normalizePortfolioLeverage(d.leverage),
   };
 }
 

@@ -480,6 +480,42 @@ try {
             Write-Host ("  app.db backup: {0} ({1} bytes, schema v{2})" -f $scan.appDbBackup.backupPath, $scan.appDbBackup.sizeBytes, $scan.appDbBackup.schemaVersion) -ForegroundColor DarkGray
             if (-not $dbBackupOk) { $notes.Add(("app.db backup did not succeed (HTTP {0}) — see host.log" -f $dbBackup.StatusCode)) }
 
+            # Release 3.6 M5 - record the day's foundation coverage and leverage
+            # in the manifest. The coverage HISTORY accrues from the assessment
+            # scan above (the only site that writes foundation_coverage); this
+            # captures the same day's figures where a human will read them.
+            Write-Host '  reading foundation coverage + leverage...' -ForegroundColor DarkGray
+            $m5 = Invoke-Req -Method Get -Uri "$baseUrl/api/portfolio/trend?days=30"
+            $m5Ok = ($m5.Ok -and $m5.StatusCode -eq 200 -and $null -ne $m5.Json -and $m5.Json.success -eq $true)
+            if ($m5Ok) {
+                $m5Series = @($m5.Json.data.series | Where-Object { [string]$_.key -eq 'foundationCoverage' })
+                $m5Lev = $m5.Json.data.leverage
+                $scan.foundationCoverage = [ordered]@{
+                    httpStatus     = $m5.StatusCode
+                    trendStatus    = [string]$m5.Json.data.trendStatus
+                    coveragePct    = if ($m5Series.Count -gt 0 -and @($m5Series[0].points).Count -gt 0) { $m5Series[0].points[-1].value } else { $null }
+                    coveragePoints = if ($m5Series.Count -gt 0) { @($m5Series[0].points).Count } else { 0 }
+                    byDomain       = $m5.Json.data.coverage
+                    leverage       = if ($null -ne $m5Lev) {
+                        [ordered]@{
+                            metricCount    = [int]$m5Lev.metricCount
+                            availableCount = [int]$m5Lev.availableCount
+                            # Both halves: what was derived, and what the product
+                            # admits it does not capture. Recording only the
+                            # first would read as though the rest were zero.
+                            derived        = @($m5Lev.metrics | Where-Object { $_.available } | ForEach-Object { [ordered]@{ key = [string]$_.key; value = $_.value; unit = [string]$_.unit; basis = [string]$_.basis } })
+                            notCaptured    = @($m5Lev.metrics | Where-Object { -not $_.available } | ForEach-Object { [ordered]@{ key = [string]$_.key; basis = [string]$_.basis } })
+                        }
+                    } else { $null }
+                }
+                Write-Host ("  foundation coverage: {0}% ({1} point(s), {2}); leverage {3}/{4} derived" -f `
+                        $scan.foundationCoverage.coveragePct, $scan.foundationCoverage.coveragePoints, $scan.foundationCoverage.trendStatus, `
+                        $(if ($null -ne $m5Lev) { $m5Lev.availableCount } else { 0 }), $(if ($null -ne $m5Lev) { $m5Lev.metricCount } else { 0 })) -ForegroundColor DarkGray
+            } else {
+                $scan.foundationCoverage = [ordered]@{ httpStatus = $m5.StatusCode; trendStatus = $null; coveragePct = $null; coveragePoints = 0; byDomain = $null; leverage = $null }
+                $notes.Add(("foundation coverage/leverage unavailable (HTTP {0}) - see host.log" -f $m5.StatusCode))
+            }
+
             Write-Host ("  health live/ready/deps: {0}/{1}/{2}" -f $live.StatusCode, $readyResp.StatusCode, $deps.StatusCode) -ForegroundColor DarkGray
             Write-Host ("  persistence: available={0} enabled={1} tables={2} agentRunEvents={3}" -f $scan.persistence.available, $scan.persistence.enabled, $scan.persistence.tables, $scan.persistence.agentRunEventCount) -ForegroundColor DarkGray
             Write-Host ("  scan: mode={0} reused={1} reindexed={2} failed={3} durationMs={4}" -f $scanMetrics.mode, $scanMetrics.reused, $scanMetrics.reindexed, $scanMetrics.failed, $scanMetrics.durationMs) -ForegroundColor DarkGray

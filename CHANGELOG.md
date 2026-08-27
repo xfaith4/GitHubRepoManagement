@@ -2,6 +2,44 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-27 — Release 3.6 milestone 5: coverage and leverage, measured or declared unmeasured
+
+### Changes
+
+- **`GET /api/portfolio/trend` gains a `foundationCoverage` series** — present
+  as a share of the foundations that actually _apply_. `not-applicable` and
+  `not-scored` are excluded from both halves, so an archived repository
+  neither inflates nor dilutes the figure, and the defined-but-unscored
+  domain cannot pad it. An empty portfolio reports null, never 0.
+- **It accrues for real.** A `foundation_coverage` table (schema v3; one row
+  per domain per scan, not one per repo per domain) is written from the same
+  site that writes maturity history — the only site that could keep it
+  honest — and read back with the same latest-capture-per-day rule, so a day
+  scanned three times cannot triple-count. Registered in the retention map
+  (180-day floor) and the backup manifest.
+- **The leverage family answers "does this return more time than it takes?"**
+  [`Portfolio.Leverage.ps1`](backend/modules/portfolio/Portfolio.Leverage.ps1)
+  derives agent first-pass success, estimate accuracy, time to deliver, tasks
+  completed this week, repositories needing nothing, and operator-verified
+  surfaces from ledgers the product already keeps. Every figure carries the
+  basis that produced it.
+- **What is not captured says so.** Operator minutes per task and
+  recommendations accepted vs rejected ship `available: false` with the reason
+  — the roadmap names them and the product does not have them. A contract
+  check refuses any metric that reports a value while claiming to be
+  unavailable: a leverage panel showing "0%" where it means "nobody measured
+  this" would argue the product is worthless using a number that does not
+  exist.
+- [`LeveragePanel.tsx`](frontend/components/LeveragePanel.tsx) renders both
+  halves in Insights, with an em dash for anything unmeasured;
+  `Invoke-DailyEvidence.ps1` records the day's figures in its manifest.
+- Gates: module smoke (coverage math, archived exclusion, empty-portfolio
+  null, the series present in **both** builder blocks and inside the
+  frontend's colour palette, leverage contract red on a zeroed fixture
+  first), api-host smoke (series shape and 0–100 range, every metric states a
+  basis, the two uncaptured ones named and null), and 15 frontend tests.
+  Frontend unit total: 332.
+
 ## 2026-08-27 — Release 3.6 milestone 3: the ranked `Today` landing
 
 ### Changes
