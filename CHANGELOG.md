@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-27 — Release 3.6 milestone 2: the outcome card
+
+### Changes
+
+- **The outcome card ships.**
+  [`OutcomeCard.tsx`](frontend/components/OutcomeCard.tsx) renders one
+  repository's conclusion the way the release defines it: the verdict, the
+  reason, every foundation domain's status with its evidence, and — where
+  improvement is warranted — one preview-first next action. It leads the
+  evaluation modal; a repository the portfolio index does not know yet says
+  exactly that instead of rendering nothing.
+- **No repository reads as a bare `L0-Absent`.** A repo with no roadmap shows
+  _Strengthen_ with "no plan recorded" and the roadmap-repair preview.
+  _Appropriate as-is_ renders with the same structure as any other outcome —
+  its evidence, and a line saying it is an outcome, not an absence of one.
+- **The next action is data, so it is checked before it is run.** The card
+  runs an action only when its route is one of this console's preview-first
+  flows (`RUNNABLE_NEXT_ACTION_ROUTES`); an unrecognised route still renders,
+  disabled, with the reason it cannot run — hiding it would leave a conclusion
+  with no visible next step. `runConclusionNextAction` in `apiClient.ts`
+  applies the same check server-side of the call.
+- A conclusion that fails the product's own contract is shown on the card, not
+  swallowed.
+- Gates: 9 component tests (jsdom) alongside the 11 data-layer tests; the
+  canonical suite is at 294 frontend unit tests.
+
 ## 2026-08-26 — Release 3.6 begins: every repository gets a conclusion (milestone 1)
 
 ### Changes

@@ -265,6 +265,40 @@ export function describeDomainStatus(status: FoundationDomainStatus): { label: s
   }
 }
 
+// ── Next-action safety ────────────────────────────────────────────────────────
+// The action is DATA: it arrives from foundation-domains.json by way of the
+// API. Data must not be able to make the browser POST wherever it likes, so the
+// card runs an action only when its route is one of the preview-first flows
+// this product already exposes. An unrecognised route still renders — with its
+// label and the reason it is not runnable — because silently hiding it would
+// leave a conclusion with no visible next step.
+export const RUNNABLE_NEXT_ACTION_ROUTES: readonly string[] = [
+  '/api/roadmap/repair/preview',
+  '/api/readme/standardize/preview',
+  '/api/repository-improvement/preview',
+  '/api/roadmap/dispatch/check',
+];
+
+export function isRunnableNextAction(action: FoundationNextAction | null | undefined): boolean {
+  if (!action) return false;
+  if (!RUNNABLE_NEXT_ACTION_ROUTES.includes(action.route)) return false;
+  // Every runnable flow identifies its repository; an action with no body would
+  // ask the backend to guess which repo the operator meant.
+  return Object.values(action.body).some(value => value.trim().length > 0);
+}
+
+/** Why an action cannot be run, for the card to show instead of a dead button. */
+export function explainUnrunnableAction(action: FoundationNextAction | null | undefined): string | null {
+  if (!action) return null;
+  if (!RUNNABLE_NEXT_ACTION_ROUTES.includes(action.route)) {
+    return `${action.route} is not one of this console's preview-first flows, so it cannot be run from here.`;
+  }
+  if (!Object.values(action.body).some(value => value.trim().length > 0)) {
+    return 'This action names no repository, so it cannot be run from here.';
+  }
+  return null;
+}
+
 /** Filter a list of entries carrying an outcome summary by conclusion; `null` keeps everything. */
 export function filterByConclusion<T extends { outcome?: RepositoryOutcomeSummary | null }>(entries: T[], conclusion: FoundationConclusionKind | null): T[] {
   if (!conclusion) return entries;
