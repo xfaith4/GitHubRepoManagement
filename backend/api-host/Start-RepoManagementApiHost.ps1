@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [Parameter()]
     [string]$BindAddress = '127.0.0.1',
@@ -521,6 +521,15 @@ function Get-OperationsReposPayload {
 
     $curationMap = Get-PortfolioCurationMap -WorkspaceRoot $WorkspaceRoot
     $entries = Apply-PortfolioCurationToEntries -Entries @($entries) -CurationMap $curationMap
+    # Release 3.6 M2 -- every entry carries its outcome summary, so a list
+    # renders and filters appropriate-as-is like any other conclusion. Pure,
+    # in-memory, after curation (curation can make a repo archived).
+    if ($null -ne (Get-Command -Name 'Add-FoundationOutcome' -ErrorAction SilentlyContinue)) {
+        $outcomeConfig = Get-FoundationDomainsConfig -ConfigPath (Join-Path $WorkspaceRoot 'backend\config\foundation-domains.json')
+        if ($null -ne $outcomeConfig) {
+            $entries = @(Add-FoundationOutcome -Entries @($entries) -Config $outcomeConfig)
+        }
+    }
 
     return [pscustomobject]@{
         available = $true
@@ -6944,6 +6953,15 @@ try {
 
                 Add-MetricCounter -Name 'api_requests_total'
                 Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                # Release 3.6 M2 -- the outcome card reads the full conclusion from
+                # the same payload the workspace already loads for this repo.
+                $detailConclusion = $null
+                $detailConclusionViolations = @()
+                $detailConclusionConfig = Get-FoundationDomainsConfig -ConfigPath (Join-Path $WorkspaceRoot 'backend\config\foundation-domains.json')
+                if ($null -ne $detailConclusionConfig) {
+                    $detailConclusion = Get-RepositoryFoundationConclusion -Entry $repoRecord -Config $detailConclusionConfig
+                    $detailConclusionViolations = @(Test-FoundationConclusion -Conclusion $detailConclusion -Config $detailConclusionConfig)
+                }
                 Write-HostLog ("[TRACE] operations.repoDetail correlationId={0} repoId={1} done docFindings={2} roadmapFindings={3} durationMs={4}" -f $correlationId, $repoId, @($docFindings).Count, @($roadmapFindings).Count, [int]((Get-Date) - $requestStart).TotalMilliseconds)
                 Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                     success = $true
@@ -6984,6 +7002,11 @@ try {
                             pendingItemCount = [int](Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'pendingItemCount' -Default 0)
                             nextPendingItemText = [string](Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'nextPendingItemText' -Default '')
                             topValueItem = (Get-ObjectPropertyValue -InputObject $repoRecord -PropertyName 'topValueItem' -Default $null)
+                        }
+                        conclusion = $detailConclusion
+                        conclusionContract = @{
+                            holds = ($null -ne $detailConclusion -and @($detailConclusionViolations).Count -eq 0)
+                            violations = @($detailConclusionViolations)
                         }
                     }
                 }
@@ -12428,6 +12451,21 @@ try {
                         }
 
                         $result = Invoke-RepoEvaluation -RepoName $repoName -LocalPath $localPath -HistoryRoot $script:RepoEvaluationHistoryRoot
+                        # Release 3.6 M2 -- the evaluation modal is the outcome card's
+                        # home, so the conclusion rides along when the portfolio index
+                        # knows this repo. A direct index read: no rebuild, no scan.
+                        $evalConclusion = $null
+                        $evalConfig = Get-FoundationDomainsConfig -ConfigPath (Join-Path $WorkspaceRoot 'backend\config\foundation-domains.json')
+                        $evalIndex = if ($null -ne $evalConfig) { Get-PortfolioIndexPayload -WorkspaceRoot $WorkspaceRoot } else { $null }
+                        if ($null -ne $evalIndex) {
+                            $evalEntry = @(@(Get-ObjectPropertyValue -InputObject $evalIndex -PropertyName 'repos' -Default @()) | Where-Object {
+                                [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '') -eq $repoName
+                            } | Select-Object -First 1)
+                            if ($evalEntry.Count -gt 0 -and $null -ne $evalEntry[0]) {
+                                $evalConclusion = Get-RepositoryFoundationConclusion -Entry $evalEntry[0] -Config $evalConfig
+                            }
+                        }
+                        $result | Add-Member -NotePropertyName 'conclusion' -NotePropertyValue $evalConclusion -Force
                         Add-MetricCounter -Name 'api_requests_total'
                         Write-HostLog ("[TRACE] repo.evaluate correlationId={0} done repoName={1} findings={2} hasRoadmap={3}" -f $correlationId, $repoName, $result.findingCount, $result.hasExistingRoadmap)
                         Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{

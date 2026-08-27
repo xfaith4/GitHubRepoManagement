@@ -43,6 +43,22 @@ All notable changes to this project are documented here.
 - Roadmap: 3.6 milestone 1 `smoke-tested`, milestone 4 (flexible standards)
   `backend-complete`, milestone 6 (evidence model) `smoke-tested`; the outcome
   card and the ranked `Today` landing are next.
+- **Outcome card — backend setup (milestone 2, `backend-complete`).** The
+  card's data arrives on the payloads the surfaces already load: an `outcome`
+  summary (conclusion, reason, kind, gap count, one next action, contract
+  holds) on every `/api/operations/repos` entry, so a list renders and filters
+  _appropriate as-is_ like any other conclusion; the full `conclusion` and its
+  contract on `/api/operations/repos/{repoId}` and on `/api/repo/evaluate`
+  (the evaluation modal is the card's home). A healthy repository with
+  recorded pending work now offers the packaging flow preview-first — the
+  dispatch readiness check — declared as `pendingWorkAction` in
+  `foundation-domains.json`. Frontend data layer:
+  [`lib/foundationConclusion.ts`](frontend/lib/foundationConclusion.ts) (types,
+  normalizers that refuse to invent a verdict or print a bare maturity code,
+  summary derivation, filter and presentation helpers; 11 unit tests) and
+  `getPortfolioConclusions` / `getRepositoryConclusion` in `apiClient.ts`.
+  Module smoke and api-host smoke assert the summary and the full conclusion
+  agree and the contract holds.
 
 ## 2026-08-26 — Release 2.9's foundations close; Release 3.6 may start
 

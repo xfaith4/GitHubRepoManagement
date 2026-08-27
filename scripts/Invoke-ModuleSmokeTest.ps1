@@ -2333,6 +2333,31 @@ Write-Step 'Foundation conclusions — Release 3.6 M1: every repository leaves w
     $fdNoRoadmapPlanning = @($fdByName['no-roadmap'].domains | Where-Object { $_.domain -eq 'planning' })[0]
     if (([string]$fdNoRoadmapPlanning.evidence[0]) -notmatch 'no plan recorded') { throw "A missing roadmap must read as 'no plan recorded', not L0-Absent (got '$($fdNoRoadmapPlanning.evidence[0])')" }
     if ([string]$fdByName['github-only'].reason -notmatch 'local clone') { throw 'A GitHub-only entry must name the local clone the product needs' }
+    # M2 backend: a healthy repo with recorded pending work offers the packaging
+    # flow, preview-first (the readiness check) - never a dispatch; a healthy
+    # repo with nothing pending offers nothing.
+    if ([string]$fdByName['healthy-l3'].nextAction.route -ne '/api/roadmap/dispatch/check' -or [string]$fdByName['healthy-l3'].nextAction.kind -ne 'dispatch-readiness-check') {
+        throw "A healthy L3 repo with pending work must offer the dispatch readiness check (got '$($fdByName['healthy-l3'].nextAction.route)')"
+    }
+    if ([string]$fdByName['healthy-l3'].nextAction.body.repoName -ne 'healthy-l3') { throw 'The packaging action must carry repoName, the dispatch-check contract' }
+    if ($null -ne $fdByName['minimal-utility'].nextAction) { throw 'A healthy repo with no pending work must not offer an action' }
+    if ([string]$fdByName['archived'].conclusion -ne 'appropriate-as-is' -or $null -ne $fdByName['archived'].nextAction) { throw 'An archived repo concludes appropriate-as-is with no action' }
+    # M2 backend: the outcome summary every list entry carries. It must say the
+    # same thing as the full conclusion, and attaching it must not scan.
+    $fdEnriched = @(Add-FoundationOutcome -Entries @($fdFixtures | ForEach-Object { [pscustomobject]($_ | ConvertTo-Json -Depth 8 | ConvertFrom-Json) }) -Config $fdConfig)
+    if ($fdEnriched.Count -ne $fdFixtures.Count) { throw 'Add-FoundationOutcome dropped entries' }
+    foreach ($entry in $fdEnriched) {
+        $summary = $entry.outcome
+        if ($null -eq $summary) { throw "Entry '$($entry.repoName)' carries no outcome summary" }
+        $full = $fdByName[[string]$entry.repoName]
+        if ([string]$summary.conclusion -ne [string]$full.conclusion -or [string]$summary.reason -ne [string]$full.reason) { throw "Outcome summary for '$($entry.repoName)' disagrees with the full conclusion" }
+        $fullRoute = if ($null -eq $full.nextAction) { $null } else { [string]$full.nextAction.route }
+        if ([string]$summary.nextActionRoute -ne [string]$fullRoute) { throw "Outcome summary for '$($entry.repoName)' names a different next action than the conclusion" }
+        if ($summary.holds -ne $true) { throw "Outcome summary for '$($entry.repoName)' reports the contract broken" }
+    }
+    $fdGapSummary = @($fdEnriched | Where-Object { $_.repoName -eq 'struct-gap' })[0].outcome
+    if ([int]$fdGapSummary.gapCount -ne 1 -or @($fdGapSummary.gapDomains) -notcontains 'structure') { throw "struct-gap summary must count its one structure gap (got $($fdGapSummary.gapCount): $($fdGapSummary.gapDomains -join ','))" }
+    if (@(Add-FoundationOutcome -Entries @($fdFixtures[0]) -Config $null)[0].PSObject.Properties.Name -contains 'outcome') { throw 'A null config must leave entries untouched, not attach a guessed outcome' }
     # Coverage reconciles: every domain's status counts sum to the item count.
     foreach ($id in $fdDomainIds) {
         $row = $fdPayload.coverage.$id

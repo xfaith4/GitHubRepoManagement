@@ -516,7 +516,20 @@ wherever it is not.
       a conclusion, not `L0-Absent`; _appropriate as-is_ renders and filters
       like any other outcome. What exists:
       [`RepoEvaluationModal.tsx`](frontend/components/RepoEvaluationModal.tsx).
-      _(state: planned)_
+      _(state: backend-complete 2026-08-26 — the card's data arrives on the
+      payloads the surfaces already load: an `outcome` summary on every
+      `/api/operations/repos` entry (renders and filters appropriate-as-is
+      like any other conclusion), the full `conclusion` + contract on
+      `/api/operations/repos/{repoId}` and on `/api/repo/evaluate`; a healthy
+      repo with pending work now offers the packaging flow preview-first via
+      the dispatch readiness check, from `foundation-domains.json`. Frontend
+      data layer in [`foundationConclusion.ts`](frontend/lib/foundationConclusion.ts)
+      (types, normalizers that refuse to invent a verdict or print a bare
+      maturity code, filter + presentation helpers; 11 unit tests) with
+      `getPortfolioConclusions` / `getRepositoryConclusion` in `apiClient.ts`.
+      Gates: module smoke (packaging action, summary agrees with the
+      conclusion, null config attaches nothing) and api-host smoke (entries
+      + detail agree, contract holds). The component itself is next.)_
 - [ ] **First interaction — the ranked `Today` landing.** The default view is
       a ranked table with _why now_, one primary next action per row, and
       effort (the value score and work-unit estimate already exist, three

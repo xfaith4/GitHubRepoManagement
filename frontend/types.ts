@@ -936,6 +936,8 @@ export interface RepoEvaluationResult {
   highCount: number;
   suggestedRoadmapContent: string | null;
   suggestedAdditions: EvaluationSuggestedAddition[];
+  /** Release 3.6 M2 — rides along when the portfolio index knows this repo; the evaluation modal is the outcome card's home. */
+  conclusion?: FoundationRepositoryConclusion | null;
 }
 
 // Release 1.6 — Roadmap-Driven Release Dispatch to GitHub Copilot
@@ -1341,11 +1343,26 @@ export interface PortfolioTrendResult {
   repoSparklines: PortfolioTrendRepoSparkline[];
 }
 
+// Release 3.6 — Every Repository Gets an Outcome (conclusion model + outcome card)
+export type {
+  FoundationConclusionKind,
+  FoundationDomainStatus,
+  FoundationNextAction,
+  FoundationDomainRecord,
+  RepositoryConclusion,
+  RepositoryOutcomeSummary,
+  ConclusionContract,
+  PortfolioConclusionsResult,
+} from './lib/foundationConclusion';
+import type { RepositoryConclusion as FoundationRepositoryConclusion, RepositoryOutcomeSummary as FoundationRepositoryOutcomeSummary, ConclusionContract as FoundationConclusionContract } from './lib/foundationConclusion';
+
 // Release 1.8 — Operations Workspace and Prompt Refinement
 
 export interface OperationsRepoEntry {
   repoId: string;
   ordinal: number;
+  /** Release 3.6 M2 — the list-row view of this repository's conclusion; null when the host has no foundation-domains config. */
+  outcome?: FoundationRepositoryOutcomeSummary | null;
   repoName: string;
   sourceCoverage: SourceCoverage;
   localPath: string;
@@ -1457,6 +1474,9 @@ export interface OperationsRepoDetail {
     nextPendingItemText?: string | null;
     topValueItem: PortfolioPendingItemValue | null;
   };
+  /** Release 3.6 M2 — the full conclusion the outcome card renders; null when the host has no foundation-domains config. */
+  conclusion?: FoundationRepositoryConclusion | null;
+  conclusionContract?: FoundationConclusionContract | null;
 }
 
 export interface OperationsPromptRefineRequest {

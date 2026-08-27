@@ -213,6 +213,13 @@ function _PC_NextActionFor {
     param([object]$Domain, [object]$Entry)
     $action = _PC_GetField -Obj $Domain -Name 'nextAction' -Default $null
     if ($null -eq $action) { return $null }
+    return _PC_ActionFromDefinition -Definition $action -DomainId ([string](_PC_GetField -Obj $Domain -Name 'id' -Default '')) -Entry $Entry
+}
+
+function _PC_ActionFromDefinition {
+    <# One action object from a config definition ({kind,label,method,route,bodyKeys}) and the entry it targets. #>
+    param([object]$Definition, [string]$DomainId, [object]$Entry)
+    $action = $Definition
     $body = [ordered]@{}
     foreach ($key in @(_PC_GetField -Obj $action -Name 'bodyKeys' -Default @())) {
         $value = switch ([string]$key) {
@@ -223,7 +230,7 @@ function _PC_NextActionFor {
         $body[[string]$key] = $value
     }
     return [pscustomobject]@{
-        domain = [string](_PC_GetField -Obj $Domain -Name 'id' -Default '')
+        domain = $DomainId
         kind   = [string](_PC_GetField -Obj $action -Name 'kind' -Default '')
         label  = [string](_PC_GetField -Obj $action -Name 'label' -Default '')
         method = [string](_PC_GetField -Obj $action -Name 'method' -Default 'POST')
@@ -336,6 +343,18 @@ function Get-RepositoryFoundationConclusion {
             $cited = @($present | ForEach-Object { "{0}: {1}" -f $_.title.ToLowerInvariant(), (@($_.evidence) | Select-Object -First 1) })
             $reason = 'Every applicable foundation is present - ' + ($cited -join '; ') + '.'
             foreach ($p in $present) { $basis.Add(("{0}=present" -f $p.domain)) }
+            # Healthy, with recorded pending work: the next action is the
+            # packaging flow, preview-first (a readiness check), never a dispatch.
+            $pendingWork = [int](_PC_GetField -Obj $Entry -Name 'pendingCount' -Default 0)
+            $planningPresent = @($present | Where-Object { $_.domain -eq 'planning' }).Count -gt 0
+            $planningDomain = @($configDomains | Where-Object { [string](_PC_GetField -Obj $_ -Name 'id' -Default '') -eq 'planning' } | Select-Object -First 1)
+            if ($pendingWork -gt 0 -and $planningPresent -and $planningDomain.Count -gt 0) {
+                $pendingAction = _PC_GetField -Obj $planningDomain[0] -Name 'pendingWorkAction' -Default $null
+                if ($null -ne $pendingAction) {
+                    $nextAction = _PC_ActionFromDefinition -Definition $pendingAction -DomainId 'planning' -Entry $Entry
+                    $basis.Add("pendingCount=$pendingWork")
+                }
+            }
         }
     }
 
@@ -414,6 +433,62 @@ function Test-FoundationConclusion {
         }
     }
     return @($violations)
+}
+
+function ConvertTo-FoundationOutcomeSummary {
+    <#
+    .SYNOPSIS
+        The card-sized view of a conclusion: what a list row needs to render and filter it.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][object]$Conclusion,
+        [Parameter()][AllowEmptyCollection()][string[]]$Violations = @()
+    )
+
+    $action = _PC_GetField -Obj $Conclusion -Name 'nextAction' -Default $null
+    $domains = @(_PC_GetField -Obj $Conclusion -Name 'domains' -Default @())
+    $gaps = @($domains | Where-Object { [string](_PC_GetField -Obj $_ -Name 'status' -Default '') -in @('missing', 'weak') })
+    return [pscustomobject]@{
+        conclusion      = [string](_PC_GetField -Obj $Conclusion -Name 'conclusion' -Default '')
+        reason          = [string](_PC_GetField -Obj $Conclusion -Name 'reason' -Default '')
+        kind            = [string](_PC_GetField -Obj $Conclusion -Name 'kind' -Default 'unknown')
+        gapCount        = $gaps.Count
+        gapDomains      = @($gaps | ForEach-Object { [string](_PC_GetField -Obj $_ -Name 'domain' -Default '') })
+        nextActionKind  = if ($null -eq $action) { $null } else { [string](_PC_GetField -Obj $action -Name 'kind' -Default '') }
+        nextActionLabel = if ($null -eq $action) { $null } else { [string](_PC_GetField -Obj $action -Name 'label' -Default '') }
+        nextActionRoute = if ($null -eq $action) { $null } else { [string](_PC_GetField -Obj $action -Name 'route' -Default '') }
+        holds           = (@($Violations).Count -eq 0)
+    }
+}
+
+function Add-FoundationOutcome {
+    <#
+    .SYNOPSIS
+        Attach an `outcome` summary to every index entry so list surfaces render
+        and filter appropriate-as-is like any other conclusion. Pure and
+        in-memory; a null config leaves the entries untouched.
+    #>
+    [CmdletBinding()]
+    [OutputType([System.Object[]])]
+    param(
+        [Parameter()][AllowEmptyCollection()][object[]]$Entries = @(),
+        [Parameter()][object]$Config = $null
+    )
+
+    if ($null -eq $Config) { return @($Entries) }
+    foreach ($entry in @($Entries)) {
+        if ($null -eq $entry) { continue }
+        $conclusion = Get-RepositoryFoundationConclusion -Entry $entry -Config $Config
+        $violations = @(Test-FoundationConclusion -Conclusion $conclusion -Config $Config)
+        $summary = ConvertTo-FoundationOutcomeSummary -Conclusion $conclusion -Violations $violations
+        if ($entry -is [System.Collections.IDictionary]) {
+            $entry['outcome'] = $summary
+        } else {
+            $entry | Add-Member -NotePropertyName 'outcome' -NotePropertyValue $summary -Force
+        }
+    }
+    return @($Entries)
 }
 
 function Get-PortfolioConclusionsPayload {
