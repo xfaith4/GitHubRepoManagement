@@ -7,6 +7,7 @@ import {
   type RepoStatus,
 } from '../types';
 import SummaryCard from './SummaryCard';
+import LeveragePanel from './LeveragePanel';
 import ProvenanceNotice from './ProvenanceNotice';
 import PortfolioMissionSection, { type PortfolioMission } from './PortfolioMissionSection';
 import type { PortfolioSnapshot } from '../types';
@@ -425,6 +426,12 @@ const InsightsView: React.FC<InsightsViewProps> = ({
                         </div>
                       );
                     })}
+                  </div>
+
+                  {/* Release 3.6 M5 — foundations gained (the coverage series
+                      above) and hours returned (below), in the same window. */}
+                  <div className="rounded-xl border border-gray-700 bg-gray-900/50 px-4 py-4">
+                    <LeveragePanel leverage={portfolioTrend?.leverage} />
                   </div>
 
                   <div className="space-y-3">

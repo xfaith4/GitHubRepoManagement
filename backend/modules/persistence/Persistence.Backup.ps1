@@ -154,7 +154,7 @@ function New-AppDbBackup {
     }
 
     $tableCounts = [ordered]@{}
-    foreach ($countTable in @('maturity_history', 'execution_ledger', 'portfolio_index_history', 'agent_runs')) {
+    foreach ($countTable in @('maturity_history', 'execution_ledger', 'portfolio_index_history', 'agent_runs', 'foundation_coverage')) {
         try {
             $countRows = @(Invoke-AppDbQuery -DatabasePath $backupPath -Sql ("SELECT COUNT(*) AS c FROM {0}" -f $countTable))
             $tableCounts[$countTable] = [long]$countRows[0].c

@@ -55,7 +55,9 @@ $ErrorActionPreference = 'Stop'
 # Constants and module state
 # ---------------------------------------------------------------------------
 
-$script:AppDbSchemaVersion = 2
+# 3 (Release 3.6 M5): foundation_coverage -- the trend's coverage series needs
+# somewhere to accrue, or it is a one-point scaffold forever.
+$script:AppDbSchemaVersion = 3
 $script:AppDbRelPath       = 'output\app.db'
 
 # Current persistence-boundary state. Enabled only after a successful
@@ -604,6 +606,24 @@ CREATE TABLE IF NOT EXISTS maturity_history (
   captured_at    TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_maturity_history_repo_time ON maturity_history(repo_name, captured_at);
+
+-- Release 3.6 M5: foundation coverage over time. One row per DOMAIN per scan
+-- (five rows), not one per repo per domain: the trend needs the portfolio
+-- aggregate, and a per-repo table would add 375 rows per scan on a 75-repo
+-- portfolio -- the growth profile portfolio_index_history already has.
+CREATE TABLE IF NOT EXISTS foundation_coverage (
+  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  scan_id              TEXT,
+  domain_id            TEXT NOT NULL,
+  present_count        INTEGER NOT NULL DEFAULT 0,
+  weak_count           INTEGER NOT NULL DEFAULT 0,
+  missing_count        INTEGER NOT NULL DEFAULT 0,
+  not_applicable_count INTEGER NOT NULL DEFAULT 0,
+  not_scored_count     INTEGER NOT NULL DEFAULT 0,
+  repo_count           INTEGER NOT NULL DEFAULT 0,
+  captured_at          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_foundation_coverage_domain_time ON foundation_coverage(domain_id, captured_at);
 
 CREATE TABLE IF NOT EXISTS ops_log (
   id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1866,6 +1886,127 @@ VALUES
 .SYNOPSIS
     Reads roadmap maturity history for one repo or all repos in a time range.
 #>
+function Write-AppDbFoundationCoverage {
+    <#
+    .SYNOPSIS
+        Record one scan's foundation coverage -- one row per domain.
+    .DESCRIPTION
+        Release 3.6 M5. The caller supplies the already-computed per-domain
+        counts (the host owns the conclusion model; this module owns storage),
+        so persistence stays free of any dependency on the portfolio modules.
+
+        Non-throwing like its sibling snapshot writer: a persistence failure
+        must never take down the scan that produced the data.
+    .PARAMETER Coverage
+        A map of domainId -> { present; weak; missing; not-applicable; not-scored }.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory = $true)][object]$Coverage,
+        [Parameter()][string]$ScanId = '',
+        [Parameter()][string]$CapturedAt = '',
+        [Parameter()][int]$RepoCount = 0
+    )
+
+    if (-not $script:AppDbState.enabled) {
+        return [pscustomobject]@{ success = $false; inserted = 0; reason = 'app database is not enabled' }
+    }
+    if ($null -eq $Coverage) {
+        return [pscustomobject]@{ success = $false; inserted = 0; reason = 'no coverage supplied' }
+    }
+
+    $capturedAtIso = if ([string]::IsNullOrWhiteSpace($CapturedAt)) { (Get-Date).ToUniversalTime().ToString('o') } else { $CapturedAt }
+    $domainNames = if ($Coverage -is [System.Collections.IDictionary]) {
+        @($Coverage.Keys | ForEach-Object { [string]$_ })
+    } else {
+        @($Coverage.PSObject.Properties | ForEach-Object { [string]$_.Name })
+    }
+    if ($domainNames.Count -eq 0) {
+        return [pscustomobject]@{ success = $false; inserted = 0; reason = 'coverage names no domains' }
+    }
+
+    $inserted = 0
+    try {
+        foreach ($domainId in $domainNames) {
+            $row = if ($Coverage -is [System.Collections.IDictionary]) { $Coverage[$domainId] } else { $Coverage.$domainId }
+            if ($null -eq $row) { continue }
+            $count = {
+                param($Name)
+                $value = if ($row -is [System.Collections.IDictionary]) {
+                    if ($row.Contains($Name)) { $row[$Name] } else { 0 }
+                } elseif ($null -ne $row.PSObject -and ($row.PSObject.Properties.Name -contains $Name)) {
+                    $row.$Name
+                } else { 0 }
+                if ($null -eq $value) { return [long]0 }
+                return [long]$value
+            }
+            $null = Invoke-AppDbNonQuery -DatabasePath ([string]$script:AppDbState.databasePath) -Sql @'
+INSERT INTO foundation_coverage
+  (scan_id, domain_id, present_count, weak_count, missing_count, not_applicable_count, not_scored_count, repo_count, captured_at)
+VALUES
+  (@scan_id, @domain_id, @present_count, @weak_count, @missing_count, @not_applicable_count, @not_scored_count, @repo_count, @captured_at)
+'@ -Parameters @{
+                scan_id              = $ScanId
+                domain_id            = [string]$domainId
+                present_count        = (& $count 'present')
+                weak_count           = (& $count 'weak')
+                missing_count        = (& $count 'missing')
+                not_applicable_count = (& $count 'not-applicable')
+                not_scored_count     = (& $count 'not-scored')
+                repo_count           = [long]$RepoCount
+                captured_at          = $capturedAtIso
+            }
+            $inserted++
+        }
+    } catch {
+        return [pscustomobject]@{ success = $false; inserted = $inserted; reason = $_.Exception.Message }
+    }
+
+    return [pscustomobject]@{ success = $true; inserted = $inserted; reason = '' }
+}
+
+function Get-AppDbFoundationCoverageHistory {
+    <#
+    .SYNOPSIS
+        Daily foundation coverage for the trend window.
+    .DESCRIPTION
+        Release 3.6 M5. One row per day per domain, taking each domain's LATEST
+        capture within the day -- the same rule maturity history uses, so a day
+        scanned three times cannot triple-count.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter()][int]$Days = 30)
+
+    if (-not $script:AppDbState.enabled) {
+        return [pscustomobject]@{ available = $false; entries = @() }
+    }
+    if ($Days -lt 1) { $Days = 1 }
+    $sinceIso = (Get-Date).ToUniversalTime().AddDays(-$Days).ToString('o')
+
+    $rows = @(Invoke-AppDbQuery -DatabasePath ([string]$script:AppDbState.databasePath) -Sql @'
+SELECT captured_day, domain_id,
+       SUM(present_count)        AS present_count,
+       SUM(weak_count)           AS weak_count,
+       SUM(missing_count)        AS missing_count,
+       SUM(not_applicable_count) AS not_applicable_count,
+       SUM(not_scored_count)     AS not_scored_count
+FROM (
+  SELECT substr(captured_at, 1, 10) AS captured_day, domain_id,
+         present_count, weak_count, missing_count, not_applicable_count, not_scored_count,
+         ROW_NUMBER() OVER (PARTITION BY substr(captured_at, 1, 10), domain_id ORDER BY captured_at DESC, id DESC) AS rn
+  FROM foundation_coverage
+  WHERE captured_at >= @since
+)
+WHERE rn = 1
+GROUP BY captured_day, domain_id
+ORDER BY captured_day ASC, domain_id ASC
+'@ -Parameters @{ since = $sinceIso })
+
+    return [pscustomobject]@{ available = $true; entries = @($rows) }
+}
+
 function Get-AppDbRoadmapMaturityHistory {
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -2237,6 +2378,10 @@ $script:AppDbRetentionPlan = [ordered]@{
     # Read by Get-AppDbRoadmapMaturityHistory / Get-AppDbQuotaBurnHistory /
     # Get-AppDbAgentRunMetricsHistory — these back the trend windows.
     'maturity_history'          = @{ column = 'captured_at';  floorDays = 180 }
+    # Release 3.6 M5: read by Get-AppDbFoundationCoverageHistory for the trend's
+    # coverage series -- same 180-day floor as the window it feeds. Five rows
+    # per scan, so it is cheap to keep.
+    'foundation_coverage'       = @{ column = 'captured_at';  floorDays = 180 }
     'quota_burn_snapshots'      = @{ column = 'evaluated_at'; floorDays = 180 }
     'merge_readiness_snapshots' = @{ column = 'captured_at';  floorDays = 180 }
     'agent_run_events'          = @{ column = 'timestamp';    floorDays = 180 }

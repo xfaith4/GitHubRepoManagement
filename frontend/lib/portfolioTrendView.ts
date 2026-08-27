@@ -86,19 +86,28 @@ export function formatTrendDateLabel(date: string): string {
   return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+/**
+ * Series whose values are percentages. A series added here without this entry
+ * renders as a bare integer — "62" where it means "62%" (Release 3.6 M5).
+ */
+export const PERCENT_TREND_SERIES: readonly string[] = ['avgMaturityScore', 'foundationCoverage'];
+
+export function isPercentTrendSeries(key: string): boolean {
+  return PERCENT_TREND_SERIES.includes(key);
+}
+
 export function formatTrendSeriesValue(key: string, value: number): string {
-  if (key === 'avgMaturityScore') {
+  if (isPercentTrendSeries(key)) {
     return `${Math.round(value)}%`;
   }
   return Math.round(value).toString();
 }
 
 export function formatTrendSeriesDelta(key: string, delta: number): string {
-  const rounded = key === 'avgMaturityScore'
-    ? Math.round(delta * 10) / 10
-    : Math.round(delta);
+  const percent = isPercentTrendSeries(key);
+  const rounded = percent ? Math.round(delta * 10) / 10 : Math.round(delta);
   const sign = rounded > 0 ? '+' : '';
-  return key === 'avgMaturityScore' ? `${sign}${rounded}%` : `${sign}${rounded}`;
+  return percent ? `${sign}${rounded}%` : `${sign}${rounded}`;
 }
 
 export interface TrendGeometry {

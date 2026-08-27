@@ -99,6 +99,8 @@ $portfolioModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\portfolio'
 # Release 3.6 milestone 1 -- one explainable conclusion per repository, composed
 # from the cached index only. Loads after Assessment (it reads the same entries).
 . (Join-Path $portfolioModuleRoot 'Portfolio.Conclusion.ps1')
+# Release 3.6 M5 -- the leverage family, derived from ledgers already kept.
+. (Join-Path $portfolioModuleRoot 'Portfolio.Leverage.ps1')
 . (Join-Path $portfolioModuleRoot 'Portfolio.Analytics.ps1')
 . (Join-Path $portfolioModuleRoot 'Portfolio.Report.ps1')
 . (Join-Path $portfolioModuleRoot 'Portfolio.Curation.ps1')
@@ -9838,6 +9840,30 @@ try {
                         Write-HostLog ("WARN portfolio.assessment persistence snapshot failed: {0}" -f $_.Exception.Message)
                     }
 
+                    # Release 3.6 M5 -- foundation coverage accrues on the same
+                    # clock as maturity history. This is the ONLY site that
+                    # records it: a capture wired anywhere else would leave the
+                    # coverage series a one-point scaffold forever.
+                    try {
+                        $coverageConfig = Get-FoundationDomainsConfig -ConfigPath (Join-Path $WorkspaceRoot 'backend\config\foundation-domains.json')
+                        if ($null -ne $coverageConfig) {
+                            $coveragePayload = Get-PortfolioConclusionsPayload -Entries @($assessments) -Config $coverageConfig -GeneratedAt $generatedAt
+                            $coverageWrite = Write-AppDbFoundationCoverage `
+                                -Coverage $coveragePayload.coverage `
+                                -ScanId $scanId `
+                                -CapturedAt $generatedAt `
+                                -RepoCount ([int]$coveragePayload.count)
+                            if ($coverageWrite.success) {
+                                Write-HostLog ("[TRACE] portfolio.assessment foundation coverage recorded scanId={0} domains={1} repos={2}" -f $scanId, $coverageWrite.inserted, $coveragePayload.count)
+                            }
+                            else {
+                                Write-HostLog ("WARN portfolio.assessment foundation coverage skipped: {0}" -f $coverageWrite.reason)
+                            }
+                        }
+                    } catch {
+                        Write-HostLog ("WARN portfolio.assessment foundation coverage failed: {0}" -f $_.Exception.Message)
+                    }
+
                     try {
                         $changedRepoNames = if ($useDifferentialScan) {
                             @($differentialChangedSet | ForEach-Object { [string]$_ })
@@ -10062,13 +10088,80 @@ try {
                     }
 
                     try {
+                        # Release 3.6 M5 -- today's foundation coverage, from the
+                        # same conclusion model the outcome card renders. The host
+                        # owns the model; the analytics module owns the chart.
+                        # Both declared before the guard: StrictMode makes an
+                        # unassigned variable a runtime error, and the leverage
+                        # block below reads them whether or not the config loads.
+                        $trendCoverage = $null
+                        $trendConclusions = $null
+                        $trendCoverageConfig = Get-FoundationDomainsConfig -ConfigPath (Join-Path $WorkspaceRoot 'backend\config\foundation-domains.json')
+                        if ($null -ne $trendCoverageConfig) {
+                            try {
+                                $trendConclusions = Get-PortfolioConclusionsPayload -Entries @($trendSeed.entries) -Config $trendCoverageConfig
+                                $trendCoverage = $trendConclusions.coverage
+                            } catch {
+                                Write-HostLog ("WARN portfolio.trend coverage unavailable: {0}" -f $_.Exception.Message)
+                            }
+                        }
+
                         $trendPayload = Get-PortfolioTrendPayload `
                             -Assessments @($trendSeed.entries) `
                             -Summary $trendSeed.summary `
                             -GeneratedAt ([string]$trendSeed.generatedAt) `
                             -SeedSource ([string]$trendSeed.seedSource) `
                             -WorkspaceRoot $WorkspaceRoot `
-                            -RequestedDays $requestedDays
+                            -RequestedDays $requestedDays `
+                            -Coverage $trendCoverage
+
+                        # The leverage family rides the same window, derived from
+                        # ledgers already kept. Every source is optional: a missing
+                        # one makes its metrics unavailable-with-a-reason, never a
+                        # zero that reads as measured.
+                        $leverageRuns = @()
+                        try {
+                            $leverageHistory = Get-AppDbAgentRunMetricsHistory -Days $requestedDays -SeedFromRunsDirectory (Join-Path $WorkspaceRoot 'output\agent-runs\runs')
+                            if ($null -ne $leverageHistory -and $leverageHistory.available) { $leverageRuns = @($leverageHistory.entries) }
+                        } catch { Write-HostLog ("WARN portfolio.trend leverage agent runs unavailable: {0}" -f $_.Exception.Message) }
+
+                        $leverageExecution = $null
+                        try {
+                            $leverageLedger = Read-ExecutionLedger -WorkspaceRoot $WorkspaceRoot
+                            $leverageWeekStart = (Get-Date).Date.AddDays(-7)
+                            $leverageExecution = [pscustomobject]@{
+                                completedThisWeek = @(@($leverageLedger.history) | Where-Object {
+                                    $ts = [datetime]::MinValue
+                                    ([datetime]::TryParse([string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'timestamp' -Default ''), [ref]$ts)) -and
+                                    $ts -ge $leverageWeekStart -and
+                                    [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'outcome' -Default '') -eq 'complete'
+                                }).Count
+                            }
+                        } catch { Write-HostLog ("WARN portfolio.trend leverage execution ledger unavailable: {0}" -f $_.Exception.Message) }
+
+                        $leverageVerifications = @()
+                        try {
+                            $leverageLogPath = Join-Path $WorkspaceRoot 'evidence\operator-verification-log.jsonl'
+                            if (Test-Path -LiteralPath $leverageLogPath) {
+                                $leverageVerifications = @(Get-Content -LiteralPath $leverageLogPath -Encoding UTF8 |
+                                    Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+                                    ForEach-Object { try { $_ | ConvertFrom-Json } catch { $null } } |
+                                    Where-Object { $null -ne $_ })
+                            }
+                        } catch { Write-HostLog ("WARN portfolio.trend leverage verification log unreadable: {0}" -f $_.Exception.Message) }
+
+                        $leveragePayload = Get-PortfolioLeverage `
+                            -AgentRuns $leverageRuns `
+                            -ExecutionMetrics $leverageExecution `
+                            -Conclusions $trendConclusions `
+                            -OperatorVerifications $leverageVerifications `
+                            -WindowDays $requestedDays
+                        $leverageViolations = @(Test-LeverageMetricContract -Payload $leveragePayload)
+                        if ($leverageViolations.Count -gt 0) {
+                            Write-HostLog ("WARN portfolio.trend leverage contract violated: {0}" -f ($leverageViolations -join '; '))
+                        }
+                        $trendPayload | Add-Member -NotePropertyName 'leverage' -NotePropertyValue $leveragePayload -Force
+                        $trendPayload | Add-Member -NotePropertyName 'coverage' -NotePropertyValue $trendCoverage -Force
 
                         Add-MetricCounter -Name 'api_requests_total'
                         Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
