@@ -542,7 +542,21 @@ wherever it is not.
       Decides the Lane 0.5 question (2026-08-23). What exists:
       [`DashboardViewTabs.tsx`](frontend/components/DashboardViewTabs.tsx),
       [`RepoGrid.tsx`](frontend/components/RepoGrid.tsx), the value scorer.
-      _(state: planned)_
+      _(state: smoke-tested 2026-08-27 —
+      [`TodayView.tsx`](frontend/components/TodayView.tsx) is the default
+      landing: an orientation paragraph naming what was assessed and
+      concluded, then a ranked table of repository / why now / one next action
+      / effort, with every conclusion filterable including appropriate-as-is.
+      Ranking is pure and explainable in
+      [`todayRanking.ts`](frontend/lib/todayRanking.ts) — conclusion, then
+      curation, then whether an action exists, then value, gaps and (only as a
+      tiebreak) cheaper effort — and every row carries the basis for its rank.
+      `estimatedSessionWorkUnits` reaches a surface for the first time; the
+      index always emitted it. Every tab now poses its question with the
+      Release 2.6 subtitle second. Gates: 13 ranking tests, 10 view tests, the
+      viewMeta contract test (every view has a unique question ending in `?`),
+      and the module smoke's Dashboard source-order tripwire. This closes Lane
+      0.5.)_
 - [ ] **Flexible standards.** Per-kind applicability in
       `foundation-domains.json` (library, service, script collection,
       archived, minimal, externally managed) so a domain can be
@@ -749,7 +763,7 @@ maintained list.
 
 Three of four closed 2026-08-10 and are archived (error boundary, bulk-scope confirmation, tab inversion).
 
-- The progressive-disclosure question — **decided 2026-08-23**: the ranked `Today` landing with one primary action per row is Release 3.6's first-interaction milestone, and collapsible sections / regrouping the six peers resolve inside it; the three 2026-08-15 review inputs are [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
+- The progressive-disclosure question — **decided 2026-08-23, resolved 2026-08-27**: the ranked `Today` landing with one primary action per row is Release 3.6's first-interaction milestone, and it shipped — `Today` is now the default view, the six peers sit behind it, and every tab poses the question it answers. The three 2026-08-15 review inputs are [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd). Nothing remains in this lane.
 
 ### Lane 0.7 — Roadmap-standard fidelity: split-history awareness (2026-08-08)
 

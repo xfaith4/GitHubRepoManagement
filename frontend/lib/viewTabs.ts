@@ -21,6 +21,10 @@ export interface ViewTabAccent {
 const INACTIVE_TAB_CLASS = 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-700/20';
 
 export const VIEW_TAB_ACCENTS: Record<ViewKey, ViewTabAccent> = {
+  'today': {
+    active: 'border-emerald-500 text-emerald-300 bg-gray-700/40',
+    badge: 'bg-emerald-700 text-emerald-100',
+  },
   'repos': {
     active: 'border-indigo-500 text-indigo-300 bg-gray-700/40',
     badge: 'bg-indigo-700 text-indigo-100',

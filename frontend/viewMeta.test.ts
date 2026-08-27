@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { VIEW_META, VIEW_META_BY_KEY, type ViewKey } from './viewMeta';
 
 const EXPECTED_KEYS: ViewKey[] = [
+  // Release 3.6 M3 — `today` leads: it is the default landing, and the tab
+  // order is the order an operator should consider the views in.
+  'today',
   'repos',
   'insights',
   'operations',
@@ -10,9 +13,10 @@ const EXPECTED_KEYS: ViewKey[] = [
   'dependencies',
 ];
 
-describe('viewMeta — the six-view single source of truth', () => {
-  it('defines exactly the six expected views in order', () => {
+describe('viewMeta — the single source of truth for the view tabs', () => {
+  it('defines exactly the expected views in order, with the Today landing first', () => {
     expect(VIEW_META.map(v => v.key)).toEqual(EXPECTED_KEYS);
+    expect(VIEW_META[0].key).toBe('today');
   });
 
   it('gives every view a non-empty label, short label, and subtitle', () => {
@@ -21,6 +25,17 @@ describe('viewMeta — the six-view single source of truth', () => {
       expect(v.short.length).toBeGreaterThan(0);
       expect(v.subtitle.length).toBeGreaterThan(0);
     }
+  });
+
+  it('poses a question for every view — a label names a place, a question names the reason to go there', () => {
+    for (const v of VIEW_META) {
+      expect(v.question.length).toBeGreaterThan(0);
+      expect(v.question.trim().endsWith('?')).toBe(true);
+      // The question must not merely restate the label.
+      expect(v.question.toLowerCase()).not.toBe(v.label.toLowerCase());
+    }
+    expect(new Set(VIEW_META.map(v => v.question)).size).toBe(VIEW_META.length);
+    expect(VIEW_META_BY_KEY['today'].question).toBe('What should I do next, and why?');
   });
 
   it('renamed the two colliding queues to distinct, self-describing names', () => {

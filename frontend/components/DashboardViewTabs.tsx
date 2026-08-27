@@ -50,13 +50,16 @@ const DashboardViewTabs: React.FC<DashboardViewTabsProps> = ({ activeView, onSel
       })}
     </div>
 
-    {/* Per-view purpose subtitle (Release 2.6 Phase 2) — lets operators
-        self-orient without trial and error as they land on each tab. */}
-    <div
-      data-testid="view-subtitle"
-      className="px-4 py-2 text-xs text-gray-400 border-b border-gray-700/60"
-    >
-      {VIEW_META_BY_KEY[activeView].subtitle}
+    {/* The question this view answers (Release 3.6 M3), then the Release 2.6
+        purpose subtitle. A label names a place; the question names the reason
+        to be there, which is what an operator is actually choosing between. */}
+    <div className="px-4 py-2 border-b border-gray-700/60">
+      <p data-testid="view-question" className="text-xs text-gray-200 font-medium">
+        {VIEW_META_BY_KEY[activeView].question}
+      </p>
+      <p data-testid="view-subtitle" className="text-xs text-gray-400 mt-0.5">
+        {VIEW_META_BY_KEY[activeView].subtitle}
+      </p>
     </div>
   </>
 );

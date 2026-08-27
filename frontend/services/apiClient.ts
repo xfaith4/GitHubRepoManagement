@@ -509,6 +509,7 @@ function normalizeOperationsRepoEntry(entry: any): OperationsRepoEntry {
     repoId: String(entry?.repoId ?? entry?.localPath ?? entry?.githubFullName ?? entry?.repoName ?? 'unknown'),
     ordinal: Number(entry?.ordinal ?? 0),
     outcome: normalizeRepositoryOutcomeSummary(entry?.outcome),
+    estimatedSessionWorkUnits: entry?.estimatedSessionWorkUnits ?? null,
     repoName: String(entry?.repoName ?? ''),
     sourceCoverage: (entry?.sourceCoverage ?? 'local') as OperationsRepoEntry['sourceCoverage'],
     localPath: String(entry?.localPath ?? ''),
