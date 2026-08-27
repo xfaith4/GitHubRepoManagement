@@ -5,8 +5,11 @@ import { type RunnerPresencePayload } from '../lib/runnerPresence';
 import { type WorkItemTrace, type WriteBackPreview, type WriteBackRefusal } from '../lib/workItemTrace';
 import {
   type FoundationConclusionKind,
+  type FoundationNextAction,
   type PortfolioConclusionsResult,
   type RepositoryConclusion,
+  explainUnrunnableAction,
+  isRunnableNextAction,
   normalizeConclusionContract,
   normalizePortfolioConclusionsResult,
   normalizeRepositoryConclusion,
@@ -2289,6 +2292,39 @@ export async function getRepositoryConclusion(repoId: string): Promise<{ conclus
     contract: normalizeConclusionContract(d.contract),
     cacheSource: String(d.cacheSource ?? ''),
   };
+}
+
+/**
+ * Release 3.6 M2 — run a conclusion's preview-first next action.
+ *
+ * The action is data (foundation-domains.json by way of the API), so the route
+ * is checked against the flows this console actually exposes before anything is
+ * sent. Every allowed route previews or reports; none applies a change.
+ */
+export async function runConclusionNextAction(action: FoundationNextAction): Promise<{ ok: boolean; summary: string }> {
+  if (!isRunnableNextAction(action)) {
+    throw new Error(explainUnrunnableAction(action) ?? 'This action cannot be run from here.');
+  }
+  if (USE_MOCK_API) {
+    return { ok: true, summary: 'Mock API: no preview was generated.' };
+  }
+  const data = await postJson<{ success?: boolean; data?: Record<string, unknown> } | null>(
+    action.route.replace(/^\/api/, ''),
+    action.body
+  );
+  const d = data?.data ?? {};
+  // Each preview flow names its result differently; report what came back
+  // rather than inventing a uniform shape none of them actually has.
+  const changeCount = ['changes', 'actions', 'findings', 'proposedChanges', 'items']
+    .map(key => (Array.isArray((d as Record<string, unknown>)[key]) ? ((d as Record<string, unknown>)[key] as unknown[]).length : null))
+    .find(n => n !== null);
+  const verdict = typeof (d as Record<string, unknown>).verdict === 'string' ? String((d as Record<string, unknown>).verdict) : null;
+  const summary = verdict
+    ? `Ready: ${verdict}`
+    : changeCount !== null && changeCount !== undefined
+      ? `Preview ready — ${changeCount} proposed change(s). Nothing has been applied.`
+      : 'Preview ready. Nothing has been applied.';
+  return { ok: data?.success !== false, summary };
 }
 
 export async function getOperationsRepos(): Promise<OperationsReposResult> {

@@ -516,20 +516,24 @@ wherever it is not.
       a conclusion, not `L0-Absent`; _appropriate as-is_ renders and filters
       like any other outcome. What exists:
       [`RepoEvaluationModal.tsx`](frontend/components/RepoEvaluationModal.tsx).
-      _(state: backend-complete 2026-08-26 — the card's data arrives on the
-      payloads the surfaces already load: an `outcome` summary on every
-      `/api/operations/repos` entry (renders and filters appropriate-as-is
-      like any other conclusion), the full `conclusion` + contract on
-      `/api/operations/repos/{repoId}` and on `/api/repo/evaluate`; a healthy
-      repo with pending work now offers the packaging flow preview-first via
-      the dispatch readiness check, from `foundation-domains.json`. Frontend
-      data layer in [`foundationConclusion.ts`](frontend/lib/foundationConclusion.ts)
-      (types, normalizers that refuse to invent a verdict or print a bare
-      maturity code, filter + presentation helpers; 11 unit tests) with
-      `getPortfolioConclusions` / `getRepositoryConclusion` in `apiClient.ts`.
-      Gates: module smoke (packaging action, summary agrees with the
-      conclusion, null config attaches nothing) and api-host smoke (entries
-      + detail agree, contract holds). The component itself is next.)_
+      _(state: smoke-tested 2026-08-27 —
+      [`OutcomeCard.tsx`](frontend/components/OutcomeCard.tsx) renders the
+      conclusion, its reason, every domain's status and evidence, and one
+      preview-first next action; it leads the evaluation modal, and a repo the
+      index does not know says so instead of showing nothing. The action is
+      data, so the card runs it only when its route is one of this console's
+      preview-first flows — an unrecognised route still renders, disabled,
+      with the reason. Backend (2026-08-26): an `outcome` summary on every
+      `/api/operations/repos` entry, the full `conclusion` + contract on the
+      detail and on `/api/repo/evaluate`, and the packaging flow offered
+      preview-first for a healthy repo with pending work — all from
+      `foundation-domains.json`. Data layer:
+      [`foundationConclusion.ts`](frontend/lib/foundationConclusion.ts).
+      Gates: 9 component tests (no repo reads as a bare `L0-Absent`,
+      appropriate-as-is renders as a first-class outcome with its evidence, a
+      rogue route is refused, a broken contract is shown not hidden), 11 data
+      tests, module smoke and api-host smoke on the payloads. Filtering by
+      conclusion lands with the ranked `Today` landing below.)_
 - [ ] **First interaction — the ranked `Today` landing.** The default view is
       a ranked table with _why now_, one primary next action per row, and
       effort (the value score and work-unit estimate already exist, three

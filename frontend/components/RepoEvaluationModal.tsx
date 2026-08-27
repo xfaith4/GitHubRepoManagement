@@ -1,6 +1,8 @@
 import React, { useState, useCallback } from 'react';
 import type { RepoEvaluationResult, EvaluationFinding, EvaluationFindingSeverity, EvaluationFindingCategory } from '../types';
-import { evaluateRepo, createRepoRoadmap } from '../services/apiClient';
+import { evaluateRepo, createRepoRoadmap, runConclusionNextAction } from '../services/apiClient';
+import type { FoundationNextAction } from '../lib/foundationConclusion';
+import OutcomeCard from './OutcomeCard';
 import { SpinnerIcon } from './icons';
 
 interface Props {
@@ -79,6 +81,15 @@ export const RepoEvaluationModal: React.FC<Props> = ({ repoName, localPath, onCl
   const [errorMsg, setErrorMsg] = useState('');
   const [roadmapContent, setRoadmapContent] = useState('');
   const [createError, setCreateError] = useState('');
+  const [actionSummary, setActionSummary] = useState('');
+
+  // Release 3.6 M2 — the conclusion's next action is preview-first: it reports
+  // what it would do and applies nothing, so running it needs no confirmation.
+  const handleNextAction = useCallback(async (action: FoundationNextAction) => {
+    setActionSummary('');
+    const outcome = await runConclusionNextAction(action);
+    setActionSummary(outcome.summary);
+  }, []);
 
   const runEvaluation = useCallback(async () => {
     setPhase('evaluating');
@@ -174,6 +185,24 @@ export const RepoEvaluationModal: React.FC<Props> = ({ repoName, localPath, onCl
 
           {(phase === 'done' || phase === 'creating' || phase === 'created') && result && (
             <>
+              {/* Release 3.6 M2 — the outcome card leads: the conclusion, why,
+                  each foundation's evidence, and one preview-first next action.
+                  Findings below are the detail behind it. It is absent only when
+                  the portfolio index does not know this repository yet. */}
+              {result.conclusion ? (
+                <OutcomeCard conclusion={result.conclusion} onRunNextAction={handleNextAction} />
+              ) : (
+                <p className="text-xs text-gray-500">
+                  No portfolio conclusion yet for {repoName} — it is not in the portfolio index. Run a portfolio scan to
+                  have the product reach one.
+                </p>
+              )}
+              {actionSummary && (
+                <div className="bg-indigo-950/50 border border-indigo-700 rounded px-3 py-2 text-xs text-indigo-200">
+                  {actionSummary}
+                </div>
+              )}
+
               {/* Summary strip */}
               <div className="flex gap-3 flex-wrap">
                 <span className="bg-gray-800 border border-gray-700 rounded px-3 py-1 text-xs text-gray-300">
