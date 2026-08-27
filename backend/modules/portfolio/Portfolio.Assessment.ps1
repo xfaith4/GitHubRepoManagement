@@ -369,6 +369,56 @@ function _ResolveLifecycleState {
 
 function _NormalizeKey { param([string]$Value) return ([string]$Value).ToLowerInvariant() }
 
+function _NormalizePathKey {
+    param([string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return '' }
+    return ([string]$Value).Trim().TrimEnd('\', '/').Replace('/', '\').ToLowerInvariant()
+}
+
+function _IndexByRepoPath {
+    param([object[]]$Items, [string]$PathField = 'repoPath')
+    $map = @{}
+    foreach ($it in @($Items)) {
+        if ($null -eq $it) { continue }
+        $value = ''
+        if ($it -is [System.Collections.IDictionary]) {
+            if ($it.Contains($PathField)) { $value = [string]$it[$PathField] }
+        } elseif ($it.PSObject.Properties.Name -contains $PathField) {
+            $value = [string]$it.$PathField
+        }
+        $pathKey = _NormalizePathKey $value
+        if ([string]::IsNullOrWhiteSpace($pathKey)) { continue }
+        $map[$pathKey] = $it
+    }
+    return $map
+}
+
+# A repository's identity is where it lives, not what its folder is called.
+# Joining scanner output on the folder name silently dropped every repo whose
+# local directory differs from its GitHub name: on 2026-08-27 the live index
+# reported CupHandleDetectionv2 (in a folder called CupHandleDetection) and
+# GenesysCloud-API-Explorer_v3 (in GenesysCloudOpsConsole) as having no roadmap
+# at all -- L0-Absent, needs-roadmap, dispatch blocked -- while the second of
+# those had 53 pending items on disk. The scanners key their output by folder
+# name and the index keys repos by remote name, so the two never met. Prefer the
+# path, which both sides already carry, and keep the name as the fallback for
+# synthetic callers that have no path.
+function _ResolveScanEntry {
+    param(
+        [hashtable]$PathMap,
+        [hashtable]$NameMap,
+        [string]$PathKey,
+        [string]$NameKey
+    )
+    if ($null -ne $PathMap -and -not [string]::IsNullOrWhiteSpace($PathKey) -and $PathMap.ContainsKey($PathKey)) {
+        return $PathMap[$PathKey]
+    }
+    if ($null -ne $NameMap -and -not [string]::IsNullOrWhiteSpace($NameKey) -and $NameMap.ContainsKey($NameKey)) {
+        return $NameMap[$NameKey]
+    }
+    return $null
+}
+
 function _IndexByRepoName {
     param([object[]]$Items, [string]$NameField = 'repoName')
     $map = @{}
@@ -509,6 +559,14 @@ function Invoke-PortfolioAssessment {
     $executionMap   = _IndexByRepoName -Items $ExecutionEntries   -NameField 'repoName'
     $githubMap      = _IndexByRepoName -Items $GitHubRepos        -NameField 'name'
 
+    # Path-keyed companions. Every local scanner records the directory it read,
+    # so these join correctly even when the folder name and the remote name
+    # disagree; the name maps above remain the fallback.
+    $roadmapPathMap  = _IndexByRepoPath -Items $RoadmapEntries      -PathField 'repoPath'
+    $docAuditPathMap = _IndexByRepoPath -Items $DocAuditEntries     -PathField 'repoPath'
+    $maturityPathMap = _IndexByRepoPath -Items $RoadmapAuditEntries -PathField 'repoPath'
+    $execPathMap     = _IndexByRepoPath -Items $ExecutionEntries    -PathField 'repoPath'
+
     $assessments = [System.Collections.Generic.List[object]]::new()
     $seenLocalKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
@@ -528,9 +586,10 @@ function Invoke-PortfolioAssessment {
         $htmlUrl    = [string](_GetField -Obj $repo -Name 'htmlUrl' -Default '')
         $branch     = [string](_GetField -Obj $repo -Name 'branch' -Default '')
         $gitStatus  = [string](_GetField -Obj $repo -Name 'status' -Default 'unknown')
+        $pathKey    = _NormalizePathKey $localPath
 
         # Roadmap state
-        $roadmapEntry = if ($roadmapMap.ContainsKey($key)) { $roadmapMap[$key] } else { $null }
+        $roadmapEntry = _ResolveScanEntry -PathMap $roadmapPathMap -NameMap $roadmapMap -PathKey $pathKey -NameKey $key
         $roadmapPath  = [string](_GetField -Obj $roadmapEntry -Name 'roadmapPath' -Default '')
         $roadmapState = [string](_GetField -Obj $roadmapEntry -Name 'roadmapState' -Default 'missing')
         $hasRoadmap   = -not [string]::IsNullOrWhiteSpace($roadmapPath) -and (Test-Path -LiteralPath $roadmapPath -ErrorAction SilentlyContinue)
@@ -547,7 +606,7 @@ function Invoke-PortfolioAssessment {
         }
 
         # Doc audit
-        $docEntry = if ($docAuditMap.ContainsKey($key)) { $docAuditMap[$key] } else { $null }
+        $docEntry = _ResolveScanEntry -PathMap $docAuditPathMap -NameMap $docAuditMap -PathKey $pathKey -NameKey $key
         $rawDispatchReadiness = [string](_GetField -Obj $docEntry -Name 'dispatchReadiness' -Default 'missing-roadmap')
         $docFindings = @()
         $rawDocFindings = _GetField -Obj $docEntry -Name 'docFindings' -Default @()
@@ -564,12 +623,12 @@ function Invoke-PortfolioAssessment {
         }
 
         # Roadmap maturity
-        $maturityEntry = if ($maturityMap.ContainsKey($key)) { $maturityMap[$key] } else { $null }
+        $maturityEntry = _ResolveScanEntry -PathMap $maturityPathMap -NameMap $maturityMap -PathKey $pathKey -NameKey $key
         $maturityLevel = [string](_GetField -Obj $maturityEntry -Name 'maturityLevel' -Default 'L0-Absent')
         $maturityScore = [int](_GetField -Obj $maturityEntry -Name 'maturityScore' -Default 0)
 
         # Execution
-        $execEntry = if ($executionMap.ContainsKey($key)) { $executionMap[$key] } else { $null }
+        $execEntry = _ResolveScanEntry -PathMap $execPathMap -NameMap $executionMap -PathKey $pathKey -NameKey $key
         $execState = [string](_GetField -Obj $execEntry -Name 'executionState' -Default 'idle')
 
         # Structure audit

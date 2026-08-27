@@ -2,6 +2,62 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-27 — Lane 0.11: a repository is found by where it lives, not by what its folder is called
+
+### Fixed
+
+- **A repository whose folder name differs from its GitHub name lost its
+  roadmap entirely.** The scanners key their output by the `.git`-ancestor
+  folder name; the portfolio index keys repositories by their remote name.
+  When the two disagree the join silently produced nothing, and the repository
+  was assessed as having no roadmap at all — `L0-Absent`, `needs-roadmap`,
+  dispatch blocked — with a full `ROADMAP.md` sitting on disk. Found from the
+  portal, where `CupHandleDetectionv2` (in a folder called
+  `CupHandleDetection`) reported "Roadmap file exists but could not be parsed"
+  and "This repo does not have a roadmap" at the same time.
+  [`Portfolio.Assessment.ps1`](backend/modules/portfolio/Portfolio.Assessment.ps1)
+  now joins roadmap, doc-audit, maturity and execution entries on the
+  repository path — which both sides already carry — and keeps the name join
+  as the fallback for callers that have no path. Two repositories recovered on
+  the live index; `GenesysCloud-API-Explorer_v3` had 53 pending items the
+  console could not see.
+- **A nested or archived copy could outrank the repository's own roadmap.**
+  Discovery accepted any file whose name began with `ROADMAP`, at any depth,
+  and the index kept the last one written — and `-Recurse` returns the root
+  before its subdirectories, so the copy always won.
+  `2026-06-13_Orchestration` was being planned from
+  `archive\roadmaps\ROADMAP.v1.0_original.md`, a superseded historical copy.
+  Five repositories resolved to the wrong file; four of them reported
+  `parse-error` with 0 pending items while holding 34, 53 and 25 real ones.
+  `Select-CanonicalRoadmapFile`
+  ([`Roadmap.Parser.ps1`](backend/modules/roadmap/Roadmap.Parser.ps1)) now
+  makes that choice explicitly and totally: markdown only, the repository root
+  beats any subdirectory, an exact `ROADMAP.md` beats a decorated sibling, and
+  an ordinal tiebreak means enumeration order decides nothing.
+- **`roadmap.json`, `roadmap.v1.schema.json` and `ROADMAP.pdf` were being read
+  as roadmaps.** Parsing a JSON schema as markdown yields zero checkbox items,
+  which the audit then reported as a damaged roadmap. Non-markdown candidates
+  are now rejected outright, and a repository with no markdown roadmap is
+  recorded as having none rather than having a broken one.
+- **The doc audit and the roadmap scan disagreed with each other.** One took
+  the first name match, the other the last, so a single repository could be
+  assessed against two different files in one pass. Both now use the same
+  selector.
+- **`ROADMAP-002` accused a healthy file of being corrupt.** It read "Roadmap
+  file exists but could not be parsed" when the parser had read the file
+  perfectly and simply found no `- [ ]` items — sending the operator to fix a
+  file that was not broken. `CupHandleDetectionv2`'s roadmap is 179 lines of
+  releases, acceptance criteria, decision gates and risks in table form. The
+  rule now names the real problem, a format mismatch, in both the `standards/`
+  and `spec/` copies, and the badge and readiness copy match it.
+
+Gated by a new module-smoke section, "Roadmap identity", covering eight
+file-selection cases, the renamed-repository join, the name-keyed fallback and
+the wording of both rule copies. All three assertions were confirmed red
+against the pre-fix code first. The caches under
+`backend/modules/output/cache/` were built by the old logic, so the corrected
+figures reach the console after the next portfolio scan.
+
 ## 2026-08-27 — Release 3.6 milestone 5: coverage and leverage, measured or declared unmeasured
 
 ### Changes

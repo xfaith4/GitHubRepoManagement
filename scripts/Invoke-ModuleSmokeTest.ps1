@@ -2252,6 +2252,123 @@ if (@($bothAssess).Count -ne 1)                  { throw "Expected single dedupe
 if ($bothAssess[0].sourceCoverage -ne 'local+github') { throw "Expected sourceCoverage=local+github, got '$($bothAssess[0].sourceCoverage)'" }
 Write-Host '  local+github source coverage correct' -ForegroundColor DarkGray
 
+Write-Step 'Roadmap identity — a repo is found by where it lives, not by what its folder is called'
+& {
+    . $roadmapParser
+    . $portfolioModule
+
+    # --- Canonical roadmap file selection -----------------------------------
+    # Discovery accepted any name starting with ROADMAP at any depth and the
+    # index kept the last one written. On 2026-08-27 that made
+    # 2026-06-13_Orchestration plan from archive\roadmaps\ROADMAP.v1.0_original.md
+    # and reported four repos as parse-error with 0 pending items when they had
+    # 34, 53 and 25 items on disk.
+    $repoRoot = 'C:\repos\demo'
+    $selCases = @(
+        @{ why = 'an archived copy must never outrank the root file'
+           cand = @("$repoRoot\ROADMAP.md", "$repoRoot\archive\roadmaps\ROADMAP.v1.0_original.md")
+           want = "$repoRoot\ROADMAP.md" },
+        @{ why = 'a docs/ copy must never outrank the root file'
+           cand = @("$repoRoot\ROADMAP.md", "$repoRoot\docs\RoadMap_PromptChain\RoadMap.md")
+           want = "$repoRoot\ROADMAP.md" },
+        @{ why = 'a JSON schema is not a roadmap'
+           cand = @("$repoRoot\roadmap.json", "$repoRoot\ROADMAP.md")
+           want = "$repoRoot\ROADMAP.md" },
+        @{ why = 'a PDF is not a roadmap'
+           cand = @("$repoRoot\ROADMAP.pdf", "$repoRoot\ROADMAP.md")
+           want = "$repoRoot\ROADMAP.md" },
+        @{ why = 'an exact ROADMAP.md outranks a decorated sibling'
+           cand = @("$repoRoot\ROADMAP.v2.md", "$repoRoot\ROADMAP.md")
+           want = "$repoRoot\ROADMAP.md" },
+        @{ why = 'enumeration order does not decide the answer'
+           cand = @("$repoRoot\ROADMAP.md", "$repoRoot\ROADMAP.v2.md")
+           want = "$repoRoot\ROADMAP.md" },
+        @{ why = 'a nested roadmap still counts when the root has none'
+           cand = @("$repoRoot\docs\ROADMAP.md")
+           want = "$repoRoot\docs\ROADMAP.md" },
+        @{ why = 'no markdown candidate means no roadmap, not a corrupt one'
+           cand = @("$repoRoot\roadmap.json", "$repoRoot\ROADMAP.pdf")
+           want = '' }
+    )
+    foreach ($case in $selCases) {
+        $picked = Select-CanonicalRoadmapFile -Candidate $case.cand -RepoPath $repoRoot
+        if ($picked -ne $case.want) {
+            throw ("Canonical roadmap selection failed ({0}): expected '{1}', got '{2}'" -f $case.why, $case.want, $picked)
+        }
+    }
+    if ((Select-CanonicalRoadmapFile -Candidate @() -RepoPath $repoRoot) -ne '') { throw 'An empty candidate set must yield an empty selection, not an error' }
+
+    # --- Path-first join ----------------------------------------------------
+    # The scanners key their output by folder name; the index keys repos by
+    # remote name. Every repo whose folder differs from its GitHub name lost its
+    # roadmap, its doc audit and its maturity in one go.
+    $renamedRepo = [pscustomobject]@{
+        name = 'Widget-v2'; localPath = $WorkspaceRoot; isArchived = $false
+        htmlUrl = 'https://github.com/x/Widget-v2'; branch = 'main'; status = 'clean'
+    }
+    $folderName = Split-Path $WorkspaceRoot -Leaf
+    if ($folderName -eq 'Widget-v2') { throw 'Fixture invalid: the folder name must differ from the repo name for this gate to mean anything' }
+    $renamedRoadmap = @([pscustomobject]@{
+        repoName = $folderName; repoPath = $WorkspaceRoot
+        roadmapPath = (Join-Path $WorkspaceRoot 'ROADMAP.md'); roadmapState = 'pending'; pendingCount = 53
+    })
+    $renamedDocs = @([pscustomobject]@{
+        repoName = $folderName; repoPath = $WorkspaceRoot
+        dispatchReadiness = 'ready'; roadmapState = 'pending'; docFindings = @()
+    })
+    $renamedAssess = @(Invoke-PortfolioAssessment -LocalRepos @($renamedRepo) `
+        -RoadmapEntries $renamedRoadmap -DocAuditEntries $renamedDocs -StructureStandards $structStds)
+    if ($renamedAssess.Count -ne 1) { throw "Expected 1 assessment for the renamed repo, got $($renamedAssess.Count)" }
+    if (-not $renamedAssess[0].hasRoadmap) {
+        throw 'A repo whose folder name differs from its remote name reported hasRoadmap=false while its ROADMAP.md sat on disk'
+    }
+    if ([string]$renamedAssess[0].roadmapState -ne 'pending') {
+        throw "Renamed repo roadmapState should join through the path: expected 'pending', got '$([string]$renamedAssess[0].roadmapState)'"
+    }
+    if ([int]$renamedAssess[0].pendingCount -ne 53) {
+        throw "Renamed repo lost its pending work: expected 53, got $([int]$renamedAssess[0].pendingCount)"
+    }
+    if ([string]$renamedAssess[0].lifecycleState -eq 'needs-roadmap') {
+        throw 'Renamed repo was still classified needs-roadmap after the path join'
+    }
+
+    # The name join must still work for callers that carry no path.
+    $namedOnly = @([pscustomobject]@{
+        repoName = 'Widget-v2'; roadmapPath = (Join-Path $WorkspaceRoot 'ROADMAP.md'); roadmapState = 'pending'; pendingCount = 7
+    })
+    $namedAssess = @(Invoke-PortfolioAssessment -LocalRepos @($renamedRepo) -RoadmapEntries $namedOnly -StructureStandards $structStds)
+    if ([int]$namedAssess[0].pendingCount -ne 7) {
+        throw "Name-keyed fallback broke: expected pendingCount=7, got $([int]$namedAssess[0].pendingCount)"
+    }
+
+    Write-Host ("  roadmap identity ok: {0} selection case(s); renamed repo keeps roadmap (state={1} pending={2}), name fallback intact" -f `
+        $selCases.Count, [string]$renamedAssess[0].roadmapState, [int]$renamedAssess[0].pendingCount) -ForegroundColor DarkGray
+}
+
+Write-Step 'Roadmap audit rules — a readable file with no checkboxes is not a damaged file'
+& {
+    # ROADMAP-002 told the operator the file "could not be parsed" when the
+    # parser had read it perfectly and found no '- [ ]' items. That sends them
+    # to fix the wrong thing: CupHandleDetectionv2's roadmap is 179 lines of
+    # releases, acceptance criteria and decision gates in table form.
+    foreach ($rulesPath in @(
+        (Join-Path $WorkspaceRoot 'standards\roadmap\roadmap-audit-rules.json'),
+        (Join-Path $WorkspaceRoot 'spec\roadmap-contract\roadmap-audit-rules.json'))) {
+        if (-not (Test-Path -LiteralPath $rulesPath)) { throw "Missing roadmap audit rules: $rulesPath" }
+        $rulesDoc = Get-Content -LiteralPath $rulesPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $rule002 = @($rulesDoc.rules | Where-Object { [string]$_.id -eq 'ROADMAP-002' })
+        if ($rule002.Count -ne 1) { throw "ROADMAP-002 not found exactly once in $rulesPath" }
+        $msg = [string]$rule002[0].message
+        if ($msg -match 'could not be parsed') {
+            throw "ROADMAP-002 still claims the file 'could not be parsed' in $rulesPath; the parser read it fine and found no checklist items"
+        }
+        if ($msg -notmatch 'checklist item') {
+            throw "ROADMAP-002 must name the real problem (no checklist items) in $rulesPath, got: $msg"
+        }
+    }
+    Write-Host '  ROADMAP-002 states the real problem in both rule copies' -ForegroundColor DarkGray
+}
+
 Write-Step 'Foundation conclusions — Release 3.6 M1: every repository leaves with an explainable conclusion'
 & {
     . $portfolioConclusionModule

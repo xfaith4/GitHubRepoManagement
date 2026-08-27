@@ -903,6 +903,47 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
       gate is a module-smoke fixture that writes eight dated snapshots and
       asserts the oldest is gone. _(state: planned)_
 
+### Lane 0.11 — Roadmap identity: repos were being found by folder name (found 2026-08-27)
+
+- [x] **[non-blocker]** Join scanner output to the index by repository path,
+      and pick one canonical roadmap file per repository. Found from the portal:
+      `CupHandleDetectionv2` reported "Roadmap file exists but could not be
+      parsed" *and* "This repo does not have a roadmap" at the same time, with
+      a 36 KB `ROADMAP.md` on disk. Three separate defects, all confirmed
+      against the live index:
+      **(a) identity** — `Invoke-RoadmapScan`
+      ([`Start-RepoManagementApiHost.ps1`](backend/api-host/Start-RepoManagementApiHost.ps1))
+      keys entries by the `.git`-ancestor *folder* name while the index keys
+      repos by their *remote* name, so every repo whose folder differs from its
+      GitHub name lost its roadmap, doc audit and maturity together
+      (`CupHandleDetectionv2` in `CupHandleDetection`,
+      `GenesysCloud-API-Explorer_v3` in `GenesysCloudOpsConsole` — both read as
+      `L0-Absent` / `needs-roadmap` / dispatch-blocked).
+      **(b) file selection** — discovery accepted any name starting with
+      `ROADMAP` at any depth, and `_IndexByRepoName` keeps the *last* write, so
+      a nested copy always beat the repository's own file: five repos resolved
+      to the wrong one, four of them reported `parse-error` with 0 pending
+      items while holding 34, 53 and 25 real items, and
+      `2026-06-13_Orchestration` was being planned from
+      `archive\roadmaps\ROADMAP.v1.0_original.md`. The doc audit took the
+      *first* match, so one repo could be assessed against two different files
+      in a single pass.
+      **(c) wording** — `ROADMAP-002` said the file "could not be parsed" when
+      the parser had read it perfectly and found no `- [ ]` items, sending the
+      operator to fix a file that was not broken.
+      Fixed by `Select-CanonicalRoadmapFile`
+      ([`Roadmap.Parser.ps1`](backend/modules/roadmap/Roadmap.Parser.ps1) —
+      markdown only, repository root beats any subdirectory, exact `ROADMAP.md`
+      beats a decorated sibling, ordinal tiebreak so enumeration order decides
+      nothing), by path-keyed companion maps in
+      [`Portfolio.Assessment.ps1`](backend/modules/portfolio/Portfolio.Assessment.ps1)
+      with the name join kept as the fallback, and by restating `ROADMAP-002`
+      in both rule copies. Gated by the module-smoke section "Roadmap identity";
+      all three assertions were confirmed red against `HEAD` first. Still to do:
+      the caches under `backend/modules/output/cache/` were built by the old
+      logic, so the corrected figures appear only after the next portfolio
+      scan. _(state: smoke-tested)_
+
 ---
 
 ## 8. Risks and Guardrails

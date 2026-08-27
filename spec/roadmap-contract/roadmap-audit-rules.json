@@ -98,11 +98,11 @@
     {
       "id": "ROADMAP-002",
       "name": "roadmap-parseable",
-      "description": "The roadmap file can be parsed without errors (contains at least one checkbox item).",
+      "description": "The roadmap file yields at least one checkbox item, so a task can be selected from it.",
       "severity": "critical",
       "scoreWeight": 15,
       "failCondition": "roadmapState === 'parse-error'",
-      "message": "Roadmap file exists but could not be parsed. No checkbox items were found.",
+      "message": "Roadmap file was read successfully but contains no '- [ ]' or '- [x]' checklist items, so no task can be selected from it. This is a format mismatch, not a damaged file.",
       "recommendedAction": "Add at least one release section with checklist items using '- [ ] task' and '- [x] done' syntax."
     },
     {
