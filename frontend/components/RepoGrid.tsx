@@ -94,7 +94,7 @@ function getRoadmapBadgeConfig(state: RoadmapBadgeState): { className: string; l
       return {
         className: 'bg-orange-900/50 text-orange-300 border-orange-700/50 hover:bg-orange-800/60 hover:text-orange-100',
         label: 'ROADMAP !',
-        title: 'Roadmap found but could not be parsed',
+        title: 'Roadmap found, but no checklist items could be read from it',
       };
     default:
       return {

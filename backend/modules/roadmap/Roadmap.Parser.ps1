@@ -679,3 +679,86 @@ function Invoke-ParseRoadmapContent {
         parseError      = $errorMsg
     }
 }
+
+<#
+.SYNOPSIS
+  Chooses the one roadmap file that represents a repository.
+
+.DESCRIPTION
+  Roadmap discovery used to accept any file whose name began with "ROADMAP",
+  at any depth, and then let the last one enumerated win. Three things went
+  wrong with that, all of them observed in the live portfolio on 2026-08-27:
+
+    * Non-markdown files were accepted. 'roadmap.json', 'roadmap.v1.schema.json'
+      and 'ROADMAP.pdf' were all treated as roadmaps; parsing a JSON schema as
+      markdown yields zero checkbox items, which the audit then reported as
+      "could not be parsed".
+    * Nested copies outranked the real file. Because Get-ChildItem -Recurse
+      returns the repository root before its subdirectories, and the index was
+      built last-wins, 2026-06-13_Orchestration resolved to
+      'archive\roadmaps\ROADMAP.v1.0_original.md' -- a superseded historical
+      copy -- instead of its own ROADMAP.md.
+    * The two scanners disagreed. The doc audit took the first match and the
+      roadmap scan took the last, so the same repository could be assessed
+      against two different files in one pass.
+
+  The selection rule is therefore explicit and total: markdown only, the
+  repository root beats any subdirectory, an exact ROADMAP.md beats a decorated
+  name at the same depth, and ordinal path order breaks any remaining tie so
+  the choice does not depend on enumeration order.
+
+.PARAMETER Candidate
+  Roadmap file candidates. Accepts FileInfo objects or path strings.
+
+.PARAMETER RepoPath
+  Repository root. Files directly inside it are preferred over nested ones.
+
+.OUTPUTS
+  System.String. The full path of the selected file, or an empty string when no
+  candidate qualifies.
+#>
+function Select-CanonicalRoadmapFile {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter()][AllowEmptyCollection()][object[]]$Candidate = @(),
+        [Parameter()][string]$RepoPath = ''
+    )
+
+    $normalizedRepoPath = ''
+    if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
+        $normalizedRepoPath = $RepoPath.TrimEnd('\', '/')
+    }
+
+    $ranked = [System.Collections.Generic.List[object]]::new()
+    foreach ($item in @($Candidate)) {
+        if ($null -eq $item) { continue }
+
+        $fullPath = if ($item -is [System.IO.FileInfo]) { $item.FullName } else { [string]$item }
+        if ([string]::IsNullOrWhiteSpace($fullPath)) { continue }
+
+        $leaf = Split-Path -Path $fullPath -Leaf
+        # Markdown only. A PDF or a JSON schema is not a plan the parser can read.
+        if ($leaf -notmatch '(?i)^roadmap(\..+)?\.(md|markdown)$') { continue }
+
+        $parent = ''
+        try { $parent = (Split-Path -Path $fullPath -Parent).TrimEnd('\', '/') } catch { $parent = '' }
+        $atRepoRoot = $normalizedRepoPath -and $parent -and
+            [string]::Equals($parent, $normalizedRepoPath, [StringComparison]::OrdinalIgnoreCase)
+
+        $ranked.Add([pscustomobject]@{
+            fullPath    = $fullPath
+            rootRank    = if ($atRepoRoot) { 0 } else { 1 }
+            exactRank   = if ($leaf -match '(?i)^roadmap\.(md|markdown)$') { 0 } else { 1 }
+            depth       = @($fullPath -split '[\/]').Count
+            fullPathKey = $fullPath
+        }) | Out-Null
+    }
+
+    if ($ranked.Count -eq 0) { return '' }
+
+    $best = $ranked.ToArray() |
+        Sort-Object -Property rootRank, exactRank, depth, @{ Expression = 'fullPathKey' } |
+        Select-Object -First 1
+    return [string]$best.fullPath
+}

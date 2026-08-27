@@ -11,7 +11,7 @@
       needs-doc-standardization — roadmap has pending work but docs have critical/warning issues
       missing-roadmap        — no ROADMAP.md found for the repo
       roadmap-complete       — roadmap exists but all items are completed
-      parse-error            — roadmap found but could not be parsed
+      parse-error            — roadmap found but yielded no checklist items
       blocked                — README.md is missing (cannot dispatch without context)
 
     Exported function: Invoke-AuditRepoDocumentation, Invoke-AuditRepoScan
@@ -395,13 +395,27 @@ function Invoke-AuditRepoScan {
                     # cache and this scan), but the roadmap may still exist on
                     # disk. Classify it directly rather than reporting
                     # missing-roadmap for a repo the roadmap audit can see.
-                    $roadmapFile = Get-ChildItem -Path $repoPath -File -ErrorAction SilentlyContinue |
-                        Where-Object { $_.Name -imatch '^ROADMAP(\..+)?$' } | Select-Object -First 1
-                    if ($null -ne $roadmapFile) {
+                    # Same selection rule as the roadmap scan. This fallback used
+                    # to take the first name-matching file, which is a different
+                    # answer from the scan's last-wins -- one repo could be
+                    # assessed against two different files in a single pass, and
+                    # either could be a PDF or a JSON schema.
+                    $roadmapCandidates = @(Get-ChildItem -Path $repoPath -File -ErrorAction SilentlyContinue |
+                        Where-Object { $_.Name -imatch '^ROADMAP(\..+)?$' })
+                    $roadmapFilePath = if (Get-Command -Name 'Select-CanonicalRoadmapFile' -ErrorAction SilentlyContinue) {
+                        Select-CanonicalRoadmapFile -Candidate $roadmapCandidates -RepoPath $repoPath
+                    }
+                    else {
+                        [string](@($roadmapCandidates |
+                            Where-Object { $_.Name -imatch '(?i)^roadmap(\..+)?\.(md|markdown)$' } |
+                            Sort-Object -Property @{ Expression = { if ($_.Name -imatch '(?i)^roadmap\.(md|markdown)$') { 0 } else { 1 } } }, FullName |
+                            Select-Object -First 1 -ExpandProperty FullName))
+                    }
+                    if (-not [string]::IsNullOrWhiteSpace($roadmapFilePath)) {
                         try {
-                            $rawRoadmap = Get-Content -LiteralPath $roadmapFile.FullName -Raw -Encoding UTF8 -ErrorAction Stop
+                            $rawRoadmap = Get-Content -LiteralPath $roadmapFilePath -Raw -Encoding UTF8 -ErrorAction Stop
                             if (Get-Command -Name 'Invoke-ParseRoadmapContent' -ErrorAction SilentlyContinue) {
-                                $parsedRoadmap = Invoke-ParseRoadmapContent -Content $rawRoadmap -SourcePath $roadmapFile.FullName
+                                $parsedRoadmap = Invoke-ParseRoadmapContent -Content $rawRoadmap -SourcePath $roadmapFilePath
                                 $roadmapState = [string](Get-DocAuditObjectValue -InputObject $parsedRoadmap -PropertyName 'roadmapState' -Default 'parse-error')
                                 $fallbackNpi = Get-DocAuditObjectValue -InputObject $parsedRoadmap -PropertyName 'nextPendingItem' -Default $null
                                 $nextPendingItem = [string](Get-DocAuditObjectValue -InputObject $fallbackNpi -PropertyName 'text' -Default '')

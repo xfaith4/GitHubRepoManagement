@@ -4306,10 +4306,18 @@ function Invoke-RoadmapScan {
             # then falsely reports missing-roadmap).
             $files = Get-ChildItem -Path $root -Recurse -Depth ($MaxDepth + 1) -File -ErrorAction SilentlyContinue |
                 Where-Object { $_.Name -imatch '^ROADMAP(\..+)?$' }
-            foreach ($file in $files) {
-                $repoName = $file.Directory.Name
-                $repoPath = $file.DirectoryName
-                $dir = $file.Directory
+
+            # One repository yields one roadmap. Emitting an entry per file let
+            # a nested or archived copy overwrite the real one downstream --
+            # _IndexByRepoName keeps the last write, and -Recurse returns the
+            # repository root before its subdirectories, so the copy always
+            # won. Group by repository first and let Select-CanonicalRoadmapFile
+            # decide, so the answer no longer depends on enumeration order.
+            $byRepo = [ordered]@{}
+            foreach ($candidate in @($files)) {
+                $repoName = $candidate.Directory.Name
+                $repoPath = $candidate.DirectoryName
+                $dir = $candidate.Directory
                 while ($null -ne $dir) {
                     if (Test-Path (Join-Path $dir.FullName '.git')) {
                         $repoName = $dir.Name
@@ -4318,6 +4326,35 @@ function Invoke-RoadmapScan {
                     }
                     $dir = $dir.Parent
                 }
+                $repoKey = $repoPath.ToLowerInvariant()
+                if (-not $byRepo.Contains($repoKey)) {
+                    $byRepo[$repoKey] = [pscustomobject]@{
+                        repoName   = $repoName
+                        repoPath   = $repoPath
+                        candidates = [System.Collections.Generic.List[object]]::new()
+                    }
+                }
+                $byRepo[$repoKey].candidates.Add($candidate) | Out-Null
+            }
+
+            foreach ($repoKey in @($byRepo.Keys)) {
+                $group = $byRepo[$repoKey]
+                $repoName = $group.repoName
+                $repoPath = $group.repoPath
+
+                $chosenPath = Select-CanonicalRoadmapFile -Candidate $group.candidates.ToArray() -RepoPath $repoPath
+                if ([string]::IsNullOrWhiteSpace($chosenPath)) {
+                    # Every candidate was a non-markdown near-miss (roadmap.json,
+                    # ROADMAP.pdf). Recording one as the roadmap made the audit
+                    # report "could not be parsed" for a repo that simply has none.
+                    Write-HostLog ("[TRACE] roadmap.scan no-markdown-roadmap repoName={0} candidates={1}" -f $repoName, $group.candidates.Count)
+                    continue
+                }
+                $file = @($group.candidates | Where-Object { $_.FullName -eq $chosenPath })[0]
+                if (@($group.candidates).Count -gt 1) {
+                    Write-HostLog ("[TRACE] roadmap.scan canonical repoName={0} chose={1} of={2}" -f $repoName, $file.Name, $group.candidates.Count)
+                }
+
                 # Parse the roadmap content to classify state and extract next pending item
                 $parseResult = $null
                 try {
