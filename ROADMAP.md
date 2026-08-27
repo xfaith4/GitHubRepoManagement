@@ -944,6 +944,20 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
       logic, so the corrected figures appear only after the next portfolio
       scan. _(state: smoke-tested)_
 
+- [x] **[non-blocker]** Make the prompt-refinement blocker name the condition
+      it actually checks. The banner fired on `hasRoadmap` alone while claiming
+      refinement "requires a ROADMAP.md with at least one pending item", so one
+      sentence covered four different failures and was wrong for two of them --
+      a repository with a real roadmap and no checklist items was told it had
+      no roadmap, which sends the operator to create a file that already
+      exists. `describeRefineBlocker`
+      ([`refineReadiness.ts`](frontend/lib/refineReadiness.ts)) now returns a
+      distinct sentence and next action for each state (no file / no checklist
+      items / all complete / parsed but nothing pending), and the button's
+      disabled reason is the same string the banner shows. Covered by six
+      assertions in `refineReadiness.test.ts`, one of which pins that a repo
+      with a roadmap is never told it has none. _(state: smoke-tested)_
+
 ---
 
 ## 8. Risks and Guardrails

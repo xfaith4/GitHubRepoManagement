@@ -26,6 +26,7 @@ import { applyAiDocImprovement, evaluateMergeReadiness, executeMergeReadinessMer
 import { resolveDispatchGate, type RunnerPresencePayload } from '../lib/runnerPresence';
 import { withPanelTimeout } from '../lib/asyncPanel';
 import { describeUsage } from '../lib/aiUsage';
+import { describeRefineBlocker } from '../lib/refineReadiness';
 import { BranchIcon, DatabaseIcon, HealthIcon, PullRequestIcon, RefreshIcon, RoadmapIcon, SpinnerIcon } from './icons';
 
 interface OperationsWorkspaceViewProps {
@@ -546,6 +547,11 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
     null;
   const dispatchReady = selectedDispatchReadiness === 'ready';
   const maturityReady = selectedEntry?.maturityLevel === 'L3-Contract-Ready' || selectedEntry?.maturityLevel === 'L4-Orchestration-Ready';
+  // Which condition is actually unmet -- see lib/refineReadiness.ts. The banner
+  // used to fire on hasRoadmap alone while claiming refinement needs "at least
+  // one pending item", so a repo with a real roadmap and no checklist items was
+  // told it had no roadmap at all.
+  const refineBlockedReason = useMemo(() => describeRefineBlocker(selectedEntry), [selectedEntry]);
   // Readiness of the *work*: is there a refined prompt for a repo mature enough
   // to receive it. Deliberately separate from the runner gate below — folding
   // them together would make the override impossible to offer, and would report
@@ -1459,9 +1465,9 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                     <div className="mt-3 space-y-3">
                       <div className="text-xs text-gray-500">Builds on `/api/copilot-task/preview` packet context and lets the operator adjust selection, emphasis, constraints, and final instructions before copy or dispatch.</div>
 
-                      {!selectedEntry.hasRoadmap && (
+                      {refineBlockedReason && (
                         <div className="rounded-md border border-amber-700/40 bg-amber-950/20 px-3 py-2 text-sm text-amber-200">
-                          This repo does not have a roadmap. Prompt refinement requires a ROADMAP.md with at least one pending item.
+                          {refineBlockedReason}
                         </div>
                       )}
 
@@ -1522,8 +1528,8 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                       <div className="flex items-center gap-2 flex-wrap">
                         <button
                           onClick={handleRefinePrompt}
-                          disabled={refineLoading || !selectedEntry.hasRoadmap}
-                          title={!selectedEntry.hasRoadmap ? 'This repository has no ROADMAP.md, and the refined prompt is built from one.' : refineLoading ? 'A prompt is already being refined.' : 'Builds a refined dispatch prompt from this roadmap.'}
+                          disabled={refineLoading || Boolean(refineBlockedReason)}
+                          title={refineBlockedReason ?? (refineLoading ? 'A prompt is already being refined.' : 'Builds a refined dispatch prompt from this roadmap.')}
                           className="inline-flex items-center gap-2 rounded-md border border-blue-700/50 bg-blue-950/40 px-3 py-1.5 text-sm text-blue-100 hover:bg-blue-900/50 disabled:opacity-50 transition-colors"
                         >
                           {refineLoading ? <SpinnerIcon className="w-4 h-4" /> : null}

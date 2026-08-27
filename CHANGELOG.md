@@ -43,6 +43,17 @@ All notable changes to this project are documented here.
   the first name match, the other the last, so a single repository could be
   assessed against two different files in one pass. Both now use the same
   selector.
+- **The prompt-refinement blocker described a condition it never checked.**
+  It fired on `hasRoadmap` alone while telling the operator that refinement
+  "requires a ROADMAP.md with at least one pending item" — one sentence for
+  four different failures, wrong for two of them. A repository with a real
+  roadmap and no checklist items was told it had no roadmap, sending the
+  operator to create a file that already existed; a repository that cleared the
+  `hasRoadmap` check was offered an enabled button with nothing to refine.
+  `describeRefineBlocker`
+  ([`refineReadiness.ts`](frontend/lib/refineReadiness.ts)) now gives each
+  state its own sentence and its own next action, and the button's disabled
+  reason is the same string the banner shows.
 - **`ROADMAP-002` accused a healthy file of being corrupt.** It read "Roadmap
   file exists but could not be parsed" when the parser had read the file
   perfectly and simply found no `- [ ]` items — sending the operator to fix a
