@@ -2,7 +2,7 @@
 
 > **Status:** Active
 > **Active release:** **Release 2.9 — Operator Field Proof + Mobile Completion**
-> **Next active release:** **Release 3.6 — Every Repository Gets an Outcome** (`planned`, defined 2026-08-23 under the product lens in §2) — its precondition, Release 2.9's three foundations-first engineering items, closed 2026-08-26 and its conclusion model is underway; 2.9's operator half keeps riding Ben's next session — then **Release 3.7 — Portfolio Value Proof**, where ten real repositories decide the 80+ rollout
+> **Next active release:** **Release 3.6 — Every Repository Gets an Outcome** is in **`validation`** — engineering complete 2026-08-27, all six milestones `smoke-tested` and every acceptance criterion gated; only operator verification remains, batched with 2.9. The next engineering release is **Release 3.7 — Portfolio Value Proof**, where ten real repositories decide the 80+ rollout
 > **Work ordering:** dependency-driven, not insertion order — see
 > [Execution Order and Dependencies](#execution-order-and-dependencies)
 > **Canonical product direction:** [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md)
@@ -13,7 +13,7 @@
 
 ## Current Status (Agent Context)
 
-**Last updated:** 2026-08-26
+**Last updated:** 2026-08-27
 
 Releases 0.4 through 2.6, 2.8 and 3.0 are **engineering-complete and archived**,
 as is every completed milestone from the releases and lanes still open below.
@@ -27,10 +27,9 @@ by the 2026-08-11 archive pass, recorded in `CHANGELOG.md`).
 What remains falls into four kinds of work that are **not** interchangeable —
 mixing them once made the roadmap read "everything is done" over real gaps:
 
-1. **Genuinely unbuilt engineering** — Release 3.6's milestones (its
-   precondition, Release 2.9's three foundations-first items, closed
-   2026-08-26) and the recorded cross-cutting items. This is the only kind an
-   autonomous agent can close on its own.
+1. **Genuinely unbuilt engineering** — Release 3.7's four milestones (Release
+   3.6's six closed 2026-08-27) and the recorded cross-cutting items. This is
+   the only kind an autonomous agent can close on its own.
 2. **Elevated / hardware / human verification** — SYSTEM rights, a physical
    Android phone, or an operator at an authenticated session; no autonomous
    test can produce these.
@@ -51,18 +50,16 @@ and defined Releases 3.6 and 3.7.
 
 **Current focus (next agent actions), in order:**
 
-- [ ] **Release 3.6 — Every Repository Gets an Outcome** is the next
-      engineering release (§6). Its precondition — Release 2.9's three
-      foundations-first items — closed 2026-08-26 when CI Smoke proved the
-      canonical module and api-host smoke green on the shipped code
-      ([evidence](evidence/verified/release-2.9-foundations-closed-2026-08-26.md),
-      [archived](docs/history/completed-releases.md#foundations-first-items--closed-2026-08-26)).
-      Start with the **conclusion model (backend)**: the other four
-      milestones compose on it. It stays `planned` in the index while 2.9
-      holds the single `active` slot (ROADMAP-011) for its operator half.
-- [ ] **Release 3.7 — Portfolio Value Proof** follows 3.6 (defined,
-      `planned`): ten representative repositories, chosen by kind, decide the
-      80+ rollout with recorded leverage numbers.
+- [ ] **Release 3.7 — Portfolio Value Proof** is the next engineering release
+      (§6). Release 3.6 finished its engineering 2026-08-27 — all six
+      milestones `smoke-tested`, every acceptance criterion gated — so the
+      product now reaches a conclusion for every repository, ranks what to do
+      first, and measures its own leverage. 3.7 turns that on ten real
+      repositories chosen by kind, and decides the 80+ rollout with recorded
+      numbers. It needs Ben for the approvals, not for the engineering.
+- [ ] **Operator-verify Release 3.6** — eyes on the live portal for the
+      `Today` landing, the outcome card, and the Insights leverage panel. No
+      agent may claim it; batch it with the 2.9 operator session below.
 - [ ] **Batch the remaining operator-session work (2.9).** An elevated shell
       covers the watchdog _and_ the service installer; one authenticated shell
       covers the `gh agent-task` run and the re-homed live-portal proofs; the
@@ -199,7 +196,7 @@ module + verification boundary`.
 | 3.3       | Steady-State Operation                                                   | `done` 2026-08-19 — retention, rehearsed restore, honest transport, decision-grade exports |
 | **3.4**   | **The Delivery Loop Closes**                                             | `done` 2026-08-15 — six milestones + the full-loop proof, driven live and operator-verified |
 | 3.5       | Trustworthy Surfaces (UI Quality)                                        | `done` 2026-08-17 — all seven milestones; trust-report per finding; operator sign-off in 2.9 |
-| **3.6**   | **Every Repository Gets an Outcome**                                     | **`planned`** 2026-08-23 — product lens (§2); precondition closed 2026-08-26; underway     |
+| **3.6**   | **Every Repository Gets an Outcome**                                     | **`validation`** - engineering complete 2026-08-27; operator proof batches with 2.9        |
 | **3.7**   | **Portfolio Value Proof**                                                | **`planned`** 2026-08-23 — follows 3.6; ten real repositories decide the 80+ rollout       |
 
 > **Note on `.5` numbering.** Reserve it for course corrections like 1.7.5;
@@ -215,22 +212,21 @@ closes or a new dependency appears.
 on another open item — the ordering below is about **what kind of resource
 each item needs**, not about prerequisites.
 
-1. **Release 3.6 — Every Repository Gets an Outcome** is the next engineering
-   release (execution contract in §6). Its preconditions — Release 2.9's three
-   foundations-first items — closed 2026-08-26
-   ([evidence](evidence/verified/release-2.9-foundations-closed-2026-08-26.md)):
-   the visible and the enforced readiness models now agree, so a conclusion
-   built on them can be trusted. It stays `planned` in the index while 2.9
-   holds the single `active` slot. Every release from 1.x through 3.5 is
-   closed; new work is still proposed as a release with its own contract,
-   never appended to a closed one.
+1. **Release 3.7 — Portfolio Value Proof** is the next engineering
+   release (execution contract in §6). Its four milestones are the only
+   genuinely unbuilt engineering left: Release 3.6 finished 2026-08-27 with
+   all six milestones `smoke-tested` and every acceptance criterion gated, so
+   the product now concludes for every repository, ranks what to do first,
+   and measures its own leverage. 3.7 needs Ben for the approvals, not for
+   the engineering. Every release from 1.x through 3.6 is engineering-closed;
+   new work is still proposed as a release with its own contract, never
+   appended to a closed one.
 2. **Release 2.9 — the active release.** Its engineering half closed
    2026-08-26 (archived); what remains is the operator half, batched and
    waiting on Ben's presence at the machine.
-3. **Release 3.7 — Portfolio Value Proof** follows 3.6 (`planned`, contract
-   in §6): ten representative repositories, chosen by kind, decide the full
-   80+ rollout with recorded leverage numbers. The product earns its next
-   release there, not by improving itself further.
+3. **Operator-verify Release 3.6** — the `Today` landing, the outcome card
+   and the Insights leverage panel, seen on the live portal. Engineering is
+   closed; only eyes remain, and they batch with the session below.
 4. **One batched operator session** — an elevated shell covers the watchdog,
    the service installer and 2.7's freeze-prevention deploy; one authenticated
    shell covers the `gh agent-task` run and the re-homed 3.1/3.5 live-portal
@@ -246,7 +242,7 @@ each item needs**, not about prerequisites.
 
 | Open item                                            | Depends on                                    | Type                                          |
 | ---------------------------------------------------- | --------------------------------------------- | --------------------------------------------- |
-| Release 3.6 Every Repository Gets an Outcome         | — (2.9 foundations closed 2026-08-26)         | none — engineering; conclusion model first    |
+| Release 3.6 operator verification                    | Eyes on the live portal (batch with 2.9)      | hard - human; engineering is done             |
 | Release 3.7 Portfolio Value Proof                    | Release 3.6; operator approvals               | soft — sequence; engineering + operator       |
 | Lane 0.2 `Checks: Read`; TLS certificate password    | An operator action outside this repository    | hard — external                               |
 | Lane 0.5 tab disclosure; Lane 0.7 archive signal     | A product decision, not engineering time      | hard — design                                 |
@@ -461,8 +457,10 @@ half depends on none of these.
 
 ### Release 3.6 — Every Repository Gets an Outcome
 
-**Status:** planned — defined 2026-08-23 (§2). Precondition closed 2026-08-26;
-engineering underway. Stays `planned` while 2.9 holds the one `active` slot.
+**Status:** validation — engineering complete 2026-08-27. All six milestones
+are `smoke-tested` and every acceptance criterion below is asserted by a
+gate; what remains is operator verification (eyes on the live portal), which
+no agent may claim. That proof batches with the Release 2.9 operator session.
 
 **Goal:** every repository in the portfolio — including the ~50 with no
 roadmap — leaves the console with an explainable conclusion (_strengthen_,
@@ -561,15 +559,17 @@ wherever it is not.
       `foundation-domains.json` (library, service, script collection,
       archived, minimal, externally managed) so a domain can be
       `not-applicable` with a stated reason; `L0-Absent` reads as "no plan
-      recorded" with the smallest credible plan offered. _(state:
-      backend-complete 2026-08-26 — the six kinds and their applicability
+      recorded" with the smallest credible plan offered.
+      _(state: smoke-tested 2026-08-27 — the six kinds and their applicability
       reasons are data in `foundation-domains.json`; `archived` is detected
       from `lifecycleState` / `curationState=archived-ignore`, the rest await
       a kind signal and read as `unknown` (every domain applies) rather than
       guessed; a missing roadmap reads "no plan recorded" and offers the
       roadmap repair preview. The module smoke proves a JSON-only detection
-      rule flips a conclusion with no code change. Rendering is the outcome
-      card's.)_
+      rule flips a conclusion with no code change, and the outcome card
+      renders a `not-applicable` domain with its stated reason — asserted by
+      an `OutcomeCard` test, which is the rendering half this item was
+      waiting on.)_
 - [ ] **Measure — coverage and leverage.** `GET /api/portfolio/trend` gains a
       foundation-coverage series (per domain: present / weak / missing /
       not-applicable) captured by
@@ -655,6 +655,37 @@ defined (it ships `not-scored`).
 
 **Dependencies:** Release 2.9's three foundations-first items; the existing
 assessment, audit, classifier, and trend modules. No external resource.
+
+**Traceability:** PRs #188 (conclusion model), #189 (outcome-card backend),
+then #191 (outcome card), #192 (`Today` landing) and #193 (coverage +
+leverage), each merged on a green CI Smoke. Gates: the `Foundation
+conclusions` and
+`Foundation coverage + leverage` module-smoke sections, the
+`foundation-domains.json integrity` suite gate, the conclusions and trend
+api-host steps, and 47 frontend tests across `foundationConclusion`,
+`todayRanking`, `portfolioLeverage`, `OutcomeCard`, `TodayView` and
+`LeveragePanel`.
+
+**Known issues:**
+
+- [ ] **Operator verification is outstanding** — every milestone is
+      `smoke-tested`, none is `operator-verified`. The `Today` landing, the
+      outcome card and the Insights leverage panel need eyes on the live
+      portal; batch with the Release 2.9 operator session.
+- [ ] **Two leverage metrics ship uncaptured, by design.** Operator minutes
+      per task needs an operator-side timer the product does not have;
+      recommendations accepted vs rejected needs an accept/reject ledger the
+      packaging approve/reject routes do not write. Both render with their
+      reason rather than a zero — Release 3.7's ten repositories decide
+      whether either earns a capture.
+- [ ] **[non-blocker]** Only `archived` has a kind-detection rule. `library`,
+      `service`, `script-collection`, `minimal` and `externally-managed`
+      exist as data with their applicability reasons but await a signal, so
+      they read as `unknown` (every domain applies). Refining that is a
+      JSON-only change, proven by the module smoke.
+- [ ] **[non-blocker]** The foundation-coverage series starts as a one-point
+      scaffold on a fresh database; it becomes history-backed as scans
+      accrue, on the same clock as maturity history.
 
 ---
 
