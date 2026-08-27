@@ -2698,6 +2698,21 @@ try {
         if ([string]$operationsRepoDetailData.repoId -ne [string]$firstOperationsRepo.repoId) {
             throw '/api/operations/repos/{repoId} returned a mismatched repoId'
         }
+        # Release 3.6 M2 (backend) — the outcome card reads from the payloads the
+        # workspace already loads: an `outcome` summary on every list entry and
+        # the full `conclusion` (+ contract) on the detail. Both must agree.
+        if (-not ($firstOperationsRepo.PSObject.Properties.Name -contains 'outcome') -or $null -eq $firstOperationsRepo.outcome) { throw '/api/operations/repos entries carry no outcome summary' }
+        $entryOutcome = $firstOperationsRepo.outcome
+        if ([string]$entryOutcome.conclusion -notin @('strengthen', 'appropriate-as-is', 'insufficiently-understood')) { throw "entry outcome conclusion '$($entryOutcome.conclusion)' is outside the set" }
+        if ([string]::IsNullOrWhiteSpace([string]$entryOutcome.reason)) { throw 'entry outcome carries an empty reason' }
+        if ($entryOutcome.holds -ne $true) { throw "entry outcome for '$($firstOperationsRepo.repoName)' reports the conclusion contract broken" }
+        if (-not ($operationsRepoDetailData.PSObject.Properties.Name -contains 'conclusion') -or $null -eq $operationsRepoDetailData.conclusion) { throw '/api/operations/repos/{repoId} carries no conclusion' }
+        if ($operationsRepoDetailData.conclusionContract.holds -ne $true) { throw "/api/operations/repos/{repoId} conclusion contract violated: $(@($operationsRepoDetailData.conclusionContract.violations) -join '; ')" }
+        if ([string]$operationsRepoDetailData.conclusion.conclusion -ne [string]$entryOutcome.conclusion -or [string]$operationsRepoDetailData.conclusion.reason -ne [string]$entryOutcome.reason) {
+            throw 'The detail conclusion and the list-entry outcome summary disagree for the same repo'
+        }
+        if (@($operationsRepoDetailData.conclusion.domains).Count -lt 5) { throw 'The detail conclusion carries fewer than the five starting-set domains' }
+        Write-Host ("  outcome on entries + conclusion on detail: {0} — {1}" -f $entryOutcome.conclusion, ([string]$entryOutcome.reason).Substring(0, [Math]::Min(90, ([string]$entryOutcome.reason).Length))) -ForegroundColor DarkGray
         Write-Host ("  /api/operations/repos/{repoId} -> repo=$($operationsRepoDetailData.repo.repoName) docFindings=$(@($operationsRepoDetailData.docAudit.findings).Count)") -ForegroundColor DarkGray
     }
     Write-Host ("  /api/operations/repos -> count={0} source={1}" -f $operationsReposData.count, [string]$operationsReposData.cacheSource) -ForegroundColor DarkGray

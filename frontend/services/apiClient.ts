@@ -3,6 +3,15 @@ import { type AutomationHealthPayload } from '../lib/automationStatus';
 import { type PackagedItem } from '../lib/packagedItems';
 import { type RunnerPresencePayload } from '../lib/runnerPresence';
 import { type WorkItemTrace, type WriteBackPreview, type WriteBackRefusal } from '../lib/workItemTrace';
+import {
+  type FoundationConclusionKind,
+  type PortfolioConclusionsResult,
+  type RepositoryConclusion,
+  normalizeConclusionContract,
+  normalizePortfolioConclusionsResult,
+  normalizeRepositoryConclusion,
+  normalizeRepositoryOutcomeSummary,
+} from '../lib/foundationConclusion';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -496,6 +505,7 @@ function normalizeOperationsRepoEntry(entry: any): OperationsRepoEntry {
   return {
     repoId: String(entry?.repoId ?? entry?.localPath ?? entry?.githubFullName ?? entry?.repoName ?? 'unknown'),
     ordinal: Number(entry?.ordinal ?? 0),
+    outcome: normalizeRepositoryOutcomeSummary(entry?.outcome),
     repoName: String(entry?.repoName ?? ''),
     sourceCoverage: (entry?.sourceCoverage ?? 'local') as OperationsRepoEntry['sourceCoverage'],
     localPath: String(entry?.localPath ?? ''),
@@ -574,6 +584,8 @@ function normalizeOperationsRepoDetail(raw: any): OperationsRepoDetail {
   return {
     repoId: String(raw?.repoId ?? repo.repoId),
     repo,
+    conclusion: normalizeRepositoryConclusion(raw?.conclusion),
+    conclusionContract: raw?.conclusionContract ? normalizeConclusionContract(raw.conclusionContract) : null,
     documentationContext: {
       hasReadme: Boolean(documentationContext?.hasReadme ?? repo.hasReadme),
       readmeLastWriteUtc: documentationContext?.readmeLastWriteUtc ? String(documentationContext.readmeLastWriteUtc) : null,
@@ -1942,7 +1954,10 @@ export async function evaluateRepo(repoName: string, localPath?: string): Promis
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  return (data?.data ?? data) as RepoEvaluationResult;
+  const evaluation = (data?.data ?? data ?? {}) as RepoEvaluationResult & { conclusion?: unknown };
+  // Release 3.6 M2 — the conclusion rides along when the index knows the repo;
+  // the normalizer refuses to invent one when it does not.
+  return { ...evaluation, conclusion: normalizeRepositoryConclusion(evaluation.conclusion) };
 }
 
 export async function createRepoRoadmap(repoName: string, content: string, localPath?: string): Promise<{ repoName: string; roadmapPath: string; createdAt: string }> {
@@ -2243,6 +2258,36 @@ export async function getPortfolioTrend(options: { days?: number } = {}): Promis
           recommendedAction: String(sparkline?.recommendedAction ?? ''),
         }))
       : [],
+  };
+}
+
+// ── Release 3.6 — Every Repository Gets an Outcome ────────────────────────────
+// The conclusion routes read the cached index only; the card renders exactly
+// what the backend concluded, and the normalizers refuse to invent a verdict.
+
+export async function getPortfolioConclusions(options: { conclusion?: FoundationConclusionKind | null } = {}): Promise<PortfolioConclusionsResult> {
+  if (USE_MOCK_API) {
+    return normalizePortfolioConclusionsResult({ items: [], count: 0, totalCount: 0, contract: { holds: true, violations: [] }, cacheSource: 'mock' });
+  }
+  const suffix = options.conclusion ? `?conclusion=${encodeURIComponent(options.conclusion)}` : '';
+  const data = await fetchJson<{ data?: unknown } | null>(`${API_BASE_URL}/portfolio/conclusions${suffix}`);
+  return normalizePortfolioConclusionsResult(data?.data ?? data ?? {});
+}
+
+export async function getRepositoryConclusion(repoId: string): Promise<{ conclusion: RepositoryConclusion | null; contract: ReturnType<typeof normalizeConclusionContract>; cacheSource: string }> {
+  const trimmedRepoId = repoId.trim();
+  if (!trimmedRepoId) {
+    throw new Error('repoId is required for a repository conclusion.');
+  }
+  if (USE_MOCK_API) {
+    return { conclusion: null, contract: { holds: false, violations: ['mock API serves no conclusions'] }, cacheSource: 'mock' };
+  }
+  const data = await fetchJson<{ data?: Record<string, unknown> } | null>(`${API_BASE_URL}/portfolio/conclusions/${encodeURIComponent(trimmedRepoId)}`);
+  const d: Record<string, unknown> = data?.data ?? ((data ?? {}) as Record<string, unknown>);
+  return {
+    conclusion: normalizeRepositoryConclusion(d.conclusion),
+    contract: normalizeConclusionContract(d.contract),
+    cacheSource: String(d.cacheSource ?? ''),
   };
 }
 

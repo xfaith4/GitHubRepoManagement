@@ -58,6 +58,14 @@
         "route": "/api/roadmap/repair/preview",
         "bodyKeys": ["repoName"]
       },
+      "pendingWorkAction": {
+        "kind": "dispatch-readiness-check",
+        "label": "Check the top-value item is ready to package",
+        "method": "POST",
+        "route": "/api/roadmap/dispatch/check",
+        "bodyKeys": ["repoName"],
+        "note": "Offered when every applicable domain is present and pending work is recorded: the packaging flow, preview-first - a readiness verdict, never a dispatch."
+      },
       "scored": true
     },
     {
