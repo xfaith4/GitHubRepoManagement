@@ -308,8 +308,8 @@ the operator, not the code, is the scarce resource.
 Three items that had sat under _Known issues_ led the engineering milestones
 because they are what makes a finding explainable — the preconditions in
 substance for Release 3.6. They shipped in PR #184 and closed when CI Smoke
-proved the canonical module and api-host smoke green; archived
-[here](docs/history/completed-releases.md#foundations-first-items--closed-2026-08-26).
+proved the canonical module and api-host smoke green; the three items are
+[archived in completed-releases.md](docs/history/completed-releases.md#foundations-first-items--closed-2026-08-26).
 
 #### Product outcomes
 
@@ -814,6 +814,23 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
   zero behavior.
 - **Separate lane, never batched mechanically:** ESLint `set-state-in-effect`
   (31) — every site needs behavioral review; a "fix" can change rendering.
+
+---
+
+### Lane 0.10 — Scan-snapshot retention (found 2026-08-27)
+
+- [ ] **[non-blocker]** Give `output/index/scans/portfolio-scan-*.json` a
+      retention rule. `Save-PortfolioIndexArtifacts`
+      ([`Portfolio.Assessment.ps1`](backend/modules/portfolio/Portfolio.Assessment.ps1))
+      writes one snapshot per scan and nothing reads or prunes them: 762
+      files / 103 MB had accumulated since 2026-05-11. The Release 3.3 ledger
+      retention ([`Ledger.Retention.ps1`](backend/modules/persistence/Ledger.Retention.ps1))
+      is code-declared over six JSONL ledgers and does not name this
+      directory. Either add it as a target (age-keyed by file time, since the
+      files are whole snapshots, not lines) or cap the directory at N newest
+      in the writer. Pruned by hand 2026-08-27 to the last seven days; the
+      gate is a module-smoke fixture that writes eight dated snapshots and
+      asserts the oldest is gone. _(state: planned)_
 
 ---
 
