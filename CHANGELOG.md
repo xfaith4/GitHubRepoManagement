@@ -2,6 +2,36 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-27 — Release 3.6 milestone 3: the ranked `Today` landing
+
+### Changes
+
+- **`Today` is the default view.** The first screen now answers one question —
+  what should I do next, and why — with an orientation paragraph naming what
+  the product assessed and what it concluded, then a ranked table:
+  repository, why now, one next action, effort.
+  [`TodayView.tsx`](frontend/components/TodayView.tsx).
+- **The ranking is pure and explainable.**
+  [`todayRanking.ts`](frontend/lib/todayRanking.ts) orders by conclusion, then
+  by what the operator curated, then by whether an action exists at all, then
+  by value score and foundation gaps — with cheaper effort only ever a
+  tiebreak. Every row carries `rankBasis`, the ordered signals behind its
+  position, so no row is ranked without being able to say why.
+- **Every conclusion filters, `appropriate as-is` included.** A repository
+  with nothing to do sinks in the order but is never hidden: "nothing to do
+  here" is an outcome the operator is entitled to see.
+- **Effort surfaces for the first time.** `estimatedSessionWorkUnits` has
+  always been in the index and was rendered nowhere; it now sits in the
+  landing's Effort column, banded, and says "Effort not estimated" rather
+  than inventing a number.
+- **Every tab poses the question it answers** (`ViewMeta.question`), with the
+  Release 2.6 subtitle second — a label names a place, a question names the
+  reason to go there.
+- This closes **Lane 0.5**'s progressive-disclosure question, whose agreed
+  resolution was this milestone.
+- Gates: 13 ranking tests, 10 view tests, the viewMeta contract test, and the
+  module smoke's Dashboard source-order tripwire. Frontend unit total: 318.
+
 ## 2026-08-27 — Release 3.6 milestone 2: the outcome card
 
 ### Changes

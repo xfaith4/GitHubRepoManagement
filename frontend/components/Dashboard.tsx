@@ -24,6 +24,7 @@ import { RoadmapLintModal } from './RoadmapLintModal';
 import WorkItemTraceModal from './WorkItemTraceModal';
 import ExecutionQueuePanel from './ExecutionQueuePanel';
 import RepoEvaluationModal from './RepoEvaluationModal';
+import TodayView from './TodayView';
 import RoadmapDispatchModal from './RoadmapDispatchModal';
 import RepositoryImprovementWorkflowModal from './RepositoryImprovementWorkflowModal';
 import RepoGitStatusModal from './RepoGitStatusModal';
@@ -102,7 +103,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   const [roadmapEntries, setRoadmapEntries] = useState<RoadmapEntry[]>([]);
   const [selectedRepoIds, setSelectedRepoIds] = useState<Set<string>>(new Set());
   const [groupBy, setGroupBy] = useState<'none' | 'status' | 'needsAttention' | 'isStale' | 'lastBuildStatus' | 'roadmapStatus'>('needsAttention');
-  const [activeView, setActiveView] = useState<'repos' | 'insights' | 'operations' | 'work-queue' | 'execution-queue' | 'dependencies'>('repos');
+  // Release 3.6 M3 -- Today is the default landing: the first screen answers
+  // what to do next and why, instead of opening on an unranked grid.
+  const [activeView, setActiveView] = useState<ViewKey>('today');
   const [docsAuditIndex, setDocsAuditIndex] = useState<DocAuditIndex | null>(null);
   const [docsAuditLoading, setDocsAuditLoading] = useState(false);
   const [docsAuditError, setDocsAuditError] = useState<string | null>(null);
@@ -467,7 +470,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   }, [activeView, depsPanel.phase, loadDependencyGraph]);
 
   useEffect(() => {
-    if (activeView !== 'operations' || hasAttemptedOperationsLoad) {
+    // Release 3.6 M3: the Today landing ranks from the same payload, so it
+    // loads on the default view as well as on Operations.
+    if ((activeView !== 'operations' && activeView !== 'today') || hasAttemptedOperationsLoad) {
       return;
     }
 
@@ -1383,7 +1388,14 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                 key={activeView} resets the boundary on every tab switch, so
                 one broken view never locks the operator out of the rest. */}
             <ErrorBoundary key={activeView} label={`The ${VIEW_META_BY_KEY[activeView].label} view`}>
-            {activeView === 'repos' ? (
+            {activeView === 'today' ? (
+              <TodayView
+                entries={operationsRepos?.entries ?? []}
+                isLoading={operationsReposLoading}
+                onOpenRepo={(_repoId, repoName) => setEvaluationModalRepo(repoName)}
+                onRunAction={row => setEvaluationModalRepo(row.repoName)}
+              />
+            ) : activeView === 'repos' ? (
               <>
                 <ActionBar
                     onAction={handleAction}
@@ -1642,6 +1654,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
       >
         <div className="flex overflow-x-auto">
           {([
+            { view: 'today' as const, label: VIEW_META_BY_KEY['today'].short, icon: <HealthIcon className="w-5 h-5" />, badge: null as number | null },
             { view: 'repos' as const, label: 'Repos', icon: <ProjectsIcon className="w-5 h-5" />, badge: null as number | null },
             { view: 'insights' as const, label: 'Insights', icon: <HealthIcon className="w-5 h-5" />, badge: null as number | null },
             { view: 'operations' as const, label: 'Ops', icon: <DocReviewIcon className="w-5 h-5" />, badge: (operationsReadyCount || null) as number | null, carriedOver: operationsBadgeCarriedOver },

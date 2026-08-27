@@ -1407,6 +1407,8 @@ export interface OperationsRepoEntry {
   pendingItemCount: number;
   nextPendingItemText: string;
   topValueItem: PortfolioPendingItemValue | null;
+  /** Release 3.6 M3 — effort for the ranked landing. The index has always emitted it; the type omitted it. */
+  estimatedSessionWorkUnits?: number | null;
   maturityLevel: RoadmapMaturityLevel;
   maturityScore: number;
   dispatchReadiness: DispatchReadiness;
