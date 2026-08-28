@@ -392,7 +392,35 @@ operator's device on the LAN.
 
 - Release 2.1 operator sign-off — `operator-verified` 2026-08-18 against the live `output/app.db`; [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
 - [ ] Operator-verify the auth + shared-LAN path so automation runs on a bound,
-      authenticated host. _(state: planned — carried over from 2.7 Phase D)_
+      authenticated host. **Engineering closed 2026-08-28; only the elevated
+      run and eyes-on remain.** The portal bound `127.0.0.1` because the
+      Release 2.2 guard refuses a non-loopback bind while API auth is off, and
+      auth had never been configured (`settings.json` carried no `auth` block);
+      the installer's own default of `0.0.0.0` would have been refused. The
+      listener is a raw `TcpListener`, so a LAN bind needs **no urlacl and no
+      elevation** — only the Machine-scope variables, firewall rule and service
+      reconfigure do. What shipped:
+      [`Enable-SharedLanAccess.ps1`](scripts/Enable-SharedLanAccess.ps1) does
+      the sequence in the order that never leaves the API open (key → toggle →
+      firewall on Private only → rebind → verify), supports `-WhatIf`
+      unelevated, prints the key once, and **fails loudly if an anonymous
+      request is not refused after the rebind**. Proved on this machine
+      against `192.168.50.200:7099`: guard refuses with auth off, binds with
+      auth on, anonymous `401`, keyed `200 application/json`.
+      **Adjacent leak found and fixed in flight:** enabling auth with the
+      toggle alone made the host write a 64-character plaintext API key into
+      `backend/config/settings.json` — a file listed in `.gitignore` but still
+      **tracked**, so the ignore entry does nothing and one `git add -A`
+      publishes it. Demonstrated, then fixed: a generated key now goes to
+      `output/auth/api-key` (genuinely ignored), and a key found in
+      `settings.json` is honored but warned about by name. Gates: two new
+      `Invoke-AuthSmokeTest.ps1` sections — "Non-loopback bind WITH auth binds
+      and still enforces the key" (the positive case nothing covered: Part 1
+      proved the gate on loopback, Part 2 proved refusal off it, so
+      bind-plus-auth was untested) and "Auth enabled without a key stores it
+      outside version control" — both confirmed red against `HEAD` first, the
+      second reporting the 64-character key it found in the tracked file.
+      _(state: smoke-tested → needs one elevated run + `operator-verified`)_
 - [ ] (Optional) Prove live GitHub App installation-token exchange + refresh,
       closing the Release 2.2 residual. _(state: planned — the PAT supersedes)_
 - [ ] Let the Release 2.3 Phase 2 trend windows accrue: `GET /api/portfolio/trend`
