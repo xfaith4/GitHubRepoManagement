@@ -20,7 +20,31 @@ Loopback-only (desktop): `-ApiHost 127.0.0.1`.
 
 ## 2. Enable API auth before sharing
 
-Add an `auth` block to `backend/config/settings.json`:
+**For the installed service, use the script.** It does the whole sequence in
+the order that never leaves the API exposed without a key, and verifies the
+result instead of assuming it:
+
+```powershell
+# From an ELEVATED PowerShell 7 prompt, in the workspace root
+pwsh -File .\scripts\Enable-SharedLanAccess.ps1 -WhatIf   # preview the plan
+pwsh -File .\scripts\Enable-SharedLanAccess.ps1           # key, firewall, rebind, verify
+```
+
+It requires elevation because the service runs as LocalSystem, so the variables
+must be **Machine** scope. It prints the key once and reverts in three commands
+(shown at the end of its own output).
+
+### Doing it by hand
+
+Set **both** environment variables, and the key first:
+
+```powershell
+[Environment]::SetEnvironmentVariable('REPO_MGMT_API_KEY', '<64-hex key>', 'Machine')
+[Environment]::SetEnvironmentVariable('REPO_MGMT_REQUIRE_API_KEY', 'true', 'Machine')
+```
+
+The environment is the right home for a key on a shared host. An `auth` block
+in `backend/config/settings.json` also works —
 
 ```json
 {
@@ -28,10 +52,19 @@ Add an `auth` block to `backend/config/settings.json`:
 }
 ```
 
-Set the key in the environment (`REPO_MGMT_API_KEY`) or let the host generate
-one on first run (written to `auth.apiKey`). On the phone, paste the key once —
-the frontend stores it and sends it as `X-Api-Key` on every request. With auth
-enforced, the bind guard no longer needs the insecure-bind acknowledgment.
+— but **never put the key itself there.** That file is listed in `.gitignore`
+yet is still tracked (it was committed before the ignore rule), so the entry has
+no effect and a key stored in it shows up in `git status`. The host warns when
+it finds one.
+
+If auth is enabled with no key configured anywhere, the host generates one and
+stores it at `output/auth/api-key`, which is genuinely outside version control.
+That keeps a first run working; pinning your own key via the environment is
+still what you want for a host other devices talk to.
+
+On the phone, paste the key once — the frontend stores it and sends it as
+`X-Api-Key` on every request. With auth enforced, the bind guard no longer needs
+the insecure-bind acknowledgment.
 
 Optional hardening (also in `network`):
 

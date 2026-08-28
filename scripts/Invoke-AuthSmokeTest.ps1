@@ -18,6 +18,8 @@
     change on disk.
 #>
 [CmdletBinding()]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseUsingScopeModifierInNewRunspaces', '',
+    Justification = 'Every Start-Job block here declares its own param() and is bound through -ArgumentList, which is the correct pattern and the one $using: exists to replace. The analyzer cannot follow -ArgumentList binding, so it reports each parameter as an undeclared capture. Suppressed file-wide rather than banked as baseline debt: a real $using: omission in this file would be a param() the ArgumentList does not fill, which fails the job outright and is caught by the smoke, not by lint.')]
 param(
     # Derived from this script's location rather than a hardcoded drive letter,
     # so the suite runs unmodified from any clone location (ROADMAP Lane 0.3).
@@ -163,6 +165,116 @@ try {
     } catch { $guardHealthReachable = $false }
     if ($guardHealthReachable) { throw "Bind guard failed: host came up on a non-loopback bind without auth" }
     if ($guardOut -notmatch 'Refusing to bind') { throw "Bind guard did not emit the expected refusal. Captured: $($guardOut.Trim())" }
+
+    # ── Part 2b: the shared-LAN path — auth ENFORCES over a non-loopback bind ─
+    # Part 1 proved the gate on loopback and Part 2 proved refusal off it, so
+    # nothing proved the claim the shared-LAN item actually makes: that a host
+    # bound off-loopback is both reachable AND gated. Without this, "bind it to
+    # the LAN with auth on" was an untested combination.
+    #
+    # 0.0.0.0 rather than a hardcoded LAN IP: it is non-loopback by
+    # Test-IsLoopbackAddress (so it exercises the same guard the LAN bind hits),
+    # it binds every interface including 127.0.0.1 so the probe is portable, and
+    # it is exactly what the installed service uses.
+    Write-Host '[STEP] Non-loopback bind WITH auth binds and still enforces the key' -ForegroundColor Cyan
+    $lanSignal = Join-Path $smokeRoot 'auth-lan.signal'
+    Remove-Item -LiteralPath $lanSignal -Force -ErrorAction SilentlyContinue
+    $lanKey = ([guid]::NewGuid().ToString('n') + [guid]::NewGuid().ToString('n'))
+    $lanJob = Start-Job -ScriptBlock {
+        param($ScriptPath, $Root, $Log, $ListenPort, $SignalPath, $Key)
+        $env:REPO_MGMT_REQUIRE_API_KEY = 'true'
+        $env:REPO_MGMT_API_KEY = $Key
+        & $ScriptPath -WorkspaceRoot $Root -BindAddress '0.0.0.0' -Port $ListenPort -LogPath $Log -ShutdownSignalPath $SignalPath
+    } -ArgumentList $hostScript, $WorkspaceRoot, ("$logPath.lan"), $BindGuardPort, $lanSignal, $lanKey
+
+    try {
+        $lanBase = "http://127.0.0.1:$BindGuardPort"
+        # Wait-Ready throws on failure and returns nothing on success — do not
+        # test its return value.
+        Wait-Ready -Uri "$lanBase/health/live" -Job $lanJob -TimeoutSeconds 40
+        $lanLog = if (Test-Path -LiteralPath "$logPath.lan") { Get-Content -LiteralPath "$logPath.lan" -Raw -ErrorAction SilentlyContinue } else { '' }
+        if ($lanLog -match 'Refusing to bind') {
+            throw 'The bind guard refused a non-loopback bind even though auth was enforced'
+        }
+        # The exposure only becomes safe if the gate is actually live over it.
+        $lanAnon = Invoke-AuthRequest -Method Get -Uri "$lanBase/api/persistence/status"
+        if ($lanAnon.StatusCode -ne 401) {
+            throw "Off-loopback, an unauthenticated /api request must be 401, got $($lanAnon.StatusCode). An open API on the LAN is the failure this item exists to prevent."
+        }
+        $lanKeyed = Invoke-AuthRequest -Method Get -Uri "$lanBase/api/persistence/status" -Headers @{ 'X-Api-Key' = $lanKey }
+        if ($lanKeyed.StatusCode -ne 200) {
+            throw "Off-loopback, a keyed /api request expected 200, got $($lanKeyed.StatusCode). Body=$($lanKeyed.Content)"
+        }
+        $lanStatus = Invoke-AuthRequest -Method Get -Uri "$lanBase/api/auth/status"
+        if ($lanStatus.Json.data.authEnforced -ne $true) {
+            throw 'auth/status must report authEnforced=true over a non-loopback bind'
+        }
+        # The env-var path must NOT have persisted a key into the tracked config.
+        $lanSettings = ConvertFrom-Json (Get-Content -LiteralPath $settingsPath -Raw)
+        $persistedKey = ''
+        if ($null -ne $lanSettings.PSObject.Properties['auth'] -and $null -ne $lanSettings.auth -and
+            $null -ne $lanSettings.auth.PSObject.Properties['apiKey']) { $persistedKey = [string]$lanSettings.auth.apiKey }
+        if (-not [string]::IsNullOrWhiteSpace($persistedKey)) {
+            throw "Enabling auth by environment variable wrote an API key into $settingsPath, which git tracks. The key must stay in the environment."
+        }
+        Write-Host '  non-loopback bind: reachable, gated, and no key written to tracked config' -ForegroundColor DarkGray
+    } finally {
+        Set-Content -LiteralPath $lanSignal -Value 'stop' -Encoding ASCII
+        Wait-Job -Job $lanJob -Timeout 20 | Out-Null
+        Stop-Job -Job $lanJob -ErrorAction SilentlyContinue
+        Remove-Job -Job $lanJob -Force -ErrorAction SilentlyContinue
+    }
+
+    # ── Part 2c: a generated key never lands in a git-tracked file ───────────
+    # The half-step an operator naturally takes on the service path — set the
+    # toggle, forget the key — used to make the host write a 64-char plaintext
+    # key into backend/config/settings.json. That file is listed in .gitignore
+    # but is still TRACKED (committed before the rule), so the ignore entry does
+    # nothing and one `git add -A` publishes the key.
+    Write-Host '[STEP] Auth enabled without a key stores it outside version control' -ForegroundColor Cyan
+    $genSignal = Join-Path $smokeRoot 'auth-gen.signal'
+    Remove-Item -LiteralPath $genSignal -Force -ErrorAction SilentlyContinue
+    $generatedKeyPath = Join-Path $WorkspaceRoot 'output\auth\api-key'
+    $generatedKeyBackup = if (Test-Path -LiteralPath $generatedKeyPath) { Get-Content -LiteralPath $generatedKeyPath -Raw } else { $null }
+    Remove-Item -LiteralPath $generatedKeyPath -Force -ErrorAction SilentlyContinue
+    $settingsHashBefore = (Get-FileHash -LiteralPath $settingsPath -Algorithm SHA256).Hash
+    $genJob = Start-Job -ScriptBlock {
+        param($ScriptPath, $Root, $Log, $ListenPort, $SignalPath)
+        # The toggle, and deliberately NO key.
+        $env:REPO_MGMT_REQUIRE_API_KEY = 'true'
+        $env:REPO_MGMT_API_KEY = ''
+        & $ScriptPath -WorkspaceRoot $Root -BindAddress '127.0.0.1' -Port $ListenPort -LogPath $Log -ShutdownSignalPath $SignalPath
+    } -ArgumentList $hostScript, $WorkspaceRoot, ("$logPath.gen"), $BindGuardPort, $genSignal
+    try {
+        Wait-Ready -Uri "http://127.0.0.1:$BindGuardPort/health/live" -Job $genJob -TimeoutSeconds 40
+        $settingsHashAfter = (Get-FileHash -LiteralPath $settingsPath -Algorithm SHA256).Hash
+        if ($settingsHashAfter -ne $settingsHashBefore) {
+            $genSettings = ConvertFrom-Json (Get-Content -LiteralPath $settingsPath -Raw)
+            $wrote = ''
+            if ($null -ne $genSettings.PSObject.Properties['auth'] -and $null -ne $genSettings.auth -and
+                $null -ne $genSettings.auth.PSObject.Properties['apiKey']) { $wrote = [string]$genSettings.auth.apiKey }
+            throw ("Enabling auth without a key modified $settingsPath (git-tracked)." +
+                $(if ($wrote) { " It now holds a $($wrote.Length)-character API key. A generated secret must never reach a tracked file." } else { '' }))
+        }
+        if (-not (Test-Path -LiteralPath $generatedKeyPath -PathType Leaf)) {
+            throw "The generated key was not persisted to $generatedKeyPath; it would change on every restart."
+        }
+        $genKeyText = (Get-Content -LiteralPath $generatedKeyPath -Raw).Trim()
+        if ($genKeyText.Length -lt 32) { throw "The generated key looks too short to be a credential ($($genKeyText.Length) chars)." }
+        # And it must actually be the key the gate is enforcing.
+        $genProbe = Invoke-AuthRequest -Method Get -Uri "http://127.0.0.1:$BindGuardPort/api/persistence/status" -Headers @{ 'X-Api-Key' = $genKeyText }
+        if ($genProbe.StatusCode -ne 200) {
+            throw "The stored generated key was rejected by the running host (HTTP $($genProbe.StatusCode)); persisting it is pointless if it is not the live key."
+        }
+        Write-Host ("  generated key stored at output\auth\api-key ({0} chars), settings.json untouched" -f $genKeyText.Length) -ForegroundColor DarkGray
+    } finally {
+        Set-Content -LiteralPath $genSignal -Value 'stop' -Encoding ASCII
+        Wait-Job -Job $genJob -Timeout 20 | Out-Null
+        Stop-Job -Job $genJob -ErrorAction SilentlyContinue
+        Remove-Job -Job $genJob -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $generatedKeyPath -Force -ErrorAction SilentlyContinue
+        if ($null -ne $generatedKeyBackup) { Set-Content -LiteralPath $generatedKeyPath -Value $generatedKeyBackup -NoNewline }
+    }
 
     # ── Part 3: scoped CORS + rate limiting + github auth status ─────────────
     Write-Host '[STEP] Starting host with scoped CORS + rate limit (no auth)' -ForegroundColor Cyan

@@ -1964,15 +1964,36 @@ function Get-AuthApiKeyEnvVarName {
     return $envVarName
 }
 
+function Get-GeneratedApiKeyPath {
+    # output/ is gitignored, so a generated secret cannot reach version control
+    # from here. backend/config/settings.json is listed in .gitignore but is
+    # still TRACKED (it was committed before the ignore rule), so writing a key
+    # there puts a plaintext secret in `git status` — which is exactly what
+    # happened when auth was enabled with the toggle alone.
+    return (Join-Path (Join-Path $WorkspaceRoot 'output\auth') 'api-key')
+}
+
 function Get-ConfiguredApiKey {
     param([hashtable]$Settings)
-    # Env var wins over settings.json so the key never has to live in a
-    # committed file. Returns '' when nothing is configured.
+    # Resolution order, most explicit first. Returns '' when nothing is set.
+    #   1. the environment  — the only place a shared-host key should live
+    #   2. settings.json    — an operator's deliberate choice; warned about
+    #                         separately because that file is tracked
+    #   3. output/auth/     — a key this host generated on a previous run
     $envVal = [System.Environment]::GetEnvironmentVariable((Get-AuthApiKeyEnvVarName -Settings $Settings))
     if (-not [string]::IsNullOrWhiteSpace($envVal)) { return $envVal.Trim() }
     if ($null -ne $Settings -and $Settings.ContainsKey('auth') -and $Settings.auth -is [System.Collections.IDictionary] -and
         $Settings.auth.ContainsKey('apiKey') -and $Settings.auth.apiKey) {
         return ([string]$Settings.auth.apiKey).Trim()
+    }
+    try {
+        $generatedPath = Get-GeneratedApiKeyPath
+        if (Test-Path -LiteralPath $generatedPath -PathType Leaf) {
+            $stored = (Get-Content -LiteralPath $generatedPath -Raw -ErrorAction Stop).Trim()
+            if (-not [string]::IsNullOrWhiteSpace($stored)) { return $stored }
+        }
+    } catch {
+        Write-HostLog ("WARN auth: could not read the generated API key: {0}" -f $_.Exception.Message)
     }
     return ''
 }
@@ -5835,16 +5856,26 @@ $script:EffectiveApiKey = Get-ConfiguredApiKey -Settings $script:AuthSettings
 if ($script:AuthRequired -and [string]::IsNullOrWhiteSpace($script:EffectiveApiKey)) {
     $generatedKey = New-ApiKey
     try {
-        $cfgPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
-        $cfg = if (Test-Path -LiteralPath $cfgPath) { ConvertFrom-JsonCompat -Json (Get-Content -LiteralPath $cfgPath -Raw) } else { @{} }
-        if (-not $cfg.ContainsKey('auth') -or -not ($cfg.auth -is [System.Collections.IDictionary])) { $cfg.auth = @{ requireApiKey = $true } }
-        $cfg.auth.apiKey = $generatedKey
-        ($cfg | ConvertTo-Json -Depth 12) | Set-Content -LiteralPath $cfgPath -Encoding UTF8
-        Write-HostLog "Auth: generated a first-run API key and wrote it to settings.json (auth.apiKey)."
+        # Never backend/config/settings.json: that file is git-TRACKED (the
+        # .gitignore entry has no effect on an already-committed path), so a key
+        # written there lands in `git status` and one `git add -A` publishes it.
+        # output/ is genuinely ignored, so the secret cannot leave the machine.
+        $generatedPath = Get-GeneratedApiKeyPath
+        $generatedDir = Split-Path -Path $generatedPath -Parent
+        if (-not (Test-Path -LiteralPath $generatedDir)) { $null = New-Item -ItemType Directory -Path $generatedDir -Force }
+        Set-Content -LiteralPath $generatedPath -Value $generatedKey -Encoding ASCII
+        Write-HostLog ("Auth: generated a first-run API key and stored it at {0} (outside version control). Set {1} to pin your own." -f $generatedPath, (Get-AuthApiKeyEnvVarName -Settings $script:AuthSettings))
     } catch {
-        Write-HostLog ("WARN auth: could not persist generated API key: {0}" -f $_.Exception.Message)
+        Write-HostLog ("WARN auth: could not persist generated API key: {0}. It is active for this run only." -f $_.Exception.Message)
     }
     $script:EffectiveApiKey = $generatedKey
+}
+# An operator may still put a key in settings.json deliberately; it is honored,
+# but say plainly where it ended up, because that file is tracked.
+if ($null -ne $script:AuthSettings -and $script:AuthSettings.ContainsKey('auth') -and
+    $script:AuthSettings.auth -is [System.Collections.IDictionary] -and
+    $script:AuthSettings.auth.ContainsKey('apiKey') -and $script:AuthSettings.auth.apiKey) {
+    Write-HostLog ("WARN auth: an API key is stored in backend/config/settings.json, which git tracks. Move it to the {0} environment variable and clear auth.apiKey before committing." -f (Get-AuthApiKeyEnvVarName -Settings $script:AuthSettings))
 }
 $script:AuthEnforced = $script:AuthRequired -and -not [string]::IsNullOrWhiteSpace($script:EffectiveApiKey)
 # Release 2.7 — human login layer. Whether the API gate is ON stays governed by
