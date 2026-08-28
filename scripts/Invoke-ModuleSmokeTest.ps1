@@ -2345,6 +2345,90 @@ Write-Step 'Roadmap identity — a repo is found by where it lives, not by what 
         $selCases.Count, [string]$renamedAssess[0].roadmapState, [int]$renamedAssess[0].pendingCount) -ForegroundColor DarkGray
 }
 
+Write-Step 'Duplicate checkouts — two clones of one repo pick a survivor by rule, and the loser is named'
+& {
+    . $portfolioModule
+
+    # Lane 0.12. MusicLibrary_v2 was cloned twice — once under Archive\, once in
+    # the working portfolio. The dedupe kept whichever the enumeration reached
+    # first, so the index snapshot showed the active checkout and the status
+    # cache showed the archived one, on the same day. The discarded clone left
+    # no trace at all, which is the half the operator could never guess.
+    $activePath   = $WorkspaceRoot
+    $archivedPath = Join-Path $WorkspaceRoot 'Archive\Widget'
+    $activeRepo = [pscustomobject]@{
+        name = 'Widget'; folderName = (Split-Path $WorkspaceRoot -Leaf); path = $activePath
+        branch = 'main'; status = 'clean'; isArchived = $false
+        scope = [pscustomobject]@{ classification = 'in-scope'; inScope = $true; reason = 'In the working portfolio.' }
+    }
+    $archivedRepo = [pscustomobject]@{
+        name = 'Widget'; folderName = 'Widget'; path = $archivedPath
+        branch = 'main'; status = 'clean'; isArchived = $false
+        scope = [pscustomobject]@{ classification = 'archived'; inScope = $false; reason = "Path matches the archive pattern '*\Archive\*' -- kept on disk, out of the working portfolio." }
+    }
+    # The archived clone's folder name MATCHES the repo name and the active
+    # one's does not, so this fixture only passes if in-scope outranks the
+    # folder-name rule rather than merely agreeing with it.
+    $dupRoadmaps = @(
+        [pscustomobject]@{ repoName = 'Widget'; repoPath = $activePath; roadmapPath = (Join-Path $WorkspaceRoot 'ROADMAP.md'); roadmapState = 'pending'; pendingCount = 53 },
+        [pscustomobject]@{ repoName = 'Widget'; repoPath = $archivedPath; roadmapPath = (Join-Path $archivedPath 'ROADMAP.md'); roadmapState = 'pending'; pendingCount = 4 }
+    )
+
+    $dupRun = Invoke-PortfolioAssessment -LocalRepos @($activeRepo, $archivedRepo) -RoadmapEntries $dupRoadmaps -StructureStandards $structStds
+    $dupRows = @($dupRun)
+    if ($dupRows.Count -ne 1) { throw "Two checkouts of one repository must yield one row, got $($dupRows.Count)" }
+    $survivor = $dupRows[0]
+    if ([string]$survivor.localPath -ne $activePath) {
+        throw ("The working-portfolio checkout must survive, not the archived one: got '{0}'" -f [string]$survivor.localPath)
+    }
+    if ([int]$survivor.pendingCount -ne 53) {
+        throw ("The surviving row must carry its OWN checkout's roadmap: expected 53 pending, got {0}" -f [int]$survivor.pendingCount)
+    }
+    # Enumeration order must not decide the answer. This assertion is first
+    # because it is the defect itself: reading the archived clone first was
+    # enough to erase the active checkout from the whole portfolio.
+    $reversedRun = Invoke-PortfolioAssessment -LocalRepos @($archivedRepo, $activeRepo) -RoadmapEntries $dupRoadmaps -StructureStandards $structStds
+    $reversedRows = @($reversedRun)
+    if ([string]$reversedRows[0].localPath -ne $activePath) {
+        throw ("Reversing the scan order changed the surviving checkout to '{0}' — the choice is still order-dependent" -f [string]$reversedRows[0].localPath)
+    }
+    if ([int]$reversedRows[0].pendingCount -ne 53) {
+        throw ("Reversed order attributed the wrong roadmap to the survivor: expected 53 pending, got {0}" -f [int]$reversedRows[0].pendingCount)
+    }
+
+    if ($null -eq (_GetField -Obj $survivor -Name 'duplicateCheckouts' -Default $null)) {
+        throw 'A discarded checkout must be recorded on the surviving row, not dropped silently'
+    }
+    $droppedPaths = @(@($survivor.duplicateCheckouts.dropped) | ForEach-Object { [string]$_.localPath })
+    if ($droppedPaths -notcontains $archivedPath) {
+        throw ("The discarded checkout must be named: expected '{0}' in [{1}]" -f $archivedPath, ($droppedPaths -join ', '))
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$survivor.duplicateCheckouts.selectionReason)) {
+        throw 'The row must say why this checkout was chosen; an unexplained choice is the defect in a different shape'
+    }
+
+    # Both in scope: the folder-name rule decides, and still not the order.
+    $peerA = [pscustomobject]@{ name = 'Widget'; folderName = 'Widget-old'; path = (Join-Path $WorkspaceRoot 'peers\Widget-old'); branch = 'main'; status = 'clean'
+        scope = [pscustomobject]@{ classification = 'in-scope'; inScope = $true; reason = 'In the working portfolio.' } }
+    $peerB = [pscustomobject]@{ name = 'Widget'; folderName = 'Widget'; path = (Join-Path $WorkspaceRoot 'peers\Widget'); branch = 'main'; status = 'clean'
+        scope = [pscustomobject]@{ classification = 'in-scope'; inScope = $true; reason = 'In the working portfolio.' } }
+    foreach ($ordering in @(@($peerA, $peerB), @($peerB, $peerA))) {
+        $peerRows = @(Invoke-PortfolioAssessment -LocalRepos $ordering -StructureStandards $structStds)
+        if ([string]$peerRows[0].localPath -ne ([string]$peerB.path)) {
+            throw ("With both checkouts in scope the folder matching the repo name must win, got '{0}'" -f [string]$peerRows[0].localPath)
+        }
+    }
+
+    # A repository with one checkout must carry no duplicate record at all.
+    $soloRows = @(Invoke-PortfolioAssessment -LocalRepos @($activeRepo) -StructureStandards $structStds)
+    if ($null -ne (_GetField -Obj $soloRows[0] -Name 'duplicateCheckouts' -Default $null)) {
+        throw 'A repository with a single checkout must not report a duplicate record'
+    }
+
+    Write-Host ("  duplicate checkouts ok: active checkout survives (pending={0}), archived clone recorded, choice stable under reversal" -f `
+        [int]$survivor.pendingCount) -ForegroundColor DarkGray
+}
+
 Write-Step 'Roadmap audit rules — a readable file with no checkboxes is not a damaged file'
 & {
     # ROADMAP-002 told the operator the file "could not be parsed" when the

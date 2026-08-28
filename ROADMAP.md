@@ -960,7 +960,7 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
 
 ### Lane 0.12 — Two local clones of one repo collapse to one row, arbitrarily (found 2026-08-27)
 
-- [ ] **[non-blocker]** Decide which local clone represents a repository when
+- [x] **[non-blocker]** Decide which local clone represents a repository when
       more than one exists, and record the loser rather than dropping it.
       `F:\Development\20_Staging\Archive\MusicLibrary` and
       `F:\Development\20_Staging\MusicLibraryProjects\MusicLibrary_v2` are two
@@ -983,7 +983,38 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
       Whichever is chosen, the discarded checkout should appear in the row's
       evidence rather than vanishing. Gate: a fixture with two local repos
       sharing one remote name asserts the active one survives and the dropped
-      path is named. _(state: planned)_
+      path is named.
+      Fixed by `Select-CanonicalLocalCheckout`
+      ([`Portfolio.Assessment.ps1`](backend/modules/portfolio/Portfolio.Assessment.ps1)),
+      which resolves every collision **before** the loop instead of inside it:
+      an in-scope checkout beats one the scope policy excluded, a folder name
+      matching the repository name beats one that differs, and an ordinal path
+      comparison settles the rest — so enumeration order decides nothing. The
+      surviving row carries `duplicateCheckouts` (the chosen path, why it was
+      chosen, and every displaced checkout with its scope reason), threaded
+      through `New-PortfolioIndexPayload` and
+      `Convert-PortfolioIndexReposToAssessments` so it survives an index
+      round-trip. Measured against the live caches: the active
+      `MusicLibraryProjects\MusicLibrary_v2` now survives with its own 52
+      pending items and `L2-Structured`, the archived clone is named as
+      dropped, and reversing the scan order changes no survivor across all 71
+      assessed repositories. Gated by the module-smoke section "Duplicate
+      checkouts", confirmed red against `HEAD` first — the reversal assertion
+      failed with the archived clone as survivor. _(state: smoke-tested)_
+
+- [ ] **[non-blocker]** Two checkouts with **different folder names** that share
+      one remote still produce two portfolio rows.
+      `GenesysCloud\Genesys.Core` and `GenesysCloud\Genesys.Core_AuditLogsApp`
+      are both clones of `github.com/xfaith4/Genesys.Core`, but the collision
+      unit above is the repository _name_, so they never collide and the
+      portfolio counts one GitHub repository twice. `Group-RepoByRemoteIdentity`
+      ([`Portfolio.Scope.ps1`](backend/modules/portfolio/Portfolio.Scope.ps1))
+      already identifies the pair by remote URL plus root-commit SHA and the
+      status response carries it as `duplicateIdentities`; the assessment still
+      does not read it. Deciding this needs a product judgement rather than
+      engineering time — `Genesys.Core_AuditLogsApp` carries its own
+      `docs/ROADMAP.md`, so collapsing the pair would discard a real plan.
+      _(state: planned)_
 
 ---
 
