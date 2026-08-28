@@ -101,7 +101,7 @@
       "description": "The roadmap file yields at least one checkbox item, so a task can be selected from it.",
       "severity": "critical",
       "scoreWeight": 15,
-      "failCondition": "roadmapState === 'parse-error'",
+      "failCondition": "roadmapState === 'no-checklist'",
       "message": "Roadmap file was read successfully but contains no '- [ ]' or '- [x]' checklist items, so no task can be selected from it. This is a format mismatch, not a damaged file.",
       "recommendedAction": "Add at least one release section with checklist items using '- [ ] task' and '- [x] done' syntax."
     },

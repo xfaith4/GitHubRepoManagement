@@ -7,13 +7,18 @@
 // needs-doc-standardization, staleness, duplicates, roadmap-flagged — are
 // deliberately EXCLUDED so the signal stays a meaningful subset rather than
 // ~100% of the portfolio. Those conditions have their own dedicated filters.
+//
+// 'no-checklist' counts: the roadmap is sound but records no '- [ ]' items,
+// so nothing in it can be ranked or dispatched — an actionable gap. It is NOT
+// 'parse-error' and must never be described to the operator as an unreadable
+// file; that wording sent operators to repair working documents.
 
 export interface NeedsAttentionInput {
   status?: string;
   uncommittedChanges?: number;
   lastBuildStatus?: 'success' | 'failure' | 'in_progress' | 'none';
   dispatchReadiness?: string;
-  roadmapState?: 'missing' | 'complete' | 'pending' | 'parse-error';
+  roadmapState?: 'missing' | 'complete' | 'pending' | 'no-checklist' | 'parse-error';
 }
 
 export function isRepoNeedsAttention(repo: NeedsAttentionInput): boolean {
@@ -23,6 +28,8 @@ export function isRepoNeedsAttention(repo: NeedsAttentionInput): boolean {
     repo.lastBuildStatus === 'failure' ||
     repo.dispatchReadiness === 'blocked' ||
     repo.dispatchReadiness === 'parse-error' ||
-    repo.roadmapState === 'parse-error'
+    repo.dispatchReadiness === 'no-checklist' ||
+    repo.roadmapState === 'parse-error' ||
+    repo.roadmapState === 'no-checklist'
   );
 }

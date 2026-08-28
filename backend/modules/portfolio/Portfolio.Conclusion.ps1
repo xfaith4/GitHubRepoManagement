@@ -158,6 +158,10 @@ function _PC_EvaluateDomain {
             $absentReadsAs = [string](_PC_GetField -Obj $Domain -Name 'absentReadsAs' -Default 'no plan recorded')
             if (-not $hasRoadmap -or $roadmapState -eq 'missing') {
                 $status = 'missing'; $evidence.Add("$absentReadsAs (no ROADMAP.md)")
+            } elseif ($roadmapState -eq 'no-checklist') {
+                # Not a gap in the repository — a gap in what this console can
+                # read. Say which it is, or the operator repairs the wrong thing.
+                $status = 'weak'; $evidence.Add('ROADMAP.md was read in full and plans in prose rather than "- [ ]" items, so no unit of work can be tracked from it')
             } elseif ($roadmapState -eq 'parse-error') {
                 $status = 'weak'; $evidence.Add('ROADMAP.md exists but could not be parsed')
             } elseif ($maturity -in $presentLevels) {
@@ -317,6 +321,12 @@ function Get-RepositoryFoundationConclusion {
         $reason = 'The product cannot reach a conclusion yet; it needs ' + ($needs -join '; ') + '.'
         $basis.Add('sourceCoverage=' + $sourceCoverage)
         $basis.Add('lastScanStatus=' + $scanStatus)
+    } elseif ($roadmapState -eq 'no-checklist') {
+        $conclusion = 'insufficiently-understood'
+        $reason = 'ROADMAP.md was read in full and records its plan in prose rather than "- [ ]" checklist items, so the product needs a checklist-shaped plan before it can rank or dispatch this repository''s work. The file itself is sound. A preview-first repair is offered.'
+        $planning = @($domains | Where-Object { $_.domain -eq 'planning' } | Select-Object -First 1)
+        if ($planning.Count -gt 0 -and $null -ne $planning[0].nextAction) { $nextAction = $planning[0].nextAction }
+        $basis.Add('roadmapState=no-checklist')
     } elseif ($roadmapState -eq 'parse-error') {
         $conclusion = 'insufficiently-understood'
         $reason = 'ROADMAP.md exists but could not be parsed, so the plan cannot be read; the product needs a parseable roadmap. A preview-first repair is offered.'

@@ -267,6 +267,7 @@ function Get-NextAvailableLaneSlot {
 #   missing-roadmap            +0
 #   roadmap-complete           +0
 #   blocked                    -50
+#   no-checklist               -10
 #   parse-error                -25
 # ---------------------------------------------------------------------------
 function Sync-LedgerFromAudit {
@@ -288,6 +289,7 @@ function Sync-LedgerFromAudit {
         'needs-doc-standardization' = 50
         'missing-roadmap'           = 0
         'roadmap-complete'          = 0
+        'no-checklist'              = -10
         'parse-error'               = -25
         'blocked'                   = -50
     }
@@ -320,6 +322,7 @@ function Sync-LedgerFromAudit {
             'needs-doc-standardization' { 'ready'   }
             'roadmap-complete'          { 'complete' }
             'blocked'                   { 'blocked'  }
+            'no-checklist'              { 'blocked'  }
             'parse-error'               { 'blocked'  }
             'missing-roadmap'           { 'idle'     }
             default                     { 'idle'     }

@@ -290,6 +290,15 @@ function _ResolveLifecycleState {
         $blocking.Add('Repository is marked archived.') | Out-Null
         return @{ state = $state; recommendedAction = $action; blockingReasons = @($blocking) }
     }
+    if ($RoadmapState -eq 'no-checklist') {
+        # The file is readable and the plan is real; this console just cannot
+        # track it item-by-item. Say that, and name what would change it —
+        # never send the operator to repair a document that is not broken.
+        $state = 'no-checklist'
+        $action = 'This roadmap plans in prose, not in checklist items. Convert its next actions to "- [ ]" items — or record that it is tracked elsewhere — before this console can rank or dispatch its work.'
+        $blocking.Add('The roadmap records no "- [ ]" checklist items, so there is no unit of work to rank or dispatch.') | Out-Null
+        return @{ state = $state; recommendedAction = $action; blockingReasons = @($blocking) }
+    }
     if ($RoadmapState -eq 'parse-error') {
         $state = 'parse-error'
         $action = 'Open the roadmap and fix the parse error before this repo can be assessed.'
@@ -970,7 +979,7 @@ function Get-PortfolioAssessmentSummary {
     foreach ($state in @(
         'discovered','needs-readme','needs-roadmap','needs-roadmap-repair',
         'needs-structure','ready-for-work','running','completed','monitored',
-        'archived','parse-error'
+        'archived','no-checklist','parse-error'
     )) { $byLifecycle[$state] = 0 }
 
     $byCoverage = @{ 'local' = 0; 'github' = 0; 'local+github' = 0 }
@@ -1003,6 +1012,7 @@ function Get-PortfolioAssessmentSummary {
             'needs-roadmap'   { $blocked++ }
             'needs-roadmap-repair' { $blocked++ }
             'needs-structure' { $blocked++ }
+            'no-checklist'    { $blocked++ }
             'parse-error'     { $blocked++ }
         }
     }
@@ -1041,6 +1051,9 @@ function _Get-DispatchReadinessExplanation {
         'roadmap-complete' {
             return 'The roadmap has no pending work, so dispatch should move to a new release or maintenance task.'
         }
+        'no-checklist' {
+            return 'The roadmap was read in full and records no "- [ ]" checklist items, so this console has no unit of work to dispatch. The file is not damaged.'
+        }
         'parse-error' {
             return 'The roadmap exists, but it could not be parsed into the standard contract format.'
         }
@@ -1067,6 +1080,7 @@ function _Get-EffectiveDispatchReadiness {
     if (-not $HasRoadmap) { return 'missing-roadmap' }
 
     switch ([string]$RoadmapState) {
+        'no-checklist' { return 'no-checklist' }
         'parse-error' { return 'parse-error' }
         'complete' { return 'roadmap-complete' }
     }
@@ -1080,6 +1094,7 @@ function _Get-EffectiveDispatchReadiness {
         'needs-roadmap-repair' { return 'blocked' }
         'running' { return 'blocked' }
         'archived' { return 'blocked' }
+        'no-checklist' { return 'no-checklist' }
         'parse-error' { return 'parse-error' }
         'needs-roadmap' { return 'missing-roadmap' }
         'needs-readme' { return 'blocked' }
@@ -1123,6 +1138,13 @@ function _Get-RoadmapScore {
     if (-not $HasRoadmap) { return 0 }
 
     switch ([string]$RoadmapState) {
+        'no-checklist' {
+            # A real plan this console cannot track item-by-item. Scoring it as
+            # a damaged file understated repositories carrying 200 KB of
+            # roadmap; the maturity auditor still reads their structure, so
+            # take whichever signal is stronger.
+            return _ClampScore -Value ([Math]::Max(40, $MaturityScore))
+        }
         'parse-error' {
             return 20
         }

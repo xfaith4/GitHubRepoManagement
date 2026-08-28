@@ -65,7 +65,7 @@ function Invoke-PlanRoadmapRepair {
     }
 
     # Cannot repair a file that cannot be parsed
-    if ($Contract.roadmapState -eq 'parse-error') {
+    if ($Contract.roadmapState -in @('no-checklist', 'parse-error')) {
         return [pscustomobject]@{
             previewState = 'repair-blocked'
             blockReason  = "Roadmap cannot be parsed. Parse error: $($Contract.parseError)"

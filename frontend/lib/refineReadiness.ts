@@ -11,7 +11,7 @@
 
 export interface RefineReadinessInput {
   hasRoadmap: boolean;
-  roadmapState?: 'missing' | 'complete' | 'pending' | 'parse-error';
+  roadmapState?: 'missing' | 'complete' | 'pending' | 'no-checklist' | 'parse-error';
   pendingCount?: number | null;
 }
 
@@ -26,8 +26,11 @@ export function describeRefineBlocker(entry: RefineReadinessInput | null | undef
   if (!entry.hasRoadmap || entry.roadmapState === 'missing') {
     return 'This repository has no ROADMAP.md. Prompt refinement is built from one, so create a roadmap first.';
   }
+  if (entry.roadmapState === 'no-checklist') {
+    return 'This roadmap has no "- [ ] task" checklist items, so there is no task to refine. The file itself is sound — run the roadmap repair preview to convert its plan to the contract format.';
+  }
   if (entry.roadmapState === 'parse-error') {
-    return 'This roadmap has no "- [ ] task" checklist items, so there is no task to refine. Run the roadmap repair preview to convert it to the contract format.';
+    return 'This roadmap file could not be read, so there is no task to refine. Open it and fix the file before refining.';
   }
   if (entry.roadmapState === 'complete') {
     return 'Every item on this roadmap is complete, so there is no pending task to refine. Add the next release before dispatching.';

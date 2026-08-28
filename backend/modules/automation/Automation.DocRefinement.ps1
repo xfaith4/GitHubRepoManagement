@@ -62,7 +62,7 @@ function Test-AutomationDocWeakness {
 
     $roadmapState = [string](_Auto_GetField -Obj $Entry -Name 'roadmapState' -Default '')
     $roadmapScore = [int](_Auto_GetField -Obj $Entry -Name 'roadmapScore' -Default 0)
-    if ($roadmapState -in @('missing', 'parse-error') -or $roadmapScore -lt $RoadmapMinScore) {
+    if ($roadmapState -in @('missing', 'no-checklist', 'parse-error') -or $roadmapScore -lt $RoadmapMinScore) {
         $weak.Add('roadmap') | Out-Null
     }
 

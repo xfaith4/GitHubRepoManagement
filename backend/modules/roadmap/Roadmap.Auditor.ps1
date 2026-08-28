@@ -500,7 +500,7 @@ function Invoke-AuditRoadmapContract {
         $failed = $false
         switch ($ruleId) {
             'ROADMAP-001' { $failed = ($Contract.roadmapState -eq 'missing') }
-            'ROADMAP-002' { $failed = ($Contract.roadmapState -eq 'parse-error') }
+            'ROADMAP-002' { $failed = ($Contract.roadmapState -in @('no-checklist', 'parse-error')) }
             'ROADMAP-003' { $failed = ($Contract.roadmapState -eq 'complete') }
             'ROADMAP-004' { $failed = (-not $Contract.hasProductIntent) }
             'ROADMAP-005' { $failed = (-not $Contract.hasReleaseSections) }

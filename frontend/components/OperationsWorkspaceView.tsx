@@ -54,6 +54,7 @@ const LIFECYCLE_STYLES: Record<RepoLifecycleState, string> = {
   completed: 'bg-violet-900/40 text-violet-200 border-violet-700/50',
   monitored: 'bg-cyan-900/40 text-cyan-200 border-cyan-700/50',
   archived: 'bg-gray-800 text-gray-300 border-gray-600',
+  'no-checklist': 'bg-amber-900/40 text-amber-200 border-amber-700/50',
   'parse-error': 'bg-red-900/40 text-red-200 border-red-700/50',
 };
 
@@ -146,14 +147,16 @@ function getLifecyclePriority(state: RepoLifecycleState): number {
       return 4;
     case 'running':
       return 5;
-    case 'parse-error':
+    case 'no-checklist':
       return 6;
-    case 'discovered':
+    case 'parse-error':
       return 7;
-    case 'monitored':
+    case 'discovered':
       return 8;
-    case 'completed':
+    case 'monitored':
       return 9;
+    case 'completed':
+      return 10;
     case 'archived':
       return 10;
     default:
