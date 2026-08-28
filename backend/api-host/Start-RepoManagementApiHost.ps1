@@ -533,6 +533,21 @@ function Get-OperationsReposPayload {
         }
     }
 
+    # Lane 0.13 -- the operations payload is what the Today landing ranks from,
+    # so it carries the same verdict the index does. The assessment-cache
+    # fallback has no index behind it at all, which is a stronger reason to say
+    # so, not a reason to stay quiet.
+    $opsStaleness = if ($null -ne $indexPayload) {
+        Get-ObjectPropertyValue -InputObject $indexPayload -PropertyName 'staleness' -Default $null
+    } else {
+        [pscustomobject]@{
+            stale       = $true
+            ageHours    = $null
+            generatedAt = $generatedAt
+            reasons     = @('These rows came from the cached assessment rather than a written portfolio index, so they cannot be confirmed current.')
+        }
+    }
+
     return [pscustomobject]@{
         available = $true
         entries = @($entries)
@@ -540,6 +555,12 @@ function Get-OperationsReposPayload {
         summary = $summary
         count = $count
         cacheSource = $cacheSource
+        basis = [pscustomobject]@{
+            indexStale       = $(if ($null -eq $opsStaleness) { $true } else { [bool](Get-ObjectPropertyValue -InputObject $opsStaleness -PropertyName 'stale' -Default $true) })
+            indexAgeHours    = Get-ObjectPropertyValue -InputObject $opsStaleness -PropertyName 'ageHours' -Default $null
+            indexGeneratedAt = Get-ObjectPropertyValue -InputObject $opsStaleness -PropertyName 'generatedAt' -Default $generatedAt
+            reasons          = @(Get-ObjectPropertyValue -InputObject $opsStaleness -PropertyName 'reasons' -Default @())
+        }
     }
 }
 

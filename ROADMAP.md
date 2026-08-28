@@ -1088,14 +1088,25 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
       added, is CRLF-insensitive, and that an unknown current fingerprint
       reads as uncertainty rather than freshness. _(state: smoke-tested)_
 
-- [ ] **Surface the staleness verdict in the UI.** _(state: planned)_ The
-      backend contract is complete and `/api/portfolio/conclusions` returns
-      `basis`; the `Today` landing, the outcome card and Insights do not yet
-      render it. Until they do, an operator can still read a stale conclusion
-      as a current one — which is the half of this that the Release 2.9
-      operator session actually depends on. Gate: a view rendered from a
-      payload whose `basis.indexStale` is true must show it, asserted by a
-      component test.
+- [x] **Surface the staleness verdict where the operator ranks work.** The
+      `Today` landing — the default view, and the one the Release 2.9 operator
+      session reads first — now leads with a banner naming the index age and
+      every reason it cannot be trusted, above the orientation paragraph and
+      before any row. `GET /api/operations/repos` carries `basis` from the
+      same verdict (the assessment-cache fallback says it has no index behind
+      it at all, which is a stronger reason to speak, not a reason to stay
+      quiet), `normalizeConclusionBasis` treats **only an explicit `false` as
+      fresh**, and `TodayView` shows the banner when the prop is absent — so
+      the failure mode of every layer is to warn, never to reassure. Covered
+      by three component tests including one that the banner stays out of the
+      way when the index is current, so the gate cannot pass by always
+      warning. _(state: smoke-tested)_
+
+- [ ] **[non-blocker]** Render the same verdict on the outcome card and
+      Insights. _(state: planned)_ Both read the index and neither states its
+      age; the `Today` banner covers the ranked landing, which is where an
+      operator starts, but a repository opened directly still presents its
+      conclusion without saying how old the evidence is.
 
 - [ ] **`estimatedSessionWorkUnits` is null for every managed repository.**
       _(state: planned)_ Release 3.6's ranked `Today` landing surfaces effort

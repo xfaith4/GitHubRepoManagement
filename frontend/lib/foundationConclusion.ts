@@ -64,6 +64,44 @@ export interface ConclusionContract {
   violations: string[];
 }
 
+/**
+ * Whether the index these conclusions were drawn from still describes the
+ * portfolio. Absent means NOT ESTABLISHED, never fresh: on 2026-08-27 a
+ * six-hour-old index reported 0 of 9 dispatch-ready repositories and every
+ * surface rendered it as fact.
+ */
+export interface ConclusionBasis {
+  indexStale: boolean;
+  indexAgeHours: number | null;
+  indexGeneratedAt: string | null;
+  reasons: string[];
+}
+
+export const UNESTABLISHED_BASIS: ConclusionBasis = {
+  indexStale: true,
+  indexAgeHours: null,
+  indexGeneratedAt: null,
+  reasons: ['The freshness of the index behind these conclusions was not established, so they cannot be presented as current.'],
+};
+
+export function normalizeConclusionBasis(raw: unknown): ConclusionBasis {
+  if (!raw || typeof raw !== 'object') return UNESTABLISHED_BASIS;
+  const d = raw as Record<string, unknown>;
+  // Only an explicit false counts as fresh. Anything missing or malformed
+  // stays stale — the whole point is that silence is not reassurance.
+  const stale = d.indexStale === false ? false : true;
+  const age = typeof d.indexAgeHours === 'number' && Number.isFinite(d.indexAgeHours) ? d.indexAgeHours : null;
+  const reasons = Array.isArray(d.reasons)
+    ? d.reasons.map(r => String(r)).filter(r => r.trim().length > 0)
+    : [];
+  return {
+    indexStale: stale,
+    indexAgeHours: age,
+    indexGeneratedAt: typeof d.indexGeneratedAt === 'string' && d.indexGeneratedAt ? d.indexGeneratedAt : null,
+    reasons: stale && reasons.length === 0 ? UNESTABLISHED_BASIS.reasons : reasons,
+  };
+}
+
 export interface PortfolioConclusionsResult {
   schemaVersion: string;
   generatedAt: string;
@@ -74,6 +112,7 @@ export interface PortfolioConclusionsResult {
   byKind: Record<string, number>;
   coverage: Record<string, Record<FoundationDomainStatus, number>>;
   contract: ConclusionContract;
+  basis: ConclusionBasis;
   items: RepositoryConclusion[];
   cacheSource: string;
 }
@@ -228,6 +267,7 @@ export function normalizePortfolioConclusionsResult(raw: unknown): PortfolioConc
     byKind: normalizeCounts(d.byKind, [] as string[]),
     coverage,
     contract: normalizeConclusionContract(d.contract),
+    basis: normalizeConclusionBasis(d.basis),
     items,
     cacheSource: asString(d.cacheSource),
   };

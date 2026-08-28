@@ -1391,6 +1391,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
             {activeView === 'today' ? (
               <TodayView
                 entries={operationsRepos?.entries ?? []}
+                basis={operationsRepos?.basis}
                 isLoading={operationsReposLoading}
                 onOpenRepo={(_repoId, repoName) => setEvaluationModalRepo(repoName)}
                 onRunAction={row => setEvaluationModalRepo(row.repoName)}

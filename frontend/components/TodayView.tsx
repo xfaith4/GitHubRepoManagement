@@ -4,6 +4,7 @@ import {
   type FoundationConclusionKind,
   FOUNDATION_CONCLUSIONS,
   describeConclusion,
+  type ConclusionBasis,
 } from '../lib/foundationConclusion';
 import { buildOrientation, buildTodayRows, type TodayRankingInput, type TodayRow } from '../lib/todayRanking';
 
@@ -37,6 +38,12 @@ export interface TodayViewProps {
   /** Runs a row's preview-first action. Omitted renders the label without a button. */
   onRunAction?: (row: TodayRow) => void;
   isLoading?: boolean;
+  /**
+   * Whether the index behind these rows still describes the portfolio.
+   * Omitted means NOT ESTABLISHED — the banner shows, because a ranking
+   * drawn from a stale index reads as a finding.
+   */
+  basis?: ConclusionBasis;
 }
 
 function toRankingInput(entry: OperationsRepoEntry): TodayRankingInput {
@@ -54,7 +61,7 @@ function toRankingInput(entry: OperationsRepoEntry): TodayRankingInput {
   };
 }
 
-export const TodayView: React.FC<TodayViewProps> = ({ entries, onOpenRepo, onRunAction, isLoading = false }) => {
+export const TodayView: React.FC<TodayViewProps> = ({ entries, onOpenRepo, onRunAction, isLoading = false, basis }) => {
   const [filter, setFilter] = useState<FoundationConclusionKind | null>(null);
 
   const allRows = useMemo(() => buildTodayRows(entries.map(toRankingInput)), [entries]);
@@ -68,6 +75,31 @@ export const TodayView: React.FC<TodayViewProps> = ({ entries, onOpenRepo, onRun
 
   return (
     <div className="p-4 space-y-4">
+      {/* The index behind this ranking may not describe the portfolio any
+          more. Saying so first is the difference between a ranking and a
+          claim: on 2026-08-27 a stale index reported 0 of 9 dispatch-ready
+          repositories, and every surface rendered it as fact. */}
+      {(basis?.indexStale ?? true) && !isLoading && (
+        <div
+          data-testid="today-staleness"
+          role="status"
+          className="rounded border border-amber-600 bg-amber-950/40 px-3 py-2 text-sm text-amber-100"
+        >
+          <p className="font-semibold">
+            This ranking may not describe the portfolio as it is now.
+            {typeof basis?.indexAgeHours === 'number' && (
+              <span className="font-normal"> The index behind it is {basis.indexAgeHours} hour(s) old.</span>
+            )}
+          </p>
+          <ul className="mt-1 list-disc pl-5 space-y-0.5 text-amber-200/90">
+            {(basis?.reasons?.length ? basis.reasons : ['The freshness of the index behind these conclusions was not established.']).map(reason => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+          <p className="mt-1 text-amber-200/80">Run a portfolio scan before acting on the order below.</p>
+        </div>
+      )}
+
       {/* Orientation — what this product evaluated and what it concluded. */}
       <p data-testid="today-orientation" className="text-sm text-gray-300 leading-relaxed max-w-4xl">
         {orientation}
