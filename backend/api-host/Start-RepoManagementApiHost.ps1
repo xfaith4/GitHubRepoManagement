@@ -10240,7 +10240,19 @@ try {
 
                     $conclusionQuery = Parse-QueryString -Query $req.Query
                     $conclusionFilter = if ($conclusionQuery.ContainsKey('conclusion')) { [string]$conclusionQuery['conclusion'] } else { '' }
-                    $conclusionsPayload = Get-PortfolioConclusionsPayload -Entries @($opsPayload.entries) -Config $conclusionConfig -GeneratedAt ([string]$opsPayload.generatedAt)
+                    # Lane 0.13 — a conclusion drawn from an index that no longer
+                    # describes the portfolio reads as a finding, which is worse
+                    # than no conclusion. Carry the verdict with the answer.
+                    $conclusionStaleness = $null
+                    try {
+                        $conclusionIndex = Get-PortfolioIndexPayload -WorkspaceRoot $WorkspaceRoot
+                        if ($null -ne $conclusionIndex) {
+                            $conclusionStaleness = Get-ObjectPropertyValue -InputObject $conclusionIndex -PropertyName 'staleness' -Default $null
+                        }
+                    } catch {
+                        Write-HostLog ("WARN portfolio.conclusions correlationId={0} staleness verdict unavailable: {1}" -f $correlationId, $_.Exception.Message)
+                    }
+                    $conclusionsPayload = Get-PortfolioConclusionsPayload -Entries @($opsPayload.entries) -Config $conclusionConfig -GeneratedAt ([string]$opsPayload.generatedAt) -Staleness $conclusionStaleness
                     $conclusionItems = @($conclusionsPayload.items)
                     if (-not [string]::IsNullOrWhiteSpace($conclusionFilter)) {
                         $conclusionItems = @($conclusionItems | Where-Object { [string]$_.conclusion -eq $conclusionFilter })
