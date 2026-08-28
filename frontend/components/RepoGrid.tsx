@@ -80,7 +80,7 @@ const ADVANCED_QUICK_FILTERS: Array<[QuickFilter, string, string]> = [
 
 type GroupByOption = RepoGridProps['groupBy'];
 
-type RoadmapBadgeState = 'pending' | 'complete' | 'parse-error' | undefined;
+type RoadmapBadgeState = 'pending' | 'complete' | 'no-checklist' | 'parse-error' | undefined;
 
 function getRoadmapBadgeConfig(state: RoadmapBadgeState): { className: string; label: string; title: string } {
   switch (state) {
@@ -90,11 +90,17 @@ function getRoadmapBadgeConfig(state: RoadmapBadgeState): { className: string; l
         label: 'ROADMAP ✓',
         title: 'Roadmap complete — no pending items',
       };
+    case 'no-checklist':
+      return {
+        className: 'bg-amber-900/50 text-amber-300 border-amber-700/50 hover:bg-amber-800/60 hover:text-amber-100',
+        label: 'ROADMAP ≡',
+        title: 'Roadmap read in full. It plans in prose rather than "- [ ]" items, so no task can be selected from it — the file is not damaged.',
+      };
     case 'parse-error':
       return {
         className: 'bg-orange-900/50 text-orange-300 border-orange-700/50 hover:bg-orange-800/60 hover:text-orange-100',
         label: 'ROADMAP !',
-        title: 'Roadmap found, but no checklist items could be read from it',
+        title: 'Roadmap file could not be read at all',
       };
     default:
       return {
@@ -261,9 +267,11 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
   const isRoadmapFlagged = (repo: RepoStatus) => {
     const roadmapState = repo.roadmapState ?? 'missing';
     return roadmapState === 'missing' || roadmapState === 'pending' || roadmapState === 'parse-error' ||
+      roadmapState === 'no-checklist' ||
       repo.dispatchReadiness === 'missing-roadmap' ||
       repo.dispatchReadiness === 'needs-doc-standardization' ||
       repo.dispatchReadiness === 'parse-error' ||
+      repo.dispatchReadiness === 'no-checklist' ||
       repo.dispatchReadiness === 'blocked';
   };
 
@@ -368,6 +376,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
             repo.lastBuildStatus === 'in_progress' ? 'Builds in progress' : 'No builds';
         case 'roadmapStatus':
           return repo.roadmapState === 'pending' ? 'ROADMAP pending' :
+            repo.roadmapState === 'no-checklist' ? 'ROADMAP without checklist items' :
             repo.roadmapState === 'parse-error' ? 'ROADMAP parse errors' :
             repo.roadmapState === 'complete' ? 'ROADMAP complete' : 'No ROADMAP';
         default:
@@ -580,6 +589,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
     { value: 'needs-doc-standardization', label: 'Needs Docs' },
     { value: 'missing-roadmap', label: 'No Roadmap' },
     { value: 'roadmap-complete', label: 'Roadmap Complete' },
+    { value: 'no-checklist', label: 'No Checklist Items' },
     { value: 'parse-error', label: 'Parse Error' },
     { value: 'blocked', label: 'Blocked' },
   ];
@@ -968,6 +978,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                     blocked: { cls: 'bg-red-900/40 text-red-300 border-red-700/40', label: '✕ Blocked' },
                     'missing-roadmap': { cls: 'bg-gray-700/50 text-gray-400 border-gray-600/40', label: 'No Roadmap' },
                     'roadmap-complete': { cls: 'bg-blue-900/40 text-blue-300 border-blue-700/40', label: 'Roadmap Done' },
+                    'no-checklist': { cls: 'bg-amber-900/40 text-amber-300 border-amber-700/40', label: '≡ No Checklist' },
                     'parse-error': { cls: 'bg-orange-900/40 text-orange-300 border-orange-700/40', label: '! Parse Error' },
                   };
                   const readinessCfg = repo.dispatchReadiness ? readinessBadge[repo.dispatchReadiness] : undefined;
@@ -1313,6 +1324,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                                      blocked: { cls: 'bg-red-900/40 text-red-300 border-red-700/40', label: '✕ Blocked' },
                                      'missing-roadmap': { cls: 'bg-gray-700/50 text-gray-400 border-gray-600/40', label: 'No Roadmap' },
                                      'roadmap-complete': { cls: 'bg-blue-900/40 text-blue-300 border-blue-700/40', label: 'Roadmap Done' },
+                                     'no-checklist': { cls: 'bg-amber-900/40 text-amber-300 border-amber-700/40', label: '≡ No Checklist' },
                                      'parse-error': { cls: 'bg-orange-900/40 text-orange-300 border-orange-700/40', label: '! Parse Error' },
                                    };
                                    const cfg = readinessBadge[repo.dispatchReadiness];

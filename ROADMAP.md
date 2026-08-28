@@ -1016,6 +1016,69 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
       `docs/ROADMAP.md`, so collapsing the pair would discard a real plan.
       _(state: planned)_
 
+### Lane 0.13 — Truthful uncertainty: the product could not tell "unreadable" from "not present" (found 2026-08-27)
+
+- [x] **Stop reporting a sound roadmap as a damaged file.** Measured against
+      the live portfolio: **15 of the 48 roadmaps on disk (31%) were reported
+      `parse-error`** — among them a **212 KB, 1,496-line** roadmap, a 43 KB
+      one and a 35 KB one, every one of them well-formed. The rule was stated
+      outright in [`Roadmap.Parser.ps1`](backend/modules/roadmap/Roadmap.Parser.ps1):
+      _"parse-error — content is empty, null, or contains no checkbox items."_
+      That state propagated to `lifecycleState`, `dispatchReadiness` and the
+      operator-facing `recommendedAction` — **"Open the roadmap and fix the
+      parse error before this repo can be assessed"** — so the console spent
+      the operator's time repairing files that were not broken, which is the
+      §2 admission rule running in reverse.
+      Fixed by splitting the state: `no-checklist` means the file was read in
+      full and records no `- [ ]` items; `parse-error` now means only that
+      there was nothing to read. Threaded through the lifecycle, dispatch
+      readiness and explanation, the roadmap score (a real plan no longer
+      scores as a damaged file), the summary tally,
+      [`DocAudit.Scanner.ps1`](backend/modules/docaudit/DocAudit.Scanner.ps1),
+      [`Roadmap.Auditor.ps1`](backend/modules/roadmap/Roadmap.Auditor.ps1),
+      [`Roadmap.Repairer.ps1`](backend/modules/roadmap/Roadmap.Repairer.ps1),
+      the execution ledger, the portfolio report, and the frontend
+      (`RepoGrid`, `WorkQueueView`, `OperationsWorkspaceView`, `needsAttention`,
+      `refineReadiness`, `portfolioTrendView`, `types.ts`).
+      [`Portfolio.Conclusion.ps1`](backend/modules/portfolio/Portfolio.Conclusion.ps1)
+      now concludes `insufficiently-understood` **naming what it needs**
+      instead of asserting the file is unparseable. Re-parsing all 48 live
+      roadmaps with the new parser: **15 move `parse-error` → `no-checklist`
+      and zero remain `parse-error` — not one roadmap in the portfolio was
+      ever actually damaged.** Gated by the module-smoke section "Truthful
+      uncertainty", confirmed red against `HEAD` first, plus 3 new frontend
+      tests pinning that the two states never share a sentence. _(state:
+      smoke-tested)_
+
+- [ ] **Give the served index a staleness contract.** _(state: planned)_ On
+      2026-08-27 `output/index/repos.index.json` was generated at 09:46Z and
+      reported **58 repositories, all `L0-Absent`, 0 ready-for-work, 58
+      blocked**. The roadmap-audit cache written at 16:09Z the same day held
+      **10 `L3-Contract-Ready`, 23 `L2`, 15 `L1`**, and re-running the join
+      offline over those caches produces **71 assessed repositories, 9 of them
+      `L3-Contract-Ready`**. The index simply predated the Lane 0.11 identity
+      fix (merged 10:47Z) and nothing re-scanned — but **nothing in the
+      product notices, records, or says so**, so every surface Release 3.6
+      shipped was rendering a portfolio that was wrong about a third of its
+      inputs and short 13 repositories. Before the Release 2.9 operator
+      session: every index-backed surface should state how old its data is
+      and refuse to present a conclusion drawn from an index older than the
+      last correctness-affecting change. Gate: a fixture index stamped older
+      than a recorded schema/logic change must surface as stale rather than
+      as fact.
+
+- [ ] **`estimatedSessionWorkUnits` is null for every managed repository.**
+      _(state: planned)_ Release 3.6's ranked `Today` landing surfaces effort
+      per row, and the field is populated only from `activePhasePlan`, which
+      **0 of 48** managed roadmaps carry (5 carry an `activeRelease`). The
+      effort column is therefore empty portfolio-wide, and `todayRanking`'s
+      cheaper-effort tiebreak never fires on real data. Either derive a
+      credible estimate from signals that do exist (pending item count, item
+      text, repo kind) or render the column as explicitly unmeasured — the
+      Release 3.6 leverage panel already sets that precedent with its two
+      `available: false` metrics. Decide which, with the ten repositories of
+      Release 3.7.
+
 ---
 
 ## 8. Risks and Guardrails

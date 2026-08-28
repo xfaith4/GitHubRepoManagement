@@ -112,17 +112,23 @@ const READINESS_CONFIG: Record<DispatchReadiness, { label: string; badgeClass: s
     dotClass: 'bg-blue-400',
     priority: 4,
   },
+  'no-checklist': {
+    label: 'No Checklist Items',
+    badgeClass: 'bg-amber-900/50 text-amber-300 border-amber-700/50',
+    dotClass: 'bg-amber-400',
+    priority: 5,
+  },
   'parse-error': {
     label: 'Parse Error',
     badgeClass: 'bg-orange-900/50 text-orange-300 border-orange-700/50',
     dotClass: 'bg-orange-400',
-    priority: 5,
+    priority: 6,
   },
   blocked: {
     label: 'Blocked',
     badgeClass: 'bg-red-900/50 text-red-300 border-red-700/50',
     dotClass: 'bg-red-500',
-    priority: 6,
+    priority: 7,
   },
 };
 

@@ -113,7 +113,7 @@ export interface RepoStatus {
   topics?: string[];
 
   hasRoadmap?: boolean;
-  roadmapState?: 'missing' | 'complete' | 'pending' | 'parse-error';
+  roadmapState?: 'missing' | 'complete' | 'pending' | 'no-checklist' | 'parse-error';
   nextPendingRoadmapItem?: string;
   dispatchReadiness?: DispatchReadiness;
   changeState?: PortfolioChangeState;
@@ -290,7 +290,7 @@ export interface RoadmapEntry {
   roadmapPath: string;
   lastModified: string;
   sizeBytes: number;
-  roadmapState?: 'complete' | 'pending' | 'parse-error';
+  roadmapState?: 'complete' | 'pending' | 'no-checklist' | 'parse-error';
   pendingCount?: number;
   completedCount?: number;
   nextPendingItem?: { text: string; section: string } | null;
@@ -365,6 +365,7 @@ export type DispatchReadiness =
   | 'needs-doc-standardization'
   | 'missing-roadmap'
   | 'roadmap-complete'
+  | 'no-checklist'
   | 'parse-error'
   | 'blocked';
 
@@ -382,7 +383,7 @@ export interface DocAuditEntry {
   repoPath: string;
   dispatchReadiness: DispatchReadiness;
   docFindings: DocFinding[];
-  roadmapState?: 'missing' | 'complete' | 'pending' | 'parse-error';
+  roadmapState?: 'missing' | 'complete' | 'pending' | 'no-checklist' | 'parse-error';
   nextPendingRoadmapItem?: string | null;
   auditedAt: string;
   criticalCount: number;
@@ -433,7 +434,7 @@ export interface RepositoryImprovementPreview {
   findings: RepositoryImprovementFinding[];
   readme: RepositoryImprovementDocumentResult;
   roadmap: RepositoryImprovementDocumentResult & {
-    state: 'pending' | 'complete' | 'missing' | 'parse-error';
+    state: 'pending' | 'complete' | 'missing' | 'no-checklist' | 'parse-error';
     maturityLevel: RoadmapMaturityLevel;
     maturityScore: number;
     pendingCount: number;
@@ -588,7 +589,7 @@ export interface RoadmapAuditEntry {
   repoName: string;
   repoPath?: string | null;
   roadmapPath?: string | null;
-  roadmapState: 'pending' | 'complete' | 'missing' | 'parse-error';
+  roadmapState: 'pending' | 'complete' | 'missing' | 'no-checklist' | 'parse-error';
   maturityLevel: RoadmapMaturityLevel;
   maturityScore: number;
   pendingCount: number;
@@ -1123,6 +1124,7 @@ export type RepoLifecycleState =
   | 'completed'
   | 'monitored'
   | 'archived'
+  | 'no-checklist'
   | 'parse-error';
 
 export type SourceCoverage = 'local' | 'github' | 'local+github';
@@ -1177,7 +1179,7 @@ export interface PortfolioAssessmentEntry {
   lifecycleState: RepoLifecycleState;
   recommendedAction: string;
   blockingReasons: string[];
-  roadmapState: 'pending' | 'complete' | 'missing' | 'parse-error';
+  roadmapState: 'pending' | 'complete' | 'missing' | 'no-checklist' | 'parse-error';
   roadmapPath: string;
   hasRoadmap: boolean;
   readmeScore?: number;
@@ -1400,7 +1402,7 @@ export interface OperationsRepoEntry {
   lifecycleState: RepoLifecycleState;
   recommendedAction: string;
   blockingReasons: string[];
-  roadmapState: 'pending' | 'complete' | 'missing' | 'parse-error';
+  roadmapState: 'pending' | 'complete' | 'missing' | 'no-checklist' | 'parse-error';
   roadmapPath: string;
   hasRoadmap: boolean;
   hasReadme: boolean;
@@ -1465,7 +1467,7 @@ export interface OperationsRepoDetail {
   };
   roadmapAudit: {
     auditedAt?: string | null;
-    roadmapState: 'pending' | 'complete' | 'missing' | 'parse-error';
+    roadmapState: 'pending' | 'complete' | 'missing' | 'no-checklist' | 'parse-error';
     maturityLevel: RoadmapMaturityLevel;
     maturityScore: number;
     pendingCount: number;

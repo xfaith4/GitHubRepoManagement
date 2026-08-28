@@ -11,7 +11,8 @@
       needs-doc-standardization — roadmap has pending work but docs have critical/warning issues
       missing-roadmap        — no ROADMAP.md found for the repo
       roadmap-complete       — roadmap exists but all items are completed
-      parse-error            — roadmap found but yielded no checklist items
+      no-checklist           — roadmap read in full, but it records no checklist items
+      parse-error            — roadmap could not be read at all
       blocked                — README.md is missing (cannot dispatch without context)
 
     Exported function: Invoke-AuditRepoDocumentation, Invoke-AuditRepoScan
@@ -90,14 +91,14 @@ function Get-DocAuditObjectValue {
 .PARAMETER Standards
     Parsed documentation standards object from Get-DocStandards.
 .PARAMETER RoadmapState
-    Optional pre-computed roadmap state string (pending/complete/missing/parse-error).
+    Optional pre-computed roadmap state string (pending/complete/missing/no-checklist/parse-error).
 .PARAMETER NextPendingRoadmapItem
     Optional next pending roadmap item text.
 .OUTPUTS
     [pscustomobject] with:
       repoName                  string
       repoPath                  string
-      dispatchReadiness         string   ready|needs-doc-standardization|missing-roadmap|roadmap-complete|parse-error|blocked
+      dispatchReadiness         string   ready|needs-doc-standardization|missing-roadmap|no-checklist|roadmap-complete|parse-error|blocked
       docFindings               array of { file, message, severity, recommendedAction }
       roadmapState              string
       nextPendingRoadmapItem    string or $null
@@ -271,6 +272,10 @@ function Invoke-AuditRepoDocumentation {
         'complete' {
             if (-not $hasReadme) { 'blocked' }
             else { 'roadmap-complete' }
+        }
+        'no-checklist' {
+            if (-not $hasReadme) { 'blocked' }
+            else { 'no-checklist' }
         }
         'parse-error' {
             if (-not $hasReadme) { 'blocked' }

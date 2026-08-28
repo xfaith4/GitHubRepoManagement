@@ -32,6 +32,13 @@ describe('isRepoNeedsAttention — acute problems flag', () => {
   it('flags an unparseable roadmap', () => {
     expect(isRepoNeedsAttention({ ...clean, roadmapState: 'parse-error' })).toBe(true);
   });
+
+  it('flags a sound roadmap that records no checklist items', () => {
+    // Actionable, but for a different reason than an unreadable file: there is
+    // nothing to rank or dispatch until its plan becomes '- [ ]' items.
+    expect(isRepoNeedsAttention({ ...clean, roadmapState: 'no-checklist' })).toBe(true);
+    expect(isRepoNeedsAttention({ ...clean, dispatchReadiness: 'no-checklist' })).toBe(true);
+  });
 });
 
 describe('isRepoNeedsAttention — ambient conditions do NOT flag', () => {

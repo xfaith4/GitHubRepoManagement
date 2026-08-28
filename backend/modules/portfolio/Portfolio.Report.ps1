@@ -88,11 +88,12 @@ function _GetPortfolioLifecyclePriority {
         'needs-roadmap-repair' { return 3 }
         'needs-structure'      { return 4 }
         'running'              { return 5 }
-        'parse-error'          { return 6 }
-        'discovered'           { return 7 }
-        'monitored'            { return 8 }
-        'completed'            { return 9 }
-        'archived'             { return 10 }
+        'no-checklist'         { return 6 }
+        'parse-error'          { return 7 }
+        'discovered'           { return 8 }
+        'monitored'            { return 9 }
+        'completed'            { return 10 }
+        'archived'             { return 11 }
         default                { return 50 }
     }
 }
@@ -107,6 +108,7 @@ function _GetPortfolioLifecycleLabel {
         'needs-roadmap-repair' { return 'Needs Roadmap Repair' }
         'needs-structure'      { return 'Needs Structure' }
         'running'              { return 'Running' }
+        'no-checklist'         { return 'No Checklist Items' }
         'parse-error'          { return 'Parse Error' }
         'discovered'           { return 'Discovered' }
         'monitored'            { return 'Monitored' }
@@ -126,6 +128,7 @@ function _GetPortfolioLifecycleBadgeClass {
         'needs-roadmap-repair' { return 'warn' }
         'needs-structure'      { return 'warn' }
         'running'              { return 'accent' }
+        'no-checklist'         { return 'warn' }
         'parse-error'          { return 'danger' }
         'archived'             { return 'muted' }
         'completed'            { return 'ok' }
@@ -255,6 +258,7 @@ function New-PortfolioCollectionStatusHtmlContent {
         'running',
         'completed',
         'monitored',
+        'no-checklist',
         'parse-error',
         'archived',
         'discovered'

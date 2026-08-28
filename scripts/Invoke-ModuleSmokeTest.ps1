@@ -757,10 +757,10 @@ if ($completeResult.pendingCount -ne 0)            { throw "Expected pendingCoun
 if ($null -ne $completeResult.nextPendingItem)     { throw "Expected nextPendingItem=null for complete roadmap" }
 Write-Host '  complete roadmap parsed correctly' -ForegroundColor DarkGray
 
-Write-Step 'Roadmap parser — smoke: parse-error (no checkboxes)'
+Write-Step 'Roadmap parser — smoke: no-checklist (readable, but no checkboxes)'
 $errorResult = Invoke-ParseRoadmapContent -Content "# ROADMAP`nThis roadmap has no checkboxes."
-if ($errorResult.roadmapState -ne 'parse-error') { throw "Expected state=parse-error, got $($errorResult.roadmapState)" }
-Write-Host '  parse-error roadmap classified correctly' -ForegroundColor DarkGray
+if ($errorResult.roadmapState -ne 'no-checklist') { throw "Expected state=no-checklist, got $($errorResult.roadmapState)" }
+Write-Host '  readable-but-checkboxless roadmap classified as no-checklist, not parse-error' -ForegroundColor DarkGray
 
 Write-Step 'Roadmap parser — smoke: parse-error (empty content)'
 $emptyResult = Invoke-ParseRoadmapContent -Content ''
@@ -2451,6 +2451,130 @@ Write-Step 'Roadmap audit rules — a readable file with no checkboxes is not a 
         }
     }
     Write-Host '  ROADMAP-002 states the real problem in both rule copies' -ForegroundColor DarkGray
+}
+
+Write-Step 'Truthful uncertainty — "I could not read this" and "this has no checklist" are different answers'
+& {
+    . $roadmapParser
+    . $portfolioModule
+
+    # 12 of 48 audited repositories were reported parse-error on 2026-08-27 —
+    # among them a 216 KB, 1,496-line roadmap and a 43 KB one, both well-formed,
+    # both planning in prose. The console sent the operator to repair files that
+    # were not broken. The states must not share a name.
+    $proseRoadmap = @(
+        '# Genesys Cloud Auditor - Product Roadmap',
+        '',
+        'This roadmap defines the evolution of the auditor into a correlation-driven',
+        'workbench. Delivery is staged; each stage states its acceptance criteria.',
+        '',
+        '## Stage 1 - Correlation engine',
+        '',
+        '| Deliverable | Acceptance |',
+        '| --- | --- |',
+        '| Event correlation | Two sources reconcile on a shared key |',
+        '',
+        '## Stage 2 - Escalation',
+        '',
+        'Escalation routes by severity and on-call calendar.'
+    ) -join "`n"
+
+    $parsedProse = Invoke-ParseRoadmapContent -Content $proseRoadmap -SourcePath 'C:\repos\demo\ROADMAP.md'
+    if ([string]$parsedProse.roadmapState -eq 'parse-error') {
+        throw 'A readable roadmap with no checkbox items must NOT be reported as parse-error — that is the defect this gate exists to stop'
+    }
+    if ([string]$parsedProse.roadmapState -ne 'no-checklist') {
+        throw "A readable roadmap with no checkbox items must report 'no-checklist', got '$([string]$parsedProse.roadmapState)'"
+    }
+    if ([string]$parsedProse.parseError -match '(?i)could not be (parsed|read)') {
+        throw "The no-checklist message must not claim the file was unreadable, got: $([string]$parsedProse.parseError)"
+    }
+    if ([string]$parsedProse.parseError -notmatch '(?i)checklist') {
+        throw "The no-checklist message must name what is actually absent, got: $([string]$parsedProse.parseError)"
+    }
+
+    # Genuinely unreadable content keeps the old name — the distinction is only
+    # worth having if BOTH sides of it stay true.
+    foreach ($empty in @('', '   ')) {
+        $parsedEmpty = Invoke-ParseRoadmapContent -Content $empty
+        if ([string]$parsedEmpty.roadmapState -ne 'parse-error') {
+            throw "Empty roadmap content must still report 'parse-error', got '$([string]$parsedEmpty.roadmapState)'"
+        }
+    }
+
+    # A roadmap that DOES carry items must be unaffected.
+    $withItems = Invoke-ParseRoadmapContent -Content "# R`n`n- [ ] do the thing`n"
+    if ([string]$withItems.roadmapState -ne 'pending') {
+        throw "A roadmap with a pending item must still report 'pending', got '$([string]$withItems.roadmapState)'"
+    }
+
+    # The operator-facing sentence must not send anyone to repair a sound file.
+    $proseRepo = [pscustomobject]@{
+        name = 'ProseRoadmapRepo'; localPath = $WorkspaceRoot; branch = 'main'; status = 'clean'
+    }
+    $proseEntries = @([pscustomobject]@{
+        repoName = 'ProseRoadmapRepo'; repoPath = $WorkspaceRoot
+        roadmapPath = (Join-Path $WorkspaceRoot 'ROADMAP.md'); roadmapState = 'no-checklist'; pendingCount = 0
+    })
+    $proseDocs = @([pscustomobject]@{
+        repoName = 'ProseRoadmapRepo'; repoPath = $WorkspaceRoot
+        dispatchReadiness = 'no-checklist'; roadmapState = 'no-checklist'; docFindings = @()
+    })
+    # Materialize with foreach, not @(). Invoke-PortfolioAssessment returns a
+    # List[object]; on pwsh 7.6.3 @() wraps it instead of enumerating it, so
+    # $rows[0] is the LIST. Member access still resolves by enumeration, which
+    # is why that reads as working right up until something walks the object's
+    # own properties — as the conclusion model does.
+    $proseRow = $null
+    foreach ($row in (Invoke-PortfolioAssessment -LocalRepos @($proseRepo) -RoadmapEntries $proseEntries `
+                -DocAuditEntries $proseDocs -StructureStandards $structStds)) {
+        if ($null -eq $proseRow) { $proseRow = $row }
+    }
+    if ($null -eq $proseRow) { throw 'The prose-roadmap fixture produced no assessment row' }
+    if (@(_GetField -Obj $proseRow -Name 'repoName' -Default '') -ne 'ProseRoadmapRepo') {
+        throw 'The fixture row did not materialize as a single assessment object'
+    }
+    if ([string]$proseRow.lifecycleState -eq 'parse-error') {
+        throw 'A no-checklist roadmap must not land in the parse-error lifecycle state'
+    }
+    if ([string]$proseRow.recommendedAction -match '(?i)fix the parse error') {
+        throw "The recommended action must not tell the operator to fix a parse error in a sound file, got: $([string]$proseRow.recommendedAction)"
+    }
+    if ([string]$proseRow.recommendedAction -notmatch '(?i)checklist|- \[ \]') {
+        throw "The recommended action must name the checklist format it needs, got: $([string]$proseRow.recommendedAction)"
+    }
+    if ([string]$proseRow.dispatchReadiness -ne 'no-checklist') {
+        throw "Dispatch readiness must carry the distinct state, got '$([string]$proseRow.dispatchReadiness)'"
+    }
+    if ([int]$proseRow.roadmapScore -le 20) {
+        throw "A real plan the console cannot track must score above a damaged file (20), got $([int]$proseRow.roadmapScore)"
+    }
+    # Every blocking reason must be true of the file. "Could not be parsed" is not.
+    foreach ($reason in @($proseRow.blockingReasons)) {
+        if ([string]$reason -match '(?i)could not be parsed') {
+            throw "A blocking reason still claims the roadmap could not be parsed: $reason"
+        }
+    }
+
+    # The conclusion model must inherit the distinction, not flatten it.
+    $conclusionModule = Join-Path $WorkspaceRoot 'backend\modules\portfolio\Portfolio.Conclusion.ps1'
+    if (Test-Path -LiteralPath $conclusionModule) {
+        . $conclusionModule
+        $domainsCfg = Get-FoundationDomainsConfig -ConfigPath (Join-Path $WorkspaceRoot 'backend\config\foundation-domains.json')
+        $concluded = Get-RepositoryFoundationConclusion -Entry $proseRow -Config $domainsCfg
+        if ([string]$concluded.conclusion -ne 'insufficiently-understood') {
+            throw "A no-checklist roadmap should conclude insufficiently-understood, got '$([string]$concluded.conclusion)'"
+        }
+        if ([string]$concluded.reason -match '(?i)could not be parsed') {
+            throw "The conclusion still claims the roadmap could not be parsed: $([string]$concluded.reason)"
+        }
+        if ([string]$concluded.reason -notmatch '(?i)checklist') {
+            throw "The conclusion must name what the product needs, got: $([string]$concluded.reason)"
+        }
+    }
+
+    Write-Host ("  truthful uncertainty ok: prose roadmap reads no-checklist (score {0}, dispatch {1}), empty content still parse-error, conclusion names the need" -f `
+        [int]$proseRow.roadmapScore, [string]$proseRow.dispatchReadiness) -ForegroundColor DarkGray
 }
 
 Write-Step 'Foundation conclusions — Release 3.6 M1: every repository leaves with an explainable conclusion'

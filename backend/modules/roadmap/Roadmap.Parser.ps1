@@ -11,9 +11,18 @@
       Get-RoadmapSelectedReleaseContext
 
     Roadmap states returned:
-      pending     — one or more unchecked items found
-      complete    — checkboxes present but none are unchecked
-      parse-error — content is empty, null, or contains no checkbox items
+      pending      — one or more unchecked items found
+      complete     — checkboxes present but none are unchecked
+      no-checklist — the file was read, but it records no checkbox items
+      parse-error  — content is empty or null; there was nothing to read
+
+    `no-checklist` exists because collapsing it into `parse-error` was a lie
+    the operator paid for. On 2026-08-27, 12 of 48 audited repositories were
+    reported "could not be parsed" — among them a 216 KB, 1,496-line roadmap
+    and a 43 KB one, both well-formed, both planning in prose and tables
+    rather than `- [ ]` items. The console sent the operator to repair files
+    that were not broken. What is true is narrower and more useful: this
+    console tracks checkbox items, and these roadmaps do not use them.
 
 .NOTES
     Dot-source this file to load the public functions into the caller scope:
@@ -527,7 +536,7 @@ function Get-RoadmapSelectedReleaseContext {
     Optional file path for diagnostic messages.
 .OUTPUTS
     [pscustomobject] with:
-      roadmapState      string   pending | complete | parse-error
+      roadmapState      string   pending | complete | no-checklist | parse-error
       pendingCount      int
       completedCount    int
       totalCount        int
@@ -639,11 +648,14 @@ function Invoke-ParseRoadmapContent {
 
     $totalCount = $pendingCount + $completedCount
     if ($totalCount -eq 0) {
-        $state    = 'parse-error'
+        # Read, understood, and carrying no checkbox items — which is a fact
+        # about how this roadmap is written, not a defect in the file. Calling
+        # it parse-error sent operators to repair working documents.
+        $state    = 'no-checklist'
         $errorMsg = if ([string]::IsNullOrWhiteSpace($SourcePath)) {
-            'No checkbox items found in roadmap content.'
+            'The roadmap was read but records no checklist items; this console tracks "- [ ]" items.'
         } else {
-            "No checkbox items found in roadmap file: $SourcePath"
+            "The roadmap at $SourcePath was read but records no checklist items; this console tracks `"- [ ]`" items."
         }
     } elseif ($pendingCount -gt 0) {
         $state    = 'pending'
