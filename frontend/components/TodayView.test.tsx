@@ -137,3 +137,41 @@ describe('TodayView — the row is a way in', () => {
     expect(screen.getByText(/no recorded outcome/)).toBeInTheDocument();
   });
 });
+
+describe('TodayView — a ranking says whether it still describes the portfolio', () => {
+  // On 2026-08-27 a stale index reported 0 of 9 dispatch-ready repositories and
+  // every surface rendered it as fact. Silence about freshness is the defect.
+  it('warns when the index behind the ranking is stale, and says why', () => {
+    render(
+      <TodayView
+        entries={[entry('alpha')]}
+        basis={{
+          indexStale: true,
+          indexAgeHours: 14.2,
+          indexGeneratedAt: '2026-08-27T09:46:23Z',
+          reasons: ['The index does not record which version of the assessment logic produced it.'],
+        }}
+      />
+    );
+    const banner = screen.getByTestId('today-staleness');
+    expect(banner).toHaveTextContent(/may not describe the portfolio as it is now/);
+    expect(banner).toHaveTextContent(/14.2 hour/);
+    expect(banner).toHaveTextContent(/does not record which version/);
+    expect(banner).toHaveTextContent(/Run a portfolio scan/);
+  });
+
+  it('treats an absent verdict as unestablished, not as fresh', () => {
+    render(<TodayView entries={[entry('alpha')]} />);
+    expect(screen.getByTestId('today-staleness')).toHaveTextContent(/was not established/);
+  });
+
+  it('stays out of the way when the index is current', () => {
+    render(
+      <TodayView
+        entries={[entry('alpha')]}
+        basis={{ indexStale: false, indexAgeHours: 0.2, indexGeneratedAt: '2026-08-28T00:00:00Z', reasons: [] }}
+      />
+    );
+    expect(screen.queryByTestId('today-staleness')).toBeNull();
+  });
+});

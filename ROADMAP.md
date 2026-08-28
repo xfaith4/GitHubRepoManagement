@@ -1050,7 +1050,7 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
       tests pinning that the two states never share a sentence. _(state:
       smoke-tested)_
 
-- [ ] **Give the served index a staleness contract.** _(state: planned)_ On
+- [x] **Give the served index a staleness contract.** On
       2026-08-27 `output/index/repos.index.json` was generated at 09:46Z and
       reported **58 repositories, all `L0-Absent`, 0 ready-for-work, 58
       blocked**. The roadmap-audit cache written at 16:09Z the same day held
@@ -1063,9 +1063,50 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
       inputs and short 13 repositories. Before the Release 2.9 operator
       session: every index-backed surface should state how old its data is
       and refuse to present a conclusion drawn from an index older than the
-      last correctness-affecting change. Gate: a fixture index stamped older
-      than a recorded schema/logic change must surface as stale rather than
-      as fact.
+      last correctness-affecting change.
+      Shipped as two verdicts, because they fail differently: **stale by
+      clock** (generated outside the freshness window) and **stale by logic**
+      (produced by different code than is running now — the dangerous one, an
+      index minutes old can still be wrong about every row).
+      `Get-PortfolioIndexLogicFingerprint` derives the second from a SHA256
+      over every `.ps1` under `backend/modules/{portfolio,roadmap,docaudit}` —
+      **derived by directory, never a maintained list**, so adding a module
+      moves the fingerprint on its own; line endings are normalized so a CRLF
+      CI checkout does not read every index as stale.
+      `Save-PortfolioIndexArtifacts` stamps `producedBy`, and the verdict is
+      attached inside `Get-PortfolioIndexPayload` — the single place every
+      consumer already goes through — so no surface can render index data
+      without the verdict on the same object. `GET
+      /api/portfolio/conclusions` carries it as `basis`, where **absent means
+      "not established", never "fresh"**. Verified against the live index: it
+      reads `stale: true`, age 14.2 h, reason _"does not record which version
+      of the assessment logic produced it"_ — the incident above, caught.
+      Gated by the module-smoke section "Index staleness", confirmed red
+      against `HEAD` first ("Reading the portfolio index produced no staleness
+      verdict — a surface can still render it as fact"); the gate also proves
+      the fingerprint moves when a producer is edited **and** when one is
+      added, is CRLF-insensitive, and that an unknown current fingerprint
+      reads as uncertainty rather than freshness. _(state: smoke-tested)_
+
+- [x] **Surface the staleness verdict where the operator ranks work.** The
+      `Today` landing — the default view, and the one the Release 2.9 operator
+      session reads first — now leads with a banner naming the index age and
+      every reason it cannot be trusted, above the orientation paragraph and
+      before any row. `GET /api/operations/repos` carries `basis` from the
+      same verdict (the assessment-cache fallback says it has no index behind
+      it at all, which is a stronger reason to speak, not a reason to stay
+      quiet), `normalizeConclusionBasis` treats **only an explicit `false` as
+      fresh**, and `TodayView` shows the banner when the prop is absent — so
+      the failure mode of every layer is to warn, never to reassure. Covered
+      by three component tests including one that the banner stays out of the
+      way when the index is current, so the gate cannot pass by always
+      warning. _(state: smoke-tested)_
+
+- [ ] **[non-blocker]** Render the same verdict on the outcome card and
+      Insights. _(state: planned)_ Both read the index and neither states its
+      age; the `Today` banner covers the ranked landing, which is where an
+      operator starts, but a repository opened directly still presents its
+      conclusion without saying how old the evidence is.
 
 - [ ] **`estimatedSessionWorkUnits` is null for every managed repository.**
       _(state: planned)_ Release 3.6's ranked `Today` landing surfaces effort

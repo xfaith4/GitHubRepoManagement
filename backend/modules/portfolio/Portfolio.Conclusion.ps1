@@ -510,7 +510,11 @@ function Get-PortfolioConclusionsPayload {
     param(
         [Parameter()][AllowEmptyCollection()][object[]]$Entries = @(),
         [Parameter(Mandatory = $true)][object]$Config,
-        [Parameter()][string]$GeneratedAt = ''
+        [Parameter()][string]$GeneratedAt = '',
+        # The staleness verdict of the index these entries came from. A
+        # conclusion drawn from an index that no longer describes the portfolio
+        # is worse than no conclusion, because it reads as a finding.
+        [Parameter()][AllowNull()][object]$Staleness = $null
     )
 
     if ([string]::IsNullOrWhiteSpace($GeneratedAt)) { $GeneratedAt = (Get-Date).ToUniversalTime().ToString('o') }
@@ -561,6 +565,19 @@ function Get-PortfolioConclusionsPayload {
             holds          = ($violations.Count -eq 0)
             violationCount = $violations.Count
             violations     = @($violations)
+        }
+        # Absent means "not established", never "fresh": a caller that does not
+        # supply the verdict gets one saying so, so no surface can render these
+        # conclusions as current without something having actually checked.
+        basis         = [pscustomobject]@{
+            indexStale   = $(if ($null -eq $Staleness) { $true } else { [bool](_PC_GetField -Obj $Staleness -Name 'stale' -Default $true) })
+            indexAgeHours = _PC_GetField -Obj $Staleness -Name 'ageHours' -Default $null
+            indexGeneratedAt = _PC_GetField -Obj $Staleness -Name 'generatedAt' -Default $null
+            reasons      = $(if ($null -eq $Staleness) {
+                    @('The freshness of the index behind these conclusions was not established, so they cannot be presented as current.')
+                } else {
+                    @(_PC_GetField -Obj $Staleness -Name 'reasons' -Default @())
+                })
         }
         items         = @($items)
     }

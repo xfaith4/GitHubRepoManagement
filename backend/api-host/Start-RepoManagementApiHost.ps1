@@ -533,6 +533,21 @@ function Get-OperationsReposPayload {
         }
     }
 
+    # Lane 0.13 -- the operations payload is what the Today landing ranks from,
+    # so it carries the same verdict the index does. The assessment-cache
+    # fallback has no index behind it at all, which is a stronger reason to say
+    # so, not a reason to stay quiet.
+    $opsStaleness = if ($null -ne $indexPayload) {
+        Get-ObjectPropertyValue -InputObject $indexPayload -PropertyName 'staleness' -Default $null
+    } else {
+        [pscustomobject]@{
+            stale       = $true
+            ageHours    = $null
+            generatedAt = $generatedAt
+            reasons     = @('These rows came from the cached assessment rather than a written portfolio index, so they cannot be confirmed current.')
+        }
+    }
+
     return [pscustomobject]@{
         available = $true
         entries = @($entries)
@@ -540,6 +555,12 @@ function Get-OperationsReposPayload {
         summary = $summary
         count = $count
         cacheSource = $cacheSource
+        basis = [pscustomobject]@{
+            indexStale       = $(if ($null -eq $opsStaleness) { $true } else { [bool](Get-ObjectPropertyValue -InputObject $opsStaleness -PropertyName 'stale' -Default $true) })
+            indexAgeHours    = Get-ObjectPropertyValue -InputObject $opsStaleness -PropertyName 'ageHours' -Default $null
+            indexGeneratedAt = Get-ObjectPropertyValue -InputObject $opsStaleness -PropertyName 'generatedAt' -Default $generatedAt
+            reasons          = @(Get-ObjectPropertyValue -InputObject $opsStaleness -PropertyName 'reasons' -Default @())
+        }
     }
 }
 
@@ -10240,7 +10261,19 @@ try {
 
                     $conclusionQuery = Parse-QueryString -Query $req.Query
                     $conclusionFilter = if ($conclusionQuery.ContainsKey('conclusion')) { [string]$conclusionQuery['conclusion'] } else { '' }
-                    $conclusionsPayload = Get-PortfolioConclusionsPayload -Entries @($opsPayload.entries) -Config $conclusionConfig -GeneratedAt ([string]$opsPayload.generatedAt)
+                    # Lane 0.13 — a conclusion drawn from an index that no longer
+                    # describes the portfolio reads as a finding, which is worse
+                    # than no conclusion. Carry the verdict with the answer.
+                    $conclusionStaleness = $null
+                    try {
+                        $conclusionIndex = Get-PortfolioIndexPayload -WorkspaceRoot $WorkspaceRoot
+                        if ($null -ne $conclusionIndex) {
+                            $conclusionStaleness = Get-ObjectPropertyValue -InputObject $conclusionIndex -PropertyName 'staleness' -Default $null
+                        }
+                    } catch {
+                        Write-HostLog ("WARN portfolio.conclusions correlationId={0} staleness verdict unavailable: {1}" -f $correlationId, $_.Exception.Message)
+                    }
+                    $conclusionsPayload = Get-PortfolioConclusionsPayload -Entries @($opsPayload.entries) -Config $conclusionConfig -GeneratedAt ([string]$opsPayload.generatedAt) -Staleness $conclusionStaleness
                     $conclusionItems = @($conclusionsPayload.items)
                     if (-not [string]::IsNullOrWhiteSpace($conclusionFilter)) {
                         $conclusionItems = @($conclusionItems | Where-Object { [string]$_.conclusion -eq $conclusionFilter })

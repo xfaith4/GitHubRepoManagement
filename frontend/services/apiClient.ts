@@ -11,6 +11,7 @@ import {
   type RepositoryConclusion,
   explainUnrunnableAction,
   isRunnableNextAction,
+  normalizeConclusionBasis,
   normalizeConclusionContract,
   normalizePortfolioConclusionsResult,
   normalizeRepositoryConclusion,
@@ -753,6 +754,13 @@ function getMockOperationsRepos(): OperationsReposResult {
     count: entries.length,
     cacheSource: 'assessment-cache',
     summary: null,
+    // Mock data describes nothing real, which is the most stale an index gets.
+    basis: {
+      indexStale: true,
+      indexAgeHours: null,
+      indexGeneratedAt: null,
+      reasons: ['These rows are mock data, not a scan of the portfolio.'],
+    },
   };
 }
 
@@ -2345,6 +2353,7 @@ export async function getOperationsRepos(): Promise<OperationsReposResult> {
     count: Number(d.count ?? 0),
     cacheSource: d.cacheSource === 'assessment-cache' ? 'assessment-cache' : 'portfolio-index',
     summary: d.summary ?? null,
+    basis: normalizeConclusionBasis(d.basis),
   };
 }
 

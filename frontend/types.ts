@@ -1443,6 +1443,13 @@ export interface OperationsReposResult {
   count: number;
   cacheSource: 'portfolio-index' | 'assessment-cache';
   summary: PortfolioAssessmentSummary | null;
+  /** Whether the index these rows came from still describes the portfolio. */
+  basis: {
+    indexStale: boolean;
+    indexAgeHours: number | null;
+    indexGeneratedAt: string | null;
+    reasons: string[];
+  };
 }
 
 export interface OperationsRepoDetail {

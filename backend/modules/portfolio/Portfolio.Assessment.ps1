@@ -1567,6 +1567,15 @@ function Save-PortfolioIndexArtifacts {
         -CurationByRepoId $CurationByRepoId `
         -GeneratedAt $GeneratedAt
 
+    # Stamp the logic that produced this index. Without it, an index written
+    # before a correctness fix is indistinguishable from one written after —
+    # which is how a six-hour-old index reported 0 of 9 dispatch-ready repos
+    # with nothing noticing (2026-08-27).
+    Add-Member -InputObject $payload -NotePropertyName 'producedBy' -NotePropertyValue ([pscustomobject]@{
+            logicFingerprint = (Get-PortfolioIndexLogicFingerprint -WorkspaceRoot $WorkspaceRoot)
+            generatedAt      = $GeneratedAt
+        }) -Force
+
     $json = $payload | ConvertTo-Json -Depth 12
     $indexPath = Join-Path $indexRoot 'repos.index.json'
     Set-Content -LiteralPath $indexPath -Value $json -Encoding UTF8
@@ -1583,6 +1592,149 @@ function Save-PortfolioIndexArtifacts {
     }
 }
 
+function Get-PortfolioIndexLogicFingerprint {
+    <#
+    .SYNOPSIS
+        A fingerprint of the code that decides what an index row says.
+
+    .DESCRIPTION
+        Derived, never maintained. The producer set is every .ps1 under the
+        module directories that compose an index row — portfolio, roadmap,
+        docaudit — so adding a module moves the fingerprint on its own and
+        editing one makes every index written beforehand read as stale.
+        A hand-listed set would drift the first time someone added a file,
+        which is the failure mode this repository already refuses elsewhere.
+
+        Line endings are normalized before hashing: the working tree is LF and
+        a CI checkout is CRLF, and a fingerprint that changed with the checkout
+        would report every index as stale everywhere.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][string]$WorkspaceRoot)
+
+    $producerRoots = @(
+        (Join-Path $WorkspaceRoot 'backend\modules\portfolio'),
+        (Join-Path $WorkspaceRoot 'backend\modules\roadmap'),
+        (Join-Path $WorkspaceRoot 'backend\modules\docaudit')
+    )
+
+    $files = [System.Collections.Generic.List[string]]::new()
+    foreach ($root in $producerRoots) {
+        if (-not (Test-Path -LiteralPath $root -PathType Container)) { continue }
+        foreach ($file in @(Get-ChildItem -LiteralPath $root -Filter '*.ps1' -File -ErrorAction SilentlyContinue)) {
+            $files.Add([string]$file.FullName) | Out-Null
+        }
+    }
+    if ($files.Count -eq 0) { return '' }
+
+    # Ordinal sort so enumeration order cannot move the fingerprint.
+    $ordered = @($files.ToArray() | Sort-Object -Property { $_ })
+    $builder = [System.Text.StringBuilder]::new()
+    foreach ($path in $ordered) {
+        $content = ''
+        try { $content = Get-Content -LiteralPath $path -Raw -Encoding UTF8 -ErrorAction Stop } catch { $content = '' }
+        if ($null -eq $content) { $content = '' }
+        [void]$builder.Append((Split-Path -Path $path -Leaf))
+        [void]$builder.Append("`n")
+        [void]$builder.Append(($content -replace "`r`n", "`n"))
+        [void]$builder.Append("`n")
+    }
+
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($builder.ToString())
+        $hash = $sha.ComputeHash($bytes)
+        return (($hash | ForEach-Object { $_.ToString('x2') }) -join '').Substring(0, 16)
+    } finally {
+        $sha.Dispose()
+    }
+}
+
+function Get-PortfolioIndexStaleness {
+    <#
+    .SYNOPSIS
+        Pure -- is this index still a fair description of the portfolio?
+
+    .DESCRIPTION
+        On 2026-08-27 the served index was generated at 09:46Z and reported 58
+        repositories, all L0-Absent, none ready for work. The repository-identity
+        fix had merged at 10:47Z; the audit cache written at 16:09Z held 10
+        L3-Contract-Ready, and re-running the join produced 71 repositories with
+        9 of them dispatch-ready. The index was simply old — and NOTHING in the
+        product noticed, recorded, or said so, so every surface rendered a
+        portfolio that was wrong about a third of its inputs.
+
+        Two ways an index goes stale, and they are not the same:
+
+          * by CLOCK  - it was generated too long ago to be trusted as current
+          * by LOGIC  - it was produced by different code than is running now,
+                        so its rows may be wrong in ways time cannot explain
+
+        The second is the dangerous one, because an index minutes old can still
+        be wrong about every row. Both are reported; either makes it stale.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter()][AllowNull()][object]$Index = $null,
+        [Parameter()][AllowEmptyString()][string]$CurrentFingerprint = '',
+        [Parameter()][AllowNull()][object]$Now = $null,
+        [Parameter()][int]$MaxAgeHours = 24
+    )
+
+    $reasons = [System.Collections.Generic.List[string]]::new()
+    if ($null -eq $Now) { $Now = (Get-Date).ToUniversalTime() }
+    $nowUtc = ([datetime]$Now).ToUniversalTime()
+
+    if ($null -eq $Index) {
+        return [pscustomobject]@{
+            stale              = $true
+            ageHours           = $null
+            generatedAt        = $null
+            producedBy         = ''
+            currentFingerprint = $CurrentFingerprint
+            reasons            = @('No portfolio index has been written yet; nothing has been scanned.')
+        }
+    }
+
+    $generatedAt = [string](_GetField -Obj $Index -Name 'generatedAt' -Default '')
+    $ageHours = $null
+    if (-not [string]::IsNullOrWhiteSpace($generatedAt)) {
+        $parsed = [datetime]::MinValue
+        if ([datetime]::TryParse($generatedAt, [ref]$parsed)) {
+            $ageHours = [math]::Round(($nowUtc - $parsed.ToUniversalTime()).TotalHours, 1)
+            if ($MaxAgeHours -gt 0 -and $ageHours -gt $MaxAgeHours) {
+                $reasons.Add(("The index was generated {0} hour(s) ago, past the {1}-hour freshness window." -f $ageHours, $MaxAgeHours)) | Out-Null
+            }
+        } else {
+            $reasons.Add("The index does not carry a readable generatedAt timestamp, so its age cannot be established.") | Out-Null
+        }
+    } else {
+        $reasons.Add('The index does not record when it was generated, so its age cannot be established.') | Out-Null
+    }
+
+    $producedBy = [string](_GetField -Obj (_GetField -Obj $Index -Name 'producedBy' -Default $null) -Name 'logicFingerprint' -Default '')
+    if ([string]::IsNullOrWhiteSpace($CurrentFingerprint)) {
+        # Not knowing which code is running is itself uncertainty, and reading
+        # it as freshness would repeat the defect this function exists to end.
+        $reasons.Add('The version of the assessment logic running now could not be determined, so this index cannot be confirmed current.') | Out-Null
+    } elseif ([string]::IsNullOrWhiteSpace($producedBy)) {
+        $reasons.Add('The index does not record which version of the assessment logic produced it, so it predates this check and cannot be trusted as current.') | Out-Null
+    } elseif ($producedBy -ne $CurrentFingerprint) {
+        $reasons.Add(("The index was produced by assessment logic '{0}'; the code running now is '{1}'. Its rows may be wrong in ways age does not explain — rescan before drawing a conclusion from it." -f $producedBy, $CurrentFingerprint)) | Out-Null
+    }
+
+    return [pscustomobject]@{
+        stale              = ($reasons.Count -gt 0)
+        ageHours           = $ageHours
+        generatedAt        = $(if ([string]::IsNullOrWhiteSpace($generatedAt)) { $null } else { $generatedAt })
+        producedBy         = $producedBy
+        currentFingerprint = $CurrentFingerprint
+        reasons            = @($reasons)
+    }
+}
+
 function Get-PortfolioIndexPayload {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$WorkspaceRoot)
@@ -1595,10 +1747,32 @@ function Get-PortfolioIndexPayload {
     try {
         $raw = Get-Content -LiteralPath $indexPath -Raw -Encoding UTF8 -ErrorAction Stop
         if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
-        return ConvertFrom-Json -InputObject $raw
+        $payload = ConvertFrom-Json -InputObject $raw
     } catch {
         return $null
     }
+
+    # Attached on read, in the one place every consumer already goes through,
+    # so a surface cannot render index data without the staleness verdict
+    # sitting on the same object it rendered from.
+    try {
+        $staleness = Get-PortfolioIndexStaleness -Index $payload `
+            -CurrentFingerprint (Get-PortfolioIndexLogicFingerprint -WorkspaceRoot $WorkspaceRoot)
+        Add-Member -InputObject $payload -NotePropertyName 'staleness' -NotePropertyValue $staleness -Force
+    } catch {
+        # A staleness verdict that cannot be computed must not hide the index,
+        # but it must not silently read as fresh either.
+        Add-Member -InputObject $payload -NotePropertyName 'staleness' -NotePropertyValue ([pscustomobject]@{
+                stale              = $true
+                ageHours           = $null
+                generatedAt        = $null
+                producedBy         = ''
+                currentFingerprint = ''
+                reasons            = @("The staleness of this index could not be established: $($_.Exception.Message)")
+            }) -Force
+    }
+
+    return $payload
 }
 
 function Convert-PortfolioIndexReposToAssessments {

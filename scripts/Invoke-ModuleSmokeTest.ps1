@@ -2577,6 +2577,169 @@ Write-Step 'Truthful uncertainty — "I could not read this" and "this has no ch
         [int]$proseRow.roadmapScore, [string]$proseRow.dispatchReadiness) -ForegroundColor DarkGray
 }
 
+Write-Step 'Index staleness — an index cannot be read without its own verdict on whether it is still true'
+& {
+    . $portfolioModule
+
+    $stalenessRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("idx-stale-{0}" -f ([guid]::NewGuid().ToString('n')))
+    $stalenessIndexDir = Join-Path $stalenessRoot 'output\index'
+    $null = New-Item -ItemType Directory -Path $stalenessIndexDir -Force
+    # A fixture workspace with its own producer modules, so the fingerprint is
+    # exercised as the derived thing it is rather than mocked.
+    $producerDirs = @{}
+    foreach ($name in 'portfolio', 'roadmap', 'docaudit') {
+        $dir = Join-Path $stalenessRoot ("backend\modules\{0}" -f $name)
+        $null = New-Item -ItemType Directory -Path $dir -Force
+        Set-Content -LiteralPath (Join-Path $dir ("{0}.Fixture.ps1" -f $name)) -Value "function _Fx_$name { 'v1' }" -Encoding UTF8
+        $producerDirs[$name] = $dir
+    }
+    try {
+        # An index read with NO verdict attached is the whole defect: on
+        # 2026-08-27 a six-hour-old index reported 0 of 9 dispatch-ready
+        # repositories and every surface rendered it as fact.
+        $bareIndex = [pscustomobject]@{
+            schemaVersion = 1; kind = 'portfolio-index'
+            generatedAt   = (Get-Date).ToUniversalTime().ToString('o')
+            repoCount     = 0; repos = @()
+        }
+        Set-Content -LiteralPath (Join-Path $stalenessIndexDir 'repos.index.json') `
+            -Value ($bareIndex | ConvertTo-Json -Depth 8) -Encoding UTF8
+
+        $readBack = Get-PortfolioIndexPayload -WorkspaceRoot $stalenessRoot
+        if ($null -eq $readBack) { throw 'The staleness fixture index did not read back at all' }
+        $verdict = _GetField -Obj $readBack -Name 'staleness' -Default $null
+        if ($null -eq $verdict) {
+            throw 'Reading the portfolio index produced no staleness verdict — a surface can still render it as fact'
+        }
+        if (-not [bool]$verdict.stale) {
+            throw 'An index carrying no record of the logic that produced it must not read as fresh'
+        }
+        if (@($verdict.reasons).Count -eq 0) {
+            throw 'A stale verdict must say why; "stale" with no reason is not actionable'
+        }
+
+        # The fingerprint is DERIVED from the producer modules, never a
+        # maintained list — prove both halves of that claim.
+        $fingerprint = Get-PortfolioIndexLogicFingerprint -WorkspaceRoot $stalenessRoot
+        if ([string]::IsNullOrWhiteSpace($fingerprint)) { throw 'The logic fingerprint must not be empty when producer modules exist' }
+        if ($fingerprint -ne (Get-PortfolioIndexLogicFingerprint -WorkspaceRoot $stalenessRoot)) {
+            throw 'The logic fingerprint must be stable across calls'
+        }
+        if ([string]::IsNullOrWhiteSpace((Get-PortfolioIndexLogicFingerprint -WorkspaceRoot $WorkspaceRoot))) {
+            throw 'The logic fingerprint must not be empty for the real workspace'
+        }
+
+        # Editing a producer changes it...
+        $editedFile = Join-Path $producerDirs['roadmap'] 'roadmap.Fixture.ps1'
+        Set-Content -LiteralPath $editedFile -Value "function _Fx_roadmap { 'v2' }" -Encoding UTF8
+        $afterEdit = Get-PortfolioIndexLogicFingerprint -WorkspaceRoot $stalenessRoot
+        if ($afterEdit -eq $fingerprint) { throw 'Editing a producer module must move the logic fingerprint' }
+
+        # ...and so does ADDING one, which is what a maintained list would miss.
+        Set-Content -LiteralPath (Join-Path $producerDirs['portfolio'] 'portfolio.Extra.ps1') -Value "function _Fx_extra { 1 }" -Encoding UTF8
+        $afterAdd = Get-PortfolioIndexLogicFingerprint -WorkspaceRoot $stalenessRoot
+        if ($afterAdd -eq $afterEdit) { throw 'Adding a producer module must move the logic fingerprint — otherwise the set is a list that drifts' }
+
+        # Line endings must not: the working tree is LF and a CI checkout is CRLF.
+        $lfRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("idx-lf-{0}" -f ([guid]::NewGuid().ToString('n')))
+        $crlfRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("idx-crlf-{0}" -f ([guid]::NewGuid().ToString('n')))
+        try {
+            foreach ($pair in @(@{ root = $lfRoot; nl = "`n" }, @{ root = $crlfRoot; nl = "`r`n" })) {
+                $d = Join-Path $pair.root 'backend\modules\portfolio'
+                $null = New-Item -ItemType Directory -Path $d -Force
+                [System.IO.File]::WriteAllText((Join-Path $d 'same.ps1'), ('function A {' + $pair.nl + '  1' + $pair.nl + '}' + $pair.nl))
+            }
+            if ((Get-PortfolioIndexLogicFingerprint -WorkspaceRoot $lfRoot) -ne (Get-PortfolioIndexLogicFingerprint -WorkspaceRoot $crlfRoot)) {
+                throw 'CRLF and LF copies of the same producer must fingerprint identically, or every CI checkout reads stale'
+            }
+        } finally {
+            Remove-Item -LiteralPath $lfRoot -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $crlfRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        $fingerprint = $afterAdd
+
+        $now = [datetime]::Parse('2026-08-27T18:00:00Z').ToUniversalTime()
+        $fresh = [pscustomobject]@{
+            generatedAt = $now.AddMinutes(-30).ToString('o')
+            producedBy  = [pscustomobject]@{ logicFingerprint = $fingerprint }
+        }
+        $freshVerdict = Get-PortfolioIndexStaleness -Index $fresh -CurrentFingerprint $fingerprint -Now $now
+        if ([bool]$freshVerdict.stale) {
+            throw ("A recent index produced by the running logic must read fresh, got: {0}" -f (@($freshVerdict.reasons) -join '; '))
+        }
+
+        # Stale by LOGIC — the dangerous one. Minutes old and wrong on every row.
+        $wrongLogic = [pscustomobject]@{
+            generatedAt = $now.AddMinutes(-5).ToString('o')
+            producedBy  = [pscustomobject]@{ logicFingerprint = 'deadbeefdeadbeef' }
+        }
+        $wrongVerdict = Get-PortfolioIndexStaleness -Index $wrongLogic -CurrentFingerprint $fingerprint -Now $now
+        if (-not [bool]$wrongVerdict.stale) {
+            throw 'An index produced by different logic must read stale even when it is minutes old'
+        }
+        if ((@($wrongVerdict.reasons) -join ' ') -notmatch 'deadbeefdeadbeef') {
+            throw 'The logic-drift reason must name the fingerprint the index was produced by'
+        }
+
+        # Stale by CLOCK, with the right logic.
+        $old = [pscustomobject]@{
+            generatedAt = $now.AddHours(-48).ToString('o')
+            producedBy  = [pscustomobject]@{ logicFingerprint = $fingerprint }
+        }
+        $oldVerdict = Get-PortfolioIndexStaleness -Index $old -CurrentFingerprint $fingerprint -Now $now -MaxAgeHours 24
+        if (-not [bool]$oldVerdict.stale) { throw 'A 48-hour-old index must read stale against a 24-hour window' }
+        if ([double]$oldVerdict.ageHours -lt 47) { throw "Age must be reported in hours, got $([double]$oldVerdict.ageHours)" }
+
+        # Nothing scanned yet is stale, not fresh-and-empty.
+        $noneVerdict = Get-PortfolioIndexStaleness -Index $null -CurrentFingerprint $fingerprint -Now $now
+        if (-not [bool]$noneVerdict.stale) { throw 'A missing index must read stale rather than empty-but-current' }
+
+        # Not knowing which code is running is uncertainty, not freshness —
+        # reading it as fresh would repeat the defect this check exists to end.
+        $unknownVerdict = Get-PortfolioIndexStaleness -Index $fresh -CurrentFingerprint '' -Now $now
+        if (-not [bool]$unknownVerdict.stale) {
+            throw 'An index checked against an unknown current fingerprint must not read as fresh'
+        }
+
+        # A written index stamps itself, and reads back fresh on the same code.
+        $stamped = Save-PortfolioIndexArtifacts -WorkspaceRoot $stalenessRoot -Assessments @() -LocalRepos @() `
+            -GitHubRepos @() -Summary (Get-PortfolioAssessmentSummary -Assessments @()) -SignalSources @{} `
+            -GeneratedAt ((Get-Date).ToUniversalTime().ToString('o'))
+        if ($null -eq $stamped) { throw 'Save-PortfolioIndexArtifacts returned nothing for the staleness fixture' }
+        $stampedRead = Get-PortfolioIndexPayload -WorkspaceRoot $stalenessRoot
+        $stampedVerdict = _GetField -Obj $stampedRead -Name 'staleness' -Default $null
+        if ([bool]$stampedVerdict.stale) {
+            throw ("An index just written by this code must read fresh, got: {0}" -f (@($stampedVerdict.reasons) -join '; '))
+        }
+        if ([string]$stampedVerdict.producedBy -ne $fingerprint) {
+            throw 'A written index must record the fingerprint of the logic that produced it'
+        }
+
+        # A conclusions payload must never present itself as current without a
+        # verdict behind it — absent has to mean "not established", not "fresh".
+        $conclusionModuleForStaleness = Join-Path $WorkspaceRoot 'backend\modules\portfolio\Portfolio.Conclusion.ps1'
+        if (Test-Path -LiteralPath $conclusionModuleForStaleness) {
+            . $conclusionModuleForStaleness
+            $stalenessCfg = Get-FoundationDomainsConfig -ConfigPath (Join-Path $WorkspaceRoot 'backend\config\foundation-domains.json')
+            $unbacked = Get-PortfolioConclusionsPayload -Entries @() -Config $stalenessCfg
+            if (-not [bool]$unbacked.basis.indexStale) {
+                throw 'A conclusions payload built without a staleness verdict must not report its index as current'
+            }
+            if (@($unbacked.basis.reasons).Count -eq 0) {
+                throw 'An unbacked conclusions payload must say why its freshness is unestablished'
+            }
+            $backed = Get-PortfolioConclusionsPayload -Entries @() -Config $stalenessCfg -Staleness $freshVerdict
+            if ([bool]$backed.basis.indexStale) {
+                throw 'A conclusions payload backed by a fresh verdict must report its index as current'
+            }
+        }
+
+        Write-Host ("  index staleness ok: verdict attached on every read; logic drift caught at 5 minutes old; clock drift at 48h; conclusions carry their basis; fresh index reads fresh (fingerprint {0})" -f $fingerprint) -ForegroundColor DarkGray
+    } finally {
+        Remove-Item -LiteralPath $stalenessRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 Write-Step 'Foundation conclusions — Release 3.6 M1: every repository leaves with an explainable conclusion'
 & {
     . $portfolioConclusionModule
