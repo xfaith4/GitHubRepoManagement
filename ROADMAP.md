@@ -958,6 +958,64 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
       assertions in `refineReadiness.test.ts`, one of which pins that a repo
       with a roadmap is never told it has none. _(state: smoke-tested)_
 
+### Lane 0.12 — Two local clones of one repo collapse to one row, arbitrarily (found 2026-08-27)
+
+- [x] **[non-blocker]** Decide which local clone represents a repository when
+      more than one exists, and record the loser rather than dropping it.
+      `F:\Development\20_Staging\Archive\MusicLibrary` and
+      `F:\Development\20_Staging\MusicLibraryProjects\MusicLibrary_v2` are two
+      checkouts of the same GitHub repository, so the status scan emits two rows
+      both named `MusicLibrary_v2`.
+      [`Portfolio.Assessment.ps1`](backend/modules/portfolio/Portfolio.Assessment.ps1)
+      dedupes with `$seenLocalKeys.Add($key)` — first wins, keyed on the name —
+      so one checkout is discarded and **which one survives depends on
+      enumeration order**: the index snapshot kept the active checkout, the
+      status cache order keeps the archived one. Found while verifying Lane
+      0.11: before the path join, the surviving archived row was displayed with
+      the *active* checkout's 52 pending items — a roadmap belonging to a
+      directory it is not. The path join fixed the attribution (the archived row
+      now reports its own 13), but the active checkout is still absent from the
+      portfolio whenever ordering favours the archive, which is the worse of the
+      two outcomes and the one the operator would never guess. The status
+      response already computes `duplicateIdentities`; the assessment does not
+      read it. Options: prefer the non-archived checkout, prefer the one whose
+      folder matches the remote name, or emit both and mark the duplicate.
+      Whichever is chosen, the discarded checkout should appear in the row's
+      evidence rather than vanishing. Gate: a fixture with two local repos
+      sharing one remote name asserts the active one survives and the dropped
+      path is named.
+      Fixed by `Select-CanonicalLocalCheckout`
+      ([`Portfolio.Assessment.ps1`](backend/modules/portfolio/Portfolio.Assessment.ps1)),
+      which resolves every collision **before** the loop instead of inside it:
+      an in-scope checkout beats one the scope policy excluded, a folder name
+      matching the repository name beats one that differs, and an ordinal path
+      comparison settles the rest — so enumeration order decides nothing. The
+      surviving row carries `duplicateCheckouts` (the chosen path, why it was
+      chosen, and every displaced checkout with its scope reason), threaded
+      through `New-PortfolioIndexPayload` and
+      `Convert-PortfolioIndexReposToAssessments` so it survives an index
+      round-trip. Measured against the live caches: the active
+      `MusicLibraryProjects\MusicLibrary_v2` now survives with its own 52
+      pending items and `L2-Structured`, the archived clone is named as
+      dropped, and reversing the scan order changes no survivor across all 71
+      assessed repositories. Gated by the module-smoke section "Duplicate
+      checkouts", confirmed red against `HEAD` first — the reversal assertion
+      failed with the archived clone as survivor. _(state: smoke-tested)_
+
+- [ ] **[non-blocker]** Two checkouts with **different folder names** that share
+      one remote still produce two portfolio rows.
+      `GenesysCloud\Genesys.Core` and `GenesysCloud\Genesys.Core_AuditLogsApp`
+      are both clones of `github.com/xfaith4/Genesys.Core`, but the collision
+      unit above is the repository _name_, so they never collide and the
+      portfolio counts one GitHub repository twice. `Group-RepoByRemoteIdentity`
+      ([`Portfolio.Scope.ps1`](backend/modules/portfolio/Portfolio.Scope.ps1))
+      already identifies the pair by remote URL plus root-commit SHA and the
+      status response carries it as `duplicateIdentities`; the assessment still
+      does not read it. Deciding this needs a product judgement rather than
+      engineering time — `Genesys.Core_AuditLogsApp` carries its own
+      `docs/ROADMAP.md`, so collapsing the pair would discard a real plan.
+      _(state: planned)_
+
 ---
 
 ## 8. Risks and Guardrails

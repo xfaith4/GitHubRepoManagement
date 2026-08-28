@@ -447,6 +447,95 @@ function _GetField {
     return $Default
 }
 
+function Select-CanonicalLocalCheckout {
+    <#
+    .SYNOPSIS
+        Pure -- decide which local checkout represents a repository when the
+        same repository has been cloned more than once.
+
+    .DESCRIPTION
+        Two clones of one repository reach the assessment as two rows under one
+        identity. Dropping whichever arrived second made the portfolio depend on
+        directory enumeration order: for MusicLibrary_v2 the index snapshot kept
+        the active checkout and the status cache kept the archived one, on the
+        same day, for the same repository (Lane 0.12). Whichever survived, the
+        other vanished with no trace -- so the operator could not tell that a
+        second checkout existed, let alone that the wrong one was on screen.
+
+        Preference, in order, so the answer is a property of the checkouts and
+        never of the order they happened to be read in:
+
+          1. a checkout the scope policy left IN SCOPE beats one it excluded
+             (archived / vendored / excluded-path) -- filing a clone under
+             Archive/ is the operator's own answer to this question
+          2. a folder name matching the repository name beats one that differs
+             -- the rule Select-CanonicalRoadmapFile already applies to files
+          3. ordinal path comparison -- a stable tiebreak, so enumeration order
+             decides nothing even when the checkouts are otherwise equivalent
+
+        Returns the winner AND the checkouts it displaced. A discarded clone
+        that leaves no record is the failure this function exists to prevent.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter()][AllowEmptyCollection()][object[]]$Candidates = @())
+
+    $list = @(@($Candidates) | Where-Object { $null -ne $_ })
+    if ($list.Count -eq 0) { return $null }
+    if ($list.Count -eq 1) {
+        return [pscustomobject]@{ winner = $list[0]; dropped = @(); reason = '' }
+    }
+
+    $describe = {
+        param([object]$Repo)
+        $path = [string](_GetField -Obj $Repo -Name 'path' -Default (_GetField -Obj $Repo -Name 'localPath' -Default ''))
+        $scope = _GetField -Obj $Repo -Name 'scope' -Default $null
+        # No scope block at all means the classifier never ran; treat it as in
+        # scope rather than inventing an exclusion this repo never earned.
+        $inScope = if ($null -eq $scope) { $true } else { [bool](_GetField -Obj $scope -Name 'inScope' -Default $true) }
+        $name = [string](_GetField -Obj $Repo -Name 'name' -Default '')
+        $folder = [string](_GetField -Obj $Repo -Name 'folderName' -Default '')
+        if ([string]::IsNullOrWhiteSpace($folder) -and -not [string]::IsNullOrWhiteSpace($path)) {
+            $folder = Split-Path -Path ($path.TrimEnd('\', '/')) -Leaf
+        }
+        [pscustomobject]@{
+            repo          = $Repo
+            path          = $path
+            inScope       = $inScope
+            folderMatches = ((-not [string]::IsNullOrWhiteSpace($folder)) -and ((_NormalizeKey $folder) -eq (_NormalizeKey $name)))
+            scopeReason   = [string](_GetField -Obj $scope -Name 'reason' -Default '')
+        }
+    }
+
+    $ordered = @(@($list | ForEach-Object { & $describe $_ }) | Sort-Object `
+            @{ Expression = { -not $_.inScope }; Ascending = $true }, `
+            @{ Expression = { -not $_.folderMatches }; Ascending = $true }, `
+            @{ Expression = { _NormalizePathKey $_.path }; Ascending = $true })
+
+    $winner = $ordered[0]
+    $losers = @($ordered | Select-Object -Skip 1)
+
+    $why = if ($winner.inScope -and @($losers | Where-Object { -not $_.inScope }).Count -gt 0) {
+        'it is the working-portfolio checkout and the others sit outside the scope policy'
+    } elseif ($winner.folderMatches -and @($losers | Where-Object { -not $_.folderMatches }).Count -gt 0) {
+        'its folder name matches the repository name'
+    } else {
+        'it sorts first by path; the checkouts are otherwise equivalent'
+    }
+
+    return [pscustomobject]@{
+        winner  = $winner.repo
+        dropped = @($losers | ForEach-Object {
+                [pscustomobject]@{
+                    localPath = $_.path
+                    inScope   = $_.inScope
+                    reason    = $_.scopeReason
+                }
+            })
+        reason  = ("Selected {0} because {1}." -f $winner.path, $why)
+    }
+}
+
 function _GetPendingRoadmapItems {
     param([object]$RoadmapEntry, [object]$MaturityEntry)
 
@@ -570,12 +659,45 @@ function Invoke-PortfolioAssessment {
     $assessments = [System.Collections.Generic.List[object]]::new()
     $seenLocalKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
+    # Lane 0.12 -- group the checkouts BEFORE the loop and decide once. Deciding
+    # inside it ("first one wins") made the surviving clone a function of
+    # directory enumeration order, and silently discarded the other.
+    $checkoutsByKey = @{}
+    foreach ($candidate in @($LocalRepos)) {
+        if ($null -eq $candidate) { continue }
+        $candidateName = [string](_GetField -Obj $candidate -Name 'name' -Default '')
+        if ([string]::IsNullOrWhiteSpace($candidateName)) { continue }
+        $candidateKey = _NormalizeKey $candidateName
+        if (-not $checkoutsByKey.ContainsKey($candidateKey)) {
+            $checkoutsByKey[$candidateKey] = [System.Collections.Generic.List[object]]::new()
+        }
+        $checkoutsByKey[$candidateKey].Add($candidate) | Out-Null
+    }
+    $canonicalByKey = @{}
+    foreach ($candidateKey in @($checkoutsByKey.Keys)) {
+        $canonicalByKey[$candidateKey] = Select-CanonicalLocalCheckout -Candidates @($checkoutsByKey[$candidateKey].ToArray())
+    }
+
     foreach ($repo in @($LocalRepos)) {
         if ($null -eq $repo) { continue }
         $repoName = [string](_GetField -Obj $repo -Name 'name' -Default '')
         if ([string]::IsNullOrWhiteSpace($repoName)) { continue }
         $key = _NormalizeKey $repoName
         if (-not $seenLocalKeys.Add($key)) { continue }
+
+        # One row per repository, but the row is the CHOSEN checkout — not
+        # whichever one this loop reached first — and it names the ones it
+        # displaced so a second clone can never vanish unremarked.
+        $duplicateCheckouts = $null
+        $canonical = $canonicalByKey[$key]
+        if ($null -ne $canonical -and @($canonical.dropped).Count -gt 0) {
+            $repo = $canonical.winner
+            $duplicateCheckouts = [pscustomobject]@{
+                selectedPath    = [string](_GetField -Obj $canonical.winner -Name 'path' -Default (_GetField -Obj $canonical.winner -Name 'localPath' -Default ''))
+                selectionReason = [string]$canonical.reason
+                dropped         = @($canonical.dropped)
+            }
+        }
 
         # Status-scan repos expose the repo directory as 'path'; only synthetic
         # callers (fixtures, index conversions) use 'localPath'. Accept both —
@@ -766,6 +888,7 @@ function Invoke-PortfolioAssessment {
             structureFindings   = @($structFindings)
             docFindingCount     = @($docFindings).Count
             dispatchReadinessExplanation = $dispatchReadinessExplanation
+            duplicateCheckouts  = $duplicateCheckouts
         }) | Out-Null
     }
 
@@ -1376,6 +1499,7 @@ function New-PortfolioIndexPayload {
             hasTestSignal       = [bool](_GetField -Obj $assessment -Name 'hasTestSignal' -Default $false)
             docFindingCount     = [int](_GetField -Obj $assessment -Name 'docFindingCount' -Default 0)
             structureFindings   = @(_GetField -Obj $assessment -Name 'structureFindings' -Default @())
+            duplicateCheckouts  = _GetField -Obj $assessment -Name 'duplicateCheckouts' -Default $null
         }) | Out-Null
     }
 
@@ -1525,6 +1649,7 @@ function Convert-PortfolioIndexReposToAssessments {
             lastScanError       = _GetField -Obj $repo -Name 'lastScanError' -Default $null
             curationState       = [string](_GetField -Obj $repo -Name 'curationState' -Default 'none')
             curationUpdatedAt   = _GetField -Obj $repo -Name 'curationUpdatedAt' -Default $null
+            duplicateCheckouts  = _GetField -Obj $repo -Name 'duplicateCheckouts' -Default $null
         }) | Out-Null
     }
 
