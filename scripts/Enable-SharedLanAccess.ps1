@@ -151,30 +151,54 @@ if ($PSCmdlet.ShouldProcess($ServiceName, "reconfigure -BindAddress $BindAddress
 # ── 4. Verify, rather than trust ─────────────────────────────────────────────
 Write-Step 'Verifying the live host'
 if ($PSCmdlet.ShouldProcess($portalUrl, 'verify auth over the LAN bind')) {
-    $probeBase = if ($lanIp -match '^\d') { "http://${lanIp}:$Port" } else { "http://127.0.0.1:$Port" }
+    # Probe BOTH schemes rather than assuming http. Once a TLS certificate is
+    # configured (Lane 0.2) the host serves https ONLY and http stops answering,
+    # so a hardcoded http probe would burn the full 90s and then blame the
+    # service. The scheme that answers first is used for the auth probes below;
+    # -SkipCertificateCheck because the portal's certificate is self-signed by
+    # design and these probes assert reachability and auth, not trust.
+    $probeHost = if ($lanIp -match '^\d') { $lanIp } else { '127.0.0.1' }
+    $probeBase = $null
+    $lastProbeError = ''
     $deadline = (Get-Date).AddSeconds(90)
-    $up = $false
-    while ((Get-Date) -lt $deadline -and -not $up) {
-        try {
-            $h = Invoke-WebRequest -Uri "$probeBase/health/live" -SkipHttpErrorCheck -TimeoutSec 5
-            if ([int]$h.StatusCode -ge 200) { $up = $true }
-        } catch { Start-Sleep -Seconds 2 }
+    while ((Get-Date) -lt $deadline -and -not $probeBase) {
+        foreach ($probeScheme in @('https', 'http')) {
+            try {
+                $candidate = "${probeScheme}://${probeHost}:$Port"
+                $h = Invoke-WebRequest -Uri "$candidate/health/live" -SkipHttpErrorCheck -SkipCertificateCheck -TimeoutSec 5
+                if ([int]$h.StatusCode -ge 200) { $probeBase = $candidate; break }
+            } catch {
+                # A scheme the host is not serving refuses or resets the
+                # connection -- that IS this probe's negative answer, kept so a
+                # total timeout can say what the last attempt actually saw.
+                $lastProbeError = "${probeScheme}: $($_.Exception.Message)"
+            }
+        }
+        if (-not $probeBase) { Start-Sleep -Seconds 2 }
     }
-    if (-not $up) { throw "The service did not answer on $probeBase within 90s. Check: Get-Service $ServiceName; and backend\modules\output\logs\apihost.log" }
+    $up = [bool]$probeBase
+    if (-not $up) { throw "The service did not answer on ${probeHost}:$Port (https or http) within 90s. Last probe error: $lastProbeError. Check: Get-Service $ServiceName; and backend\modules\output\logs\apihost.log" }
     Write-Note "reachable on $probeBase"
 
     $probe = "$probeBase/api/persistence/status"
-    $anon = Invoke-WebRequest -Uri $probe -SkipHttpErrorCheck -TimeoutSec 30
+    $anon = Invoke-WebRequest -Uri $probe -SkipHttpErrorCheck -SkipCertificateCheck -TimeoutSec 30
     if ([int]$anon.StatusCode -ne 401) {
         throw "SECURITY: an unauthenticated request to $probe returned $([int]$anon.StatusCode), not 401. The API is exposed on the LAN without a key — revert with -BindAddress 127.0.0.1 now."
     }
     Write-Note 'anonymous request rejected (401)'
 
-    $keyed = Invoke-WebRequest -Uri $probe -Headers @{ 'X-Api-Key' = $ApiKey } -SkipHttpErrorCheck -TimeoutSec 30
+    $keyed = Invoke-WebRequest -Uri $probe -Headers @{ 'X-Api-Key' = $ApiKey } -SkipHttpErrorCheck -SkipCertificateCheck -TimeoutSec 30
     if ([int]$keyed.StatusCode -ne 200) {
         throw "A keyed request returned $([int]$keyed.StatusCode), not 200. The key in the Machine environment and the one the service loaded disagree — restart $ServiceName and retry."
     }
     Write-Note 'keyed request accepted (200)'
+
+    # The URL the operator carries away reflects the scheme the host actually
+    # answered on, not the http this script assumed before probing.
+    if ($probeBase -match '^(https?)://') {
+        $portalUrl = "$($Matches[1])://${lanIp}:$Port"
+        $script:ProbedScheme = $Matches[1]
+    }
 }
 
 Write-Host ''
@@ -195,12 +219,23 @@ Write-Note 'The key is shown once. It lives in the Machine environment, not in t
 Write-Note 'On the phone: open the portal URL and paste the key when prompted; it is stored client-side'
 Write-Note 'and sent as X-Api-Key on every request.'
 Write-Host ''
-Write-Host 'TLS is NOT enabled.' -ForegroundColor Yellow
-Write-Note 'The portal serves plain HTTP, so this key crosses the LAN in the clear and so does'
-Write-Note 'anything typed into the portal. To fix, in this same elevated session:'
-Write-Note '  pwsh -File .\scripts\New-RepoManagementTlsCertificate.ps1 -Force'
-Write-Note '  pwsh -File .\scripts\Install-RepoManagementService.ps1 -Action Reconfigure'
-Write-Note 'That flips the portal to https://, and every plain http:// URL stops working.'
+# State the transport the verification actually saw, never an assumption. The
+# old text said "TLS is NOT enabled" unconditionally, which became false the day
+# the certificate was repaired (Lane 0.2, 2026-08-29) — a script asserting a
+# security posture it did not check is the exact defect the transport indicator
+# exists to prevent.
+if ((Get-Variable -Name ProbedScheme -Scope Script -ErrorAction SilentlyContinue) -and $script:ProbedScheme -eq 'https') {
+    Write-Host 'TLS is enabled.' -ForegroundColor Green
+    Write-Note 'The portal answered over https; the key and anything typed into it are encrypted in transit.'
+    Write-Note 'The certificate is self-signed — import backend\config\tls\portal.cer on the phone to avoid the warning.'
+} else {
+    Write-Host 'TLS is NOT enabled.' -ForegroundColor Yellow
+    Write-Note 'The portal serves plain HTTP, so this key crosses the LAN in the clear and so does'
+    Write-Note 'anything typed into the portal. To fix, in this same elevated session:'
+    Write-Note '  pwsh -File .\scripts\New-RepoManagementTlsCertificate.ps1 -Force'
+    Write-Note '  pwsh -File .\scripts\Install-RepoManagementService.ps1 -Action Reconfigure'
+    Write-Note 'That flips the portal to https://, and every plain http:// URL stops working.'
+}
 Write-Host ''
 Write-Note 'To revert entirely:'
 Write-Note "  pwsh -File .\scripts\Install-RepoManagementService.ps1 -Action Reconfigure -BindAddress 127.0.0.1 -Port $Port"
