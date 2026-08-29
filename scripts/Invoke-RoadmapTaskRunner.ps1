@@ -90,7 +90,18 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) { $WorkspaceRoot = Split-Path -Parent $PSScriptRoot }
-if ([string]::IsNullOrWhiteSpace($QueuePath)) { $QueuePath = Join-Path $WorkspaceRoot 'output\roadmap-task-queue.jsonl' }
+
+# One resolver decides the queue path, here as everywhere else. Building it
+# inline made the RUNNER the one process that ignored REPO_MGMT_QUEUE_PATH --
+# so a smoke run could redirect every writer and still have the operator's
+# real runner draining the operator's real queue underneath it. That is the
+# same shape as the 2026-08-19 incident the resolver was introduced to end,
+# only from the reading side instead of the writing side.
+# Resolved from $PSScriptRoot, not $WorkspaceRoot: the runner is pointed at
+# fixture workspaces that carry no backend/ tree, and dot-sourcing off
+# $WorkspaceRoot made it exit at startup against every one of them.
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\automation\Automation.RoadmapQueue.ps1')
+if ([string]::IsNullOrWhiteSpace($QueuePath)) { $QueuePath = Get-RoadmapQueuePath -WorkspaceRoot $WorkspaceRoot }
 if ([string]::IsNullOrWhiteSpace($StopFilePath)) { $StopFilePath = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.stop' }
 $runsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
 
