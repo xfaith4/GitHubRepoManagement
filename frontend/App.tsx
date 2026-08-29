@@ -8,7 +8,7 @@ import MobileRepoHealth from './components/MobileRepoHealth';
 import OrientationOverlay, { hasSeenOrientation } from './components/OrientationOverlay';
 import { getStatus, getGithubRepoInsights, getSetupStatus, getAuthStatus, logout, type AuthStatus } from './services/apiClient';
 import { type RepoStatus, type GithubInsightsMeta } from './types';
-import { SettingsIcon } from './components/icons';
+import { HelpIcon, SettingsIcon } from './components/icons';
 
 function formatRelativeTime(date: Date): string {
   const diffMs = Date.now() - date.getTime();
@@ -84,6 +84,11 @@ function App() {
   // open signal — a counter rather than a boolean so repeated clicks re-open the
   // dialog after it has been dismissed.
   const [settingsOpenRequest, setSettingsOpenRequest] = useState(0);
+  // Help follows the same pattern, and for the same reason Settings did: it was
+  // a button in the Repository Grid's action bar, so the guide — and the term
+  // definitions, and the API reference — were unreachable from the six other
+  // tabs. A counter, not a boolean, so a second click re-opens after dismissal.
+  const [helpOpenRequest, setHelpOpenRequest] = useState(0);
   const [insightsMeta, setInsightsMeta] = useState<GithubInsightsMeta | null>(null);
   const [dataLastUpdated, setDataLastUpdated] = useState<Date | null>(null);
   const [relativeTime, setRelativeTime] = useState<string>('');
@@ -385,12 +390,24 @@ function App() {
                   </span>
                 )}
                 {renderViewToggle()}
-                {/* Settings moved out of the Repository Grid toolbar and into the
-                    header so it is reachable from every tab, not just the grid.
-                    GitHub API connection now lives inside this dialog. */}
+                {/* Help and Settings both moved out of the Repository Grid
+                    toolbar and into the header, so they are reachable from every
+                    tab rather than from one of seven. Help now carries the term
+                    definitions and the API reference that used to be their own
+                    grid-only buttons. */}
+                <button
+                  onClick={() => setHelpOpenRequest(n => n + 1)}
+                  className="ml-3 inline-flex items-center px-3 py-2 md:py-1.5 border border-gray-600 rounded-md text-sm font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 transition-colors"
+                  title="Guide, status-word definitions (Dirty, Stale, PRs, Blocked, L1–L4), and the backend API reference"
+                  aria-label="Help"
+                  data-testid="header-help-button"
+                >
+                  <HelpIcon className="w-4 h-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Help</span>
+                </button>
                 <button
                   onClick={() => setSettingsOpenRequest(n => n + 1)}
-                  className="ml-3 inline-flex items-center px-3 py-2 md:py-1.5 border border-gray-600 rounded-md text-sm font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 transition-colors"
+                  className="inline-flex items-center px-3 py-2 md:py-1.5 border border-gray-600 rounded-md text-sm font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 transition-colors"
                   title="Configure the local workspace path, scan depth, thresholds, and the GitHub API connection"
                   aria-label="Settings"
                   data-testid="header-settings-button"
@@ -425,6 +442,7 @@ function App() {
             insightsMeta={viewMode === 'github' && githubSource ? insightsMeta : null}
             dataLastUpdated={dataLastUpdated}
             settingsOpenRequest={settingsOpenRequest}
+            helpOpenRequest={helpOpenRequest}
             onConnectGitHub={handleDataSourceChange}
             connectedGitHubUser={githubSource?.username ?? null}
         />

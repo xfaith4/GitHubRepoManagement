@@ -998,14 +998,24 @@ const EndpointCard: React.FC<{ ep: EndpointDef; defaultOpen?: boolean }> = ({ ep
 };
 
 // ---------------------------------------------------------------------------
-// Modal
+// Panel
 // ---------------------------------------------------------------------------
-interface ApiDocsModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
 
-const ApiDocsModal: React.FC<ApiDocsModalProps> = ({ isOpen, onClose }) => {
+/**
+ * The API reference, as a PANEL rather than a modal.
+ *
+ * It shipped as its own dialog behind its own button in the Repository Grid
+ * toolbar, which meant the reference for every backend route was reachable
+ * from exactly one of seven tabs. Help had the same problem and the same
+ * fix: both now live in one dialog, opened from the page header, so the
+ * answer is in the same place regardless of where you are standing when the
+ * question arrives.
+ *
+ * Rendering as a panel is what makes that possible — the dialog chrome
+ * (backdrop, Escape, focus trap, close button) belongs to the host once, not
+ * to each thing the host can show.
+ */
+const ApiReference: React.FC = () => {
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
@@ -1028,91 +1038,71 @@ const ApiDocsModal: React.FC<ApiDocsModalProps> = ({ isOpen, onClose }) => {
       );
   }, [search, activeCategory]);
 
-  if (!isOpen) return null;
-
   const totalRoutes = CATEGORIES.reduce((n, c) => n + c.endpoints.length, 0);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="mobile-sheet relative flex flex-col w-full max-w-5xl h-[90vh] bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden">
+    <div className="flex flex-col h-full min-h-0" data-testid="api-reference">
+      <div className="flex flex-wrap items-center gap-3 px-4 pt-3 pb-2">
+        <span className="text-[13px] text-gray-400">
+          {totalRoutes} routes · v1 · base URL <span className="font-mono text-gray-500">{API_DOCS_BASE_URL}</span>
+        </span>
+        <span className="text-[13px] text-gray-500">
+          Full schema: <span className="font-mono">docs/reference/contracts.md</span>
+        </span>
+      </div>
 
-        {/* ── Header ── */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold text-gray-100">API Reference</h2>
-            <span className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded-full">{totalRoutes} routes · v1</span>
-          </div>
+      <div className="flex flex-1 min-h-0">
+        {/* Category rail */}
+        <nav className="hidden md:flex flex-col w-52 flex-shrink-0 border-r border-gray-700/60 py-2 overflow-y-auto">
           <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-100 text-xl leading-none transition-colors"
-            title="Close"
+            onClick={() => setActiveCategory(null)}
+            className={`text-left px-4 py-2 text-sm transition-colors ${activeCategory === null ? 'text-gray-100 bg-gray-700/50' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/60'}`}
           >
-            ✕
+            All Routes
           </button>
-        </div>
-
-        {/* ── Body: sidebar + content ── */}
-        <div className="flex flex-1 min-h-0">
-
-          {/* Sidebar */}
-          <nav className="hidden md:flex flex-col w-52 flex-shrink-0 border-r border-gray-700/60 bg-gray-900/80 py-4 overflow-y-auto">
+          {CATEGORIES.map(cat => (
             <button
-              onClick={() => setActiveCategory(null)}
-              className={`text-left px-4 py-2 text-sm transition-colors ${activeCategory === null ? 'text-gray-100 bg-gray-700/50' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/60'}`}
+              key={cat.label}
+              onClick={() => setActiveCategory(cat.label === activeCategory ? null : cat.label)}
+              className={`text-left px-4 py-2 text-sm transition-colors ${activeCategory === cat.label ? 'text-gray-100 bg-gray-700/50' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/60'}`}
             >
-              All Routes
+              <span className={`mr-1.5 text-[13px] ${cat.color}`}>●</span>
+              {cat.label}
+              <span className="ml-1 text-[13px] text-gray-600">({cat.endpoints.length})</span>
             </button>
-            {CATEGORIES.map(cat => (
-              <button
-                key={cat.label}
-                onClick={() => setActiveCategory(cat.label === activeCategory ? null : cat.label)}
-                className={`text-left px-4 py-2 text-sm transition-colors ${activeCategory === cat.label ? 'text-gray-100 bg-gray-700/50' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/60'}`}
-              >
-                <span className={`mr-1.5 text-xs ${cat.color}`}>●</span>
-                {cat.label}
-                <span className="ml-1 text-xs text-gray-600">({cat.endpoints.length})</span>
-              </button>
+          ))}
+        </nav>
+
+        {/* Routes */}
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          <div className="px-4 pt-2 pb-2 flex-shrink-0">
+            <label htmlFor="api-reference-filter" className="sr-only">Filter API routes</label>
+            <input
+              id="api-reference-filter"
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Filter by path, method, or description…"
+              className="w-full bg-gray-800 border border-gray-600 rounded-md px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
+            />
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-6">
+            {filtered.length === 0 && (
+              <p className="text-gray-400 text-sm text-center mt-8">No routes match your filter.</p>
+            )}
+            {filtered.map(cat => (
+              <section key={cat.label}>
+                <h3 className={`text-[13px] font-bold uppercase tracking-widest mb-3 ${cat.color}`}>
+                  {cat.label}
+                </h3>
+                <div className="space-y-2">
+                  {cat.endpoints.map(ep => (
+                    <EndpointCard key={`${ep.method}:${ep.path}`} ep={ep} defaultOpen={false} />
+                  ))}
+                </div>
+              </section>
             ))}
-          </nav>
-
-          {/* Content */}
-          <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-
-            {/* Search bar */}
-            <div className="px-4 pt-3 pb-2 border-b border-gray-700/40 flex-shrink-0">
-              <input
-                type="text"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Filter by path, method, or description…"
-                className="w-full bg-gray-800 border border-gray-600 rounded-md px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-sky-500"
-              />
-            </div>
-
-            {/* Route list */}
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
-              {filtered.length === 0 && (
-                <p className="text-gray-500 text-sm text-center mt-8">No routes match your filter.</p>
-              )}
-              {filtered.map(cat => (
-                <section key={cat.label}>
-                  <h3 className={`text-xs font-bold uppercase tracking-widest mb-3 ${cat.color}`}>
-                    {cat.label}
-                  </h3>
-                  <div className="space-y-2">
-                    {cat.endpoints.map(ep => (
-                      <EndpointCard key={`${ep.method}:${ep.path}`} ep={ep} defaultOpen={false} />
-                    ))}
-                  </div>
-                </section>
-              ))}
-            </div>
-
-            {/* Footer */}
-            <div className="flex-shrink-0 px-4 py-2 border-t border-gray-700/40 text-xs text-gray-600 flex justify-between">
-              <span>Base URL: <span className="font-mono text-gray-500">{API_DOCS_BASE_URL}</span></span>
-              <span>Full schema: <span className="font-mono text-gray-500">docs/reference/contracts.md</span></span>
-            </div>
           </div>
         </div>
       </div>
@@ -1120,4 +1110,4 @@ const ApiDocsModal: React.FC<ApiDocsModalProps> = ({ isOpen, onClose }) => {
   );
 };
 
-export default ApiDocsModal;
+export default ApiReference;
