@@ -23,8 +23,6 @@ function renderActionBar(overrides: Partial<React.ComponentProps<typeof ActionBa
     onRefresh: vi.fn(),
     onInitClick: vi.fn(),
     onDocReviewClick: vi.fn(),
-    onApiDocsClick: vi.fn(),
-    onHelpClick: vi.fn(),
   };
   render(
     <ActionBar
@@ -94,5 +92,17 @@ describe('ActionBar bulk scope (Release 3.5 milestone 7)', () => {
   it('names the missing workspace root instead of the generic remedy', () => {
     renderActionBar({ repoCount: 0, missingRoots: ['F:\\Development\\20_Staging'] });
     expect(screen.getByTestId('no-repos-hint').textContent).toContain('F:\\Development\\20_Staging');
+  });
+
+  // Help and the API reference used to live here, which put the guide, the
+  // status-word definitions and the endpoint list behind a tab you had to be
+  // standing on to reach them. They are in the page header now. This asserts
+  // they did not come back: a second Help button is how the console ends up
+  // with two of something again, only one of which stays maintained.
+  it('carries no Help or API reference button — those are in the page header', () => {
+    renderActionBar();
+    expect(screen.queryByRole('button', { name: 'Help' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'API docs' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
   });
 });

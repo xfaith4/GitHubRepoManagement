@@ -870,6 +870,24 @@ Intent: **awareness, not enforcement.**
 
 **Re-homed from Release 3.1 on its closure (2026-08-15):**
 
+- [x] **The API contract gate could not pass on a machine running our own
+      shared-LAN configuration.**
+      [`Enable-SharedLanAccess.ps1`](scripts/Enable-SharedLanAccess.ps1) writes
+      `REPO_MGMT_API_KEY` and `REPO_MGMT_REQUIRE_API_KEY` at **Machine** scope —
+      correctly; that is the Release 2.9 feature doing its job. But a
+      machine-scope variable reaches every shell forever, so the host
+      [`Invoke-ApiContractTest.ps1`](scripts/Invoke-ApiContractTest.ps1) starts
+      inherited it, enforced auth, and answered `401` to tests that send no
+      credentials by design. Measured on this machine: **32 of 37 failed, every
+      one a `401`, not one a contract violation** — and the gate reported them
+      as 32 broken contracts, pointing at the routes instead of at the
+      environment. The same defect class as the task runner's inherited
+      `GITHUB_TOKEN`: a variable no one passed silently changing what a process
+      does. The gate now clears the inherited value for **its own process only**
+      and says so, leaving the operator's LAN auth intact at User and Machine
+      scope; auth enforcement stays the Auth smoke's gate, which sets the
+      variables itself. Verified both ways: 32 failures before, 37/37 after,
+      with a real machine-scope key inherited. _(state: shipped 2026-08-29)_
 - [ ] **[non-blocker]** **No `.gitattributes`, with `core.autocrlf=true`.**
       Byte-level comparisons are non-deterministic locally while passing in
       CI's fresh checkout (2026-08-13: 245 CRLF vs 245 LF read as drift); the
@@ -1166,6 +1184,38 @@ lift to `#858fa3` (4.51:1 on the worst surface, from 3.03:1), the ARIA tablist
 on the seven views, and `Escape`-to-close plus a focus trap on the two dialogs
 that had neither.
 
+- [x] **Put Help where the question gets asked, and give the console's words a
+      definition.** Two findings, one fix. **(a) Reach** — `Help` and
+      `API Docs` were buttons in the Repository Grid's action bar, so the
+      guide and the endpoint reference were reachable from one of seven tabs.
+      An operator on Today, Work Queue or Operations had no route to either.
+      They now sit in the page header beside `Settings`, which moved there for
+      exactly this reason in an earlier release, and they are **one dialog**:
+      the API reference is a tab inside Help
+      ([`ApiReference.tsx`](frontend/components/ApiReference.tsx), converted
+      from a modal to a panel) rather than a second button answering an
+      adjacent question. **(b) Vocabulary** — the console had no glossary.
+      Badge meanings lived in a legend inside the grid, readiness meanings in a
+      hover `title`, and maturity levels in a modal reachable only from a repo
+      that already had a roadmap; `docs/reference/status-vocabulary.md` settled
+      the model but in a file the operator never opens. A `Definitions` tab now
+      renders [`lib/glossary.ts`](frontend/lib/glossary.ts): every term states
+      what it means **and what computed it**, with a `caveat` wherever a
+      displayed value can be mistaken for a measurement it is not —
+      `PRs` reads 0 in Local mode because nothing populates it, `Clean` in
+      GitHub mode means unmeasured, `unknown` drift is not stale, and
+      `no-checklist` is a sound document, never a damaged one. The two
+      `Blocked` meanings are documented as two entries, which is Lane 0.15's
+      finding explained rather than resolved — the surfaces still share the
+      word. Drift is gated in both directions: the readiness and maturity
+      groups are `Record`s over their unions, so a new union member is a
+      **compile** error, and `glossary.test.ts` reads the vocabulary doc and
+      fails naming any documented value with no entry (proven by injecting
+      one). The doc itself was missing `no-checklist` from the readiness row;
+      added. Help also adopted `useDialogDismiss`, taking the dialog contract
+      to 3 of 20. _(state: shipped 2026-08-29 — 390 frontend tests green,
+      UI ratchet re-baselined down 649→643 tinyText and 5→4 outlineNone)_
+
 - [ ] **Collapse the ad-hoc button palette into a semantic token set.** The
       audit counted **21 distinct button background colors** on one tab. They
       are ad hoc, so no checker can currently tell a legitimate new one from an
@@ -1178,7 +1228,7 @@ that had neither.
       third ratchet rule ships with it. _(state: planned)_
 
 - [ ] **Raise the type floor from 12px to 13px.** **86% of console text renders
-      at ≤12px**; the ratchet baseline counts **651** sub-12px class uses across
+      at ≤12px**; the ratchet baseline counts **643** sub-12px class uses across
       the frontend. This is not a token swap: `text-xs` sets row heights
       throughout `RepoGrid`, `OperationsWorkspaceView` and the queue panels, so
       the floor moves layout on every dense surface and needs a visual pass per
@@ -1203,11 +1253,11 @@ that had neither.
       ignore signals. Serialize with a fixed key order and skip the write when
       the content is unchanged. _(state: planned)_
 
-- [ ] **Adopt the dialog dismiss contract in the remaining 18 modals.**
+- [ ] **Adopt the dialog dismiss contract in the remaining 17 modals.**
       [`useDialogDismiss`](frontend/hooks/useDialogDismiss.ts) now carries
       `Escape`-to-close, a focus trap and focus restoration, proven by seven
-      tests, and is wired into `SettingsModal` and
-      `RepositoryImprovementWorkflowModal`. **Twenty modal components ship in
+      tests, and is wired into `SettingsModal`,
+      `RepositoryImprovementWorkflowModal` and `HelpModal`. **Twenty modal components ship in
       this console and exactly one handled `Escape` before this lane**
       (`AgentRunSheet`, with its own inline implementation to be replaced by
       the hook). Each remaining dialog is a two-line change: call the hook,

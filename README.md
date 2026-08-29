@@ -276,7 +276,10 @@ The API host exposes ~55 routes. Key groups:
 | Notifications | `GET /api/notifications/webhooks`, `POST /api/notifications/webhooks` |
 | Logs | `GET /api/log/tail`, `GET /api/settings`, `POST /api/export` |
 
-Full interactive API reference available in-app via the **API Docs** button.
+Full interactive API reference available in-app: **Help** in the page header,
+then the **API Reference** tab. The same dialog's **Definitions** tab defines
+every status word the console uses (`Dirty`, `Stale`, `PRs`, `Blocked`,
+`L0`–`L4`) and names what computed each one.
 
 ---
 

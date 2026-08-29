@@ -14,7 +14,6 @@ import ArtifactsModal from './ArtifactsModal';
 import InsightsView from './InsightsView';
 import DocReviewModal from './DocReviewModal';
 import RoadmapViewerModal from './RoadmapViewerModal';
-import ApiDocsModal from './ApiDocsModal';
 import WorkQueueView from './WorkQueueView';
 import CopilotTaskPreviewModal from './CopilotTaskPreviewModal';
 import RoadmapAuditModal from './RoadmapAuditModal';
@@ -69,6 +68,11 @@ interface DashboardProps {
    * dialog re-opens after being dismissed.
    */
   settingsOpenRequest?: number;
+  /**
+   * Open signal for the Help dialog, driven by the header Help button. Same
+   * counter contract as `settingsOpenRequest`.
+   */
+  helpOpenRequest?: number;
   /** Connects the GitHub API view; surfaced inside the Settings dialog. */
   onConnectGitHub?: (username: string) => Promise<void>;
   connectedGitHubUser?: string | null;
@@ -79,7 +83,7 @@ const EXECUTION_METRICS_REFRESH_MS = 15_000;
 // execution metrics would be pure noise against a status that changes slowly.
 const AUTOMATION_STATUS_REFRESH_MS = 120_000;
 
-const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefreshing = false, error, fetchRepoStatus, dataSource, insightsMeta, dataLastUpdated, settingsOpenRequest = 0, onConnectGitHub, connectedGitHubUser }) => {
+const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefreshing = false, error, fetchRepoStatus, dataSource, insightsMeta, dataLastUpdated, settingsOpenRequest = 0, helpOpenRequest = 0, onConnectGitHub, connectedGitHubUser }) => {
   const [currentOperation, setCurrentOperation] = useState<OperationType | null>(null);
   const [isLogPanelOpen, setIsLogPanelOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -94,8 +98,11 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   const [docReviewTargetRepo, setDocReviewTargetRepo] = useState<string | null>(null);
   const [selectedRepoForArtifacts, setSelectedRepoForArtifacts] = useState<string | null>(null);
   const [isRoadmapViewerOpen, setIsRoadmapViewerOpen] = useState(false);
-  const [isApiDocsOpen, setIsApiDocsOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  // Mirrors the settings signal above; 0 is the initial value and never opens.
+  useEffect(() => {
+    if (helpOpenRequest > 0) setIsHelpOpen(true);
+  }, [helpOpenRequest]);
   const [selectedRoadmapRepo, setSelectedRoadmapRepo] = useState<string | null>(null);
   const [isCopilotTaskPreviewOpen, setIsCopilotTaskPreviewOpen] = useState(false);
   const [copilotTaskPreviewRepo, setCopilotTaskPreviewRepo] = useState<string | null>(null);
@@ -1415,8 +1422,6 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                     onRefresh={fetchRepoStatus}
                     onInitClick={() => setIsInitModalOpen(true)}
                   onDocReviewClick={() => { setDocReviewTargetRepo(null); setIsDocReviewModalOpen(true); }}
-                    onApiDocsClick={() => setIsApiDocsOpen(true)}
-                    onHelpClick={() => setIsHelpOpen(true)}
                     isActionRunning={!!currentOperation}
                     currentOperation={currentOperation}
                     settings={settings}
@@ -1754,11 +1759,6 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
         defaultOwner={dataSource?.source === 'github' ? dataSource.username : dataSource?.source === 'local' ? (dataSource.configuredGithubUser ?? null) : null}
         onClose={() => setIsRoadmapViewerOpen(false)}
         onScanComplete={handleRoadmapScanComplete}
-      />
-
-      <ApiDocsModal
-        isOpen={isApiDocsOpen}
-        onClose={() => setIsApiDocsOpen(false)}
       />
 
       <HelpModal

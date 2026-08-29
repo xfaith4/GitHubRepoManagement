@@ -17,7 +17,7 @@ UI belongs to exactly one dimension, and no two dimensions share a word.
 | --- | --- | --- | --- |
 | **Working tree** | `clean` · `dirty` | local scan (`git status`) | grid status chip, Dirty KPI |
 | **Remote drift** | `current` · `behind` · `ahead-or-unpushed` · `unknown` | local scan vs GitHub `pushed_at` (Release 3.1: drift, not age) | grid Stale column/chip, Stale KPI |
-| **Dispatch readiness** | `ready` · `needs-doc-standardization` · `missing-roadmap` · `roadmap-complete` · `parse-error` · `blocked` | docs-audit cache | Doc Readiness rows, grid readiness filter |
+| **Dispatch readiness** | `ready` · `needs-doc-standardization` · `missing-roadmap` · `roadmap-complete` · `no-checklist` · `parse-error` · `blocked` | docs-audit cache | Doc Readiness rows, grid readiness filter |
 | **Roadmap maturity** | `L0-Absent` → `L4-Orchestration-Ready` | roadmap contract audit | Insights maturity views, assessment |
 | **Execution lane** | `idle` · `ready` · `running` · `blocked` · `complete` | execution ledger | Execution Queue lanes |
 

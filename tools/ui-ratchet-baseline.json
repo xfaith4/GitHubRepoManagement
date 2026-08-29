@@ -1,7 +1,7 @@
 {
   "counts": {
-    "tinyText": 649,
-    "outlineNone": 5
+    "tinyText": 643,
+    "outlineNone": 4
   },
   "byFile": {
     "frontend/App.tsx": {
@@ -20,9 +20,9 @@
       "tinyText": 3,
       "outlineNone": 0
     },
-    "frontend/components/ApiDocsModal.tsx": {
-      "tinyText": 10,
-      "outlineNone": 1
+    "frontend/components/ApiReference.tsx": {
+      "tinyText": 5,
+      "outlineNone": 0
     },
     "frontend/components/ArtifactsModal.tsx": {
       "tinyText": 3,
@@ -65,7 +65,7 @@
       "outlineNone": 0
     },
     "frontend/components/HelpModal.tsx": {
-      "tinyText": 4,
+      "tinyText": 3,
       "outlineNone": 0
     },
     "frontend/components/InitModal.tsx": {

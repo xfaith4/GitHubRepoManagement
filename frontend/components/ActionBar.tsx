@@ -1,5 +1,5 @@
 import React from 'react';
-import { InitIcon, UpdateIcon, SyncIcon, ExportIcon, ArchiveIcon, RefreshIcon, SpinnerIcon, DocReviewIcon, RoadmapIcon, ApiDocsIcon, HelpIcon } from './icons';
+import { InitIcon, UpdateIcon, SyncIcon, ExportIcon, ArchiveIcon, RefreshIcon, SpinnerIcon, DocReviewIcon, RoadmapIcon } from './icons';
 import { type OperationType, type AppSettings } from '../types';
 import { canRunRepoActions, repoActionsBlockedReason } from '../lib/dataProvenance';
 import { bulkActionDisabledReason, type BulkActionKind } from '../lib/bulkScope';
@@ -10,8 +10,6 @@ interface ActionBarProps {
   onRefresh: () => void;
   onInitClick: () => void;
   onDocReviewClick: () => void;
-  onApiDocsClick: () => void;
-  onHelpClick: () => void;
   isActionRunning: boolean;
   currentOperation: OperationType | null;
   settings: AppSettings | null;
@@ -73,16 +71,15 @@ const ActionButton: React.FC<ActionButtonProps> = ({ onClick, disabled, isLoadin
 );
 
 
-const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, onInitClick, onDocReviewClick, onApiDocsClick, onHelpClick, isActionRunning, currentOperation, settings, selectedRepos, repoCount, missingRoots }) => {
+const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, onInitClick, onDocReviewClick, isActionRunning, currentOperation, settings, selectedRepos, repoCount, missingRoots }) => {
 
     const selection = selectedRepos.size > 0 ? Array.from(selectedRepos) : undefined;
     const selectionCount = selectedRepos.size;
     const cloneImplemented = false;
     const archiveImplemented = false;
 
-    // Repo-acting buttons need something to act on. Navigational/recovery
-    // controls (Refresh, Settings, Help, API docs) stay enabled — they are the
-    // way out of the empty state.
+    // Repo-acting buttons need something to act on. Refresh stays enabled — it
+    // is the way out of the empty state, as are Help and Settings in the header.
     const repoActionsEnabled = canRunRepoActions(repoCount, isActionRunning);
     const blockedReason = repoActionsBlockedReason(repoCount, missingRoots ?? []);
     // When nothing is in scope, the blocker replaces the action's own tooltip so
@@ -174,12 +171,11 @@ const ActionBar: React.FC<ActionBarProps> = ({ onAction, onExport, onRefresh, on
                 </ActionButton>
             </div>
             <div className="flex gap-3">
-                 <ActionButton onClick={onHelpClick} disabled={false} ariaLabel="Help" title="Open the end-to-end user guide for this application." icon={<HelpIcon className="w-4 h-4" />}>
-                    <span className="hidden sm:inline">Help</span>
-                 </ActionButton>
-                 <ActionButton onClick={onApiDocsClick} disabled={false} ariaLabel="API docs" title="View API reference documentation for all backend endpoints." icon={<ApiDocsIcon className="w-4 h-4" />} />
-                 {/* Settings moved to the page header (left of Sign out) so it is
-                     reachable from every tab, not just the Repository Grid. */}
+                 {/* Help, API reference and Settings all moved to the page header
+                     so they are reachable from every tab, not just the Repository
+                     Grid. Help and the API reference are now one dialog: they
+                     answered adjacent questions behind two separate buttons, and
+                     the API reference is a tab inside it. */}
                  <ActionButton onClick={onRefresh} disabled={isActionRunning} ariaLabel="Refresh" title="Refresh the current view." icon={<RefreshIcon className="w-4 h-4" />} />
             </div>
         </div>
