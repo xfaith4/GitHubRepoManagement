@@ -161,3 +161,111 @@ describe('buildOrientation — the newcomer test', () => {
     expect(text).toContain('Nothing here needs an action right now.');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Pin reasons (audit follow-up 2026-08-29).
+//
+// The live Today tab sorted correctly from row 3 down (90, 90, 87, 87, 86...)
+// while rows 1 and 2 carried 72 and NO score at all. The sort was right; a
+// second ordering key was simply undisclosed. These prove the row now says
+// which key put it there -- and, just as importantly, that rows the value
+// column already explains stay silent.
+// ---------------------------------------------------------------------------
+describe('pinReason', () => {
+  const outcome = (conclusion: string, withAction = true) => ({
+    conclusion,
+    reason: 'because.',
+    gapCount: 0,
+    gapDomains: [],
+    nextActionLabel: withAction ? 'Do the thing' : null,
+    nextActionRoute: withAction ? '/route' : null,
+  }) as never;
+
+  const entry = (over: Record<string, unknown>) => ({
+    repoId: String(over.repoId ?? over.repoName),
+    repoName: String(over.repoName),
+    ...over,
+  }) as never;
+
+  it('names curation when a favorite outranks higher-value work', () => {
+    const rows = buildTodayRows([
+      entry({
+        repoName: 'CupHandleDetectionv2',
+        outcome: outcome('strengthen'),
+        curationState: 'favorite',
+        topValueItem: null,
+      }),
+      entry({
+        repoName: 'HigherValue',
+        outcome: outcome('strengthen'),
+        curationState: 'none',
+        topValueItem: { text: 'x', valueScore: 90, valueTier: 'high' },
+      }),
+    ]);
+
+    expect(rows[0].repoName).toBe('CupHandleDetectionv2');
+    expect(rows[0].pinReason).toContain('favorite');
+    // The row whose position value already explains says nothing.
+    expect(rows[1].pinReason).toBeNull();
+  });
+
+  it('names the conclusion when it is the key that won', () => {
+    const rows = buildTodayRows([
+      entry({
+        repoName: 'Strengthen72',
+        outcome: outcome('strengthen'),
+        curationState: 'none',
+        topValueItem: { text: 'x', valueScore: 72, valueTier: 'medium' },
+      }),
+      entry({
+        repoName: 'Healthy90',
+        outcome: outcome('appropriate-as-is'),
+        curationState: 'none',
+        topValueItem: { text: 'y', valueScore: 90, valueTier: 'high' },
+      }),
+    ]);
+
+    expect(rows[0].repoName).toBe('Strengthen72');
+    expect(rows[0].pinReason).toContain('next step');
+    expect(rows[1].pinReason).toBeNull();
+  });
+
+  it('names actionability when only that separates the two', () => {
+    const rows = buildTodayRows([
+      entry({
+        repoName: 'Actionable',
+        outcome: outcome('strengthen', true),
+        curationState: 'none',
+        topValueItem: { text: 'x', valueScore: 10, valueTier: 'low' },
+      }),
+      entry({
+        repoName: 'NoAction',
+        outcome: outcome('strengthen', false),
+        curationState: 'none',
+        topValueItem: { text: 'y', valueScore: 99, valueTier: 'high' },
+      }),
+    ]);
+
+    expect(rows[0].repoName).toBe('Actionable');
+    expect(rows[0].pinReason).toContain('offers an action');
+  });
+
+  it('stays silent when the list is already in value order', () => {
+    const rows = buildTodayRows([
+      entry({
+        repoName: 'Top',
+        outcome: outcome('strengthen'),
+        curationState: 'none',
+        topValueItem: { text: 'x', valueScore: 90, valueTier: 'high' },
+      }),
+      entry({
+        repoName: 'Next',
+        outcome: outcome('strengthen'),
+        curationState: 'none',
+        topValueItem: { text: 'y', valueScore: 80, valueTier: 'high' },
+      }),
+    ]);
+
+    expect(rows.map(r => r.pinReason)).toEqual([null, null]);
+  });
+});

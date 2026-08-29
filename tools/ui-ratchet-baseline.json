@@ -1,6 +1,6 @@
 {
   "counts": {
-    "tinyText": 651,
+    "tinyText": 649,
     "outlineNone": 5
   },
   "byFile": {
@@ -193,7 +193,7 @@
       "outlineNone": 0
     },
     "frontend/components/WorkQueueView.tsx": {
-      "tinyText": 46,
+      "tinyText": 44,
       "outlineNone": 0
     }
   }

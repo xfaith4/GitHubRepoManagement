@@ -596,6 +596,163 @@ Describe 'Portfolio snapshot route - Release 3.5 milestones 1+2' {
             }
         }
     }
+    # ------------------------------------------------------------------
+    # Independent-derivation guards.
+    #
+    # Build-PortfolioSnapshot is now the single source every consumer reads,
+    # so consumer agreement is guaranteed BY CONSTRUCTION and is no longer
+    # evidence of correctness -- it only means the divergence that used to
+    # expose a dead unifier is gone. These two tests compare the snapshot
+    # against something derived a DIFFERENT way: a walk of the filesystem,
+    # and the cache record's own clock. Neither can be satisfied by the
+    # snapshot agreeing with itself.
+    # ------------------------------------------------------------------
+
+    It 'repoCount equals an independent filesystem enumeration at the configured scan depth' {
+        $cacheDir = Join-Path $script:WorkspaceRoot 'backend\modules\output\cache'
+        $null = New-Item -ItemType Directory -Path $cacheDir -Force
+        $cacheFile = Join-Path $cacheDir 'status-cache.json'
+        $restore = if (Test-Path -LiteralPath $cacheFile) { Get-Content -LiteralPath $cacheFile -Raw } else { $null }
+
+        try {
+            $settingsResponse = Invoke-ContractApiRequest -Method GET -Path '/api/settings'
+            $configured = @($settingsResponse.Json.data.inventory.localRoots | ForEach-Object { [string]$_ } |
+                    Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path -LiteralPath $_) })
+            $roots = if ($configured.Count -gt 0) { $configured } else { @($script:WorkspaceRoot) }
+            $depth = if ($settingsResponse.Json.data.inventory.maxDepth) { [int]$settingsResponse.Json.data.inventory.maxDepth } else { 3 }
+
+            # THE INDEPENDENT DERIVATION: walk the disk and count working trees.
+            # This consults neither the snapshot, the cache, nor any host code --
+            # it is the outside opinion the snapshot has to match.
+            $discovered = [System.Collections.Generic.List[string]]::new()
+            foreach ($root in $roots) {
+                $gitDirs = @(Get-ChildItem -LiteralPath $root -Directory -Force -Filter '.git' -Depth $depth -ErrorAction SilentlyContinue)
+                foreach ($g in $gitDirs) { $discovered.Add($g.Parent.FullName) }
+            }
+            $enumerated = @($discovered | Sort-Object -Unique)
+
+            if ($enumerated.Count -eq 0) {
+                Set-Content -LiteralPath $cacheFile -Value '' -Encoding UTF8
+                $response = Invoke-ContractApiRequest -Method GET -Path '/api/portfolio/snapshot'
+                $response.StatusCode | Should -Be 200
+                @($response.Json.data.degraded | Where-Object { $_.source -eq 'status-scan' }).Count |
+                    Should -BeGreaterThan 0 -Because 'with nothing on disk the metric must degrade by name, never report 0 as measured'
+                return
+            }
+
+            # Seed the cache FROM the enumeration, so the number the snapshot
+            # reports can only be right if its own counting is right.
+            $entry = @{
+                schemaVersion = 4
+                key           = '{0}|depth:{1}|nonGit:{2}' -f (($roots | ForEach-Object { ([string]$_).Trim().ToLowerInvariant() } | Sort-Object) -join ';'), $depth, $false
+                createdAtUtc  = (Get-Date).ToUniversalTime().ToString('o')
+                response      = @{
+                    success = $true
+                    data    = @{
+                        repos = @($enumerated | ForEach-Object {
+                                @{
+                                    name               = (Split-Path -Leaf $_)
+                                    path               = $_
+                                    status             = 'clean'
+                                    uncommittedChanges = 0
+                                    lastCommitAuthor   = 'enumeration-fixture'
+                                    commitsLastWeek    = 0
+                                    commitsLastMonth   = 0
+                                }
+                            })
+                    }
+                }
+            }
+            ($entry | ConvertTo-Json -Depth 20) | Set-Content -LiteralPath $cacheFile -Encoding UTF8
+
+            $response = Invoke-ContractApiRequest -Method GET -Path '/api/portfolio/snapshot'
+            $response.StatusCode | Should -Be 200
+
+            $repoCount = $response.Json.data.metrics.repoCount
+            $repoCount.source | Should -Be 'status-scan' -Because 'a cache miss would make this test vacuous'
+            [int]$repoCount.value | Should -Be $enumerated.Count -Because (
+                'the snapshot must agree with an independent walk of the disk ({0} working trees under {1} at depth {2}), not with itself' -f
+                $enumerated.Count, ($roots -join ';'), $depth)
+        }
+        finally {
+            if ($null -ne $restore) {
+                Set-Content -LiteralPath $cacheFile -Value $restore -Encoding UTF8 -NoNewline
+            }
+            else {
+                Remove-Item -LiteralPath $cacheFile -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    It 'the status clock is the cache record it derives from, not the moment of the build' {
+        $cacheDir = Join-Path $script:WorkspaceRoot 'backend\modules\output\cache'
+        $null = New-Item -ItemType Directory -Path $cacheDir -Force
+        $cacheFile = Join-Path $cacheDir 'status-cache.json'
+        $restore = if (Test-Path -LiteralPath $cacheFile) { Get-Content -LiteralPath $cacheFile -Raw } else { $null }
+
+        try {
+            $settingsResponse = Invoke-ContractApiRequest -Method GET -Path '/api/settings'
+            $configured = @($settingsResponse.Json.data.inventory.localRoots | ForEach-Object { [string]$_ } |
+                    Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path -LiteralPath $_) })
+            $roots = if ($configured.Count -gt 0) { $configured } else { @($script:WorkspaceRoot) }
+            $depth = if ($settingsResponse.Json.data.inventory.maxDepth) { [int]$settingsResponse.Json.data.inventory.maxDepth } else { 3 }
+
+            # A distinctive instant well in the past, so a snapshot that stamps
+            # "now" instead of the record's own time is unmistakable rather
+            # than off by milliseconds.
+            $sourceInstant = (Get-Date).ToUniversalTime().AddHours(-7).AddMinutes(-13)
+            $entry = @{
+                schemaVersion = 4
+                key           = '{0}|depth:{1}|nonGit:{2}' -f (($roots | ForEach-Object { ([string]$_).Trim().ToLowerInvariant() } | Sort-Object) -join ';'), $depth, $false
+                createdAtUtc  = $sourceInstant.ToString('o')
+                response      = @{
+                    success = $true
+                    data    = @{
+                        repos = @(
+                            @{
+                                name               = 'clock-fixture-repo'
+                                status             = 'clean'
+                                uncommittedChanges = 0
+                                lastCommitAuthor   = 'clock-fixture'
+                                commitsLastWeek    = 0
+                                commitsLastMonth   = 0
+                            }
+                        )
+                    }
+                }
+            }
+            ($entry | ConvertTo-Json -Depth 20) | Set-Content -LiteralPath $cacheFile -Encoding UTF8
+
+            $response = Invoke-ContractApiRequest -Method GET -Path '/api/portfolio/snapshot'
+            $response.StatusCode | Should -Be 200
+
+            $repoCount = $response.Json.data.metrics.repoCount
+            $repoCount.source | Should -Be 'status-scan' -Because 'a cache miss would make this test vacuous'
+
+            $styles = [System.Globalization.DateTimeStyles]::AdjustToUniversal -bor [System.Globalization.DateTimeStyles]::AssumeUniversal
+            $invariant = [System.Globalization.CultureInfo]::InvariantCulture
+
+            # Compared as INSTANTS against the record the value came from --
+            # not against the snapshot's own generatedAt.
+            $reported = [datetime]::Parse([string]$repoCount.asOf, $invariant, $styles)
+            $driftSeconds = [math]::Abs(($reported - $sourceInstant).TotalSeconds)
+            $driftSeconds | Should -BeLessThan 2 -Because 'the status clock must be the cache record createdAtUtc, not the build moment'
+
+            # Two clocks, each naming what it measures: generatedAt is the build
+            # moment and must NOT collapse onto the measurement instant.
+            $generated = [datetime]::Parse([string]$response.Json.data.generatedAt, $invariant, $styles)
+            $spread = [math]::Abs(($generated - $sourceInstant).TotalSeconds)
+            $spread | Should -BeGreaterThan 60 -Because 'generatedAt names when the snapshot was built; asOf names when the data was measured'
+        }
+        finally {
+            if ($null -ne $restore) {
+                Set-Content -LiteralPath $cacheFile -Value $restore -Encoding UTF8 -NoNewline
+            }
+            else {
+                Remove-Item -LiteralPath $cacheFile -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
 }
 
 Describe 'Branch cleanup route - Release 3.4 milestone 5' {
