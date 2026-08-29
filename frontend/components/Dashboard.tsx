@@ -32,7 +32,7 @@ import ReadmeGenerateModal from './ReadmeGenerateModal';
 import HelpModal from './HelpModal';
 import OperationsWorkspaceView from './OperationsWorkspaceView';
 import { VIEW_META_BY_KEY, type ViewKey } from '../viewMeta';
-import DashboardViewTabs from './DashboardViewTabs';
+import DashboardViewTabs, { viewPanelId, viewTabId } from './DashboardViewTabs';
 import ErrorBoundary from './ErrorBoundary';
 import PortfolioSummarySection from './PortfolioSummarySection';
 import { type ViewTabBadges } from '../lib/viewTabs';
@@ -1386,7 +1386,18 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
             {/* Per-view boundary: a crashed panel degrades to a named error
                 card while the tab strip and the other views keep working.
                 key={activeView} resets the boundary on every tab switch, so
-                one broken view never locks the operator out of the rest. */}
+                one broken view never locks the operator out of the rest.
+
+                The tabpanel wrapper closes the ARIA loop the tab strip opens:
+                each tab's aria-controls points here, and this points back at
+                the tab that selected it. Only the active panel is rendered, so
+                one wrapper carrying the active view's id is the whole set. */}
+            <div
+              role="tabpanel"
+              id={viewPanelId(activeView)}
+              aria-labelledby={viewTabId(activeView)}
+              tabIndex={0}
+            >
             <ErrorBoundary key={activeView} label={`The ${VIEW_META_BY_KEY[activeView].label} view`}>
             {activeView === 'today' ? (
               <TodayView
@@ -1643,6 +1654,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
               </div>
             )}
             </ErrorBoundary>
+            </div>
         </div>
       </div>
 

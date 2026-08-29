@@ -1150,6 +1150,173 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
 
 ---
 
+### Lane 0.14 — Console UI audit follow-ups (operator audit 2026-08-29)
+
+An operator audit of the live console found the product contradicting itself
+before it found anything visual: `Blocked` reads 1, 17 and 58 on three surfaces
+because six components use one word for different quantities; "how many
+repositories" has six denominators; and seven timestamps in one sitting span
+three clock bases. Those are Lane 0.15 (below). This lane is the part that is
+**component-wide styling debt** — real, counted, and deliberately not blocking
+anything.
+
+Four single-location fixes from the same audit already shipped and are not
+repeated here: the global `:focus-visible` ring, the muted-foreground token
+lift to `#858fa3` (4.51:1 on the worst surface, from 3.03:1), the ARIA tablist
+on the seven views, and `Escape`-to-close plus a focus trap on the two dialogs
+that had neither.
+
+- [ ] **Collapse the ad-hoc button palette into a semantic token set.** The
+      audit counted **21 distinct button background colors** on one tab. They
+      are ad hoc, so no checker can currently tell a legitimate new one from an
+      accidental one — which is why the UI ratchet
+      ([`tools/Measure-UiRatchet.mjs`](tools/Measure-UiRatchet.mjs)) counts
+      tiny text and unrestored `outline-none` but **not** button colors. That
+      rule is a consequence of this item, not a substitute for it.
+      **Done means the token set exists and CI rejects a raw hex or a bare
+      Tailwind color utility in a button background** — at which point the
+      third ratchet rule ships with it. _(state: planned)_
+
+- [ ] **Raise the type floor from 12px to 13px.** **86% of console text renders
+      at ≤12px**; the ratchet baseline counts **651** sub-12px class uses across
+      the frontend. This is not a token swap: `text-xs` sets row heights
+      throughout `RepoGrid`, `OperationsWorkspaceView` and the queue panels, so
+      the floor moves layout on every dense surface and needs a visual pass per
+      view. Re-baseline `tinyText` **downward** as views are converted — the
+      ratchet accepts a decrease and reports it. _(state: planned)_
+
+- [ ] **Add breakpoints above 768px.** The console declares **two responsive
+      breakpoints, both under 768px**, so every viewport from a laptop to a
+      wide desktop renders one fixed desktop layout — the 310 interactive
+      controls the audit counted on a single tab are laid out for none of them
+      specifically. Define the wide tiers and prove them at 1280px and 1920px.
+      _(state: planned)_
+
+- [ ] **Write `settings.json` with a stable key order, and not at all when
+      nothing changed.** A running portal rewrites
+      [`backend/config/settings.json`](backend/config/settings.json) with the
+      keys reordered and **no value altered** — verified by comparing the two
+      revisions with keys sorted. The file is tracked, so the working tree
+      reads dirty in every session for a change nobody made, and eventually
+      someone stages it without diffing. This is the same class as the rest of
+      the audit: the system generating noise that trains its operator to
+      ignore signals. Serialize with a fixed key order and skip the write when
+      the content is unchanged. _(state: planned)_
+
+- [ ] **Adopt the dialog dismiss contract in the remaining 18 modals.**
+      [`useDialogDismiss`](frontend/hooks/useDialogDismiss.ts) now carries
+      `Escape`-to-close, a focus trap and focus restoration, proven by seven
+      tests, and is wired into `SettingsModal` and
+      `RepositoryImprovementWorkflowModal`. **Twenty modal components ship in
+      this console and exactly one handled `Escape` before this lane**
+      (`AgentRunSheet`, with its own inline implementation to be replaced by
+      the hook). Each remaining dialog is a two-line change: call the hook,
+      attach the ref to the panel. _(state: planned)_
+
+---
+
+### Lane 0.15 — The console contradicts itself (operator audit 2026-08-29)
+
+The audit's headline, and the reason it outranks every visual finding: once an
+operator catches the console disagreeing with itself on a number, they stop
+trusting all of it. Each item below was **confirmed in code**, not inferred
+from the screenshot.
+
+- [ ] **Give the six `Blocked` counts six names.** `Blocked` reads **1, 17 and
+      58** on three surfaces simultaneously, and all three are correct — they
+      count different things: queue items in `blocked` execution state
+      ([`ExecutionQueuePanel.tsx:27`](frontend/components/ExecutionQueuePanel.tsx#L27)),
+      repos blocked from dispatch for missing docs or a roadmap parse error
+      ([`PortfolioMissionSection.tsx:36`](frontend/components/PortfolioMissionSection.tsx#L36)),
+      merge blockers on a single PR
+      ([`OperationsWorkspaceView.tsx:2179`](frontend/components/OperationsWorkspaceView.tsx#L2179)),
+      plus a per-repo badge and a filter value in `RepoGrid`. Reconciling the
+      numbers is the wrong fix — they are different quantities wearing one
+      word. Name each, and state the denominator on the surface that shows it.
+      _(state: planned)_
+
+- [ ] **Stop the app switching data source without being asked.**
+      [`App.tsx:240`](frontend/App.tsx#L240) calls `setViewMode('github')` on a
+      successful GitHub fetch, and that fetch is reachable from inside the
+      Settings dialog via `onConnectGitHub` — so connecting a credential
+      silently changes which source the operator is _looking at_, and `Cancel`
+      cannot revert it because `viewMode` was never modal state. Connecting a
+      credential and choosing a view are different acts; the source toggle
+      already exists for the second. _(state: planned)_
+
+- [ ] **Never render "not computed" as a number.** In GitHub mode
+      `Dirty Repositories` shows **0**, which reads as "clean" and means "no
+      working tree exists here":
+      [`Dashboard.tsx:1043`](frontend/components/Dashboard.tsx#L1043) computes
+      it from `status === 'dirty' || uncommittedChanges > 0`, neither of which
+      the GitHub API can populate. Mode-dependent KPIs must render as
+      explicitly unavailable, the precedent Release 3.6's leverage panel
+      already set with its two `available: false` metrics. _(state: planned)_
+
+- [ ] **Show the Today rank basis instead of hiding it in a tooltip.** The
+      audit read a value-49 repo above a value-80 one as a sort bug; it is not.
+      `todayRanking` ranks conclusion, then curation, then whether a row offers
+      an action, and only then value
+      ([`todayRanking.ts:120-145`](frontend/lib/todayRanking.ts#L120-L145)), so
+      that order is correct and deliberate. The defect is that the `rankBasis`
+      audit trail the module already builds for exactly this question renders
+      **only as a `title=` tooltip**
+      ([`TodayView.tsx:187`](frontend/components/TodayView.tsx#L187)) — invisible,
+      hover-only, unreachable by keyboard. Do not change the comparator.
+      _(state: planned)_
+
+- [ ] **Fix the dead-end automation instruction.**
+      [`automationStatus.ts:100`](frontend/lib/automationStatus.ts#L100) tells
+      the operator _"Enable it in Settings to keep favorites assessed
+      automatically."_ The Settings dialog holds seven fields and none of them
+      is that toggle — nor packaging, auto-scan, lane concurrency, or the
+      scoring thresholds that drive every number in the product. Either build
+      the control or stop naming it. _(state: planned)_
+
+**Already fixed (2026-08-29) — the snapshot route answered 500 on every
+operator machine.** `Get-StatusFromCache` returns
+`{ hit, source, ageSeconds, cachedAt, response }` on every path: the payload is
+an API envelope under `response`, and the four other callers unwrap it that
+way. The snapshot route instead read `.entries` and `.scannedAt`, which is
+**`Get-RoadmapFromCache`'s** shape, so StrictMode threw the moment a status
+cache existed. All seven `/api/portfolio/snapshot` contract tests failed at
+their FIRST assertion (`StatusCode | Should -Be 200`), so every rule after it —
+including the timezone-basis and denominator invariants — never executed at
+all. CI passed because a fresh clone has no cache, `hit` is false, and the
+branch never ran: the gate was real but had **never once evaluated this path**.
+Fixed by unwrapping `response.data.repos` and taking the UTC `cachedAt` as the
+status basis. A regression test now writes a cache fixture so the branch runs
+on a fresh clone too, and asserts the fixture's own repo count so a key
+mismatch fails loudly instead of silently skipping — verified by re-injecting
+the bug and watching the guard alone go red.
+
+- [ ] **Reconcile the six repository denominators and the three clock bases.**
+      One sitting showed **seven timestamps across three clock bases, one
+      running four hours fast** — exactly the UTC-vs-EDT offset, so the likely
+      cause is a single UTC value rendered as local rather than three
+      independent defects. Establish one clock and one repository denominator,
+      and name the denominator wherever a count is shown.
+      **The reconciliation layer has never run in production**, which is the
+      most probable cause of the whole contradiction class: `Build-PortfolioSnapshot`
+      is the "one snapshot, one clock, one provenance" unifier, and it 500'd on
+      every real machine until the fix above, so every consumer fell back to
+      computing its own numbers independently. Re-audit the console against a
+      working snapshot before assuming the remaining divergence is separate.
+      Note the raw divergence is already visible: the same session reported
+      `repoCount` **72** from the status cache and **58** from the assessment
+      scan. _(state: planned)_
+
+- [ ] **Close the timestamp-basis test's own blind spot.** The contract test
+      _"every timestamp field in key payloads carries an explicit timezone
+      basis"_ guards its check with `-and $value -is [string]`, and
+      PowerShell's `ConvertFrom-Json` silently promotes an ISO-8601 string to
+      `[datetime]`. Every timestamp that parses as a date is therefore skipped
+      by the very test that exists to check timestamps. Assert against the raw
+      response body instead, as the new cache-fixture test does.
+      _(state: planned)_
+
+---
+
 ## 8. Risks and Guardrails
 
 Full list in [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md);

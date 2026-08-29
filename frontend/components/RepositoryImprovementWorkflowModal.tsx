@@ -3,6 +3,7 @@ import type { DispatchExecuteResult, DocAuditEntry, RepositoryImprovementPreview
 import { executeRoadmapDispatch, getRunnerPresence, previewRepositoryImprovement } from '../services/apiClient';
 import { resolveDispatchGate, runnerStartCommand, type RunnerPresencePayload } from '../lib/runnerPresence';
 import { SpinnerIcon } from './icons';
+import { useDialogDismiss } from '../hooks/useDialogDismiss';
 
 interface RepositoryImprovementWorkflowModalProps {
   isOpen: boolean;
@@ -24,6 +25,9 @@ const RepositoryImprovementWorkflowModal: React.FC<RepositoryImprovementWorkflow
   onDispatchComplete,
 }) => {
   const sortedRepos = useMemo(() => [...repos].sort((a, b) => a.repoName.localeCompare(b.repoName)), [repos]);
+  // Escape closes and Tab stays inside. Safe here even mid-dispatch: onClose
+  // dismisses the dialog, it does not cancel work already handed to the queue.
+  const panelRef = useDialogDismiss<HTMLDivElement>(isOpen, onClose);
   const [repoName, setRepoName] = useState('');
   const [phase, setPhase] = useState<Phase>('select');
   const [preview, setPreview] = useState<RepositoryImprovementPreview | null>(null);
@@ -95,10 +99,16 @@ const RepositoryImprovementWorkflowModal: React.FC<RepositoryImprovementWorkflow
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className="mobile-sheet flex max-h-[92vh] w-full max-w-5xl flex-col rounded-xl border border-gray-700 bg-gray-900 shadow-2xl">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="guided-improvement-title"
+        className="mobile-sheet flex max-h-[92vh] w-full max-w-5xl flex-col rounded-xl border border-gray-700 bg-gray-900 shadow-2xl"
+      >
         <div className="flex items-start justify-between border-b border-gray-700 px-5 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-white">Guided repository improvement</h2>
+            <h2 id="guided-improvement-title" className="text-lg font-semibold text-white">Guided repository improvement</h2>
             <p className="mt-1 text-sm text-gray-400">Scan README and ROADMAP, review the exact task, then dispatch it to a pull request.</p>
           </div>
           <button onClick={onClose} className="text-lg leading-none text-gray-400 hover:text-white" aria-label="Close">✕</button>

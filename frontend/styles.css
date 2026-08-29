@@ -76,3 +76,51 @@
     min-height: 44px;
   }
 }
+
+/* --- Audit follow-up: focus visibility -----------------------------------
+   The console had no visible focus indicator anywhere. Several components
+   clear the browser default with `focus:outline-none` and then style only
+   `focus:ring-*`, which paints a ring on mouse click but leaves keyboard
+   focus invisible on every control that forgot the ring -- most of them.
+
+   `:focus-visible` is the correct key: the browser already distinguishes a
+   keyboard focus from a mouse click, so this shows a ring exactly when one is
+   needed and never adds a click halo. Unlayered, so it wins over Tailwind's
+   `outline-none` utilities without needing !important or a component edit.
+
+   Written once here rather than per component for the same reason as the
+   touch-target floor above: focus visibility is a property of the INPUT
+   MODE, not of any button. */
+:focus-visible {
+  outline: 2px solid var(--color-sky-400, #74d4ff);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Dialogs take focus programmatically on open; the panel itself does not need
+   to advertise a ring for that. Its children still do. */
+[role="dialog"]:focus-visible {
+  outline: none;
+}
+
+/* --- Audit follow-up: muted-foreground contrast --------------------------
+   `text-gray-500` is this console's muted-foreground token -- 264 uses across
+   the components, carrying timestamps, counts, hints, and the "why now" that
+   the Today view ranks on. Against the two surfaces it actually renders on it
+   measured 3.03:1 (gray-800) and 3.67:1 (gray-900), both under the WCAG AA
+   4.5:1 floor for body text.
+
+   Lifting the token clears the whole class in one declaration instead of 264
+   edits. #858fa3 is the smallest lift that clears 4.5:1 on the WORST surface:
+
+     on gray-800  4.51:1     on gray-900  5.46:1     on gray-950  6.19:1
+
+   Fifteen non-text uses (status dots, a few borders) shift with it and read
+   as slightly lighter; none carry meaning that a lightness change alters.
+
+   This does not make the type scale legible -- 86% of text is still 12px or
+   below, and that floor moves every row height in the app, so it is a
+   roadmap item rather than a token change. */
+@theme {
+  --color-gray-500: #858fa3;
+}
