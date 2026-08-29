@@ -63,6 +63,24 @@
     when honored. `scripts/Stop-RoadmapTaskRunner.ps1` is the friendly front
     door.
 
+.PARAMETER ClearInheritedGitHubToken
+    Clear GH_TOKEN / GITHUB_TOKEN from this process before polling.
+
+    For the SCHEDULED TASK, which inherits the machine environment. On a box
+    where GITHUB_TOKEN is set at Machine scope, every copilot task the task
+    runner claimed would be refused by its own dispatch precondition -- `gh`
+    ignores its stored OAuth credential whenever an environment token is
+    present, and `gh agent-task` needs OAuth. The task would sit there looking
+    perfectly healthy in Task Scheduler and dispatch nothing, forever.
+
+    Deliberately opt-IN and never the default: run interactively and the
+    precondition still stops you with an explanation, which is the right
+    behaviour for a human who can act on it. Only the unattended path, which
+    has no one to tell, clears it -- and says so in its startup banner.
+
+    Claude-target tasks are unaffected: git inside them authenticates through
+    the credential helper, not this variable.
+
 .PARAMETER LoadFunctionsOnly
     Dot-source the pure functions without running (used by the module smoke).
 
@@ -83,11 +101,26 @@ param(
     [switch]$AcknowledgeStaleBase,
     [switch]$SyncMain,
     [string]$StopFilePath,
+    [switch]$ClearInheritedGitHubToken,
     [switch]$LoadFunctionsOnly
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# Unattended runs clear the inherited token before anything reads it, so the
+# dispatch precondition sees the session it would have had if a human had run
+# `$env:GITHUB_TOKEN=$null` first. Announced, never silent.
+if ($ClearInheritedGitHubToken) {
+    $clearedTokenNames = @('GH_TOKEN', 'GITHUB_TOKEN') |
+        Where-Object { -not [string]::IsNullOrWhiteSpace([System.Environment]::GetEnvironmentVariable($_)) }
+    foreach ($clearedTokenName in $clearedTokenNames) {
+        [System.Environment]::SetEnvironmentVariable($clearedTokenName, $null, 'Process')
+    }
+    if (@($clearedTokenNames).Count -gt 0) {
+        Write-Host ("  cleared inherited {0} for this process so gh uses its stored OAuth credential" -f ($clearedTokenNames -join ', ')) -ForegroundColor DarkYellow
+    }
+}
 
 if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) { $WorkspaceRoot = Split-Path -Parent $PSScriptRoot }
 

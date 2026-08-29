@@ -4806,6 +4806,25 @@ Write-Step 'Runner logon-task installer — smoke: refuses service accounts (Rel
     if ($argString -match '\-Headless') { throw 'Headless must be opt-in, not the default' }
     if ((New-RunnerTaskArgumentString -ScriptPath 'a' -WorkspaceRoot 'b' -Headless $true) -notmatch '\-Headless') { throw '-Headless must be passed through when requested' }
 
+    # A scheduled task inherits the machine environment. On a box with a
+    # Machine-scope GITHUB_TOKEN, `gh` ignores the OAuth credential that
+    # `gh agent-task` needs, so the runner's own precondition refuses every
+    # copilot item it claims -- while Task Scheduler reports the task healthy.
+    # Unconditional, because there is no variant of an unattended run that
+    # wants the inherited token.
+    if ($argString -notmatch '\-ClearInheritedGitHubToken') {
+        throw 'The scheduled task must pass -ClearInheritedGitHubToken, or an inherited GITHUB_TOKEN silently blocks every copilot dispatch.'
+    }
+    if ((New-RunnerTaskArgumentString -ScriptPath 'a' -WorkspaceRoot 'b') -notmatch '\-ClearInheritedGitHubToken') {
+        throw '-ClearInheritedGitHubToken must be unconditional, not opt-in, for the scheduled task.'
+    }
+    # And the runner must actually accept it, or the task launches into a
+    # parameter-binding error at every logon.
+    $runnerParamSource = Get-Content -LiteralPath (Join-Path $root 'scripts\Invoke-RoadmapTaskRunner.ps1') -Raw -Encoding UTF8
+    if ($runnerParamSource -notmatch '\[switch\]\$ClearInheritedGitHubToken') {
+        throw 'Invoke-RoadmapTaskRunner.ps1 must declare -ClearInheritedGitHubToken; the installer passes it.'
+    }
+
     foreach ($case in @(
             @{ Uninstall = $false; Exists = $false; Expected = 'install' },
             @{ Uninstall = $false; Exists = $true;  Expected = 'reinstall' },

@@ -108,6 +108,9 @@ function New-RunnerTaskArgumentString {
         truncates at the first space into a -WorkspaceRoot that does not exist.
         Deliberately never passes -Once — a logon task is the long-running poll
         loop, and -Once would exit after one sweep and look installed but idle.
+        Always passes -ClearInheritedGitHubToken, because a scheduled task
+        inherits the machine environment and an inherited token would make the
+        runner refuse every copilot dispatch it claimed.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -125,6 +128,13 @@ function New-RunnerTaskArgumentString {
     $parts.Add('-WorkspaceRoot'); $parts.Add(('"{0}"' -f $WorkspaceRoot))
     $parts.Add('-PollSeconds'); $parts.Add([string]$PollSeconds)
     $parts.Add('-PermissionMode'); $parts.Add(('"{0}"' -f $PermissionMode))
+    # Always, for a scheduled task: it inherits the machine environment, and a
+    # Machine-scope GITHUB_TOKEN makes `gh` ignore the OAuth credential that
+    # `gh agent-task` requires. Without this the task registers cleanly, reports
+    # healthy, claims copilot work and refuses every item of it -- the same
+    # "looks installed but does nothing" failure this installer refuses SYSTEM
+    # to avoid, arriving through the environment instead of the principal.
+    $parts.Add('-ClearInheritedGitHubToken')
     if ($Headless) { $parts.Add('-Headless') }
     return ($parts -join ' ')
 }
