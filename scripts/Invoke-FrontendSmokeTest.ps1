@@ -3,6 +3,11 @@ param(
     # Derived from this script's location rather than a hardcoded drive letter,
     # so the suite runs unmodified from any clone location (ROADMAP Lane 0.3).
     [string]$WorkspaceRoot = (Split-Path -Parent $PSScriptRoot),
+    # http by default because a fresh install serves plain HTTP; on a portal
+    # with TLS enabled (Lane 0.2, 2026-08-29) http stops answering entirely, so
+    # pass -BaseUrl https://127.0.0.1:7071 there. Requests below skip
+    # certificate validation for exactly that case: the portal's certificate is
+    # self-signed by design.
     [string]$BaseUrl = 'http://127.0.0.1:7071',
     [int]$TimeoutSeconds = 90,
     [switch]$NoStartApp
@@ -32,7 +37,9 @@ function Wait-HttpReady {
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
         try {
-            $response = Invoke-WebRequest -Uri $Uri -Method Get -TimeoutSec 5 -SkipHttpErrorCheck
+            # -SkipCertificateCheck: the portal's TLS certificate is self-signed
+            # by design, and this probe asserts reachability, not trust.
+            $response = Invoke-WebRequest -Uri $Uri -Method Get -TimeoutSec 5 -SkipHttpErrorCheck -SkipCertificateCheck
             if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 500) {
                 return
             }

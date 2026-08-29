@@ -64,11 +64,13 @@ and defined Releases 3.6 and 3.7.
       covers the watchdog _and_ the service installer; one authenticated shell
       covers the `gh agent-task` run and the re-homed live-portal proofs; the
       phone proof rides the same visit when the device is on the LAN.
-- [ ] **Lane 0.2's two items need an operator action outside this repository**
-      — the PAT's `Checks: Read` grant (optional; the `mergeStateStatus` proxy
-      is the working contract) and the portal TLS certificate password, whose
-      recovery path is exhausted and needs a regeneration in an elevated
-      session.
+- [ ] **Lane 0.2's remaining item needs an operator decision outside this
+      repository** — the PAT's `Checks: Read` grant (optional; the
+      `mergeStateStatus` proxy is the working contract). The TLS certificate
+      closed 2026-08-29: regenerated around the stored password and live as
+      `https://127.0.0.1:7071`. Operator note: plain `http://` bookmarks stop
+      working, and the login password is unrecoverable by design — reset with
+      `scripts\Set-PortalLogin.ps1` if forgotten.
 
 **Forward arc.** Releases 3.0-3.5 describe the finished product: dispatch that
 runs, the loop closing legibly and without a hand-off, numbers an operator can
@@ -796,21 +798,114 @@ Completed cross-cutting items are in
       protection). Granting it only adds `gh pr checks --watch` detail. Under a
       minimal-permissions policy it is legitimate to **decline permanently**; if
       declined, close this as "decided: proxy is the contract".
-- [ ] **Regenerate the portal TLS certificate (recovery is dead).** _(state:
-      planned — non-blocker; recovery path exhausted 2026-08-10)_
+- [x] **Regenerate the portal TLS certificate (recovery is dead).** _(state:
+      done 2026-08-29 — the portal serves HTTPS; verified live:
+      `tlsState: enabled`, `CN=localhost`, valid to 2031-08-29, and plain
+      `http://` no longer answers)_ The "one elevated step remains" note below
+      resolved itself: shawl's restart policy recycled the service during the
+      test-suite work and the new host loaded the repaired certificate — the
+      elevated restart was never run by hand. Unplanned, and worth recording:
+      the service's own restart policy is an unelevated path to picking up
+      config changes, at the cost of not choosing the moment.
       Machine-scoped `REPO_MGMT_TLS_PFX_PASSWORD` (17 chars) does not open
       `backend\config\tls\portal.pfx`, so the portal serves plain HTTP on
-      loopback while `REPO_MGMT_TLS_PFX` points at the pfx. **Recovery is no
-      longer an option:** the pre-#53 shawl logs that recorded the plaintext
-      password have rotated away — a 2026-08-10 sweep of the shawl log dir,
-      `evidence/`, and `output/` found zero `-PfxPassword` matches (which
-      also closes the old plaintext-leak concern). Remaining remedy is one
-      **elevated** session (the service is LocalSystem, so the env var must
-      be Machine-scope and the restart needs admin):
-      `scripts\New-RepoManagementTlsCertificate.ps1 -Force` (prints the new
-      password once), then `scripts\Install-RepoManagementService.ps1
-      -Action Reconfigure` with it. Note: enabling TLS flips the portal to
-      `https://127.0.0.1:7071` — plain `http://` URLs stop working.
+      loopback while `REPO_MGMT_TLS_PFX` points at the pfx. Re-confirmed
+      2026-08-29 against the live service, which logs the degraded state on
+      every start: `the certificate could not be loaded ("The specified
+      network password is not correct")`. The pfx on disk dates from
+      2026-07-07; the password was rotated after it and the certificate was
+      never regenerated to match, which is the whole defect.
+
+      **Recovery of the old password is not an option** and is not needed: the
+      pre-#53 shawl logs that recorded it have rotated away (a 2026-08-10 sweep
+      of the shawl log dir, `evidence/` and `output/` found zero `-PfxPassword`
+      matches, which also closes the old plaintext-leak concern).
+
+      **The remedy is cheaper than this item previously recorded.** The earlier
+      plan generated a NEW password and reconfigured the service, which needs
+      an elevated session twice over (a Machine-scope env write plus a service
+      restart). Instead, regenerate the certificate **around the password
+      already stored in `REPO_MGMT_TLS_PFX_PASSWORD`** — `New-RepoManagement‑
+      TlsCertificate.ps1` writes the pfx with .NET directly (no PKI module, no
+      certificate store, no elevation) and accepts `-PfxPassword`. Nothing then
+      has to change in the environment or in `settings.json`, so **only the
+      service restart needs admin**, and the blast radius is one file.
+
+      All steps are **done** (2026-08-29); only 5 (client trust) is optional
+      and still open — accept the browser warning, or import
+      `backend\config\tls\portal.cer`:
+
+      1. ~~Read the existing Machine-scope `REPO_MGMT_TLS_PFX_PASSWORD`; abort
+         if absent rather than inventing a new secret.~~ Present, 17 chars.
+      2. ~~`New-RepoManagementTlsCertificate.ps1 -Force -PfxPassword <existing>`
+         with SANs covering `localhost`, the hostname, `127.0.0.1` and the
+         current LAN IPv4.~~ Issued `CN=localhost`, SAN
+         `DNS=localhost, DNS=THESHIRE, IP=127.0.0.1, IP=192.168.50.200`,
+         thumbprint `3ECA086B0D5C…`, valid to 2031-08-29. The old pfx
+         (2026-07-07) is kept out of the repo as evidence; `*.pfx` and
+         `backend/config/tls/` are both gitignored, so no key is committed.
+      3. ~~Prove the pfx opens with the stored password before touching the
+         service, and prove the old one did not.~~ Both, with the **same**
+         password: old → `The specified network password is not correct`;
+         new → loads, `CN=localhost`, `notAfter=2031-08-29`. Nothing in the
+         environment or in `settings.json` changed, and no elevation was used.
+      4. ~~Restart `RepoMgmtPortal` (elevated).~~ Attempted unelevated and
+         refused as expected; then shawl's restart policy recycled the service
+         on its own and the new host loaded the certificate. Confirmed live:
+         `tlsState: enabled`, `encryptedInTransit: true`, 72 repos over
+         `https://127.0.0.1:7071`, plain `http://` refused.
+      5. Trust the exported `.cer` on this machine (`-TrustLocally`, also
+         elevated) or accept the browser warning; import it on the phone for
+         the LAN portal.
+
+      **Consequence, stated because it breaks working URLs:** once the
+      certificate loads, the host wraps every connection in an SslStream, so
+      the portal becomes `https://127.0.0.1:7071` and plain `http://` stops
+      answering. Bookmarks, the Vite dev proxy and any script calling the
+      loopback API must move to `https://`.
+
+- [x] **The HTTPS flip's fallout, swept rather than awaited.** _(state:
+      shipped 2026-08-29)_ Enabling TLS makes the portal stop answering plain
+      `http://`, so everything holding an `http` assumption about a live portal
+      broke or would have. Found by sweeping for `7071`/`http://` consumers,
+      not by waiting for each to fail:
+      [`Enable-SharedLanAccess.ps1`](scripts/Enable-SharedLanAccess.ps1) probed
+      `http` only (its verification would burn 90s and blame the service) and
+      printed "TLS is NOT enabled" unconditionally — it now probes both
+      schemes, tolerates the self-signed certificate, carries the answering
+      scheme into the phone URL it prints, and states the transport it actually
+      saw; the Vite dev proxy needed `secure: false` for a self-signed https
+      target; the frontend smoke's probe needed `-SkipCertificateCheck`;
+      [`ApiReference.tsx`](frontend/components/ApiReference.tsx) had a
+      hardcoded `http://192.168.50.200:7071` fallback — one operator's LAN
+      address compiled into every build, wrong host for anyone else and wrong
+      scheme for everyone — replaced with an honest "unavailable outside a
+      browser"; and [`Invoke-DailyEvidence.ps1`](scripts/Invoke-DailyEvidence.ps1)
+      was the fourth host-starting gate inheriting `REPO_MGMT_TLS_PFX`, now
+      cleared in its job and added to the inherited-env gate.
+
+- [x] **Surface `tlsState: degraded` to signed-in operators, not only at the
+      login screen.** _(state: shipped 2026-08-29 — found while diagnosing the
+      item above)_ The host has reported TLS state on every transport payload
+      since Release 3.x, and the frontend renders it in exactly one place:
+      [`Login.tsx:115`](frontend/components/Login.tsx#L115). An operator who is
+      already signed in — which is every operator, most of the time — is never
+      told that the portal claiming TLS is serving plain HTTP. That is how this
+      certificate stayed broken from 2026-08-10 to 2026-08-29 with the warning
+      printed on every single service start. **Done means the degraded state is
+      visible on an authenticated surface** (the page header carries
+      `RunnerHealthIndicator` and `AgentActivityIndicator` already and is the
+      obvious home), and a test proves it renders for `degraded` and stays
+      silent for `enabled`. Shipped as
+      [`TransportSecurityIndicator`](frontend/components/TransportSecurityIndicator.tsx)
+      in the page header, fed from the `authStatus` the header already holds —
+      no new request. It warns on two states and no others: `degraded` (config
+      claims TLS, the connection has none) and unencrypted on a **non-loopback**
+      bind (the shared-LAN path without a certificate). A plain-HTTP loopback
+      bind is the documented default and renders nothing, because a permanent
+      chip nobody needs is how the ones that matter stop being read. Eight tests
+      cover both directions, including that an unreported bind is not treated as
+      exposed.
 
 ### Lanes 0.3, 0.4 and 0.6 — closed entirely
 
@@ -869,6 +964,129 @@ Intent: **awareness, not enforcement.**
 ### Lane 0.8 — Verification gate integrity (CI audit 2026-08-10)
 
 **Re-homed from Release 3.1 on its closure (2026-08-15):**
+
+- [x] **Give the portal settings file the override its queue already has, so a
+      gate stops writing the file the operator is reading.** _(state: shipped
+      2026-08-29 — reproduced live, then closed)_
+      `Invoke-ApiHostSmokeTest.ps1` repoints the git-tracked
+      [`backend/config/settings.json`](backend/config/settings.json) at its own
+      fixture workspace for the duration of the gate. It restores the file
+      afterwards, byte-exact, and that restore works — but for the ~10 minutes
+      the gate runs, the **live portal reads the same file**. Observed
+      2026-08-29 during a routine suite run: the console emptied mid-session
+      because the status cache is keyed by scan root
+      (`f:\development\20_staging|depth:3|nonGit:False`), and while the fixture
+      path was installed that key had no entry to serve. The operator sees a
+      portfolio that has apparently vanished, with nothing on screen connecting
+      it to a test run.
+
+      This is the reading-side twin of the 2026-08-19 queue incident, and it
+      has the same shape of fix. Release 2.9 gave the queue `Get-RoadmapQueue‑
+      Path` plus `REPO_MGMT_QUEUE_PATH` so redirecting it is one decision
+      instead of four edits that can disagree; settings never got an
+      equivalent, so the only way for a gate to point the host at different
+      settings is to **overwrite the operator's copy**.
+
+      Note the smoke does not write the file directly — it `POST`s
+      `/api/settings` and the **host** writes it. So the override has to be
+      honoured by the host on both the read and the write path, or the fixture
+      POST lands on the tracked file regardless.
+
+      Precise steps:
+
+      1. Add `Get-PortalSettingsPath -WorkspaceRoot` beside the queue resolver's
+         pattern, honouring `REPO_MGMT_SETTINGS_PATH` and falling back to
+         `backend\config\settings.json`. Home it where both the api-host and
+         `backend/adapters` can dot-source it without a circular load.
+      2. Route all **seven** current construction sites through it: six in
+         [`Start-RepoManagementApiHost.ps1`](backend/api-host/Start-RepoManagementApiHost.ps1)
+         (settings read, secret-strip, setup-status probe, setup config write,
+         `GET /api/settings`, `POST /api/settings`) and one in
+         [`Adapters.ps1`](backend/adapters/Adapters.ps1) (the scope policy).
+      3. Point the api-host smoke at a temp copy via the override, and **delete
+         the backup/restore machinery it needed** — a restore that never has to
+         run is the proof the mutation is gone. Keep one assertion that the
+         tracked file's bytes are unchanged across the whole gate.
+      4. Extend the module-smoke queue-path gate to refuse inline settings-path
+         construction under `backend/`, with the same operator-path-only rule
+         under `scripts/` (the smokes legitimately build settings paths inside
+         their own fixture workspaces).
+      5. Prove it non-vacuously: the detector must fail a planted violating
+         fixture first, and the gate must name the file when the old inline
+         line is re-injected.
+
+      **Done means** a full api-host smoke run leaves `git status` clean for
+      `backend/config/settings.json` at every point during the run, not merely
+      at the end.
+
+      **Shipped, with two things the plan did not foresee.** First, there were
+      **three** gates writing the tracked file, not one:
+      `Invoke-AuthSmokeTest.ps1` did the same backup-and-restore, and
+      `Invoke-DailyEvidence.ps1` kept a net for both. All three now redirect or
+      declare intent, and the two host smokes assert the tracked bytes are
+      byte-identical across the run instead of restoring them. Second, the
+      auth smoke's "must not persist a secret into settings" assertions had to
+      follow the host's file rather than the tracked one — left pointing at the
+      tracked file they would pass because the host can no longer write it,
+      which is a vacuous green, not a proof.
+
+      The gate itself was **wrong on its first two attempts and the injection
+      test is what said so.** Attempt one anchored on
+      `'backend\config\settings.json'`, but `Adapters.ps1` resolves from
+      `backend\` and writes `'config\settings.json'` — re-injecting that exact
+      inline build left the gate green, meaning it would never have caught the
+      call site it was written for. Attempt two matched its own detector
+      fixtures. Final form: match any `Join-Path` ending in a
+      `config\settings.json`, skip the resolver and this smoke's own source,
+      exempt `Install-RepoManagementService.ps1` (acting on the operator's real
+      file is its job), and allow a `$...Tracked...` variable so the
+      untouched-assertions can still name the file. Verified both ways —
+      green clean, and red naming `Adapters.ps1` with the bypass re-injected.
+
+- [ ] **[non-blocker]** **Isolate the runner heartbeat the way the queue,
+      settings and TLS config now are.** _(state: planned — found 2026-08-29
+      while verifying the port and settings fixes)_ The api-host smoke asserts
+      the **no-operator-runner** path of the presence route
+      (`The smoke host has no operator runner; reporting one present would be
+      the false-green this route exists to prevent`). The route reads the real
+      heartbeat at `output\roadmap-task-runner.heartbeat.json`, so a live
+      scheduled runner makes it correctly report a runner and the assertion
+      fails. The operator must therefore **stop their runner to run the test
+      suite** — the same "a gate cannot coexist with the operator's live state"
+      shape as the three fixes above, and the last one left. CI never sees it
+      because a runner is never installed there. An override on the heartbeat
+      path, set by the smoke exactly as `REPO_MGMT_QUEUE_PATH` and
+      `REPO_MGMT_SETTINGS_PATH` now are, removes the constraint. Deliberately
+      **not** bundled into this PR: it changes what the presence route reads,
+      which deserves its own change and its own proof.
+
+- [x] **The api-host smoke defaulted to the port the portal service listens
+      on, and the host it starts evicts whatever holds that port.** _(state:
+      shipped 2026-08-29 — found while verifying the settings override above)_
+      `Invoke-ApiHostSmokeTest.ps1` declared `-Port 7071` and
+      `-BaseUrl http://127.0.0.1:7071` as its DEFAULTS. 7071 is the installed
+      portal service's port, and `Start-RepoManagementApiHost.ps1` deliberately
+      terminates whatever already holds the port it is told to bind, so that a
+      restart-in-place is not blocked by its own stale process. Pointed at the
+      operator's port, that mechanism attacks the operator's service:
+
+      ```text
+      Port 7071 is already in use by pwsh (PID 35160). Terminating it before startup.
+      ```
+
+      The portal survived only because an unelevated smoke cannot kill a
+      LocalSystem service — luck, not design; run from an elevated shell it
+      would have taken the portal down mid-session.
+      [`Invoke-TestSuite.ps1`](scripts/Invoke-TestSuite.ps1) always passed
+      `7171` explicitly, so the suite was never exposed and the default sat
+      unnoticed behind it; only a direct invocation reached it.
+
+      Two changes, because the default alone is not a guarantee: the default is
+      now **7171**, and the smoke **refuses to start** when anything already
+      holds its target port, naming the PID and process rather than evicting
+      it. An explicit `-Port 7071` is now a refusal, not a kill. Verified both:
+      `-Port 7071` against the live service refuses by name and leaves PID
+      35160 listening; the default run proceeds untouched.
 
 - [x] **The API contract gate could not pass on a machine running our own
       shared-LAN configuration.**

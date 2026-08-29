@@ -9,8 +9,18 @@ param(
     # [::1]:7071, so every 'localhost' request burned ~2s in a dual-stack
     # fallback and left each connect at the mercy of firewall timing. Direct
     # IPv4 makes each request ~2ms and removes that fragility entirely.
-    [string]$BaseUrl = 'http://127.0.0.1:7071',
-    [int]$Port = 7071,
+    # 7171, NOT 7071. 7071 is the port the INSTALLED PORTAL SERVICE listens on,
+    # and the api-host's startup terminates whatever already holds the port it
+    # is told to bind -- by design, so a restart-in-place is not blocked by its
+    # own stale process. Defaulting this gate to 7071 pointed that mechanism at
+    # the operator's live service: run the smoke directly, with no -Port, and it
+    # tries to kill the portal. Observed 2026-08-29:
+    #   "Port 7071 is already in use by pwsh (PID 35160). Terminating it before startup."
+    # It survived only because an unelevated smoke cannot kill a LocalSystem
+    # service -- luck, not design. Invoke-TestSuite.ps1 always passed 7171
+    # explicitly, so the suite was never exposed and the default went unnoticed.
+    [string]$BaseUrl = 'http://127.0.0.1:7171',
+    [int]$Port = 7171,
     # Per-request timeout. Cold cache routes that scan a full workspace
     # (e.g. /api/portfolio/assessment) can legitimately take well over 30s on a
     # large real workspace, so the default is generous enough to let them finish
@@ -42,12 +52,24 @@ if (-not $PSBoundParameters.ContainsKey('BaseUrl') -and $PSBoundParameters.Conta
 $BaseUrl = $BaseUrl.TrimEnd('/')
 Write-Host ("[INFO] api-host smoke targeting {0} (host boots on port {1})" -f $BaseUrl, $Port) -ForegroundColor DarkGray
 
-# Declared BEFORE the try so the finally block can always read them. These are
-# assigned for real just before the first settings write; under StrictMode an
-# early failure would otherwise make the finally throw
+# Declared BEFORE the try so the finally block can always read them. Under
+# StrictMode an early failure would otherwise make the finally throw
 # "variable ... has not been set" and replace the actual error with a bogus one.
+#
+# This smoke NO LONGER WRITES the git-tracked settings file. The host is pointed
+# at a private copy through REPO_MGMT_SETTINGS_PATH (see the isolation block
+# below), so the tracked bytes are captured here only to PROVE the file was
+# never touched. That assertion is worth more than the restore it replaces: a
+# restore still leaves a ~10-minute window in which the live portal reads the
+# fixture path, and on 2026-08-29 that emptied the operator's console
+# mid-session with nothing on screen connecting it to a test run.
 $script:TrackedSettingsPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
-$script:TrackedSettingsBackup = $null
+$script:TrackedSettingsAtStart = if (Test-Path -LiteralPath $script:TrackedSettingsPath) {
+    Get-Content -LiteralPath $script:TrackedSettingsPath -Raw -Encoding UTF8
+} else { $null }
+# The copy the HOST reads and writes for the whole run; assigned once $smokeRoot
+# exists, beside the queue isolation.
+$script:HostSettingsPath = $null
 
 $hostScript = Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1'
 $smokeRoot = Join-Path $WorkspaceRoot 'output\smoke\api-host'
@@ -320,11 +342,52 @@ $smokeQueuePath = Join-Path $smokeRoot 'roadmap-task-queue.jsonl'
 Remove-Item -LiteralPath $smokeQueuePath -Force -ErrorAction SilentlyContinue
 Write-Host ("  queue isolated to {0} (the operator's real queue is untouched)" -f $smokeQueuePath) -ForegroundColor DarkGray
 
+# The settings twin of the queue isolation above -- the same lesson, learned on
+# the reading side. This smoke has to point the host at a fixture workspace, and
+# its only way to do that was to POST /api/settings and let the host overwrite
+# the git-TRACKED file, restoring it afterwards. The restore worked; the window
+# did not. The host now resolves settings through Get-PortalSettingsPath, which
+# honours REPO_MGMT_SETTINGS_PATH, so the fixture config lands somewhere only
+# this test looks and the operator's portal keeps serving the portfolio.
+#
+# Seeded from the tracked file's bytes so the run starts from the operator's
+# real configuration -- the point is to stop WRITING that file, not to test
+# against a different one.
+# Refuse to start on a port something else already holds, rather than letting
+# the host's restart-in-place mechanism terminate it. The default above is now
+# 7171, but an explicit -Port can still name the portal's, and "the gate killed
+# the service" must not be reachable by a typo. Reported, never silently worked
+# around: the operator picks the port, this only declines to take one.
+$occupant = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($null -ne $occupant) {
+    $occupantName = (Get-Process -Id $occupant.OwningProcess -ErrorAction SilentlyContinue).ProcessName
+    throw ("Port {0} is already held by PID {1} ({2}). This smoke will not evict it -- the api-host terminates whatever holds the port it binds, and on {0} that is usually the installed portal service. Re-run with -Port on a free port." -f $Port, $occupant.OwningProcess, ($occupantName ?? 'unknown'))
+}
+
+$script:HostSettingsPath = Join-Path $smokeRoot 'settings.smoke.json'
+Set-Content -LiteralPath $script:HostSettingsPath `
+    -Value $(if ($null -ne $script:TrackedSettingsAtStart) { $script:TrackedSettingsAtStart } else { '{}' }) `
+    -Encoding UTF8 -NoNewline
+Write-Host ("  settings isolated to {0} (the operator's tracked settings.json is never written)" -f $script:HostSettingsPath) -ForegroundColor DarkGray
+
 $job = Start-Job -ScriptBlock {
-    param($ScriptPath, $Root, $Log, $ListenPort, $SignalPath, $QueuePath)
+    param($ScriptPath, $Root, $Log, $ListenPort, $SignalPath, $QueuePath, $SettingsPath)
+    # Both overrides are set on the JOB, never on the parent, so a crashed smoke
+    # cannot leave the operator's environment redirected.
     $env:REPO_MGMT_QUEUE_PATH = $QueuePath
+    $env:REPO_MGMT_SETTINGS_PATH = $SettingsPath
+    # Start-Job inherits the parent environment. Every assertion below speaks
+    # plain HTTP to this host, so an inherited REPO_MGMT_TLS_PFX -- which the
+    # installed service sets at MACHINE scope -- would wrap the listener in an
+    # SslStream and every request would die in the handshake, 30 seconds from a
+    # readiness timeout that names nothing about TLS. Observed 2026-08-29 the
+    # hour the operator's certificate was repaired: it had been inert only
+    # because the certificate could not be loaded. The auth smoke's TLS step
+    # supplies its own certificate; this gate wants none.
+    $env:REPO_MGMT_TLS_PFX = ''
+    $env:REPO_MGMT_TLS_PFX_PASSWORD = ''
     & $ScriptPath -WorkspaceRoot $Root -BindAddress '127.0.0.1' -Port $ListenPort -LogPath $Log -ShutdownSignalPath $SignalPath -QueuePath $QueuePath
-} -ArgumentList $hostScript, $WorkspaceRoot, $logPath, $Port, $shutdownSignalPath, $smokeQueuePath
+} -ArgumentList $hostScript, $WorkspaceRoot, $logPath, $Port, $shutdownSignalPath, $smokeQueuePath, $script:HostSettingsPath
 
 try {
     Wait-ApiHostReady -Uri "$BaseUrl/health/live" -Job $job
@@ -507,9 +570,11 @@ try {
     $requireToggle = [Environment]::GetEnvironmentVariable('REPO_MGMT_REQUIRE_API_KEY')
     $requireFromEnv = (-not [string]::IsNullOrWhiteSpace($requireToggle)) -and ($requireToggle.Trim() -match '^(?i)(1|true|yes|on)$')
     $requireFromSettings = $false
-    if (Test-Path -LiteralPath $script:TrackedSettingsPath) {
+    # The file the HOST resolved, not the tracked one: this predicts the host's
+    # own behaviour, so it has to read the settings the host is actually using.
+    if (Test-Path -LiteralPath $script:HostSettingsPath) {
         try {
-            $trackedAuth = (Get-Content -LiteralPath $script:TrackedSettingsPath -Raw | ConvertFrom-Json).auth
+            $trackedAuth = (Get-Content -LiteralPath $script:HostSettingsPath -Raw | ConvertFrom-Json).auth
             if ($null -ne $trackedAuth -and ($trackedAuth.PSObject.Properties.Name -contains 'requireApiKey')) {
                 $requireFromSettings = [bool]$trackedAuth.requireApiKey
             }
@@ -724,16 +789,10 @@ try {
         daysInactive = [int]($settingsJson.data.retention.days ?? 30)
         githubUser = [string]($settingsJson.data.reconcile.gitHubOwner ?? '')
     }
-    # Captured before the FIRST write to git-tracked settings.json, not just
-    # before the fixture step later on: every POST here round-trips the file
-    # through ConvertTo-Json and reorders its keys, so a backup taken any later
-    # still leaves the tracked file churned. The finally block restores this
-    # byte-exact however the run ends (ROADMAP Lane 0.1).
-    $script:TrackedSettingsPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
-    $script:TrackedSettingsBackup = if (Test-Path -LiteralPath $script:TrackedSettingsPath) {
-        Get-Content -LiteralPath $script:TrackedSettingsPath -Raw -Encoding UTF8
-    } else { $null }
-
+    # No backup is taken here any more. Every POST below round-trips through the
+    # host, which now writes $script:HostSettingsPath -- the tracked file is not
+    # in the write path at all, so there is nothing to put back. The finally
+    # block asserts that, rather than restoring it (ROADMAP Lane 0.1, Lane 0.8).
     $settingsPost = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/settings" -Body $settingsPostBody
     Assert-Not503 -Name '/api/settings (POST)' -Response $settingsPost
 
@@ -1685,7 +1744,7 @@ try {
     # died at its final step on "Cannot bind argument to parameter 'RunId'".
     # A contract proven only by its refusals is not proven.
     Write-Host '[STEP] Dispatch success path — the route the wizard uses must actually enqueue' -ForegroundColor Cyan
-    $okSettingsPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
+    $okSettingsPath = $script:HostSettingsPath
     $okSettingsBackup = if (Test-Path -LiteralPath $okSettingsPath) { Get-Content -LiteralPath $okSettingsPath -Raw -Encoding UTF8 } else { $null }
     $okRepoRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("dispatch-success-smoke-" + [guid]::NewGuid().ToString('n').Substring(0, 8))
     $okRepoPath = Join-Path $okRepoRoot 'dispatch-success-smoke'
@@ -1887,7 +1946,7 @@ try {
     }
 
     Write-Host '[STEP] Dispatch quota guard contract (Release 2.0 Phase 4)' -ForegroundColor Cyan
-    $settingsPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
+    $settingsPath = $script:HostSettingsPath
     $settingsBackup = if (Test-Path -LiteralPath $settingsPath) { Get-Content -LiteralPath $settingsPath -Raw -Encoding UTF8 } else { $null }
     $agentEventsPath = Join-Path $WorkspaceRoot 'output\agent-runs\events.jsonl'
     $agentEventsBackup = if (Test-Path -LiteralPath $agentEventsPath) { Get-Content -LiteralPath $agentEventsPath -Raw -Encoding UTF8 } else { $null }
@@ -3819,22 +3878,30 @@ A release should not be marked `done` unless:
     [pscustomobject]$summary | Format-List
 }
 finally {
-    # Restore the tracked config the fixture step overwrote, byte-exact, before
-    # anything else in teardown — a failed run must not leave a fixture path
-    # sitting in git-tracked settings.json for someone to commit by accident.
-    if ($script:TrackedSettingsBackup) {
+    # PROVE the tracked config was never written, rather than putting it back.
+    # This is the assertion that replaced the old byte-exact restore: with the
+    # host resolving settings through REPO_MGMT_SETTINGS_PATH there is no write
+    # path to the tracked file, so any difference here is a real regression --
+    # a call site that went round the resolver — and it must fail the gate
+    # loudly instead of being silently repaired.
+    if ($null -ne $script:TrackedSettingsAtStart) {
         try {
             $current = if (Test-Path -LiteralPath $script:TrackedSettingsPath) {
                 Get-Content -LiteralPath $script:TrackedSettingsPath -Raw -Encoding UTF8
             } else { $null }
-            if ($current -ne $script:TrackedSettingsBackup) {
-                Set-Content -LiteralPath $script:TrackedSettingsPath -Value $script:TrackedSettingsBackup -Encoding UTF8 -NoNewline
-                Write-Host '  restored tracked settings.json overwritten by the portfolio fixture step' -ForegroundColor DarkGray
+            if ($current -ne $script:TrackedSettingsAtStart) {
+                # Put it back first -- the operator's file matters more than the
+                # tidiness of the failure -- then fail so the leak is not missed.
+                Set-Content -LiteralPath $script:TrackedSettingsPath -Value $script:TrackedSettingsAtStart -Encoding UTF8 -NoNewline
+                Write-Host '  FAIL: tracked settings.json was written during this run and has been restored.' -ForegroundColor Red
+                Write-Host '        A call site is resolving the settings path inline instead of through Get-PortalSettingsPath.' -ForegroundColor Red
+                throw 'api-host smoke mutated the git-tracked backend/config/settings.json'
             }
+            Write-Host '  verified: tracked settings.json byte-identical across the run' -ForegroundColor DarkGray
         }
+        catch [System.Management.Automation.RuntimeException] { throw }
         catch {
-            # Surface loudly: an unrestored mutation is the regression this guards.
-            Write-Host ("  WARNING: could not restore settings.json — check it before committing. {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+            Write-Host ("  WARNING: could not verify settings.json — check it before committing. {0}" -f $_.Exception.Message) -ForegroundColor Yellow
         }
     }
 

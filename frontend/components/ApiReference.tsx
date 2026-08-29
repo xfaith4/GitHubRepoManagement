@@ -39,7 +39,13 @@ const API_DOCS_BASE_URL = (() => {
     return window.location.origin;
   }
 
-  return 'http://192.168.50.200:7071';
+  // No window (tests, SSR) and no configured URL: say so rather than assert a
+  // base URL. The previous fallback was a literal 'http://192.168.50.200:7071'
+  // -- one operator's LAN address, compiled into every build, and wrong on two
+  // counts the day the portal gained TLS: wrong host for anyone else, wrong
+  // scheme for everyone. A reference that states an address it cannot know is
+  // the same defect as a metric that reports a number it did not measure.
+  return '(base URL unavailable outside a browser)';
 })();
 
 // ---------------------------------------------------------------------------

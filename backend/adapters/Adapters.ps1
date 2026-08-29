@@ -10,6 +10,13 @@ if (-not (Get-Command Invoke-BoundedGitCommand -ErrorAction SilentlyContinue)) {
     . (Join-Path $PSScriptRoot '..\modules\git\Git.BoundedSweep.ps1')
 }
 
+# The settings-path resolver, loaded the same defensive way and for the same
+# reason: this file is dot-sourced standalone by scripts that never load the
+# api-host's module list, so it cannot assume the function is already in scope.
+if (-not (Get-Command Get-PortalSettingsPath -ErrorAction SilentlyContinue)) {
+    . (Join-Path $PSScriptRoot '..\modules\common\Config.SettingsPath.ps1')
+}
+
 # ---------------------------------------------------------------------------
 # Shared response envelope (was Adapter.Common.ps1)
 # ---------------------------------------------------------------------------
@@ -218,7 +225,11 @@ function Get-StatusAdapterResult {
         # repositories is the same class of lie as a metric that silently
         # counts them. The policy reads from the application settings beside
         # this backend; absent settings fall back to shipped defaults.
-        $scopeSettingsPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'config\settings.json'
+        # Through the resolver, not inline: a gate that redirects the host must
+        # redirect the scope policy with it, or the two disagree about which
+        # repositories are even in play. $PSScriptRoot is backend\adapters, so
+        # two parents up is the workspace root the resolver expects.
+        $scopeSettingsPath = Get-PortalSettingsPath -WorkspaceRoot (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
         $scopeSettings = $null
         if (Test-Path -LiteralPath $scopeSettingsPath) {
             try { $scopeSettings = Get-Content -LiteralPath $scopeSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $scopeSettings = $null }

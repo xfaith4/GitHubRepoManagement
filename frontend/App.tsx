@@ -4,6 +4,7 @@ import SetupWizard from './components/SetupWizard';
 import Login from './components/Login';
 import AgentActivityIndicator from './components/AgentActivityIndicator';
 import RunnerHealthIndicator from './components/RunnerHealthIndicator';
+import TransportSecurityIndicator from './components/TransportSecurityIndicator';
 import MobileRepoHealth from './components/MobileRepoHealth';
 import OrientationOverlay, { hasSeenOrientation } from './components/OrientationOverlay';
 import { getStatus, getGithubRepoInsights, getSetupStatus, getAuthStatus, logout, type AuthStatus } from './services/apiClient';
@@ -377,6 +378,14 @@ function App() {
             <div className="flex items-center gap-2">
                 {/* Release 3.5 milestone 6 — runner health above the fold,
                     beside the agent-activity pill, on every tab. */}
+                {/* The portal saying what it actually is. Rendered here rather
+                    than only on the login screen, because a signed-in operator
+                    never sees that screen again — which is how a broken
+                    certificate ran for 19 days announced only in a service log. */}
+                <TransportSecurityIndicator
+                  transport={authStatus?.transport}
+                  isLoopbackBind={authStatus?.isLoopbackBind}
+                />
                 <RunnerHealthIndicator />
                 <AgentActivityIndicator />
                 <span className="inline-flex">{renderDataSourceLabel()}</span>
