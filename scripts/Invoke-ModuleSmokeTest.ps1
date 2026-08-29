@@ -7898,6 +7898,28 @@ Write-Step 'Queue path resolver - Release 2.9: one definition, so the smoke cann
         throw 'Queue-path detector failed its own violating fixture; the sweep below is vacuous.'
     }
 
+    # scripts/ is swept too, but with a NARROWER pattern. Under backend/ any
+    # inline build is a bypass. Under scripts/ the smokes legitimately build
+    # queue paths inside their own temp fixture workspaces ($traceWorkspace,
+    # $pkgWs, ...), which are not the operator's queue and must not trip this.
+    # The thing that matters is building the OPERATOR's path -- the one rooted
+    # at $WorkspaceRoot. That is exactly what Invoke-RoadmapTaskRunner.ps1 did
+    # until 2026-08-29, which made the runner the only process deaf to
+    # REPO_MGMT_QUEUE_PATH.
+    $queuePathOperatorPattern = "Join-Path\s+\`$WorkspaceRoot\s+'output.roadmap-task-queue\.jsonl'"
+    $queuePathOperatorFixture = "`$queuePath = Join-Path `$WorkspaceRoot 'output\roadmap-task-queue.jsonl'"
+    if ($queuePathOperatorFixture -notmatch $queuePathOperatorPattern) {
+        throw 'Operator-queue detector failed its own violating fixture; the scripts/ sweep below is vacuous.'
+    }
+    foreach ($queuePathScript in @(Get-ChildItem -LiteralPath (Join-Path $WorkspaceRoot 'scripts') -Filter '*.ps1' -File)) {
+        foreach ($queuePathLine in ((Get-Content -LiteralPath $queuePathScript.FullName -Raw -Encoding UTF8) -split "`r?`n")) {
+            if ($queuePathLine -match '^\s*#') { continue }
+            if ($queuePathLine -match $queuePathOperatorPattern) {
+                throw ("{0} builds the operator queue path inline: {1}`n  Use Get-RoadmapQueuePath so REPO_MGMT_QUEUE_PATH reaches every reader and writer." -f $queuePathScript.Name, $queuePathLine.Trim())
+            }
+        }
+    }
+
     $queuePathBypasses = New-Object System.Collections.Generic.List[string]
     foreach ($queuePathFile in @(Get-ChildItem -LiteralPath (Join-Path $WorkspaceRoot 'backend') -Filter '*.ps1' -Recurse -File)) {
         if ($queuePathFile.FullName -eq (Resolve-Path -LiteralPath $queuePathResolver).Path) { continue }
