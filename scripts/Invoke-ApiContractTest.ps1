@@ -30,13 +30,21 @@ if (-not (Test-Path -LiteralPath $testPath)) {
 # just reports 32 broken contracts. So the inherited value is cleared for this
 # process only (never at User or Machine scope: the operator's LAN access must
 # survive a test run), and the clear is announced rather than silent.
-$clearedAuthNames = @('REPO_MGMT_REQUIRE_API_KEY', 'REPO_MGMT_API_KEY') |
+#
+# REPO_MGMT_TLS_PFX belongs on the same list and for the same reason. The
+# installed service sets it at Machine scope; these tests speak plain HTTP to
+# the host they start. While the operator's certificate was unloadable the
+# inherited value was inert, so this never bit -- until the certificate was
+# repaired on 2026-08-29 and the host began wrapping the listener in an
+# SslStream, failing every request in the handshake instead of answering it.
+# Three gates went red at once for a reason none of them named.
+$clearedAuthNames = @('REPO_MGMT_REQUIRE_API_KEY', 'REPO_MGMT_API_KEY', 'REPO_MGMT_TLS_PFX', 'REPO_MGMT_TLS_PFX_PASSWORD') |
     Where-Object { -not [string]::IsNullOrWhiteSpace([System.Environment]::GetEnvironmentVariable($_)) }
 foreach ($clearedAuthName in $clearedAuthNames) {
     [System.Environment]::SetEnvironmentVariable($clearedAuthName, $null, 'Process')
 }
 if (@($clearedAuthNames).Count -gt 0) {
-    Write-Host ("  cleared inherited {0} for this process — the contract tests send no key by design; shared-LAN auth is untouched at User/Machine scope" -f ($clearedAuthNames -join ', ')) -ForegroundColor DarkYellow
+    Write-Host ("  cleared inherited {0} for this process — these tests speak plain HTTP and send no credentials by design; the operator's shared-LAN auth and TLS are untouched at User/Machine scope" -f ($clearedAuthNames -join ', ')) -ForegroundColor DarkYellow
 }
 
 $result = Invoke-Pester -Path $testPath -Output Detailed -PassThru

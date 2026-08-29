@@ -62,6 +62,10 @@ $roadmapModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\roadmap'
 $docAuditModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\docaudit'
 $executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 . (Join-Path $commonRoot 'Metrics.ps1')
+# The settings-path resolver. Loaded BEFORE Adapters.ps1 deliberately: the scope
+# policy in that adapter resolves the same settings file, and a dot-source that
+# arrives after its caller is a function that does not exist yet.
+. (Join-Path $commonRoot 'Config.SettingsPath.ps1')
 . (Join-Path $adapterRoot 'Adapters.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.Parser.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.ExecutionContract.ps1')
@@ -1859,7 +1863,7 @@ function Get-JsonObjectFromText {
 }
 
 function Get-HostSettings {
-    $configPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
+    $configPath = Get-PortalSettingsPath -WorkspaceRoot $WorkspaceRoot
     if (-not (Test-Path -LiteralPath $configPath)) {
         return @{
             inventory = @{ localRoots = @($WorkspaceRoot); maxDepth = 3; includeNonGitFolders = $false }
@@ -1888,7 +1892,7 @@ function Remove-StoredSecretsFromSettings {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param()
 
-    $configPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
+    $configPath = Get-PortalSettingsPath -WorkspaceRoot $WorkspaceRoot
     if (-not (Test-Path -LiteralPath $configPath)) { return @() }
 
     # container key -> secret key, for every literal-secret slot older builds wrote.
@@ -7978,7 +7982,7 @@ try {
                     if ($s.ContainsKey('inventory') -and $s.inventory -is [System.Collections.IDictionary] -and $s.inventory.ContainsKey('localRoots')) {
                         $roots = @($s.inventory.localRoots | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
                     }
-                    $configExists = Test-Path -LiteralPath (Join-Path $WorkspaceRoot 'backend\config\settings.json')
+                    $configExists = Test-Path -LiteralPath (Get-PortalSettingsPath -WorkspaceRoot $WorkspaceRoot)
                     $firstScanComplete = Test-Path -LiteralPath (Join-Path $WorkspaceRoot 'output\index\repos.index.json')
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
@@ -8036,7 +8040,7 @@ try {
                             Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{ success = $false; error = ("localRoots not found on disk: {0}" -f ($missingRoots -join ', ')); category = 'validation' }
                         }
                         else {
-                            $cfgPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
+                            $cfgPath = Get-PortalSettingsPath -WorkspaceRoot $WorkspaceRoot
                             $cfg = if (Test-Path -LiteralPath $cfgPath) { ConvertFrom-JsonCompat -Json (Get-Content -LiteralPath $cfgPath -Raw) } else { @{} }
                             if (-not $cfg.ContainsKey('inventory') -or -not ($cfg.inventory -is [System.Collections.IDictionary])) { $cfg.inventory = @{} }
                             $cfg.inventory.localRoots = $newRoots
@@ -8220,7 +8224,7 @@ try {
                     }
                 }
                 'GET /api/settings' {
-                    $configPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
+                    $configPath = Get-PortalSettingsPath -WorkspaceRoot $WorkspaceRoot
                     $config = @{}
                     if (Test-Path -LiteralPath $configPath) {
                         $config = ConvertFrom-JsonCompat -Json (Get-Content -LiteralPath $configPath -Raw)
@@ -8233,7 +8237,7 @@ try {
                 }
                 'POST /api/settings' {
                     $body = Parse-JsonBody -Body $req.Body
-                    $configPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
+                    $configPath = Get-PortalSettingsPath -WorkspaceRoot $WorkspaceRoot
                     $existing = @{}
                     if (Test-Path -LiteralPath $configPath) {
                         $existing = ConvertFrom-JsonCompat -Json (Get-Content -LiteralPath $configPath -Raw)

@@ -38,8 +38,43 @@ $hostScript = Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApi
 $smokeRoot = Join-Path $WorkspaceRoot 'output\smoke\auth'
 $null = New-Item -ItemType Directory -Path $smokeRoot -Force
 $logPath = Join-Path $smokeRoot 'auth-smoke.log'
-$settingsPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
-$settingsBackup = if (Test-Path -LiteralPath $settingsPath) { Get-Content -LiteralPath $settingsPath -Raw } else { $null }
+# The git-TRACKED settings file. This smoke used to write it -- the
+# /setup/config step below persists a config -- and put it back in the finally.
+# It no longer does: every host started here resolves settings through
+# Get-PortalSettingsPath, which honours REPO_MGMT_SETTINGS_PATH. The tracked
+# bytes are captured only to PROVE the file was never touched.
+$trackedSettingsPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
+$trackedSettingsAtStart = if (Test-Path -LiteralPath $trackedSettingsPath) {
+    Get-Content -LiteralPath $trackedSettingsPath -Raw
+} else { $null }
+
+# The file every host in this smoke actually reads and writes, seeded from the
+# operator's real configuration so the run starts from their settings rather
+# than a synthetic one. Every assertion below that checks "the host must not
+# persist a secret into settings" points HERE deliberately: pointed at the
+# tracked file instead, those checks would pass because the host cannot write
+# it any more, which is a vacuous green, not a proof.
+$settingsPath = Join-Path $smokeRoot 'settings.smoke.json'
+Set-Content -LiteralPath $settingsPath `
+    -Value $(if ($null -ne $trackedSettingsAtStart) { $trackedSettingsAtStart } else { '{}' }) `
+    -Encoding UTF8 -NoNewline
+
+# Set on THIS process, which is the whole of the blast radius: the suite invokes
+# this script with `pwsh -File`, so the variable dies with it, and the Start-Job
+# children below inherit it exactly as the hosts need. The finally clears it
+# anyway for the case where an operator runs this script in their own session.
+$env:REPO_MGMT_SETTINGS_PATH = $settingsPath
+Write-Host ("  settings isolated to {0} (the operator's tracked settings.json is never written)" -f $settingsPath) -ForegroundColor DarkGray
+
+# Every host started here except the TLS step speaks plain HTTP, and Start-Job
+# inherits this process's environment. An inherited REPO_MGMT_TLS_PFX -- set at
+# MACHINE scope by the installed service -- would wrap those listeners in an
+# SslStream and fail their readiness checks in the handshake. Cleared here for
+# all of them; the TLS step sets its own pfx explicitly in its own job, so it is
+# unaffected. Inert until 2026-08-29 only because the operator's certificate
+# could not be loaded; repairing it turned a latent trap into three red gates.
+$env:REPO_MGMT_TLS_PFX = ''
+$env:REPO_MGMT_TLS_PFX_PASSWORD = ''
 $testKey = ([guid]::NewGuid().ToString('n') + [guid]::NewGuid().ToString('n'))
 
 function Invoke-AuthRequest {
@@ -129,8 +164,8 @@ try {
     # restoring the file byte-exact (ROADMAP Lane 0.1), the borrowed value went
     # away and the hidden cross-test dependency surfaced as a 400 here.
     $currentRoots = @()
-    if ($settingsBackup) {
-        try { $currentRoots = @((ConvertFrom-Json $settingsBackup).inventory.localRoots) } catch { $currentRoots = @() }
+    if ($trackedSettingsAtStart) {
+        try { $currentRoots = @((ConvertFrom-Json $trackedSettingsAtStart).inventory.localRoots) } catch { $currentRoots = @() }
     }
     $currentRoots = @($currentRoots | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) -and (Test-Path -LiteralPath ([string]$_)) })
     if (@($currentRoots).Count -eq 0) { $currentRoots = @($WorkspaceRoot) }
@@ -215,7 +250,7 @@ try {
         if ($null -ne $lanSettings.PSObject.Properties['auth'] -and $null -ne $lanSettings.auth -and
             $null -ne $lanSettings.auth.PSObject.Properties['apiKey']) { $persistedKey = [string]$lanSettings.auth.apiKey }
         if (-not [string]::IsNullOrWhiteSpace($persistedKey)) {
-            throw "Enabling auth by environment variable wrote an API key into $settingsPath, which git tracks. The key must stay in the environment."
+            throw "Enabling auth by environment variable wrote an API key into the host's settings file ($settingsPath). The key must stay in the environment and never be persisted."
         }
         Write-Host '  non-loopback bind: reachable, gated, and no key written to tracked config' -ForegroundColor DarkGray
     } finally {
@@ -253,7 +288,7 @@ try {
             $wrote = ''
             if ($null -ne $genSettings.PSObject.Properties['auth'] -and $null -ne $genSettings.auth -and
                 $null -ne $genSettings.auth.PSObject.Properties['apiKey']) { $wrote = [string]$genSettings.auth.apiKey }
-            throw ("Enabling auth without a key modified $settingsPath (git-tracked)." +
+            throw ("Enabling auth without a key modified the host's settings file ($settingsPath)." +
                 $(if ($wrote) { " It now holds a $($wrote.Length)-character API key. A generated secret must never reach a tracked file." } else { '' }))
         }
         if (-not (Test-Path -LiteralPath $generatedKeyPath -PathType Leaf)) {
@@ -386,5 +421,19 @@ finally {
             ForEach-Object { try { Stop-Process -Id $_ -Force -ErrorAction Stop } catch { } }
     }
     # Restore settings.json exactly as it was before the run.
-    if ($null -ne $settingsBackup) { Set-Content -LiteralPath $settingsPath -Value $settingsBackup -Encoding UTF8 -NoNewline }
+    $env:REPO_MGMT_SETTINGS_PATH = $null
+    # PROVE the tracked config was never written rather than putting it back.
+    # With the host redirected there is no write path to it, so a difference
+    # here means a call site went round Get-PortalSettingsPath -- a regression
+    # that must fail loudly, not be silently repaired.
+    if ($null -ne $trackedSettingsAtStart) {
+        $trackedNow = if (Test-Path -LiteralPath $trackedSettingsPath) {
+            Get-Content -LiteralPath $trackedSettingsPath -Raw
+        } else { $null }
+        if ($trackedNow -ne $trackedSettingsAtStart) {
+            Set-Content -LiteralPath $trackedSettingsPath -Value $trackedSettingsAtStart -Encoding UTF8 -NoNewline
+            throw 'auth smoke mutated the git-tracked backend/config/settings.json (restored); a call site is resolving the settings path inline.'
+        }
+        Write-Host '  verified: tracked settings.json byte-identical across the run' -ForegroundColor DarkGray
+    }
 }

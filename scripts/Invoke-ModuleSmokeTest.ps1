@@ -7978,6 +7978,165 @@ Write-Step 'Queue path resolver - Release 2.9: one definition, so the smoke cann
     Write-Host '  queue path ok: detector rejected its own inline fixture first; no bypass under backend/; REPO_MGMT_QUEUE_PATH redirects and clears cleanly' -ForegroundColor DarkGray
 }
 
+Write-Step 'Settings path resolver - one definition, so a gate cannot write the file the operator is reading'
+& {
+    # The reading-side twin of the queue incident above, one release later.
+    # Invoke-ApiHostSmokeTest had no way to point the host at a fixture config
+    # except to POST /api/settings and let the host overwrite the git-TRACKED
+    # backend/config/settings.json, restoring it byte-exact afterwards. The
+    # restore worked. The WINDOW did not: for the ~10 minutes the gate runs the
+    # live portal reads the same file, and on 2026-08-29 the operator's console
+    # emptied mid-session -- the status cache is keyed by scan root, and while
+    # the fixture root was installed their key had no entry to serve.
+    #
+    # Get-PortalSettingsPath + REPO_MGMT_SETTINGS_PATH make redirecting the host
+    # one decision, so the tracked file leaves the write path entirely.
+    $settingsPathResolver = Join-Path $WorkspaceRoot 'backend\modules\common\Config.SettingsPath.ps1'
+    if (-not (Test-Path -LiteralPath $settingsPathResolver)) { throw "Missing $settingsPathResolver" }
+
+    # Prove the detector before trusting the sweep it drives.
+    #
+    # The literal is NOT always 'backend\config\settings.json'. Adapters.ps1
+    # resolves from backend\ and writes 'config\settings.json', so a pattern
+    # anchored on the longer form silently spares that call site -- which an
+    # injection test caught: re-introducing the adapter's old inline build left
+    # the gate green. Match any Join-Path ending in a config\settings.json.
+    $settingsPathPattern = "Join-Path\s+.+'[^']*config.settings\.json'"
+    foreach ($settingsPathViolatingFixture in @(
+            "`$configPath = Join-Path `$WorkspaceRoot 'backend\config\settings.json'",
+            "`$scopeSettingsPath = Join-Path (Split-Path -Parent `$PSScriptRoot) 'config\settings.json'")) {
+        if ($settingsPathViolatingFixture -notmatch $settingsPathPattern) {
+            throw ('Settings-path detector failed a violating fixture; the sweep below is vacuous: {0}' -f $settingsPathViolatingFixture)
+        }
+    }
+    # ...and prove it does NOT fire on the resolved form, or every converted
+    # call site would read as a violation and the gate would be unpassable.
+    if ('$configPath = Get-PortalSettingsPath -WorkspaceRoot $WorkspaceRoot' -match $settingsPathPattern) {
+        throw 'Settings-path detector matches the resolved form; it would fail correct code.'
+    }
+
+    $settingsPathBypasses = New-Object System.Collections.Generic.List[string]
+    foreach ($settingsPathFile in @(Get-ChildItem -LiteralPath (Join-Path $WorkspaceRoot 'backend') -Filter '*.ps1' -Recurse -File)) {
+        if ($settingsPathFile.FullName -eq (Resolve-Path -LiteralPath $settingsPathResolver).Path) { continue }
+        foreach ($settingsPathLine in ((Get-Content -LiteralPath $settingsPathFile.FullName -Raw -Encoding UTF8) -split "`r?`n")) {
+            if ($settingsPathLine -match '^\s*#') { continue }
+            if ($settingsPathLine -match $settingsPathPattern) {
+                $settingsPathBypasses.Add(("{0}: {1}" -f $settingsPathFile.Name, $settingsPathLine.Trim())) | Out-Null
+            }
+        }
+    }
+    if ($settingsPathBypasses.Count -gt 0) {
+        throw ("Settings path built inline instead of via Get-PortalSettingsPath:`n    {0}`n  One resolver, or a gate writes the config the operator's portal is reading." -f ($settingsPathBypasses -join "`n    "))
+    }
+
+    # scripts/ is swept with the same pattern, one documented exemption, and one
+    # narrowing rule.
+    #
+    # EXEMPTION. Install-RepoManagementService.ps1 configures the real service
+    # and strips secrets from the operator's real tracked file -- acting on that
+    # exact file is its entire job, and an installer that silently followed an
+    # environment override could migrate secrets out of a file nobody meant to
+    # touch.
+    #
+    # NARROWING. The two host smokes still NAME the tracked path, deliberately:
+    # they capture its bytes to prove they never wrote it. Refusing that would
+    # refuse the very assertion this gate exists to protect. So naming it is
+    # allowed only when the variable SAYS so -- a `$...Tracked...` assignment --
+    # which keeps the intent legible at the call site instead of in a comment
+    # this gate cannot read.
+    $settingsPathScriptExempt = @('Install-RepoManagementService.ps1')
+    # The scope prefix is optional in the pattern because the api-host smoke's
+    # copy is $script:TrackedSettingsPath and the auth smoke's is a plain local;
+    # both are the same declaration of intent.
+    $settingsPathTrackedIntent = '\$(\w+:)?\w*[Tt]racked\w*\s*='
+    foreach ($settingsPathIntentForm in @(
+            "`$trackedSettingsPath = Join-Path `$WorkspaceRoot 'backend\config\settings.json'",
+            "`$script:TrackedSettingsPath = Join-Path `$WorkspaceRoot 'backend\config\settings.json'")) {
+        if ($settingsPathIntentForm -notmatch $settingsPathTrackedIntent) {
+            throw 'Tracked-intent detector rejects an assertion form it must allow; the scripts/ sweep would refuse correct code.'
+        }
+    }
+    if ("`$configPath = Join-Path `$WorkspaceRoot 'backend\config\settings.json'" -match $settingsPathTrackedIntent) {
+        throw 'Tracked-intent detector allows an unnamed settings path; the scripts/ sweep would be vacuous.'
+    }
+    # This file is skipped for the same reason the backend sweep skips the
+    # resolver: a source-scanning gate that lives inside its own scan range will
+    # always match its own detector fixtures. Those fixtures are already proven
+    # by the self-tests immediately above, and nothing in this smoke resolves a
+    # settings file for a running host.
+    $settingsPathScriptExempt += 'Invoke-ModuleSmokeTest.ps1'
+    foreach ($settingsPathScript in @(Get-ChildItem -LiteralPath (Join-Path $WorkspaceRoot 'scripts') -Filter '*.ps1' -File)) {
+        if ($settingsPathScriptExempt -contains $settingsPathScript.Name) { continue }
+        foreach ($settingsPathLine in ((Get-Content -LiteralPath $settingsPathScript.FullName -Raw -Encoding UTF8) -split "`r?`n")) {
+            if ($settingsPathLine -match '^\s*#') { continue }
+            if ($settingsPathLine -notmatch $settingsPathPattern) { continue }
+            if ($settingsPathLine -match $settingsPathTrackedIntent) { continue }
+            throw ("{0} builds the settings path inline: {1}`n  Use REPO_MGMT_SETTINGS_PATH to point the host at a copy, or name the variable `$...Tracked... if you are only asserting the operator's file is untouched." -f $settingsPathScript.Name, $settingsPathLine.Trim())
+        }
+    }
+
+    # The override must actually redirect, or no gate can isolate itself.
+    . $settingsPathResolver
+    $settingsPathDefault = Get-PortalSettingsPath -WorkspaceRoot 'C:\fixture-ws'
+    if ($settingsPathDefault -notmatch 'settings\.json$') { throw "Default settings path is wrong: $settingsPathDefault" }
+    if (Test-PortalSettingsPathOverridden) { throw 'Test-PortalSettingsPathOverridden reported an override with none set.' }
+    $env:REPO_MGMT_SETTINGS_PATH = 'C:\fixture-ws\isolated-settings.json'
+    try {
+        $settingsPathOverridden = Get-PortalSettingsPath -WorkspaceRoot 'C:\fixture-ws'
+        if ($settingsPathOverridden -ne 'C:\fixture-ws\isolated-settings.json') {
+            throw "REPO_MGMT_SETTINGS_PATH did not redirect the resolver (got $settingsPathOverridden); a gate cannot isolate its config."
+        }
+        if (-not (Test-PortalSettingsPathOverridden)) { throw 'Test-PortalSettingsPathOverridden missed an active override.' }
+    }
+    finally {
+        Remove-Item Env:REPO_MGMT_SETTINGS_PATH -ErrorAction SilentlyContinue
+    }
+    if ((Get-PortalSettingsPath -WorkspaceRoot 'C:\fixture-ws') -ne $settingsPathDefault) {
+        throw 'The settings resolver did not return to its default after the override was cleared.'
+    }
+
+    # The two gates that used to write the tracked file must now declare the
+    # override instead. A restore that no longer runs is the proof the mutation
+    # is gone -- so the presence of the redirect is what is asserted here, and
+    # each smoke asserts the tracked bytes at runtime.
+    foreach ($settingsIsolatedSmoke in @('Invoke-ApiHostSmokeTest.ps1', 'Invoke-AuthSmokeTest.ps1')) {
+        $settingsSmokeText = Get-Content -LiteralPath (Join-Path $WorkspaceRoot ('scripts\' + $settingsIsolatedSmoke)) -Raw -Encoding UTF8
+        if ($settingsSmokeText -notmatch 'REPO_MGMT_SETTINGS_PATH') {
+            throw ("{0} does not set REPO_MGMT_SETTINGS_PATH; it is writing the operator's tracked settings.json again." -f $settingsIsolatedSmoke)
+        }
+        if ($settingsSmokeText -notmatch 'byte-identical across the run') {
+            throw ("{0} lost its assertion that the tracked settings.json is unchanged across the run." -f $settingsIsolatedSmoke)
+        }
+    }
+
+    # INHERITED TLS. The fourth instance this repository has found of one defect
+    # class -- a MACHINE-scope REPO_MGMT_* variable silently changing what a
+    # process does -- after the task runner's GITHUB_TOKEN, the contract gate's
+    # API key, and the settings path above.
+    #
+    # Every host these three gates start speaks plain HTTP. Start-Job inherits
+    # the parent environment, so an inherited REPO_MGMT_TLS_PFX (the installed
+    # service sets it at Machine scope) wraps the listener in an SslStream and
+    # every request dies in the handshake. It stayed inert for weeks only
+    # because the operator's certificate could not be LOADED; repairing that
+    # certificate on 2026-08-29 turned one latent trap into three red gates at
+    # once, none of whose failures mentioned TLS.
+    #
+    # The auth smoke's own TLS step is exempt from the spirit of this rule -- it
+    # supplies a certificate deliberately -- and satisfies the letter of it by
+    # assigning the variable in its own job.
+    foreach ($tlsInheritGate in @('Invoke-ApiHostSmokeTest.ps1', 'Invoke-AuthSmokeTest.ps1', 'Invoke-ApiContractTest.ps1', 'Invoke-DailyEvidence.ps1')) {
+        $tlsInheritText = Get-Content -LiteralPath (Join-Path $WorkspaceRoot ('scripts\' + $tlsInheritGate)) -Raw -Encoding UTF8
+        if ($tlsInheritText -notmatch 'REPO_MGMT_TLS_PFX') {
+            throw ("{0} does not neutralise an inherited REPO_MGMT_TLS_PFX; on a machine with a working portal certificate its hosts serve HTTPS and every plain-HTTP assertion fails in the handshake." -f $tlsInheritGate)
+        }
+    }
+
+    Write-Host '  inherited-env ok: all four host-starting gates neutralise REPO_MGMT_TLS_PFX before starting a plain-HTTP host' -ForegroundColor DarkGray
+
+    Write-Host '  settings path ok: detector rejected its own inline fixture and spared the resolved form; no bypass under backend/ or scripts/ (installer exempt); REPO_MGMT_SETTINGS_PATH redirects and clears; both host smokes isolate and assert' -ForegroundColor DarkGray
+}
+
 Write-Step 'Runner stop mechanism - Release 2.9: a detached runner can be stopped without hunting a PID'
 & {
     # A headless runner is launched DETACHED so a tool timeout cannot strand a

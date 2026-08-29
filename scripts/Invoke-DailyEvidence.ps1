@@ -83,14 +83,19 @@ $summaryPath = Join-Path $evidenceDir 'summary.md'
 $queuePath = Join-Path $evidenceDir 'verify-queue.md'
 $stateIndexPath = Join-Path $evidenceDir 'roadmap-state-index.json'
 
-$settingsPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
-$settingsBackup = $null
-if (Test-Path -LiteralPath $settingsPath) {
+# The git-TRACKED settings file, named as such deliberately: this driver does
+# not configure anything, it only guards the operator's copy. The host smokes
+# it invokes now isolate themselves through REPO_MGMT_SETTINGS_PATH, so this
+# is a last-resort net for any writer that still slips through rather than the
+# routine cleanup it used to be.
+$trackedSettingsPath = Join-Path $WorkspaceRoot 'backend\config\settings.json'
+$trackedSettingsAtStart = $null
+if (Test-Path -LiteralPath $trackedSettingsPath) {
     # ReadAllText/WriteAllText round-trips byte-exact (no BOM, no appended
     # newline) so restoring the file NEVER introduces a diff of its own. The
     # earlier Set-Content approach appended a newline each run, and because each
     # run re-read the grown file as its backup, trailing blank lines accumulated.
-    $settingsBackup = [System.IO.File]::ReadAllText($settingsPath)
+    $trackedSettingsAtStart = [System.IO.File]::ReadAllText($trackedSettingsPath)
 }
 
 $pwshExe = Join-Path $PSHOME 'pwsh.exe'
@@ -109,11 +114,11 @@ function Restore-Settings {
     # settings.json; a mid-run crash leaves it dirty. Restore byte-exact, and
     # only when the content actually differs, so the driver leaves settings.json
     # exactly as it found it — introducing no diff of its own.
-    if ($null -eq $settingsBackup) { return }
+    if ($null -eq $trackedSettingsAtStart) { return }
     try {
-        $current = if (Test-Path -LiteralPath $settingsPath) { [System.IO.File]::ReadAllText($settingsPath) } else { $null }
-        if ($current -ne $settingsBackup) {
-            [System.IO.File]::WriteAllText($settingsPath, $settingsBackup)
+        $current = if (Test-Path -LiteralPath $trackedSettingsPath) { [System.IO.File]::ReadAllText($trackedSettingsPath) } else { $null }
+        if ($current -ne $trackedSettingsAtStart) {
+            [System.IO.File]::WriteAllText($trackedSettingsPath, $trackedSettingsAtStart)
         }
     }
     catch { }
@@ -351,6 +356,15 @@ try {
 
         $job = Start-Job -ScriptBlock {
             param($ScriptPath, $Root, $Log, $ListenPort, $SignalPath)
+            # This driver's probes speak plain HTTP ($baseUrl above), and
+            # Start-Job inherits the parent environment -- including the
+            # Machine-scope REPO_MGMT_TLS_PFX the installed service sets. With
+            # the operator's certificate working (Lane 0.2, 2026-08-29) that
+            # inherited value would wrap this host in an SslStream and fail
+            # every probe in the handshake. Same fix as the three suite gates:
+            # cleared for this job only, never at User or Machine scope.
+            $env:REPO_MGMT_TLS_PFX = ''
+            $env:REPO_MGMT_TLS_PFX_PASSWORD = ''
             & $ScriptPath -WorkspaceRoot $Root -BindAddress '127.0.0.1' -Port $ListenPort -LogPath $Log -ShutdownSignalPath $SignalPath
         } -ArgumentList $hostScript, $WorkspaceRoot, $hostLog, $Port, $shutdownSignal
 
