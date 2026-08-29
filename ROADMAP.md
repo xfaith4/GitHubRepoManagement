@@ -1290,6 +1290,58 @@ on a fresh clone too, and asserts the fixture's own repo count so a key
 mismatch fails loudly instead of silently skipping — verified by re-injecting
 the bug and watching the guard alone go red.
 
+**Re-audit against a working snapshot (2026-08-29).** Run once the unifier
+actually returned 200, to test the prediction that these contradictions were
+consumers stamping their own values because `Build-PortfolioSnapshot` 500'd.
+The prediction was half right, and the half that was wrong matters more.
+
+**Collapsed, as predicted — the denominators.** They now form one stated chain
+rather than six free-floating numbers: `repoCount` **72** (`status-scan`),
+`inScopeRepoCount` **58** with `denominator: 72` declared on the metric,
+`staleRepoCount` and `dirtyRepoCount` both carrying `denominator: 58`. The 57
+is `blockedCount` — 57 of the 58 in-scope. So 72 → 58 → 57 is coherent and
+self-describing.
+
+**Did NOT collapse — Blocked.** Two live surfaces still report different
+numbers, and both are right: `/api/execution/metrics` says `blocked=17`
+(ledger **execution state**, alongside `idle=30 ready=20 complete=4`), while
+`/api/portfolio/assessment` says `blockedCount=57` (repos **blocked from
+dispatch**). The fallback theory is therefore dead for this one: these are two
+definitions sharing one word, and reconciling them is hand work, not a
+consequence of the fix.
+
+**Did NOT collapse — the clock bases.** Three remain, and the fix did not
+touch two of them: the snapshot emits UTC `Z`, `/api/execution/metrics` emits
+a local offset `-04:00`, and **`/api/portfolio/assessment` and
+`/api/operations/repos` emit `createdAt` as locale text with no basis at all**
+(`01/12/2026 05:25:34`, on the wire, unparsed). The "four hours fast" reading
+is explained by the first two: `...T08:56:29Z` and `...T04:56:29-04:00` are
+the SAME instant, so any surface rendering the UTC one as if it were local
+runs exactly four hours ahead.
+
+**A new discrepancy the guard surfaced.** An independent filesystem walk finds
+**70** working trees under the configured root at depth 3, while the status
+cache reports **72**. Two repositories are counted that the disk does not
+have, or the scan counts something a `.git` walk does not. Not yet explained.
+
+- [ ] **Give `Blocked` two names, because it has two definitions.** Confirmed
+      live: `blocked=17` is ledger execution state; `blockedCount=57` is repos
+      blocked from dispatch. Name each on the surface that shows it, and state
+      its denominator. _(state: planned)_
+
+- [ ] **Give `/api/portfolio/assessment` and `/api/operations/repos` a
+      timezone basis.** Both serialize `createdAt` as locale text
+      (`01/12/2026 05:25:34`) with no `Z` and no offset — the only two
+      surfaces with no basis at all. This is what the existing contract
+      assertion was written to catch and cannot, because it skips any value
+      `ConvertFrom-Json` has already promoted to `[datetime]`. Fix the
+      serializer and the assertion together. _(state: planned)_
+
+- [ ] **Explain the 70-vs-72 repository gap.** An independent walk of the
+      filesystem at the configured scan depth finds 70 working trees; the
+      status scan reports 72. One of the two is counting something the other
+      is not. _(state: planned)_
+
 - [ ] **Reconcile the six repository denominators and the three clock bases.**
       One sitting showed **seven timestamps across three clock bases, one
       running four hours fast** — exactly the UTC-vs-EDT offset, so the likely

@@ -36,6 +36,17 @@ export interface TodayRow {
   valueScore: number | null;
   /** The ordered signals behind the rank, most significant first — the audit trail. */
   rankBasis: string[];
+  /**
+   * Set only when this row sits ABOVE work with a strictly higher value score,
+   * and names the key that put it there. Null on every row whose position the
+   * value column already explains.
+   *
+   * The sort is not the defect: conclusion, then curation, then whether a row
+   * offers an action, all legitimately outrank value. The defect was that the
+   * winning key was invisible, so a value-72 row above a value-90 row read as
+   * a broken sort. A rank that cannot say why it is a rank is a guess.
+   */
+  pinReason: string | null;
 }
 
 export interface TodayEffort {
@@ -155,10 +166,44 @@ function compare(a: TodayRankingInput, b: TodayRankingInput): number {
   return a.repoName.localeCompare(b.repoName);
 }
 
+const CURATION_PHRASE: Record<string, string> = {
+  favorite: 'you marked it a favorite',
+  'portfolio-candidate': 'you marked it a portfolio candidate',
+};
+
+/**
+ * Why `pinned` outranks `outvalued`, which carries more value. Walks the same
+ * keys as `compare`, in the same order, and reports the first one that decided
+ * it — so the explanation cannot drift from the ordering it explains.
+ */
+function explainPin(pinned: TodayRankingInput, outvalued: TodayRankingInput): string | null {
+  const conclusionRank = (x: TodayRankingInput) => CONCLUSION_PRECEDENCE[conclusionOf(x)] ?? 9;
+  if (conclusionRank(pinned) !== conclusionRank(outvalued)) {
+    const kind = conclusionOf(pinned);
+    return kind === 'strengthen'
+      ? 'Ranked above higher-value work because this repository has a specific next step and that one does not.'
+      : `Ranked above higher-value work because its conclusion is "${kind}".`;
+  }
+
+  const curationRank = (x: TodayRankingInput) => CURATION_PRECEDENCE[x.curationState ?? 'none'] ?? 2;
+  if (curationRank(pinned) !== curationRank(outvalued)) {
+    const phrase = CURATION_PHRASE[pinned.curationState ?? 'none'] ?? `its curation is ${pinned.curationState}`;
+    return `Ranked above higher-value work because ${phrase}.`;
+  }
+
+  const actionable = (x: TodayRankingInput) => (x.outcome?.nextActionRoute ? 0 : 1);
+  if (actionable(pinned) !== actionable(outvalued)) {
+    return 'Ranked above higher-value work because it offers an action to take and that one does not.';
+  }
+
+  return null;
+}
+
 export function buildTodayRows(entries: TodayRankingInput[]): TodayRow[] {
-  return [...entries]
-    .filter(entry => Boolean(entry) && Boolean(entry.repoId))
-    .sort(compare)
+  const ordered = [...entries].filter(entry => Boolean(entry) && Boolean(entry.repoId)).sort(compare);
+  const valueOf = (x: TodayRankingInput) => x.topValueItem?.valueScore ?? 0;
+
+  return ordered
     .map((entry, index) => ({
       rank: index + 1,
       repoId: entry.repoId,
@@ -170,6 +215,12 @@ export function buildTodayRows(entries: TodayRankingInput[]): TodayRow[] {
       effort: describeEffort(entry.estimatedSessionWorkUnits),
       valueScore: entry.topValueItem?.valueScore ?? null,
       rankBasis: rankBasisFor(entry),
+      // The first row below this one carrying MORE value is the row this
+      // position has to justify itself against.
+      pinReason: (() => {
+        const outvalued = ordered.slice(index + 1).find(other => valueOf(other) > valueOf(entry));
+        return outvalued ? explainPin(entry, outvalued) : null;
+      })(),
     }));
 }
 

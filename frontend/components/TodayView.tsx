@@ -186,6 +186,20 @@ export const TodayView: React.FC<TodayViewProps> = ({ entries, onOpenRepo, onRun
                     </td>
                     <td className="px-3 py-3 text-xs text-gray-300 leading-relaxed max-w-md" title={row.rankBasis.join(' · ')}>
                       {row.whyNow}
+                      {row.pinReason && (
+                        // Shown only on rows that outrank higher-value work.
+                        // Without it the ordering reads as broken: a value-72
+                        // row above a value-90 row looks like a bad sort rather
+                        // than a deliberate one. The sort is right; it was the
+                        // reason that was missing.
+                        <span
+                          data-testid="today-pin-reason"
+                          className="mt-1.5 flex items-start gap-1.5 rounded border border-amber-700/40 bg-amber-900/20 px-2 py-1 text-sm text-amber-200"
+                        >
+                          <span aria-hidden="true">▲</span>
+                          <span>{row.pinReason}</span>
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-3">
                       {row.nextActionLabel ? (

@@ -19,7 +19,22 @@
 //   node tools/Measure-UiRatchet.mjs            # check against the baseline
 //   node tools/Measure-UiRatchet.mjs --update   # re-baseline (only ever DOWN)
 //
-// Deliberately NOT counted: button background colors. There is no canonical
+// Deliberately NOT counted #1: TEXT CONTRAST. Static analysis cannot see it.
+// Real failures here are alpha-modified utilities on translucent stacks that
+// exist as no token at all. Measured example, confirmed to the digit:
+//
+//   gray-900  ->  + bg-gray-800/50  ->  + bg-red-900/20  ->  text-red-400/80
+//   composited = 3.97:1        (naive, ignoring every alpha = 3.47:1)
+//
+// Neither number is reachable by pairing class names: the effective background
+// is three layers deep and none of the layers is the element's own. A scan
+// that assumes a flat opaque ancestor reports "all pass" while 50 live
+// failures sit on one tab -- which is worse than no rule, because it launders
+// the debt as measured-and-clean. Measuring this needs computed style off a
+// real composited DOM (headless browser); this repo has no browser harness,
+// so the rule is deliberately absent rather than present and wrong.
+//
+// Deliberately NOT counted #2: button background colors. There is no canonical
 // set of 21 to compare against — they are ad hoc, so a checker cannot tell a
 // legitimate new one from an accidental one. That rule is a consequence of the
 // design-system pass, not a substitute for it; see the roadmap item.

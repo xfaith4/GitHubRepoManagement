@@ -742,19 +742,24 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                     )}
                   </div>
 
+                  {/* Rendered only when there IS a value. When topValueItem is
+                      null the card could show nothing but its own empty state,
+                      while still costing a quarter of the row's width and
+                      contributing the bulk of this tab's sub-AA text. An empty
+                      slot that never fills is not an empty state; it is a
+                      column that should not exist. */}
+                  {topValueItem && (
                   <div className="w-full sm:w-auto sm:min-w-[188px]">
                     <div className="rounded-lg border border-gray-700 bg-gray-900/60 px-3 py-2">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[11px] uppercase tracking-wide text-gray-500">Value</span>
-                        {valueTier ? (
+                        {valueTier && (
                           <span className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium ${valueTier.chipClass}`}>
                             {valueTier.label}
                           </span>
-                        ) : (
-                          <span className="text-[11px] text-gray-600">Not ranked</span>
                         )}
                       </div>
-                      {topValueItem ? (
+                      {topValueItem && (
                         <>
                           <div className="mt-2 flex items-center justify-between gap-3">
                             <div className={`text-xl font-semibold ${valueTier?.scoreClass ?? 'text-white'}`}>
@@ -794,13 +799,10 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                             </div>
                           )}
                         </>
-                      ) : (
-                        <div className="mt-2 text-xs text-gray-500">
-                          No ranked roadmap work available yet.
-                        </div>
                       )}
                     </div>
                   </div>
+                  )}
 
                   {/* Action buttons */}
                   <div className="flex-shrink-0 flex flex-wrap items-center gap-1.5 sm:ml-auto">
