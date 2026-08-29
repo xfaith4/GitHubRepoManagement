@@ -502,6 +502,100 @@ Describe 'Portfolio snapshot route - Release 3.5 milestones 1+2' {
             @($response.Json.data.degraded | Where-Object { $_.source -eq 'status-scan' }).Count | Should -BeGreaterThan 0
         }
     }
+
+    # Regression guard, 2026-08-29. Every assertion above ran green in CI for
+    # months while the route answered 500 on every operator machine, because
+    # all of them reach the status-cache branch only when a cache EXISTS — and
+    # a fresh CI clone has none, so `hit` is false and the branch never
+    # executes. The route read `.entries`/`.scannedAt` off Get-StatusFromCache,
+    # which returns neither (that is Get-RoadmapFromCache's shape); StrictMode
+    # threw the moment the branch was entered.
+    #
+    # This test writes a cache file directly, so the branch runs on a fresh
+    # clone too. It asserts the unwrap, not the numbers: the payload is a
+    # fixture, and the contract under test is "the route can read what the
+    # cache actually writes."
+    It 'reads a populated status cache instead of throwing on its shape' {
+        $cacheDir = Join-Path $script:WorkspaceRoot 'backend\modules\output\cache'
+        # The cache directory is gitignored, so it does not exist on a fresh
+        # clone; creating the parent is part of the fixture, not a side effect.
+        $null = New-Item -ItemType Directory -Path $cacheDir -Force
+        $cacheFile = Join-Path $cacheDir 'status-cache.json'
+        $restore = if (Test-Path -LiteralPath $cacheFile) { Get-Content -LiteralPath $cacheFile -Raw } else { $null }
+
+        try {
+            $settingsResponse = Invoke-ContractApiRequest -Method GET -Path '/api/settings'
+            # Mirrors Get-ConfiguredLocalRootsOrWorkspace: configured roots that
+            # exist on disk, else the workspace root.
+            $configured = @($settingsResponse.Json.data.inventory.localRoots | ForEach-Object { [string]$_ } |
+                    Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path -LiteralPath $_) })
+            $roots = if ($configured.Count -gt 0) { $configured } else { @($script:WorkspaceRoot) }
+            $normalized = @($roots | ForEach-Object { ([string]$_).Trim().ToLowerInvariant() } | Sort-Object)
+            $depth = if ($settingsResponse.Json.data.inventory.maxDepth) { [int]$settingsResponse.Json.data.inventory.maxDepth } else { 3 }
+            $key = '{0}|depth:{1}|nonGit:{2}' -f ($normalized -join ';'), $depth, $false
+
+            $entry = @{
+                schemaVersion = 4
+                key           = $key
+                createdAtUtc  = (Get-Date).ToUniversalTime().ToString('o')
+                response      = @{
+                    success = $true
+                    data    = @{
+                        repos = @(
+                            # lastCommitAuthor / commitsLastWeek / commitsLastMonth
+                            # are mandatory: Test-StatusResponseHasActivityMetrics
+                            # rejects the whole cache entry without them, which
+                            # silently turns a cache HIT into a MISS -- and this
+                            # test into a no-op.
+                            @{
+                                name               = 'contract-fixture-repo'
+                                status             = 'clean'
+                                uncommittedChanges = 0
+                                lastCommitAuthor   = 'contract-fixture'
+                                commitsLastWeek    = 0
+                                commitsLastMonth   = 0
+                            }
+                        )
+                    }
+                }
+            }
+            ($entry | ConvertTo-Json -Depth 20) | Set-Content -LiteralPath $cacheFile -Encoding UTF8
+
+            $response = Invoke-ContractApiRequest -Method GET -Path '/api/portfolio/snapshot'
+
+            # The whole point: a cache hit must not be a 500.
+            $response.StatusCode | Should -Be 200
+            $response.Json.success | Should -BeTrue
+
+            # Self-validating, and this matters more than the status code.
+            # If the key were wrong the cache would MISS, the branch under test
+            # would never execute, and every assertion above would pass while
+            # proving nothing -- the exact vacuous green this test exists to
+            # end. Asserting the fixture's own repo count forces a real hit:
+            # 1 repo comes from nowhere but the cache written above.
+            $repoCount = $response.Json.data.metrics.repoCount
+            $repoCount | Should -Not -BeNullOrEmpty
+            $repoCount.source | Should -Be 'status-scan' -Because 'a miss would degrade the metric instead, leaving this test vacuous'
+            [int]$repoCount.value | Should -Be 1 -Because 'the value must come from the fixture cache, proving the branch ran'
+
+            # The status timestamp must carry an explicit UTC basis rather than
+            # the empty string the throwing path left behind. Asserted against
+            # the RAW body: ConvertFrom-Json silently promotes an ISO-8601
+            # string to [datetime], and [string] on that renders in the local
+            # culture ('08/29/2026 07:59:32'), so a parsed-object check would
+            # report a basis failure the wire format never had.
+            $repoCount.asOf | Should -Not -BeNullOrEmpty
+            $response.Content | Should -Match '"asOf"\s*:\s*"[^"]*(Z|[+-][0-9]{2}:[0-9]{2})"'
+        }
+        finally {
+            if ($null -ne $restore) {
+                Set-Content -LiteralPath $cacheFile -Value $restore -Encoding UTF8 -NoNewline
+            }
+            else {
+                Remove-Item -LiteralPath $cacheFile -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
 }
 
 Describe 'Branch cleanup route - Release 3.4 milestone 5' {

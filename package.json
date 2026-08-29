@@ -16,7 +16,8 @@
     "lint": "npm run lint --workspace frontend",
     "test:unit": "npm run test:unit --workspace frontend",
     "test": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/Invoke-TestSuite.ps1",
-    "test:fast": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/Invoke-TestSuite.ps1 -SkipApiHost"
+    "test:fast": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/Invoke-TestSuite.ps1 -SkipApiHost",
+    "ui:ratchet": "node tools/Measure-UiRatchet.mjs"
   },
   "devDependencies": {
     "@types/react": "^19.2.16",

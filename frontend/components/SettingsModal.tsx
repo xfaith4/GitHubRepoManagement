@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { type AppSettings, type GitHubAuthStatus } from '../types';
 import { saveSettings, getGitHubAuthStatus } from '../services/apiClient';
+import { useDialogDismiss } from '../hooks/useDialogDismiss';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -32,6 +33,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onSave, 
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [connectNotice, setConnectNotice] = useState<string | null>(null);
+  // Escape closes and Tab stays inside; same contract the wizard uses.
+  const panelRef = useDialogDismiss<HTMLDivElement>(isOpen, onClose);
 
   useEffect(() => {
     setSettings(currentSettings);
@@ -133,9 +136,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onSave, 
           Wider on large screens so the settings use the horizontal space
           instead of forming one long column. */}
       <div
+        ref={panelRef}
         className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md md:max-w-3xl border border-gray-700 flex flex-col max-h-[95vh] my-auto"
         onClick={e => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-label="Settings"
       >
         <form onSubmit={handleSave} className="flex flex-col min-h-0 flex-1">

@@ -10116,9 +10116,25 @@ try {
                         $snapStatus = Get-StatusFromCache -Key $snapKey -TtlSeconds 3600 -IgnoreTtl
                         $snapStatusData = $null
                         $snapStatusAsOf = ''
-                        if ($null -ne $snapStatus -and $snapStatus.hit) {
-                            $snapStatusData = [pscustomobject]@{ repos = @($snapStatus.entries) }
-                            $snapStatusAsOf = [string]$snapStatus.scannedAt
+                        # Get-StatusFromCache returns { hit, source, ageSeconds,
+                        # cachedAt, response } on EVERY path -- the payload is an
+                        # API envelope under `response`, exactly as the four other
+                        # callers of this function unwrap it. It has never carried
+                        # `entries` or `scannedAt`; that is Get-RoadmapFromCache's
+                        # shape, and reading it here threw under StrictMode the
+                        # moment a status cache existed, which is every operator
+                        # machine after its first scan. CI never caught it because
+                        # a fresh clone has no cache, so `hit` is false and this
+                        # branch never ran.
+                        if ($null -ne $snapStatus -and $snapStatus.hit -and $null -ne $snapStatus.response) {
+                            $snapResponse = $snapStatus.response
+                            if ($snapResponse.success -and $null -ne $snapResponse.data) {
+                                $snapStatusData = [pscustomobject]@{ repos = @($snapResponse.data.repos) }
+                                # cachedAt is written as $createdAtUtc.ToString('o')
+                                # -- UTC with an explicit offset, which is what the
+                                # snapshot's one-clock contract requires.
+                                $snapStatusAsOf = [string]$snapStatus.cachedAt
+                            }
                         }
 
                         $snapExecution = $null
