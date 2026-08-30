@@ -1043,6 +1043,36 @@ Intent: **awareness, not enforcement.**
       untouched-assertions can still name the file. Verified both ways —
       green clean, and red naming `Adapters.ps1` with the bypass re-injected.
 
+- [ ] **The portal watchdog is restarting a healthy service every 3 minutes —
+      its probe URL was frozen at registration time.** _(state: diagnosed
+      2026-08-29; the fix is ONE elevated re-registration, waiting on the
+      operator)_ Found live the evening the portal flipped to HTTPS: shawl's
+      log shows `Received stop event` every ~3 minutes (59 restarts in one
+      window), each an SCM stop ordered by `RepoMgmtPortalWatchdog` — a SYSTEM
+      scheduled task invisible to unelevated queries (`schtasks` answers
+      _Access is denied_, not _not found_, which is itself the tell).
+      [`Watch-PortalHealth.ps1`](scripts/service/Watch-PortalHealth.ps1) on
+      disk handles HTTPS correctly — defaults to `https`, skips the
+      self-signed certificate on both pwsh and 5.1, and documents this exact
+      failure — but the REGISTERED task carries the `-BaseUrl` baked into its
+      argument string when it was installed, before TLS. The plain-http probe
+      dies in the TLS handshake, the watchdog declares the host frozen, and
+      restarts a healthy service, forever. The handshake-failure flood in
+      `apihost.log` is that probe.
+
+      The lesson the HTTPS fallout sweep missed, stated for the next flip of
+      any kind: **grep finds stale assumptions in files; it cannot find frozen
+      copies of arguments in the task registry.** Registered tasks, service
+      ImagePaths, and shortcuts all hold snapshots of defaults that later
+      change — a config-flip sweep must enumerate REGISTRATIONS, not just
+      sources. The runner task from this same release has the identical
+      exposure (its argument string is also frozen; benign today).
+
+      Fix, elevated: `pwsh -File .\scripts\service\Install-PortalWatchdog.ps1`
+      — the installer already unregisters and re-registers with current
+      defaults. Done means shawl's log shows no stop events for an hour and
+      the watchdog's next cycles leave the service pid unchanged.
+
 - [ ] **[non-blocker]** **Isolate the runner heartbeat the way the queue,
       settings and TLS config now are.** _(state: planned — found 2026-08-29
       while verifying the port and settings fixes)_ The api-host smoke asserts
