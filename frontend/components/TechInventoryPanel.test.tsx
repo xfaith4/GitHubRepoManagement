@@ -96,18 +96,20 @@ describe('TechInventoryPanel — absence of data is never a finding', () => {
     expect(screen.queryByTestId('tech-inventory-groups')).toBeNull();
   });
 
-  it('warns when the index behind the inventory is stale, and stays quiet when it is fresh', () => {
+  it('never renders a stale basis as an amber banner — freshness is quiet footer metadata', () => {
+    // Operator principle (2026-08-30): amber means an actual problem with the
+    // manager, never a statement about the validity of the data shown.
     const stale = inventory({
       basis: { indexStale: true, indexAgeHours: 30, indexGeneratedAt: '2026-08-29T00:00:00Z', reasons: ['The index was generated 30 hour(s) ago, past the 24-hour freshness window.'] },
     });
     const { unmount } = render(<TechInventoryPanel panel={panelState(stale)} onRefresh={vi.fn()} />);
-    const banner = screen.getByTestId('tech-inventory-basis');
-    expect(banner).toHaveTextContent(/may not describe the portfolio as it is now/);
-    expect(banner).toHaveTextContent(/24-hour freshness window/);
+    expect(screen.queryByTestId('tech-inventory-basis')).toBeNull();
+    expect(screen.getByTestId('tech-inventory-footer')).toHaveTextContent(/a portfolio scan refreshes this/);
     unmount();
 
     render(<TechInventoryPanel panel={panelState(inventory())} onRefresh={vi.fn()} />);
     expect(screen.queryByTestId('tech-inventory-basis')).toBeNull();
+    expect(screen.getByTestId('tech-inventory-footer')).not.toHaveTextContent(/refreshes this/);
   });
 
   it('renders a fetch failure as a named error with retry, never as an empty inventory', () => {

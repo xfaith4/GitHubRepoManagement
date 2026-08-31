@@ -88,19 +88,11 @@ export const TechInventoryPanel: React.FC<TechInventoryPanelProps> = ({ panel, o
 
       {inventory && panel.phase !== 'error' && (
         <>
-          {/* The index behind this inventory may no longer describe the
-              portfolio — say so before the numbers, same as the Today banner. */}
-          {inventory.basis.indexStale && (
-            <div className="mb-3 rounded border border-amber-600 bg-amber-950/40 px-3 py-2 text-sm text-amber-100" data-testid="tech-inventory-basis" role="status">
-              <p className="font-semibold">This inventory may not describe the portfolio as it is now.</p>
-              {inventory.basis.reasons.length > 0 && (
-                <ul className="mt-1 list-disc pl-5 space-y-0.5 text-amber-200/90">
-                  {inventory.basis.reasons.map(reason => <li key={reason}>{reason}</li>)}
-                </ul>
-              )}
-              <p className="mt-1 text-amber-200/80">Run a portfolio scan (Today tab) and this inventory rebuilds with it.</p>
-            </div>
-          )}
+          {/* No amber basis banner here, deliberately (operator principle,
+              2026-08-30): amber means an actual problem with the manager,
+              never a statement about the validity of the data. Freshness is
+              quiet metadata — the footer names when the index was generated
+              and, when stale, that a portfolio scan refreshes it. */}
 
           {inventory.reposWithTechnologyData === 0 ? (
             <div className="text-center py-8 text-gray-500 text-sm" data-testid="tech-inventory-predates">
@@ -149,9 +141,10 @@ export const TechInventoryPanel: React.FC<TechInventoryPanelProps> = ({ panel, o
             </div>
           )}
 
-          <p className="text-sm text-gray-600 text-right pt-2">
+          <p className="text-sm text-gray-600 text-right pt-2" data-testid="tech-inventory-footer">
             {inventory.reposWithTechnologyData} of {inventory.repoCount} indexed repositories carry technology data
             {inventory.generatedAt ? ` · index generated ${new Date(inventory.generatedAt).toLocaleString()}` : ''}
+            {inventory.basis.indexStale ? ' · a portfolio scan refreshes this' : ''}
           </p>
         </>
       )}
