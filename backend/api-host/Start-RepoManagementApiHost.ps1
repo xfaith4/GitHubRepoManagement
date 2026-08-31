@@ -6169,6 +6169,11 @@ try {
             break
         }
         try {
+            # Lane 0.17 — reset per-request state before any of it is assigned,
+            # so the catch below can tell "this request never got a stream/id"
+            # from a stale value left by the previous connection.
+            $req = $null
+            $correlationId = $null
             # Release 2.2 TLS: wrap the raw stream in an SslStream when a cert is
             # configured; otherwise the plain NetworkStream is used unchanged.
             $activeStream = $null
@@ -10469,13 +10474,21 @@ try {
 
                     $assessmentEntry = Find-PortfolioAssessmentEntry -RepoName $repoName -Settings $settings
 
-                    $packet = Build-CopilotTaskPacket -RepoName $repoName -RoadmapPath $roadmapPath -AuditEntry $auditEntry -AssessmentEntry $assessmentEntry
-                    Add-MetricCounter -Name 'api_requests_total'
-                    Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
-                    Write-HostLog ("[TRACE] copilot-task.preview correlationId={0} done repoName={1} runId={2}" -f $correlationId, $repoName, $packet.runId)
-                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
-                        success = $true
-                        data    = $packet
+                    # Lane 0.17 — a packet-build failure (cold roadmap cache, no
+                    # pending items) must reach the browser as JSON with the real
+                    # message, not escalate to the accept-loop catch.
+                    try {
+                        $packet = Build-CopilotTaskPacket -RepoName $repoName -RoadmapPath $roadmapPath -AuditEntry $auditEntry -AssessmentEntry $assessmentEntry
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                        Write-HostLog ("[TRACE] copilot-task.preview correlationId={0} done repoName={1} runId={2}" -f $correlationId, $repoName, $packet.runId)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = $packet
+                        }
+                    } catch {
+                        Write-HostLog ("[TRACE] copilot-task.preview correlationId={0} failed repoName={1}: {2}" -f $correlationId, $repoName, $_.Exception.Message)
+                        Send-ErrorJson -Stream $req.Stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $correlationId -Operation 'copilot-task.preview'
                     }
                 }
                 'POST /api/operations/prompt/refine' {
@@ -13171,10 +13184,24 @@ try {
                 }            }
         }
         catch {
+            # Lane 0.17 — the 500 must ride the SAME stream the request arrived
+            # on. Under TLS that is the SslStream; writing plaintext to the raw
+            # NetworkStream corrupts the session and the browser reports only
+            # "Failed to fetch", losing the actual error message.
             if ($client.Connected) {
-                $stream = $client.GetStream()
-                $requestCorrelationId = [guid]::NewGuid().ToString('n')
-                Send-ErrorJson -Stream $stream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $requestCorrelationId -Operation 'api.request'
+                $errorStream = if ($null -ne $req -and $null -ne $req.Stream) {
+                    $req.Stream
+                } elseif ($null -ne $activeStream) {
+                    $activeStream
+                } else {
+                    $client.GetStream()
+                }
+                $requestCorrelationId = if (-not [string]::IsNullOrWhiteSpace($correlationId)) { $correlationId } else { [guid]::NewGuid().ToString('n') }
+                try {
+                    Send-ErrorJson -Stream $errorStream -StatusCode 500 -ErrorMessage $_.Exception.Message -CorrelationId $requestCorrelationId -Operation 'api.request'
+                } catch {
+                    Write-HostLog ("WARN could not deliver 500 for {0}: {1}" -f $requestCorrelationId, $_.Exception.Message)
+                }
             }
         }
         finally {

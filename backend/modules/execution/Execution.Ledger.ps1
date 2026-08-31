@@ -338,7 +338,11 @@ function Sync-LedgerFromAudit {
         $bonus = if ($readinessBonus.ContainsKey($doc.dispatchReadiness)) { $readinessBonus[$doc.dispatchReadiness] } else { 0 }
         $priorityScore = $maturityScore + $bonus
 
-        $roadmapPath = if ($null -ne $ra) { [string]($ra.roadmapPath ?? '') } else { [string]($doc.nextPendingRoadmapItem ?? '') }
+        # Lane 0.17 — roadmapPath holds a PATH or nothing. The old fallback wrote
+        # $doc.nextPendingRoadmapItem (the roadmap item TEXT) into this field,
+        # so queue rows showed raw markdown as their "path" and dispatch handed
+        # the packet builder a path that never existed.
+        $roadmapPath = if ($null -ne $ra) { [string]($ra.roadmapPath ?? '') } else { '' }
         $nextTaskText = if ($null -ne $ra -and $null -ne $ra.nextPendingItem) { [string]$ra.nextPendingItem.text } else { [string]($doc.nextPendingRoadmapItem ?? '') }
         $nextTaskSection = if ($null -ne $ra -and $null -ne $ra.nextPendingItem) { [string]$ra.nextPendingItem.section } else { '' }
 

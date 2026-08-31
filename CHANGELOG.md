@@ -2,6 +2,53 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-30 — Lane 0.17: the dispatch console could not dispatch
+
+### Fixed
+
+- **An uncaught route error reached the browser as "Failed to fetch" under
+  TLS.** The accept-loop catch in
+  [`Start-RepoManagementApiHost.ps1`](backend/api-host/Start-RepoManagementApiHost.ps1)
+  wrote its 500 to the raw `$client.GetStream()`; since the portal moved to
+  HTTPS the request rides an `SslStream`, so the plaintext write corrupted
+  the session and the real error message never arrived. The catch now uses
+  the stream the request arrived on (and its correlation id), and
+  `POST /api/copilot-task/preview` gained a local catch so a packet-build
+  failure returns JSON naming the actual problem. The preview modal's
+  "run a roadmap scan" hint now renders only for roadmap errors — a network
+  failure gets a connectivity hint instead of a remedy that cannot fix it.
+- **Dispatch dropped the roadmap path the ledger already knew.** The queue
+  row passed only the repo name to the preview, so the packet build depended
+  on a warm roadmap cache and threw for repos outside it. The ledger's
+  `roadmapPath` now travels with the dispatch. And `Sync-LedgerFromAudit`
+  ([`Execution.Ledger.ps1`](backend/modules/execution/Execution.Ledger.ps1))
+  no longer writes the roadmap item **text** into `roadmapPath` when no
+  roadmap-audit entry exists — the module smoke pins it, shown red first.
+- **The preview → dispatch flow dead-ended at Copy/Close.** The button
+  labeled Dispatch opened a preview modal with no dispatch action, so
+  `assignExecutionLane` was unreachable from the page built around it.
+  [`CopilotTaskPreviewModal.tsx`](frontend/components/CopilotTaskPreviewModal.tsx)
+  now carries a "Dispatch to Lane" action when its caller provides one;
+  a successful dispatch reloads the board, a refusal renders inline.
+
+### Changed
+
+- **The execution-lanes view is one board, not three overlapping tabs.**
+  "Top Candidates" duplicated rows 1–3 of "Ready Queue"; the page said
+  27 Ready while showing three; blocked repos hid in an appendix; and the
+  five state tiles counted without filtering.
+  [`ExecutionQueuePanel.tsx`](frontend/components/ExecutionQueuePanel.tsx)
+  now pins the two lanes on top, renders one ranked ledger list beneath
+  them filtered by the state tiles (now toggle buttons whose counts stay
+  portfolio-wide), and keeps History as the only remaining tab. Covered by
+  new `ExecutionQueuePanel` and `CopilotTaskPreviewModal` component tests.
+- **The tab is named for what the page does: Dispatch Board.** "Copilot
+  Execution Lanes" claimed execution monitoring, but the ledger states are
+  manual bookkeeping derived from audit data — nothing on the page observes
+  a live agent. Renamed in [`viewMeta.ts`](frontend/viewMeta.ts) (label,
+  short label, question, subtitle), the panel header, the improvement-
+  workflow modal copy, and the frontend smoke's assertions.
+
 ## 2026-08-27 — Lane 0.11: a repository is found by where it lives, not by what its folder is called
 
 ### Fixed

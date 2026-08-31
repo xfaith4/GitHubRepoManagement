@@ -1,6 +1,6 @@
 {
   "counts": {
-    "tinyText": 643,
+    "tinyText": 637,
     "outlineNone": 4
   },
   "byFile": {
@@ -61,7 +61,7 @@
       "outlineNone": 0
     },
     "frontend/components/ExecutionQueuePanel.tsx": {
-      "tinyText": 30,
+      "tinyText": 24,
       "outlineNone": 0
     },
     "frontend/components/HelpModal.tsx": {

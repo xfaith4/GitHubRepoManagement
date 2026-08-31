@@ -137,7 +137,7 @@ async function main() {
       const overlay = page.locator('[data-testid="orientation-overlay"]');
       await overlay.waitFor({ state: 'visible', timeout: timeoutMs });
       const overlayText = await overlay.innerText();
-      const sixLabels = ['Repository Grid', 'Insights', 'Operations', 'Doc Readiness Queue', 'Copilot Execution Lanes', 'Dependencies'];
+      const sixLabels = ['Repository Grid', 'Insights', 'Operations', 'Doc Readiness Queue', 'Dispatch Board', 'Dependencies'];
       report.orientationListsAllTabs = sixLabels.every(l => overlayText.includes(l));
       await page.locator('[data-testid="orientation-dismiss"]').click();
       await overlay.waitFor({ state: 'hidden', timeout: timeoutMs });
@@ -170,10 +170,13 @@ async function main() {
     // names, and the old ambiguous names are gone.
     try {
       await page.getByRole('button', { name: 'Doc Readiness Queue', exact: false }).first().waitFor({ state: 'visible', timeout: timeoutMs });
-      await page.getByRole('button', { name: 'Copilot Execution Lanes', exact: false }).first().waitFor({ state: 'visible', timeout: timeoutMs });
+      // Lane 0.17 — renamed from "Copilot Execution Lanes": a dispatch board,
+      // not an execution monitor.
+      await page.getByRole('button', { name: 'Dispatch Board', exact: false }).first().waitFor({ state: 'visible', timeout: timeoutMs });
       const oldWork = await page.getByRole('button', { name: 'Work Queue', exact: true }).count();
       const oldExec = await page.getByRole('button', { name: 'Execution Queue', exact: true }).count();
-      report.queuesRenamed = oldWork === 0 && oldExec === 0;
+      const oldLanes = await page.getByRole('button', { name: 'Copilot Execution Lanes', exact: true }).count();
+      report.queuesRenamed = oldWork === 0 && oldExec === 0 && oldLanes === 0;
     } catch (err) {
       report.queuesRenamed = false;
       report.queuesRenamedError = err && err.message ? err.message : String(err);
@@ -307,12 +310,12 @@ async function main() {
       report.bulkSelectionNoteError = err && err.message ? err.message : String(err);
     }
 
-    // (b) Empty Copilot Execution lanes carry explanatory guidance (how to fill).
+    // (b) Empty Dispatch Board lanes carry explanatory guidance (how to fill).
     try {
-      await page.getByRole('button', { name: 'Copilot Execution Lanes', exact: false }).first().click();
+      await page.getByRole('button', { name: 'Dispatch Board', exact: false }).first().click();
       const emptyLane = page.locator('[data-testid="execution-lane-empty"]').first();
       await emptyLane.waitFor({ state: 'visible', timeout: timeoutMs });
-      report.executionLaneEmptyStateOk = /Ready Queue/i.test(await emptyLane.innerText());
+      report.executionLaneEmptyStateOk = /queue below/i.test(await emptyLane.innerText());
     } catch (err) {
       report.executionLaneEmptyStateOk = false;
       report.executionLaneEmptyError = err && err.message ? err.message : String(err);

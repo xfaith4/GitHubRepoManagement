@@ -40,11 +40,14 @@ describe('viewMeta — the single source of truth for the view tabs', () => {
 
   it('renamed the two colliding queues to distinct, self-describing names', () => {
     expect(VIEW_META_BY_KEY['work-queue'].label).toBe('Doc Readiness Queue');
-    expect(VIEW_META_BY_KEY['execution-queue'].label).toBe('Copilot Execution Lanes');
+    // Lane 0.17 — the dispatch ledger is a board, not an execution monitor;
+    // the label must not claim telemetry the page does not have.
+    expect(VIEW_META_BY_KEY['execution-queue'].label).toBe('Dispatch Board');
     // The old ambiguous names must be gone.
     const labels = VIEW_META.map(v => v.label);
     expect(labels).not.toContain('Work Queue');
     expect(labels).not.toContain('Execution Queue');
+    expect(labels).not.toContain('Copilot Execution Lanes');
   });
 
   it('has unique labels and unique keys', () => {
