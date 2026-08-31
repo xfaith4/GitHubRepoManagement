@@ -1841,16 +1841,22 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
         onClose={() => setIsHelpOpen(false)}
       />
 
-      <CopilotTaskPreviewModal
-        isOpen={isCopilotTaskPreviewOpen}
-        repoName={copilotTaskPreviewRepo}
-        roadmapPath={copilotTaskPreviewRoadmapPath}
-        onDispatch={handleDispatchToLane}
-        onClose={() => {
-          setIsCopilotTaskPreviewOpen(false);
-          setCopilotTaskPreviewRoadmapPath(undefined);
-        }}
-      />
+      {/* Lane 0.17 follow-up — the modal renders outside the per-view
+          boundary, so a render crash in it used to take the whole portal to
+          the app-level error card. Its own boundary keeps the blast radius
+          to the preview. */}
+      <ErrorBoundary label="The task preview" key={copilotTaskPreviewRepo ?? 'task-preview'}>
+        <CopilotTaskPreviewModal
+          isOpen={isCopilotTaskPreviewOpen}
+          repoName={copilotTaskPreviewRepo}
+          roadmapPath={copilotTaskPreviewRoadmapPath}
+          onDispatch={handleDispatchToLane}
+          onClose={() => {
+            setIsCopilotTaskPreviewOpen(false);
+            setCopilotTaskPreviewRoadmapPath(undefined);
+          }}
+        />
+      </ErrorBoundary>
 
       <RoadmapAuditModal
         isOpen={isRoadmapAuditModalOpen}

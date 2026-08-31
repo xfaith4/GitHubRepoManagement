@@ -12,6 +12,7 @@ import '@testing-library/jest-dom/vitest';
 import React from 'react';
 import CopilotTaskPreviewModal from './CopilotTaskPreviewModal';
 import * as apiClient from '../services/apiClient';
+import { normalizeCopilotTaskPacket } from '../lib/copilotTaskPacket';
 import type { CopilotTaskPacket } from '../types';
 
 vi.mock('../services/apiClient', () => ({
@@ -88,6 +89,35 @@ describe('CopilotTaskPreviewModal — dispatch action and honest error hints', (
 
     expect(await screen.findByText('Failed to build task packet')).toBeInTheDocument();
     expect(screen.getByText(/Ensure a roadmap scan has been run/)).toBeInTheDocument();
+  });
+
+  it('renders a sparse packet the way the live backend actually sent one — null arrays, no crash', async () => {
+    // Lane 0.17 follow-up — the live service serialized empty arrays as JSON
+    // null (valueContext.rationale in the field); the normalizer at the API
+    // edge is what stands between that payload and a portal-wide crash.
+    const rawSparse = {
+      packetVersion: '1.0',
+      runId: 'run-field-1',
+      createdAt: '2026-08-31T00:00:00Z',
+      repoContext: { repoName: 'test-nextgs', roadmapPath: 'F:\\repos\\test-nextgs\\ROADMAP.md' },
+      readmeContext: { summary: null, headings: null, hasSetupGuidance: false, hasUsageGuidance: false, hasArchitectureGuidance: false },
+      roadmapContext: { releaseGoal: null, pendingMilestones: null, completedMilestones: null, acceptanceCriteria: null, outOfScope: null },
+      selectedRoadmapItem: { text: 'Store an API key in Settings', section: 'Release 1.0', tags: null },
+      followUpCandidates: null,
+      docFindings: null,
+      valueContext: { topValueItemText: null, valueTier: null, selectedBy: 'roadmap-order', selectedIsTopValueItem: false, rationale: null },
+      constraints: null,
+      acceptanceCriteria: null,
+      guardrails: null,
+      generatedPrompt: 'Do the thing.',
+    };
+    mockedPreview.mockResolvedValue(normalizeCopilotTaskPacket(rawSparse));
+    mockedHistory.mockResolvedValue([]);
+
+    render(<CopilotTaskPreviewModal isOpen repoName="test-nextgs" onClose={vi.fn()} />);
+
+    expect(await screen.findByText('Store an API key in Settings')).toBeInTheDocument();
+    expect(screen.getByText(/Acceptance Criteria/)).toBeInTheDocument();
   });
 
   it('a network failure gets a connectivity hint, never "run a roadmap scan"', async () => {

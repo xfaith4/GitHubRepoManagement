@@ -5462,7 +5462,11 @@ Execution requirements:
             topValueItemText      = if ($null -ne $topValueItem) { [string](Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'text' -Default '') } else { $null }
             valueScore            = if ($null -ne $selectedValueItem) { Get-ObjectPropertyValue -InputObject $selectedValueItem -PropertyName 'valueScore' -Default $null } else { Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'valueScore' -Default $null }
             valueTier             = if ($null -ne $selectedValueItem) { Get-ObjectPropertyValue -InputObject $selectedValueItem -PropertyName 'valueTier' -Default $null } else { Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'valueTier' -Default $null }
-            rationale             = if ($null -ne $selectedValueItem) { @(Get-ObjectPropertyValue -InputObject $selectedValueItem -PropertyName 'valueRationale' -Default @()) } else { @(Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'valueRationale' -Default @()) }
+            # Lane 0.17 follow-up — an if-EXPRESSION enumerates its result, so
+            # an empty array collapses to $null and serializes as JSON null
+            # (the preview modal then read .length of null and took the whole
+            # portal down). The OUTER @() re-collects the empty case into [].
+            rationale             = @(if ($null -ne $selectedValueItem) { Get-ObjectPropertyValue -InputObject $selectedValueItem -PropertyName 'valueRationale' -Default @() } else { Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'valueRationale' -Default @() })
         }
         constraints        = @($constraints)
         acceptanceCriteria = @($acceptanceCriteria)

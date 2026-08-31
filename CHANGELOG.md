@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented here.
 
+## 2026-08-31 — Lane 0.17 follow-up: a sparse dispatch crashed the whole portal
+
+### Fixed
+
+- **An empty PowerShell array reached the browser as JSON `null` and took
+  the portal down.** A PowerShell `if`-EXPRESSION enumerates its result, so
+  `rationale = if (...) { @(...) } else { @(...) }` collapses an empty array
+  to `$null` — the live packet carried `valueContext.rationale: null`, the
+  preview modal read `.length` of it, and because the modal renders outside
+  the per-view boundary the app-level error card replaced the entire portal.
+  Exposed by the 2026-08-30 fixes, which made packets buildable for repos
+  with no value assessment. Three layers: the packet builder wraps the whole
+  if-expression in `@(...)` (empty now serializes `[]`);
+  [`copilotTaskPacket.ts`](frontend/lib/copilotTaskPacket.ts) normalizes
+  every UI-iterated array at the API-client choke point so a stale service
+  cannot crash the page (pinned with the field-captured payload shape); and
+  `Dashboard.tsx` wraps the preview modal in its own `ErrorBoundary` so a
+  future preview crash degrades to a labeled card. A ~30-site sweep of the
+  same if-expression pattern on local variables is recorded as a Lane 0.17
+  non-blocker.
+
 ## 2026-08-30 — Lane 0.17: the dispatch console could not dispatch
 
 ### Fixed

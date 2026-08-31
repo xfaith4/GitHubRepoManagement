@@ -1835,6 +1835,32 @@ not observed agent activity.
       asserted gone) and [`frontend-smoke.cjs`](scripts/frontend-smoke.cjs)
       all follow. The `execution-queue` view key is unchanged, so no route
       or persisted state breaks.)_
+- [x] **Follow-up (operator, 2026-08-31): dispatching a sparse repo crashed
+      the whole portal.** The Lane 0.17 fixes made packets buildable for
+      repos with no value assessment — and exposed a latent serializer bug:
+      a PowerShell `if`-EXPRESSION enumerates its result, so an empty `@()`
+      collapses to `$null` and `valueContext.rationale` reached the browser
+      as JSON `null`; the modal's `.length` read then threw, and because the
+      modal renders outside the per-view boundary the app-level card took
+      the entire portal down. _(state: smoke-tested 2026-08-31 — reproduced
+      by rendering the modal against the live captured packets; three-layer
+      fix: the backend wraps the whole if-expression in `@(...)` (micro-proof:
+      the old shape serializes `null`, the new `[]`);
+      [`copilotTaskPacket.ts`](frontend/lib/copilotTaskPacket.ts) normalizes
+      every UI-iterated array at the API-client choke point so a stale
+      service cannot crash the page (3 lib tests with the field-observed
+      payload + a modal render test); and `Dashboard.tsx` wraps the modal in
+      its own `ErrorBoundary` so any future preview crash degrades to a
+      labeled card instead of the whole portal. Requires a service restart
+      to take effect on the live host.)_
+- [ ] **[non-blocker]** Sweep the `$x = if (...) { @(...) } else { @() }`
+      pattern portfolio-wide: ~30 sites across
+      [`Start-RepoManagementApiHost.ps1`](backend/api-host/Start-RepoManagementApiHost.ps1)
+      and `backend/modules/` assign an if-expression that silently turns an
+      empty array into `$null` (and `@($x)` then makes a one-element
+      `[null]`). Only the payload-literal site crashed a surface; the local-
+      variable sites deserve an audit and, ideally, a lint gate for the
+      pattern. _(state: planned)_
 - [ ] **[non-blocker]** The "Running" state is still bookkeeping — an
       operator clicked Dispatch and has not clicked Complete. Linking lane
       entries to the agent-run ledger (run id, PR state) would make the tab
