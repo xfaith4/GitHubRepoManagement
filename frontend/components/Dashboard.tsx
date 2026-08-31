@@ -36,7 +36,7 @@ import ErrorBoundary from './ErrorBoundary';
 import PortfolioSummarySection from './PortfolioSummarySection';
 import { type ViewTabBadges } from '../lib/viewTabs';
 import { useAsyncPanel, withPanelTimeout } from '../lib/asyncPanel';
-import { getPortfolioSnapshot } from '../services/apiClient';
+import { getPortfolioSnapshot, assignExecutionLane } from '../services/apiClient';
 import ScanProgressChip from './ScanProgressChip';
 import TechInventoryPanel from './TechInventoryPanel';
 import type { PortfolioSnapshot } from '../types';
@@ -108,6 +108,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   const [isCopilotTaskPreviewOpen, setIsCopilotTaskPreviewOpen] = useState(false);
   const [copilotTaskPreviewRepo, setCopilotTaskPreviewRepo] = useState<string | null>(null);
   const [copilotTaskPreviewRoadmapPath, setCopilotTaskPreviewRoadmapPath] = useState<string | undefined>(undefined);
+  // Lane 0.17 — bumped after a successful dispatch from the preview modal so
+  // the Dispatch Board reloads its ledger instead of showing stale lanes.
+  const [executionQueueRefreshToken, setExecutionQueueRefreshToken] = useState(0);
   const [roadmapEntries, setRoadmapEntries] = useState<RoadmapEntry[]>([]);
   const [selectedRepoIds, setSelectedRepoIds] = useState<Set<string>>(new Set());
   const [groupBy, setGroupBy] = useState<'none' | 'status' | 'needsAttention' | 'isStale' | 'lastBuildStatus' | 'roadmapStatus'>('needsAttention');
@@ -1016,6 +1019,17 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     setIsCopilotTaskPreviewOpen(true);
   };
 
+  // Lane 0.17 — the preview modal's dispatch action: assign the repo to a
+  // lane, and on success tell the Dispatch Board to reload its ledger. The
+  // backend stays the authority on refusals (lanes full, not dispatchable).
+  const handleDispatchToLane = async (repoName: string) => {
+    const result = await assignExecutionLane(repoName);
+    if (result.success) {
+      setExecutionQueueRefreshToken(t => t + 1);
+    }
+    return result;
+  };
+
   const handleViewRoadmapAudit = (repoName: string) => {
     setRoadmapAuditModalRepo(repoName);
     setIsRoadmapAuditModalOpen(true);
@@ -1629,6 +1643,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
             ) : activeView === 'execution-queue' ? (
               <ExecutionQueuePanel
                 onDispatchPreviewTask={handlePreviewCopilotTask}
+                refreshToken={executionQueueRefreshToken}
               />
             ) : (
               /* Dependencies view — Release 1.2 graph, led since Lane 0.16 by
@@ -1830,6 +1845,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
         isOpen={isCopilotTaskPreviewOpen}
         repoName={copilotTaskPreviewRepo}
         roadmapPath={copilotTaskPreviewRoadmapPath}
+        onDispatch={handleDispatchToLane}
         onClose={() => {
           setIsCopilotTaskPreviewOpen(false);
           setCopilotTaskPreviewRoadmapPath(undefined);

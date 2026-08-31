@@ -1757,6 +1757,92 @@ that question anywhere.
 
 ---
 
+### Lane 0.17 — The dispatch console could not dispatch (operator evaluation 2026-08-30)
+
+An operator evaluation of the Copilot Execution Lanes tab found the page's
+one verb broken end to end: **Dispatch** opened a preview modal instead of
+assigning a lane, the modal had no dispatch action of its own, the packet
+build failed for a repo the queue itself called Ready, and the failure
+surfaced as the browser's bare _"Failed to fetch"_ because the host wrote
+the 500 to the wrong stream under TLS. Around the broken verb, the surface
+over-promised: five state tiles that count but cannot filter, a three-tab
+layout where "Top Candidates" duplicates rows 1–3 of "Ready Queue", and a
+tab name ("Copilot Execution Lanes") that claims execution monitoring the
+ledger does not do — states are manual bookkeeping derived from audit data,
+not observed agent activity.
+
+- [x] **Deliver route errors over the stream the request arrived on.** The
+      accept-loop catch in
+      [`Start-RepoManagementApiHost.ps1`](backend/api-host/Start-RepoManagementApiHost.ps1)
+      wrote its 500 to the raw `$client.GetStream()`; under TLS the request
+      rode an `SslStream`, so plaintext bytes corrupted the session and every
+      uncaught route error reached the browser as _"Failed to fetch"_ with
+      the real message lost. _(state: smoke-tested 2026-08-30 — the catch now
+      prefers `$req.Stream`, then `$activeStream`, and reuses the request's
+      correlation id; per-request variables reset at loop start so a stale
+      `$req` from a previous connection can never answer. `POST
+      /api/copilot-task/preview` gained a route-level catch, pinned by a new
+      api-host smoke step: an unknown repo must return structured JSON whose
+      `operation` is `copilot-task.preview` — shown red first against the
+      pre-fix host, which answered from `api.request`. The preview modal's
+      roadmap-scan hint now renders only for roadmap errors (a network
+      failure gets a connectivity hint), pinned by two component tests. The
+      TLS half specifically — plaintext-on-SslStream — is asserted by code
+      path, not by an automated TLS fixture; the operation-name gate is the
+      tripwire that keeps route errors out of the accept-loop catch.)_
+- [x] **Carry the known roadmap path through dispatch, and never write item
+      text into `roadmapPath`.** The ledger entry carries `roadmapPath`, but
+      [`ExecutionQueuePanel.tsx`](frontend/components/ExecutionQueuePanel.tsx)
+      dropped it when opening the preview, so the packet build re-resolved
+      from caches and threw when they were cold; and
+      [`Execution.Ledger.ps1`](backend/modules/execution/Execution.Ledger.ps1)
+      fell back to `$doc.nextPendingRoadmapItem` — the roadmap item _text_ —
+      when no roadmap-audit entry existed, which is why a queue row could
+      show raw markdown as its "path". _(state: smoke-tested 2026-08-30 —
+      `entry.roadmapPath` travels with the dispatch callback (component test:
+      a pathless entry passes `undefined`, never `''`); the ledger fallback
+      is now empty, pinned by a module-smoke fixture (`smoke-repo-noaudit`)
+      proven red against the pre-fix module first.)_
+- [x] **Give the preview modal its dispatch.** From this tab the flow
+      dead-ended: preview opened, and the only actions were Copy and Close —
+      `assignExecutionLane` was unreachable. _(state: smoke-tested 2026-08-30
+      — [`CopilotTaskPreviewModal.tsx`](frontend/components/CopilotTaskPreviewModal.tsx)
+      offers "Dispatch to Lane" when its caller provides the action;
+      `Dashboard.tsx` wires it to `assignExecutionLane` and bumps a refresh
+      token so the board reloads its ledger on success; a backend refusal
+      (lanes full, not dispatchable) renders inline, and a preview-only
+      caller gets no dispatch button. Five component tests cover the action,
+      the refusal, the absence, and both error hints.)_
+- [x] **One filtered queue instead of three overlapping lists; the state
+      tiles become the filters.** The five state tiles were static; the page
+      said 27 Ready while showing three; "Top Candidates" was rows 1–3 of the
+      next tab; blocked repos hid in an "Other repos" appendix. _(state:
+      smoke-tested 2026-08-30 —
+      [`ExecutionQueuePanel.tsx`](frontend/components/ExecutionQueuePanel.tsx)
+      pins the two lanes on top, renders one ranked ledger list filtered by
+      state-tile toggle buttons (counts stay portfolio-wide; the active tile
+      clicked again clears the filter; Total shows everything), and keeps
+      History as the only remaining tab. Seven component tests, including
+      the every-ready-repo-renders pin. The new tiles are `text-sm`; the
+      UI-ratchet baseline moved DOWN six tiny-text nodes and was locked in.)_
+- [x] **Rename the tab to what the page does.** "Copilot Execution Lanes"
+      claimed monitoring; the page is a dispatch board — ready work ranked,
+      two lanes of work in progress, a paper trail. _(state: smoke-tested
+      2026-08-30 — renamed to **Dispatch Board** (short "Dispatch") in
+      [`viewMeta.ts`](frontend/viewMeta.ts) with question "What is
+      dispatched, and what should go next?"; the panel header, the
+      improvement-workflow modal copy, `viewMeta.test.ts` (old label
+      asserted gone) and [`frontend-smoke.cjs`](scripts/frontend-smoke.cjs)
+      all follow. The `execution-queue` view key is unchanged, so no route
+      or persisted state breaks.)_
+- [ ] **[non-blocker]** The "Running" state is still bookkeeping — an
+      operator clicked Dispatch and has not clicked Complete. Linking lane
+      entries to the agent-run ledger (run id, PR state) would make the tab
+      answer "is it stuck?" with observed fact; until then the board is
+      honest about being a plan, not a monitor. _(state: planned)_
+
+---
+
 ## 8. Risks and Guardrails
 
 Full list in [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md);

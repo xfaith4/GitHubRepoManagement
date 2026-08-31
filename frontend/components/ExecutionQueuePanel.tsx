@@ -35,6 +35,8 @@ const STATE_CONFIG: Record<ExecutionState, { label: string; badgeClass: string; 
   },
 };
 
+const STATE_ORDER: ExecutionState[] = ['running', 'ready', 'blocked', 'complete', 'idle'];
+
 function StateBadge({ state }: { state: ExecutionState }) {
   const cfg = STATE_CONFIG[state] ?? STATE_CONFIG['idle'];
   return (
@@ -71,7 +73,7 @@ function LaneCard({
           <div className="text-2xl mb-1">○</div>
           <div className="font-medium text-gray-400">{slotLabel} — Empty</div>
           <div className="text-xs text-gray-500 mt-1">
-            Dispatch a repo from the Ready Queue to start work in this lane.
+            Dispatch a repo from the queue below to start work in this lane.
           </div>
         </div>
       </div>
@@ -126,18 +128,75 @@ function LaneCard({
 }
 
 // ---------------------------------------------------------------------------
-// Queue row for ranked ready repos
+// State filter tiles — Lane 0.17: the counts are the filters. Each tile
+// filters the ledger list below; counts always describe the whole ledger,
+// never the filtered subset.
+// ---------------------------------------------------------------------------
+function StateFilterTiles({
+  counts,
+  total,
+  activeFilter,
+  onFilterChange,
+}: {
+  counts: ExecutionQueueSummary['stateCounts'];
+  total: number;
+  activeFilter: ExecutionState | null;
+  onFilterChange: (state: ExecutionState | null) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2" role="group" aria-label="Filter queue by state">
+      {STATE_ORDER.map(key => {
+        const cfg = STATE_CONFIG[key];
+        const selected = activeFilter === key;
+        return (
+          <button
+            key={key}
+            type="button"
+            aria-pressed={selected}
+            onClick={() => onFilterChange(selected ? null : key)}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded border text-sm transition-colors ${cfg.badgeClass} ${
+              selected ? 'ring-2 ring-blue-400/70 opacity-100' : 'opacity-70 hover:opacity-100'
+            }`}
+            title={selected ? `Showing ${cfg.label} — click to show all` : `Show only ${cfg.label}`}
+          >
+            <span className={`inline-block w-1.5 h-1.5 rounded-full ${cfg.dotClass}`} />
+            <span className="font-medium">{counts[key] ?? 0}</span>
+            <span className="opacity-80">{cfg.label}</span>
+          </button>
+        );
+      })}
+      <button
+        type="button"
+        aria-pressed={activeFilter === null}
+        onClick={() => onFilterChange(null)}
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-gray-700 text-gray-400 text-sm transition-colors ${
+          activeFilter === null ? 'ring-2 ring-blue-400/70 opacity-100' : 'opacity-70 hover:opacity-100'
+        }`}
+        title="Show every repo in the ledger"
+      >
+        <span className="font-medium">{total}</span>
+        <span className="opacity-80">Total</span>
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Queue row — one row shape for every ledger state; the action follows the
+// state (Dispatch for ready, Requeue for blocked, none otherwise).
 // ---------------------------------------------------------------------------
 function QueueRow({
   entry,
   rank,
-  onAssign,
+  onDispatch,
+  onRequeue,
   isBusy,
   lanesAvailable,
 }: {
   entry: ExecutionLaneEntry;
   rank: number;
-  onAssign: (repoName: string) => void;
+  onDispatch: (entry: ExecutionLaneEntry) => void;
+  onRequeue: (repoName: string) => void;
   isBusy: boolean;
   lanesAvailable: boolean;
 }) {
@@ -164,14 +223,26 @@ function QueueRow({
         )}
       </div>
       <div className="flex-shrink-0">
-        <button
-          onClick={() => onAssign(entry.repoName)}
-          disabled={isBusy || !lanesAvailable}
-          className="text-xs px-2.5 py-1 rounded border border-blue-700/50 bg-blue-900/30 text-blue-300 hover:bg-blue-800/50 disabled:opacity-40 transition-colors"
-          title={!lanesAvailable ? 'Both lanes are occupied' : `Dispatch ${entry.repoName} to next available lane`}
-        >
-          Dispatch
-        </button>
+        {entry.executionState === 'ready' && (
+          <button
+            onClick={() => onDispatch(entry)}
+            disabled={isBusy || !lanesAvailable}
+            className="text-xs px-2.5 py-1 rounded border border-blue-700/50 bg-blue-900/30 text-blue-300 hover:bg-blue-800/50 disabled:opacity-40 transition-colors"
+            title={!lanesAvailable ? 'Both lanes are occupied' : `Preview and dispatch ${entry.repoName}`}
+          >
+            Dispatch
+          </button>
+        )}
+        {entry.executionState === 'blocked' && (
+          <button
+            onClick={() => onRequeue(entry.repoName)}
+            disabled={isBusy}
+            className="text-xs px-2.5 py-1 rounded border border-yellow-700/50 bg-yellow-900/20 text-yellow-300 hover:bg-yellow-800/40 disabled:opacity-40 transition-colors"
+            title="Force requeue this repo"
+          >
+            Requeue
+          </button>
+        )}
       </div>
     </div>
   );
@@ -205,53 +276,28 @@ function HistoryRow({ item }: { item: ExecutionHistoryRecord }) {
 }
 
 // ---------------------------------------------------------------------------
-// State counts panel
-// ---------------------------------------------------------------------------
-function StateCounts({ counts, total }: { counts: ExecutionQueueSummary['stateCounts']; total: number }) {
-  const items: Array<{ key: ExecutionState; label: string }> = [
-    { key: 'running', label: 'Running' },
-    { key: 'ready', label: 'Ready' },
-    { key: 'blocked', label: 'Blocked' },
-    { key: 'complete', label: 'Complete' },
-    { key: 'idle', label: 'Idle' },
-  ];
-  return (
-    <div className="flex flex-wrap gap-2">
-      {items.map(({ key, label }) => (
-        <div
-          key={key}
-          className={`inline-flex items-center gap-1.5 px-2 py-1 rounded border text-xs ${STATE_CONFIG[key].badgeClass}`}
-        >
-          <span className={`inline-block w-1.5 h-1.5 rounded-full ${STATE_CONFIG[key].dotClass}`} />
-          <span className="font-medium">{counts[key] ?? 0}</span>
-          <span className="opacity-70">{label}</span>
-        </div>
-      ))}
-      <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded border border-gray-700 text-gray-400 text-xs">
-        <span className="font-medium">{total}</span>
-        <span className="opacity-70">Total</span>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Main ExecutionQueuePanel
+// Main ExecutionQueuePanel — Lane 0.17: one board, not three tabs. The two
+// lanes stay pinned (they are the page's unique answer to "what is in
+// progress?"); beneath them one ranked ledger list is filtered by the state
+// tiles; History is the only remaining tab.
 // ---------------------------------------------------------------------------
 interface ExecutionQueuePanelProps {
-  onDispatchPreviewTask?: (repoName: string) => void;
+  onDispatchPreviewTask?: (repoName: string, roadmapPath?: string) => void;
+  /** Bump to reload the queue after an external action (e.g. a dispatch from the preview modal). */
+  refreshToken?: number;
 }
 
-type PanelTab = 'lanes' | 'queue' | 'history';
+type PanelTab = 'queue' | 'history';
 
-const ExecutionQueuePanel: React.FC<ExecutionQueuePanelProps> = ({ onDispatchPreviewTask }) => {
+const ExecutionQueuePanel: React.FC<ExecutionQueuePanelProps> = ({ onDispatchPreviewTask, refreshToken }) => {
   const [queueData, setQueueData] = useState<ExecutionQueueSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<PanelTab>('lanes');
+  const [activeTab, setActiveTab] = useState<PanelTab>('queue');
+  const [stateFilter, setStateFilter] = useState<ExecutionState | null>('ready');
 
   const loadQueue = useCallback(async () => {
     try {
@@ -269,7 +315,7 @@ const ExecutionQueuePanel: React.FC<ExecutionQueuePanelProps> = ({ onDispatchPre
 
   useEffect(() => {
     void loadQueue();
-  }, [loadQueue]);
+  }, [loadQueue, refreshToken]);
 
   const handleSync = useCallback(async () => {
     setSyncing(true);
@@ -348,32 +394,31 @@ const ExecutionQueuePanel: React.FC<ExecutionQueuePanelProps> = ({ onDispatchPre
     }
   }, [loadQueue]);
 
+  const handleDispatch = useCallback((entry: ExecutionLaneEntry) => {
+    if (onDispatchPreviewTask) {
+      // Lane 0.17 — carry the ledger's known roadmap path into the preview so
+      // the packet build never depends on a warm roadmap cache.
+      onDispatchPreviewTask(entry.repoName, entry.roadmapPath || undefined);
+    } else {
+      void handleAssign(entry.repoName);
+    }
+  }, [onDispatchPreviewTask, handleAssign]);
+
   const lanesAvailable = (queueData?.activeLaneCount ?? 0) < 2;
-  const rankedQueue = Array.isArray(queueData?.rankedQueue) ? queueData.rankedQueue : [];
   const recentHistory = Array.isArray(queueData?.recentHistory) ? queueData.recentHistory : [];
   const allEntries = Array.isArray(queueData?.entries) ? queueData.entries : [];
-  const otherEntries = allEntries
-    .filter(e => e.executionState !== 'ready')
-    .sort((a, b) => b.priorityScore - a.priorityScore);
-
-  const tabs: Array<{ id: PanelTab; label: string; count?: number }> = [
-    { id: 'lanes', label: 'Active Lanes', count: queueData?.activeLaneCount ?? 0 },
-    { id: 'queue', label: 'Ready Queue', count: rankedQueue.length },
-    { id: 'history', label: 'History', count: recentHistory.length },
-  ];
+  const rankedEntries = [...allEntries].sort((a, b) => b.priorityScore - a.priorityScore);
+  const visibleEntries = stateFilter === null
+    ? rankedEntries
+    : rankedEntries.filter(e => e.executionState === stateFilter);
 
   return (
     <div className="flex flex-col h-full min-h-0 text-sm">
-      {/* Header */}
+      {/* Header — the view header above the panel already carries the question
+          and subtitle; repeating them here was pure noise. */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700 flex-shrink-0">
-        <div>
-          <h2 className="text-base font-semibold text-white">Copilot Execution Lanes</h2>
-          <p className="text-xs text-gray-500 mt-0.5">Two-lane console tracking Copilot dispatches in progress</p>
-        </div>
+        <h2 className="text-base font-semibold text-white">Dispatch Board</h2>
         <div className="flex items-center gap-2">
-          {queueData && (
-            <StateCounts counts={queueData.stateCounts} total={queueData.totalRepos} />
-          )}
           <button
             onClick={handleSync}
             disabled={syncing || busy}
@@ -396,7 +441,7 @@ const ExecutionQueuePanel: React.FC<ExecutionQueuePanelProps> = ({ onDispatchPre
       </div>
 
       {/* Error banners */}
-      {error && (
+      {error && queueData && (
         <div className="mx-4 mt-3 px-3 py-2 rounded border border-red-700/50 bg-red-900/20 text-red-300 text-xs flex-shrink-0">
           {error}
         </div>
@@ -407,28 +452,6 @@ const ExecutionQueuePanel: React.FC<ExecutionQueuePanelProps> = ({ onDispatchPre
           <button onClick={() => setActionError(null)} className="text-orange-400 hover:text-orange-200 flex-shrink-0">✕</button>
         </div>
       )}
-
-      {/* Tab bar */}
-      <div className="flex items-center gap-0 px-4 pt-3 border-b border-gray-700 flex-shrink-0">
-        {tabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${
-              activeTab === tab.id
-                ? 'border-blue-500 text-blue-300'
-                : 'border-transparent text-gray-500 hover:text-gray-300'
-            }`}
-          >
-            {tab.label}
-            {tab.count !== undefined && (
-              <span className={`ml-1.5 px-1.5 py-0.5 rounded text-xs ${activeTab === tab.id ? 'bg-blue-900/50 text-blue-300' : 'bg-gray-800 text-gray-500'}`}>
-                {tab.count}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto min-h-0 px-4 py-4">
@@ -466,127 +489,102 @@ const ExecutionQueuePanel: React.FC<ExecutionQueuePanelProps> = ({ onDispatchPre
           </div>
         )}
 
-        {queueData && activeTab === 'lanes' && (
+        {queueData && (
           <div className="space-y-4">
-            <div className="text-xs text-gray-500 mb-1">
-              {queueData.activeLaneCount === 0
-                ? 'No active lanes — dispatch from the Ready Queue below.'
-                : `${queueData.activeLaneCount} of 2 lanes occupied.`}
-            </div>
-            <div className="flex gap-4">
-              <LaneCard
-                slotLabel="Lane 1"
-                entry={queueData.lanes.lane1}
-                onCancel={handleCancel}
-                onComplete={handleComplete}
-                isBusy={busy}
-              />
-              <LaneCard
-                slotLabel="Lane 2"
-                entry={queueData.lanes.lane2}
-                onCancel={handleCancel}
-                onComplete={handleComplete}
-                isBusy={busy}
-              />
-            </div>
-
-            {/* Quick-dispatch from ranked queue if lanes available */}
-            {lanesAvailable && rankedQueue.length > 0 && (
-              <div className="mt-4">
-                <div className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">
-                  Top Candidates
-                </div>
-                <div className="space-y-1.5">
-                  {rankedQueue.slice(0, 3).map((entry, i) => (
-                    <QueueRow
-                      key={entry.repoName}
-                      entry={entry}
-                      rank={i + 1}
-                      onAssign={repoName => {
-                        if (onDispatchPreviewTask) {
-                          onDispatchPreviewTask(repoName);
-                        } else {
-                          void handleAssign(repoName);
-                        }
-                      }}
-                      isBusy={busy}
-                      lanesAvailable={lanesAvailable}
-                    />
-                  ))}
-                </div>
+            {/* Lanes strip — always visible; the WIP limit is the page's core answer. */}
+            <div>
+              <div className="text-xs text-gray-500 mb-2">
+                {queueData.activeLaneCount === 0
+                  ? 'No active lanes — dispatch from the queue below.'
+                  : `${queueData.activeLaneCount} of 2 lanes occupied.`}
               </div>
-            )}
-          </div>
-        )}
+              <div className="flex gap-4">
+                <LaneCard
+                  slotLabel="Lane 1"
+                  entry={queueData.lanes.lane1}
+                  onCancel={handleCancel}
+                  onComplete={handleComplete}
+                  isBusy={busy}
+                />
+                <LaneCard
+                  slotLabel="Lane 2"
+                  entry={queueData.lanes.lane2}
+                  onCancel={handleCancel}
+                  onComplete={handleComplete}
+                  isBusy={busy}
+                />
+              </div>
+            </div>
 
-        {queueData && activeTab === 'queue' && (
-          <div className="space-y-1.5">
-            {rankedQueue.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                No repos in the ready queue.
-                {queueData.stateCounts.idle > 0 && (
-                  <p className="mt-1 text-xs">Click Sync to refresh from current audit data.</p>
+            {/* Tab bar — Queue (the one filtered ledger list) and History. */}
+            <div className="flex items-center gap-0 border-b border-gray-700">
+              {([
+                { id: 'queue' as PanelTab, label: 'Queue' },
+                { id: 'history' as PanelTab, label: 'History', count: recentHistory.length },
+              ]).map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${
+                    activeTab === tab.id
+                      ? 'border-blue-500 text-blue-300'
+                      : 'border-transparent text-gray-500 hover:text-gray-300'
+                  }`}
+                >
+                  {tab.label}
+                  {tab.count !== undefined && (
+                    <span className={`ml-1.5 px-1.5 py-0.5 rounded text-xs ${activeTab === tab.id ? 'bg-blue-900/50 text-blue-300' : 'bg-gray-800 text-gray-500'}`}>
+                      {tab.count}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {activeTab === 'queue' && (
+              <div className="space-y-3">
+                <StateFilterTiles
+                  counts={queueData.stateCounts}
+                  total={queueData.totalRepos}
+                  activeFilter={stateFilter}
+                  onFilterChange={setStateFilter}
+                />
+
+                {visibleEntries.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    {stateFilter === null
+                      ? 'The ledger is empty — click Sync to build it from current audit data.'
+                      : `No repos in the ${STATE_CONFIG[stateFilter].label} state.`}
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {visibleEntries.map((entry, i) => (
+                      <QueueRow
+                        key={entry.repoName}
+                        entry={entry}
+                        rank={i + 1}
+                        onDispatch={handleDispatch}
+                        onRequeue={repoName => { void handleRequeue(repoName); }}
+                        isBusy={busy}
+                        lanesAvailable={lanesAvailable}
+                      />
+                    ))}
+                  </div>
                 )}
               </div>
-            ) : (
-              rankedQueue.map((entry, i) => (
-                <QueueRow
-                  key={entry.repoName}
-                  entry={entry}
-                  rank={i + 1}
-                  onAssign={repoName => {
-                    if (onDispatchPreviewTask) {
-                      onDispatchPreviewTask(repoName);
-                    } else {
-                      void handleAssign(repoName);
-                    }
-                  }}
-                  isBusy={busy}
-                  lanesAvailable={lanesAvailable}
-                />
-              ))
             )}
 
-            {/* All entries — non-ready states */}
-            {otherEntries.length > 0 && (
-              <div className="mt-4">
-                <div className="text-xs font-medium text-gray-600 uppercase tracking-wide mb-2 pt-2 border-t border-gray-800">
-                  Other repos
-                </div>
-                <div className="space-y-1.5">
-                  {otherEntries.map(entry => (
-                      <div key={entry.repoName} className="flex items-center gap-3 px-4 py-2 border border-gray-800/50 rounded-lg text-xs">
-                        <div className="flex-1 min-w-0">
-                          <span className="text-gray-300 truncate mr-2">{entry.repoName}</span>
-                          <StateBadge state={entry.executionState} />
-                        </div>
-                        {entry.executionState === 'blocked' && (
-                          <button
-                            onClick={() => void handleRequeue(entry.repoName)}
-                            disabled={busy}
-                            className="px-2 py-0.5 rounded border border-yellow-700/50 bg-yellow-900/20 text-yellow-300 hover:bg-yellow-800/40 disabled:opacity-40 transition-colors"
-                            title="Force requeue this repo"
-                          >
-                            Requeue
-                          </button>
-                        )}
-                      </div>
+            {activeTab === 'history' && (
+              <div>
+                {recentHistory.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">No execution history yet.</div>
+                ) : (
+                  <div className="divide-y divide-gray-800 rounded border border-gray-800 bg-gray-900/30 px-3 py-1">
+                    {[...recentHistory].reverse().map((item) => (
+                      <HistoryRow key={`${item.repoName}-${item.timestamp}`} item={item} />
                     ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {queueData && activeTab === 'history' && (
-          <div>
-            {recentHistory.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">No execution history yet.</div>
-            ) : (
-              <div className="divide-y divide-gray-800 rounded border border-gray-800 bg-gray-900/30 px-3 py-1">
-                {[...recentHistory].reverse().map((item) => (
-                  <HistoryRow key={`${item.repoName}-${item.timestamp}`} item={item} />
-                ))}
+                  </div>
+                )}
               </div>
             )}
           </div>

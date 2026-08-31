@@ -65,11 +65,15 @@ export const VIEW_META: ViewMeta[] = [
     subtitle: 'Repos ranked by README/roadmap readiness — the on-ramp to dispatch.',
   },
   {
+    // Lane 0.17 — renamed from "Copilot Execution Lanes": the ledger is a
+    // dispatch board (ready work ranked, two manual work-in-progress slots,
+    // a paper trail), not an execution monitor, and the name must not claim
+    // telemetry the page does not have.
     key: 'execution-queue',
-    label: 'Copilot Execution Lanes',
-    short: 'Lanes',
-    question: 'What is running, and is it stuck?',
-    subtitle: 'Two-lane console tracking Copilot dispatches in progress.',
+    label: 'Dispatch Board',
+    short: 'Dispatch',
+    question: 'What is dispatched, and what should go next?',
+    subtitle: 'Ready work ranked for dispatch, two lanes in progress, and the paper trail.',
   },
   {
     key: 'dependencies',

@@ -1490,6 +1490,31 @@ try {
         $copilotPreviewPacketOk = $true  # graceful error is OK in smoke context
     }
 
+    # Lane 0.17 — the packet-build EXCEPTION path must return JSON naming the
+    # problem, via the route's own catch. Before it existed, the throw reached
+    # the accept-loop catch, which wrote the 500 to the raw TCP stream — fatal
+    # under TLS (the browser saw only "Failed to fetch"). A repo no cache has
+    # ever heard of forces that throw deterministically.
+    $copilotPreviewGhostResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/copilot-task/preview" -Body @{ repoName = 'lane017-ghost-repo-that-no-cache-holds' }
+    Assert-Not503 -Name '/api/copilot-task/preview (unknown repo)' -Response $copilotPreviewGhostResponse
+    $copilotGhostJson = $copilotPreviewGhostResponse.Json
+    if (-not $copilotGhostJson) {
+        throw '/api/copilot-task/preview (unknown repo) did not return parseable JSON — the packet-build failure is not reaching the client as a structured error'
+    }
+    if ($copilotGhostJson.success -ne $false) {
+        throw "/api/copilot-task/preview (unknown repo) returned success=$($copilotGhostJson.success); expected a structured failure"
+    }
+    $copilotGhostMessage = if ($copilotGhostJson.error -and $copilotGhostJson.error.message) { [string]$copilotGhostJson.error.message } else { [string]$copilotGhostJson.error }
+    if ([string]::IsNullOrWhiteSpace($copilotGhostMessage)) {
+        throw '/api/copilot-task/preview (unknown repo) returned a failure with no error message — the operator would see nothing actionable'
+    }
+    # The operation name proves the ROUTE's catch answered, not the accept-loop
+    # catch (which writes to the raw TCP stream and dies under TLS).
+    if ([string]$copilotGhostJson.operation -ne 'copilot-task.preview') {
+        throw "/api/copilot-task/preview (unknown repo) was answered by operation '$($copilotGhostJson.operation)' — expected the route-level catch 'copilot-task.preview'"
+    }
+    Write-Host ("  /api/copilot-task/preview (unknown repo) -> HTTP {0} JSON error from route catch: {1}" -f $copilotPreviewGhostResponse.StatusCode, $copilotGhostMessage) -ForegroundColor DarkGray
+
     $opsPromptRefineMissingBody = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/operations/prompt/refine" -Body @{}
     Assert-Not503 -Name '/api/operations/prompt/refine (no repoName)' -Response $opsPromptRefineMissingBody
     Write-Host ("  /api/operations/prompt/refine (no repoName) -> HTTP {0}" -f $opsPromptRefineMissingBody.StatusCode) -ForegroundColor DarkGray

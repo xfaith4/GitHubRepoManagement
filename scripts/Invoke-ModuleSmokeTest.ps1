@@ -1969,6 +1969,14 @@ $smokeDocEntries = @(
         nextPendingRoadmapItem = ''; roadmapState = 'missing'
         criticalCount = 2; warningCount = 0; infoCount = 0; readyForDispatch = $false
         auditedAt = (Get-Date).ToString('o'); docFindings = @()
+    },
+    [PSCustomObject]@{
+        # Lane 0.17 — a ready repo with NO roadmap-audit entry: the ledger must
+        # leave roadmapPath empty, never write the roadmap item TEXT into it.
+        repoName = 'smoke-repo-noaudit'; repoPath = $smokeWs; dispatchReadiness = 'ready'
+        nextPendingRoadmapItem = '**Store an API key in Settings** and confirm live data renders'; roadmapState = 'pending'
+        criticalCount = 0; warningCount = 0; infoCount = 0; readyForDispatch = $true
+        auditedAt = (Get-Date).ToString('o'); docFindings = @()
     }
 )
 $smokeRoadmapEntries = @(
@@ -1981,9 +1989,16 @@ $smokeRoadmapEntries = @(
 $smokedLedger = Sync-LedgerFromAudit -WorkspaceRoot $smokeWs -DocAuditEntries $smokeDocEntries -RoadmapAuditEntries $smokeRoadmapEntries
 $smokeReady   = @($smokedLedger.entries | Where-Object { $_.executionState -eq 'ready'   }).Count
 $smokeBlocked = @($smokedLedger.entries | Where-Object { $_.executionState -eq 'blocked' }).Count
-if ($smokeReady   -ne 1) { throw "Expected 1 ready entry after sync, got $smokeReady"   }
+if ($smokeReady   -ne 2) { throw "Expected 2 ready entries after sync, got $smokeReady"   }
 if ($smokeBlocked -ne 1) { throw "Expected 1 blocked entry after sync, got $smokeBlocked" }
-Write-Host ('  sync: ready=' + $smokeReady + ' blocked=' + $smokeBlocked) -ForegroundColor DarkGray
+# Lane 0.17 — roadmapPath holds a path or nothing. The regression this pins:
+# Sync-LedgerFromAudit used to fall back to $doc.nextPendingRoadmapItem (item
+# TEXT), so queue rows rendered raw markdown as their "path" and dispatch
+# handed the packet builder a path that never existed.
+$smokeNoAudit = $smokedLedger.entries | Where-Object { $_.repoName -eq 'smoke-repo-noaudit' } | Select-Object -First 1
+if ($null -eq $smokeNoAudit) { throw 'Expected smoke-repo-noaudit in the synced ledger' }
+if ($smokeNoAudit.roadmapPath -ne '') { throw "Lane 0.17: roadmapPath must be empty when no roadmap-audit entry exists, got '$($smokeNoAudit.roadmapPath)'" }
+Write-Host ('  sync: ready=' + $smokeReady + ' blocked=' + $smokeBlocked + '; no-audit roadmapPath stays empty') -ForegroundColor DarkGray
 
 Write-Step 'Execution ledger — smoke: assign lane and verify duplicate guard'
 $assignResult = Invoke-AssignLane -WorkspaceRoot $smokeWs -RepoName 'smoke-repo-ready'

@@ -8,6 +8,13 @@ interface CopilotTaskPreviewModalProps {
   repoName: string | null;
   roadmapPath?: string;
   onClose: () => void;
+  /**
+   * Lane 0.17 — when provided, the modal offers "Dispatch to Lane" after a
+   * successful preview, so the preview → dispatch flow no longer dead-ends
+   * at Copy/Close. The callback returns the backend's verdict; a refusal
+   * (both lanes occupied, repo not dispatchable) renders inline.
+   */
+  onDispatch?: (repoName: string) => Promise<{ success: boolean; error?: string | null }>;
 }
 
 /**
@@ -75,6 +82,7 @@ const CopilotTaskPreviewModal: React.FC<CopilotTaskPreviewModalProps> = ({
   repoName,
   roadmapPath,
   onClose,
+  onDispatch,
 }) => {
   const [activeTab, setActiveTab] = useState<'packet' | 'prompt' | 'history'>('packet');
   const [packet, setPacket] = useState<CopilotTaskPacket | null>(null);
@@ -83,12 +91,17 @@ const CopilotTaskPreviewModal: React.FC<CopilotTaskPreviewModalProps> = ({
   const [historyLoading, setHistoryLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [dispatching, setDispatching] = useState(false);
+  const [dispatched, setDispatched] = useState(false);
+  const [dispatchError, setDispatchError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen || !repoName) return;
     setPacket(null);
     setError(null);
     setActiveTab('packet');
+    setDispatched(false);
+    setDispatchError(null);
     setLoading(true);
 
     previewCopilotTaskPacket(repoName, roadmapPath)
@@ -114,6 +127,24 @@ const CopilotTaskPreviewModal: React.FC<CopilotTaskPreviewModalProps> = ({
       setTimeout(() => setCopied(false), 2000);
     } catch {
       // clipboard may not be available in all contexts
+    }
+  };
+
+  const handleDispatch = async () => {
+    if (!onDispatch || !repoName || dispatching || dispatched) return;
+    setDispatching(true);
+    setDispatchError(null);
+    try {
+      const result = await onDispatch(repoName);
+      if (result.success) {
+        setDispatched(true);
+      } else {
+        setDispatchError(result.error ?? 'Dispatch failed.');
+      }
+    } catch (err) {
+      setDispatchError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDispatching(false);
     }
   };
 
@@ -168,13 +199,17 @@ const CopilotTaskPreviewModal: React.FC<CopilotTaskPreviewModalProps> = ({
             </div>
           )}
 
-          {/* Error */}
+          {/* Error — Lane 0.17: the remedy hint must match the failure. The
+              roadmap-scan hint used to render on EVERY error, including a
+              network failure it could not fix. */}
           {!loading && error && (
             <div className="bg-red-900/30 border border-red-700/40 rounded-lg px-4 py-3 text-sm text-red-300">
               <div className="font-semibold mb-1">Failed to build task packet</div>
               <div className="text-red-400/80">{error}</div>
               <div className="mt-2 text-xs text-red-400/60">
-                Ensure a roadmap scan has been run (Work Queue → Rescan roadmaps) and this repository has pending roadmap items.
+                {/roadmap/i.test(error)
+                  ? 'Ensure a roadmap scan has been run (Doc Readiness Queue → Rescan roadmaps) and this repository has pending roadmap items.'
+                  : 'The API host did not return a usable response — check that the portal is reachable, then retry.'}
               </div>
             </div>
           )}
@@ -555,14 +590,36 @@ const CopilotTaskPreviewModal: React.FC<CopilotTaskPreviewModalProps> = ({
           )}
         </div>
 
-        {/* Footer */}
-        <div className="px-5 py-3 border-t border-gray-700 flex items-center justify-end gap-2 flex-shrink-0">
+        {/* Footer — Lane 0.17: from the Dispatch Board this modal is the
+            confirm step, so it carries the dispatch action instead of
+            dead-ending at Copy/Close. */}
+        <div className="px-5 py-3 border-t border-gray-700 flex items-center justify-end gap-3 flex-shrink-0">
+          {dispatchError && (
+            <span className="text-sm text-red-400 flex-1 text-left" role="alert">
+              {dispatchError}
+            </span>
+          )}
+          {dispatched && (
+            <span className="text-sm text-green-400 flex-1 text-left">
+              ✓ Dispatched to a lane — track it on the Dispatch Board.
+            </span>
+          )}
           <button
             onClick={onClose}
             className="px-4 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 text-gray-200 rounded border border-gray-600 transition-colors"
           >
             Close
           </button>
+          {onDispatch && packet && !loading && !error && !dispatched && (
+            <button
+              onClick={() => { void handleDispatch(); }}
+              disabled={dispatching}
+              className="px-4 py-1.5 text-sm bg-blue-700 hover:bg-blue-600 text-white rounded border border-blue-600 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+            >
+              {dispatching ? <SpinnerIcon className="w-3.5 h-3.5 animate-spin" /> : null}
+              Dispatch to Lane
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -225,7 +225,7 @@ const RepositoryImprovementWorkflowModal: React.FC<RepositoryImprovementWorkflow
               <h3 className="mt-2 text-lg font-semibold text-white">Task queued for the operator runner</h3>
               <p className="mt-2 text-sm text-gray-300">{dispatchResult.message}</p>
               <dl className="mt-4 grid grid-cols-1 gap-2 text-left text-xs sm:grid-cols-2"><div><dt className="text-gray-500">Repository</dt><dd className="mt-1 text-gray-200">{dispatchResult.githubRepo}</dd></div><div><dt className="text-gray-500">Run ID</dt><dd className="mt-1 break-all text-gray-200">{dispatchResult.runId || dispatchResult.agentRunId}</dd></div></dl>
-              <p className="mt-4 text-xs text-gray-400">The task runner creates the GitHub agent task in your own session — the portal cannot, because <code>gh agent-task</code> needs an OAuth credential a service cannot hold. Start it with <code>{runnerStartCommand(runnerPresence)}</code> if it is not already running. Track progress in Copilot Execution Lanes or GitHub; the pull request remains a review gate and is not merged automatically.</p>
+              <p className="mt-4 text-xs text-gray-400">The task runner creates the GitHub agent task in your own session — the portal cannot, because <code>gh agent-task</code> needs an OAuth credential a service cannot hold. Start it with <code>{runnerStartCommand(runnerPresence)}</code> if it is not already running. Track progress on the Dispatch Board or GitHub; the pull request remains a review gate and is not merged automatically.</p>
             </div>
           )}
         </div>
