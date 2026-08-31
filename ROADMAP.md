@@ -1396,6 +1396,25 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
       way when the index is current, so the gate cannot pass by always
       warning. _(state: smoke-tested)_
 
+- [x] **Put the scan the banner asks for inside the banner.** The staleness
+      banner told the operator to _"run a portfolio scan before acting"_ while
+      offering no control that does so — found by the operator on 2026-08-30,
+      searching the screen for a button that did not exist. `POST
+      /api/portfolio/scan` and its client wrapper `startPortfolioScan()` had
+      shipped with Release 3.2's background scan, but nothing in the UI ever
+      called them: the chip could observe and cancel a scan, never start one,
+      and the only rescan affordances lived on the Repository Grid tab under
+      different names ("Rescan all", Refresh). The banner now carries a **Run
+      portfolio scan** button wired to that route; progress shows in the
+      existing header chip, and the Dashboard watches for the terminal state
+      and re-pulls `/api/operations/repos` so the banner clears — or restates
+      its reasons — from the rebuilt index instead of freezing on the
+      pre-scan verdict. An already-running scan and a refused start are each
+      said, never pretended. Covered by five component tests, including that
+      a still-stale refresh re-offers the button and that the guidance
+      renders without a dead control when no handler is wired.
+      _(state: smoke-tested)_
+
 - [ ] **[non-blocker]** Render the same verdict on the outcome card and
       Insights. _(state: planned)_ Both read the index and neither states its
       age; the `Today` banner covers the ranked landing, which is where an

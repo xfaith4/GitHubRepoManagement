@@ -41,7 +41,7 @@ import ScanProgressChip from './ScanProgressChip';
 import type { PortfolioSnapshot } from '../types';
 import { isRepoNeedsAttention } from '../lib/needsAttention';
 import { classifyFetchFailure } from '../lib/fetchFailure';
-import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getAutomationStatus, getPackagedItems, approvePackagedItem, rejectPackagedItem, getRoadmapDependencies, getPortfolioAssessment, refreshAllPortfolioAssessment, setOperationsRepoCuration, getPortfolioTrend, getOperationsRepos, getRunnerPresence } from '../services/apiClient';
+import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getAutomationStatus, getPackagedItems, approvePackagedItem, rejectPackagedItem, getRoadmapDependencies, getPortfolioAssessment, refreshAllPortfolioAssessment, setOperationsRepoCuration, getPortfolioTrend, getOperationsRepos, getRunnerPresence, startPortfolioScan, getPortfolioScanStatus } from '../services/apiClient';
 import { type RunnerPresencePayload } from '../lib/runnerPresence';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
@@ -276,6 +276,47 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
         throw err;
       })
       .finally(() => setOperationsReposLoading(false));
+  };
+
+  // The Today staleness banner's remedy. Starting is the button's job; progress
+  // is the header chip's; this watcher's only job is to re-pull the ranking
+  // (entries + basis) once the scan reaches a terminal state, so the banner
+  // clears — or restates its reasons — from the rebuilt index rather than
+  // staying frozen on the pre-scan verdict.
+  const scanCompletionWatchRef = useRef(false);
+  const watchScanThenRefreshRanking = () => {
+    if (scanCompletionWatchRef.current) return;
+    scanCompletionWatchRef.current = true;
+    const pollMs = 5000;
+    let remainingPolls = 360; // ~30 min; past that the operator still has Refresh.
+    const poll = async () => {
+      if (remainingPolls-- <= 0) {
+        scanCompletionWatchRef.current = false;
+        return;
+      }
+      try {
+        const status = await getPortfolioScanStatus();
+        if (status.state === 'running') {
+          setTimeout(poll, pollMs);
+          return;
+        }
+      } catch {
+        // A failed probe is silence, not an outcome; keep listening.
+        setTimeout(poll, pollMs * 2);
+        return;
+      }
+      scanCompletionWatchRef.current = false;
+      // Cancelled/failed scans keep their completed phases, so refresh on every
+      // terminal state — the basis says whatever is now true.
+      refreshOperationsRepos(false).catch(() => {/* surfaced in-panel */});
+    };
+    setTimeout(poll, pollMs);
+  };
+
+  const handleRunPortfolioScan = async () => {
+    const result = await startPortfolioScan();
+    watchScanThenRefreshRanking();
+    return { started: result.started, alreadyRunning: result.alreadyRunning };
   };
 
   const refreshExecutionMetrics = useCallback(async ({ background = false }: { background?: boolean } = {}) => {
@@ -1413,6 +1454,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                 isLoading={operationsReposLoading}
                 onOpenRepo={(_repoId, repoName) => setEvaluationModalRepo(repoName)}
                 onRunAction={row => setEvaluationModalRepo(row.repoName)}
+                onRunScan={handleRunPortfolioScan}
               />
             ) : activeView === 'repos' ? (
               <>

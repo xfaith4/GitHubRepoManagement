@@ -175,3 +175,56 @@ describe('TodayView — a ranking says whether it still describes the portfolio'
     expect(screen.queryByTestId('today-staleness')).toBeNull();
   });
 });
+
+describe('TodayView — the banner offers the scan it asks for', () => {
+  // The banner used to name a remedy ("run a portfolio scan") that no control
+  // on the screen could perform; the operator had to know it lived two tabs
+  // away under a different name. The warning and its remedy belong together.
+  const staleBasis = {
+    indexStale: true,
+    indexAgeHours: 14.2,
+    indexGeneratedAt: '2026-08-27T09:46:23Z',
+    reasons: ['The index does not record which version of the assessment logic produced it.'],
+  };
+
+  it('starts the scan from the banner and says the ranking will refresh', async () => {
+    const onRunScan = vi.fn().mockResolvedValue({ started: true, alreadyRunning: false });
+    render(<TodayView entries={[entry('alpha')]} basis={staleBasis} onRunScan={onRunScan} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Run portfolio scan' }));
+    expect(onRunScan).toHaveBeenCalledTimes(1);
+    expect(await screen.findByTestId('today-scan-note')).toHaveTextContent(/Scan started/);
+    // One request per click: the button yields to the note while the scan runs.
+    expect(screen.queryByRole('button', { name: 'Run portfolio scan' })).toBeNull();
+  });
+
+  it('says so when a scan is already running instead of pretending to start one', async () => {
+    const onRunScan = vi.fn().mockResolvedValue({ started: false, alreadyRunning: true });
+    render(<TodayView entries={[entry('alpha')]} basis={staleBasis} onRunScan={onRunScan} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Run portfolio scan' }));
+    expect(await screen.findByTestId('today-scan-note')).toHaveTextContent(/already running/);
+  });
+
+  it('shows the failure and offers the button again when the start is refused', async () => {
+    const onRunScan = vi.fn().mockRejectedValue(new Error('The API host is not reachable.'));
+    render(<TodayView entries={[entry('alpha')]} basis={staleBasis} onRunScan={onRunScan} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Run portfolio scan' }));
+    expect(await screen.findByTestId('today-scan-note')).toHaveTextContent('The API host is not reachable.');
+    expect(screen.getByRole('button', { name: 'Run portfolio scan' })).toBeEnabled();
+  });
+
+  it('re-offers the button when a refresh delivers a basis that is still stale', async () => {
+    const onRunScan = vi.fn().mockResolvedValue({ started: true, alreadyRunning: false });
+    const { rerender } = render(<TodayView entries={[entry('alpha')]} basis={staleBasis} onRunScan={onRunScan} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Run portfolio scan' }));
+    await screen.findByTestId('today-scan-note');
+    rerender(<TodayView entries={[entry('alpha')]} basis={{ ...staleBasis, indexAgeHours: 0.1 }} onRunScan={onRunScan} />);
+    expect(screen.getByRole('button', { name: 'Run portfolio scan' })).toBeEnabled();
+    expect(screen.queryByTestId('today-scan-note')).toBeNull();
+  });
+
+  it('renders the guidance without a dead control when no scan handler is wired', () => {
+    render(<TodayView entries={[entry('alpha')]} basis={staleBasis} />);
+    expect(screen.getByTestId('today-staleness')).toHaveTextContent(/Run a portfolio scan/);
+    expect(screen.queryByRole('button', { name: 'Run portfolio scan' })).toBeNull();
+  });
+});
