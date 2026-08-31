@@ -893,6 +893,39 @@ export interface RoadmapDependencyGraph {
   scannedAt: string;
 }
 
+// Lane 0.16 — technology inventory: what the portfolio runs on, detected from
+// each repository's manifests during the index build (never on a request).
+
+export interface TechInventoryRepoRef {
+  repoName: string;
+  /** The manifest fact that produced the detection, e.g. 'package.json dependency "next"'. */
+  evidence: string;
+}
+
+export interface TechInventoryEntry {
+  id: string;
+  label: string;
+  category: 'language' | 'framework' | 'data' | 'infrastructure' | string;
+  repoCount: number;
+  repos: TechInventoryRepoRef[];
+}
+
+export interface PortfolioTechInventoryResult {
+  generatedAt: string;
+  /** Every repository in the index, whether or not its row carries detections. */
+  repoCount: number;
+  /** Rows carrying a technologies field; 0 means the index predates detection. */
+  reposWithTechnologyData: number;
+  technologies: TechInventoryEntry[];
+  /** Whether the index this inventory came from still describes the portfolio. */
+  basis: {
+    indexStale: boolean;
+    indexAgeHours: number | null;
+    indexGeneratedAt: string | null;
+    reasons: string[];
+  };
+}
+
 // Release 1.4 — Repo Evaluation Pipeline
 
 export type EvaluationFindingSeverity = 'critical' | 'high' | 'medium' | 'low';

@@ -1,4 +1,4 @@
-import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type BackgroundScanStatus, type PortfolioSnapshot, type RepoStatus, type RepoScopeClassification, type RepoScopeSummary, type RepoStaleness, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type RepositoryImprovementPreview, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioAssessmentScanSummary, type PortfolioChangeState, type PortfolioScanDecisionReason, type PortfolioScanStatus, type RepoCurationState, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocUsage, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult, type GitHubAuthStatus } from '../types';
+import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type BackgroundScanStatus, type PortfolioSnapshot, type RepoStatus, type RepoScopeClassification, type RepoScopeSummary, type RepoStaleness, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type RepositoryImprovementPreview, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioTechInventoryResult, type TechInventoryEntry, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioAssessmentScanSummary, type PortfolioChangeState, type PortfolioScanDecisionReason, type PortfolioScanStatus, type RepoCurationState, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocUsage, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult, type GitHubAuthStatus } from '../types';
 import { type AutomationHealthPayload } from '../lib/automationStatus';
 import { type PackagedItem } from '../lib/packagedItems';
 import { type RunnerPresencePayload } from '../lib/runnerPresence';
@@ -1890,6 +1890,46 @@ export async function getRoadmapDependencies(refresh = false): Promise<RoadmapDe
     summary: Array.isArray(d.summary) ? d.summary : [],
     totalEdges: Number(d.totalEdges ?? 0),
     scannedAt: d.scannedAt ?? new Date().toISOString(),
+  };
+}
+
+// Lane 0.16 — technology inventory. Served from the written index; detection
+// runs in the index build, so this read is cheap and carries the index's own
+// staleness verdict as `basis` (absent means "not established", never fresh).
+export async function getPortfolioTechInventory(): Promise<PortfolioTechInventoryResult> {
+  const data = await fetchJson<{ data?: unknown }>(`${API_BASE_URL}/portfolio/tech-inventory`);
+  const asRecord = (value: unknown): Record<string, unknown> =>
+    value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  const d = asRecord(data?.data);
+  const basis = asRecord(d.basis);
+  const technologies: TechInventoryEntry[] = Array.isArray(d.technologies)
+    ? (d.technologies as unknown[]).map(rawTech => {
+        const t = asRecord(rawTech);
+        const rawRepos = Array.isArray(t.repos) ? (t.repos as unknown[]) : [];
+        return {
+          id: String(t.id ?? ''),
+          label: String(t.label ?? t.id ?? ''),
+          category: String(t.category ?? 'other'),
+          repoCount: Number(t.repoCount ?? 0),
+          repos: rawRepos.map(rawRepo => {
+            const r = asRecord(rawRepo);
+            return { repoName: String(r.repoName ?? ''), evidence: String(r.evidence ?? '') };
+          }),
+        };
+      })
+    : [];
+  return {
+    generatedAt: String(d.generatedAt ?? ''),
+    repoCount: Number(d.repoCount ?? 0),
+    reposWithTechnologyData: Number(d.reposWithTechnologyData ?? 0),
+    technologies,
+    basis: {
+      // Only an explicit false reads as fresh — same contract as the Today basis.
+      indexStale: basis.indexStale === false ? false : true,
+      indexAgeHours: typeof basis.indexAgeHours === 'number' && Number.isFinite(basis.indexAgeHours) ? basis.indexAgeHours : null,
+      indexGeneratedAt: typeof basis.indexGeneratedAt === 'string' && basis.indexGeneratedAt ? basis.indexGeneratedAt : null,
+      reasons: Array.isArray(basis.reasons) ? basis.reasons.map(reason => String(reason)).filter(reason => reason.trim().length > 0) : [],
+    },
   };
 }
 

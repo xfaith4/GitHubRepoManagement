@@ -2740,6 +2740,92 @@ Write-Step 'Index staleness — an index cannot be read without its own verdict 
     }
 }
 
+Write-Step 'Technology inventory — Lane 0.16: the Dependencies tab answers with what repositories actually run on'
+& {
+    . $portfolioModule
+
+    $techRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("tech-inv-{0}" -f ([guid]::NewGuid().ToString('n')))
+    try {
+        # Fixture repos covering the three detection channels: named manifests,
+        # dependency names inside package manifests (root and one level down),
+        # and compose service images.
+        $nodeRepo = Join-Path $techRoot 'repo-node'
+        $null = New-Item -ItemType Directory -Path (Join-Path $nodeRepo 'frontend') -Force
+        Set-Content -LiteralPath (Join-Path $nodeRepo 'package.json') -Encoding UTF8 -Value '{"dependencies":{"next":"^14.0.0","pg":"^8.11.0"},"devDependencies":{"typescript":"^5.4.0"}}'
+        Set-Content -LiteralPath (Join-Path $nodeRepo 'tsconfig.json') -Encoding UTF8 -Value '{}'
+        Set-Content -LiteralPath (Join-Path $nodeRepo 'Dockerfile') -Encoding UTF8 -Value 'FROM node:20'
+        Set-Content -LiteralPath (Join-Path $nodeRepo 'frontend\package.json') -Encoding UTF8 -Value '{"dependencies":{"react":"^19.0.0"}}'
+
+        $pyRepo = Join-Path $techRoot 'repo-python'
+        $null = New-Item -ItemType Directory -Path $pyRepo -Force
+        Set-Content -LiteralPath (Join-Path $pyRepo 'requirements.txt') -Encoding UTF8 -Value "flask`npsycopg2-binary==2.9.9"
+        Set-Content -LiteralPath (Join-Path $pyRepo 'docker-compose.yml') -Encoding UTF8 -Value "services:`n  cache:`n    image: redis:7"
+
+        $psRepo = Join-Path $techRoot 'repo-ps'
+        $null = New-Item -ItemType Directory -Path (Join-Path $psRepo 'scripts') -Force
+        Set-Content -LiteralPath (Join-Path $psRepo 'scripts\Invoke-Fixture.ps1') -Encoding UTF8 -Value 'Write-Output 1'
+
+        $nodeProfile = @(Get-RepoTechnologyProfile -LocalPath $nodeRepo)
+        $nodeIds = @($nodeProfile | ForEach-Object { [string]$_.id })
+        foreach ($expected in @('nodejs', 'typescript', 'nextjs', 'postgresql', 'docker', 'react')) {
+            if ($expected -notin $nodeIds) { throw ("The node fixture must detect '{0}', got: {1}" -f $expected, ($nodeIds -join ', ')) }
+        }
+        if ('python' -in $nodeIds) { throw 'The node fixture must not detect Python — detection must be evidence-bound, not generous' }
+        $reactEvidence = [string](@($nodeProfile | Where-Object { $_.id -eq 'react' })[0].evidence)
+        if ($reactEvidence -notmatch 'frontend/package\.json') {
+            throw ("A child-directory manifest detection must name the manifest it came from, got: {0}" -f $reactEvidence)
+        }
+
+        $pyProfile = @(Get-RepoTechnologyProfile -LocalPath $pyRepo)
+        $pyIds = @($pyProfile | ForEach-Object { [string]$_.id })
+        foreach ($expected in @('python', 'flask', 'postgresql', 'redis', 'docker')) {
+            if ($expected -notin $pyIds) { throw ("The python fixture must detect '{0}' (psycopg2/compose channels), got: {1}" -f $expected, ($pyIds -join ', ')) }
+        }
+
+        $psProfile = @(Get-RepoTechnologyProfile -LocalPath $psRepo)
+        $psIds = @($psProfile | ForEach-Object { [string]$_.id })
+        if ('powershell' -notin $psIds) { throw ("The PowerShell fixture must detect 'powershell', got: {0}" -f ($psIds -join ', ')) }
+        if ('docker' -in $psIds) { throw 'The PowerShell fixture must not detect Docker' }
+
+        if (@(Get-RepoTechnologyProfile -LocalPath '').Count -ne 0) { throw 'An empty localPath must yield an empty profile, never a throw' }
+        if (@(Get-RepoTechnologyProfile -LocalPath (Join-Path $techRoot 'no-such-dir')).Count -ne 0) { throw 'A missing localPath must yield an empty profile' }
+
+        # Aggregation: a row written before detection existed carries no
+        # `technologies` field, and must be counted as data-less rather than
+        # read as a repository with no technology in it.
+        $techIndexFixture = [pscustomobject]@{
+            generatedAt = (Get-Date).ToUniversalTime().ToString('o')
+            repos       = @(
+                [pscustomobject]@{ repoName = 'repo-node'; technologies = $nodeProfile },
+                [pscustomobject]@{ repoName = 'repo-python'; technologies = $pyProfile },
+                [pscustomobject]@{ repoName = 'legacy-row' }
+            )
+        }
+        $inventory = Get-PortfolioTechInventoryPayload -IndexPayload $techIndexFixture
+        if ([int]$inventory.repoCount -ne 3) { throw "Inventory repoCount must be 3, got $($inventory.repoCount)" }
+        if ([int]$inventory.reposWithTechnologyData -ne 2) { throw "A pre-detection row must not count as technology data; expected 2, got $($inventory.reposWithTechnologyData)" }
+        $pgEntry = @($inventory.technologies | Where-Object { $_.id -eq 'postgresql' })[0]
+        if ($null -eq $pgEntry) { throw 'PostgreSQL must aggregate across detection channels (pg dependency + psycopg2)' }
+        if ([int]$pgEntry.repoCount -ne 2) { throw "PostgreSQL must count both fixture repos, got $($pgEntry.repoCount)" }
+        if (@($pgEntry.repos | Where-Object { [string]::IsNullOrWhiteSpace([string]$_.evidence) }).Count -gt 0) {
+            throw 'Every aggregated detection must carry its evidence'
+        }
+        if (-not [bool]$inventory.basis.indexStale) {
+            throw 'An inventory whose index carries no staleness verdict must not present itself as current'
+        }
+        if (@($inventory.basis.reasons).Count -eq 0) { throw 'An unestablished inventory basis must say why' }
+
+        $emptyInventory = Get-PortfolioTechInventoryPayload -IndexPayload $null
+        if (@($emptyInventory.technologies).Count -ne 0 -or [int]$emptyInventory.repoCount -ne 0) {
+            throw 'A null index must aggregate to an explicitly empty inventory, never a throw'
+        }
+
+        Write-Host ("  technology inventory ok: {0} technologies across the fixtures; cross-channel aggregation, child-manifest evidence, pre-detection rows counted as data-less" -f @($inventory.technologies).Count) -ForegroundColor DarkGray
+    } finally {
+        Remove-Item -LiteralPath $techRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 Write-Step 'Foundation conclusions — Release 3.6 M1: every repository leaves with an explainable conclusion'
 & {
     . $portfolioConclusionModule
@@ -5483,7 +5569,7 @@ foreach ($emitted in $emittedClasses) {
 
 # The routes must actually consult the budget. A budget nothing calls is a
 # config file, not a gate.
-foreach ($budgetRoute in @('GET /api/portfolio/assessment', 'GET /api/operations/repos', 'GET /api/portfolio/conclusions')) {
+foreach ($budgetRoute in @('GET /api/portfolio/assessment', 'GET /api/operations/repos', 'GET /api/portfolio/conclusions', 'GET /api/portfolio/tech-inventory')) {
     $routeClause = @($hostFileAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.SwitchStatementAst] }, $true) |
         ForEach-Object { $_.Clauses } |
         Where-Object { $_.Item1.Extent.Text.Trim("'`"") -eq $budgetRoute }) | Select-Object -First 1

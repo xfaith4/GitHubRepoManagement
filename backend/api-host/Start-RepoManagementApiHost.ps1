@@ -10358,6 +10358,55 @@ try {
                         }
                     }
                 }
+                'GET /api/portfolio/tech-inventory' {
+                    # Lane 0.16 -- what the portfolio runs on. Reads the written
+                    # index only: detection happens in the index build, where
+                    # scans belong, never on the request thread. The staleness
+                    # verdict rides the same payload as `basis`, so an inventory
+                    # drawn from an old index says so instead of reading as fact.
+                    Write-HostLog ("[TRACE] portfolio.tech-inventory correlationId={0} start" -f $correlationId)
+
+                    $techSettings = Get-HostSettings
+                    $techIndex = $null
+                    try {
+                        $techIndex = Get-PortfolioIndexPayload -WorkspaceRoot $WorkspaceRoot
+                    } catch {
+                        Write-HostLog ("WARN portfolio.tech-inventory correlationId={0} index read failed: {1}" -f $correlationId, $_.Exception.Message)
+                    }
+                    if ($null -eq $techIndex) {
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error = 'No portfolio index has been written yet, so no technology inventory exists. Run a portfolio scan and this route will answer from its results.'
+                        }
+                        break
+                    }
+
+                    $techPayload = Get-PortfolioTechInventoryPayload -IndexPayload $techIndex
+
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
+                    Write-HostLog ("[TRACE] portfolio.tech-inventory correlationId={0} done technologies={1} reposWithData={2} durationMs={3}" -f $correlationId, @($techPayload.technologies).Count, $techPayload.reposWithTechnologyData, [int]((Get-Date) - $requestStart).TotalMilliseconds)
+                    $readBudget = New-PortfolioReadBudgetResult -CacheSource 'portfolio-index' `
+                        -MeasuredMs ([double]((Get-Date) - $requestStart).TotalMilliseconds) -Settings $techSettings
+                    Write-HostLog (Format-PortfolioReadBudgetLog -Result $readBudget -CorrelationId $correlationId -Route '/api/portfolio/tech-inventory')
+                    if (-not $readBudget.withinBudget) {
+                        Write-HostLog ("WARN portfolio.tech-inventory read budget exceeded correlationId={0} class={1} measuredMs={2} budgetMs={3} overByMs={4}" -f $correlationId, $readBudget.readClass, $readBudget.measuredMs, $readBudget.budgetMs, $readBudget.overByMs)
+                    }
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = @{
+                            schemaVersion = $techPayload.schemaVersion
+                            generatedAt = $techPayload.generatedAt
+                            repoCount = $techPayload.repoCount
+                            reposWithTechnologyData = $techPayload.reposWithTechnologyData
+                            technologies = $techPayload.technologies
+                            basis = $techPayload.basis
+                            cacheSource = 'portfolio-index'
+                            performance = $readBudget
+                        }
+                    }
+                }
                 'GET /api/operations/repos' {
                     Write-HostLog ("[TRACE] operations.repos correlationId={0} start" -f $correlationId)
 

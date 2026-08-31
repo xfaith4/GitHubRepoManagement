@@ -1686,6 +1686,49 @@ have, or the scan counts something a `.git` walk does not. Not yet explained.
 
 ---
 
+### Lane 0.16 — The Dependencies tab answered a different question than it asked (operator feedback 2026-08-30)
+
+The tab led with _"What does this repository depend on?"_ and answered with
+roadmap cross-references — for a portfolio, in the plural, and usually with
+nothing at all. To an operator, dependencies are what the repositories run
+on: Node, Next.js, PostgreSQL, SQLite, Docker. The product had no answer to
+that question anywhere.
+
+- [x] **Make the Dependencies tab answer with technologies.**
+      `Get-RepoTechnologyProfile`
+      ([`Portfolio.Assessment.ps1`](backend/modules/portfolio/Portfolio.Assessment.ps1))
+      detects languages, frameworks, data stores, and infrastructure from
+      each repository's manifests — named files, dependency names in
+      `package.json` (root and one level down, for monorepos), Python
+      manifest contents, and compose service images — **during the index
+      build**, because a scan belongs to the background worker, never to a
+      request. Every index row now carries `technologies`, each detection
+      with the manifest evidence that produced it. `GET
+      /api/portfolio/tech-inventory` aggregates from the written index only
+      (read-budget class `portfolio-index`, on the route census and the
+      budget-wiring gate), carrying the index staleness verdict as `basis` —
+      and because the detector lives under `backend/modules/portfolio`, the
+      logic fingerprint moved on its own, so every pre-upgrade index honestly
+      reads stale-by-logic until the next scan. The tab now leads with a
+      `TechInventoryPanel` grouped by category with per-technology repo
+      counts and expandable evidence, renames the old section to _"Cross-repo
+      roadmap references"_, and the tab question becomes _"What does the
+      portfolio run on?"_. A pre-detection index renders as **"predates
+      technology detection — rescan"**, never as a portfolio with no
+      technology in it. Gated by the module-smoke section "Technology
+      inventory" (which caught a StrictMode empty-pipeline bug on its first
+      red run) plus 6 `TechInventoryPanel` component tests; full module smoke
+      and the 409-repo-free census pass locally.
+      _(state: smoke-tested)_
+
+- [ ] **[non-blocker]** Detect versions, not just presence — the inventory
+      says _which_ repos run Node, not which Node; a version column would
+      turn the panel into an upgrade-planning surface. Needs a per-manifest
+      version parse and a staleness policy for engines fields.
+      _(state: planned)_
+
+---
+
 ## 8. Risks and Guardrails
 
 Full list in [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md);

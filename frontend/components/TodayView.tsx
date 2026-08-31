@@ -136,7 +136,7 @@ export const TodayView: React.FC<TodayViewProps> = ({ entries, onOpenRepo, onRun
                 onClick={handleRunScan}
                 disabled={scanRequest === 'starting'}
                 title="Start the background scan that rebuilds the index behind this ranking. Progress shows in the header; the ranking refreshes when it completes."
-                className={`text-xs px-2.5 py-1 rounded border transition-colors ${scanRequest === 'starting'
+                className={`text-sm px-2.5 py-1 rounded border transition-colors ${scanRequest === 'starting'
                   ? 'border-amber-800 text-amber-500/70 cursor-not-allowed'
                   : 'border-amber-600 bg-amber-900/40 text-amber-100 hover:bg-amber-800/50'}`}
               >
@@ -144,17 +144,17 @@ export const TodayView: React.FC<TodayViewProps> = ({ entries, onOpenRepo, onRun
               </button>
             )}
             {scanRequest === 'started' && (
-              <span data-testid="today-scan-note" className="text-xs text-amber-200/90">
+              <span data-testid="today-scan-note" className="text-sm text-amber-200/90">
                 Scan started — progress shows in the header, and this ranking refreshes when it completes.
               </span>
             )}
             {scanRequest === 'already-running' && (
-              <span data-testid="today-scan-note" className="text-xs text-amber-200/90">
+              <span data-testid="today-scan-note" className="text-sm text-amber-200/90">
                 A scan is already running — this ranking refreshes when it completes.
               </span>
             )}
             {scanRequest === 'failed' && scanRequestError && (
-              <span data-testid="today-scan-note" className="text-xs text-red-300">
+              <span data-testid="today-scan-note" className="text-sm text-red-300">
                 {scanRequestError}
               </span>
             )}
