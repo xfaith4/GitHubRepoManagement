@@ -138,58 +138,33 @@ describe('TodayView — the row is a way in', () => {
   });
 });
 
-describe('TodayView — a ranking says whether it still describes the portfolio', () => {
-  // On 2026-08-27 a stale index reported 0 of 9 dispatch-ready repositories and
-  // every surface rendered it as fact. Silence about freshness is the defect.
-  it('warns when the index behind the ranking is stale, and says why', () => {
-    render(
+describe('TodayView — no warning banner on the landing page', () => {
+  // Lane 0.13 shipped a staleness banner here; the operator removed it
+  // (2026-08-30): the first screen opening with an amber warning reads as a
+  // broken product. The verdict still rides every payload as `basis` — it is
+  // simply not rendered on this view. This pins the removal.
+  it('renders no staleness banner even when the basis is stale or absent', () => {
+    const { unmount } = render(
       <TodayView
         entries={[entry('alpha')]}
-        basis={{
-          indexStale: true,
-          indexAgeHours: 14.2,
-          indexGeneratedAt: '2026-08-27T09:46:23Z',
-          reasons: ['The index does not record which version of the assessment logic produced it.'],
-        }}
+        basis={{ indexStale: true, indexAgeHours: 14.2, indexGeneratedAt: '2026-08-27T09:46:23Z', reasons: ['stale by logic'] }}
       />
     );
-    const banner = screen.getByTestId('today-staleness');
-    expect(banner).toHaveTextContent(/may not describe the portfolio as it is now/);
-    expect(banner).toHaveTextContent(/14.2 hour/);
-    expect(banner).toHaveTextContent(/does not record which version/);
-    expect(banner).toHaveTextContent(/Run a portfolio scan/);
-  });
+    expect(screen.queryByTestId('today-staleness')).toBeNull();
+    unmount();
 
-  it('treats an absent verdict as unestablished, not as fresh', () => {
     render(<TodayView entries={[entry('alpha')]} />);
-    expect(screen.getByTestId('today-staleness')).toHaveTextContent(/was not established/);
-  });
-
-  it('stays out of the way when the index is current', () => {
-    render(
-      <TodayView
-        entries={[entry('alpha')]}
-        basis={{ indexStale: false, indexAgeHours: 0.2, indexGeneratedAt: '2026-08-28T00:00:00Z', reasons: [] }}
-      />
-    );
     expect(screen.queryByTestId('today-staleness')).toBeNull();
   });
 });
 
-describe('TodayView — the banner offers the scan it asks for', () => {
-  // The banner used to name a remedy ("run a portfolio scan") that no control
-  // on the screen could perform; the operator had to know it lived two tabs
-  // away under a different name. The warning and its remedy belong together.
-  const staleBasis = {
-    indexStale: true,
-    indexAgeHours: 14.2,
-    indexGeneratedAt: '2026-08-27T09:46:23Z',
-    reasons: ['The index does not record which version of the assessment logic produced it.'],
-  };
-
-  it('starts the scan from the banner and says the ranking will refresh', async () => {
+describe('TodayView — the toolbar offers the portfolio scan', () => {
+  // The scan control survives the banner's removal, as a quiet toolbar
+  // control rather than an alarm: rebuilding the index must stay one click
+  // away from the ranking drawn from it.
+  it('starts the scan and says the ranking will refresh', async () => {
     const onRunScan = vi.fn().mockResolvedValue({ started: true, alreadyRunning: false });
-    render(<TodayView entries={[entry('alpha')]} basis={staleBasis} onRunScan={onRunScan} />);
+    render(<TodayView entries={[entry('alpha')]} onRunScan={onRunScan} />);
     fireEvent.click(screen.getByRole('button', { name: 'Run portfolio scan' }));
     expect(onRunScan).toHaveBeenCalledTimes(1);
     expect(await screen.findByTestId('today-scan-note')).toHaveTextContent(/Scan started/);
@@ -199,20 +174,21 @@ describe('TodayView — the banner offers the scan it asks for', () => {
 
   it('says so when a scan is already running instead of pretending to start one', async () => {
     const onRunScan = vi.fn().mockResolvedValue({ started: false, alreadyRunning: true });
-    render(<TodayView entries={[entry('alpha')]} basis={staleBasis} onRunScan={onRunScan} />);
+    render(<TodayView entries={[entry('alpha')]} onRunScan={onRunScan} />);
     fireEvent.click(screen.getByRole('button', { name: 'Run portfolio scan' }));
     expect(await screen.findByTestId('today-scan-note')).toHaveTextContent(/already running/);
   });
 
   it('shows the failure and offers the button again when the start is refused', async () => {
     const onRunScan = vi.fn().mockRejectedValue(new Error('The API host is not reachable.'));
-    render(<TodayView entries={[entry('alpha')]} basis={staleBasis} onRunScan={onRunScan} />);
+    render(<TodayView entries={[entry('alpha')]} onRunScan={onRunScan} />);
     fireEvent.click(screen.getByRole('button', { name: 'Run portfolio scan' }));
     expect(await screen.findByTestId('today-scan-note')).toHaveTextContent('The API host is not reachable.');
     expect(screen.getByRole('button', { name: 'Run portfolio scan' })).toBeEnabled();
   });
 
-  it('re-offers the button when a refresh delivers a basis that is still stale', async () => {
+  it('re-offers the button when a refresh re-draws the ranking', async () => {
+    const staleBasis = { indexStale: true, indexAgeHours: 14.2, indexGeneratedAt: '2026-08-27T09:46:23Z', reasons: [] };
     const onRunScan = vi.fn().mockResolvedValue({ started: true, alreadyRunning: false });
     const { rerender } = render(<TodayView entries={[entry('alpha')]} basis={staleBasis} onRunScan={onRunScan} />);
     fireEvent.click(screen.getByRole('button', { name: 'Run portfolio scan' }));
@@ -222,9 +198,8 @@ describe('TodayView — the banner offers the scan it asks for', () => {
     expect(screen.queryByTestId('today-scan-note')).toBeNull();
   });
 
-  it('renders the guidance without a dead control when no scan handler is wired', () => {
-    render(<TodayView entries={[entry('alpha')]} basis={staleBasis} />);
-    expect(screen.getByTestId('today-staleness')).toHaveTextContent(/Run a portfolio scan/);
+  it('renders no dead control when no scan handler is wired', () => {
+    render(<TodayView entries={[entry('alpha')]} />);
     expect(screen.queryByRole('button', { name: 'Run portfolio scan' })).toBeNull();
   });
 });

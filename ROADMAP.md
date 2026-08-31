@@ -1415,11 +1415,26 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
       renders without a dead control when no handler is wired.
       _(state: smoke-tested)_
 
-- [ ] **[non-blocker]** Render the same verdict on the outcome card and
-      Insights. _(state: planned)_ Both read the index and neither states its
-      age; the `Today` banner covers the ranked landing, which is where an
-      operator starts, but a repository opened directly still presents its
-      conclusion without saying how old the evidence is.
+- [x] **Remove the staleness banner from the Today landing (operator
+      decision, 2026-08-30).** With a scan completed three minutes earlier,
+      the landing still opened with the amber warning — showing the fallback
+      _"was not established"_ reason, which explains nothing an operator can
+      act on — and the operator's verdict was that a first screen that
+      appears to have a problem costs more confidence than the freshness
+      warning earns. The banner is gone from `TodayView` (a component comment
+      marks the removal as deliberate, so it is not "restored" as a
+      regression); a component test now pins that **no** staleness banner
+      renders on this view, stale or absent basis alike. The verdict itself
+      is unchanged and still rides every payload as `basis`
+      (`/api/operations/repos`, `/api/portfolio/conclusions`,
+      `/api/portfolio/tech-inventory`) and the Dependencies inventory panel;
+      the **Run portfolio scan** control survives as a quiet neutral button
+      in the Today filter row, with the same started / already-running /
+      refused reporting and re-arm on refresh. This decision also supersedes
+      the former non-blocker _"render the same verdict on the outcome card
+      and Insights"_ — no more warning banners; the basis stays a payload
+      fact for surfaces to consult, not an alarm to lead with.
+      _(state: smoke-tested)_
 
 - [ ] **`estimatedSessionWorkUnits` is null for every managed repository.**
       _(state: planned)_ Release 3.6's ranked `Today` landing surfaces effort

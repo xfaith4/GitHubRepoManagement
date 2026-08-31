@@ -39,16 +39,18 @@ export interface TodayViewProps {
   onRunAction?: (row: TodayRow) => void;
   isLoading?: boolean;
   /**
-   * Whether the index behind these rows still describes the portfolio.
-   * Omitted means NOT ESTABLISHED — the banner shows, because a ranking
-   * drawn from a stale index reads as a finding.
+   * The freshness payload the ranking was drawn from. NOT rendered: the
+   * staleness banner was removed by operator decision (2026-08-30) — the
+   * landing page must not open with a warning; do not reintroduce one here.
+   * A new object marks the ranking as re-drawn, which re-arms the scan
+   * control below.
    */
   basis?: ConclusionBasis;
   /**
-   * Starts the background portfolio scan the banner asks for. Resolves once
-   * the scan is started (not finished); progress lives in the header chip.
-   * Omitted renders the guidance without a button — a control with nothing
-   * behind it is worse than no control.
+   * Starts the background portfolio scan behind the toolbar control. Resolves
+   * once the scan is started (not finished); progress lives in the header
+   * chip. Omitted renders no control — a control with nothing behind it is
+   * worse than no control.
    */
   onRunScan?: () => Promise<{ started: boolean; alreadyRunning: boolean }>;
 }
@@ -107,60 +109,12 @@ export const TodayView: React.FC<TodayViewProps> = ({ entries, onOpenRepo, onRun
 
   return (
     <div className="p-4 space-y-4">
-      {/* The index behind this ranking may not describe the portfolio any
-          more. Saying so first is the difference between a ranking and a
-          claim: on 2026-08-27 a stale index reported 0 of 9 dispatch-ready
-          repositories, and every surface rendered it as fact. */}
-      {(basis?.indexStale ?? true) && !isLoading && (
-        <div
-          data-testid="today-staleness"
-          role="status"
-          className="rounded border border-amber-600 bg-amber-950/40 px-3 py-2 text-sm text-amber-100"
-        >
-          <p className="font-semibold">
-            This ranking may not describe the portfolio as it is now.
-            {typeof basis?.indexAgeHours === 'number' && (
-              <span className="font-normal"> The index behind it is {basis.indexAgeHours} hour(s) old.</span>
-            )}
-          </p>
-          <ul className="mt-1 list-disc pl-5 space-y-0.5 text-amber-200/90">
-            {(basis?.reasons?.length ? basis.reasons : ['The freshness of the index behind these conclusions was not established.']).map(reason => (
-              <li key={reason}>{reason}</li>
-            ))}
-          </ul>
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-            <p className="text-amber-200/80">Run a portfolio scan before acting on the order below.</p>
-            {onRunScan && scanRequest !== 'started' && scanRequest !== 'already-running' && (
-              <button
-                type="button"
-                onClick={handleRunScan}
-                disabled={scanRequest === 'starting'}
-                title="Start the background scan that rebuilds the index behind this ranking. Progress shows in the header; the ranking refreshes when it completes."
-                className={`text-sm px-2.5 py-1 rounded border transition-colors ${scanRequest === 'starting'
-                  ? 'border-amber-800 text-amber-500/70 cursor-not-allowed'
-                  : 'border-amber-600 bg-amber-900/40 text-amber-100 hover:bg-amber-800/50'}`}
-              >
-                {scanRequest === 'starting' ? 'Starting scan…' : 'Run portfolio scan'}
-              </button>
-            )}
-            {scanRequest === 'started' && (
-              <span data-testid="today-scan-note" className="text-sm text-amber-200/90">
-                Scan started — progress shows in the header, and this ranking refreshes when it completes.
-              </span>
-            )}
-            {scanRequest === 'already-running' && (
-              <span data-testid="today-scan-note" className="text-sm text-amber-200/90">
-                A scan is already running — this ranking refreshes when it completes.
-              </span>
-            )}
-            {scanRequest === 'failed' && scanRequestError && (
-              <span data-testid="today-scan-note" className="text-sm text-red-300">
-                {scanRequestError}
-              </span>
-            )}
-          </div>
-        </div>
-      )}
+      {/* No staleness banner here, deliberately. Lane 0.13 shipped one and the
+          operator removed it (2026-08-30): the landing page opening with an
+          amber warning reads as a broken product, which costs more confidence
+          than the verdict earns. The verdict still rides every payload as
+          `basis`; the remedy survives as the quiet scan control in the filter
+          row below. Do not reintroduce a warning banner on this view. */}
 
       {/* Orientation — what this product evaluated and what it concluded. */}
       <p data-testid="today-orientation" className="text-sm text-gray-300 leading-relaxed max-w-4xl">
@@ -192,6 +146,36 @@ export const TodayView: React.FC<TodayViewProps> = ({ entries, onOpenRepo, onRun
             </button>
           );
         })}
+        {onRunScan && (
+          <div className="ml-auto flex items-center gap-2">
+            {scanRequest !== 'started' && scanRequest !== 'already-running' && (
+              <button
+                type="button"
+                onClick={handleRunScan}
+                disabled={scanRequest === 'starting'}
+                title="Rebuild the index behind this ranking. Progress shows in the header; the ranking refreshes when the scan completes."
+                className="text-sm px-3 py-1.5 rounded border border-gray-600 bg-gray-800 text-gray-300 hover:border-gray-500 hover:text-white disabled:opacity-50 transition-colors"
+              >
+                {scanRequest === 'starting' ? 'Starting scan…' : 'Run portfolio scan'}
+              </button>
+            )}
+            {scanRequest === 'started' && (
+              <span data-testid="today-scan-note" className="text-sm text-gray-400">
+                Scan started — this ranking refreshes when it completes.
+              </span>
+            )}
+            {scanRequest === 'already-running' && (
+              <span data-testid="today-scan-note" className="text-sm text-gray-400">
+                A scan is already running — this ranking refreshes when it completes.
+              </span>
+            )}
+            {scanRequest === 'failed' && scanRequestError && (
+              <span data-testid="today-scan-note" className="text-sm text-red-300">
+                {scanRequestError}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {isLoading && <p className="text-xs text-gray-500">Loading the portfolio…</p>}
