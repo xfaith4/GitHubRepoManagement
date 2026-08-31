@@ -4,6 +4,7 @@ import { type PackagedItem } from '../lib/packagedItems';
 import { type RunnerPresencePayload } from '../lib/runnerPresence';
 import { type WorkItemTrace, type WriteBackPreview, type WriteBackRefusal } from '../lib/workItemTrace';
 import { normalizePortfolioLeverage } from '../lib/portfolioLeverage';
+import { normalizeCopilotTaskPacket } from '../lib/copilotTaskPacket';
 import {
   type FoundationConclusionKind,
   type FoundationNextAction,
@@ -1088,7 +1089,10 @@ export async function previewCopilotTaskPacket(repoName: string, roadmapPath?: s
   if (!data?.success) {
     throw new Error(data?.error?.message ?? data?.error ?? 'Copilot task preview failed.');
   }
-  return data.data as CopilotTaskPacket;
+  // Lane 0.17 follow-up — the backend has serialized empty arrays as null
+  // (valueContext.rationale in the field); normalize at this choke point so a
+  // sparse or stale-service packet can never crash the preview render.
+  return normalizeCopilotTaskPacket(data.data);
 }
 
 export async function getCopilotTaskHistory(limit = 25): Promise<CopilotTaskHistoryItem[]> {
