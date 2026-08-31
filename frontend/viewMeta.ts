@@ -75,8 +75,8 @@ export const VIEW_META: ViewMeta[] = [
     key: 'dependencies',
     label: 'Dependencies',
     short: 'Deps',
-    question: 'What does this repository depend on?',
-    subtitle: 'Cross-repo references detected across portfolio roadmaps.',
+    question: 'What does the portfolio run on?',
+    subtitle: 'Languages, frameworks, data stores, and infrastructure detected per repository — plus cross-repo references between roadmaps.',
   },
 ];
 

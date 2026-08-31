@@ -44,6 +44,13 @@ export interface TodayViewProps {
    * drawn from a stale index reads as a finding.
    */
   basis?: ConclusionBasis;
+  /**
+   * Starts the background portfolio scan the banner asks for. Resolves once
+   * the scan is started (not finished); progress lives in the header chip.
+   * Omitted renders the guidance without a button — a control with nothing
+   * behind it is worse than no control.
+   */
+  onRunScan?: () => Promise<{ started: boolean; alreadyRunning: boolean }>;
 }
 
 function toRankingInput(entry: OperationsRepoEntry): TodayRankingInput {
@@ -61,8 +68,33 @@ function toRankingInput(entry: OperationsRepoEntry): TodayRankingInput {
   };
 }
 
-export const TodayView: React.FC<TodayViewProps> = ({ entries, onOpenRepo, onRunAction, isLoading = false, basis }) => {
+export const TodayView: React.FC<TodayViewProps> = ({ entries, onOpenRepo, onRunAction, isLoading = false, basis, onRunScan }) => {
   const [filter, setFilter] = useState<FoundationConclusionKind | null>(null);
+  const [scanRequest, setScanRequest] = useState<'idle' | 'starting' | 'started' | 'already-running' | 'failed'>('idle');
+  const [scanRequestError, setScanRequestError] = useState<string | null>(null);
+
+  // A new basis means the ranking was re-drawn (the post-scan refresh, or any
+  // other reload). If the index is still stale the button must come back —
+  // otherwise one click is all the operator ever gets without a page reload.
+  // Adjusted during render, not in an effect, so the stale note never paints.
+  const [seenBasis, setSeenBasis] = useState<ConclusionBasis | undefined>(basis);
+  if (seenBasis !== basis) {
+    setSeenBasis(basis);
+    if (scanRequest === 'started' || scanRequest === 'already-running') setScanRequest('idle');
+  }
+
+  const handleRunScan = async () => {
+    if (!onRunScan) return;
+    setScanRequest('starting');
+    setScanRequestError(null);
+    try {
+      const result = await onRunScan();
+      setScanRequest(result.alreadyRunning ? 'already-running' : 'started');
+    } catch (err) {
+      setScanRequest('failed');
+      setScanRequestError(err instanceof Error ? err.message : 'The scan could not be started.');
+    }
+  };
 
   const allRows = useMemo(() => buildTodayRows(entries.map(toRankingInput)), [entries]);
   const orientation = useMemo(() => buildOrientation(allRows), [allRows]);
@@ -96,7 +128,37 @@ export const TodayView: React.FC<TodayViewProps> = ({ entries, onOpenRepo, onRun
               <li key={reason}>{reason}</li>
             ))}
           </ul>
-          <p className="mt-1 text-amber-200/80">Run a portfolio scan before acting on the order below.</p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <p className="text-amber-200/80">Run a portfolio scan before acting on the order below.</p>
+            {onRunScan && scanRequest !== 'started' && scanRequest !== 'already-running' && (
+              <button
+                type="button"
+                onClick={handleRunScan}
+                disabled={scanRequest === 'starting'}
+                title="Start the background scan that rebuilds the index behind this ranking. Progress shows in the header; the ranking refreshes when it completes."
+                className={`text-sm px-2.5 py-1 rounded border transition-colors ${scanRequest === 'starting'
+                  ? 'border-amber-800 text-amber-500/70 cursor-not-allowed'
+                  : 'border-amber-600 bg-amber-900/40 text-amber-100 hover:bg-amber-800/50'}`}
+              >
+                {scanRequest === 'starting' ? 'Starting scan…' : 'Run portfolio scan'}
+              </button>
+            )}
+            {scanRequest === 'started' && (
+              <span data-testid="today-scan-note" className="text-sm text-amber-200/90">
+                Scan started — progress shows in the header, and this ranking refreshes when it completes.
+              </span>
+            )}
+            {scanRequest === 'already-running' && (
+              <span data-testid="today-scan-note" className="text-sm text-amber-200/90">
+                A scan is already running — this ranking refreshes when it completes.
+              </span>
+            )}
+            {scanRequest === 'failed' && scanRequestError && (
+              <span data-testid="today-scan-note" className="text-sm text-red-300">
+                {scanRequestError}
+              </span>
+            )}
+          </div>
         </div>
       )}
 

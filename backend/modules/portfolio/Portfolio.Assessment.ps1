@@ -1491,6 +1491,10 @@ function New-PortfolioIndexPayload {
             curationState       = $curationState
             curationUpdatedAt   = $curationUpdatedAt
             repoType            = [string](_GetField -Obj $assessment -Name 'repoType' -Default 'other')
+            # Lane 0.16 — what this repository runs on, detected from its
+            # manifests while the index build already has the repo in hand.
+            # A request never computes this; it reads it from the index.
+            technologies        = @(Get-RepoTechnologyProfile -LocalPath $localPath)
             lifecycleState      = [string](_GetField -Obj $assessment -Name 'lifecycleState' -Default 'discovered')
             recommendedAction   = [string](_GetField -Obj $assessment -Name 'recommendedAction' -Default '')
             blockingReasons     = @(_GetField -Obj $assessment -Name 'blockingReasons' -Default @())
@@ -1850,4 +1854,235 @@ function Convert-PortfolioIndexReposToAssessments {
     }
 
     return ,@($out)
+}
+
+# ---------------------------------------------------------------------------
+# Lane 0.16 — technology inventory: what each repository actually runs on.
+#
+# Detection is manifest-based and bounded: named files at the repo root, one
+# level of child directories for package manifests (monorepos keep theirs in
+# frontend/ and backend/), and the same depth-2 globs the repo-type detector
+# above already uses. It runs where scans belong — inside the index build,
+# never on a request thread. Every detection carries the evidence that
+# produced it, so the answer is checkable rather than asserted.
+# ---------------------------------------------------------------------------
+
+function Get-RepoTechnologyProfile {
+    [CmdletBinding()]
+    [OutputType([System.Object[]])]
+    param([Parameter()][AllowEmptyString()][string]$LocalPath = '')
+
+    $found = [System.Collections.Generic.List[object]]::new()
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    if ([string]::IsNullOrWhiteSpace($LocalPath) -or -not (Test-Path -LiteralPath $LocalPath -PathType Container -ErrorAction SilentlyContinue)) {
+        return @()
+    }
+
+    $add = {
+        param([string]$Id, [string]$Label, [string]$Category, [string]$Evidence)
+        if ($seen.Add($Id)) {
+            $found.Add([pscustomobject]@{ id = $Id; label = $Label; category = $Category; evidence = $Evidence }) | Out-Null
+        }
+    }
+
+    # --- Languages and runtimes: named manifests at the root ---------------
+    if (Test-Path -LiteralPath (Join-Path $LocalPath 'package.json') -PathType Leaf) { & $add 'nodejs' 'Node.js' 'language' 'package.json at the repo root' }
+    if (Test-Path -LiteralPath (Join-Path $LocalPath 'tsconfig.json') -PathType Leaf) { & $add 'typescript' 'TypeScript' 'language' 'tsconfig.json at the repo root' }
+    foreach ($pyManifest in @('pyproject.toml', 'requirements.txt', 'setup.py')) {
+        if (Test-Path -LiteralPath (Join-Path $LocalPath $pyManifest) -PathType Leaf) { & $add 'python' 'Python' 'language' "$pyManifest at the repo root"; break }
+    }
+    if (Test-Path -LiteralPath (Join-Path $LocalPath 'go.mod') -PathType Leaf) { & $add 'go' 'Go' 'language' 'go.mod at the repo root' }
+    if (Test-Path -LiteralPath (Join-Path $LocalPath 'Cargo.toml') -PathType Leaf) { & $add 'rust' 'Rust' 'language' 'Cargo.toml at the repo root' }
+    foreach ($dotnetGlob in @('*.csproj', '*.sln', '*.fsproj')) {
+        if (@(Get-ChildItem -LiteralPath $LocalPath -Filter $dotnetGlob -Recurse -Depth 2 -File -ErrorAction SilentlyContinue).Count -gt 0) { & $add 'dotnet' '.NET' 'language' "$dotnetGlob project file within two directory levels"; break }
+    }
+    foreach ($psGlob in @('*.psd1', '*.psm1', '*.ps1')) {
+        if (@(Get-ChildItem -LiteralPath $LocalPath -Filter $psGlob -Recurse -Depth 2 -File -ErrorAction SilentlyContinue).Count -gt 0) { & $add 'powershell' 'PowerShell' 'language' "$psGlob script within two directory levels"; break }
+    }
+
+    # --- Infrastructure: containers and CI ---------------------------------
+    foreach ($dockerFile in @('Dockerfile', 'docker-compose.yml', 'docker-compose.yaml', 'compose.yaml')) {
+        if (Test-Path -LiteralPath (Join-Path $LocalPath $dockerFile) -PathType Leaf) { & $add 'docker' 'Docker' 'infrastructure' "$dockerFile at the repo root"; break }
+    }
+    $workflowsDir = Join-Path (Join-Path $LocalPath '.github') 'workflows'
+    if ((Test-Path -LiteralPath $workflowsDir -PathType Container -ErrorAction SilentlyContinue) -and
+        @(Get-ChildItem -LiteralPath $workflowsDir -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in @('.yml', '.yaml') }).Count -gt 0) {
+        & $add 'github-actions' 'GitHub Actions' 'infrastructure' 'workflow file under .github/workflows'
+    }
+
+    # --- Node dependency map: package.json at the root and one level down --
+    $depTechMap = [ordered]@{
+        'next'           = @('nextjs', 'Next.js', 'framework')
+        'react'          = @('react', 'React', 'framework')
+        'vue'            = @('vue', 'Vue', 'framework')
+        'express'        = @('express', 'Express', 'framework')
+        'vite'           = @('vite', 'Vite', 'framework')
+        'electron'       = @('electron', 'Electron', 'framework')
+        'tailwindcss'    = @('tailwind', 'Tailwind CSS', 'framework')
+        'typescript'     = @('typescript', 'TypeScript', 'language')
+        'pg'             = @('postgresql', 'PostgreSQL', 'data')
+        'postgres'       = @('postgresql', 'PostgreSQL', 'data')
+        'sqlite3'        = @('sqlite', 'SQLite', 'data')
+        'better-sqlite3' = @('sqlite', 'SQLite', 'data')
+        'mysql'          = @('mysql', 'MySQL', 'data')
+        'mysql2'         = @('mysql', 'MySQL', 'data')
+        'redis'          = @('redis', 'Redis', 'data')
+        'ioredis'        = @('redis', 'Redis', 'data')
+        'mongodb'        = @('mongodb', 'MongoDB', 'data')
+        'mongoose'       = @('mongodb', 'MongoDB', 'data')
+        'prisma'         = @('prisma', 'Prisma', 'data')
+        '@prisma/client' = @('prisma', 'Prisma', 'data')
+    }
+    $packageManifests = [System.Collections.Generic.List[object]]::new()
+    $rootPackage = Join-Path $LocalPath 'package.json'
+    if (Test-Path -LiteralPath $rootPackage -PathType Leaf) { $packageManifests.Add([pscustomobject]@{ path = $rootPackage; rel = 'package.json' }) | Out-Null }
+    $childDirs = @(Get-ChildItem -LiteralPath $LocalPath -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -notlike '.*' -and $_.Name -ne 'node_modules' } | Select-Object -First 25)
+    foreach ($childDir in $childDirs) {
+        $childPackage = Join-Path $childDir.FullName 'package.json'
+        if (Test-Path -LiteralPath $childPackage -PathType Leaf) { $packageManifests.Add([pscustomobject]@{ path = $childPackage; rel = ('{0}/package.json' -f $childDir.Name) }) | Out-Null }
+    }
+    foreach ($manifest in $packageManifests) {
+        $parsed = $null
+        try { $parsed = Get-Content -LiteralPath $manifest.path -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json } catch { continue }
+        if ($null -eq $parsed) { continue }
+        $depNames = [System.Collections.Generic.List[string]]::new()
+        foreach ($section in @('dependencies', 'devDependencies')) {
+            $block = _GetField -Obj $parsed -Name $section -Default $null
+            if ($null -eq $block) { continue }
+            foreach ($prop in @($block.PSObject.Properties)) { $depNames.Add([string]$prop.Name) | Out-Null }
+        }
+        foreach ($depName in $depNames) {
+            if ($depTechMap.Contains($depName)) {
+                $tech = $depTechMap[$depName]
+                & $add $tech[0] $tech[1] $tech[2] ('{0} dependency "{1}"' -f $manifest.rel, $depName)
+            }
+        }
+    }
+
+    # --- Python manifest contents: root requirements.txt / pyproject.toml --
+    $pyTechPatterns = @(
+        @('flask', 'flask', 'Flask', 'framework'),
+        @('django', 'django', 'Django', 'framework'),
+        @('fastapi', 'fastapi', 'FastAPI', 'framework'),
+        @('psycopg2?', 'postgresql', 'PostgreSQL', 'data'),
+        @('pymysql', 'mysql', 'MySQL', 'data'),
+        @('redis', 'redis', 'Redis', 'data')
+    )
+    foreach ($pyFile in @('requirements.txt', 'pyproject.toml')) {
+        $pyPath = Join-Path $LocalPath $pyFile
+        if (-not (Test-Path -LiteralPath $pyPath -PathType Leaf)) { continue }
+        $pyContent = ''
+        try { $pyContent = Get-Content -LiteralPath $pyPath -Raw -Encoding UTF8 -ErrorAction Stop } catch { continue }
+        if ([string]::IsNullOrWhiteSpace($pyContent)) { continue }
+        foreach ($pattern in $pyTechPatterns) {
+            if ($pyContent -match ('(?im)\b{0}\b' -f $pattern[0])) {
+                & $add $pattern[1] $pattern[2] $pattern[3] ('{0} names "{1}"' -f $pyFile, $Matches[0])
+            }
+        }
+    }
+
+    # --- Compose services: the databases a repo runs beside it -------------
+    $composeImageMap = @(
+        @('postgres', 'postgresql', 'PostgreSQL'),
+        @('mysql|mariadb', 'mysql', 'MySQL'),
+        @('redis', 'redis', 'Redis'),
+        @('mongo', 'mongodb', 'MongoDB')
+    )
+    foreach ($composeFile in @('docker-compose.yml', 'docker-compose.yaml', 'compose.yaml')) {
+        $composePath = Join-Path $LocalPath $composeFile
+        if (-not (Test-Path -LiteralPath $composePath -PathType Leaf)) { continue }
+        $composeContent = ''
+        try { $composeContent = Get-Content -LiteralPath $composePath -Raw -Encoding UTF8 -ErrorAction Stop } catch { continue }
+        foreach ($imageRule in $composeImageMap) {
+            if ($composeContent -match ('(?im)^\s*image:\s*[''"]?({0})' -f $imageRule[0])) {
+                & $add $imageRule[1] $imageRule[2] 'data' ('{0} image "{1}"' -f $composeFile, $Matches[1])
+            }
+        }
+        break
+    }
+
+    # --- SQLite database files at the root (the dep-less usage pattern) ----
+    if (@(Get-ChildItem -LiteralPath $LocalPath -Filter '*.sqlite' -File -ErrorAction SilentlyContinue).Count -gt 0) {
+        & $add 'sqlite' 'SQLite' 'data' '*.sqlite database file at the repo root'
+    }
+
+    return $found.ToArray()
+}
+
+function Get-PortfolioTechInventoryPayload {
+    <#
+    .SYNOPSIS
+        Aggregate per-repo technology detections into a portfolio-wide answer.
+
+    .DESCRIPTION
+        Pure over the written index — no disk probes here. Rows written before
+        detection existed carry no `technologies` field; they are counted in
+        reposWithTechnologyData so the surface can say "this index predates
+        detection, rescan" instead of rendering absence as a portfolio with no
+        technology in it.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter()][AllowNull()][object]$IndexPayload = $null)
+
+    $rows = @(if ($null -ne $IndexPayload) { _GetField -Obj $IndexPayload -Name 'repos' -Default @() })
+    $staleness = if ($null -ne $IndexPayload) { _GetField -Obj $IndexPayload -Name 'staleness' -Default $null } else { $null }
+
+    $techAccumulator = [ordered]@{}
+    $reposWithData = 0
+    foreach ($row in $rows) {
+        if ($null -eq $row) { continue }
+        $techProperty = $row.PSObject.Properties['technologies']
+        if ($null -eq $techProperty -or $null -eq $techProperty.Value) { continue }
+        $reposWithData++
+        $repoName = [string](_GetField -Obj $row -Name 'repoName' -Default '')
+        foreach ($tech in @($techProperty.Value)) {
+            if ($null -eq $tech) { continue }
+            $techId = [string](_GetField -Obj $tech -Name 'id' -Default '')
+            if ([string]::IsNullOrWhiteSpace($techId)) { continue }
+            if (-not $techAccumulator.Contains($techId)) {
+                $techAccumulator[$techId] = [pscustomobject]@{
+                    id       = $techId
+                    label    = [string](_GetField -Obj $tech -Name 'label' -Default $techId)
+                    category = [string](_GetField -Obj $tech -Name 'category' -Default 'other')
+                    repos    = [System.Collections.Generic.List[object]]::new()
+                }
+            }
+            $techAccumulator[$techId].repos.Add([pscustomobject]@{
+                repoName = $repoName
+                evidence = [string](_GetField -Obj $tech -Name 'evidence' -Default '')
+            }) | Out-Null
+        }
+    }
+
+    $technologies = @($techAccumulator.Values | ForEach-Object {
+        [pscustomobject]@{
+            id        = $_.id
+            label     = $_.label
+            category  = $_.category
+            repoCount = $_.repos.Count
+            repos     = @($_.repos.ToArray() | Sort-Object -Property repoName)
+        }
+    } | Sort-Object -Property @{ Expression = 'repoCount'; Descending = $true }, @{ Expression = 'label'; Ascending = $true })
+
+    return [pscustomobject]@{
+        schemaVersion           = 'v1'
+        generatedAt             = $(if ($null -ne $IndexPayload) { [string](_GetField -Obj $IndexPayload -Name 'generatedAt' -Default '') } else { '' })
+        repoCount               = $rows.Count
+        reposWithTechnologyData = $reposWithData
+        technologies            = $technologies
+        # Absent means "not established", never "fresh" — same contract as the
+        # conclusions payload, for the same reason.
+        basis                   = [pscustomobject]@{
+            indexStale       = $(if ($null -eq $staleness) { $true } else { [bool](_GetField -Obj $staleness -Name 'stale' -Default $true) })
+            indexAgeHours    = _GetField -Obj $staleness -Name 'ageHours' -Default $null
+            indexGeneratedAt = _GetField -Obj $staleness -Name 'generatedAt' -Default $null
+            reasons          = $(if ($null -eq $staleness) {
+                    @('The freshness of the index behind this inventory was not established, so it cannot be presented as current.')
+                } else {
+                    @(_GetField -Obj $staleness -Name 'reasons' -Default @())
+                })
+        }
+    }
 }

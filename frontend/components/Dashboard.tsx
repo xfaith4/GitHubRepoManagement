@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry, type DocAuditIndex, type RoadmapAuditIndex, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioAssessmentEntry, type PortfolioAssessmentResult, type PortfolioTrendResult, type OperationsReposResult, type RepoCurationState } from '../types';
+import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry, type DocAuditIndex, type RoadmapAuditIndex, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioTechInventoryResult, type PortfolioAssessmentEntry, type PortfolioAssessmentResult, type PortfolioTrendResult, type OperationsReposResult, type RepoCurationState } from '../types';
 import ActionBar from './ActionBar';
 import { isCarriedOverCount } from '../lib/dataProvenance';
 import AutomationStatusBadge from './AutomationStatusBadge';
@@ -38,10 +38,11 @@ import { type ViewTabBadges } from '../lib/viewTabs';
 import { useAsyncPanel, withPanelTimeout } from '../lib/asyncPanel';
 import { getPortfolioSnapshot } from '../services/apiClient';
 import ScanProgressChip from './ScanProgressChip';
+import TechInventoryPanel from './TechInventoryPanel';
 import type { PortfolioSnapshot } from '../types';
 import { isRepoNeedsAttention } from '../lib/needsAttention';
 import { classifyFetchFailure } from '../lib/fetchFailure';
-import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getAutomationStatus, getPackagedItems, approvePackagedItem, rejectPackagedItem, getRoadmapDependencies, getPortfolioAssessment, refreshAllPortfolioAssessment, setOperationsRepoCuration, getPortfolioTrend, getOperationsRepos, getRunnerPresence } from '../services/apiClient';
+import { getSettings, startInit, startUpdate, startSync, startArchive, startExport, startDocReview, getRoadmapIndex, triggerRoadmapScan, getDocsAudit, triggerDocsAuditScan, getRoadmapAudit, triggerRoadmapAuditScan, isOptionalApiUnavailableError, getExecutionMetrics, getScanSchedule, getAutomationStatus, getPackagedItems, approvePackagedItem, rejectPackagedItem, getRoadmapDependencies, getPortfolioAssessment, refreshAllPortfolioAssessment, setOperationsRepoCuration, getPortfolioTrend, getOperationsRepos, getRunnerPresence, startPortfolioScan, getPortfolioScanStatus, getPortfolioTechInventory } from '../services/apiClient';
 import { type RunnerPresencePayload } from '../lib/runnerPresence';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
@@ -176,6 +177,14 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     fetchDependencyGraph, '/api/roadmap/dependencies', dependencyGraphIsEmpty,
   );
   const dependencyGraph = depsPanel.data;
+  // Lane 0.16 — the technology inventory the Dependencies tab leads with.
+  // A payload whose index predates detection is DATA (the panel explains it),
+  // not empty — only a payload with no repos at all counts as empty here.
+  const fetchTechInventory = useCallback(() => getPortfolioTechInventory(), []);
+  const techInventoryIsEmpty = useCallback((r: PortfolioTechInventoryResult) => r.repoCount === 0, []);
+  const { state: techInventoryPanel, load: loadTechInventory } = useAsyncPanel<PortfolioTechInventoryResult>(
+    fetchTechInventory, '/api/portfolio/tech-inventory', techInventoryIsEmpty,
+  );
   const [portfolioAssessment, setPortfolioAssessment] = useState<PortfolioAssessmentResult | null>(null);
   const [portfolioAssessmentLoading, setPortfolioAssessmentLoading] = useState(false);
   const [portfolioAssessmentError, setPortfolioAssessmentError] = useState<string | null>(null);
@@ -276,6 +285,47 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
         throw err;
       })
       .finally(() => setOperationsReposLoading(false));
+  };
+
+  // The Today staleness banner's remedy. Starting is the button's job; progress
+  // is the header chip's; this watcher's only job is to re-pull the ranking
+  // (entries + basis) once the scan reaches a terminal state, so the banner
+  // clears — or restates its reasons — from the rebuilt index rather than
+  // staying frozen on the pre-scan verdict.
+  const scanCompletionWatchRef = useRef(false);
+  const watchScanThenRefreshRanking = () => {
+    if (scanCompletionWatchRef.current) return;
+    scanCompletionWatchRef.current = true;
+    const pollMs = 5000;
+    let remainingPolls = 360; // ~30 min; past that the operator still has Refresh.
+    const poll = async () => {
+      if (remainingPolls-- <= 0) {
+        scanCompletionWatchRef.current = false;
+        return;
+      }
+      try {
+        const status = await getPortfolioScanStatus();
+        if (status.state === 'running') {
+          setTimeout(poll, pollMs);
+          return;
+        }
+      } catch {
+        // A failed probe is silence, not an outcome; keep listening.
+        setTimeout(poll, pollMs * 2);
+        return;
+      }
+      scanCompletionWatchRef.current = false;
+      // Cancelled/failed scans keep their completed phases, so refresh on every
+      // terminal state — the basis says whatever is now true.
+      refreshOperationsRepos(false).catch(() => {/* surfaced in-panel */});
+    };
+    setTimeout(poll, pollMs);
+  };
+
+  const handleRunPortfolioScan = async () => {
+    const result = await startPortfolioScan();
+    watchScanThenRefreshRanking();
+    return { started: result.started, alreadyRunning: result.alreadyRunning };
   };
 
   const refreshExecutionMetrics = useCallback(async ({ background = false }: { background?: boolean } = {}) => {
@@ -475,6 +525,11 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     if (activeView !== 'dependencies' || depsPanel.phase !== 'idle') return;
     void loadDependencyGraph();
   }, [activeView, depsPanel.phase, loadDependencyGraph]);
+
+  useEffect(() => {
+    if (activeView !== 'dependencies' || techInventoryPanel.phase !== 'idle') return;
+    void loadTechInventory();
+  }, [activeView, techInventoryPanel.phase, loadTechInventory]);
 
   useEffect(() => {
     // Release 3.6 M3: the Today landing ranks from the same payload, so it
@@ -1413,6 +1468,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                 isLoading={operationsReposLoading}
                 onOpenRepo={(_repoId, repoName) => setEvaluationModalRepo(repoName)}
                 onRunAction={row => setEvaluationModalRepo(row.repoName)}
+                onRunScan={handleRunPortfolioScan}
               />
             ) : activeView === 'repos' ? (
               <>
@@ -1575,13 +1631,17 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                 onDispatchPreviewTask={handlePreviewCopilotTask}
               />
             ) : (
-              /* Dependencies view — Release 1.2 */
+              /* Dependencies view — Release 1.2 graph, led since Lane 0.16 by
+                 the technology inventory: "dependencies" to an operator means
+                 what the repos run on, so that answer comes first. */
               <div className="px-4 sm:px-6 lg:px-8 py-4">
+                <TechInventoryPanel panel={techInventoryPanel} onRefresh={() => { void loadTechInventory(); }} />
+
                 <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
                   <div>
-                    <h2 className="text-lg font-semibold text-white">Cross-Repo Dependency Graph</h2>
+                    <h2 className="text-lg font-semibold text-white">Cross-repo roadmap references</h2>
                     <p className="text-sm text-gray-400 mt-0.5">
-                      References detected across portfolio roadmaps (GitHub URLs, hash refs, keyword patterns).
+                      Which repositories reference each other in their roadmaps (GitHub URLs, hash refs, keyword patterns).
                     </p>
                   </div>
                   <button
@@ -1617,8 +1677,8 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                     state dropped. */}
                 {depsPanel.phase === 'empty' && dependencyGraph && (
                   <div className="text-center py-10 text-gray-500 text-sm" data-testid="dependencies-empty-state">
-                    <p className="mb-1">No cross-repo dependencies detected — scanned {new Date(dependencyGraph.scannedAt).toLocaleTimeString()}.</p>
-                    <p className="text-gray-600 text-xs">Dependencies are found via GitHub URLs, <code>RepoName#42</code> refs, and keywords like "depends on" in roadmap files.</p>
+                    <p className="mb-1">No cross-repo references detected — scanned {new Date(dependencyGraph.scannedAt).toLocaleTimeString()}.</p>
+                    <p className="text-gray-600 text-xs">References are found via GitHub URLs, <code>RepoName#42</code> refs, and keywords like "depends on" in roadmap files.</p>
                   </div>
                 )}
 

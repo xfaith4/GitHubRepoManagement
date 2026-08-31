@@ -3763,6 +3763,10 @@ A release should not be marked `done` unless:
         # Release 3.6 M1 — every repository's conclusion; a deleted route would
         # answer 200 text/html here and the whole product outcome would vanish.
         '/api/portfolio/conclusions',
+        # Lane 0.16 — the Dependencies tab's technology inventory. With no index
+        # in the fixture workspace it answers 409 JSON, which still proves the
+        # route exists; the SPA fallback would answer 200 text/html.
+        '/api/portfolio/tech-inventory',
         # Release 3.1. The census asserts content-type, not status, so an
         # id that matches nothing still proves the route exists: its 404 is
         # JSON, whereas a deleted route would answer 200 text/html.

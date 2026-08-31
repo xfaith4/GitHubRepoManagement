@@ -190,6 +190,20 @@ const CATEGORIES: CategoryDef[] = [
       },
       {
         method: 'GET',
+        path: '/api/portfolio/tech-inventory',
+        summary: 'Technology inventory: which languages, frameworks, data stores, and infrastructure each repository runs on, aggregated portfolio-wide with the manifest evidence behind every detection. Served from the written index — detection runs during the index build, never on the request thread.',
+        responseFields: [
+          { name: 'success', type: 'bool', description: 'Operation result flag' },
+          { name: 'data.technologies', type: 'TechInventoryEntry[]', description: 'Per-technology aggregation: id, label, category (language | framework | data | infrastructure), repoCount, and the repositories with the manifest evidence that produced each detection' },
+          { name: 'data.repoCount', type: 'int', description: 'Every repository in the index, whether or not its row carries detections' },
+          { name: 'data.reposWithTechnologyData', type: 'int', description: '0 means the index predates technology detection — rescan to populate, do not read as a portfolio with no technology in it' },
+          { name: 'data.basis', type: 'ConclusionBasis', description: 'Whether the index behind this inventory still describes the portfolio; absent means "not established", never "fresh"' },
+          { name: 'data.performance', type: 'PortfolioReadBudget', description: 'Read-path budget judged against the portfolio-index class' },
+        ],
+        notes: 'Answers 409 with a named error when no index has been written yet. A stale basis means run a portfolio scan; the inventory rebuilds with the index.',
+      },
+      {
+        method: 'GET',
         path: '/api/portfolio/trend',
         summary: 'Returns the Release 2.3 analytics scaffold: current portfolio KPI summary, trend series, and repo sparkline seed data backed by SQLite history when available.',
         queryParams: [
