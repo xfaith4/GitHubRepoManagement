@@ -1736,6 +1736,19 @@ that question anywhere.
       and the 409-repo-free census pass locally.
       _(state: smoke-tested)_
 
+- [x] **Amber means a problem, never a statement about the data (operator
+      principle, 2026-08-30).** Stated while removing the Today staleness
+      banner and extended here: _"Anytime we show an amber text box, it
+      better represent an actual problem"_ — a validity note styled as a
+      warning reads as an error in the manager itself. The inventory panel's
+      amber basis banner is gone; freshness is quiet footer metadata (when
+      the index was generated, plus _"a portfolio scan refreshes this"_ when
+      stale), with a component comment and test pinning that no amber basis
+      banner returns. Fetch-failure notices (the `stale` async-panel state)
+      keep their amber: a refresh that failed is an actual problem. Pinned by
+      the reworked `TechInventoryPanel` basis test.
+      _(state: smoke-tested)_
+
 - [ ] **[non-blocker]** Detect versions, not just presence — the inventory
       says _which_ repos run Node, not which Node; a version column would
       turn the panel into an upgrade-planning surface. Needs a per-manifest
