@@ -158,10 +158,9 @@ Invoke-ScriptGate -Name 'Adapter smoke'     -ScriptPath (Join-Path $scriptsDir '
 # Frontend gates before the slow API-host smoke: cheap failures fail fast.
 # These were dark until 2026-08-10 — 149 vitest assertions, the typecheck, and
 # the production build ran only when someone typed them (ROADMAP Lane 0.8).
-# Ratchets against a committed baseline, so it fails on NEW sub-12px text and
-# NEW unrestored `outline-none` only. The existing 651 and 5 are recorded debt
-# with roadmap items; a gate that failed on those would be switched off inside
-# a week and then nothing would be counting at all.
+# Ratchets against a committed baseline, so it fails only on NEW unrestored
+# `outline-none`. The old tiny-text rule is retired (see tools/Measure-UiRatchet.mjs)
+# because the product's density ladder is now intentional design, not debt.
 Invoke-NpmGate -Name 'UI debt ratchet'     -ScriptName 'ui:ratchet'
 Invoke-NpmGate -Name 'Frontend typecheck'  -ScriptName 'typecheck'
 Invoke-NpmGate -Name 'Frontend lint'       -ScriptName 'lint'

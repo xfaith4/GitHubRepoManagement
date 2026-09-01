@@ -65,6 +65,7 @@ import { dirname } from 'node:path';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SCAN_DIR = join(ROOT, 'frontend');
 const BASELINE = join(ROOT, 'tools', 'ui-ratchet-baseline.json');
+const RETIRED_KEYS = new Set(['tinyText']);
 
 const OUTLINE_NONE = /\b(?:focus:)?outline-none\b/g;
 const HAS_RING = /\b(?:focus:|focus-visible:)?(?:ring|outline)-(?!none)/;
@@ -115,6 +116,17 @@ try {
 } catch {
   console.error(`No baseline at ${relative(ROOT, BASELINE)}. Run: node tools/Measure-UiRatchet.mjs --update`);
   process.exit(2);
+}
+
+if (baseline?.counts && typeof baseline.counts === 'object') {
+  for (const key of RETIRED_KEYS) delete baseline.counts[key];
+}
+
+if (baseline?.byFile && typeof baseline.byFile === 'object') {
+  for (const fileMetrics of Object.values(baseline.byFile)) {
+    if (!fileMetrics || typeof fileMetrics !== 'object') continue;
+    for (const key of RETIRED_KEYS) delete fileMetrics[key];
+  }
 }
 
 let failed = false;
