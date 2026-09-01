@@ -6011,6 +6011,150 @@ if ($script:TlsState -eq 'degraded') {
     Write-HostLog 'WARN TLS: DEGRADED - configuration claims TLS and this host is serving plain HTTP. Credentials typed into this portal are not encrypted in transit.'
 }
 
+function Invoke-AgentRunAutoClose {
+    <#
+    .SYNOPSIS
+        Close agent runs whose pull request has landed, without waiting for an
+        operator to click refresh on each one.
+
+    .DESCRIPTION
+        Every agent run in this ledger was stuck at `dispatched` — 52 of 52,
+        with no `startedAt`, no `completedAt`, no `workUnitsActual` and not one
+        `run.completed` event, going back to the first dispatch in August. The
+        machinery to close a run was already complete: `Update-AgentRunRecord`
+        validates the transition, emits `run.completed` / `run.failed`, and
+        computes `timeToDeliverSeconds`. Nothing ever called it, because in
+        production the only path to it was POST /api/agent-runs/{id}/refresh —
+        one run, one operator click. So the product could not answer its own
+        central question (does a better-documented repository produce fewer
+        failed runs?) for want of an outcome on any run at all.
+
+        This walks the non-terminal runs and does what that click does. It is
+        deliberately BOUNDED rather than exhaustive: GitHub is called at most
+        `MaxRuns` times per invocation, and a run is only re-examined once its
+        record has gone `CooldownMinutes` without an update. A list request must
+        not turn into thirty API round-trips.
+
+        NOT gated by the automation flag. That flag governs an external cron
+        firing scheduled WORK (POST /api/automation/run). This reads pull-request
+        state and writes local bookkeeping; it dispatches nothing, merges
+        nothing, and changes no remote state, so switching automation off must
+        not blind the ledger to what already happened.
+
+        Every failure is per-run and swallowed: a repository that has been
+        deleted, a token that cannot see it, or a GitHub outage degrades this to
+        "no progress this time", never to a failed list request.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+        [Parameter()][string]$CorrelationId = '',
+        [Parameter()][int]$MaxRuns = 3,
+        [Parameter()][int]$CooldownMinutes = 10
+    )
+
+    $summary = [ordered]@{ considered = 0; attempted = 0; advanced = 0; failed = 0 }
+
+    try {
+        # 'completed' and 'failed' are terminal. 'blocked' is not: a blocked run
+        # can still be unblocked and land, so it stays in the sweep.
+        $openStatuses = @('dispatched', 'active', 'blocked')
+        $allRuns = @(Get-AgentRuns -WorkspaceRoot $WorkspaceRoot -Limit 200)
+        $cutoff = (Get-Date).ToUniversalTime().AddMinutes(-1 * $CooldownMinutes)
+
+        $candidates = @(
+            $allRuns | Where-Object {
+                $status = ([string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'status' -Default '')).ToLowerInvariant()
+                if ($openStatuses -notcontains $status) { return $false }
+
+                # No owner/repo means nothing to ask GitHub about.
+                $ghRepo = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'githubRepo' -Default '')
+                if (($ghRepo -split '/').Count -ne 2) { return $false }
+
+                $updatedRaw = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'updatedAt' -Default '')
+                if ([string]::IsNullOrWhiteSpace($updatedRaw)) { return $true }
+                $updated = $null
+                if (-not [datetime]::TryParse($updatedRaw, [ref]$updated)) { return $true }
+                return ($updated.ToUniversalTime() -lt $cutoff)
+            }
+        )
+        $summary['considered'] = $candidates.Count
+        if ($candidates.Count -eq 0) { return [pscustomobject]$summary }
+
+        # Oldest-touched first, so one unreachable repository cannot starve the
+        # rest of the ledger by always being picked.
+        $ordered = @(
+            $candidates | Sort-Object {
+                $u = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'updatedAt' -Default '')
+                if ([string]::IsNullOrWhiteSpace($u)) { [datetime]::MinValue } else { try { [datetime]::Parse($u).ToUniversalTime() } catch { [datetime]::MinValue } }
+            }
+        )
+
+        $settings = Get-HostSettings
+        $token = Get-ConfiguredGitHubToken -Settings $settings
+        $headers = Get-GitHubApiHeaders -Token $token
+
+        foreach ($run in ($ordered | Select-Object -First $MaxRuns)) {
+            $runId = [string](Get-ObjectPropertyValue -InputObject $run -PropertyName 'runId' -Default '')
+            $ghRepo = [string](Get-ObjectPropertyValue -InputObject $run -PropertyName 'githubRepo' -Default '')
+            $parts = $ghRepo -split '/'
+            $summary['attempted'] = [int]$summary['attempted'] + 1
+
+            # Tick before each repository's network calls. A network-bound loop
+            # that stays silent reads as a frozen portal, and the watchdog
+            # restarts it — the failure that took the GitHub metadata phase down
+            # for 134 seconds. Ambient: this no-ops outside a request.
+            $null = Update-ActivePortalOperationProgress -Stage 'agent-run-autoclose' -Completed ([int]$summary['attempted'])
+
+            try {
+                $before = ([string](Get-ObjectPropertyValue -InputObject $run -PropertyName 'status' -Default '')).ToLowerInvariant()
+
+                $pullsUri = "https://api.github.com/repos/$($parts[0])/$($parts[1])/pulls?state=all&sort=created&direction=desc&per_page=30"
+                $pulls = @(Invoke-RestMethod -Uri $pullsUri -Headers $headers -Method Get)
+
+                # Resolve the head branch before asking for Actions, so the run
+                # is judged against the agent's branch and not the default one.
+                $detail = Get-AgentRunDetail -WorkspaceRoot $WorkspaceRoot -RunId $runId
+                if ($null -eq $detail) { continue }
+                # Sibling runs against the same repository, so a pull request is
+                # claimed by the nearest preceding dispatch and never by several
+                # runs at once.
+                $siblings = @($allRuns | Where-Object {
+                    [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'githubRepo' -Default '') -eq $ghRepo
+                })
+                $candidate = Select-AgentRunPullRequestCandidate -Run $detail.run -PullRequests $pulls -SiblingRuns $siblings
+                $branch = [string](Get-ObjectPropertyValue -InputObject $detail.run -PropertyName 'branch' -Default '')
+                if ($null -ne $candidate.pullRequest) {
+                    $head = Get-ObjectPropertyValue -InputObject $candidate.pullRequest -PropertyName 'head' -Default $null
+                    $ref = [string](Get-ObjectPropertyValue -InputObject $head -PropertyName 'ref' -Default '')
+                    if (-not [string]::IsNullOrWhiteSpace($ref)) { $branch = $ref }
+                }
+
+                $actionsRun = $null
+                if (-not [string]::IsNullOrWhiteSpace($branch)) {
+                    $actionsRun = Get-LatestGitHubWorkflowRunViaApi -Owner $parts[0] -Repo $parts[1] -Headers $headers -Branch $branch
+                }
+
+                $result = Invoke-AgentRunRefresh -WorkspaceRoot $WorkspaceRoot -RunId $runId -PullRequests $pulls -ActionsRun $actionsRun -SiblingRuns $siblings -Actor 'system'
+                $after = ([string](Get-ObjectPropertyValue -InputObject $result.run -PropertyName 'status' -Default $before)).ToLowerInvariant()
+                if ($after -ne $before) {
+                    $summary['advanced'] = [int]$summary['advanced'] + 1
+                    Write-HostLog ("[TRACE] agent-runs.autoclose correlationId={0} runId={1} {2} -> {3}" -f $CorrelationId, $runId, $before, $after)
+                }
+            } catch {
+                $summary['failed'] = [int]$summary['failed'] + 1
+                Write-HostLog ("[WARN ] agent-runs.autoclose correlationId={0} runId={1} skipped: {2}" -f $CorrelationId, $runId, $_.Exception.Message)
+            }
+        }
+    } catch {
+        # The sweep is an optimisation on top of the operator's own refresh
+        # button; it must never be the reason a list request fails.
+        Write-HostLog ("[WARN ] agent-runs.autoclose correlationId={0} sweep aborted: {1}" -f $CorrelationId, $_.Exception.Message)
+    }
+
+    return [pscustomobject]$summary
+}
+
 function Get-PortalTransportState {
     <#
     .SYNOPSIS
@@ -6565,7 +6709,11 @@ try {
 
                 # Resolve the branch first so the Actions lookup targets the
                 # agent's head branch rather than the default branch.
-                $refreshCandidate = Select-AgentRunPullRequestCandidate -Run $refreshDetail.run -PullRequests $refreshPulls
+                # Same sibling context the automatic sweep uses, so a manual
+                # refresh cannot attribute a pull request that a later dispatch
+                # in this repository has a better claim to.
+                $refreshSiblings = @(Get-AgentRuns -WorkspaceRoot $WorkspaceRoot -RepoName ([string](Get-ObjectPropertyValue -InputObject $refreshDetail.run -PropertyName 'repoName' -Default '')) -Limit 200)
+                $refreshCandidate = Select-AgentRunPullRequestCandidate -Run $refreshDetail.run -PullRequests $refreshPulls -SiblingRuns $refreshSiblings
                 $refreshBranch = [string](Get-ObjectPropertyValue -InputObject $refreshDetail.run -PropertyName 'branch' -Default '')
                 if ($null -ne $refreshCandidate.pullRequest) {
                     $candidateHead = Get-ObjectPropertyValue -InputObject $refreshCandidate.pullRequest -PropertyName 'head' -Default $null
@@ -6578,7 +6726,7 @@ try {
                     $refreshActionsRun = Get-LatestGitHubWorkflowRunViaApi -Owner $refreshOwner -Repo $refreshRepoName -Headers $refreshHeaders -Branch $refreshBranch
                 }
 
-                $refreshResult = Invoke-AgentRunRefresh -WorkspaceRoot $WorkspaceRoot -RunId $refreshRunId -PullRequests $refreshPulls -ActionsRun $refreshActionsRun
+                $refreshResult = Invoke-AgentRunRefresh -WorkspaceRoot $WorkspaceRoot -RunId $refreshRunId -PullRequests $refreshPulls -ActionsRun $refreshActionsRun -SiblingRuns $refreshSiblings
 
                 Add-MetricCounter -Name 'api_requests_total'
                 Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
@@ -11012,6 +11160,17 @@ try {
                     $statusFilter = if ($q.ContainsKey('status') -and $q.status) { [string]$q.status } else { '' }
                     $repoFilter   = if ($q.ContainsKey('repoName') -and $q.repoName) { [System.Uri]::UnescapeDataString([string]$q.repoName) } else { '' }
                     $limit        = if ($q.ContainsKey('limit') -and $q.limit) { [int]$q.limit } else { 50 }
+
+                    # Bring open runs up to date before reporting them. Without
+                    # this every run sits at 'dispatched' for ever, because the
+                    # only other path to a close is an operator clicking refresh
+                    # on one run at a time. Bounded and best-effort: it never
+                    # throws, so the list still answers if GitHub does not.
+                    $autoClose = Invoke-AgentRunAutoClose -WorkspaceRoot $WorkspaceRoot -CorrelationId $correlationId
+                    if ($autoClose.attempted -gt 0) {
+                        Write-HostLog ("[TRACE] agent-runs.list correlationId={0} autoclose considered={1} attempted={2} advanced={3} failed={4}" -f `
+                            $correlationId, $autoClose.considered, $autoClose.attempted, $autoClose.advanced, $autoClose.failed)
+                    }
 
                     $runs = @(Get-AgentRuns -WorkspaceRoot $WorkspaceRoot -Status $statusFilter -RepoName $repoFilter -Limit $limit)
 

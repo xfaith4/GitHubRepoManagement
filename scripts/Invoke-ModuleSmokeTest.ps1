@@ -3400,6 +3400,67 @@ try {
     if (@($refreshEventTypes | Where-Object { $_ -eq 'validation.passed' }).Count -ne 1) { throw 'Expected exactly one validation.passed event' }
 
     Write-Host ("  agent-run refresh correct: runId={0} events={1} finalOutcome={2}" -f $refreshRun.runId, @($refreshDetail.events).Count, $refresh4.run.outcome) -ForegroundColor DarkGray
+
+    # --- PR attribution is bounded on both sides, and exclusive -------------
+    #
+    # The failures these prevent, both observed against the real ledger:
+    #   1. A 15 August dispatch adopted a pull request opened by hand on
+    #      1 September and — because it was merged — would have closed the run
+    #      with a fabricated 17-day time-to-deliver.
+    #   2. Three ben-fuhr-portfolio runs (13, 28 and 29 August) all claimed the
+    #      same PR #4, so one pull request would have closed three runs.
+    $attribRun = New-AgentRunRecord -WorkspaceRoot $refreshWorkspace -RepoName 'attrib-repo' -RepoId 'repo:attrib' `
+        -GitHubRepo 'owner/attrib-repo' -ProviderTool 'github-copilot-agent' -SelectedTaskText 'Attribution bound check'
+    $attribDispatchedAt = [datetime]::Parse($attribRun.metrics.dispatchedAt).ToUniversalTime()
+
+    # A copilot PR opened 30 days later is NOT this run's work.
+    $farFuturePr = [pscustomobject]@{
+        number = 900; html_url = 'https://github.com/owner/attrib-repo/pull/900'
+        state = 'closed'; draft = $false
+        merged_at = $attribDispatchedAt.AddDays(30).AddHours(1).ToString('o')
+        created_at = $attribDispatchedAt.AddDays(30).ToString('o')
+        title = 'Unrelated later work'; body = ''
+        head = [pscustomobject]@{ ref = 'copilot/something-else' }
+    }
+    $farMatch = Select-AgentRunPullRequestCandidate -Run $attribRun -PullRequests @($farFuturePr)
+    if ($null -ne $farMatch.pullRequest) {
+        throw "A PR created 30 days after dispatch must not be attributed to that run (got #$($farMatch.pullRequest.number))"
+    }
+
+    # The same PR one hour after dispatch IS credible.
+    $nearPr = [pscustomobject]@{
+        number = 901; html_url = 'https://github.com/owner/attrib-repo/pull/901'
+        state = 'open'; draft = $false; merged_at = $null
+        created_at = $attribDispatchedAt.AddHours(1).ToString('o')
+        title = 'Agent work'; body = ''
+        head = [pscustomobject]@{ ref = 'copilot/agent-work' }
+    }
+    $nearMatch = Select-AgentRunPullRequestCandidate -Run $attribRun -PullRequests @($nearPr)
+    if ($null -eq $nearMatch.pullRequest -or [int]$nearMatch.pullRequest.number -ne 901) {
+        throw 'A PR created one hour after dispatch must still be attributed to that run'
+    }
+
+    # One PR, one run: a later dispatch that still precedes the PR wins it.
+    $nearerRun = [pscustomobject]@{
+        runId = 'attrib-nearer'; repoName = 'attrib-repo'; githubRepo = 'owner/attrib-repo'
+        createdAt = $attribDispatchedAt.AddMinutes(30).ToString('o')
+        metrics = [pscustomobject]@{ dispatchedAt = $attribDispatchedAt.AddMinutes(30).ToString('o') }
+    }
+    $contested = Select-AgentRunPullRequestCandidate -Run $attribRun -PullRequests @($nearPr) -SiblingRuns @($nearerRun)
+    if ($null -ne $contested.pullRequest) {
+        throw 'A PR must go to the nearest preceding dispatch, not to an older run'
+    }
+    if ('rejected-nearer-dispatch-claims-it' -notin @($contested.evidence.matchedBy)) {
+        throw "Rejection must say why it was rejected; got '$($contested.evidence.matchedBy -join ',')'"
+    }
+
+    # The nearer run itself still gets it — the rule redirects, never discards.
+    $winner = Select-AgentRunPullRequestCandidate -Run $nearerRun -PullRequests @($nearPr) -SiblingRuns @($attribRun)
+    if ($null -eq $winner.pullRequest -or [int]$winner.pullRequest.number -ne 901) {
+        throw 'The nearest preceding dispatch must receive the pull request'
+    }
+
+    Write-Host '  agent-run PR attribution correct: 24h upper bound holds, one PR resolves to one run' -ForegroundColor DarkGray
 }
 finally {
     Remove-Item -LiteralPath $refreshWorkspace -Recurse -Force -ErrorAction SilentlyContinue
