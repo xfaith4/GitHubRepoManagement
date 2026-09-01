@@ -27,7 +27,23 @@
 // not mean CI is absent; it means nobody looked. Counting it as a failure
 // would invent a number, which is the thing this file exists to prevent.
 
-import type { OperationsRepoEntry } from '../types';
+/**
+ * The five signals readiness is derived from — declared structurally rather
+ * than as `Partial<OperationsRepoEntry>` so anything carrying these fields can
+ * be assessed. The ranking passes its own input type through here, and tying
+ * this to the full entry shape would have forced a cast at that boundary.
+ *
+ * Every field is optional on purpose: absent means unmeasured, and unmeasured
+ * has to be representable or the assessor cannot tell "no" from "nobody
+ * looked".
+ */
+export interface ReadinessSignals {
+  hasReadme?: boolean;
+  hasRoadmap?: boolean;
+  roadmapState?: string;
+  localDirtyCount?: number;
+  hasCiSignal?: boolean;
+}
 
 export type ReadinessState = 'ready' | 'not-ready' | 'unmeasured';
 
@@ -57,7 +73,7 @@ export interface UnattendedReadiness {
 /** The roadmap states an agent can actually select work from. */
 const MACHINE_READABLE_ROADMAP = new Set(['pending', 'complete']);
 
-function docsFactor(entry: Partial<OperationsRepoEntry>): ReadinessFactor {
+function docsFactor(entry: ReadinessSignals): ReadinessFactor {
   const hasReadme = entry.hasReadme;
   const hasRoadmap = entry.hasRoadmap;
   if (typeof hasReadme !== 'boolean' || typeof hasRoadmap !== 'boolean') {
@@ -87,7 +103,7 @@ function docsFactor(entry: Partial<OperationsRepoEntry>): ReadinessFactor {
   };
 }
 
-function roadmapFactor(entry: Partial<OperationsRepoEntry>): ReadinessFactor {
+function roadmapFactor(entry: ReadinessSignals): ReadinessFactor {
   const state = entry.roadmapState;
   if (!state) {
     return {
@@ -116,7 +132,7 @@ function roadmapFactor(entry: Partial<OperationsRepoEntry>): ReadinessFactor {
   return { key: 'roadmap-machine-readable', label: 'Roadmap machine-readable', state: 'not-ready', detail };
 }
 
-function treeFactor(entry: Partial<OperationsRepoEntry>): ReadinessFactor {
+function treeFactor(entry: ReadinessSignals): ReadinessFactor {
   const dirty = entry.localDirtyCount;
   if (typeof dirty !== 'number' || !Number.isFinite(dirty)) {
     return {
@@ -142,7 +158,7 @@ function treeFactor(entry: Partial<OperationsRepoEntry>): ReadinessFactor {
   };
 }
 
-function ciFactor(entry: Partial<OperationsRepoEntry>): ReadinessFactor {
+function ciFactor(entry: ReadinessSignals): ReadinessFactor {
   const hasCi = entry.hasCiSignal;
   if (typeof hasCi !== 'boolean') {
     return {
@@ -171,7 +187,7 @@ function ciFactor(entry: Partial<OperationsRepoEntry>): ReadinessFactor {
  * Four checks, in the order an agent hits them: understand the repo, select
  * the work, get a clean tree, prove the result.
  */
-export function assessUnattendedReadiness(entry: Partial<OperationsRepoEntry>): UnattendedReadiness {
+export function assessUnattendedReadiness(entry: ReadinessSignals): UnattendedReadiness {
   const factors = [docsFactor(entry), roadmapFactor(entry), treeFactor(entry), ciFactor(entry)];
   const ready = factors.filter(f => f.state === 'ready').length;
   const measured = factors.filter(f => f.state !== 'unmeasured').length;

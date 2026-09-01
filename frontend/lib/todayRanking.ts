@@ -4,11 +4,27 @@
 // Everything here is pure and explainable — a row that cannot say why it is
 // ranked where it is has no business being at the top of the operator's day.
 //
-// The inputs already exist. The value score and the work-unit estimate were
-// three clicks deep; the conclusion arrived with milestone 1. This module only
-// decides an order and states the reason for it.
+// The inputs already exist. The work-unit estimate was three clicks deep; the
+// conclusion arrived with milestone 1. This module only decides an order and
+// states the reason for it.
+//
+// Correction, 2026-09-01: the fourth sort key was the highest-value pending
+// item's score, which ordered repositories by business value. Every repository
+// in this portfolio has its own purpose and all of them are useful, so nothing
+// may rank by usefulness. The key is now readiness for unattended work — how
+// much of the repository an agent can act in without asking — which is the
+// thing that legitimately differs between two otherwise-tied rows.
 
 import type { FoundationConclusionKind, RepositoryOutcomeSummary } from './foundationConclusion';
+import { assessUnattendedReadiness, type UnattendedReadiness } from './unattendedReadiness';
+
+/**
+ * Readiness for one input. Assessed here rather than passed in, so the sort,
+ * the row and the audit trail can never disagree about what a rank meant.
+ */
+function readinessOf(input: TodayRankingInput): UnattendedReadiness {
+  return assessUnattendedReadiness(input);
+}
 
 export interface TodayRankingInput {
   repoId: string;
@@ -19,6 +35,14 @@ export interface TodayRankingInput {
   pendingCount?: number;
   curationState?: string;
   lifecycleState?: string;
+  // Signals for readiness for unattended work — the tiebreak that replaced the
+  // item value score. Forwarded straight off OperationsRepoEntry; the ranking
+  // assesses them itself so the rule and its explanation stay in one place.
+  hasReadme?: boolean;
+  hasRoadmap?: boolean;
+  roadmapState?: 'pending' | 'complete' | 'missing' | 'no-checklist' | 'parse-error';
+  localDirtyCount?: number;
+  hasCiSignal?: boolean;
 }
 
 export interface TodayRow {
@@ -33,17 +57,22 @@ export interface TodayRow {
   nextActionRoute: string | null;
   /** Human effort estimate, or null when the product genuinely does not know. */
   effort: TodayEffort | null;
-  valueScore: number | null;
+  /**
+   * Whether an agent can work in this repository without asking — the four
+   * checks, carried on the row so the table and the sort cannot disagree about
+   * what they mean.
+   */
+  readiness: UnattendedReadiness;
   /** The ordered signals behind the rank, most significant first — the audit trail. */
   rankBasis: string[];
   /**
-   * Set only when this row sits ABOVE work with a strictly higher value score,
-   * and names the key that put it there. Null on every row whose position the
-   * value column already explains.
+   * Set only when this row sits ABOVE a repository that is strictly READIER
+   * for unattended work, and names the key that put it there. Null on every
+   * row whose position the readiness column already explains.
    *
    * The sort is not the defect: conclusion, then curation, then whether a row
-   * offers an action, all legitimately outrank value. The defect was that the
-   * winning key was invisible, so a value-72 row above a value-90 row read as
+   * offers an action, all legitimately outrank readiness. The defect was that
+   * the winning key was invisible, so a 1-of-4 row above a 4-of-4 row read as
    * a broken sort. A rank that cannot say why it is a rank is a guess.
    */
   pinReason: string | null;
@@ -118,9 +147,14 @@ function rankBasisFor(input: TodayRankingInput): string[] {
   if (input.outcome && input.outcome.gapCount > 0) {
     basis.push(`${input.outcome.gapCount} foundation gap(s): ${input.outcome.gapDomains.join(', ')}`);
   }
-  if (input.topValueItem && input.topValueItem.valueScore > 0) {
-    basis.push(`valueScore=${input.topValueItem.valueScore}`);
-  }
+  // Says what it measures in its own label: not a score out of anything, but
+  // how many of the four unattended-work checks this repository passes.
+  const readiness = readinessOf(input);
+  basis.push(
+    readiness.measured === 0
+      ? 'unattendedReadiness=unmeasured'
+      : `unattendedReadiness=${readiness.ready}/${readiness.measured} checks ready`,
+  );
   const effort = describeEffort(input.estimatedSessionWorkUnits);
   if (effort.workUnits !== null) basis.push(`effort=${effort.workUnits}`);
   if (!input.outcome?.nextActionRoute) basis.push('no next action offered');
@@ -144,10 +178,26 @@ function compare(a: TodayRankingInput, b: TodayRankingInput): number {
   const byActionable = actionable(a) - actionable(b);
   if (byActionable !== 0) return byActionable;
 
-  // 4. Value of the highest-value pending work, descending.
-  const value = (x: TodayRankingInput) => x.topValueItem?.valueScore ?? 0;
-  const byValue = value(b) - value(a);
-  if (byValue !== 0) return byValue;
+  // 4. Readiness for unattended work, descending — the repository an agent can
+  //    actually work in without asking goes first.
+  //
+  //    This key used to be the highest-value pending item's score, which
+  //    ordered repositories by business value. Every repository in this
+  //    portfolio has its own purpose and all of them are useful, so nothing
+  //    here may rank by usefulness. Readiness is the thing that legitimately
+  //    differs: at the point where conclusion, curation and actionability have
+  //    all tied, prefer the work that can proceed without the operator.
+  //
+  //    Unmeasured sorts LAST among ties, and is not the same as zero. "We know
+  //    an agent cannot work here" and "nobody has looked" are different
+  //    statements; a repo with no checks run is not claimed to be unready, it
+  //    is just weaker information than a repo that was actually assessed.
+  const readinessRank = (x: TodayRankingInput) => {
+    const r = readinessOf(x);
+    return r.measured === 0 ? -1 : r.ready;
+  };
+  const byReadiness = readinessRank(b) - readinessRank(a);
+  if (byReadiness !== 0) return byReadiness;
 
   // 5. More foundation gaps first — more of the repository is unsupported.
   const gaps = (x: TodayRankingInput) => x.outcome?.gapCount ?? 0;
@@ -176,24 +226,24 @@ const CURATION_PHRASE: Record<string, string> = {
  * keys as `compare`, in the same order, and reports the first one that decided
  * it — so the explanation cannot drift from the ordering it explains.
  */
-function explainPin(pinned: TodayRankingInput, outvalued: TodayRankingInput): string | null {
+function explainPin(pinned: TodayRankingInput, outranked: TodayRankingInput): string | null {
   const conclusionRank = (x: TodayRankingInput) => CONCLUSION_PRECEDENCE[conclusionOf(x)] ?? 9;
-  if (conclusionRank(pinned) !== conclusionRank(outvalued)) {
+  if (conclusionRank(pinned) !== conclusionRank(outranked)) {
     const kind = conclusionOf(pinned);
     return kind === 'strengthen'
-      ? 'Ranked above higher-value work because this repository has a specific next step and that one does not.'
-      : `Ranked above higher-value work because its conclusion is "${kind}".`;
+      ? 'Ranked above a repository that is readier for unattended work because this one has a specific next step and that one does not.'
+      : `Ranked above a repository that is readier for unattended work because its conclusion is "${kind}".`;
   }
 
   const curationRank = (x: TodayRankingInput) => CURATION_PRECEDENCE[x.curationState ?? 'none'] ?? 2;
-  if (curationRank(pinned) !== curationRank(outvalued)) {
+  if (curationRank(pinned) !== curationRank(outranked)) {
     const phrase = CURATION_PHRASE[pinned.curationState ?? 'none'] ?? `its curation is ${pinned.curationState}`;
-    return `Ranked above higher-value work because ${phrase}.`;
+    return `Ranked above a repository that is readier for unattended work because ${phrase}.`;
   }
 
   const actionable = (x: TodayRankingInput) => (x.outcome?.nextActionRoute ? 0 : 1);
-  if (actionable(pinned) !== actionable(outvalued)) {
-    return 'Ranked above higher-value work because it offers an action to take and that one does not.';
+  if (actionable(pinned) !== actionable(outranked)) {
+    return 'Ranked above a repository that is readier for unattended work because it offers an action to take and that one does not.';
   }
 
   return null;
@@ -201,7 +251,12 @@ function explainPin(pinned: TodayRankingInput, outvalued: TodayRankingInput): st
 
 export function buildTodayRows(entries: TodayRankingInput[]): TodayRow[] {
   const ordered = [...entries].filter(entry => Boolean(entry) && Boolean(entry.repoId)).sort(compare);
-  const valueOf = (x: TodayRankingInput) => x.topValueItem?.valueScore ?? 0;
+  // Unmeasured is not zero, and a row is not "outranked" by one nobody
+  // assessed — so an unmeasured repository never triggers a pin explanation.
+  const readyOf = (x: TodayRankingInput) => {
+    const r = readinessOf(x);
+    return r.measured === 0 ? -1 : r.ready;
+  };
 
   return ordered
     .map((entry, index) => ({
@@ -213,13 +268,13 @@ export function buildTodayRows(entries: TodayRankingInput[]): TodayRow[] {
       nextActionLabel: entry.outcome?.nextActionLabel ?? null,
       nextActionRoute: entry.outcome?.nextActionRoute ?? null,
       effort: describeEffort(entry.estimatedSessionWorkUnits),
-      valueScore: entry.topValueItem?.valueScore ?? null,
+      readiness: readinessOf(entry),
       rankBasis: rankBasisFor(entry),
-      // The first row below this one carrying MORE value is the row this
-      // position has to justify itself against.
+      // The first row below this one that is READIER is the row this position
+      // has to justify itself against.
       pinReason: (() => {
-        const outvalued = ordered.slice(index + 1).find(other => valueOf(other) > valueOf(entry));
-        return outvalued ? explainPin(entry, outvalued) : null;
+        const readier = ordered.slice(index + 1).find(other => readyOf(other) > readyOf(entry));
+        return readier ? explainPin(entry, readier) : null;
       })(),
     }));
 }
