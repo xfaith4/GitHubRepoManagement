@@ -1,14 +1,32 @@
 #!/usr/bin/env node
 // UI debt ratchet — audit follow-up.
 //
-// Two counted classes of debt, both too large to fix now and both easy to grow
-// by accident:
+// One counted class of debt, too large to fix now and easy to grow by accident:
 //
-//   tinyText      text at or below 12px (`text-xs`, `text-[10px]`, `text-[11px]`,
-//                 `text-[9px]`). 86% of the console's text sits here.
 //   outlineNone   `focus:outline-none` / `outline-none` without a sibling ring
 //                 or outline utility — the pattern that made keyboard focus
 //                 invisible before the global :focus-visible rule landed.
+//
+// RETIRED 2026-09-01: tinyText, which counted text at or below 12px. It was
+// built when 86% of the console's text sat under 12px by accident, and its
+// job was to stop that number growing while a per-view pass brought it down.
+//
+// The Nocturne migration (MIGRATION.md §4) makes the density deliberate: the
+// console is an operator tool whose type ladder runs 10px eyebrows, 11px meta,
+// 12-13px body, and "the density is the point — an operator sees the whole
+// state without scrolling." A gate that fails the design it was asked to build
+// is not measuring debt any more, it is measuring the design.
+//
+// It was also already half-blind. The regex only ever matched INTEGER px
+// (`text-[0..12px]`), so the ladder's 11.5px and 12.5px steps — the two the
+// design leans on hardest — passed it unseen. Re-baselining it upward would
+// have left a gate that counts a third of what it claims to and reports the
+// rest as clean, which is worse than no gate: it launders the debt as
+// measured. Retired rather than widened, because the thing it forbids is now
+// the thing the design requires.
+//
+// Text CONTRAST is the rule that would actually serve this design, and it is
+// still absent for the reason given below — it needs a real composited DOM.
 //
 // This fails ONLY on the delta against a committed baseline. A check that fails
 // on the existing debt is an alarm nobody arms: it gets commented out inside a
@@ -48,7 +66,6 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SCAN_DIR = join(ROOT, 'frontend');
 const BASELINE = join(ROOT, 'tools', 'ui-ratchet-baseline.json');
 
-const TINY_TEXT = /\btext-(xs|\[(?:[0-9]|1[0-2])px\])/g;
 const OUTLINE_NONE = /\b(?:focus:)?outline-none\b/g;
 const HAS_RING = /\b(?:focus:|focus-visible:)?(?:ring|outline)-(?!none)/;
 
@@ -63,11 +80,10 @@ function sourceFiles(dir, acc = []) {
 }
 
 function measure() {
-  const counts = { tinyText: 0, outlineNone: 0 };
+  const counts = { outlineNone: 0 };
   const byFile = {};
   for (const file of sourceFiles(SCAN_DIR)) {
     const text = readFileSync(file, 'utf8');
-    const tiny = (text.match(TINY_TEXT) ?? []).length;
 
     // An outline-none only counts as debt when nothing in the same className
     // restores a visible focus indicator.
@@ -77,10 +93,9 @@ function measure() {
       if (hits > 0 && !HAS_RING.test(line)) outline += hits;
     }
 
-    if (tiny || outline) {
-      byFile[relative(ROOT, file).replace(/\\/g, '/')] = { tinyText: tiny, outlineNone: outline };
+    if (outline) {
+      byFile[relative(ROOT, file).replace(/\\/g, '/')] = { outlineNone: outline };
     }
-    counts.tinyText += tiny;
     counts.outlineNone += outline;
   }
   return { counts, byFile };
