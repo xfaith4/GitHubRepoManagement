@@ -22,7 +22,7 @@ import {
   type RepoLifecycleState,
   type RoadmapContent,
 } from '../types';
-import { applyAiDocImprovement, evaluateMergeReadiness, executeMergeReadinessMerge, executeRoadmapDispatch, getAgentRuns, getAiDocImprovementHistory, getAiDocTemplates, getMergeReadiness, getOperationsPromptHistory, getOperationsRepoDetail, getReadmeContent, getRoadmapContent, getRunnerPresence, previewAiDocImprovement, refineOperationsPrompt, refreshAgentRun } from '../services/apiClient';
+import { applyAiDocImprovement, evaluateMergeReadiness, executeMergeReadinessMerge, executeRoadmapDispatch, getAgentRuns, getAiDocImprovementHistory, getAiDocTemplates, getMergeReadiness, getOperationsPromptHistory, getOperationsRepoDetail, getPortfolioScanStatus, getReadmeContent, getRoadmapContent, getRunnerPresence, previewAiDocImprovement, refineOperationsPrompt, refreshAgentRun, startPortfolioScan } from '../services/apiClient';
 import { resolveDispatchGate, type RunnerPresencePayload } from '../lib/runnerPresence';
 import { withPanelTimeout } from '../lib/asyncPanel';
 import { describeUsage } from '../lib/aiUsage';
@@ -238,6 +238,18 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
 }) => {
   const [filterText, setFilterText] = useState('');
   const [selectedRepoId, setSelectedRepoId] = useState<string | null>(null);
+  // FOCUS is not SELECTION. A repository is always selected — the effect below
+  // falls back to the first row so the detail pane always has something to
+  // render — so "collapse the list when a repo is selected" would have
+  // collapsed it permanently and left no way back. Focus is the operator's own
+  // act: clicking a row focuses it and gives the detail the whole page;
+  // "All repositories" returns to the picker.
+  //
+  // The list used to hold 54% of the width forever (a 1.15fr / 1fr split)
+  // while the repo being worked on got the remainder, which turned twelve
+  // stacked panels into one long scroll. The list is a picker used once per
+  // session; the repo is the work.
+  const [isRepoFocused, setIsRepoFocused] = useState(false);
   const [docTab, setDocTab] = useState<'readme' | 'roadmap'>('readme');
   const [docsLoading, setDocsLoading] = useState(false);
   const [docsError, setDocsError] = useState<string | null>(null);
@@ -282,6 +294,12 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
   const [aiHistory, setAiHistory] = useState<AiDocImprovementHistoryItem[]>([]);
   const [aiHistoryLoading, setAiHistoryLoading] = useState(false);
   const [aiApplyLoading, setAiApplyLoading] = useState(false);
+  // Whether the index has caught up with a file this panel just wrote.
+  // `behind` is the honest resting state when the scan could not be run: the
+  // file IS on disk, and the panel must say which of the two facts it is sure
+  // of rather than showing a blocker that is no longer true.
+  const [reindexState, setReindexState] = useState<'idle' | 'scanning' | 'settled' | 'behind'>('idle');
+  const [reindexNote, setReindexNote] = useState<string | null>(null);
   const [aiApplyError, setAiApplyError] = useState<string | null>(null);
   const [aiApplyResult, setAiApplyResult] = useState<AiDocImproveApplyResult | null>(null);
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
@@ -848,12 +866,61 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
     }
   };
 
+  /**
+   * Bring the index level with a file this panel just wrote.
+   *
+   * Best-effort by construction: the write already succeeded and is not undone
+   * by a failed scan, so every failure path lands on `behind` — which SAYS the
+   * index is behind rather than leaving a stale blocker on screen claiming the
+   * file does not exist.
+   */
+  const reindexAfterApply = async () => {
+    setReindexState('scanning');
+    setReindexNote(null);
+    try {
+      const started = await startPortfolioScan();
+      if (!started.started && !started.alreadyRunning) {
+        setReindexState('behind');
+        setReindexNote('The reindex scan would not start.');
+        return;
+      }
+
+      // Poll rather than assume. A differential scan over this portfolio is
+      // seconds, but "assume it finished" is how a stale panel gets presented
+      // as a fresh one.
+      const deadline = Date.now() + 120_000;
+      let status = started.scan;
+      while (status?.state === 'running' && Date.now() < deadline) {
+        await new Promise(resolve => window.setTimeout(resolve, 1500));
+        status = await getPortfolioScanStatus();
+      }
+
+      if (status?.state === 'running') {
+        setReindexState('behind');
+        setReindexNote('The scan is still running after two minutes.');
+        return;
+      }
+      if (status?.state === 'failed' || status?.state === 'aborted') {
+        setReindexState('behind');
+        setReindexNote(status.error ?? `The reindex scan ${status.state}.`);
+        return;
+      }
+
+      onRefresh();
+      setReindexState('settled');
+    } catch (err) {
+      setReindexState('behind');
+      setReindexNote(err instanceof Error ? err.message : 'The reindex scan could not be completed.');
+    }
+  };
+
   const handleApplyAiProposed = async () => {
     if (!selectedEntry || !aiPreview?.proposedContent) {
       return;
     }
 
     const docFileName = aiPreview.docType === 'roadmap' ? 'ROADMAP.md' : 'README.md';
+
     const confirmed = window.confirm(
       `Apply the proposed ${docFileName} to "${selectedEntry.repoName}"?\n\nThe current file will be backed up first, and a restore command will be recorded. This writes to disk.`,
     );
@@ -863,6 +930,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
 
     setAiApplyLoading(true);
     setAiApplyError(null);
+    setReindexState('idle');
 
     try {
       const result = await applyAiDocImprovement({
@@ -884,6 +952,20 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
       } catch {
         // Viewer refresh is best-effort; the apply itself already succeeded.
       }
+
+      // Reindex, or the console contradicts itself.
+      //
+      // Applying writes the file and nothing else. The panel's "no ROADMAP.md
+      // found", its dispatch blocker and its structure findings all come from
+      // the portfolio index, which is not told. The result was a screen that
+      // said "Applied to ...\ROADMAP.md" directly above "No ROADMAP.md found."
+      //
+      // There is no per-repo reindex: GET /api/operations/repos/{id} serves the
+      // cached index, so re-fetching returns the same stale entry. The scan is
+      // the only lever. It is cheap here because it is differential and the
+      // scan fingerprint includes roadmapLastWriteUtc — this repo comes back
+      // `metadata-changed` and is the only one re-read.
+      void reindexAfterApply();
     } catch (err) {
       setAiApplyError(err instanceof Error ? err.message : 'Failed to apply the proposed documentation improvement.');
     } finally {
@@ -970,8 +1052,30 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
       )}
 
       {filteredEntries.length > 0 && (
-        <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-          <section className="overflow-hidden rounded-lg border border-gray-700 bg-gray-900/40">
+        <div className="mt-6 flex flex-col gap-4">
+          {/* Focused-repo bar. The way back to the picker, and the only thing
+              that names which repository the page is about once the list is
+              gone. */}
+          {isRepoFocused && selectedEntry && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-700 bg-gray-900/40 px-4 py-2.5">
+              <button
+                type="button"
+                onClick={() => setIsRepoFocused(false)}
+                data-testid="operations-back-to-list"
+                className="inline-flex items-center gap-1.5 rounded-md border border-gray-600 px-2.5 py-1 text-xs text-gray-300 transition-colors hover:border-gray-500 hover:text-white"
+              >
+                <span aria-hidden="true">←</span> All repositories
+              </button>
+              <span className="font-mono text-sm font-medium text-white">{selectedEntry.repoName}</span>
+              <span className="text-xs text-gray-500">
+                {filteredEntries.length} indexed · showing this repository full width
+              </span>
+            </div>
+          )}
+
+          <section
+            className={`overflow-hidden rounded-lg border border-gray-700 bg-gray-900/40 ${isRepoFocused ? 'hidden' : ''}`}
+          >
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-700">
                 <thead className="bg-gray-800/80">
@@ -991,7 +1095,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                     return (
                       <tr
                         key={entry.repoId}
-                        onClick={() => setSelectedRepoId(entry.repoId)}
+                        onClick={() => { setSelectedRepoId(entry.repoId); setIsRepoFocused(true); }}
                         className={`cursor-pointer transition-colors ${isSelected ? 'bg-blue-900/20' : 'hover:bg-gray-800/50'}`}
                       >
                         <td className="px-4 py-3 align-top">
@@ -1051,7 +1155,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
             </div>
           </section>
 
-          <section className="rounded-lg border border-gray-700 bg-gray-900/40 p-4">
+          <section className={`rounded-lg border border-gray-700 bg-gray-900/40 p-4 ${isRepoFocused ? '' : 'hidden'}`}>
             {selectedEntry ? (
               <div className="space-y-4">
                 <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -1840,6 +1944,27 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
 
                       {aiApplyResult && !aiApplyLoading && (
                         <div className="rounded-md border border-emerald-700/40 bg-emerald-950/20 px-3 py-2 text-xs text-emerald-200 space-y-1">
+                          {/* What the index knows, beside what the disk knows.
+                              Without this the panel reported a successful write
+                              and a "no ROADMAP.md found" blocker at the same
+                              time — two contradictory facts, both presented as
+                              current. */}
+                          <div data-testid="operations-reindex-state" className="flex flex-wrap items-center gap-2">
+                            {reindexState === 'scanning' && (
+                              <>
+                                <SpinnerIcon className="h-3.5 w-3.5" />
+                                <span>Reindexing so this repository&apos;s findings catch up…</span>
+                              </>
+                            )}
+                            {reindexState === 'settled' && <span>Index updated — the findings below reflect the applied file.</span>}
+                            {reindexState === 'behind' && (
+                              <span className="text-amber-200">
+                                Written to disk, but the index is still behind, so the findings below describe the
+                                file as it was before this apply.{reindexNote ? ` ${reindexNote}` : ''} Run a portfolio
+                                scan to bring them level.
+                              </span>
+                            )}
+                          </div>
                           <div>
                             Applied to <span className="text-emerald-100 break-all">{aiApplyResult.targetPath}</span>
                             {' '}at {new Date(aiApplyResult.appliedAt).toLocaleString()}.
