@@ -1503,19 +1503,44 @@ that had neither.
       are ad hoc, so no checker can currently tell a legitimate new one from an
       accidental one — which is why the UI ratchet
       ([`tools/Measure-UiRatchet.mjs`](tools/Measure-UiRatchet.mjs)) counts
-      tiny text and unrestored `outline-none` but **not** button colors. That
-      rule is a consequence of this item, not a substitute for it.
-      **Done means the token set exists and CI rejects a raw hex or a bare
-      Tailwind color utility in a button background** — at which point the
-      third ratchet rule ships with it. _(state: planned)_
+      unrestored `outline-none` but **not** button colors. That rule is a
+      consequence of this item, not a substitute for it. The Nocturne token
+      sheet ([`frontend/styles.css`](frontend/styles.css)) now supplies the
+      semantic set this item asked for — one accent plus three status hues —
+      so what remains is the enforcement, not the palette.
+      **Done means CI rejects a raw hex or a bare Tailwind color utility in a
+      button background** — at which point the second ratchet rule ships with
+      it. _(state: planned)_
 
-- [ ] **Raise the type floor from 12px to 13px.** **86% of console text renders
-      at ≤12px**; the ratchet baseline counts **643** sub-12px class uses across
-      the frontend. This is not a token swap: `text-xs` sets row heights
-      throughout `RepoGrid`, `OperationsWorkspaceView` and the queue panels, so
-      the floor moves layout on every dense surface and needs a visual pass per
-      view. Re-baseline `tinyText` **downward** as views are converted — the
-      ratchet accepts a decrease and reports it. _(state: planned)_
+- [x] **Raise the type floor from 12px to 13px.** **Superseded — not done, and
+      no longer wanted.** The item assumed the console's ≤12px text was
+      accidental debt. The Nocturne migration ([`MIGRATION.md`](MIGRATION.md)
+      §4) makes it deliberate: the ladder is 10px eyebrows, 11px meta, 12–13px
+      body, because "the density is the point — an operator sees the whole
+      state without scrolling." Raising the floor would now break the design
+      the console is being migrated to, so the `tinyText` ratchet rule that
+      policed it was retired in the same change
+      ([`tools/Measure-UiRatchet.mjs`](tools/Measure-UiRatchet.mjs)) — it had
+      also only ever matched integer px, so the ladder's 11.5px and 12.5px
+      steps passed it unseen. The accessibility question underneath it did NOT
+      go away and is now the open one: the §2 opacity ladder's bottom three
+      rungs measure 4.55:1, 3.91:1 and 3.58:1 on `--color-bg`, which is
+      large-text-only, and the design uses them at 10–11.5px — including for
+      `unmeasured`. That is tracked as its own item below rather than as a type
+      floor. _(state: superseded 2026-09-01 — density is a design decision, not
+      debt)_
+
+- [ ] **Resolve the Nocturne opacity ladder against WCAG AA.** The migration's
+      text hierarchy is opacity over `--color-text`
+      ([`frontend/styles.css`](frontend/styles.css)), and the top four rungs
+      clear AA comfortably (14.54:1, 9.21:1, 7.62:1, 5.19:1 on `--color-bg`).
+      The bottom three do not: 50% is 4.55:1, 45% is 3.91:1, 42% is 3.58:1 —
+      all below the 4.5:1 body-text floor, and all used at 10–11.5px where the
+      large-text exemption does not apply. 42% is where `unmeasured` renders,
+      which MIGRATION.md §5.1 makes load-bearing, so this cannot be fixed by
+      dropping the value. **Done means every rung used for body text clears
+      4.5:1 on both grounds, or the ones that cannot are moved off body text**,
+      with the measurement recorded. _(state: planned)_
 
 - [ ] **Add breakpoints above 768px.** The console declares **two responsive
       breakpoints, both under 768px**, so every viewport from a laptop to a
