@@ -131,6 +131,7 @@ if (baseline?.byFile && typeof baseline.byFile === 'object') {
 
 let failed = false;
 for (const [key, current] of Object.entries(counts)) {
+  if (RETIRED_KEYS.has(key)) continue;
   const allowed = baseline.counts[key] ?? 0;
   const delta = current - allowed;
   if (delta > 0) {
