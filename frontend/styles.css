@@ -124,3 +124,99 @@
 @theme {
   --color-gray-500: #858fa3;
 }
+
+/* --- Nocturne token sheet — migration step 1 ------------------------------
+   The console is being migrated to the Nocturne design system; this block is
+   MIGRATION.md §2 and §3 landed as tokens and NOTHING else. No existing rule
+   changes, so the app renders exactly as it did before this block existed.
+   Every value here is copied from the spec -- none is derived, rounded, or
+   chosen.
+
+   NEW NAMES ONLY, deliberately. Redefining `--color-gray-900` here would
+   re-skin all 3,992 colored nodes in one commit, with no way to review a
+   screen at a time and no way back if one of them was load-bearing. Instead
+   these sit alongside the Tailwind palette until each call site is moved onto
+   them by hand -- `bg-gray-800` becomes `bg-surface` when its screen is
+   migrated, and until then both are real.
+
+   Declared inside `@theme` rather than `:root` because Tailwind v4 emits the
+   properties into `:root` anyway AND generates the utilities the rewrite
+   needs, so one declaration serves both `var(--color-surface)` in this file
+   and `className="bg-surface"` in a component.
+
+   `static` is load-bearing, not decoration. A plain `@theme` tree-shakes any
+   variable whose utility is unused, and on a token sheet landed BEFORE its
+   call sites that is every variable: the first build of this block emitted 7
+   of 21 and silently dropped `--color-bg`, `--color-text`, `--color-divider`
+   and the whole accent ramp -- leaving the aliases below pointing at
+   variables that did not exist. A token sheet is a contract, not a
+   usage-derived artifact; `static` emits all of it.
+
+   NO TEXT-LADDER TOKENS, also deliberately. §2 is explicit that hierarchy is
+   opacity over `--color-text`, not separate gray tokens -- "do not flatten it
+   into three named grays, the gradations carry the density." Tailwind's
+   opacity modifier expresses the ladder natively off the one token:
+
+     text-text        primary        text-text/70   supporting
+     text-text/78     body           text-text/55   meta, labels
+
+   Note the ladder's bottom rungs (50%, 45%, 42%) measure 4.55:1, 3.91:1 and
+   3.58:1 on `--color-bg` -- large-text-only under WCAG AA, and the reference
+   uses them at 10-11.5px. That conflict is real and unresolved; it is called
+   out in the migration map rather than silently fixed here, because changing
+   the ladder changes the design. */
+@theme static {
+  /* Nocturne — ground and text (§2) */
+  --color-bg: #161826;
+  --color-surface: #232532;
+  --color-text: #e9e9ed;
+  --color-divider: color-mix(in srgb, #e9e9ed 16%, transparent);
+  --color-hairline: #3f424d;
+
+  /* Nocturne — accent ramp, blurple, OKLCH hue 289.2 (§2).
+     The accent is a 1px border, a 3px rail, a meter fill, a text color. It is
+     never a large flood and never a solid button fill; primary buttons are an
+     accent outline on transparent. Accent body copy goes on -300, never on
+     the base. */
+  --color-accent: #9184d9;
+  --color-accent-100: #f5f4ff;
+  --color-accent-200: #e7e5fe;
+  --color-accent-300: #d2cefd;
+  --color-accent-400: #b5abfc;
+  --color-accent-500: #968ae0;
+  --color-accent-600: #796cbf;
+  --color-accent-700: #5d5294;
+  --color-accent-800: #423a6a;
+  --color-accent-900: #2b2741;
+
+  /* Console status hues (§3) — NOT Nocturne tokens. Nocturne is a mono
+     palette and ships no semantic red/amber/green; these were added because
+     operational state genuinely needs them, and they are tuned to the same
+     perceptual lightness as the accent so they do not shout.
+
+     Base variants are for dots, rails, and borders. The `-text` variants are
+     lighter and are the only ones for text on the dark ground.
+
+     These replace nine Tailwind families doing the work of three: red+rose,
+     amber+yellow, emerald+green+teal, with orange still undecided. */
+  --color-status-ok: oklch(0.70 0.09 155);
+  --color-status-ok-text: oklch(0.78 0.07 155);
+  --color-status-warn: oklch(0.75 0.115 75);
+  --color-status-warn-text: oklch(0.80 0.09 75);
+  --color-status-crit: oklch(0.66 0.125 25);
+  --color-status-crit-text: oklch(0.82 0.08 25);
+}
+
+/* The spec's own names for the four tokens whose Tailwind namespace forced a
+   prefix above. Hand-written CSS quotes MIGRATION.md verbatim -- `var(--status-warn)`,
+   `var(--border-hairline)` -- while components use the generated utilities, and
+   neither vocabulary has to know about the other. */
+:root {
+  --border-hairline: var(--color-hairline);
+  --status-ok: var(--color-status-ok);
+  --status-ok-text: var(--color-status-ok-text);
+  --status-warn: var(--color-status-warn);
+  --status-warn-text: var(--color-status-warn-text);
+  --status-crit: var(--color-status-crit);
+  --status-crit-text: var(--color-status-crit-text);
+}
