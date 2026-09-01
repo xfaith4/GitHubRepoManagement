@@ -440,6 +440,20 @@ $script:AgentRunCopilotBranchPrefix = 'copilot/'
 # Clock-skew allowance when comparing PR creation time against dispatch time.
 $script:AgentRunDispatchSkewMinutes = 10
 
+# How long after a dispatch a new copilot/* pull request can still credibly be
+# the result of THAT dispatch.
+#
+# Without an upper bound the heuristic asked only "was it created after the
+# dispatch?", so any later pull request matched any earlier run. Measured
+# against the real ledger, that attributed a 15 August dispatch to a pull
+# request opened by hand on 1 September — and, because that PR was merged, it
+# would have closed the run with a fabricated 17-day time-to-deliver.
+#
+# 24 hours is deliberately generous. Observed copilot pull requests appeared
+# 10 seconds, 17 seconds and 8 minutes after their dispatch, so this rejects
+# nothing real; it only stops a run adopting unrelated later work.
+$script:AgentRunPullRequestMaxAgeHours = 24
+
 <#
 .SYNOPSIS
     Normalize a timestamp to a UTC [datetime], or $null when unusable.
@@ -504,7 +518,13 @@ function Select-AgentRunPullRequestCandidate {
     [OutputType([pscustomobject])]
     param(
         [Parameter(Mandatory = $true)][object]$Run,
-        [Parameter()][object[]]$PullRequests = @()
+        [Parameter()][object[]]$PullRequests = @(),
+        # Other runs against the same repository. When supplied, a pull request
+        # is claimed by the LATEST dispatch that still precedes it — so one PR
+        # can never close several runs. Three ben-fuhr-portfolio runs (13, 28
+        # and 29 August) all claimed the same PR #4 before this existed.
+        # Optional: callers without sibling context keep the old behaviour.
+        [Parameter()][object[]]$SiblingRuns = @()
     )
 
     $prs = @($PullRequests | Where-Object { $null -ne $_ })
@@ -560,7 +580,10 @@ function Select-AgentRunPullRequestCandidate {
             if ($null -eq $dispatchedAt) { return $true }
             $created = _AgentRunsAsUtc -Value (_AgentRunsField -Obj $_ -Name 'created_at')
             if ($null -eq $created) { return $false }
-            return $created -ge $dispatchedAt.AddMinutes(-1 * $script:AgentRunDispatchSkewMinutes)
+            if ($created -lt $dispatchedAt.AddMinutes(-1 * $script:AgentRunDispatchSkewMinutes)) { return $false }
+            # Bounded on BOTH sides. "After the dispatch" alone let a run adopt
+            # any later pull request, however distant.
+            return $created -le $dispatchedAt.AddHours($script:AgentRunPullRequestMaxAgeHours)
         }
     )
     $evidence['candidateCount'] = $candidates.Count
@@ -599,6 +622,33 @@ function Select-AgentRunPullRequestCandidate {
         }
     )[0]
 
+    # One pull request, one run. A PR belongs to the most recent dispatch that
+    # still precedes it; an older run must not adopt work that a later dispatch
+    # in the same repository has a better claim to.
+    if ($null -ne $selected -and $null -ne $dispatchedAt -and @($SiblingRuns).Count -gt 0) {
+        $selectedCreated = _AgentRunsAsUtc -Value (_AgentRunsField -Obj $selected -Name 'created_at')
+        $thisRunId = [string](_AgentRunsField -Obj $Run -Name 'runId' -Default '')
+        if ($null -ne $selectedCreated) {
+            $nearer = @(
+                $SiblingRuns | Where-Object {
+                    if ($null -eq $_) { return $false }
+                    if ([string](_AgentRunsField -Obj $_ -Name 'runId' -Default '') -eq $thisRunId) { return $false }
+                    $sibMetrics = _AgentRunsField -Obj $_ -Name 'metrics'
+                    $sibAt = _AgentRunsAsUtc -Value (_AgentRunsField -Obj $sibMetrics -Name 'dispatchedAt')
+                    if ($null -eq $sibAt) { $sibAt = _AgentRunsAsUtc -Value (_AgentRunsField -Obj $_ -Name 'createdAt') }
+                    if ($null -eq $sibAt) { return $false }
+                    # Dispatched after this run, but still before the PR existed.
+                    return ($sibAt -gt $dispatchedAt) -and ($sibAt -le $selectedCreated)
+                }
+            )
+            if ($nearer.Count -gt 0) {
+                $evidence['matchedBy'] = @('rejected-nearer-dispatch-claims-it')
+                $evidence['candidateCount'] = $candidates.Count
+                return [pscustomobject]@{ pullRequest = $null; evidence = [pscustomobject]$evidence }
+            }
+        }
+    }
+
     $evidence['matchedBy'] = $matchedBy
     return [pscustomobject]@{ pullRequest = $selected; evidence = [pscustomobject]$evidence }
 }
@@ -631,7 +681,12 @@ function Invoke-AgentRunRefresh {
         [Parameter(Mandatory = $true)][string]$RunId,
         [Parameter()][object[]]$PullRequests = @(),
         [Parameter()][object]$ActionsRun = $null,
-        [Parameter()][string]$Actor = 'operator'
+        [Parameter()][string]$Actor = 'operator',
+        # Other runs against the same repository. Passed through to the
+        # candidate matcher so one pull request cannot close several runs.
+        # Omitted by callers that have no sibling context; the matcher then
+        # falls back to time-bounded matching alone.
+        [Parameter()][object[]]$SiblingRuns = @()
     )
 
     $path = _AgentRunFilePath -WorkspaceRoot $WorkspaceRoot -RunId $RunId
@@ -641,7 +696,7 @@ function Invoke-AgentRunRefresh {
     $run = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $path -Raw -Encoding UTF8)
 
     $nowIso = (Get-Date).ToUniversalTime().ToString('o')
-    $candidate = Select-AgentRunPullRequestCandidate -Run $run -PullRequests $PullRequests
+    $candidate = Select-AgentRunPullRequestCandidate -Run $run -PullRequests $PullRequests -SiblingRuns $SiblingRuns
     $currentStatus = [string](_AgentRunsField -Obj $run -Name 'status' -Default '')
     $metrics = _AgentRunsField -Obj $run -Name 'metrics'
 
