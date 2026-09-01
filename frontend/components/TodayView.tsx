@@ -7,7 +7,7 @@ import {
   type ConclusionBasis,
 } from '../lib/foundationConclusion';
 import { buildOrientation, buildTodayRows, type TodayRankingInput, type TodayRow } from '../lib/todayRanking';
-import { assessUnattendedReadiness, describeAssessedAt } from '../lib/unattendedReadiness';
+import { describeAssessedAt } from '../lib/unattendedReadiness';
 import { buildHoldGroups, describeHoldCount, type RepoHold } from '../lib/repoHolds';
 
 // Release 3.6 milestone 3 — the first interaction.
@@ -81,6 +81,13 @@ function toRankingInput(entry: OperationsRepoEntry): TodayRankingInput {
     pendingCount: entry.pendingCount,
     curationState: entry.curationState,
     lifecycleState: entry.lifecycleState,
+    // Readiness signals for the fourth sort key. Forwarded raw so the ranking
+    // assesses them itself and the table cannot disagree with the sort.
+    hasReadme: entry.hasReadme,
+    hasRoadmap: entry.hasRoadmap,
+    roadmapState: entry.roadmapState,
+    localDirtyCount: entry.localDirtyCount,
+    hasCiSignal: entry.hasCiSignal,
   };
 }
 
@@ -163,10 +170,6 @@ export const TodayView: React.FC<TodayViewProps> = ({ entries, onOpenRepo, onRun
   }, [allRows]);
   const rows = useMemo(() => (filter ? allRows.filter(row => row.conclusion === filter) : allRows), [allRows, filter]);
   const holds = useMemo(() => buildHoldGroups(entries), [entries]);
-  const readinessByRepo = useMemo(
-    () => new Map(entries.map(entry => [entry.repoId, assessUnattendedReadiness(entry)])),
-    [entries],
-  );
   const assessedAt = useMemo(() => describeAssessedAt(basis), [basis]);
 
   return (
@@ -395,24 +398,14 @@ export const TodayView: React.FC<TodayViewProps> = ({ entries, onOpenRepo, onRun
                         because a stale readiness figure is the one number an
                         operator would act on and be wrong about. */}
                     <td className="px-3 py-3">
-                      {(() => {
-                        const readiness = readinessByRepo.get(row.repoId);
-                        if (!readiness) {
-                          return <span className="text-xs text-text/45">unmeasured — this repository was not assessed</span>;
-                        }
-                        return (
-                          <>
-                            <span
-                              data-testid="today-readiness"
-                              className="font-mono text-xs text-text/78"
-                              title={readiness.factors.map(f => `${f.label}: ${f.detail}`).join('\n')}
-                            >
-                              {readiness.summary}
-                            </span>
-                            <div className="mt-0.5 text-[11px] text-text/45">{assessedAt}</div>
-                          </>
-                        );
-                      })()}
+                      <span
+                        data-testid="today-readiness"
+                        className="font-mono text-xs text-text/78"
+                        title={row.readiness.factors.map(f => `${f.label}: ${f.detail}`).join('\n')}
+                      >
+                        {row.readiness.summary}
+                      </span>
+                      <div className="mt-0.5 text-[11px] text-text/45">{assessedAt}</div>
                     </td>
                   </tr>
                 );

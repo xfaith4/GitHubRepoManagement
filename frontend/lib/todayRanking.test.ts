@@ -56,12 +56,25 @@ describe('buildTodayRows — what to do first, and why', () => {
     expect(rows[1].nextActionRoute).toBeNull();
   });
 
-  it('orders by value score, then by gap count, then by cheaper effort', () => {
-    const byValue = buildTodayRows([
-      repo('low', { topValueItem: { text: 'x', valueScore: 20, valueTier: 'low' } }),
-      repo('high', { topValueItem: { text: 'y', valueScore: 90, valueTier: 'highest' } }),
+  it('orders by readiness for unattended work, then by gap count, then by cheaper effort', () => {
+    // The tiebreak used to be the highest-value pending item's score, which
+    // ranked repositories by business value. Every repository here is useful,
+    // so the tiebreak is now the one thing that legitimately differs: whether
+    // an agent can work in it without asking.
+    const byReadiness = buildTodayRows([
+      repo('not-ready', { hasReadme: false, hasRoadmap: false, roadmapState: 'missing', localDirtyCount: 9, hasCiSignal: false }),
+      repo('ready', { hasReadme: true, hasRoadmap: true, roadmapState: 'pending', localDirtyCount: 0, hasCiSignal: true }),
     ]);
-    expect(byValue.map(r => r.repoName)).toEqual(['high', 'low']);
+    expect(byReadiness.map(r => r.repoName)).toEqual(['ready', 'not-ready']);
+
+    // Unmeasured is not zero: a repository nobody assessed sorts BELOW one
+    // measured at 0 of 4, because "we looked and it cannot" is a stronger
+    // statement than "nobody looked".
+    const unmeasuredLast = buildTodayRows([
+      repo('never-assessed'),
+      repo('measured-zero', { hasReadme: false, hasRoadmap: false, roadmapState: 'missing', localDirtyCount: 4, hasCiSignal: false }),
+    ]);
+    expect(unmeasuredLast.map(r => r.repoName)).toEqual(['measured-zero', 'never-assessed']);
 
     const byGaps = buildTodayRows([
       repo('one-gap', { outcome: outcome('strengthen', { gapCount: 1, gapDomains: ['planning'] }) }),
@@ -97,7 +110,7 @@ describe('buildTodayRows — what to do first, and why', () => {
       'conclusion=strengthen',
       'curation=favorite',
       '2 foundation gap(s): planning, structure',
-      'valueScore=77',
+      'unattendedReadiness=unmeasured',
       'effort=5',
     ]);
   });
@@ -187,7 +200,7 @@ describe('pinReason', () => {
     ...over,
   }) as never;
 
-  it('names curation when a favorite outranks higher-value work', () => {
+  it('names curation when a favorite outranks a readier repository', () => {
     const rows = buildTodayRows([
       entry({
         repoName: 'CupHandleDetectionv2',
@@ -196,36 +209,43 @@ describe('pinReason', () => {
         topValueItem: null,
       }),
       entry({
-        repoName: 'HigherValue',
+        repoName: 'Readier',
         outcome: outcome('strengthen'),
         curationState: 'none',
-        topValueItem: { text: 'x', valueScore: 90, valueTier: 'high' },
+        hasReadme: true,
+        hasRoadmap: true,
+        roadmapState: 'pending',
+        localDirtyCount: 0,
+        hasCiSignal: true,
       }),
     ]);
 
     expect(rows[0].repoName).toBe('CupHandleDetectionv2');
     expect(rows[0].pinReason).toContain('favorite');
-    // The row whose position value already explains says nothing.
+    // The row whose position the readiness column already explains says nothing.
     expect(rows[1].pinReason).toBeNull();
   });
 
   it('names the conclusion when it is the key that won', () => {
     const rows = buildTodayRows([
       entry({
-        repoName: 'Strengthen72',
+        repoName: 'StrengthenNotReady',
         outcome: outcome('strengthen'),
         curationState: 'none',
-        topValueItem: { text: 'x', valueScore: 72, valueTier: 'medium' },
       }),
       entry({
-        repoName: 'Healthy90',
+        repoName: 'HealthyReadier',
         outcome: outcome('appropriate-as-is'),
         curationState: 'none',
-        topValueItem: { text: 'y', valueScore: 90, valueTier: 'high' },
+        hasReadme: true,
+        hasRoadmap: true,
+        roadmapState: 'pending',
+        localDirtyCount: 0,
+        hasCiSignal: true,
       }),
     ]);
 
-    expect(rows[0].repoName).toBe('Strengthen72');
+    expect(rows[0].repoName).toBe('StrengthenNotReady');
     expect(rows[0].pinReason).toContain('next step');
     expect(rows[1].pinReason).toBeNull();
   });
@@ -236,13 +256,16 @@ describe('pinReason', () => {
         repoName: 'Actionable',
         outcome: outcome('strengthen', true),
         curationState: 'none',
-        topValueItem: { text: 'x', valueScore: 10, valueTier: 'low' },
       }),
       entry({
-        repoName: 'NoAction',
+        repoName: 'NoActionButReadier',
         outcome: outcome('strengthen', false),
         curationState: 'none',
-        topValueItem: { text: 'y', valueScore: 99, valueTier: 'high' },
+        hasReadme: true,
+        hasRoadmap: true,
+        roadmapState: 'pending',
+        localDirtyCount: 0,
+        hasCiSignal: true,
       }),
     ]);
 
@@ -250,22 +273,47 @@ describe('pinReason', () => {
     expect(rows[0].pinReason).toContain('offers an action');
   });
 
-  it('stays silent when the list is already in value order', () => {
+  it('stays silent when the list is already in readiness order', () => {
     const rows = buildTodayRows([
       entry({
         repoName: 'Top',
         outcome: outcome('strengthen'),
         curationState: 'none',
-        topValueItem: { text: 'x', valueScore: 90, valueTier: 'high' },
+        hasReadme: true, hasRoadmap: true, roadmapState: 'pending', localDirtyCount: 0, hasCiSignal: true,
       }),
       entry({
         repoName: 'Next',
         outcome: outcome('strengthen'),
         curationState: 'none',
-        topValueItem: { text: 'y', valueScore: 80, valueTier: 'high' },
+        hasReadme: true, hasRoadmap: true, roadmapState: 'pending', localDirtyCount: 3, hasCiSignal: true,
       }),
     ]);
 
     expect(rows.map(r => r.pinReason)).toEqual([null, null]);
+  });
+
+  it('does not rank by business value at all — the correction, guarded', () => {
+    // Two repositories identical in every ranking key EXCEPT the item value
+    // score. If value still influenced the order, 'rich' would lead. It must
+    // not: every repository in this portfolio is useful, so worth cannot order
+    // them. With every key tied the sort falls through to its stable
+    // name-ordered tiebreak.
+    const rows = buildTodayRows([
+      entry({
+        repoName: 'zulu-rich',
+        outcome: outcome('strengthen'),
+        curationState: 'none',
+        topValueItem: { text: 'x', valueScore: 99, valueTier: 'highest' },
+      }),
+      entry({
+        repoName: 'alpha-poor',
+        outcome: outcome('strengthen'),
+        curationState: 'none',
+        topValueItem: { text: 'y', valueScore: 1, valueTier: 'low' },
+      }),
+    ]);
+
+    expect(rows.map(r => r.repoName)).toEqual(['alpha-poor', 'zulu-rich']);
+    expect(rows.flatMap(r => r.rankBasis).join(' ')).not.toContain('valueScore');
   });
 });
