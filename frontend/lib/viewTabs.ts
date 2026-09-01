@@ -18,41 +18,35 @@ export interface ViewTabAccent {
   badge: string;
 }
 
-const INACTIVE_TAB_CLASS = 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-700/20';
+// Nocturne (MIGRATION.md §2): ONE accent, used as line and text, never as a
+// fill. The seven per-view hues that used to live here -- emerald, indigo,
+// sky, sky, indigo, blue, teal -- were decoration, not meaning: a tab is
+// already identified by its label and its position, so a colour per tab told
+// the operator nothing a second glance did not, while spending six of the
+// palette's hues on it. Status colour has to stay legible against the
+// chrome, and it cannot if the chrome is also coloured.
+//
+// The active tab is the accent plus a 2px accent rail drawn as an inset
+// shadow, which is §4's rule -- the rail sits outside the box model, so
+// switching tabs never shifts the strip by a pixel.
+const INACTIVE_TAB_CLASS = 'text-text/62 hover:text-text hover:bg-text/6';
+const ACTIVE_TAB_CLASS = 'text-accent shadow-[inset_0_-2px_0_0_var(--color-accent)]';
 
+/** Every view now shares the accent; the record keeps the per-view shape so a
+ *  future view cannot forget to declare itself. */
 export const VIEW_TAB_ACCENTS: Record<ViewKey, ViewTabAccent> = {
-  'today': {
-    active: 'border-emerald-500 text-emerald-300 bg-gray-700/40',
-    badge: 'bg-emerald-700 text-emerald-100',
-  },
-  'repos': {
-    active: 'border-indigo-500 text-indigo-300 bg-gray-700/40',
-    badge: 'bg-indigo-700 text-indigo-100',
-  },
-  'insights': {
-    active: 'border-sky-500 text-sky-300 bg-gray-700/40',
-    badge: 'bg-sky-700 text-sky-100',
-  },
-  'operations': {
-    active: 'border-sky-500 text-sky-300 bg-gray-700/40',
-    badge: 'bg-sky-700 text-sky-100',
-  },
-  'work-queue': {
-    active: 'border-indigo-500 text-indigo-300 bg-gray-700/40',
-    badge: 'bg-green-700 text-green-100',
-  },
-  'execution-queue': {
-    active: 'border-blue-500 text-blue-300 bg-gray-700/40',
-    badge: 'bg-blue-700 text-blue-100',
-  },
-  'dependencies': {
-    active: 'border-teal-500 text-teal-300 bg-gray-700/40',
-    badge: 'bg-teal-700 text-teal-100',
-  },
+  'today': { active: ACTIVE_TAB_CLASS, badge: 'bg-accent-800 text-accent-100' },
+  'repos': { active: ACTIVE_TAB_CLASS, badge: 'bg-accent-800 text-accent-100' },
+  'insights': { active: ACTIVE_TAB_CLASS, badge: 'bg-accent-800 text-accent-100' },
+  'operations': { active: ACTIVE_TAB_CLASS, badge: 'bg-accent-800 text-accent-100' },
+  'work-queue': { active: ACTIVE_TAB_CLASS, badge: 'bg-accent-800 text-accent-100' },
+  'execution-queue': { active: ACTIVE_TAB_CLASS, badge: 'bg-accent-800 text-accent-100' },
+  'dependencies': { active: ACTIVE_TAB_CLASS, badge: 'bg-accent-800 text-accent-100' },
 };
 
-/** Carried-over badges are amber-ringed regardless of the view's own accent. */
-export const CARRIED_OVER_BADGE_CLASS = 'bg-amber-800 text-amber-100 ring-1 ring-amber-500/60';
+/** Carried-over badges stay warn-coloured — a stale count is an operational
+ *  state, and §3's warn hue is what states it everywhere else. */
+export const CARRIED_OVER_BADGE_CLASS = 'bg-status-warn/25 text-status-warn-text ring-1 ring-status-warn/50';
 
 export function getViewTabClass(key: ViewKey, activeView: ViewKey): string {
   return key === activeView ? VIEW_TAB_ACCENTS[key].active : INACTIVE_TAB_CLASS;

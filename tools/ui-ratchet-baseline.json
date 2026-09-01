@@ -1,6 +1,6 @@
 {
   "counts": {
-    "tinyText": 637,
+    "tinyText": 635,
     "outlineNone": 4
   },
   "byFile": {
@@ -41,7 +41,7 @@
       "outlineNone": 0
     },
     "frontend/components/DashboardViewTabs.tsx": {
-      "tinyText": 3,
+      "tinyText": 1,
       "outlineNone": 0
     },
     "frontend/components/DefaultBranchSyncButton.tsx": {
