@@ -203,3 +203,93 @@ describe('TodayView — the toolbar offers the portfolio scan', () => {
     expect(screen.queryByRole('button', { name: 'Run portfolio scan' })).toBeNull();
   });
 });
+
+// --- Unit 1: Now — holds, gaps, and readiness -----------------------------
+//
+// The failures these prevent, in order:
+//   1. A landing screen that opens as a wall of red. The staleness banner was
+//      removed for that reason (2026-08-30); "Needs you" must not bring it
+//      back in another form, so actionable holds start collapsed.
+//   2. A stuck lane hidden behind a click. Work already under way and stopped
+//      is the one thing that must never be collapsed.
+//   3. Ambient documentation gaps presented as alarms — the mistake
+//      `needsAttention.ts` avoids by excluding them from the attention signal.
+//   4. A repository ranked by business value. Every repository here is useful,
+//      so the figure beside a row measures readiness for unattended work.
+
+describe('TodayView — Needs you collapses, blocking never does', () => {
+  it('collapses actionable holds behind a count on first paint', () => {
+    render(<TodayView entries={[entry('alpha', { localDirtyCount: 12, executionState: 'idle' })]} />);
+
+    expect(screen.getByTestId('today-holds-toggle')).toHaveTextContent('1 needs you');
+    // The card itself is not in the document until asked for.
+    expect(screen.queryByTestId('today-hold-working-tree-dirty')).not.toBeInTheDocument();
+  });
+
+  it('opens the holds and shows each rule with its reason', () => {
+    render(<TodayView entries={[entry('alpha', { localDirtyCount: 12, executionState: 'idle' })]} />);
+    fireEvent.click(screen.getByTestId('today-holds-toggle'));
+
+    const card = screen.getByTestId('today-hold-working-tree-dirty');
+    expect(card).toHaveTextContent('12 uncommitted files block dispatch');
+    expect(card).toHaveTextContent('destructive');
+    expect(within(card).getByText('always held')).toBeInTheDocument();
+  });
+
+  it('never collapses a hold that is blocking a lane', () => {
+    render(<TodayView entries={[entry('alpha', { localDirtyCount: 12, executionState: 'running' })]} />);
+
+    // Visible with no interaction, and not behind the collapse control.
+    const card = screen.getByTestId('today-hold-working-tree-dirty');
+    expect(card).toHaveAttribute('data-severity', 'blocking');
+    expect(screen.queryByTestId('today-holds-toggle')).not.toBeInTheDocument();
+  });
+
+  it('keeps ambient gaps out of Needs you and in the quiet list', () => {
+    render(<TodayView entries={[entry('alpha', { roadmapState: 'missing', executionState: 'idle' })]} />);
+
+    expect(screen.queryByTestId('today-needs-you')).not.toBeInTheDocument();
+    const gap = screen.getByTestId('today-gap-roadmap-missing');
+    expect(gap).toHaveTextContent('authors a new contract');
+  });
+
+  it('promotes an ambient gap to blocking when the lane is stuck on it', () => {
+    render(<TodayView entries={[entry('alpha', { roadmapState: 'missing', executionState: 'running' })]} />);
+
+    expect(screen.getByTestId('today-hold-roadmap-missing')).toHaveAttribute('data-severity', 'blocking');
+    expect(screen.queryByTestId('today-gap-roadmap-missing')).not.toBeInTheDocument();
+  });
+});
+
+describe('TodayView — readiness replaces the value score', () => {
+  it('measures readiness for unattended work, not worth', () => {
+    render(<TodayView entries={[entry('alpha', {
+      hasReadme: true, hasRoadmap: true, roadmapState: 'pending', localDirtyCount: 0, hasCiSignal: true,
+    })]} />);
+
+    expect(screen.getByRole('columnheader', { name: 'Ready for unattended work' })).toBeInTheDocument();
+    expect(screen.getByTestId('today-readiness')).toHaveTextContent('4 of 4 ready');
+  });
+
+  it('reports an unmeasured check as unmeasured rather than as a failure', () => {
+    render(<TodayView entries={[entry('alpha', {
+      hasReadme: true, hasRoadmap: true, roadmapState: 'pending', localDirtyCount: 0, hasCiSignal: undefined,
+    })]} />);
+
+    expect(screen.getByTestId('today-readiness')).toHaveTextContent('3 of 3 ready · ci present unmeasured');
+  });
+
+  it('stamps how old the assessment is, because a stale score is actionable', () => {
+    render(<TodayView
+      entries={[entry('alpha')]}
+      basis={{ indexStale: false, indexAgeHours: 5, indexGeneratedAt: '2026-09-01T00:00:00Z', reasons: [] }}
+    />);
+
+    expect(screen.getByText('assessed 5 hours ago')).toBeInTheDocument();
+  });
+
+  it('no longer prints a business-value figure anywhere', () => {
+    render(<TodayView entries={[entry('alpha')]} />);
+    expect(screen.queryByText(/^value \d+$/)).not.toBeInTheDocument();
+  });
+});
