@@ -211,7 +211,44 @@
    prefix above. Hand-written CSS quotes MIGRATION.md verbatim -- `var(--status-warn)`,
    `var(--border-hairline)` -- while components use the generated utilities, and
    neither vocabulary has to know about the other. */
+/* --- Nocturne type and shape — migration step 2 (MIGRATION.md §4) --------
+   Inter is self-hosted and imported in `index.tsx`; this block points the
+   type stack at it.
+
+   `--font-sans` is REDEFINED rather than added, because Tailwind's preflight
+   sets `font-family: var(--font-sans)` on the document -- redefining it is
+   what actually moves the app onto Inter. `--font-mono` is likewise
+   redefined; §4's stack and Tailwind's differ only in the fallbacks after
+   `ui-monospace`, so the 70 existing `font-mono` uses keep rendering the same
+   glyphs.
+
+   NO `--radius-md`, deliberately, and this one is a trap worth naming. §4
+   gives `--radius-md: 8px`, but Tailwind already binds that exact name to
+   0.375rem = 6px, and its utilities read the variable at use time -- so
+   declaring §4's value here (in `@theme` OR in `:root`) would silently
+   re-radius all 133 existing `rounded-md` elements from 6px to 8px.
+
+   No token is needed anyway. The design's shape scale already exists:
+
+     cards      8px   -> rounded-lg   (--radius-lg, .5rem)     already 8px
+     controls   6px   -> rounded-md   (--radius-md, .375rem)   already 6px
+     meters   2-3px   -> rounded-xs   (--radius-xs, .125rem)   already 2px
+
+   So §4's shapes are reached by moving call sites onto the right existing
+   step, not by defining a token. The 318 bare `rounded` (4px) uses are the
+   ones that move; nothing else does. */
+@theme static {
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, Menlo, Consolas, "Cascadia Mono", monospace;
+}
+
 :root {
+  /* §4's own names, for hand-written CSS. Both resolve to the sans stack --
+     Nocturne sets headings and body in the same face and separates them by
+     size and weight, never by family. */
+  --font-heading: var(--font-sans);
+  --font-body: var(--font-sans);
+
   --border-hairline: var(--color-hairline);
   --status-ok: var(--color-status-ok);
   --status-ok-text: var(--color-status-ok-text);

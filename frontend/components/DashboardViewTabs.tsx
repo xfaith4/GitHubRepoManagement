@@ -108,7 +108,7 @@ const DashboardViewTabs: React.FC<DashboardViewTabsProps> = ({ activeView, onSel
         aria-label="Views"
         aria-orientation="horizontal"
         onKeyDown={onKeyDown}
-        className="hidden md:flex border-b border-gray-700 px-4 pt-3 gap-1"
+        className="hidden md:flex px-5 pt-2 gap-0.5"
       >
         {VIEW_META.map(({ key, label }) => {
           const badge = getVisibleTabBadge(badges, key);
@@ -123,7 +123,7 @@ const DashboardViewTabs: React.FC<DashboardViewTabsProps> = ({ activeView, onSel
               aria-controls={viewPanelId(key)}
               tabIndex={key === focusedView ? 0 : -1}
               onClick={() => onSelectView(key)}
-              className={`px-4 py-2 text-sm font-medium rounded-t border-b-2 transition-colors flex items-center gap-1.5 ${getViewTabClass(key, activeView)}`}
+              className={`px-2.5 py-1.5 text-[13px] rounded-t-md transition-colors flex items-center gap-1.5 ${getViewTabClass(key, activeView)}`}
             >
               {label}
               {badge && (
@@ -131,7 +131,7 @@ const DashboardViewTabs: React.FC<DashboardViewTabsProps> = ({ activeView, onSel
                   data-testid={`${key}-tab-badge`}
                   data-carried-over={badge.carriedOver || undefined}
                   title={badge.carriedOver ? badge.title : undefined}
-                  className={`inline-flex items-center justify-center w-5 h-5 text-xs rounded-full font-semibold ${getTabBadgeClass(key, badge.carriedOver)}`}
+                  className={`inline-flex items-center justify-center w-4.5 h-4.5 text-[11px] rounded-full font-medium ${getTabBadgeClass(key, badge.carriedOver)}`}
                 >
                   {badge.count}
                 </span>
@@ -144,11 +144,11 @@ const DashboardViewTabs: React.FC<DashboardViewTabsProps> = ({ activeView, onSel
       {/* The question this view answers (Release 3.6 M3), then the Release 2.6
           purpose subtitle. A label names a place; the question names the reason
           to be there, which is what an operator is actually choosing between. */}
-      <div className="px-4 py-2 border-b border-gray-700/60">
-        <p data-testid="view-question" className="text-xs text-gray-200 font-medium">
+      <div className="px-5 pt-1.5 pb-2 border-b border-text/10">
+        <p data-testid="view-question" className="text-[11.5px] text-text/70 font-medium">
           {VIEW_META_BY_KEY[activeView].question}
         </p>
-        <p data-testid="view-subtitle" className="text-xs text-gray-400 mt-0.5">
+        <p data-testid="view-subtitle" className="text-[11.5px] text-text/50 mt-0.5">
           {VIEW_META_BY_KEY[activeView].subtitle}
         </p>
       </div>
