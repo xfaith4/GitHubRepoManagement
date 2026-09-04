@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-04 — Trend charts drew in a strip in the middle of the card
+
+### Fixed
+
+- **The Portfolio Analytics series charts occupied a ~330px strip centred
+  in a ~1200px card.** Each chart was a fixed 320-by-92 viewBox in a
+  full-width, fixed-height box, and under the SVG default aspect handling
+  the browser scaled the drawing to the box height and centred it. The
+  series now render through [`TrendSparkline.tsx`](frontend/components/TrendSparkline.tsx),
+  which measures its wrapper with a ResizeObserver and lays the geometry
+  out in real pixels, so the line spans the card and the stroke and point
+  markers stay round. Pinned by `TrendSparkline.test.tsx` (viewBox and end
+  points follow the measurement, a zero-width resize is ignored, the
+  observer is released on unmount) and a wiring test in
+  `InsightsView.test.tsx`. The per-repo sparklines in Repo Momentum sit in
+  a fixed-width box whose aspect already matches their viewBox, so they are
+  unchanged.
+
 ## 2026-09-04 — The first sign-in opened on a refusal
 
 ### Fixed
