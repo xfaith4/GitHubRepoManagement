@@ -276,7 +276,7 @@ function Wait-ApiHostReady {
         [Parameter(Mandatory = $true)]
         [System.Management.Automation.Job]$Job,
         [Parameter()]
-        [int]$TimeoutSeconds = 30
+        [int]$TimeoutSeconds = 60
     )
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
