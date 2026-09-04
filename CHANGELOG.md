@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-04 — The first sign-in opened on a refusal
+
+### Fixed
+
+- **After typing the portal password, the page opened on "The backend
+  refused this request" until Retry.** The first repository load fired on
+  mount, before `/api/auth/status` had resolved, so on a protected portal
+  `/api/status` answered 401 and that refusal was stored as the page error.
+  The login then succeeded, but the stored error was what the dashboard
+  rendered; Retry cleared it and loaded. [`App.tsx`](frontend/App.tsx) now
+  starts the first load only once the auth check reports the browser is in,
+  so no data request is made before the session exists. Pinned by
+  [`App.test.tsx`](frontend/App.test.tsx): the data route is not called while
+  the login form is up, and after a sign-in the dashboard opens on data, not
+  on the pre-login refusal.
+
 ## 2026-08-31 — Lane 0.17 follow-up: a sparse dispatch crashed the whole portal
 
 ### Fixed
