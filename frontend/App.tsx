@@ -172,7 +172,14 @@ function App() {
   // Initial load: two-phase stale-while-revalidate.
   // Phase 1 — serve cached data immediately (no TTL check) so the UI is never blank on launch.
   // Phase 2 — background refresh to pick up any changes since the last scan.
+  //
+  // It waits for the auth check. A gated host answers /api/status with 401
+  // until the browser holds a session, and when this load fired on mount the
+  // refusal was stored as the page error, survived the login, and greeted the
+  // operator until they pressed Retry. Re-running on every 'ok' also reloads
+  // after a sign-out and sign-in, when the cached list may be stale.
   useEffect(() => {
+    if (authState !== 'ok') return;
     let cancelled = false;
 
     const doInitialLoad = async () => {
@@ -213,7 +220,7 @@ function App() {
     doInitialLoad();
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authState]);
 
   useEffect(() => {
     if (!dataLastUpdated) return;
