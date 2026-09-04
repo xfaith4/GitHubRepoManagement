@@ -1894,6 +1894,97 @@ not observed agent activity.
 
 ---
 
+### Lane 0.18 — Execution depth: four mechanisms RoadmapOrchestrator already solved (evaluated 2026-09-04)
+
+`RoadmapOrchestrator` (`xfaith4/RoadmapOrchestrator`, local at
+`F:\Development\20_Staging\AI Projects\RoadmapOrchestrator`) reaches the same
+end as this console from the opposite side. This product decides **what**
+deserves an agent across a portfolio and dispatches one item; that one takes a
+single target and drives a dependency-ordered roadmap to completion in a closed
+loop, gating every phase against the real repository. Its `README.md` states
+the split worth borrowing: phase selection is deterministic and lives in
+PowerShell, while execution and self-assessment are delegated to the model.
+Both products already refuse an agent's self-report —
+[`Roadmap.WriteBack.ps1`](backend/modules/roadmap/Roadmap.WriteBack.ps1)
+demands merge evidence, the orchestrator demands an independent gate — so these
+items extend a conviction this repo already holds rather than importing a
+foreign one.
+
+**Each item adds a step that does not exist today; none changes what a current
+surface already does.** Every acceptance line below names the unchanged
+behaviour explicitly, because that is the cheap half to get wrong.
+
+**Do not build on its `maintain_existing_app` pipeline.** `Get-Pipeline`
+(`orchestrator\Invoke-RoadmapOrchestrator.ps1`) names eleven agents,
+`agents\agent-library.json` defines eight, and `RepoContextBuilder`,
+`ReviewGate` and `PRPublisher` exist only as prose in `agents\agents-full.md`.
+`Invoke-Agent` returns failure for an unknown agent, so that pipeline halts on
+its first step. None of the items below depend on it.
+
+- [ ] **Carry an amendment forward between dispatches.** Every dispatch starts
+      cold: what the last agent learned, or deliberately left undone, dies
+      unless it reaches the pull-request body, so the next prompt for the same
+      repository re-asks settled questions. Port the carryover channel from
+      `.orchestration\STATE_SCHEMA.md` — a `carryover[]` replaced wholesale
+      each run and injected into the next run's context by
+      `Invoke-PhasePipeline`. **Translate, do not copy:** there it lives in a
+      state file written by the very agent being judged, a weaker trust model
+      than this repo's append-only ledgers, so carryover belongs beside the run
+      that produced it in the agent-run ledger and is read by the dispatch
+      prompt builder. Acceptance: a second dispatch to the same repository
+      carries the prior run's unresolved note into its prompt; a repository
+      with no prior run produces exactly the prompt it produces today.
+      _(state: planned)_
+- [ ] **Check the acceptance criteria before a pull request is called ready.**
+      Dispatch prompts already carry acceptance criteria and nothing verifies
+      them; merge evidence answers "did this land", not "did it do what the
+      item asked". Port `Test-PhaseGate`
+      (`orchestrator\Invoke-RoadmapOrchestrator.ps1`): a separate read-only
+      pass that re-checks the named deliverables against the repository, with
+      an unparseable verdict treated as rejection rather than a pass. Its
+      refusal shape and read-only tool set transfer directly; its inputs do
+      not, so run it against the agent's branch and record the verdict in the
+      agent-run ledger. Acceptance: an item whose criteria are unmet reports
+      the failing criterion by name, and every existing merge gate keeps its
+      current strictness. _(state: planned)_
+- [ ] **Cap cumulative spend across a dispatch sequence.**
+      [`BudgetLedger.ps1`](backend/modules/agent-runs/BudgetLedger.ps1)
+      evaluates one dispatch against a work-unit quota. The orchestrator's run
+      loop caps per agent, per gate and per roadmap, halts on the cap, and
+      persists banked cost **before** halting so the figure is never lost.
+      Port the cumulative cap and the persist-before-halt ordering; translate
+      the unit, since this product counts work units and captured token cost
+      rather than one headless price. Acceptance: a sequence that reaches the
+      cap stops with its spend recorded, and a single dispatch inside quota
+      behaves as it does today. _(state: planned)_
+- [ ] **Order work inside one repository's roadmap, and detect dead ends.**
+      [`Roadmap.DependencyTracker.ps1`](backend/modules/roadmap/Roadmap.DependencyTracker.ps1)
+      finds references _between_ repositories; nothing orders items _within_ a
+      roadmap, so an operator re-picks after every merge. Port `Get-NextPhase`
+      (`orchestrator\Invoke-RoadmapOrchestrator.ps1`): the first item whose
+      `depends_on` are all complete, plus its Phase 3 dead-end rule, where
+      incomplete-but-ineligible halts as blocked instead of reporting the
+      roadmap complete. **This is the one piece that transfers as code** — a
+      pure function over item ids and a completed set, liftable almost
+      verbatim into a module and covered by module smoke. It needs a
+      `depends_on` notion in this product's roadmap contract first, which is a
+      spec decision in `standards/roadmap` and `spec/roadmap-contract`, not a
+      code change. Acceptance: selection is deterministic for a given completed
+      set; a cycle or an unresolved id halts as blocked; a roadmap with no
+      dependency declarations ranks exactly as it does today.
+      _(state: planned)_
+- [ ] **[non-blocker]** Treat the orchestrator as a third `dispatchTarget`
+      beside `copilot` and `claude`, handing a whole well-formed roadmap to a
+      closed-loop executor while single-item dispatch keeps serving everything
+      else. This reuses the tool whole instead of cherry-picking it, and the
+      queue, the target discriminator and the runner already exist in
+      [`Automation.RoadmapQueue.ps1`](backend/modules/automation/Automation.RoadmapQueue.ps1)
+      and [`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1).
+      Blocked on that repo's own hardening roadmap (its Phases 4-7) and on the
+      missing pipeline agents named above. _(state: planned)_
+
+---
+
 ## 8. Risks and Guardrails
 
 Full list in [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md);
