@@ -8033,7 +8033,7 @@ Write-Step 'Agent contract mirror - the portable contract reaches every tool, an
     }
 
     if (-not $contractMirrorText.EndsWith($contractSourceText)) {
-        throw ('.github\copilot-instructions.md has drifted from AGENTS.md. It is a generated mirror: edit AGENTS.md, regenerate the mirror, and re-run. A stale contract is worse than none, because it reads as authoritative.')
+        throw ('.github\copilot-instructions.md has drifted from AGENTS.md. It is a generated mirror: edit AGENTS.md, then run `pwsh ./tools/Sync-AgentContractMirror.ps1` and re-run this gate. A stale contract is worse than none, because it reads as authoritative.')
     }
     if ($contractMirrorText -notmatch 'GENERATED MIRROR') {
         throw 'The copilot mirror does not declare itself generated; someone will edit it by hand.'

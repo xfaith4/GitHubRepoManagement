@@ -4,7 +4,13 @@ import SummaryCard from './SummaryCard';
 export interface PortfolioSummaryCounts {
   total: number;
   needsAttention: number;
-  dirty: number;
+  /**
+   * `null` when the source cannot observe a working tree. The GitHub API path
+   * hardcodes `status: 'clean'` and `uncommittedChanges: 0` because a remote
+   * repository has no checkout, so counting them produced a confident `0` that
+   * read as "nothing is dirty" instead of "not observable here".
+   */
+  dirty: number | null;
   stale: number;
   commitsThisWeek: number;
 }
@@ -71,7 +77,12 @@ const PortfolioSummarySection: React.FC<PortfolioSummarySectionProps> = ({
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
         <SummaryCard title="Total Repositories" value={summary.total} color="blue" />
         <SummaryCard title="Needs Attention" value={summary.needsAttention} color="yellow" tooltip="Repos with an actionable problem: uncommitted changes, a failing build, a blocked or parse-error dispatch state, or an unparseable roadmap. Excludes baseline gaps like 'no CI yet' or a roadmap that merely has pending items." />
-        <SummaryCard title="Dirty Repositories" value={summary.dirty} color="red" />
+        <SummaryCard
+          title="Dirty Repositories"
+          value={summary.dirty}
+          color="red"
+          unavailableReason="Needs a local checkout — the GitHub API cannot see a working tree."
+        />
         <SummaryCard title="Stale Repositories" value={summary.stale} color="red" />
         <SummaryCard title="Commits This Week" value={summary.commitsThisWeek} color="green" />
       </div>

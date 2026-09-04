@@ -1116,7 +1116,15 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     // missing policy cannot shrink the portfolio.
     const inScopeRepos = reposWithRoadmap.filter(r => r.scope?.inScope !== false);
     const total = inScopeRepos.length;
-    const dirty = inScopeRepos.filter(r => r.status === 'dirty' || r.uncommittedChanges > 0).length;
+    // Lane 0.15 — never render "not computed" as a number. The GitHub path
+    // (Get-GitHubReposViaApi) hardcodes status 'clean' and uncommittedChanges 0
+    // because a remote repository has no working tree, so this filter always
+    // returned 0 there and the tile read "nothing is dirty" rather than "not
+    // observable from this source". null means unmeasurable; the tile renders
+    // it as such instead of as a count.
+    const dirty = dataSource?.source === 'github'
+      ? null
+      : inScopeRepos.filter(r => r.status === 'dirty' || r.uncommittedChanges > 0).length;
     const stale = inScopeRepos.filter(r => r.isStale).length;
     const commitsThisWeek = inScopeRepos.reduce((sum, r) => sum + (r.commitsLastWeek ?? 0), 0);
     const commitsThisMonth = inScopeRepos.reduce((sum, r) => sum + (r.commitsLastMonth ?? 0), 0);
@@ -1138,7 +1146,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
       total, dirty, stale, commitsThisWeek, commitsThisMonth, needsAttention,
       totalIssues, totalProjects, totalStaleBranches, reposWithVulnerabilities, avgHealthScore
     };
-  }, [reposWithRoadmap]);
+  }, [reposWithRoadmap, dataSource]);
 
   // Release 3.5 milestone 3 -- the scope statement under the KPI row. Derived
   // from the per-repo classifications the scan attached, so the statement and

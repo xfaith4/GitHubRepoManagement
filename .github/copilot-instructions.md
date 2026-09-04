@@ -130,5 +130,12 @@ pattern itself:
 - Commit prefixes: `feat(release-N.M):`, `fix(validation):`, `chore(config):`.
 - Non-blockers: name it, record it as a ROADMAP entry, and move on — do not
   stall the current step.
+- **A question that is the operator's to answer goes in
+  [`docs/governance/open-decisions.md`](docs/governance/open-decisions.md),
+  not only in the reply.** If it turns on preference, product direction, risk
+  appetite, or anything outside this repository, add an entry naming the
+  default you proceeded under, then carry on with the parts that do not depend
+  on it. Raising it in conversation alone is how a decision gets made by
+  default, by whichever agent next touches the code.
 - Never hide an error. Name it, record it, judge whether it blocks, and decide.
   `SilentlyContinue` must never be used to make a failure disappear.
