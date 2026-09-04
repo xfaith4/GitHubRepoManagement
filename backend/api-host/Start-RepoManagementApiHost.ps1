@@ -66,6 +66,10 @@ $executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 # policy in that adapter resolves the same settings file, and a dot-source that
 # arrives after its caller is a function that does not exist yet.
 . (Join-Path $commonRoot 'Config.SettingsPath.ps1')
+# Standard-file locator (ROADMAP.md at root or docs/, SECURITY.md at .github/,
+# ...). The modules below dot-source it themselves; loading it here too keeps
+# the host's own roadmap resolvers on the same answer.
+. (Join-Path $commonRoot 'RepoStandardFile.ps1')
 . (Join-Path $adapterRoot 'Adapters.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.Parser.ps1')
 . (Join-Path $roadmapModuleRoot 'Roadmap.ExecutionContract.ps1')
@@ -4751,13 +4755,9 @@ function Resolve-RoadmapPathForRepo {
         return $candidateFromEntry
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($LocalPath) -and (Test-Path -LiteralPath $LocalPath -PathType Container)) {
-        foreach ($candidateName in @('ROADMAP.md', 'Roadmap.md', 'docs\planning\roadmap.md', 'docs\ROADMAP.md', 'roadmap.md')) {
-            $candidatePath = Join-Path $LocalPath $candidateName
-            if (Test-Path -LiteralPath $candidatePath -PathType Leaf) {
-                return $candidatePath
-            }
-        }
+    if (-not [string]::IsNullOrWhiteSpace($LocalPath)) {
+        $fromLocalPath = Resolve-RepoRoadmapPath -RepoPath $LocalPath
+        if (-not [string]::IsNullOrWhiteSpace($fromLocalPath)) { return $fromLocalPath }
     }
 
     $candidateRepoRoots = [System.Collections.Generic.List[string]]::new()
@@ -4788,12 +4788,8 @@ function Resolve-RoadmapPathForRepo {
         }
 
         $probeRoot = if ((Split-Path -Path $repoRoot -Leaf) -eq $RepoName) { $repoRoot } else { Join-Path $repoRoot $RepoName }
-        foreach ($candidateName in @('ROADMAP.md', 'Roadmap.md', 'docs\planning\roadmap.md', 'docs\ROADMAP.md', 'roadmap.md')) {
-            $candidatePath = Join-Path $probeRoot $candidateName
-            if (Test-Path -LiteralPath $candidatePath -PathType Leaf) {
-                return $candidatePath
-            }
-        }
+        $fromProbeRoot = Resolve-RepoRoadmapPath -RepoPath $probeRoot
+        if (-not [string]::IsNullOrWhiteSpace($fromProbeRoot)) { return $fromProbeRoot }
     }
 
     return ''
@@ -5023,14 +5019,8 @@ function Build-CopilotTaskPacket {
 
     if ([string]::IsNullOrWhiteSpace($effectiveRoadmapPath) -and $null -ne $AuditEntry) {
         $auditRepoPath = if ($AuditEntry -is [System.Collections.IDictionary]) { [string](Get-ValueOrDefault $AuditEntry['repoPath'] '') } else { [string](Get-ValueOrDefault $AuditEntry.repoPath '') }
-        if (-not [string]::IsNullOrWhiteSpace($auditRepoPath) -and (Test-Path -LiteralPath $auditRepoPath -PathType Container)) {
-            foreach ($candidateName in @('ROADMAP.md', 'Roadmap.md', 'docs\planning\roadmap.md', 'docs\ROADMAP.md', 'roadmap.md')) {
-                $candidatePath = Join-Path $auditRepoPath $candidateName
-                if (Test-Path -LiteralPath $candidatePath -PathType Leaf) {
-                    $effectiveRoadmapPath = $candidatePath
-                    break
-                }
-            }
+        if (-not [string]::IsNullOrWhiteSpace($auditRepoPath)) {
+            $effectiveRoadmapPath = Resolve-RepoRoadmapPath -RepoPath $auditRepoPath
         }
     }
 
@@ -12963,10 +12953,13 @@ try {
                             throw "Local path for repo '$repoName' could not be resolved. Pass localPath explicitly."
                         }
 
-                        $roadmapPath = Join-Path $localPath 'ROADMAP.md'
-                        if (Test-Path -LiteralPath $roadmapPath -PathType Leaf) {
-                            throw "ROADMAP.md already exists for '$repoName'. Use roadmap repair/apply to update it."
+                        # A roadmap at any accepted location (docs/ included)
+                        # refuses the create; a new one goes to the root.
+                        $existingRoadmapPath = Resolve-RepoRoadmapPath -RepoPath $localPath
+                        if (-not [string]::IsNullOrWhiteSpace($existingRoadmapPath)) {
+                            throw "A roadmap already exists for '$repoName' at '$existingRoadmapPath'. Use roadmap repair/apply to update it."
                         }
+                        $roadmapPath = Get-RepoRoadmapDefaultPath -RepoPath $localPath
 
                         Set-Content -LiteralPath $roadmapPath -Value $content -Encoding UTF8 -NoNewline:$false
                         # Invalidate roadmap cache so next scan picks up the new file

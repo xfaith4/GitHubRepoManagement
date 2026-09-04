@@ -10,14 +10,13 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-function Get-RepositoryImprovementRoadmapPath {
-    param([Parameter(Mandatory = $true)][string]$RepoPath)
+. (Join-Path $PSScriptRoot '..\common\RepoStandardFile.ps1')
 
-    foreach ($candidate in @('ROADMAP.md', 'Roadmap.md', 'docs\planning\roadmap.md', 'docs\ROADMAP.md', 'roadmap.md')) {
-        $path = Join-Path $RepoPath $candidate
-        if (Test-Path -LiteralPath $path -PathType Leaf) { return $path }
-    }
-    return ''
+function Get-RepositoryImprovementRoadmapPath {
+    # Kept as the name this module's callers use; the locations come from the
+    # standards through the shared locator, not from a list kept here.
+    param([Parameter(Mandatory = $true)][string]$RepoPath)
+    return (Resolve-RepoRoadmapPath -RepoPath $RepoPath)
 }
 
 function New-RepositoryImprovementPrompt {

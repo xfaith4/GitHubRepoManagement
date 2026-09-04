@@ -25,6 +25,10 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Roadmap presence is answered by the shared locator, at every location the
+# standards accept (docs/ROADMAP.md included), not by a root-only probe.
+. (Join-Path $PSScriptRoot '..\common\RepoStandardFile.ps1')
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -778,8 +782,12 @@ function Invoke-RepoEvaluation {
     # ------------------------------------------------------------------
     # Roadmap presence
     # ------------------------------------------------------------------
-    $roadmapPath = Join-Path $LocalPath 'ROADMAP.md'
-    $hasExistingRoadmap = Test-Path -LiteralPath $roadmapPath -PathType Leaf
+    # Any accepted location counts (root, docs/, docs/planning/ per the
+    # standards). A repository whose roadmap lives under docs/ used to read
+    # "No roadmap" here while the Planning row of the same evaluation had
+    # already parsed it.
+    $roadmapPath = Resolve-RepoRoadmapPath -RepoPath $LocalPath
+    $hasExistingRoadmap = -not [string]::IsNullOrWhiteSpace($roadmapPath)
 
     $suggestedRoadmapContent = $null
     $suggestedAdditions = @()
@@ -802,6 +810,7 @@ function Invoke-RepoEvaluation {
         repoType                = $repoType
         evaluatedAt             = $evaluatedAt
         hasExistingRoadmap      = $hasExistingRoadmap
+        roadmapPath             = if ($hasExistingRoadmap) { $roadmapPath } else { $null }
         findings                = @($sortedFindings)
         findingCount            = $sortedFindings.Count
         criticalCount           = $criticalCount
