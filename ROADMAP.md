@@ -34,7 +34,10 @@ mixing them once made the roadmap read "everything is done" over real gaps:
    Android phone, or an operator at an authenticated session; no autonomous
    test can produce these.
 3. **Product / design decisions** — waiting on a judgement, not on time or
-   engineering (progressive disclosure; the `Checks: Read` grant).
+   engineering. These now have one durable home:
+   [`docs/governance/open-decisions.md`](docs/governance/open-decisions.md).
+   A decision raised only in conversation gets made by default, by whichever
+   agent next touches the code.
 4. **Calendar-gated accrual** — the 7/90-day trend windows fill only as
    time passes with capture running.
 
@@ -1601,14 +1604,24 @@ from the screenshot.
       credential and choosing a view are different acts; the source toggle
       already exists for the second. _(state: planned)_
 
-- [ ] **Never render "not computed" as a number.** In GitHub mode
-      `Dirty Repositories` shows **0**, which reads as "clean" and means "no
-      working tree exists here":
-      [`Dashboard.tsx:1043`](frontend/components/Dashboard.tsx#L1043) computes
-      it from `status === 'dirty' || uncommittedChanges > 0`, neither of which
-      the GitHub API can populate. Mode-dependent KPIs must render as
-      explicitly unavailable, the precedent Release 3.6's leverage panel
-      already set with its two `available: false` metrics. _(state: planned)_
+- [x] **Never render "not computed" as a number.** In GitHub mode
+      `Dirty Repositories` showed **0**, which reads as "clean" and means "no
+      working tree exists here". Confirmed at the source, not just the
+      consumer: `Get-GitHubReposViaApi`
+      ([`Start-RepoManagementApiHost.ps1`](backend/api-host/Start-RepoManagementApiHost.ps1))
+      hardcodes `status = 'clean'` and `uncommittedChanges = 0` for every
+      remote repository, so the Dashboard filter could only ever return 0.
+      A count is now `number | null`, where `null` means **not measurable from
+      this source**; [`SummaryCard.tsx`](frontend/components/SummaryCard.tsx)
+      renders it as an em dash with the reason beneath it and a
+      `data-unavailable` marker, and the Dashboard passes `null` for dirty
+      whenever the source is GitHub. The sibling tiles were checked rather
+      than assumed: `Commits This Week` and `Stale Repositories` ARE genuinely
+      computed in GitHub mode (commit counts from the API, staleness from
+      `pushed_at` via `Resolve-RepoStaleness`), so they keep their numbers.
+      Gated by three `PortfolioSummarySection` tests including a row-wide
+      tripwire — proven red first by forcing the old always-render path, where
+      2 of 7 failed. _(state: smoke-tested)_
 
 - [ ] **Show the Today rank basis instead of hiding it in a tooltip.** The
       audit read a value-49 repo above a value-80 one as a sort bug; it is not.
@@ -1676,10 +1689,10 @@ is explained by the first two: `...T08:56:29Z` and `...T04:56:29-04:00` are
 the SAME instant, so any surface rendering the UTC one as if it were local
 runs exactly four hours ahead.
 
-**A new discrepancy the guard surfaced.** An independent filesystem walk finds
-**70** working trees under the configured root at depth 3, while the status
-cache reports **72**. Two repositories are counted that the disk does not
-have, or the scan counts something a `.git` walk does not. Not yet explained.
+**A new discrepancy the guard surfaced — resolved 2026-09-04.** An independent
+filesystem walk found **70** working trees under the configured root at depth
+3 while the status cache reported **72**. The scan was right and the walk was
+wrong; both reasons are recorded on the closed item below.
 
 - [ ] **Give `Blocked` two names, because it has two definitions.** Confirmed
       live: `blocked=17` is ledger execution state; `blockedCount=57` is repos
@@ -1694,10 +1707,22 @@ have, or the scan counts something a `.git` walk does not. Not yet explained.
       `ConvertFrom-Json` has already promoted to `[datetime]`. Fix the
       serializer and the assertion together. _(state: planned)_
 
-- [ ] **Explain the 70-vs-72 repository gap.** An independent walk of the
-      filesystem at the configured scan depth finds 70 working trees; the
-      status scan reports 72. One of the two is counting something the other
-      is not. _(state: planned)_
+- [x] **Explain the 70-vs-72 repository gap — the scan was right.** _(state:
+      operator-verified 2026-09-04; re-runnable, see below)_ The audit's
+      independent walk was the thing miscounting, for two compounding reasons.
+      It **stopped at the first `.git`**, so it could not see a repository
+      nested inside another one (`SereneHarmony_Site_Starter` contains
+      `custom_SereneHarmonySite`, and both are working trees), and it walked
+      to **depth 3** while the scan walks one level deeper, the same
+      `MaxDepth + 1` convention `Invoke-RoadmapScan` uses so a repo at the
+      deepest level is not invisible. A descending walk reproduces the product
+      exactly: depth 3 finds 71, depth 4 finds 72, depth 5 finds 72. One more
+      shape a naive walk misses: a linked worktree stores `.git` as a **file**,
+      not a directory, so a directory-only test skips it. No product change;
+      the number on the landing surface was correct all along. Whether a
+      repository nested inside another should be its own portfolio row is a
+      product question, recorded as D-002 in
+      [`docs/governance/open-decisions.md`](docs/governance/open-decisions.md).
 
 - [ ] **Reconcile the six repository denominators and the three clock bases.**
       One sitting showed **seven timestamps across three clock bases, one

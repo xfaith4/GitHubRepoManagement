@@ -15,6 +15,58 @@ afterEach(() => cleanup());
 const summary = { total: 52, needsAttention: 4, dirty: 3, stale: 7, commitsThisWeek: 12 };
 
 describe('PortfolioSummarySection', () => {
+  // Lane 0.15 — "never render 'not computed' as a number". In GitHub mode the
+  // backend hardcodes status 'clean' and uncommittedChanges 0 (a remote repo
+  // has no checkout), so this tile counted a confident 0 and the operator read
+  // "nothing is dirty" where the truth was "not observable here".
+  it('renders an unmeasurable count as unavailable, never as zero', () => {
+    render(
+      <PortfolioSummarySection
+        sourceLabel="GitHub API: xfaith4"
+        summary={{ ...summary, dirty: null }}
+      />
+    );
+    const card = screen.getByTestId('summary-dirty-repositories');
+    expect(card).toHaveAttribute('data-unavailable', 'true');
+    expect(card.querySelector('p')?.textContent?.trim()).toBe('—');
+    expect(card.textContent).toContain('Needs a local checkout');
+  });
+
+  it('still renders a real zero as zero when the source can measure it', () => {
+    render(
+      <PortfolioSummarySection
+        sourceLabel="Local workspace"
+        summary={{ ...summary, dirty: 0 }}
+      />
+    );
+    const card = screen.getByTestId('summary-dirty-repositories');
+    expect(card).not.toHaveAttribute('data-unavailable');
+    expect(card.querySelector('p')?.textContent?.trim()).toBe('0');
+    expect(card.textContent).not.toContain('Needs a local checkout');
+  });
+
+  // Tripwire: whatever the tile row grows to, a null must never reach the
+  // operator as a digit. This asserts the rule over every rendered card rather
+  // than over the one tile the audit happened to name.
+  it('no tile in the row paints a number for a null count', () => {
+    const allNull = { total: 52, needsAttention: 4, dirty: null, stale: 7, commitsThisWeek: 12 };
+    const { container } = render(
+      <PortfolioSummarySection sourceLabel="GitHub API: xfaith4" summary={allNull} />
+    );
+    const cards = Array.from(container.querySelectorAll('[data-testid^="summary-"]'));
+    expect(cards.length).toBeGreaterThanOrEqual(5);
+    for (const card of cards) {
+      const rendered = card.querySelector('p')?.textContent?.trim() ?? '';
+      if (card.getAttribute('data-unavailable') === 'true') {
+        // An unavailable tile shows an em dash where the count would go.
+        expect(rendered).toBe('—');
+      } else {
+        expect(rendered).not.toBe('—');
+      }
+    }
+    expect(cards.filter(c => c.getAttribute('data-unavailable') === 'true')).toHaveLength(1);
+  });
+
   it('announces scan completion via a polite live region', () => {
     render(
       <PortfolioSummarySection
