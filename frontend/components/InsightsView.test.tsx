@@ -6,13 +6,55 @@
 // actually renders its content, keeps empty states visible and explanatory,
 // and wires the retry path to the caller.
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, within, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import React from 'react';
 import InsightsView from './InsightsView';
 import { EMPTY_EXECUTION_METRICS } from '../lib/portfolioTrendView';
+import type { PortfolioTrendResult } from '../types';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+// Captures what the trend sparklines observe, so a test can hand them a width.
+type ResizeCallback = (entries: Array<{ contentRect: { width: number } }>) => void;
+const resizeObservers: FakeResizeObserver[] = [];
+class FakeResizeObserver {
+  observed: Element[] = [];
+  constructor(private readonly callback: ResizeCallback) { resizeObservers.push(this); }
+  observe(el: Element) { this.observed.push(el); }
+  unobserve() { /* unused */ }
+  disconnect() { /* unused */ }
+  resize(width: number) { this.callback([{ contentRect: { width } }]); }
+}
+
+const TREND_FIXTURE: PortfolioTrendResult = {
+  trendStatus: 'history-backed',
+  seedSource: 'portfolio-index',
+  requestedDays: 90,
+  availableDays: 33,
+  generatedAt: '2026-09-04T00:00:00.000Z',
+  summary: {
+    totalRepos: 59,
+    readyForWorkCount: 8,
+    runningCount: 0,
+    blockedCount: 0,
+    completedCount: 0,
+    averageMaturityScore: 35,
+    averageDocumentationHealthScore: 50,
+    maturityAssessedCount: 59,
+    docsHealthAssessedCount: 59,
+    improvedThisWeek: 1,
+  },
+  series: [
+    { key: 'avgMaturityScore', label: 'Avg Maturity', color: 'emerald', points: [{ date: '2026-08-01', value: 30 }, { date: '2026-09-04', value: 35 }] },
+    { key: 'readyRepos', label: 'Work-ready (L3+)', color: 'sky', points: [{ date: '2026-08-01', value: 18 }, { date: '2026-09-04', value: 8 }] },
+  ],
+  topCandidates: [],
+  repoSparklines: [],
+};
 
 function renderEmptyInsights(overrides: Partial<React.ComponentProps<typeof InsightsView>> = {}) {
   const handlers = {
@@ -49,6 +91,27 @@ describe('InsightsView', () => {
     renderEmptyInsights();
     expect(screen.getByTestId('insights-view')).toBeInTheDocument();
     expect(screen.getByText(/Insights is read-only analytics/)).toBeInTheDocument();
+  });
+
+  // The series charts used a fixed 320-unit viewBox, which the SVG default
+  // aspect handling scaled to the box height and centred: a ~330px line in
+  // the middle of a ~1200px card. Each series now draws in its card's
+  // measured width.
+  it('draws each trend series across the measured width of its card', () => {
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+    // The analytics block is shown once any assessment context exists; the
+    // error is the cheapest context, as the retry tests above use it.
+    renderEmptyInsights({ portfolioTrend: TREND_FIXTURE, portfolioAssessmentError: 'assessment failed' });
+
+    for (const key of ['avgMaturityScore', 'readyRepos']) {
+      const wrapper = screen.getByTestId(`trend-sparkline-${key}`);
+      const observer = resizeObservers.find(o => o.observed.includes(wrapper));
+      expect(observer).toBeDefined();
+      act(() => observer!.resize(1180));
+      const svg = wrapper.querySelector('svg');
+      expect(svg).toHaveAttribute('viewBox', '0 0 1180 96');
+      expect(svg!.querySelector('line')).toHaveAttribute('x2', '1170');
+    }
   });
 
   // An idle ledger (loaded, all zeros) keeps its card VISIBLE with an

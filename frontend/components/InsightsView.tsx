@@ -12,6 +12,7 @@ import ProvenanceNotice from './ProvenanceNotice';
 import PortfolioMissionSection, { type PortfolioMission } from './PortfolioMissionSection';
 import type { PortfolioSnapshot } from '../types';
 import ChangeHistoryPanel from './ChangeHistoryPanel';
+import TrendSparkline from './TrendSparkline';
 import { SpinnerIcon, IssuesIcon, ProjectsIcon, BranchIcon, HealthIcon } from './icons';
 import {
   buildTrendGeometry,
@@ -394,30 +395,9 @@ const InsightsView: React.FC<InsightsViewProps> = ({
                               <span>{geometry.pointCount} point{geometry.pointCount === 1 ? '' : 's'} · {portfolioTrend.availableDays}d window</span>
                               <span>{formatTrendDateLabel(geometry.endDate)}</span>
                             </div>
-                            <svg viewBox="0 0 320 92" className="mt-3 h-24 w-full" aria-hidden="true">
-                              <line x1="10" y1="82" x2="310" y2="82" stroke="rgba(148, 163, 184, 0.18)" strokeWidth="1" />
-                              <path d={geometry.areaPath} fill={palette.fill} />
-                              {geometry.coordinates.length > 1 && (
-                                <polyline
-                                  points={geometry.polyline}
-                                  fill="none"
-                                  stroke={palette.stroke}
-                                  strokeWidth="3"
-                                  strokeLinejoin="round"
-                                  strokeLinecap="round"
-                                />
-                              )}
-                              {geometry.coordinates.map((coord, index) => (
-                                <circle
-                                  key={`${series.key}-${coord.point.date}-${index}`}
-                                  cx={coord.x}
-                                  cy={coord.y}
-                                  r={index === geometry.coordinates.length - 1 ? 4 : 2.5}
-                                  fill={palette.stroke}
-                                  opacity={index === geometry.coordinates.length - 1 ? 1 : 0.6}
-                                />
-                              ))}
-                            </svg>
+                            {/* Drawn in the card's measured width; the
+                                geometry above is only for the labels. */}
+                            <TrendSparkline seriesKey={series.key} points={series.points} palette={palette} />
                             <div className="mt-2 flex items-center justify-between text-xs text-gray-400">
                               <span>Low {formatTrendSeriesValue(series.key, geometry.min)}</span>
                               <span>High {formatTrendSeriesValue(series.key, geometry.max)}</span>
