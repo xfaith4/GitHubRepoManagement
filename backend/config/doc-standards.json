@@ -18,13 +18,16 @@
       "name": "LICENSE",
       "required": false,
       "severity": "warning",
+      "altNames": ["LICENSE.txt", "LICENSE.md"],
       "recommendedAction": "Add a LICENSE file to clarify terms of use."
     },
     {
       "name": "CONTRIBUTING.md",
       "required": false,
       "severity": "info",
-      "recommendedAction": "Add CONTRIBUTING.md to guide contributors on how to submit changes."
+      "altPaths": [".github/CONTRIBUTING.md", "docs/CONTRIBUTING.md"],
+      "locationNote": "altNames/altPaths mirror repo-structure-standards.json for the files both list, resolved by backend/modules/common/RepoStandardFile.ps1; the module smoke fails when the two files drift.",
+      "recommendedAction": "Add CONTRIBUTING.md (at the root, under .github/, or under docs/) to guide contributors on how to submit changes."
     },
     {
       "name": "CHANGELOG.md",

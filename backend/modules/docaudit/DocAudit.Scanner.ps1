@@ -25,6 +25,10 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Presence of the required root files is resolved at every accepted location
+# (altNames / altPaths on each spec) by the shared locator.
+. (Join-Path $PSScriptRoot '..\common\RepoStandardFile.ps1')
+
 <#
 .SYNOPSIS
     Load documentation standards from doc-standards.json.
@@ -138,14 +142,13 @@ function Invoke-AuditRepoDocumentation {
     if ($null -ne $Standards -and $null -ne $Standards.requiredRootFiles) {
         foreach ($fileSpec in $Standards.requiredRootFiles) {
             $fileName = [string]$fileSpec.name
-            $filePath = Join-Path $RepoPath $fileName
 
-            # Also check common variants (LICENSE vs LICENSE.txt vs LICENSE.md)
-            $found = Test-Path -LiteralPath $filePath
-            if (-not $found -and $fileName -eq 'LICENSE') {
-                $found = (Test-Path (Join-Path $RepoPath 'LICENSE.txt')) -or
-                         (Test-Path (Join-Path $RepoPath 'LICENSE.md'))
-            }
+            # Accepted variants (LICENSE.txt for LICENSE) and repo-relative
+            # locations (.github/CONTRIBUTING.md) are declared on the spec as
+            # altNames / altPaths and resolved by the shared locator, so this
+            # audit and the structure audit cannot disagree about presence.
+            $filePath = Resolve-RepoStandardFilePath -RepoPath $RepoPath -Spec $fileSpec
+            $found = -not [string]::IsNullOrWhiteSpace($filePath)
 
             if ($fileName -eq 'README.md') {
                 $hasReadme = $found
