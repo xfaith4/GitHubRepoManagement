@@ -2229,6 +2229,146 @@ if ($malformedAudit.missingCount -ne 0)    { throw "Expected missingCount=0 when
 if (@($malformedAudit.findings).Count -ne 0) { throw 'Expected zero findings when standards object lacks common section' }
 Write-Host '  malformed standards correctly degraded to empty findings' -ForegroundColor DarkGray
 
+Write-Step 'Standard files — smoke: a roadmap under docs/ (and SECURITY.md under .github/) is present on every surface'
+# UnifiedAIToolbox keeps its roadmap at docs/ROADMAP.md. The Planning row of
+# its evaluation parsed that file while the structure row and the "No roadmap"
+# chip of the SAME evaluation said there was none: four private candidate
+# lists and five root-only lookups answered one question differently. One
+# locator (backend/modules/common/RepoStandardFile.ps1) reads the accepted
+# locations from the standards; these assertions hold every surface to it,
+# and the undeclared-location case proves the locator can still say no.
+. (Join-Path $WorkspaceRoot 'backend\modules\docaudit\RepositoryImprovement.Workflow.ps1')
+$docStds = Get-DocStandards -StandardsPath $docStandards
+$stdFixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('repostd-smoke-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
+$stdDocsRepo = Join-Path $stdFixtureRoot 'docs-roadmap'
+$stdBothRepo = Join-Path $stdFixtureRoot 'both-roadmaps'
+$stdElsewhereRepo = Join-Path $stdFixtureRoot 'elsewhere-roadmap'
+try {
+    foreach ($repo in @($stdDocsRepo, $stdBothRepo, $stdElsewhereRepo)) {
+        $null = New-Item -ItemType Directory -Path (Join-Path $repo 'docs') -Force
+        $null = New-Item -ItemType Directory -Path (Join-Path $repo '.github') -Force
+        Set-Content -LiteralPath (Join-Path $repo 'package.json') -Encoding UTF8 -Value '{ "name": "repostd-smoke", "version": "1.0.0" }'
+        Set-Content -LiteralPath (Join-Path $repo 'README.md') -Encoding UTF8 -Value ('# repostd smoke' + [Environment]::NewLine + ('Enough README for the doc audit to read. ' * 12))
+        Set-Content -LiteralPath (Join-Path $repo 'LICENSE.txt') -Encoding UTF8 -Value 'MIT'
+    }
+    $stdRoadmapBody = "# Roadmap`n`n## Release 1.0`n`n- [ ] Keep this roadmap alive`n"
+    Set-Content -LiteralPath (Join-Path $stdDocsRepo 'docs\ROADMAP.md') -Encoding UTF8 -Value $stdRoadmapBody
+    Set-Content -LiteralPath (Join-Path $stdDocsRepo '.github\SECURITY.md') -Encoding UTF8 -Value '# Security'
+    Set-Content -LiteralPath (Join-Path $stdDocsRepo '.github\CONTRIBUTING.md') -Encoding UTF8 -Value '# Contributing'
+    Set-Content -LiteralPath (Join-Path $stdBothRepo 'docs\ROADMAP.md') -Encoding UTF8 -Value $stdRoadmapBody
+    Set-Content -LiteralPath (Join-Path $stdBothRepo 'ROADMAP.md') -Encoding UTF8 -Value $stdRoadmapBody
+    $null = New-Item -ItemType Directory -Path (Join-Path $stdElsewhereRepo 'planning') -Force
+    Set-Content -LiteralPath (Join-Path $stdElsewhereRepo 'planning\ROADMAP.md') -Encoding UTF8 -Value $stdRoadmapBody
+
+    # The locator: docs\ is found, the root outranks docs\, an undeclared
+    # location is NOT found (so the check is not vacuous), a missing repository
+    # resolves to nothing, and -DefaultToRoot names the creation target.
+    $docsResolved = Resolve-RepoRoadmapPath -RepoPath $stdDocsRepo
+    if ($docsResolved -ne (Join-Path $stdDocsRepo 'docs\ROADMAP.md')) { throw "Expected docs\ROADMAP.md to resolve, got '$docsResolved'" }
+    $bothResolved = Resolve-RepoRoadmapPath -RepoPath $stdBothRepo
+    if ($bothResolved -ne (Join-Path $stdBothRepo 'ROADMAP.md')) { throw "Expected the root roadmap to outrank docs\, got '$bothResolved'" }
+    $elsewhereResolved = Resolve-RepoRoadmapPath -RepoPath $stdElsewhereRepo
+    if (-not [string]::IsNullOrWhiteSpace($elsewhereResolved)) { throw "Expected planning\ROADMAP.md (not a declared location) to resolve to nothing, got '$elsewhereResolved'" }
+    if ((Resolve-RepoRoadmapPath -RepoPath $stdElsewhereRepo -DefaultToRoot) -ne (Join-Path $stdElsewhereRepo 'ROADMAP.md')) { throw '-DefaultToRoot did not return the root creation target' }
+    if ((Resolve-RepoRoadmapPath -RepoPath (Join-Path $stdFixtureRoot 'does-not-exist')) -ne '') { throw 'A missing repository path must resolve to nothing' }
+
+    # Structure audit: ROADMAP.md, SECURITY.md, CONTRIBUTING.md and LICENSE are
+    # present at alternative locations; the check still fires for what is
+    # genuinely absent (.gitignore) and for the undeclared location.
+    $docsAudit = Invoke-RepoStructureAudit -RepoPath $stdDocsRepo -Standards $structStds
+    $docsMissing = @($docsAudit.findings | Where-Object { $_.kind -eq 'missing-root-file' } | ForEach-Object { [string]$_.target })
+    foreach ($presentName in @('ROADMAP.md', 'SECURITY.md', 'CONTRIBUTING.md', 'LICENSE', 'README.md')) {
+        if ($docsMissing -contains $presentName) { throw "Structure audit reported '$presentName' missing although it exists at an accepted location (missing: $($docsMissing -join ', '))" }
+    }
+    if ($docsMissing -notcontains '.gitignore') { throw "Structure audit must still report the absent .gitignore (missing: $($docsMissing -join ', '))" }
+    $elsewhereAudit = Invoke-RepoStructureAudit -RepoPath $stdElsewhereRepo -Standards $structStds
+    $elsewhereMissing = @($elsewhereAudit.findings | Where-Object { $_.kind -eq 'missing-root-file' } | ForEach-Object { [string]$_.target })
+    if ($elsewhereMissing -notcontains 'ROADMAP.md') { throw 'Structure audit must report ROADMAP.md missing when the only copy is at an undeclared location' }
+
+    # Repo evaluator: the "No roadmap" chip reads hasExistingRoadmap.
+    $docsEval = Invoke-RepoEvaluation -RepoName 'repostd-smoke' -LocalPath $stdDocsRepo
+    if (-not $docsEval.hasExistingRoadmap) { throw 'Repo evaluator reported no roadmap for a repository with docs\ROADMAP.md' }
+    if ([string]$docsEval.roadmapPath -ne (Join-Path $stdDocsRepo 'docs\ROADMAP.md')) { throw "Repo evaluator roadmapPath should name docs\ROADMAP.md, got '$($docsEval.roadmapPath)'" }
+    if (-not [string]::IsNullOrWhiteSpace($docsEval.suggestedRoadmapContent)) { throw 'Repo evaluator drafted a replacement roadmap for a repository that has one under docs\' }
+    $elsewhereEval = Invoke-RepoEvaluation -RepoName 'repostd-smoke-elsewhere' -LocalPath $stdElsewhereRepo
+    if ($elsewhereEval.hasExistingRoadmap) { throw 'Repo evaluator must not count a roadmap at an undeclared location' }
+
+    # Doc audit: its own requiredRootFiles (doc-standards.json) honor the same
+    # altNames / altPaths, so LICENSE.txt and .github\CONTRIBUTING.md count.
+    $docsDocAudit = Invoke-AuditRepoDocumentation -RepoPath $stdDocsRepo -RepoName 'repostd-smoke' -Standards $docStds -RoadmapState 'pending'
+    $docAuditMissing = @($docsDocAudit.docFindings | Where-Object { [string]$_.message -like "Required file '*' is missing." } | ForEach-Object { [string]$_.file })
+    foreach ($presentName in @('README.md', 'LICENSE', 'CONTRIBUTING.md')) {
+        if ($docAuditMissing -contains $presentName) { throw "Doc audit reported '$presentName' missing although it exists at an accepted location (missing: $($docAuditMissing -join ', '))" }
+    }
+    if ($docAuditMissing -notcontains 'CHANGELOG.md') { throw "Doc audit must still report the absent CHANGELOG.md (missing: $($docAuditMissing -join ', '))" }
+
+    # The repository-improvement workflow takes the same answer.
+    if ((Get-RepositoryImprovementRoadmapPath -RepoPath $stdDocsRepo) -ne $docsResolved) { throw 'Get-RepositoryImprovementRoadmapPath disagrees with Resolve-RepoRoadmapPath' }
+
+    Write-Host '  standard files ok: docs\ROADMAP.md, .github\SECURITY.md, .github\CONTRIBUTING.md and LICENSE.txt present on structure audit, evaluator and doc audit; root outranks docs\; planning\ROADMAP.md correctly not found' -ForegroundColor DarkGray
+} finally {
+    Remove-Item -LiteralPath $stdFixtureRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+Write-Step 'Standard files — gate: repo-structure-standards.json and doc-standards.json agree on accepted locations'
+# Both files list LICENSE and CONTRIBUTING.md. A location added to one and
+# not the other lets the structure audit and the doc audit disagree again,
+# which is the defect above. Proven red on a planted pair first.
+$compareStandardFileLocations = {
+    param([object[]]$StructureSpecs, [object[]]$DocSpecs)
+    $mismatches = [System.Collections.Generic.List[string]]::new()
+    foreach ($structureSpec in @($StructureSpecs)) {
+        $name = [string](Get-RepoStandardFileField -Spec $structureSpec -Name 'name')
+        $docSpec = @($DocSpecs | Where-Object { [string](Get-RepoStandardFileField -Spec $_ -Name 'name') -eq $name }) | Select-Object -First 1
+        if ($null -eq $docSpec) { continue }
+        $structureLocations = @(Get-RepoStandardFileCandidateList -Spec $structureSpec) -join '|'
+        $docLocations = @(Get-RepoStandardFileCandidateList -Spec $docSpec) -join '|'
+        if ($structureLocations -ne $docLocations) { $mismatches.Add(("{0}: structure=[{1}] doc=[{2}]" -f $name, $structureLocations, $docLocations)) }
+    }
+    return @($mismatches)
+}
+$plantedMismatch = & $compareStandardFileLocations `
+    -StructureSpecs @([pscustomobject]@{ name = 'CONTRIBUTING.md'; altPaths = @('docs/CONTRIBUTING.md') }) `
+    -DocSpecs @([pscustomobject]@{ name = 'CONTRIBUTING.md' })
+if (@($plantedMismatch).Count -ne 1) { throw 'Standards-agreement check did not fail its planted mismatch; it would pass vacuously' }
+$structureSpecList = @(Get-RepoStandardFileSpecList -Standards $structStds)
+$docSpecList = @(Get-RepoStandardFileSpecList -Standards $docStds)
+$liveMismatch = & $compareStandardFileLocations -StructureSpecs $structureSpecList -DocSpecs $docSpecList
+if (@($liveMismatch).Count -gt 0) { throw ("repo-structure-standards.json and doc-standards.json disagree on accepted locations: {0}" -f ($liveMismatch -join '; ')) }
+$docSpecNames = @($docSpecList | ForEach-Object { [string](Get-RepoStandardFileField -Spec $_ -Name 'name') })
+$sharedStandardFileCount = @($structureSpecList | Where-Object { $docSpecNames -contains [string](Get-RepoStandardFileField -Spec $_ -Name 'name') }).Count
+if ($sharedStandardFileCount -lt 2) { throw "Expected at least LICENSE and CONTRIBUTING.md to be shared between the two standards files, found $sharedStandardFileCount" }
+Write-Host ("  standards agree on accepted locations for {0} shared file(s); planted mismatch caught first" -f $sharedStandardFileCount) -ForegroundColor DarkGray
+
+Write-Step 'Standard files — sweep: no backend lookup bypasses the locator (root-only ROADMAP.md probes, private candidate lists)'
+# Derived scope: every backend .ps1 except the locator itself. Both detectors
+# are proven on a planted offender first, so an empty result means "none",
+# not "matched nothing".
+$locatorPath = Join-Path $WorkspaceRoot 'backend\modules\common\RepoStandardFile.ps1'
+$bypassPatterns = @(
+    @{ name = 'root-only roadmap probe';         regex = "Join-Path\s+[^\r\n]*?['""]ROADMAP\.md['""]" },
+    @{ name = 'private roadmap candidate list';  regex = "['""]docs[\\/]+(planning[\\/]+)?roadmap\.md['""]" }
+)
+$plantedOffender = "`$p = Join-Path `$repo 'ROADMAP.md'`n`$list = @('ROADMAP.md', 'docs\ROADMAP.md')"
+foreach ($pattern in $bypassPatterns) {
+    if ($plantedOffender -notmatch $pattern.regex) { throw "Bypass detector '$($pattern.name)' did not match its planted offender; the sweep would pass vacuously" }
+}
+$backendOutputPrefix = Join-Path $WorkspaceRoot 'backend\modules\output'
+$backendScripts = @(Get-ChildItem -LiteralPath (Join-Path $WorkspaceRoot 'backend') -Recurse -File -Filter '*.ps1' | Where-Object { $_.FullName -ne $locatorPath -and -not $_.FullName.StartsWith($backendOutputPrefix, [System.StringComparison]::OrdinalIgnoreCase) })
+$bypasses = [System.Collections.Generic.List[string]]::new()
+foreach ($file in $backendScripts) {
+    $lineNumber = 0
+    foreach ($line in [System.IO.File]::ReadAllLines($file.FullName)) {
+        $lineNumber++
+        foreach ($pattern in $bypassPatterns) {
+            if ($line -imatch $pattern.regex) { $bypasses.Add(("{0}:{1} ({2})" -f $file.FullName.Substring($WorkspaceRoot.Length + 1), $lineNumber, $pattern.name)) }
+        }
+    }
+}
+if ($bypasses.Count -gt 0) { throw ("Roadmap lookups bypass RepoStandardFile.ps1 — route them through Resolve-RepoRoadmapPath / Get-RepoRoadmapDefaultPath: {0}" -f ($bypasses -join '; ')) }
+if ($backendScripts.Count -lt 20) { throw "Bypass sweep examined only $($backendScripts.Count) backend script(s); scope derivation is broken" }
+Write-Host ("  bypass sweep ok: {0} backend script(s) probed, both detectors failed their planted offender first, none bypass the locator" -f $backendScripts.Count) -ForegroundColor DarkGray
+
 Write-Step 'Portfolio assessment — smoke: lifecycle precedence (archived overrides everything)'
 $archivedRepo = [pscustomobject]@{ name = 'arch-repo'; localPath = $WorkspaceRoot; isArchived = $true; htmlUrl = 'https://github.com/x/arch-repo'; branch = 'main'; status = 'clean' }
 $archivedAssess = Invoke-PortfolioAssessment -LocalRepos @($archivedRepo) -StructureStandards $structStds

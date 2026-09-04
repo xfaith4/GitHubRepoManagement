@@ -45,6 +45,10 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# When a caller does not name the roadmap, it is found where the standards
+# accept one (docs/ included), not assumed at the root.
+. (Join-Path $PSScriptRoot '..\common\RepoStandardFile.ps1')
+
 $script:RoadmapWriteBackSchemaVersion = '1'
 $script:RoadmapWriteBackRelPath = 'output\roadmap-writeback\history.jsonl'
 
@@ -381,7 +385,7 @@ function Add-RoadmapCompletionCommit {
         return [pscustomobject]$result
     }
 
-    if ([string]::IsNullOrWhiteSpace($RoadmapPath)) { $RoadmapPath = Join-Path $RepoPath 'ROADMAP.md' }
+    if ([string]::IsNullOrWhiteSpace($RoadmapPath)) { $RoadmapPath = Resolve-RepoRoadmapPath -RepoPath $RepoPath -DefaultToRoot }
     $result.roadmapPath = $RoadmapPath
     if (-not (Test-Path -LiteralPath $RoadmapPath -PathType Leaf)) {
         $result.category = 'roadmap-not-found'

@@ -31,6 +31,11 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# The shared locator for standard files (ROADMAP.md, SECURITY.md, ...) at every
+# location the standards accept. The structure audit and the roadmap path
+# tokens below must answer the same way the evaluator and the doc audit do.
+. (Join-Path $PSScriptRoot '..\common\RepoStandardFile.ps1')
+
 # ---------------------------------------------------------------------------
 # Standards loader
 # ---------------------------------------------------------------------------
@@ -142,11 +147,11 @@ function Invoke-RepoStructureAudit {
 
     foreach ($spec in @($common.requiredRootFiles)) {
         if ($null -eq $spec) { continue }
-        $names = @([string]$spec.name)
-        if ($spec.PSObject.Properties.Name -contains 'altNames' -and $spec.altNames) {
-            $names += @($spec.altNames | ForEach-Object { [string]$_ })
-        }
-        if (-not (_TestPathAny -Base $RepoPath -Names $names)) {
+        # Accepted names AND repo-relative paths come from the spec (altNames,
+        # altPaths), so a roadmap under docs/ or a SECURITY.md under .github/
+        # is present, not missing. Resolved by RepoStandardFile.ps1, the same
+        # answer the evaluator's "No roadmap" chip and the doc audit give.
+        if ([string]::IsNullOrWhiteSpace((Resolve-RepoStandardFilePath -RepoPath $RepoPath -Spec $spec))) {
             $findings.Add([pscustomobject]@{
                 kind              = 'missing-root-file'
                 target            = [string]$spec.name
@@ -1261,7 +1266,7 @@ function Get-PortfolioScanFingerprintFromSignals {
     }
 
     $readmePath = if ([string]::IsNullOrWhiteSpace($effectiveLocalPath)) { '' } else { Join-Path $effectiveLocalPath 'README.md' }
-    $roadmapPath = if ([string]::IsNullOrWhiteSpace($effectiveLocalPath)) { '' } else { Join-Path $effectiveLocalPath 'ROADMAP.md' }
+    $roadmapPath = if ([string]::IsNullOrWhiteSpace($effectiveLocalPath)) { '' } else { Resolve-RepoRoadmapPath -RepoPath $effectiveLocalPath -DefaultToRoot }
 
     $tokens = [ordered]@{
         sourceCoverage             = [string]$SourceCoverage
@@ -1433,7 +1438,7 @@ function New-PortfolioIndexPayload {
         $localUntrackedCount = [int](_GetField -Obj $localRepo -Name 'untrackedCount' -Default 0)
         $localDirtyCount = [int](_GetField -Obj $localRepo -Name 'dirtyCount' -Default 0)
         $readmeLastWriteUtc = if ([string]::IsNullOrWhiteSpace($localPath)) { '' } else { _Get-FileLastWriteUtcIso -FilePath (Join-Path $localPath 'README.md') }
-        $roadmapLastWriteUtc = if ([string]::IsNullOrWhiteSpace($localPath)) { '' } else { _Get-FileLastWriteUtcIso -FilePath (Join-Path $localPath 'ROADMAP.md') }
+        $roadmapLastWriteUtc = if ([string]::IsNullOrWhiteSpace($localPath)) { '' } else { _Get-FileLastWriteUtcIso -FilePath (Resolve-RepoRoadmapPath -RepoPath $localPath -DefaultToRoot) }
         $scanFingerprint = Get-PortfolioScanFingerprintFromSignals -LocalRepo $localRepo -GitHubRepo $githubRepo -LocalPath $localPath -SourceCoverage ([string](_GetField -Obj $assessment -Name 'sourceCoverage' -Default 'local'))
         $repoId = Get-PortfolioRepoId -ScanFingerprint $scanFingerprint -LocalPath $localPath -GitHubFullName $githubFullName -RepoName $repoName
         $curation = if ($CurationByRepoId.ContainsKey($repoId)) { $CurationByRepoId[$repoId] } else { $null }

@@ -14,7 +14,10 @@
         "name": "ROADMAP.md",
         "severity": "warning",
         "category": "roadmap",
-        "recommendedAction": "Add ROADMAP.md so the repo can participate in portfolio work selection."
+        "altNames": ["Roadmap.md", "roadmap.md"],
+        "altPaths": ["docs/ROADMAP.md", "docs/roadmap.md", "docs/planning/roadmap.md"],
+        "locationNote": "altNames are accepted in the same directory as name; altPaths are repo-relative. Many repositories keep the roadmap under docs/. Resolved by backend/modules/common/RepoStandardFile.ps1, first match wins, so a root file outranks a docs/ copy. Keep LICENSE and CONTRIBUTING.md locations identical to doc-standards.json (the module smoke fails on drift).",
+        "recommendedAction": "Add ROADMAP.md (at the root or under docs/) so the repo can participate in portfolio work selection."
       },
       {
         "name": "LICENSE",
@@ -27,13 +30,15 @@
         "name": "SECURITY.md",
         "severity": "info",
         "category": "security",
-        "recommendedAction": "Add SECURITY.md so vulnerability reports have a documented destination."
+        "altPaths": [".github/SECURITY.md", "docs/SECURITY.md"],
+        "recommendedAction": "Add SECURITY.md (at the root, under .github/, or under docs/) so vulnerability reports have a documented destination."
       },
       {
         "name": "CONTRIBUTING.md",
         "severity": "info",
         "category": "documentation",
-        "recommendedAction": "Add CONTRIBUTING.md describing how outside contributors should submit changes."
+        "altPaths": [".github/CONTRIBUTING.md", "docs/CONTRIBUTING.md"],
+        "recommendedAction": "Add CONTRIBUTING.md (at the root, under .github/, or under docs/) describing how outside contributors should submit changes."
       },
       {
         "name": ".gitignore",

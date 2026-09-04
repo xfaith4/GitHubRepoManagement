@@ -2,6 +2,33 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-04 — A roadmap under docs/ read as "No roadmap"
+
+### Fixed
+
+- **A repository that keeps its roadmap at `docs/ROADMAP.md` was reported
+  as having none.** UnifiedAIToolbox's evaluation said "No roadmap" and
+  counted ROADMAP.md as a missing structure file while the Planning row of
+  the same evaluation had parsed `docs/ROADMAP.md`. Four private candidate
+  lists and five root-only lookups answered one question differently. The
+  accepted locations are now declared on each spec in
+  [`repo-structure-standards.json`](backend/config/repo-structure-standards.json)
+  (`altNames` in the same directory, `altPaths` repo-relative: ROADMAP.md
+  under `docs/` and `docs/planning/`, SECURITY.md and CONTRIBUTING.md under
+  `.github/` or `docs/`, matching GitHub's community-file locations) and
+  resolved by one module,
+  [`RepoStandardFile.ps1`](backend/modules/common/RepoStandardFile.ps1),
+  which the structure audit, the repo evaluator (`hasExistingRoadmap`, now
+  with `roadmapPath`), the doc audit, roadmap write-back, the improvement
+  workflow and the api-host's roadmap resolvers all call. A root file still
+  outranks a `docs/` copy; the create route refuses when a roadmap exists at
+  any accepted location. `doc-standards.json` carries the same locations for
+  the files both standards list. Three module-smoke steps pin it: the
+  fixture assertions across every surface (with an undeclared location that
+  must still read as missing), a drift gate between the two standards files,
+  and a sweep over 70 backend scripts that fails on any lookup bypassing the
+  locator, each proven red on a planted case first.
+
 ## 2026-09-04 — Trend charts drew in a strip in the middle of the card
 
 ### Fixed
