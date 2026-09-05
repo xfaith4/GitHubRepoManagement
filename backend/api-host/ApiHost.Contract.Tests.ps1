@@ -493,7 +493,7 @@ Describe 'Portfolio snapshot route - Release 3.5 milestones 1+2' {
             # exist on disk, else the workspace root.
             $configured = @($settingsResponse.Json.data.inventory.localRoots | ForEach-Object { [string]$_ } |
                     Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path -LiteralPath $_) })
-            $roots = if ($configured.Count -gt 0) { $configured } else { @($script:WorkspaceRoot) }
+            $roots = @(if ($configured.Count -gt 0) { $configured } else { @($script:WorkspaceRoot) })
             $normalized = @($roots | ForEach-Object { ([string]$_).Trim().ToLowerInvariant() } | Sort-Object)
             $depth = if ($settingsResponse.Json.data.inventory.maxDepth) { [int]$settingsResponse.Json.data.inventory.maxDepth } else { 3 }
             $key = '{0}|depth:{1}|nonGit:{2}' -f ($normalized -join ';'), $depth, $false
@@ -582,7 +582,7 @@ Describe 'Portfolio snapshot route - Release 3.5 milestones 1+2' {
             $settingsResponse = Invoke-ContractApiRequest -Method GET -Path '/api/settings'
             $configured = @($settingsResponse.Json.data.inventory.localRoots | ForEach-Object { [string]$_ } |
                     Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path -LiteralPath $_) })
-            $roots = if ($configured.Count -gt 0) { $configured } else { @($script:WorkspaceRoot) }
+            $roots = @(if ($configured.Count -gt 0) { $configured } else { @($script:WorkspaceRoot) })
             $depth = if ($settingsResponse.Json.data.inventory.maxDepth) { [int]$settingsResponse.Json.data.inventory.maxDepth } else { 3 }
 
             # THE INDEPENDENT DERIVATION: walk the disk and count working trees.
@@ -658,7 +658,7 @@ Describe 'Portfolio snapshot route - Release 3.5 milestones 1+2' {
             $settingsResponse = Invoke-ContractApiRequest -Method GET -Path '/api/settings'
             $configured = @($settingsResponse.Json.data.inventory.localRoots | ForEach-Object { [string]$_ } |
                     Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path -LiteralPath $_) })
-            $roots = if ($configured.Count -gt 0) { $configured } else { @($script:WorkspaceRoot) }
+            $roots = @(if ($configured.Count -gt 0) { $configured } else { @($script:WorkspaceRoot) })
             $depth = if ($settingsResponse.Json.data.inventory.maxDepth) { [int]$settingsResponse.Json.data.inventory.maxDepth } else { 3 }
 
             # A distinctive instant well in the past, so a snapshot that stamps

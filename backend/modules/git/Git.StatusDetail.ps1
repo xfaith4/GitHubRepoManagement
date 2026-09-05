@@ -40,7 +40,7 @@ function Get-RepoGitStatusDetail {
 
     # ── git status --porcelain=v1 ─────────────────────────────────────────────
     $porcelainOutput = & git -C $LocalPath status --porcelain=v1 2>&1
-    $porcelainLines  = if ($LASTEXITCODE -eq 0) { @($porcelainOutput) } else { @() }
+    $porcelainLines  = @(if ($LASTEXITCODE -eq 0) { @($porcelainOutput) } else { @() })
 
     $stagedFiles    = [System.Collections.Generic.List[object]]::new()
     $unstagedFiles  = [System.Collections.Generic.List[object]]::new()

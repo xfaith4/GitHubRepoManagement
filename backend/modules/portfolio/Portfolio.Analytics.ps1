@@ -122,11 +122,11 @@ function _GetPortfolioTrendCoveragePercent {
     param([object]$Coverage)
 
     if ($null -eq $Coverage) { return $null }
-    $domainNames = if ($Coverage -is [System.Collections.IDictionary]) {
+    $domainNames = @(if ($Coverage -is [System.Collections.IDictionary]) {
         @($Coverage.Keys | ForEach-Object { [string]$_ })
     } else {
         @($Coverage.PSObject.Properties | ForEach-Object { [string]$_.Name })
-    }
+    })
 
     $present = 0.0
     $applicable = 0.0

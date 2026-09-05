@@ -1185,8 +1185,8 @@ function Write-AppDbExecutionLedger {
     try {
         $entriesRaw = _AppDbRecordValue -Record $Ledger -Name 'entries'
         $historyRaw = _AppDbRecordValue -Record $Ledger -Name 'history'
-        $entries = if ($null -ne $entriesRaw) { @($entriesRaw) } else { @() }
-        $history = if ($null -ne $historyRaw) { @($historyRaw) } else { @() }
+        $entries = @(if ($null -ne $entriesRaw) { @($entriesRaw) } else { @() })
+        $history = @(if ($null -ne $historyRaw) { @($historyRaw) } else { @() })
         $nowIso = (Get-Date).ToUniversalTime().ToString('o')
 
         Invoke-AppDbTransaction -DatabasePath ([string]$script:AppDbState.databasePath) -Body {
@@ -1917,11 +1917,11 @@ function Write-AppDbFoundationCoverage {
     }
 
     $capturedAtIso = if ([string]::IsNullOrWhiteSpace($CapturedAt)) { (Get-Date).ToUniversalTime().ToString('o') } else { $CapturedAt }
-    $domainNames = if ($Coverage -is [System.Collections.IDictionary]) {
+    $domainNames = @(if ($Coverage -is [System.Collections.IDictionary]) {
         @($Coverage.Keys | ForEach-Object { [string]$_ })
     } else {
         @($Coverage.PSObject.Properties | ForEach-Object { [string]$_.Name })
-    }
+    })
     if ($domainNames.Count -eq 0) {
         return [pscustomobject]@{ success = $false; inserted = 0; reason = 'coverage names no domains' }
     }

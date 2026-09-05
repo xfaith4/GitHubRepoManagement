@@ -574,7 +574,7 @@ function _GetPendingRoadmapItems {
     $items = [System.Collections.Generic.List[object]]::new()
     $nextPending = _GetField -Obj $source -Name 'nextPendingItem' -Default (_GetField -Obj $RoadmapEntry -Name 'nextPendingItem' -Default $null)
     $nextText = if ($null -ne $nextPending) { [string](_GetField -Obj $nextPending -Name 'text' -Default '') } else { '' }
-    $nextTags = if ($null -ne $nextPending) { @(_GetField -Obj $nextPending -Name 'tags' -Default @() | ForEach-Object { [string]$_ }) } else { @() }
+    $nextTags = @(if ($null -ne $nextPending) { @(_GetField -Obj $nextPending -Name 'tags' -Default @() | ForEach-Object { [string]$_ }) } else { @() })
 
     foreach ($sec in @(_GetField -Obj $source -Name 'sections' -Default @())) {
         if ($null -eq $sec) { continue }
@@ -582,7 +582,7 @@ function _GetPendingRoadmapItems {
         foreach ($pending in @(_GetField -Obj $sec -Name 'pendingItems' -Default @())) {
             $text = [string]$pending
             if ([string]::IsNullOrWhiteSpace($text)) { continue }
-            $tags = if (-not [string]::IsNullOrWhiteSpace($nextText) -and $text -eq $nextText) { $nextTags } else { @() }
+            $tags = @(if (-not [string]::IsNullOrWhiteSpace($nextText) -and $text -eq $nextText) { $nextTags } else { @() })
             $items.Add([pscustomobject]@{
                 text    = $text
                 section = $sectionName
@@ -789,7 +789,7 @@ function Invoke-PortfolioAssessment {
         if (-not [string]::IsNullOrWhiteSpace($localPath) -and (Test-Path -LiteralPath $localPath -ErrorAction SilentlyContinue)) {
             $structAudit = Invoke-RepoStructureAudit -RepoPath $localPath -Standards $StructureStandards
         }
-        $structFindings = if ($null -ne $structAudit) { @($structAudit.findings) } else { @() }
+        $structFindings = @(if ($null -ne $structAudit) { @($structAudit.findings) } else { @() })
         $repoType = if ($null -ne $structAudit) { [string]$structAudit.repoType } else { 'other' }
 
         $roadmapExecutionContext = if ($null -ne $activeRelease) { $activeRelease } else { $roadmapEntry }

@@ -146,12 +146,12 @@ function Resolve-AiDocTemplate {
 
     if ($null -eq $TemplatesConfig) { return $null }
 
-    $list = if ($DocType -eq 'roadmap') {
+    $list = @(if ($DocType -eq 'roadmap') {
         @(_AiGetField -Obj $TemplatesConfig -Name 'roadmapTemplates' -Default @())
     }
     else {
         @(_AiGetField -Obj $TemplatesConfig -Name 'readmeTemplates' -Default @())
-    }
+    })
     if (@($list).Count -eq 0) { return $null }
 
     if (-not [string]::IsNullOrWhiteSpace($TemplateId)) {

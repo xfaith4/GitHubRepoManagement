@@ -4318,9 +4318,9 @@ function Invoke-DocAuditScan {
     $settings = Get-HostSettings
     $ttlSeconds = Get-RoadmapCacheTtlSeconds -Settings $settings
     $roadmapCached = Get-RoadmapFromCache -TtlSeconds $ttlSeconds
-    $roadmapEntries = if ($roadmapCached.hit) { @($roadmapCached.entries) } else {
+    $roadmapEntries = @(if ($roadmapCached.hit) { @($roadmapCached.entries) } else {
         @(Invoke-RoadmapScan -LocalRoots $LocalRoots -MaxDepth $MaxDepth)
-    }
+    })
 
     $results = Invoke-AuditRepoScan `
         -LocalRoots $LocalRoots `
@@ -5808,14 +5808,14 @@ function Get-OperationsPromptRefinementHistory {
             ForEach-Object {
                 $historyItem = $_
                 $historyRunId = [string](Get-ObjectPropertyValue -InputObject $historyItem -PropertyName 'runId' -Default '')
-                $linkedDispatchRecords = if (-not [string]::IsNullOrWhiteSpace($historyRunId) -and $dispatchRecordsByPromptRunId.ContainsKey($historyRunId)) {
+                $linkedDispatchRecords = @(if (-not [string]::IsNullOrWhiteSpace($historyRunId) -and $dispatchRecordsByPromptRunId.ContainsKey($historyRunId)) {
                     @($dispatchRecordsByPromptRunId[$historyRunId] | Sort-Object {
                         [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'startedAt' -Default '')
                     } -Descending)
                 }
                 else {
                     @()
-                }
+                })
 
                 [pscustomobject]@{
                     runId                 = $historyRunId
@@ -6815,7 +6815,7 @@ try {
                 $badgeName = $badgeName.Substring(0, $badgeName.Length - 4)  # strip .svg
                 $settings = Get-HostSettings
                 $opsPayload = Get-OperationsReposPayload -Settings $settings
-                $entries = if ($opsPayload.available) { @($opsPayload.entries) } else { @() }
+                $entries = @(if ($opsPayload.available) { @($opsPayload.entries) } else { @() })
                 $svg = ''
                 if ($badgeName -ieq 'portfolio') {
                     $total = @($entries).Count
@@ -7607,7 +7607,7 @@ try {
                     Add-MetricCounter -Name 'api_requests_total'
                     $settings = Get-HostSettings
                     $opsPayload = Get-OperationsReposPayload -Settings $settings
-                    $entries = if ($opsPayload.available) { @($opsPayload.entries) } else { @() }
+                    $entries = @(if ($opsPayload.available) { @($opsPayload.entries) } else { @() })
                     $digest = Get-DigestPayload -Entries $entries
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{ success = $true; data = @{ delivered = $false; payload = $digest } }
                 }
@@ -7619,7 +7619,7 @@ try {
                     $body = Parse-JsonBody -Body $req.Body
                     $settings = Get-HostSettings
                     $opsPayload = Get-OperationsReposPayload -Settings $settings
-                    $entries = if ($opsPayload.available) { @($opsPayload.entries) } else { @() }
+                    $entries = @(if ($opsPayload.available) { @($opsPayload.entries) } else { @() })
                     $digest = Get-DigestPayload -Entries $entries
                     $webhookUrl = ''
                     if ($null -ne $body -and $body.ContainsKey('webhookUrl') -and $body.webhookUrl) { $webhookUrl = [string]$body.webhookUrl }
@@ -8231,7 +8231,7 @@ try {
                     $defaultIncludeNonGit = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('includeNonGitFolders')) { [bool]$settings.inventory.includeNonGitFolders } else { $false }
                     $configuredGitHubUser = if ($settings.ContainsKey('reconcile') -and $settings.reconcile.ContainsKey('gitHubOwner') -and $settings.reconcile.gitHubOwner) { [string]$settings.reconcile.gitHubOwner } else { '' }
 
-                    $localRoots = if ($q.ContainsKey('localRoots') -and $q.localRoots) { @($q.localRoots -split ';|,') } else { $defaultRoots }
+                    $localRoots = @(if ($q.ContainsKey('localRoots') -and $q.localRoots) { @($q.localRoots -split ';|,') } else { $defaultRoots })
                     $maxDepth = if ($q.ContainsKey('maxDepth') -and $q.maxDepth) { [int]$q.maxDepth } else { $defaultMaxDepth }
                     $includeNonGit = if ($q.ContainsKey('includeNonGitFolders')) { Parse-Bool -Value $q.includeNonGitFolders -Default $defaultIncludeNonGit } else { $defaultIncludeNonGit }
                     $refresh = if ($q.ContainsKey('refresh')) { Parse-Bool -Value $q.refresh -Default $false } else { $false }
@@ -8323,7 +8323,7 @@ try {
                     $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
                     $defaultIncludeNonGit = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('includeNonGitFolders')) { [bool]$settings.inventory.includeNonGitFolders } else { $true }
 
-                    $localRoots = if ($body.ContainsKey('localRoots') -and $body.localRoots) { @($body.localRoots) } else { $defaultRoots }
+                    $localRoots = @(if ($body.ContainsKey('localRoots') -and $body.localRoots) { @($body.localRoots) } else { $defaultRoots })
                     $ownerType = if ($body.ContainsKey('ownerType') -and $body.ownerType) { [string]$body.ownerType } else { $defaultOwnerType }
                     $maxDepth = if ($body.ContainsKey('maxDepth') -and $body.maxDepth) { [int]$body.maxDepth } else { $defaultDepth }
                     $includeNonGit = if ($body.ContainsKey('includeNonGitFolders')) { [bool]$body.includeNonGitFolders } else { $defaultIncludeNonGit }
@@ -8487,8 +8487,8 @@ try {
                 }
                 'POST /api/update' {
                     $body = Parse-JsonBody -Body $req.Body
-                    $repoNames = if ($body.ContainsKey('repoNames') -and $body.repoNames) { @($body.repoNames) } else { @() }
-                    $repoPaths = if ($body.ContainsKey('repoPaths') -and $body.repoPaths) { @($body.repoPaths) } else { @() }
+                    $repoNames = @(if ($body.ContainsKey('repoNames') -and $body.repoNames) { @($body.repoNames) } else { @() })
+                    $repoPaths = @(if ($body.ContainsKey('repoPaths') -and $body.repoPaths) { @($body.repoPaths) } else { @() })
                     $result = Invoke-GitOperation -OperationType 'pull' -RepoNames $repoNames -RepoPaths $repoPaths
                     Add-MetricCounter -Name 'api_requests_total'
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
@@ -8498,8 +8498,8 @@ try {
                 }
                 'POST /api/sync' {
                     $body = Parse-JsonBody -Body $req.Body
-                    $repoNames = if ($body.ContainsKey('repoNames') -and $body.repoNames) { @($body.repoNames) } else { @() }
-                    $repoPaths = if ($body.ContainsKey('repoPaths') -and $body.repoPaths) { @($body.repoPaths) } else { @() }
+                    $repoNames = @(if ($body.ContainsKey('repoNames') -and $body.repoNames) { @($body.repoNames) } else { @() })
+                    $repoPaths = @(if ($body.ContainsKey('repoPaths') -and $body.repoPaths) { @($body.repoPaths) } else { @() })
                     $result = Invoke-GitOperation -OperationType 'sync' -RepoNames $repoNames -RepoPaths $repoPaths
                     Add-MetricCounter -Name 'api_requests_total'
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
@@ -8693,11 +8693,11 @@ try {
                 'POST /api/export' {
                     $body = Parse-JsonBody -Body $req.Body
                     $sourceLabel = if ($body.ContainsKey('sourceLabel') -and $body.sourceLabel) { [string]$body.sourceLabel } else { 'Repository dashboard export' }
-                    $portfolioEntries = if ($body.ContainsKey('portfolioEntries') -and $body.portfolioEntries) { @($body.portfolioEntries) } else { @() }
+                    $portfolioEntries = @(if ($body.ContainsKey('portfolioEntries') -and $body.portfolioEntries) { @($body.portfolioEntries) } else { @() })
                     if (@($portfolioEntries).Count -gt 0) {
                         $result = Export-PortfolioCollectionStatusReport -Entries $portfolioEntries -SourceLabel $sourceLabel -ReportsRoot (Get-ReportsRootPath)
                     } else {
-                        $repos = if ($body.ContainsKey('repos') -and $body.repos) { @($body.repos) } else { @() }
+                        $repos = @(if ($body.ContainsKey('repos') -and $body.repos) { @($body.repos) } else { @() })
                         $result = Export-RepoStatusReports -Repos $repos -SourceLabel $sourceLabel
                     }
                     Add-MetricCounter -Name 'api_requests_total'
@@ -9106,7 +9106,7 @@ try {
                     $ttlSeconds = Get-RoadmapCacheTtlSeconds -Settings $settings
                     $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
                     $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
-                    $localRoots = if ($q.ContainsKey('localRoots') -and $q.localRoots) { @($q.localRoots -split ';|,') } else { $defaultRoots }
+                    $localRoots = @(if ($q.ContainsKey('localRoots') -and $q.localRoots) { @($q.localRoots -split ';|,') } else { $defaultRoots })
                     $maxDepth = if ($q.ContainsKey('maxDepth') -and $q.maxDepth) { [int]$q.maxDepth } else { $defaultDepth }
                     $useDefaultScope = ($maxDepth -eq $defaultDepth) -and ((@($localRoots) -join '|') -eq (@($defaultRoots) -join '|'))
 
@@ -9163,7 +9163,7 @@ try {
                         $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
                         $ttlSeconds = Get-RoadmapCacheTtlSeconds -Settings $settings
                         $cached = Get-RoadmapFromCache -TtlSeconds $ttlSeconds
-                        $indexEntries = if ($cached.hit) { @($cached.entries) } else { @(Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth) }
+                        $indexEntries = @(if ($cached.hit) { @($cached.entries) } else { @(Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth) })
                         $match = $indexEntries | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1
                         if ($null -ne $match) { $targetPath = [string]$match.roadmapPath }
                     }
@@ -9219,7 +9219,7 @@ try {
                             foreach ($cacheKey in @($script:StatusCacheMemory.Keys)) {
                                 $entry = $script:StatusCacheMemory[$cacheKey]
                                 if ($null -eq $entry -or $null -eq $entry.Response) { continue }
-                                $cachedRepos = if ($entry.Response.PSObject.Properties['repos']) { @($entry.Response.repos) } else { @() }
+                                $cachedRepos = @(if ($entry.Response.PSObject.Properties['repos']) { @($entry.Response.repos) } else { @() })
                                 $match = $cachedRepos | Where-Object { $_.name -eq $repoName } | Select-Object -First 1
                                 if ($null -eq $match -or [string]::IsNullOrWhiteSpace([string]$match.localPath)) { continue }
                                 $candidatePath = Join-Path ([string]$match.localPath) 'README.md'
@@ -9263,7 +9263,7 @@ try {
                     $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
                     $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
                     $targetRepoName = if ($body.ContainsKey('repoName') -and $body.repoName) { [string]$body.repoName } elseif ($body.ContainsKey('targetRepo') -and $body.targetRepo) { [string]$body.targetRepo } else { '' }
-                    $localRoots = if ($body.ContainsKey('localRoots') -and $body.localRoots) { @($body.localRoots) } else { $defaultRoots }
+                    $localRoots = @(if ($body.ContainsKey('localRoots') -and $body.localRoots) { @($body.localRoots) } else { $defaultRoots })
                     $maxDepth = if ($body.ContainsKey('maxDepth') -and $body.maxDepth) { [int]$body.maxDepth } else { $defaultDepth }
                     $isScopedRepoScan = -not [string]::IsNullOrWhiteSpace($targetRepoName)
 
@@ -9379,7 +9379,7 @@ try {
                     $ttlSeconds = Get-DocAuditCacheTtlSeconds -Settings $settings
                     $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
                     $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
-                    $localRoots = if ($q.ContainsKey('localRoots') -and $q.localRoots) { @($q.localRoots -split ';|,') } else { $defaultRoots }
+                    $localRoots = @(if ($q.ContainsKey('localRoots') -and $q.localRoots) { @($q.localRoots -split ';|,') } else { $defaultRoots })
                     $maxDepth = if ($q.ContainsKey('maxDepth') -and $q.maxDepth) { [int]$q.maxDepth } else { $defaultDepth }
                     $useDefaultScope = ($maxDepth -eq $defaultDepth) -and ((@($localRoots) -join '|') -eq (@($defaultRoots) -join '|'))
 
@@ -9429,7 +9429,7 @@ try {
                     $settings = Get-HostSettings
                     $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
                     $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
-                    $localRoots = if ($body.ContainsKey('localRoots') -and $body.localRoots) { @($body.localRoots) } else { $defaultRoots }
+                    $localRoots = @(if ($body.ContainsKey('localRoots') -and $body.localRoots) { @($body.localRoots) } else { $defaultRoots })
                     $maxDepth = if ($body.ContainsKey('maxDepth') -and $body.maxDepth) { [int]$body.maxDepth } else { $defaultDepth }
                     $useDefaultScope = ($maxDepth -eq $defaultDepth) -and ((@($localRoots) -join '|') -eq (@($defaultRoots) -join '|'))
                     $auditedAt = (Get-Date).ToUniversalTime().ToString('o')
@@ -9571,7 +9571,7 @@ try {
                         # very cost this change removed.
                         $signalSources['statusRefreshing'] = $false
                     }
-                    $localRepos = if ($null -ne $statusResult -and $statusResult.success -and $null -ne $statusResult.data) { @($statusResult.data.repos) } else { @() }
+                    $localRepos = @(if ($null -ne $statusResult -and $statusResult.success -and $null -ne $statusResult.data) { @($statusResult.data.repos) } else { @() })
                     # Release 3.5 milestone 3 (assessment recompute) -- the
                     # assessment, the doc-readiness queue and the value ranking
                     # all derive from this list, and until now they counted
@@ -9746,7 +9746,7 @@ try {
 
                     if ($useDifferentialScan) {
                         $previousIndexPayload = Get-PortfolioIndexPayload -WorkspaceRoot $WorkspaceRoot
-                        $previousRepos = if ($null -ne $previousIndexPayload -and $previousIndexPayload.PSObject.Properties.Name -contains 'repos') { @($previousIndexPayload.repos) } else { @() }
+                        $previousRepos = @(if ($null -ne $previousIndexPayload -and $previousIndexPayload.PSObject.Properties.Name -contains 'repos') { @($previousIndexPayload.repos) } else { @() })
                         if (@($previousRepos).Count -gt 0) {
                             foreach ($prev in @($previousRepos)) {
                                 if ($null -eq $prev) { continue }
@@ -9937,8 +9937,8 @@ try {
                     $valueScoringConfig = Get-PortfolioValueScoringConfig -ConfigPath $valueScoringPath
 
                     # Run the assessment
-                    $assessmentLocalRepos = if ($useDifferentialScan) { @($localReposForAssessment) } else { @($localRepos) }
-                    $assessmentGithubRepos = if ($useDifferentialScan) { @($githubReposForAssessmentSubset) } else { @($githubReposForAssessment) }
+                    $assessmentLocalRepos = @(if ($useDifferentialScan) { @($localReposForAssessment) } else { @($localRepos) })
+                    $assessmentGithubRepos = @(if ($useDifferentialScan) { @($githubReposForAssessmentSubset) } else { @($githubReposForAssessment) })
 
                     # Cross-cutting — scan performance budget: prep (discovery +
                     # git status + GitHub API + prior scans) up to here, then the
@@ -9956,11 +9956,11 @@ try {
                         -ValueScoringConfig  $valueScoringConfig
                     $swAssess.Stop()
 
-                    $assessments = if ($useDifferentialScan -and @($previousRepos).Count -gt 0) {
+                    $assessments = @(if ($useDifferentialScan -and @($previousRepos).Count -gt 0) {
                         @(@($assessedChanged) + @($unchangedAssessments))
                     } else {
                         @($assessedChanged)
-                    }
+                    })
 
                     if ($useDifferentialScan -and @($previousRepos).Count -gt 0) {
                         foreach ($assessment in @($assessments)) {
@@ -10105,11 +10105,11 @@ try {
                     }
 
                     try {
-                        $changedRepoNames = if ($useDifferentialScan) {
+                        $changedRepoNames = @(if ($useDifferentialScan) {
                             @($differentialChangedSet | ForEach-Object { [string]$_ })
                         } else {
                             @($assessments | ForEach-Object { [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '') } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-                        }
+                        })
                         $scanSummaryResult = Write-AppDbDifferentialScanSnapshot `
                             -ScanId $scanId `
                             -ScanMode $(if ($useDifferentialScan) { 'differential' } else { 'full' }) `
@@ -10640,8 +10640,8 @@ try {
                     $roadmapPath = if ($body.ContainsKey('roadmapPath') -and $body.roadmapPath) { [string]$body.roadmapPath } else { '' }
                     $selectedTaskText = if ($body.ContainsKey('selectedTaskText') -and $body.selectedTaskText) { [string]$body.selectedTaskText } else { '' }
                     $selectedTaskSection = if ($body.ContainsKey('selectedTaskSection') -and $body.selectedTaskSection) { [string]$body.selectedTaskSection } else { '' }
-                    $additionalConstraints = if ($body.ContainsKey('additionalConstraints')) { @($body.additionalConstraints) } else { @() }
-                    $emphasisAreas = if ($body.ContainsKey('emphasisAreas')) { @($body.emphasisAreas) } else { @() }
+                    $additionalConstraints = @(if ($body.ContainsKey('additionalConstraints')) { @($body.additionalConstraints) } else { @() })
+                    $emphasisAreas = @(if ($body.ContainsKey('emphasisAreas')) { @($body.emphasisAreas) } else { @() })
                     $operatorInstructions = if ($body.ContainsKey('operatorInstructions') -and $body.operatorInstructions) { [string]$body.operatorInstructions } else { '' }
 
                     if ([string]::IsNullOrWhiteSpace($repoName)) {
@@ -10794,7 +10794,7 @@ try {
                     if ($days -gt 3650) { $days = 3650 }
                     $agentRunsJsonDir = Join-Path $WorkspaceRoot 'output\agent-runs\runs'
                     $history = Get-AppDbAgentRunMetricsHistory -RepoName '' -Days $days -SeedFromRunsDirectory $agentRunsJsonDir
-                    $entries = if ($history.available) { @($history.entries) } else { @() }
+                    $entries = @(if ($history.available) { @($history.entries) } else { @() })
                     $byRepo = [System.Collections.Generic.List[object]]::new()
                     foreach ($grp in ($entries | Group-Object -Property repoName)) {
                         $cost = 0.0; $tokens = 0
@@ -11685,7 +11685,7 @@ try {
                         foreach ($cacheKey in @($script:StatusCacheMemory.Keys)) {
                             $entry = $script:StatusCacheMemory[$cacheKey]
                             if ($null -ne $entry -and $null -ne $entry.Response) {
-                                $cachedRepos = if ($entry.Response.PSObject.Properties['repos']) { @($entry.Response.repos) } else { @() }
+                                $cachedRepos = @(if ($entry.Response.PSObject.Properties['repos']) { @($entry.Response.repos) } else { @() })
                                 $match = $cachedRepos | Where-Object { $_.name -eq $repoName } | Select-Object -First 1
                                 if ($null -ne $match -and -not [string]::IsNullOrWhiteSpace($match.localPath)) {
                                     $localPath = [string]$match.localPath
@@ -11724,7 +11724,7 @@ try {
                         foreach ($cacheKey in @($script:StatusCacheMemory.Keys)) {
                             $entry = $script:StatusCacheMemory[$cacheKey]
                             if ($null -ne $entry -and $null -ne $entry.Response) {
-                                $cachedRepos = if ($entry.Response.PSObject.Properties['repos']) { @($entry.Response.repos) } else { @() }
+                                $cachedRepos = @(if ($entry.Response.PSObject.Properties['repos']) { @($entry.Response.repos) } else { @() })
                                 $match = $cachedRepos | Where-Object { $_.name -eq $repoName } | Select-Object -First 1
                                 if ($null -ne $match -and -not [string]::IsNullOrWhiteSpace($match.localPath)) {
                                     $localPath = [string]$match.localPath
@@ -11776,7 +11776,7 @@ try {
                         foreach ($cacheKey in @($script:StatusCacheMemory.Keys)) {
                             $entry = $script:StatusCacheMemory[$cacheKey]
                             if ($null -ne $entry -and $null -ne $entry.Response) {
-                                $cachedRepos = if ($entry.Response.PSObject.Properties['repos']) { @($entry.Response.repos) } else { @() }
+                                $cachedRepos = @(if ($entry.Response.PSObject.Properties['repos']) { @($entry.Response.repos) } else { @() })
                                 $match = $cachedRepos | Where-Object { $_.name -eq $repoName } | Select-Object -First 1
                                 if ($null -ne $match -and -not [string]::IsNullOrWhiteSpace($match.localPath)) {
                                     $localPath = [string]$match.localPath
@@ -11831,7 +11831,7 @@ try {
                             foreach ($cacheKey in @($script:StatusCacheMemory.Keys)) {
                                 $entry = $script:StatusCacheMemory[$cacheKey]
                                 if ($null -ne $entry -and $null -ne $entry.Response) {
-                                    $cachedRepos = if ($entry.Response.PSObject.Properties['repos']) { @($entry.Response.repos) } else { @() }
+                                    $cachedRepos = @(if ($entry.Response.PSObject.Properties['repos']) { @($entry.Response.repos) } else { @() })
                                     $match = $cachedRepos | Where-Object { $_.name -eq $repoName } | Select-Object -First 1
                                     if ($null -ne $match -and -not [string]::IsNullOrWhiteSpace($match.localPath)) {
                                         $localPath = [string]$match.localPath
@@ -11886,7 +11886,7 @@ try {
                             foreach ($cacheKey in @($script:StatusCacheMemory.Keys)) {
                                 $entry = $script:StatusCacheMemory[$cacheKey]
                                 if ($null -ne $entry -and $null -ne $entry.Response) {
-                                    $cachedRepos = if ($entry.Response.PSObject.Properties['repos']) { @($entry.Response.repos) } else { @() }
+                                    $cachedRepos = @(if ($entry.Response.PSObject.Properties['repos']) { @($entry.Response.repos) } else { @() })
                                     $match = $cachedRepos | Where-Object { $_.name -eq $repoName } | Select-Object -First 1
                                     if ($null -ne $match -and -not [string]::IsNullOrWhiteSpace($match.localPath)) {
                                         $localPath = [string]$match.localPath
@@ -11961,7 +11961,7 @@ try {
                     $ttlSeconds = Get-RoadmapAuditCacheTtlSeconds -Settings $settings
                     $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
                     $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
-                    $localRoots = if ($q.ContainsKey('localRoots') -and $q.localRoots) { @($q.localRoots -split ';|,') } else { $defaultRoots }
+                    $localRoots = @(if ($q.ContainsKey('localRoots') -and $q.localRoots) { @($q.localRoots -split ';|,') } else { $defaultRoots })
                     $maxDepth = if ($q.ContainsKey('maxDepth') -and $q.maxDepth) { [int]$q.maxDepth } else { $defaultDepth }
                     $useDefaultScope = ($maxDepth -eq $defaultDepth) -and ((@($localRoots) -join '|') -eq (@($defaultRoots) -join '|'))
 
@@ -12011,7 +12011,7 @@ try {
                     $settings = Get-HostSettings
                     $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
                     $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
-                    $localRoots = if ($body.ContainsKey('localRoots') -and $body.localRoots) { @($body.localRoots) } else { $defaultRoots }
+                    $localRoots = @(if ($body.ContainsKey('localRoots') -and $body.localRoots) { @($body.localRoots) } else { $defaultRoots })
                     $maxDepth = if ($body.ContainsKey('maxDepth') -and $body.maxDepth) { [int]$body.maxDepth } else { $defaultDepth }
                     $useDefaultScope = ($maxDepth -eq $defaultDepth) -and ((@($localRoots) -join '|') -eq (@($defaultRoots) -join '|'))
                     $auditedAt = (Get-Date).ToUniversalTime().ToString('o')
@@ -12712,14 +12712,14 @@ try {
                         # Reuse the roadmap cache for content
                         $ttlSeconds   = Get-RoadmapCacheTtlSeconds -Settings $settings
                         $roadmapCache = Get-RoadmapFromCache -TtlSeconds $ttlSeconds
-                        $entries      = if ($roadmapCache.hit) { @($roadmapCache.entries) } else {
+                        $entries      = @(if ($roadmapCache.hit) { @($roadmapCache.entries) } else {
                             $defaultRoots    = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
                             $defaultMaxDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth')) { [int]$settings.inventory.maxDepth } else { 3 }
                             $scannedAt = (Get-Date).ToUniversalTime().ToString('o')
                             $scanned = Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultMaxDepth
                             Save-RoadmapCache -Entries $scanned -ScannedAt $scannedAt
                             @($scanned)
-                        }
+                        })
 
                         $depResult = Invoke-ScanRoadmapDependencies -RoadmapEntries $entries -GitHubOwner $gitHubOwner
                         Add-MetricCounter -Name 'api_requests_total'
@@ -12865,7 +12865,7 @@ try {
                             $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
                             $ttlSeconds   = Get-RoadmapCacheTtlSeconds -Settings $settings
                             $cached       = Get-RoadmapFromCache -TtlSeconds $ttlSeconds
-                            $indexEntries = if ($cached.hit) { @($cached.entries) } else { @(Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth) }
+                            $indexEntries = @(if ($cached.hit) { @($cached.entries) } else { @(Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth) })
                             $match        = $indexEntries | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1
                             if ($null -ne $match -and -not [string]::IsNullOrWhiteSpace($match.localPath)) {
                                 $localPath = [string]$match.localPath
@@ -12940,7 +12940,7 @@ try {
                             $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
                             $ttlSeconds   = Get-RoadmapCacheTtlSeconds -Settings $settings
                             $cached       = Get-RoadmapFromCache -TtlSeconds $ttlSeconds
-                            $indexEntries = if ($cached.hit) { @($cached.entries) } else { @(Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth) }
+                            $indexEntries = @(if ($cached.hit) { @($cached.entries) } else { @(Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth) })
                             $match        = $indexEntries | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1
                             if ($null -ne $match -and -not [string]::IsNullOrWhiteSpace($match.localPath)) {
                                 $localPath = [string]$match.localPath
