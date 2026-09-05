@@ -591,7 +591,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
     { value: 'roadmap-complete', label: 'Roadmap Complete' },
     { value: 'no-checklist', label: 'No Checklist Items' },
     { value: 'parse-error', label: 'Parse Error' },
-    { value: 'blocked', label: 'Blocked' },
+    { value: 'blocked', label: 'Dispatch blocked' },
   ];
 
   const hasReadinessData = repos.some(r => r.dispatchReadiness !== undefined);
@@ -975,7 +975,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                   const readinessBadge: Record<string, { cls: string; label: string }> = {
                     ready: { cls: 'bg-green-900/40 text-green-300 border-green-700/40', label: '✓ Ready' },
                     'needs-doc-standardization': { cls: 'bg-yellow-900/40 text-yellow-300 border-yellow-700/40', label: '⚠ Needs Docs' },
-                    blocked: { cls: 'bg-red-900/40 text-red-300 border-red-700/40', label: '✕ Blocked' },
+                    blocked: { cls: 'bg-red-900/40 text-red-300 border-red-700/40', label: '✕ Dispatch blocked' },
                     'missing-roadmap': { cls: 'bg-gray-700/50 text-gray-400 border-gray-600/40', label: 'No Roadmap' },
                     'roadmap-complete': { cls: 'bg-blue-900/40 text-blue-300 border-blue-700/40', label: 'Roadmap Done' },
                     'no-checklist': { cls: 'bg-amber-900/40 text-amber-300 border-amber-700/40', label: '≡ No Checklist' },
@@ -1321,7 +1321,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
                                    const readinessBadge: Record<string, { cls: string; label: string }> = {
                                      ready: { cls: 'bg-green-900/40 text-green-300 border-green-700/40', label: '✓ Ready' },
                                      'needs-doc-standardization': { cls: 'bg-yellow-900/40 text-yellow-300 border-yellow-700/40', label: '⚠ Needs Docs' },
-                                     blocked: { cls: 'bg-red-900/40 text-red-300 border-red-700/40', label: '✕ Blocked' },
+                                     blocked: { cls: 'bg-red-900/40 text-red-300 border-red-700/40', label: '✕ Dispatch blocked' },
                                      'missing-roadmap': { cls: 'bg-gray-700/50 text-gray-400 border-gray-600/40', label: 'No Roadmap' },
                                      'roadmap-complete': { cls: 'bg-blue-900/40 text-blue-300 border-blue-700/40', label: 'Roadmap Done' },
                                      'no-checklist': { cls: 'bg-amber-900/40 text-amber-300 border-amber-700/40', label: '≡ No Checklist' },

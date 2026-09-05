@@ -250,7 +250,7 @@ function App() {
         fetchedRepos: data.fetchedRepos,
         rateLimit: data.rateLimit
       });
-      setViewMode('github');
+      // Connecting credentials does not choose the visible data source.
     } catch (err) {
       githubCredentialsRef.current = null;
       console.error(err);

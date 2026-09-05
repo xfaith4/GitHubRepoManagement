@@ -31,7 +31,7 @@ function MobileRepoHealth() {
         { label: 'Repos', value: summary.totalRepos, cls: 'text-gray-200' },
         { label: 'Ready', value: summary.readyForWorkCount, cls: 'text-green-300' },
         { label: 'Running', value: summary.runningCount, cls: 'text-sky-300' },
-        { label: 'Blocked', value: summary.blockedCount, cls: 'text-red-300' },
+        { label: 'Dispatch blocked', value: summary.blockedCount, cls: 'text-red-300' },
         { label: 'No README', value: summary.missingReadmeCount, cls: 'text-yellow-300' },
         { label: 'No roadmap', value: summary.missingRoadmapCount, cls: 'text-yellow-300' },
       ]
@@ -52,6 +52,7 @@ function MobileRepoHealth() {
             <div key={t.label} className="rounded bg-gray-900/60 px-2 py-1.5 text-center">
               <div className={`text-lg font-bold ${t.cls}`}>{t.value}</div>
               <div className="text-[10px] text-gray-500 leading-tight">{t.label}</div>
+              {t.label === 'Dispatch blocked' && <div className="text-[10px] text-gray-500">of {summary.totalRepos} assessed repositories</div>}
             </div>
           ))}
         </div>

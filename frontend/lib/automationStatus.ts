@@ -97,7 +97,7 @@ export function resolveAutomationStatus(
     return {
       severity: 'off',
       label: `${subject} off`,
-      detail: `Scheduled ${subject.toLowerCase()} is disabled. Enable it in Settings to keep favorites assessed automatically.`,
+      detail: `Scheduled ${subject.toLowerCase()} is disabled. No scheduled work will run while it is disabled.`,
       needsAttention: false,
       code: null,
     };

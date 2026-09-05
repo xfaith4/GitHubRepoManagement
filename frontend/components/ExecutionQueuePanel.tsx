@@ -24,7 +24,7 @@ const STATE_CONFIG: Record<ExecutionState, { label: string; badgeClass: string; 
     dotClass: 'bg-blue-400 animate-pulse',
   },
   blocked: {
-    label: 'Blocked',
+    label: 'Execution blocked',
     badgeClass: 'bg-red-900/40 text-red-300 border-red-700/40',
     dotClass: 'bg-red-400',
   },
@@ -162,6 +162,7 @@ function StateFilterTiles({
             <span className={`inline-block w-1.5 h-1.5 rounded-full ${cfg.dotClass}`} />
             <span className="font-medium">{counts[key] ?? 0}</span>
             <span className="opacity-80">{cfg.label}</span>
+            {key === 'blocked' && <span>of {total} ledger repositories</span>}
           </button>
         );
       })}

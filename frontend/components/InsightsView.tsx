@@ -224,8 +224,9 @@ const InsightsView: React.FC<InsightsViewProps> = ({
                 <div className="mt-1 text-lg font-semibold text-gray-100">{metrics.totalCancelled}</div>
               </div>
               <div className="rounded-lg border border-gray-700/60 bg-gray-900/40 px-3 py-2">
-                <div className="text-xs text-gray-500">Blocked</div>
+                <div className="text-xs text-gray-500">Execution blocked</div>
                 <div className="mt-1 text-lg font-semibold text-gray-100">{metrics.stateCounts.blocked}</div>
+                <div className="text-xs text-gray-500">of {Object.values(metrics.stateCounts).reduce((total, count) => total + count, 0)} ledger repositories</div>
               </div>
               <div className="rounded-lg border border-gray-700/60 bg-gray-900/40 px-3 py-2">
                 <div className="text-xs text-gray-500">Idle / Complete</div>

@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter()]
     [string]$BindAddress = '127.0.0.1',
@@ -3448,8 +3448,8 @@ function Get-GitHubReposViaApi {
             topics = $metadata.topics
             hasPages = $metadata.hasPages
             pagesUrl = $metadata.pagesUrl
-            createdAt = if ($_.created_at) { [string]$_.created_at } else { $null }
-            updatedAt = if ($_.updated_at) { [string]$_.updated_at } else { $null }
+            createdAt = ConvertTo-PortfolioTimestamp $_.created_at
+            updatedAt = ConvertTo-PortfolioTimestamp $_.updated_at
             latestWorkflowRunStatus = if ($null -ne $workflowRun) { $workflowRun.status } else { $null }
             latestWorkflowRunConclusion = if ($null -ne $workflowRun) { $workflowRun.conclusion } else { $null }
             latestWorkflowRunName = if ($null -ne $workflowRun) { $workflowRun.name } else { $null }

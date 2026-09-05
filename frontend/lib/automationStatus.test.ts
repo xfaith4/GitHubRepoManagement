@@ -146,3 +146,8 @@ describe('formatMinutesAgo', () => {
     expect(formatMinutesAgo(-30)).toBe('just now');
   });
 });
+
+it('does not send the operator to a nonexistent Settings toggle', () => {
+  const status = resolveAutomationStatus({ enabled: false } as Parameters<typeof resolveAutomationStatus>[0]);
+  expect(status.detail).not.toContain('Enable it in Settings');
+});

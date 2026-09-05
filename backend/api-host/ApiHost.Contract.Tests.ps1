@@ -438,50 +438,14 @@ Describe 'Portfolio snapshot route - Release 3.5 milestones 1+2' {
     # timestamp is how one generation event rendered as 7:54 AM on one card
     # and 11:54 AM on another.
     It 'every timestamp field in key payloads carries an explicit timezone basis' {
-        # Recurse ONLY into JSON-shaped nodes (objects, dictionaries,
-        # arrays). The first version walked every PSObject property and
-        # discovered that DateTime.Date returns a DateTime - infinite
-        # recursion, found by a 315-second call-depth overflow rather than
-        # by reading. JSON-parsed payloads contain nothing deeper than
-        # pscustomobject / array / scalar, so this shape is sufficient.
-        $walk = {
-            param([object]$Node, [string]$Trail, [System.Collections.Generic.List[string]]$Failures, $Self)
-            if ($null -eq $Node) { return }
-            if ($Node -is [System.Array]) {
-                for ($i = 0; $i -lt $Node.Length; $i++) {
-                    & $Self -Node $Node[$i] -Trail ("{0}[{1}]" -f $Trail, $i) -Failures $Failures -Self $Self
-                }
-                return
-            }
-            if ($Node -isnot [pscustomobject] -and $Node -isnot [System.Collections.IDictionary]) { return }
-            $properties = if ($Node -is [System.Collections.IDictionary]) {
-                @($Node.Keys | ForEach-Object { [pscustomobject]@{ Name = $_; Value = $Node[$_] } })
-            } else {
-                @($Node.PSObject.Properties)
-            }
-            foreach ($property in $properties) {
-                $name = [string]$property.Name
-                $value = $property.Value
-                if ($name -match '(At|generatedAt|asOf)$' -and $value -is [string] -and -not [string]::IsNullOrWhiteSpace([string]$value)) {
-                    if ([string]$value -notmatch '(Z|[+-]\d{2}:\d{2})$') {
-                        $Failures.Add(("{0}.{1} = '{2}' has no timezone basis" -f $Trail, $name, $value)) | Out-Null
-                    }
-                }
-                else {
-                    & $Self -Node $value -Trail ("{0}.{1}" -f $Trail, $name) -Failures $Failures -Self $Self
-                }
-            }
-        }
-
-        $failures = [System.Collections.Generic.List[string]]::new()
-        foreach ($endpoint in @('/api/portfolio/snapshot', '/api/execution/metrics', '/api/roadmap/runner')) {
+        . (Join-Path $script:WorkspaceRoot 'tools/Assert-JsonTimestampBasis.ps1')
+        $checked = 0
+        foreach ($endpoint in @('/api/portfolio/snapshot', '/api/execution/metrics', '/api/roadmap/runner', '/api/portfolio/assessment', '/api/operations/repos')) {
             $response = Invoke-ContractApiRequest -Method GET -Path $endpoint
             $response.StatusCode | Should -Be 200
-            & $walk -Node $response.Json.data -Trail $endpoint -Failures $failures -Self $walk
+            $checked += Assert-JsonTimestampBasis -Json $response.Content -Context $endpoint
         }
-        if ($failures.Count -gt 0) {
-            throw ("Naive timestamps found (no timezone basis):`n  " + ($failures -join "`n  "))
-        }
+        $checked | Should -BeGreaterThan 0 -Because 'a timestamp gate must examine actual wire values'
     }
 
     It 'the scan denominator is either a real count with a basis or degraded by name' {

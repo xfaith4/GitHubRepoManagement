@@ -100,6 +100,16 @@ what happens by default if it is never answered, and what it blocks.
 
 ---
 
+### D-006 — Which repository represents external management in the value trial?
+
+- **Asked** 2026-09-05 during the approved Release 3.7 preparation.
+- **Question.** Which repository is externally managed? Confirm or correct the archived-ignore Genesys-Telecom-Powershell candidate for the abandoned category as well.
+- **Why it is not an agent's call.** External management and abandonment are owner intent; neither follows from an old commit or an xfaith4 remote.
+- **Default if unanswered.** Nine provisional named candidates and one unfilled external-management slot in `evidence/trials/release-3.7/cohort.json`; no substitution chosen for conformance and no measured execution claimed.
+- **Blocks.** Final ten-repository cohort and measured Release 3.7 trial; consistency fixes and validation continue.
+
+---
+
 ## Decided
 
 Move entries here with the decision and its date. Keep the original question
