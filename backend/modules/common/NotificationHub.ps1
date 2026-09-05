@@ -276,7 +276,7 @@ function Send-NotificationEvent {
     foreach ($webhook in $store.webhooks) {
         # Only dispatch to enabled webhooks subscribed to this event
         if (-not $webhook.enabled) { continue }
-        $webhookEvents = if ($null -ne $webhook.events -and $webhook.events -is [array]) { $webhook.events } else { @() }
+        $webhookEvents = @(if ($null -ne $webhook.events -and $webhook.events -is [array]) { $webhook.events } else { @() })
         $subscribed = @($webhookEvents | Where-Object { $_ -eq $EventName })
         if (-not $subscribed) { continue }
 

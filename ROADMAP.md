@@ -1917,14 +1917,15 @@ not observed agent activity.
       its own `ErrorBoundary` so any future preview crash degrades to a
       labeled card instead of the whole portal. Requires a service restart
       to take effect on the live host.)_
-- [ ] **[non-blocker]** Sweep the `$x = if (...) { @(...) } else { @() }`
-      pattern portfolio-wide: ~30 sites across
+- [x] **[non-blocker]** Sweep the `$x = if (...) { @(...) } else { @() }`
+      pattern portfolio-wide: the estimate of ~30 sites across
       [`Start-RepoManagementApiHost.ps1`](backend/api-host/Start-RepoManagementApiHost.ps1)
-      and `backend/modules/` assign an if-expression that silently turns an
-      empty array into `$null` (and `@($x)` then makes a one-element
-      `[null]`). Only the payload-literal site crashed a surface; the local-
-      variable sites deserve an audit and, ideally, a lint gate for the
-      pattern. _(state: planned)_
+      and `backend/modules/` was low — an AST sweep found **56** across 12
+      files, each assigning an if-expression that silently turns an empty
+      array into `$null` (and `@($x)` then makes a one-element `[null]`).
+      Only the payload-literal site crashed a surface; the local-variable
+      sites are now wrapped too, and the pattern has the lint gate the audit
+      asked for. _(state: smoke-tested 2026-09-05 — all 56 wrapped; `tools/Assert-NoArrayCollapsingIfExpression.ps1` is AST-based, not textual, proves itself against a collapsing fixture before sweeping, spares the wrapped and scalar forms, and holds a zero baseline in `scripts/array-collapse-baseline.json`; wired into the module smoke)_
 - [ ] **[non-blocker]** The "Running" state is still bookkeeping — an
       operator clicked Dispatch and has not clicked Complete. Linking lane
       entries to the agent-run ledger (run id, PR state) would make the tab

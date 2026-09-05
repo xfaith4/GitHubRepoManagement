@@ -175,11 +175,11 @@ function Get-NextPendingRelease {
         $goal              = _ExtractGoal -Lines $blockLines
         $acceptanceCriteria = _ExtractSubsectionLines -Lines $blockLines -HeadingPattern 'Acceptance\s+criteria'
         $outOfScope        = _ExtractSubsectionLines -Lines $blockLines -HeadingPattern 'Out\s+of\s+scope'
-        $validationPlan    = if ($null -ne (Get-Command -Name '_RoadmapParserExtractValidationLines' -ErrorAction SilentlyContinue)) {
+        $validationPlan    = @(if ($null -ne (Get-Command -Name '_RoadmapParserExtractValidationLines' -ErrorAction SilentlyContinue)) {
             @(_RoadmapParserExtractValidationLines -Lines $blockLines)
         } else {
             @(_ExtractSubsectionLines -Lines $blockLines -HeadingPattern '(?:Validation|Test)\s+plan')
-        }
+        })
 
         $releaseName = "Release $($block.version) — $($block.title)"
 

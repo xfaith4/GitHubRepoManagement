@@ -583,7 +583,7 @@ function Invoke-AuditRoadmapContract {
 
     $Contract.maturityScore   = $normalised
     $Contract.maturityLevel   = _ScoreToMaturityLevel -Score $normalised -MaturityThresholds $thresholds
-    $Contract.auditFindings   = if ($findings.Count -gt 0) { @($findings) } else { @() }
+    $Contract.auditFindings   = @(if ($findings.Count -gt 0) { @($findings) } else { @() })
 
     return $Contract
 }

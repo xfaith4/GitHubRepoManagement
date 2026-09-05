@@ -35,6 +35,9 @@ $foundationDomainsConfig = Join-Path $WorkspaceRoot 'backend\config\foundation-d
 Write-Step 'Portfolio timestamp truth: index projection and raw JSON gate'
 & (Join-Path $WorkspaceRoot 'tools/Test-PortfolioTimestamp.ps1') -WorkspaceRoot $WorkspaceRoot
 
+Write-Step 'Array-collapsing if-expressions: an empty branch must not become $null'
+& (Join-Path $WorkspaceRoot 'tools/Assert-NoArrayCollapsingIfExpression.ps1') -WorkspaceRoot $WorkspaceRoot
+
 Write-Step 'Loading reconciliation module functions only'
 & $reconcile -LoadFunctionsOnly
 Write-Host 'Loaded reconciliation module successfully' -ForegroundColor Green
@@ -1297,7 +1300,10 @@ Write-Step 'Portfolio scope — Release 3.5 milestone 3: classified, never delet
     # localRepos materialization and its first assessment consumer, so the
     # assertion cannot be satisfied by a filter somewhere unrelated.
     $scopeHostSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1') -Raw -Encoding UTF8
-    $scopeIntake = [regex]::Match($scopeHostSource, "(?s)\`$localRepos = if \(\`$null -ne \`$statusResult.{0,20000}?localReposForAssessment")
+    # `@(` optional: Lane 0.17's sweep wrapped every array-valued
+    # if-expression, so the anchor must survive both the wrapped and the
+    # unwrapped form rather than pinning the tripwire to one spelling.
+    $scopeIntake = [regex]::Match($scopeHostSource, "(?s)\`$localRepos = (?:@\()?if \(\`$null -ne \`$statusResult.{0,20000}?localReposForAssessment")
     if (-not $scopeIntake.Success) { throw 'Could not locate the assessment intake window - the scope-filter tripwire lost its anchor and must fail rather than pass vacuously' }
     if ($scopeIntake.Value -notmatch 'inScope') {
         throw 'The assessment intake no longer filters to in-scope repos: out-of-scope clones would re-enter the Doc Readiness queue and the value ranking.'
@@ -5574,8 +5580,8 @@ Write-Step 'Dot-source scope safety — tripwire: a dot-sourced script must not 
                 continue
             }
             $asRel = Join-Path $root $literal
-            $targets = if (Test-Path -LiteralPath $asRel -PathType Leaf) { @((Resolve-Path -LiteralPath $asRel).Path) }
-            else { @($leafIndex[(Split-Path $literal -Leaf)]) | Where-Object { $_ } }
+            $targets = @(if (Test-Path -LiteralPath $asRel -PathType Leaf) { @((Resolve-Path -LiteralPath $asRel).Path) }
+            else { @($leafIndex[(Split-Path $literal -Leaf)]) | Where-Object { $_ } })
             foreach ($tPath in $targets) {
                 if (-not $paramCache.ContainsKey($tPath)) { $paramCache[$tPath] = @(Get-ScriptParameterName -Path $tPath) }
                 $targetParams = @($paramCache[$tPath])
@@ -6866,7 +6872,7 @@ if (-not (Test-Path -LiteralPath $freshnessModule)) { throw "Missing module file
                 $sub = $e; $subIndex = $i; break
             }
             if ([string]::IsNullOrWhiteSpace($sub)) { continue }
-            $subArgs = if ($subIndex -ge 0 -and $subIndex -lt ($elements.Count - 1)) { @($elements[($subIndex + 1)..($elements.Count - 1)]) } else { @() }
+            $subArgs = @(if ($subIndex -ge 0 -and $subIndex -lt ($elements.Count - 1)) { @($elements[($subIndex + 1)..($elements.Count - 1)]) } else { @() })
 
             $fnName = '<file scope>'
             $walk = $cmd

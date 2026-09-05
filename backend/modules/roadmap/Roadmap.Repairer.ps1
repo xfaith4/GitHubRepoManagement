@@ -98,7 +98,7 @@ function Invoke-PlanRoadmapRepair {
     }
 
     # Map audit findings to repair actions
-    $findings = if ($null -ne $Contract.auditFindings) { @($Contract.auditFindings) } else { @() }
+    $findings = @(if ($null -ne $Contract.auditFindings) { @($Contract.auditFindings) } else { @() })
 
     foreach ($finding in $findings) {
         $ruleId = [string]$finding.ruleId
