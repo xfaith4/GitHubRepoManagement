@@ -35,6 +35,7 @@ vi.mock('./components/Dashboard', () => ({
 vi.mock('./components/SetupWizard', () => ({ default: () => null }));
 vi.mock('./components/AgentActivityIndicator', () => ({ default: () => null }));
 vi.mock('./components/RunnerHealthIndicator', () => ({ default: () => null }));
+vi.mock('./components/BuildStampIndicator', () => ({ default: () => null }));
 vi.mock('./components/TransportSecurityIndicator', () => ({ default: () => null }));
 vi.mock('./components/MobileRepoHealth', () => ({ default: () => null }));
 vi.mock('./components/OrientationOverlay', () => ({ default: () => null, hasSeenOrientation: () => true }));

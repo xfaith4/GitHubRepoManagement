@@ -1,6 +1,25 @@
+import { execSync } from 'child_process';
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+
+// The commit this bundle was built from. `frontend/dist` is served
+// per-request, so a rebuild goes live with no restart while the backend only
+// changes when the service is restarted — an operator otherwise cannot tell a
+// fresh page served by a stale host from a current portal. Baked in at build
+// time because the built bundle has no other way to know.
+//
+// Unknown stays unknown: a build outside a git checkout reports null rather
+// than a fabricated version, which would defeat the point of the chip.
+function resolveBuildCommit(): string | null {
+  try {
+    return execSync('git rev-parse --short=7 HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim() || null;
+  } catch {
+    return null;
+  }
+}
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', 'VITE_');
@@ -35,6 +54,12 @@ export default defineConfig(({ mode }) => {
       },
       // Never `define` a secret here: anything in `define` is inlined into the
       // public bundle. Server-side keys stay in backend config, never in Vite.
+      // A commit sha and a build time are not secrets — they are the two facts
+      // the version chip needs and cannot obtain at runtime.
+      define: {
+        __BUILD_COMMIT__: JSON.stringify(resolveBuildCommit()),
+        __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+      },
       plugins: [react()],
       resolve: {
         alias: {

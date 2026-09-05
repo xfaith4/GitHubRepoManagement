@@ -151,6 +151,10 @@ $persistenceModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\persistence'
 . (Join-Path $PSScriptRoot 'OperationHeartbeat.ps1')
 . (Join-Path $PSScriptRoot 'PerformanceBudget.ps1')
 
+# Declared here because Set-StrictMode -Version Latest (line 48) makes reading
+# a never-assigned $script: variable a terminating error — the memoisation
+# check in Get-PortalBuildStamp would 500 on its first call otherwise.
+$script:PortalBuildStamp = $null
 $script:StatusCacheMemory = @{}
 $script:StatusCacheDefaultTtlSeconds = 120
 $script:StatusCacheSchemaVersion = 4
@@ -269,6 +273,87 @@ function Parse-Bool {
     if ($null -eq $Value) { return $Default }
     $text = [string]$Value
     return $text -match '^(1|true|yes|on)$'
+}
+
+function Get-PortalBuildStamp {
+    <#
+    .SYNOPSIS
+        Identifies the code THIS host process is running, for the portal's
+        version chip.
+
+    .DESCRIPTION
+        `frontend/dist` is served per-request, so `npm run build` changes the
+        UI immediately; the backend only changes when the service restarts.
+        An operator therefore cannot tell a fresh page served by a stale host
+        from a fully current portal. This is the host's half of that answer.
+
+        The commit is read straight out of `.git` rather than by running
+        `git`: the host can run as a service, and spawning git from a
+        non-interactive child with an inherited stdin is what caused the
+        2026-08-19..22 CI hang. No subprocess, no hang.
+
+        Resolved ONCE per process. A per-request read would report the
+        working tree, not the code actually loaded into this process - the
+        opposite of what the chip is for.
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param([Parameter(Mandatory = $true)][string]$RepositoryRoot)
+
+    if ($null -ne $script:PortalBuildStamp) { return $script:PortalBuildStamp }
+
+    $commit = $null
+    $branch = $null
+    try {
+        $gitDir = Join-Path $RepositoryRoot '.git'
+        if (Test-Path -LiteralPath $gitDir -PathType Container) {
+            $headText = (Get-Content -LiteralPath (Join-Path $gitDir 'HEAD') -Raw -ErrorAction Stop).Trim()
+            if ($headText -match '^ref:\s*(?<ref>.+)$') {
+                $ref = $Matches['ref'].Trim()
+                $branch = ($ref -replace '^refs/heads/', '')
+                $refFile = Join-Path $gitDir $ref
+                if (Test-Path -LiteralPath $refFile -PathType Leaf) {
+                    $commit = (Get-Content -LiteralPath $refFile -Raw -ErrorAction Stop).Trim()
+                }
+                else {
+                    # A ref that has never been unpacked lives only in
+                    # packed-refs; without this branch a freshly cloned
+                    # deployment would report an unknown commit.
+                    $packed = Join-Path $gitDir 'packed-refs'
+                    if (Test-Path -LiteralPath $packed -PathType Leaf) {
+                        foreach ($line in (Get-Content -LiteralPath $packed -ErrorAction Stop)) {
+                            if ($line -match ("^(?<sha>[0-9a-f]{40})\s+" + [regex]::Escape($ref) + '$')) {
+                                $commit = $Matches['sha']
+                                break
+                            }
+                        }
+                    }
+                }
+            }
+            elseif ($headText -match '^[0-9a-f]{40}$') {
+                # Detached HEAD - a real deployment state, not an error.
+                $commit = $headText
+                $branch = '(detached)'
+            }
+        }
+    }
+    catch {
+        # An unreadable .git must not take the host down, and must not be
+        # dressed up as a known version either: unavailable stays unavailable.
+        $commit = $null
+        $branch = $null
+    }
+
+    $startedAt = $null
+    try { $startedAt = (Get-Process -Id $PID -ErrorAction Stop).StartTime.ToUniversalTime().ToString('o') } catch { $startedAt = $null }
+
+    $script:PortalBuildStamp = @{
+        commit      = $(if ($commit) { $commit.Substring(0, [Math]::Min(7, $commit.Length)) } else { $null })
+        commitFull  = $commit
+        branch      = $branch
+        startedAtUtc = $startedAt
+    }
+    return $script:PortalBuildStamp
 }
 
 function Get-ListeningProcessIds {
@@ -6375,7 +6460,7 @@ try {
             # screen; everything else under /api/ requires a valid API key
             # (automation) OR a valid session cookie (a logged-in human).
             if ($script:GateEnabled) {
-                $authExempt = ($path -eq '/health/live') -or ($path -eq '/health/ready') -or
+                $authExempt = ($path -eq '/health/live') -or ($path -eq '/health/ready') -or ($path -eq '/health/version') -or
                     ($path -eq '/api/auth/status') -or ($path -eq '/api/auth/login') -or ($path -eq '/api/auth/logout') -or
                     ($path -eq '/setup') -or ($path -like '/setup/*') -or
                     (-not ($path -like '/api/*'))
@@ -7266,6 +7351,20 @@ try {
                 'GET /health/live' {
                     Add-MetricCounter -Name 'api_requests_total'
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{ status = 'ok'; service = 'repo-management-api'; time = (Get-Date).ToString('o') }
+                }
+                'GET /health/version' {
+                    # Auth-exempt with the other /health routes: the chip has
+                    # to render on the login screen, which is exactly where an
+                    # operator is when they doubt what they are looking at.
+                    $stamp = Get-PortalBuildStamp -RepositoryRoot $WorkspaceRoot
+                    Add-MetricCounter -Name 'api_requests_total'
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        schemaVersion = 'v1'
+                        commit        = $stamp.commit
+                        branch        = $stamp.branch
+                        startedAtUtc  = $stamp.startedAtUtc
+                        service       = 'repo-management-api'
+                    }
                 }
                 'GET /health/ready' {
                     $checks = @{
