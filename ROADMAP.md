@@ -2,7 +2,7 @@
 
 > **Status:** Active
 > **Active release:** **Release 2.9 — Operator Field Proof + Mobile Completion**
-> **Next active release:** **Release 3.6 — Every Repository Gets an Outcome** is in **`validation`** — engineering complete 2026-08-27, all six milestones `smoke-tested` and every acceptance criterion gated; only operator verification remains, batched with 2.9. The next release is **Release 3.7 — Portfolio Value Proof**: cohort preparation may proceed; measured execution waits for Lane 0.15 truth validation and live Release 3.6 verification. Ten real repositories decide the 80+ rollout
+> **Next active release:** **Release 3.6 — Every Repository Gets an Outcome** is in **`validation`** — engineering complete 2026-08-27, all six milestones `smoke-tested` and every acceptance criterion gated; only operator verification remains, batched with 2.9. The next release is **Release 3.7 — Portfolio Value Proof**: cohort preparation may proceed; Lane 0.15 truth validation **landed 2026-09-05** (#228), so measured execution now waits only on live Release 3.6 verification, the D-006 cohort decision and the cohort freeze — all operator work, no engineering. Ten real repositories decide the 80+ rollout
 > **Work ordering:** dependency-driven, not insertion order — see
 > [Execution Order and Dependencies](#execution-order-and-dependencies)
 > **Canonical product direction:** [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md)
@@ -13,7 +13,7 @@
 
 ## Current Status (Agent Context)
 
-**Last updated:** 2026-08-27
+**Last updated:** 2026-09-05
 
 Releases 0.4 through 2.6, 2.8 and 3.0 are **engineering-complete and archived**,
 as is every completed milestone from the releases and lanes still open below.
@@ -50,6 +50,18 @@ not prescribe what a repository should become; it identifies and strengthens
 the foundations that allow each repository to succeed at what it is intended
 to be.** Full statement and admission rule in §2; it resequenced Release 2.9
 and defined Releases 3.6 and 3.7.
+
+**What changed 2026-09-05 (record, not an action).** Lane 0.15's truth defects
+are fixed and validated (#228): every portfolio timestamp now carries a UTC ISO
+8601 basis before any `DateTime` coercion, a value with no determinable basis
+reports unavailable instead of inventing one, and `Blocked` is named and given a
+denominator wherever it is shown. A raw-wire gate inspects JSON tokens before
+`ConvertFrom-Json` can parse the evidence away. Lane 0.17's array-collapse sweep
+landed with it (#229): 56 sites, not the estimated ~30, plus an AST lint gate
+holding a zero baseline. Together these clear the **engineering** half of Release
+3.7's entry gate; everything still open on that gate is operator work, below.
+This is emphatically **not** live operator verification, which no agent may
+claim. Evidence: [`evidence/verified/trial-truth-readiness-2026-09-05.md`](evidence/verified/trial-truth-readiness-2026-09-05.md).
 
 **Current focus (next agent actions), in order:**
 
