@@ -2,6 +2,7 @@ import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type Backg
 import { type AutomationHealthPayload } from '../lib/automationStatus';
 import { type PackagedItem } from '../lib/packagedItems';
 import { type RunnerPresencePayload } from '../lib/runnerPresence';
+import { type PortalVersionPayload } from '../lib/buildStamp';
 import { type WorkItemTrace, type WriteBackPreview, type WriteBackRefusal } from '../lib/workItemTrace';
 import { normalizePortfolioLeverage } from '../lib/portfolioLeverage';
 import { normalizeCopilotTaskPacket } from '../lib/copilotTaskPacket';
@@ -1745,6 +1746,29 @@ export async function getPortfolioSnapshot(): Promise<PortfolioSnapshot | null> 
   } catch {
     // An unreachable snapshot is not an empty one; callers render their
     // own degraded state rather than a zero.
+    return null;
+  }
+}
+
+/**
+ * The API host's own build stamp, for the header version chip.
+ *
+ * `/health/version` sits outside `/api`, so the base is derived rather than
+ * assumed: when VITE_API_URL points at an absolute origin, the health probe
+ * has to follow it there instead of falling back to this page's origin.
+ * Auth-exempt on the host, so this answers on the login screen too.
+ */
+export async function getPortalVersion(): Promise<PortalVersionPayload | null> {
+  try {
+    const healthBase = API_BASE_URL.replace(/\/api\/?$/, '') + '/health';
+    // The /health routes answer unwrapped; `data` is tolerated so a future
+    // move behind the standard success envelope does not blank the chip.
+    const body = await fetchJson<PortalVersionPayload & { data?: PortalVersionPayload }>(
+      `${healthBase}/version`,
+    );
+    const d = body?.data ?? body ?? null;
+    return d && typeof d === 'object' ? d : null;
+  } catch {
     return null;
   }
 }

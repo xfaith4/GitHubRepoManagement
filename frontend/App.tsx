@@ -4,6 +4,7 @@ import SetupWizard from './components/SetupWizard';
 import Login from './components/Login';
 import AgentActivityIndicator from './components/AgentActivityIndicator';
 import RunnerHealthIndicator from './components/RunnerHealthIndicator';
+import BuildStampIndicator from './components/BuildStampIndicator';
 import TransportSecurityIndicator from './components/TransportSecurityIndicator';
 import MobileRepoHealth from './components/MobileRepoHealth';
 import OrientationOverlay, { hasSeenOrientation } from './components/OrientationOverlay';
@@ -400,6 +401,9 @@ function App() {
                 />
                 <RunnerHealthIndicator />
                 <AgentActivityIndicator />
+                {/* Which code you are looking at. Two stamps, because the
+                    bundle and the host move on different cadences. */}
+                <BuildStampIndicator />
                 <span className="inline-flex">{renderDataSourceLabel()}</span>
                 {isBackgroundRefreshing && (
                   <span role="status" aria-live="polite" className="ml-2 inline-flex items-center gap-1.5 text-xs text-blue-400" title="Refreshing repository data in the background…">

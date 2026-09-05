@@ -178,6 +178,21 @@ Describe 'API Success Contracts' {
         $response.Json.status | Should -Not -BeNullOrEmpty
     }
 
+    It 'reports the running host build for GET /health/version' {
+        # The operator half of "am I looking at the updated portal?". Must be
+        # reachable without auth, like the other /health routes, because the
+        # login screen is exactly where that doubt arises.
+        $response = Invoke-ContractApiRequest -Method GET -Path '/health/version'
+        $response.StatusCode | Should -Be 200
+        $response.Json.schemaVersion | Should -Be 'v1'
+        $response.Json.service | Should -Be 'repo-management-api'
+        # Running from a git checkout, so the commit must resolve. A null here
+        # means the .git read broke and the chip would silently read "unknown"
+        # forever.
+        $response.Json.commit | Should -Match '^[0-9a-f]{7}$'
+        $response.Json.startedAtUtc | Should -Not -BeNullOrEmpty
+    }
+
     It 'returns a success envelope for GET /api/settings' {
         $response = Invoke-ContractApiRequest -Method GET -Path '/api/settings'
         $response.StatusCode | Should -Be 200

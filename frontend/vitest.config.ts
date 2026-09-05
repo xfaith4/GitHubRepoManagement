@@ -7,6 +7,13 @@ import { defineConfig } from 'vitest/config';
 // tests keep the cheaper node environment.
 export default defineConfig({
   plugins: [react()],
+  // vite.config.ts injects these at build time; tests need them defined too,
+  // or the version chip renders its "built outside a checkout" branch and the
+  // match/mismatch cases can never be exercised.
+  define: {
+    __BUILD_COMMIT__: JSON.stringify('testsha'),
+    __BUILD_TIME__: JSON.stringify('2026-09-05T12:00:00.000Z'),
+  },
   test: {
     environment: 'node',
     include: ['**/*.test.ts', '**/*.test.tsx'],
