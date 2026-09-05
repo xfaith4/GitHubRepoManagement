@@ -2,7 +2,7 @@
 
 > **Status:** Active
 > **Active release:** **Release 2.9 — Operator Field Proof + Mobile Completion**
-> **Next active release:** **Release 3.6 — Every Repository Gets an Outcome** is in **`validation`** — engineering complete 2026-08-27, all six milestones `smoke-tested` and every acceptance criterion gated; only operator verification remains, batched with 2.9. The next engineering release is **Release 3.7 — Portfolio Value Proof**, where ten real repositories decide the 80+ rollout
+> **Next active release:** **Release 3.6 — Every Repository Gets an Outcome** is in **`validation`** — engineering complete 2026-08-27, all six milestones `smoke-tested` and every acceptance criterion gated; only operator verification remains, batched with 2.9. The next release is **Release 3.7 — Portfolio Value Proof**: cohort preparation may proceed; measured execution waits for Lane 0.15 truth validation and live Release 3.6 verification. Ten real repositories decide the 80+ rollout
 > **Work ordering:** dependency-driven, not insertion order — see
 > [Execution Order and Dependencies](#execution-order-and-dependencies)
 > **Canonical product direction:** [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md)
@@ -213,13 +213,16 @@ Release numbers identify scope — they do not dictate sequence. Work through
 open items in the order below, and update this section whenever a lane
 closes or a new dependency appears.
 
-**Everything that once blocked something else has landed.** No open item waits
-on another open item — the ordering below is about **what kind of resource
-each item needs**, not about prerequisites.
+**Trial sequencing — approved 2026-09-05.** Select the ten by kind now; fix
+and validate the remaining Lane 0.15 truth defects before measured execution.
+Live Release 3.6 verification and operator approvals remain required. Lane
+0.18 acceptance evidence is required for each counted improvement, but an
+independent operator check can supply it; completing all of Lane 0.18 is not
+a prerequisite. Dependency ordering remains blocked on D-001.
 
 1. **Release 3.7 — Portfolio Value Proof** is the next engineering
-   release (execution contract in §6). Its four milestones are the only
-   genuinely unbuilt engineering left: Release 3.6 finished 2026-08-27 with
+   release (execution contract in §6). Its four milestones follow the
+   trial-facing consistency fixes: Release 3.6 finished 2026-08-27 with
    all six milestones `smoke-tested` and every acceptance criterion gated, so
    the product now concludes for every repository, ranks what to do first,
    and measures its own leverage. 3.7 needs Ben for the approvals, not for
@@ -248,7 +251,7 @@ each item needs**, not about prerequisites.
 | Open item                                            | Depends on                                    | Type                                          |
 | ---------------------------------------------------- | --------------------------------------------- | --------------------------------------------- |
 | Release 3.6 operator verification                    | Eyes on the live portal (batch with 2.9)      | hard - human; engineering is done             |
-| Release 3.7 Portfolio Value Proof                    | Release 3.6; operator approvals               | soft — sequence; engineering + operator       |
+| Release 3.7 measured value trial | Lane 0.15 truth validation; live Release 3.6 proof; ten-category cohort; operator approvals | hard — evidence integrity + operator |
 | Lane 0.2 `Checks: Read`; TLS certificate password    | An operator action outside this repository    | hard — external                               |
 | Lane 0.5 tab disclosure; Lane 0.7 archive signal     | A product decision, not engineering time      | hard — design                                 |
 | Release 2.9 freeze-prevention deploy (from 2.7)      | An elevated (SYSTEM) Windows install          | hard — privilege; batch with the two below    |
@@ -724,8 +727,14 @@ api-host steps, and 47 frontend tests across `foundationConclusion`,
 
 ### Release 3.7 — Portfolio Value Proof
 
-**Status:** planned — defined 2026-08-23; follows Release 3.6. Its job is to
-make the product earn its next release against the real portfolio, not itself.
+**Status:** planned — defined 2026-08-23; sequencing approved 2026-09-05.
+Follows Release 3.6. Measured execution is held until the truth checks, live
+operator verification and ten-category cohort are ready. Its job is to make
+the product earn its next release against the real portfolio, not itself.
+
+Preparation and per-repository evidence: [trial record](evidence/trials/release-3.7/README.md)
+and `evidence/trials/release-3.7/cohort.json`. Nine candidates are named;
+external management awaits D-006. No improvements are counted yet.
 
 **Goal:** ten representative repositories — chosen by kind, not for
 conformance — each receive a credible conclusion and, where warranted, a next
@@ -745,7 +754,9 @@ recorded; the result decides the full 80+ rollout.
       active application, small utility, experiment, abandoned project,
       repository without a roadmap, library, externally managed project,
       nearly finished repository, messy repository — recording why each was
-      chosen. _(state: planned)_
+      chosen. Nine provisional candidates and an explicit unfilled external-management
+      slot are recorded in `evidence/trials/release-3.7/cohort.json`; D-006
+      must resolve before selection is complete. _(state: scaffolded)_
 - [ ] **Run the conclusion model over the ten**, recording per repository:
       what it is, whether it still matters, its state, what limits its value,
       the highest-value next action, and whether the product can execute or
@@ -753,7 +764,10 @@ recorded; the result decides the full 80+ rollout.
 - [ ] **Execute at least five improvements** through preview → approve →
       execute → validate, recording operator minutes, agent first-pass
       result, and whether the repository is materially stronger afterwards —
-      appropriate-as-is or archive counts as an outcome. _(state: planned)_
+      appropriate-as-is or archive counts as a conclusion outcome, not automatically
+      as one of the five improvements. Each counted improvement needs an
+      independently checked acceptance criterion and before/after evidence;
+      merge evidence alone is insufficient. _(state: planned)_
 - [ ] **Adjust and decide** — fix the false positives and bad recommendations
       the ten expose; record the go/no-go for the full rollout and the
       leverage numbers behind it. _(state: planned)_
@@ -779,7 +793,8 @@ arbiter for any product fix the ten expose.
 prevents it); counting a repair as an improvement when the repository is not
 stronger (outcome quality is recorded, not assumed).
 
-**Dependencies:** Release 3.6; the operator's time for approvals and effort.
+**Dependencies:** Lane 0.15 truth validation; live Release 3.6 verification;
+ten-category cohort (D-006); the operator's approvals and measured effort.
 
 ---
 
@@ -1577,6 +1592,12 @@ that had neither.
 
 ### Lane 0.15 — The console contradicts itself (operator audit 2026-08-29)
 
+**2026-09-05 implementation:** trial-facing fixes are connected in the working
+branch. Validation and live deployment boundaries are recorded in
+`evidence/verified/trial-truth-readiness-2026-09-05.md`; open checkboxes remain
+until the required proof is complete. The paragraphs below retain the original
+audit observations; their old line numbers are historical pointers.
+
 The audit's headline, and the reason it outranks every visual finding: once an
 operator catches the console disagreeing with itself on a number, they stop
 trusting all of it. Each item below was **confirmed in code**, not inferred
@@ -1593,7 +1614,7 @@ from the screenshot.
       plus a per-repo badge and a filter value in `RepoGrid`. Reconciling the
       numbers is the wrong fix — they are different quantities wearing one
       word. Name each, and state the denominator on the surface that shows it.
-      _(state: planned)_
+      _(state: ui-connected — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
 
 - [ ] **Stop the app switching data source without being asked.**
       [`App.tsx:240`](frontend/App.tsx#L240) calls `setViewMode('github')` on a
@@ -1602,7 +1623,7 @@ from the screenshot.
       silently changes which source the operator is _looking at_, and `Cancel`
       cannot revert it because `viewMode` was never modal state. Connecting a
       credential and choosing a view are different acts; the source toggle
-      already exists for the second. _(state: planned)_
+      already exists for the second. _(state: ui-connected — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
 
 - [x] **Never render "not computed" as a number.** In GitHub mode
       `Dirty Repositories` showed **0**, which reads as "clean" and means "no
@@ -1633,7 +1654,7 @@ from the screenshot.
       **only as a `title=` tooltip**
       ([`TodayView.tsx:187`](frontend/components/TodayView.tsx#L187)) — invisible,
       hover-only, unreachable by keyboard. Do not change the comparator.
-      _(state: planned)_
+      _(state: ui-connected — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
 
 - [ ] **Fix the dead-end automation instruction.**
       [`automationStatus.ts:100`](frontend/lib/automationStatus.ts#L100) tells
@@ -1641,7 +1662,7 @@ from the screenshot.
       automatically."_ The Settings dialog holds seven fields and none of them
       is that toggle — nor packaging, auto-scan, lane concurrency, or the
       scoring thresholds that drive every number in the product. Either build
-      the control or stop naming it. _(state: planned)_
+      the control or stop naming it. _(state: ui-connected — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
 
 **Already fixed (2026-08-29) — the snapshot route answered 500 on every
 operator machine.** `Get-StatusFromCache` returns
@@ -1694,10 +1715,8 @@ filesystem walk found **70** working trees under the configured root at depth
 3 while the status cache reported **72**. The scan was right and the walk was
 wrong; both reasons are recorded on the closed item below.
 
-- [ ] **Give `Blocked` two names, because it has two definitions.** Confirmed
-      live: `blocked=17` is ledger execution state; `blockedCount=57` is repos
-      blocked from dispatch. Name each on the surface that shows it, and state
-      its denominator. _(state: planned)_
+The re-audit's two live `Blocked` definitions are covered by the first naming
+item above; they are not a second implementation task.
 
 - [ ] **Give `/api/portfolio/assessment` and `/api/operations/repos` a
       timezone basis.** Both serialize `createdAt` as locale text
@@ -1705,7 +1724,7 @@ wrong; both reasons are recorded on the closed item below.
       surfaces with no basis at all. This is what the existing contract
       assertion was written to catch and cannot, because it skips any value
       `ConvertFrom-Json` has already promoted to `[datetime]`. Fix the
-      serializer and the assertion together. _(state: planned)_
+      serializer and the assertion together. _(state: ui-connected — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
 
 - [x] **Explain the 70-vs-72 repository gap — the scan was right.** _(state:
       operator-verified 2026-09-04; re-runnable, see below)_ The audit's
@@ -1724,21 +1743,16 @@ wrong; both reasons are recorded on the closed item below.
       product question, recorded as D-002 in
       [`docs/governance/open-decisions.md`](docs/governance/open-decisions.md).
 
-- [ ] **Reconcile the six repository denominators and the three clock bases.**
-      One sitting showed **seven timestamps across three clock bases, one
-      running four hours fast** — exactly the UTC-vs-EDT offset, so the likely
-      cause is a single UTC value rendered as local rather than three
-      independent defects. Establish one clock and one repository denominator,
-      and name the denominator wherever a count is shown.
-      **The reconciliation layer has never run in production**, which is the
-      most probable cause of the whole contradiction class: `Build-PortfolioSnapshot`
-      is the "one snapshot, one clock, one provenance" unifier, and it 500'd on
-      every real machine until the fix above, so every consumer fell back to
-      computing its own numbers independently. Re-audit the console against a
-      working snapshot before assuming the remaining divergence is separate.
-      Note the raw divergence is already visible: the same session reported
-      `repoCount` **72** from the status cache and **58** from the assessment
-      scan. _(state: planned)_
+- [ ] **Verify the remaining clock and denominator presentation on the live console.**
+      The snapshot 500 and 70-versus-72 discrepancy are resolved above. The
+      re-audit established the coherent 72 scanned → 58 in-scope → 57 dispatch
+      blocked chain; different quantities must retain their own denominators.
+      Do not repeat the obsolete hypothesis that the snapshot has never run.
+      Verify the newly named execution/dispatch/PR blockers, stable selected
+      source, visible rank basis and local rendering of explicitly based UTC
+      timestamps after deployment. Automated proof is in
+      `evidence/verified/trial-truth-readiness-2026-09-05.md`.
+      _(state: ui-connected)_
 
 - [ ] **Close the timestamp-basis test's own blind spot.** The contract test
       _"every timestamp field in key payloads carries an explicit timezone
@@ -1747,7 +1761,7 @@ wrong; both reasons are recorded on the closed item below.
       `[datetime]`. Every timestamp that parses as a date is therefore skipped
       by the very test that exists to check timestamps. Assert against the raw
       response body instead, as the new cache-fixture test does.
-      _(state: planned)_
+      _(state: ui-connected — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
 
 ---
 
@@ -1920,6 +1934,12 @@ not observed agent activity.
 ---
 
 ### Lane 0.18 — Execution depth: four mechanisms RoadmapOrchestrator already solved (evaluated 2026-09-04)
+
+**Trial boundary (approved 2026-09-05):** independently verify acceptance
+criteria for each Release 3.7 improvement. The operator may perform and record
+that check through the existing workflow; this lane's new automated gate,
+carryover, cumulative sequence cap and dependency selector are not blanket
+prerequisites for the trial. Preserve existing merge gates.
 
 `RoadmapOrchestrator` (`xfaith4/RoadmapOrchestrator`, local at
 `F:\Development\20_Staging\AI Projects\RoadmapOrchestrator`) reaches the same

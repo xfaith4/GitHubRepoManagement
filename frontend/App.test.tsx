@@ -28,8 +28,8 @@ vi.mock('./services/apiClient', () => ({
 // The shell around the data is not under test. Stubs keep the assertions on
 // what App itself decides: when to load, and which error it hands down.
 vi.mock('./components/Dashboard', () => ({
-  default: ({ error }: { error: string | null }) => (
-    <div data-testid="dashboard">{error ?? 'no error'}</div>
+  default: ({ error, dataSource, onConnectGitHub }: { error: string | null; dataSource: { source: string }; onConnectGitHub: (user: string) => Promise<void> }) => (
+    <div data-testid="dashboard">{error ?? 'no error'}<span data-testid="active-source">{dataSource?.source ?? 'local'}</span><button onClick={() => void onConnectGitHub('fixture')}>Connect fixture</button></div>
   ),
 }));
 vi.mock('./components/SetupWizard', () => ({ default: () => null }));
@@ -129,4 +129,17 @@ describe('App auth gate and first load', () => {
     await screen.findByTestId('dashboard');
     await waitFor(() => expect(mockedGetStatus).toHaveBeenCalled());
   });
+});
+
+it('connecting GitHub preserves the selected source until the operator switches it', async () => {
+  mockedAuthStatus.mockResolvedValue(authStatus({ gateEnabled: false, authenticated: true }));
+  mockedGetStatus.mockResolvedValue(LOCAL_DATA);
+  vi.mocked(apiClient.getGithubRepoInsights).mockResolvedValue({ repos: [], source: 'github', username: 'fixture', totalRepos: 0, fetchedRepos: 0, rateLimit: null } as Awaited<ReturnType<typeof apiClient.getGithubRepoInsights>>);
+  render(<App />);
+  await screen.findByTestId('dashboard');
+  fireEvent.click(screen.getByRole('button', { name: 'Connect fixture' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'GitHub' })).toBeEnabled());
+  expect(screen.getByTestId('active-source')).toHaveTextContent('local');
+  fireEvent.click(screen.getByRole('button', { name: 'GitHub' }));
+  expect(screen.getByTestId('active-source')).toHaveTextContent('github');
 });

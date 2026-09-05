@@ -2301,7 +2301,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                       Merge Readiness
                       {mergeReadiness && (
                         <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs ${mergeReadiness.ready ? 'bg-emerald-900/40 text-emerald-200 border-emerald-700/50' : 'bg-red-900/40 text-red-200 border-red-700/50'}`}>
-                          {mergeReadiness.ready ? 'Ready to merge' : `Blocked (${mergeReadiness.blockers.length})`}
+                          {mergeReadiness.ready ? 'Ready to merge' : `Merge blockers: ${mergeReadiness.blockers.length} on this PR`}
                         </span>
                       )}
                     </div>

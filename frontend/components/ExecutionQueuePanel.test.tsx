@@ -86,7 +86,7 @@ describe('ExecutionQueuePanel — the Dispatch Board', () => {
     render(<ExecutionQueuePanel />);
     await screen.findByText('ready-one');
 
-    const blockedTile = screen.getByRole('button', { name: /1\s*Blocked/ });
+    const blockedTile = screen.getByRole('button', { name: /1\s*Execution blocked/ });
     fireEvent.click(blockedTile);
     expect(screen.getByText('blocked-repo')).toBeInTheDocument();
     expect(screen.queryByText('ready-one')).not.toBeInTheDocument();
@@ -147,9 +147,16 @@ describe('ExecutionQueuePanel — the Dispatch Board', () => {
     render(<ExecutionQueuePanel />);
     await screen.findByText('ready-one');
 
-    fireEvent.click(screen.getByRole('button', { name: /1\s*Blocked/ }));
+    fireEvent.click(screen.getByRole('button', { name: /1\s*Execution blocked/ }));
     const row = screen.getByText('blocked-repo').closest('div[class*="rounded-lg"]') as HTMLElement;
     expect(within(row).getByRole('button', { name: 'Requeue' })).toBeInTheDocument();
     expect(within(row).queryByRole('button', { name: 'Dispatch' })).not.toBeInTheDocument();
   });
+});
+
+it('names execution blockers and their ledger denominator', async () => {
+  mockedGetQueue.mockResolvedValue(summary());
+  render(<ExecutionQueuePanel />);
+  await screen.findByText('ready-one');
+  expect(screen.getByRole('button', { name: /1\s*Execution blocked\s*of\s*7\s*ledger repositories/ })).toBeVisible();
 });

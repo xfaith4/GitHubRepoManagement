@@ -347,8 +347,11 @@ export const TodayView: React.FC<TodayViewProps> = ({ entries, onOpenRepo, onRun
                         </span>
                       </div>
                     </td>
-                    <td className="px-3 py-3 text-[12.5px] text-text/78 leading-relaxed max-w-md" title={row.rankBasis.join(' · ')}>
+                    <td className="px-3 py-3 text-[12.5px] text-text/78 leading-relaxed max-w-md">
                       {row.whyNow}
+                      <div data-testid="today-rank-basis" className="mt-1 text-xs text-text/60">
+                        Rank basis: {row.rankBasis.join(' · ')}
+                      </div>
                       {row.pinReason && (
                         // Shown only on rows that outrank higher-value work.
                         // Without it the ordering reads as broken: a value-72

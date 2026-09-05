@@ -125,7 +125,7 @@ const READINESS_CONFIG: Record<DispatchReadiness, { label: string; badgeClass: s
     priority: 6,
   },
   blocked: {
-    label: 'Blocked',
+    label: 'Dispatch blocked',
     badgeClass: 'bg-red-900/50 text-red-300 border-red-700/50',
     dotClass: 'bg-red-500',
     priority: 7,

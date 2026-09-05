@@ -40,6 +40,23 @@ $ErrorActionPreference = 'Stop'
 # Standards loader
 # ---------------------------------------------------------------------------
 
+function ConvertTo-PortfolioTimestamp {
+    [CmdletBinding()]
+    param([AllowNull()][object]$Value)
+    if ($null -eq $Value -or [string]::IsNullOrWhiteSpace([string]$Value)) { return $null }
+    if ($Value -is [datetimeoffset]) { return $Value.UtcDateTime.ToString('o') }
+    if ($Value -is [datetime] -and $Value.Kind -ne [DateTimeKind]::Unspecified) {
+        return $Value.ToUniversalTime().ToString('o')
+    }
+    $parsed = [datetimeoffset]::MinValue
+    if ($Value -is [string] -and $Value -match '^\d{4}-\d{2}-\d{2}T.*(Z|[+-]\d{2}:\d{2})$' -and
+        [datetimeoffset]::TryParse($Value, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$parsed)) {
+        return $parsed.UtcDateTime.ToString('o')
+    }
+    Write-Warning 'Portfolio timestamp unavailable: the source value has an invalid or unspecified timezone basis; refresh its source.'
+    return $null
+}
+
 function Get-RepoStructureStandards {
     [CmdletBinding()]
     param([string]$StandardsPath = '')
@@ -863,12 +880,12 @@ function Invoke-PortfolioAssessment {
             sourceCoverage      = $sourceCoverage
             hasPages            = [bool](_GetField -Obj $githubRepo -Name 'hasPages' -Default (_GetField -Obj $repo -Name 'hasPages' -Default $false))
             pagesUrl            = _GetField -Obj $githubRepo -Name 'pagesUrl' -Default (_GetField -Obj $repo -Name 'pagesUrl' -Default $null)
-            createdAt           = _GetField -Obj $githubRepo -Name 'createdAt' -Default (_GetField -Obj $repo -Name 'createdAt' -Default $null)
-            updatedAt           = _GetField -Obj $githubRepo -Name 'updatedAt' -Default (_GetField -Obj $repo -Name 'updatedAt' -Default $null)
+            createdAt           = ConvertTo-PortfolioTimestamp (_GetField -Obj $githubRepo -Name 'createdAt' -Default (_GetField -Obj $repo -Name 'createdAt' -Default $null))
+            updatedAt           = ConvertTo-PortfolioTimestamp (_GetField -Obj $githubRepo -Name 'updatedAt' -Default (_GetField -Obj $repo -Name 'updatedAt' -Default $null))
             latestWorkflowRunStatus = _GetField -Obj $githubRepo -Name 'latestWorkflowRunStatus' -Default (_GetField -Obj $repo -Name 'latestWorkflowRunStatus' -Default $null)
             latestWorkflowRunConclusion = _GetField -Obj $githubRepo -Name 'latestWorkflowRunConclusion' -Default (_GetField -Obj $repo -Name 'latestWorkflowRunConclusion' -Default $null)
             latestWorkflowRunName = _GetField -Obj $githubRepo -Name 'latestWorkflowRunName' -Default (_GetField -Obj $repo -Name 'latestWorkflowRunName' -Default $null)
-            latestWorkflowRunTimestamp = _GetField -Obj $githubRepo -Name 'latestWorkflowRunTimestamp' -Default (_GetField -Obj $repo -Name 'latestWorkflowRunTimestamp' -Default $null)
+            latestWorkflowRunTimestamp = ConvertTo-PortfolioTimestamp (_GetField -Obj $githubRepo -Name 'latestWorkflowRunTimestamp' -Default (_GetField -Obj $repo -Name 'latestWorkflowRunTimestamp' -Default $null))
             openPrCount         = $openPrCount
             pendingReviewPrCount = $pendingReviewPrCount
             repoType            = $repoType
@@ -924,12 +941,12 @@ function Invoke-PortfolioAssessment {
             sourceCoverage      = 'github'
             hasPages            = [bool](_GetField -Obj $gh -Name 'hasPages' -Default $false)
             pagesUrl            = _GetField -Obj $gh -Name 'pagesUrl' -Default $null
-            createdAt           = _GetField -Obj $gh -Name 'createdAt' -Default $null
-            updatedAt           = _GetField -Obj $gh -Name 'updatedAt' -Default $null
+            createdAt           = ConvertTo-PortfolioTimestamp (_GetField -Obj $gh -Name 'createdAt' -Default $null)
+            updatedAt           = ConvertTo-PortfolioTimestamp (_GetField -Obj $gh -Name 'updatedAt' -Default $null)
             latestWorkflowRunStatus = _GetField -Obj $gh -Name 'latestWorkflowRunStatus' -Default $null
             latestWorkflowRunConclusion = _GetField -Obj $gh -Name 'latestWorkflowRunConclusion' -Default $null
             latestWorkflowRunName = _GetField -Obj $gh -Name 'latestWorkflowRunName' -Default $null
-            latestWorkflowRunTimestamp = _GetField -Obj $gh -Name 'latestWorkflowRunTimestamp' -Default $null
+            latestWorkflowRunTimestamp = ConvertTo-PortfolioTimestamp (_GetField -Obj $gh -Name 'latestWorkflowRunTimestamp' -Default $null)
             openPrCount         = [int](_GetField -Obj $gh -Name 'openPrCount' -Default 0)
             pendingReviewPrCount = [int](_GetField -Obj $gh -Name 'pendingReviewPrCount' -Default 0)
             repoType            = 'other'
@@ -1422,12 +1439,12 @@ function New-PortfolioIndexPayload {
         $htmlUrl = [string](_GetField -Obj $assessment -Name 'htmlUrl' -Default (_GetField -Obj $githubRepo -Name 'htmlUrl' -Default ''))
         $hasPages = [bool](_GetField -Obj $assessment -Name 'hasPages' -Default (_GetField -Obj $githubRepo -Name 'hasPages' -Default $false))
         $pagesUrl = [string](_GetField -Obj $assessment -Name 'pagesUrl' -Default (_GetField -Obj $githubRepo -Name 'pagesUrl' -Default ''))
-        $createdAt = [string](_GetField -Obj $assessment -Name 'createdAt' -Default (_GetField -Obj $githubRepo -Name 'createdAt' -Default ''))
-        $updatedAt = [string](_GetField -Obj $assessment -Name 'updatedAt' -Default (_GetField -Obj $githubRepo -Name 'updatedAt' -Default ''))
+        $createdAt = ConvertTo-PortfolioTimestamp (_GetField -Obj $assessment -Name 'createdAt' -Default (_GetField -Obj $githubRepo -Name 'createdAt' -Default ''))
+        $updatedAt = ConvertTo-PortfolioTimestamp (_GetField -Obj $assessment -Name 'updatedAt' -Default (_GetField -Obj $githubRepo -Name 'updatedAt' -Default ''))
         $latestWorkflowRunStatus = [string](_GetField -Obj $assessment -Name 'latestWorkflowRunStatus' -Default (_GetField -Obj $githubRepo -Name 'latestWorkflowRunStatus' -Default ''))
         $latestWorkflowRunConclusion = [string](_GetField -Obj $assessment -Name 'latestWorkflowRunConclusion' -Default (_GetField -Obj $githubRepo -Name 'latestWorkflowRunConclusion' -Default ''))
         $latestWorkflowRunName = [string](_GetField -Obj $assessment -Name 'latestWorkflowRunName' -Default (_GetField -Obj $githubRepo -Name 'latestWorkflowRunName' -Default ''))
-        $latestWorkflowRunTimestamp = [string](_GetField -Obj $assessment -Name 'latestWorkflowRunTimestamp' -Default (_GetField -Obj $githubRepo -Name 'latestWorkflowRunTimestamp' -Default ''))
+        $latestWorkflowRunTimestamp = ConvertTo-PortfolioTimestamp (_GetField -Obj $assessment -Name 'latestWorkflowRunTimestamp' -Default (_GetField -Obj $githubRepo -Name 'latestWorkflowRunTimestamp' -Default ''))
         $openPrCount = [int](_GetField -Obj $assessment -Name 'openPrCount' -Default (_GetField -Obj $githubRepo -Name 'openPrCount' -Default 0))
         $pendingReviewPrCount = [int](_GetField -Obj $assessment -Name 'pendingReviewPrCount' -Default (_GetField -Obj $githubRepo -Name 'pendingReviewPrCount' -Default 0))
         $localLastCommitDate = [string](_GetField -Obj $localRepo -Name 'lastCommitDate' -Default '')
@@ -1761,6 +1778,23 @@ function Get-PortfolioIndexPayload {
         return $null
     }
 
+    # ConvertFrom-Json turns an ISO date token into a [datetime], and every
+    # downstream [string] coercion then renders it in the host's culture -
+    # '09/05/2026 12:00:00' reaches the wire with no timezone basis at all.
+    # Normalize on the one read path both the staleness verdict and the
+    # snapshot payload go through, so neither has to re-derive the basis.
+    if ($null -ne $payload.PSObject.Properties['generatedAt']) {
+        $payload.generatedAt = ConvertTo-PortfolioTimestamp $payload.generatedAt
+    }
+
+    foreach ($repo in @(_GetField -Obj $payload -Name 'repos' -Default @())) {
+        foreach ($field in @('createdAt', 'updatedAt', 'latestWorkflowRunTimestamp')) {
+            if ($null -ne $repo.PSObject.Properties[$field]) {
+                $repo.$field = ConvertTo-PortfolioTimestamp $repo.$field
+            }
+        }
+    }
+
     # Attached on read, in the one place every consumer already goes through,
     # so a surface cannot render index data without the staleness verdict
     # sitting on the same object it rendered from.
@@ -1804,12 +1838,12 @@ function Convert-PortfolioIndexReposToAssessments {
             sourceCoverage      = [string](_GetField -Obj $repo -Name 'sourceCoverage' -Default 'local')
             hasPages            = [bool](_GetField -Obj $repo -Name 'hasPages' -Default $false)
             pagesUrl            = _GetField -Obj $repo -Name 'pagesUrl' -Default $null
-            createdAt           = _GetField -Obj $repo -Name 'createdAt' -Default $null
-            updatedAt           = _GetField -Obj $repo -Name 'updatedAt' -Default $null
+            createdAt           = ConvertTo-PortfolioTimestamp (_GetField -Obj $repo -Name 'createdAt' -Default $null)
+            updatedAt           = ConvertTo-PortfolioTimestamp (_GetField -Obj $repo -Name 'updatedAt' -Default $null)
             latestWorkflowRunStatus = _GetField -Obj $repo -Name 'latestWorkflowRunStatus' -Default $null
             latestWorkflowRunConclusion = _GetField -Obj $repo -Name 'latestWorkflowRunConclusion' -Default $null
             latestWorkflowRunName = _GetField -Obj $repo -Name 'latestWorkflowRunName' -Default $null
-            latestWorkflowRunTimestamp = _GetField -Obj $repo -Name 'latestWorkflowRunTimestamp' -Default $null
+            latestWorkflowRunTimestamp = ConvertTo-PortfolioTimestamp (_GetField -Obj $repo -Name 'latestWorkflowRunTimestamp' -Default $null)
             openPrCount         = [int](_GetField -Obj $repo -Name 'openPrCount' -Default 0)
             pendingReviewPrCount = [int](_GetField -Obj $repo -Name 'pendingReviewPrCount' -Default 0)
             repoType            = [string](_GetField -Obj $repo -Name 'repoType' -Default 'other')

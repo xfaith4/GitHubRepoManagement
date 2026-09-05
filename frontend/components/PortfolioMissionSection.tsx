@@ -33,7 +33,7 @@ const METRIC_TOOLTIPS: Record<string, string> = {
   'Missing ROADMAP': 'Repos with no ROADMAP file.',
   'Weak ROADMAP': 'Repos whose ROADMAP is below the L3 contract-ready maturity bar.',
   'Failing Actions': 'Repos whose latest GitHub Actions run concluded in failure.',
-  'Blocked': 'Repos blocked from dispatch (missing docs/roadmap or a parse error).',
+  'Dispatch blocked': 'Repos blocked from dispatch (missing docs/roadmap or a parse error).',
   'Open PRs': 'Repos with at least one open pull request.',
   'Pages Enabled': 'Repos with GitHub Pages enabled.',
 };
@@ -148,7 +148,7 @@ const PortfolioMissionSection: React.FC<PortfolioMissionSectionProps> = ({
             { label: 'Weak ROADMAP', value: mission.weakRoadmap, accent: 'text-orange-300' },
             { label: 'Work-ready (L3+)', value: mission.ready, accent: 'text-emerald-300' },
             { label: 'Running', value: mission.running, accent: 'text-blue-300' },
-            { label: 'Blocked', value: mission.blocked, accent: 'text-red-300' },
+            { label: 'Dispatch blocked', value: mission.blocked, accent: 'text-red-300' },
             { label: 'Completed', value: mission.completed, accent: 'text-violet-300' },
             { label: 'Dirty Worktrees', value: mission.dirtyWorktrees, accent: 'text-yellow-300' },
             { label: 'Open PRs', value: mission.openPrs, accent: 'text-cyan-300' },
@@ -162,6 +162,7 @@ const PortfolioMissionSection: React.FC<PortfolioMissionSectionProps> = ({
             >
               <div className={`text-lg font-semibold ${metric.accent}`}>{metric.value}</div>
               <div className="mt-1 text-xs text-gray-400">{metric.label}</div>
+              {metric.label === 'Dispatch blocked' && <div className="text-xs text-gray-400">of {mission.totalRepos} assessed repositories</div>}
             </div>
           ))}
         </div>

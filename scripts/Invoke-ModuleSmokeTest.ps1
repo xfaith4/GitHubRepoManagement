@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     # Derived from this script's location rather than a hardcoded drive letter —
     # the previous 'G:\...' default no longer resolved on this machine, so the
@@ -31,6 +31,9 @@ $docStandards = Join-Path $WorkspaceRoot 'backend\config\doc-standards.json'
 $agentBudgetModule = Join-Path $WorkspaceRoot 'backend\modules\agent-runs\BudgetLedger.ps1'
 $portfolioConclusionModule = Join-Path $WorkspaceRoot 'backend\modules\portfolio\Portfolio.Conclusion.ps1'
 $foundationDomainsConfig = Join-Path $WorkspaceRoot 'backend\config\foundation-domains.json'
+
+Write-Step 'Portfolio timestamp truth: index projection and raw JSON gate'
+& (Join-Path $WorkspaceRoot 'tools/Test-PortfolioTimestamp.ps1') -WorkspaceRoot $WorkspaceRoot
 
 Write-Step 'Loading reconciliation module functions only'
 & $reconcile -LoadFunctionsOnly

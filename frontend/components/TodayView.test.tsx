@@ -293,3 +293,9 @@ describe('TodayView — readiness replaces the value score', () => {
     expect(screen.queryByText(/^value \d+$/)).not.toBeInTheDocument();
   });
 });
+
+it('shows the ranking basis as visible text without hovering', () => {
+  render(<TodayView entries={[entry('alpha')]} />);
+  expect(screen.getByTestId('today-rank-basis')).toBeVisible();
+  expect(screen.getByTestId('today-rank-basis')).toHaveTextContent('Rank basis:');
+});

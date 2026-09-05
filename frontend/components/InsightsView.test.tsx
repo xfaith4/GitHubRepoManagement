@@ -188,3 +188,9 @@ describe('InsightsView', () => {
     expect(screen.getByText(/metrics endpoint timed out/)).toBeInTheDocument();
   });
 });
+
+it('distinguishes ledger blockers from assessed repository blockers', () => {
+  renderEmptyInsights({ executionMetrics: { ...EMPTY_EXECUTION_METRICS, stateCounts: { idle: 2, ready: 3, running: 1, blocked: 4, complete: 5 } } });
+  expect(screen.getByText('Execution blocked')).toBeVisible();
+  expect(screen.getByText('of 15 ledger repositories')).toBeVisible();
+});
