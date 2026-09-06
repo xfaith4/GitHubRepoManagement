@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry, type DocAuditIndex, type RoadmapAuditIndex, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioTechInventoryResult, type PortfolioAssessmentEntry, type PortfolioAssessmentResult, type PortfolioTrendResult, type OperationsReposResult, type RepoCurationState } from '../types';
+import { type RepoStatus, type AppSettings, type OperationType, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type RoadmapEntry, type DocAuditIndex, type RoadmapAuditIndex, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioTechInventoryResult, type PortfolioAssessmentEntry, type PortfolioAssessmentResult, type PortfolioTrendResult, type OperationsReposResult, type RepoCurationState, type DispatchExecuteResult } from '../types';
 import ActionBar from './ActionBar';
 import { isCarriedOverCount } from '../lib/dataProvenance';
 import AutomationStatusBadge from './AutomationStatusBadge';
@@ -15,7 +15,7 @@ import InsightsView from './InsightsView';
 import DocReviewModal from './DocReviewModal';
 import RoadmapViewerModal from './RoadmapViewerModal';
 import WorkQueueView from './WorkQueueView';
-import CopilotTaskPreviewModal from './CopilotTaskPreviewModal';
+import CopilotTaskPreviewModal, { type LaneDispatchResult } from './CopilotTaskPreviewModal';
 import RoadmapAuditModal from './RoadmapAuditModal';
 import RoadmapRepairModal from './RoadmapRepairModal';
 import { ReadmeStandardizationModal } from './ReadmeStandardizationModal';
@@ -36,7 +36,7 @@ import ErrorBoundary from './ErrorBoundary';
 import PortfolioSummarySection from './PortfolioSummarySection';
 import { type ViewTabBadges } from '../lib/viewTabs';
 import { useAsyncPanel, withPanelTimeout } from '../lib/asyncPanel';
-import { getPortfolioSnapshot, assignExecutionLane } from '../services/apiClient';
+import { getPortfolioSnapshot, assignExecutionLane, executeRoadmapDispatch } from '../services/apiClient';
 import ScanProgressChip from './ScanProgressChip';
 import TechInventoryPanel from './TechInventoryPanel';
 import type { PortfolioSnapshot } from '../types';
@@ -108,6 +108,9 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   const [isCopilotTaskPreviewOpen, setIsCopilotTaskPreviewOpen] = useState(false);
   const [copilotTaskPreviewRepo, setCopilotTaskPreviewRepo] = useState<string | null>(null);
   const [copilotTaskPreviewRoadmapPath, setCopilotTaskPreviewRoadmapPath] = useState<string | undefined>(undefined);
+  // Lane 0.17 — carried from the ledger so a real dispatch does not depend on
+  // a warm roadmap cache to find the repo on disk.
+  const [copilotTaskPreviewRepoPath, setCopilotTaskPreviewRepoPath] = useState<string | undefined>(undefined);
   // Lane 0.17 — bumped after a successful dispatch from the preview modal so
   // the Dispatch Board reloads its ledger instead of showing stale lanes.
   const [executionQueueRefreshToken, setExecutionQueueRefreshToken] = useState(0);
@@ -1013,21 +1016,64 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
       });
   };
 
-  const handlePreviewCopilotTask = (repoName: string, roadmapPath?: string) => {
+  const handlePreviewCopilotTask = (repoName: string, roadmapPath?: string, repoPath?: string) => {
     setCopilotTaskPreviewRepo(repoName);
     setCopilotTaskPreviewRoadmapPath(roadmapPath);
+    setCopilotTaskPreviewRepoPath(repoPath);
     setIsCopilotTaskPreviewOpen(true);
   };
 
-  // Lane 0.17 — the preview modal's dispatch action: assign the repo to a
-  // lane, and on success tell the Dispatch Board to reload its ledger. The
-  // backend stays the authority on refusals (lanes full, not dispatchable).
-  const handleDispatchToLane = async (repoName: string) => {
-    const result = await assignExecutionLane(repoName);
-    if (result.success) {
-      setExecutionQueueRefreshToken(t => t + 1);
+  // Lane 0.17 — the preview modal's dispatch action, in the order that makes
+  // the lane checkable afterwards:
+  //
+  //   1. really queue the previewed prompt for the operator runner, and
+  //   2. bind the run id it returns to a lane.
+  //
+  // The order matters and is not reversible. Occupying the lane first would
+  // reintroduce exactly the defect this closes — a lane holding an id that
+  // resolves to nothing — every time step 2 failed.
+  //
+  // A dispatch that succeeds and a lane that refuses is NOT a failed dispatch:
+  // the work is queued and an agent will pick it up. Reporting failure there
+  // would tell the operator nothing happened while a run was already moving,
+  // so it reports success and names the lane problem.
+  const handleDispatchToLane = async (
+    repoName: string,
+    options: { prompt: string; acknowledgeNoRunner?: boolean }
+  ): Promise<LaneDispatchResult> => {
+    let dispatch: DispatchExecuteResult;
+    try {
+      dispatch = await executeRoadmapDispatch(repoName, options.prompt, {
+        localPath: copilotTaskPreviewRepoPath,
+        acknowledgeNoRunner: options.acknowledgeNoRunner,
+      });
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
-    return result;
+
+    const runId = typeof dispatch?.runId === 'string' ? dispatch.runId : '';
+    const agentRunId = typeof dispatch?.agentRunId === 'string' ? dispatch.agentRunId : undefined;
+    const quotaWarning = dispatch?.quota?.warning ?? null;
+
+    const assign = await assignExecutionLane(repoName, {
+      runId: runId || undefined,
+      dispatchRunId: runId || undefined,
+      agentRunId,
+      dispatchSource: 'release-dispatch',
+    });
+    setExecutionQueueRefreshToken(t => t + 1);
+
+    return {
+      success: true,
+      runId: runId || null,
+      agentRunId: agentRunId ?? null,
+      queuedWithoutRunner: dispatch?.queuedWithoutRunner === true,
+      message: dispatch?.message ?? null,
+      quotaWarning,
+      laneWarning: assign.success
+        ? null
+        : `Queued, but no lane was occupied: ${assign.error ?? 'the board refused the assignment'}. The run is still moving — track it in Agent Runs.`,
+    };
   };
 
   const handleViewRoadmapAudit = (repoName: string) => {
@@ -1862,6 +1908,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
           onClose={() => {
             setIsCopilotTaskPreviewOpen(false);
             setCopilotTaskPreviewRoadmapPath(undefined);
+            setCopilotTaskPreviewRepoPath(undefined);
           }}
         />
       </ErrorBoundary>

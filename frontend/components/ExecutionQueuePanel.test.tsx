@@ -14,7 +14,7 @@ import '@testing-library/jest-dom/vitest';
 import React from 'react';
 import ExecutionQueuePanel from './ExecutionQueuePanel';
 import * as apiClient from '../services/apiClient';
-import type { ExecutionQueueSummary, ExecutionLaneEntry, ExecutionState } from '../types';
+import type { ExecutionQueueSummary, ExecutionLaneEntry, ExecutionLaneObservation, ExecutionState } from '../types';
 
 vi.mock('../services/apiClient', () => ({
   getExecutionQueue: vi.fn(),
@@ -26,6 +26,7 @@ vi.mock('../services/apiClient', () => ({
 }));
 
 const mockedGetQueue = vi.mocked(apiClient.getExecutionQueue);
+const mockedComplete = vi.mocked(apiClient.completeExecutionTask);
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
@@ -42,7 +43,7 @@ function entry(repoName: string, executionState: ExecutionState, priorityScore: 
 
 function summary(over: Partial<ExecutionQueueSummary> = {}): ExecutionQueueSummary {
   const entries = [
-    entry('ready-one', 'ready', 200, { roadmapPath: 'F:\\repos\\ready-one\\ROADMAP.md', currentTaskText: 'Ship the widget' }),
+    entry('ready-one', 'ready', 200, { roadmapPath: 'F:\\repos\\ready-one\\ROADMAP.md', repoPath: 'F:\\repos\\ready-one', currentTaskText: 'Ship the widget' }),
     entry('ready-two', 'ready', 184),
     entry('ready-three', 'ready', 150),
     entry('ready-four', 'ready', 120),
@@ -110,7 +111,7 @@ describe('ExecutionQueuePanel — the Dispatch Board', () => {
     expect(screen.getByText('idle-repo')).toBeInTheDocument();
   });
 
-  it('Dispatch passes the repo name AND the ledger roadmap path to the preview', async () => {
+  it('Dispatch passes the repo name AND the ledger roadmap and repo paths to the preview', async () => {
     mockedGetQueue.mockResolvedValue(summary());
     const onDispatch = vi.fn();
     render(<ExecutionQueuePanel onDispatchPreviewTask={onDispatch} />);
@@ -118,7 +119,9 @@ describe('ExecutionQueuePanel — the Dispatch Board', () => {
 
     const row = screen.getByText('ready-one').closest('div[class*="rounded-lg"]') as HTMLElement;
     fireEvent.click(within(row).getByRole('button', { name: 'Dispatch' }));
-    expect(onDispatch).toHaveBeenCalledWith('ready-one', 'F:\\repos\\ready-one\\ROADMAP.md');
+    // Lane 0.17 — repoPath travels too, so a real dispatch can locate the repo
+    // on disk without depending on a warm roadmap cache.
+    expect(onDispatch).toHaveBeenCalledWith('ready-one', 'F:\\repos\\ready-one\\ROADMAP.md', 'F:\\repos\\ready-one');
   });
 
   it('a ledger entry without a roadmap path dispatches with undefined, never an empty string', async () => {
@@ -129,7 +132,7 @@ describe('ExecutionQueuePanel — the Dispatch Board', () => {
 
     const row = screen.getByText('ready-two').closest('div[class*="rounded-lg"]') as HTMLElement;
     fireEvent.click(within(row).getByRole('button', { name: 'Dispatch' }));
-    expect(onDispatch).toHaveBeenCalledWith('ready-two', undefined);
+    expect(onDispatch).toHaveBeenCalledWith('ready-two', undefined, undefined);
   });
 
   it('the lanes strip stays pinned above the queue — empty lanes say how to fill them', async () => {
@@ -140,6 +143,121 @@ describe('ExecutionQueuePanel — the Dispatch Board', () => {
     const emptyLanes = screen.getAllByTestId('execution-lane-empty');
     expect(emptyLanes).toHaveLength(2);
     expect(emptyLanes[0]).toHaveTextContent(/queue below/i);
+  });
+
+  // ---------------------------------------------------------------------
+  // Lane 0.17 — observed run state on the lane card.
+  //
+  // These pin the difference the release exists to create: before it, every
+  // one of these lanes rendered identically as "Running", because the only
+  // fact the card had was that nobody had clicked Complete yet.
+  // ---------------------------------------------------------------------
+  function runningLane(over: Partial<ExecutionLaneObservation> = {}): ExecutionLaneEntry {
+    return entry('lane-repo', 'running', 200, {
+      laneSlot: 1,
+      assignedAt: '2026-08-30T11:00:00Z',
+      currentTaskText: 'Ship the widget',
+      dispatchRunId: 'dispatch-abc',
+      observation: {
+        linked: true,
+        dispatchRunId: 'dispatch-abc',
+        verdict: 'working',
+        verdictLabel: 'Working',
+        verdictDetail: 'The agent is working on draft PR #18.',
+        stalled: false,
+        suggestedAction: 'wait',
+        sources: ['run-summary', 'agent-run'],
+        lastObservedAt: '2026-08-30T11:55:00Z',
+        ...over,
+      },
+    });
+  }
+
+  function laneSummary(laneEntry: ExecutionLaneEntry) {
+    const base = summary();
+    return {
+      ...base,
+      activeLaneCount: 1,
+      lanes: { lane1: laneEntry, lane2: null },
+      entries: [laneEntry, ...base.entries],
+    };
+  }
+
+  it('a working lane reports the run, its PR and when it was last observed', async () => {
+    mockedGetQueue.mockResolvedValue(laneSummary(runningLane({
+      pr: { number: 18, url: 'https://github.com/x/y/pull/18', state: 'open', draft: true },
+      actions: { status: 'completed', conclusion: 'success' },
+    })));
+    render(<ExecutionQueuePanel />);
+    await screen.findByText('lane-repo');
+
+    const observed = screen.getByTestId('lane-observation');
+    expect(within(observed).getByTestId('lane-observation-verdict')).toHaveTextContent('Working');
+    expect(within(observed).getByRole('link', { name: /PR #18 \(draft\)/ })).toHaveAttribute(
+      'href',
+      'https://github.com/x/y/pull/18'
+    );
+    expect(observed).toHaveTextContent('Checks: success');
+    expect(observed).toHaveTextContent('Run dispatch-abc');
+    expect(observed).toHaveTextContent(/last observed/);
+  });
+
+  it('a stalled lane says Stuck — the question the board exists to answer', async () => {
+    mockedGetQueue.mockResolvedValue(laneSummary(runningLane({
+      stalled: true,
+      verdictLabel: 'Stuck',
+      verdictDetail: 'Queued — no runner has claimed this task yet. Nothing has moved for 3 hours.',
+      verdict: 'queued',
+      stalledAfterMinutes: 15,
+    })));
+    render(<ExecutionQueuePanel />);
+    await screen.findByText('lane-repo');
+
+    expect(screen.getByTestId('lane-observation-verdict')).toHaveTextContent('Stuck');
+    expect(screen.getByTestId('lane-observation')).toHaveTextContent(/Nothing has moved for 3 hours/);
+  });
+
+  it('a hand-occupied lane admits it is bookkeeping instead of borrowing a run it does not have', async () => {
+    mockedGetQueue.mockResolvedValue(laneSummary(entry('lane-repo', 'running', 200, {
+      laneSlot: 1,
+      assignedAt: '2026-08-30T11:00:00Z',
+      observation: {
+        linked: false,
+        verdict: 'unlinked',
+        verdictLabel: 'Bookkeeping',
+        verdictDetail: 'No agent run is linked to this lane — it was occupied by hand 42 minutes ago.',
+        stalled: false,
+        suggestedAction: 'none',
+        sources: [],
+      },
+    })));
+    render(<ExecutionQueuePanel />);
+    await screen.findByText('lane-repo');
+
+    const observed = screen.getByTestId('lane-observation');
+    expect(observed).toHaveTextContent('Bookkeeping');
+    expect(observed).toHaveTextContent(/occupied by hand/);
+    // No run id line: there is no run, and inventing provenance is the defect.
+    expect(observed).not.toHaveTextContent(/^Run /m);
+    expect(observed).not.toHaveTextContent(/last observed/);
+  });
+
+  it('a merged run points at Complete without pressing it', async () => {
+    mockedGetQueue.mockResolvedValue(laneSummary(runningLane({
+      verdict: 'finished',
+      verdictLabel: 'Merged',
+      verdictDetail: 'PR #18 is merged.',
+      suggestedAction: 'complete',
+      pr: { number: 18, url: 'https://github.com/x/y/pull/18', state: 'merged', draft: false },
+    })));
+    render(<ExecutionQueuePanel />);
+    await screen.findByText('lane-repo');
+
+    expect(screen.getByText('Merged — completing frees the lane.')).toBeInTheDocument();
+    // The lane is still occupied: the verdict informs the operator, it does
+    // not close the lane for them.
+    expect(screen.getByRole('button', { name: 'Complete' })).toBeEnabled();
+    expect(mockedComplete).not.toHaveBeenCalled();
   });
 
   it('blocked rows offer Requeue, not Dispatch', async () => {

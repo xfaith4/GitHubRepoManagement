@@ -672,6 +672,39 @@ export type ExecutionState =
   | 'blocked'
   | 'complete';
 
+/**
+ * Lane 0.17 — what the run ledgers actually say about an occupied lane.
+ *
+ * Derived on read from the dispatch run summary and the agent-run record the
+ * lane's `dispatchRunId` resolves to; never stored. `verdict` says where the
+ * work is, `stalled` says whether it is stuck there — two questions one field
+ * cannot answer, because a PR awaiting review for an hour is fine and a task
+ * unclaimed for an hour is not.
+ */
+export interface ExecutionLaneObservation {
+  /** False when nothing resolved: the lane is bookkeeping, and says so. */
+  linked: boolean;
+  dispatchRunId?: string | null;
+  agentRunId?: string | null;
+  runStatus?: string | null;
+  outcome?: string | null;
+  branch?: string | null;
+  pr?: { number?: number | null; url: string; state: string; draft: boolean } | null;
+  actions?: { status: string; conclusion?: string | null; workflowName?: string; runUrl?: string | null } | null;
+  lastObservedAt?: string | null;
+  observedAgeMinutes?: number | null;
+  laneAgeMinutes?: number | null;
+  verdict: 'unlinked' | 'queued' | 'working' | 'awaiting-review' | 'finished' | 'failed';
+  verdictLabel: string;
+  verdictDetail: string;
+  stalled: boolean;
+  stalledAfterMinutes?: number | null;
+  /** What the observed state warrants — never applied automatically. */
+  suggestedAction: 'none' | 'wait' | 'complete' | 'cancel';
+  /** Which artifacts contributed, so a claim can be traced to its source. */
+  sources: string[];
+}
+
 export interface ExecutionLaneEntry {
   repoName: string;
   repoPath?: string;
@@ -680,6 +713,11 @@ export interface ExecutionLaneEntry {
   currentTaskText?: string;
   currentTaskSection?: string;
   currentRunId?: string | null;
+  /** Lane 0.17 — the join key to the run ledgers; null when hand-occupied. */
+  dispatchRunId?: string | null;
+  agentRunId?: string | null;
+  dispatchSource?: 'operator' | 'release-dispatch' | null;
+  observation?: ExecutionLaneObservation | null;
   laneSlot?: number | null;
   priorityScore: number;
   assignedAt?: string | null;
