@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { withPanelTimeout } from '../lib/asyncPanel';
-import { type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type ExecutionState } from '../types';
+import { type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionLaneObservation, type ExecutionHistoryRecord, type ExecutionState } from '../types';
 import { SpinnerIcon } from './icons';
 import { getExecutionQueue, syncExecutionQueue, assignExecutionLane, completeExecutionTask, cancelExecutionTask, requeueExecution } from '../services/apiClient';
 
@@ -44,6 +44,76 @@ function StateBadge({ state }: { state: ExecutionState }) {
       <span className={`inline-block w-1.5 h-1.5 rounded-full ${cfg.dotClass}`} />
       {cfg.label}
     </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Observed run state — Lane 0.17
+//
+// 'Running' by itself only ever meant "an operator clicked Dispatch and has
+// not clicked Complete". These are the verdicts the run ledgers support, and
+// `unlinked` is deliberately one of them: a lane with no run behind it says so
+// rather than borrowing the look of one that has.
+// ---------------------------------------------------------------------------
+const VERDICT_CONFIG: Record<
+  ExecutionLaneObservation['verdict'],
+  { badgeClass: string; dotClass: string }
+> = {
+  unlinked: { badgeClass: 'bg-gray-800 text-gray-400 border-gray-600', dotClass: 'bg-gray-500' },
+  queued: { badgeClass: 'bg-slate-800 text-slate-300 border-slate-600', dotClass: 'bg-slate-400' },
+  working: { badgeClass: 'bg-blue-900/40 text-blue-300 border-blue-700/40', dotClass: 'bg-blue-400 animate-pulse' },
+  'awaiting-review': { badgeClass: 'bg-amber-900/40 text-amber-200 border-amber-700/40', dotClass: 'bg-amber-400' },
+  finished: { badgeClass: 'bg-green-900/40 text-green-300 border-green-700/40', dotClass: 'bg-green-400' },
+  failed: { badgeClass: 'bg-red-900/40 text-red-300 border-red-700/40', dotClass: 'bg-red-400' },
+};
+
+const STUCK_BADGE = 'bg-red-900/50 text-red-200 border-red-600/60';
+
+function ObservedRunState({ observation }: { observation: ExecutionLaneObservation }) {
+  const cfg = VERDICT_CONFIG[observation.verdict] ?? VERDICT_CONFIG.unlinked;
+  const badgeClass = observation.stalled ? STUCK_BADGE : cfg.badgeClass;
+
+  return (
+    <div className="mt-2 pt-2 border-t border-blue-800/40" data-testid="lane-observation">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span
+          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-xs font-medium ${badgeClass}`}
+          data-testid="lane-observation-verdict"
+        >
+          <span className={`inline-block w-1.5 h-1.5 rounded-full ${observation.stalled ? 'bg-red-400' : cfg.dotClass}`} />
+          {observation.verdictLabel}
+        </span>
+        {observation.pr?.url && (
+          <a
+            href={observation.pr.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-blue-300 hover:text-blue-200 underline decoration-dotted"
+          >
+            {observation.pr.number ? `PR #${observation.pr.number}` : 'Pull request'}
+            {observation.pr.draft ? ' (draft)' : ''}
+          </a>
+        )}
+        {observation.actions?.conclusion && (
+          <span className="text-sm text-gray-400">
+            Checks: {observation.actions.conclusion}
+          </span>
+        )}
+      </div>
+
+      <div className="text-sm text-gray-300 mt-1.5 leading-relaxed">{observation.verdictDetail}</div>
+
+      {/* Provenance. A claim about someone else's repo is worth exactly as
+          much as the artifact behind it, so the artifact is named. */}
+      {observation.linked && observation.dispatchRunId && (
+        <div className="text-sm text-gray-500 mt-1">
+          Run {observation.dispatchRunId}
+          {observation.lastObservedAt
+            ? ` · last observed ${new Date(observation.lastObservedAt).toLocaleString()}`
+            : ' · never observed since dispatch'}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -105,23 +175,43 @@ function LaneCard({
         </div>
       )}
 
-      <div className="flex gap-1.5 mt-3">
+      {entry.observation && <ObservedRunState observation={entry.observation} />}
+
+      {/* The verdict informs the buttons; it never presses them. Lane closure
+          stays the operator's call — an observed merge is strong evidence the
+          work is done, and a run that failed silently still needs a human to
+          decide whether to retry or drop it. */}
+      <div className="flex gap-1.5 mt-3 items-center flex-wrap">
         <button
           onClick={() => onComplete(entry.repoName)}
           disabled={isBusy}
-          className="text-xs px-2 py-1 rounded border border-green-700/50 bg-green-900/30 text-green-300 hover:bg-green-800/50 disabled:opacity-40 transition-colors"
-          title="Mark task complete"
+          className={`text-xs px-2 py-1 rounded border disabled:opacity-40 transition-colors ${
+            entry.observation?.suggestedAction === 'complete'
+              ? 'border-green-500 bg-green-800/60 text-green-100'
+              : 'border-green-700/50 bg-green-900/30 text-green-300 hover:bg-green-800/50'
+          }`}
+          title="Free the lane and return this repo to the queue"
         >
           Complete
         </button>
         <button
           onClick={() => onCancel(entry.repoName)}
           disabled={isBusy}
-          className="text-xs px-2 py-1 rounded border border-red-700/50 bg-red-900/30 text-red-300 hover:bg-red-800/50 disabled:opacity-40 transition-colors"
+          className={`text-xs px-2 py-1 rounded border disabled:opacity-40 transition-colors ${
+            entry.observation?.suggestedAction === 'cancel'
+              ? 'border-red-500 bg-red-800/60 text-red-100'
+              : 'border-red-700/50 bg-red-900/30 text-red-300 hover:bg-red-800/50'
+          }`}
           title="Cancel / fail task"
         >
           Cancel
         </button>
+        {entry.observation?.suggestedAction === 'complete' && (
+          <span className="text-sm text-green-300">Merged — completing frees the lane.</span>
+        )}
+        {entry.observation?.suggestedAction === 'cancel' && (
+          <span className="text-sm text-red-300">This run ended without a merge.</span>
+        )}
       </div>
     </div>
   );
@@ -283,7 +373,7 @@ function HistoryRow({ item }: { item: ExecutionHistoryRecord }) {
 // tiles; History is the only remaining tab.
 // ---------------------------------------------------------------------------
 interface ExecutionQueuePanelProps {
-  onDispatchPreviewTask?: (repoName: string, roadmapPath?: string) => void;
+  onDispatchPreviewTask?: (repoName: string, roadmapPath?: string, repoPath?: string) => void;
   /** Bump to reload the queue after an external action (e.g. a dispatch from the preview modal). */
   refreshToken?: number;
 }
@@ -399,7 +489,7 @@ const ExecutionQueuePanel: React.FC<ExecutionQueuePanelProps> = ({ onDispatchPre
     if (onDispatchPreviewTask) {
       // Lane 0.17 — carry the ledger's known roadmap path into the preview so
       // the packet build never depends on a warm roadmap cache.
-      onDispatchPreviewTask(entry.repoName, entry.roadmapPath || undefined);
+      onDispatchPreviewTask(entry.repoName, entry.roadmapPath || undefined, entry.repoPath || undefined);
     } else {
       void handleAssign(entry.repoName);
     }

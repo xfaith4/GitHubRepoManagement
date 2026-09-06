@@ -80,6 +80,7 @@ $executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 . (Join-Path $docAuditModuleRoot 'DocAudit.Scanner.ps1')
 . (Join-Path $docAuditModuleRoot 'RepositoryImprovement.Workflow.ps1')
 . (Join-Path $executionModuleRoot 'Execution.Ledger.ps1')
+. (Join-Path $executionModuleRoot 'Execution.LaneObservation.ps1')
 . (Join-Path $WorkspaceRoot 'backend\modules\auth\GitHubApp.ps1')
 . (Join-Path $WorkspaceRoot 'backend\modules\auth\SessionAuth.ps1')
 $docStdModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\docstandardization'
@@ -12516,13 +12517,22 @@ try {
                         $runId = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'runId' -Default '')
                         $taskText = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'taskText' -Default '')
                         $taskSection = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'taskSection' -Default '')
+                        # Lane 0.17 — the ids that make this lane checkable
+                        # against the run ledgers. Absent means the operator
+                        # occupied the lane by hand, which the board reports as
+                        # bookkeeping rather than dressing up as a run.
+                        $dispatchRunId = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'dispatchRunId' -Default '')
+                        $agentRunId = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'agentRunId' -Default '')
+                        $dispatchSource = [string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'dispatchSource' -Default 'operator')
+                        if ($dispatchSource -notin @('operator', 'release-dispatch')) { $dispatchSource = 'operator' }
 
-                        $result = Invoke-AssignLane -WorkspaceRoot $WorkspaceRoot -RepoName $repoName -RunId $runId -TaskText $taskText -TaskSection $taskSection
+                        $result = Invoke-AssignLane -WorkspaceRoot $WorkspaceRoot -RepoName $repoName -RunId $runId -TaskText $taskText -TaskSection $taskSection `
+                            -DispatchRunId $dispatchRunId -AgentRunId $agentRunId -DispatchSource $dispatchSource
                         $statusCode = if ($result.success) { 200 } else { 409 }
                         Add-MetricCounter -Name 'api_requests_total'
                         Send-HttpJson -Stream $req.Stream -StatusCode $statusCode -CorrelationId $correlationId -Payload @{
                             success = $result.success
-                            data    = if ($result.success) { @{ laneSlot = $result.laneSlot; runId = $result.runId; entry = $result.entry } } else { $null }
+                            data    = if ($result.success) { @{ laneSlot = $result.laneSlot; runId = $result.runId; dispatchRunId = $result.dispatchRunId; agentRunId = $result.agentRunId; dispatchSource = $result.dispatchSource; entry = $result.entry } } else { $null }
                             error   = if (-not $result.success) { @{ message = $result.error } } else { $null }
                         }
                     } catch {

@@ -18,12 +18,19 @@ import type { CopilotTaskPacket } from '../types';
 vi.mock('../services/apiClient', () => ({
   previewCopilotTaskPacket: vi.fn(),
   getCopilotTaskHistory: vi.fn(),
+  getRunnerPresence: vi.fn(),
 }));
 
 const mockedPreview = vi.mocked(apiClient.previewCopilotTaskPacket);
 const mockedHistory = vi.mocked(apiClient.getCopilotTaskHistory);
+const mockedRunner = vi.mocked(apiClient.getRunnerPresence);
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
+
+/** A runner reporting in — the ordinary case, where Dispatch is offered plain. */
+function runnerPresent() {
+  return { state: 'present', present: true, hostname: 'BENCH', user: 'ben' };
+}
 
 function packet(): CopilotTaskPacket {
   return {
@@ -45,29 +52,98 @@ function packet(): CopilotTaskPacket {
 }
 
 describe('CopilotTaskPreviewModal — dispatch action and honest error hints', () => {
-  it('offers "Dispatch to Lane" when a dispatch callback is provided and the packet loads', async () => {
+  it('dispatches the prompt the operator just read, and names the run it became', async () => {
+    // Lane 0.17 — the prompt travels with the call. Rebuilding it behind the
+    // operator would mean the packet they reviewed is not the one dispatched.
     mockedPreview.mockResolvedValue(packet());
     mockedHistory.mockResolvedValue([]);
-    const onDispatch = vi.fn().mockResolvedValue({ success: true });
+    mockedRunner.mockResolvedValue(runnerPresent());
+    const onDispatch = vi.fn().mockResolvedValue({ success: true, runId: 'dispatch-abc' });
 
     render(<CopilotTaskPreviewModal isOpen repoName="fixture-repo" onClose={vi.fn()} onDispatch={onDispatch} />);
 
-    const button = await screen.findByRole('button', { name: /Dispatch to Lane/ });
+    const button = await screen.findByRole('button', { name: /^Dispatch$/ });
     fireEvent.click(button);
-    await waitFor(() => expect(onDispatch).toHaveBeenCalledWith('fixture-repo'));
-    expect(await screen.findByText(/Dispatched to a lane/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(onDispatch).toHaveBeenCalledWith('fixture-repo', {
+        prompt: 'Do the thing.',
+        acknowledgeNoRunner: undefined,
+      })
+    );
+    expect(await screen.findByText(/Queued as run dispatch-abc/)).toBeInTheDocument();
     // The action is done — it must not be offered twice.
-    expect(screen.queryByRole('button', { name: /Dispatch to Lane/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Dispatch$/ })).not.toBeInTheDocument();
+  });
+
+  it('says the board cannot observe a dispatch that came back without a run id', async () => {
+    // A success with no run id is a real outcome, not a formality: the work is
+    // queued and the lane still cannot be joined to it. Claiming a clean
+    // dispatch there would rebuild the blind spot this release removes.
+    mockedPreview.mockResolvedValue(packet());
+    mockedHistory.mockResolvedValue([]);
+    mockedRunner.mockResolvedValue(runnerPresent());
+    const onDispatch = vi.fn().mockResolvedValue({ success: true, runId: null });
+
+    render(<CopilotTaskPreviewModal isOpen repoName="fixture-repo" onClose={vi.fn()} onDispatch={onDispatch} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Dispatch$/ }));
+    expect(await screen.findByText(/no run id came back/)).toBeInTheDocument();
+    expect(screen.getByText(/cannot observe this one/)).toBeInTheDocument();
+  });
+
+  it('refuses to queue into an empty room, and offers the override that names the cost', async () => {
+    mockedPreview.mockResolvedValue(packet());
+    mockedHistory.mockResolvedValue([]);
+    mockedRunner.mockResolvedValue({ state: 'absent', present: false, strandedCount: 3 });
+    const onDispatch = vi.fn().mockResolvedValue({ success: true, runId: 'r1', queuedWithoutRunner: true });
+
+    render(<CopilotTaskPreviewModal isOpen repoName="fixture-repo" onClose={vi.fn()} onDispatch={onDispatch} />);
+
+    // The plain Dispatch button is gone; only the deliberate override remains.
+    await waitFor(() => expect(screen.getByTestId('preview-dispatch-gate')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /^Dispatch$/ })).not.toBeInTheDocument();
+    expect(screen.getByTestId('preview-dispatch-gate')).toHaveTextContent('3 tasks already queued');
+
+    fireEvent.click(screen.getByRole('button', { name: /Queue anyway/ }));
+    await waitFor(() =>
+      expect(onDispatch).toHaveBeenCalledWith('fixture-repo', {
+        prompt: 'Do the thing.',
+        acknowledgeNoRunner: true,
+      })
+    );
+    expect(await screen.findByText(/stays queued until you start one/)).toBeInTheDocument();
+  });
+
+  it('a queued run whose lane refused still reports success — the work is moving either way', async () => {
+    // Reporting failure here would tell the operator nothing happened while an
+    // agent was already working. The dispatch and the lane are two outcomes.
+    mockedPreview.mockResolvedValue(packet());
+    mockedHistory.mockResolvedValue([]);
+    mockedRunner.mockResolvedValue(runnerPresent());
+    const onDispatch = vi.fn().mockResolvedValue({
+      success: true,
+      runId: 'dispatch-xyz',
+      laneWarning: 'Queued, but no lane was occupied: Both execution lanes are occupied.',
+    });
+
+    render(<CopilotTaskPreviewModal isOpen repoName="fixture-repo" onClose={vi.fn()} onDispatch={onDispatch} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Dispatch$/ }));
+    expect(await screen.findByText(/Queued as run dispatch-xyz/)).toBeInTheDocument();
+    expect(screen.getByText(/Both execution lanes are occupied/)).toBeInTheDocument();
+    // Not an error: no alert role, because nothing failed.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('renders the backend refusal inline when dispatch fails', async () => {
     mockedPreview.mockResolvedValue(packet());
     mockedHistory.mockResolvedValue([]);
+    mockedRunner.mockResolvedValue(runnerPresent());
     const onDispatch = vi.fn().mockResolvedValue({ success: false, error: 'Both lane slots are occupied' });
 
     render(<CopilotTaskPreviewModal isOpen repoName="fixture-repo" onClose={vi.fn()} onDispatch={onDispatch} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /Dispatch to Lane/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Dispatch$/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Both lane slots are occupied');
   });
 
@@ -78,7 +154,11 @@ describe('CopilotTaskPreviewModal — dispatch action and honest error hints', (
     render(<CopilotTaskPreviewModal isOpen repoName="fixture-repo" onClose={vi.fn()} />);
 
     await screen.findByText('Ship the widget');
-    expect(screen.queryByRole('button', { name: /Dispatch to Lane/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Dispatch$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Queue anyway/ })).not.toBeInTheDocument();
+    // A preview-only caller must not even read runner presence: nothing here
+    // can queue work, so there is no gate to evaluate.
+    expect(mockedRunner).not.toHaveBeenCalled();
   });
 
   it('shows the roadmap-scan hint only for roadmap errors', async () => {

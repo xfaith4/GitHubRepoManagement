@@ -1966,6 +1966,16 @@ if (-not (Test-Path -LiteralPath $smokeWs)) {
     $null = New-Item -ItemType Directory -Path $smokeWs -Force
 }
 $null = New-Item -ItemType Directory -Path (Join-Path $smokeWs 'output\execution') -Force -ErrorAction SilentlyContinue
+
+# Start from a known ledger. Sync-LedgerFromAudit preserves `running` entries
+# by design, so a lane left occupied by a PREVIOUS run — any run that failed
+# part-way and never reached its cleanup — survives into this one and fails
+# the ready-count assertion below, pointing at a defect that is not there.
+# The fixture is disposable; the state carried between runs is the bug.
+$smokeLedgerFile = Join-Path $smokeWs 'output\execution\execution-ledger.json'
+if (Test-Path -LiteralPath $smokeLedgerFile) {
+    Remove-Item -LiteralPath $smokeLedgerFile -Force
+}
 $smokeDocEntries = @(
     [PSCustomObject]@{
         repoName = 'smoke-repo-ready'; repoPath = $smokeWs; dispatchReadiness = 'ready'
@@ -2045,6 +2055,173 @@ if ($null -eq $summary.lanes)       { throw 'Expected summary.lanes to be presen
 if ($null -eq $summary.rankedQueue) { throw 'Expected summary.rankedQueue to be present' }
 if ($null -eq $summary.stateCounts) { throw 'Expected summary.stateCounts to be present' }
 Write-Host ("  queue summary: total={0} activeLanes={1} rankedQueue={2}" -f $summary.totalRepos, $summary.activeLaneCount, @($summary.rankedQueue).Count) -ForegroundColor DarkGray
+
+# ---------------------------------------------------------------------------
+# Lane 0.17 — observed lane state.
+#
+# What this pins: 'running' used to mean only "an operator clicked Dispatch and
+# has not clicked Complete", so every lane rendered identically whether its
+# agent was three minutes into a draft PR or had died an hour earlier. These
+# assertions prove the lane now resolves to the run ledgers, that a lane with
+# nothing behind it says so, and that a finished run does not follow the repo
+# into its next lane.
+# ---------------------------------------------------------------------------
+Write-Step 'Loading lane observation module (Lane 0.17)'
+$laneObsPath = Join-Path $WorkspaceRoot 'backend\modules\execution\Execution.LaneObservation.ps1'
+if (-not (Test-Path -LiteralPath $laneObsPath)) { throw "Execution.LaneObservation.ps1 not found at: $laneObsPath" }
+. $laneObsPath
+Write-Host 'Lane observation module loaded successfully' -ForegroundColor Green
+
+Write-Step 'Lane observation — smoke: the decision table, offline'
+$obsNow = [datetime]::Parse('2026-09-06T12:00:00Z').ToUniversalTime()
+
+# A lane occupied by hand resolves to nothing, and says so rather than
+# rendering the empty shape of a run that does not exist.
+$handLane = [ordered]@{
+    repoName = 'smoke-hand'; executionState = 'running'; laneSlot = 1
+    currentRunId = 'local-guid'; dispatchRunId = ''; agentRunId = ''
+    assignedAt = $obsNow.AddMinutes(-42).ToString('o')
+}
+$obsHand = Resolve-LaneObservation -Entry $handLane -NowUtc $obsNow
+if ($obsHand.verdict -ne 'unlinked') { throw "Expected verdict=unlinked for a hand-occupied lane, got '$($obsHand.verdict)'" }
+if ($obsHand.linked) { throw 'Expected linked=$false for a hand-occupied lane' }
+if ($obsHand.laneAgeMinutes -ne 42) { throw "Expected laneAgeMinutes=42, got $($obsHand.laneAgeMinutes)" }
+if ($obsHand.verdictDetail -notmatch '42 minutes') { throw "Expected the unlinked detail to name the lane age, got: $($obsHand.verdictDetail)" }
+
+# Queued past the runner's patience is the 'is it stuck?' answer the board
+# exists to give — and the threshold that produced it ships with the verdict.
+$queuedLane = [ordered]@{ repoName = 'smoke-queued'; executionState = 'running'; dispatchRunId = 'run-q'; assignedAt = $obsNow.AddMinutes(-40).ToString('o') }
+$obsQueued = Resolve-LaneObservation -Entry $queuedLane -RunSummary ([pscustomobject]@{ status = 'queued'; startedAt = $obsNow.AddMinutes(-40).ToString('o') }) -NowUtc $obsNow
+if ($obsQueued.verdict -ne 'queued') { throw "Expected verdict=queued, got '$($obsQueued.verdict)'" }
+if (-not $obsQueued.stalled) { throw 'Expected a 40-minute-unclaimed queued task to be stalled (patience is 15 minutes)' }
+if ($obsQueued.stalledAfterMinutes -ne 15) { throw "Expected stalledAfterMinutes=15, got $($obsQueued.stalledAfterMinutes)" }
+
+# A draft PR observed four minutes ago is working, NOT stuck. The inverse of
+# the assertion above, and the reason patience is per-verdict.
+$workingRun = [pscustomobject]@{
+    runId = 'ar-1'; dispatchRunId = 'run-w'; status = 'active'
+    prUrl = 'https://github.com/x/y/pull/18'; prNumber = 18; prState = 'open'; prDraft = $true
+    lastRefreshAt = $obsNow.AddMinutes(-4).ToString('o')
+}
+$workingLane = [ordered]@{ repoName = 'smoke-working'; executionState = 'running'; dispatchRunId = 'run-w'; assignedAt = $obsNow.AddMinutes(-20).ToString('o') }
+$obsWorking = Resolve-LaneObservation -Entry $workingLane -AgentRun $workingRun -NowUtc $obsNow
+if ($obsWorking.verdict -ne 'working') { throw "Expected verdict=working, got '$($obsWorking.verdict)'" }
+if ($obsWorking.stalled) { throw 'Expected a PR observed 4 minutes ago NOT to be stalled' }
+if ($obsWorking.pr.number -ne 18) { throw "Expected the PR number to reach the surface, got '$($obsWorking.pr.number)'" }
+
+# A merged run is terminal: it warrants Complete, and terminal states never
+# go stale no matter how long they sit.
+$mergedRun = [pscustomobject]@{
+    runId = 'ar-2'; dispatchRunId = 'run-m'; status = 'completed'; outcome = 'merged'
+    prUrl = 'https://github.com/x/y/pull/20'; prNumber = 20; prState = 'merged'; prDraft = $false
+    lastRefreshAt = $obsNow.AddDays(-5).ToString('o')
+}
+$mergedLane = [ordered]@{ repoName = 'smoke-merged'; executionState = 'running'; dispatchRunId = 'run-m'; assignedAt = $obsNow.AddDays(-5).ToString('o') }
+$obsMerged = Resolve-LaneObservation -Entry $mergedLane -AgentRun $mergedRun -NowUtc $obsNow
+if ($obsMerged.verdict -ne 'finished') { throw "Expected verdict=finished for a merged PR, got '$($obsMerged.verdict)'" }
+if ($obsMerged.suggestedAction -ne 'complete') { throw "Expected suggestedAction=complete, got '$($obsMerged.suggestedAction)'" }
+if ($obsMerged.stalled) { throw 'Expected a terminal verdict never to be reported as stalled' }
+
+# A completed agent run with no PR observed yet must not fall through to
+# 'queued'. Merged and closed runs are taken earlier, so what reaches here is
+# delivered-but-not-merged; reporting "no runner has claimed this task yet"
+# for a finished agent is not vague, it is false.
+$doneRun = [pscustomobject]@{
+    runId = 'ar-4'; dispatchRunId = 'run-d'; status = 'completed'; outcome = 'awaiting-merge'
+    lastRefreshAt = $obsNow.AddMinutes(-2).ToString('o')
+}
+$doneLane = [ordered]@{ repoName = 'smoke-done'; executionState = 'running'; dispatchRunId = 'run-d'; assignedAt = $obsNow.AddMinutes(-30).ToString('o') }
+$obsDone = Resolve-LaneObservation -Entry $doneLane -AgentRun $doneRun -NowUtc $obsNow
+if ($obsDone.verdict -ne 'awaiting-review') { throw "Expected a completed run with no PR to read as awaiting-review, got '$($obsDone.verdict)'" }
+if ($obsDone.verdictDetail -match 'no runner has claimed') { throw "A completed agent run was described as unclaimed: $($obsDone.verdictDetail)" }
+
+# A failure outranks a PR the same run also produced: the failure is the fact
+# the operator needs, and reporting "awaiting review" would bury it.
+$failedRun = [pscustomobject]@{
+    runId = 'ar-3'; dispatchRunId = 'run-f'; status = 'failed'
+    prUrl = 'https://github.com/x/y/pull/22'; prNumber = 22; prState = 'open'; prDraft = $false
+    lastRefreshAt = $obsNow.AddMinutes(-5).ToString('o')
+}
+$failedLane = [ordered]@{ repoName = 'smoke-failed'; executionState = 'running'; dispatchRunId = 'run-f'; assignedAt = $obsNow.AddHours(-1).ToString('o') }
+$obsFailed = Resolve-LaneObservation -Entry $failedLane -AgentRun $failedRun -NowUtc $obsNow
+if ($obsFailed.verdict -ne 'failed') { throw "Expected a failed run to outrank its own open PR, got '$($obsFailed.verdict)'" }
+if ($obsFailed.suggestedAction -ne 'cancel') { throw "Expected suggestedAction=cancel, got '$($obsFailed.suggestedAction)'" }
+
+# Empty arrays must serialize as [], never null. This is the Lane 0.17
+# follow-up crash class: a PowerShell if-EXPRESSION collapsing @() to $null
+# reached the browser as JSON null and a `.length` read took the portal down.
+$obsJson = $obsHand | ConvertTo-Json -Depth 6
+if ($obsJson -match '"sources"\s*:\s*null') { throw 'Lane 0.17: observation.sources serialized as JSON null; it must be []' }
+Write-Host '  decision table: unlinked / queued-stuck / working / merged / failed-beats-PR, sources serialize as []' -ForegroundColor DarkGray
+
+Write-Step 'Lane observation — smoke: the join reads the real artifacts off disk'
+# The pure table above proves the rules; this proves the wiring — that the
+# dispatch run id written at assign time actually finds the two files a real
+# dispatch leaves behind. output/ is gitignored, so the fixture creates its
+# own parents: on a fresh CI clone these directories do not exist.
+$obsRunsDir = Join-Path $smokeWs 'output\roadmap-task-history\runs'
+$obsAgentDir = Join-Path $smokeWs 'output\agent-runs\runs'
+$null = New-Item -ItemType Directory -Path $obsRunsDir -Force
+$null = New-Item -ItemType Directory -Path $obsAgentDir -Force
+
+$smokeDispatchRunId = 'smoke-dispatch-001'
+([ordered]@{
+    runId = $smokeDispatchRunId; status = 'running'; dispatchTarget = 'copilot'
+    startedAt = (Get-Date).ToUniversalTime().AddMinutes(-6).ToString('o')
+    repository = 'x/smoke-repo-ready'; branch = "roadmap/$smokeDispatchRunId"
+} | ConvertTo-Json -Depth 6) | Set-Content -LiteralPath (Join-Path $obsRunsDir ("{0}.summary.json" -f $smokeDispatchRunId)) -Encoding UTF8
+
+([ordered]@{
+    runId = 'smoke-agent-001'; dispatchRunId = $smokeDispatchRunId; repoName = 'smoke-repo-ready'
+    status = 'active'; outcome = $null; branch = "roadmap/$smokeDispatchRunId"
+    prUrl = 'https://github.com/x/smoke-repo-ready/pull/7'; prNumber = 7; prState = 'open'; prDraft = $true
+    createdAt = (Get-Date).ToUniversalTime().AddMinutes(-5).ToString('o')
+    lastRefreshAt = (Get-Date).ToUniversalTime().AddMinutes(-1).ToString('o')
+} | ConvertTo-Json -Depth 6) | Set-Content -LiteralPath (Join-Path $obsAgentDir 'smoke-agent-001.json') -Encoding UTF8
+
+# Re-sync so the repo is dispatchable again, then assign the lane the way a
+# real dispatch does — carrying the ids instead of minting a throwaway GUID.
+$null = Sync-LedgerFromAudit -WorkspaceRoot $smokeWs -DocAuditEntries $smokeDocEntries -RoadmapAuditEntries $smokeRoadmapEntries
+$obsAssign = Invoke-AssignLane -WorkspaceRoot $smokeWs -RepoName 'smoke-repo-ready' `
+    -DispatchRunId $smokeDispatchRunId -AgentRunId 'smoke-agent-001' -DispatchSource 'release-dispatch'
+if (-not $obsAssign.success) { throw "Expected the dispatch-bound assign to succeed, got: $($obsAssign.error)" }
+if ($obsAssign.runId -ne $smokeDispatchRunId) { throw "Expected the lane to adopt the dispatch run id, got '$($obsAssign.runId)'" }
+
+$obsSummary = Get-ExecutionQueueSummary -WorkspaceRoot $smokeWs
+$obsLaneEntry = @($obsSummary.entries | Where-Object { $_.repoName -eq 'smoke-repo-ready' })[0]
+if ($null -eq $obsLaneEntry.observation) { throw 'Expected Get-ExecutionQueueSummary to attach an observation to the occupied lane' }
+if (-not $obsLaneEntry.observation.linked) { throw 'Expected the dispatch-bound lane to resolve to its run (linked=$true)' }
+if ($obsLaneEntry.observation.verdict -ne 'working') { throw "Expected verdict=working from the on-disk artifacts, got '$($obsLaneEntry.observation.verdict)'" }
+if ($obsLaneEntry.observation.pr.number -ne 7) { throw "Expected PR #7 from the agent-run file, got '$($obsLaneEntry.observation.pr.number)'" }
+if (@($obsLaneEntry.observation.sources) -notcontains 'agent-run') { throw 'Expected the observation to name agent-run as a source' }
+if (@($obsLaneEntry.observation.sources) -notcontains 'run-summary') { throw 'Expected the observation to name run-summary as a source' }
+Write-Host ("  join: lane -> run {0} -> PR #{1} ({2}), sources={3}" -f `
+    $obsLaneEntry.observation.dispatchRunId, $obsLaneEntry.observation.pr.number, $obsLaneEntry.observation.verdict, (@($obsLaneEntry.observation.sources) -join '+')) -ForegroundColor DarkGray
+
+Write-Step 'Lane observation — smoke: completing a lane releases its run'
+# A finished run must not follow the repo into its next lane, or the board
+# would report the previous run's PR as the new work's observed state.
+$obsComplete = Invoke-CompleteTask -WorkspaceRoot $smokeWs -RepoName 'smoke-repo-ready' -Outcome 'success' -HasRemainingWork $true
+if (-not $obsComplete.success) { throw "Expected complete to succeed, got: $($obsComplete.error)" }
+$afterComplete = Get-ExecutionQueueSummary -WorkspaceRoot $smokeWs
+$releasedEntry = @($afterComplete.entries | Where-Object { $_.repoName -eq 'smoke-repo-ready' })[0]
+if (-not [string]::IsNullOrWhiteSpace([string]$releasedEntry.dispatchRunId)) {
+    throw "Expected dispatchRunId to be cleared on completion, still holds '$($releasedEntry.dispatchRunId)'"
+}
+# Re-assigning by hand must now read as bookkeeping, not as the old run.
+$null = Invoke-AssignLane -WorkspaceRoot $smokeWs -RepoName 'smoke-repo-ready'
+$rebound = Get-ExecutionQueueSummary -WorkspaceRoot $smokeWs
+$reboundEntry = @($rebound.entries | Where-Object { $_.repoName -eq 'smoke-repo-ready' })[0]
+if ($reboundEntry.observation.verdict -ne 'unlinked') {
+    throw "Expected a hand-assigned lane to read as unlinked after the run was released, got '$($reboundEntry.observation.verdict)'"
+}
+
+# Leave the lane free. Sync-LedgerFromAudit preserves running entries by
+# design, so a lane left occupied here survives into the NEXT smoke run and
+# fails an assertion several hundred lines earlier — a self-inflicted version
+# of the cross-test pollution this suite exists to catch.
+$null = Invoke-CompleteTask -WorkspaceRoot $smokeWs -RepoName 'smoke-repo-ready' -Outcome 'success' -HasRemainingWork $true
+Write-Host '  release: dispatchRunId cleared on complete; a hand-assigned lane reads unlinked, not the old PR; lane left free' -ForegroundColor DarkGray
 
 Write-Step 'Running modular reconciliation smoke test (narrow scope)'
 & $reconcileModular `

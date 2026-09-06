@@ -1,7 +1,38 @@
 import React, { useState, useEffect } from 'react';
 import { type CopilotTaskPacket, type CopilotTaskHistoryItem } from '../types';
-import { previewCopilotTaskPacket, getCopilotTaskHistory } from '../services/apiClient';
+import { previewCopilotTaskPacket, getCopilotTaskHistory, getRunnerPresence } from '../services/apiClient';
+import {
+  resolveDispatchGate,
+  runnerStartCommand,
+  type RunnerPresencePayload,
+} from '../lib/runnerPresence';
 import { SpinnerIcon } from './icons';
+
+/**
+ * Lane 0.17 — what the caller reports back after really dispatching.
+ *
+ * `runId` is the load-bearing field: it is the dispatch run id the lane now
+ * carries, and the only key that resolves the lane to the run ledgers. A
+ * success without one means the work was queued but the board still cannot
+ * observe it, so the modal says that rather than claiming a clean dispatch.
+ */
+export interface LaneDispatchResult {
+  success: boolean;
+  error?: string | null;
+  runId?: string | null;
+  agentRunId?: string | null;
+  /** True when the operator overrode the runner gate to queue anyway. */
+  queuedWithoutRunner?: boolean;
+  message?: string | null;
+  quotaWarning?: string | null;
+  /**
+   * Set when the work queued but the lane did not take it (both lanes busy,
+   * repo not dispatchable). Distinct from `quotaWarning` because it is a
+   * different problem with a different remedy, and folding them into one
+   * field would have the board report a budget issue for a lane issue.
+   */
+  laneWarning?: string | null;
+}
 
 interface CopilotTaskPreviewModalProps {
   isOpen: boolean;
@@ -9,12 +40,20 @@ interface CopilotTaskPreviewModalProps {
   roadmapPath?: string;
   onClose: () => void;
   /**
-   * Lane 0.17 — when provided, the modal offers "Dispatch to Lane" after a
-   * successful preview, so the preview → dispatch flow no longer dead-ends
-   * at Copy/Close. The callback returns the backend's verdict; a refusal
-   * (both lanes occupied, repo not dispatchable) renders inline.
+   * Lane 0.17 — when provided, the modal offers Dispatch after a successful
+   * preview, so the preview → dispatch flow no longer dead-ends at Copy/Close.
+   *
+   * The callback really dispatches: it queues the previewed prompt for the
+   * operator runner and binds the returned run id to a lane. That is why the
+   * prompt travels with the call — the operator dispatches the packet they
+   * just read, not a prompt rebuilt behind them. The callback returns the
+   * backend's verdict; a refusal (no runner, lanes full, repo not
+   * dispatchable) renders inline.
    */
-  onDispatch?: (repoName: string) => Promise<{ success: boolean; error?: string | null }>;
+  onDispatch?: (
+    repoName: string,
+    options: { prompt: string; acknowledgeNoRunner?: boolean }
+  ) => Promise<LaneDispatchResult>;
 }
 
 /**
@@ -92,15 +131,18 @@ const CopilotTaskPreviewModal: React.FC<CopilotTaskPreviewModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [dispatching, setDispatching] = useState(false);
-  const [dispatched, setDispatched] = useState(false);
+  const [dispatchResult, setDispatchResult] = useState<LaneDispatchResult | null>(null);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
+  const [runnerPresence, setRunnerPresence] = useState<RunnerPresencePayload | null>(null);
+
+  const dispatched = dispatchResult?.success === true;
 
   useEffect(() => {
     if (!isOpen || !repoName) return;
     setPacket(null);
     setError(null);
     setActiveTab('packet');
-    setDispatched(false);
+    setDispatchResult(null);
     setDispatchError(null);
     setLoading(true);
 
@@ -109,6 +151,19 @@ const CopilotTaskPreviewModal: React.FC<CopilotTaskPreviewModalProps> = ({
       .catch(err => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setLoading(false));
   }, [isOpen, repoName, roadmapPath]);
+
+  // Release 3.1's rule, applied to this surface: read runner presence BEFORE
+  // offering the control that queues work. Dispatching into an empty room
+  // looks identical to dispatching into a running one until the operator
+  // notices nothing ever left `queued`.
+  useEffect(() => {
+    if (!isOpen || !onDispatch) return;
+    let cancelled = false;
+    getRunnerPresence()
+      .then(p => { if (!cancelled) setRunnerPresence(p); })
+      .catch(() => { if (!cancelled) setRunnerPresence(null); });
+    return () => { cancelled = true; };
+  }, [isOpen, onDispatch]);
 
   useEffect(() => {
     if (!isOpen || activeTab !== 'history') return;
@@ -130,14 +185,17 @@ const CopilotTaskPreviewModal: React.FC<CopilotTaskPreviewModalProps> = ({
     }
   };
 
-  const handleDispatch = async () => {
-    if (!onDispatch || !repoName || dispatching || dispatched) return;
+  const handleDispatch = async (options?: { acknowledgeNoRunner?: boolean }) => {
+    if (!onDispatch || !repoName || !packet || dispatching || dispatched) return;
     setDispatching(true);
     setDispatchError(null);
     try {
-      const result = await onDispatch(repoName);
+      const result = await onDispatch(repoName, {
+        prompt: packet.generatedPrompt,
+        acknowledgeNoRunner: options?.acknowledgeNoRunner,
+      });
       if (result.success) {
-        setDispatched(true);
+        setDispatchResult(result);
       } else {
         setDispatchError(result.error ?? 'Dispatch failed.');
       }
@@ -149,6 +207,10 @@ const CopilotTaskPreviewModal: React.FC<CopilotTaskPreviewModalProps> = ({
   };
 
   if (!isOpen) return null;
+
+  // 'unknown' deliberately does NOT block (see resolveDispatchGate): a failed
+  // status call is not evidence that nothing is listening.
+  const dispatchGate = resolveDispatchGate(runnerPresence);
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
@@ -592,7 +654,16 @@ const CopilotTaskPreviewModal: React.FC<CopilotTaskPreviewModalProps> = ({
 
         {/* Footer — Lane 0.17: from the Dispatch Board this modal is the
             confirm step, so it carries the dispatch action instead of
-            dead-ending at Copy/Close. */}
+            dead-ending at Copy/Close. The button really queues the previewed
+            prompt, which is why the runner gate lives here too. */}
+        {onDispatch && packet && !loading && !error && !dispatched && !dispatchGate.canQueue && (
+          <div
+            className="px-5 py-2.5 border-t border-gray-700 bg-amber-900/20 text-sm text-amber-200 flex-shrink-0"
+            data-testid="preview-dispatch-gate"
+          >
+            {dispatchGate.unmetPrecondition}
+          </div>
+        )}
         <div className="px-5 py-3 border-t border-gray-700 flex items-center justify-end gap-3 flex-shrink-0">
           {dispatchError && (
             <span className="text-sm text-red-400 flex-1 text-left" role="alert">
@@ -600,9 +671,24 @@ const CopilotTaskPreviewModal: React.FC<CopilotTaskPreviewModalProps> = ({
             </span>
           )}
           {dispatched && (
-            <span className="text-sm text-green-400 flex-1 text-left">
-              ✓ Dispatched to a lane — track it on the Dispatch Board.
-            </span>
+            <div className="flex-1 text-left" data-testid="preview-dispatch-success">
+              <span className="text-sm text-green-400">
+                {dispatchResult?.runId
+                  ? `✓ Queued as run ${dispatchResult.runId} and bound to a lane — the Dispatch Board now tracks it.`
+                  : '✓ Queued, but no run id came back — the board cannot observe this one; track it in Agent Runs.'}
+              </span>
+              {dispatchResult?.queuedWithoutRunner && (
+                <span className="block text-sm text-amber-300 mt-0.5">
+                  No runner is reporting in, so it stays queued until you start one: {runnerStartCommand(runnerPresence)}
+                </span>
+              )}
+              {dispatchResult?.laneWarning && (
+                <span className="block text-sm text-amber-300 mt-0.5">{dispatchResult.laneWarning}</span>
+              )}
+              {dispatchResult?.quotaWarning && (
+                <span className="block text-sm text-amber-300 mt-0.5">{dispatchResult.quotaWarning}</span>
+              )}
+            </div>
           )}
           <button
             onClick={onClose}
@@ -611,14 +697,25 @@ const CopilotTaskPreviewModal: React.FC<CopilotTaskPreviewModalProps> = ({
             Close
           </button>
           {onDispatch && packet && !loading && !error && !dispatched && (
-            <button
-              onClick={() => { void handleDispatch(); }}
-              disabled={dispatching}
-              className="px-4 py-1.5 text-sm bg-blue-700 hover:bg-blue-600 text-white rounded border border-blue-600 disabled:opacity-50 transition-colors flex items-center gap-1.5"
-            >
-              {dispatching ? <SpinnerIcon className="w-3.5 h-3.5 animate-spin" /> : null}
-              Dispatch to Lane
-            </button>
+            dispatchGate.canQueue ? (
+              <button
+                onClick={() => { void handleDispatch(); }}
+                disabled={dispatching}
+                className="px-4 py-1.5 text-sm bg-blue-700 hover:bg-blue-600 text-white rounded border border-blue-600 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+              >
+                {dispatching ? <SpinnerIcon className="w-3.5 h-3.5 animate-spin" /> : null}
+                Dispatch
+              </button>
+            ) : (
+              <button
+                onClick={() => { void handleDispatch({ acknowledgeNoRunner: true }); }}
+                disabled={dispatching}
+                className="px-4 py-1.5 text-sm bg-amber-800 hover:bg-amber-700 text-amber-50 rounded border border-amber-600 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+              >
+                {dispatching ? <SpinnerIcon className="w-3.5 h-3.5 animate-spin" /> : null}
+                {dispatchGate.overrideLabel}
+              </button>
+            )
           )}
         </div>
       </div>

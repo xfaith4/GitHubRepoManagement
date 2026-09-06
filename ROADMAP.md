@@ -1938,11 +1938,35 @@ not observed agent activity.
       Only the payload-literal site crashed a surface; the local-variable
       sites are now wrapped too, and the pattern has the lint gate the audit
       asked for. _(state: smoke-tested 2026-09-05 — all 56 wrapped; `tools/Assert-NoArrayCollapsingIfExpression.ps1` is AST-based, not textual, proves itself against a collapsing fixture before sweeping, spares the wrapped and scalar forms, and holds a zero baseline in `scripts/array-collapse-baseline.json`; wired into the module smoke)_
-- [ ] **[non-blocker]** The "Running" state is still bookkeeping — an
-      operator clicked Dispatch and has not clicked Complete. Linking lane
-      entries to the agent-run ledger (run id, PR state) would make the tab
-      answer "is it stuck?" with observed fact; until then the board is
-      honest about being a plan, not a monitor. _(state: planned)_
+- [x] **The "Running" state was bookkeeping — an operator clicked Dispatch and
+      had not clicked Complete.** Every occupied lane rendered identically
+      whether its agent was three minutes into a draft PR or had died an hour
+      earlier, because `Invoke-AssignLane` minted a throwaway GUID that
+      resolved to nothing. Two halves closed it: the board now **really
+      dispatches** (operator decision, 2026-09-06), and the lane carries the
+      dispatch run id that joins it to the run ledgers.
+      _(state: smoke-tested 2026-09-06 — `backend/modules/execution/Execution.LaneObservation.ps1` is pure (`Resolve-LaneObservation` takes already-read records and a clock, so the whole decision table runs offline) and reports two orthogonal facts: `verdict` (unlinked | queued | working | awaiting-review | finished | failed) and `stalled`, each non-terminal verdict carrying its own patience (queued 15m, working 90m, awaiting-review 24h) because one threshold is wrong in both directions. `Execution.Ledger.ps1` stores `dispatchRunId`/`agentRunId`/`dispatchSource` through a shape-tolerant setter (a pre-Lane-0.17 PSCustomObject entry throws on assignment to a property it lacks) and releases them on complete/cancel so a finished run never follows the repo into its next lane; `Get-ExecutionQueueSummary` derives the observation on read and never persists it. `CopilotTaskPreviewModal.tsx` dispatches the previewed prompt through `POST /api/roadmap/dispatch/execute` and binds the returned run id via `POST /api/execution/assign`, in that order — occupying the lane first would rebuild the very defect — behind Release 3.1's runner-presence gate with the `Queue anyway` override. A dispatch that succeeds while the lane refuses reports success and names the lane problem, because the work is queued either way. Lane closure stays the operator's (operator decision, 2026-09-06): the verdict highlights Complete or Cancel and never presses them. Covered by 8 module-smoke assertions (decision table + an on-disk join proving lane -> run summary -> agent run -> PR #7, proven red by reverting the assign to drop the id) and 8 component tests (4 proven red against the pre-change card); `sources` is asserted to serialize as `[]`, never JSON `null`.)_
+- [ ] **[non-blocker]** The api-host smoke fails on any machine where the
+      operator is actually running a runner. `Invoke-ApiHostSmokeTest.ps1:3754`
+      asserts `GET /api/roadmap/runner` reports **no** runner present, but the
+      route reads `output/roadmap-task-runner.heartbeat.json` from the real
+      workspace — so a live `Invoke-RoadmapTaskRunner.ps1` (the normal state
+      when work is being driven) makes the gate fail on an untouched tree.
+      Confirmed 2026-09-06: `origin/main` (f7452d4) fails at the same line with
+      the same message as a feature branch, with the operator's runner alive on
+      PID 8892. The isolation the smoke already applies to settings and the
+      queue ("queue isolated to `output/smoke/api-host/…`") is the shape of the
+      fix — the presence check needs the same fixture treatment, not a real
+      heartbeat read. Until then the gate is red for an environmental reason
+      and cannot distinguish a regression from a working runner.
+      _(state: planned)_
+- [ ] **[non-blocker]** The board reads observed state; nothing refreshes it on
+      a cadence. `Invoke-AgentRunAutoClose` advances open runs only when
+      someone loads Agent Runs, so a lane can sit on a `lastObservedAt` that is
+      hours old and be reported — correctly — as stuck for want of a poll
+      rather than want of progress. The verdict is honest either way (it says
+      when it last observed), but a board that refreshed its own runs would
+      distinguish "the agent stopped" from "nobody looked". _(state: planned)_
 
 ---
 

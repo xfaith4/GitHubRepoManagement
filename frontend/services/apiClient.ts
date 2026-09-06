@@ -1445,7 +1445,24 @@ export async function syncExecutionQueue(): Promise<ExecutionQueueSummary> {
   }
 }
 
-export async function assignExecutionLane(repoName: string, options?: { runId?: string; taskText?: string; taskSection?: string }): Promise<{ success: boolean; laneSlot?: number; runId?: string; error?: string }> {
+export async function assignExecutionLane(
+  repoName: string,
+  options?: {
+    runId?: string;
+    taskText?: string;
+    taskSection?: string;
+    /**
+     * Lane 0.17 — the dispatch run id this lane is now accountable for. It is
+     * the join key to `output/roadmap-task-history/runs/<id>.summary.json` and
+     * to the agent-run ledger, and it is what lets the board report observed
+     * run state instead of "an operator clicked Dispatch".
+     */
+    dispatchRunId?: string;
+    agentRunId?: string;
+    /** 'release-dispatch' when a real dispatch filled the lane. */
+    dispatchSource?: 'operator' | 'release-dispatch';
+  }
+): Promise<{ success: boolean; laneSlot?: number; runId?: string; error?: string }> {
   const cachedError = getOptionalApiUnavailableError('execution-queue');
   if (cachedError) {
     return { success: false, error: cachedError.message };
@@ -1454,6 +1471,9 @@ export async function assignExecutionLane(repoName: string, options?: { runId?: 
   if (options?.runId) body.runId = options.runId;
   if (options?.taskText) body.taskText = options.taskText;
   if (options?.taskSection) body.taskSection = options.taskSection;
+  if (options?.dispatchRunId) body.dispatchRunId = options.dispatchRunId;
+  if (options?.agentRunId) body.agentRunId = options.agentRunId;
+  if (options?.dispatchSource) body.dispatchSource = options.dispatchSource;
   let data: any;
   try {
     data = await postJson<any>('/execution/assign', body);

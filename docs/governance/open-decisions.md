@@ -108,6 +108,42 @@ what happens by default if it is never answered, and what it blocks.
 - **Default if unanswered.** Nine provisional named candidates and one unfilled external-management slot in `evidence/trials/release-3.7/cohort.json`; no substitution chosen for conformance and no measured execution claimed.
 - **Blocks.** Final ten-repository cohort and measured Release 3.7 trial; consistency fixes and validation continue.
 
+### D-007 — How long may a lane sit before the board calls it stuck?
+
+- **Asked** 2026-09-06, from [Lane 0.17](../../ROADMAP.md), while giving the
+  Dispatch Board observed run state.
+- **Question.** A lane's `stalled` flag needs a threshold per non-terminal
+  verdict. The shipped defaults are queued **15 minutes**, working **90
+  minutes**, awaiting-review **24 hours**. Are those the right patience?
+- **Why it is not an agent's call.** It is a tolerance judgement, not a
+  derivable fact: it depends on how long your Copilot agents actually take and
+  how quickly you want to be told something is wrong. Set too low it cries
+  wolf, too high it is the silence the lane already had.
+- **Default if unanswered.** The three values above, in
+  `$script:LaneObservationDefaultPatienceMinutes`
+  ([`Execution.LaneObservation.ps1`](../../backend/modules/execution/Execution.LaneObservation.ps1)).
+  They are a parameter (`-PatienceMinutes`), not a constant, so tuning them is
+  a one-line change and needs no redesign. Every verdict ships the threshold
+  that produced it, so a wrong value is visible rather than mysterious.
+- **Blocks.** Nothing. The board is useful at any of these values; only the
+  false-positive rate changes.
+
+### D-008 — Should Dispatch really dispatch from every surface that previews a task?
+
+- **Asked** 2026-09-06, from [Lane 0.17](../../ROADMAP.md), as a consequence of
+  the D-010 decision below.
+- **Question.** `CopilotTaskPreviewModal` is opened from the Dispatch Board,
+  the Work Queue and Operations. `Dashboard.tsx` passes the dispatch callback
+  unconditionally, so the button now queues real agent work and spends quota
+  from all three — where before it only wrote a ledger row.
+- **Why it is not an agent's call.** It is a question about which surfaces
+  should be able to spend agent budget, which is an operating-posture choice.
+- **Default if unanswered.** All three can dispatch. The runner-presence gate
+  and the full prompt preview stand in front of the button everywhere, and the
+  modal is the confirm step by construction, so the exposure is the same one
+  the Dispatch Board already accepted.
+- **Blocks.** Nothing. Restricting it later is one conditional on the callback.
+
 ---
 
 ## Decided
@@ -115,4 +151,30 @@ what happens by default if it is never answered, and what it blocks.
 Move entries here with the decision and its date. Keep the original question
 intact — the reasoning is what stops the next agent reopening a settled point.
 
-Nothing has been decided yet.
+### D-009 — When an observed run reaches a terminal state, should the lane clear itself?
+
+- **Asked** 2026-09-06, from [Lane 0.17](../../ROADMAP.md).
+- **Question.** Once the board can observe that a run's PR merged, should a
+  background pass release the lane and write a `completed (observed)` history
+  record, or should it show the verdict and leave the click to the operator?
+- **Why it was not an agent's call.** It decides whether the ledger is
+  operator-owned state or derived state — a different product, not a different
+  implementation.
+- **Decision (Ben, 2026-09-06).** **Show the verdict; the operator still
+  clicks.** The card names what happened ("PR #18 merged") and highlights the
+  action that fits, but nothing mutates lane state behind the operator. A run
+  closed without merging still needs a human to decide retry versus drop.
+
+### D-010 — Should the Dispatch Board's Dispatch button really dispatch?
+
+- **Asked** 2026-09-06, from [Lane 0.17](../../ROADMAP.md).
+- **Question.** Closing the "Running is only bookkeeping" gap needed a run id
+  that resolves to something. Either the board keeps writing ledger rows and
+  only observes runs dispatched elsewhere, or its own button queues real work
+  through the gated release-dispatch route.
+- **Why it was not an agent's call.** The second option makes every click spend
+  agent quota and create a GitHub task — an outward-facing, costly action.
+- **Decision (Ben, 2026-09-06).** **Make Dispatch really dispatch.** The
+  previewed prompt goes to `POST /api/roadmap/dispatch/execute` behind Release
+  3.1's runner-presence gate, and the returned run id binds to the lane. The
+  board is the dispatcher, and its lanes hold real runs.

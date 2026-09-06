@@ -13,6 +13,16 @@
 # Two-lane model:
 #   At most two repos may be in 'running' state simultaneously.
 #   A repo cannot occupy both lanes at the same time.
+#
+# Lane 0.17 — join keys. 'running' on its own only ever meant "an operator
+# clicked Dispatch and has not clicked Complete". A lane assigned from a real
+# dispatch now records the ids that resolve to the run ledgers:
+#   dispatchRunId - minted by POST /api/roadmap/dispatch/execute; names
+#                   output/roadmap-task-history/runs/<id>.summary.json
+#   agentRunId    - the agent-run ledger record carrying that dispatchRunId
+#   dispatchSource - who occupied the lane ('release-dispatch' | 'operator')
+# Execution.LaneObservation.ps1 turns those into observed state. A lane with no
+# dispatchRunId is reported as bookkeeping rather than dressed up as a run.
 #   The same roadmap item cannot be running in two repos simultaneously.
 
 Set-StrictMode -Version Latest
@@ -134,6 +144,41 @@ function Write-ExecutionLedger {
 }
 
 # ---------------------------------------------------------------------------
+# _Ledger_SetField  (private helper — underscore form, as in Execution.Trace.ps1)
+# Sets a field on a ledger entry whichever shape it arrived in.
+#
+# Entries read from the JSON ledger are PSCustomObjects, and assigning to a
+# property a PSCustomObject does not have throws — which is exactly what every
+# entry written before Lane 0.17 would do the first time a dispatch tried to
+# record its run id on one. Entries built by New-LedgerEntry (and those from
+# the SQLite bridge) are dictionaries. This is the one setter that handles
+# both, adding the member when it is missing.
+# ---------------------------------------------------------------------------
+function _Ledger_SetField {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Entry,
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [Parameter()]
+        [AllowNull()]
+        [object]$Value
+    )
+
+    if ($Entry -is [System.Collections.IDictionary]) {
+        $Entry[$Name] = $Value
+        return
+    }
+
+    if ($null -ne $Entry.PSObject -and ($Entry.PSObject.Properties.Name -contains $Name)) {
+        $Entry.$Name = $Value
+        return
+    }
+
+    Add-Member -InputObject $Entry -MemberType NoteProperty -Name $Name -Value $Value -Force
+}
+
+# ---------------------------------------------------------------------------
 # New-LedgerEntry
 # Constructs a fresh ledger entry for a repo.
 # ---------------------------------------------------------------------------
@@ -163,6 +208,9 @@ function New-LedgerEntry {
         currentTaskText      = $CurrentTaskText
         currentTaskSection   = $CurrentTaskSection
         currentRunId         = $null
+        dispatchRunId        = $null
+        agentRunId           = $null
+        dispatchSource       = $null
         laneSlot             = $null
         priorityScore        = $PriorityScore
         assignedAt           = $null
@@ -400,7 +448,17 @@ function Invoke-AssignLane {
         [Parameter()]
         [string]$TaskText = '',
         [Parameter()]
-        [string]$TaskSection = ''
+        [string]$TaskSection = '',
+        # Lane 0.17 — the ids that make 'running' checkable. Supplied when the
+        # lane is filled from a real dispatch; empty when an operator occupied
+        # it by hand, and the board says so rather than inventing a run.
+        [Parameter()]
+        [string]$DispatchRunId = '',
+        [Parameter()]
+        [string]$AgentRunId = '',
+        [Parameter()]
+        [ValidateSet('operator', 'release-dispatch')]
+        [string]$DispatchSource = 'operator'
     )
 
     $ledger = Read-ExecutionLedger -WorkspaceRoot $WorkspaceRoot
@@ -437,7 +495,15 @@ function Invoke-AssignLane {
         }
     }
 
-    $runId = if (-not [string]::IsNullOrWhiteSpace($RunId)) { $RunId } else { [System.Guid]::NewGuid().ToString('N') }
+    # A dispatch run id is the lane's identity when there is one: minting a
+    # fresh GUID over it would throw away the only key that resolves to a run.
+    $runId = if (-not [string]::IsNullOrWhiteSpace($RunId)) {
+        $RunId
+    } elseif (-not [string]::IsNullOrWhiteSpace($DispatchRunId)) {
+        $DispatchRunId
+    } else {
+        [System.Guid]::NewGuid().ToString('N')
+    }
 
     $entry.executionState     = 'running'
     $entry.laneSlot           = $laneSlot
@@ -447,6 +513,13 @@ function Invoke-AssignLane {
     $entry.lastOutcome        = $null
     $entry.errorMessage       = $null
     $entry.updatedAt          = (Get-Date).ToUniversalTime().ToString('o')
+
+    # Set through the shape-tolerant setter: entries written before Lane 0.17
+    # have no such properties, and a PSCustomObject throws on assignment to one
+    # it does not have.
+    _Ledger_SetField -Entry $entry -Name 'dispatchRunId'  -Value $(if ([string]::IsNullOrWhiteSpace($DispatchRunId)) { $null } else { $DispatchRunId })
+    _Ledger_SetField -Entry $entry -Name 'agentRunId'     -Value $(if ([string]::IsNullOrWhiteSpace($AgentRunId)) { $null } else { $AgentRunId })
+    _Ledger_SetField -Entry $entry -Name 'dispatchSource' -Value $DispatchSource
     if (-not [string]::IsNullOrWhiteSpace($TaskText))    { $entry.currentTaskText    = $TaskText }
     if (-not [string]::IsNullOrWhiteSpace($TaskSection)) { $entry.currentTaskSection = $TaskSection }
 
@@ -454,7 +527,16 @@ function Invoke-AssignLane {
     $ledger.history = @($ledger.history) + @($hist)
 
     Write-ExecutionLedger -WorkspaceRoot $WorkspaceRoot -Ledger $ledger
-    return @{ success = $true; laneSlot = $laneSlot; error = $null; runId = $runId; entry = $entry }
+    return @{
+        success        = $true
+        laneSlot       = $laneSlot
+        error          = $null
+        runId          = $runId
+        dispatchRunId  = $(if ([string]::IsNullOrWhiteSpace($DispatchRunId)) { $null } else { $DispatchRunId })
+        agentRunId     = $(if ([string]::IsNullOrWhiteSpace($AgentRunId)) { $null } else { $AgentRunId })
+        dispatchSource = $DispatchSource
+        entry          = $entry
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -492,6 +574,13 @@ function Invoke-CompleteTask {
     $entry.completedAt    = (Get-Date).ToUniversalTime().ToString('o')
     $entry.lastOutcome    = $Outcome
     $entry.updatedAt      = (Get-Date).ToUniversalTime().ToString('o')
+
+    # Release the join keys with the lane. A finished run left attached would
+    # make the NEXT assignment of this repo report the previous run's PR as its
+    # own — the board would show observed fact about the wrong work.
+    _Ledger_SetField -Entry $entry -Name 'dispatchRunId'  -Value $null
+    _Ledger_SetField -Entry $entry -Name 'agentRunId'     -Value $null
+    _Ledger_SetField -Entry $entry -Name 'dispatchSource' -Value $null
 
     $hist = New-HistoryRecord -RepoName $RepoName -Event 'completed' -RunId $runId -TaskText $entry.currentTaskText -Outcome $Outcome
     $ledger.history = @($ledger.history) + @($hist)
@@ -535,6 +624,12 @@ function Invoke-CancelTask {
     $entry.lastOutcome = $Reason
     $entry.errorMessage = $Reason
     $entry.updatedAt   = (Get-Date).ToUniversalTime().ToString('o')
+
+    # Same reason as Invoke-CompleteTask: the run does not follow the repo into
+    # its next lane.
+    _Ledger_SetField -Entry $entry -Name 'dispatchRunId'  -Value $null
+    _Ledger_SetField -Entry $entry -Name 'agentRunId'     -Value $null
+    _Ledger_SetField -Entry $entry -Name 'dispatchSource' -Value $null
 
     if ($entry.retryCount -ge $MaxRetries) {
         $entry.executionState = 'blocked'
@@ -616,6 +711,31 @@ function Get-ExecutionQueueSummary {
     )
 
     $ledger = Read-ExecutionLedger -WorkspaceRoot $WorkspaceRoot
+
+    # Lane 0.17 — attach what the run ledgers actually say about each occupied
+    # lane. Derived on read and never written back: the observation is a view
+    # of the run artifacts, and persisting it would create a second, staler
+    # copy of a fact that already has an owner.
+    #
+    # Optional by design. The observation module is dot-sourced by the API
+    # host; a caller that loaded only the ledger (the smoke's narrow scope)
+    # still gets a queue summary, just without observations.
+    if (Get-Command -Name 'Get-LaneObservationMap' -ErrorAction SilentlyContinue) {
+        try {
+            $observations = Get-LaneObservationMap -WorkspaceRoot $WorkspaceRoot -Entries @($ledger.entries)
+            foreach ($entry in @($ledger.entries)) {
+                $entryRepo = [string]$entry.repoName
+                if ($observations.ContainsKey($entryRepo)) {
+                    _Ledger_SetField -Entry $entry -Name 'observation' -Value $observations[$entryRepo]
+                }
+            }
+        } catch {
+            # Never let a malformed run artifact take the whole board down —
+            # but never swallow it silently either.
+            Write-Warning "Execution.Ledger: lane observation failed (board renders without observed run state). Error: $($_.Exception.Message)"
+        }
+    }
+
     $lanes = Get-LaneSummary -Ledger $ledger
     $ranked = Get-RankedQueue -Ledger $ledger
 
