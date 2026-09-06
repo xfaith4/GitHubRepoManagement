@@ -185,3 +185,42 @@ Decide by **where the work physically has to happen**, not by preference:
 This split is defensible on capability rather than taste, and it matches the
 engine-attribution rule from Release 3.1: every surface names the engine that
 acted.
+
+## Addendum — provider-aware execution (Release 3.8, added 2026-09-06)
+
+[Agent Execution Governance](../governance/Agent-Execution-Governance.md)
+extends this loop rather than replacing it. The twelve steps stay; three
+things about them change, and the layer model above is what makes the change
+cheap.
+
+**The task-dispatch axis gains a third provider and an `auto`.** It becomes
+`codex` / `claude` / `copilot` / `operator-runner` / `auto`, and the choice
+stops being a preference recorded on the task. The task contract is
+**provider-neutral** — objective, scope, acceptance criteria, verification,
+permission envelope — and the scheduler is **provider-aware**, choosing on
+eligibility and remaining subscription capacity and recording why. The
+capability rule above survives as an eligibility input rather than the whole
+answer: a conflicted working tree still cannot go to a GitHub-side agent.
+
+**Approval moves from pre-push to pre-merge.** Today the runner stops at
+`awaiting-review` and the operator clicks Approve & push, which was the right
+gate when the runner held the only credential. Release 3.8 has the agent exit
+at `IMPLEMENTATION_COMPLETE`, Repo Manager push and open the pull request, and
+the operator approve a **verified head SHA** after CI. This is exactly the
+substitution "Approval is a layer, not a hard-coded step" was written to allow:
+push and PR become trusted transitions, and the human gate moves to the one
+transition that is genuinely irreversible. Steps 6 and 7 keep their refusal
+matrices; only who invokes them changes.
+
+**A provider limit becomes state rather than a failed run.** The runner reads
+the CLI's exit code today, so a usage limit records as `failed` and the work
+looks broken when it is merely deferred. `CAPACITY_WAIT` returns the task to
+the queue with its workspace, branch, attempt count and session identifier
+intact, and no roadmap item is failed for it.
+
+**What this unblocks.** The deferred conflict-resolution loop above named two
+constraints — an OAuth credential the service cannot hold, and a retry counter
+that must be persisted rather than held in memory. Release 3.8's persistence
+requirements cover the second outright, and its provider registry is where the
+first stops being a special case: the credential belongs to the adapter, not to
+the loop.
