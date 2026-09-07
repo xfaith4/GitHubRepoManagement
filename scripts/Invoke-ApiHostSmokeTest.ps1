@@ -3788,6 +3788,44 @@ A release should not be marked `done` unless:
         throw 'The smoke host has no operator runner; reporting one present would be the false-green this route exists to prevent.'
     }
 
+    # Release 3.8 M2 (H38-12) — the governor's reasoning, over HTTP.
+    $providersResp = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/providers"
+    Assert-Not503 -Name '/api/providers' -Response $providersResp
+    # Content-type, never status: an unmatched GET answers 200 text/html from
+    # the SPA fallback, so a deleted route would pass a status check.
+    if ([string]$providersResp.ContentType -notmatch 'application/json') {
+        throw "GET /api/providers must answer JSON, not the SPA fallback; got content-type '$($providersResp.ContentType)'"
+    }
+    if (-not [bool]$providersResp.Json.success) {
+        throw "GET /api/providers returned success=false. HTTP $($providersResp.StatusCode). Body=$($providersResp.Content)"
+    }
+    $providerRows = @($providersResp.Json.data.providers)
+    if ($providerRows.Count -ne 3) {
+        throw "GET /api/providers must report every configured provider; got $($providerRows.Count). Body=$($providersResp.Content)"
+    }
+    foreach ($expectedProvider in @('claude', 'codex', 'copilot')) {
+        $row = $providerRows | Where-Object { [string]$_.provider -eq $expectedProvider } | Select-Object -First 1
+        if ($null -eq $row) { throw "GET /api/providers is missing '$expectedProvider'. Body=$($providersResp.Content)" }
+        # A provider that is never selected has to be explainable without
+        # reading a log, so every row carries its reason.
+        if ([string]::IsNullOrWhiteSpace([string]$row.verdict.reason)) {
+            throw "Provider '$expectedProvider' carries no verdict reason; an unexplained refusal is the failure this route exists to prevent."
+        }
+        if ([string]$row.verdict.reason -ne 'no-capacity-record') {
+            throw "The smoke workspace has no capacity records, so '$expectedProvider' must read no-capacity-record; got '$($row.verdict.reason)'"
+        }
+        # limitSignals are runner regexes, not operator-facing policy.
+        if ($null -ne $row.config -and ($row.config.PSObject.Properties.Name -contains 'limitSignals')) {
+            throw "Provider '$expectedProvider' must not expose limitSignals over the API"
+        }
+    }
+    # enforced is the field that says whether a verdict can actually refuse
+    # work. D-011 left the per-task estimate provisional, so it must read false.
+    if ([bool]($providerRows[0].verdict.enforced)) {
+        throw 'Capacity enforcement must stay off while estimates.provisional is true (D-011)'
+    }
+    Write-Host ("  providers ok: {0} providers, each with a verdict reason; enforcement off while the task estimate is provisional" -f $providerRows.Count) -ForegroundColor DarkGray
+
     # The route-level refusal: asking the host to run cloud dispatch itself must
     # be a 409 that names the runner, not a 200 that fails at the last step.
     $inProcessResp = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/dispatch/execute" -Body @{
@@ -3813,6 +3851,9 @@ A release should not be marked `done` unless:
         '/api/persistence/status', '/api/auth/status', '/api/auth/github/status',
         '/api/automation/history', '/api/automation/status', '/api/automation/packages',
         '/api/roadmap/runner',
+        # Release 3.8 M2 — the governor's reasoning. A deleted route would
+        # answer 200 text/html and every capacity verdict would vanish silently.
+        '/api/providers',
         '/api/settings', '/api/roadmap/index',
         '/api/maintenance/database',
         '/api/cache/diagnostics', '/api/scan/schedule', '/api/execution/metrics',

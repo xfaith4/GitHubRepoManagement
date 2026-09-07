@@ -7867,6 +7867,55 @@ try {
                         data    = $runnerPayload
                     }
                 }
+                # ── Release 3.8 M2 (H38-12) — what is left with each provider ──
+                # The governor's reasoning, made visible. A provider that is
+                # never selected must be explainable without reading a log:
+                # every entry carries its verdict AND the reason for it, and
+                # `enforced` says whether that verdict can actually refuse work
+                # or is only being recorded.
+                'GET /api/providers' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $providerConfig = Get-AgentProviderConfig -ConfigPath (Get-AgentProviderConfigPath -WorkspaceRoot $WorkspaceRoot)
+                    if ($null -eq $providerConfig) {
+                        Send-HttpJson -Stream $req.Stream -StatusCode 409 -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error   = 'agent-providers.json is missing or is not schema v1; provider policy cannot be reported'
+                        }
+                        break
+                    }
+
+                    $providerRows = @()
+                    foreach ($providerName in @($providerConfig.providers.PSObject.Properties | ForEach-Object { $_.Name })) {
+                        $entry = $providerConfig.providers.$providerName
+                        $entryPayload = [ordered]@{}
+                        foreach ($entryProperty in @($entry.PSObject.Properties | ForEach-Object { $_.Name })) {
+                            # limitSignals are regexes for the runner, not
+                            # operator-facing policy, and they only add noise.
+                            if ($entryProperty -eq 'limitSignals') { continue }
+                            $entryPayload[$entryProperty] = $entry.$entryProperty
+                        }
+                        $record = Read-ProviderCapacityRecord -WorkspaceRoot $WorkspaceRoot -Provider $providerName
+                        $providerRows += , [ordered]@{
+                            provider = $providerName
+                            config   = $entryPayload
+                            capacity = $record
+                            verdict  = (Resolve-ProviderCapacityVerdict -Record $record -Config $providerConfig -TaskClass 'normal' -Provider $providerName)
+                        }
+                    }
+
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = [ordered]@{
+                            providers = @($providerRows)
+                            config    = [ordered]@{
+                                reserves           = $providerConfig.reserves
+                                estimates          = $providerConfig.estimates
+                                localExecutionSlots = $providerConfig.localExecutionSlots
+                                dispatch           = $providerConfig.dispatch
+                            }
+                        }
+                    }
+                }
                 # ── Release 2.7 Phase D — automation health ─────────────────────
                 # Interval firing is delegated to an external cron, so a scheduler
                 # that stops changes nothing visible in the product: the config
