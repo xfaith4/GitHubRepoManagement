@@ -134,6 +134,10 @@ if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) { $WorkspaceRoot = Split-Path 
 # fixture workspaces that carry no backend/ tree, and dot-sourcing off
 # $WorkspaceRoot made it exit at startup against every one of them.
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\automation\Automation.RoadmapQueue.ps1')
+# Release 3.8 M1 (H38-03) - the execution contract. Resolved from $PSScriptRoot
+# for the same reason as the queue module directly above: the runner is pointed
+# at fixture workspaces that carry no backend/ tree of their own.
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\execution\Execution.WorkPacket.ps1')
 if ([string]::IsNullOrWhiteSpace($QueuePath)) { $QueuePath = Get-RoadmapQueuePath -WorkspaceRoot $WorkspaceRoot }
 if ([string]::IsNullOrWhiteSpace($StopFilePath)) { $StopFilePath = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.stop' }
 $runsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
@@ -431,6 +435,87 @@ function Update-TaskSummary {
     ($obj | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $SummaryPath -Encoding UTF8
 }
 
+function Resolve-RunOutcomeFromResult {
+    <#
+    .SYNOPSIS
+        Pure - decide a run's outcome from the agent's structured result.
+
+    .DESCRIPTION
+        Release 3.8 M1. Until this existed the runner read $LASTEXITCODE and
+        nothing else, so an agent that printed an apology and exited 0 reached
+        `awaiting-review` with no work behind it. The spec's rule is that
+        free-form prose must not be the orchestration protocol, and the way to
+        mean it is to make the ABSENCE of a structured result a named failure
+        rather than a silent pass.
+
+        ExitCode is recorded and decides nothing. That is deliberate, and it is
+        not the same as ignoring a crash: a non-zero exit still throws earlier,
+        at the launch site, before this is ever called. What this pins down is
+        that once a result EXISTS, the result is the protocol -- an adapter
+        reporting implementation_complete is believed even if the CLI's exit
+        code disagrees, because the adapter knows what happened and the exit
+        code only knows that a process ended.
+
+        capacity_exhausted maps to `queued`, not `failed`. A provider limit
+        means the work was never attempted; failing the task would blame the
+        roadmap item for the subscription's state. H38-10 completes that path
+        by preserving the branch, attempt and session; this only maps it.
+    .OUTPUTS
+        [pscustomobject] status, error, exitCode
+    #>
+    param(
+        [Parameter()][object]$Result = $null,
+        [Parameter()][int]$ExitCode = 0
+    )
+
+    $status = 'failed'
+    $errorText = ''
+
+    if ($null -eq $Result) {
+        $errorText = 'no-structured-result: the agent produced no ExecutionResult; prose is not the protocol'
+    }
+    else {
+        $validation = $null
+        if (Get-Command -Name 'Test-ExecutionResult' -ErrorAction SilentlyContinue) {
+            $validation = Test-ExecutionResult -Result $Result
+        }
+        if ($null -ne $validation -and -not $validation.valid) {
+            $errorText = ('invalid-structured-result: {0}' -f ($validation.errors -join '; '))
+        }
+        else {
+            $resultStatus = ''
+            if ($Result -is [System.Collections.IDictionary]) {
+                if ($Result.Contains('status')) { $resultStatus = [string]$Result['status'] }
+            }
+            elseif ($null -ne $Result.PSObject -and ($Result.PSObject.Properties.Name -contains 'status')) {
+                $resultStatus = [string]$Result.status
+            }
+
+            $resultSummary = ''
+            if ($Result -is [System.Collections.IDictionary]) {
+                if ($Result.Contains('summary')) { $resultSummary = [string]$Result['summary'] }
+            }
+            elseif ($null -ne $Result.PSObject -and ($Result.PSObject.Properties.Name -contains 'summary')) {
+                $resultSummary = [string]$Result.summary
+            }
+
+            switch ($resultStatus) {
+                'capacity_exhausted' { $status = 'queued'; $errorText = '' }
+                'implementation_failed' { $status = 'failed'; $errorText = $resultSummary }
+                'cancelled' { $status = 'failed'; $errorText = 'cancelled' }
+                'implementation_complete' { $status = 'awaiting-review'; $errorText = '' }
+                default { $errorText = ('invalid-structured-result: status must be one of: implementation_complete, implementation_failed, capacity_exhausted, cancelled') }
+            }
+        }
+    }
+
+    return [pscustomobject]@{
+        status   = $status
+        error    = $errorText
+        exitCode = [int]$ExitCode
+    }
+}
+
 if ($LoadFunctionsOnly) { return }
 
 # ── Execution ─────────────────────────────────────────────────────────────────
@@ -625,6 +710,61 @@ function Invoke-QueuedTask {
             throw "Repo vanished mid-run: '$repo' is no longer the root of a git working tree (git resolved: '$topLevel')."
         }
 
+        # Release 3.8 M1 (H38-03) - what did the agent actually say happened?
+        #
+        # Headless is where the question has teeth: nobody watched, so the only
+        # evidence is what the adapter wrote. H38-04 is what writes it; until
+        # then this reads $null and every headless run fails BY NAME, which is
+        # the milestone's acceptance criterion rather than a regression.
+        #
+        # An interactive run has a human in the loop who saw the session, so it
+        # records its own result instead of demanding one from an adapter that
+        # was never involved. Every run leaves a result file either way.
+        $runExitCode = if ($null -ne $LASTEXITCODE) { [int]$LASTEXITCODE } else { 0 }
+        $executionResult = $null
+        if ($Headless) {
+            $executionResult = Read-ExecutionResult -WorkspaceRoot $WorkspaceRoot -TaskId $runId
+        }
+        else {
+            $executionResult = New-ExecutionResult `
+                -TaskId $runId `
+                -ExecutionId $runId `
+                -Provider 'claude' `
+                -Status 'implementation_complete' `
+                -Summary 'interactive session; result recorded by the runner' `
+                -Source 'interactive'
+            $null = Save-ExecutionResult -WorkspaceRoot $WorkspaceRoot -Result $executionResult
+        }
+
+        $outcome = Resolve-RunOutcomeFromResult -Result $executionResult -ExitCode $runExitCode
+        if ($outcome.status -eq 'failed') {
+            # Return WITHOUT committing. Committing work whose result is missing
+            # or malformed would put unreviewable changes on a branch and call
+            # them ready, which is the exact failure this packet removes.
+            Update-TaskSummary -SummaryPath $summaryPath -Set @{
+                status            = $outcome.status
+                error             = $outcome.error
+                branch            = $branch
+                resultPath        = (Get-ExecutionResultPath -WorkspaceRoot $WorkspaceRoot -TaskId $runId)
+                runnerCompletedAt = (Get-Date).ToString('o')
+            }
+            Write-Host ("  [failed] {0}" -f $outcome.error) -ForegroundColor Red
+            return
+        }
+
+        $resultSource = ''
+        $resultSessionId = $null
+        if ($null -ne $executionResult) {
+            if ($executionResult -is [System.Collections.IDictionary]) {
+                if ($executionResult.Contains('source')) { $resultSource = [string]$executionResult['source'] }
+                if ($executionResult.Contains('providerSessionId')) { $resultSessionId = $executionResult['providerSessionId'] }
+            }
+            else {
+                if ($executionResult.PSObject.Properties.Name -contains 'source') { $resultSource = [string]$executionResult.source }
+                if ($executionResult.PSObject.Properties.Name -contains 'providerSessionId') { $resultSessionId = $executionResult.providerSessionId }
+            }
+        }
+
         # Best-effort verify.
         $verifyResult = 'skipped'
         $verifyCmd = Resolve-VerifyCommand -RepoPath $repo
@@ -675,7 +815,7 @@ function Invoke-QueuedTask {
         $commitSha = (& git -C $repo rev-parse --short HEAD 2>$null)
 
         Update-TaskSummary -SummaryPath $summaryPath -Set @{
-            status          = 'awaiting-review'
+            status          = $outcome.status
             branch          = $branch
             commitSha       = "$commitSha"
             filesChanged    = $filesChanged
@@ -683,9 +823,12 @@ function Invoke-QueuedTask {
             completionEditStatus = $completionStatus
             completionCommitSha  = $completionSha
             completionEditDetail = $completionDetail
+            resultPath        = (Get-ExecutionResultPath -WorkspaceRoot $WorkspaceRoot -TaskId $runId)
+            resultSource      = $resultSource
+            providerSessionId = $resultSessionId
             runnerCompletedAt = (Get-Date).ToString('o')
         }
-        Write-Host ("  [awaiting-review] branch={0} commit={1} files={2} verify={3} completion={4}" -f $branch, $commitSha, $filesChanged, $verifyResult, $completionStatus) -ForegroundColor Green
+        Write-Host ("  [{0}] branch={1} commit={2} files={3} verify={4} completion={5}" -f $outcome.status, $branch, $commitSha, $filesChanged, $verifyResult, $completionStatus) -ForegroundColor Green
         Write-Host "  Review the branch, then approve the push - the PR opens through the product." -ForegroundColor DarkGray
     }
     catch {
