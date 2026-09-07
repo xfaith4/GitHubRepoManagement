@@ -3000,12 +3000,17 @@ Write-Step 'Runner claim gate — smoke: cooldown, one local slot, and liveness 
     $clUnknown = Test-RunnerClaimAllowed -Entry ([pscustomobject]@{ runId = 'e4'; dispatchTarget = 'gpt' }) -Config $pcConfig -NowUtc $clNow
     if ($clUnknown.allowed -or $clUnknown.code -ne 'unknown-dispatch-target') { throw "An unknown dispatchTarget must refuse the claim, got '$($clUnknown.code)'" }
     if ($clUnknown.reason -notmatch 'gpt') { throw 'The refusal must name the target it did not recognise' }
-    # Resolve-ClaimToken knows `auto`; Get-QueueEntryDispatchTarget still must
-    # not, because that one decides which tool to RUN and auto names no tool.
+    # H38-14 widened the vocabulary, so BOTH resolvers now accept auto as a
+    # known token. What protects the repository is no longer the resolver
+    # throwing but Invoke-QueuedTask refusing to execute a token it has no
+    # branch for -- asserted below against the runner source, since running the
+    # branch itself would launch an agent.
     if ((Resolve-ClaimToken -Entry $clAutoEntry).token -ne 'auto') { throw 'Resolve-ClaimToken must recognise auto' }
-    $clRunResolverThrew = $false
-    try { $null = Get-QueueEntryDispatchTarget -Entry $clAutoEntry } catch { $clRunResolverThrew = $true }
-    if (-not $clRunResolverThrew) { throw 'Get-QueueEntryDispatchTarget must still refuse auto until H38-14 widens the token list' }
+    if ((Get-QueueEntryDispatchTarget -Entry $clAutoEntry) -ne 'auto') { throw 'After H38-14 the runner resolver shares the one vocabulary' }
+    $clRunnerSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'scripts\Invoke-RoadmapTaskRunner.ps1') -Raw -Encoding UTF8
+    if ($clRunnerSource -notmatch "if \(\`$dispatchTarget -ne 'claude'\) \{") {
+        throw 'Invoke-QueuedTask must refuse a token it has no branch for; without that guard codex and auto would silently run Claude Code'
+    }
 
     # An unenforced verdict is advisory: reported, not binding. Enforcing on a
     # guessed task cost (D-011) would block real work on an unmeasured number.
@@ -6127,6 +6132,46 @@ Write-Step 'Local Claude Code dispatch — smoke: queue writer + runner logic (R
         $runnerRefused = $false
         try { $null = Get-QueueEntryDispatchTarget -Entry ([pscustomobject]@{ runId = 'r'; dispatchTarget = 'gemini' }) } catch { $runnerRefused = $true }
         if (-not $runnerRefused) { throw 'The runner must refuse an unknown dispatchTarget rather than guess' }
+
+        # H38-14: one vocabulary. Before this the list lived in four places --
+        # the queue module, the runner, and two ValidateSet attributes -- so
+        # adding a provider meant finding every copy and missing one.
+        if ((Resolve-RoadmapDispatchTarget -DispatchTarget 'CODEX') -ne 'codex') { throw 'The registry vocabulary must reach the queue module: CODEX should resolve' }
+        if ((Resolve-RoadmapDispatchTarget -DispatchTarget 'auto') -ne 'auto') { throw 'auto is a valid token; the router resolves it at claim time' }
+        if ((Resolve-RoadmapDispatchTarget -DispatchTarget '') -ne 'claude') { throw 'An empty target is a pre-3.0 entry and stays claude' }
+        $vocabRefusal = ''
+        try { $null = Resolve-RoadmapDispatchTarget -DispatchTarget 'gpt' } catch { $vocabRefusal = $_.Exception.Message }
+        # The message is what an operator reads, so it is a contract.
+        if ($vocabRefusal -notmatch "^Unknown dispatchTarget 'gpt'\. Allowed: claude, codex, copilot, auto\.$") {
+            throw "The refusal must name every allowed token in registry order; got: $vocabRefusal"
+        }
+
+        # The ValidateSet attributes cannot call the registry (a param() block
+        # binds before the body runs), so they are checked AGAINST it instead:
+        # drift fails here rather than silently rejecting a valid provider at
+        # the command line.
+        $vocabExpected = @(Get-AgentProviderToken) | Sort-Object
+        foreach ($vocabScript in @('scripts\Add-RoadmapTaskToQueue.ps1', 'scripts\Start-RoadmapCopilotTask.ps1')) {
+            $vocabPath = Join-Path $WorkspaceRoot $vocabScript
+            $vocabAst = [System.Management.Automation.Language.Parser]::ParseFile($vocabPath, [ref]$null, [ref]$null)
+            $vocabAttr = $vocabAst.FindAll({
+                    param($node)
+                    $node -is [System.Management.Automation.Language.AttributeAst] -and $node.TypeName.Name -eq 'ValidateSet'
+                }, $true) | Where-Object {
+                @($_.PositionalArguments | ForEach-Object { $_.Value }) -contains 'claude'
+            } | Select-Object -First 1
+            if ($null -eq $vocabAttr) { throw "No dispatch-target ValidateSet found in $vocabScript" }
+            $vocabActual = @($vocabAttr.PositionalArguments | ForEach-Object { [string]$_.Value }) | Sort-Object
+            if (($vocabActual -join ',') -ne ($vocabExpected -join ',')) {
+                throw ("{0}'s ValidateSet has drifted from the registry: '{1}' vs '{2}'" -f $vocabScript, ($vocabActual -join ','), ($vocabExpected -join ','))
+            }
+        }
+
+        # Golden: the widened vocabulary must not have changed what a default
+        # entry writes, nor what a pre-3.0 entry resolves to.
+        $vocabDefault = New-RoadmapQueueEntry -RunId 'r-vocab' -Repository 'x/y' -LocalRepoPath 'C:\repo' -RoadmapPath 'C:\repo\ROADMAP.md' `
+            -SelectedTask 'T' -TaskDescription 'P' -Branch '' -QueuedAt '2026-01-01T00:00:03Z' -BaseBranch 'main'
+        if ($vocabDefault.dispatchTarget -ne 'claude') { throw "A default entry must still write claude; got '$($vocabDefault.dispatchTarget)'" }
 
         # `gh agent-task create` argv: an array, never a command string — the
         # prompt is multi-line roadmap text full of quotes.

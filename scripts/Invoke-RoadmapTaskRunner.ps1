@@ -248,12 +248,9 @@ function Get-QueueEntryDispatchTarget {
     if ($Entry.PSObject.Properties.Name -contains 'dispatchTarget' -and $Entry.dispatchTarget) {
         $raw = [string]$Entry.dispatchTarget
     }
-    if ([string]::IsNullOrWhiteSpace($raw)) { return 'claude' }
-    $normalized = $raw.Trim().ToLowerInvariant()
-    if ($normalized -notin @('claude', 'copilot')) {
-        throw ("Unknown dispatchTarget '{0}'; refusing to guess which tool to run. Allowed: claude, copilot." -f $raw)
-    }
-    return $normalized
+    # H38-14: one vocabulary. This used to repeat the queue module's list and
+    # message, so adding a provider meant finding four copies and missing one.
+    return (Resolve-RoadmapDispatchTarget -DispatchTarget $raw)
 }
 
 function New-CopilotAgentTaskArgs {
@@ -932,6 +929,22 @@ function Invoke-QueuedTask {
 
     if ($dispatchTarget -eq 'copilot') {
         Invoke-QueuedCopilotTask -Entry $Entry -RunId $runId -SummaryPath $summaryPath
+        return
+    }
+
+    # H38-14 widened the VOCABULARY from claude|copilot to the full registry, so
+    # a token can now be valid without this runner being able to execute it:
+    # `codex` gets its branch in H38-16, and `auto` is resolved to a real
+    # provider by the router in H38-17. Everything below is the Claude Code
+    # path, so without this guard either token would silently run Claude Code
+    # against a real repository -- the exact failure the old hardcoded list's
+    # refusal existed to prevent. Refuse by name instead.
+    if ($dispatchTarget -ne 'claude') {
+        $unrunnable = ("dispatchTarget '{0}' is a known token but this runner has no branch for it yet; refusing rather than running Claude Code in its place" -f $dispatchTarget)
+        Write-Host ("  refused: {0}" -f $unrunnable) -ForegroundColor Red
+        if (-not $DryRun) {
+            Update-TaskSummary -SummaryPath $summaryPath -Set @{ status = 'failed'; error = $unrunnable; runnerCompletedAt = (Get-Date).ToString('o') }
+        }
         return
     }
 
