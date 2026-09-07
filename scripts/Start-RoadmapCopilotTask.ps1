@@ -41,7 +41,7 @@ param(
     # runner (Invoke-RoadmapTaskRunner.ps1) to execute with Claude Code on the
     # LOCAL repo. 'copilot': legacy GitHub Copilot cloud dispatch (needs a remote).
     [Parameter()]
-    [ValidateSet('claude', 'copilot')]
+    [ValidateSet('claude', 'codex', 'copilot', 'auto')]
     [string]$DispatchMode = 'claude'
 )
 

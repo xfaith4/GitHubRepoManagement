@@ -27,7 +27,7 @@ param(
     [string]$TaskDescription,
     [string]$Branch,
     [string]$QueuePath,
-    [ValidateSet('claude', 'copilot')]
+    [ValidateSet('claude', 'codex', 'copilot', 'auto')]
     [string]$DispatchTarget = 'claude',
     [string]$BaseBranch,
     [switch]$LoadFunctionsOnly

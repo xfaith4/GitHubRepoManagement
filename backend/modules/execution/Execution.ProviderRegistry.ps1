@@ -23,8 +23,13 @@
     cannot yet claim would leave every dispatch queued forever, which is the
     deadlock this pairing exists to prevent.
 
-    This packet is the loader only. H38-14 adds the registry functions that
-    resolve a provider token; the file is named for what it becomes.
+    H38-14 added the registry half: this module is now the ONE token
+    vocabulary. The list used to live in four places -- the queue module, the
+    runner, and two ValidateSet attributes -- so adding a provider meant finding
+    every copy, and missing one meant a valid provider was rejected somewhere
+    nobody looked. The queue module and the runner delegate here; the two
+    attributes cannot (a param() block binds before the body runs), so the
+    module smoke checks them against this list and fails on drift.
 
 .NOTES
     PowerShell 5.1 compatible. Param-less library: dot-source it, do not run it.
@@ -117,6 +122,107 @@ function Get-AgentProviderConfig {
     if ([string](_APR_Field -Obj $parsed -Name 'schemaVersion' -Default '') -ne 'v1') { return $null }
     if (@(_APR_Name -Obj (_APR_Field -Obj $parsed -Name 'providers' -Default $null)).Count -eq 0) { return $null }
     return $parsed
+}
+
+<#
+.SYNOPSIS
+    Every configured provider, keyed by name, in config order.
+
+.DESCRIPTION
+    H38-14. Includes providers whose `supported` is false. Whether a provider
+    can currently run work is a ROUTING fact, decided per candidate; whether the
+    name exists at all is a vocabulary fact, and this is the vocabulary. Hiding
+    an unsupported provider here would make `codex` an unknown token rather than
+    a known one that cannot yet be selected, and the two produce very different
+    error messages for an operator.
+
+    $null when the config cannot be read, so a caller can tell "no policy" from
+    "a policy naming no providers" -- Get-AgentProviderConfig already refuses
+    the latter.
+#>
+function Get-AgentProviderRegistry {
+    [CmdletBinding()]
+    [OutputType([System.Collections.Specialized.OrderedDictionary])]
+    param([Parameter(Mandatory)][string]$WorkspaceRoot)
+
+    $config = Get-AgentProviderConfig -ConfigPath (Get-AgentProviderConfigPath -WorkspaceRoot $WorkspaceRoot)
+    if ($null -eq $config) { return $null }
+
+    $registry = [ordered]@{}
+    $providers = _APR_Field -Obj $config -Name 'providers' -Default $null
+    foreach ($name in @(_APR_Name -Obj $providers)) {
+        $registry[$name] = (_APR_Field -Obj $providers -Name $name -Default $null)
+    }
+    return $registry
+}
+
+<#
+.SYNOPSIS
+    The one token vocabulary: every provider name, plus `auto`.
+
+.DESCRIPTION
+    Before this there were four copies -- the queue module, the runner, and two
+    ValidateSet attributes -- each of which had to be found and edited to add a
+    provider, and any one of which could be missed. `auto` is appended here
+    rather than stored in config because it names no provider: it is the
+    instruction to choose one.
+
+    Falls back to the committed three when no config is loadable, so a caller in
+    a fixture workspace still gets a usable vocabulary rather than an empty one.
+#>
+function Get-AgentProviderToken {
+    [CmdletBinding()]
+    [OutputType([object[]])]
+    param([string]$WorkspaceRoot = '')
+
+    $names = @()
+    if (-not [string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
+        $registry = Get-AgentProviderRegistry -WorkspaceRoot $WorkspaceRoot
+        if ($null -ne $registry) { $names = @($registry.Keys) }
+    }
+    if ($names.Count -eq 0) { $names = @('claude', 'codex', 'copilot') }
+    return @(@($names) + @('auto'))
+}
+
+<#
+.SYNOPSIS
+    Is this a token the product knows, in any casing?
+#>
+function Test-AgentProviderToken {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Token, [string]$WorkspaceRoot = '')
+
+    if ([string]::IsNullOrWhiteSpace($Token)) { return $false }
+    return (@(Get-AgentProviderToken -WorkspaceRoot $WorkspaceRoot) -contains $Token.Trim().ToLowerInvariant())
+}
+
+<#
+.SYNOPSIS
+    Normalize a token; empty means claude, unknown throws with the list named.
+
+.DESCRIPTION
+    Empty resolves to `claude` because entries written before Release 3.0 carry
+    no target and must keep running as the Claude Code tasks they were queued
+    as. An unrecognized value is refused rather than defaulted: silently running
+    an unknown target as `claude` would execute the wrong tool against a real
+    repository.
+
+    The message shape is asserted by the module smoke and is what an operator
+    reads, so it is a contract, not a string.
+#>
+function Resolve-AgentProviderToken {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([AllowEmptyString()][string]$Token = '', [string]$WorkspaceRoot = '')
+
+    if ([string]::IsNullOrWhiteSpace($Token)) { return 'claude' }
+    $normalized = $Token.Trim().ToLowerInvariant()
+    $allowed = @(Get-AgentProviderToken -WorkspaceRoot $WorkspaceRoot)
+    if ($allowed -notcontains $normalized) {
+        throw ("Unknown dispatchTarget '{0}'. Allowed: {1}." -f $Token, ($allowed -join ', '))
+    }
+    return $normalized
 }
 
 <#

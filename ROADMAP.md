@@ -949,7 +949,13 @@ to the queue — never fails it — when a provider is exhausted.
       `frontend/types.ts`, and reconciles the third vocabulary
       (`operator-runner`) the approval route writes. Eligibility then ranking,
       selection reason recorded, presence counts derived from the registry
-      rather than naming providers. _(state: planned)_
+      rather than naming providers. _(state: scaffolded 2026-09-07 — H38-14
+      Execution.ProviderRegistry.ps1 is the one token list (claude, codex,
+      copilot, auto); the queue module and the runner delegate to it, and the
+      two ValidateSet attributes that cannot are gated against it so drift
+      fails a smoke rather than rejecting a valid provider unnoticed;
+      Invoke-QueuedTask now refuses a known token it has no branch for, so the
+      wider vocabulary cannot run Claude Code in codex's place)_
 - [ ] **Move push and PR opening to Repo Manager; bind approval to the verified
       SHA.** The agent exits at `IMPLEMENTATION_COMPLETE`; Repo Manager pushes,
       opens the pull request and monitors CI on a cadence without holding an

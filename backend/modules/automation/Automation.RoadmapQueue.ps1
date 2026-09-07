@@ -63,10 +63,24 @@ function Get-RoadmapQueuePath {
 }
 
 function Get-RoadmapDispatchTargets {
-    <# Release 3.0 - the only two execution contexts a queue entry may name.
-       `claude` runs Claude Code in the operator's session; `copilot` runs
-       `gh agent-task create`, which needs the OAuth credential only an operator
-       session holds. Both execute as the operator; neither runs in the service. #>
+    <# The execution contexts a queue entry may name. `claude` runs Claude Code
+       in the operator's session; `copilot` runs `gh agent-task create`, which
+       needs the OAuth credential only an operator session holds; `codex` is a
+       second local CLI; `auto` names no tool and asks the router to choose.
+       None of them run in the service.
+
+       Release 3.8 M3 (H38-14): the list now comes from the provider registry,
+       which reads agent-providers.json, so adding a provider is a config edit
+       rather than four synchronized code edits.
+
+       The literal fallback is NOT dead code. This module is dot-sourced by the
+       runner before anything else, and by callers using -LoadFunctionsOnly that
+       load no execution modules at all; a hard dependency here would break
+       them. The fallback is the pre-3.8 pair, which is what those callers
+       already assumed. #>
+    if (Get-Command -Name 'Get-AgentProviderToken' -ErrorAction SilentlyContinue) {
+        return @(Get-AgentProviderToken)
+    }
     return @('claude', 'copilot')
 }
 
@@ -82,6 +96,13 @@ function Resolve-RoadmapDispatchTarget {
         would execute the wrong tool against a real repository.
     #>
     param([AllowEmptyString()][string]$DispatchTarget = '')
+
+    # Delegates when the registry is loaded, for the same reason and with the
+    # same fallback as Get-RoadmapDispatchTargets above. The message shape is
+    # identical either way, because an operator reads it.
+    if (Get-Command -Name 'Resolve-AgentProviderToken' -ErrorAction SilentlyContinue) {
+        return (Resolve-AgentProviderToken -Token $DispatchTarget)
+    }
 
     if ([string]::IsNullOrWhiteSpace($DispatchTarget)) { return 'claude' }
     $normalized = $DispatchTarget.Trim().ToLowerInvariant()
