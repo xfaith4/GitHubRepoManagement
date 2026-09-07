@@ -2556,7 +2556,15 @@ if ([bool]$pcConfig.dispatch.autoEnabled) { throw 'dispatch.autoEnabled must sta
 if ([string]$pcConfig.dispatch.defaultTarget -ne 'claude') { throw "dispatch.defaultTarget should be 'claude' until routing is on, got '$($pcConfig.dispatch.defaultTarget)'" }
 if ([string]$pcConfig.ranking.tieBreak -ne 'nearest-reset-first') { throw 'ranking.tieBreak is the decided D-013 value, nearest-reset-first' }
 if ($pcConfig.ranking.PSObject.Properties.Name -contains 'provisional') { throw 'ranking carries no provisional flag: D-013 is decided, not assumed' }
-if (-not [bool]$pcConfig.reserves.provisional) { throw 'reserves stay marked provisional until D-011 is answered' }
+# D-011, decided 2026-09-07: the reserves are Ben's ruling (15/20 as the spec
+# wrote them), so they carry no provisional flag. The per-task ESTIMATE was not
+# ruled on and stays provisional -- it is the one number nobody can know before
+# real runs report usage. Enforcement waits on that half, not on the reserves.
+if ($pcConfig.reserves.PSObject.Properties.Name -contains 'provisional') { throw 'reserves carry no provisional flag: D-011 decided them 2026-09-07, they are not an assumption' }
+if ([double]$pcConfig.reserves.shortWindowRatio -ne 0.15) { throw "D-011 set the short-window reserve to 0.15, got $($pcConfig.reserves.shortWindowRatio)" }
+if ([double]$pcConfig.reserves.weeklyRatio -ne 0.20) { throw "D-011 set the weekly reserve to 0.20, got $($pcConfig.reserves.weeklyRatio)" }
+if (-not [bool]$pcConfig.reserves.remediationInsideWeekly) { throw 'D-011 kept remediation drawing from inside the weekly reserve' }
+if (-not [bool]$pcConfig.estimates.provisional) { throw 'the per-task estimate stays provisional until observed consumption replaces the guess' }
 
 # `supported` says this repository has a way to run work through the provider,
 # which CI can check. It replaced `enabled`, which asserted that one operator
@@ -2742,6 +2750,81 @@ if (-not $capSaveThrew) { throw 'Save must validate before writing; an invalid r
 
 Remove-Item -LiteralPath $capWs -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host '  provider capacity: spec example valid, unmeasured stays null (0.0 does not), 6-source ladder ranked, merge refuses a worse source, round-trip holds' -ForegroundColor DarkGray
+
+# --- H38-09: the reserve arithmetic and the verdict -----------------------
+# Run against the COMMITTED config, so the assertions below are checking the
+# reserves Ben actually decided rather than a fixture that agrees with itself.
+$capVerdictConfig = $pcConfig
+
+# D-011's consequence, and the single most important assertion in this section:
+# the reserves are decided but the per-task estimate is not, so enforcement
+# stays OFF. A verdict may be wrong today; it may not refuse anyone.
+$capFits = Resolve-ProviderCapacityVerdict -Record $capSpec -Config $capVerdictConfig -TaskClass normal
+if ($capFits.enforced) { throw 'enforced must be FALSE while estimates.provisional is true: a reserve can only refuse work if you know what a task costs' }
+if (-not $capFits.eligible) { throw "The spec example must fit: $($capFits.reason)" }
+if ($capFits.reason -ne 'fits') { throw "Expected reason 'fits', got '$($capFits.reason)'" }
+if ($capFits.window -ne 'weekly') { throw "The tightest window is weekly (0.43 - 0.20 = 0.23 beats 0.61 - 0.15 = 0.46), got '$($capFits.window)'" }
+if ([math]::Round([double]$capFits.usableRatio, 4) -ne 0.23) { throw "Usable weekly capacity must be 0.23, got $($capFits.usableRatio)" }
+if ([double]$capFits.reserveRatio -ne 0.20) { throw "The weekly reserve is 0.20, got $($capFits.reserveRatio)" }
+if ($capFits.provider -ne 'codex') { throw 'The verdict names the provider it is about' }
+
+# A record that does not fit, and the reason an operator would read.
+$capTightWindows = @(
+    @{ name = 'short-term'; unit = 'provider-allowance'; remainingRatio = 0.61; resetAt = $null; source = 'provider-status' },
+    @{ name = 'weekly'; unit = 'provider-allowance'; remainingRatio = 0.22; resetAt = $null; source = 'provider-status' }
+)
+$capTight = New-ProviderCapacityRecord -Provider 'claude' -Windows $capTightWindows
+$capTightNormal = Resolve-ProviderCapacityVerdict -Record $capTight -Config $capVerdictConfig -TaskClass normal
+if ($capTightNormal.eligible) { throw '0.22 weekly leaves 0.02 usable against a 0.05 estimate; that must not be eligible' }
+if ($capTightNormal.window -ne 'weekly') { throw "The refusal must name the weekly window, got '$($capTightNormal.window)'" }
+if ($capTightNormal.reason -ne 'insufficient weekly capacity: usable 0.02 < estimate 0.05') { throw "Reason reworded: '$($capTightNormal.reason)'" }
+
+# Remediation MAY consume the weekly reserve (spec). Same record, different
+# task class, opposite answer -- this is the rule that keeps a failure
+# recoverable when normal work has already been throttled.
+$capTightRemediation = Resolve-ProviderCapacityVerdict -Record $capTight -Config $capVerdictConfig -TaskClass remediation
+if (-not $capTightRemediation.eligible) { throw "Remediation may draw from inside the weekly reserve: $($capTightRemediation.reason)" }
+
+# An operator override releases every reserve, and says so in the reason: a
+# released reserve must never be invisible.
+$capOverride = Resolve-ProviderCapacityVerdict -Record $capTight -Config $capVerdictConfig -TaskClass normal -OperatorOverride $true
+if (-not $capOverride.eligible) { throw "An operator override must release the reserve: $($capOverride.reason)" }
+if (-not $capOverride.reason.EndsWith('(operator override)')) { throw "The override must be recorded in the reason, got '$($capOverride.reason)'" }
+
+# Cooldown: future blocks, past is spent and ignored. The second half is what
+# lets a provider come back on its own without anyone clearing the field.
+$capNow = [datetime]::Parse('2026-09-07T12:00:00Z', [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal -bor [System.Globalization.DateTimeStyles]::AssumeUniversal)
+$capCooling = New-ProviderCapacityRecord -Provider 'claude' -Windows $capSpecWindows -CooldownUntil '2026-09-07T13:00:00Z'
+$capCoolingVerdict = Resolve-ProviderCapacityVerdict -Record $capCooling -Config $capVerdictConfig -NowUtc $capNow
+if ($capCoolingVerdict.eligible) { throw 'A provider cooling down is not eligible' }
+if ($capCoolingVerdict.reason -ne 'cooling-down until 2026-09-07T13:00:00Z') { throw "Cooldown reason reworded: '$($capCoolingVerdict.reason)'" }
+if ($capCoolingVerdict.cooldownUntil -ne '2026-09-07T13:00:00Z') { throw 'The verdict carries the cooldown timestamp it refused on' }
+$capExpired = New-ProviderCapacityRecord -Provider 'claude' -Windows $capSpecWindows -CooldownUntil '2026-09-07T11:00:00Z'
+if (-not (Resolve-ProviderCapacityVerdict -Record $capExpired -Config $capVerdictConfig -NowUtc $capNow).eligible) { throw 'A cooldown in the past is spent: the provider comes back on its own' }
+
+# Unknown is not exhausted. Treating silence as empty would strand Copilot,
+# whose allowance is not published at all, permanently ineligible.
+$capUnmeasured = Resolve-ProviderCapacityVerdict -Record $capUnknown -Config $capVerdictConfig
+if (-not $capUnmeasured.eligible) { throw "An unmeasured provider must stay eligible: $($capUnmeasured.reason)" }
+if ($capUnmeasured.reason -ne 'capacity unmeasured') { throw "Expected 'capacity unmeasured', got '$($capUnmeasured.reason)'" }
+
+# The two states that are not the same as "no capacity".
+$capNoRecord = Resolve-ProviderCapacityVerdict -Record $null -Config $capVerdictConfig -Provider 'codex'
+if ($capNoRecord.eligible -or $capNoRecord.reason -ne 'no-capacity-record') { throw "A missing record reads 'no-capacity-record', got '$($capNoRecord.reason)'" }
+if ($capNoRecord.provider -ne 'codex') { throw 'A verdict with no record still names which provider it is about' }
+$capUnavailableRecord = New-ProviderCapacityRecord -Provider 'claude' -Windows $capSpecWindows -Available $false
+$capUnavailable = Resolve-ProviderCapacityVerdict -Record $capUnavailableRecord -Config $capVerdictConfig
+if ($capUnavailable.eligible -or $capUnavailable.reason -ne 'provider-unavailable') { throw "An unavailable provider reads 'provider-unavailable', got '$($capUnavailable.reason)'" }
+
+# enforced is a conjunction, proven in both directions against fixture configs
+# -- the committed config can only ever demonstrate one of them.
+$capEnforceFixture = ConvertFrom-Json -InputObject $pcRaw
+$capEnforceFixture.estimates.provisional = $false
+if ((Resolve-ProviderCapacityVerdict -Record $capSpec -Config $capEnforceFixture).enforced -ne $true) { throw 'With both flags clear, enforced must be true' }
+$capEnforceFixture.reserves | Add-Member -NotePropertyName 'provisional' -NotePropertyValue $true -Force
+if ((Resolve-ProviderCapacityVerdict -Record $capSpec -Config $capEnforceFixture).enforced) { throw 'A provisional reserve must keep enforcement off even when the estimate is settled' }
+
+Write-Host '  capacity verdict: reserves 15/20 applied, remediation may use the weekly reserve, override recorded, cooldown expires on its own, unmeasured stays eligible, enforcement OFF while the task estimate is a guess' -ForegroundColor DarkGray
 
 Write-Step 'WorkPacket prompt rendering — smoke: acceptance criteria travel verbatim'
 
