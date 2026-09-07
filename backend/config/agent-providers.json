@@ -43,8 +43,7 @@
   "reserves": {
     "shortWindowRatio": 0.15,
     "weeklyRatio": 0.20,
-    "remediationInsideWeekly": true,
-    "provisional": true
+    "remediationInsideWeekly": true
   },
   "estimates": {
     "defaultTaskConsumptionRatio": 0.05,

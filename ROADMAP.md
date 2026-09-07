@@ -912,17 +912,21 @@ to the queue — never fails it — when a provider is exhausted.
       [`BudgetLedger.ps1`](backend/modules/agent-runs/BudgetLedger.ps1) keeps the
       portfolio work-unit quota and gains no token conversion it cannot source.
       A limit re-queues the task with workspace, branch, attempt and session
-      intact. _(state: scaffolded 2026-09-07 — H38-07 added agent-providers.json
-      (schemaVersion v1) + Get-AgentProviderConfig; reserves are data marked
-      provisional pending D-011; ranking weights and tieBreak are the decided
-      D-013 values; corrected same day — `providers.<name>.supported` replaces
-      `enabled`, a repository fact CI can verify, because whether a provider is
-      installed and funded is per-installation state that is detected at runtime
-      and shown in Settings, never committed on every operator's behalf; H38-08
+      intact. _(state: scaffolded 2026-09-07 — H38-07 added
+      agent-providers.json (schemaVersion v1) + Get-AgentProviderConfig;
+      ranking weights and tieBreak are the decided D-013 values; corrected same
+      day — `providers.<name>.supported` replaces `enabled`, a repository fact
+      CI can verify, because whether a provider is installed and funded is
+      per-installation state detected at runtime and shown in Settings, never
+      committed on every operator's behalf; H38-08
       Execution.ProviderCapacity.ps1 — one record per provider under
       output/provider-capacity/, native units preserved, confidence from the
       spec's six-source ladder, and a merge that refuses to let a worse source
-      overwrite a better one)_
+      overwrite a better one; H38-09 Resolve-ProviderCapacityVerdict applies the
+      D-011 reserves (15% short, 20% weekly, decided 2026-09-07 and no longer
+      provisional; remediation may use the weekly reserve; operator override
+      recorded in the reason) — enforcement stays OFF because the per-task cost
+      estimate is still a guess, so verdicts are recorded and refuse nobody)_
 - [ ] **Route between providers, and add the Codex adapter.** One registry
       replaces the `claude`/`copilot` pair hardcoded in
       [`Automation.RoadmapQueue.ps1`](backend/modules/automation/Automation.RoadmapQueue.ps1),

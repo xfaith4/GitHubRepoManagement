@@ -58,27 +58,6 @@ against that mistaken test and had to be withdrawn; see
 - **Blocks.** No longer the cohort — the empty-category rule above releases it.
   Only the owner-intent labels themselves still need Ben.
 
-### D-011 — Are the capacity reserves right, and what does a task cost?
-
-- **Asked** 2026-09-06, from
-  [Release 3.8 milestone 2](../../ROADMAP.md) and the
-  [execution spec](Agent-Execution-Governance.md)'s _Capacity reserves_.
-- **Question.** The spec proposes holding back **15%** of a short window and
-  **20%** of a weekly window, with remediation drawing from inside the weekly
-  reserve. Are those the right numbers? And what should a single task be
-  assumed to consume, which the spec does not say at all?
-- **Why it is not an agent's call.** Reserve size is the risk posture of the
-  whole release. Too high starves ordinary work of capacity that was never
-  going to be needed; too low exhausts a subscription and leaves nothing for
-  the remediation that a failure will demand. Neither number is derivable
-  until real consumption has been observed.
-- **Default if unanswered.** `backend/config/agent-providers.json` ships the
-  spec's 15 and 20 and an estimate of `0.05` of the short window, all marked
-  `"provisional": true`. Capacity verdicts are **recorded but not enforced**,
-  so a wrong reserve cannot refuse work — it can only be visibly wrong.
-- **Blocks.** Nothing outright. It gates the enforcement half of the capacity
-  verdict in Release 3.8.
-
 ### D-012 — What may an agent touch, and may it edit workflow files?
 
 - **Asked** 2026-09-06, from
@@ -170,6 +149,42 @@ meaning a conforming adapter exists here, which CI can verify.
 
 Move entries here with the decision and its date. Keep the original question
 intact — the reasoning is what stops the next agent reopening a settled point.
+
+### D-011 — Are the capacity reserves right, and what does a task cost?
+
+- **Asked** 2026-09-06, from
+  [Release 3.8 milestone 2](../../ROADMAP.md) and the
+  [execution spec](Agent-Execution-Governance.md)'s _Capacity reserves_.
+- **Question.** The spec proposes holding back **15%** of a short window and
+  **20%** of a weekly window, with remediation drawing from inside the weekly
+  reserve. Are those the right numbers? And what should a single task be
+  assumed to consume, which the spec does not say at all?
+- **Why it is not an agent's call.** Reserve size is the risk posture of the
+  whole release. Too high starves ordinary work of capacity that was never
+  going to be needed; too low exhausts a subscription and leaves nothing for
+  the remediation that a failure will demand. Neither number is derivable
+  until real consumption has been observed.
+- **Decision** 2026-09-07, Ben. **The reserves stand exactly as the spec wrote
+  them: 15% of a short window, 20% of a weekly window, remediation drawing from
+  inside the weekly reserve.** They are no longer provisional — the
+  `provisional` flag comes off `reserves` in `agent-providers.json`, because
+  these are now a ruling rather than an assumption.
+- **Decision, second half.** The per-task consumption estimate **stays `0.05`
+  and stays provisional.** It was never ruled on, only left at its default,
+  and it is the one number nobody can know before real runs report usage.
+- **The consequence, which is not obvious.** Enforcement does **not** turn on.
+  A reserve can only refuse work if you know what a task costs, so
+  `enforced` requires **both** `reserves.provisional` and
+  `estimates.provisional` to be clear — not `reserves` alone, as H38-09 was
+  originally written. Clearing one flag while the cost model is still a guess
+  would have silently started refusing dispatches on an unmeasured number.
+  Capacity verdicts are therefore computed and recorded, and refuse nobody: a
+  wrong estimate can look wrong, but it cannot block work.
+- **What lifts the remaining flag.** Observed consumption, not another ruling.
+  Once completed runs have reported real usage the estimate stops being a
+  guess, and the flag comes off on evidence.
+- **Blocks.** Nothing. It gated the enforcement half of the capacity verdict;
+  that half now waits on measurement instead.
 
 ### D-013 — What are the provider ranking weights, and how is a tie broken?
 

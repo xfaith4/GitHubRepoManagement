@@ -557,7 +557,7 @@ packet about something else.
 
 **Roadmap item:** M2 ("reserves … live in config"); acceptance criterion `A provider at a hard limit is not dispatched`. Spec: *Capacity reserves* ("Normal implementation work cannot consume the reserve. Remediation … MAY consume the reserve. An operator MAY explicitly override a reserve").
 
-**Prerequisites:** H38-08; **D-011 decided** (see Stop if).
+**Prerequisites:** H38-08. **D-011 was decided 2026-09-07** — reserves stand at the spec's 15/20 with remediation inside the weekly reserve, and the per-task estimate stays `0.05` and stays provisional. This packet clears `reserves.provisional` and leaves `estimates.provisional` alone.
 
 **Scope (edit only):** `backend/modules/execution/Execution.ProviderCapacity.ps1`; `scripts/Invoke-ModuleSmokeTest.ps1`; `ROADMAP.md`.
 
@@ -570,7 +570,7 @@ packet about something else.
    4. For each window with a non-null ratio: `reserve` = `reserves.shortWindowRatio` when `name = 'short-term'`, `reserves.weeklyRatio` when `name = 'weekly'`, else `0`; `usable = remainingRatio - reserve`, floored at 0; when `TaskClass = remediation` and `remediationInsideWeekly` is true, `usable = remainingRatio` for the weekly window; when `OperatorOverride`, `usable = remainingRatio` for every window and `reason` gains a trailing space plus `(operator override)`. If `usable < EstimatedConsumptionRatio` → `$false`, `'insufficient <name> capacity: usable <u> < estimate <e>'`, `window = name`.
    5. No window has a ratio → `eligible = $true`, `reason = 'capacity unmeasured'` (unknown is not exhausted; the spec's `unknown` unit exists for this).
    6. Otherwise `$true`, `reason = 'fits'`, `window` = the tightest window.
-2. `enforced` = `-not $Config.reserves.provisional`. **While D-011 is unanswered the verdict is computed and recorded but the runner must not refuse on it** — H38-11 reads `enforced`.
+2. `enforced` = `(-not $Config.reserves.provisional) -and (-not $Config.estimates.provisional)`. **Both halves, not the reserves alone** — this line originally read `-not $Config.reserves.provisional`, which D-011's answer made wrong. Ben ruled the reserves on 2026-09-07 (15/20, as the spec wrote them) but deliberately left the per-task estimate provisional, and a reserve can only refuse work if you know what a task costs. Clearing one flag while the cost model is still a guess would silently start refusing dispatches on an unmeasured number. So today `enforced` is `$false`: **the verdict is computed and recorded, and the runner must not refuse on it** — H38-11 reads `enforced`. What lifts the remaining flag is observed consumption, not another ruling.
 
 **Gate (red first) — module smoke, extend the capacity section:**
 
@@ -582,7 +582,7 @@ packet about something else.
 
 **Roadmap write-back:** append `; H38-09 Resolve-ProviderCapacityVerdict applies the configured reserves (remediation may use the weekly reserve; operator override recorded)`.
 
-**Stop if:** D-011 is not under **Decided** in `open-decisions.md` — do the work through step 2 with `enforced = $false` and report; do **not** flip `provisional` yourself.
+**Stop if:** nothing — D-011 is under **Decided** as of 2026-09-07, so step 2 runs and `reserves.provisional` is cleared by this packet. Do **not** touch `estimates.provisional`: that half was left provisional on purpose, and clearing it is a measurement result, never a packet's decision.
 
 ---
 

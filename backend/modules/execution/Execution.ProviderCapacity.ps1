@@ -426,3 +426,183 @@ function Merge-ProviderCapacityWindow {
         record = $rebuilt
     }
 }
+
+function _PCR_Ratio {
+    <# Format a ratio for an operator-facing reason string. Invariant culture,
+       so a machine with a comma decimal separator produces the same sentence a
+       gate asserts against. #>
+    param([object]$Value)
+    return [string]::Format([System.Globalization.CultureInfo]::InvariantCulture, '{0:0.####}', [double]$Value)
+}
+
+<#
+.SYNOPSIS
+    Is there room to run a task on this provider, after the reserve is held back?
+
+.DESCRIPTION
+    The spec's reserve rules: normal implementation work cannot consume the
+    reserve, remediation MAY consume it, and an operator MAY explicitly override
+    it. This applies them to a capacity record and reports WHY, because a
+    provider that silently stops being chosen is indistinguishable from one that
+    is broken.
+
+    **Unmeasured is not exhausted.** A record whose windows carry no ratio is
+    eligible with the reason `capacity unmeasured`. The spec's `unknown` unit
+    exists precisely so a provider that does not publish an allowance can still
+    be used; treating silence as empty would strand Copilot permanently.
+
+    **`enforced` needs BOTH provisional flags clear.** D-011 (2026-09-07) ruled
+    the reserves -- 15% short, 20% weekly, remediation inside the weekly -- but
+    deliberately left the per-task consumption estimate provisional, because
+    nobody can know that number before real runs report usage. A reserve can
+    only refuse work if you know what a task costs, so enforcing on a decided
+    reserve and a guessed cost would refuse dispatches on an unmeasured number.
+    Until observed consumption replaces the guess, every verdict here is
+    computed and recorded and refuses nobody: H38-11 reads `enforced` and
+    declines to act while it is false.
+#>
+function Resolve-ProviderCapacityVerdict {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][AllowNull()][object]$Record,
+        [Parameter(Mandatory)][object]$Config,
+        [ValidateSet('normal', 'remediation')][string]$TaskClass = 'normal',
+        [AllowNull()][object]$EstimatedConsumptionRatio = $null,
+        [bool]$OperatorOverride = $false,
+        [datetime]$NowUtc = [datetime]::UtcNow,
+        [AllowEmptyString()][string]$Provider = ''
+    )
+
+    $reserves = _PCR_Field -Obj $Config -Name 'reserves' -Default $null
+    $estimates = _PCR_Field -Obj $Config -Name 'estimates' -Default $null
+
+    # Both halves, never the reserves alone. See the D-011 note above.
+    $reservesProvisional = [bool](_PCR_Field -Obj $reserves -Name 'provisional' -Default $false)
+    $estimatesProvisional = [bool](_PCR_Field -Obj $estimates -Name 'provisional' -Default $false)
+    $enforced = ((-not $reservesProvisional) -and (-not $estimatesProvisional))
+
+    $estimate = _PCR_TryRatio $EstimatedConsumptionRatio
+    if ($null -eq $estimate) {
+        $estimate = _PCR_TryRatio (_PCR_Field -Obj $estimates -Name 'defaultTaskConsumptionRatio' -Default $null)
+    }
+    if ($null -eq $estimate) { $estimate = 0.0 }
+
+    $shortReserve = [double](_PCR_TryRatio (_PCR_Field -Obj $reserves -Name 'shortWindowRatio' -Default 0.0))
+    $weeklyReserve = [double](_PCR_TryRatio (_PCR_Field -Obj $reserves -Name 'weeklyRatio' -Default 0.0))
+    $remediationInsideWeekly = [bool](_PCR_Field -Obj $reserves -Name 'remediationInsideWeekly' -Default $false)
+
+    $recordProvider = [string](_PCR_Field -Obj $Record -Name 'provider' -Default '')
+    $namedProvider = $(if ([string]::IsNullOrWhiteSpace($recordProvider)) { $Provider } else { $recordProvider })
+
+    $verdict = [ordered]@{
+        provider      = $namedProvider
+        eligible      = $false
+        reason        = ''
+        window        = $null
+        usableRatio   = $null
+        reserveRatio  = $null
+        cooldownUntil = $null
+        enforced      = $enforced
+    }
+
+    # 1. No record at all. Ordinary on a fresh install, so it is a reason and
+    #    not an error -- but it is not eligibility either, because nothing is
+    #    known about what is left.
+    if ($null -eq $Record) {
+        $verdict.reason = 'no-capacity-record'
+        return [pscustomobject]$verdict
+    }
+
+    # 2. The provider itself said no.
+    if (-not [bool](_PCR_Field -Obj $Record -Name 'available' -Default $true)) {
+        $verdict.reason = 'provider-unavailable'
+        return [pscustomobject]$verdict
+    }
+
+    # 3. A cooldown in the future. A cooldown in the PAST is spent and ignored,
+    #    which is what lets a provider come back on its own without anyone
+    #    clearing the field.
+    $cooldownRaw = [string](_PCR_Field -Obj $Record -Name 'cooldownUntil' -Default '')
+    if (-not [string]::IsNullOrWhiteSpace($cooldownRaw)) {
+        $cooldownAt = [datetime]::MinValue
+        $parsedCooldown = [datetime]::TryParse(
+            $cooldownRaw,
+            [System.Globalization.CultureInfo]::InvariantCulture,
+            [System.Globalization.DateTimeStyles]::AdjustToUniversal -bor [System.Globalization.DateTimeStyles]::AssumeUniversal,
+            [ref]$cooldownAt)
+        if ($parsedCooldown -and $cooldownAt -gt $NowUtc) {
+            $verdict.reason = ('cooling-down until {0}' -f $cooldownRaw)
+            $verdict.cooldownUntil = $cooldownRaw
+            return [pscustomobject]$verdict
+        }
+    }
+
+    $windows = @()
+    if ($Record -is [System.Collections.IDictionary]) {
+        if ($Record.Contains('windows')) { $windows = @($Record['windows']) }
+    }
+    elseif ($null -ne $Record.PSObject -and ($Record.PSObject.Properties.Name -contains 'windows')) {
+        $windows = @($Record.windows)
+    }
+
+    $overrideSuffix = $(if ($OperatorOverride) { ' (operator override)' } else { '' })
+
+    # 4. Every measured window must fit. The tightest one is what the verdict
+    #    reports, because that is the one that will run out first.
+    $tightestName = $null
+    $tightestUsable = $null
+    $tightestReserve = $null
+    $measured = 0
+
+    foreach ($window in $windows) {
+        $ratio = $null
+        if (_PCR_HasKey -Obj $window -Name 'remainingRatio') {
+            $ratio = _PCR_TryRatio (_PCR_Field -Obj $window -Name 'remainingRatio' -Default $null)
+        }
+        if ($null -eq $ratio) { continue }
+        $measured++
+
+        $name = [string](_PCR_Field -Obj $window -Name 'name' -Default '')
+        $reserve = 0.0
+        if ($name -eq 'short-term') { $reserve = $shortReserve }
+        elseif ($name -eq 'weekly') { $reserve = $weeklyReserve }
+
+        # Remediation may draw from inside the weekly reserve; an operator
+        # override releases every reserve. Both are the spec's, and both are
+        # recorded in the reason so a released reserve is never invisible.
+        $usable = [double]$ratio - $reserve
+        if ($usable -lt 0.0) { $usable = 0.0 }
+        if ($TaskClass -eq 'remediation' -and $remediationInsideWeekly -and $name -eq 'weekly') { $usable = [double]$ratio }
+        if ($OperatorOverride) { $usable = [double]$ratio }
+
+        if ($usable -lt $estimate) {
+            $verdict.reason = ('insufficient {0} capacity: usable {1} < estimate {2}{3}' -f $name, (_PCR_Ratio $usable), (_PCR_Ratio $estimate), $overrideSuffix)
+            $verdict.window = $name
+            $verdict.usableRatio = $usable
+            $verdict.reserveRatio = $reserve
+            return [pscustomobject]$verdict
+        }
+
+        if ($null -eq $tightestUsable -or $usable -lt $tightestUsable) {
+            $tightestUsable = $usable
+            $tightestName = $name
+            $tightestReserve = $reserve
+        }
+    }
+
+    # 5. Nothing was measured. Unknown is not exhausted.
+    if ($measured -eq 0) {
+        $verdict.eligible = $true
+        $verdict.reason = ('capacity unmeasured{0}' -f $overrideSuffix)
+        return [pscustomobject]$verdict
+    }
+
+    # 6. Everything fits.
+    $verdict.eligible = $true
+    $verdict.reason = ('fits{0}' -f $overrideSuffix)
+    $verdict.window = $tightestName
+    $verdict.usableRatio = $tightestUsable
+    $verdict.reserveRatio = $tightestReserve
+    return [pscustomobject]$verdict
+}
