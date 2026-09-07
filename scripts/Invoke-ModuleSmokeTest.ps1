@@ -2918,6 +2918,125 @@ if ((Test-ProviderLimitSignal -Provider 'claude' -Text '' -Config $pcConfig).mat
 
 Write-Host '  provider limit: capacity_exhausted not failed, session survives, reset time believed when given and marked assumed when not, cooldown persisted and honoured by the verdict' -ForegroundColor DarkGray
 
+# --- H38-11: refusing to CLAIM, and what counts as running ----------------
+Write-Step 'Runner claim gate — smoke: cooldown, one local slot, and liveness by heartbeat pid'
+
+& {
+    $clWs = Join-Path $WorkspaceRoot 'output\smoke\module\claim-gate'
+    if (Test-Path -LiteralPath $clWs) { Remove-Item -LiteralPath $clWs -Recurse -Force }
+    $clRuns = Join-Path $clWs 'runs'
+    $null = New-Item -ItemType Directory -Path $clRuns -Force
+    $clHeartbeat = Join-Path $clWs 'heartbeat.json'
+    $clNow = [datetime]::Parse('2026-09-10T12:00:00Z', [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal -bor [System.Globalization.DateTimeStyles]::AssumeUniversal)
+
+    function Write-ClSummary {
+        param([string]$RunId, [hashtable]$Fields)
+        $body = @{ runId = $RunId; status = 'running'; branch = "roadmap/$RunId"; providerSessionId = 'sess-1' }
+        foreach ($k in $Fields.Keys) { $body[$k] = $Fields[$k] }
+        $path = Join-Path $clRuns ("{0}.summary.json" -f $RunId)
+        Set-Content -LiteralPath $path -Value ($body | ConvertTo-Json -Depth 6) -Encoding UTF8
+        return $path
+    }
+    function Write-ClHeartbeat {
+        param([int]$BeatPid, [int]$AgeMinutes)
+        Set-Content -LiteralPath $clHeartbeat -Value (@{ pid = $BeatPid; lastHeartbeatAt = $clNow.AddMinutes(-$AgeMinutes).ToString('yyyy-MM-ddTHH:mm:ssZ') } | ConvertTo-Json) -Encoding UTF8
+    }
+
+    $null = Write-ClSummary -RunId 'run-live' -Fields @{ runnerPid = 4242; dispatchTarget = 'claude' }
+
+    # A19: a `running` summary counts only while a live heartbeat claims its pid.
+    # Each of these four is a way a crashed runner would otherwise hold the slot
+    # forever.
+    Write-ClHeartbeat -BeatPid 4242 -AgeMinutes 1
+    if ((Get-ProviderActiveExecutionCount -RunsDir $clRuns -Provider 'claude' -HeartbeatPath $clHeartbeat -NowUtc $clNow) -ne 1) { throw 'A running summary whose pid matches a fresh heartbeat must count' }
+    Write-ClHeartbeat -BeatPid 4242 -AgeMinutes 11
+    if ((Get-ProviderActiveExecutionCount -RunsDir $clRuns -Provider 'claude' -HeartbeatPath $clHeartbeat -NowUtc $clNow) -ne 0) { throw 'A stale heartbeat means nothing is running, whatever the summaries say' }
+    Write-ClHeartbeat -BeatPid 4243 -AgeMinutes 1
+    if ((Get-ProviderActiveExecutionCount -RunsDir $clRuns -Provider 'claude' -HeartbeatPath $clHeartbeat -NowUtc $clNow) -ne 0) { throw 'A different runner pid does not own this run' }
+    Remove-Item -LiteralPath $clHeartbeat -Force
+    if ((Get-ProviderActiveExecutionCount -RunsDir $clRuns -Provider 'claude' -HeartbeatPath $clHeartbeat -NowUtc $clNow) -ne 0) { throw 'No heartbeat at all means no runner, so nothing is running' }
+
+    # A summary written before H38-11 has no pid and can never be live -- an old
+    # `running` row is exactly the stuck slot this rule exists to release.
+    $null = Write-ClSummary -RunId 'run-legacy' -Fields @{ dispatchTarget = 'claude' }
+    Write-ClHeartbeat -BeatPid 4242 -AgeMinutes 1
+    if ((Get-ProviderActiveExecutionCount -RunsDir $clRuns -Provider 'claude' -HeartbeatPath $clHeartbeat -NowUtc $clNow) -ne 1) { throw 'A summary with no runnerPid must not count as live' }
+
+    # Orphan repair names the abandoned run instead of leaving it "in progress".
+    $null = Write-ClSummary -RunId 'run-mine' -Fields @{ runnerPid = 4243; dispatchTarget = 'claude' }
+    $null = Write-ClSummary -RunId 'run-copilot' -Fields @{ runnerPid = 9999; dispatchTarget = 'copilot' }
+    $clRepaired = @(Repair-OrphanedRunSummary -RunsDir $clRuns -CurrentPid 4243 -NowUtc $clNow -Config $pcConfig)
+    if ($clRepaired -notcontains 'run-live') { throw "Orphan repair must report the run it repaired, got: $($clRepaired -join ', ')" }
+    if ($clRepaired -notcontains 'run-legacy') { throw 'A running summary with no pid at all is an orphan too' }
+    $clRepairedSummary = ConvertFrom-Json -InputObject (Get-Content -LiteralPath (Join-Path $clRuns 'run-live.summary.json') -Raw -Encoding UTF8)
+    if ($clRepairedSummary.status -ne 'failed' -or $clRepairedSummary.failureCategory -ne 'orphaned') { throw 'An orphan is marked failed/orphaned, not left running forever' }
+    if ($clRepairedSummary.branch -ne 'roadmap/run-live') { throw 'Orphan repair must not touch the branch: the run failed, but the branch is still true' }
+    if ($clRepairedSummary.providerSessionId -ne 'sess-1') { throw 'Orphan repair must not touch the provider session id' }
+    if ($clRepairedSummary.error -notmatch 'runner pid 4242 is not this runner \(4243\)') { throw "The error must name both pids, got: $($clRepairedSummary.error)" }
+    if ((ConvertFrom-Json -InputObject (Get-Content -LiteralPath (Join-Path $clRuns 'run-mine.summary.json') -Raw -Encoding UTF8)).status -ne 'running') { throw 'This runner own run must be left alone' }
+    # A github-hosted run continues on GitHub whether or not this runner lives.
+    if ((ConvertFrom-Json -InputObject (Get-Content -LiteralPath (Join-Path $clRuns 'run-copilot.summary.json') -Raw -Encoding UTF8)).status -ne 'running') { throw 'A copilot run is not orphaned by a local runner dying' }
+
+    # The claim gate itself.
+    $clEntry = [pscustomobject]@{ runId = 'e1'; dispatchTarget = 'claude' }
+    $clCooling = New-ProviderCapacityRecord -Provider 'claude' -Windows @(@{ name = 'short-term'; unit = 'provider-allowance'; remainingRatio = 0.9; source = 'provider-status' }) -CooldownUntil '2026-09-10T13:00:00Z'
+    $clCooldownCheck = Test-RunnerClaimAllowed -Entry $clEntry -CapacityRecord $clCooling -Config $pcConfig -NowUtc $clNow
+    if ($clCooldownCheck.allowed -or $clCooldownCheck.code -ne 'provider-cooling-down') { throw "Expected provider-cooling-down, got '$($clCooldownCheck.code)'" }
+    if ($clCooldownCheck.reason -notmatch '2026-09-10T13:00:00Z') { throw 'The refusal must say WHEN, not just that it refused' }
+
+    $clHealthy = New-ProviderCapacityRecord -Provider 'claude' -Windows @(@{ name = 'short-term'; unit = 'provider-allowance'; remainingRatio = 0.9; source = 'provider-status' })
+    $clSlotCheck = Test-RunnerClaimAllowed -Entry $clEntry -CapacityRecord $clHealthy -Config $pcConfig -ActiveLocalCount 1 -NowUtc $clNow
+    if ($clSlotCheck.allowed -or $clSlotCheck.code -ne 'local-slot-occupied') { throw "One local slot in use must refuse a local claim, got '$($clSlotCheck.code)'" }
+    # Copilot runs on GitHub's machines, so it does not compete for that slot.
+    $clCopilotEntry = [pscustomobject]@{ runId = 'e2'; dispatchTarget = 'copilot' }
+    if (-not (Test-RunnerClaimAllowed -Entry $clCopilotEntry -CapacityRecord $null -Config $pcConfig -ActiveLocalCount 1 -NowUtc $clNow).allowed) { throw 'A github-hosted provider must not be blocked by the local slot' }
+
+    # `auto` defers rather than deciding here: there is no provider yet.
+    $clAutoEntry = [pscustomobject]@{ runId = 'e3'; dispatchTarget = 'auto' }
+    $clAuto = Test-RunnerClaimAllowed -Entry $clAutoEntry -CapacityRecord $clCooling -Config $pcConfig -NowUtc $clNow
+    if (-not $clAuto.allowed -or $clAuto.code -ne 'deferred-to-router') { throw "auto must defer to the router even while claude cools down, got '$($clAuto.code)'" }
+
+    # An unrecognised target is refused by name rather than run as claude.
+    $clUnknown = Test-RunnerClaimAllowed -Entry ([pscustomobject]@{ runId = 'e4'; dispatchTarget = 'gpt' }) -Config $pcConfig -NowUtc $clNow
+    if ($clUnknown.allowed -or $clUnknown.code -ne 'unknown-dispatch-target') { throw "An unknown dispatchTarget must refuse the claim, got '$($clUnknown.code)'" }
+    if ($clUnknown.reason -notmatch 'gpt') { throw 'The refusal must name the target it did not recognise' }
+    # Resolve-ClaimToken knows `auto`; Get-QueueEntryDispatchTarget still must
+    # not, because that one decides which tool to RUN and auto names no tool.
+    if ((Resolve-ClaimToken -Entry $clAutoEntry).token -ne 'auto') { throw 'Resolve-ClaimToken must recognise auto' }
+    $clRunResolverThrew = $false
+    try { $null = Get-QueueEntryDispatchTarget -Entry $clAutoEntry } catch { $clRunResolverThrew = $true }
+    if (-not $clRunResolverThrew) { throw 'Get-QueueEntryDispatchTarget must still refuse auto until H38-14 widens the token list' }
+
+    # An unenforced verdict is advisory: reported, not binding. Enforcing on a
+    # guessed task cost (D-011) would block real work on an unmeasured number.
+    $clTight = New-ProviderCapacityRecord -Provider 'claude' -Windows @(@{ name = 'weekly'; unit = 'provider-allowance'; remainingRatio = 0.22; source = 'provider-status' })
+    $clAdvisory = Test-RunnerClaimAllowed -Entry $clEntry -CapacityRecord $clTight -Config $pcConfig -NowUtc $clNow
+    if (-not $clAdvisory.allowed) { throw 'An unenforced capacity verdict must not refuse a claim' }
+    if (-not $clAdvisory.reason.StartsWith('capacity verdict advisory')) { throw "Expected an advisory reason, got '$($clAdvisory.reason)'" }
+    $clEnforcing = ConvertFrom-Json -InputObject $pcRaw
+    $clEnforcing.estimates.provisional = $false
+    $clEnforced = Test-RunnerClaimAllowed -Entry $clEntry -CapacityRecord $clTight -Config $clEnforcing -NowUtc $clNow
+    if ($clEnforced.allowed -or $clEnforced.code -ne 'capacity-reserve') { throw "With enforcement on, the reserve must refuse the claim, got '$($clEnforced.code)'" }
+
+    # Golden: a heartbeat written without the new parameters is byte-identical
+    # in its pre-existing keys. The portal, the presence module and the api-host
+    # smoke all parse this file.
+    $clBeatOld = New-RunnerHeartbeat -QueuePath 'C:\q.jsonl' -PollSeconds 15 -ClaimedCount 2 -Mode 'interactive' -BeatAt '2026-09-10T12:00:00Z' -StopFilePath 'C:\stop'
+    if (@($clBeatOld.Keys) -contains 'providerCooldowns') { throw 'The heartbeat must not gain keys when the caller supplied none' }
+    if (@($clBeatOld.Keys) -contains 'localSlotsInUse') { throw 'The heartbeat must not gain keys when the caller supplied none' }
+    $clBeatNew = New-RunnerHeartbeat -QueuePath 'C:\q.jsonl' -PollSeconds 15 -ClaimedCount 2 -Mode 'interactive' -BeatAt '2026-09-10T12:00:00Z' -StopFilePath 'C:\stop' `
+        -ProviderCooldowns @{ claude = '2026-09-10T13:00:00Z'; codex = $null; copilot = $null } -LocalSlotsInUse 1
+    foreach ($clKey in @($clBeatOld.Keys)) {
+        if ("$($clBeatNew[$clKey])" -ne "$($clBeatOld[$clKey])") { throw "Heartbeat key '$clKey' changed when the new fields were added" }
+    }
+    if (@($clBeatNew.providerCooldowns.Keys).Count -ne 3) { throw 'providerCooldowns carries one entry per provider' }
+    if ($clBeatNew.localSlotsInUse -ne 1) { throw 'localSlotsInUse is a number the portal can read' }
+
+    Remove-Item -LiteralPath $clWs -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+Write-Host '  claim gate: cooldown and the one local slot refuse a claim by name (nothing written, entry stays queued), auto defers to the router, an unenforced verdict is advisory; a run counts only while the heartbeat pid is live, and startup names the orphans' -ForegroundColor DarkGray
+
 Write-Step 'WorkPacket prompt rendering — smoke: acceptance criteria travel verbatim'
 
 # The spec lets an adapter reshape prompting but forbids it changing the

@@ -353,11 +353,13 @@ function New-RunnerHeartbeat {
         [int]$ClaimedCount = 0,
         [AllowEmptyString()][string]$Mode = 'interactive',
         [AllowEmptyString()][string]$BeatAt = '',
-        [AllowEmptyString()][string]$StopFilePath = ''
+        [AllowEmptyString()][string]$StopFilePath = '',
+        [object]$ProviderCooldowns = $null,
+        [nullable[int]]$LocalSlotsInUse = $null
     )
 
     if ([string]::IsNullOrWhiteSpace($BeatAt)) { $BeatAt = (Get-Date).ToUniversalTime().ToString('o') }
-    return [ordered]@{
+    $beat = [ordered]@{
         schemaVersion    = '1'
         hostname         = [string]$env:COMPUTERNAME
         # The account matters: a runner must be an interactive operator session,
@@ -373,6 +375,12 @@ function New-RunnerHeartbeat {
         # Whoever finds the heartbeat is exactly whoever needs to stop it.
         stopFilePath     = $StopFilePath
     }
+    # Release 3.8 M2 (H38-11). Added ONLY when supplied, so a heartbeat written
+    # without them is byte-identical to what every earlier reader expects --
+    # the portal, the presence module and the api-host smoke all parse this.
+    if ($null -ne $ProviderCooldowns) { $beat['providerCooldowns'] = $ProviderCooldowns }
+    if ($null -ne $LocalSlotsInUse) { $beat['localSlotsInUse'] = [int]$LocalSlotsInUse }
+    return $beat
 }
 
 function Get-RunnerHeartbeatPath {
@@ -564,6 +572,181 @@ function Resolve-RunOutcomeFromResult {
     }
 }
 
+function Resolve-ClaimToken {
+    <#
+    .SYNOPSIS
+        Pure - the provider token a claim decision is about, including `auto`.
+
+    .DESCRIPTION
+        Release 3.8 M2 (H38-11). Deliberately NOT Get-QueueEntryDispatchTarget,
+        which throws on `auto`: that function decides which tool to RUN, and
+        `auto` names no tool, so refusing it there is correct and stays correct.
+        H38-14 widens that resolver to the full token list; until then the claim
+        gate needs to recognise `auto` without borrowing the run-time contract.
+
+        An unrecognised target is reported, never defaulted. Treating `gpt` as
+        claude would run the wrong tool against a real repository, which is the
+        exact failure Get-QueueEntryDispatchTarget exists to prevent.
+    .OUTPUTS
+        [pscustomobject] token, known, error
+    #>
+    param([Parameter(Mandatory)][object]$Entry)
+
+    $raw = ''
+    if ($null -ne $Entry.PSObject -and ($Entry.PSObject.Properties.Name -contains 'dispatchTarget') -and $Entry.dispatchTarget) {
+        $raw = [string]$Entry.dispatchTarget
+    }
+    if ([string]::IsNullOrWhiteSpace($raw)) { return [pscustomobject]@{ token = 'claude'; known = $true; error = '' } }
+
+    $normalized = $raw.Trim().ToLowerInvariant()
+    if ($normalized -eq 'auto') { return [pscustomobject]@{ token = 'auto'; known = $true; error = '' } }
+
+    try { return [pscustomobject]@{ token = (Get-QueueEntryDispatchTarget -Entry $Entry); known = $true; error = '' } }
+    catch { return [pscustomobject]@{ token = $normalized; known = $false; error = $_.Exception.Message } }
+}
+
+function Test-RunnerClaimAllowed {
+    <#
+    .SYNOPSIS
+        Pure - may this runner claim this entry right now?
+
+    .DESCRIPTION
+        Release 3.8 M2 (H38-11). Refusing to CLAIM is different from failing a
+        task: the entry is left `queued` and untouched, so the next poll after a
+        cooldown expires picks it up with nothing lost. The runner writes no
+        summary at all on a refusal, which is what keeps this reversible.
+
+        Every refusal names itself with a `code`, because a runner that quietly
+        stops picking work up is indistinguishable from one that has died.
+
+        An unenforced capacity verdict is ADVISORY: it is reported in the reason
+        and the claim proceeds. While the per-task cost estimate is still a
+        guess (D-011), refusing on it would block real work on an unmeasured
+        number -- so it is visible without being binding.
+    .OUTPUTS
+        [pscustomobject] allowed, reason, code
+    #>
+    param(
+        [Parameter(Mandatory)][object]$Entry,
+        [Parameter()][AllowNull()][object]$CapacityRecord = $null,
+        [Parameter()][AllowNull()][object]$Config = $null,
+        [int]$ActiveLocalCount = 0,
+        [datetime]$NowUtc = [datetime]::UtcNow
+    )
+
+    $resolved = Resolve-ClaimToken -Entry $Entry
+    $token = [string]$resolved.token
+
+    # An entry naming a tool this runner does not know is refused, not guessed
+    # at. Leaving it queued is safe; running the wrong tool against a real
+    # repository is not.
+    if (-not $resolved.known) {
+        return [pscustomobject]@{
+            allowed = $false
+            code    = 'unknown-dispatch-target'
+            reason  = $resolved.error
+        }
+    }
+
+    # `auto` has no provider yet, so there is nothing here to check. The router
+    # (H38-17) evaluates cooldown, reserve and concurrency per candidate, at
+    # claim time, in the session that can actually see authentication.
+    if ($token -eq 'auto') {
+        return [pscustomobject]@{
+            allowed = $true
+            code    = 'deferred-to-router'
+            reason  = 'auto: cooldown, reserve and concurrency are checked per candidate by Resolve-ProviderSelection'
+        }
+    }
+
+    $providerConfig = $null
+    if ($null -ne $Config) {
+        $providers = $null
+        if ($Config -is [System.Collections.IDictionary]) {
+            if ($Config.Contains('providers')) { $providers = $Config['providers'] }
+        }
+        elseif ($null -ne $Config.PSObject -and ($Config.PSObject.Properties.Name -contains 'providers')) {
+            $providers = $Config.providers
+        }
+        if ($null -ne $providers -and $null -ne $providers.PSObject -and (@($providers.PSObject.Properties | ForEach-Object { $_.Name }) -contains $token)) {
+            $providerConfig = $providers.$token
+        }
+    }
+
+    # Cooldown first: it is the most specific answer and carries a time, so the
+    # operator learns not just that nothing is moving but when it will.
+    # Both shapes, deliberately: a record built in memory is an ordered
+    # dictionary and one read from disk is a PSCustomObject, and reading only
+    # one of them would silently skip the cooldown check for the other.
+    $cooldownRaw = ''
+    if ($CapacityRecord -is [System.Collections.IDictionary]) {
+        if ($CapacityRecord.Contains('cooldownUntil')) { $cooldownRaw = [string]$CapacityRecord['cooldownUntil'] }
+    }
+    elseif ($null -ne $CapacityRecord -and $null -ne $CapacityRecord.PSObject -and ($CapacityRecord.PSObject.Properties.Name -contains 'cooldownUntil')) {
+        $cooldownRaw = [string]$CapacityRecord.cooldownUntil
+    }
+    if (-not [string]::IsNullOrWhiteSpace($cooldownRaw)) {
+        $cooldownAt = [datetime]::MinValue
+        $parsed = [datetime]::TryParse(
+            $cooldownRaw,
+            [System.Globalization.CultureInfo]::InvariantCulture,
+            [System.Globalization.DateTimeStyles]::AdjustToUniversal -bor [System.Globalization.DateTimeStyles]::AssumeUniversal,
+            [ref]$cooldownAt)
+        if ($parsed -and $cooldownAt -gt $NowUtc) {
+            return [pscustomobject]@{
+                allowed = $false
+                code    = 'provider-cooling-down'
+                reason  = ('{0} is cooling down until {1}' -f $token, $cooldownRaw)
+            }
+        }
+    }
+
+    $executionMode = ''
+    if ($null -ne $providerConfig -and $null -ne $providerConfig.PSObject -and ($providerConfig.PSObject.Properties.Name -contains 'executionMode')) {
+        $executionMode = [string]$providerConfig.executionMode
+    }
+
+    # MVP concurrency is one local slot. A github-hosted run does not occupy it:
+    # the work happens on GitHub's machines, not this one.
+    if ($executionMode -eq 'local') {
+        $slots = 1
+        if ($null -ne $Config -and $null -ne $Config.PSObject -and ($Config.PSObject.Properties.Name -contains 'localExecutionSlots')) {
+            $slots = [int]$Config.localExecutionSlots
+        }
+        if ($ActiveLocalCount -ge $slots) {
+            return [pscustomobject]@{
+                allowed = $false
+                code    = 'local-slot-occupied'
+                reason  = ('{0} local execution slot(s) in use; MVP concurrency is {1}' -f $ActiveLocalCount, $slots)
+            }
+        }
+    }
+
+    if ($null -ne $Config -and (Get-Command -Name 'Resolve-ProviderCapacityVerdict' -ErrorAction SilentlyContinue)) {
+        $verdict = Resolve-ProviderCapacityVerdict -Record $CapacityRecord -Config $Config -NowUtc $NowUtc -Provider $token
+        if (-not $verdict.eligible) {
+            if ($verdict.enforced) {
+                return [pscustomobject]@{
+                    allowed = $false
+                    code    = 'capacity-reserve'
+                    reason  = ('{0}: {1}' -f $token, $verdict.reason)
+                }
+            }
+            return [pscustomobject]@{
+                allowed = $true
+                code    = 'capacity-advisory'
+                reason  = ('capacity verdict advisory: {0}' -f $verdict.reason)
+            }
+        }
+    }
+
+    return [pscustomobject]@{
+        allowed = $true
+        code    = 'allowed'
+        reason  = ''
+    }
+}
+
 function Resolve-CapacityWaitUpdate {
     <#
     .SYNOPSIS
@@ -682,7 +865,7 @@ function Invoke-QueuedCopilotTask {
         return
     }
 
-    Update-TaskSummary -SummaryPath $SummaryPath -Set @{ status = 'running'; dispatchTarget = 'copilot'; runnerStartedAt = (Get-Date).ToString('o') }
+    Update-TaskSummary -SummaryPath $SummaryPath -Set @{ status = 'running'; dispatchTarget = 'copilot'; runnerStartedAt = (Get-Date).ToString('o'); runnerPid = $PID }
     try {
         $ghArgs = New-CopilotAgentTaskArgs -Repository $repository -Prompt $prompt -BaseBranch $baseBranch
         $output = ((& $ghCommand.Source @ghArgs 2>&1) | Out-String).Trim()
@@ -803,7 +986,7 @@ function Invoke-QueuedTask {
         return
     }
 
-    Update-TaskSummary -SummaryPath $summaryPath -Set @{ status = 'running'; runnerStartedAt = (Get-Date).ToString('o') }
+    Update-TaskSummary -SummaryPath $summaryPath -Set @{ status = 'running'; runnerStartedAt = (Get-Date).ToString('o'); runnerPid = $PID }
     try {
         if (-not (Test-Path -LiteralPath (Join-Path $repo '.git'))) { throw "Not a git repo: $repo" }
 
@@ -1062,6 +1245,29 @@ Write-Host ("  heartbeat: {0}" -f $heartbeatPath) -ForegroundColor DarkGray
 Clear-RunnerStopFile -StopFilePath $StopFilePath
 Write-Host ("  stop with: New-Item -ItemType File '{0}'  (honored at the next poll boundary)" -f $StopFilePath) -ForegroundColor DarkGray
 
+# Release 3.8 M2 (H38-11). The provider policy the claim gate reads, resolved
+# once: a poll loop that re-read a config file every 15 seconds would turn an
+# editor's half-saved file into a refusal to work.
+$runnerProviderConfig = $null
+if (Get-Command -Name 'Get-AgentProviderConfig' -ErrorAction SilentlyContinue) {
+    $runnerProviderConfig = Get-AgentProviderConfig -ConfigPath (Get-AgentProviderConfigPath -WorkspaceRoot (Split-Path -Parent $PSScriptRoot))
+}
+
+# Orphan repair runs ONCE, here, before the first poll. A run left `running` by
+# a runner that died is not just holding a slot -- it shows on the board as work
+# in progress that will never finish. Naming it failed/orphaned is the only way
+# anyone can tell it apart from a live run. Not per-poll: a live run's own pid
+# equals this one's, so repeated passes would do nothing but re-read the disk.
+if ((Get-Command -Name 'Repair-OrphanedRunSummary' -ErrorAction SilentlyContinue) -and $null -ne $runnerProviderConfig) {
+    try {
+        $orphaned = @(Repair-OrphanedRunSummary -RunsDir $runsDir -CurrentPid $PID -Config $runnerProviderConfig)
+        foreach ($orphanId in $orphaned) {
+            Write-Host ("  [orphaned] {0} was left running by a runner that is gone; marked failed" -f $orphanId) -ForegroundColor DarkYellow
+        }
+    }
+    catch { Write-Host ("  [warn] orphan repair failed: {0}" -f $_.Exception.Message) -ForegroundColor DarkYellow }
+}
+
 do {
     if (Test-RunnerStopRequested -StopFilePath $StopFilePath) {
         Write-Host ("Stop requested ({0}); exiting before claiming anything." -f $StopFilePath) -ForegroundColor Yellow
@@ -1076,8 +1282,26 @@ do {
     # Beat every cycle, including the idle ones. A runner that only announced
     # itself while working would look absent exactly when the portal most needs
     # to know it is there — before queueing anything.
+    # Cooldowns and slot usage ride the heartbeat so the portal can explain a
+    # runner that is alive and deliberately not claiming -- which otherwise
+    # looks exactly like one that is stuck.
+    $beatCooldowns = $null
+    $beatLocalSlots = $null
+    if ($null -ne $runnerProviderConfig -and (Get-Command -Name 'Read-ProviderCapacityRecord' -ErrorAction SilentlyContinue)) {
+        $beatCooldowns = @{}
+        foreach ($beatProvider in @($runnerProviderConfig.providers.PSObject.Properties | ForEach-Object { $_.Name })) {
+            $beatRecord = Read-ProviderCapacityRecord -WorkspaceRoot $WorkspaceRoot -Provider $beatProvider
+            $beatCooldowns[$beatProvider] = $(if ($null -eq $beatRecord) { $null } else { $beatRecord.cooldownUntil })
+        }
+        $beatLocalSlots = 0
+        foreach ($beatProvider in @($runnerProviderConfig.providers.PSObject.Properties | ForEach-Object { $_.Name })) {
+            if ([string]$runnerProviderConfig.providers.$beatProvider.executionMode -ne 'local') { continue }
+            $beatLocalSlots += Get-ProviderActiveExecutionCount -RunsDir $runsDir -Provider $beatProvider -HeartbeatPath $heartbeatPath
+        }
+    }
     Write-RunnerHeartbeat -Path $heartbeatPath -Heartbeat (New-RunnerHeartbeat `
-            -QueuePath $QueuePath -PollSeconds $PollSeconds -ClaimedCount $claimable.Count -Mode $runnerMode -StopFilePath $StopFilePath)
+            -QueuePath $QueuePath -PollSeconds $PollSeconds -ClaimedCount $claimable.Count -Mode $runnerMode -StopFilePath $StopFilePath `
+            -ProviderCooldowns $beatCooldowns -LocalSlotsInUse $beatLocalSlots)
 
     if ($claimable.Count -eq 0) {
         if ($Once) { Write-Host 'No queued tasks.' -ForegroundColor DarkGray; break }
@@ -1091,6 +1315,39 @@ do {
             Write-Host ("Stop requested ({0}); finishing between tasks with {1} still queued." -f $StopFilePath, @($claimable).Count) -ForegroundColor Yellow
             break
         }
+        # The claim gate. A refusal writes NOTHING: the entry stays `queued` and
+        # is picked up by a later poll once the cooldown expires or the slot
+        # frees. That is why this runs before Invoke-QueuedTask rather than
+        # inside it -- claiming is the irreversible step.
+        if ($null -ne $runnerProviderConfig) {
+            $entryToken = [string](Resolve-ClaimToken -Entry $entry).token
+
+            if ($entryToken -eq 'auto' -and -not (Get-Command -Name 'Resolve-ProviderSelection' -ErrorAction SilentlyContinue)) {
+                # A18 means nothing writes `auto` by default, so this is a
+                # safety net rather than an expected path.
+                Write-Host ("  [skip] {0}: routing not enabled; leaving the entry queued" -f $entry.runId) -ForegroundColor DarkGray
+                continue
+            }
+
+            $entryRecord = $null
+            if (Get-Command -Name 'Read-ProviderCapacityRecord' -ErrorAction SilentlyContinue) {
+                $entryRecord = Read-ProviderCapacityRecord -WorkspaceRoot $WorkspaceRoot -Provider $entryToken
+            }
+            $activeLocal = 0
+            if (Get-Command -Name 'Get-ProviderActiveExecutionCount' -ErrorAction SilentlyContinue) {
+                $activeLocal = Get-ProviderActiveExecutionCount -RunsDir $runsDir -Provider $entryToken -HeartbeatPath $heartbeatPath
+            }
+
+            $claimCheck = Test-RunnerClaimAllowed -Entry $entry -CapacityRecord $entryRecord -Config $runnerProviderConfig -ActiveLocalCount $activeLocal
+            if (-not $claimCheck.allowed) {
+                Write-Host ("  [{0}] {1}: {2}" -f $claimCheck.code, $entry.runId, $claimCheck.reason) -ForegroundColor DarkYellow
+                continue
+            }
+            if ($claimCheck.code -eq 'capacity-advisory') {
+                Write-Host ("  [advisory] {0}: {1}" -f $entry.runId, $claimCheck.reason) -ForegroundColor DarkGray
+            }
+        }
+
         Invoke-QueuedTask -Entry $entry
     }
     if (Test-RunnerStopRequested -StopFilePath $StopFilePath) {

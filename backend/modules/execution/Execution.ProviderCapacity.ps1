@@ -603,6 +603,157 @@ function Set-ProviderCooldown {
     return (Save-ProviderCapacityRecord -WorkspaceRoot $WorkspaceRoot -Record $rebuilt)
 }
 
+function _PCR_ReadSummary {
+    <# Parse one run summary; $null when absent or unparseable. A corrupt
+       summary must not take a poll loop down with it. #>
+    param([Parameter(Mandatory)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return $null }
+    try { return (ConvertFrom-Json -InputObject (Get-Content -LiteralPath $Path -Raw -Encoding UTF8)) }
+    catch { return $null }
+}
+
+function _PCR_SummaryProvider {
+    <# Which provider a run summary belongs to. selectedProvider is written by
+       the router (H38-17), dispatchTarget by the queue; an entry from before
+       either is claude, which is what the runner did unconditionally. #>
+    param([object]$Summary)
+    $selected = [string](_PCR_Field -Obj $Summary -Name 'selectedProvider' -Default '')
+    if (-not [string]::IsNullOrWhiteSpace($selected)) { return $selected }
+    $dispatch = [string](_PCR_Field -Obj $Summary -Name 'dispatchTarget' -Default '')
+    if (-not [string]::IsNullOrWhiteSpace($dispatch) -and $dispatch -ne 'operator-runner') { return $dispatch }
+    return 'claude'
+}
+
+<#
+.SYNOPSIS
+    How many executions this provider has actually running right now.
+
+.DESCRIPTION
+    Derived on every read, never stored (A6). A stored count is a number that
+    can only be wrong: a runner killed mid-task never decrements it, and the
+    slot stays occupied by a run that ended hours ago.
+
+    But derived from summaries ALONE it is just as wrong in the other direction
+    -- a crashed runner leaves `status = running` on disk forever, which would
+    refuse every future claim. So a run counts only while it is LIVE (A19): the
+    heartbeat file exists, its beat is recent, and its pid matches the pid the
+    summary recorded. One runner means one pid, and the heartbeat is the
+    liveness evidence the portal already trusts.
+
+    A summary with no `runnerPid` was written before H38-11 and is never live.
+    That is deliberate: an old running summary is exactly the stuck slot this
+    rule exists to release.
+#>
+function Get-ProviderActiveExecutionCount {
+    [CmdletBinding()]
+    [OutputType([int])]
+    param(
+        [Parameter(Mandatory)][string]$RunsDir,
+        [Parameter(Mandatory)][string]$Provider,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$HeartbeatPath,
+        [datetime]$NowUtc = [datetime]::UtcNow,
+        [int]$StaleAfterMinutes = 10
+    )
+
+    if (-not (Test-Path -LiteralPath $RunsDir)) { return 0 }
+
+    # Resolve liveness once: if no runner is alive, nothing is running, and
+    # every summary on disk is a leftover.
+    $livePid = $null
+    $heartbeat = $null
+    if (-not [string]::IsNullOrWhiteSpace($HeartbeatPath)) { $heartbeat = _PCR_ReadSummary -Path $HeartbeatPath }
+    if ($null -ne $heartbeat) {
+        $beatRaw = _PCR_Stamp (_PCR_Field -Obj $heartbeat -Name 'lastHeartbeatAt' -Default '')
+        $beatAt = [datetime]::MinValue
+        $beatParsed = [datetime]::TryParse(
+            $beatRaw,
+            [System.Globalization.CultureInfo]::InvariantCulture,
+            [System.Globalization.DateTimeStyles]::AdjustToUniversal -bor [System.Globalization.DateTimeStyles]::AssumeUniversal,
+            [ref]$beatAt)
+        if ($beatParsed -and ($NowUtc - $beatAt).TotalMinutes -le $StaleAfterMinutes -and $beatAt -le $NowUtc.AddMinutes($StaleAfterMinutes)) {
+            $livePid = _PCR_Field -Obj $heartbeat -Name 'pid' -Default $null
+        }
+    }
+    if ($null -eq $livePid) { return 0 }
+
+    $count = 0
+    foreach ($file in @(Get-ChildItem -LiteralPath $RunsDir -Filter '*.summary.json' -File -ErrorAction SilentlyContinue)) {
+        $summary = _PCR_ReadSummary -Path $file.FullName
+        if ($null -eq $summary) { continue }
+        if ([string](_PCR_Field -Obj $summary -Name 'status' -Default '') -ne 'running') { continue }
+        if ((_PCR_SummaryProvider -Summary $summary) -ne $Provider) { continue }
+        $summaryPid = _PCR_Field -Obj $summary -Name 'runnerPid' -Default $null
+        if ($null -eq $summaryPid) { continue }
+        if ([string]$summaryPid -ne [string]$livePid) { continue }
+        $count++
+    }
+    return $count
+}
+
+<#
+.SYNOPSIS
+    Mark local runs abandoned by a dead runner as failed, once at startup.
+
+.DESCRIPTION
+    The other half of A19. Liveness stops an orphan from HOLDING a slot, but the
+    summary still says `running` forever, so the board shows a run that will
+    never finish and nobody can tell it apart from one in progress. This names
+    it: failed, category `orphaned`, with the pid that abandoned it.
+
+    Only local providers. A github-hosted run continues on GitHub's machines
+    whether or not this runner lives, so declaring it orphaned would be a lie
+    about work that is still happening.
+
+    branch, attempt, providerSessionId and workPacketPath are left untouched --
+    the run failed, but everything needed to retry or resume it is still true.
+#>
+function Repair-OrphanedRunSummary {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory)][string]$RunsDir,
+        [Parameter(Mandatory)][int]$CurrentPid,
+        [datetime]$NowUtc = [datetime]::UtcNow,
+        [Parameter(Mandatory)][object]$Config
+    )
+
+    $repaired = @()
+    if (-not (Test-Path -LiteralPath $RunsDir)) { return $repaired }
+
+    $providers = _PCR_Field -Obj $Config -Name 'providers' -Default $null
+    $stamp = $NowUtc.ToString('yyyy-MM-ddTHH:mm:ssZ')
+
+    foreach ($file in @(Get-ChildItem -LiteralPath $RunsDir -Filter '*.summary.json' -File -ErrorAction SilentlyContinue)) {
+        $summary = _PCR_ReadSummary -Path $file.FullName
+        if ($null -eq $summary) { continue }
+        if ([string](_PCR_Field -Obj $summary -Name 'status' -Default '') -ne 'running') { continue }
+
+        $provider = _PCR_SummaryProvider -Summary $summary
+        $mode = [string](_PCR_Field -Obj (_PCR_Field -Obj $providers -Name $provider -Default $null) -Name 'executionMode' -Default '')
+        if ($mode -ne 'local') { continue }
+
+        $summaryPid = _PCR_Field -Obj $summary -Name 'runnerPid' -Default $null
+        if ($null -ne $summaryPid -and [string]$summaryPid -eq [string]$CurrentPid) { continue }
+
+        $runId = [string](_PCR_Field -Obj $summary -Name 'runId' -Default ([System.IO.Path]::GetFileNameWithoutExtension($file.Name) -replace '\.summary$', ''))
+        if (-not $PSCmdlet.ShouldProcess($runId, 'mark orphaned run failed')) { continue }
+
+        $rebuilt = [ordered]@{}
+        foreach ($property in @($summary.PSObject.Properties | ForEach-Object { $_.Name })) {
+            $rebuilt[$property] = $summary.$property
+        }
+        $rebuilt['status'] = 'failed'
+        $rebuilt['failureCategory'] = 'orphaned'
+        $rebuilt['error'] = ('runner pid {0} is not this runner ({1}); run abandoned at {2}' -f $(if ($null -eq $summaryPid) { 'none' } else { [string]$summaryPid }), $CurrentPid, $stamp)
+        $rebuilt['orphanedAt'] = $stamp
+
+        Set-Content -LiteralPath $file.FullName -Value ([pscustomobject]$rebuilt | ConvertTo-Json -Depth 10) -Encoding UTF8
+        $repaired += , $runId
+    }
+
+    return $repaired
+}
+
 function _PCR_Ratio {
     <# Format a ratio for an operator-facing reason string. Invariant culture,
        so a machine with a comma decimal separator produces the same sentence a
