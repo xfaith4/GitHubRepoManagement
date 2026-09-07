@@ -16,6 +16,12 @@
 - [Features](reference/features.md)
 - [Contracts](reference/contracts.md)
 - [Roadmap Contracts](reference/roadmap-contracts.md)
+- [Haiku Work Packets](reference/HAIKU-WORK-PACKETS.md) — open roadmap items
+  rendered as bounded units a small model executes one at a time; §0 carries
+  the operating rules every packet inherits
+- [Haiku Work Packets — Release 3.8](reference/HAIKU-WORK-PACKETS-3.8.md) —
+  provider-aware execution as 37 packets, with the choices made for the
+  executing agent and the ones that stay the operator's
 
 ## Governance
 
