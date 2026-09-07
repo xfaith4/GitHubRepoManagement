@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "v1",
+  "providers": {
+    "claude": {
+      "enabled": true,
+      "executionMode": "local",
+      "providerTool": "claude-code",
+      "autoPush": true,
+      "maxConcurrentExecutions": 1,
+      "windows": [
+        { "name": "short-term", "unit": "provider-allowance" },
+        { "name": "weekly", "unit": "provider-allowance" }
+      ],
+      "limitSignals": [ "(?i)usage limit", "(?i)rate limit", "(?i)429" ],
+      "provisional": true
+    },
+    "codex": {
+      "enabled": false,
+      "executionMode": "local",
+      "providerTool": "codex-cli",
+      "autoPush": true,
+      "maxConcurrentExecutions": 1,
+      "windows": [
+        { "name": "short-term", "unit": "provider-allowance" },
+        { "name": "weekly", "unit": "provider-allowance" }
+      ],
+      "limitSignals": [ "(?i)usage limit", "(?i)rate limit", "(?i)429" ],
+      "provisional": true
+    },
+    "copilot": {
+      "enabled": true,
+      "executionMode": "github-hosted",
+      "providerTool": "github-copilot-agent",
+      "autoPush": false,
+      "maxConcurrentExecutions": 2,
+      "windows": [
+        { "name": "billing", "unit": "unknown" }
+      ],
+      "limitSignals": [],
+      "provisional": true
+    }
+  },
+  "reserves": {
+    "shortWindowRatio": 0.15,
+    "weeklyRatio": 0.20,
+    "remediationInsideWeekly": true,
+    "provisional": true
+  },
+  "estimates": {
+    "defaultTaskConsumptionRatio": 0.05,
+    "provisional": true
+  },
+  "ranking": {
+    "weights": {
+      "suitability": 1,
+      "usableCapacity": 1,
+      "history": 1,
+      "fitsWindow": 1,
+      "sessionReuse": 1,
+      "timeToReset": 1,
+      "estimatedConsumption": -1,
+      "recentFailureRate": -1
+    },
+    "tieBreak": "nearest-reset-first"
+  },
+  "remediation": {
+    "maxRemediationAttempts": 2
+  },
+  "defaultScope": {
+    "allowedPaths": [ "**" ],
+    "forbiddenPaths": [ ".github/workflows/**" ],
+    "provisional": true
+  },
+  "defaultPermissions": {
+    "filesystemWrite": true,
+    "shell": true,
+    "network": false,
+    "githubWrite": false,
+    "provisional": true
+  },
+  "dispatch": {
+    "defaultTarget": "claude",
+    "autoEnabled": false
+  },
+  "localExecutionSlots": 1
+}

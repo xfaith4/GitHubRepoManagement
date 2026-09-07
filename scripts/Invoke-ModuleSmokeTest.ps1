@@ -32,6 +32,8 @@ $agentBudgetModule = Join-Path $WorkspaceRoot 'backend\modules\agent-runs\Budget
 $portfolioConclusionModule = Join-Path $WorkspaceRoot 'backend\modules\portfolio\Portfolio.Conclusion.ps1'
 $foundationDomainsConfig = Join-Path $WorkspaceRoot 'backend\config\foundation-domains.json'
 $workPacketModule = Join-Path $WorkspaceRoot 'backend\modules\execution\Execution.WorkPacket.ps1'
+$providerRegistryModule = Join-Path $WorkspaceRoot 'backend\modules\execution\Execution.ProviderRegistry.ps1'
+$agentProvidersConfig = Join-Path $WorkspaceRoot 'backend\config\agent-providers.json'
 
 Write-Step 'Portfolio timestamp truth: index projection and raw JSON gate'
 & (Join-Path $WorkspaceRoot 'tools/Test-PortfolioTimestamp.ps1') -WorkspaceRoot $WorkspaceRoot
@@ -44,7 +46,7 @@ Write-Step 'Loading reconciliation module functions only'
 Write-Host 'Loaded reconciliation module successfully' -ForegroundColor Green
 
 Write-Step 'Validating copied module files exist'
-@($docInventory, $docQueue, $docBatch, $reconcile, $reconcileModular, $reconcileTests, $roadmapParser, $roadmapExecutionContract, $roadmapAuditor, $roadmapEvaluatorPath, $roadmapRepairerPath, $roadmapPrSubmitterPath, $docAuditScanner, $docStandards, $agentBudgetModule, $portfolioConclusionModule, $foundationDomainsConfig, $workPacketModule) | ForEach-Object {
+@($docInventory, $docQueue, $docBatch, $reconcile, $reconcileModular, $reconcileTests, $roadmapParser, $roadmapExecutionContract, $roadmapAuditor, $roadmapEvaluatorPath, $roadmapRepairerPath, $roadmapPrSubmitterPath, $docAuditScanner, $docStandards, $agentBudgetModule, $portfolioConclusionModule, $foundationDomainsConfig, $workPacketModule, $providerRegistryModule, $agentProvidersConfig) | ForEach-Object {
     if (-not (Test-Path -LiteralPath $_)) {
         throw "Missing module file: $_"
     }
@@ -2492,6 +2494,11 @@ if ($null -ne $caBare.usage.tokensObserved) { throw 'A missing usage block must 
 $caNonNumeric = ConvertTo-ClaudeExecutionResult -Parsed (ConvertFrom-ClaudeStreamJson -Lines @('{"type":"result","is_error":false,"usage":{"detail_tokens":"lots","model":"x"}}')) -TaskId 't' -ExecutionId 'e'
 if ($null -ne $caNonNumeric.usage.tokensObserved) { throw 'A usage block with no numeric *_tokens must give tokensObserved=$null, never 0' }
 if ((Get-ClaudeTokenTotal -Usage ([pscustomobject]@{ input_tokens = 10; output_tokens = 5; model = 'x' })) -ne 15) { throw 'Token totalling should sum every numeric *_tokens property' }
+# An EMPTY usage object, which under StrictMode used to throw on member-access
+# enumeration rather than answering "unknown".
+$caEmptyUsage = ConvertTo-ClaudeExecutionResult -Parsed (ConvertFrom-ClaudeStreamJson -Lines @('{"type":"result","is_error":false,"usage":{}}')) -TaskId 't' -ExecutionId 'e'
+if ($null -ne $caEmptyUsage.usage.tokensObserved) { throw 'An empty usage object must give tokensObserved=$null' }
+if ($null -ne (Get-ClaudeTokenTotal -Usage ([pscustomobject]@{}))) { throw 'Get-ClaudeTokenTotal must answer $null for an empty object, not throw' }
 
 # Argv is an array, never a command string: the prompt is multi-line roadmap
 # text and flattening it turns one argument into several.
@@ -2514,6 +2521,84 @@ try { Stop-ClaudeExecution } catch { $caStopRefused = $true }
 if (-not $caStopRefused) { throw 'Stop-ClaudeExecution should refuse in 3.8 rather than pretend' }
 
 Write-Host '  claude adapter: transcript parsed, session and usage carried, missing fields tolerated, argv is an array' -ForegroundColor DarkGray
+
+# ---------------------------------------------------------------------------
+# Release 3.8 M2 (H38-07) — provider policy is configuration, not constants.
+#
+# The spec says reserve percentages are configuration; the milestone says they
+# live in backend/config/ rather than in code. What makes that worth asserting
+# is the failure mode of getting it wrong quietly: a policy file that is
+# silently corrected on load is one nobody notices is not being obeyed. So each
+# rule below refuses by name, and the smoke pins the exact operator-facing
+# string rather than merely that "something was invalid".
+# ---------------------------------------------------------------------------
+Write-Step 'Loading provider registry module (Release 3.8 M2)'
+if (-not (Test-Path -LiteralPath $providerRegistryModule)) { throw "Execution.ProviderRegistry.ps1 not found at: $providerRegistryModule" }
+. $providerRegistryModule
+Write-Host 'Provider registry module loaded successfully' -ForegroundColor Green
+
+Write-Step 'Provider config — smoke: schema v1 and the reserve bounds'
+
+$pcPath = Get-AgentProviderConfigPath -WorkspaceRoot $WorkspaceRoot
+if ($pcPath -ne $agentProvidersConfig) { throw "The config resolver and the smoke disagree about the path: '$pcPath' vs '$agentProvidersConfig'" }
+$pcConfig = Get-AgentProviderConfig -ConfigPath $pcPath
+if ($null -eq $pcConfig) { throw "Get-AgentProviderConfig returned null for the committed config at $pcPath" }
+$pcValid = Test-AgentProviderConfig -Config $pcConfig
+if (-not $pcValid.valid) { throw ("The committed provider config is invalid: " + ($pcValid.errors -join '; ')) }
+if ([int]$pcConfig.localExecutionSlots -ne 1) { throw 'MVP concurrency is one local execution slot' }
+
+# Tripwires on the committed values themselves. Routing stays off until the
+# router exists (A18), and the ranking values are D-013's ruling, so a silent
+# edit to either is a behaviour change disguised as a config tweak.
+if ([string]$pcConfig.schemaVersion -ne 'v1') { throw 'The provider config must declare schemaVersion v1' }
+if ([bool]$pcConfig.dispatch.autoEnabled) { throw 'dispatch.autoEnabled must stay false until H38-17 builds the router' }
+if ([string]$pcConfig.dispatch.defaultTarget -ne 'claude') { throw "dispatch.defaultTarget should be 'claude' until routing is on, got '$($pcConfig.dispatch.defaultTarget)'" }
+if ([string]$pcConfig.ranking.tieBreak -ne 'nearest-reset-first') { throw 'ranking.tieBreak is the decided D-013 value, nearest-reset-first' }
+if ($pcConfig.ranking.PSObject.Properties.Name -contains 'provisional') { throw 'ranking carries no provisional flag: D-013 is decided, not assumed' }
+if (-not [bool]$pcConfig.reserves.provisional) { throw 'reserves stay marked provisional until D-011 is answered' }
+
+# Absent, unparseable and wrong-schema all answer $null, so a caller gets one
+# thing to test rather than three.
+$pcTmp = Join-Path $WorkspaceRoot 'output\smoke\module\provider-config'
+if (Test-Path -LiteralPath $pcTmp) { Remove-Item -LiteralPath $pcTmp -Recurse -Force }
+$null = New-Item -ItemType Directory -Path $pcTmp -Force
+if ($null -ne (Get-AgentProviderConfig -ConfigPath (Join-Path $pcTmp 'nope.json'))) { throw 'An absent config must load as $null' }
+'{ not json' | Set-Content -LiteralPath (Join-Path $pcTmp 'bad.json') -Encoding UTF8
+if ($null -ne (Get-AgentProviderConfig -ConfigPath (Join-Path $pcTmp 'bad.json'))) { throw 'An unparseable config must load as $null' }
+'{ "schemaVersion": "v2", "providers": { "x": {} } }' | Set-Content -LiteralPath (Join-Path $pcTmp 'v2.json') -Encoding UTF8
+if ($null -ne (Get-AgentProviderConfig -ConfigPath (Join-Path $pcTmp 'v2.json'))) { throw 'A future schemaVersion must load as $null rather than be guessed at' }
+'{ "schemaVersion": "v1", "providers": {} }' | Set-Content -LiteralPath (Join-Path $pcTmp 'empty.json') -Encoding UTF8
+if ($null -ne (Get-AgentProviderConfig -ConfigPath (Join-Path $pcTmp 'empty.json'))) { throw 'A config with no providers must load as $null' }
+
+# Each rule broken once, asserting the exact string an operator would read.
+$pcRaw = Get-Content -LiteralPath $pcPath -Raw -Encoding UTF8
+function Test-SmokeProviderConfigError {
+    param([Parameter(Mandatory)][scriptblock]$Mutate, [Parameter(Mandatory)][string]$Expected)
+    $copy = ConvertFrom-Json -InputObject $pcRaw
+    & $Mutate $copy
+    $result = Test-AgentProviderConfig -Config $copy
+    if ($result.errors -notcontains $Expected) {
+        throw ("Expected '{0}', got: {1}" -f $Expected, (($result.errors -join '; ')))
+    }
+}
+Test-SmokeProviderConfigError -Expected 'providers.claude.executionMode must be local or github-hosted' -Mutate { param($c) $c.providers.claude.executionMode = 'cloud' }
+Test-SmokeProviderConfigError -Expected 'providers.claude.windows[0].unit must be one of: provider-allowance, tokens, ai-credits, premium-requests, currency, unknown' -Mutate { param($c) $c.providers.claude.windows[0].unit = 'gallons' }
+Test-SmokeProviderConfigError -Expected 'providers.claude.windows must be a non-empty array' -Mutate { param($c) $c.providers.claude.windows = @() }
+Test-SmokeProviderConfigError -Expected 'reserves.shortWindowRatio must be between 0 and 1' -Mutate { param($c) $c.reserves.shortWindowRatio = 1.5 }
+Test-SmokeProviderConfigError -Expected 'reserves.weeklyRatio must be between 0 and 1' -Mutate { param($c) $c.reserves.weeklyRatio = -0.2 }
+Test-SmokeProviderConfigError -Expected 'localExecutionSlots must be 1' -Mutate { param($c) $c.localExecutionSlots = 2 }
+Test-SmokeProviderConfigError -Expected 'dispatch.defaultTarget must name a provider or auto' -Mutate { param($c) $c.dispatch.defaultTarget = 'gemini' }
+Test-SmokeProviderConfigError -Expected 'dispatch.defaultTarget is auto but dispatch.autoEnabled is false' -Mutate { param($c) $c.dispatch.defaultTarget = 'auto' }
+Test-SmokeProviderConfigError -Expected 'ranking.tieBreak must be nearest-reset-first or alphabetical' -Mutate { param($c) $c.ranking.tieBreak = 'coin-flip' }
+
+# The pairing is a guard, not a blanket ban: auto IS valid once routing is on.
+$pcAutoOn = ConvertFrom-Json -InputObject $pcRaw
+$pcAutoOn.dispatch.defaultTarget = 'auto'
+$pcAutoOn.dispatch.autoEnabled = $true
+if (-not (Test-AgentProviderConfig -Config $pcAutoOn).valid) { throw 'defaultTarget=auto must be valid once autoEnabled is true — H38-17 depends on it' }
+
+Remove-Item -LiteralPath $pcTmp -Recurse -Force -ErrorAction SilentlyContinue
+Write-Host '  provider config: schema v1 loads, 9 policy rules refuse by name, routing off until the router lands' -ForegroundColor DarkGray
 
 Write-Step 'WorkPacket prompt rendering — smoke: acceptance criteria travel verbatim'
 
