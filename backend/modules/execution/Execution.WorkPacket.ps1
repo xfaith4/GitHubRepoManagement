@@ -284,3 +284,214 @@ function Read-WorkPacket {
         return $null
     }
 }
+
+# ---------------------------------------------------------------------------
+# The other half of the contract: what came back.
+#
+# A WorkPacket says what to do. An ExecutionResult says what happened, and it
+# exists because the runner has never had an answer to that question. It reads
+# the CLI's exit code, so an agent that printed an apology and exited 0 reached
+# `awaiting-review` with nothing behind it. The spec puts it plainly: free-form
+# prose must not be the orchestration protocol.
+# ---------------------------------------------------------------------------
+
+$script:ExecutionResultSchemaVersion = 1
+
+function Get-ExecutionResultStatus {
+    <#
+    .SYNOPSIS
+        The four ways an execution can end. One list, so the validator and the
+        constructor cannot disagree about it.
+    #>
+    return @('implementation_complete', 'implementation_failed', 'capacity_exhausted', 'cancelled')
+}
+
+<#
+.SYNOPSIS
+    Build an ExecutionResult: the structured answer an adapter owes the runner.
+
+.DESCRIPTION
+    `capacity_exhausted` is a first-class status rather than a kind of failure.
+    A provider limit means the work was never attempted, so recording it as
+    failed would blame the task for the subscription's state and burn an
+    attempt that never happened. H38-10 completes that path; this defines it.
+
+.PARAMETER VerificationPassed
+    Tri-state on purpose: $true, $false, or $null for "no verification ran".
+    Collapsing the third into $false would report an unverified run as a failed
+    one, which is a different and much louder claim.
+
+.PARAMETER UsageNative
+    Whatever the provider actually reported, in the provider's own units, kept
+    unconverted. The spec forbids inventing a token conversion for a
+    subscription allowance, so this stays opaque and TokensObserved carries a
+    count only when the provider genuinely gave one.
+#>
+function New-ExecutionResult {
+    [CmdletBinding()]
+    [OutputType([System.Collections.Specialized.OrderedDictionary])]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Pure constructor: builds and returns a result in memory and touches nothing. Save-ExecutionResult is the only writer, and the New- verb is fixed by the M1 task contract.')]
+    param(
+        [Parameter(Mandatory)][string]$TaskId,
+        [Parameter(Mandatory)][string]$ExecutionId,
+        [Parameter(Mandatory)][string]$Provider,
+        [AllowEmptyString()][string]$ProviderSessionId = '',
+        [Parameter(Mandatory)][ValidateSet('implementation_complete', 'implementation_failed', 'capacity_exhausted', 'cancelled')][string]$Status,
+        [string[]]$ChangedFiles = @(),
+        [nullable[bool]]$VerificationPassed = $null,
+        [string[]]$VerificationCommands = @(),
+        [object]$UsageNative = $null,
+        [nullable[int]]$TokensObserved = $null,
+        [string[]]$Risks = @(),
+        [bool]$OperatorAttentionRequired = $false,
+        [AllowEmptyString()][string]$Summary = '',
+        [ValidateSet('adapter', 'interactive')][string]$Source = 'adapter'
+    )
+
+    $sessionId = $null
+    if (-not [string]::IsNullOrWhiteSpace($ProviderSessionId)) {
+        $sessionId = [string]$ProviderSessionId
+    }
+
+    return [ordered]@{
+        schemaVersion             = $script:ExecutionResultSchemaVersion
+        taskId                    = [string]$TaskId
+        executionId               = [string]$ExecutionId
+        provider                  = [string]$Provider
+        providerSessionId         = $sessionId
+        status                    = [string]$Status
+        changedFiles              = @($ChangedFiles)
+        verification              = [ordered]@{
+            passed   = $VerificationPassed
+            commands = @($VerificationCommands)
+        }
+        usage                     = [ordered]@{
+            native         = $UsageNative
+            tokensObserved = $TokensObserved
+        }
+        risks                     = @($Risks)
+        operatorAttentionRequired = [bool]$OperatorAttentionRequired
+        summary                   = [string]$Summary
+        source                    = [string]$Source
+    }
+}
+
+<#
+.SYNOPSIS
+    Validate an ExecutionResult. Same posture as Test-WorkPacket: every error
+    at once, and both a fresh hashtable and a JSON round-trip accepted.
+#>
+function Test-ExecutionResult {
+    param([Parameter(Mandatory)][object]$Result)
+
+    $errors = @()
+
+    if ([string]::IsNullOrWhiteSpace([string](_WP_Field -Obj $Result -Name 'taskId' -Default ''))) {
+        $errors += 'taskId is required'
+    }
+    if ([string]::IsNullOrWhiteSpace([string](_WP_Field -Obj $Result -Name 'executionId' -Default ''))) {
+        $errors += 'executionId is required'
+    }
+    if ([string]::IsNullOrWhiteSpace([string](_WP_Field -Obj $Result -Name 'provider' -Default ''))) {
+        $errors += 'provider is required'
+    }
+
+    $status = [string](_WP_Field -Obj $Result -Name 'status' -Default '')
+    if ($status -notin (Get-ExecutionResultStatus)) {
+        $errors += ('status must be one of: {0}' -f ((Get-ExecutionResultStatus) -join ', '))
+    }
+
+    # Read inline rather than through _WP_Field. Returning a value from a
+    # PowerShell function ENUMERATES it, so an empty array comes back as $null
+    # and a correctly-formed result would be reported as having no array at
+    # all. Indexing into the object directly does not enumerate. This is the
+    # same hazard tools\Assert-NoArrayCollapsingIfExpression.ps1 gates for in
+    # its if-expression form.
+    #
+    # A STRING here is a provider that answered the wrong question, and a
+    # caller counting files would silently read its character length.
+    $hasChangedFiles = $false
+    $changedFiles = $null
+    if ($Result -is [System.Collections.IDictionary]) {
+        if ($Result.Contains('changedFiles')) {
+            $hasChangedFiles = $true
+            $changedFiles = $Result['changedFiles']
+        }
+    }
+    elseif ($null -ne $Result.PSObject -and ($Result.PSObject.Properties.Name -contains 'changedFiles')) {
+        $hasChangedFiles = $true
+        $changedFiles = $Result.changedFiles
+    }
+    if (-not $hasChangedFiles -or $changedFiles -is [string] -or $changedFiles -isnot [System.Collections.IEnumerable]) {
+        $errors += 'changedFiles must be an array'
+    }
+
+    return [pscustomobject]@{
+        valid  = ($errors.Count -eq 0)
+        errors = @($errors)
+    }
+}
+
+<#
+.SYNOPSIS
+    Where a run's result lives: beside the run summary that already describes it.
+#>
+function Get-ExecutionResultPath {
+    param(
+        [Parameter(Mandatory)][string]$WorkspaceRoot,
+        [Parameter(Mandatory)][string]$TaskId
+    )
+    return (Join-Path $WorkspaceRoot ('output\roadmap-task-history\runs\{0}.result.json' -f $TaskId))
+}
+
+<#
+.SYNOPSIS
+    Persist a result, refusing to write an invalid one.
+#>
+function Save-ExecutionResult {
+    param(
+        [Parameter(Mandatory)][string]$WorkspaceRoot,
+        [Parameter(Mandatory)][object]$Result
+    )
+
+    $validation = Test-ExecutionResult -Result $Result
+    if (-not $validation.valid) {
+        throw ('ExecutionResult is invalid: {0}' -f ($validation.errors -join '; '))
+    }
+
+    $taskId = [string](_WP_Field -Obj $Result -Name 'taskId' -Default '')
+    $path = Get-ExecutionResultPath -WorkspaceRoot $WorkspaceRoot -TaskId $taskId
+    $directory = Split-Path -Parent $path
+    if (-not (Test-Path -LiteralPath $directory)) {
+        $null = New-Item -ItemType Directory -Path $directory -Force
+    }
+
+    Set-Content -LiteralPath $path -Value ($Result | ConvertTo-Json -Depth 8) -Encoding UTF8
+    return $path
+}
+
+<#
+.SYNOPSIS
+    Read a result back, or $null when there is nothing readable.
+
+.DESCRIPTION
+    $null is the ordinary case, not an error: until an adapter writes one, no
+    run has a result. Resolve-RunOutcomeFromResult in the runner is what turns
+    that absence into a named failure.
+#>
+function Read-ExecutionResult {
+    param(
+        [Parameter(Mandatory)][string]$WorkspaceRoot,
+        [Parameter(Mandatory)][string]$TaskId
+    )
+
+    $path = Get-ExecutionResultPath -WorkspaceRoot $WorkspaceRoot -TaskId $TaskId
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+    try {
+        return (ConvertFrom-Json -InputObject (Get-Content -LiteralPath $path -Raw -Encoding UTF8))
+    }
+    catch {
+        return $null
+    }
+}

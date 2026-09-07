@@ -2357,6 +2357,55 @@ if (-not $wpSaveRefused) { throw 'Expected Save-WorkPacket to refuse an invalid 
 $wpModuleText = Get-Content -LiteralPath $workPacketModule -Raw -Encoding UTF8
 if ($wpModuleText -match '(?m)^param\s*\(') { throw 'Execution.WorkPacket.ps1 declares a file-scope param() block; the host may only dot-source param-less libraries' }
 
+Write-Step 'ExecutionResult contract — smoke: schema v1 and the four terminal statuses, offline'
+
+$erResult = New-ExecutionResult -TaskId 'smoke-er-1' -ExecutionId 'exec-1' -Provider 'claude' -Status 'implementation_complete' -ChangedFiles @('a.ps1', 'b.ps1') -VerificationPassed $true -VerificationCommands @('pwsh ./scripts/Invoke-TestSuite.ps1') -Summary 'Did the thing.'
+$erValid = Test-ExecutionResult -Result $erResult
+if (-not $erValid.valid) { throw ("Expected the example result to be valid, got: " + ($erValid.errors -join '; ')) }
+if ($erResult.schemaVersion -ne 1) { throw "Expected ExecutionResult schemaVersion=1, got '$($erResult.schemaVersion)'" }
+if ($erResult.source -ne 'adapter') { throw "Expected source to default to 'adapter', got '$($erResult.source)'" }
+if ($null -ne $erResult.providerSessionId) { throw 'Expected an absent providerSessionId to be $null, not an empty string' }
+
+# Tri-state verification. Collapsing "no verification ran" into $false would
+# report an unverified run as a failed one, which is a much louder claim.
+$erNoVerify = New-ExecutionResult -TaskId 't' -ExecutionId 'e' -Provider 'claude' -Status 'implementation_complete'
+if ($null -ne $erNoVerify.verification.passed) { throw 'Expected verification.passed to stay $null when no verification ran' }
+
+$erRoundTripPath = Save-ExecutionResult -WorkspaceRoot $wpWorkspace -Result $erResult
+if ($erRoundTripPath -notmatch 'roadmap-task-history') { throw "Expected the result beside the run summary, got: $erRoundTripPath" }
+$erRawJson = Get-Content -LiteralPath $erRoundTripPath -Raw -Encoding UTF8
+if ($erRawJson -notmatch '"providerSessionId"\s*:\s*null') { throw 'Expected providerSessionId to serialize as JSON null on the wire' }
+if ($erRawJson -notmatch '"risks"\s*:\s*\[\s*\]') { throw 'Expected an empty risks list to serialize as [] on the wire, not null' }
+$erRead = Read-ExecutionResult -WorkspaceRoot $wpWorkspace -TaskId 'smoke-er-1'
+if ($null -eq $erRead) { throw 'Read-ExecutionResult returned $null for a result just written' }
+if (-not (Test-ExecutionResult -Result $erRead).valid) { throw 'A round-tripped ExecutionResult failed validation' }
+if (@($erRead.changedFiles).Count -ne 2) { throw "Round-trip lost changedFiles, got $(@($erRead.changedFiles).Count)" }
+if ($null -ne (Read-ExecutionResult -WorkspaceRoot $wpWorkspace -TaskId 'no-such-run')) { throw 'Expected $null for a run with no result' }
+
+foreach ($erStatus in @('implementation_complete', 'implementation_failed', 'capacity_exhausted', 'cancelled')) {
+    $erEach = New-ExecutionResult -TaskId 't' -ExecutionId 'e' -Provider 'claude' -Status $erStatus
+    if (-not (Test-ExecutionResult -Result $erEach).valid) { throw "Status '$erStatus' should be accepted by the contract" }
+}
+
+$erBad = New-ExecutionResult -TaskId 't' -ExecutionId 'e' -Provider 'claude' -Status 'implementation_complete'
+$erBad.provider = ''
+if ((Test-ExecutionResult -Result $erBad).errors -notcontains 'provider is required') { throw "Expected 'provider is required'" }
+$erBad2 = New-ExecutionResult -TaskId 't' -ExecutionId 'e' -Provider 'claude' -Status 'implementation_complete'
+$erBad2.status = 'made-up'
+if ((Test-ExecutionResult -Result $erBad2).errors -notcontains 'status must be one of: implementation_complete, implementation_failed, capacity_exhausted, cancelled') { throw 'Expected the status enumeration error' }
+# A string here is a provider that answered the wrong question; a caller
+# counting files would silently read its character length instead.
+$erBad3 = New-ExecutionResult -TaskId 't' -ExecutionId 'e' -Provider 'claude' -Status 'implementation_complete'
+$erBad3.changedFiles = 'a.ps1'
+if ((Test-ExecutionResult -Result $erBad3).errors -notcontains 'changedFiles must be an array') { throw "Expected 'changedFiles must be an array' for a bare string" }
+
+$erSaveRefused = $false
+try { $null = Save-ExecutionResult -WorkspaceRoot $wpWorkspace -Result $erBad }
+catch { $erSaveRefused = $true }
+if (-not $erSaveRefused) { throw 'Expected Save-ExecutionResult to refuse an invalid result' }
+
+Write-Host '  executionresult: schema v1, four statuses, tri-state verification, round-trip, invalid refused' -ForegroundColor DarkGray
+
 Remove-Item -LiteralPath $wpWorkspace -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host '  workpacket: schema v1 validates, round-trips, and refuses to persist an invalid packet; [] and null hold on the wire' -ForegroundColor DarkGray
 
@@ -5220,6 +5269,48 @@ Write-Step 'Local Claude Code dispatch — smoke: queue writer + runner logic (R
         $wpEntryWithPacket = New-RoadmapQueueEntry -RunId 'r3' -Repository 'x/y' -LocalRepoPath 'C:\repo' -RoadmapPath 'C:\repo\ROADMAP.md' -SelectedTask 'Do it' -TaskDescription 'PROMPT' -Branch '' -QueuedAt '2026-01-01T00:00:00Z' -WorkPacketPath 'C:\ws\output\work-packets\r3.workpacket.json'
         if ($wpEntryWithPacket.workPacketPath -ne 'C:\ws\output\work-packets\r3.workpacket.json') { throw 'workPacketPath not carried onto the queue entry' }
         if (@($read)[0].PSObject.Properties.Name -notcontains 'workPacketPath') { throw 'workPacketPath did not survive the queue round-trip' }
+
+        # ── Release 3.8 M1 (H38-03) — the result, not the exit code, decides ──
+        # The defect being closed: the runner read $LASTEXITCODE and nothing
+        # else, so an agent that printed an apology and exited 0 reached
+        # awaiting-review with no work behind it.
+        $roNone = Resolve-RunOutcomeFromResult -Result $null -ExitCode 0
+        if ($roNone.status -ne 'failed') { throw "A run with no ExecutionResult must fail by name, got '$($roNone.status)'" }
+        if ($roNone.error -ne 'no-structured-result: the agent produced no ExecutionResult; prose is not the protocol') {
+            throw "Wrong no-result error text: $($roNone.error)"
+        }
+
+        $roComplete = New-ExecutionResult -TaskId 't' -ExecutionId 'e' -Provider 'claude' -Status 'implementation_complete'
+        if ((Resolve-RunOutcomeFromResult -Result $roComplete -ExitCode 0).status -ne 'awaiting-review') { throw 'A complete result should reach awaiting-review' }
+
+        # GOLDEN: a non-zero exit code with a valid complete result is still
+        # awaiting-review. A crashed CLI still fails, because the non-zero exit
+        # throws earlier at the launch site; this pins that once a result
+        # exists, the result is the protocol.
+        $roExitNonZero = Resolve-RunOutcomeFromResult -Result $roComplete -ExitCode 1
+        if ($roExitNonZero.status -ne 'awaiting-review') { throw 'The exit code must not override a valid ExecutionResult' }
+        if ($roExitNonZero.exitCode -ne 1) { throw 'The exit code must still be recorded even though it decides nothing' }
+
+        $roFailed = New-ExecutionResult -TaskId 't' -ExecutionId 'e' -Provider 'claude' -Status 'implementation_failed' -Summary 'the tests did not pass'
+        $roFailedOutcome = Resolve-RunOutcomeFromResult -Result $roFailed -ExitCode 0
+        if ($roFailedOutcome.status -ne 'failed') { throw 'implementation_failed should map to failed' }
+        if ($roFailedOutcome.error -ne 'the tests did not pass') { throw "implementation_failed should carry its summary, got '$($roFailedOutcome.error)'" }
+
+        # A provider limit means the work was never attempted. Failing the task
+        # would blame the roadmap item for the subscription's state.
+        $roCapacity = New-ExecutionResult -TaskId 't' -ExecutionId 'e' -Provider 'claude' -Status 'capacity_exhausted'
+        if ((Resolve-RunOutcomeFromResult -Result $roCapacity -ExitCode 0).status -ne 'queued') { throw 'capacity_exhausted must re-queue, never fail' }
+
+        $roCancelled = New-ExecutionResult -TaskId 't' -ExecutionId 'e' -Provider 'claude' -Status 'cancelled'
+        $roCancelledOutcome = Resolve-RunOutcomeFromResult -Result $roCancelled -ExitCode 0
+        if ($roCancelledOutcome.status -ne 'failed' -or $roCancelledOutcome.error -ne 'cancelled') { throw 'cancelled should fail with error=cancelled' }
+
+        $roInvalid = New-ExecutionResult -TaskId 't' -ExecutionId 'e' -Provider 'claude' -Status 'implementation_complete'
+        $roInvalid.provider = ''
+        $roInvalidOutcome = Resolve-RunOutcomeFromResult -Result $roInvalid -ExitCode 0
+        if ($roInvalidOutcome.status -ne 'failed') { throw 'An invalid result must fail' }
+        if ($roInvalidOutcome.error -notmatch '^invalid-structured-result: ') { throw "Wrong invalid-result error text: $($roInvalidOutcome.error)" }
+        if ($roInvalidOutcome.error -notmatch 'provider is required') { throw 'The invalid-result error should name what was wrong' }
 
         # summary status transitions (queued -> awaiting-review, fields merged)
         $sp = Join-Path $dispTmp 'r1.summary.json'

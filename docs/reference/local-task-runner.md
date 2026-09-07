@@ -29,6 +29,7 @@ Queue Task    -> output/roadmap-task-queue.jsonl  (status=queued)
                                          claim        (status=running)
                                          git switch -c roadmap/<runId>
                                          claude  (task prompt, in the repo)
+                                         result  (<runId>.result.json; missing or invalid => status=failed)
                                          verify  (best-effort: npm test / Invoke-TestSuite)
                                          git commit   (only if there are changes)
                                          status=awaiting-review   <-- STOPS here
@@ -99,8 +100,16 @@ same runner loop described above.
 ```text
 package-run  -> packet (pending-approval)   [nothing queued]
 approve      -> roadmap-task-queue.jsonl + <runId>.summary.json (status=queued)
-runner       -> claim -> branch -> claude -> verify -> commit -> awaiting-review
+runner       -> claim -> branch -> claude -> result -> verify -> commit -> awaiting-review
 ```
+
+Release 3.8 M1 adds the `result` step: the runner reads
+`<runId>.result.json`, the structured `ExecutionResult` the agent's adapter
+writes, and a headless run whose result is **missing or invalid is recorded as
+`failed` by name** rather than committed and marked ready. The CLI's exit code
+is recorded but no longer decides the outcome, because an agent that printed
+prose and exited 0 used to reach `awaiting-review` with nothing behind it. An
+interactive run records its own result, since a person watched the session.
 
 Inspect the approval queue with `GET /api/automation/packages?status=pending-approval`.
 A packet may be approved only from `pending-approval`, and a dispatched packet is
