@@ -142,6 +142,8 @@ if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) { $WorkspaceRoot = Split-Path 
 # and the capacity module records the cooldown a matched signal implies.
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\execution\Execution.ProviderRegistry.ps1')
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\execution\Execution.ProviderCapacity.ps1')
+# H38-17: `auto` is resolved to a real provider here, at claim time.
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\execution\Execution.ProviderRouter.ps1')
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\agent-adapters\Adapter.Claude.ps1')
 # H38-15: the copilot dispatch functions moved here from this file. Dot-sourced
 # BEFORE any use, so every existing call site is unchanged by the move.
@@ -675,6 +677,99 @@ function Test-RunnerClaimAllowed {
     }
 }
 
+<#
+.SYNOPSIS
+    H38-17 — gather the router's inputs from live runner state and choose a
+    provider for one queued entry.
+
+.DESCRIPTION
+    The router itself is pure; this is the impure half that reads what is true
+    right now: capacity records off disk, availability detected per installation
+    (H38-15b), active execution counts derived from run summaries and the
+    heartbeat, and recent run history.
+
+    Availability comes from Get-AgentProviderAvailabilityMap and NOT from an
+    inline Get-Command here. Duplicating the PATH probe is how availability came
+    to be asserted in two places in the first place (A20), and a second copy
+    would drift from the one Settings and the setup wizard show the operator.
+#>
+function Resolve-QueuedTaskProvider {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][object]$Entry,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$RunId
+    )
+
+    $empty = [pscustomobject]@{ selected = $null; reason = @('router unavailable'); candidates = @(); tie = $false }
+    if (-not (Get-Command -Name 'Resolve-ProviderSelection' -ErrorAction SilentlyContinue)) { return $empty }
+
+    $config = $null
+    if (Get-Command -Name 'Get-AgentProviderConfig' -ErrorAction SilentlyContinue) {
+        $config = Get-AgentProviderConfig -ConfigPath (Get-AgentProviderConfigPath -WorkspaceRoot $WorkspaceRoot)
+    }
+    if ($null -eq $config) {
+        return [pscustomobject]@{ selected = $null; reason = @('no eligible provider', 'the provider config could not be loaded'); candidates = @(); tie = $false }
+    }
+
+    $registry = @(@(Get-AgentProviderToken -WorkspaceRoot $WorkspaceRoot) | Where-Object { $_ -ne 'auto' })
+
+    $availability = @{}
+    if (Get-Command -Name 'Get-AgentProviderAvailabilityMap' -ErrorAction SilentlyContinue) {
+        $availability = Get-AgentProviderAvailabilityMap -WorkspaceRoot $WorkspaceRoot
+    }
+
+    $records = @{}
+    $active = @{}
+    foreach ($provider in $registry) {
+        if (Get-Command -Name 'Read-ProviderCapacityRecord' -ErrorAction SilentlyContinue) {
+            $records[$provider] = Read-ProviderCapacityRecord -WorkspaceRoot $WorkspaceRoot -Provider $provider
+        }
+        if (Get-Command -Name 'Get-ProviderActiveExecutionCount' -ErrorAction SilentlyContinue) {
+            $active[$provider] = Get-ProviderActiveExecutionCount -RunsDir $runsDir -Provider $provider -HeartbeatPath $heartbeatPath
+        }
+    }
+
+    # The last 50 run summaries, newest last, so the router's recent-failure
+    # window reads the most recent attempts. Best effort: history is a ranking
+    # input, and losing it must degrade the score rather than refuse the run.
+    $history = @()
+    try {
+        if (Test-Path -LiteralPath $runsDir) {
+            $summaryFiles = @(Get-ChildItem -LiteralPath $runsDir -Filter '*.json' -File -ErrorAction SilentlyContinue |
+                    Sort-Object LastWriteTimeUtc | Select-Object -Last 50)
+            foreach ($file in $summaryFiles) {
+                try {
+                    $summary = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+                    if ($null -eq $summary) { continue }
+                    $history += [pscustomobject]@{
+                        provider   = [string](_PRT_Field -Obj $summary -Name 'selectedProvider' -Default (_PRT_Field -Obj $summary -Name 'dispatchTarget' -Default ''))
+                        repository = [string](_PRT_Field -Obj $summary -Name 'repoName' -Default '')
+                        status     = [string](_PRT_Field -Obj $summary -Name 'status' -Default '')
+                    }
+                }
+                catch { continue }
+            }
+        }
+    }
+    catch { $history = @() }
+
+    $packet = [pscustomobject]@{
+        taskId      = [string]$RunId
+        repository  = [string](_PRT_Field -Obj $Entry -Name 'repoName' -Default '')
+        execution   = [pscustomobject]@{
+            preferredProvider = 'auto'
+            previousProvider  = [string](_PRT_Field -Obj $Entry -Name 'previousProvider' -Default '')
+        }
+        permissions = [pscustomobject]@{
+            githubWrite = [bool](_PRT_Field -Obj $Entry -Name 'githubWrite' -Default $false)
+        }
+    }
+
+    return Resolve-ProviderSelection -Packet $packet -Registry $registry -CapacityRecords $records `
+        -AuthStatus $availability -ActiveCounts $active -History @($history) -Config $config -NowUtc ([datetime]::UtcNow)
+}
+
 function Resolve-CapacityWaitUpdate {
     <#
     .SYNOPSIS
@@ -871,6 +966,42 @@ function Invoke-QueuedTask {
     }
 
     Write-Host ("`n[task] runId={0} repo={1} target={2}" -f $runId, $repo, $dispatchTarget) -ForegroundColor Cyan
+
+    # H38-17 -- resolve `auto` BEFORE any provider branch, at claim time.
+    #
+    # At claim time and not at enqueue time on purpose: capacity, cooldowns
+    # and concurrency are all state that moves between the two, and a
+    # provider chosen when the task was queued can be exhausted by the time
+    # it runs. Choosing here means the decision is made against what is true
+    # now, and the reason recorded alongside it is the reason that applied.
+    if ($dispatchTarget -eq 'auto') {
+        $routing = Resolve-QueuedTaskProvider -Entry $Entry -RunId $runId
+        if ([string]::IsNullOrWhiteSpace($routing.selected)) {
+            # No provider can take it. The entry stays QUEUED rather than
+            # failing: nothing is wrong with the task, and marking it failed
+            # would burn an attempt on the estate's condition.
+            Write-Host '  [routing] no eligible provider; leaving the task queued' -ForegroundColor DarkYellow
+            foreach ($routingLine in @($routing.reason)) { Write-Host ("             {0}" -f $routingLine) -ForegroundColor DarkGray }
+            if (-not $DryRun) {
+                Update-TaskSummary -SummaryPath $summaryPath -Set @{
+                    status          = 'queued'
+                    selectedProvider = $null
+                    selectionReason = @($routing.reason)
+                    capacityWaitReason = 'no eligible provider'
+                }
+            }
+            return
+        }
+        $dispatchTarget = [string]$routing.selected
+        Write-Host ("  [routing] auto -> {0}" -f $dispatchTarget) -ForegroundColor Cyan
+        foreach ($routingLine in @($routing.reason)) { Write-Host ("             {0}" -f $routingLine) -ForegroundColor DarkGray }
+        if (-not $DryRun) {
+            Update-TaskSummary -SummaryPath $summaryPath -Set @{
+                selectedProvider = $dispatchTarget
+                selectionReason  = @($routing.reason)
+            }
+        }
+    }
 
     if ($dispatchTarget -eq 'copilot') {
         Invoke-QueuedCopilotTask -Entry $Entry -RunId $runId -SummaryPath $summaryPath

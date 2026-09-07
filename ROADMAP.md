@@ -949,7 +949,7 @@ to the queue — never fails it — when a provider is exhausted.
       `frontend/types.ts`, and reconciles the third vocabulary
       (`operator-runner`) the approval route writes. Eligibility then ranking,
       selection reason recorded, presence counts derived from the registry
-      rather than naming providers. _(state: scaffolded 2026-09-07 —
+      rather than naming providers. _(state: routing-on 2026-09-07 —
       H38-14 Execution.ProviderRegistry.ps1 is the one token list (claude,
       codex, copilot, auto); the queue module and the runner delegate to it,
       and the two ValidateSet attributes that cannot are gated against it so
@@ -971,7 +971,21 @@ to the queue — never fails it — when a provider is exhausted.
       forms and mean something else entirely; the runner runs codex tasks
       through the same branch, launch, parse, verify and commit path, with the
       provider held in a variable at every launch and ledger site so a codex
-      run is never recorded, rested or billed as a claude one)_
+      run is never recorded, rested or billed as a claude one; H38-17
+      Resolve-ProviderSelection is eligibility THEN ranking with the reason
+      recorded — every Stage 1 condition is kept per candidate whether it
+      passed or failed and the first failure becomes ineligibleBecause, so a
+      provider that is never chosen is explainable without reading a log;
+      Stage 2 weights eight factors each normalised to [0,1] and a tie names
+      the rule that broke it. An unenforced capacity verdict is recorded as
+      advisory and does not exclude, because D-011 left the per-task estimate
+      provisional and refusing work on a guessed cost would block real
+      execution on an unmeasured number. The runner resolves `auto` at CLAIM
+      time, not enqueue time, since capacity and cooldowns move in between,
+      and writes selectedProvider and selectionReason onto the run summary;
+      with no eligible provider the entry stays queued rather than failing.
+      dispatch.autoEnabled and defaultTarget are now true/auto (D-013), and
+      the config tripwire inverted to guard that rather than disappearing.)_
 - [ ] **Move push and PR opening to Repo Manager; bind approval to the verified
       SHA.** The agent exits at `IMPLEMENTATION_COMPLETE`; Repo Manager pushes,
       opens the pull request and monitors CI on a cadence without holding an
