@@ -1786,6 +1786,171 @@ if ($specDrift.Count -gt 0) {
 }
 Write-Host '  standards/roadmap and spec/roadmap-contract in sync (7 assets)' -ForegroundColor DarkGray
 
+# ---------------------------------------------------------------------------
+# Lane 0.18 (H-13a) — roadmap dependency notation.
+#
+# ROADMAP_TEMPLATE.md has recommended `[[M3]]` ids and `(depends: M3)` since it
+# was written, and the contract schema has declared `milestoneId` as "extracted
+# from a leading [[M#]] marker" for just as long. The roadmap recorded this as
+# notation "that nothing reads". It was worse than unread: `[[M4]]` contains
+# `[M4]`, so the tag extractor claimed the inner pair, lowercased the id into
+# allTags beside real tags, and left a stray `[]` at the front of the item —
+# which then reached the console, the queue and the dispatch prompt.
+#
+# The first assertion below is that regression, pinned by the exact text an
+# operator would have seen.
+# ---------------------------------------------------------------------------
+Write-Step 'Roadmap dependencies (notation) — smoke: ids parsed, unknown ids and cycles found, offline'
+
+$rdTemplateItem = '[[M4]] Wire backoff into dispatcher (depends: M3)'
+$rdSplit = _RoadmapParserGetItemTagsAndText -Raw $rdTemplateItem
+if ($rdSplit.text -like '`[`]*') { throw "The template's own id syntax still corrupts the display text: '$($rdSplit.text)'" }
+if ($rdSplit.text -ne 'Wire backoff into dispatcher') { throw "Display text must carry neither marker, got '$($rdSplit.text)'" }
+if ($rdSplit.id -ne 'M4') { throw "The id must be read with its case intact, got '$($rdSplit.id)'" }
+if (@($rdSplit.tags) -contains 'm4') { throw 'An item id must not leak into allTags as an ordinary lowercase tag' }
+if ((@($rdSplit.dependsOn) -join ',') -ne 'M3') { throw "dependsOn must carry the referenced id, got '$(@($rdSplit.dependsOn) -join ',')'" }
+# Ordinary tags still work, and a bare item is still bare.
+if ((@((_RoadmapParserGetItemTagsAndText -Raw '[urgent] Ordinary tagged item').tags) -join ',') -ne 'urgent') { throw 'Ordinary [tag] extraction regressed' }
+if ((_RoadmapParserGetItemTagsAndText -Raw 'Plain item').id -ne '') { throw 'An item with no marker must report no id' }
+
+$rdParsed = Invoke-ParseRoadmapContent -Content "## R`n`n- [x] [[A]] done one`n- [ ] [[B]] two (depends: A)`n- [ ] [[C]] three (depends: A, B)`n- [ ] plain`n"
+$rdItems = @($rdParsed.items)
+if ($rdItems.Count -ne 4) { throw "Expected 4 parsed items, got $($rdItems.Count)" }
+if ($rdItems[0].id -ne 'A' -or -not $rdItems[0].checked) { throw 'The completed item must carry its id and its checked state' }
+if ((@($rdItems[2].dependsOn) -join ',') -ne 'A,B') { throw 'A comma-separated depends list must yield both ids' }
+# "absent" and "declared empty" must stay distinguishable, per the packet.
+$rdPlainNames = @($rdItems[3].PSObject.Properties | ForEach-Object { $_.Name })
+if ($rdPlainNames -contains 'id' -or $rdPlainNames -contains 'dependsOn') { throw 'An item with no notation must carry NEITHER property, not a null and not an empty array' }
+
+# The two findings. Both are findings, never parse errors: a roadmap carrying
+# either is still perfectly readable for every other purpose.
+$rdUnknown = Invoke-ParseRoadmapContent -Content "## R`n`n- [ ] [[A]] one (depends: NOPE)`n"
+if ($rdUnknown.roadmapState -ne 'pending') { throw 'An unresolved dependency must not change the roadmap state' }
+if ((@($rdUnknown.dependencyFindings.unknownIds) -join ',') -ne 'A -> NOPE') { throw "The unknown-id finding must name the item AND the id, got '$(@($rdUnknown.dependencyFindings.unknownIds) -join ',')'" }
+
+$rdCycle = Invoke-ParseRoadmapContent -Content "## R`n`n- [ ] [[A]] one (depends: B)`n- [ ] [[B]] two (depends: A)`n"
+if ($rdCycle.roadmapState -ne 'pending') { throw 'A cycle must not change the roadmap state' }
+if (@($rdCycle.dependencyFindings.cycles).Count -ne 1) { throw "Expected exactly one cycle, got $(@($rdCycle.dependencyFindings.cycles).Count)" }
+foreach ($rdId in @('A', 'B')) {
+    if (@($rdCycle.dependencyFindings.cycles)[0] -notmatch $rdId) { throw "The cycle finding must name every id in the ring; '$rdId' is missing from '$(@($rdCycle.dependencyFindings.cycles)[0])'" }
+}
+# A three-node ring, because a two-node cycle can be found by a check that is
+# not a real graph walk at all.
+$rdCycle3 = Invoke-ParseRoadmapContent -Content "## R`n`n- [ ] [[A]] a (depends: C)`n- [ ] [[B]] b (depends: A)`n- [ ] [[C]] c (depends: B)`n"
+if (@($rdCycle3.dependencyFindings.cycles).Count -ne 1) { throw 'A three-node ring must be reported as one cycle' }
+
+# A DAG that revisits a node by two different paths is not a cycle. This is the
+# case a naive "have I seen this node" walk reports wrongly, and it is also
+# where a phantom " -> " cycle appeared during development, because @($null)
+# is a one-element array holding $null rather than an empty one.
+$rdDiamond = Invoke-ParseRoadmapContent -Content "## R`n`n- [ ] [[A]] a`n- [ ] [[B]] b (depends: A)`n- [ ] [[C]] c (depends: A)`n- [ ] [[D]] d (depends: B, C)`n"
+if (@($rdDiamond.dependencyFindings.cycles).Count -ne 0) { throw "A diamond is not a cycle; got: $(@($rdDiamond.dependencyFindings.cycles) -join ' | ')" }
+if (@($rdDiamond.dependencyFindings.unknownIds).Count -ne 0) { throw "A diamond has no unknown ids; got: $(@($rdDiamond.dependencyFindings.unknownIds) -join ' | ')" }
+
+# GOLDEN. A roadmap with no notation must parse exactly as it did before, or
+# this packet has changed the meaning of every roadmap in the estate rather
+# than adding an optional convention to it.
+$rdGoldenSource = "## Release 1.0 - Thing`n`n- [x] First thing done`n- [ ] Second thing pending`n- [ ] [chore] Third with an ordinary tag`n"
+$rdGolden = Invoke-ParseRoadmapContent -Content $rdGoldenSource
+if ($rdGolden.pendingCount -ne 2 -or $rdGolden.completedCount -ne 1) { throw 'Notation-free counts changed' }
+if ((@($rdGolden.sections)[0].pendingItems -join '|') -ne 'Second thing pending|Third with an ordinary tag') { throw "Notation-free display text changed: '$(@($rdGolden.sections)[0].pendingItems -join '|')'" }
+if ((@($rdGolden.allTags) -join ',') -ne 'chore') { throw "Notation-free tags changed: '$(@($rdGolden.allTags) -join ',')'" }
+if (@($rdGolden.dependencyFindings.unknownIds).Count -ne 0 -or @($rdGolden.dependencyFindings.cycles).Count -ne 0) { throw 'A roadmap with no notation must produce no dependency findings' }
+# And the estate's real roadmap, which is this one.
+$rdSelf = Invoke-ParseRoadmapContent -Content (Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'ROADMAP.md') -Raw -Encoding UTF8)
+if (@($rdSelf.dependencyFindings.unknownIds).Count -ne 0 -or @($rdSelf.dependencyFindings.cycles).Count -ne 0) {
+    throw ("This repository's own roadmap must produce no dependency findings; got unknown=[{0}] cycles=[{1}]" -f (@($rdSelf.dependencyFindings.unknownIds) -join ', '), (@($rdSelf.dependencyFindings.cycles) -join ', '))
+}
+
+# APPLICABILITY. A rule that cannot describe a roadmap must leave the
+# DENOMINATOR, not just the numerator.
+#
+# This is not theoretical. Adding ROADMAP-013/014 without it took the
+# split-archive repair fixture from 64 to 67 — across the L2/L3 boundary,
+# without a character of that fixture changing — because the weight sum grew
+# from 125 to 135 while its penalties stayed the same. "Repair this roadmap"
+# silently became "already contract-ready". Any future rule added to this pack
+# would do the same to some repository in the estate.
+& {
+    $rdNoNotation = "## Open Work`n`n- [ ] Build the first thing`n- [ ] Build the second thing`n"
+    $rdParsedNN = Invoke-ParseRoadmapContent -Content $rdNoNotation
+    $rdContractNN = Invoke-NormalizeRoadmapContract -ParsedResult $rdParsedNN -RawContent $rdNoNotation -RepoName 'smoke-applicability'
+    if ([int]$rdContractNN.dependencyDeclaredCount -ne 0) { throw 'A roadmap declaring no dependencies must report dependencyDeclaredCount = 0' }
+
+    foreach ($rdRuleId in @('ROADMAP-013', 'ROADMAP-014')) {
+        $rdRule = @($auditRules.rules | Where-Object { $_.id -eq $rdRuleId })[0]
+        if ($null -eq $rdRule) { throw "$rdRuleId is missing from the rule pack" }
+        if (@($rdRule.PSObject.Properties | ForEach-Object { $_.Name }) -notcontains 'applicabilityCondition') {
+            throw "$rdRuleId must declare an applicabilityCondition, or it inflates the score of every roadmap that declares no dependencies"
+        }
+        if (Test-RoadmapRuleApplicable -Rule $rdRule -Contract $rdContractNN) { throw "$rdRuleId must not apply to a roadmap with no dependency notation" }
+    }
+
+    # And it DOES apply once the roadmap uses the notation.
+    $rdWith = "## Open Work`n`n- [ ] [[A]] one`n- [ ] [[B]] two (depends: A)`n"
+    $rdContractWith = Invoke-NormalizeRoadmapContract -ParsedResult (Invoke-ParseRoadmapContent -Content $rdWith) -RawContent $rdWith -RepoName 'smoke-applicability-2'
+    if ([int]$rdContractWith.dependencyDeclaredCount -lt 1) { throw 'A roadmap using the notation must report a declared dependency' }
+    $rd013 = @($auditRules.rules | Where-Object { $_.id -eq 'ROADMAP-013' })[0]
+    if (-not (Test-RoadmapRuleApplicable -Rule $rd013 -Contract $rdContractWith)) { throw 'ROADMAP-013 must apply once dependencies are declared' }
+
+    # The property that matters, stated as an invariant rather than as a number:
+    # scoring a notation-free roadmap with the two rules REMOVED must give the
+    # same result as scoring it with them present-but-inapplicable.
+    $rdRulesAll = [pscustomobject]@{ rules = @($auditRules.rules); maturityThresholds = $auditRules.maturityThresholds }
+    $rdRulesWithout = [pscustomobject]@{ rules = @($auditRules.rules | Where-Object { $_.id -notin @('ROADMAP-013', 'ROADMAP-014') }); maturityThresholds = $auditRules.maturityThresholds }
+    $rdScoredAll = Invoke-AuditRoadmapContract -Contract (Invoke-NormalizeRoadmapContract -ParsedResult $rdParsedNN -RawContent $rdNoNotation -RepoName 'a') -AuditRules $rdRulesAll
+    $rdScoredWithout = Invoke-AuditRoadmapContract -Contract (Invoke-NormalizeRoadmapContract -ParsedResult $rdParsedNN -RawContent $rdNoNotation -RepoName 'b') -AuditRules $rdRulesWithout
+    if ([int]$rdScoredAll.maturityScore -ne [int]$rdScoredWithout.maturityScore) {
+        throw ("Adding a rule changed the score of a roadmap that rule cannot describe: {0} with the dependency rules, {1} without. Applicable rules only belong in the denominator." -f $rdScoredAll.maturityScore, $rdScoredWithout.maturityScore)
+    }
+    if ([string]$rdScoredAll.maturityLevel -ne [string]$rdScoredWithout.maturityLevel) {
+        throw ("Adding a rule changed the maturity LEVEL of a roadmap that rule cannot describe: {0} vs {1}" -f $rdScoredAll.maturityLevel, $rdScoredWithout.maturityLevel)
+    }
+    Write-Host ("  applicability: the dependency rules leave the denominator when unused — score {0} either way" -f $rdScoredAll.maturityScore) -ForegroundColor DarkGray
+}
+
+# The detection patterns are DATA. Both evaluators mirror them as literals, and
+# a mirror nobody checks is how the 2026-08-08 divergence happened.
+$rdRulesDetection = $auditRules.detection
+foreach ($rdPatternName in @('itemIdPattern', 'itemDependsPattern')) {
+    if (@($rdRulesDetection.PSObject.Properties | ForEach-Object { $_.Name }) -notcontains $rdPatternName) {
+        throw "roadmap-audit-rules.json must publish detection.$rdPatternName; both evaluators read it from there"
+    }
+}
+if ($script:RoadmapItemIdPattern -ne [string]$rdRulesDetection.itemIdPattern) { throw 'The parser''s id pattern has drifted from the published detection contract' }
+if ($script:RoadmapItemDependsPattern -ne [string]$rdRulesDetection.itemDependsPattern) { throw 'The parser''s depends pattern has drifted from the published detection contract' }
+
+# PARITY, behavioural rather than claimed. tools/Test-RoadmapContract.ps1 is
+# deliberately standalone -- a gate asserts spec/roadmap-contract is
+# self-contained -- so it carries its own copy of the graph walk. A second
+# implementation is exactly the divergence this file's header warns about, so
+# run BOTH over the same fixtures and require identical output.
+& {
+    . (Join-Path $WorkspaceRoot 'tools\Test-RoadmapContract.ps1') -LoadFunctionsOnly
+    $rdFixtures = [ordered]@{
+        'clean'        = "## R`n`n- [ ] [[A]] one`n- [ ] [[B]] two (depends: A)`n"
+        'unknown'      = "## R`n`n- [ ] [[A]] one (depends: NOPE)`n"
+        'cycle'        = "## R`n`n- [ ] [[A]] one (depends: B)`n- [ ] [[B]] two (depends: A)`n"
+        'three-cycle'  = "## R`n`n- [ ] [[A]] a (depends: C)`n- [ ] [[B]] b (depends: A)`n- [ ] [[C]] c (depends: B)`n"
+        'diamond'      = "## R`n`n- [ ] [[A]] a`n- [ ] [[B]] b (depends: A)`n- [ ] [[C]] c (depends: A)`n- [ ] [[D]] d (depends: B, C)`n"
+        'no-notation'  = "## R`n`n- [ ] plain one`n- [x] plain two`n"
+        'multi-depend' = "## R`n`n- [ ] [[A]] a`n- [ ] [[B]] b`n- [ ] [[C]] c (depends: A, B, GHOST)`n"
+    }
+    foreach ($rdName in @($rdFixtures.Keys)) {
+        $rdContent = $rdFixtures[$rdName]
+        $rdMod = (Invoke-ParseRoadmapContent -Content $rdContent).dependencyFindings
+        $rdCli = Get-CliDependencyReport -Items @(Get-ChecklistItemsFromLines -Lines @($rdContent -split "`n"))
+        $rdModKey = ((@($rdMod.unknownIds) | Sort-Object) -join '|') + ' /// ' + ((@($rdMod.cycles) | Sort-Object) -join '|')
+        $rdCliKey = ((@($rdCli.unknownIds) | Sort-Object) -join '|') + ' /// ' + ((@($rdCli.cycles) | Sort-Object) -join '|')
+        if ($rdModKey -ne $rdCliKey) {
+            throw ("The two evaluators disagree on '{0}': module '{1}' vs CLI '{2}'. One roadmap must produce one answer." -f $rdName, $rdModKey, $rdCliKey)
+        }
+    }
+    Write-Host ("  dependency findings: module and CLI evaluators agree across {0} fixtures" -f @($rdFixtures.Keys).Count) -ForegroundColor DarkGray
+}
+
+Write-Host '  roadmap dependencies: template notation is read rather than mangled, unknown ids and cycles are findings not parse errors, a diamond is not a cycle, notation-free roadmaps are byte-for-byte unchanged' -ForegroundColor DarkGray
+
 Write-Step 'Loading roadmap repairer module (Release 0.9)'
 $roadmapRepairer = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Repairer.ps1'
 if (-not (Test-Path -LiteralPath $roadmapRepairer)) { throw "Roadmap.Repairer.ps1 not found at: $roadmapRepairer" }

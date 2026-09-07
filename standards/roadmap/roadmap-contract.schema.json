@@ -197,6 +197,23 @@
     "releasesMissingAcceptanceCriteria": { "type": "integer", "minimum": 0 },
     "releasesMissingOutOfScope": { "type": "integer", "minimum": 0 },
     "vagueItemCount": { "type": "integer", "minimum": 0 },
+    "dependencyUnknownIds": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Lane 0.18. Each '<item> -> <id>' where a (depends: ...) reference names an id no item in this roadmap declares. The list NAMES the offenders; ROADMAP-013 scores the count."
+    },
+    "dependencyCycles": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Lane 0.18. Each detected dependency cycle, rendered as the ring of ids it closes. ROADMAP-014 scores the count."
+    },
+    "dependencyUnknownIdCount": { "type": "integer", "minimum": 0 },
+    "dependencyCycleCount": { "type": "integer", "minimum": 0 },
+    "dependencyDeclaredCount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "How many items DECLARE a dependency. Zero means the roadmap has no dependency graph, so ROADMAP-013/014 do not apply and leave the denominator — adding a rule must not change the score of a roadmap that rule cannot describe."
+    },
     "unknownStatusCount": { "type": "integer", "minimum": 0 },
     "doneReleaseUncheckedItemCount": { "type": "integer", "minimum": 0 },
     "activeReleaseHasValidationPlan": { "type": "boolean" },
