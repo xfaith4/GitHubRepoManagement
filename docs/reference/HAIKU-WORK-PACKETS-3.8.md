@@ -238,8 +238,15 @@ companion (`H-`).
 | H38-34 | M6 | Vocabulary reconciliation: sixth dimension, glossary, `roadmap-events.md` + mirror | H38-33 | medium |
 | H38-35 | M6 | Dispatch Board renders provider, capacity, selection reason; capacity wait is not stalled | H38-19, H38-12, H-07 | medium |
 | H38-36 | M6 | Milestone 6 closing; Release 3.8 acceptance-criteria audit | H38-33…35 | low |
+| H38-37 | — | Close the UTF-8 BOM debt across 56 PowerShell files; ratchet to 0 | none (runs last) | low |
 
 Everything in Release 3.8 or Lane 0.18 not in this table is in §3, with the reason.
+
+H38-37 is the exception to "this file renders Release 3.8": it is Lane 0.8
+repo hygiene, placed last because the lint ratchet it clears has zero headroom
+and cost three packets in this release a local workaround each. It runs after
+the release rather than inside it, so a 56-file sweep never rides along with a
+packet about something else.
 
 ---
 
@@ -1272,6 +1279,45 @@ Everything in Release 3.8 or Lane 0.18 not in this table is in §3, with the rea
 **Roadmap write-back:** M6 state word → `smoke-tested <date>`. Do **not** change the release `**Status:**` line — `validation` and `done` are the operator's, after live proof.
 
 **Stop if:** step 2 finds an unasserted criterion.
+
+---
+
+### H38-37 — Close the UTF-8 BOM debt, and ratchet it to zero
+
+**Roadmap item:** Lane 0.8, `[non-blocker] P4 BOM`. Not a Release 3.8 capability — this is the cleanup the release kept bumping into, deferred here so it never rides inside a packet about something else.
+
+**Why:** 56 PowerShell files contain non-ASCII characters and carry no byte-order mark. Windows PowerShell 5.1 decodes an unmarked file as the ANSI code page rather than UTF-8, so an em-dash or a curly quote in a comment becomes mojibake, and in a **string literal** it becomes a silently wrong value. `PSUseBOMForUnicodeEncodedFile` has sat at a baseline of 56 throughout Release 3.8, which means any new file with a non-ASCII character fails the lint gate for debt it did not create. Three packets in this release hit exactly that, and each worked around it locally.
+
+**This packet disagrees with the roadmap, and says so rather than reconciling it.** Lane 0.8's item reads *"Measure first: which BOM-less files contain non-ASCII AND can run under Windows PowerShell 5.1; add BOMs to that subset only."* This packet proposes sweeping **all 56**, and the operator decides which happens.
+
+The roadmap's restraint was written against a cost of "churn for zero behavior". That was right at the time and is now incomplete, because the debt has acquired a second cost the item does not mention: `PSUseBOMForUnicodeEncodedFile` is pinned at its exact ceiling, so **any new file containing a single em-dash fails CI for debt it did not create**. Three packets in this release hit that and worked around it locally. A subset sweep leaves the ratchet loose and the tax in place.
+
+Against that: every flagged file is PowerShell (55 `.ps1` plus `PSScriptAnalyzerSettings.psd1`, verified 2026-09-07), and a BOM is correct for a PowerShell file under **both** 5.1 and 7. So the wider sweep costs a three-byte prefix on files where it is merely unnecessary, and buys a ratchet at zero.
+
+**Default if the operator has not ruled:** do the roadmap's subset only, and set the baseline to the number of files that remain flagged rather than to 0. Say in the report how many were left and what the new baseline is.
+
+**Prerequisites:** none. Runs last so it never collides with a packet's own diff.
+
+**Scope (edit only):** the flagged PowerShell files, byte prefix only; `scripts/pssa-baseline.json`; `ROADMAP.md`.
+
+**Steps**
+
+1. Enumerate: `Invoke-ScriptAnalyzer -Path . -Recurse -IncludeRule PSUseBOMForUnicodeEncodedFile`, excluding `node_modules`, `output` and `.git`. Record the count — expect **56**.
+2. **Stop if any flagged file is not `.ps1`, `.psm1` or `.psd1`.** A BOM changes how JSON, YAML and several tools parse a file; this packet is safe only because the set is entirely PowerShell. Report any other extension and exclude it.
+2a. Decide the set from the ruling above. **All 56** if the operator has confirmed the wider sweep. Otherwise the roadmap's subset: a file is 5.1-runnable unless it carries `#Requires -Version 6` or higher, or is dot-sourced only by a script that does. Record both counts in the report either way, because the difference between them is exactly what the remaining baseline will be.
+3. For each file: read all text, write it back as UTF-8 **with** BOM. Change nothing else — no line endings, no trailing whitespace, no content. Use `[System.IO.File]::ReadAllText` / `WriteAllText` with `New-Object System.Text.UTF8Encoding($true)`, which preserves the existing line endings exactly.
+4. **Verify the diff is a byte prefix and nothing more:** `git diff --numstat` must show **at most `1  1`** for every touched file. Any file showing more than one added and one removed line had its content altered — stop and report it. This is the assertion that separates "added a BOM" from "reformatted 56 files", which is the failure mode that makes this kind of sweep unreviewable.
+5. Set `PSUseBOMForUnicodeEncodedFile` in `scripts/pssa-baseline.json` to the number still flagged after step 3 — `0` for the full sweep, the remaining count for the subset. Do **not** run `-UpdateBaseline`: it rewrites every rule from the current run, which would silently bake in any other rule that happens to be over its baseline that day.
+
+**Gate:**
+
+- `pwsh ./scripts/Invoke-LintGate.ps1` exits 0 and reports `PSUseBOMForUnicodeEncodedFile` at its new baseline. Before step 5 the gate *passes anyway*, printing the rule as "below baseline" — so **step 5 is what makes the improvement permanent**, and skipping it lets the debt return silently. That is the one thing in this packet that a green run will not catch for you.
+- `pwsh ./scripts/Invoke-ModuleSmokeTest.ps1` exits 0. The point is not that a BOM breaks logic; it is that 56 files were rewritten and the suite proves none of them lost content.
+- `pwsh ./tools/Test-RoadmapStructure.ps1 -Path ./ROADMAP.md` exits 0.
+
+**Roadmap write-back:** the item is `- [ ] **P4 — BOM/PS5.1 hazard (60).**` in Lane 0.8 (verified 2026-09-07; the `(60)` is a stale count, the measured figure is 56). Append `_(state: done <date> — <n> PowerShell files given a UTF-8 BOM, byte prefix only; PSUseBOMForUnicodeEncodedFile ratcheted to <baseline>)_` to it. Leave the checkbox unchecked and the bullet in place: the archive move is a separate decision, and R3 forbids marking `[x]`.
+
+**Stop if:** step 2 finds a non-PowerShell file; or step 4 finds a file with more than one changed line; or the flagged count differs from 56 by more than ±5 (the set has drifted enough that it should be re-read rather than swept blind).
 
 ---
 
