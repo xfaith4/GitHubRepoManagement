@@ -95,7 +95,13 @@ function New-WorkPacket {
     param(
         [Parameter(Mandatory)][string]$TaskId,
         [Parameter(Mandatory)][AllowEmptyString()][string]$Repository,
-        [Parameter(Mandatory)][string]$BaseBranch,
+        # Empty is legitimate and is not the same as missing: the queue entry
+        # has always allowed it, and a local task with no declared base branches
+        # from whatever is checked out. H38-01 shipped this mandatory and
+        # non-empty; H38-02's packaging caller is the real case that showed the
+        # constraint was wrong. Inventing 'main' here would branch some repository
+        # off the wrong base one day, silently.
+        [Parameter(Mandatory)][AllowEmptyString()][string]$BaseBranch,
         [Parameter(Mandatory)][AllowEmptyString()][string]$BaseSha,
         [Parameter(Mandatory)][string]$Objective,
         [string[]]$AllowedPaths = @('**'),

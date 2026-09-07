@@ -1165,12 +1165,20 @@ function New-PackagedItemQueueEntry {
     param(
         [Parameter(Mandatory = $true)][string]$RunId,
         [Parameter(Mandatory = $true)][object]$Packet,
-        [Parameter()][AllowEmptyString()][string]$QueuedAt = ''
+        [Parameter()][AllowEmptyString()][string]$QueuedAt = '',
+        # Release 3.8 M1. This parameter exists here because the module smoke's
+        # "Packaging queue contract" tripwire asserts both writers emit an
+        # IDENTICAL key set and identical values — adding workPacketPath to the
+        # canonical writer alone fails that gate, which is the tripwire doing
+        # exactly its job.
+        [Parameter()][AllowEmptyString()][string]$WorkPacketPath = ''
     )
 
     if ([string]::IsNullOrWhiteSpace($QueuedAt)) { $QueuedAt = (Get-Date).ToString('o') }
     $branch = [string](_Pack_GetField -Obj $Packet -Name 'branch' -Default '')
     if ([string]::IsNullOrWhiteSpace($branch)) { $branch = "roadmap/$RunId" }
+    $resolvedWorkPacketPath = $null
+    if (-not [string]::IsNullOrWhiteSpace($WorkPacketPath)) { $resolvedWorkPacketPath = [string]$WorkPacketPath }
 
     return [ordered]@{
         schemaVersion  = '1'
@@ -1190,6 +1198,7 @@ function New-PackagedItemQueueEntry {
         dispatchTarget = 'claude'
         baseBranch     = [string](_Pack_GetField -Obj $Packet -Name 'baseBranch' -Default '')
         queuedAt       = $QueuedAt
+        workPacketPath = $resolvedWorkPacketPath
     }
 }
 
@@ -1282,7 +1291,34 @@ function Submit-PackagedItemToRunner {
 
     if ([string]::IsNullOrWhiteSpace($RunId)) { $RunId = New-PackagedItemDispatchRunId }
 
-    $entry = New-PackagedItemQueueEntry -RunId $RunId -Packet $Packet
+    # Release 3.8 M1 (H38-02) — the other road to the queue gets the same task
+    # contract. An approved packet already carries the two things a WorkPacket
+    # needs and the wizard route does not have: a task text and a real
+    # acceptance-criteria list. Saving is fatal, for the same reason it is in
+    # the dispatch route: a queue entry pointing at no packet is worse than a
+    # refused approval, because it fails later and further away.
+    if (-not (Get-Command New-WorkPacket -ErrorAction SilentlyContinue)) {
+        . (Join-Path (Split-Path -Parent $PSScriptRoot) 'execution\Execution.WorkPacket.ps1')
+    }
+    $packetObjective = [string](_Pack_GetField -Obj $Packet -Name 'itemText' -Default '')
+    if ([string]::IsNullOrWhiteSpace($packetObjective)) {
+        $packetObjective = [string](@([string](_Pack_GetField -Obj $Packet -Name 'generatedPrompt' -Default '') -split "`r?`n") | Select-Object -First 1)
+    }
+    $approvalWorkPacket = New-WorkPacket `
+        -TaskId $RunId `
+        -Repository ([string](_Pack_GetField -Obj $Packet -Name 'repoName' -Default '')) `
+        -BaseBranch ([string](_Pack_GetField -Obj $Packet -Name 'baseBranch' -Default '')) `
+        -BaseSha '' `
+        -Objective $packetObjective `
+        -AllowedPaths @('**') `
+        -ForbiddenPaths @('.github/workflows/**') `
+        -AcceptanceCriteria @(_Pack_GetField -Obj $Packet -Name 'acceptanceCriteria' -Default @()) `
+        -VerificationCommands @() `
+        -Permissions @{ filesystemWrite = $true; shell = $true; network = $false; githubWrite = $false } `
+        -PreferredProvider 'auto'
+    $approvalWorkPacketPath = Save-WorkPacket -WorkspaceRoot $WorkspaceRoot -Packet $approvalWorkPacket
+
+    $entry = New-PackagedItemQueueEntry -RunId $RunId -Packet $Packet -WorkPacketPath $approvalWorkPacketPath
     if (-not (Get-Command Get-RoadmapQueuePath -ErrorAction SilentlyContinue)) {
         . (Join-Path $PSScriptRoot 'Automation.RoadmapQueue.ps1')
     }

@@ -58,6 +58,15 @@ milestone's **closing** packet changes the state word to `smoke-tested`. A commi
 prefixed `feat(release-3.8):` that touches `backend/` or `scripts/` without one
 of these edits is rejected by CI (`Test-RoadmapCapabilityRecord.ps1`).
 
+**The append must land on the physical line that carries `(state:`.** That gate
+reads only the **added** lines of `ROADMAP.md` in the commit and looks for
+`(state: <word>` where the word is not `planned`. A state clause wraps across
+several lines, so appending to its tail leaves the `(state:` line unmodified,
+it never appears as an added line, and the gate fails a commit that did record
+its capability correctly. Discovered the hard way in H38-02. **Rewrap the whole
+clause** so the `(state:` line itself is part of the diff, then confirm with
+`git show --unified=0 HEAD -- ROADMAP.md` before pushing.
+
 Thirty-seven appends make the Release 3.8 section outgrow the 120-line budget
 `R013-FUTURE-RELEASE-SIZE` prefers, and they lengthen `ROADMAP.md` past
 `R010-FILE-LENGTH`. Both are **warnings, not errors** (severity checked

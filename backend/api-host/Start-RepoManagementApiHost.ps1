@@ -11649,6 +11649,37 @@ try {
                     $startedAt = (Get-Date).ToUniversalTime().ToString('o')
                     $dispatchBranch = "roadmap/$runId"
 
+                    # Release 3.8 M1 (H38-02) — the task as data, written before
+                    # the queue line that points at it.
+                    #
+                    # Saving is FATAL to the dispatch by design. A queue entry
+                    # whose workPacketPath resolves to nothing is the prose-only
+                    # dispatch this milestone exists to remove, arrived at by a
+                    # different route, and it would fail later in the runner
+                    # where the cause is much harder to see.
+                    #
+                    # Scope and permissions are the spec's example values,
+                    # provisional under D-012 and literal here on purpose:
+                    # H38-07b replaces them with a config read once
+                    # agent-providers.json exists.
+                    $dispatchObjective = [string](Get-ValueOrDefault $planningContext.selectedTaskText '')
+                    if ([string]::IsNullOrWhiteSpace($dispatchObjective)) {
+                        $dispatchObjective = [string](@([string]$prompt -split "`r?`n") | Select-Object -First 1)
+                    }
+                    $dispatchWorkPacket = New-WorkPacket `
+                        -TaskId $runId `
+                        -Repository $githubRepo `
+                        -BaseBranch $baseBranch `
+                        -BaseSha '' `
+                        -Objective $dispatchObjective `
+                        -AllowedPaths @('**') `
+                        -ForbiddenPaths @('.github/workflows/**') `
+                        -AcceptanceCriteria @(Get-ObjectPropertyValue -InputObject $planningContext -PropertyName 'acceptanceCriteria' -Default @()) `
+                        -VerificationCommands @() `
+                        -Permissions @{ filesystemWrite = $true; shell = $true; network = $false; githubWrite = $false } `
+                        -PreferredProvider 'auto'
+                    $dispatchWorkPacketPath = Save-WorkPacket -WorkspaceRoot $WorkspaceRoot -Packet $dispatchWorkPacket
+
                     $queueEntry = New-RoadmapQueueEntry `
                         -RunId $runId `
                         -Repository $githubRepo `
@@ -11659,7 +11690,8 @@ try {
                         -Branch $dispatchBranch `
                         -QueuedAt $startedAt `
                         -DispatchTarget 'copilot' `
-                        -BaseBranch $baseBranch
+                        -BaseBranch $baseBranch `
+                        -WorkPacketPath $dispatchWorkPacketPath
                     $dispatchQueuePath = Get-RoadmapQueuePath -WorkspaceRoot $WorkspaceRoot
                     $dispatchQueueDir = Split-Path -Parent $dispatchQueuePath
                     if (-not (Test-Path -LiteralPath $dispatchQueueDir)) { $null = New-Item -ItemType Directory -Path $dispatchQueueDir -Force }
@@ -11678,6 +11710,7 @@ try {
                         baseBranch        = $baseBranch
                         branch            = $dispatchBranch
                         selectedTask      = [string](Get-ValueOrDefault $planningContext.selectedTaskText '')
+                        workPacketPath    = $dispatchWorkPacketPath
                         queuedBy          = 'release-dispatch-api'
                     } | ConvertTo-Json -Depth 8) | Set-Content -LiteralPath (Join-Path $dispatchRunsDir ("{0}.summary.json" -f $runId)) -Encoding UTF8
 
