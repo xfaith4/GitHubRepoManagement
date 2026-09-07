@@ -111,6 +111,29 @@ is recorded but no longer decides the outcome, because an agent that printed
 prose and exited 0 used to reach `awaiting-review` with nothing behind it. An
 interactive run records its own result, since a person watched the session.
 
+## The work packet and the result (Release 3.8 M1)
+
+Each run now has two structured files instead of one prose prompt:
+
+| File | Written by | Holds |
+| --- | --- | --- |
+| `output/work-packets/<runId>.workpacket.json` | the dispatch route, or the packaging approval path | objective, scope paths, acceptance criteria, verification commands, permission envelope. Names **no provider** |
+| `output/roadmap-task-history/runs/<runId>.result.json` | the provider's adapter | status, changed files, verification outcome, provider session id, usage in the provider's own units |
+
+The packet is gitignored on purpose: an agent editing its own repository must
+not be able to commit, and so rewrite, the instructions it was given. The
+prompt is **rendered from** the packet, with acceptance criteria copied
+verbatim, so the two cannot drift.
+
+A headless run with no result, or an unreadable one, is `failed` with
+`no-structured-result` and **nothing is committed**. A queue entry with no
+`workPacketPath` — anything queued before Release 3.8 — still runs from its
+`prompt` field exactly as before. The runner logs which source it used.
+
+The provider's raw output is kept at `<runId>.claude.stream.jsonl` for
+diagnosis. Copying one into `tests/fixtures/providers/` is also how a real
+transcript reaches the test suite, which is why no gate needs a recorded one.
+
 Inspect the approval queue with `GET /api/automation/packages?status=pending-approval`.
 A packet may be approved only from `pending-approval`, and a dispatched packet is
 terminal — re-approving is refused with a 409 rather than dispatched twice.

@@ -21,6 +21,9 @@ UI belongs to exactly one dimension, and no two dimensions share a word.
 | **Roadmap maturity** | `L0-Absent` → `L4-Orchestration-Ready` | roadmap contract audit | Insights maturity views, assessment |
 | **Execution lane** | `idle` · `ready` · `running` · `blocked` · `complete` | execution ledger | Execution Queue lanes |
 
+Release 3.8 adds a sixth dimension, Delivery state, in H38-34; until then the
+run summary's status field is the per-task state.
+
 The Genesys.Core collision, decoded: *Ready* was **dispatch readiness**
 (docs in shape to receive work); *blocked / L0-Absent* was **execution lane**
 plus **roadmap maturity** (no lane assigned, no roadmap contract). All three

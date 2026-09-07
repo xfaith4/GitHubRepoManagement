@@ -899,7 +899,7 @@ to the queue — never fails it — when a provider is exhausted.
       [`Roadmap.Dispatcher.ps1`](backend/modules/roadmap/Roadmap.Dispatcher.ps1)
       builds prose today and nothing reads a result back. A run producing no
       structured `ExecutionResult` fails by name instead of reaching
-      `awaiting-review`. _(state: scaffolded 2026-09-07 — H38-01 WorkPacket schema v1
+      `awaiting-review`. _(state: smoke-tested 2026-09-07 — H38-01 WorkPacket schema v1
       under output/work-packets/; H38-02 dispatch and approval both save one and
       carry workPacketPath; H38-03 ExecutionResult schema v1, a headless run with
       no/invalid result is failed by name; H38-04 Adapter.Claude.ps1 parses
