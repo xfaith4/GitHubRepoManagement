@@ -54,7 +54,13 @@ function _APR_Field {
         if ($Obj.Contains($Name) -and $null -ne $Obj[$Name]) { return $Obj[$Name] }
         return $Default
     }
-    if ($null -ne $Obj.PSObject -and ($Obj.PSObject.Properties.Name -contains $Name)) {
+    # The ForEach-Object rather than `.Properties.Name`: under
+    # Set-StrictMode -Version Latest, member-access enumeration over an EMPTY
+    # property collection throws "The property 'Name' cannot be found on this
+    # object". An empty object is an ordinary input here -- a fresh install has
+    # no per-installation state, a provider may report no usage -- so this must
+    # answer "absent", not crash.
+    if ($null -ne $Obj.PSObject -and (@($Obj.PSObject.Properties | ForEach-Object { $_.Name }) -contains $Name)) {
         $value = $Obj.$Name
         if ($null -ne $value) { return $value }
     }
@@ -223,6 +229,132 @@ function Resolve-AgentProviderToken {
         throw ("Unknown dispatchTarget '{0}'. Allowed: {1}." -f $Token, ($allowed -join ', '))
     }
     return $normalized
+}
+
+<#
+.SYNOPSIS
+    The command a provider is invoked by, if it is installed at all.
+
+.DESCRIPTION
+    One place, so the availability probe and the router cannot drift apart about
+    what to look for. `copilot` runs through the GitHub CLI, which is why its
+    command is `gh` and not its own name.
+#>
+function Get-AgentProviderCommandName {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][string]$Provider)
+
+    switch ($Provider.ToLowerInvariant()) {
+        'claude' { return 'claude' }
+        'codex' { return 'codex' }
+        'copilot' { return 'gh' }
+        default { return $Provider.ToLowerInvariant() }
+    }
+}
+
+<#
+.SYNOPSIS
+    Can this installation actually run work through this provider, and why not?
+
+.DESCRIPTION
+    Release 3.8 M3 (H38-15b), assumptions A20 and A21.
+
+    Three different facts, deliberately kept apart:
+
+      supported  a REPOSITORY fact -- a conforming adapter exists in this build.
+                 Same for everyone, and CI can verify it.
+      installed  a MACHINE fact -- the CLI is on this PATH. Different on every
+                 installation, so it is detected here and never committed.
+      optedOut   an OPERATOR fact -- switched off deliberately, stored in an
+                 untracked per-installation file (A22).
+
+    **Nothing here authenticates.** There is no probe of whether the account
+    works, because the only way to prove that is to USE the account, and that
+    spends the subscription quota this release exists to conserve (A21, R12).
+    `authenticated` is therefore always the string `unknown`, and stays unknown
+    until a real run reports otherwise -- an auth failure is a cheap and
+    distinguishable outcome. An unknown that is labelled unknown is safe to
+    route on; a guess is not. If this function ever starts a provider process,
+    it has gone wrong.
+
+    `detail` names the FIRST reason it is unavailable, because an operator
+    fixing three problems wants the next one, not all of them at once.
+#>
+function Test-AgentProviderAvailability {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][string]$Provider,
+        [string]$WorkspaceRoot = '',
+        [object]$InstallationState = $null
+    )
+
+    $supported = $false
+    if (-not [string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
+        $registry = Get-AgentProviderRegistry -WorkspaceRoot $WorkspaceRoot
+        if ($null -ne $registry -and $registry.Contains($Provider)) {
+            $supported = [bool](_APR_Field -Obj $registry[$Provider] -Name 'supported' -Default $false)
+        }
+    }
+
+    $commandName = Get-AgentProviderCommandName -Provider $Provider
+    $installed = [bool](Get-Command -Name $commandName -ErrorAction SilentlyContinue)
+
+    $optedOut = $false
+    $state = $InstallationState
+    if ($null -eq $state -and -not [string]::IsNullOrWhiteSpace($WorkspaceRoot) -and (Get-Command -Name 'Get-InstallationState' -ErrorAction SilentlyContinue)) {
+        $state = Get-InstallationState -WorkspaceRoot $WorkspaceRoot
+    }
+    if ($null -ne $state) {
+        $entry = _APR_Field -Obj (_APR_Field -Obj $state -Name 'providers' -Default $null) -Name $Provider -Default $null
+        $optedOut = [bool](_APR_Field -Obj $entry -Name 'optOut' -Default $false)
+    }
+
+    $available = ($supported -and $installed -and -not $optedOut)
+
+    $detail = 'available'
+    if (-not $supported) { $detail = 'no adapter in this build' }
+    elseif (-not $installed) { $detail = ("the {0} CLI was not found on PATH" -f $commandName) }
+    elseif ($optedOut) { $detail = 'switched off in Settings' }
+
+    return [pscustomobject]@{
+        provider      = $Provider
+        supported     = $supported
+        installed     = $installed
+        optedOut      = $optedOut
+        authenticated = 'unknown'
+        available     = $available
+        detail        = $detail
+    }
+}
+
+<#
+.SYNOPSIS
+    Availability per provider, as the router consumes it.
+
+.DESCRIPTION
+    H38-17 passes this as its eligibility input. It must call this rather than
+    inlining `Get-Command`: an earlier draft of that packet did exactly that,
+    which is how availability came to be duplicated between the router and the
+    config in the first place (A20).
+#>
+function Get-AgentProviderAvailabilityMap {
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param([Parameter(Mandatory)][string]$WorkspaceRoot)
+
+    $map = @{}
+    $state = $null
+    if (Get-Command -Name 'Get-InstallationState' -ErrorAction SilentlyContinue) {
+        $state = Get-InstallationState -WorkspaceRoot $WorkspaceRoot
+    }
+    foreach ($token in @(Get-AgentProviderToken -WorkspaceRoot $WorkspaceRoot)) {
+        # `auto` names no provider, so it has nothing to be available.
+        if ($token -eq 'auto') { continue }
+        $map[$token] = [bool](Test-AgentProviderAvailability -Provider $token -WorkspaceRoot $WorkspaceRoot -InstallationState $state).available
+    }
+    return $map
 }
 
 <#

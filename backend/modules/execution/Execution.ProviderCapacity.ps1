@@ -67,7 +67,13 @@ function _PCR_Field {
         if ($Obj.Contains($Name) -and $null -ne $Obj[$Name]) { return $Obj[$Name] }
         return $Default
     }
-    if ($null -ne $Obj.PSObject -and ($Obj.PSObject.Properties.Name -contains $Name)) {
+    # The ForEach-Object rather than `.Properties.Name`: under
+    # Set-StrictMode -Version Latest, member-access enumeration over an EMPTY
+    # property collection throws "The property 'Name' cannot be found on this
+    # object". An empty object is an ordinary input here -- a fresh install has
+    # no per-installation state, a provider may report no usage -- so this must
+    # answer "absent", not crash.
+    if ($null -ne $Obj.PSObject -and (@($Obj.PSObject.Properties | ForEach-Object { $_.Name }) -contains $Name)) {
         $value = $Obj.$Name
         if ($null -ne $value) { return $value }
     }
