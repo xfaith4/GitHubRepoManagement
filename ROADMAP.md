@@ -2362,7 +2362,20 @@ are re-scoped into Release 3.8** rather than built standalone; each says how.
       [`ROADMAP_TEMPLATE.md`](standards/roadmap/ROADMAP_TEMPLATE.md) already
       recommends `[[M3]]` ids and an inline `(depends: M3)` tag that nothing
       reads; the schema and parser have to catch up with the authoring
-      convention. _(state: planned)_
+      convention. _(state: backend-complete 2026-09-07 — H-13a notation
+      parsed into item id/dependsOn and published on the parse result as an
+      additive `items` array, so the fifteen consumers of the existing
+      string lists are untouched; unknown-id and cycle findings are
+      FINDINGS (ROADMAP-013/014), never parse errors, so a roadmap carrying
+      either still reads normally everywhere else. The notation was not
+      merely unread: `[[M4]]` contains `[M4]`, so the tag extractor claimed
+      the inner pair, lowercased the id into allTags and left a stray `[]`
+      on the item text that reached the console, the queue and the dispatch
+      prompt. Both rules declare an applicabilityCondition and leave the
+      DENOMINATOR when a roadmap declares no dependencies — without that,
+      adding them moved an unrelated fixture from 64 to 67 and across the
+      L2/L3 boundary without a character of it changing. Selector is
+      H-13b.)_
 
 ---
 

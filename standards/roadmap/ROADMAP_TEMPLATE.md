@@ -27,6 +27,19 @@ AUTHORING RULES (not rendered as a section; parsers and agents should still read
      - [ ] [[M4]] Wire backoff into dispatcher (depends: M3)
    Once assigned, an ID is permanent — never reassign it to a different item.
 
+   Exact form, because these are now parsed rather than decorative:
+     - The ID is `[[` + one or more of `A-Z a-z 0-9 . _ -` + `]]`, and it comes
+       IMMEDIATELY after the checkbox, before the item text.
+     - Case is significant: `[[M4]]` and `(depends: m4)` do not match.
+     - The dependency tag is `(depends: ...)` and may appear anywhere in the
+       item's first line. Several IDs are COMMA-separated:
+         - [ ] [[M5]] Ship the thing (depends: M3, M4)
+     - Dependencies resolve within this file only. Referencing an ID no item
+       declares raises ROADMAP-013; a cycle raises ROADMAP-014.
+     - Both markers are stripped from the item's display text, exactly as
+       ordinary `[tags]` are, so the console shows the wording and not the
+       notation.
+
 4. TOKEN / COST DATA LIVES IN THE LEDGER, NOT HERE: do not hand-maintain a
    running token or dollar total inline in this file. That number decays the
    moment it's not updated. roadmap-events.jsonl is the append-only, always-

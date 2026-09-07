@@ -60,6 +60,8 @@ $script:Detection = [pscustomobject]@{
     releaseHeadingPattern            = '(?im)^#{2,}\s+Release\s+([0-9]+(?:\.[0-9]+)*)\s*[—–-]+\s*(.+?)\s*$'
     productIntentHeadingPattern      = '(?im)^#{1,6}\s*(?:[0-9]+\.\s*)?(?:product\s+intent|product\s+scope|product\s+direction|overview|about|purpose|background|what\s+this\s+(?:does|is))\b'
     releaseStatusPattern             = '(?im)^\s*>?\s*\**\s*Status\s*\**\s*:\s*\**\s*([A-Za-z][A-Za-z \-]*?)\s*\**\s*(?:$|[—–\-(.,;])'
+    itemIdPattern                    = '^\s*\[\[([A-Za-z0-9._-]+)\]\]\s*'
+    itemDependsPattern               = '(?i)\(\s*depends(?:\s+on)?\s*:\s*([^)]*)\)'
     allowedStatuses                  = @('planned', 'active', 'blocked', 'validation', 'done', 'archived')
     activeStatuses                   = @('active')
     statusAliases                    = @{
@@ -114,6 +116,12 @@ function Set-DetectionProfile {
     }
     if ($names -contains 'releaseStatusPattern' -and -not [string]::IsNullOrWhiteSpace([string]$d.releaseStatusPattern)) {
         $script:Detection.releaseStatusPattern = [string]$d.releaseStatusPattern
+    }
+    if ($names -contains 'itemIdPattern' -and -not [string]::IsNullOrWhiteSpace([string]$d.itemIdPattern)) {
+        $script:Detection.itemIdPattern = [string]$d.itemIdPattern
+    }
+    if ($names -contains 'itemDependsPattern' -and -not [string]::IsNullOrWhiteSpace([string]$d.itemDependsPattern)) {
+        $script:Detection.itemDependsPattern = [string]$d.itemDependsPattern
     }
     if ($names -contains 'statusVocabulary' -and $null -ne $d.statusVocabulary) {
         $sv = @($d.statusVocabulary.PSObject.Properties.Name)
@@ -314,14 +322,117 @@ function Get-ChecklistItemsFromLines {
         $m = [regex]::Match($Lines[$i], '^\s*[-*]\s+\[([ xX])\]\s+(.+?)\s*$')
         if ($m.Success) {
             $checked = ($m.Groups[1].Value -match '[xX]')
+            # Lane 0.18 (H-13a). The id MUST be read before anything else
+            # looks at brackets: `[[M4]]` contains `[M4]`. Both patterns come
+            # from the shared detection contract, never from a private
+            # literal here -- this file and Roadmap.Auditor.ps1 diverging on
+            # detection is the 2026-08-08 defect the mirrors exist to stop.
+            $rawText = $m.Groups[2].Value.Trim()
+            $itemId = ''
+            $idMatch = [regex]::Match($rawText, $script:Detection.itemIdPattern)
+            if ($idMatch.Success) {
+                $itemId = $idMatch.Groups[1].Value
+                $rawText = $rawText.Substring($idMatch.Length)
+            }
+            $itemDeps = @()
+            $depMatch = [regex]::Match($rawText, $script:Detection.itemDependsPattern)
+            if ($depMatch.Success) {
+                $itemDeps = @($depMatch.Groups[1].Value -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
+                $rawText = [regex]::Replace($rawText, $script:Detection.itemDependsPattern, '')
+            }
             [void]$items.Add([pscustomobject]@{
                 Checked = $checked
-                Text = $m.Groups[2].Value.Trim()
+                Text = ([regex]::Replace($rawText, '\s{2,}', ' ')).Trim()
                 Line = $i + 1
+                Id = $itemId
+                DependsOn = @($itemDeps)
             })
         }
     }
     return $items.ToArray()
+}
+
+function Get-CliDependencyReport {
+    <#
+        MIRROR of Get-RoadmapDependencyReport in
+        backend/modules/roadmap/Roadmap.Parser.ps1. This tool is deliberately
+        standalone -- spec/roadmap-contract must stay self-contained, and a gate
+        asserts that -- so it cannot dot-source the module.
+
+        A second implementation is the exact divergence risk this file's header
+        warns about, so the module smoke does not take this comment on trust: it
+        runs BOTH implementations over the same fixtures and requires identical
+        output. Behavioural parity, checked, rather than byte identity, claimed.
+    #>
+    param([Parameter()][AllowEmptyCollection()][object[]]$Items = @())
+
+    $known = @{}
+    foreach ($item in @($Items)) {
+        $id = [string]$item.Id
+        if (-not [string]::IsNullOrWhiteSpace($id) -and -not $known.ContainsKey($id)) { $known[$id] = $item }
+    }
+
+    $unknown = [System.Collections.Generic.List[string]]::new()
+    $edges = @{}
+    foreach ($item in @($Items)) {
+        $id = [string]$item.Id
+        $deps = @(@($item.DependsOn) | Where-Object { $null -ne $_ -and -not [string]::IsNullOrWhiteSpace([string]$_) })
+        if ($deps.Count -eq 0) { continue }
+        foreach ($dep in $deps) {
+            $depId = [string]$dep
+            if (-not $known.ContainsKey($depId)) {
+                $label = if ([string]::IsNullOrWhiteSpace($id)) { [string]$item.Text } else { $id }
+                $unknown.Add(("{0} -> {1}" -f $label, $depId)) | Out-Null
+            }
+        }
+        if (-not [string]::IsNullOrWhiteSpace($id)) {
+            $edges[$id] = @($deps | Where-Object { $known.ContainsKey([string]$_) } | ForEach-Object { [string]$_ })
+        }
+    }
+
+    $state = @{}
+    $cycles = [System.Collections.Generic.List[string]]::new()
+    foreach ($start in @($edges.Keys)) {
+        if ($state.ContainsKey($start) -and $state[$start] -eq 2) { continue }
+        $stack = [System.Collections.Generic.List[object]]::new()
+        $stack.Add([pscustomobject]@{ node = $start; phase = 'enter' }) | Out-Null
+        $path = [System.Collections.Generic.List[string]]::new()
+        while ($stack.Count -gt 0) {
+            $frame = $stack[$stack.Count - 1]
+            $stack.RemoveAt($stack.Count - 1)
+            $node = [string]$frame.node
+            if ($frame.phase -eq 'exit') {
+                $state[$node] = 2
+                if ($path.Count -gt 0) { $path.RemoveAt($path.Count - 1) }
+                continue
+            }
+            if ($state.ContainsKey($node) -and $state[$node] -eq 1) {
+                # Assigned in statements, never as an if-EXPRESSION: pwsh
+                # collapses an empty array result to $null, and the repo
+                # gate refuses the pattern for exactly that reason.
+                $from = $path.IndexOf($node)
+                $ring = @($node)
+                if ($from -ge 0) { $ring = @($path[$from..($path.Count - 1)]) }
+                $ringText = (@($ring) + @($node)) -join ' -> '
+                if (-not $cycles.Contains($ringText)) { $cycles.Add($ringText) | Out-Null }
+                continue
+            }
+            if ($state.ContainsKey($node) -and $state[$node] -eq 2) { continue }
+            $state[$node] = 1
+            $path.Add($node) | Out-Null
+            $stack.Add([pscustomobject]@{ node = $node; phase = 'exit' }) | Out-Null
+            if (-not $edges.ContainsKey($node)) { continue }
+            foreach ($next in @($edges[$node])) {
+                if ([string]::IsNullOrWhiteSpace([string]$next)) { continue }
+                $stack.Add([pscustomobject]@{ node = [string]$next; phase = 'enter' }) | Out-Null
+            }
+        }
+    }
+
+    return [pscustomobject]@{
+        unknownIds = @($unknown)
+        cycles     = @($cycles)
+    }
 }
 
 function New-BaseContract {
@@ -455,6 +566,15 @@ function ConvertTo-RoadmapContract {
         }
     }
     Flush-Section
+
+    # Lane 0.18 (H-13a). Both evaluators must agree on these counts, or the
+    # parity gate breaks -- the module smoke asserts that directly.
+    $depFindings = Get-CliDependencyReport -Items @($allItems)
+    $contract | Add-Member -NotePropertyName 'dependencyUnknownIds' -NotePropertyValue @($depFindings.unknownIds) -Force
+    $contract | Add-Member -NotePropertyName 'dependencyCycles' -NotePropertyValue @($depFindings.cycles) -Force
+    $contract | Add-Member -NotePropertyName 'dependencyUnknownIdCount' -NotePropertyValue @($depFindings.unknownIds).Count -Force
+    $contract | Add-Member -NotePropertyName 'dependencyCycleCount' -NotePropertyValue @($depFindings.cycles).Count -Force
+    $contract | Add-Member -NotePropertyName 'dependencyDeclaredCount' -NotePropertyValue @(@($allItems) | Where-Object { @($_.DependsOn).Count -gt 0 }).Count -Force
 
     $contract.sections = $sectionList.ToArray()
     $contract.pendingCount = @($allItems | Where-Object { -not $_.Checked }).Count
@@ -702,7 +822,41 @@ function Test-KnownRuleFailure {
         'ROADMAP-010' { return ([int]$Contract.vagueItemCount -gt 0) }
         'ROADMAP-011' { return ([int]$Contract.activeReleaseCount -gt 1) }
         'ROADMAP-012' { return ([int]$Contract.releaseCount -gt 0 -and [int]$Contract.activeReleaseCount -eq 0) }
+        'ROADMAP-013' { return ([int]$Contract.dependencyUnknownIdCount -gt 0) }
+        'ROADMAP-014' { return ([int]$Contract.dependencyCycleCount -gt 0) }
         default       { return $false }  # unknown rule — do not penalise
+    }
+}
+
+function Test-CliRuleApplicable {
+    <#
+        MIRROR of Test-RoadmapRuleApplicable in Roadmap.Auditor.ps1. A rule
+        that cannot describe this roadmap leaves the DENOMINATOR as well as
+        the numerator, so adding a rule to the pack does not raise the score
+        of every roadmap that simply does not violate it.
+
+        Conditions are matched by NAME, never evaluated: the pack is data,
+        and running text from it as code would make the rule file an
+        execution surface. Unrecognized conditions are APPLICABLE, because
+        silently dropping a rule from the denominator is the failure.
+    #>
+    param(
+        [Parameter(Mandatory=$true)]$Rule,
+        [Parameter(Mandatory=$true)]$Contract
+    )
+
+    $ruleNames = @($Rule.PSObject.Properties | ForEach-Object { $_.Name })
+    if ($ruleNames -notcontains 'applicabilityCondition') { return $true }
+    $condition = [string]$Rule.applicabilityCondition
+    if ([string]::IsNullOrWhiteSpace($condition)) { return $true }
+
+    $contractNames = @($Contract.PSObject.Properties | ForEach-Object { $_.Name })
+    switch ($condition) {
+        'dependencyDeclaredCount > 0' {
+            if ($contractNames -notcontains 'dependencyDeclaredCount') { return $false }
+            return ([int]$Contract.dependencyDeclaredCount -gt 0)
+        }
+        default { return $true }
     }
 }
 
@@ -721,11 +875,12 @@ function Invoke-RoadmapAuditRules {
     # total weight, rescaled to 0-100. Subtracting penalties from a flat 100 —
     # what this tool did before 2026-08-08 — produces a different number than
     # the backend auditor on the very same file.
-    $maxPossibleScore = ($Rules.rules | Measure-Object -Property scoreWeight -Sum).Sum
+    $applicableRules = @(@($Rules.rules) | Where-Object { Test-CliRuleApplicable -Rule $_ -Contract $Contract })
+    $maxPossibleScore = ($applicableRules | Measure-Object -Property scoreWeight -Sum).Sum
     if ($null -eq $maxPossibleScore -or [double]$maxPossibleScore -le 0) { $maxPossibleScore = 100 }
     $totalPenalty = 0.0
 
-    foreach ($rule in @($Rules.rules)) {
+    foreach ($rule in $applicableRules) {
         $failed = if ($rule.PSObject.Properties.Name -contains 'condition' -and $null -ne $rule.condition) {
             Test-Condition -Condition $rule.condition -Contract $Contract
         } else {

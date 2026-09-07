@@ -66,16 +66,205 @@ function _RoadmapParserNormalizeTaskKey {
     return $normalized.Trim().ToLowerInvariant()
 }
 
+# Lane 0.18 (H-13a). Item identity and dependency notation, both already
+# recommended by ROADMAP_TEMPLATE.md before anything read them.
+#
+# The id MUST be consumed before tags are. `[[M4]]` contains `[M4]`, so the tag
+# extractor below matched the inner pair, lowercased `M4` into allTags beside
+# real tags like `urgent`, and left a stray `[]` at the front of the display
+# text -- so an item authored exactly as the template recommends reached the
+# console, the queue and the dispatch prompt reading "[] Wire backoff". The
+# roadmap recorded this notation as something "nothing reads"; it was worse
+# than that, because it was read wrongly.
+$script:RoadmapItemIdPattern = '^\s*\[\[([A-Za-z0-9._-]+)\]\]\s*'
+$script:RoadmapItemDependsPattern = '(?i)\(\s*depends(?:\s+on)?\s*:\s*([^)]*)\)'
+
 function _RoadmapParserGetItemTagsAndText {
     param([string]$Raw)
 
-    $tags = @([regex]::Matches($Raw, '\[([a-zA-Z0-9_-]+)\]') | ForEach-Object { $_.Groups[1].Value.ToLowerInvariant() })
-    $cleaned = ([regex]::Replace($Raw, '\s*\[[a-zA-Z0-9_-]+\]', '')).Trim()
+    $working = [string]$Raw
+
+    # 1. The id, immediately after the checkbox. Case is PRESERVED: ids are
+    #    matched against `depends:` references, and lowercasing them here would
+    #    make `[[M4]]` and `(depends: m4)` resolve while `[[m4]]`/`(depends: M4)`
+    #    silently would not.
+    $itemId = ''
+    $idMatch = [regex]::Match($working, $script:RoadmapItemIdPattern)
+    if ($idMatch.Success) {
+        $itemId = $idMatch.Groups[1].Value
+        $working = $working.Substring($idMatch.Length)
+    }
+
+    # 2. The dependency tag, anywhere in the item's first line, comma-separated.
+    $dependsOn = @()
+    $depMatch = [regex]::Match($working, $script:RoadmapItemDependsPattern)
+    if ($depMatch.Success) {
+        $dependsOn = @($depMatch.Groups[1].Value -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
+        $working = [regex]::Replace($working, $script:RoadmapItemDependsPattern, '')
+    }
+
+    # 3. Ordinary tags, from what is left. Unchanged behaviour.
+    $tags = @([regex]::Matches($working, '\[([a-zA-Z0-9_-]+)\]') | ForEach-Object { $_.Groups[1].Value.ToLowerInvariant() })
+    $cleaned = ([regex]::Replace($working, '\s*\[[a-zA-Z0-9_-]+\]', '')).Trim()
+    $cleaned = ([regex]::Replace($cleaned, '\s{2,}', ' ')).Trim()
 
     return @{
-        text = $cleaned
-        tags = $tags
+        text      = $cleaned
+        tags      = $tags
+        id        = $itemId
+        dependsOn = @($dependsOn)
     }
+}
+
+<#
+.SYNOPSIS
+    Unknown-id and cycle findings over parsed items. Pure.
+
+.DESCRIPTION
+    Lane 0.18 (H-13a). Both are FINDINGS, not parse errors: a roadmap carrying
+    either is still perfectly readable for every other purpose, and refusing to
+    parse it would take away the console's ability to say what is wrong.
+
+    Cycle detection is an iterative depth-first walk with an explicit stack
+    rather than recursion, because a malformed roadmap is exactly where an
+    unbounded recursion would land.
+#>
+function Get-RoadmapDependencyReport {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter()][AllowEmptyCollection()][object[]]$Items = @())
+
+    $known = @{}
+    foreach ($item in @($Items)) {
+        $id = [string](_RoadmapParserItemField -Item $item -Name 'id')
+        if (-not [string]::IsNullOrWhiteSpace($id) -and -not $known.ContainsKey($id)) { $known[$id] = $item }
+    }
+
+    $unknown = [System.Collections.Generic.List[string]]::new()
+    $edges = @{}
+    foreach ($item in @($Items)) {
+        $id = [string](_RoadmapParserItemField -Item $item -Name 'id')
+        # The Where-Object is load-bearing: @($null) is a ONE-element array
+        # holding $null, not an empty one, so an item with no dependsOn would
+        # otherwise report a dependency on the empty string.
+        $deps = @(@(_RoadmapParserItemField -Item $item -Name 'dependsOn') |
+            Where-Object { $null -ne $_ -and -not [string]::IsNullOrWhiteSpace([string]$_) })
+        if ($deps.Count -eq 0) { continue }
+        foreach ($dep in @($deps)) {
+            $depId = [string]$dep
+            if (-not $known.ContainsKey($depId)) {
+                $label = if ([string]::IsNullOrWhiteSpace($id)) { [string](_RoadmapParserItemField -Item $item -Name 'text') } else { $id }
+                $unknown.Add(("{0} -> {1}" -f $label, $depId)) | Out-Null
+            }
+        }
+        if (-not [string]::IsNullOrWhiteSpace($id)) {
+            $edges[$id] = @(@($deps) | Where-Object { $known.ContainsKey([string]$_) } | ForEach-Object { [string]$_ })
+        }
+    }
+
+    # 0 = unvisited, 1 = on the current path, 2 = finished.
+    $state = @{}
+    $cycles = [System.Collections.Generic.List[string]]::new()
+    foreach ($start in @($edges.Keys)) {
+        if ($state.ContainsKey($start) -and $state[$start] -eq 2) { continue }
+        $stack = [System.Collections.Generic.List[object]]::new()
+        $stack.Add([pscustomobject]@{ node = $start; phase = 'enter' }) | Out-Null
+        $path = [System.Collections.Generic.List[string]]::new()
+        while ($stack.Count -gt 0) {
+            $frame = $stack[$stack.Count - 1]
+            $stack.RemoveAt($stack.Count - 1)
+            $node = [string]$frame.node
+            if ($frame.phase -eq 'exit') {
+                $state[$node] = 2
+                if ($path.Count -gt 0) { $path.RemoveAt($path.Count - 1) }
+                continue
+            }
+            if ($state.ContainsKey($node) -and $state[$node] -eq 1) {
+                # Assigned in statements, never as an if-EXPRESSION: pwsh
+                # collapses an empty array result to $null, and the repo
+                # gate refuses the pattern for exactly that reason.
+                $from = $path.IndexOf($node)
+                $ring = @($node)
+                if ($from -ge 0) { $ring = @($path[$from..($path.Count - 1)]) }
+                $ringText = (@($ring) + @($node)) -join ' -> '
+                if (-not $cycles.Contains($ringText)) { $cycles.Add($ringText) | Out-Null }
+                continue
+            }
+            if ($state.ContainsKey($node) -and $state[$node] -eq 2) { continue }
+            $state[$node] = 1
+            $path.Add($node) | Out-Null
+            $stack.Add([pscustomobject]@{ node = $node; phase = 'exit' }) | Out-Null
+            # ContainsKey first, for the SAME reason as above: a node with no
+            # outgoing edges is absent from the map, `$edges[$node]` is $null,
+            # and @($null) is a one-element array holding $null -- which walked
+            # an empty-string node and reported a phantom cycle " -> ".
+            if (-not $edges.ContainsKey($node)) { continue }
+            foreach ($next in @($edges[$node])) {
+                if ([string]::IsNullOrWhiteSpace([string]$next)) { continue }
+                $stack.Add([pscustomobject]@{ node = [string]$next; phase = 'enter' }) | Out-Null
+            }
+        }
+    }
+
+    return [pscustomobject]@{
+        unknownIds = @($unknown)
+        cycles     = @($cycles)
+    }
+}
+
+<#
+.SYNOPSIS
+    One parsed checklist item as an object. Pure.
+
+.DESCRIPTION
+    Lane 0.18 (H-13a). This array is ADDITIVE and deliberately so: the string
+    lists in `sections[].pendingItems` / `completedItems` have more than fifteen
+    consumers across the backend, the API host and five frontend components, and
+    turning them into objects would be a wire break on every one of them to buy
+    two optional properties.
+
+    `id` and `dependsOn` are present only when the item carries them, per the
+    packet: an item without the notation has NEITHER property, not a null and
+    not an empty array, so "absent" and "declared empty" stay distinguishable.
+#>
+function _RoadmapParserNewItem {
+    param(
+        [Parameter(Mandatory)][object]$Parsed,
+        [Parameter()][AllowEmptyString()][string]$Section = '',
+        [Parameter()][bool]$Checked = $false,
+        [Parameter()][int]$Order = 0
+    )
+
+    $item = [ordered]@{
+        text    = [string]$Parsed.text
+        section = [string]$Section
+        checked = [bool]$Checked
+        order   = [int]$Order
+        tags    = @($Parsed.tags)
+    }
+
+    $id = [string]$Parsed.id
+    if (-not [string]::IsNullOrWhiteSpace($id)) { $item['id'] = $id }
+    $deps = @($Parsed.dependsOn)
+    if ($deps.Count -gt 0) { $item['dependsOn'] = @($deps) }
+
+    return [pscustomobject]$item
+}
+
+function _RoadmapParserItemField {
+    param([object]$Item, [string]$Name)
+    if ($null -eq $Item) { return $null }
+    if ($Item -is [System.Collections.IDictionary]) {
+        if ($Item.Contains($Name)) { return $Item[$Name] }
+        return $null
+    }
+    # ForEach-Object rather than `.Properties.Name`: under StrictMode,
+    # member-access enumeration over an EMPTY property collection throws, and an
+    # item with neither id nor dependsOn is the ordinary case here.
+    if ($null -ne $Item.PSObject -and (@($Item.PSObject.Properties | ForEach-Object { $_.Name }) -contains $Name)) {
+        return $Item.$Name
+    }
+    return $null
 }
 
 function _RoadmapParserExtractSubsectionLines {
@@ -542,6 +731,10 @@ function Get-RoadmapSelectedReleaseContext {
       totalCount        int
       nextPendingItem   pscustomobject { text, section, tags } or $null
       sections          array of { name, pendingItems[], completedItems[] }
+      items             array of { text, section, checked, order, tags } plus
+                        optional id / dependsOn (Lane 0.18). Additive: the
+                        string lists above are unchanged.
+      dependencyFindings { unknownIds[], cycles[] } from the item ids
       allTags           string[]  unique tags found across all items
       releaseContexts   array of parsed release-context blocks
       activeRelease     parsed release context for the next actionable release
@@ -572,6 +765,8 @@ function Invoke-ParseRoadmapContent {
             totalCount      = 0
             nextPendingItem = $null
             sections        = @()
+            items           = @()
+            dependencyFindings = [pscustomobject]@{ unknownIds = @(); cycles = @() }
             allTags         = @()
             releaseContexts = @()
             activeRelease   = $null
@@ -585,6 +780,7 @@ function Invoke-ParseRoadmapContent {
     $currentSection  = 'General'
     $sections        = [System.Collections.Generic.List[pscustomobject]]::new()
     $sectionMap      = @{}
+    $items           = [System.Collections.Generic.List[pscustomobject]]::new()
     $allTagsSet      = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
     $pendingCount    = 0
@@ -624,6 +820,7 @@ function Invoke-ParseRoadmapContent {
             $itemTags = @($parsed.tags)
             foreach ($t in @($itemTags)) { $null = $allTagsSet.Add($t) }
             $sec.pendingItems.Add($itemText) | Out-Null
+            $items.Add((_RoadmapParserNewItem -Parsed $parsed -Section $currentSection -Checked $false -Order $items.Count)) | Out-Null
             $pendingCount++
             if ($null -eq $nextPendingItem) {
                 $nextPendingItem = [pscustomobject]@{
@@ -641,6 +838,7 @@ function Invoke-ParseRoadmapContent {
             $itemTags = @($parsed.tags)
             foreach ($t in @($itemTags)) { $null = $allTagsSet.Add($t) }
             $sec.completedItems.Add($itemText) | Out-Null
+            $items.Add((_RoadmapParserNewItem -Parsed $parsed -Section $currentSection -Checked $true -Order $items.Count)) | Out-Null
             $completedCount++
             continue
         }
@@ -683,6 +881,8 @@ function Invoke-ParseRoadmapContent {
         totalCount      = $totalCount
         nextPendingItem = $nextPendingItem
         sections        = @($sections)
+        items           = @($items)
+        dependencyFindings = (Get-RoadmapDependencyReport -Items @($items))
         allTags         = @($allTagsSet | Sort-Object)
         releaseContexts = @($releaseContexts)
         activeRelease   = $activeRelease

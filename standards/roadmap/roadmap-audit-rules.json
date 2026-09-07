@@ -1,12 +1,13 @@
 {
-  "version": "1.5",
+  "version": "1.6",
   "description": "Weighted audit rules for roadmap contract quality scoring. Each rule is evaluated against a parsed roadmap contract and contributes to a 0-100 maturity score.",
   "changelog": {
     "1.1": "Added ROADMAP-011 (multiple active releases) and ROADMAP-012 (no active release designated). Status matching is case-insensitive with alias normalization; author lowercase regardless. See ROADMAP_MATURITY_MODEL.md for updated caps.",
     "1.2": "Added the 'detection' block. Detection was previously reimplemented independently by the backend auditor and tools/Test-RoadmapContract.ps1, so the same ROADMAP.md scored differently depending on which tool an operator ran. Detection is now data, not code: both evaluators read these patterns, the release-scoped signal list, and the scoring mode from this file.",
     "1.3": "Moved release-status detection into the 'detection' block as 'releaseStatusPattern' and 'statusVocabulary'. Status was the one signal 1.2 left each evaluator to implement privately: the backend auditor accepted '**Status:** active' and its own in-progress aliases, while Test-RoadmapContract.ps1 required a '> Status:' blockquote and knew no aliases. It was the sole remaining cause of score divergence across the estate, and it drove ROADMAP-011 and ROADMAP-012 -- the two rules that decide whether dispatch has a target -- so a repo with two active releases could read as fully conformant through one tool and be capped at L2 by the other.",
     "1.4": "Two vocabulary corrections surfaced by folding tools/Test-RoadmapStructure.ps1 -- a third private copy of the status contract, missed by 1.3 because it is a structure linter rather than a scorer -- onto this block. (a) 'releaseStatusPattern' now accepts sentence punctuation ('.', ',', ';') as a status terminator alongside end-of-line, dash, and open-paren. The linter had read 'Status: done. Shipped 2026-05.' and 'Status: active, pending review' since it was written; the 1.3 pattern matched neither, so adopting it unchanged would have converted statuses an operator can plainly read into RQ001 'no Status line' warnings. This widens reading only -- authoring tools still emit the canonical '> Status: active' form. The colon became MANDATORY in the same edit: 1.3 wrote it as ':?\\**\\s*:?' to tolerate both '**Status:**' and '**Status**:', which made a line that merely begins with the word 'status' a status declaration. Harmless while the terminator set was end-of-line, dash, and open-paren; with sentence punctuation added, an ordinary prose sentence starting 'status in one tool and ...' parsed as an unrecognized status. All three documented forms carry a colon, so requiring one costs no real roadmap and makes 1.4 strictly more precise than 1.3, not merely more tolerant. (b) 'productIntentHeadingPattern' accepts 'Product direction'. ROADMAP-004 failed on a repository whose intent section is headed 'Product Direction (summary)', which is a synonym of the already-accepted 'product intent', not a missing section.",
-    "1.5": "Demoted ROADMAP-011 from critical to warning, and implemented the two blanket maturity caps ROADMAP_MATURITY_MODEL.md has always documented but no evaluator applied: any critical finding caps maturity at L1, any warning finding caps at L3. The demotion resolves a self-contradiction in the model: ROADMAP-011 carried BOTH a documented L2 cap and critical severity, so applying the blanket critical cap literally would have forced it to L1 and made its own documented L2 cap unreachable. As a warning it takes the L3 blanket cap plus its existing named L2 cap, landing at L2 exactly as documented, and 'any critical finding caps at L1' becomes literally true. Ambiguous dispatch remains a hard gate: L2 is still below the L3 contract-ready bar."
+    "1.5": "Demoted ROADMAP-011 from critical to warning, and implemented the two blanket maturity caps ROADMAP_MATURITY_MODEL.md has always documented but no evaluator applied: any critical finding caps maturity at L1, any warning finding caps at L3. The demotion resolves a self-contradiction in the model: ROADMAP-011 carried BOTH a documented L2 cap and critical severity, so applying the blanket critical cap literally would have forced it to L1 and made its own documented L2 cap unreachable. As a warning it takes the L3 blanket cap plus its existing named L2 cap, landing at L2 exactly as documented, and 'any critical finding caps at L1' becomes literally true. Ambiguous dispatch remains a hard gate: L2 is still below the L3 contract-ready bar.",
+    "1.6": "Added roadmap item identity and dependency notation (ROADMAP-013 unknown id, ROADMAP-014 cycle) and centralized their detection patterns, so the authoring convention ROADMAP_TEMPLATE.md already recommended is read rather than silently mangled."
   },
   "detection": {
     "description": "Canonical detection contract. Every evaluator of this rule pack MUST derive its signals from these patterns rather than reimplementing them, so that one roadmap file produces one score.",
@@ -81,8 +82,12 @@
     },
     "scoring": {
       "mode": "normalized",
-      "note": "score = round((sumOfAllRuleWeights - sumOfFailedRuleWeights) / sumOfAllRuleWeights * 100). The rule weights do not sum to 100, so subtracting penalties from a flat 100 produces a different number on the same file and must not be used."
-    }
+      "note": "score = round((sumOfAllRuleWeights - sumOfFailedRuleWeights) / sumOfAllRuleWeights * 100). The rule weights do not sum to 100, so subtracting penalties from a flat 100 produces a different number on the same file and must not be used.",
+      "applicabilityNote": "A rule carrying an applicabilityCondition leaves BOTH the numerator and the DENOMINATOR when it does not apply. Adding a rule to this pack must not change the score of a roadmap the rule cannot describe: when ROADMAP-013/014 were first added without this, a fixture that declares no dependencies at all rose from 64 to 67 purely because the denominator grew, crossing the L2/L3 boundary and turning 'repair this roadmap' into 'already contract-ready'."
+    },
+    "itemIdPattern": "^\\s*\\[\\[([A-Za-z0-9._-]+)\\]\\]\\s*",
+    "itemDependsPattern": "(?i)\\(\\s*depends(?:\\s+on)?\\s*:\\s*([^)]*)\\)",
+    "itemDependencyNote": "Lane 0.18 (D-001). The id is matched immediately after the checkbox and its case is PRESERVED, because ids are compared against `depends:` references. The depends tag may appear anywhere in the item's first line and takes a comma-separated list. Both are stripped from the display text, exactly as ordinary [tags] are. The id MUST be consumed before tag extraction: `[[M4]]` contains `[M4]`, so a tag-first reader records the id as a lowercase tag and leaves a stray `[]` in the item text."
   },
   "rules": [
     {
@@ -213,6 +218,28 @@
       "failCondition": "releaseCount > 0 && activeReleaseCount === 0",
       "message": "Releases exist but none is marked active. Dispatch tooling has no default target.",
       "recommendedAction": "Mark the release currently being worked on as 'Status: active'."
+    },
+    {
+      "id": "ROADMAP-013",
+      "name": "dependency-ids-resolve",
+      "description": "Every `(depends: ...)` reference names an item id declared in the same roadmap.",
+      "severity": "warning",
+      "scoreWeight": 5,
+      "applicabilityCondition": "dependencyDeclaredCount > 0",
+      "failCondition": "dependencyUnknownIdCount > 0",
+      "message": "One or more work items declare a dependency on an id that no item in this roadmap defines.",
+      "recommendedAction": "Correct the id in the `(depends: ...)` tag, or add the `[[id]]` marker to the item it was meant to reference. Dependencies are resolved within a single roadmap only."
+    },
+    {
+      "id": "ROADMAP-014",
+      "name": "dependency-graph-is-acyclic",
+      "description": "Item dependencies form no cycle, so a dependency-aware selector can always reach a next item.",
+      "severity": "warning",
+      "scoreWeight": 5,
+      "applicabilityCondition": "dependencyDeclaredCount > 0",
+      "failCondition": "dependencyCycleCount > 0",
+      "message": "Work item dependencies form a cycle, so no item in the cycle can ever become eligible.",
+      "recommendedAction": "Break the cycle by removing one `(depends: ...)` edge. A cycle is a dead end: every item in it waits on another item in it, so dispatch halts as blocked rather than choosing arbitrarily."
     }
   ],
   "maturityThresholds": {

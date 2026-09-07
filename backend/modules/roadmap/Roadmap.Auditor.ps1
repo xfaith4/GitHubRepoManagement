@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Roadmap contract normalization and rule-based auditor.
 .DESCRIPTION
@@ -73,6 +73,8 @@ $script:RoadmapDetectionDefaults = [pscustomobject]@{
     releaseScopedSignals             = @('hasAcceptanceCriteria', 'hasOutOfScope')
     meaningfulBodyMinimumCharacters  = 4
     meaningfulBodyPlaceholderPattern = '(?i)\b(tbd|todo|none yet|not yet|n/a)\b'
+    itemIdPattern                    = '^\s*\[\[([A-Za-z0-9._-]+)\]\]\s*'
+    itemDependsPattern               = '(?i)\(\s*depends(?:\s+on)?\s*:\s*([^)]*)\)'
     scoringMode                      = 'normalized'
 }
 
@@ -111,6 +113,12 @@ function Get-RoadmapDetectionProfile {
     }
     if ($names -contains 'releaseStatusPattern' -and -not [string]::IsNullOrWhiteSpace([string]$d.releaseStatusPattern)) {
         $detectionProfile.releaseStatusPattern = [string]$d.releaseStatusPattern
+    }
+    if ($names -contains 'itemIdPattern' -and -not [string]::IsNullOrWhiteSpace([string]$d.itemIdPattern)) {
+        $detectionProfile.itemIdPattern = [string]$d.itemIdPattern
+    }
+    if ($names -contains 'itemDependsPattern' -and -not [string]::IsNullOrWhiteSpace([string]$d.itemDependsPattern)) {
+        $detectionProfile.itemDependsPattern = [string]$d.itemDependsPattern
     }
     if ($names -contains 'statusVocabulary' -and $null -ne $d.statusVocabulary) {
         $svNames = @($d.statusVocabulary.PSObject.Properties.Name)
@@ -413,6 +421,23 @@ function Invoke-NormalizeRoadmapContract {
         _TestDocumentScopedSubsection -Content $content -Aliases @($detection.outOfScopeHeadingAliases) -Detection $detection
     }
 
+    # Read defensively: a contract normalized from a pre-Lane-0.18 cache, or
+    # from a parser that predates the item array, carries neither property.
+    $dependencyFindings = [pscustomobject]@{ unknownIds = @(); cycles = @() }
+    $dependencyDeclaredCount = 0
+    $parsedNames = @()
+    if ($null -ne $ParsedResult -and $null -ne $ParsedResult.PSObject) {
+        $parsedNames = @($ParsedResult.PSObject.Properties | ForEach-Object { $_.Name })
+    }
+    if ($parsedNames -contains 'dependencyFindings' -and $null -ne $ParsedResult.dependencyFindings) {
+        $dependencyFindings = $ParsedResult.dependencyFindings
+    }
+    if ($parsedNames -contains 'items') {
+        $dependencyDeclaredCount = @(@($ParsedResult.items) | Where-Object {
+            $null -ne $_ -and (@($_.PSObject.Properties | ForEach-Object { $_.Name }) -contains 'dependsOn')
+        }).Count
+    }
+
     return [pscustomobject]@{
         schemaVersion         = '1.0'
         repoName              = $RepoName
@@ -433,6 +458,17 @@ function Invoke-NormalizeRoadmapContract {
         releaseCount          = [int]$releaseBlocks.Count
         activeReleaseCount    = (_DetectActiveReleaseCount -ReleaseBlocks $releaseBlocks -Detection $detection)
         vagueItemCount        = 0  # filled below
+        # Lane 0.18 (H-13a). Counts rather than the lists, because the rule
+        # pack's failConditions are numeric; the lists themselves travel on
+        # the parse result for whoever needs to NAME the offending ids.
+        dependencyUnknownIds  = @($dependencyFindings.unknownIds)
+        dependencyCycles      = @($dependencyFindings.cycles)
+        dependencyUnknownIdCount = @($dependencyFindings.unknownIds).Count
+        # How many items DECLARE a dependency. Zero means this roadmap has no
+        # dependency graph at all, so ROADMAP-013/014 do not apply to it and
+        # must leave the denominator -- see the applicability note in the pack.
+        dependencyDeclaredCount = $dependencyDeclaredCount
+        dependencyCycleCount  = @($dependencyFindings.cycles).Count
         parseError            = $ParsedResult.parseError
         auditFindings         = $null
         parsedAt              = $parsedAt
@@ -455,6 +491,41 @@ function Invoke-NormalizeRoadmapContract {
     The same [pscustomobject] contract, with maturityLevel, maturityScore, and
     auditFindings populated in place, and the object returned for chaining.
 #>
+<#
+.SYNOPSIS
+    Does this rule describe this roadmap at all? Pure.
+.DESCRIPTION
+    A rule with no applicabilityCondition always applies, so every rule that
+    predates the concept behaves exactly as before. Conditions are matched by
+    NAME rather than evaluated as expressions: the pack is data this tool
+    reads, and running arbitrary text from it as code would make the rule file
+    an execution surface. An unrecognized condition is treated as APPLICABLE,
+    because silently dropping a rule from the denominator is the failure this
+    function exists to prevent.
+#>
+function Test-RoadmapRuleApplicable {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory = $true)]$Rule,
+        [Parameter(Mandatory = $true)]$Contract
+    )
+
+    $ruleNames = @($Rule.PSObject.Properties | ForEach-Object { $_.Name })
+    if ($ruleNames -notcontains 'applicabilityCondition') { return $true }
+    $condition = [string]$Rule.applicabilityCondition
+    if ([string]::IsNullOrWhiteSpace($condition)) { return $true }
+
+    $contractNames = @($Contract.PSObject.Properties | ForEach-Object { $_.Name })
+    switch ($condition) {
+        'dependencyDeclaredCount > 0' {
+            if ($contractNames -notcontains 'dependencyDeclaredCount') { return $false }
+            return ([int]$Contract.dependencyDeclaredCount -gt 0)
+        }
+        default { return $true }
+    }
+}
+
 function Invoke-AuditRoadmapContract {
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -481,15 +552,29 @@ function Invoke-AuditRoadmapContract {
         $Contract.vagueItemCount = _CountVagueItems -ParsedSections $Contract.sections -VaguePatterns @($vagueRule.vaguePatterns)
     }
 
-    # Total maximum score = sum of all rule weights
-    $maxPossibleScore = ($rules | Measure-Object -Property scoreWeight -Sum).Sum
+    # Total maximum score = sum of the weights of APPLICABLE rules.
+    #
+    # A rule that cannot describe this roadmap leaves the denominator as well
+    # as the numerator. Without that, adding any rule to the pack raises the
+    # score of every roadmap that does not violate it: when ROADMAP-013/014
+    # first landed, the split-archive fixture went from 64 to 67 and crossed
+    # the L2/L3 boundary without a character of it changing, turning "repair
+    # this roadmap" into "already contract-ready".
+    $applicableRules = @($rules | Where-Object { Test-RoadmapRuleApplicable -Rule $_ -Contract $Contract })
+    $maxPossibleScore = ($applicableRules | Measure-Object -Property scoreWeight -Sum).Sum
     if ($maxPossibleScore -le 0) { $maxPossibleScore = 100 }
 
     $totalPenalty = 0
     $findings     = [System.Collections.Generic.List[pscustomobject]]::new()
     $hasActiveCount = ($Contract.PSObject.Properties.Name -contains 'activeReleaseCount')
+    # Same defensive read for Lane 0.18's signals: a contract deserialized from
+    # a cache written before H-13a carries neither, and StrictMode makes a bare
+    # property access on it throw. Absent means "not measured", which must not
+    # read as "no dependency problems" -- so the rules simply do not fire.
+    $contractNames = @($Contract.PSObject.Properties | ForEach-Object { $_.Name })
+    $hasDependencySignals = ($contractNames -contains 'dependencyUnknownIdCount') -and ($contractNames -contains 'dependencyCycleCount')
 
-    foreach ($rule in $rules) {
+    foreach ($rule in $applicableRules) {
         $ruleId     = [string]$rule.id
         $weight     = [int]$rule.scoreWeight
         $severity   = [string]$rule.severity
@@ -514,6 +599,8 @@ function Invoke-AuditRoadmapContract {
             # bare property access on it throw.
             'ROADMAP-011' { $failed = ($hasActiveCount -and [int]$Contract.activeReleaseCount -gt 1) }
             'ROADMAP-012' { $failed = ($hasActiveCount -and [int]$Contract.releaseCount -gt 0 -and [int]$Contract.activeReleaseCount -eq 0) }
+            'ROADMAP-013' { $failed = ($hasDependencySignals -and [int]$Contract.dependencyUnknownIdCount -gt 0) }
+            'ROADMAP-014' { $failed = ($hasDependencySignals -and [int]$Contract.dependencyCycleCount -gt 0) }
             default       { $failed = $false }  # unknown rule — do not penalise
         }
 
