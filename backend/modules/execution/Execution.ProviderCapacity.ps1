@@ -88,6 +88,19 @@ function _PCR_HasKey {
     return $false
 }
 
+function _PCR_KeyName {
+    <# Key names of a record, whichever shape it arrived in: New- returns an
+       ordered dictionary, Read- returns a PSCustomObject from ConvertFrom-Json.
+       The ForEach-Object rather than `.Properties.Name` because under
+       Set-StrictMode member-access enumeration over an EMPTY property
+       collection throws. #>
+    param([object]$Obj)
+    if ($null -eq $Obj) { return @() }
+    if ($Obj -is [System.Collections.IDictionary]) { return @($Obj.Keys) }
+    if ($null -ne $Obj.PSObject) { return @($Obj.PSObject.Properties | ForEach-Object { $_.Name }) }
+    return @()
+}
+
 function _PCR_Stamp {
     <# Normalize a timestamp to an ISO-8601 UTC string.
 
@@ -599,6 +612,81 @@ function Set-ProviderCooldown {
         cooldownSource   = $Source
         resetAssumed     = [bool]$ResetAssumed
     }
+
+    return (Save-ProviderCapacityRecord -WorkspaceRoot $WorkspaceRoot -Record $rebuilt)
+}
+
+<#
+.SYNOPSIS
+    Record what a completed execution actually consumed.
+
+.DESCRIPTION
+    Rank 4 on the spec's ladder: usage accumulated from completed executions.
+
+    **It never touches a window's `remainingRatio`.** The spec is explicit that
+    execution token telemetry and subscription capacity are separate
+    measurements, and the arithmetic to bridge them does not exist: knowing a
+    run cost 25,000 tokens says nothing about what fraction of a subscription
+    allowance remains, because the provider never published the denominator.
+    Deriving a ratio from these would manufacture exactly the invented number
+    this module refuses everywhere else.
+
+    So this is evidence, accumulating until there is enough of it to replace
+    D-011's guessed per-task cost with a measured one. That is what eventually
+    turns enforcement on -- an observation, not another ruling.
+
+    Capped at the newest 200. A run history is unbounded; a capacity record read
+    on every claim is not.
+#>
+function Add-ProviderUsageObservation {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][string]$WorkspaceRoot,
+        [Parameter(Mandatory)][string]$Provider,
+        [Parameter(Mandatory)][object]$Result,
+        [datetime]$NowUtc = [datetime]::UtcNow,
+        [int]$MaxObservations = 200
+    )
+
+    if (-not $PSCmdlet.ShouldProcess($Provider, 'record usage observation')) { return '' }
+
+    $record = Read-ProviderCapacityRecord -WorkspaceRoot $WorkspaceRoot -Provider $Provider
+    if ($null -eq $record) {
+        $record = New-ProviderCapacityRecord -Provider $Provider -Windows @(
+            @{ name = 'short-term'; unit = 'unknown'; source = 'accumulated-usage' }
+        )
+    }
+
+    $usage = _PCR_Field -Obj $Result -Name 'usage' -Default $null
+    $observation = [ordered]@{
+        at             = $NowUtc.ToString('yyyy-MM-ddTHH:mm:ssZ')
+        taskId         = [string](_PCR_Field -Obj $Result -Name 'taskId' -Default '')
+        tokensObserved = (_PCR_Field -Obj $usage -Name 'tokensObserved' -Default $null)
+        native         = (_PCR_Field -Obj $usage -Name 'native' -Default $null)
+    }
+
+    $existing = @()
+    if ($record -is [System.Collections.IDictionary]) {
+        if ($record.Contains('usageObservations')) { $existing = @($record['usageObservations']) }
+    }
+    elseif ($null -ne $record.PSObject -and ($record.PSObject.Properties.Name -contains 'usageObservations')) {
+        $existing = @($record.usageObservations)
+    }
+
+    $appended = @($existing) + @($observation)
+    if ($appended.Count -gt $MaxObservations) {
+        # Oldest first, so eviction drops the least useful evidence.
+        $appended = @($appended[($appended.Count - $MaxObservations)..($appended.Count - 1)])
+    }
+
+    $rebuilt = [ordered]@{}
+    foreach ($property in @(_PCR_KeyName -Obj $record)) {
+        if ($property -in @('usageObservations', 'observedAt')) { continue }
+        $rebuilt[$property] = (_PCR_Field -Obj $record -Name $property -Default $null)
+    }
+    $rebuilt['observedAt'] = $NowUtc.ToString('yyyy-MM-ddTHH:mm:ssZ')
+    $rebuilt['usageObservations'] = @($appended)
 
     return (Save-ProviderCapacityRecord -WorkspaceRoot $WorkspaceRoot -Record $rebuilt)
 }

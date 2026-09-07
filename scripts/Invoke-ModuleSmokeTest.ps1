@@ -3037,6 +3037,72 @@ Write-Step 'Runner claim gate — smoke: cooldown, one local slot, and liveness 
 
 Write-Host '  claim gate: cooldown and the one local slot refuse a claim by name (nothing written, entry stays queued), auto defers to the router, an unenforced verdict is advisory; a run counts only while the heartbeat pid is live, and startup names the orphans' -ForegroundColor DarkGray
 
+# --- H38-12: usage accumulates as evidence, never as an invented ratio -----
+Write-Step 'Provider usage — smoke: observations accumulate without inventing a ratio'
+
+& {
+    $uoWs = Join-Path $WorkspaceRoot 'output\smoke\module\usage-observations'
+    if (Test-Path -LiteralPath $uoWs) { Remove-Item -LiteralPath $uoWs -Recurse -Force }
+    $null = New-Item -ItemType Directory -Path $uoWs -Force
+
+    $uoSeed = New-ProviderCapacityRecord -Provider 'claude' -Windows @(
+        @{ name = 'short-term'; unit = 'provider-allowance'; remainingRatio = 0.61; source = 'provider-status' }
+    )
+    $null = Save-ProviderCapacityRecord -WorkspaceRoot $uoWs -Record $uoSeed
+
+    $uoResult = New-ExecutionResult -TaskId 'uo-1' -ExecutionId 'uo-1' -Provider 'claude' -Status implementation_complete -TokensObserved 25427 -UsageNative ([pscustomobject]@{ input_tokens = 14320; output_tokens = 867 })
+    $null = Add-ProviderUsageObservation -WorkspaceRoot $uoWs -Provider 'claude' -Result $uoResult
+    $null = Add-ProviderUsageObservation -WorkspaceRoot $uoWs -Provider 'claude' -Result $uoResult
+    $uoRecord = Read-ProviderCapacityRecord -WorkspaceRoot $uoWs -Provider 'claude'
+    if (@($uoRecord.usageObservations).Count -ne 2) { throw "Two observations must both append, got $(@($uoRecord.usageObservations).Count)" }
+    if ([int]$uoRecord.usageObservations[0].tokensObserved -ne 25427) { throw 'The observation must carry what the run actually consumed' }
+
+    # THE rule of this packet: token telemetry and subscription capacity are
+    # separate measurements (spec). Knowing a run cost 25k tokens says nothing
+    # about what fraction of an allowance remains, because the provider never
+    # published the denominator. Observations must never move a ratio.
+    if ([double]$uoRecord.windows[0].remainingRatio -ne 0.61) { throw 'Usage observations must not touch a window ratio: telemetry is not subscription capacity' }
+    if ($uoRecord.windows[0].source -ne 'provider-status') { throw 'Nor may they downgrade the window source' }
+
+    # The cap keeps a record that is read on every claim from growing unbounded.
+    for ($uoI = 0; $uoI -lt 12; $uoI++) { $null = Add-ProviderUsageObservation -WorkspaceRoot $uoWs -Provider 'claude' -Result $uoResult -MaxObservations 10 }
+    $uoCapped = Read-ProviderCapacityRecord -WorkspaceRoot $uoWs -Provider 'claude'
+    if (@($uoCapped.usageObservations).Count -ne 10) { throw "The cap must evict the oldest, got $(@($uoCapped.usageObservations).Count)" }
+
+    # A provider with no record yet still records evidence, and the record it
+    # creates claims no measurement.
+    $null = Add-ProviderUsageObservation -WorkspaceRoot $uoWs -Provider 'codex' -Result $uoResult
+    $uoFresh = Read-ProviderCapacityRecord -WorkspaceRoot $uoWs -Provider 'codex'
+    if ($null -eq $uoFresh) { throw 'A first observation must create the record' }
+    if ($null -ne $uoFresh.windows[0].remainingRatio) { throw 'A record created from usage alone must not claim a ratio' }
+
+    Remove-Item -LiteralPath $uoWs -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# Rank 3 (provider-reported remaining percentage) is UNAVAILABLE for Claude with
+# the transcripts this repository has: they expose only token counts, which are
+# rank 4 and a different measurement. The reader is written anyway because it
+# costs nothing when absent, but the honest state today is $null, and that is
+# what is asserted -- not a hopeful stub nobody checks.
+foreach ($uoFixture in @($caSyntheticPath, $capLimitSynthetic)) {
+    $uoParsed = ConvertFrom-ClaudeStreamJson -Lines @(Get-Content -LiteralPath $uoFixture -Encoding UTF8)
+    if ($null -ne (Get-ClaudeAdapterCapacity -Parsed $uoParsed)) { throw "No Claude transcript here reports a remaining percentage; $uoFixture must yield `$null rather than an invented window" }
+}
+if ($null -ne (Get-ClaudeAdapterCapacity -Parsed $null)) { throw 'A null parse must answer $null, not throw' }
+
+# The reader works when the data appears, and refuses what only looks like data.
+$uoSynthetic = [pscustomobject]@{ events = @([pscustomobject]@{ type = 'system'; remaining_percent = 40 }); result = $null }
+$uoWindow = Get-ClaudeAdapterCapacity -Parsed $uoSynthetic
+if ($null -eq $uoWindow) { throw 'A numeric remaining percentage must be read when one exists' }
+if ([double]$uoWindow.remainingRatio -ne 0.4) { throw "40 percent must normalize to 0.4, got $($uoWindow.remainingRatio)" }
+if ($uoWindow.source -ne 'provider-warning') { throw 'A provider-reported percentage is rank 3, provider-warning' }
+$uoTextual = [pscustomobject]@{ events = @([pscustomobject]@{ type = 'result'; result = 'Usage limit reached.' }); result = $null }
+if ($null -ne (Get-ClaudeAdapterCapacity -Parsed $uoTextual)) { throw 'A string that matches the name pattern carries no ratio and must not become one' }
+$uoTokenCount = [pscustomobject]@{ events = @([pscustomobject]@{ type = 'system'; token_limit = 200000 }); result = $null }
+if ($null -ne (Get-ClaudeAdapterCapacity -Parsed $uoTokenCount)) { throw 'A token count named "limit" is not a percentage; guessing at it would invent the number this refuses' }
+
+Write-Host '  provider usage: observations accumulate and evict oldest-first, never moving a window ratio; the rank-3 reader answers $null on every transcript we actually have, and refuses text and token counts that only look like percentages' -ForegroundColor DarkGray
+
 Write-Step 'WorkPacket prompt rendering — smoke: acceptance criteria travel verbatim'
 
 # The spec lets an adapter reshape prompting but forbids it changing the

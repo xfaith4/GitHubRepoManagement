@@ -1071,6 +1071,25 @@ function Invoke-QueuedTask {
                 $adapterResult = ConvertTo-ClaudeExecutionResult -Parsed $parsedStream -TaskId $runId -ExecutionId $runId -ChangedFiles $changedForResult -Config $providerConfigForResult
                 if ($null -ne $adapterResult) {
                     $null = Save-ExecutionResult -WorkspaceRoot $WorkspaceRoot -Result $adapterResult
+
+                    # H38-12. What the run actually consumed is rank-4 evidence
+                    # toward replacing D-011's guessed per-task cost with a
+                    # measured one. Best-effort: a capacity bookkeeping failure
+                    # must never fail a run that succeeded.
+                    try {
+                        if (Get-Command -Name 'Add-ProviderUsageObservation' -ErrorAction SilentlyContinue) {
+                            $null = Add-ProviderUsageObservation -WorkspaceRoot $WorkspaceRoot -Provider 'claude' -Result $adapterResult
+                        }
+                        $adapterWindow = Get-ClaudeAdapterCapacity -Parsed $parsedStream
+                        if ($null -ne $adapterWindow -and (Get-Command -Name 'Merge-ProviderCapacityWindow' -ErrorAction SilentlyContinue)) {
+                            $capacityRecordNow = Read-ProviderCapacityRecord -WorkspaceRoot $WorkspaceRoot -Provider 'claude'
+                            if ($null -ne $capacityRecordNow) {
+                                $mergeOutcome = Merge-ProviderCapacityWindow -Record $capacityRecordNow -Window $adapterWindow
+                                if ($mergeOutcome.merged) { $null = Save-ProviderCapacityRecord -WorkspaceRoot $WorkspaceRoot -Record $mergeOutcome.record }
+                            }
+                        }
+                    }
+                    catch { Write-Host ("  [warn] could not record capacity evidence: {0}" -f $_.Exception.Message) -ForegroundColor DarkYellow }
                 }
             }
             $executionResult = Read-ExecutionResult -WorkspaceRoot $WorkspaceRoot -TaskId $runId

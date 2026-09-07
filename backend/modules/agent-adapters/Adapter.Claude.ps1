@@ -274,8 +274,67 @@ function Get-ClaudeAdapterCapability {
 }
 
 function Get-ClaudeAdapterCapacity {
-    <# H38-12 fills this. $null means "not measured", which is honest; a
-       fabricated ratio would be worse than no number at all. #>
+    <#
+    .SYNOPSIS
+        A capacity window from a parsed stream-json transcript, or $null.
+
+    .DESCRIPTION
+        H38-12. Rank 3 on the spec's ladder -- "provider-reported warning or
+        remaining percentage" -- read from whatever the CLI volunteered.
+
+        **No transcript we have carries one.** The success and usage-limit
+        fixtures expose only `usage` token counts, which are rank 4 evidence and
+        a different measurement entirely (see Add-ProviderUsageObservation). So
+        today this returns $null on every transcript in the repository, and the
+        module smoke asserts exactly that rather than pretending otherwise.
+
+        It is still written as a real reader rather than a hardcoded $null,
+        because the shape it looks for is cheap to check and costs nothing when
+        absent: if a future transcript does carry a remaining percentage, this
+        starts working without anyone having to notice it could.
+
+        $null means "not measured", which is honest. A fabricated ratio would be
+        worse than no number at all -- it is indistinguishable from a measured
+        one at the moment the Governor decides whether to spend it.
+    #>
+    [CmdletBinding()]
+    [OutputType([System.Collections.Specialized.OrderedDictionary])]
+    param([Parameter()][AllowNull()][object]$Parsed = $null)
+
+    if ($null -eq $Parsed) { return $null }
+
+    $candidates = @()
+    if ($null -ne $Parsed.PSObject -and ($Parsed.PSObject.Properties.Name -contains 'events')) { $candidates += @($Parsed.events) }
+    if ($null -ne $Parsed.PSObject -and ($Parsed.PSObject.Properties.Name -contains 'result')) { $candidates += @($Parsed.result) }
+
+    foreach ($candidate in $candidates) {
+        if ($null -eq $candidate -or $null -eq $candidate.PSObject) { continue }
+        foreach ($property in @($candidate.PSObject.Properties | ForEach-Object { $_ })) {
+            if ($property.Name -notmatch '(?i)remaining|limit|quota') { continue }
+
+            $value = $property.Value
+            # Only a bare number is usable. A string like "usage limit reached"
+            # matches the name pattern and carries no ratio at all, which is
+            # precisely the confusion this guard prevents.
+            if ($value -isnot [double] -and $value -isnot [int] -and $value -isnot [long] -and $value -isnot [decimal]) { continue }
+
+            $numeric = [double]$value
+            if ($numeric -lt 0) { continue }
+            # 0..1 is a ratio; 1..100 is a percentage. Above 100 is neither, and
+            # is far more likely to be a token count that happened to be named
+            # "limit" -- guessing at it would invent the number this refuses.
+            if ($numeric -gt 100) { continue }
+            $ratio = $(if ($numeric -gt 1) { $numeric / 100.0 } else { $numeric })
+
+            return [ordered]@{
+                name           = 'short-term'
+                unit           = 'provider-allowance'
+                remainingRatio = $ratio
+                source         = 'provider-warning'
+            }
+        }
+    }
+
     return $null
 }
 
