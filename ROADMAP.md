@@ -2362,7 +2362,7 @@ are re-scoped into Release 3.8** rather than built standalone; each says how.
       [`ROADMAP_TEMPLATE.md`](standards/roadmap/ROADMAP_TEMPLATE.md) already
       recommends `[[M3]]` ids and an inline `(depends: M3)` tag that nothing
       reads; the schema and parser have to catch up with the authoring
-      convention. _(state: backend-complete 2026-09-07 — H-13a notation
+      convention. _(state: smoke-tested 2026-09-07 — H-13a notation
       parsed into item id/dependsOn and published on the parse result as an
       additive `items` array, so the fifteen consumers of the existing
       string lists are untouched; unknown-id and cycle findings are
@@ -2374,8 +2374,16 @@ are re-scoped into Release 3.8** rather than built standalone; each says how.
       prompt. Both rules declare an applicabilityCondition and leave the
       DENOMINATOR when a roadmap declares no dependencies — without that,
       adding them moved an unrelated fixture from 64 to 67 and across the
-      L2/L3 boundary without a character of it changing. Selector is
-      H-13b.)_
+      L2/L3 boundary without a character of it changing. H-13b
+      Get-NextEligibleRoadmapItem then gates SELECTION on it: the next item
+      is the first ELIGIBLE one in document order, and complete and blocked
+      stay distinct verdicts because collapsing them into a null next item
+      makes a dead end look like a finished roadmap. A graph with an
+      unresolved id or a cycle refuses BY NAME rather than answering from an
+      input it cannot trust, and that refusal surfaces through the execution
+      contract checks where every other dispatch refusal already does. A
+      roadmap with no notation selects exactly what first-pending selected
+      before, asserted against this file.)_
 
 ---
 

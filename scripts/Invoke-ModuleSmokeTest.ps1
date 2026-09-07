@@ -1951,6 +1951,105 @@ if ($script:RoadmapItemDependsPattern -ne [string]$rdRulesDetection.itemDependsP
 
 Write-Host '  roadmap dependencies: template notation is read rather than mangled, unknown ids and cycles are findings not parse errors, a diamond is not a cycle, notation-free roadmaps are byte-for-byte unchanged' -ForegroundColor DarkGray
 
+# ---------------------------------------------------------------------------
+# Lane 0.18 (H-13b) — dependency-aware next-item selection.
+#
+# The distinction this section exists to protect: "nothing is eligible" and
+# "nothing is left" are different answers. Collapsing them into a null next
+# item makes a dead end look like a finished roadmap, and the console would
+# report a blocked repository as done.
+# ---------------------------------------------------------------------------
+Write-Step 'Roadmap dependencies (selection) — smoke: eligibility gates the next item, offline'
+
+$rsDeps = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Dependencies.ps1'
+if (-not (Test-Path -LiteralPath $rsDeps)) { throw "Roadmap.Dependencies.ps1 not found at: $rsDeps" }
+. $rsDeps
+
+function Get-SmokeItemList { param([string]$Markdown) return @((Invoke-ParseRoadmapContent -Content $Markdown).items) }
+
+# A linear chain: the packet's own example.
+$rsChain = Get-SmokeItemList -Markdown "## R`n`n- [x] [[A]] a`n- [ ] [[B]] b (depends: A)`n- [ ] [[C]] c (depends: B)`n"
+$rsChainVerdict = Get-NextEligibleRoadmapItem -Items $rsChain
+if ($rsChainVerdict.verdict -ne 'ready') { throw "A->B->C with A complete must be ready, got '$($rsChainVerdict.verdict)'" }
+if ($rsChainVerdict.item.id -ne 'B') { throw "Expected B, got '$($rsChainVerdict.item.id)' — C is eligible only once B is done" }
+
+# Nothing complete: the DEPENDENT item must not be chosen just because a
+# document-order scan reaches it.
+$rsFresh = Get-SmokeItemList -Markdown "## R`n`n- [ ] [[A]] a`n- [ ] [[B]] b (depends: A)`n"
+if ((Get-NextEligibleRoadmapItem -Items $rsFresh).item.id -ne 'A') { throw 'With nothing complete, the item that depends on A must not be selected before A' }
+
+# Structural faults refuse BY NAME, and outrank eligibility: a graph that
+# contradicts itself cannot be trusted to say what comes next.
+$rsCycle = Get-NextEligibleRoadmapItem -Items (Get-SmokeItemList -Markdown "## R`n`n- [ ] [[A]] a (depends: B)`n- [ ] [[B]] b (depends: A)`n")
+if ($rsCycle.verdict -ne 'blocked') { throw 'A cycle must block selection' }
+if ($null -ne $rsCycle.item) { throw 'A blocked verdict must carry no item; returning one from a broken graph is the failure' }
+foreach ($rsId in @('A', 'B')) { if ($rsCycle.reason -notmatch $rsId) { throw "The cycle refusal must name '$rsId': '$($rsCycle.reason)'" } }
+
+$rsUnknown = Get-NextEligibleRoadmapItem -Items (Get-SmokeItemList -Markdown "## R`n`n- [ ] [[A]] a (depends: NOPE)`n")
+if ($rsUnknown.verdict -ne 'blocked') { throw 'An unresolved dependency id must block selection' }
+if ($rsUnknown.reason -notmatch 'NOPE') { throw "The refusal must name the id it could not resolve: '$($rsUnknown.reason)'" }
+# An eligible item elsewhere does NOT rescue a broken graph.
+$rsUnknownMixed = Get-NextEligibleRoadmapItem -Items (Get-SmokeItemList -Markdown "## R`n`n- [ ] [[A]] a`n- [ ] [[B]] b (depends: NOPE)`n")
+if ($rsUnknownMixed.verdict -ne 'blocked') { throw 'A structurally broken graph must block even when some item happens to be eligible' }
+
+# complete and blocked are DIFFERENT answers.
+$rsComplete = Get-NextEligibleRoadmapItem -Items (Get-SmokeItemList -Markdown "## R`n`n- [x] [[A]] a`n")
+if ($rsComplete.verdict -ne 'complete') { throw "A roadmap with no pending items is complete, got '$($rsComplete.verdict)'" }
+if ($rsComplete.verdict -eq $rsCycle.verdict) { throw 'complete and blocked must not collapse into one verdict' }
+
+# An explicitly empty CompletedIds means "treat nothing as done", and must not
+# be silently re-derived from the checkboxes.
+$rsDerived = Get-SmokeItemList -Markdown "## R`n`n- [x] [[A]] a`n- [ ] [[B]] b (depends: A)`n"
+if ((Get-NextEligibleRoadmapItem -Items $rsDerived).item.id -ne 'B') { throw 'Derived completion should satisfy B''s dependency on the checked A' }
+if ((Get-NextEligibleRoadmapItem -Items $rsDerived -CompletedIds @()).verdict -ne 'blocked') { throw 'An explicit empty CompletedIds must be honoured, not replaced by the derived set' }
+
+# GOLDEN. A roadmap with no notation must select exactly what first-pending
+# selected before this existed.
+$rsGoldenMd = "## Release 1.0 - Thing`n`n- [x] Done thing`n- [ ] First pending`n- [ ] Second pending`n"
+$rsGoldenParsed = Invoke-ParseRoadmapContent -Content $rsGoldenMd
+if ($rsGoldenParsed.nextPendingItem.text -ne 'First pending') { throw "Notation-free selection changed: got '$($rsGoldenParsed.nextPendingItem.text)'" }
+if ($rsGoldenParsed.nextItemVerdict.verdict -ne 'ready') { throw 'A notation-free roadmap with pending work is ready' }
+# And this repository's own roadmap, which is the one that would break first.
+$rsSelf = Invoke-ParseRoadmapContent -Content (Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'ROADMAP.md') -Raw -Encoding UTF8)
+if ($rsSelf.nextItemVerdict.verdict -ne 'ready') { throw "This repository's roadmap must stay dispatchable, got '$($rsSelf.nextItemVerdict.verdict)': $($rsSelf.nextItemVerdict.reason)" }
+if ($null -eq $rsSelf.nextPendingItem) { throw 'A ready verdict must still carry a next item' }
+
+# The parser REFUSES rather than handing back an ineligible item.
+$rsBlockedParse = Invoke-ParseRoadmapContent -Content "## R`n`n- [ ] [[A]] a (depends: B)`n- [ ] [[B]] b (depends: A)`n"
+if ($rsBlockedParse.roadmapState -ne 'pending') { throw 'A blocked roadmap is still pending; the state describes the checkboxes, not the graph' }
+if ($null -ne $rsBlockedParse.nextPendingItem) { throw 'When nothing is eligible there is no next item — handing back the first pending one dispatches work whose prerequisites are unmet' }
+if ($rsBlockedParse.nextItemVerdict.verdict -ne 'blocked') { throw 'The verdict must say WHY there is no next item, or a dead end is indistinguishable from a finished roadmap' }
+
+# The refusal surfaces where every other dispatch refusal already surfaces.
+$rsContract = Test-RoadmapExecutionContract -RoadmapContext ([pscustomobject]@{
+        releaseGoal        = 'Ship the thing'
+        pendingMilestones  = @('Do the work')
+        outOfScope         = @('Not this')
+        acceptanceCriteria = @('Runs Invoke-Pester and passes')
+        validationPlan     = @('pwsh -File .\scripts\Invoke-ModuleSmokeTest.ps1')
+        nextItemVerdict    = $rsBlockedParse.nextItemVerdict
+    }) -MaturityLevel 'L4-Orchestration-Ready'
+$rsDepCheck = @($rsContract.checks | Where-Object { $_.name -eq 'dependencies' })
+if ($rsDepCheck.Count -ne 1) { throw 'The execution contract must report a dependencies check' }
+if ($rsDepCheck[0].passed) { throw 'A blocked dependency graph must fail the dependencies check' }
+if ([string]::IsNullOrWhiteSpace([string]$rsDepCheck[0].explanation)) { throw 'The dependencies check must explain itself' }
+if ($rsContract.sufficient) { throw 'A roadmap whose next item is blocked is not a sufficient execution contract' }
+
+# The dead-end branch is UNREACHABLE on a sound graph -- an acyclic graph whose
+# ids resolve always has a source node, and a source is eligible by definition.
+# Assert that invariant rather than pretending a fixture exercises the branch:
+# every sound acyclic fixture must yield 'ready'.
+foreach ($rsSound in @(
+        "## R`n`n- [ ] [[A]] a`n- [ ] [[B]] b (depends: A)`n- [ ] [[C]] c (depends: A, B)`n",
+        "## R`n`n- [x] [[A]] a`n- [ ] [[B]] b (depends: A)`n- [ ] [[C]] c (depends: A)`n",
+        "## R`n`n- [ ] [[A]] a`n- [ ] plain`n- [ ] [[C]] c (depends: A)`n"
+    )) {
+    $rsSoundVerdict = Get-NextEligibleRoadmapItem -Items (Get-SmokeItemList -Markdown $rsSound)
+    if ($rsSoundVerdict.verdict -ne 'ready') { throw "A sound acyclic roadmap always has an eligible item; got '$($rsSoundVerdict.verdict)'" }
+}
+
+Write-Host '  roadmap selection: first ELIGIBLE item in document order, complete and blocked stay distinct verdicts, a broken graph refuses by name rather than answering from it, notation-free roadmaps select exactly as before' -ForegroundColor DarkGray
+
 Write-Step 'Loading roadmap repairer module (Release 0.9)'
 $roadmapRepairer = Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Repairer.ps1'
 if (-not (Test-Path -LiteralPath $roadmapRepairer)) { throw "Roadmap.Repairer.ps1 not found at: $roadmapRepairer" }
