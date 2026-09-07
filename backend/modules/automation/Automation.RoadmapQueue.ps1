@@ -110,9 +110,17 @@ function New-RoadmapQueueEntry {
         [string]$Branch,
         [Parameter(Mandatory)][string]$QueuedAt,
         [AllowEmptyString()][string]$DispatchTarget = 'claude',
-        [AllowEmptyString()][string]$BaseBranch = ''
+        [AllowEmptyString()][string]$BaseBranch = '',
+        # Release 3.8 M1: where the run's WorkPacket lives. `prompt` above is
+        # what a provider is told; this is the same task as data, and it is what
+        # an adapter will render from once the packet, not the prose, is the
+        # contract. $null rather than '' when absent, so "no packet" is
+        # distinguishable from "a packet at the empty path".
+        [AllowEmptyString()][string]$WorkPacketPath = ''
     )
     if ([string]::IsNullOrWhiteSpace($Branch)) { $Branch = "roadmap/$RunId" }
+    $resolvedWorkPacketPath = $null
+    if (-not [string]::IsNullOrWhiteSpace($WorkPacketPath)) { $resolvedWorkPacketPath = [string]$WorkPacketPath }
     return [ordered]@{
         schemaVersion  = '1'
         runId          = $RunId
@@ -126,6 +134,7 @@ function New-RoadmapQueueEntry {
         dispatchTarget = (Resolve-RoadmapDispatchTarget -DispatchTarget $DispatchTarget)
         baseBranch     = $BaseBranch
         queuedAt       = $QueuedAt
+        workPacketPath = $resolvedWorkPacketPath
     }
 }
 

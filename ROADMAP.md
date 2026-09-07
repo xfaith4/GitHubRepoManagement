@@ -899,9 +899,10 @@ to the queue — never fails it — when a provider is exhausted.
       [`Roadmap.Dispatcher.ps1`](backend/modules/roadmap/Roadmap.Dispatcher.ps1)
       builds prose today and nothing reads a result back. A run producing no
       structured `ExecutionResult` fails by name instead of reaching
-      `awaiting-review`. _(state: scaffolded 2026-09-07 — H38-01 WorkPacket
-      schema v1 (Execution.WorkPacket.ps1), persisted under
-      output/work-packets/)_
+      `awaiting-review`. _(state: scaffolded 2026-09-07 — H38-01 WorkPacket schema
+      v1 (Execution.WorkPacket.ps1) persisted under output/work-packets/;
+      H38-02 dispatch/execute and packet approval save a WorkPacket per run and
+      carry workPacketPath)_
 - [ ] **Persist capacity per provider, in the provider's own unit.** Named
       windows with `remainingRatio`, `resetAt` and a confidence rank; reserves
       and ranking weights live in `backend/config/`, not in code.

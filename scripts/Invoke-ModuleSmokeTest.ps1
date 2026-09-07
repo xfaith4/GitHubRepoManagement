@@ -2301,6 +2301,14 @@ if ($null -ne (Read-WorkPacket -WorkspaceRoot $wpWorkspace -TaskId 'no-such-task
     throw 'Expected Read-WorkPacket to answer $null for a task with no packet'
 }
 
+# H38-02 loosened BaseBranch to allow ''. A local task with no declared base
+# branches from whatever is checked out, which the queue entry has always
+# permitted; the alternative was inventing 'main' in the packaging path and
+# branching someone's repository off the wrong base one day, silently.
+$wpNoBase = New-WorkPacket -TaskId 'smoke-wp-nobase' -Repository '' -BaseBranch '' -BaseSha '' -Objective 'No declared base branch.' -Permissions $wpPermissions
+if (-not (Test-WorkPacket -Packet $wpNoBase).valid) { throw 'A packet with an empty baseBranch must be valid — the queue entry has always allowed it' }
+if ($wpNoBase.baseBranch -ne '') { throw "Expected an empty baseBranch to stay empty, got '$($wpNoBase.baseBranch)'" }
+
 # Each rule broken once, asserting the exact operator-facing string.
 $wpBadTaskId = New-WorkPacket -TaskId 'x' -Repository '' -BaseBranch 'main' -BaseSha '' -Objective 'o' -Permissions $wpPermissions
 $wpBadTaskId.taskId = ''
@@ -5193,6 +5201,26 @@ Write-Step 'Local Claude Code dispatch — smoke: queue writer + runner logic (R
         if ($read.Count -ne 2) { throw "queue round-trip expected 2 entries, got $($read.Count)" }
         if ($read[0].prompt -ne 'PROMPT' -or $read[0].localRepoPath -ne 'C:\repo') { throw 'queue entry fields not preserved on round-trip' }
 
+        # ── Release 3.8 M1 (H38-02) — workPacketPath on the queue contract ───
+        # The key order is a golden, captured from the code BEFORE this field
+        # existed. The runner and both smokes read these entries positionally
+        # in places, and a reordered contract is the kind of drift that shows up
+        # as a task the runner silently mishandles rather than as an error.
+        $wpGoldenKeys = 'schemaVersion,runId,status,repository,localRepoPath,roadmapPath,selectedTask,branch,prompt,dispatchTarget,baseBranch,queuedAt'
+        $wpEntryKeys = @($entry.Keys) -join ','
+        if ($wpEntryKeys -ne ($wpGoldenKeys + ',workPacketPath')) {
+            throw "Queue-entry key order drifted. Expected the pre-3.8 order plus workPacketPath last, got: $wpEntryKeys"
+        }
+        # Absent must be JSON null, never '' — "no packet" and "a packet at the
+        # empty path" are different facts, and only one of them is recoverable.
+        $wpEntryJson = ([pscustomobject]$entry | ConvertTo-Json -Depth 8 -Compress)
+        if ($wpEntryJson -notmatch '"workPacketPath"\s*:\s*null') {
+            throw "Expected workPacketPath to serialize as JSON null when no packet was supplied, got: $wpEntryJson"
+        }
+        $wpEntryWithPacket = New-RoadmapQueueEntry -RunId 'r3' -Repository 'x/y' -LocalRepoPath 'C:\repo' -RoadmapPath 'C:\repo\ROADMAP.md' -SelectedTask 'Do it' -TaskDescription 'PROMPT' -Branch '' -QueuedAt '2026-01-01T00:00:00Z' -WorkPacketPath 'C:\ws\output\work-packets\r3.workpacket.json'
+        if ($wpEntryWithPacket.workPacketPath -ne 'C:\ws\output\work-packets\r3.workpacket.json') { throw 'workPacketPath not carried onto the queue entry' }
+        if (@($read)[0].PSObject.Properties.Name -notcontains 'workPacketPath') { throw 'workPacketPath did not survive the queue round-trip' }
+
         # summary status transitions (queued -> awaiting-review, fields merged)
         $sp = Join-Path $dispTmp 'r1.summary.json'
         Update-TaskSummary -SummaryPath $sp -Set @{ status = 'queued'; runId = 'r1' }
@@ -5949,6 +5977,17 @@ Write-Step 'Packaging queue contract — tripwire: the entry shape the runner cl
             throw "Queue-entry drift on '$k': canonical='$($canonical[$k])' packaged='$($packaged[$k])'"
         }
     }
+    # Release 3.8 M1 (H38-02). workPacketPath is the reason this tripwire earned
+    # its keep: the field was specified for the canonical writer alone, and this
+    # gate is what proved the packaging writer is a parallel implementation that
+    # has to move with it. Assert the packaged writer actually carries a path,
+    # not merely that it has the key.
+    $packagedWithPacket = New-PackagedItemQueueEntry -RunId 'r1' -QueuedAt '2026-01-01T00:00:00Z' -WorkPacketPath 'C:\ws\output\work-packets\r1.workpacket.json' -Packet ([pscustomobject]@{
+            repoName = 'owner/x'; repoPath = 'C:\repo'; roadmapPath = 'C:\repo\ROADMAP.md'; itemText = 'Task'; generatedPrompt = 'PROMPT'; branch = 'b'
+        })
+    if ($packagedWithPacket.workPacketPath -ne 'C:\ws\output\work-packets\r1.workpacket.json') { throw 'the packaging queue writer dropped workPacketPath' }
+    if ($null -ne $packaged.workPacketPath) { throw 'the packaging queue writer must emit $null, not '''', when no packet was supplied' }
+
     Write-Host ("  queue contract ok: {0} fields identical to the canonical writer" -f @($canonical.Keys).Count) -ForegroundColor DarkGray
 
     Write-Step 'Packaging health — a stopped packaging cron is visible on its own evidence'

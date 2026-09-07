@@ -1863,6 +1863,40 @@ try {
         $okSummary = Get-Content -LiteralPath $okSummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json
         if ([string]$okSummary.status -ne 'queued') { throw ("run summary status expected 'queued', got '{0}'" -f $okSummary.status) }
 
+        # ── Release 3.8 M1 (H38-02) — the task travelled as data, not only prose
+        # A queue line whose workPacketPath resolves to nothing is the
+        # prose-only dispatch this milestone removes, reached by another road.
+        # Asserted end to end here because only a real POST proves the route
+        # writes the packet BEFORE the queue line that points at it.
+        $okWorkPacketPath = [string]$okEntry.workPacketPath
+        if ([string]::IsNullOrWhiteSpace($okWorkPacketPath)) {
+            throw 'queue entry carries no workPacketPath; the dispatch is prose-only, which Release 3.8 M1 exists to end'
+        }
+        if (-not (Test-Path -LiteralPath $okWorkPacketPath -PathType Leaf)) {
+            throw ("queue entry points at a WorkPacket that is not on disk: {0}" -f $okWorkPacketPath)
+        }
+        if ([string]$okSummary.workPacketPath -ne $okWorkPacketPath) {
+            throw ("run summary and queue entry disagree about the WorkPacket: summary='{0}' queue='{1}'" -f $okSummary.workPacketPath, $okWorkPacketPath)
+        }
+        if (-not (Get-Command Test-WorkPacket -ErrorAction SilentlyContinue)) {
+            . (Join-Path $WorkspaceRoot 'backend\modules\execution\Execution.WorkPacket.ps1')
+        }
+        $okWorkPacket = Get-Content -LiteralPath $okWorkPacketPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $okWorkPacketValid = Test-WorkPacket -Packet $okWorkPacket
+        if (-not $okWorkPacketValid.valid) {
+            throw ("the dispatched WorkPacket is invalid: " + ($okWorkPacketValid.errors -join '; '))
+        }
+        if ([string]$okWorkPacket.taskId -ne $okRunId) {
+            throw ("WorkPacket taskId '{0}' does not match the returned runId '{1}'; the packet and the run would never join" -f $okWorkPacket.taskId, $okRunId)
+        }
+        if ([string]$okWorkPacket.baseBranch -ne 'smoke-base') {
+            throw ("WorkPacket lost the requested baseBranch: got '{0}'" -f $okWorkPacket.baseBranch)
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$okWorkPacket.objective)) {
+            throw 'WorkPacket carries no objective; an adapter would have nothing provider-neutral to render'
+        }
+        Write-Host ("  dispatch workpacket ok: taskId={0} valid, on disk, agreed by queue and summary" -f $okWorkPacket.taskId) -ForegroundColor DarkGray
+
         # The response has to agree with the heartbeat it was authorised
         # against. `queuedWithoutRunner` true here would mean the route queued
         # into an empty room and called it a success.
