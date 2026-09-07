@@ -170,3 +170,78 @@ describe('runnerStartCommand', () => {
     expect(runnerStartCommand({ state: 'absent', startCommand: '   ' })).toBe(relative);
   });
 });
+
+// ── H38-19 — the backlog reads per provider, not as a hardcoded pair ────────
+// queuedClaude/queuedCopilot stay on the payload and keep their meaning; these
+// cover the new map and, just as importantly, that a payload without it is
+// unchanged. A view that quietly gained or lost a field would break every
+// surface that reads it.
+describe('resolveRunnerPresence — queuedByProvider (H38-19)', () => {
+  it('summarizes the non-zero providers when the map is present', () => {
+    const view = resolveRunnerPresence({
+      state: 'present',
+      present: true,
+      queuedTotal: 3,
+      queuedClaude: 2,
+      queuedCopilot: 1,
+      queuedByProvider: { claude: 2, codex: 0, copilot: 1, auto: 0 },
+    });
+    expect(view.queuedByProviderSummary).toBe('claude 2 · copilot 1');
+  });
+
+  it('reports every queued provider including auto, in payload order', () => {
+    const view = resolveRunnerPresence({
+      state: 'present',
+      present: true,
+      queuedByProvider: { claude: 1, codex: 4, copilot: 0, auto: 2 },
+    });
+    expect(view.queuedByProviderSummary).toBe('claude 1 · codex 4 · auto 2');
+  });
+
+  it('is null when nothing is queued, rather than an empty string', () => {
+    const view = resolveRunnerPresence({
+      state: 'present',
+      present: true,
+      queuedByProvider: { claude: 0, codex: 0, copilot: 0, auto: 0 },
+    });
+    expect(view.queuedByProviderSummary).toBeNull();
+  });
+
+  it('is null on a payload with no map at all — the pre-H38-18 host', () => {
+    const view = resolveRunnerPresence({
+      state: 'present',
+      present: true,
+      queuedTotal: 2,
+      queuedClaude: 2,
+      queuedCopilot: 0,
+    });
+    expect(view.queuedByProviderSummary).toBeNull();
+  });
+
+  // The golden: a payload with no queuedByProvider must produce exactly the
+  // view it produced before this change, field for field. Captured from the
+  // pre-change implementation.
+  it('leaves every pre-existing field untouched when the map is absent', () => {
+    const view = resolveRunnerPresence({
+      state: 'stale',
+      present: false,
+      message: 'The last runner heartbeat was 900s ago.',
+      strandedCount: 3,
+    });
+    expect({
+      severity: view.severity,
+      label: view.label,
+      detail: view.detail,
+      needsAttention: view.needsAttention,
+      warnBeforeQueueing: view.warnBeforeQueueing,
+      queueAgeAlarmHours: view.queueAgeAlarmHours,
+    }).toEqual({
+      severity: 'warning',
+      label: 'Runner stalled',
+      detail: 'The last runner heartbeat was 900s ago. 3 tasks already queued and waiting.',
+      needsAttention: true,
+      warnBeforeQueueing: true,
+      queueAgeAlarmHours: null,
+    });
+  });
+});

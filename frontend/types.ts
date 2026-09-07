@@ -1111,6 +1111,20 @@ export interface DispatchQuotaSummary {
   plannedPhaseName?: string | null;
 }
 
+/**
+ * H38-19 — the one provider vocabulary the frontend speaks.
+ *
+ * `auto` names no provider: it is the instruction to let the router choose,
+ * resolved at claim time by the runner (the only process that can see
+ * authentication and capacity). It belongs in the union because a queue entry
+ * and a dispatch body can both legitimately carry it.
+ *
+ * This replaces `'claude' | 'copilot'`, a pair that predated the registry and
+ * could not name codex at all — so a codex dispatch was typed as, and reported
+ * as, something it was not.
+ */
+export type ProviderToken = 'claude' | 'codex' | 'copilot' | 'auto';
+
 export interface DispatchExecuteResult {
   runId: string;
   agentRunId?: string | null;
@@ -1121,7 +1135,7 @@ export interface DispatchExecuteResult {
    * structurally cannot hold. `started` remains for older recorded results.
    */
   status: 'queued' | 'started' | 'failed';
-  dispatchTarget?: 'claude' | 'copilot';
+  dispatchTarget?: ProviderToken;
   githubRepo: string;
   branch?: string | null;
   startedAt: string;

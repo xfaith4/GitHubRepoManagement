@@ -11,6 +11,8 @@
 // module turns `GET /api/roadmap/runner` into the warning the dispatch surfaces
 // show BEFORE the work is queued.
 
+import type { ProviderToken } from '../types';
+
 export type RunnerState = 'present' | 'stale' | 'absent';
 
 export interface RunnerPresencePayload {
@@ -27,8 +29,26 @@ export interface RunnerPresencePayload {
   staleAfterSeconds?: number;
   message?: string;
   queuedTotal?: number;
+  /**
+   * H38-19 — kept, and kept meaning exactly what they meant before: everything
+   * that is not copilot counts as claude, unknown tokens included. Every
+   * surface still reads them, so narrowing them to "only claude" would silently
+   * change numbers on screens this packet does not touch.
+   */
   queuedClaude?: number;
   queuedCopilot?: number;
+  /**
+   * H38-18's per-provider backlog, one key per registry token plus `auto`.
+   * Optional because a host older than that packet does not send it — absent
+   * and "all zero" are different answers, and only the second is a backlog.
+   */
+  queuedByProvider?: Partial<Record<ProviderToken, number>>;
+  /**
+   * What a dispatch with no explicit target would actually do. Both null when
+   * the host could not load its provider config: "no policy loaded" is not the
+   * same as "routing is off", and a surface should be able to tell them apart.
+   */
+  dispatch?: { defaultTarget: ProviderToken | null; autoEnabled: boolean | null };
   /** Queued tasks with no runner to pick them up. Zero when one is present. */
   strandedCount?: number;
   /** Oldest still-queued entry's timestamp (ISO) — the queue-age alarm's raw fact. */
@@ -58,6 +78,15 @@ export interface RunnerPresenceView {
    * same operator problem as an absent one.
    */
   queueAgeAlarmHours: number | null;
+  /**
+   * H38-19 — the backlog written per provider, e.g. `claude 2 · copilot 1`.
+   *
+   * Null rather than an empty string when nothing is queued or the host is too
+   * old to send the map, so a caller renders nothing instead of an empty row.
+   * Zero-count providers are omitted: "codex 0" is noise on a surface whose
+   * whole job is to say what is waiting.
+   */
+  queuedByProviderSummary: string | null;
 }
 
 /**
@@ -69,6 +98,23 @@ export interface RunnerPresenceView {
 const RUNNER_COMMAND_FALLBACK = 'pwsh -File scripts/Invoke-RoadmapTaskRunner.ps1';
 
 const QUEUE_AGE_ALARM_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * H38-19 — the per-provider backlog as one readable line.
+ *
+ * Payload order is preserved rather than sorted: the host writes the registry's
+ * own order (claude, codex, copilot, then auto), and re-sorting here would make
+ * the reading order depend on the counts, which moves entries around between
+ * polls for no reason.
+ */
+function summarizeQueuedByProvider(payload: RunnerPresencePayload | null | undefined): string | null {
+  const map = payload?.queuedByProvider;
+  if (!map) return null;
+  const parts = Object.entries(map)
+    .filter(([, count]) => Number(count) > 0)
+    .map(([name, count]) => `${name} ${Number(count)}`);
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
 
 function computeQueueAgeAlarmHours(payload: RunnerPresencePayload | null | undefined, nowMs: number): number | null {
   const raw = payload?.oldestQueuedAt;
@@ -100,10 +146,12 @@ export function resolveRunnerPresence(
       needsAttention: false,
       warnBeforeQueueing: true,
       queueAgeAlarmHours: null,
+      queuedByProviderSummary: null,
     };
   }
 
   const queueAgeAlarmHours = computeQueueAgeAlarmHours(payload, nowMs);
+  const queuedByProviderSummary = summarizeQueuedByProvider(payload);
 
   const stranded = Number(payload.strandedCount ?? 0);
   const strandedSuffix =
@@ -122,6 +170,7 @@ export function resolveRunnerPresence(
       needsAttention: queueAgeAlarmHours != null,
       warnBeforeQueueing: queueAgeAlarmHours != null,
       queueAgeAlarmHours,
+      queuedByProviderSummary,
     };
   }
 
@@ -134,6 +183,7 @@ export function resolveRunnerPresence(
       needsAttention: true,
       warnBeforeQueueing: true,
       queueAgeAlarmHours,
+      queuedByProviderSummary,
     };
   }
 
@@ -145,6 +195,7 @@ export function resolveRunnerPresence(
     needsAttention: stranded > 0 || queueAgeAlarmHours != null,
     warnBeforeQueueing: true,
     queueAgeAlarmHours,
+    queuedByProviderSummary,
   };
 }
 

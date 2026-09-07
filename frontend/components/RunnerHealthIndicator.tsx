@@ -84,6 +84,14 @@ function RunnerHealthIndicator() {
           className="absolute right-0 top-full mt-2 z-50 w-80 rounded-lg border border-gray-600 bg-gray-800 p-3 text-left shadow-xl"
         >
           <p className="text-xs text-gray-200 mb-2">{view.detail}</p>
+          {/* H38-19 — what is waiting, per provider. Rendered only when the
+              host sends the map and something is actually queued, so an
+              up-to-date host with an empty queue shows no empty row. */}
+          {view.queuedByProviderSummary && (
+            <p className="text-sm text-gray-300 mb-2" data-testid="runner-queued-by-provider">
+              Queued: {view.queuedByProviderSummary}
+            </p>
+          )}
           {view.severity !== 'ok' && (
             <div className="rounded border border-gray-600 bg-gray-900 px-2 py-1.5 flex items-center justify-between gap-2">
               <code className="text-[11px] text-gray-300 break-all select-all">{runnerStartCommand(payload)}</code>

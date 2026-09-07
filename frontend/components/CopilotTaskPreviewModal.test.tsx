@@ -210,4 +210,37 @@ describe('CopilotTaskPreviewModal — dispatch action and honest error hints', (
     expect(screen.queryByText(/Ensure a roadmap scan has been run/)).not.toBeInTheDocument();
     expect(screen.getByText(/check that the portal is reachable/)).toBeInTheDocument();
   });
+  // ── H38-19 — the preview names the provider that would really run it ──────
+  // D-008 says a preview surface exposes the intended provider without
+  // granting dispatch authority. The component must never hardcode a token:
+  // before the router existed every dispatch said "copilot" whatever ran it,
+  // which is the defect this line replaces rather than repeats.
+  it('names the intended provider when the board supplies one', async () => {
+    mockedPreview.mockResolvedValue(packet());
+    mockedHistory.mockResolvedValue([]);
+    mockedRunner.mockResolvedValue(runnerPresent());
+
+    render(
+      <CopilotTaskPreviewModal
+        isOpen
+        repoName="fixture-repo"
+        onClose={vi.fn()}
+        intendedProvider="codex"
+      />
+    );
+
+    expect(await screen.findByText('Intended provider: codex')).toBeInTheDocument();
+  });
+
+  it('says the provider is not yet known rather than guessing one', async () => {
+    mockedPreview.mockResolvedValue(packet());
+    mockedHistory.mockResolvedValue([]);
+    mockedRunner.mockResolvedValue(runnerPresent());
+
+    render(<CopilotTaskPreviewModal isOpen repoName="fixture-repo" onClose={vi.fn()} />);
+
+    expect(await screen.findByText('Intended provider: not yet known')).toBeInTheDocument();
+    // The old hardcode must not come back as a default.
+    expect(screen.queryByText(/Intended provider: copilot/)).not.toBeInTheDocument();
+  });
 });
