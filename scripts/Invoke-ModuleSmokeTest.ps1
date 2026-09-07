@@ -2775,8 +2775,26 @@ if ($LASTEXITCODE -eq 0) {
         $avOptedOut = Test-AgentProviderAvailability -Provider 'claude' -WorkspaceRoot $avWs
         if (-not $avOptedOut.optedOut) { throw 'The opt-out was not read back' }
         if ($avOptedOut.available) { throw 'A provider switched off deliberately must not be available' }
-        if ($avOptedOut.detail -ne 'switched off in Settings') { throw "The reason must point at where it was switched off, got '$($avOptedOut.detail)'" }
         if ((Test-AgentProviderAvailability -Provider 'copilot' -WorkspaceRoot $avWs).optedOut) { throw 'One opt-out must not affect another provider' }
+
+        # `detail` names the FIRST reason, so asserting the opt-out sentence
+        # requires the CLI to be installed -- otherwise "not found on PATH" is
+        # the honest answer and comes first. The first version of this assertion
+        # did not control that and passed only on a machine with Claude Code
+        # installed, which is precisely the machine-dependence this packet
+        # exists to remove. Stub the command name so the environment is decided
+        # by the test rather than by the runner it happens to be on.
+        $avOptOutCommandName = ${function:Get-AgentProviderCommandName}
+        try {
+            Set-Item -Path 'function:\Get-AgentProviderCommandName' -Value { param([Parameter(Mandatory)][string]$Provider) $null = $Provider; return 'git' }
+            $avOptedOutInstalled = Test-AgentProviderAvailability -Provider 'claude' -WorkspaceRoot $avWs
+            if (-not $avOptedOutInstalled.installed) { throw 'The stub should have reported an installed command' }
+            if ($avOptedOutInstalled.available) { throw 'An installed CLI must not override a deliberate opt-out' }
+            if ($avOptedOutInstalled.detail -ne 'switched off in Settings') { throw "With the CLI present, the reason must point at where it was switched off, got '$($avOptedOutInstalled.detail)'" }
+        }
+        finally {
+            Set-Item -Path 'function:\Get-AgentProviderCommandName' -Value $avOptOutCommandName
+        }
 
         # A corrupt file costs a preference, never the ability to work.
         '{ not json' | Set-Content -LiteralPath $avStatePath -Encoding UTF8
