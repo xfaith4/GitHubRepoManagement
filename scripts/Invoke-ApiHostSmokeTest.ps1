@@ -1853,7 +1853,21 @@ try {
         $okEntry = $okQueueLines[-1] | ConvertFrom-Json
         if ([string]$okEntry.runId -ne $okRunId) { throw ("queue tail runId '{0}' does not match the returned runId '{1}'" -f $okEntry.runId, $okRunId) }
         if ([string]$okEntry.baseBranch -ne 'smoke-base') { throw ("queue entry lost the requested baseBranch: got '{0}'" -f $okEntry.baseBranch) }
-        if ([string]$okEntry.dispatchTarget -ne 'copilot') { throw ("queue entry dispatchTarget expected 'copilot', got '{0}'" -f $okEntry.dispatchTarget) }
+        # H38-18 — the route no longer hardcodes a provider, so the expected
+        # token is read from the committed config rather than written here.
+        # H38-17 step 4 already moved it from 'claude' to 'auto'; a literal in
+        # this assertion would have to be edited every time that policy moves,
+        # which is how a gate quietly starts asserting last release's intent.
+        $committedProviderConfigPath = Join-Path $WorkspaceRoot 'backend\config\agent-providers.json'
+        $committedProviderConfig = Get-Content -LiteralPath $committedProviderConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $expectedDefaultTarget = [string]$committedProviderConfig.dispatch.defaultTarget
+        $committedAutoEnabled = [bool]$committedProviderConfig.dispatch.autoEnabled
+        if ([string]$okEntry.dispatchTarget -ne $expectedDefaultTarget) {
+            throw ("queue entry dispatchTarget expected the committed default '{0}', got '{1}'" -f $expectedDefaultTarget, $okEntry.dispatchTarget)
+        }
+        if ([string]$okJson.data.dispatchTarget -ne $expectedDefaultTarget) {
+            throw ("dispatch response data.dispatchTarget expected '{0}', got '{1}'" -f $expectedDefaultTarget, $okJson.data.dispatchTarget)
+        }
         if ([string]$okEntry.prompt -notmatch 'Smoke-test the successful enqueue') { throw 'queue entry did not carry the approved prompt' }
 
         $okSummaryPath = Join-Path $WorkspaceRoot ("output\roadmap-task-history\runs\{0}.summary.json" -f $okRunId)
@@ -1906,6 +1920,94 @@ try {
         if ([bool]$okJson.data.queuedWithoutRunner) { throw 'dispatch success path reported queuedWithoutRunner=true with a live runner' }
         Write-Host ("  dispatch success path ok: runId={0} branch={1} baseBranch={2} queue+summary written, runner present" -f `
                 $okRunId, $okJson.data.branch, $okEntry.baseBranch) -ForegroundColor DarkGray
+
+        # ── H38-18 — one vocabulary: the caller names the provider ──────────
+        # Before this packet the route wrote 'copilot' onto every queue line
+        # whatever the caller asked for, so a codex dispatch and a copilot
+        # dispatch were indistinguishable once queued. These three cases are
+        # the whole contract: an explicit token travels, an unknown one is
+        # refused by name, and 'auto' is governed by the committed config.
+        $explicitTargetResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/dispatch/execute" -Body @{
+            repoName       = 'dispatch-success-smoke'
+            localPath      = $okRepoPath
+            prompt         = 'Smoke-test an explicit codex dispatch target.'
+            baseBranch     = 'smoke-base'
+            dispatchTarget = 'codex'
+        }
+        Assert-Not503 -Name '/api/roadmap/dispatch/execute (explicit codex)' -Response $explicitTargetResponse
+        if ([int]$explicitTargetResponse.StatusCode -ne 200) {
+            throw ("/api/roadmap/dispatch/execute with dispatchTarget=codex expected 200, got {0}. Body={1}" -f $explicitTargetResponse.StatusCode, $explicitTargetResponse.Content)
+        }
+        if ([string]$explicitTargetResponse.Json.data.dispatchTarget -ne 'codex') {
+            throw ("dispatch response data.dispatchTarget expected 'codex', got '{0}'" -f $explicitTargetResponse.Json.data.dispatchTarget)
+        }
+        $explicitQueueEntry = (@(Get-Content -LiteralPath $okQueuePath -Encoding UTF8 | Where-Object { $_ -and $_.Trim() })[-1]) | ConvertFrom-Json
+        if ([string]$explicitQueueEntry.dispatchTarget -ne 'codex') {
+            throw ("queue entry lost the requested dispatchTarget: expected 'codex', got '{0}'" -f $explicitQueueEntry.dispatchTarget)
+        }
+        $explicitSummary = Get-Content -LiteralPath (Join-Path $WorkspaceRoot ("output\roadmap-task-history\runs\{0}.summary.json" -f [string]$explicitTargetResponse.Json.data.runId)) -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ([string]$explicitSummary.dispatchTarget -ne 'codex') {
+            throw ("run summary lost the requested dispatchTarget: expected 'codex', got '{0}'" -f $explicitSummary.dispatchTarget)
+        }
+
+        # An unrecognized token is refused by name rather than defaulted, or a
+        # typo would silently run the wrong tool against a real repository.
+        $unknownTargetResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/dispatch/execute" -Body @{
+            repoName       = 'dispatch-success-smoke'
+            localPath      = $okRepoPath
+            prompt         = 'Smoke-test an unknown dispatch target.'
+            baseBranch     = 'smoke-base'
+            dispatchTarget = 'nope'
+        }
+        Assert-Not503 -Name '/api/roadmap/dispatch/execute (unknown target)' -Response $unknownTargetResponse
+        if ([int]$unknownTargetResponse.StatusCode -ne 400) {
+            throw ("/api/roadmap/dispatch/execute with dispatchTarget=nope expected 400, got {0}. Body={1}" -f $unknownTargetResponse.StatusCode, $unknownTargetResponse.Content)
+        }
+        if ([string]$unknownTargetResponse.Json.category -ne 'validation') {
+            throw ("unknown dispatchTarget refusal expected category 'validation', got '{0}'" -f $unknownTargetResponse.Json.category)
+        }
+        if ([string]$unknownTargetResponse.Json.error -notlike "Unknown dispatchTarget 'nope'*") {
+            throw ("unknown dispatchTarget refusal must name the token; got '{0}'" -f $unknownTargetResponse.Json.error)
+        }
+
+        # 'auto' is only as available as the committed config says it is. Both
+        # arms are asserted, so this gate keeps its meaning whichever way the
+        # flag is set when someone reads it next.
+        $autoTargetResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/dispatch/execute" -Body @{
+            repoName       = 'dispatch-success-smoke'
+            localPath      = $okRepoPath
+            prompt         = 'Smoke-test the auto dispatch target.'
+            baseBranch     = 'smoke-base'
+            dispatchTarget = 'auto'
+        }
+        Assert-Not503 -Name '/api/roadmap/dispatch/execute (auto)' -Response $autoTargetResponse
+        if ($committedAutoEnabled) {
+            if ([int]$autoTargetResponse.StatusCode -ne 200) {
+                throw ("dispatchTarget=auto with autoEnabled=true expected 200, got {0}. Body={1}" -f $autoTargetResponse.StatusCode, $autoTargetResponse.Content)
+            }
+            if ([string]$autoTargetResponse.Json.data.dispatchTarget -ne 'auto') {
+                throw ("dispatchTarget=auto expected to travel as 'auto', got '{0}'" -f $autoTargetResponse.Json.data.dispatchTarget)
+            }
+        }
+        else {
+            if ([int]$autoTargetResponse.StatusCode -ne 400) {
+                throw ("dispatchTarget=auto with autoEnabled=false expected 400, got {0}. Body={1}" -f $autoTargetResponse.StatusCode, $autoTargetResponse.Content)
+            }
+            if ([string]$autoTargetResponse.Json.category -ne 'validation') {
+                throw ("auto refusal expected category 'validation', got '{0}'" -f $autoTargetResponse.Json.category)
+            }
+            if ([string]$autoTargetResponse.Json.error -notlike "dispatchTarget 'auto' is not enabled*") {
+                throw ("auto refusal must say the flag is off; got '{0}'" -f $autoTargetResponse.Json.error)
+            }
+        }
+        # provisionalSelection is present and null: the field the board reads
+        # exists from this packet on, and H38-35 fills it. Absent and null are
+        # different answers, and only one of them is a shape a caller can bind.
+        if (-not ($okJson.data.PSObject.Properties.Name -contains 'provisionalSelection')) {
+            throw 'dispatch response is missing provisionalSelection; the board has no field to bind'
+        }
+        Write-Host ("  dispatch target vocabulary ok: default={0} explicit=codex unknown->400 auto(autoEnabled={1}) handled" -f `
+                $expectedDefaultTarget, $committedAutoEnabled) -ForegroundColor DarkGray
 
         # ── The refused state, which is the one that matters here ───────────
         # Release 3.1 acceptance criterion: prove the DISABLED state, not the
@@ -3769,6 +3871,44 @@ A release should not be marked `done` unless:
             throw "GET /api/roadmap/runner missing '$runnerField'. Body=$($runnerResp.Content)"
         }
     }
+    # ── H38-18 — the backlog is counted per provider, not per hardcoded pair ──
+    # queuedClaude/queuedCopilot keep their existing semantics because the
+    # frontend still reads them until H38-19; queuedByProvider is the shape
+    # that survives a fourth provider being added to the registry.
+    $runnerByProvider = $runnerResp.Json.data.queuedByProvider
+    if ($null -eq $runnerByProvider) {
+        throw "GET /api/roadmap/runner missing 'queuedByProvider'. Body=$($runnerResp.Content)"
+    }
+    foreach ($providerKey in @('claude', 'codex', 'copilot', 'auto')) {
+        if (-not ($runnerByProvider.PSObject.Properties.Name -contains $providerKey)) {
+            throw "queuedByProvider is missing the '$providerKey' key. Body=$($runnerResp.Content)"
+        }
+    }
+    # Golden: the two pre-existing counters still add up to the same work the
+    # per-provider map describes. If these ever disagree the frontend and the
+    # payload are reporting two different backlogs.
+    $byProviderTotal = 0
+    foreach ($providerProperty in $runnerByProvider.PSObject.Properties) { $byProviderTotal += [int]$providerProperty.Value }
+    if (([int]$runnerResp.Json.data.queuedClaude + [int]$runnerResp.Json.data.queuedCopilot) -ne $byProviderTotal) {
+        throw ("backlog disagreement: queuedClaude+queuedCopilot={0} but queuedByProvider sums to {1}" -f `
+            ([int]$runnerResp.Json.data.queuedClaude + [int]$runnerResp.Json.data.queuedCopilot), $byProviderTotal)
+    }
+    # The preview in H38-19 names the provider a dispatch would actually use;
+    # it reads these two rather than hardcoding one, so they must travel.
+    $runnerDispatchBlock = $runnerResp.Json.data.dispatch
+    if ($null -eq $runnerDispatchBlock) {
+        throw "GET /api/roadmap/runner missing 'dispatch'. Body=$($runnerResp.Content)"
+    }
+    $runnerProviderConfigPath = Join-Path $WorkspaceRoot 'backend\config\agent-providers.json'
+    $runnerProviderConfig = Get-Content -LiteralPath $runnerProviderConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ([string]$runnerDispatchBlock.defaultTarget -ne [string]$runnerProviderConfig.dispatch.defaultTarget) {
+        throw ("runner payload dispatch.defaultTarget '{0}' disagrees with the committed config '{1}'" -f `
+            $runnerDispatchBlock.defaultTarget, $runnerProviderConfig.dispatch.defaultTarget)
+    }
+    if ($runnerDispatchBlock.autoEnabled -isnot [bool]) {
+        throw ("runner payload dispatch.autoEnabled must be a boolean; got '{0}'" -f $runnerDispatchBlock.autoEnabled)
+    }
+
     # The header's Copy button hands startCommand to the operator verbatim; a
     # relative path fails from any terminal that did not open inside the repo.
     $runnerStartCmd = [string]$runnerResp.Json.data.startCommand

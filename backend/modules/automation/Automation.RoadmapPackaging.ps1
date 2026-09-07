@@ -1339,5 +1339,11 @@ function Submit-PackagedItemToRunner {
         branch      = [string]$entry.branch
         queuePath   = $queuePath
         summaryPath = $summaryPath
+        # H38-18 — the token the queue line actually carries, so the approval
+        # route can report it instead of naming a dispatch CHANNEL
+        # ('operator-runner') where a provider belongs. Read from the entry
+        # rather than restated, or the host would duplicate a literal that
+        # lives here and the two would drift apart silently.
+        dispatchTarget = [string]$entry.dispatchTarget
     }
 }

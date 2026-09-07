@@ -7111,7 +7111,17 @@ Write-Step 'Runner presence — smoke: queueing into an empty room is visible (R
     $hostCode = @($hostSource | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
     if ($hostCode -match 'Start-GitHubCopilotTask\.ps1') { throw 'The API host invokes Start-GitHubCopilotTask.ps1 again; cloud dispatch must go through the operator-runner queue' }
     if ($hostCode -notmatch 'Test-InProcessCloudDispatchAllowed') { throw 'The dispatch route must refuse an in-process cloud dispatch request' }
-    if ($hostCode -notmatch "DispatchTarget 'copilot'") { throw 'The dispatch route must enqueue with dispatchTarget=copilot' }
+    # H38-18 — inverted deliberately. Until this packet the host was REQUIRED to
+    # enqueue 'copilot', which is the hardcode the packet removes: the caller
+    # names the provider and the route carries that token through. Comment lines
+    # are already stripped above, so the release notes explaining the change do
+    # not trip either of these.
+    if ($hostCode -match "DispatchTarget 'copilot'") { throw 'The dispatch route hardcodes dispatchTarget=copilot again; the resolved target must travel from the caller' }
+    if ($hostCode -notmatch 'Resolve-RoadmapDispatchTarget') { throw 'The dispatch route must resolve its target through Resolve-RoadmapDispatchTarget' }
+    # The third vocabulary is gone. 'operator-runner' is a dispatch CHANNEL, not
+    # a provider, and reporting it where a provider token belongs is the
+    # contradiction this packet closes.
+    if ($hostCode -match "'operator-runner'") { throw "The host reports 'operator-runner' as a dispatchTarget again; it is a channel, not a provider" }
     Remove-Item -LiteralPath $backlogWs -Recurse -Force -ErrorAction SilentlyContinue
     Write-Host '  runner presence ok: absent/stale/present classified from the runner own interval, backlog split by target, corrupt heartbeat is absent, in-host cloud dispatch refused in both modes' -ForegroundColor DarkGray
 }

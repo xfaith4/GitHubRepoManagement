@@ -304,6 +304,27 @@ function Get-QueuedTaskBacklog {
     $copilot = 0
     $oldestQueuedAt = $null
 
+    # H38-18 — the backlog is counted per registry token, not per hardcoded
+    # pair. `queuedClaude`/`queuedCopilot` keep their existing semantics because
+    # the frontend reads them until H38-19; this map is the shape that survives
+    # a fourth provider without another pair of fields being invented.
+    if (-not (Get-Command Get-AgentProviderToken -ErrorAction SilentlyContinue)) {
+        $registryModule = Join-Path (Split-Path -Parent $PSScriptRoot) 'execution\Execution.ProviderRegistry.ps1'
+        if (Test-Path -LiteralPath $registryModule -PathType Leaf) { . $registryModule }
+    }
+    # Assigned then overwritten rather than written as an if-expression: pwsh
+    # collapses an array returned from one arm to $null, which the repo gate
+    # (Assert-NoArrayCollapsingIfExpression) refuses on sight.
+    $backlogTokens = @('claude', 'codex', 'copilot', 'auto')
+    if (Get-Command Get-AgentProviderToken -ErrorAction SilentlyContinue) {
+        $backlogTokens = @(Get-AgentProviderToken -WorkspaceRoot $WorkspaceRoot)
+    }
+    $queuedByProvider = [ordered]@{}
+    foreach ($backlogToken in @($backlogTokens | Where-Object { $_ -ne 'auto' })) { $queuedByProvider[$backlogToken] = 0 }
+    # `auto` last and always present: it is a routing instruction rather than a
+    # provider, and an entry can still be sitting at it awaiting the router.
+    $queuedByProvider['auto'] = 0
+
     if (Test-Path -LiteralPath $queuePath -PathType Leaf) {
         foreach ($line in @(Get-Content -LiteralPath $queuePath -Encoding UTF8)) {
             if ([string]::IsNullOrWhiteSpace($line)) { continue }
@@ -322,7 +343,12 @@ function Get-QueuedTaskBacklog {
 
             $target = [string](_Runner_GetField -Obj $entry -Name 'dispatchTarget' -Default 'claude')
             if ([string]::IsNullOrWhiteSpace($target)) { $target = 'claude' }
-            if ($target.ToLowerInvariant() -eq 'copilot') { $copilot++ } else { $claude++ }
+            $normalizedTarget = $target.ToLowerInvariant()
+            if ($normalizedTarget -eq 'copilot') { $copilot++ } else { $claude++ }
+            # An unrecognized token counts where the pair above counts it, so
+            # the two views can never report different totals for one queue.
+            if ($queuedByProvider.Contains($normalizedTarget)) { $queuedByProvider[$normalizedTarget]++ }
+            else { $queuedByProvider['claude']++ }
 
             # Release 3.5 milestone 6 -- the queue-age alarm's raw fact. The
             # oldest still-queued entry's timestamp travels on the payload, so
@@ -339,9 +365,10 @@ function Get-QueuedTaskBacklog {
     }
 
     return [pscustomobject]@{
-        queuedTotal    = ($claude + $copilot)
-        queuedClaude   = $claude
-        queuedCopilot  = $copilot
+        queuedTotal      = ($claude + $copilot)
+        queuedClaude     = $claude
+        queuedCopilot    = $copilot
+        queuedByProvider = $queuedByProvider
         queuePath      = $queuePath
         oldestQueuedAt = $(if ($null -ne $oldestQueuedAt) { $oldestQueuedAt.ToUniversalTime().ToString('o') } else { $null })
     }

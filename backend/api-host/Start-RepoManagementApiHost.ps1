@@ -7871,6 +7871,17 @@ try {
                     # Backlog without presence understates the problem: "no
                     # runner" matters far more with 12 tasks already waiting.
                     $runnerPayload['strandedCount'] = if ($runnerState.present) { 0 } else { [int]$runnerBacklog.queuedTotal }
+                    # H38-18 — what a dispatch with no explicit target would
+                    # actually do. The preview (H38-19) names that provider
+                    # instead of hardcoding one, so the operator is told the
+                    # policy in force rather than last release's default.
+                    # $null for both when the config is absent: "no policy
+                    # loaded" and "routing is off" are different answers.
+                    $runnerProviderConfig = Get-AgentProviderConfig -ConfigPath (Get-AgentProviderConfigPath -WorkspaceRoot $WorkspaceRoot)
+                    $runnerPayload['dispatch'] = [ordered]@{
+                        defaultTarget = if ($null -ne $runnerProviderConfig -and $null -ne $runnerProviderConfig.dispatch) { [string]$runnerProviderConfig.dispatch.defaultTarget } else { $null }
+                        autoEnabled   = if ($null -ne $runnerProviderConfig -and $null -ne $runnerProviderConfig.dispatch) { [bool]$runnerProviderConfig.dispatch.autoEnabled } else { $null }
+                    }
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data    = $runnerPayload
@@ -8246,7 +8257,14 @@ try {
                                             packetId       = $approvePacketId
                                             status         = if ($approveDispatch) { 'dispatched' } else { 'approved' }
                                             dispatched     = [bool]$approveDispatch
-                                            dispatchTarget = 'operator-runner'
+                                            # H38-18 — the token the queue entry
+                                            # carries, not the channel it went
+                                            # through. 'operator-runner' named
+                                            # HOW the work travels; every other
+                                            # surface uses this field for WHICH
+                                            # provider runs it, and one field
+                                            # cannot mean both.
+                                            dispatchTarget = if ($null -ne $approveDispatchResult -and -not [string]::IsNullOrWhiteSpace([string]$approveDispatchResult.dispatchTarget)) { [string]$approveDispatchResult.dispatchTarget } else { $null }
                                             dispatchRunId  = if ($null -ne $approveDispatchResult) { [string]$approveDispatchResult.runId } else { $null }
                                             branch         = if ($null -ne $approveDispatchResult) { [string]$approveDispatchResult.branch } else { $null }
                                             note           = 'Queued for the operator runner (Invoke-RoadmapTaskRunner.ps1). Nothing was merged; the PR opens for review.'
@@ -11528,6 +11546,56 @@ try {
                         throw 'prompt is required for /api/roadmap/dispatch/execute'
                     }
 
+                    # ── H38-18 — one vocabulary at the host ─────────────────
+                    # This route used to write 'copilot' onto every queue line
+                    # whatever the caller asked for, so the queue could not
+                    # distinguish a Codex dispatch from a Copilot one and the
+                    # runner had no token to branch on. The caller names the
+                    # provider; an absent field takes the committed default.
+                    #
+                    # Resolved BEFORE the runner and quota gates because a
+                    # misspelled token is the cheapest possible refusal: it
+                    # costs no disk read and no planning work to detect.
+                    $dispatchTargetRequested = if ($body.ContainsKey('dispatchTarget') -and $body.dispatchTarget) { [string]$body.dispatchTarget } else { '' }
+                    $dispatchProviderConfig = Get-AgentProviderConfig -ConfigPath (Get-AgentProviderConfigPath -WorkspaceRoot $WorkspaceRoot)
+                    # Defaults that hold when the config is absent: 'claude' is
+                    # what a pre-3.0 entry means, and 'auto' stays off, because
+                    # a missing config must not silently enable routing.
+                    $dispatchDefaultTarget = 'claude'
+                    $dispatchAutoEnabled = $false
+                    if ($null -ne $dispatchProviderConfig -and $null -ne $dispatchProviderConfig.dispatch) {
+                        if (-not [string]::IsNullOrWhiteSpace([string]$dispatchProviderConfig.dispatch.defaultTarget)) {
+                            $dispatchDefaultTarget = [string]$dispatchProviderConfig.dispatch.defaultTarget
+                        }
+                        $dispatchAutoEnabled = [bool]$dispatchProviderConfig.dispatch.autoEnabled
+                    }
+                    if ([string]::IsNullOrWhiteSpace($dispatchTargetRequested)) { $dispatchTargetRequested = $dispatchDefaultTarget }
+
+                    $resolvedDispatchTarget = ''
+                    try {
+                        $resolvedDispatchTarget = Resolve-RoadmapDispatchTarget -DispatchTarget $dispatchTargetRequested
+                    }
+                    catch {
+                        Write-HostLog ("WARN roadmap.dispatch.execute correlationId={0} refused unknown dispatchTarget '{1}'" -f $correlationId, $dispatchTargetRequested)
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                            success  = $false
+                            error    = [string]$_.Exception.Message
+                            category = 'validation'
+                        }
+                        break
+                    }
+                    if ($resolvedDispatchTarget -eq 'auto' -and -not $dispatchAutoEnabled) {
+                        Write-HostLog ("WARN roadmap.dispatch.execute correlationId={0} refused 'auto' while dispatch.autoEnabled is false" -f $correlationId)
+                        Add-MetricCounter -Name 'api_requests_total'
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                            success  = $false
+                            error    = "dispatchTarget 'auto' is not enabled yet; the provider router lands in H38-17. Use claude, codex or copilot."
+                            category = 'validation'
+                        }
+                        break
+                    }
+
                     # Release 3.0 — a caller may not ask the host to run cloud
                     # dispatch in-process. Refused with a 409 that names the
                     # runner rather than accepted and failed at the last step,
@@ -11794,7 +11862,7 @@ try {
                         -TaskDescription $prompt `
                         -Branch $dispatchBranch `
                         -QueuedAt $startedAt `
-                        -DispatchTarget 'copilot' `
+                        -DispatchTarget $resolvedDispatchTarget `
                         -BaseBranch $baseBranch `
                         -WorkPacketPath $dispatchWorkPacketPath
                     $dispatchQueuePath = Get-RoadmapQueuePath -WorkspaceRoot $WorkspaceRoot
@@ -11807,7 +11875,7 @@ try {
                     ([ordered]@{
                         runId             = $runId
                         status            = 'queued'
-                        dispatchTarget    = 'copilot'
+                        dispatchTarget    = $resolvedDispatchTarget
                         startedAt         = $startedAt
                         repository        = $githubRepo
                         roadmapPath       = $effectiveRoadmapPath
@@ -11876,14 +11944,20 @@ try {
 
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
-                    Write-HostLog ("[TRACE] roadmap.dispatch.execute correlationId={0} done repoName={1} runId={2} agentRunId={3} target=copilot runnerState={4}" -f $correlationId, $repoName, $runId, $agentRunId, $runnerPresence.state)
+                    Write-HostLog ("[TRACE] roadmap.dispatch.execute correlationId={0} done repoName={1} runId={2} agentRunId={3} target={4} runnerState={5}" -f $correlationId, $repoName, $runId, $agentRunId, $resolvedDispatchTarget, $runnerPresence.state)
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data    = @{
                             runId          = $runId
                             agentRunId     = $agentRunId
                             status         = 'queued'
-                            dispatchTarget = 'copilot'
+                            dispatchTarget = $resolvedDispatchTarget
+                            # H38-18 — the field exists from this packet on so
+                            # the Dispatch Board has something to bind; H38-35
+                            # fills it from a host-side dry run of the router.
+                            # Present-and-null and absent are different answers,
+                            # and only one of them is a shape a caller can read.
+                            provisionalSelection = $null
                             githubRepo     = $githubRepo
                             branch         = $dispatchBranch
                             startedAt      = $startedAt

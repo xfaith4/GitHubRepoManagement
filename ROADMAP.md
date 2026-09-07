@@ -949,8 +949,8 @@ to the queue — never fails it — when a provider is exhausted.
       `frontend/types.ts`, and reconciles the third vocabulary
       (`operator-runner`) the approval route writes. Eligibility then ranking,
       selection reason recorded, presence counts derived from the registry
-      rather than naming providers. _(state: routing-on 2026-09-07 —
-      H38-14 Execution.ProviderRegistry.ps1 is the one token list (claude,
+      rather than naming providers. _(state: routing-on 2026-09-07 — H38-14
+      Execution.ProviderRegistry.ps1 is the one token list (claude,
       codex, copilot, auto); the queue module and the runner delegate to it,
       and the two ValidateSet attributes that cannot are gated against it so
       drift fails a smoke rather than rejecting a valid provider unnoticed;
@@ -985,7 +985,11 @@ to the queue — never fails it — when a provider is exhausted.
       and writes selectedProvider and selectionReason onto the run summary;
       with no eligible provider the entry stays queued rather than failing.
       dispatch.autoEnabled and defaultTarget are now true/auto (D-013), and
-      the config tripwire inverted to guard that rather than disappearing.)_
+      the config tripwire inverted to guard that rather than disappearing;
+      H38-18 dispatch/execute takes a target (default from config, auto
+      refused when the config disables it), approval reports the real token,
+      backlog is counted per registry token — queuedClaude/queuedCopilot
+      unchanged.)_
 - [ ] **Move push and PR opening to Repo Manager; bind approval to the verified
       SHA.** The agent exits at `IMPLEMENTATION_COMPLETE`; Repo Manager pushes,
       opens the pull request and monitors CI on a cadence without holding an
