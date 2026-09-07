@@ -147,9 +147,13 @@ function Get-ClaudeTokenTotal {
 
     if ($null -eq $Usage) { return $null }
 
+    # ForEach-Object rather than `.Properties.Name`: under
+    # Set-StrictMode -Version Latest, member-access enumeration over an EMPTY
+    # property collection throws. A provider that reports `"usage": {}` is
+    # exactly the shape this function must answer $null for, not crash on.
     $names = @()
     if ($Usage -is [System.Collections.IDictionary]) { $names = @($Usage.Keys) }
-    elseif ($null -ne $Usage.PSObject) { $names = @($Usage.PSObject.Properties.Name) }
+    elseif ($null -ne $Usage.PSObject) { $names = @($Usage.PSObject.Properties | ForEach-Object { $_.Name }) }
     if ($names.Count -eq 0) { return $null }
 
     $total = 0
