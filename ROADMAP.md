@@ -985,7 +985,11 @@ to the queue — never fails it — when a provider is exhausted.
       and writes selectedProvider and selectionReason onto the run summary;
       with no eligible provider the entry stays queued rather than failing.
       dispatch.autoEnabled and defaultTarget are now true/auto (D-013), and
-      the config tripwire inverted to guard that rather than disappearing.)_
+      the config tripwire inverted to guard that rather than disappearing;
+      H38-18 dispatch/execute takes a target (default from config, auto
+      refused when the config disables it), approval reports the real token,
+      backlog is counted per registry token — queuedClaude/queuedCopilot
+      unchanged.)_
 - [ ] **Move push and PR opening to Repo Manager; bind approval to the verified
       SHA.** The agent exits at `IMPLEMENTATION_COMPLETE`; Repo Manager pushes,
       opens the pull request and monitors CI on a cadence without holding an
