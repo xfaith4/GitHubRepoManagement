@@ -34,6 +34,7 @@ $foundationDomainsConfig = Join-Path $WorkspaceRoot 'backend\config\foundation-d
 $workPacketModule = Join-Path $WorkspaceRoot 'backend\modules\execution\Execution.WorkPacket.ps1'
 $providerRegistryModule = Join-Path $WorkspaceRoot 'backend\modules\execution\Execution.ProviderRegistry.ps1'
 $agentProvidersConfig = Join-Path $WorkspaceRoot 'backend\config\agent-providers.json'
+$providerCapacityModule = Join-Path $WorkspaceRoot 'backend\modules\execution\Execution.ProviderCapacity.ps1'
 
 Write-Step 'Portfolio timestamp truth: index projection and raw JSON gate'
 & (Join-Path $WorkspaceRoot 'tools/Test-PortfolioTimestamp.ps1') -WorkspaceRoot $WorkspaceRoot
@@ -46,7 +47,7 @@ Write-Step 'Loading reconciliation module functions only'
 Write-Host 'Loaded reconciliation module successfully' -ForegroundColor Green
 
 Write-Step 'Validating copied module files exist'
-@($docInventory, $docQueue, $docBatch, $reconcile, $reconcileModular, $reconcileTests, $roadmapParser, $roadmapExecutionContract, $roadmapAuditor, $roadmapEvaluatorPath, $roadmapRepairerPath, $roadmapPrSubmitterPath, $docAuditScanner, $docStandards, $agentBudgetModule, $portfolioConclusionModule, $foundationDomainsConfig, $workPacketModule, $providerRegistryModule, $agentProvidersConfig) | ForEach-Object {
+@($docInventory, $docQueue, $docBatch, $reconcile, $reconcileModular, $reconcileTests, $roadmapParser, $roadmapExecutionContract, $roadmapAuditor, $roadmapEvaluatorPath, $roadmapRepairerPath, $roadmapPrSubmitterPath, $docAuditScanner, $docStandards, $agentBudgetModule, $portfolioConclusionModule, $foundationDomainsConfig, $workPacketModule, $providerRegistryModule, $agentProvidersConfig, $providerCapacityModule) | ForEach-Object {
     if (-not (Test-Path -LiteralPath $_)) {
         throw "Missing module file: $_"
     }
@@ -2616,6 +2617,131 @@ if (-not (Test-AgentProviderConfig -Config $pcAutoOn).valid) { throw 'defaultTar
 
 Remove-Item -LiteralPath $pcTmp -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host '  provider config: schema v1 loads, 11 policy rules refuse by name, routing off until the router lands' -ForegroundColor DarkGray
+
+Write-Step 'Provider capacity — smoke: native units, confidence rank, persistence'
+
+if (-not (Test-Path -LiteralPath $providerCapacityModule)) { throw "Execution.ProviderCapacity.ps1 not found at: $providerCapacityModule" }
+. $providerCapacityModule
+
+# The unit list is deliberately duplicated between the two modules so neither
+# depends on the other's load order. That is only safe while a gate catches
+# drift, so this is that gate.
+if (($script:ProviderCapacityUnit -join ',') -ne ($script:AgentProviderWindowUnit -join ',')) {
+    throw ("Capacity and config unit lists have drifted: '{0}' vs '{1}'" -f ($script:ProviderCapacityUnit -join ','), ($script:AgentProviderWindowUnit -join ','))
+}
+
+# The spec's own example, verbatim, so the contract is checked against the
+# document rather than against my reading of it.
+$capSpecWindows = @(
+    @{ name = 'short-term'; unit = 'provider-allowance'; remainingRatio = 0.61; resetAt = '2026-09-06T23:10:00Z'; source = 'provider-status' },
+    @{ name = 'weekly'; unit = 'provider-allowance'; remainingRatio = 0.43; resetAt = '2026-09-10T14:00:00Z'; source = 'provider-status' }
+)
+$capSpec = New-ProviderCapacityRecord -Provider 'codex' -Windows $capSpecWindows -Available $true -ObservedAt '2026-09-06T19:00:00Z'
+$capSpecCheck = Test-ProviderCapacityRecord -Record $capSpec
+if (-not $capSpecCheck.valid) { throw ("The spec's own example record must be valid, got: " + ($capSpecCheck.errors -join '; ')) }
+if ($capSpec.provider -ne 'codex') { throw 'provider must round-trip' }
+if ($capSpec.activeExecutions -ne 0) { throw 'activeExecutions is always 0 at write time; H38-11 derives it from live runner evidence' }
+if ($null -ne $capSpec.cooldownUntil) { throw 'cooldownUntil must be null when no cooldown was supplied, matching the spec example' }
+if (@($capSpec.windows).Count -ne 2) { throw "windows must hold both windows, got $(@($capSpec.windows).Count)" }
+foreach ($capW in @($capSpec.windows)) {
+    if ($capW.confidence -ne 'high') { throw "provider-status is rank 1, so confidence must be high, got '$($capW.confidence)'" }
+    if ($capW.unit -ne 'provider-allowance') { throw 'the provider native unit must be preserved, never converted' }
+}
+
+# The whole point of the contract: not knowing is an answer, and it must be
+# cheaper to tell the truth than to guess.
+$capUnknown = New-ProviderCapacityRecord -Provider 'copilot' -Windows @(
+    @{ name = 'billing'; unit = 'unknown'; remainingRatio = $null; source = 'historical-estimate' }
+)
+$capUnknownCheck = Test-ProviderCapacityRecord -Record $capUnknown
+if (-not $capUnknownCheck.valid) { throw ("A window with no measured ratio must be VALID, got: " + ($capUnknownCheck.errors -join '; ')) }
+if ($capUnknown.windows[0].confidence -ne 'none') { throw "no ratio means confidence none, got '$($capUnknown.windows[0].confidence)'" }
+$capUnknownJson = $capUnknown | ConvertTo-Json -Depth 8
+if ($capUnknownJson -notmatch '"remainingRatio"\s*:\s*null') { throw 'an unmeasured ratio must serialize as JSON null, never as 0 or as an absent key' }
+
+# 0.0 is a measurement (the window is spent), not a missing value. Conflating
+# the two would let an exhausted provider read as merely unknown.
+$capZero = New-ProviderCapacityRecord -Provider 'claude' -Windows @(
+    @{ name = 'short-term'; unit = 'provider-allowance'; remainingRatio = 0.0; source = 'provider-cli' }
+)
+if ($capZero.windows[0].confidence -ne 'high') { throw 'a measured 0.0 is still a measurement: provider-cli is rank 2, so confidence is high' }
+if ($null -eq $capZero.windows[0].remainingRatio) { throw 'a ratio of 0.0 must survive as 0.0, not collapse to null' }
+
+# The source ladder, end to end, in the spec's order.
+$capRankExpected = @('provider-status', 'provider-cli', 'provider-warning', 'accumulated-usage', 'rate-limit-response', 'historical-estimate')
+for ($capI = 0; $capI -lt $capRankExpected.Count; $capI++) {
+    $capRank = Get-CapacitySourceRank -Source $capRankExpected[$capI]
+    if ($capRank -ne ($capI + 1)) { throw "Source '$($capRankExpected[$capI])' must rank $($capI + 1), got $capRank" }
+}
+$capRankThrew = $false
+try { $null = Get-CapacitySourceRank -Source 'vibes' } catch { $capRankThrew = $true; $capRankMessage = $_.Exception.Message }
+if (-not $capRankThrew) { throw 'An unknown capacity source must throw, not silently rank worst — a typo would quietly lose every merge' }
+if (-not $capRankMessage.Contains("Unknown capacity source 'vibes'")) { throw "The throw must name the offending source, got: $capRankMessage" }
+$capConfidenceExpected = @{ 'provider-status' = 'high'; 'provider-cli' = 'high'; 'provider-warning' = 'medium'; 'accumulated-usage' = 'medium'; 'rate-limit-response' = 'low'; 'historical-estimate' = 'low' }
+foreach ($capSource in $capConfidenceExpected.Keys) {
+    $capGot = Get-CapacityWindowConfidence -Source $capSource -RemainingRatio 0.5
+    if ($capGot -ne $capConfidenceExpected[$capSource]) { throw "Confidence for '$capSource' must be $($capConfidenceExpected[$capSource]), got '$capGot'" }
+}
+
+# Validation refuses by name, each error naming the exact index at fault.
+$capBad = Test-ProviderCapacityRecord -Record ([ordered]@{ provider = ''; windows = @() })
+if ($capBad.errors -notcontains 'provider is required') { throw "Expected 'provider is required', got: $($capBad.errors -join '; ')" }
+if ($capBad.errors -notcontains 'windows must be a non-empty array') { throw "Expected 'windows must be a non-empty array', got: $($capBad.errors -join '; ')" }
+$capBadWindow = Test-ProviderCapacityRecord -Record ([ordered]@{
+        provider = 'claude'
+        windows  = @([ordered]@{ name = 'x'; unit = 'gallons'; remainingRatio = 1.7; source = 'astrology' })
+    })
+if ($capBadWindow.errors -notcontains ('windows[0].unit must be one of: ' + ($script:ProviderCapacityUnit -join ', '))) { throw "Unit error missing or reworded, got: $($capBadWindow.errors -join '; ')" }
+if ($capBadWindow.errors -notcontains 'windows[0].remainingRatio must be null or between 0 and 1') { throw "Ratio error missing or reworded, got: $($capBadWindow.errors -join '; ')" }
+if ($capBadWindow.errors -notcontains ('windows[0].source must be one of: ' + ($script:CapacitySourceRank -join ', '))) { throw "Source error missing or reworded, got: $($capBadWindow.errors -join '; ')" }
+
+# Merge protects the better observation regardless of arrival order. Without
+# this the record would get LESS trustworthy the more often it was updated.
+$capMergeBase = New-ProviderCapacityRecord -Provider 'claude' -Windows @(
+    @{ name = 'short-term'; unit = 'provider-allowance'; remainingRatio = 0.61; source = 'provider-status' }
+)
+$capDowngrade = Merge-ProviderCapacityWindow -Record $capMergeBase -Window @{ name = 'short-term'; unit = 'provider-allowance'; remainingRatio = 0.10; source = 'historical-estimate' }
+if ($capDowngrade.merged) { throw "A historical estimate must not overwrite the provider's own status" }
+if ($capDowngrade.reason -ne 'lower-confidence source') { throw "The refusal must name its reason, got '$($capDowngrade.reason)'" }
+if ($capDowngrade.record.windows[0].remainingRatio -ne 0.61) { throw 'A refused merge must leave the stored window exactly as it was' }
+
+$capUpgradeBase = New-ProviderCapacityRecord -Provider 'claude' -Windows @(
+    @{ name = 'short-term'; unit = 'provider-allowance'; remainingRatio = 0.10; source = 'historical-estimate' }
+)
+$capUpgrade = Merge-ProviderCapacityWindow -Record $capUpgradeBase -Window @{ name = 'short-term'; unit = 'provider-allowance'; remainingRatio = 0.61; source = 'provider-status' }
+if (-not $capUpgrade.merged) { throw 'A better source must replace a worse one' }
+if ($capUpgrade.record.windows[0].confidence -ne 'high') { throw 'The merged window carries the better confidence' }
+
+# Equal rank merges: a fresh reading from the same source is newer, not worse.
+$capEqual = Merge-ProviderCapacityWindow -Record $capMergeBase -Window @{ name = 'short-term'; unit = 'provider-allowance'; remainingRatio = 0.22; source = 'provider-status' }
+if (-not $capEqual.merged) { throw 'An equally-confident observation must merge; refusing it would freeze the record at its first reading' }
+
+# An unseen window is an addition, not a contest.
+$capAdd = Merge-ProviderCapacityWindow -Record $capMergeBase -Window @{ name = 'weekly'; unit = 'provider-allowance'; remainingRatio = 0.43; source = 'historical-estimate' }
+if (-not $capAdd.merged) { throw 'A window the record has never seen must be added; there is nothing better to protect' }
+if (@($capAdd.record.windows).Count -ne 2) { throw 'Adding a new window must not drop the existing one' }
+
+# Round-trip through a temp workspace, never the operator's output directory.
+$capWs = Join-Path $WorkspaceRoot 'output\smoke\module\provider-capacity'
+if (Test-Path -LiteralPath $capWs) { Remove-Item -LiteralPath $capWs -Recurse -Force }
+$null = New-Item -ItemType Directory -Path $capWs -Force
+if ($null -ne (Read-ProviderCapacityRecord -WorkspaceRoot $capWs -Provider 'codex')) { throw 'An absent capacity record must read as $null: no record is the ordinary state on a fresh install' }
+$capSaved = Save-ProviderCapacityRecord -WorkspaceRoot $capWs -Record $capSpec
+if ($capSaved -ne (Get-ProviderCapacityRecordPath -WorkspaceRoot $capWs -Provider 'codex')) { throw 'Save must write to the path the resolver names' }
+$capRawJson = Get-Content -LiteralPath $capSaved -Raw -Encoding UTF8
+if ($capRawJson -notmatch '"windows"\s*:\s*\[') { throw 'windows must serialize as a JSON array, never as a bare object' }
+$capRead = Read-ProviderCapacityRecord -WorkspaceRoot $capWs -Provider 'codex'
+if (@($capRead.windows).Count -ne 2) { throw "Round-trip must preserve both windows, got $(@($capRead.windows).Count)" }
+if ([double]$capRead.windows[0].remainingRatio -ne 0.61) { throw 'Round-trip must preserve the ratio exactly' }
+if (-not (Test-ProviderCapacityRecord -Record $capRead).valid) { throw 'A record read back from disk must still validate' }
+'{ not json' | Set-Content -LiteralPath (Get-ProviderCapacityRecordPath -WorkspaceRoot $capWs -Provider 'claude') -Encoding UTF8
+if ($null -ne (Read-ProviderCapacityRecord -WorkspaceRoot $capWs -Provider 'claude')) { throw 'An unparseable record must read as $null, the same as absent: one case for the caller' }
+$capSaveThrew = $false
+try { $null = Save-ProviderCapacityRecord -WorkspaceRoot $capWs -Record ([ordered]@{ provider = 'claude'; windows = @() }) } catch { $capSaveThrew = $true }
+if (-not $capSaveThrew) { throw 'Save must validate before writing; an invalid record on disk is worse than no record' }
+
+Remove-Item -LiteralPath $capWs -Recurse -Force -ErrorAction SilentlyContinue
+Write-Host '  provider capacity: spec example valid, unmeasured stays null (0.0 does not), 6-source ladder ranked, merge refuses a worse source, round-trip holds' -ForegroundColor DarkGray
 
 Write-Step 'WorkPacket prompt rendering — smoke: acceptance criteria travel verbatim'
 
