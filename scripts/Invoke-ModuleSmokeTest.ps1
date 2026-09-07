@@ -31,6 +31,7 @@ $docStandards = Join-Path $WorkspaceRoot 'backend\config\doc-standards.json'
 $agentBudgetModule = Join-Path $WorkspaceRoot 'backend\modules\agent-runs\BudgetLedger.ps1'
 $portfolioConclusionModule = Join-Path $WorkspaceRoot 'backend\modules\portfolio\Portfolio.Conclusion.ps1'
 $foundationDomainsConfig = Join-Path $WorkspaceRoot 'backend\config\foundation-domains.json'
+$workPacketModule = Join-Path $WorkspaceRoot 'backend\modules\execution\Execution.WorkPacket.ps1'
 
 Write-Step 'Portfolio timestamp truth: index projection and raw JSON gate'
 & (Join-Path $WorkspaceRoot 'tools/Test-PortfolioTimestamp.ps1') -WorkspaceRoot $WorkspaceRoot
@@ -43,7 +44,7 @@ Write-Step 'Loading reconciliation module functions only'
 Write-Host 'Loaded reconciliation module successfully' -ForegroundColor Green
 
 Write-Step 'Validating copied module files exist'
-@($docInventory, $docQueue, $docBatch, $reconcile, $reconcileModular, $reconcileTests, $roadmapParser, $roadmapExecutionContract, $roadmapAuditor, $roadmapEvaluatorPath, $roadmapRepairerPath, $roadmapPrSubmitterPath, $docAuditScanner, $docStandards, $agentBudgetModule, $portfolioConclusionModule, $foundationDomainsConfig) | ForEach-Object {
+@($docInventory, $docQueue, $docBatch, $reconcile, $reconcileModular, $reconcileTests, $roadmapParser, $roadmapExecutionContract, $roadmapAuditor, $roadmapEvaluatorPath, $roadmapRepairerPath, $roadmapPrSubmitterPath, $docAuditScanner, $docStandards, $agentBudgetModule, $portfolioConclusionModule, $foundationDomainsConfig, $workPacketModule) | ForEach-Object {
     if (-not (Test-Path -LiteralPath $_)) {
         throw "Missing module file: $_"
     }
@@ -2222,6 +2223,134 @@ if ($reboundEntry.observation.verdict -ne 'unlinked') {
 # of the cross-test pollution this suite exists to catch.
 $null = Invoke-CompleteTask -WorkspaceRoot $smokeWs -RepoName 'smoke-repo-ready' -Outcome 'success' -HasRemainingWork $true
 Write-Host '  release: dispatchRunId cleared on complete; a hand-assigned lane reads unlinked, not the old PR; lane left free' -ForegroundColor DarkGray
+
+# ---------------------------------------------------------------------------
+# Release 3.8 M1 (H38-01) — the provider-neutral task contract.
+#
+# The packet is what every adapter will render into its own prompt, so its
+# shape is a contract rather than a convenience. Two of the assertions below
+# read the RAW JSON rather than the parsed object on purpose: an empty array
+# that serializes as `null`, or an absent session id that serializes as `""`,
+# is a wire defect ConvertFrom-Json quietly repairs on the way back in, which
+# is exactly how it would reach a provider unnoticed.
+# ---------------------------------------------------------------------------
+Write-Step 'Loading WorkPacket contract module (Release 3.8 M1)'
+if (-not (Test-Path -LiteralPath $workPacketModule)) { throw "Execution.WorkPacket.ps1 not found at: $workPacketModule" }
+. $workPacketModule
+Write-Host 'WorkPacket contract module loaded successfully' -ForegroundColor Green
+
+Write-Step 'WorkPacket contract — smoke: schema v1, offline'
+
+$wpPermissions = @{ filesystemWrite = $true; shell = $true; network = $false; githubWrite = $false }
+$wpPacket = New-WorkPacket `
+    -TaskId 'smoke-wp-1' `
+    -Repository 'xfaith4/GitHubRepoManagement' `
+    -BaseBranch 'main' `
+    -BaseSha '' `
+    -Objective 'Give a task a provider-neutral contract.' `
+    -AcceptanceCriteria @('Test-WorkPacket reports valid') `
+    -VerificationCommands @('pwsh ./scripts/Invoke-ModuleSmokeTest.ps1') `
+    -Permissions $wpPermissions
+
+$wpValid = Test-WorkPacket -Packet $wpPacket
+if (-not $wpValid.valid) { throw ("Expected the example packet to be valid, got errors: " + ($wpValid.errors -join '; ')) }
+if ($wpPacket.schemaVersion -ne 1) { throw "Expected schemaVersion=1, got '$($wpPacket.schemaVersion)'" }
+if ($wpPacket.execution.preferredProvider -ne 'auto') { throw "Expected preferredProvider to default to 'auto', got '$($wpPacket.execution.preferredProvider)'" }
+if ($null -ne $wpPacket.execution.previousSessionId) { throw 'Expected an absent previousSessionId to be $null, not an empty string' }
+
+# The packet names no provider anywhere except the caller's own preference.
+# This is the milestone's whole point, so it is asserted rather than assumed.
+$wpProviderNames = @('claude', 'codex', 'copilot')
+foreach ($wpKey in @('taskId', 'repository', 'baseBranch', 'objective')) {
+    foreach ($wpProviderName in $wpProviderNames) {
+        if ([string]$wpPacket.$wpKey -match $wpProviderName) {
+            throw "The packet's '$wpKey' names provider '$wpProviderName'; the contract must stay provider-neutral"
+        }
+    }
+}
+
+# Round-trip through disk, in the smoke's own isolated workspace.
+$wpWorkspace = Join-Path $WorkspaceRoot 'output\smoke\module\workpacket'
+if (Test-Path -LiteralPath $wpWorkspace) { Remove-Item -LiteralPath $wpWorkspace -Recurse -Force }
+$null = New-Item -ItemType Directory -Path $wpWorkspace -Force
+
+$wpSavedPath = Save-WorkPacket -WorkspaceRoot $wpWorkspace -Packet $wpPacket
+if (-not (Test-Path -LiteralPath $wpSavedPath -PathType Leaf)) { throw "Save-WorkPacket reported '$wpSavedPath' but no file is there" }
+if ($wpSavedPath -notmatch 'work-packets') { throw "Expected the packet to live under output\work-packets\, got: $wpSavedPath" }
+
+$wpRawJson = Get-Content -LiteralPath $wpSavedPath -Raw -Encoding UTF8
+if ($wpRawJson -notmatch '"forbiddenPaths"\s*:\s*\[\s*\]') {
+    throw 'Expected scope.forbiddenPaths to serialize as [] on the wire; an empty array that becomes null is the array-collapse defect this repo already carries a gate for'
+}
+if ($wpRawJson -notmatch '"previousSessionId"\s*:\s*null') {
+    throw 'Expected execution.previousSessionId to serialize as JSON null on the wire, not "" or absent'
+}
+if ($wpRawJson -notmatch '"allowedPaths"\s*:\s*\[') {
+    throw 'Expected scope.allowedPaths to serialize as a JSON array even with one element'
+}
+
+$wpRead = Read-WorkPacket -WorkspaceRoot $wpWorkspace -TaskId 'smoke-wp-1'
+if ($null -eq $wpRead) { throw 'Read-WorkPacket returned $null for a packet just written' }
+if ($wpRead.taskId -ne 'smoke-wp-1') { throw "Round-trip lost taskId, got '$($wpRead.taskId)'" }
+if ($wpRead.objective -ne $wpPacket.objective) { throw 'Round-trip lost the objective' }
+# The validator has to accept what came back from JSON, not only what it built.
+$wpReadValid = Test-WorkPacket -Packet $wpRead
+if (-not $wpReadValid.valid) { throw ("A round-tripped packet failed validation: " + ($wpReadValid.errors -join '; ')) }
+
+if ($null -ne (Read-WorkPacket -WorkspaceRoot $wpWorkspace -TaskId 'no-such-task')) {
+    throw 'Expected Read-WorkPacket to answer $null for a task with no packet'
+}
+
+# Each rule broken once, asserting the exact operator-facing string.
+$wpBadTaskId = New-WorkPacket -TaskId 'x' -Repository '' -BaseBranch 'main' -BaseSha '' -Objective 'o' -Permissions $wpPermissions
+$wpBadTaskId.taskId = ''
+$wpBadTaskIdResult = Test-WorkPacket -Packet $wpBadTaskId
+if ($wpBadTaskIdResult.valid) { throw 'Expected an empty taskId to be invalid' }
+if ($wpBadTaskIdResult.errors -notcontains 'taskId is required') { throw ("Expected 'taskId is required', got: " + ($wpBadTaskIdResult.errors -join '; ')) }
+
+$wpBadPermission = New-WorkPacket -TaskId 'x' -Repository '' -BaseBranch 'main' -BaseSha '' -Objective 'o' -Permissions $wpPermissions
+$wpBadPermission.permissions.network = 'no'
+$wpBadPermissionResult = Test-WorkPacket -Packet $wpBadPermission
+if ($wpBadPermissionResult.errors -notcontains 'permissions.network must be a boolean') { throw ("Expected 'permissions.network must be a boolean', got: " + ($wpBadPermissionResult.errors -join '; ')) }
+
+# A missing key must read as an error, never as a deliberate $false — which is
+# why New-WorkPacket stores what it was handed instead of casting it.
+$wpMissingPermission = New-WorkPacket -TaskId 'x' -Repository '' -BaseBranch 'main' -BaseSha '' -Objective 'o' -Permissions @{ filesystemWrite = $true; shell = $true }
+$wpMissingResult = Test-WorkPacket -Packet $wpMissingPermission
+if ($wpMissingResult.errors -notcontains 'permissions.network must be a boolean') { throw 'Expected an omitted permission key to be an error, not a silent $false' }
+if ($wpMissingResult.errors -notcontains 'permissions.githubWrite must be a boolean') { throw 'Expected every omitted permission key to be reported, not just the first' }
+
+$wpBadAttempt = New-WorkPacket -TaskId 'x' -Repository '' -BaseBranch 'main' -BaseSha '' -Objective 'o' -Permissions $wpPermissions
+$wpBadAttempt.execution.attempt = 0
+$wpBadAttemptResult = Test-WorkPacket -Packet $wpBadAttempt
+if ($wpBadAttemptResult.errors -notcontains 'execution.attempt must be an integer >= 1') { throw ("Expected 'execution.attempt must be an integer >= 1', got: " + ($wpBadAttemptResult.errors -join '; ')) }
+
+$wpBadSchema = New-WorkPacket -TaskId 'x' -Repository '' -BaseBranch 'main' -BaseSha '' -Objective 'o' -Permissions $wpPermissions
+$wpBadSchema.schemaVersion = 2
+if ((Test-WorkPacket -Packet $wpBadSchema).errors -notcontains 'schemaVersion must be 1') { throw "Expected 'schemaVersion must be 1' for a version-2 packet" }
+
+$wpBadScope = New-WorkPacket -TaskId 'x' -Repository '' -BaseBranch 'main' -BaseSha '' -Objective 'o' -Permissions $wpPermissions
+$wpBadScope.scope.allowedPaths = @()
+if ((Test-WorkPacket -Packet $wpBadScope).errors -notcontains 'scope.allowedPaths must be a non-empty array') { throw "Expected 'scope.allowedPaths must be a non-empty array' for an empty scope" }
+
+$wpBadProvider = New-WorkPacket -TaskId 'x' -Repository '' -BaseBranch 'main' -BaseSha '' -Objective 'o' -Permissions $wpPermissions
+$wpBadProvider.execution.preferredProvider = ''
+if ((Test-WorkPacket -Packet $wpBadProvider).errors -notcontains 'execution.preferredProvider is required') { throw "Expected 'execution.preferredProvider is required' for a blank provider" }
+
+# An invalid packet must never reach disk: a queue entry pointing at an
+# unreadable packet is the prose-only dispatch this milestone removes.
+$wpSaveRefused = $false
+try { $null = Save-WorkPacket -WorkspaceRoot $wpWorkspace -Packet $wpBadTaskId }
+catch { $wpSaveRefused = $true; if ($_.Exception.Message -notmatch 'WorkPacket is invalid') { throw "Save-WorkPacket threw, but not with the contract's message: $($_.Exception.Message)" } }
+if (-not $wpSaveRefused) { throw 'Expected Save-WorkPacket to refuse an invalid packet' }
+
+# The module is a param-less library. The host-wide gate checks this too, but
+# a failure there names a dot-source list; here it names this file.
+$wpModuleText = Get-Content -LiteralPath $workPacketModule -Raw -Encoding UTF8
+if ($wpModuleText -match '(?m)^param\s*\(') { throw 'Execution.WorkPacket.ps1 declares a file-scope param() block; the host may only dot-source param-less libraries' }
+
+Remove-Item -LiteralPath $wpWorkspace -Recurse -Force -ErrorAction SilentlyContinue
+Write-Host '  workpacket: schema v1 validates, round-trips, and refuses to persist an invalid packet; [] and null hold on the wire' -ForegroundColor DarkGray
 
 Write-Step 'Running modular reconciliation smoke test (narrow scope)'
 & $reconcileModular `
