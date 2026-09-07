@@ -1,4 +1,4 @@
-import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type BackgroundScanStatus, type PortfolioSnapshot, type RepoStatus, type RepoScopeClassification, type RepoScopeSummary, type RepoStaleness, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type RepositoryImprovementPreview, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioTechInventoryResult, type TechInventoryEntry, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioAssessmentScanSummary, type PortfolioChangeState, type PortfolioScanDecisionReason, type PortfolioScanStatus, type RepoCurationState, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocUsage, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult, type GitHubAuthStatus, type ProviderToken } from '../types';
+import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type BackgroundScanStatus, type PortfolioSnapshot, type RepoStatus, type RepoScopeClassification, type RepoScopeSummary, type RepoStaleness, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type RepositoryImprovementPreview, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioTechInventoryResult, type TechInventoryEntry, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioAssessmentScanSummary, type PortfolioChangeState, type PortfolioScanDecisionReason, type PortfolioScanStatus, type RepoCurationState, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocUsage, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult, type GitHubAuthStatus, type ProviderToken, type ProviderAvailability } from '../types';
 import { type AutomationHealthPayload } from '../lib/automationStatus';
 import { type PackagedItem } from '../lib/packagedItems';
 import { type RunnerPresencePayload } from '../lib/runnerPresence';
@@ -1799,6 +1799,53 @@ export async function getPortalVersion(): Promise<PortalVersionPayload | null> {
   } catch {
     return null;
   }
+}
+
+// ── H38-19b — provider availability, and the per-machine opt-out ───────────
+
+/** The wire shape of GET /api/providers, narrowed to what this client reads. */
+interface ProvidersEnvelope {
+  data?: {
+    providers?: Array<{ provider: ProviderToken; availability?: Omit<ProviderAvailability, 'provider'> }>;
+  };
+}
+
+/** The wire shape of POST /api/providers/:provider/opt-out. */
+interface ProviderOptOutEnvelope {
+  data?: {
+    provider?: ProviderToken;
+    availability?: Omit<ProviderAvailability, 'provider'>;
+    statePath?: string;
+    /** True when a malformed state file was replaced rather than merged. */
+    stateReplaced?: boolean;
+  };
+}
+
+/**
+ * Every provider's availability on this machine.
+ *
+ * Unlike getRunnerPresence this does NOT swallow errors into a null: Settings
+ * has to be able to say why the list is missing. A section that silently
+ * renders nothing looks identical to "you have no providers", which is the
+ * false-green this surface exists to avoid.
+ */
+export async function getProviderAvailability(): Promise<ProviderAvailability[]> {
+  const data = await fetchJson<ProvidersEnvelope>(`${API_BASE_URL}/providers`);
+  const rows = data?.data?.providers ?? [];
+  return rows.map(r => ({ provider: r.provider, ...(r.availability ?? {}) }) as ProviderAvailability);
+}
+
+/**
+ * Switch one provider off (or back on) for this installation only.
+ *
+ * The host writes installation.local.json, which is gitignored and gated
+ * against ever becoming tracked (A22). It must never reach settings.json,
+ * which IS tracked — committing "this operator has no Codex" would assert one
+ * machine's state on behalf of every installation.
+ */
+export async function setProviderOptOut(provider: ProviderToken, optOut: boolean): Promise<ProviderAvailability> {
+  const data = await postJson<ProviderOptOutEnvelope>(`/providers/${encodeURIComponent(provider)}/opt-out`, { optOut });
+  return { provider, ...(data?.data?.availability ?? {}) } as ProviderAvailability;
 }
 
 export async function getRunnerPresence(): Promise<RunnerPresencePayload | null> {

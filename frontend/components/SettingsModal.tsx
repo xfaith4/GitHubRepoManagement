@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { type AppSettings, type GitHubAuthStatus } from '../types';
-import { saveSettings, getGitHubAuthStatus } from '../services/apiClient';
+import { type AppSettings, type GitHubAuthStatus, type ProviderAvailability, type ProviderToken } from '../types';
+import { saveSettings, getGitHubAuthStatus, getProviderAvailability, setProviderOptOut } from '../services/apiClient';
 import { useDialogDismiss } from '../hooks/useDialogDismiss';
 
 interface SettingsModalProps {
@@ -30,6 +30,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onSave, 
   // The save used to fail silently (console.error only), which meant a rejected
   // workspace path looked like a successful save. Surface it in the dialog.
   const [saveError, setSaveError] = useState<string | null>(null);
+  // H38-19b — provider availability is per-machine state read from the host,
+  // deliberately NOT folded into `settings`: saveSettings persists AppSettings
+  // to the tracked settings.json, and an opt-out that round-tripped through it
+  // would commit one operator's machine state to every installation (A22).
+  const [providers, setProviders] = useState<ProviderAvailability[] | null>(null);
+  const [providerError, setProviderError] = useState<string | null>(null);
+  const [providerBusy, setProviderBusy] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [connectNotice, setConnectNotice] = useState<string | null>(null);
@@ -61,6 +68,50 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onSave, 
       setAuthStatus(null);
     } finally {
       setIsChecking(false);
+    }
+  }, []);
+
+  // H38-19b — read availability when the dialog opens. Errors surface rather
+  // than leaving an empty section: "no providers listed" and "the list could
+  // not be read" look identical on screen and mean opposite things.
+  // State is set from the promise callbacks rather than an async body, which is
+  // the shape the react-hooks set-state-in-effect rule accepts — and it carries
+  // the cancellation guard an await-then-setState version silently lacks: the
+  // dialog can close while the request is still in flight.
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    getProviderAvailability()
+      .then(rows => {
+        if (cancelled) return;
+        setProviders(rows);
+        setProviderError(null);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setProviders(null);
+        setProviderError(error instanceof Error ? error.message : 'Could not read provider availability.');
+      });
+    return () => { cancelled = true; };
+  }, [isOpen]);
+
+  /**
+   * Switch one provider off or on.
+   *
+   * The row is replaced only with what the host reports back. An optimistic
+   * flip would tell the operator a provider is off while the runner still
+   * selects it — the write is the only thing that makes it true.
+   */
+  const toggleProviderOptOut = useCallback(async (provider: ProviderToken, optOut: boolean) => {
+    setProviderBusy(provider);
+    setProviderError(null);
+    try {
+      const updated = await setProviderOptOut(provider, optOut);
+      setProviders(prev => (prev ?? []).map(p => (p.provider === provider ? { ...p, ...updated } : p)));
+    } catch (error) {
+      setProviderError(error instanceof Error ? error.message : 'Could not change the provider setting.');
+    } finally {
+      setProviderBusy(null);
     }
   }, []);
 
@@ -294,6 +345,64 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onSave, 
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* ── Agent providers (H38-19b) ───────────────────────────────── */}
+              <div className="md:col-span-2 pt-2 border-t border-gray-700">
+                <h3 className="text-sm font-semibold text-gray-200">Agent providers</h3>
+                {/* The point of the whole section: this is machine state, and
+                    it never leaves the machine. Do not drop it for space. */}
+                <p className="text-sm text-gray-400 mt-1">
+                  Detected on this machine. Nothing here is shared with other installations or committed to the repository.
+                </p>
+              </div>
+
+              <div className="md:col-span-2 space-y-2">
+                {providerError && (
+                  <p className="text-sm text-red-300" data-testid="provider-error">{providerError}</p>
+                )}
+                {providers?.map(p => {
+                  // Same precedence the host uses, so the word on screen and
+                  // the reason the router gives can never disagree: no adapter
+                  // beats not installed, which beats switched off.
+                  const state = !p.supported
+                    ? 'Not in this build'
+                    : !p.installed
+                      ? 'Not installed'
+                      : p.optedOut
+                        ? 'Switched off'
+                        : 'Available';
+                  const sentence =
+                    state === 'Available' ? 'Ready to run work'
+                      : state === 'Not installed' ? `The ${p.command} command was not found on this machine`
+                        : state === 'Switched off' ? 'You turned this off here; it will not be selected'
+                          : 'This version has no adapter for it';
+                  // Offering to disable something that is not installed, or has
+                  // no adapter at all, is noise: there is nothing to switch.
+                  const canToggle = state === 'Available' || state === 'Switched off';
+                  return (
+                    <div key={p.provider} className="flex items-start gap-3 bg-gray-800/40 border border-gray-700/60 rounded px-3 py-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-white font-medium">{p.provider}</div>
+                        <div className="text-sm text-gray-400">{state}</div>
+                        <div className="text-sm text-gray-300">{sentence}</div>
+                      </div>
+                      {canToggle && (
+                        <label className="flex items-center gap-2 text-sm text-gray-300 shrink-0">
+                          <input
+                            type="checkbox"
+                            data-testid={`provider-optout-${p.provider}`}
+                            checked={p.optedOut}
+                            disabled={providerBusy === p.provider}
+                            onChange={() => { void toggleProviderOptOut(p.provider, !p.optedOut); }}
+                            className="rounded border-gray-600 bg-gray-700"
+                          />
+                          Switch off
+                        </label>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
               {/* ── Archiving and output ───────────────────────────────────── */}
