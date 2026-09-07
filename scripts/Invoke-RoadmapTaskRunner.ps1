@@ -138,6 +138,7 @@ if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) { $WorkspaceRoot = Split-Path 
 # for the same reason as the queue module directly above: the runner is pointed
 # at fixture workspaces that carry no backend/ tree of their own.
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\execution\Execution.WorkPacket.ps1')
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\agent-adapters\Adapter.Claude.ps1')
 if ([string]::IsNullOrWhiteSpace($QueuePath)) { $QueuePath = Get-RoadmapQueuePath -WorkspaceRoot $WorkspaceRoot }
 if ([string]::IsNullOrWhiteSpace($StopFilePath)) { $StopFilePath = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.stop' }
 $runsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
@@ -688,9 +689,19 @@ function Invoke-QueuedTask {
 
         # Launch Claude Code in the repo.
         if (-not (Get-Command claude -ErrorAction SilentlyContinue)) { throw "'claude' not found on PATH. Run this as the operator with Claude Code installed." }
+        # Declared before the launch so the parse below can read it
+        # unconditionally: Tee-Object -Variable writes into this scope, and an
+        # interactive run never sets it at all.
+        $claudeLines = @()
         Push-Location $repo
         try {
-            if ($Headless) { & claude -p $prompt --permission-mode $PermissionMode }
+            if ($Headless) {
+                # Release 3.8 M1 (H38-04) - structured output, captured.
+                # Tee rather than redirect: the operator still sees the stream
+                # live, and the same lines are kept for the adapter to parse.
+                $claudeArgv = New-ClaudeExecutionArgument -Prompt $prompt -PermissionMode $PermissionMode
+                & claude @claudeArgv 2>&1 | Tee-Object -Variable claudeLines | Out-Null
+            }
             else { & claude --permission-mode $PermissionMode $prompt }
             if ($LASTEXITCODE -ne 0) { throw "Claude Code execution failed with exit code $LASTEXITCODE." }
         }
@@ -723,6 +734,27 @@ function Invoke-QueuedTask {
         $runExitCode = if ($null -ne $LASTEXITCODE) { [int]$LASTEXITCODE } else { 0 }
         $executionResult = $null
         if ($Headless) {
+            # Release 3.8 M1 (H38-04) - the adapter turns the transcript into a
+            # result. The provider-native payload is retained alongside it: the
+            # spec asks for it for diagnosis, and it is also how a REAL
+            # transcript reaches the fixture set without anyone spending quota
+            # to record one.
+            $claudeCaptured = @(@($claudeLines) | ForEach-Object { [string]$_ })
+            if ($claudeCaptured.Count -gt 0) {
+                $streamPath = Join-Path $runsDir ("{0}.claude.stream.jsonl" -f $runId)
+                try { Set-Content -LiteralPath $streamPath -Value $claudeCaptured -Encoding UTF8 }
+                catch { Write-Host ("  [warn] could not retain the provider transcript: {0}" -f $_.Exception.Message) -ForegroundColor DarkYellow }
+
+                $parsedStream = ConvertFrom-ClaudeStreamJson -Lines $claudeCaptured
+                if (@($parsedStream.parseErrors).Count -gt 0) {
+                    Write-Host ("  [warn] {0} unparseable transcript line(s): {1}" -f @($parsedStream.parseErrors).Count, (@($parsedStream.parseErrors) -join ', ')) -ForegroundColor DarkYellow
+                }
+                $changedForResult = @(& git -C $repo status --porcelain | ForEach-Object { $_.Substring(3) })
+                $adapterResult = ConvertTo-ClaudeExecutionResult -Parsed $parsedStream -TaskId $runId -ExecutionId $runId -ChangedFiles $changedForResult
+                if ($null -ne $adapterResult) {
+                    $null = Save-ExecutionResult -WorkspaceRoot $WorkspaceRoot -Result $adapterResult
+                }
+            }
             $executionResult = Read-ExecutionResult -WorkspaceRoot $WorkspaceRoot -TaskId $runId
         }
         else {
