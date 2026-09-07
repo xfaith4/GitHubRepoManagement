@@ -3,6 +3,12 @@
 Thumbs.db
 .vscode/
 backend/config/settings.json
+# Per-installation state (H38-15b, A22): which agent CLIs this operator has
+# switched off. Different on every machine, so it must never be committed --
+# unlike settings.json above, which was already tracked before its ignore entry
+# was added and therefore stays tracked. This one is ignored from the start, and
+# the module smoke asserts `git ls-files` does not know it.
+backend/config/installation.local.json
 
 # TLS certificates and keys (secrets — never commit)
 *.pfx

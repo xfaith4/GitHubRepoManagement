@@ -2703,6 +2703,119 @@ if (@(ConvertTo-CopilotCanonicalEvent).Count -ne 0) { throw 'A GitHub-hosted run
 
 Write-Host '  provider adapters: claude and copilot conform to all seven names, codex is honestly unsupported, the gate names a removed function, and the three moved functions are byte-identical to their pre-move behaviour' -ForegroundColor DarkGray
 
+Write-Step 'Provider availability — smoke: detected per installation, never committed'
+
+$avStateModule = Join-Path $WorkspaceRoot 'backend\modules\common\Config.InstallationStatePath.ps1'
+if (-not (Test-Path -LiteralPath $avStateModule)) { throw "Config.InstallationStatePath.ps1 not found at: $avStateModule" }
+. $avStateModule
+
+# A22, and the whole point of this packet. settings.json carries an ignore entry
+# that does nothing, because it was tracked before the entry was added. This
+# file must never reach that state, and an ignore rule alone is a hope -- this
+# is the guarantee.
+$null = & git -C $WorkspaceRoot ls-files --error-unmatch 'backend/config/installation.local.json' 2>&1
+if ($LASTEXITCODE -eq 0) {
+    throw ('backend/config/installation.local.json is TRACKED. It holds per-installation state — which agent CLIs this operator switched off — and committing it publishes one machine''s state to every installation. ' +
+        'This is exactly how backend/config/settings.json became tracked despite its .gitignore entry: an ignore rule does nothing for a file that is already tracked. Run: git rm --cached backend/config/installation.local.json')
+}
+
+& {
+    $avWs = Join-Path $WorkspaceRoot 'output\smoke\module\availability'
+    if (Test-Path -LiteralPath $avWs) { Remove-Item -LiteralPath $avWs -Recurse -Force }
+    $null = New-Item -ItemType Directory -Path (Join-Path $avWs 'backend\config') -Force
+    Copy-Item -LiteralPath $agentProvidersConfig -Destination (Join-Path $avWs 'backend\config\agent-providers.json') -Force
+
+    # codex is unsupported in this build, and that must decide the answer
+    # REGARDLESS of the PATH: `supported` is the repository fact, availability is
+    # the machine fact, and conflating them is what A20 removed.
+    $avOriginalCommandName = ${function:Get-AgentProviderCommandName}
+    try {
+        # A command that certainly exists. codex must STILL be unavailable.
+        Set-Item -Path 'function:\Get-AgentProviderCommandName' -Value { param([Parameter(Mandatory)][string]$Provider) $null = $Provider; return 'git' }
+        $avCodexPresent = Test-AgentProviderAvailability -Provider 'codex' -WorkspaceRoot $avWs
+        if ($avCodexPresent.installed -ne $true) { throw 'The stub should have reported an installed command' }
+        if ($avCodexPresent.available) { throw 'codex has no adapter in this build; an installed CLI must not make it available' }
+        if ($avCodexPresent.detail -ne 'no adapter in this build') { throw "Expected the missing-adapter reason, got '$($avCodexPresent.detail)'" }
+
+        # And a command that certainly does not exist.
+        Set-Item -Path 'function:\Get-AgentProviderCommandName' -Value { param([Parameter(Mandatory)][string]$Provider) $null = $Provider; return 'definitely-not-a-real-command-38b' }
+        $avClaudeAbsent = Test-AgentProviderAvailability -Provider 'claude' -WorkspaceRoot $avWs
+        if ($avClaudeAbsent.available) { throw 'claude cannot be available when its CLI is not on PATH' }
+        if ($avClaudeAbsent.detail -notmatch 'was not found on PATH') { throw "Expected the PATH reason, got '$($avClaudeAbsent.detail)'" }
+        if (-not $avClaudeAbsent.supported) { throw 'claude is supported in this build regardless of the machine' }
+    }
+    finally {
+        Set-Item -Path 'function:\Get-AgentProviderCommandName' -Value $avOriginalCommandName
+    }
+    if ((Get-AgentProviderCommandName -Provider 'copilot') -ne 'gh') { throw 'The stub was not reverted; copilot runs through the GitHub CLI' }
+
+    # A21 TRIPWIRE. This fails the moment someone adds a login probe, which is
+    # the point: proving an account works means spending its quota.
+    foreach ($avProvider in @('claude', 'codex', 'copilot')) {
+        $avResult = Test-AgentProviderAvailability -Provider $avProvider -WorkspaceRoot $avWs
+        if ($avResult.authenticated -ne 'unknown') {
+            throw "Availability must never authenticate: proving an account works means spending its quota (A21). '$avProvider' reported authenticated='$($avResult.authenticated)'"
+        }
+    }
+
+    # Opt-out round-trip through the override, so the gate never writes the file
+    # the operator is actually using.
+    $avStatePath = Join-Path $avWs 'installation.local.json'
+    $avPrevious = [System.Environment]::GetEnvironmentVariable('REPO_MGMT_INSTALLATION_STATE_PATH')
+    try {
+        [System.Environment]::SetEnvironmentVariable('REPO_MGMT_INSTALLATION_STATE_PATH', $avStatePath)
+        if ((Get-InstallationStatePath -WorkspaceRoot $avWs) -ne $avStatePath) { throw 'The override must win, so a gate can point away from the operator file' }
+
+        # An absent file is the ordinary state on every fresh install.
+        foreach ($avProvider in @('claude', 'codex', 'copilot')) {
+            if ((Test-AgentProviderAvailability -Provider $avProvider -WorkspaceRoot $avWs).optedOut) { throw "With no state file, '$avProvider' must not read as opted out" }
+        }
+
+        '{ "providers": { "claude": { "optOut": true } } }' | Set-Content -LiteralPath $avStatePath -Encoding UTF8
+        $avOptedOut = Test-AgentProviderAvailability -Provider 'claude' -WorkspaceRoot $avWs
+        if (-not $avOptedOut.optedOut) { throw 'The opt-out was not read back' }
+        if ($avOptedOut.available) { throw 'A provider switched off deliberately must not be available' }
+        if ((Test-AgentProviderAvailability -Provider 'copilot' -WorkspaceRoot $avWs).optedOut) { throw 'One opt-out must not affect another provider' }
+
+        # `detail` names the FIRST reason, so asserting the opt-out sentence
+        # requires the CLI to be installed -- otherwise "not found on PATH" is
+        # the honest answer and comes first. The first version of this assertion
+        # did not control that and passed only on a machine with Claude Code
+        # installed, which is precisely the machine-dependence this packet
+        # exists to remove. Stub the command name so the environment is decided
+        # by the test rather than by the runner it happens to be on.
+        $avOptOutCommandName = ${function:Get-AgentProviderCommandName}
+        try {
+            Set-Item -Path 'function:\Get-AgentProviderCommandName' -Value { param([Parameter(Mandatory)][string]$Provider) $null = $Provider; return 'git' }
+            $avOptedOutInstalled = Test-AgentProviderAvailability -Provider 'claude' -WorkspaceRoot $avWs
+            if (-not $avOptedOutInstalled.installed) { throw 'The stub should have reported an installed command' }
+            if ($avOptedOutInstalled.available) { throw 'An installed CLI must not override a deliberate opt-out' }
+            if ($avOptedOutInstalled.detail -ne 'switched off in Settings') { throw "With the CLI present, the reason must point at where it was switched off, got '$($avOptedOutInstalled.detail)'" }
+        }
+        finally {
+            Set-Item -Path 'function:\Get-AgentProviderCommandName' -Value $avOptOutCommandName
+        }
+
+        # A corrupt file costs a preference, never the ability to work.
+        '{ not json' | Set-Content -LiteralPath $avStatePath -Encoding UTF8
+        if ((Test-AgentProviderAvailability -Provider 'claude' -WorkspaceRoot $avWs).optedOut) { throw 'An unreadable state file must not silently opt a provider out' }
+
+        Remove-Item -LiteralPath $avStatePath -Force -ErrorAction SilentlyContinue
+        $avMap = Get-AgentProviderAvailabilityMap -WorkspaceRoot $avWs
+        $avMapKeys = @($avMap.Keys) | Sort-Object
+        $avExpectedKeys = @(@(Get-AgentProviderToken -WorkspaceRoot $avWs) | Where-Object { $_ -ne 'auto' }) | Sort-Object
+        if (($avMapKeys -join ',') -ne ($avExpectedKeys -join ',')) { throw "The availability map must cover every provider and only providers: '$($avMapKeys -join ',')' vs '$($avExpectedKeys -join ',')'" }
+        foreach ($avKey in $avMapKeys) { if ($avMap[$avKey] -isnot [bool]) { throw "The map must answer booleans; '$avKey' did not" } }
+    }
+    finally {
+        [System.Environment]::SetEnvironmentVariable('REPO_MGMT_INSTALLATION_STATE_PATH', $avPrevious)
+    }
+
+    Remove-Item -LiteralPath $avWs -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+Write-Host '  provider availability: supported (repo) and installed (machine) stay separate, nothing authenticates, opt-out round-trips through an UNTRACKED per-installation file, and a corrupt one costs a preference rather than the ability to work' -ForegroundColor DarkGray
+
 Write-Step 'Provider capacity — smoke: native units, confidence rank, persistence'
 
 if (-not (Test-Path -LiteralPath $providerCapacityModule)) { throw "Execution.ProviderCapacity.ps1 not found at: $providerCapacityModule" }

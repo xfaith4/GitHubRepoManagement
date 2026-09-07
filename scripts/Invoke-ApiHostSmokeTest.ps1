@@ -3824,7 +3824,35 @@ A release should not be marked `done` unless:
     if ([bool]($providerRows[0].verdict.enforced)) {
         throw 'Capacity enforcement must stay off while estimates.provisional is true (D-011)'
     }
-    Write-Host ("  providers ok: {0} providers, each with a verdict reason; enforcement off while the task estimate is provisional" -f $providerRows.Count) -ForegroundColor DarkGray
+    # H38-15b: availability sits beside the verdict, because "no capacity
+    # record" and "that CLI is not installed here" are different answers to why
+    # a provider is never chosen.
+    foreach ($row in $providerRows) {
+        if ($null -eq $row.availability) { throw "Provider '$($row.provider)' carries no availability block. Body=$($providersResp.Content)" }
+        if ([string]$row.availability.authenticated -ne 'unknown') {
+            throw "Availability must never authenticate (A21): '$($row.provider)' reported authenticated='$($row.availability.authenticated)'"
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$row.availability.detail)) { throw "Provider '$($row.provider)' availability carries no detail sentence" }
+    }
+    Write-Host ("  providers ok: {0} providers, each with a verdict reason and detected availability; enforcement off while the task estimate is provisional" -f $providerRows.Count) -ForegroundColor DarkGray
+
+    # Release 3.8 M3 (H38-15b) — provider availability reaches the setup wizard.
+    $prereqResp = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/setup/prerequisites"
+    Assert-Not503 -Name '/setup/prerequisites' -Response $prereqResp
+    if ([string]$prereqResp.ContentType -notmatch 'application/json') {
+        throw "GET /setup/prerequisites must answer JSON, not the SPA fallback; got content-type '$($prereqResp.ContentType)'"
+    }
+    $prereqChecks = @($prereqResp.Json.data.checks)
+    foreach ($expectedProvider in @('claude', 'codex', 'copilot')) {
+        $prereqRow = $prereqChecks | Where-Object { [string]$_.id -eq ("provider-{0}" -f $expectedProvider) } | Select-Object -First 1
+        if ($null -eq $prereqRow) { throw "The setup wizard must show whether '$expectedProvider' is available here; check 'provider-$expectedProvider' is missing. Body=$($prereqResp.Content)" }
+        if ($prereqRow.ok -isnot [bool]) { throw "Check 'provider-$expectedProvider' must answer a boolean ok" }
+        if ([string]::IsNullOrWhiteSpace([string]$prereqRow.detail)) { throw "Check 'provider-$expectedProvider' must say WHY, not just yes or no" }
+        # A portfolio manager with no agent CLI installed is still a working
+        # portfolio manager, so these must never block setup.
+        if ([bool]$prereqRow.required) { throw "Provider check 'provider-$expectedProvider' must be optional; setup must not require an agent CLI" }
+    }
+    Write-Host ("  setup prerequisites ok: {0} checks including one per provider, none of them required" -f $prereqChecks.Count) -ForegroundColor DarkGray
 
     # The route-level refusal: asking the host to run cloud dispatch itself must
     # be a 409 that names the runner, not a 200 that fails at the last step.

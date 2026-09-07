@@ -66,6 +66,10 @@ $executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 # policy in that adapter resolves the same settings file, and a dot-source that
 # arrives after its caller is a function that does not exist yet.
 . (Join-Path $commonRoot 'Config.SettingsPath.ps1')
+# H38-15b (A22). Per-installation state -- which agent CLIs this operator
+# switched off -- kept apart from the tracked settings file for the reason
+# Config.InstallationStatePath.ps1's header records.
+. (Join-Path $commonRoot 'Config.InstallationStatePath.ps1')
 # Standard-file locator (ROADMAP.md at root or docs/, SECURITY.md at .github/,
 # ...). The modules below dot-source it themselves; loading it here too keeps
 # the host's own roadmap resolvers on the same answer.
@@ -7888,6 +7892,10 @@ try {
                         break
                     }
 
+                    # Read once, not per provider: the file is per-installation
+                    # state, and re-reading it three times per request would let
+                    # a mid-request edit report two different answers.
+                    $providerInstallState = Get-InstallationState -WorkspaceRoot $WorkspaceRoot
                     $providerRows = @()
                     foreach ($providerName in @($providerConfig.providers.PSObject.Properties | ForEach-Object { $_.Name })) {
                         $entry = $providerConfig.providers.$providerName
@@ -7899,11 +7907,22 @@ try {
                             $entryPayload[$entryProperty] = $entry.$entryProperty
                         }
                         $record = Read-ProviderCapacityRecord -WorkspaceRoot $WorkspaceRoot -Provider $providerName
+                        # H38-15b: availability is DETECTED per installation and
+                        # reported beside the verdict, because "no capacity
+                        # record" and "the CLI is not installed here" are
+                        # different answers to why a provider is never chosen.
+                        $availability = Test-AgentProviderAvailability -Provider $providerName -WorkspaceRoot $WorkspaceRoot -InstallationState $providerInstallState
+                        $availabilityPayload = [ordered]@{}
+                        foreach ($availabilityProperty in @($availability.PSObject.Properties | ForEach-Object { $_.Name })) {
+                            if ($availabilityProperty -eq 'provider') { continue }
+                            $availabilityPayload[$availabilityProperty] = $availability.$availabilityProperty
+                        }
                         $providerRows += , [ordered]@{
-                            provider = $providerName
-                            config   = $entryPayload
-                            capacity = $record
-                            verdict  = (Resolve-ProviderCapacityVerdict -Record $record -Config $providerConfig -TaskClass 'normal' -Provider $providerName)
+                            provider     = $providerName
+                            config       = $entryPayload
+                            capacity     = $record
+                            availability = $availabilityPayload
+                            verdict      = (Resolve-ProviderCapacityVerdict -Record $record -Config $providerConfig -TaskClass 'normal' -Provider $providerName)
                         }
                     }
 
@@ -8322,6 +8341,35 @@ try {
                         @{ id = 'gh';          label = 'GitHub CLI (optional)';           required = $false; ok = [bool](Get-Command gh -ErrorAction SilentlyContinue); detail = '' },
                         @{ id = 'githubToken'; label = 'GitHub token/CLI configured';     required = $false; ok = [bool]$tokenPresent; detail = $(if ($tokenPresent) { "env var '$tokenEnvVar' (source: $($prereqResolution.Source))" } else { "env var '$tokenEnvVar' is not set" }) }
                     )
+                    # H38-15b. One check per provider, DETECTED rather than
+                    # configured (A20). These are the answer to "do I have an
+                    # account with this provider" -- a per-installation fact
+                    # that no committed file may claim on anyone's behalf.
+                    # Every one is required = $false on purpose: a portfolio
+                    # manager with no agent CLI installed is still a working
+                    # portfolio manager, so these must never block setup.
+                    try {
+                        $prereqProviderConfig = Get-AgentProviderConfig -ConfigPath (Get-AgentProviderConfigPath -WorkspaceRoot $WorkspaceRoot)
+                        if ($null -ne $prereqProviderConfig) {
+                            $prereqState = Get-InstallationState -WorkspaceRoot $WorkspaceRoot
+                            foreach ($prereqProvider in @($prereqProviderConfig.providers.PSObject.Properties | ForEach-Object { $_.Name })) {
+                                $prereqAvailability = Test-AgentProviderAvailability -Provider $prereqProvider -WorkspaceRoot $WorkspaceRoot -InstallationState $prereqState
+                                $checks += @{
+                                    id       = ('provider-{0}' -f $prereqProvider)
+                                    label    = ('{0}{1} agent CLI' -f $prereqProvider.Substring(0, 1).ToUpperInvariant(), $prereqProvider.Substring(1))
+                                    required = $false
+                                    ok       = [bool]$prereqAvailability.available
+                                    detail   = [string]$prereqAvailability.detail
+                                }
+                            }
+                        }
+                    }
+                    catch {
+                        # Setup must still answer if provider policy is broken:
+                        # the operator is here to fix things, not to be blocked.
+                        Write-HostLog ("WARN setup/prerequisites: provider checks skipped: {0}" -f $_.Exception.Message)
+                    }
+
                     $requiredOk = (@($checks | Where-Object { $_.required -and -not $_.ok }).Count -eq 0)
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true

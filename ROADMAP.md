@@ -949,8 +949,8 @@ to the queue — never fails it — when a provider is exhausted.
       `frontend/types.ts`, and reconciles the third vocabulary
       (`operator-runner`) the approval route writes. Eligibility then ranking,
       selection reason recorded, presence counts derived from the registry
-      rather than naming providers. _(state: scaffolded 2026-09-07 —
-      H38-14 Execution.ProviderRegistry.ps1 is the one token list (claude, codex,
+      rather than naming providers. _(state: scaffolded 2026-09-07 — H38-14
+      Execution.ProviderRegistry.ps1 is the one token list (claude, codex,
       copilot, auto); the queue module and the runner delegate to it, and the
       two ValidateSet attributes that cannot are gated against it so drift
       fails a smoke rather than rejecting a valid provider unnoticed;
@@ -959,7 +959,13 @@ to the queue — never fails it — when a provider is exhausted.
       seven-function adapter contract gated per supported provider, naming every
       missing function at once; Adapter.Copilot.ps1 holds the three moved runner
       functions unchanged, asserted byte-identical, and a cloud dispatch now
-      writes an ExecutionResult like every other provider)_
+      writes an ExecutionResult like every other provider; H38-15b provider
+      availability detected per installation (PATH probe, and deliberately no
+      authentication — proving an account works would spend its quota) and
+      surfaced in GET /setup/prerequisites, which the setup wizard already
+      renders, plus GET /api/providers; the operator opt-out lives in an
+      untracked installation.local.json that a gate refuses to let become
+      tracked)_
 - [ ] **Move push and PR opening to Repo Manager; bind approval to the verified
       SHA.** The agent exits at `IMPLEMENTATION_COMPLETE`; Repo Manager pushes,
       opens the pull request and monitors CI on a cadence without holding an
