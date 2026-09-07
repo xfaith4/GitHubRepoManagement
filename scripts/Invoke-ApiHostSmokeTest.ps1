@@ -370,12 +370,26 @@ Set-Content -LiteralPath $script:HostSettingsPath `
     -Encoding UTF8 -NoNewline
 Write-Host ("  settings isolated to {0} (the operator's tracked settings.json is never written)" -f $script:HostSettingsPath) -ForegroundColor DarkGray
 
+# H38-19b -- the installation-state twin of the two isolations above. The
+# opt-out route writes installation.local.json, and a gate must not write into
+# the state the operator is looking at: switching codex off here would switch it
+# off for their next real dispatch. The host resolves it through
+# Get-InstallationStatePath, which honours REPO_MGMT_INSTALLATION_STATE_PATH.
+$script:SmokeInstallationStatePath = Join-Path $smokeRoot 'installation.local.smoke.json'
+Remove-Item -LiteralPath $script:SmokeInstallationStatePath -Force -ErrorAction SilentlyContinue
+Write-Host ("  installation state isolated to {0} (the operator's own opt-outs are untouched)" -f $script:SmokeInstallationStatePath) -ForegroundColor DarkGray
+
 $job = Start-Job -ScriptBlock {
     param($ScriptPath, $Root, $Log, $ListenPort, $SignalPath, $QueuePath, $SettingsPath)
     # Both overrides are set on the JOB, never on the parent, so a crashed smoke
     # cannot leave the operator's environment redirected.
     $env:REPO_MGMT_QUEUE_PATH = $QueuePath
     $env:REPO_MGMT_SETTINGS_PATH = $SettingsPath
+    # Rebuilt from $Root rather than passed as its own parameter: every extra
+    # parameter referenced inside a Start-Job scriptblock is one more
+    # PSUseUsingScopeModifierInNewRunspaces finding, and that ratchet only
+    # moves down. Must stay in step with $script:SmokeInstallationStatePath.
+    $env:REPO_MGMT_INSTALLATION_STATE_PATH = (Join-Path $Root 'output\smoke\api-host\installation.local.smoke.json')
     # Start-Job inherits the parent environment. Every assertion below speaks
     # plain HTTP to this host, so an inherited REPO_MGMT_TLS_PFX -- which the
     # installed service sets at MACHINE scope -- would wrap the listener in an
@@ -3975,6 +3989,67 @@ A release should not be marked `done` unless:
         if ([string]::IsNullOrWhiteSpace([string]$row.availability.detail)) { throw "Provider '$($row.provider)' availability carries no detail sentence" }
     }
     Write-Host ("  providers ok: {0} providers, each with a verdict reason and detected availability; enforcement off while the task estimate is provisional" -f $providerRows.Count) -ForegroundColor DarkGray
+
+    # ── H38-19b — the per-machine opt-out, written where it cannot be committed ──
+    # Content-type is asserted rather than the status code: an unmatched route
+    # returns the SPA index.html with HTTP 200, so a status check would pass
+    # against a route that does not exist.
+    $optOutResp = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/providers/codex/opt-out" -Body @{ optOut = $true }
+    Assert-Not503 -Name '/api/providers/codex/opt-out' -Response $optOutResp
+    if ([string]$optOutResp.ContentType -notmatch 'application/json') {
+        throw "POST /api/providers/{provider}/opt-out must answer JSON, not the SPA fallback; got content-type '$($optOutResp.ContentType)'"
+    }
+    if ([bool]$optOutResp.Json.data.availability.optedOut -ne $true) {
+        throw "The opt-out route must report optedOut=true for codex. Body=$($optOutResp.Content)"
+    }
+    if ([bool]$optOutResp.Json.data.availability.available) {
+        throw 'A provider switched off must not still report available=true'
+    }
+    # The command actually probed travels with the row, so Settings can name the
+    # CLI without keeping its own copy of the mapping (copilot probes `gh`).
+    if ([string]::IsNullOrWhiteSpace([string]$optOutResp.Json.data.availability.command)) {
+        throw "The availability payload must name the command it probed. Body=$($optOutResp.Content)"
+    }
+
+    # GET must agree with what the write reported, or the two views of one
+    # machine's state disagree and only one of them can be right.
+    $afterOptOut = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/providers"
+    $codexRow = @($afterOptOut.Json.data.providers) | Where-Object { [string]$_.provider -eq 'codex' } | Select-Object -First 1
+    if ([bool]$codexRow.availability.optedOut -ne $true) {
+        throw "GET /api/providers disagrees with the opt-out just written. Body=$($afterOptOut.Content)"
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$codexRow.availability.command)) {
+        throw 'GET /api/providers must carry the probed command per provider'
+    }
+
+    # Switching it back on must be reachable, or the operator can only ever
+    # remove providers.
+    $optInResp = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/providers/codex/opt-out" -Body @{ optOut = $false }
+    if ([bool]$optInResp.Json.data.availability.optedOut) {
+        throw "The opt-out must be reversible. Body=$($optInResp.Content)"
+    }
+
+    # An unknown provider is refused by name rather than silently written into
+    # the state file, which would create a key no router will ever read.
+    $badProviderResp = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/providers/gemini/opt-out" -Body @{ optOut = $true }
+    if ([int]$badProviderResp.StatusCode -ne 400) {
+        throw "POST /api/providers/gemini/opt-out expected 400, got $($badProviderResp.StatusCode). Body=$($badProviderResp.Content)"
+    }
+    if ([string]$badProviderResp.Json.category -ne 'validation') {
+        throw "An unknown provider must be refused as a validation error; got category '$($badProviderResp.Json.category)'"
+    }
+
+    # The whole point of the isolation: a gate must not write into the state the
+    # operator is looking at. The repository's own file must not exist because
+    # of this run.
+    $trackedInstallationState = Join-Path $WorkspaceRoot 'backend\config\installation.local.json'
+    if (Test-Path -LiteralPath $trackedInstallationState -PathType Leaf) {
+        throw ("The smoke wrote {0}; REPO_MGMT_INSTALLATION_STATE_PATH must keep the operator's installation state untouched." -f $trackedInstallationState)
+    }
+    if (-not (Test-Path -LiteralPath $script:SmokeInstallationStatePath -PathType Leaf)) {
+        throw ("The opt-out wrote nothing to the isolated state file {0}; the route cannot have persisted anything." -f $script:SmokeInstallationStatePath)
+    }
+    Write-Host '  provider opt-out ok: written to the isolated installation state, reversible, unknown provider 400s, the tracked file was never created' -ForegroundColor DarkGray
 
     # Release 3.8 M3 (H38-15b) — provider availability reaches the setup wizard.
     $prereqResp = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/setup/prerequisites"

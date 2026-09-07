@@ -1125,6 +1125,38 @@ export interface DispatchQuotaSummary {
  */
 export type ProviderToken = 'claude' | 'codex' | 'copilot' | 'auto';
 
+/**
+ * H38-19b — one provider's availability on THIS machine.
+ *
+ * Per-installation state, detected at runtime and never committed: the
+ * repository records only `supported` (a conforming adapter exists in this
+ * build, which CI can verify). Whether the CLI is installed, and whether the
+ * operator switched it off, differ per machine and per month.
+ *
+ * `authenticated` is deliberately not rendered anywhere. Availability answers
+ * *installed and switched on*; proving an account works would mean spending its
+ * quota (A21), so it stays `unknown` until a real run reports otherwise, and a
+ * tick claiming it works is worse than saying nothing.
+ */
+export interface ProviderAvailability {
+  provider: ProviderToken;
+  /** A conforming adapter exists in this build. A repository fact. */
+  supported: boolean;
+  /** The CLI was found on PATH here. A machine fact. */
+  installed: boolean;
+  /** The operator switched it off in Settings. A machine fact. */
+  optedOut: boolean;
+  available: boolean;
+  authenticated: string;
+  detail: string;
+  /**
+   * The command actually probed on PATH — `gh` for copilot, not `copilot`.
+   * Carried from the host so the frontend never has to keep its own copy of a
+   * mapping that is not guessable from the provider name.
+   */
+  command: string;
+}
+
 export interface DispatchExecuteResult {
   runId: string;
   agentRunId?: string | null;

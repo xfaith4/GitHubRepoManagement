@@ -7355,6 +7355,88 @@ try {
                 continue
             }
 
+            # ── H38-19b — switch one provider off for THIS installation ──────
+            #
+            # Writes installation.local.json through Get-InstallationStatePath,
+            # never settings.json. settings.json is git-TRACKED (its .gitignore
+            # entry does nothing, because a file already tracked stays tracked),
+            # so recording "this operator has no Codex" there would commit one
+            # machine's state on behalf of every installation - the exact defect
+            # A20/A22 exist to remove.
+            if ($req.Method -eq 'POST' -and $path -like '/api/providers/*/opt-out') {
+                Add-MetricCounter -Name 'api_requests_total'
+                $optOutProvider = [System.Uri]::UnescapeDataString(
+                    $path.Substring('/api/providers/'.Length, $path.Length - '/api/providers/'.Length - '/opt-out'.Length))
+                $optOutProvider = $optOutProvider.Trim().ToLowerInvariant()
+
+                $validProviderTokens = @(Get-AgentProviderToken -WorkspaceRoot $WorkspaceRoot)
+                if ($optOutProvider -notin $validProviderTokens) {
+                    Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                        success  = $false
+                        error    = ("Unknown provider '{0}'. Valid: {1}." -f $optOutProvider, ($validProviderTokens -join ', '))
+                        category = 'validation'
+                    }
+                    $client.Close()
+                    continue
+                }
+
+                $optOutBody = Parse-JsonBody -Body $req.Body
+                $optOutValue = $false
+                if ($null -ne $optOutBody -and $optOutBody.ContainsKey('optOut')) { $optOutValue = [bool]$optOutBody.optOut }
+
+                $installationStatePath = Get-InstallationStatePath -WorkspaceRoot $WorkspaceRoot
+                # A malformed file is REPLACED, not merged, and the response
+                # says so: merging into a shape we could not parse is how a
+                # corrupt file quietly becomes a corrupt file with one more key.
+                $stateReplaced = $false
+                $existingState = $null
+                if (Test-Path -LiteralPath $installationStatePath -PathType Leaf) {
+                    try { $existingState = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $installationStatePath -Raw -Encoding UTF8) }
+                    catch { $existingState = $null; $stateReplaced = $true }
+                    if ($null -eq $existingState) { $stateReplaced = $true }
+                }
+
+                $providersState = [ordered]@{}
+                if ($null -ne $existingState -and $null -ne $existingState.PSObject.Properties['providers'] -and $null -ne $existingState.providers) {
+                    foreach ($existingProvider in @($existingState.providers.PSObject.Properties)) {
+                        $providersState[$existingProvider.Name] = $existingProvider.Value
+                    }
+                }
+                $providersState[$optOutProvider] = [ordered]@{ optOut = $optOutValue }
+
+                $newState = [ordered]@{
+                    schemaVersion = '1'
+                    providers     = $providersState
+                }
+                $stateDir = Split-Path -Parent $installationStatePath
+                if (-not [string]::IsNullOrWhiteSpace($stateDir) -and -not (Test-Path -LiteralPath $stateDir)) {
+                    $null = New-Item -ItemType Directory -Path $stateDir -Force
+                }
+                ($newState | ConvertTo-Json -Depth 6) | Set-Content -LiteralPath $installationStatePath -Encoding UTF8
+
+                # Re-read rather than predict: the response is what the next
+                # GET /api/providers will say, not what this route hoped.
+                $refreshedAvailability = Test-AgentProviderAvailability -Provider $optOutProvider -WorkspaceRoot $WorkspaceRoot
+                $refreshedPayload = [ordered]@{}
+                foreach ($availabilityProperty in @($refreshedAvailability.PSObject.Properties | ForEach-Object { $_.Name })) {
+                    if ($availabilityProperty -eq 'provider') { continue }
+                    $refreshedPayload[$availabilityProperty] = $refreshedAvailability.$availabilityProperty
+                }
+                $refreshedPayload['command'] = (Get-AgentProviderCommandName -Provider $optOutProvider)
+
+                Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                    success = $true
+                    data    = [ordered]@{
+                        provider        = $optOutProvider
+                        availability    = $refreshedPayload
+                        statePath       = $installationStatePath
+                        stateReplaced   = $stateReplaced
+                    }
+                }
+                $client.Close()
+                continue
+            }
+
             # Release 2.3 Phase 5E: POST /api/portfolio/assessment/refresh-all is the
             # explicit operator-driven full reassessment. It shares the assessment
             # handler; the flag forces refresh semantics so every repo emits a
@@ -7929,6 +8011,12 @@ try {
                             if ($availabilityProperty -eq 'provider') { continue }
                             $availabilityPayload[$availabilityProperty] = $availability.$availabilityProperty
                         }
+                        # H38-19b: the command actually probed on PATH travels
+                        # with the row. `copilot` probes `gh`, which no caller
+                        # can guess from the provider name -- and a second copy
+                        # of that mapping in the frontend would be the drift
+                        # this release keeps removing.
+                        $availabilityPayload['command'] = (Get-AgentProviderCommandName -Provider $providerName)
                         $providerRows += , [ordered]@{
                             provider     = $providerName
                             config       = $entryPayload
