@@ -138,6 +138,33 @@ Inspect the approval queue with `GET /api/automation/packages?status=pending-app
 A packet may be approved only from `pending-approval`, and a dispatched packet is
 terminal — re-approving is refused with a 409 rather than dispatched twice.
 
+## Capacity and cooldown (Release 3.8 M2)
+
+One record per provider lives at `output/provider-capacity/<provider>.json`,
+holding named windows in **that provider's own unit** — never converted to
+tokens — plus a confidence rank and any cooldown. A window with no
+`remainingRatio` is valid and reads `confidence: none`: for a subscription whose
+allowance is not published, *unknown* is the truth.
+
+When a provider reports a usage limit, the run is **not** failed. Its summary
+reads `status: queued` with a `capacityWait` block naming the provider, the
+reset time, and whether that time was the provider's or assumed (now + 60
+minutes when it gave none). Branch, attempt and provider session id survive
+untouched and **nothing is committed**, so the task resumes on the same session
+when the window reopens.
+
+The runner then **declines to claim** while a cooldown is live or the single
+local execution slot is busy, leaving the entry `queued` and writing no summary
+at all. Each refusal is logged with a code — `provider-cooling-down`,
+`local-slot-occupied`, `unknown-dispatch-target` — and the heartbeat carries
+`providerCooldowns` and `localSlotsInUse`, so a runner that is alive and
+deliberately idle never looks stuck. `GET /api/providers` reports each
+provider's record, verdict and reason.
+
+Capacity verdicts are **recorded but not enforced**: the reserves are decided
+(15% short window, 20% weekly) but the per-task cost estimate is still a guess,
+so a verdict can look wrong without blocking work.
+
 ## Cloud (Copilot) dispatch runs here too — Release 3.0
 
 The guided-improvement wizard's final step used to call

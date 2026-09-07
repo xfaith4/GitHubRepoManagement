@@ -216,7 +216,10 @@ matrices; only who invokes them changes.
 the CLI's exit code today, so a usage limit records as `failed` and the work
 looks broken when it is merely deferred. `CAPACITY_WAIT` returns the task to
 the queue with its workspace, branch, attempt count and session identifier
-intact, and no roadmap item is failed for it.
+intact, and no roadmap item is failed for it. Shipped in M2: the wait is
+persisted as a cooldown on the provider's record under
+`output/provider-capacity/`, so the runner declines to claim until it expires
+rather than rediscovering the limit on every poll.
 
 **What this unblocks.** The deferred conflict-resolution loop above named two
 constraints — an OAuth credential the service cannot hold, and a retry counter
