@@ -2,6 +2,62 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-06 — The execution model gets a spec, a release, and its decisions
+
+### Added
+
+- **[`docs/governance/Agent-Execution-Governance.md`](docs/governance/Agent-Execution-Governance.md)
+  is the design authority for how work reaches a coding agent.** Its core
+  invariant is that the **work contract is provider-neutral and the scheduler
+  is provider-aware**: a task carries objective, scope, acceptance criteria,
+  verification and a permission envelope and names no provider, while the
+  orchestrator chooses between Codex, Claude Code and GitHub Copilot on
+  eligibility and remaining subscription capacity, records the reason, and
+  treats a provider limit as **state rather than a failed task**. Capacity is
+  kept per provider in the provider's own unit — no invented token conversion
+  for a subscription allowance — and promotion is bound to a **verified head
+  SHA**, not a pull request number.
+- **Release 3.8 — Provider-Aware Execution** in
+  [`ROADMAP.md`](ROADMAP.md), six milestones, sequenced after the Release 3.7
+  value trial: the trial measures the loop as it exists, and 3.8 changes what
+  runs inside it. Two new guardrails in §8 carry the invariants that outlive
+  the release.
+
+### Changed
+
+- **Seven open decisions answered and one re-ruled**, in
+  [`open-decisions.md`](docs/governance/open-decisions.md). Roadmaps may
+  optionally declare acyclic within-repository dependencies keyed on stable
+  item ids, gating dispatch eligibility (D-001); a nested git repository is
+  reported but is not a portfolio entry unless explicitly classified (D-002);
+  the PAT gets read-only `Checks: Read` because CI detail is becoming an
+  orchestration input rather than UI decoration (D-003); RoadmapOrchestrator
+  does **not** become a third dispatch target, because this product is the
+  orchestration authority (D-004); the completion-history signal ships as
+  awareness metadata, never enforcement (D-005); the lane patience defaults
+  stand as bootstrap thresholds (D-007). D-006 stays open but no longer blocks
+  the Release 3.7 cohort — an unrepresented category is recorded as such rather
+  than filled by a substitute.
+- **Dispatch authority narrows to the Dispatch Board (D-008)**, reversing the
+  default shipped hours earlier under D-010. Previewing a task must not
+  implicitly grant authority to spend agent quota, so Work Queue and Operations
+  keep the full preview and navigate to the board instead of calling the
+  dispatch endpoint. Recorded as a Lane 0.17 item; the code change follows
+  separately.
+- **[`docs/execution-orchestrator-design.md`](docs/execution-orchestrator-design.md)
+  is marked superseded.** Two of its 2026-07-07 locked decisions are reversed:
+  "merge automatically when green" (promotion is now an explicit operator
+  action against a verified SHA) and the adaptive `429`-discovered ceiling,
+  which survives only as the lowest-confidence capacity source. Its P0 is the
+  only part ever built and is why the document is kept.
+- **[`delivery-loop.md`](docs/product/delivery-loop.md) gains a provider-aware
+  addendum.** The twelve steps stand; approval moves from pre-push to
+  pre-merge, which is precisely the substitution "approval is a layer, not a
+  hard-coded step" was written to allow.
+
+Nothing in `backend/` or `scripts/` changed — this is a contract and planning
+pass.
+
 ## 2026-09-04 — A roadmap under docs/ read as "No roadmap"
 
 ### Fixed

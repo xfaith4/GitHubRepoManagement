@@ -13,7 +13,7 @@
 
 ## Current Status (Agent Context)
 
-**Last updated:** 2026-09-05
+**Last updated:** 2026-09-06
 
 Releases 0.4 through 2.6, 2.8 and 3.0 are **engineering-complete and archived**,
 as is every completed milestone from the releases and lanes still open below.
@@ -27,17 +27,20 @@ by the 2026-08-11 archive pass, recorded in `CHANGELOG.md`).
 What remains falls into four kinds of work that are **not** interchangeable —
 mixing them once made the roadmap read "everything is done" over real gaps:
 
-1. **Genuinely unbuilt engineering** — Release 3.7's four milestones (Release
-   3.6's six closed 2026-08-27) and the recorded cross-cutting items. This is
-   the only kind an autonomous agent can close on its own.
+1. **Genuinely unbuilt engineering** — Release 3.7's four milestones, Release
+   3.8's six (defined 2026-09-06, sequenced after 3.7) and the recorded
+   cross-cutting items. This is the only kind an autonomous agent can close on
+   its own.
 2. **Elevated / hardware / human verification** — SYSTEM rights, a physical
    Android phone, or an operator at an authenticated session; no autonomous
    test can produce these.
 3. **Product / design decisions** — waiting on a judgement, not on time or
-   engineering. These now have one durable home:
+   engineering. These have one durable home:
    [`docs/governance/open-decisions.md`](docs/governance/open-decisions.md).
-   A decision raised only in conversation gets made by default, by whichever
-   agent next touches the code.
+   **Nine of the ten are now answered** (2026-09-06 closed D-001 through D-005,
+   D-007 and D-008); only D-006's owner-intent labels remain open, and its
+   ruling already released the work it was blocking. A decision raised only in
+   conversation gets made by default, by whichever agent next touches the code.
 4. **Calendar-gated accrual** — the 7/90-day trend windows fill only as
    time passes with capture running.
 
@@ -63,6 +66,27 @@ holding a zero baseline. Together these clear the **engineering** half of Releas
 This is emphatically **not** live operator verification, which no agent may
 claim. Evidence: [`evidence/verified/trial-truth-readiness-2026-09-05.md`](evidence/verified/trial-truth-readiness-2026-09-05.md).
 
+**What changed 2026-09-06 (record, not an action).** The execution model gained
+a written spec and the decision backlog was cleared.
+[`docs/governance/Agent-Execution-Governance.md`](docs/governance/Agent-Execution-Governance.md)
+is now the design authority for how work reaches a coding agent: a
+**provider-neutral task contract** with a **provider-aware scheduler** across
+Codex, Claude Code and GitHub Copilot, per-provider capacity in each provider's
+own unit, and a promotion boundary where the operator approves a **verified head
+SHA**. It is defined as **Release 3.8** (§6) and it supersedes the 2026-07-07
+decisions in `docs/execution-orchestrator-design.md`, whose P0 is the only part
+ever built — notably reversing that document's "merge automatically when green".
+Seven open decisions were answered the same day and one was re-ruled: roadmaps
+may declare dependencies (D-001), nested repositories are not portfolio entries
+by default (D-002), the PAT gets `Checks: Read` (D-003), RoadmapOrchestrator
+does **not** become a third dispatch target (D-004), the archive signal ships as
+awareness metadata (D-005), the lane patience defaults stand (D-007), and
+**dispatch authority narrows to the Dispatch Board** (D-008, reversing the
+default shipped hours earlier under D-010). D-006 stays open but no longer
+blocks: an unrepresented trial category is recorded as such, never filled by a
+substitute. Nothing in `backend/` or `scripts/` changed — this was a contract
+and planning pass.
+
 **Current focus (next agent actions), in order:**
 
 - [ ] **Release 3.7 — Portfolio Value Proof** is the next engineering release
@@ -79,9 +103,14 @@ claim. Evidence: [`evidence/verified/trial-truth-readiness-2026-09-05.md`](evide
       covers the watchdog _and_ the service installer; one authenticated shell
       covers the `gh agent-task` run and the re-homed live-portal proofs; the
       phone proof rides the same visit when the device is on the LAN.
-- [ ] **Lane 0.2's remaining item needs an operator decision outside this
-      repository** — the PAT's `Checks: Read` grant (optional; the
-      `mergeStateStatus` proxy is the working contract). The TLS certificate
+- [ ] **Release 3.8 — Provider-Aware Execution** is defined and sequenced
+      **after** 3.7, not started before it: the trial measures the loop as it
+      exists, and 3.8 changes what runs inside it. Two dependencies can be
+      satisfied in parallel — D-001's dependency notion and D-003's
+      `Checks: Read` grant.
+- [ ] **Grant the PAT `Checks: Read`** — decided 2026-09-06 (D-003), so this is
+      now an operator action rather than an open question. It rides the same
+      operator batch. The TLS certificate
       closed 2026-08-29: regenerated around the stored password and live as
       `https://127.0.0.1:7071`. Operator note: plain `http://` bookmarks stop
       working, and the login password is unrecoverable by design — reset with
@@ -92,7 +121,8 @@ runs, the loop closing legibly and without a hand-off, numbers an operator can
 act on, an 80+ repo portfolio that feels immediate, unattended operation.
 Release 3.6 extends it to "every repository ends with an explainable
 conclusion"; Release 3.7 makes the product prove, on ten real repositories,
-that it returns more time than it takes.
+that it returns more time than it takes. Release 3.8 makes the execution layer
+provider-aware, so that proof is not capped by one agent's subscription.
 
 ---
 
@@ -215,6 +245,7 @@ module + verification boundary`.
 | 3.5       | Trustworthy Surfaces (UI Quality)                                        | `done` 2026-08-17 — all seven milestones; trust-report per finding; operator sign-off in 2.9 |
 | **3.6**   | **Every Repository Gets an Outcome**                                     | **`validation`** - engineering complete 2026-08-27; operator proof batches with 2.9        |
 | **3.7**   | **Portfolio Value Proof**                                                | **`planned`** 2026-08-23 — follows 3.6; ten real repositories decide the 80+ rollout       |
+| **3.8**   | **Provider-Aware Execution**                                             | **`planned`** 2026-09-06 — Codex/Claude/Copilot behind one provider-neutral task contract  |
 
 > **Note on `.5` numbering.** Reserve it for course corrections like 1.7.5;
 > default new work to integer minor releases.
@@ -230,7 +261,10 @@ and validate the remaining Lane 0.15 truth defects before measured execution.
 Live Release 3.6 verification and operator approvals remain required. Lane
 0.18 acceptance evidence is required for each counted improvement, but an
 independent operator check can supply it; completing all of Lane 0.18 is not
-a prerequisite. Dependency ordering remains blocked on D-001.
+a prerequisite. **Dependency ordering is no longer blocked:** D-001 was
+answered 2026-09-06 — a managed roadmap may optionally declare dependencies,
+within one repository, acyclic, keyed on stable item ids, gating dispatch
+eligibility. The cohort is unblocked too; see the D-006 note under Release 3.7.
 
 1. **Release 3.7 — Portfolio Value Proof** is the next engineering
    release (execution contract in §6). Its four milestones follow the
@@ -258,14 +292,24 @@ a prerequisite. Dependency ordering remains blocked on D-001.
    condition was met; both engineering items shipped the same day (archived),
    and the physical-Android proof rides the operator batch above.
 
+**Where Release 3.8 sits — after the trial, not before it.** The value trial
+measures the delivery loop as it exists; Release 3.8 changes what runs inside
+that loop. Defining it now (2026-09-06, from the
+[execution-governance spec](docs/governance/Agent-Execution-Governance.md)) is
+deliberate: the trial's false positives and bad recommendations then land
+against a named target instead of an unwritten one. Two of its dependencies are
+already satisfiable in parallel — D-001's dependency notion and D-003's
+`Checks: Read` grant — and both are listed in the map below.
+
 **Dependency map (open work only):**
 
 | Open item                                            | Depends on                                    | Type                                          |
 | ---------------------------------------------------- | --------------------------------------------- | --------------------------------------------- |
 | Release 3.6 operator verification                    | Eyes on the live portal (batch with 2.9)      | hard - human; engineering is done             |
-| Release 3.7 measured value trial | Lane 0.15 truth validation; live Release 3.6 proof; ten-category cohort; operator approvals | hard — evidence integrity + operator |
-| Lane 0.2 `Checks: Read`; TLS certificate password    | An operator action outside this repository    | hard — external                               |
-| Lane 0.5 tab disclosure; Lane 0.7 archive signal     | A product decision, not engineering time      | hard — design                                 |
+| Release 3.7 measured value trial                     | Lane 0.15 truth; live 3.6 proof; approvals    | hard — evidence integrity + operator          |
+| Release 3.8 provider-aware execution                 | Release 3.7 baseline; D-001; D-003 grant      | soft — sequencing; one operator grant         |
+| Lane 0.2 `Checks: Read` grant (D-003: grant it)      | An operator action outside this repository    | hard — external                               |
+| Lane 0.5 tab disclosure                              | A product decision, not engineering time      | hard — design                                 |
 | Release 2.9 freeze-prevention deploy (from 2.7)      | An elevated (SYSTEM) Windows install          | hard — privilege; batch with the two below    |
 | Release 2.9 watchdog + service-installer proof       | An elevated (SYSTEM) session                  | hard — privilege                              |
 | Release 2.9 physical-Android proof (2.5 + 2.6)       | The operator's Galaxy S24 Ultra on the LAN    | hard — hardware; the software is ready for it |
@@ -745,8 +789,9 @@ operator verification and ten-category cohort are ready. Its job is to make
 the product earn its next release against the real portfolio, not itself.
 
 Preparation and per-repository evidence: [trial record](evidence/trials/release-3.7/README.md)
-and `evidence/trials/release-3.7/cohort.json`. Nine candidates are named;
-external management awaits D-006. No improvements are counted yet.
+and `evidence/trials/release-3.7/cohort.json`. Nine candidates are named; the
+tenth category is recorded as unrepresented under D-006's 2026-09-06 ruling
+rather than filled by a substitute. No improvements are counted yet.
 
 **Goal:** ten representative repositories — chosen by kind, not for
 conformance — each receive a credible conclusion and, where warranted, a next
@@ -767,8 +812,14 @@ recorded; the result decides the full 80+ rollout.
       repository without a roadmap, library, externally managed project,
       nearly finished repository, messy repository — recording why each was
       chosen. Nine provisional candidates and an explicit unfilled external-management
-      slot are recorded in `evidence/trials/release-3.7/cohort.json`; D-006
-      must resolve before selection is complete. _(state: scaffolded)_
+      slot are recorded in `evidence/trials/release-3.7/cohort.json`. **D-006's
+      ruling (2026-09-06) releases the selection:** external management is owner
+      intent and may not be inferred from age, activity, remote ownership or
+      documentation maturity, so a category with **no natural member is recorded
+      as unrepresented** rather than filled by a substitute. An empty category
+      is a valid trial outcome. Selection completes with nine named
+      repositories and the tenth category recorded as having no cohort member.
+      _(state: scaffolded)_
 - [ ] **Run the conclusion model over the ten**, recording per repository:
       what it is, whether it still matters, its state, what limits its value,
       the highest-value next action, and whether the product can execute or
@@ -806,7 +857,119 @@ prevents it); counting a repair as an improvement when the repository is not
 stronger (outcome quality is recorded, not assumed).
 
 **Dependencies:** Lane 0.15 truth validation; live Release 3.6 verification;
-ten-category cohort (D-006); the operator's approvals and measured effort.
+the operator's approvals and measured effort. **D-006 no longer blocks the
+cohort** (decided 2026-09-06): external management is owner intent and may not
+be inferred, so a category with no natural member is recorded as unrepresented
+rather than filled by a substitute. The trial proceeds with nine named
+repositories and records the tenth category as having no cohort member.
+
+---
+
+### Release 3.8 — Provider-Aware Execution
+
+**Status:** planned — defined 2026-09-06. The design authority is
+[`docs/governance/Agent-Execution-Governance.md`](docs/governance/Agent-Execution-Governance.md);
+this block carries only milestones and gates. It supersedes the 2026-07-07
+decisions in [`docs/execution-orchestrator-design.md`](docs/execution-orchestrator-design.md),
+whose P0 is the only part ever built. Follows Release 3.7 — the value trial
+measures the loop that exists, and this release changes what runs inside it.
+
+**Goal:** the work contract becomes provider-neutral and the scheduler becomes
+provider-aware. A task carries objective, scope, acceptance criteria,
+verification and a permission envelope, and says nothing about which agent runs
+it; the orchestrator chooses between Codex, Claude Code and GitHub Copilot on
+eligibility and remaining subscription capacity, records why, and returns work
+to the queue — never fails it — when a provider is exhausted.
+
+#### Product outcomes
+
+- Roadmap work keeps moving when one provider hits a limit, because
+  `CAPACITY_WAIT` is a normal operating state rather than a failed run.
+- No subscription is unexpectedly exhausted by ordinary roadmap work: each
+  provider keeps a configured reserve only remediation may consume.
+- The operator approves a **verified head SHA**, not a pull request number, and
+  execution below that line needs no per-step attendance.
+
+#### Engineering milestones
+
+- [ ] **Give a task a provider-neutral contract and a structured result.** A
+      `WorkPacket` (objective, scope paths, acceptance criteria, verification
+      commands, permission envelope) persisted outside the commit-eligible tree,
+      which each adapter renders into its own prompt.
+      [`Roadmap.Dispatcher.ps1`](backend/modules/roadmap/Roadmap.Dispatcher.ps1)
+      builds prose today and nothing reads a result back. A run producing no
+      structured `ExecutionResult` fails by name instead of reaching
+      `awaiting-review`. _(state: planned)_
+- [ ] **Persist capacity per provider, in the provider's own unit.** Named
+      windows with `remainingRatio`, `resetAt` and a confidence rank; reserves
+      and ranking weights live in `backend/config/`, not in code.
+      [`BudgetLedger.ps1`](backend/modules/agent-runs/BudgetLedger.ps1) keeps the
+      portfolio work-unit quota and gains no token conversion it cannot source.
+      A limit re-queues the task with workspace, branch, attempt and session
+      intact. _(state: planned)_
+- [ ] **Route between providers, and add the Codex adapter.** One registry
+      replaces the `claude`/`copilot` pair hardcoded in
+      [`Automation.RoadmapQueue.ps1`](backend/modules/automation/Automation.RoadmapQueue.ps1),
+      [`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1) and
+      `frontend/types.ts`, and reconciles the third vocabulary
+      (`operator-runner`) the approval route writes. Eligibility then ranking,
+      selection reason recorded, presence counts derived from the registry
+      rather than naming providers. _(state: planned)_
+- [ ] **Move push and PR opening to Repo Manager; bind approval to the verified
+      SHA.** The agent exits at `IMPLEMENTATION_COMPLETE`; Repo Manager pushes,
+      opens the pull request and monitors CI on a cadence without holding an
+      execution slot — which also closes Lane 0.17's open "nothing refreshes the
+      board" non-blocker. A head change after verification invalidates
+      `READY_FOR_OPERATOR`. Merge stays an explicit operator action.
+      _(state: planned)_
+- [ ] **Remediate from evidence, and hand off between providers.** Attempt and
+      remediation counts survive a restart; a CI failure builds a
+      `RemediationPacket`, resumes the original session where capacity allows,
+      and otherwise transfers a `HandoffPacket` of durable evidence to another
+      eligible provider. No provider depends on another's conversation.
+      _(state: planned)_
+- [ ] **Normalize execution events onto the Dispatch Board.** Provider output
+      converts to the canonical `execution.*` vocabulary, reconciled with
+      [`roadmap-events.md`](standards/roadmap/roadmap-events.md) so exactly one
+      is canonical. New states arrive as a mapped dimension in
+      [`status-vocabulary.md`](docs/reference/status-vocabulary.md), keeping the
+      Release 3.5 rule that no two dimensions share a word. Per D-008 this is
+      the one surface that dispatches. _(state: planned)_
+
+#### Acceptance criteria
+
+- A task contract carries no provider-specific execution assumption unless the
+  task genuinely requires a provider-specific capability.
+- A provider at a hard limit is not dispatched; exhaustion re-queues the task
+  rather than failing it, and the task resumes after the window resets.
+- Capacity is persisted per provider in its native unit with no invented token
+  conversion, and survives a restart along with attempt count, session id,
+  cooldown and verified SHA.
+- Provider selection records its reason; a run records the provider, session id
+  and usage it actually consumed.
+- Operator approval names a verified head SHA, and a head change after
+  verification invalidates readiness.
+
+#### Out of scope
+
+- Concurrency above one local execution slot, raised only after capacity
+  accounting, session persistence, CI reconciliation and restart recovery are
+  proven.
+- Automatic merge. The promotion boundary stays an explicit operator action.
+
+**Validation plan:** module smoke covers the pure decision tables — eligibility,
+ranking, capacity arithmetic, handoff construction — offline, in the shape
+`Resolve-LaneObservation` already uses; api-host smoke covers the routes; every
+new gate is proven red against a violating fixture before it is trusted.
+
+**Risks:** an adapter that quietly widens the packet's scope or permission
+envelope (the contract forbids it and a gate asserts it); equating provider
+token telemetry with remaining subscription allowance; reserves set so high that
+ordinary work starves.
+
+**Dependencies:** D-001 for the dependency clause of eligibility; D-003's
+`Checks: Read` grant for check-run-level CI evidence; Release 3.7's trial for
+the measured baseline this release changes.
 
 ---
 
@@ -819,15 +982,26 @@ Completed cross-cutting items are in
 
 ### Lane 0.2 — Credential freshness
 
-- [ ] **Decide the PAT `Checks: Read` grant — it is optional, not required.**
-      _(state: planned — non-blocker; scope audit 2026-08-10)_ The token 403s on
-      check-runs and GraphQL `statusCheckRollup`, but **nothing in the product
-      depends on it**: merge readiness reads `mergeable_state` from the Pulls
-      API and the merge loop's `mergeStateStatus` proxy works without it (six
-      PRs merged 2026-08-10 on the proxy alone, through required-check branch
-      protection). Granting it only adds `gh pr checks --watch` detail. Under a
-      minimal-permissions policy it is legitimate to **decline permanently**; if
-      declined, close this as "decided: proxy is the contract".
+- [ ] **Grant the PAT `Checks: Read` — decided 2026-09-06 (D-003).**
+      _(state: planned — an operator action outside this repository)_ The token
+      403s on check-runs and GraphQL `statusCheckRollup`. The open question was
+      grant-or-decline-permanently, and the answer is **grant**: detailed CI
+      state is becoming a first-class input to orchestration, remediation and
+      merge readiness rather than the optional `gh pr checks --watch` detail it
+      was when this was raised. The scope stays read-only and within least
+      privilege. Batch it with the Release 2.9 operator session.
+- [ ] **Read check-run detail where it exists; keep `mergeStateStatus` as the
+      documented fallback.** _(state: planned)_
+      [`MergeReadiness.ps1`](backend/modules/agent-runs/MergeReadiness.ps1)
+      reads `mergeable_state` from the Pulls API, which is why a `BLOCKED`
+      rollup cannot tell a required check still running from one that failed —
+      the ambiguity the merge loop works around by polling. With the grant in
+      place, prefer per-check conclusions and keep the proxy for a token
+      without the scope. Release 3.8's CI-failure evidence collection is the
+      consumer that wants the finer signal. Gate: a fixture with one pending
+      and one failed required check reports different blockers, and a token
+      lacking `Checks: Read` still evaluates through the proxy rather than
+      erroring.
 - [x] **Regenerate the portal TLS certificate (recovery is dead).** _(state:
       done 2026-08-29 — the portal serves HTTPS; verified live:
       `tlsState: enabled`, `CN=localhost`, valid to 2031-08-29, and plain
@@ -988,7 +1162,13 @@ Intent: **awareness, not enforcement.**
       inert. Add an explicit signal (e.g. `historyLocation` / `archiveRef`)
       to [`roadmap-contract.schema.json`](standards/roadmap/roadmap-contract.schema.json),
       set from a pointer link in the roadmap, and surface it in the audit
-      payload.
+      payload. **Decided 2026-09-06 (D-005): yes, as awareness metadata, not an
+      enforcement requirement.** The contract may state that history is
+      externalized and where it lives; it never requires a repository to
+      externalize history and prescribes no archive format. The purpose is
+      semantic accuracy for portfolio reporting, progress calculation and future
+      automation. The `spec/roadmap-contract` mirror moves with the schema, so
+      the sync gate is part of this item, not a follow-up.
 - Sanction the external-archive pattern in the standard — done (`ROADMAP_TEMPLATE.md` §6 "External archive option"); [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
 
 ### Lane 0.8 — Verification gate integrity (CI audit 2026-08-10)
@@ -1339,6 +1519,23 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
       engineering time — `Genesys.Core_AuditLogsApp` carries its own
       `docs/ROADMAP.md`, so collapsing the pair would discard a real plan.
       _(state: planned)_
+
+- [ ] **Classify a repository nested inside another as `nested`, not as its own
+      portfolio entry.** _(state: planned)_ Decided 2026-09-06 (D-002): the
+      portfolio represents managed projects, not merely every `.git` boundary
+      present on disk. `custom_SereneHarmonySite` is a working tree inside
+      `SereneHarmony_Site_Starter`, which is also one, and the scan counts both
+      — correctly, as the 70-versus-72 explanation in Lane 0.15 established.
+      Give `Get-RepoScopeClassification`
+      ([`Portfolio.Scope.ps1`](backend/modules/portfolio/Portfolio.Scope.ps1))
+      a `nested` verdict beside `vendored` and `archived`, so a nested
+      repository is reported and never silently lost, with an explicit opt-in
+      promoting one to independently managed when it genuinely has its own
+      lifecycle. **The portfolio total falls by one when this lands** — record
+      that in the Release 3.7 trial evidence so it is not later read as scan
+      drift. Gate: a fixture with a repository inside a repository classifies
+      the inner one `nested` and drops it from the managed count, and the
+      opt-in promotes it back.
 
 ### Lane 0.13 — Truthful uncertainty: the product could not tell "unreadable" from "not present" (found 2026-08-27)
 
@@ -1966,7 +2163,34 @@ not observed agent activity.
       hours old and be reported — correctly — as stuck for want of a poll
       rather than want of progress. The verdict is honest either way (it says
       when it last observed), but a board that refreshed its own runs would
-      distinguish "the agent stopped" from "nobody looked". _(state: planned)_
+      distinguish "the agent stopped" from "nobody looked". Release 3.8's
+      fourth milestone owns the cadence — Repo Manager monitors CI without
+      holding an execution slot — so close this item there rather than building
+      a second poller. _(state: planned)_
+- [ ] **Restrict dispatch authority to the Dispatch Board.** _(state: planned)_
+      Decided 2026-09-06 (D-008), and it **reverses the default shipped the
+      same day** under D-010. `CopilotTaskPreviewModal` opens from the Dispatch
+      Board, the Work Queue and Operations, and
+      [`Dashboard.tsx`](frontend/components/Dashboard.tsx) passes its dispatch
+      callback unconditionally — so all three now queue real agent work and
+      spend quota, where before they only wrote a ledger row. Previewing a task
+      must not implicitly grant authority to consume agent budget. Work Queue
+      and Operations keep the full preview — readiness, estimated resource
+      requirement, intended provider — and navigate the operator to that task
+      on the board instead of invoking the dispatch endpoint themselves. This
+      also gives Release 3.8's capacity governor, provider selection and budget
+      impact one consistent surface to appear on before work begins. Gate:
+      component tests prove the dispatch action is present from the board and
+      absent from the two preview-only surfaces.
+- [ ] **[non-blocker]** Archive this lane's eight closed items to
+      [`docs/history/completed-releases.md`](docs/history/completed-releases.md).
+      The roadmap's own rule is that this file carries open work only and an
+      `[x]` here is a mistake rather than a record; the lane has held eight
+      since 2026-08-30. Left in place deliberately on 2026-09-06 so the
+      execution-model pass stayed reviewable — a verbatim move of ~110 lines
+      does not belong in the same diff as a new release contract. It is the
+      larger half of `R010-FILE-LENGTH`, which has warned since the file passed
+      2,000 lines. _(state: planned)_
 
 ---
 
@@ -2003,6 +2227,16 @@ behaviour explicitly, because that is the cheap half to get wrong.
 `Invoke-Agent` returns failure for an unknown agent, so that pipeline halts on
 its first step. None of the items below depend on it.
 
+**The third-dispatch-target option is withdrawn — D-004, decided 2026-09-06.**
+GitHub Repo Manager is the orchestration authority, and a second closed-loop
+orchestrator beneath it would duplicate ownership of task selection, execution
+state, budgeting, remediation and completion. Mechanisms still come across —
+that is exactly what the items below are. If the tool is integrated later it
+participates through Release 3.8's provider-adapter contract, which is bounded
+by construction: an adapter translates packets and events, and makes no
+roadmap, merge or portfolio-priority decisions. **Three of the four items below
+are re-scoped into Release 3.8** rather than built standalone; each says how.
+
 - [ ] **Carry an amendment forward between dispatches.** Every dispatch starts
       cold: what the last agent learned, or deliberately left undone, dies
       unless it reaches the pull-request body, so the next prompt for the same
@@ -2016,7 +2250,10 @@ its first step. None of the items below depend on it.
       prompt builder. Acceptance: a second dispatch to the same repository
       carries the prior run's unresolved note into its prompt; a repository
       with no prior run produces exactly the prompt it produces today.
-      _(state: planned)_
+      **Re-scoped 2026-09-06:** this is the `HandoffPacket`'s `priorResult` and
+      `remainingScope` in Release 3.8 — build it there, once, rather than as a
+      separate carryover channel that a cross-provider handoff would then have
+      to duplicate. _(state: planned)_
 - [ ] **Check the acceptance criteria before a pull request is called ready.**
       Dispatch prompts already carry acceptance criteria and nothing verifies
       them; merge evidence answers "did this land", not "did it do what the
@@ -2028,7 +2265,10 @@ its first step. None of the items below depend on it.
       not, so run it against the agent's branch and record the verdict in the
       agent-run ledger. Acceptance: an item whose criteria are unmet reports
       the failing criterion by name, and every existing merge gate keeps its
-      current strictness. _(state: planned)_
+      current strictness. **Re-scoped 2026-09-06:** this check is what gives
+      Release 3.8's `LOCAL_VERIFYING` state its meaning — without it
+      `IMPLEMENTATION_COMPLETE` asserts only that an agent stopped. Build it as
+      that gate. _(state: planned)_
 - [ ] **Cap cumulative spend across a dispatch sequence.**
       [`BudgetLedger.ps1`](backend/modules/agent-runs/BudgetLedger.ps1)
       evaluates one dispatch against a work-unit quota. The orchestrator's run
@@ -2038,7 +2278,12 @@ its first step. None of the items below depend on it.
       the unit, since this product counts work units and captured token cost
       rather than one headless price. Acceptance: a sequence that reaches the
       cap stops with its spend recorded, and a single dispatch inside quota
-      behaves as it does today. _(state: planned)_
+      behaves as it does today. **Re-scoped 2026-09-06:** the cumulative cap
+      becomes Release 3.8's per-provider reserve, which is the same
+      persist-before-halt ordering applied to the unit each provider actually
+      exposes; the work-unit quota stays the portfolio budget beside it. The
+      two measure different things and neither replaces the other.
+      _(state: planned)_
 - [ ] **Order work inside one repository's roadmap, and detect dead ends.**
       [`Roadmap.DependencyTracker.ps1`](backend/modules/roadmap/Roadmap.DependencyTracker.ps1)
       finds references _between_ repositories; nothing orders items _within_ a
@@ -2054,16 +2299,13 @@ its first step. None of the items below depend on it.
       code change. Acceptance: selection is deterministic for a given completed
       set; a cycle or an unresolved id halts as blocked; a roadmap with no
       dependency declarations ranks exactly as it does today.
-      _(state: planned)_
-- [ ] **[non-blocker]** Treat the orchestrator as a third `dispatchTarget`
-      beside `copilot` and `claude`, handing a whole well-formed roadmap to a
-      closed-loop executor while single-item dispatch keeps serving everything
-      else. This reuses the tool whole instead of cherry-picking it, and the
-      queue, the target discriminator and the runner already exist in
-      [`Automation.RoadmapQueue.ps1`](backend/modules/automation/Automation.RoadmapQueue.ps1)
-      and [`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1).
-      Blocked on that repo's own hardening roadmap (its Phases 4-7) and on the
-      missing pipeline agents named above. _(state: planned)_
+      **Unblocked 2026-09-06 (D-001):** dependencies are permitted, optional,
+      within one repository, acyclic, keyed on stable item ids, and they gate
+      dispatch eligibility. Less new notation than it looks —
+      [`ROADMAP_TEMPLATE.md`](standards/roadmap/ROADMAP_TEMPLATE.md) already
+      recommends `[[M3]]` ids and an inline `(depends: M3)` tag that nothing
+      reads; the schema and parser have to catch up with the authoring
+      convention. _(state: planned)_
 
 ---
 
@@ -2098,6 +2340,16 @@ headline guardrails for the active release and near-term roadmap:
   shipped milestones reading `planned`). Enforced by
   `Test-RoadmapCapabilityRecord.ps1`: a stated rule drifts; a derived one does
   not.
+- **A provider limit is state, not an execution failure** (added 2026-09-06
+  from the [execution-governance spec](docs/governance/Agent-Execution-Governance.md)).
+  Reaching a subscription limit returns the task to the queue with its
+  workspace, branch, attempt count and session identifier intact. It must never
+  mark the roadmap item failed, and `CAPACITY_WAIT` is a normal operating state.
+  Ordinary roadmap work may not consume a provider's configured reserve.
+- **Operator approval applies to a verified head SHA, not a pull request
+  number.** Any change to the pull request head after verification invalidates
+  readiness and requires re-approval. Agent execution may be autonomous;
+  promotion to the protected default branch is not.
 
 ---
 

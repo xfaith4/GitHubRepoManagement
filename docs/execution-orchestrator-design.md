@@ -1,7 +1,32 @@
-# Execution Orchestrator — design (draft for redline)
+# Execution Orchestrator — design (superseded 2026-09-06)
 
-> Status: design, not built. This captures the decisions from the planning
-> discussion so we can redline before writing code.
+> **Status: superseded — do not build from this document.** The design
+> authority for execution is now
+> [Agent Execution Governance](governance/Agent-Execution-Governance.md),
+> carried as **Release 3.8 — Provider-Aware Execution** in
+> [`ROADMAP.md`](../ROADMAP.md). What follows is kept for two reasons: its
+> **P0 record**, which is the only part ever built (phase-plan protocol,
+> write-back and the agent-readiness gate, 2026-07-08), and the reasoning
+> behind the decisions the new spec revisits.
+>
+> **Two of its decisions locked on 2026-07-07 are reversed.**
+>
+> - **"Merge — automatic when green"** is reversed. Promotion is an explicit
+>   operator action against a **verified head SHA**. A well-formed roadmap
+>   grants permission to prepare and execute work; it never grants permission
+>   to merge that work into the protected default branch.
+> - **"Governor threshold — adaptive, not preset"** survives only as the
+>   lowest-confidence capacity source. Capacity is observed per provider in the
+>   provider's own unit and ranked by confidence, with provider-reported status
+>   preferred over a ceiling discovered by hitting a `429`.
+>
+> Its single-provider assumption is gone too: the orchestrator routes between
+> Codex, Claude Code and GitHub Copilot, and a provider limit is **state**, not
+> a failed task.
+>
+> Original status line, retained: _design, not built. This captures the
+> decisions from the planning discussion so we can redline before writing
+> code._
 
 ## Mission
 
