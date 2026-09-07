@@ -82,6 +82,7 @@ $executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 . (Join-Path $executionModuleRoot 'Execution.Ledger.ps1')
 . (Join-Path $executionModuleRoot 'Execution.LaneObservation.ps1')
 . (Join-Path $executionModuleRoot 'Execution.WorkPacket.ps1')
+. (Join-Path $WorkspaceRoot 'backend\modules\agent-adapters\Adapter.Claude.ps1')
 . (Join-Path $WorkspaceRoot 'backend\modules\auth\GitHubApp.ps1')
 . (Join-Path $WorkspaceRoot 'backend\modules\auth\SessionAuth.ps1')
 $docStdModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\docstandardization'

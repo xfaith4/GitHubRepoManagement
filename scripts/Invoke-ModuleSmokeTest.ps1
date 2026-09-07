@@ -2406,6 +2406,115 @@ if (-not $erSaveRefused) { throw 'Expected Save-ExecutionResult to refuse an inv
 
 Write-Host '  executionresult: schema v1, four statuses, tri-state verification, round-trip, invalid refused' -ForegroundColor DarkGray
 
+# ---------------------------------------------------------------------------
+# Release 3.8 M1 (H38-04) — the Claude adapter.
+#
+# The fixture below is SYNTHETIC: authored from the documented stream-json
+# shape, not recorded from a real run, because no packet in this release may
+# require spending subscription quota to produce a test input. That makes the
+# shape an ASSUMPTION, so the assertions deliberately include the tolerance
+# cases — a transcript with no session_id, no usage, or an unfamiliar usage
+# shape must still yield a valid result rather than a throw or a wrong parse.
+#
+# A real transcript appears for free at <runId>.claude.stream.jsonl after any
+# headless run. Drop it in beside the synthetic one and the block below asserts
+# against both; a difference between them is a finding, not a failure.
+# ---------------------------------------------------------------------------
+Write-Step 'Loading Claude adapter module (Release 3.8 M1)'
+$claudeAdapterPath = Join-Path $WorkspaceRoot 'backend\modules\agent-adapters\Adapter.Claude.ps1'
+if (-not (Test-Path -LiteralPath $claudeAdapterPath)) { throw "Adapter.Claude.ps1 not found at: $claudeAdapterPath" }
+. $claudeAdapterPath
+Write-Host 'Claude adapter module loaded successfully' -ForegroundColor Green
+
+Write-Step 'Claude adapter — smoke: stream-json to ExecutionResult, offline'
+
+$caSyntheticPath = Join-Path $WorkspaceRoot 'tests\fixtures\providers\claude-stream-json-success.synthetic.jsonl'
+if (-not (Test-Path -LiteralPath $caSyntheticPath)) { throw "Synthetic Claude fixture not found at: $caSyntheticPath" }
+
+$caTranscripts = [ordered]@{ synthetic = $caSyntheticPath }
+$caRealPath = Join-Path $WorkspaceRoot 'tests\fixtures\providers\claude-stream-json-success.jsonl'
+if (Test-Path -LiteralPath $caRealPath) { $caTranscripts['recorded'] = $caRealPath }
+
+foreach ($caName in @($caTranscripts.Keys)) {
+    $caLines = @(Get-Content -LiteralPath $caTranscripts[$caName] -Encoding UTF8)
+    $caParsed = ConvertFrom-ClaudeStreamJson -Lines $caLines
+    if ($null -eq $caParsed.result) { throw "[$caName] transcript has no terminal result object" }
+    if (@($caParsed.parseErrors).Count -ne 0) { throw "[$caName] transcript has unparseable lines: $(@($caParsed.parseErrors) -join ', ')" }
+    if (@($caParsed.events).Count -lt 2) { throw "[$caName] expected several events, got $(@($caParsed.events).Count)" }
+
+    $caResult = ConvertTo-ClaudeExecutionResult -Parsed $caParsed -TaskId 'smoke-ca-1' -ExecutionId 'exec-ca-1' -ChangedFiles @('src/thing.ps1')
+    if ($null -eq $caResult) { throw "[$caName] adapter returned no ExecutionResult for a transcript that has one" }
+    $caValid = Test-ExecutionResult -Result $caResult
+    if (-not $caValid.valid) { throw ("[$caName] adapter produced an invalid result: " + ($caValid.errors -join '; ')) }
+    if ($caResult.provider -ne 'claude') { throw "[$caName] expected provider=claude" }
+    if ($caResult.status -ne 'implementation_complete') { throw "[$caName] expected implementation_complete, got '$($caResult.status)'" }
+    if ($caResult.source -ne 'adapter') { throw "[$caName] expected source=adapter" }
+    if ([string]::IsNullOrWhiteSpace([string]$caResult.providerSessionId)) { throw "[$caName] session id was not carried onto the result" }
+    if ($null -eq $caResult.usage.native) { throw "[$caName] provider usage was not retained" }
+    Write-Host ("  claude adapter [{0}]: session={1} tokens={2}" -f $caName, $caResult.providerSessionId, $caResult.usage.tokensObserved) -ForegroundColor DarkGray
+}
+if (-not $caTranscripts.Contains('recorded')) {
+    Write-Host '  claude adapter: no recorded transcript present yet — synthetic only. Copy any <runId>.claude.stream.jsonl here to assert against both.' -ForegroundColor DarkGray
+}
+
+$caSyntheticLines = @(Get-Content -LiteralPath $caSyntheticPath -Encoding UTF8)
+
+# No terminal result -> no ExecutionResult. That is H38-03's named failure
+# path, not an adapter error.
+$caNoResult = ConvertFrom-ClaudeStreamJson -Lines @($caSyntheticLines | Where-Object { $_ -notmatch '"type"\s*:\s*"result"' })
+if ($null -ne $caNoResult.result) { throw 'Expected no result object once the result line is removed' }
+if ($null -ne (ConvertTo-ClaudeExecutionResult -Parsed $caNoResult -TaskId 't' -ExecutionId 'e')) { throw 'Expected $null ExecutionResult when the transcript has no result line' }
+
+# One garbage line must not lose the transcript.
+# Built with + rather than a comma list: @(a, b, $array) nests the array
+# instead of flattening it, and the nested element then coerces to one
+# unparseable string. The assertion caught that, which is the gate working.
+$caGarbled = @($caSyntheticLines[0]) + @('this is not json at all') + @($caSyntheticLines[1..($caSyntheticLines.Count - 1)])
+$caGarbledParsed = ConvertFrom-ClaudeStreamJson -Lines $caGarbled
+if (@($caGarbledParsed.parseErrors) -notcontains 2) { throw "Expected line 2 to be reported as unparseable, got: $(@($caGarbledParsed.parseErrors) -join ', ')" }
+if ($null -eq $caGarbledParsed.result) { throw 'A single garbage line must not lose the terminal result' }
+
+if ((ConvertTo-ClaudeExecutionResult -Parsed (ConvertFrom-ClaudeStreamJson -Lines @('{"type":"result","is_error":true,"session_id":"s","result":"it failed"}')) -TaskId 't' -ExecutionId 'e').status -ne 'implementation_failed') {
+    throw 'is_error=true must map to implementation_failed'
+}
+
+# Shape tolerance. This is what makes a synthetic fixture safe to build on: an
+# assumption that turns out wrong degrades to nulls rather than to a throw or
+# a confidently wrong parse.
+$caBare = ConvertTo-ClaudeExecutionResult -Parsed (ConvertFrom-ClaudeStreamJson -Lines @('{"type":"result","is_error":false}')) -TaskId 't' -ExecutionId 'e'
+if ($null -eq $caBare) { throw 'A result line with no session_id or usage must still produce an ExecutionResult' }
+if (-not (Test-ExecutionResult -Result $caBare).valid) { throw 'The tolerated bare result must still be a valid ExecutionResult' }
+if ($null -ne $caBare.providerSessionId) { throw 'A missing session_id must be $null, not an empty string' }
+if ($null -ne $caBare.usage.native) { throw 'A missing usage block must be $null' }
+if ($null -ne $caBare.usage.tokensObserved) { throw 'A missing usage block must give tokensObserved=$null' }
+
+# An unknown count and a count of zero are different claims.
+$caNonNumeric = ConvertTo-ClaudeExecutionResult -Parsed (ConvertFrom-ClaudeStreamJson -Lines @('{"type":"result","is_error":false,"usage":{"detail_tokens":"lots","model":"x"}}')) -TaskId 't' -ExecutionId 'e'
+if ($null -ne $caNonNumeric.usage.tokensObserved) { throw 'A usage block with no numeric *_tokens must give tokensObserved=$null, never 0' }
+if ((Get-ClaudeTokenTotal -Usage ([pscustomobject]@{ input_tokens = 10; output_tokens = 5; model = 'x' })) -ne 15) { throw 'Token totalling should sum every numeric *_tokens property' }
+
+# Argv is an array, never a command string: the prompt is multi-line roadmap
+# text and flattening it turns one argument into several.
+$caArgv = New-ClaudeExecutionArgument -Prompt "a`nb" -PermissionMode 'acceptEdits'
+if (@($caArgv).Count -ne 7) { throw "Expected 7 argv elements, got $(@($caArgv).Count)" }
+if ($caArgv[1] -ne "a`nb") { throw 'The prompt must survive argv construction with its newline intact' }
+if ($caArgv -notcontains 'stream-json') { throw 'Headless runs must request stream-json output' }
+$caResume = Resume-ClaudeExecution -SessionId 'sess-1' -Prompt 'p' -PermissionMode 'acceptEdits'
+if ($caResume -notcontains '--resume' -or $caResume -notcontains 'sess-1') { throw 'Resume argv must carry --resume and the session id' }
+
+# The A4 interface: all seven names exist for claude, so H38-15's conformance
+# gate has nothing to special-case.
+foreach ($caFn in @('Get-ClaudeAdapterCapability', 'Get-ClaudeAdapterCapacity', 'Start-ClaudeExecution', 'Resume-ClaudeExecution', 'Stop-ClaudeExecution', 'ConvertTo-ClaudeCanonicalEvent', 'Get-ClaudeExecutionResult')) {
+    if (-not (Get-Command $caFn -ErrorAction SilentlyContinue)) { throw "Adapter contract incomplete: $caFn is missing" }
+}
+if ((Get-ClaudeAdapterCapability).executionMode -ne 'local') { throw 'The Claude adapter runs locally' }
+if ($null -ne (Get-ClaudeAdapterCapacity)) { throw 'Capacity is not measured until H38-12; it must answer $null rather than a fabricated number' }
+$caStopRefused = $false
+try { Stop-ClaudeExecution } catch { $caStopRefused = $true }
+if (-not $caStopRefused) { throw 'Stop-ClaudeExecution should refuse in 3.8 rather than pretend' }
+
+Write-Host '  claude adapter: transcript parsed, session and usage carried, missing fields tolerated, argv is an array' -ForegroundColor DarkGray
+
 Remove-Item -LiteralPath $wpWorkspace -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host '  workpacket: schema v1 validates, round-trips, and refuses to persist an invalid packet; [] and null hold on the wire' -ForegroundColor DarkGray
 

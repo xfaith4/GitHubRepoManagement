@@ -1,4 +1,4 @@
-<!-- markdownlint-disable MD036 -->
+﻿<!-- markdownlint-disable MD036 -->
 <!--
   MD036 (emphasis-as-heading) is disabled for this file only. A packet's
   **Why** / **Scope** / **Steps** / **Gate** / **Stop if** labels are a fixed
@@ -39,10 +39,29 @@ executing, the roadmap's Release 3.8 milestone the packet names, and the spec
 section the packet names by heading. Do **not** read the spec end to end per
 packet; the packet quotes what it needs.
 
-**R12. Offline means offline.** No packet runs `claude`, `codex`, `gh`, or the
-live portal, and no packet needs a subscription. Provider behaviour is gated
-against **recorded fixture transcripts** under `tests/fixtures/providers/`
-(§C names them). A packet whose fixture is absent stops at its first step.
+**R12. Offline means offline, including how the fixtures are obtained.** No
+packet runs `claude`, `codex`, `gh`, or the live portal, and **no packet may
+require spending provider quota — not to execute, and not to produce a
+fixture.** Provider behaviour is gated against transcripts under
+`tests/fixtures/providers/`, and every one of those is **authored
+synthetically** by the packet that needs it, from the provider's documented
+output shape, committed as `<name>.synthetic.jsonl`.
+
+The first version of this file got that wrong: it made a recorded transcript an
+operator prerequisite of H38-04, the fourth packet of thirty-seven, which put a
+subscription spend in front of the whole release and contradicted this very
+rule. Corrected 2026-09-07.
+
+**Real transcripts arrive for free, and are never a prerequisite.** Every
+headless run writes its provider-native output beside the run summary
+(`<runId>.claude.stream.jsonl`, H38-04 step 4), so the first genuine dispatch
+leaves a real transcript as a byproduct. Promoting one to a fixture is a file
+copy, and the packet that consumes it asserts against **both** when the real
+one is present. Because a synthetic fixture encodes an assumption about a
+shape, every adapter parses **defensively** — unknown fields are recorded, a
+missing expected field is a named condition, never a crash — so a wrong
+assumption surfaces as a diagnosable mismatch rather than a confidently wrong
+parse.
 
 **R13. One line, one state.** The roadmap write-back edits only the milestone's
 `_(state: …)_` clause. Never insert a line break between `(state:` and the
@@ -139,7 +158,7 @@ there.
 | D-011 | Are the spec's initial reserves right — short-window **15%**, weekly **20%**, remediation inside the weekly reserve — and what is the default per-task consumption estimate (the spec gives none)? | Reserve size is the whole risk posture of the release: too high starves ordinary work, too low exhausts a subscription. | Config ships the spec's 15/20 marked `"provisional": true`; the estimate defaults to `0.05` of the short window and is marked the same. Records are written, verdicts are **not enforced**. | H38-09, H38-17 |
 | D-012 | What is the default permission envelope and scope? The spec's example is `filesystemWrite true, shell true, network false, githubWrite false`, `forbiddenPaths [".github/workflows/**"]`. Confirm, and say whether an agent may edit workflow files (the July design said yes, flagged). | Security posture of every agent run. | Config ships the spec's example marked provisional; the packet carries it; **no adapter enforces it** (no `--allowedTools` mapping) until decided. | H38-05 (enforcement half only), H38-16 (`--sandbox` mapping) |
 | D-014 | Which GitHub Copilot billing mode does this account use — AI credits, or the legacy premium-request allowance? | The spec forbids assuming the generation; the answer is on the account, not in the repo. | The Copilot adapter's `Get-CopilotAdapterCapacity` returns one window with `unit: "unknown"`, `confidence: "none"`, `available: true`; routing treats Copilot as eligible-but-unmeasured. | H38-15 (capacity half only) |
-| D-015 | Is Codex (`codex` CLI, an account with capacity) available on the operator's machine, and will Ben record the two fixture transcripts §C names? | Nothing in the repository has ever seen Codex; a fixture is the only offline evidence. | `codex` ships in config with `"enabled": false`; the router works with two providers; H38-16 is blocked. | H38-16, H38-29 (Codex resume half) |
+| D-015 | Is Codex (`codex` CLI, an account with capacity) available on the operator's machine at all? | Whether a tool is installed and funded is a fact about the machine and the account, not the repository. | `codex` ships in config with `"enabled": false`; the router works with two providers; H38-16 is blocked. **No transcript is needed to answer this** — H38-16 authors a synthetic fixture like every other packet (R12). | H38-16, H38-29 (Codex resume half) |
 
 **All five are now in the register**, so a packet's **Stop if** reads
 `open-decisions.md` rather than this table. D-011, D-012, D-014 and D-015 are
@@ -157,10 +176,18 @@ runs rather than being skipped.
 | Prerequisite | Needed by | How |
 | --- | --- | --- |
 | `HAIKU-WORK-PACKETS.md` H-05 landed (heartbeat path override), H-07 (dispatch authority), H-10 (check-run detail), H-13a and H-13b (dependencies) | H-05: all runner packets; H-07: H38-35; H-10: H38-23, H38-28; H-13a/b: H38-17 | Execute those packets first. Each 3.8 packet that depends on one names it under **Prerequisites**. |
-| `tests/fixtures/providers/claude-stream-json-success.jsonl` | H38-04 onward | From an operator shell: `claude -p "Reply with the single word OK." --output-format stream-json --verbose > tests\fixtures\providers\claude-stream-json-success.jsonl`. Commit it. |
-| `tests/fixtures/providers/claude-stream-json-usage-limit.jsonl` | H38-10 (real-transcript half) | Recorded the next time a usage limit is hit; until then H38-10 uses its synthetic fixture. |
-| `tests/fixtures/providers/codex-exec-success.jsonl` | H38-16 | `codex exec --json "Reply with the single word OK." > tests\fixtures\providers\codex-exec-success.jsonl` — only if D-015 is yes. |
-| D-011 … D-015 answered | see §B | `open-decisions.md` **Decided** section. |
+| D-011, D-012, D-014, D-015 answered | see §B | `open-decisions.md` **Decided** section. D-013 is already decided. |
+
+**No fixture is an operator prerequisite.** Every provider transcript this
+release gates against is authored synthetically by the packet that needs it
+(R12), so nothing here waits on a subscription spend. Real transcripts are
+collected opportunistically, from runs that were going to happen anyway:
+
+| Real transcript | Where it appears on its own | What to do with it |
+| --- | --- | --- |
+| Claude success | `output/roadmap-task-history/runs/<runId>.claude.stream.jsonl` after any headless dispatch | Copy to `tests/fixtures/providers/claude-stream-json-success.jsonl`; H38-04's gate then asserts against it **as well as** the synthetic one, and any shape difference is a finding worth acting on |
+| Claude usage limit | the same path, the next time a limit is actually hit | Copy to `claude-stream-json-usage-limit.jsonl`; H38-10 already asserts against both |
+| Codex success | the equivalent path once the Codex adapter runs | Only relevant if D-015 is yes |
 
 ---
 
@@ -177,7 +204,7 @@ companion (`H-`).
 | H38-01 | M1 | `WorkPacket` contract module, schema v1, persisted under `output/work-packets/` | — | low |
 | H38-02 | M1 | Build the WorkPacket at dispatch and carry `workPacketPath` on the queue entry | H38-01 | medium |
 | H38-03 | M1 | `ExecutionResult` contract; a run with no structured result fails by name | H38-01 | medium |
-| H38-04 | M1 | Claude adapter: `stream-json` → ExecutionResult with session id and usage | H38-03, §C fixture | high |
+| H38-04 | M1 | Claude adapter: `stream-json` → ExecutionResult with session id and usage | H38-03 | high |
 | H38-05 | M1 | Render the packet into the provider prompt; acceptance criteria travel verbatim | H38-02 | medium |
 | H38-06 | M1 | Milestone 1 closing: runner doc, vocabulary note, state → `smoke-tested` | H38-01…05 | low |
 | H38-07 | M2 | `backend/config/agent-providers.json` + loader + config tripwire | — | low |
@@ -190,7 +217,7 @@ companion (`H-`).
 | H38-13 | M2 | Milestone 2 closing: state → `smoke-tested`, doc, vocabulary note | H38-07…12 | low |
 | H38-14 | M3 | Provider registry replaces the hardcoded `claude`/`copilot` pair, one definition | H38-07 | medium |
 | H38-15 | M3 | Adapter conformance gate; Copilot adapter wraps the existing runner functions | H38-14, H38-04 | medium |
-| H38-16 | M3 | Codex adapter from a recorded fixture; runner branch for `codex` | H38-15, D-015, §C fixture | high |
+| H38-16 | M3 | Codex adapter from a synthetic fixture; runner branch for `codex` | H38-15, D-015 | high |
 | H38-17 | M3 | Router: eligibility then ranking, reason recorded, resolved at claim time; turns routing on | H38-09, H38-15, H-13b | high |
 | H38-18 | M3 | One vocabulary at the host: dispatch/execute accepts a target (default from config), approve route stops writing `operator-runner`, backlog by provider | H38-14 | medium |
 | H38-19 | M3 | Frontend: target union, presence payload by provider, preview names the intended provider | H38-18 | medium |
@@ -308,13 +335,15 @@ Everything in Release 3.8 or Lane 0.18 not in this table is in §3, with the rea
 
 **Why:** the runner records nothing from the CLI. The spec wants `session_id` recorded, usage normalized, and structured output used.
 
-**Prerequisites:** H38-03; the fixture `tests/fixtures/providers/claude-stream-json-success.jsonl` (§C).
+**Prerequisites:** H38-03. **No fixture prerequisite** — this packet authors its own (R12).
 
-**Scope (edit only):** new `backend/modules/agent-adapters/Adapter.Claude.ps1`; `scripts/Invoke-RoadmapTaskRunner.ps1` (the headless launch line and the result save only); `scripts/Invoke-ModuleSmokeTest.ps1`; `backend/api-host/Start-RepoManagementApiHost.ps1` (dot-source line only, after `Execution.WorkPacket.ps1`); `ROADMAP.md`.
+**Scope (edit only):** new `backend/modules/agent-adapters/Adapter.Claude.ps1`; new `tests/fixtures/providers/claude-stream-json-success.synthetic.jsonl`; `scripts/Invoke-RoadmapTaskRunner.ps1` (the headless launch line and the result save only); `scripts/Invoke-ModuleSmokeTest.ps1`; `backend/api-host/Start-RepoManagementApiHost.ps1` (dot-source line only, after `Execution.WorkPacket.ps1`); `ROADMAP.md`.
 
 **Steps**
 
-1. **Discovery, exact-match.** Open the fixture. Count lines whose parsed JSON has `type` equal to `result` — expect **1**. On that line confirm properties named `session_id` and `usage` exist (any nesting under `usage` is acceptable). If the count is not 1 or either property is absent, stop and report the property names present.
+1. **Author the synthetic fixture** at `tests/fixtures/providers/claude-stream-json-success.synthetic.jsonl`, one JSON object per line, from the documented `stream-json` shape: a `{"type":"system","subtype":"init","session_id":"…"}` line, one or more `{"type":"assistant",…}` lines, and exactly one terminal `{"type":"result","subtype":"success","is_error":false,"session_id":"…","result":"…","usage":{"input_tokens":…,"output_tokens":…}}` line. Put a header comment in the smoke section naming this as an **assumed shape**, not an observed one.
+
+   The assumption is contained rather than trusted: the parser in step 2 reads every field defensively, so a real transcript with a different shape produces a **named mismatch** rather than a wrong parse. When a real transcript is later copied in beside it (§C — it appears for free after any headless run), the gate asserts against both and any difference is a finding.
 2. Create the adapter (R15; a param-less library). Functions, all pure:
    - `New-ClaudeExecutionArgument -Prompt -PermissionMode` → string[]: `@('-p', $Prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', $PermissionMode)`. Array, never a command string (the prompt is multi-line roadmap text).
    - `ConvertFrom-ClaudeStreamJson -Lines <string[]>` → `[pscustomobject]@{ result = <the type=result object or $null>; events = @(all parsed objects); parseErrors = @(line numbers that failed) }`. Unparseable lines are recorded, never thrown.
@@ -322,16 +351,19 @@ Everything in Release 3.8 or Lane 0.18 not in this table is in §3, with the rea
 3. Also define the seven A4 names for `claude` now so H38-15's conformance gate has nothing to add later: `Get-ClaudeAdapterCapability` (returns `@{ provider='claude'; executionMode='local'; supportsResume=$true; supportsStructuredOutput=$true }`), `Get-ClaudeAdapterCapacity` (returns `$null` — H38-12 fills it), `Start-ClaudeExecution` (**not** executable here — returns `New-ClaudeExecutionArgument`; the runner is the process that invokes), `Resume-ClaudeExecution -SessionId -Prompt -PermissionMode` (returns the same argv with `'--resume', $SessionId` inserted after `'-p', $Prompt`), `Stop-ClaudeExecution` (throws `Not supported in 3.8: a local process is stopped by the runner`), `ConvertTo-ClaudeCanonicalEvent` (returns `@()` — H38-33 fills it), `Get-ClaudeExecutionResult` = `ConvertTo-ClaudeExecutionResult`.
 4. Runner: replace `& claude -p $prompt --permission-mode $PermissionMode` with: build argv via `New-ClaudeExecutionArgument`; run `& claude @argv 2>&1 | Tee-Object -Variable claudeLines | Out-Null`; keep the existing non-zero-exit throw; then `$parsed = ConvertFrom-ClaudeStreamJson -Lines @($claudeLines | ForEach-Object { [string]$_ })`; compute `$changed = @(& git -C $repo status --porcelain | ForEach-Object { $_.Substring(3) })`; `$result = ConvertTo-ClaudeExecutionResult …`; if `$result` is not `$null`, `Save-ExecutionResult`. Also write the raw lines to `<runsDir>\<runId>.claude.stream.jsonl` (provider-native payload retained for diagnosis, per spec). Dot-source the adapter in the runner next to the queue module dot-source (`$PSScriptRoot`-relative, as that line is).
 
-**Gate (red first) — module smoke, new section `Write-Step 'Claude adapter — smoke: recorded stream-json to ExecutionResult, offline'`:**
+**Gate (red first) — module smoke, new section `Write-Step 'Claude adapter — smoke: stream-json to ExecutionResult, offline'`:**
 
-- Parse the fixture; assert `result` not null, `session_id` non-empty, `ConvertTo-ClaudeExecutionResult` yields `provider = 'claude'`, `providerSessionId` equal to the fixture's, `status = 'implementation_complete'`, `usage.native` not null. Predicted red: `The term 'ConvertFrom-ClaudeStreamJson' is not recognized …`.
+- Parse the synthetic fixture; assert `result` not null, `session_id` non-empty, `ConvertTo-ClaudeExecutionResult` yields `provider = 'claude'`, `providerSessionId` equal to the fixture's, `status = 'implementation_complete'`, `usage.native` not null. Predicted red: `The term 'ConvertFrom-ClaudeStreamJson' is not recognized …`.
 - A fixture copy with the `result` line deleted → `result` is `$null`; `ConvertTo-ClaudeExecutionResult` returns `$null`.
 - A fixture copy with one garbage line inserted → `parseErrors` names that line number; `result` still found.
+- `is_error = $true` on the result line → `status = 'implementation_failed'`.
+- **Shape tolerance, which is what makes a synthetic fixture safe to rely on:** a result line carrying **no** `session_id` and **no** `usage` still yields a valid ExecutionResult with `providerSessionId = $null`, `usage.native = $null` and `tokensObserved = $null`, and never throws. A `usage` object whose properties are all non-numeric yields `tokensObserved = $null`, not `0` — an unknown count and a count of zero are different claims.
+- **Run against the real transcript too, when one exists:** if `tests/fixtures/providers/claude-stream-json-success.jsonl` is present, every assertion above runs against it as well. When it is absent the section says so and passes — its absence is never a failure.
 - Argv: `New-ClaudeExecutionArgument -Prompt "a`nb" -PermissionMode acceptEdits` is an array of 7 elements whose second element contains the newline intact.
 
 **Roadmap write-back:** append `; H38-04 Adapter.Claude.ps1 parses stream-json; session_id and usage recorded on <runId>.result.json`.
 
-**Stop if:** step 1 fails; or the fixture's `result` line has no `session_id`; or the runner's headless launch line matches more than one site.
+**Stop if:** the runner's headless launch line matches more than one site. **Not** a stop condition: a missing `session_id` or `usage` in any transcript — the parser is required to tolerate both.
 
 ---
 
@@ -692,7 +724,7 @@ Everything in Release 3.8 or Lane 0.18 not in this table is in §3, with the rea
 
 **Roadmap item:** M3 ("add the Codex adapter"). Spec: *Codex adapter* (`codex exec --json --sandbox workspace-write --output-schema <ExecutionResult schema>`; "records the Codex thread/session identifier"; "MUST NOT equate Codex token telemetry with remaining subscription allowance").
 
-**Prerequisites:** H38-15; **D-015 decided yes**; fixture `tests/fixtures/providers/codex-exec-success.jsonl` (§C).
+**Prerequisites:** H38-15; **D-015 decided yes**. No fixture prerequisite: this packet authors `tests/fixtures/providers/codex-exec-success.synthetic.jsonl` from the documented `codex exec --json` shape, parses it defensively, and asserts additionally against a real transcript only if one has appeared (R12).
 
 **Scope (edit only):** new `backend/modules/agent-adapters/Adapter.Codex.ps1`; new `backend/config/execution-result.schema.json` (the JSON Schema of H38-03's shape, for `--output-schema`); `scripts/Invoke-RoadmapTaskRunner.ps1` (a `codex` branch beside the claude launch); `backend/config/agent-providers.json` (`codex.enabled` → `true` **only** in this packet); `scripts/Invoke-ModuleSmokeTest.ps1`; `ROADMAP.md`.
 
@@ -713,7 +745,7 @@ Everything in Release 3.8 or Lane 0.18 not in this table is in §3, with the rea
 
 **Roadmap write-back:** append `; H38-16 Adapter.Codex.ps1 from a recorded codex exec --json transcript; runner runs codex tasks through the same result path`.
 
-**Stop if:** D-015 is not decided yes, or the fixture is absent, or step 1 finds no session identifier. Report and leave `codex.enabled = false`.
+**Stop if:** D-015 is not decided yes. Report and leave `codex.enabled = false`. **Not** a stop condition: a missing session identifier or usage block — the parser tolerates both, as the Claude adapter does.
 
 ---
 
@@ -1023,7 +1055,7 @@ Everything in Release 3.8 or Lane 0.18 not in this table is in §3, with the rea
 
 **Roadmap item:** M5 ("resumes the original session where capacity allows"). Spec: *Default routing policy* (remediation: "original provider session available? YES + capacity available → resume original session").
 
-**Prerequisites:** H38-28, H38-09. Codex half: **D-015** and a resume fixture (`tests/fixtures/providers/codex-exec-resume.jsonl`, operator-recorded).
+**Prerequisites:** H38-28, H38-09. Codex half: **D-015** only; the resume fixture `tests/fixtures/providers/codex-exec-resume.synthetic.jsonl` is authored by this packet (R12).
 
 **Scope (edit only):** `backend/modules/execution/Execution.Handoff.ps1`; `backend/modules/agent-adapters/Adapter.Claude.ps1`; `backend/modules/agent-adapters/Adapter.Codex.ps1`; `scripts/Invoke-RoadmapTaskRunner.ps1`; `scripts/Invoke-ModuleSmokeTest.ps1`; `ROADMAP.md`.
 
@@ -1254,7 +1286,8 @@ expected): `backend/config/agent-providers.json` (H38-07),
 `Execution.ProviderRegistry.ps1` (H38-07), `Execution.ProviderCapacity.ps1`
 (H38-08), `Execution.ProviderRouter.ps1` (H38-17), `Execution.Handoff.ps1`
 (H38-28), `Execution.Events.ps1` (H38-33), `tests/fixtures/providers/` and its
-transcripts (§C, operator-recorded), `output/work-packets/` and
+synthetic transcripts (authored by the packet that needs each, R12),
+`output/work-packets/` and
 `output/provider-capacity/` (runtime, gitignored).
 
 Paths named that exist today but whose **internal target** must be discovered
