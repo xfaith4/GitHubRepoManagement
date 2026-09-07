@@ -47,12 +47,131 @@ what happens by default if it is never answered, and what it blocks.
 - **Blocks.** No longer the cohort — the empty-category rule above releases it.
   Only the owner-intent labels themselves still need Ben.
 
+### D-011 — Are the capacity reserves right, and what does a task cost?
+
+- **Asked** 2026-09-06, from
+  [Release 3.8 milestone 2](../../ROADMAP.md) and the
+  [execution spec](Agent-Execution-Governance.md)'s _Capacity reserves_.
+- **Question.** The spec proposes holding back **15%** of a short window and
+  **20%** of a weekly window, with remediation drawing from inside the weekly
+  reserve. Are those the right numbers? And what should a single task be
+  assumed to consume, which the spec does not say at all?
+- **Why it is not an agent's call.** Reserve size is the risk posture of the
+  whole release. Too high starves ordinary work of capacity that was never
+  going to be needed; too low exhausts a subscription and leaves nothing for
+  the remediation that a failure will demand. Neither number is derivable
+  until real consumption has been observed.
+- **Default if unanswered.** `backend/config/agent-providers.json` ships the
+  spec's 15 and 20 and an estimate of `0.05` of the short window, all marked
+  `"provisional": true`. Capacity verdicts are **recorded but not enforced**,
+  so a wrong reserve cannot refuse work — it can only be visibly wrong.
+- **Blocks.** Nothing outright. It gates the enforcement half of the capacity
+  verdict in Release 3.8.
+
+### D-012 — What may an agent touch, and may it edit workflow files?
+
+- **Asked** 2026-09-06, from
+  [Release 3.8 milestone 1](../../ROADMAP.md) and the spec's _Permission
+  envelope_.
+- **Question.** The spec's example envelope is `filesystemWrite true`,
+  `shell true`, `network false`, `githubWrite false`, with `forbiddenPaths`
+  of `.github/workflows/**`. Confirm it, and rule on whether an agent may
+  edit workflow files. The superseded July design said yes and flagged it.
+- **Why it is not an agent's call.** It is the security posture of every
+  agent run, and the workflow question is self-referential: an agent that can
+  edit `.github/workflows/**` can edit the CI that reviews its own work.
+- **Default if unanswered.** The config ships the spec's example marked
+  provisional and every work packet carries it, so the envelope is visible on
+  each run. **No adapter enforces it** — nothing maps it onto a provider's
+  own permission flags until this is decided.
+- **Blocks.** The enforcement half of packet H38-05 and the Codex sandbox
+  mapping in H38-16. The envelope still travels; it just does not yet bind.
+
+### D-014 — Which Copilot billing mode does this account use?
+
+- **Asked** 2026-09-06, from
+  [Release 3.8 milestone 2](../../ROADMAP.md) and the spec's _GitHub Copilot
+  adapter_.
+- **Question.** Does this account meter agent work as AI credits, or under
+  the legacy premium-request allowance?
+- **Why it is not an agent's call.** The spec explicitly forbids assuming the
+  generation, and the answer is a property of the GitHub account rather than
+  anything in this repository. No code inspection can settle it.
+- **Default if unanswered.** `Get-CopilotAdapterCapacity` reports one window
+  with `unit: "unknown"` and `confidence: "none"`, and routing treats Copilot
+  as **eligible but unmeasured**. Work still dispatches to it; the governor
+  simply cannot reason about what is left.
+- **Blocks.** Only the capacity half of the Copilot adapter. Dispatch, events
+  and result handling are unaffected.
+
+### D-015 — Is Codex available, and will its fixtures be recorded?
+
+- **Asked** 2026-09-06, from
+  [Release 3.8 milestone 3](../../ROADMAP.md).
+- **Question.** Is the `codex` CLI installed on the operator's machine with
+  an account that has capacity — and will two transcripts be recorded so its
+  adapter can be gated offline?
+- **Why it is not an agent's call.** Nothing in this repository has ever seen
+  Codex. Its output shape cannot be inferred, and a recorded transcript is
+  the only offline evidence a gate can assert against.
+- **Default if unanswered.** `codex` ships in the provider config with
+  `"enabled": false`. The registry, the router and every other packet work
+  with two providers; the Codex adapter is simply not built.
+- **Blocks.** Packet H38-16 entirely, and the Codex resume path in H38-29.
+  Nothing else in Release 3.8 waits on it.
+
 ---
 
 ## Decided
 
 Move entries here with the decision and its date. Keep the original question
 intact — the reasoning is what stops the next agent reopening a settled point.
+
+### D-013 — What are the provider ranking weights, and how is a tie broken?
+
+- **Asked** 2026-09-06, from
+  [Release 3.8 milestone 3](../../ROADMAP.md) and the
+  [execution spec](Agent-Execution-Governance.md)'s _Provider selection_,
+  which says only that "the exact scoring weights are configuration" and
+  names no tie rule at all.
+- **Question.** When more than one provider is eligible for a task, the
+  router scores each and takes the highest. Eight factors feed that sum:
+  `suitability`, `usableCapacity`, `history`, `fitsWindow`, `sessionReuse`
+  and `timeToReset` count for it, `estimatedConsumption` and
+  `recentFailureRate` count against it. What weight does each carry, and what
+  happens when two providers score exactly the same?
+- **Why it was not an agent's call.** The spec pushes the weights to
+  configuration precisely because they encode preference rather than fact.
+  Nothing in the code says whether remaining capacity should outrank past
+  success on a repository, and no tie rule is neutral — every one of them
+  quietly prefers some provider.
+- **Decision (Ben, 2026-09-07).** **Keep all eight weights as they ship, for
+  the first run.** Every positive factor carries `1` and both negative
+  factors carry `-1`. Tuning a scoring function against no observed execution
+  history produces numbers nobody can later explain or defend, and with Codex
+  disabled the router is choosing between Claude and Copilot, which
+  eligibility and measured capacity separate long before the weights matter.
+  These are a first-run baseline to revisit against real routing evidence,
+  in the same spirit as the D-007 patience thresholds.
+- **Tie-break, adopted with the same decision.** `nearest-reset-first`: among
+  tied candidates the one whose nearest window resets soonest wins, a
+  candidate with no known reset time sorts last, and alphabetical order
+  applies only when no tied candidate has one. The reasoning is
+  use-it-or-lose-it. Allowance that refills in two hours is worth spending
+  now, because unspent it simply disappears, which serves the governor's
+  stated objective of conserving scarce capacity. This also **corrects the
+  two options originally offered with the question**: plain `alphabetical`
+  silently makes Claude the permanent winner of every tie, and "nearest reset
+  last" had the conservation argument backwards.
+- **What it changes.** `backend/config/agent-providers.json` carries the
+  weights and `"tieBreak": "nearest-reset-first"` without a `provisional`
+  flag, since they are now ruled on rather than assumed. More consequentially
+  it **turns provider routing on**: the config ships
+  `dispatch.autoEnabled = false` with a default target of `claude` precisely
+  so that nothing could write a dispatch target the runner was unable to
+  claim, and packet H38-17 flips both once the router exists. Until this
+  decision, every board dispatch and every remediation entry would have run
+  on Claude regardless of what else was eligible.
 
 ### D-001 — May a managed roadmap declare dependencies between its items?
 

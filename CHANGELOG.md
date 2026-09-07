@@ -2,6 +2,41 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-07 — Provider routing gets its weights, and four questions get a home
+
+### Changed
+
+- **D-013 answered: the eight provider ranking weights stand as they ship**, in
+  [`open-decisions.md`](docs/governance/open-decisions.md). Every positive
+  factor carries `1` and both negative factors carry `-1`, as a first-run
+  baseline rather than a permanent constant — the same posture D-007 took with
+  the lane patience thresholds. Tuning a scoring function before any routing
+  evidence exists produces numbers nobody can later defend, and with Codex
+  disabled the router only chooses between Claude and Copilot, which
+  eligibility and measured capacity separate long before a weight matters.
+- **The tie-break is `nearest-reset-first`, correcting both options originally
+  offered.** Among tied candidates the one whose window resets soonest wins,
+  because allowance that refills in two hours is worth spending now and is
+  otherwise simply lost. Plain `alphabetical` would have made Claude the silent
+  permanent winner of every tie, and the "nearest reset last" alternative had
+  the conservation argument backwards.
+- **This turns provider routing on.** The provider config ships
+  `dispatch.autoEnabled = false` with a default target of `claude` so that no
+  surface can write a dispatch target the runner is unable to claim; the router
+  packet flips it. Until this decision every board dispatch and every
+  remediation entry would have run on Claude regardless of what else was
+  eligible.
+
+### Added
+
+- **D-011, D-012, D-014 and D-015 are now in the register under Open**, rather
+  than living only in the work-packet file where nothing outside Release 3.8
+  would find them: the capacity reserves and the per-task cost estimate, the
+  permission envelope and whether an agent may edit workflow files, the Copilot
+  billing mode, and whether Codex is available. Each carries the default it
+  proceeds under, so none of them stalls the release. The permission envelope
+  travels on every work packet today but binds nothing until D-012 is ruled on.
+
 ## 2026-09-06 — The execution model gets a spec, a release, and its decisions
 
 ### Added
