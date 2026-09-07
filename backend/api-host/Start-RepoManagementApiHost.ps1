@@ -85,6 +85,10 @@ $executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 . (Join-Path $executionModuleRoot 'Execution.ProviderRegistry.ps1')
 . (Join-Path $executionModuleRoot 'Execution.ProviderCapacity.ps1')
 . (Join-Path $WorkspaceRoot 'backend\modules\agent-adapters\Adapter.Claude.ps1')
+# H38-15. The host needs each adapter's CAPABILITY and CAPACITY to answer
+# GET /api/providers; it never executes one. Execution belongs to the operator
+# session, which is the only process holding a provider credential.
+. (Join-Path $WorkspaceRoot 'backend\modules\agent-adapters\Adapter.Copilot.ps1')
 . (Join-Path $WorkspaceRoot 'backend\modules\auth\GitHubApp.ps1')
 . (Join-Path $WorkspaceRoot 'backend\modules\auth\SessionAuth.ps1')
 $docStdModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\docstandardization'

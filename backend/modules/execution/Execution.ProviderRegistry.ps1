@@ -227,6 +227,63 @@ function Resolve-AgentProviderToken {
 
 <#
 .SYNOPSIS
+    Where a provider's adapter file lives.
+#>
+function Get-AgentProviderAdapterPath {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][string]$WorkspaceRoot,
+        [Parameter(Mandatory)][string]$Provider
+    )
+    $capitalized = $Provider.Substring(0, 1).ToUpperInvariant() + $Provider.Substring(1).ToLowerInvariant()
+    return (Join-Path $WorkspaceRoot ('backend\modules\agent-adapters\Adapter.{0}.ps1' -f $capitalized))
+}
+
+<#
+.SYNOPSIS
+    Does this provider implement all seven IAgentExecutor functions?
+
+.DESCRIPTION
+    PowerShell has no interfaces, so the contract is a set of NAMES and the
+    check is whether they resolve. That is the offline-testable equivalent: it
+    needs no provider, no network and no quota, and it fails at gate time rather
+    than at 2am when the router first selects a provider whose adapter is half
+    written.
+
+    Reports every missing name at once. A conformance check that stops at the
+    first gap makes fixing a new adapter an exercise in re-running the gate.
+#>
+function Test-AgentProviderAdapter {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory)][string]$Provider)
+
+    $capitalized = $Provider.Substring(0, 1).ToUpperInvariant() + $Provider.Substring(1).ToLowerInvariant()
+    $required = @(
+        ('Get-{0}AdapterCapability' -f $capitalized),
+        ('Get-{0}AdapterCapacity' -f $capitalized),
+        ('Start-{0}Execution' -f $capitalized),
+        ('Resume-{0}Execution' -f $capitalized),
+        ('Stop-{0}Execution' -f $capitalized),
+        ('ConvertTo-{0}CanonicalEvent' -f $capitalized),
+        ('Get-{0}ExecutionResult' -f $capitalized)
+    )
+
+    $missing = @()
+    foreach ($name in $required) {
+        if (-not (Get-Command -Name $name -ErrorAction SilentlyContinue)) { $missing += , $name }
+    }
+
+    return [pscustomobject]@{
+        provider = $Provider
+        conforms = ($missing.Count -eq 0)
+        missing  = @($missing)
+    }
+}
+
+<#
+.SYNOPSIS
     Validate a loaded provider config. Every error at once, each naming the
     exact key at fault.
 #>

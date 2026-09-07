@@ -143,6 +143,9 @@ if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) { $WorkspaceRoot = Split-Path 
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\execution\Execution.ProviderRegistry.ps1')
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\execution\Execution.ProviderCapacity.ps1')
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\agent-adapters\Adapter.Claude.ps1')
+# H38-15: the copilot dispatch functions moved here from this file. Dot-sourced
+# BEFORE any use, so every existing call site is unchanged by the move.
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\agent-adapters\Adapter.Copilot.ps1')
 if ([string]::IsNullOrWhiteSpace($QueuePath)) { $QueuePath = Get-RoadmapQueuePath -WorkspaceRoot $WorkspaceRoot }
 if ([string]::IsNullOrWhiteSpace($StopFilePath)) { $StopFilePath = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.stop' }
 $runsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
@@ -253,85 +256,11 @@ function Get-QueueEntryDispatchTarget {
     return (Resolve-RoadmapDispatchTarget -DispatchTarget $raw)
 }
 
-function New-CopilotAgentTaskArgs {
-    <#
-    .SYNOPSIS
-        Pure — the `gh agent-task create` argv for a queued copilot entry.
-    .DESCRIPTION
-        Built as an array, never a command string: the prompt is multi-line
-        roadmap text and interpolating it into a shell line would break on the
-        first quote it contains.
-    #>
-    param(
-        [Parameter(Mandatory)][string]$Repository,
-        [Parameter(Mandatory)][string]$Prompt,
-        [AllowEmptyString()][string]$BaseBranch = ''
-    )
-
-    if ([string]::IsNullOrWhiteSpace($Repository)) { throw 'A copilot entry needs repository (owner/repo).' }
-    if ([string]::IsNullOrWhiteSpace($Prompt)) { throw 'A copilot entry needs a prompt.' }
-
-    # Not $args — that is an automatic variable, and shadowing it inside an
-    # advanced function is a debugging trap for whoever reads this next.
-    $ghArgv = [System.Collections.Generic.List[string]]::new()
-    $ghArgv.Add('agent-task'); $ghArgv.Add('create'); $ghArgv.Add($Prompt)
-    $ghArgv.Add('--repo'); $ghArgv.Add($Repository)
-    if (-not [string]::IsNullOrWhiteSpace($BaseBranch)) { $ghArgv.Add('--base'); $ghArgv.Add($BaseBranch) }
-    return $ghArgv.ToArray()
-}
-
-function Get-AgentTaskUrlFromOutput {
-    <#
-    .SYNOPSIS
-        Pure — pull the agent-task URL out of `gh agent-task create` output.
-    .DESCRIPTION
-        The URL is the only durable handle on a cloud run; without it the run
-        summary records "dispatched" and the operator has no way to find what
-        was dispatched. Returns '' when the output carries none, so the caller
-        records the absence rather than a fabricated link.
-    #>
-    param([AllowEmptyString()][string]$Output = '')
-
-    if ([string]::IsNullOrWhiteSpace($Output)) { return '' }
-    $match = [regex]::Match($Output, 'https://github\.com/\S+')
-    if (-not $match.Success) { return '' }
-    return $match.Value.TrimEnd('.', ',', ')', ']', '"', "'")
-}
-
-function Test-CopilotDispatchPrecondition {
-    <#
-    .SYNOPSIS
-        Pure — can this session run `gh agent-task create`? Named reason if not.
-    .DESCRIPTION
-        Two things break cloud dispatch, and both are silent until the call
-        fails: `gh` is absent, or the process carries GH_TOKEN/GITHUB_TOKEN.
-        The second is the trap Release 3.0 exists to route around — gh IGNORES
-        its stored OAuth credential whenever an environment token is set, so a
-        PAT inherited from the portal's environment turns a working operator
-        session into the same failure the service has.
-    #>
-    param(
-        [bool]$GhAvailable,
-        [AllowEmptyString()][string]$EnvToken = ''
-    )
-
-    if (-not $GhAvailable) {
-        return [pscustomobject]@{
-            ok     = $false
-            reason = 'gh-not-found'
-            message = "'gh' was not found on PATH. Cloud dispatch runs the GitHub CLI in your session; install it or set GH_CLI_PATH."
-        }
-    }
-    if (-not [string]::IsNullOrWhiteSpace($EnvToken)) {
-        return [pscustomobject]@{
-            ok     = $false
-            reason = 'env-token-overrides-oauth'
-            message = ('This session carries a GitHub token in the environment, and gh ignores its stored OAuth credential whenever one is set. ' +
-                       'agent-task needs OAuth, so clear GH_TOKEN/GITHUB_TOKEN in this shell and re-run: $env:GH_TOKEN=$null; $env:GITHUB_TOKEN=$null')
-        }
-    }
-    return [pscustomobject]@{ ok = $true; reason = ''; message = '' }
-}
+# New-CopilotAgentTaskArgs, Get-AgentTaskUrlFromOutput and
+# Test-CopilotDispatchPrecondition MOVED to
+# backend\modulesgent-adapters\Adapter.Copilot.ps1 in H38-15, verbatim.
+# The adapter is dot-sourced above, so every call site here is unchanged; the
+# module smoke asserts their output is identical to the pre-move behaviour.
 
 # ── Release 3.0: runner presence ─────────────────────────────────────────────
 
@@ -877,6 +806,20 @@ function Invoke-QueuedCopilotTask {
             agentTaskUrl      = $taskUrl
             runnerCompletedAt = (Get-Date).ToString('o')
         }
+        # H38-15: a cloud dispatch now produces an ExecutionResult like every
+        # other provider, so the result file is the one shape a reader handles
+        # rather than "claude runs have one, copilot runs do not". The task URL
+        # is the provider session id because it is the only durable handle a
+        # dispatch produces today. Best-effort: failing to write the result must
+        # not fail a dispatch that actually succeeded.
+        try {
+            if (Get-Command -Name 'Get-CopilotExecutionResult' -ErrorAction SilentlyContinue) {
+                $copilotResult = Get-CopilotExecutionResult -TaskUrl $taskUrl -TaskId $RunId -ExecutionId $RunId
+                $null = Save-ExecutionResult -WorkspaceRoot $WorkspaceRoot -Result $copilotResult
+            }
+        }
+        catch { Write-Host ("  [warn] could not record the dispatch result: {0}" -f $_.Exception.Message) -ForegroundColor DarkYellow }
+
         Write-Host ("  [dispatched] repo={0} url={1}" -f $repository, $(if ($taskUrl) { $taskUrl } else { '(none reported)' })) -ForegroundColor Green
         if (-not $taskUrl) {
             Write-Host "  gh reported no task URL; check 'gh agent-task list' for the run." -ForegroundColor DarkYellow
