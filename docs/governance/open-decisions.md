@@ -14,14 +14,25 @@ next. This is the durable place for them.
   **Decision**, with the date. Then move the row to
   [Decided](#decided) and let the linked work proceed.
 - **Agents:** when you find a question that turns on preference, product
-  direction, risk appetite, or anything outside the repository, add a row here
-  and keep going on the parts that do not depend on it. Do **not** invent an
-  answer and do not stall the whole task waiting for one. State the default you
-  proceeded under so a later reader knows what happens if the question is never
-  answered.
+  direction, or risk appetite, add a row here and keep going on the parts that
+  do not depend on it. Do **not** invent an answer and do not stall the whole
+  task waiting for one. State the default you proceeded under so a later reader
+  knows what happens if the question is never answered.
 
 Each entry carries: what is being asked, why it cannot be settled from the code,
 what happens by default if it is never answered, and what it blocks.
+
+**Before adding a row, apply this test.** Ask whether the answer would be the
+same for every person who installs this product. If it would, it belongs here.
+If it differs per machine, per account, or per month — _is that tool installed,
+is that account funded, which plan is it on_ — it is **not a decision**, it is
+**state to be detected** and shown in the setup wizard and Settings, the way
+`git`, the GitHub CLI and the GitHub token already are. "It cannot be settled
+from the code" is not sufficient grounds for a row: an agent's own machine
+cannot settle what is on someone else's, and asking the owner still produces an
+answer that is wrong for every other installation. Two entries were filed
+against that mistaken test and had to be withdrawn; see
+[Withdrawn](#withdrawn).
 
 ---
 
@@ -87,38 +98,71 @@ what happens by default if it is never answered, and what it blocks.
 - **Blocks.** The enforcement half of packet H38-05 and the Codex sandbox
   mapping in H38-16. The envelope still travels; it just does not yet bind.
 
-### D-014 — Which Copilot billing mode does this account use?
+---
+
+## Withdrawn
+
+A question belongs here when it should never have been asked of the owner —
+not because it was answered, but because it was the wrong kind of question.
+The record stays so the next agent can recognise the shape and not re-file it.
+
+**The shape:** a decision register holds questions whose answer is the same for
+everyone who installs this product — risk posture, security posture, product
+behaviour. It must not hold questions whose answer differs per installation and
+changes over time. _"Do you have an account with this provider?"_ has a
+different answer for every operator, and a different answer for the same
+operator next month. Writing that answer into a governance file, or into a
+committed config file, makes one machine's state a fact about the product.
+
+**Where those questions go instead:** they are **detected at runtime** and
+surfaced in the setup wizard and Settings, exactly as `git`, the GitHub CLI and
+the GitHub token already are by `GET /setup/prerequisites`. The repository
+records only what is true of the repository — `providers.<name>.supported`,
+meaning a conforming adapter exists here, which CI can verify.
+
+### D-014 — Which Copilot billing mode does this account use? _(withdrawn 2026-09-07)_
 
 - **Asked** 2026-09-06, from
   [Release 3.8 milestone 2](../../ROADMAP.md) and the spec's _GitHub Copilot
   adapter_.
-- **Question.** Does this account meter agent work as AI credits, or under
-  the legacy premium-request allowance?
-- **Why it is not an agent's call.** The spec explicitly forbids assuming the
-  generation, and the answer is a property of the GitHub account rather than
-  anything in this repository. No code inspection can settle it.
-- **Default if unanswered.** `Get-CopilotAdapterCapacity` reports one window
-  with `unit: "unknown"` and `confidence: "none"`, and routing treats Copilot
-  as **eligible but unmeasured**. Work still dispatches to it; the governor
-  simply cannot reason about what is left.
-- **Blocks.** Only the capacity half of the Copilot adapter. Dispatch, events
-  and result handling are unaffected.
+- **Question, as originally put.** Does this account meter agent work as AI
+  credits, or under the legacy premium-request allowance?
+- **Why it was withdrawn.** Billing mode is a property of whichever GitHub
+  account is signed in, so there is no single answer to record. The original
+  entry said as much — _"the answer is on the account, not in the repo"_ — and
+  then filed it as an owner decision anyway, which is the contradiction.
+- **What replaces it.** The Copilot adapter reports billing mode as observed,
+  or `unknown` with `confidence: "none"` when it cannot tell, and routing
+  treats Copilot as **eligible but unmeasured** until an observation arrives.
+  That was already the "default if unanswered", and it is simply the behaviour
+  now — a capacity record whose confidence is honest needs no ruling.
+- **Still genuinely open:** nothing. The spec's ban on assuming the generation
+  is satisfied by reporting `unknown` rather than by asking the owner.
 
-### D-015 — Is Codex available, and will its fixtures be recorded?
+### D-015 — Is Codex available on the operator's machine? _(withdrawn 2026-09-07)_
 
 - **Asked** 2026-09-06, from
   [Release 3.8 milestone 3](../../ROADMAP.md).
-- **Question.** Is the `codex` CLI installed on the operator's machine with
-  an account that has capacity — and will two transcripts be recorded so its
-  adapter can be gated offline?
-- **Why it is not an agent's call.** Nothing in this repository has ever seen
-  Codex. Its output shape cannot be inferred, and a recorded transcript is
-  the only offline evidence a gate can assert against.
-- **Default if unanswered.** `codex` ships in the provider config with
-  `"enabled": false`. The registry, the router and every other packet work
-  with two providers; the Codex adapter is simply not built.
-- **Blocks.** Packet H38-16 entirely, and the Codex resume path in H38-29.
-  Nothing else in Release 3.8 waits on it.
+- **Question, as originally put.** Is the `codex` CLI installed on the
+  operator's machine with an account that has capacity — and will two
+  transcripts be recorded so its adapter can be gated offline?
+- **Why it was withdrawn.** Two unrelated questions were fused into one. The
+  first — _is it installed and funded_ — is per-installation state that must be
+  detected, never decided; if ten people run this product, the committed answer
+  is wrong for most of them. The second — _will transcripts be recorded_ — was
+  already dissolved by rule R12: every fixture is authored synthetically, so no
+  packet waits on a transcript and none spends provider quota to obtain one.
+  Nothing was left to decide once both halves were examined.
+- **What replaces it.** `Test-AgentProviderAvailability` probes the PATH and
+  reports per provider, feeding `GET /setup/prerequisites` (so the setup wizard
+  shows it on first launch) and a Settings section where the operator may opt a
+  provider **out**. Authentication is deliberately **not** probed: proving an
+  account works means spending its quota, so it is learned from the first real
+  run instead. The Codex adapter is built regardless — it costs an operator
+  without Codex nothing, and the router simply never selects an unavailable
+  provider.
+- **Still genuinely open:** nothing. H38-16 is unblocked and H38-15b implements
+  the detection.
 
 ---
 
