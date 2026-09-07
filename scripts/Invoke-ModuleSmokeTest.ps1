@@ -2626,6 +2626,83 @@ if (-not (Test-AgentProviderConfig -Config $pcAutoOn).valid) { throw 'defaultTar
 Remove-Item -LiteralPath $pcTmp -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host '  provider config: schema v1 loads, 11 policy rules refuse by name, routing off until the router lands' -ForegroundColor DarkGray
 
+Write-Step 'Provider adapters — smoke: every supported provider conforms to the seven-function contract'
+
+$paAdapterModule = Join-Path $WorkspaceRoot 'backend\modules\agent-adapters\Adapter.Copilot.ps1'
+if (-not (Test-Path -LiteralPath $paAdapterModule)) { throw "Adapter.Copilot.ps1 not found at: $paAdapterModule" }
+. $paAdapterModule
+
+if ((Get-AgentProviderAdapterPath -WorkspaceRoot $WorkspaceRoot -Provider 'copilot') -ne $paAdapterModule) { throw 'The adapter path resolver and the smoke disagree about where adapters live' }
+
+# `supported` is the REPOSITORY fact -- an adapter exists here -- so this gate
+# can check it. It is never a claim about the operator's machine (A20), and this
+# gate must therefore never consult the PATH: CI has no provider CLI installed
+# and would fail on a perfectly conforming adapter.
+foreach ($paProvider in @($pcConfig.providers.PSObject.Properties | ForEach-Object { $_.Name })) {
+    $paConformance = Test-AgentProviderAdapter -Provider $paProvider
+    if ([bool]$pcConfig.providers.$paProvider.supported) {
+        if (-not $paConformance.conforms) {
+            throw ("Provider '{0}' is marked supported but its adapter is missing: {1}" -f $paProvider, (@($paConformance.missing) -join ', '))
+        }
+    }
+    elseif ($paProvider -ne 'codex') {
+        throw "Only codex may be unsupported before H38-16; '$paProvider' is not"
+    }
+}
+if ((Test-AgentProviderAdapter -Provider 'codex').conforms) { throw 'codex has no adapter yet; a conformance pass would mean the gate is not checking anything' }
+
+# The gate must NAME what is missing, or fixing a new adapter becomes an
+# exercise in re-running it. Injection: rename one function and confirm the gate
+# catches exactly that one, then put it back.
+Rename-Item -Path 'function:\Stop-CopilotExecution' -NewName 'Stop-CopilotExecutionSmokeStash'
+try {
+    $paInjected = Test-AgentProviderAdapter -Provider 'copilot'
+    if ($paInjected.conforms) { throw 'The conformance gate passed with a function removed; it is not checking anything' }
+    if (@($paInjected.missing) -notcontains 'Stop-CopilotExecution') { throw "The gate must name the missing function; got: $(@($paInjected.missing) -join ', ')" }
+    if (@($paInjected.missing).Count -ne 1) { throw 'Exactly one name was removed; the gate must report exactly one' }
+}
+finally {
+    Rename-Item -Path 'function:\Stop-CopilotExecutionSmokeStash' -NewName 'Stop-CopilotExecution'
+}
+if (-not (Test-AgentProviderAdapter -Provider 'copilot').conforms) { throw 'The injection was not reverted' }
+
+# GOLDEN (move-only). These three came out of the runner verbatim in H38-15; a
+# move that quietly changed behaviour is the worst kind of refactor -- invisible
+# in review, visible only in production.
+$paGoldenArgs = @(New-CopilotAgentTaskArgs -Repository 'x/y' -Prompt "a`nb" -BaseBranch 'main')
+if ($paGoldenArgs.Count -ne 7) { throw "Moved argv builder changed shape: expected 7 elements, got $($paGoldenArgs.Count)" }
+if (($paGoldenArgs -join '|') -ne "agent-task|create|a`nb|--repo|x/y|--base|main") { throw "Moved argv builder changed output: $($paGoldenArgs -join '|')" }
+if ((Get-AgentTaskUrlFromOutput -Output 'Created https://github.com/o/r/pull/12.') -ne 'https://github.com/o/r/pull/12') { throw 'Moved URL extractor changed behaviour' }
+if ((Get-AgentTaskUrlFromOutput -Output 'no url here') -ne '') { throw 'Moved URL extractor must still return empty rather than fabricate' }
+if ((Test-CopilotDispatchPrecondition -GhAvailable $false).reason -ne 'gh-not-found') { throw 'Moved precondition changed its reason code' }
+if ((Test-CopilotDispatchPrecondition -GhAvailable $true -EnvToken 'ghp_x').reason -ne 'env-token-overrides-oauth') { throw 'Moved precondition changed its env-token reason code' }
+if (-not (Test-CopilotDispatchPrecondition -GhAvailable $true).ok) { throw 'Moved precondition changed its success case' }
+
+# Copilot is GitHub-hosted, so the operations this machine cannot perform REFUSE
+# rather than returning nothing: a silent no-op is indistinguishable from work.
+$paCapability = Get-CopilotAdapterCapability
+if ($paCapability.executionMode -ne 'github-hosted') { throw 'Copilot runs on GitHub, not here' }
+if ($paCapability.supportsResume) { throw 'A GitHub-hosted run is not a session this machine can resume' }
+foreach ($paUnsupported in @('Resume-CopilotExecution', 'Stop-CopilotExecution')) {
+    $paThrew = $false
+    try { $null = & $paUnsupported } catch { $paThrew = $true }
+    if (-not $paThrew) { throw "$paUnsupported must refuse rather than silently do nothing" }
+}
+# Billing mode is a property of the signed-in account (D-014 withdrawn, A20),
+# so unmeasured is the honest answer -- and unmeasured is not exhausted.
+$paCapacity = Get-CopilotAdapterCapacity
+if ($null -ne $paCapacity.remainingRatio) { throw 'Copilot capacity must stay unmeasured until an observation arrives, never invented' }
+if ($paCapacity.unit -ne 'unknown') { throw "Copilot's unit is unknown until billing mode is observed" }
+# The verdict half of that claim is asserted in the capacity section below,
+# where the capacity module is loaded.
+
+$paResult = Get-CopilotExecutionResult -TaskUrl 'https://github.com/o/r/pull/12' -TaskId 't1' -ExecutionId 'e1'
+if (-not (Test-ExecutionResult -Result $paResult).valid) { throw 'The copilot adapter must produce a valid ExecutionResult' }
+if ($paResult.providerSessionId -ne 'https://github.com/o/r/pull/12') { throw 'The task URL is the only durable handle, so it is the session id' }
+if (@(ConvertTo-CopilotCanonicalEvent).Count -ne 0) { throw 'A GitHub-hosted run emits nothing this machine sees; no events is the honest answer' }
+
+Write-Host '  provider adapters: claude and copilot conform to all seven names, codex is honestly unsupported, the gate names a removed function, and the three moved functions are byte-identical to their pre-move behaviour' -ForegroundColor DarkGray
+
 Write-Step 'Provider capacity — smoke: native units, confidence rank, persistence'
 
 if (-not (Test-Path -LiteralPath $providerCapacityModule)) { throw "Execution.ProviderCapacity.ps1 not found at: $providerCapacityModule" }
@@ -2806,6 +2883,11 @@ if (-not (Resolve-ProviderCapacityVerdict -Record $capExpired -Config $capVerdic
 # whose allowance is not published at all, permanently ineligible.
 $capUnmeasured = Resolve-ProviderCapacityVerdict -Record $capUnknown -Config $capVerdictConfig
 if (-not $capUnmeasured.eligible) { throw "An unmeasured provider must stay eligible: $($capUnmeasured.reason)" }
+# The Copilot adapter's own window, run through the verdict: billing mode is a
+# property of the signed-in account, so it is unmeasured by design (A20), and
+# the governor must treat that as eligible rather than exhausted.
+$capCopilotRecord = New-ProviderCapacityRecord -Provider 'copilot' -Windows @(Get-CopilotAdapterCapacity)
+if (-not (Resolve-ProviderCapacityVerdict -Record $capCopilotRecord -Config $capVerdictConfig).eligible) { throw 'Copilot reports unmeasured capacity by design; it must not read as exhausted' }
 if ($capUnmeasured.reason -ne 'capacity unmeasured') { throw "Expected 'capacity unmeasured', got '$($capUnmeasured.reason)'" }
 
 # The two states that are not the same as "no capacity".
