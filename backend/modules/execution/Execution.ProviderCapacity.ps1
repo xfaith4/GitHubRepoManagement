@@ -88,6 +88,23 @@ function _PCR_HasKey {
     return $false
 }
 
+function _PCR_Stamp {
+    <# Normalize a timestamp to an ISO-8601 UTC string.
+
+       This exists because PowerShell 7's ConvertFrom-Json silently converts an
+       ISO-8601 STRING into a [datetime] object. A record built in memory
+       therefore has a different shape from the same record read back off disk,
+       and `[string]$value` on the datetime renders in the CURRENT CULTURE --
+       so an operator-facing reason would read "cooling-down until 10.09.2026
+       14:00:00" on one machine and the ISO stamp on another, and a gate
+       asserting the sentence would pass only where it was written. #>
+    param([object]$Value)
+    if ($null -eq $Value) { return '' }
+    if ($Value -is [datetime]) { return ([datetime]$Value).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ') }
+    if ($Value -is [datetimeoffset]) { return ([datetimeoffset]$Value).UtcDateTime.ToString('yyyy-MM-ddTHH:mm:ssZ') }
+    return [string]$Value
+}
+
 function _PCR_TryRatio {
     <# Parse a ratio. Returns $null for absent-or-unparseable, so callers can
        tell "no ratio" from a real 0.0 -- and 0.0 is a legitimate, important
@@ -186,7 +203,7 @@ function New-ProviderCapacityRecord {
             $ratio = _PCR_TryRatio (_PCR_Field -Obj $window -Name 'remainingRatio' -Default $null)
         }
 
-        $resetAt = [string](_PCR_Field -Obj $window -Name 'resetAt' -Default '')
+        $resetAt = _PCR_Stamp (_PCR_Field -Obj $window -Name 'resetAt' -Default '')
 
         $entry = [ordered]@{
             name           = [string](_PCR_Field -Obj $window -Name 'name' -Default '')
@@ -330,7 +347,34 @@ function Read-ProviderCapacityRecord {
     catch {
         return $null
     }
-    return $parsed
+    if ($null -eq $parsed) { return $null }
+
+    # Timestamps come back from ConvertFrom-Json as [datetime], not as the
+    # strings that were written (see _PCR_Stamp). Normalizing here -- the one
+    # place records enter from disk -- means every consumer sees the same shape
+    # whether the record was just built or just read, instead of each one
+    # having to remember which it was handed.
+    $windows = @()
+    if ($null -ne $parsed.PSObject -and ($parsed.PSObject.Properties.Name -contains 'windows')) {
+        foreach ($window in @($parsed.windows)) {
+            $rebuiltWindow = [ordered]@{}
+            foreach ($property in @($window.PSObject.Properties | ForEach-Object { $_.Name })) {
+                $rebuiltWindow[$property] = $(if ($property -eq 'resetAt') { $(if ($null -eq $window.$property) { $null } else { _PCR_Stamp $window.$property }) } else { $window.$property })
+            }
+            $windows += , ([pscustomobject]$rebuiltWindow)
+        }
+    }
+
+    $rebuilt = [ordered]@{}
+    foreach ($property in @($parsed.PSObject.Properties | ForEach-Object { $_.Name })) {
+        if ($property -eq 'windows') { $rebuilt[$property] = @($windows); continue }
+        if ($property -in @('observedAt', 'cooldownUntil')) {
+            $rebuilt[$property] = $(if ($null -eq $parsed.$property) { $null } else { _PCR_Stamp $parsed.$property })
+            continue
+        }
+        $rebuilt[$property] = $parsed.$property
+    }
+    return [pscustomobject]$rebuilt
 }
 
 <#
@@ -370,7 +414,7 @@ function Merge-ProviderCapacityWindow {
     if (_PCR_HasKey -Obj $Window -Name 'remainingRatio') {
         $incomingRatio = _PCR_TryRatio (_PCR_Field -Obj $Window -Name 'remainingRatio' -Default $null)
     }
-    $incomingResetAt = [string](_PCR_Field -Obj $Window -Name 'resetAt' -Default '')
+    $incomingResetAt = _PCR_Stamp (_PCR_Field -Obj $Window -Name 'resetAt' -Default '')
 
     $normalizedIncoming = [ordered]@{
         name           = $incomingName
@@ -414,10 +458,10 @@ function Merge-ProviderCapacityWindow {
     $rebuilt = [ordered]@{
         provider         = [string](_PCR_Field -Obj $Record -Name 'provider' -Default '')
         available        = [bool](_PCR_Field -Obj $Record -Name 'available' -Default $true)
-        observedAt       = [string](_PCR_Field -Obj $Record -Name 'observedAt' -Default '')
+        observedAt       = _PCR_Stamp (_PCR_Field -Obj $Record -Name 'observedAt' -Default '')
         activeExecutions = 0
         windows          = @($result)
-        cooldownUntil    = (_PCR_Field -Obj $Record -Name 'cooldownUntil' -Default $null)
+        cooldownUntil    = $(if ($null -eq (_PCR_Field -Obj $Record -Name 'cooldownUntil' -Default $null)) { $null } else { _PCR_Stamp (_PCR_Field -Obj $Record -Name 'cooldownUntil' -Default $null) })
     }
 
     return [pscustomobject]@{
@@ -425,6 +469,138 @@ function Merge-ProviderCapacityWindow {
         reason = $reason
         record = $rebuilt
     }
+}
+
+<#
+.SYNOPSIS
+    Did this text come from a provider refusing on capacity rather than failing?
+
+.DESCRIPTION
+    The spec's rule that this exists to serve: a provider limit response is
+    STATE, not an execution failure. Telling the two apart from a CLI's error
+    text is guesswork, so the patterns are data -- `providers.<name>.limitSignals`
+    in agent-providers.json -- and can be corrected without a code change when a
+    provider rewords its message (A7).
+
+    The reset time is extracted from the same text when it is there, and is
+    `$null` when it is not. A17 decides what happens then; this function does not
+    invent one, because a guessed reset time would be indistinguishable from a
+    provider's own.
+#>
+function Test-ProviderLimitSignal {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Provider,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Text,
+        [Parameter(Mandatory)][object]$Config
+    )
+
+    $verdict = [ordered]@{
+        matched = $false
+        pattern = $null
+        resetAt = $null
+    }
+    if ([string]::IsNullOrWhiteSpace($Text)) { return [pscustomobject]$verdict }
+
+    $providers = _PCR_Field -Obj $Config -Name 'providers' -Default $null
+    $entry = _PCR_Field -Obj $providers -Name $Provider -Default $null
+
+    # Read inline: a helper returning an empty patterns array would hand back
+    # $null and this would look like a provider with no signals configured.
+    $patterns = @()
+    if ($entry -is [System.Collections.IDictionary]) {
+        if ($entry.Contains('limitSignals')) { $patterns = @($entry['limitSignals']) }
+    }
+    elseif ($null -ne $entry -and $null -ne $entry.PSObject -and ($entry.PSObject.Properties.Name -contains 'limitSignals')) {
+        $patterns = @($entry.limitSignals)
+    }
+
+    foreach ($pattern in $patterns) {
+        $patternText = [string]$pattern
+        if ([string]::IsNullOrWhiteSpace($patternText)) { continue }
+        # A malformed regex in config must not take the runner down with it: an
+        # unusable pattern is a config defect, not a reason to fail a task that
+        # may simply have succeeded.
+        try { $isMatch = [regex]::IsMatch($Text, $patternText) }
+        catch { continue }
+        if ($isMatch) {
+            $verdict.matched = $true
+            $verdict.pattern = $patternText
+            break
+        }
+    }
+
+    if ($verdict.matched) {
+        $stamp = [regex]::Match($Text, '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?Z')
+        if ($stamp.Success) { $verdict.resetAt = $stamp.Value }
+    }
+
+    return [pscustomobject]$verdict
+}
+
+<#
+.SYNOPSIS
+    Record that a provider is cooling down until a given time.
+
+.DESCRIPTION
+    Creates a minimal record when the provider has none, because the first thing
+    ever learned about a provider is often that it just refused. That record
+    carries no windows: a limit response says "not now", not how much is left,
+    and inventing a 0.0 ratio from it would claim a measurement nobody made.
+
+    `resetAssumed` marks a cooldown whose end time WE picked because the
+    provider did not say (A17). It is a separate field rather than a silent
+    default so the board can show an assumed wait differently from a promised
+    one, and so a later real reset time can overwrite it without ambiguity.
+#>
+function Set-ProviderCooldown {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][string]$WorkspaceRoot,
+        [Parameter(Mandatory)][string]$Provider,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Until,
+        [string]$Source = 'rate-limit-response',
+        [switch]$ResetAssumed
+    )
+
+    if (-not $PSCmdlet.ShouldProcess($Provider, 'set provider cooldown')) { return '' }
+
+    $record = Read-ProviderCapacityRecord -WorkspaceRoot $WorkspaceRoot -Provider $Provider
+    if ($null -eq $record) {
+        # `available` stays TRUE. A rate limit does not make a provider
+        # unavailable, it makes it unavailable UNTIL a time -- which is exactly
+        # what cooldownUntil expresses, and it expires on its own. Writing
+        # available = false here would leave the provider ineligible forever
+        # after its window reopened, because nothing ever sets it back, and the
+        # verdict would report 'provider-unavailable' instead of naming the wait
+        # and when it ends.
+        $record = New-ProviderCapacityRecord -Provider $Provider -Windows @(
+            @{ name = 'short-term'; unit = 'unknown'; source = $Source }
+        ) -Available $true
+    }
+
+    $windows = @()
+    if ($record -is [System.Collections.IDictionary]) {
+        if ($record.Contains('windows')) { $windows = @($record['windows']) }
+    }
+    elseif ($null -ne $record.PSObject -and ($record.PSObject.Properties.Name -contains 'windows')) {
+        $windows = @($record.windows)
+    }
+
+    $rebuilt = [ordered]@{
+        provider         = $Provider
+        available        = [bool](_PCR_Field -Obj $record -Name 'available' -Default $true)
+        observedAt       = [datetime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+        activeExecutions = 0
+        windows          = @($windows)
+        cooldownUntil    = $(if ([string]::IsNullOrWhiteSpace($Until)) { $null } else { $Until })
+        cooldownSource   = $Source
+        resetAssumed     = [bool]$ResetAssumed
+    }
+
+    return (Save-ProviderCapacityRecord -WorkspaceRoot $WorkspaceRoot -Record $rebuilt)
 }
 
 function _PCR_Ratio {
@@ -523,7 +699,7 @@ function Resolve-ProviderCapacityVerdict {
     # 3. A cooldown in the future. A cooldown in the PAST is spent and ignored,
     #    which is what lets a provider come back on its own without anyone
     #    clearing the field.
-    $cooldownRaw = [string](_PCR_Field -Obj $Record -Name 'cooldownUntil' -Default '')
+    $cooldownRaw = _PCR_Stamp (_PCR_Field -Obj $Record -Name 'cooldownUntil' -Default '')
     if (-not [string]::IsNullOrWhiteSpace($cooldownRaw)) {
         $cooldownAt = [datetime]::MinValue
         $parsedCooldown = [datetime]::TryParse(

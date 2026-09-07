@@ -2826,6 +2826,98 @@ if ((Resolve-ProviderCapacityVerdict -Record $capSpec -Config $capEnforceFixture
 
 Write-Host '  capacity verdict: reserves 15/20 applied, remediation may use the weekly reserve, override recorded, cooldown expires on its own, unmeasured stays eligible, enforcement OFF while the task estimate is a guess' -ForegroundColor DarkGray
 
+# --- H38-10: a provider limit re-queues the task, it does not fail it ------
+Write-Step 'Provider limit — smoke: a limit re-queues with branch, attempt and session intact'
+
+# The runner's pure functions are the subject here, so load them up front:
+# Resolve-RunOutcomeFromResult is what keeps a limit off the failed path, and
+# Resolve-CapacityWaitUpdate is what preserves the work.
+. (Join-Path $WorkspaceRoot 'scripts\Invoke-RoadmapTaskRunner.ps1') -LoadFunctionsOnly
+
+$capLimitSynthetic = Join-Path $WorkspaceRoot 'tests\fixtures\providers\claude-stream-json-usage-limit.synthetic.jsonl'
+if (-not (Test-Path -LiteralPath $capLimitSynthetic)) { throw "Synthetic usage-limit fixture not found at: $capLimitSynthetic" }
+$capLimitTranscripts = [ordered]@{ synthetic = $capLimitSynthetic }
+$capLimitReal = Join-Path $WorkspaceRoot 'tests\fixtures\providers\claude-stream-json-usage-limit.jsonl'
+if (Test-Path -LiteralPath $capLimitReal) { $capLimitTranscripts['recorded'] = $capLimitReal }
+
+foreach ($capLimitName in @($capLimitTranscripts.Keys)) {
+    $capLimitParsed = ConvertFrom-ClaudeStreamJson -Lines @(Get-Content -LiteralPath $capLimitTranscripts[$capLimitName] -Encoding UTF8)
+    $capLimitResult = ConvertTo-ClaudeExecutionResult -Parsed $capLimitParsed -TaskId 'smoke-limit-1' -ExecutionId 'exec-limit-1' -Config $pcConfig
+    if ($null -eq $capLimitResult) { throw "[$capLimitName] the adapter must still produce a result for a limit response" }
+    if ($capLimitResult.status -ne 'capacity_exhausted') { throw "[$capLimitName] a provider limit is STATE, not a failure: expected capacity_exhausted, got '$($capLimitResult.status)'" }
+    if (@($capLimitResult.risks) -notcontains 'provider-limit') { throw "[$capLimitName] the result must carry the provider-limit risk" }
+    if ([string]::IsNullOrWhiteSpace([string]$capLimitResult.providerSessionId)) { throw "[$capLimitName] the session id must survive a limit, or the work cannot resume where it stopped" }
+    # The outcome mapper is what keeps the task off the failed path.
+    if ((Resolve-RunOutcomeFromResult -Result $capLimitResult -ExitCode 1).status -ne 'queued') { throw "[$capLimitName] capacity_exhausted must map to queued, never failed" }
+}
+if (-not $capLimitTranscripts.Contains('recorded')) {
+    Write-Host '  provider limit: no recorded limit transcript yet — synthetic only. Copy one here when a real limit is hit; nothing waits on it.' -ForegroundColor DarkGray
+}
+
+# Without the config the adapter cannot know limit wording, and must report the
+# plain failure it can see rather than guessing.
+$capNoConfigParsed = ConvertFrom-ClaudeStreamJson -Lines @(Get-Content -LiteralPath $capLimitSynthetic -Encoding UTF8)
+if ((ConvertTo-ClaudeExecutionResult -Parsed $capNoConfigParsed -TaskId 't' -ExecutionId 'e').status -ne 'implementation_failed') { throw 'With no config the adapter must not guess at limit wording; it reports implementation_failed' }
+
+# Golden: an ordinary failure is still a failure. The limit path must not have
+# turned every error into a capacity wait.
+$capGoldenParsed = ConvertFrom-ClaudeStreamJson -Lines @(Get-Content -LiteralPath $caSyntheticPath -Encoding UTF8)
+if ((ConvertTo-ClaudeExecutionResult -Parsed $capGoldenParsed -TaskId 't' -ExecutionId 'e' -Config $pcConfig).status -ne 'implementation_complete') { throw 'A successful transcript must still read implementation_complete' }
+
+$capSignal = Test-ProviderLimitSignal -Provider 'claude' -Text 'Usage limit reached. Your limit resets at 2026-09-10T14:00:00Z.' -Config $pcConfig
+if (-not $capSignal.matched) { throw 'The configured limitSignals must match the fixture text' }
+if ($capSignal.resetAt -ne '2026-09-10T14:00:00Z') { throw "The reset time must be read from the text, got '$($capSignal.resetAt)'" }
+$capNoStamp = Test-ProviderLimitSignal -Provider 'claude' -Text 'Usage limit reached.' -Config $pcConfig
+if (-not $capNoStamp.matched -or $null -ne $capNoStamp.resetAt) { throw 'A limit with no timestamp matches, and resetAt stays null rather than being invented' }
+if ((Test-ProviderLimitSignal -Provider 'claude' -Text 'Implemented the change and the module smoke passes.' -Config $pcConfig).matched) { throw 'Ordinary success text must not match a limit signal' }
+if ((Test-ProviderLimitSignal -Provider 'claude' -Text '' -Config $pcConfig).matched) { throw 'Empty text must not match' }
+
+& {
+    $capWaitWs = Join-Path $WorkspaceRoot 'output\smoke\module\capacity-wait'
+    if (Test-Path -LiteralPath $capWaitWs) { Remove-Item -LiteralPath $capWaitWs -Recurse -Force }
+    $null = New-Item -ItemType Directory -Path $capWaitWs -Force
+    $capWaitNow = [datetime]::Parse('2026-09-10T12:00:00Z', [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal -bor [System.Globalization.DateTimeStyles]::AssumeUniversal)
+
+    # A provider that named its reset time is believed.
+    $capWaitKnown = Resolve-CapacityWaitUpdate -Provider 'claude' -LimitSignal $capSignal -NowUtc $capWaitNow -Summary 'Usage limit reached.'
+    if ($capWaitKnown.set.status -ne 'queued') { throw 'A capacity wait writes status=queued' }
+    if ($capWaitKnown.set.error -ne '') { throw 'A capacity wait is not an error; the error field must be cleared' }
+    if ($capWaitKnown.cooldownUntil -ne '2026-09-10T14:00:00Z') { throw "Expected the provider's own reset time, got '$($capWaitKnown.cooldownUntil)'" }
+    if ($capWaitKnown.resetAssumed) { throw 'A reset time the provider supplied is not assumed' }
+    if ($capWaitKnown.set.capacityWait.resetAt -ne '2026-09-10T14:00:00Z') { throw 'The summary records the reset time it is waiting for' }
+
+    # A17: no reset time means now + 60 minutes, MARKED as assumed so a guessed
+    # wait is never displayed as a promise.
+    $capWaitUnknown = Resolve-CapacityWaitUpdate -Provider 'claude' -LimitSignal $capNoStamp -NowUtc $capWaitNow
+    if ($capWaitUnknown.cooldownUntil -ne '2026-09-10T13:00:00Z') { throw "A17: expected now + 60 minutes, got '$($capWaitUnknown.cooldownUntil)'" }
+    if (-not $capWaitUnknown.resetAssumed) { throw 'A cooldown we invented must be marked assumed' }
+    if ($null -ne $capWaitUnknown.set.capacityWait.resetAt) { throw 'The summary must not claim a reset time the provider never gave' }
+
+    # The cooldown reaches the capacity record, creating one if the provider has
+    # none -- the first thing learned about a provider is often that it refused.
+    $null = Set-ProviderCooldown -WorkspaceRoot $capWaitWs -Provider 'claude' -Until $capWaitKnown.cooldownUntil -Source 'rate-limit-response'
+    $capCooldownRecord = Read-ProviderCapacityRecord -WorkspaceRoot $capWaitWs -Provider 'claude'
+    if ($null -eq $capCooldownRecord) { throw 'Set-ProviderCooldown must create a record when the provider has none' }
+    if ($capCooldownRecord.cooldownUntil -ne '2026-09-10T14:00:00Z') { throw 'The cooldown must be persisted' }
+    if ($capCooldownRecord.cooldownSource -ne 'rate-limit-response') { throw 'The cooldown records where it came from' }
+    if ($capCooldownRecord.resetAssumed) { throw 'A supplied reset time is not assumed' }
+    # A limit says "not now", not how much is left: it must not invent a ratio.
+    if ($null -ne $capCooldownRecord.windows[0].remainingRatio) { throw 'A limit response must not claim a measurement nobody made' }
+
+    $null = Set-ProviderCooldown -WorkspaceRoot $capWaitWs -Provider 'codex' -Until $capWaitUnknown.cooldownUntil -ResetAssumed
+    if (-not (Read-ProviderCapacityRecord -WorkspaceRoot $capWaitWs -Provider 'codex').resetAssumed) { throw 'resetAssumed must persist onto the record' }
+
+    # The verdict now refuses on that cooldown, which is the loop closing:
+    # a limit becomes a wait that the governor can actually see.
+    $capCooledVerdict = Resolve-ProviderCapacityVerdict -Record $capCooldownRecord -Config $pcConfig -NowUtc $capWaitNow
+    if ($capCooledVerdict.eligible) { throw 'After a limit, the provider must read ineligible until its reset time' }
+    if (-not $capCooledVerdict.reason.StartsWith('cooling-down until')) { throw "Expected a cooling-down reason, got '$($capCooledVerdict.reason)'" }
+
+    Remove-Item -LiteralPath $capWaitWs -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+Write-Host '  provider limit: capacity_exhausted not failed, session survives, reset time believed when given and marked assumed when not, cooldown persisted and honoured by the verdict' -ForegroundColor DarkGray
+
 Write-Step 'WorkPacket prompt rendering — smoke: acceptance criteria travel verbatim'
 
 # The spec lets an adapter reshape prompting but forbids it changing the
