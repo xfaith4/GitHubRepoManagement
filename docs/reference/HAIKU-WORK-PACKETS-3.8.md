@@ -145,6 +145,9 @@ security judgement. Vetoing one means editing the packets that cite it.
 | A17 | When a matched limit signal carries no parseable reset time, the provider's `cooldownUntil` is **now + 60 minutes**, the record carries `cooldownSource = 'rate-limit-response'` and `resetAssumed = $true`, and the next `Get-<P>AdapterCapacity` observation (H38-12) may shorten or lengthen it. | Sixty minutes is the shortest window any provider in scope resets on; an assumed value that is visibly flagged beats a task that never re-queues. Ben may veto the number. | H38-10 |
 | A18 | `auto` routing stays **off until the router exists**. `agent-providers.json` carries `dispatch: { defaultTarget: "claude", autoEnabled: false }`. The dispatch route defaults an absent `dispatchTarget` to `dispatch.defaultTarget`; an explicit `auto` while `autoEnabled` is false is a 400 (`validation`). H38-17's last step flips both values to `auto` / `true`. Remediation entries (H38-31) use `dispatch.defaultTarget` the same way. **D-013 was decided 2026-09-07, so that step runs** — but the flag stays false through packets H38-07 to H38-16, because nothing may write a token the runner cannot yet claim. | Without this, H38-18 defaulting to `auto` before the router is built leaves every board dispatch queued forever. | H38-07, H38-11, H38-17, H38-18, H38-31 |
 | A19 | A `running` summary counts toward `activeExecutions` only while the runner heartbeat file (`output/roadmap-task-runner.heartbeat.json`) exists, its `lastHeartbeatAt` is within **10 minutes** of now, and its `pid` equals the summary's `runnerPid` (a new field written at claim). At startup the runner marks every other `running` summary for a local provider `status = 'failed'`, `failureCategory = 'orphaned'`, keeping `branch`, `attempt` and `providerSessionId`. | A runner that dies mid-run leaves `running` on disk forever; deriving the count from summaries alone would then refuse every local claim. The heartbeat is the liveness evidence the portal already trusts, and one runner means one pid. | H38-11 |
+| A20 | **Supported and available are different things, and only one of them is committed.** `providers.<name>.supported` in `agent-providers.json` means *this repository has a conforming adapter* — a repo fact CI can verify, and the same for everyone. Whether the tool is installed and the account funded is **per-installation state, detected at runtime**, surfaced in `GET /setup/prerequisites` and Settings, and never written to a tracked file. A provider is a routing candidate only when `supported` **and** detected available **and** not opted out. The config field was called `enabled` in H38-07 and is renamed by this rule. | A committed `enabled: false` asserted a fact about one operator's laptop on behalf of every installation, and no gate could check it — CI has never seen that machine. Detection is cheap, always current, and already how `git`, `gh` and the token are handled. | H38-15b, H38-16, H38-17, H38-19b |
+| A21 | **Availability detection never authenticates.** The probe answers *is the CLI on PATH*, which costs nothing. It does **not** run the tool to prove the account works, because that spends the subscription quota this release is built to conserve (R12). Authentication is learned from the first real run: an auth failure is a cheap, distinguishable outcome. Until then a provider reports `authenticated: "unknown"`, which is honest rather than absent. | Probing an account by using it is the same trap R12 removed from H38-04 — a test that costs quota to run. An unknown that is labelled unknown is safe to route on; a guess is not. | H38-15b |
+| A22 | **Per-installation state gets its own untracked file.** The operator's provider opt-out is written to `backend/config/installation.local.json`, resolved by `Get-InstallationStatePath` (honouring `REPO_MGMT_INSTALLATION_STATE_PATH`, as the settings resolver does), created on first write, `.gitignore`d, and **gated: the module smoke fails if `git ls-files` ever reports it as tracked**. It is not put in `settings.json`. | `backend/config/settings.json` is git-**tracked** — its `.gitignore` entry does nothing, because a file already tracked stays tracked. Writing "this operator has no Codex" there would commit one machine's state to everyone's repository, which is the exact defect A20 removes, reintroduced one layer down. A never-tracked file *is* ignorable, and the tracking assertion is what stops the next person committing it by reflex. | H38-15b, H38-19b |
 
 ## B. Decisions needed — Ben's call, not Haiku's
 
@@ -157,12 +160,30 @@ there.
 | --- | --- | --- | --- | --- |
 | D-011 | Are the spec's initial reserves right — short-window **15%**, weekly **20%**, remediation inside the weekly reserve — and what is the default per-task consumption estimate (the spec gives none)? | Reserve size is the whole risk posture of the release: too high starves ordinary work, too low exhausts a subscription. | Config ships the spec's 15/20 marked `"provisional": true`; the estimate defaults to `0.05` of the short window and is marked the same. Records are written, verdicts are **not enforced**. | H38-09, H38-17 |
 | D-012 | What is the default permission envelope and scope? The spec's example is `filesystemWrite true, shell true, network false, githubWrite false`, `forbiddenPaths [".github/workflows/**"]`. Confirm, and say whether an agent may edit workflow files (the July design said yes, flagged). | Security posture of every agent run. | Config ships the spec's example marked provisional; the packet carries it; **no adapter enforces it** (no `--allowedTools` mapping) until decided. | H38-05 (enforcement half only), H38-16 (`--sandbox` mapping) |
-| D-014 | Which GitHub Copilot billing mode does this account use — AI credits, or the legacy premium-request allowance? | The spec forbids assuming the generation; the answer is on the account, not in the repo. | The Copilot adapter's `Get-CopilotAdapterCapacity` returns one window with `unit: "unknown"`, `confidence: "none"`, `available: true`; routing treats Copilot as eligible-but-unmeasured. | H38-15 (capacity half only) |
-| D-015 | Is Codex (`codex` CLI, an account with capacity) available on the operator's machine at all? | Whether a tool is installed and funded is a fact about the machine and the account, not the repository. | `codex` ships in config with `"enabled": false`; the router works with two providers; H38-16 is blocked. **No transcript is needed to answer this** — H38-16 authors a synthetic fixture like every other packet (R12). | H38-16, H38-29 (Codex resume half) |
 
-**All five are now in the register**, so a packet's **Stop if** reads
-`open-decisions.md` rather than this table. D-011, D-012, D-014 and D-015 are
-under **Open**.
+**D-014 and D-015 were withdrawn on 2026-09-07, not answered.** Both asked the
+owner to state, once and in a governance file, something that is different on
+every machine this product is installed on: *which billing mode is this account
+on*, and *is the `codex` CLI installed and funded*. If ten people run this
+portfolio manager, a committed answer is wrong for nine of them, and wrong for
+the tenth as soon as they install a tool or change a plan. The first version of
+this file argued its own way into the mistake — it wrote *"the answer is on the
+account, not in the repo"* and then filed it as a decision anyway. The test that
+produced the error was **"an agent cannot settle this from the code"**; the
+correct test is **"would the answer be the same for everyone who installs
+this."**
+
+Per-installation state is **detected and surfaced**, never decided: it belongs
+in `GET /setup/prerequisites` — which the setup wizard already renders on first
+launch, alongside `git`, the GitHub CLI and the token — and in a Settings
+section where a provider can be opted out. H38-15b builds that, H38-19b names
+the providers in Settings, and both replace the withdrawn rows. See
+`open-decisions.md` → **Withdrawn** for the full record.
+
+**The two that remain are in the register**, so a packet's **Stop if** reads
+`open-decisions.md` rather than this table. D-011 and D-012 are under **Open**;
+both pass the test above, because a reserve ratio and a permission envelope are
+the product's risk posture and are the same for every installation.
 
 **D-013 was answered 2026-09-07 and is under Decided.** All eight ranking
 weights stand as they ship (`+1` each, `-1` for the two negative factors) as a
@@ -176,7 +197,7 @@ runs rather than being skipped.
 | Prerequisite | Needed by | How |
 | --- | --- | --- |
 | `HAIKU-WORK-PACKETS.md` H-05 landed (heartbeat path override), H-07 (dispatch authority), H-10 (check-run detail), H-13a and H-13b (dependencies) | H-05: all runner packets; H-07: H38-35; H-10: H38-23, H38-28; H-13a/b: H38-17 | Execute those packets first. Each 3.8 packet that depends on one names it under **Prerequisites**. |
-| D-011, D-012, D-014, D-015 answered | see §B | `open-decisions.md` **Decided** section. D-013 is already decided. |
+| D-011, D-012 answered | see §B | `open-decisions.md` **Decided** section. D-013 is already decided; D-014 and D-015 were withdrawn as the wrong kind of question and need nothing from the operator. |
 
 **No fixture is an operator prerequisite.** Every provider transcript this
 release gates against is authored synthetically by the packet that needs it
@@ -187,7 +208,7 @@ collected opportunistically, from runs that were going to happen anyway:
 | --- | --- | --- |
 | Claude success | `output/roadmap-task-history/runs/<runId>.claude.stream.jsonl` after any headless dispatch | Copy to `tests/fixtures/providers/claude-stream-json-success.jsonl`; H38-04's gate then asserts against it **as well as** the synthetic one, and any shape difference is a finding worth acting on |
 | Claude usage limit | the same path, the next time a limit is actually hit | Copy to `claude-stream-json-usage-limit.jsonl`; H38-10 already asserts against both |
-| Codex success | the equivalent path once the Codex adapter runs | Only relevant if D-015 is yes |
+| Codex success | the equivalent path once the Codex adapter runs | Appears only on an installation that has Codex; absent everywhere else, and no packet waits for it |
 
 ---
 
@@ -217,11 +238,13 @@ companion (`H-`).
 | H38-13 | M2 | Milestone 2 closing: state → `smoke-tested`, doc, vocabulary note | H38-07…12 | low |
 | H38-14 | M3 | Provider registry replaces the hardcoded `claude`/`copilot` pair, one definition | H38-07 | medium |
 | H38-15 | M3 | Adapter conformance gate; Copilot adapter wraps the existing runner functions | H38-14, H38-04 | medium |
-| H38-16 | M3 | Codex adapter from a synthetic fixture; runner branch for `codex` | H38-15, D-015 | high |
-| H38-17 | M3 | Router: eligibility then ranking, reason recorded, resolved at claim time; turns routing on | H38-09, H38-15, H-13b | high |
+| H38-15b | M3 | Provider availability is detected, not configured: `supported` vs available, PATH probe, `GET /setup/prerequisites` gains a check per provider, operator opt-out | H38-15 | medium |
+| H38-16 | M3 | Codex adapter from a synthetic fixture; runner branch for `codex` | H38-15 | high |
+| H38-17 | M3 | Router: eligibility then ranking, reason recorded, resolved at claim time; turns routing on | H38-09, H38-15b, H-13b | high |
 | H38-18 | M3 | One vocabulary at the host: dispatch/execute accepts a target (default from config), approve route stops writing `operator-runner`, backlog by provider | H38-14 | medium |
 | H38-19 | M3 | Frontend: target union, presence payload by provider, preview names the intended provider | H38-18 | medium |
-| H38-20 | M3 | Milestone 3 closing | H38-14…19 | low |
+| H38-19b | M3 | Settings shows the three providers: detected, opted out, or not installed — with what to do about it | H38-15b, H38-19 | medium |
+| H38-20 | M3 | Milestone 3 closing | H38-14…19b | low |
 | H38-21 | M4 | The runner pushes after `IMPLEMENTATION_COMPLETE` when `autoPush` is on; `awaiting-review` survives at off | H38-03, H38-14 | high |
 | H38-22 | M4 | `POST /api/delivery/reconcile`: open pending PRs, refresh CI, called from the runner's poll loop over https with the api key | H38-21 | high |
 | H38-23 | M4 | Record `verifiedHeadSha` and `readyForOperatorAt` when CI passes on a known head | H38-22, H-10 | medium |
@@ -459,7 +482,7 @@ packet about something else.
    ```
 
 2. Loader in the new module: `Get-AgentProviderConfigPath -WorkspaceRoot` → `<root>\backend\config\agent-providers.json`; `Get-AgentProviderConfig -ConfigPath` following `Get-FoundationDomainsConfig` in `backend/modules/portfolio/Portfolio.Conclusion.ps1` exactly: `$null` when absent, unparseable, `schemaVersion` not `v1`, or `providers` empty. `Test-AgentProviderConfig -Config` → `{ valid; errors }` with errors: `providers.<name>.executionMode must be local or github-hosted`, `providers.<name>.windows must be a non-empty array`, `providers.<name>.windows[<i>].unit must be one of: provider-allowance, tokens, ai-credits, premium-requests, currency, unknown` (the spec's list), `reserves.shortWindowRatio must be between 0 and 1`, `reserves.weeklyRatio must be between 0 and 1`, `localExecutionSlots must be 1` (spec: MVP concurrency; H38-36 may relax this only if the roadmap changes), `dispatch.defaultTarget must name a provider or auto`, `dispatch.defaultTarget is auto but dispatch.autoEnabled is false` (A18: the default may be `auto` only once routing is on), `ranking.tieBreak must be nearest-reset-first or alphabetical`.
-3. `open-decisions.md` already carries all five (added 2026-09-07). **Do not add them again.** Verify only: D-011, D-012, D-014 and D-015 appear under **Open** and D-013 under **Decided**. If any is missing, add just that one in the register's entry format (`Asked`, `Question`, `Why it is not an agent's call`, `Default if unanswered`, `Blocks`) from §B, and say so in the report. `ranking` carries **no** `provisional` flag because D-013 is decided; every other provisional flag stays until its own decision lands.
+3. `open-decisions.md` already carries them (added 2026-09-07). **Do not add them again.** Verify only: D-011 and D-012 appear under **Open**, D-013 under **Decided**, and D-014 and D-015 under **Withdrawn** (withdrawn 2026-09-07 as per-installation state rather than decisions — A20; do not restore them to **Open**). If any is missing, add just that one in the register's entry format (`Asked`, `Question`, `Why it is not an agent's call`, `Default if unanswered`, `Blocks`) from §B, and say so in the report. `ranking` carries **no** `provisional` flag because D-013 is decided; every other provisional flag stays until its own decision lands.
 
 **Gate (red first) — module smoke, new section `Write-Step 'Provider config — smoke: schema v1 and the reserve bounds'`:**
 
@@ -711,13 +734,13 @@ packet about something else.
 **Steps**
 
 1. Registry: `Test-AgentProviderAdapter -Provider` → `{ conforms; missing = @() }` checking the seven A4 names with `Get-Command -Name … -ErrorAction SilentlyContinue`. `Get-AgentProviderAdapterPath -WorkspaceRoot -Provider` → `<root>\backend\modules\agent-adapters\Adapter.<Capitalized>.ps1`.
-2. Create `Adapter.Copilot.ps1` by **moving verbatim** from the runner: `New-CopilotAgentTaskArgs`, `Get-AgentTaskUrlFromOutput`, `Test-CopilotDispatchPrecondition` (same bodies, same signatures — a move is the change; the runner dot-sources the adapter so every existing call keeps working). Add the seven names: `Get-CopilotAdapterCapability` (`executionMode = 'github-hosted'`, `supportsResume = $false`), `Get-CopilotAdapterCapacity` → one window `{ name='billing'; unit='unknown'; remainingRatio=$null; source='historical-estimate' }` with a header comment citing D-014, `Start-CopilotExecution` = `New-CopilotAgentTaskArgs`, `Resume-CopilotExecution` throws `Not supported: Copilot runs are GitHub-hosted; remediation is a new task`, `Stop-CopilotExecution` throws `Not supported in 3.8`, `ConvertTo-CopilotCanonicalEvent` → `@()`, `Get-CopilotExecutionResult -TaskUrl -TaskId -ExecutionId` → `New-ExecutionResult -Provider 'copilot' -Status implementation_complete -Summary "dispatched: $TaskUrl" -ProviderSessionId $TaskUrl` (the URL is the only durable handle today; H38-22 reconciles PR state).
+2. Create `Adapter.Copilot.ps1` by **moving verbatim** from the runner: `New-CopilotAgentTaskArgs`, `Get-AgentTaskUrlFromOutput`, `Test-CopilotDispatchPrecondition` (same bodies, same signatures — a move is the change; the runner dot-sources the adapter so every existing call keeps working). Add the seven names: `Get-CopilotAdapterCapability` (`executionMode = 'github-hosted'`, `supportsResume = $false`), `Get-CopilotAdapterCapacity` → one window `{ name='billing'; unit='unknown'; remainingRatio=$null; source='historical-estimate' }` with a header comment recording that billing mode is a property of the signed-in account, so `unknown` is the honest answer until an observation arrives (D-014 withdrawn 2026-09-07, A20), `Start-CopilotExecution` = `New-CopilotAgentTaskArgs`, `Resume-CopilotExecution` throws `Not supported: Copilot runs are GitHub-hosted; remediation is a new task`, `Stop-CopilotExecution` throws `Not supported in 3.8`, `ConvertTo-CopilotCanonicalEvent` → `@()`, `Get-CopilotExecutionResult -TaskUrl -TaskId -ExecutionId` → `New-ExecutionResult -Provider 'copilot' -Status implementation_complete -Summary "dispatched: $TaskUrl" -ProviderSessionId $TaskUrl` (the URL is the only durable handle today; H38-22 reconciles PR state).
 3. Runner: `Invoke-QueuedCopilotTask` saves an ExecutionResult via `Get-CopilotExecutionResult` after recording `agentTaskUrl`.
 4. Host: dot-source the three adapters after the capacity module (the host needs capability and capacity, never execution).
 
-**Gate (red first) — module smoke, new section `Write-Step 'Provider adapters — smoke: every enabled provider conforms to the seven-function contract'`:**
+**Gate (red first) — module smoke, new section `Write-Step 'Provider adapters — smoke: every supported provider conforms to the seven-function contract'`:**
 
-- For each provider in the registry: `Test-AgentProviderAdapter` conforms, or the provider is `codex` and `enabled = $false` (until H38-16). Predicted red: `Test-AgentProviderAdapter` not recognized; after defining it, `copilot` is missing all seven.
+- For each provider in the registry: `Test-AgentProviderAdapter` conforms, or the provider is `codex` and `supported = $false` (until H38-16). **`supported` is the repo fact — an adapter exists here — not a claim about the operator's machine (A20); the gate must never consult the PATH.** Predicted red: `Test-AgentProviderAdapter` not recognized; after defining it, `copilot` is missing all seven.
 - **Golden (move-only):** the three moved functions produce identical output to a captured pre-move run: `New-CopilotAgentTaskArgs -Repository 'x/y' -Prompt "a`nb" -BaseBranch main` → the same 7-element array; `Get-AgentTaskUrlFromOutput` on the same sample string; `Test-CopilotDispatchPrecondition -GhAvailable $false` → `gh-not-found`.
 - Injection: temporarily rename `Stop-CopilotExecution` → gate names it as missing. Revert.
 
@@ -727,11 +750,55 @@ packet about something else.
 
 ---
 
+### H38-15b — Provider availability is detected, never configured
+
+**Why this packet exists.** The first version of this plan asked the operator,
+in a governance file, whether they had a Codex account (D-015) and which Copilot
+billing plan they were on (D-014), and shipped `enabled: false` for `codex` in a
+committed config. All three are the same mistake: **a fact that is different on
+every installation was written down once, in the repository, on everyone's
+behalf.** Ben named it on 2026-09-07 — *"If 10 people use this Repo manager, why
+would we write an answer to this question in code."* The answer is that it must
+be detected and surfaced, not decided. This packet is the detection; H38-19b is
+the surface. See A20, A21, A22.
+
+**Roadmap item:** M3. Spec: *Provider adapters* (eligibility precedes ranking).
+
+**Prerequisites:** H38-15, H38-12 (`GET /api/providers` exists).
+
+**Scope (edit only):** `backend/modules/execution/Execution.ProviderRegistry.ps1`; new `backend/modules/common/Config.InstallationStatePath.ps1`; `backend/api-host/Start-RepoManagementApiHost.ps1` (`GET /setup/prerequisites`, `GET /api/providers`, one dot-source line); `.gitignore`; `scripts/Invoke-ModuleSmokeTest.ps1`; `scripts/Invoke-ApiHostSmokeTest.ps1`; `ROADMAP.md`.
+
+**Steps**
+
+1. `Config.InstallationStatePath.ps1`: `Get-InstallationStatePath -WorkspaceRoot` → `REPO_MGMT_INSTALLATION_STATE_PATH` if set, else `<root>\backend\config\installation.local.json`. Header comment states A22 and names the settings.json precedent. Add the filename to `.gitignore`.
+2. `Get-AgentProviderCommandName -Provider` → `claude`→`claude`, `codex`→`codex`, `copilot`→`gh`. One place, so step 4 and H38-17 cannot drift apart.
+3. `Test-AgentProviderAvailability -Provider [-WorkspaceRoot] [-InstallationState]` → `[pscustomobject]` with `provider`, `supported` (from config), `installed` (`[bool](Get-Command <name> -ErrorAction SilentlyContinue)`), `optedOut` (from the installation state file), `authenticated` (**always the string `unknown`** — see step 3a), `available` (`supported -and installed -and -not optedOut`), and `detail`, a sentence naming the *first* reason it is unavailable: `no adapter in this build` / `the codex CLI was not found on PATH` / `switched off in Settings` / `available`.
+   - 3a. **Do not authenticate.** There is no `claude --version`-style probe of the account, and nothing invokes the provider CLI. Proving an account works means spending its quota, which is the trap R12 exists to prevent (A21). `authenticated` stays `unknown` until a real run reports otherwise. If a step here starts a provider process, the packet has gone wrong — stop and report.
+4. `Get-AgentProviderAvailabilityMap -WorkspaceRoot` → `@{ claude = <bool>; codex = <bool>; copilot = <bool> }` of `available`. This is the value H38-17 passes as `AuthStatus`; that packet must call this rather than inlining `Get-Command`.
+5. Host, `GET /setup/prerequisites`: after the existing five checks, append one per provider in the config — `id = "provider-<name>"`, `label = "<Name> agent CLI"`, `required = $false`, `ok = <available>`, `detail = <detail>`. **No frontend change is needed**: `SetupWizard.tsx` already renders `prereqs.map(...)` generically, so these appear on first launch for free. Verify that claim before relying on it.
+6. Host, `GET /api/providers`: each provider gains `availability` = the step-3 object minus `provider`.
+
+**Gate (red first) — module smoke, new section `Write-Step 'Provider availability — smoke: detected per installation, never committed'`:**
+
+- `Test-AgentProviderAvailability -Provider codex` on a tree where `codex.supported` is `$false` → `available = $false`, `detail` names the missing adapter, **regardless of whether the CLI is on PATH** (assert both branches by stubbing `Get-AgentProviderCommandName` to a name that certainly exists, e.g. `git`, and to one that certainly does not). Predicted red: `The term 'Test-AgentProviderAvailability' is not recognized …`.
+- `authenticated` is the string `unknown` for all three providers. This is the A21 tripwire: it fails the moment someone adds a login probe.
+- Opt-out round-trip through a temp `REPO_MGMT_INSTALLATION_STATE_PATH`: absent file → `optedOut = $false` for every provider (never a throw); `{ "providers": { "claude": { "optOut": true } } }` → `claude.available = $false` with `detail` naming Settings, and the other two unchanged.
+- **Tracking assertion (A22):** `git ls-files --error-unmatch backend/config/installation.local.json` must fail — if that file is ever tracked, this gate fails and says why, naming settings.json as the precedent.
+- `Get-AgentProviderAvailabilityMap` keys equal `Get-AgentProviderToken` minus `auto`.
+
+**Gate — api-host smoke:** `GET /setup/prerequisites` returns JSON (**assert `content-type: application/json`, never status** — an unmatched route answers `200 text/html` from the SPA fallback) whose `checks` contains `provider-claude`, `provider-codex` and `provider-copilot`, each with a boolean `ok` and a non-empty `detail`; `prerequisitesMet` is unchanged by them, because every provider check is `required = $false` — a portfolio manager with no agent CLI installed is still a working portfolio manager.
+
+**Roadmap write-back:** append `; H38-15b provider availability detected per installation (PATH probe, no authentication) and surfaced in setup prerequisites; opt-out lives in an untracked installation.local.json`.
+
+**Stop if:** `Get-Command` is called against a provider CLI name anywhere outside `Get-AgentProviderCommandName`'s callers (grep `Get-Command claude|Get-Command codex|Get-Command gh` under `backend\` and `scripts\`) — report each site; they are duplicates of this logic and belong in scope. Also stop if any step would run a provider CLI to test authentication (A21).
+
+---
+
 ### H38-16 — Codex adapter
 
 **Roadmap item:** M3 ("add the Codex adapter"). Spec: *Codex adapter* (`codex exec --json --sandbox workspace-write --output-schema <ExecutionResult schema>`; "records the Codex thread/session identifier"; "MUST NOT equate Codex token telemetry with remaining subscription allowance").
 
-**Prerequisites:** H38-15; **D-015 decided yes**. No fixture prerequisite: this packet authors `tests/fixtures/providers/codex-exec-success.synthetic.jsonl` from the documented `codex exec --json` shape, parses it defensively, and asserts additionally against a real transcript only if one has appeared (R12).
+**Prerequisites:** H38-15. No decision prerequisite (D-015 withdrawn, A20) and no fixture prerequisite: this packet authors `tests/fixtures/providers/codex-exec-success.synthetic.jsonl` from the documented `codex exec --json` shape, parses it defensively, and asserts additionally against a real transcript only if one has appeared (R12).
 
 **Scope (edit only):** new `backend/modules/agent-adapters/Adapter.Codex.ps1`; new `backend/config/execution-result.schema.json` (the JSON Schema of H38-03's shape, for `--output-schema`); `scripts/Invoke-RoadmapTaskRunner.ps1` (a `codex` branch beside the claude launch); `backend/config/agent-providers.json` (`codex.enabled` → `true` **only** in this packet); `scripts/Invoke-ModuleSmokeTest.ps1`; `ROADMAP.md`.
 
@@ -741,7 +808,7 @@ packet about something else.
 2. Adapter functions mirroring H38-04: `New-CodexExecutionArgument -Prompt -SchemaPath` → `@('exec', '--json', '--sandbox', 'workspace-write', '--output-schema', $SchemaPath, $Prompt)`; `ConvertFrom-CodexJsonl -Lines`; `ConvertTo-CodexExecutionResult -Parsed -TaskId -ExecutionId -ChangedFiles` reading the session id and the final object's usage (any property tree named `usage` on the final object; `$null` when absent); the seven A4 names, with `Resume-CodexExecution` throwing `Codex resume is fixture-gated (H38-29)` for now and `Get-CodexAdapterCapacity` returning `$null` (the spec forbids deriving allowance from token telemetry).
 3. `--sandbox workspace-write` is the **only** permission mapping in this packet; any finer mapping of the envelope waits on D-012 (say so in the header comment).
 4. Runner: in `Invoke-QueuedTask`, branch on the resolved provider: `codex` → same flow as claude (branch, launch with `& codex @argv`, parse, result, verify, commit) using the Codex functions; the `codex` command must be on PATH (throw the same shape as the `'claude' not found` message).
-5. Flip `codex.enabled` to `true`.
+5. Flip `codex.supported` to `true` — the adapter now exists in this repository, which is all that field claims. **Do not touch availability**: whether the `codex` CLI is installed is detected per installation (A20), and this packet must not assert it for anyone.
 
 **Gate (red first) — module smoke, new section `Write-Step 'Codex adapter — smoke: recorded JSONL to ExecutionResult, offline'`:**
 
@@ -752,7 +819,7 @@ packet about something else.
 
 **Roadmap write-back:** append `; H38-16 Adapter.Codex.ps1 from a recorded codex exec --json transcript; runner runs codex tasks through the same result path`.
 
-**Stop if:** D-015 is not decided yes. Report and leave `codex.enabled = false`. **Not** a stop condition: a missing session identifier or usage block — the parser tolerates both, as the Claude adapter does.
+**Stop if:** nothing external. This packet was once gated on D-015 (*does the operator have Codex*); that decision was withdrawn on 2026-09-07 because it is per-installation state, not a ruling (A20). Build the adapter regardless: it costs an installation without Codex nothing, the router simply never selects an unavailable provider, and the gate is synthetic so no quota is spent. **Not** a stop condition: a missing session identifier or usage block — the parser tolerates both, as the Claude adapter does.
 
 ---
 
@@ -768,7 +835,7 @@ packet about something else.
 
 1. `Resolve-ProviderSelection -Packet -Registry -CapacityRecords <hashtable provider→record> -AuthStatus <hashtable provider→bool> -ActiveCounts <hashtable provider→int> -History <object[]> -Config -TaskClass -NowUtc` → `{ selected; reason = @(); candidates = @(); tie }`. **Stage 1**, per provider, every condition recorded as a string in `candidates[i].checks` and the first failure as `candidates[i].ineligibleBecause`: `enabled`; `auth valid` (from `AuthStatus`; absent → `$false`); `required capabilities supported` (packet `execution.preferredProvider` ≠ `auto` → only that provider; a packet whose `repository` is empty excludes `github-hosted` providers — there is nothing on GitHub to run against); `not cooling down` and `capacity fits` (both from `Resolve-ProviderCapacityVerdict`; when the verdict is not `enforced` the check is recorded as `advisory` and does not exclude); `concurrency slot available` (`ActiveCounts[p] < maxConcurrentExecutions`); `permissions compatible` (a packet with `githubWrite = $true` requires a `github-hosted` provider — the spec's boundary). No eligible provider → `selected = $null`, `reason = @('no eligible provider', <each provider's ineligibleBecause>)`.
 2. **Stage 2**: score = Σ `weights[k] * factor[k]` with factors in `[0,1]`: `suitability` (1 when `preferredProvider` names it, 0.5 for `auto`), `usableCapacity` (the verdict's `usableRatio`, 0.5 when unmeasured), `history` (success ratio over `History` entries for the provider with the same repository, 0.5 when none), `fitsWindow` (1 when `usableRatio ≥ 2×estimate`, else 0.5), `sessionReuse` (1 when `packet.execution.previousSessionId` belongs to this provider — the packet gains `execution.previousProvider` in H38-28; 0 otherwise), `timeToReset` (1 − hours-to-nearest-reset/168 floored at 0; 0.5 when none), `estimatedConsumption` (the estimate ratio), `recentFailureRate` (failures / runs over the last 10 history entries for the provider, 0 when none). Highest score wins. Equal scores → `tie = $true` and `tieBreak` from config. `nearest-reset-first` (the decided value, D-013): among the tied candidates take the one whose **earliest** window `resetAt` is soonest; a candidate whose windows carry no `resetAt` sorts **last**; when no tied candidate has one, fall back to alphabetical by provider name. `alphabetical`: first by name. Any other value throws at load (H38-07 validates it). `reason` = `@('eligible', "<score> for <name>: …" per candidate, "selected <name>", and "tie broken by <tieBreak rule>" naming the rule that decided it when a tie applied)`.
-3. Runner: when the resolved token is `auto`, build the inputs at claim time (records from disk, `AuthStatus` = `@{ claude = [bool](Get-Command claude); codex = [bool](Get-Command codex); copilot = (Test-CopilotDispatchPrecondition …).ok }`, active counts via `Get-ProviderActiveExecutionCount` with the heartbeat path (H38-11 step 2), history = the last 50 summaries in `$runsDir`), call the router, write `selectedProvider` and `selectionReason` onto the summary, and proceed with the selected provider. `selected = $null` → do not claim, log the reasons (the entry stays queued — this is `CAPACITY_WAIT` with no provider). This replaces H38-11's `routing not enabled` branch.
+3. Runner: when the resolved token is `auto`, build the inputs at claim time (records from disk, `AuthStatus` = `Get-AgentProviderAvailabilityMap` from H38-15b — **do not inline `Get-Command` here**; an earlier draft of this step did, which is how availability came to be duplicated between the router and the config in the first place (A20), active counts via `Get-ProviderActiveExecutionCount` with the heartbeat path (H38-11 step 2), history = the last 50 summaries in `$runsDir`), call the router, write `selectedProvider` and `selectionReason` onto the summary, and proceed with the selected provider. `selected = $null` → do not claim, log the reasons (the entry stays queued — this is `CAPACITY_WAIT` with no provider). This replaces H38-11's `routing not enabled` branch.
 4. Turn routing on: set `dispatch.autoEnabled` to `true` and `dispatch.defaultTarget` to `"auto"` in `agent-providers.json` (A18), and update H38-07's config tripwire to assert the new values. **D-013 is Decided (2026-09-07)**, so this step runs — confirm the entry is still under **Decided** in `open-decisions.md` before doing it, and stop if Ben has reopened it. The weights and `tieBreak` are already the decided values from H38-07 and need no edit here. This step is the switch that turns routing on; nothing else flips it.
 
 **Gate (red first) — module smoke, new section `Write-Step 'Provider router — smoke: eligibility then ranking, offline'`:**
@@ -841,6 +908,46 @@ packet about something else.
 
 ---
 
+### H38-19b — Settings names the three providers and what to do about each
+
+**Why this packet exists.** H38-15b detects availability; nothing shows it. Ben
+asked for this surface directly: *"Whether or not I have an account in any of
+the three providers needs to be surfaced in the Settings section or setup
+wizard at the initial launch of the application."* The wizard half comes free
+from H38-15b step 5 — `SetupWizard.tsx` already renders the prerequisite list
+generically. This packet is the Settings half, plus the one thing the wizard
+cannot do: let the operator switch a provider **off** on purpose.
+
+**Roadmap item:** M3. Spec: *Provider adapters*.
+
+**Prerequisites:** H38-15b, H38-19.
+
+**Scope (edit only):** `backend/api-host/Start-RepoManagementApiHost.ps1` (one new route); `frontend/components/SettingsModal.tsx`; `frontend/services/apiClient.ts`; `frontend/types.ts`; new or extended `frontend/components/SettingsModal.test.tsx`; `backend/api-host/README.md` (route list); `scripts/Invoke-ApiHostSmokeTest.ps1`; `ROADMAP.md`.
+
+**Steps**
+
+1. Host: `POST /api/providers/{provider}/opt-out`, body `{ "optOut": true|false }`, writes `installation.local.json` through `Get-InstallationStatePath` (A22 — **never** `settings.json`, which is tracked) and returns the refreshed availability object. Unknown provider → `400` naming the four valid tokens. A missing state file is created; a malformed one is replaced rather than merged, and the response says so.
+2. `apiClient.ts`: `getProviderAvailability()` and `setProviderOptOut(provider, optOut)`, following the existing `fetchJson` envelope handling.
+3. `SettingsModal.tsx`: a third section `Agent providers`, between the two existing ones, with one row per provider: the name, a state word, a one-sentence explanation, and a checkbox to switch it off. The four states and their exact words: **Available** (`Ready to run work`), **Not installed** (`The <cli> command was not found on this machine`), **Switched off** (`You turned this off here; it will not be selected`), **Not in this build** (`This version has no adapter for it`). The checkbox renders only for **Available** and **Switched off** — offering to disable something that is not installed is noise.
+4. The section states, in one line under the heading, that this is per-machine: `Detected on this machine. Nothing here is shared with other installations or committed to the repository.` That sentence is the point of the whole change; do not drop it for space.
+5. **Do not** report an authentication state. Availability answers *installed and switched on*; whether the account has capacity is learned from the first run (A21), and a green tick claiming an account works when nobody has tested it is worse than silence.
+
+**Gate (red first) — Vitest `SettingsModal.test.tsx`:**
+
+- Each of the four states renders its exact sentence; the checkbox is present for **Available** and **Switched off** and absent for the other two. Predicted red: text not found.
+- Ticking the box calls `setProviderOptOut` with `(provider, true)` (mock the client) and the row re-reads as **Switched off**.
+- A failed opt-out call leaves the previous state on screen and shows the error, rather than optimistically flipping the row.
+
+**Gate — api-host smoke:** `POST /api/providers/codex/opt-out` with `{ "optOut": true }` returns `application/json` (assert the content-type, not the status) with `availability.optedOut = true`; a follow-up `GET /api/providers` agrees; `POST /api/providers/gemini/opt-out` returns `400`. The smoke points `REPO_MGMT_INSTALLATION_STATE_PATH` at its fixture directory and asserts the repository's own `backend/config/installation.local.json` was **not** created — a gate must not write into the state the operator is looking at.
+
+**UI debt:** new text renders at `text-sm` or larger. Run `node frontend/scripts/Measure-UiRatchet.mjs` before pushing: any new `text-xs` or `text-[9-12px]` node fails CI against the baseline.
+
+**Roadmap write-back:** append `; H38-19b Settings shows each provider as available, not installed, switched off or not in this build, and the opt-out writes per-machine state that is never committed`.
+
+**Stop if:** `SettingsModal.tsx` fetches settings through a path that would round-trip the opt-out into `settings.json` — report the site; the opt-out must reach the installation state file only.
+
+---
+
 ### H38-20 — Milestone 3 closing
 
 **Roadmap item:** M3 state clause.
@@ -850,11 +957,11 @@ packet about something else.
 **Steps**
 
 1. Combined green run of module smoke, api-host smoke, `npm run test:unit`.
-2. `local-task-runner.md`: the header line `# Local task runner (Claude Code and Copilot)` → `# Local task runner (Claude Code, Codex and Copilot)`; add a subsection `## Which provider runs a task (Release 3.8 M3)` of at most 15 lines: the four tokens, `auto` resolved at claim time, where the reason is recorded.
+2. `local-task-runner.md`: the header line `# Local task runner (Claude Code and Copilot)` → `# Local task runner (Claude Code, Codex and Copilot)`; add a subsection `## Which provider runs a task (Release 3.8 M3)` of at most 18 lines: the four tokens, `auto` resolved at claim time, where the reason is recorded, and — in one sentence — that a provider is selectable only where its CLI is installed, which is detected per machine and shown in Settings, never configured in the repository (A20).
 
 **Roadmap write-back:** M3 state word → `smoke-tested <date>`.
 
-**Stop if:** H38-16 was stopped on D-015 — then the closing state is `backend-complete <date>` with the clause `codex adapter fixture-gated (D-015)`, and this is reported, not hidden.
+**Stop if:** nothing. H38-16 no longer stops on a decision (D-015 withdrawn 2026-09-07, A20), so milestone 3 closes with all three adapters present. If H38-16 was skipped for any other reason, say which and close at `backend-complete <date>` with the clause `codex adapter not built`, reported rather than hidden.
 
 ---
 
@@ -1062,7 +1169,7 @@ packet about something else.
 
 **Roadmap item:** M5 ("resumes the original session where capacity allows"). Spec: *Default routing policy* (remediation: "original provider session available? YES + capacity available → resume original session").
 
-**Prerequisites:** H38-28, H38-09. Codex half: **D-015** only; the resume fixture `tests/fixtures/providers/codex-exec-resume.synthetic.jsonl` is authored by this packet (R12).
+**Prerequisites:** H38-28, H38-09. Codex half: H38-16 only (no decision — D-015 withdrawn, A20); the resume fixture `tests/fixtures/providers/codex-exec-resume.synthetic.jsonl` is authored by this packet (R12).
 
 **Scope (edit only):** `backend/modules/execution/Execution.Handoff.ps1`; `backend/modules/agent-adapters/Adapter.Claude.ps1`; `backend/modules/agent-adapters/Adapter.Codex.ps1`; `scripts/Invoke-RoadmapTaskRunner.ps1`; `scripts/Invoke-ModuleSmokeTest.ps1`; `ROADMAP.md`.
 
@@ -1333,8 +1440,13 @@ expected): `backend/config/agent-providers.json` (H38-07),
 (H38-08), `Execution.ProviderRouter.ps1` (H38-17), `Execution.Handoff.ps1`
 (H38-28), `Execution.Events.ps1` (H38-33), `tests/fixtures/providers/` and its
 synthetic transcripts (authored by the packet that needs each, R12),
+`backend/modules/common/Config.InstallationStatePath.ps1` (H38-15b),
 `output/work-packets/` and
 `output/provider-capacity/` (runtime, gitignored).
+
+`backend/config/installation.local.json` (H38-15b) is a fourth kind: it is
+created by the **operator's** first opt-out, not by a packet, and it must stay
+untracked (A22). If it exists in a fresh clone, something has gone wrong.
 
 Paths named that exist today but whose **internal target** must be discovered
 by the packet (an exact-match rule is given in the packet): the host's Actions
@@ -1353,13 +1465,13 @@ No path named in this file was found missing without a creating packet.
 | Spec *Architectural responsibilities*: **isolated worktree** per task | Not claimed by any 3.8 milestone. The runner branches inside the operator's clone, and Lane 0.12's canonical-checkout logic and the runner's "repo vanished mid-run" guard both assume that. Changing it is a design decision about workspace ownership. | Ben — a decision entry, then a packet |
 | Spec *Revised delivery state machine*: `POST_MERGE_VERIFYING`, `POST_MERGE_REMEDIATION` | No 3.8 milestone names post-merge verification; `Invoke-AgentRunRefresh` reads Actions for the PR branch, not for the default branch after merge. The vocabulary carries the tokens (H38-34) so the surface is honest about the gap. | A later release, or a 3.8 amendment |
 | Spec *Claude Code adapter*: "Allowed and denied tools MUST be derived from the WorkPacket permission envelope"; *Codex adapter* sandbox mapping beyond `workspace-write` | Waits on D-012 (the envelope's contents and whether workflow files are editable). H38-05 and H38-16 carry the packet fields and say enforcement is pending. | Ben answers D-012 → one packet per adapter |
-| Spec *GitHub Copilot adapter*: record "GitHub task identifier, issue identifier, agent session"; account for the account's **billing mode** | The runner records only the task URL (`Get-AgentTaskUrlFromOutput`); `gh agent-task create` output carries no other identifier in the recorded shape, and billing mode is D-014. `GET /api/providers` reports Copilot as unmeasured until then. | Ben answers D-014; a packet once `gh agent-task` output is recorded as a fixture |
+| Spec *GitHub Copilot adapter*: record "GitHub task identifier, issue identifier, agent session"; account for the account's **billing mode** | The runner records only the task URL (`Get-AgentTaskUrlFromOutput`); `gh agent-task create` output carries no other identifier in the recorded shape, and billing mode is a property of whichever account is signed in. `GET /api/providers` reports Copilot as unmeasured, with `confidence: "none"`, which is the honest answer rather than a placeholder. | Nothing from Ben (D-014 withdrawn 2026-09-07, A20). A packet once `gh agent-task` output is recorded as a fixture, and billing mode becomes an observation like any other capacity signal |
 | Spec *Capacity sources* ranks 1–2 (provider-supported machine-readable status; CLI account status) for Claude and Codex | No fixture shows either CLI exposing remaining allowance. H38-12 implements rank 3 conservatively against the recorded fixture and records rank 4 (usage) without inventing a ratio. | Operator: record `claude`/`codex` account-status output if such a command exists → packet |
 | Lane 0.18 **acceptance-criteria check before a PR is called ready** (`Test-PhaseGate` port) | The check is a model-driven read-only pass — it needs a live model, which R12 forbids. H38-30 leaves `remainingScope` = all criteria and says so. | Fable-class pass with a live model, or an operator-recorded judge transcript as fixture |
 | Lane 0.18 **dependency-aware selection** (`Get-NextEligibleRoadmapItem`) | Rendered in the companion file as H-13a/H-13b; H38-17 consumes it. | `HAIKU-WORK-PACKETS.md` |
 | Release 3.8 `**Status:**` promotion to `validation` / `done`; operator verification on the live portal | No agent may claim live proof. | Operator |
 | Spec *MVP concurrency*: raising concurrency above one local slot | Out of scope by the roadmap; `Test-AgentProviderConfig` refuses `localExecutionSlots ≠ 1` until the roadmap changes. | A later release |
-| Codex adapter and Codex resume when D-015 is no | The packets exist (H38-16, H38-29 Codex half) and stop on the decision. | Ben answers D-015 |
+| Running work on Codex on an installation that does not have it | Nothing is deferred in this repository: H38-16 builds the adapter and H38-29 its resume path, both gated synthetically. The router declines a provider the availability probe cannot find (H38-15b), and Settings says so in words (H38-19b). | Nothing. Installing the `codex` CLI on a given machine makes it selectable there, with no repository change |
 
 ---
 

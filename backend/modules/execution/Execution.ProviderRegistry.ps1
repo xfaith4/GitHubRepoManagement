@@ -138,6 +138,21 @@ function Test-AgentProviderConfig {
             $errors += ('providers.{0}.executionMode must be local or github-hosted' -f $providerName)
         }
 
+        # `supported` is a fact about THIS REPOSITORY -- whether a conforming
+        # adapter exists here -- so CI can check it. It is deliberately not
+        # `enabled`, which asserted something about one operator's machine that
+        # no gate could ever verify and that this file has no business shipping
+        # to every other installation. Whether a provider is installed and
+        # funded is detected per installation, never committed.
+        $supported = _APR_Field -Obj $provider -Name 'supported' -Default $null
+        if ($supported -isnot [bool]) {
+            $errors += ('providers.{0}.supported must be true or false' -f $providerName)
+        }
+
+        if ($null -ne (_APR_Field -Obj $provider -Name 'enabled' -Default $null)) {
+            $errors += ('providers.{0}.enabled was removed -- use supported; whether a provider is installed is detected per installation, not configured' -f $providerName)
+        }
+
         # Read inline: returning a collection from a function enumerates it, so
         # an empty windows array would come back as $null and be reported as
         # the wrong error.

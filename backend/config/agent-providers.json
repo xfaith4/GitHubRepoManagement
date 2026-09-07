@@ -2,7 +2,7 @@
   "schemaVersion": "v1",
   "providers": {
     "claude": {
-      "enabled": true,
+      "supported": true,
       "executionMode": "local",
       "providerTool": "claude-code",
       "autoPush": true,
@@ -15,7 +15,7 @@
       "provisional": true
     },
     "codex": {
-      "enabled": false,
+      "supported": false,
       "executionMode": "local",
       "providerTool": "codex-cli",
       "autoPush": true,
@@ -28,7 +28,7 @@
       "provisional": true
     },
     "copilot": {
-      "enabled": true,
+      "supported": true,
       "executionMode": "github-hosted",
       "providerTool": "github-copilot-agent",
       "autoPush": false,

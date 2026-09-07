@@ -2557,6 +2557,21 @@ if ([string]$pcConfig.ranking.tieBreak -ne 'nearest-reset-first') { throw 'ranki
 if ($pcConfig.ranking.PSObject.Properties.Name -contains 'provisional') { throw 'ranking carries no provisional flag: D-013 is decided, not assumed' }
 if (-not [bool]$pcConfig.reserves.provisional) { throw 'reserves stay marked provisional until D-011 is answered' }
 
+# `supported` says this repository has a way to run work through the provider,
+# which CI can check. It replaced `enabled`, which asserted that one operator
+# had the tool installed and funded -- a per-installation fact that no gate
+# could verify and that a committed file should never claim on anyone's behalf.
+# codex flips to true in H38-16, when its adapter actually exists.
+foreach ($pcName in @($pcConfig.providers.PSObject.Properties | ForEach-Object { $_.Name })) {
+    $pcEntry = $pcConfig.providers.$pcName
+    if ($pcEntry.PSObject.Properties.Name -contains 'enabled') {
+        throw "providers.$pcName carries 'enabled': whether a provider is installed is detected per installation, never committed"
+    }
+    if ($pcEntry.supported -isnot [bool]) { throw "providers.$pcName.supported must be a boolean" }
+}
+if ([bool]$pcConfig.providers.codex.supported) { throw 'codex.supported stays false until H38-16 writes a conforming adapter' }
+if (-not [bool]$pcConfig.providers.claude.supported) { throw 'claude.supported must be true: its adapter landed in H38-04' }
+
 # Absent, unparseable and wrong-schema all answer $null, so a caller gets one
 # thing to test rather than three.
 $pcTmp = Join-Path $WorkspaceRoot 'output\smoke\module\provider-config'
@@ -2590,6 +2605,8 @@ Test-SmokeProviderConfigError -Expected 'localExecutionSlots must be 1' -Mutate 
 Test-SmokeProviderConfigError -Expected 'dispatch.defaultTarget must name a provider or auto' -Mutate { param($c) $c.dispatch.defaultTarget = 'gemini' }
 Test-SmokeProviderConfigError -Expected 'dispatch.defaultTarget is auto but dispatch.autoEnabled is false' -Mutate { param($c) $c.dispatch.defaultTarget = 'auto' }
 Test-SmokeProviderConfigError -Expected 'ranking.tieBreak must be nearest-reset-first or alphabetical' -Mutate { param($c) $c.ranking.tieBreak = 'coin-flip' }
+Test-SmokeProviderConfigError -Expected 'providers.claude.supported must be true or false' -Mutate { param($c) $c.providers.claude.supported = 'yes' }
+Test-SmokeProviderConfigError -Expected 'providers.claude.enabled was removed -- use supported; whether a provider is installed is detected per installation, not configured' -Mutate { param($c) $c.providers.claude | Add-Member -NotePropertyName 'enabled' -NotePropertyValue $true -Force }
 
 # The pairing is a guard, not a blanket ban: auto IS valid once routing is on.
 $pcAutoOn = ConvertFrom-Json -InputObject $pcRaw
@@ -2598,7 +2615,7 @@ $pcAutoOn.dispatch.autoEnabled = $true
 if (-not (Test-AgentProviderConfig -Config $pcAutoOn).valid) { throw 'defaultTarget=auto must be valid once autoEnabled is true — H38-17 depends on it' }
 
 Remove-Item -LiteralPath $pcTmp -Recurse -Force -ErrorAction SilentlyContinue
-Write-Host '  provider config: schema v1 loads, 9 policy rules refuse by name, routing off until the router lands' -ForegroundColor DarkGray
+Write-Host '  provider config: schema v1 loads, 11 policy rules refuse by name, routing off until the router lands' -ForegroundColor DarkGray
 
 Write-Step 'WorkPacket prompt rendering — smoke: acceptance criteria travel verbatim'
 
