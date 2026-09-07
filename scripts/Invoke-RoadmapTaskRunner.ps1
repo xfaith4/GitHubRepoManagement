@@ -436,6 +436,49 @@ function Update-TaskSummary {
     ($obj | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $SummaryPath -Encoding UTF8
 }
 
+function Resolve-RunnerPrompt {
+    <#
+    .SYNOPSIS
+        Pure - choose the prompt a run is given, and say where it came from.
+
+    .DESCRIPTION
+        Release 3.8 M1. From H38-02 the WorkPacket is the source of truth for
+        what a task is, so the prompt should be DERIVED from it rather than
+        carried alongside it and allowed to drift. But entries queued before
+        3.8 carry no packet at all, and a runner that refused them would strip
+        the queue of work it can still do perfectly well.
+
+        So the packet wins when there is one and the prose stands in when there
+        is not. The source is returned rather than inferred, because "which
+        text did this run actually receive" is the first question when a result
+        looks wrong, and reconstructing it afterwards is guesswork.
+    .OUTPUTS
+        [pscustomobject] prompt, source ('work-packet' | 'queue-entry')
+    #>
+    param(
+        [Parameter()][object]$Entry = $null,
+        [Parameter()][object]$Packet = $null
+    )
+
+    if ($null -ne $Packet -and (Get-Command -Name 'ConvertTo-ClaudePrompt' -ErrorAction SilentlyContinue)) {
+        $rendered = ConvertTo-ClaudePrompt -Packet $Packet
+        if (-not [string]::IsNullOrWhiteSpace($rendered)) {
+            return [pscustomobject]@{ prompt = $rendered; source = 'work-packet' }
+        }
+    }
+
+    $entryPrompt = ''
+    if ($null -ne $Entry) {
+        if ($Entry -is [System.Collections.IDictionary]) {
+            if ($Entry.Contains('prompt')) { $entryPrompt = [string]$Entry['prompt'] }
+        }
+        elseif ($null -ne $Entry.PSObject -and ($Entry.PSObject.Properties.Name -contains 'prompt')) {
+            $entryPrompt = [string]$Entry.prompt
+        }
+    }
+    return [pscustomobject]@{ prompt = $entryPrompt; source = 'queue-entry' }
+}
+
 function Resolve-RunOutcomeFromResult {
     <#
     .SYNOPSIS
@@ -603,8 +646,25 @@ function Invoke-QueuedTask {
     $runId = [string]$Entry.runId
     $repo = [string]$Entry.localRepoPath
     $branch = if ($Entry.PSObject.Properties.Name -contains 'branch' -and $Entry.branch) { [string]$Entry.branch } else { "roadmap/$runId" }
-    $prompt = [string]$Entry.prompt
     $summaryPath = Join-Path $runsDir ("{0}.summary.json" -f $runId)
+
+    # Release 3.8 M1 (H38-05) - the packet is the source of truth for what this
+    # task is, so the prompt is rendered from it. Pre-3.8 entries carry no
+    # packet and keep their prose; the chosen source is logged because "which
+    # text did this run actually receive" is the first question when a result
+    # looks wrong.
+    $entryWorkPacketPath = ''
+    if ($Entry.PSObject.Properties.Name -contains 'workPacketPath' -and $Entry.workPacketPath) {
+        $entryWorkPacketPath = [string]$Entry.workPacketPath
+    }
+    $runWorkPacket = $null
+    if (-not [string]::IsNullOrWhiteSpace($entryWorkPacketPath) -and (Test-Path -LiteralPath $entryWorkPacketPath -PathType Leaf)) {
+        try { $runWorkPacket = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $entryWorkPacketPath -Raw -Encoding UTF8) }
+        catch { $runWorkPacket = $null }
+    }
+    $promptChoice = Resolve-RunnerPrompt -Entry $Entry -Packet $runWorkPacket
+    $prompt = [string]$promptChoice.prompt
+    Write-Host ("  prompt source: {0}" -f $promptChoice.source) -ForegroundColor DarkGray
 
     # Refuse an unrecognized target before claiming it — a claimed task that
     # cannot run is worse than one left queued, because it looks handled.

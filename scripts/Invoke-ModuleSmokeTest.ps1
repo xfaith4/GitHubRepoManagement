@@ -2515,6 +2515,72 @@ if (-not $caStopRefused) { throw 'Stop-ClaudeExecution should refuse in 3.8 rath
 
 Write-Host '  claude adapter: transcript parsed, session and usage carried, missing fields tolerated, argv is an array' -ForegroundColor DarkGray
 
+Write-Step 'WorkPacket prompt rendering — smoke: acceptance criteria travel verbatim'
+
+# The spec lets an adapter reshape prompting but forbids it changing the
+# objective, scope, criteria or envelope. "Verbatim" is the assertion that
+# makes that rule enforceable rather than aspirational: a renderer that
+# trims, wraps or renumbers a criterion has changed what the work will be
+# judged against, and nothing downstream would ever notice.
+$prCriteria = @(
+    'Test-WorkPacket reports valid for the example packet.',
+    'A criterion containing a `backtick` and a # hash survives unchanged.',
+    '   Leading and trailing whitespace is preserved exactly.   ',
+    'Numbered like 1. this, which a helpful renderer would renumber.'
+)
+$prPacket = New-WorkPacket `
+    -TaskId 'smoke-pr-1' `
+    -Repository 'xfaith4/GitHubRepoManagement' `
+    -BaseBranch 'main' `
+    -BaseSha '' `
+    -Objective 'Render the packet into the provider prompt.' `
+    -ForbiddenPaths @('.github/workflows/**') `
+    -AcceptanceCriteria $prCriteria `
+    -VerificationCommands @('pwsh ./scripts/Invoke-ModuleSmokeTest.ps1') `
+    -Permissions @{ filesystemWrite = $true; shell = $true; network = $false; githubWrite = $false }
+
+$prRendered = ConvertTo-WorkPacketPrompt -Packet $prPacket
+# .Contains, not -like. In a -like pattern the BACKTICK is the escape
+# character, so testing for verbatim text that contains backticks with a
+# wildcard operator fails against output that is in fact correct. A verbatim
+# assertion has to be a plain substring test.
+foreach ($prCriterion in $prCriteria) {
+    if (-not $prRendered.Contains($prCriterion)) {
+        throw "Acceptance criterion was not carried verbatim into the prompt: '$prCriterion'"
+    }
+}
+
+$prHeadings = @('## Objective', '## Scope', '## Acceptance Criteria', '## Verification', '## Permissions')
+$prLastIndex = -1
+foreach ($prHeading in $prHeadings) {
+    $prIndex = $prRendered.IndexOf($prHeading)
+    if ($prIndex -lt 0) { throw "Prompt is missing the '$prHeading' section" }
+    if ($prIndex -le $prLastIndex) { throw "Prompt sections are out of order at '$prHeading'" }
+    $prLastIndex = $prIndex
+}
+if ($prRendered -notmatch '(?m)^Forbidden:') { throw 'A packet with forbidden paths must render a Forbidden: block' }
+if (-not $prRendered.Contains('- .github/workflows/**')) { throw 'The forbidden path was not rendered' }
+if (-not $prRendered.Contains('- `pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`')) { throw 'Verification commands render in backticks' }
+if (-not $prRendered.Contains('- network: false')) { throw 'The permission envelope must reach the agent even though nothing enforces it yet' }
+
+# Omitted, not rendered empty: an empty "Forbidden:" heading reads as a
+# statement that nothing is forbidden, which is a different claim.
+$prNoForbidden = New-WorkPacket -TaskId 't' -Repository '' -BaseBranch 'main' -BaseSha '' -Objective 'o' -Permissions @{ filesystemWrite = $true; shell = $true; network = $false; githubWrite = $false }
+if ((ConvertTo-WorkPacketPrompt -Packet $prNoForbidden) -match '(?m)^Forbidden:') { throw 'An empty forbidden list must omit the block, not render an empty one' }
+if (-not (ConvertTo-WorkPacketPrompt -Packet $prNoForbidden).Contains('- (none declared)')) { throw 'Empty criteria and verification render as (none declared)' }
+
+$prClaude = ConvertTo-ClaudePrompt -Packet $prPacket
+if (-not $prClaude.Contains('# Task smoke-pr-1')) { throw 'The Claude adapter titles the prompt with the task id' }
+foreach ($prCriterion in $prCriteria) {
+    if (-not $prClaude.Contains($prCriterion)) { throw "The adapter altered a criterion: '$prCriterion'" }
+}
+
+# The runner's prompt-SELECTION logic is asserted in the dispatch section
+# below, where Invoke-RoadmapTaskRunner.ps1 -LoadFunctionsOnly is dot-sourced.
+$script:SmokePromptPacket = $prPacket
+
+Write-Host '  prompt rendering: five sections in order, criteria verbatim (backticks, hashes, whitespace, numbering)' -ForegroundColor DarkGray
+
 Remove-Item -LiteralPath $wpWorkspace -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host '  workpacket: schema v1 validates, round-trips, and refuses to persist an invalid packet; [] and null hold on the wire' -ForegroundColor DarkGray
 
@@ -5420,6 +5486,18 @@ Write-Step 'Local Claude Code dispatch — smoke: queue writer + runner logic (R
         if ($roInvalidOutcome.status -ne 'failed') { throw 'An invalid result must fail' }
         if ($roInvalidOutcome.error -notmatch '^invalid-structured-result: ') { throw "Wrong invalid-result error text: $($roInvalidOutcome.error)" }
         if ($roInvalidOutcome.error -notmatch 'provider is required') { throw 'The invalid-result error should name what was wrong' }
+
+        # ── Release 3.8 M1 (H38-05) — which prompt does a run receive? ───────
+        # The packet wins when there is one; prose stands in when there is not,
+        # so a pre-3.8 entry keeps working exactly as it did.
+        $prEntry = [pscustomobject]@{ runId = 'r1'; prompt = 'ORIGINAL PROSE PROMPT'; workPacketPath = $null }
+        $prFromEntry = Resolve-RunnerPrompt -Entry $prEntry -Packet $null
+        if ($prFromEntry.source -ne 'queue-entry') { throw "An entry with no packet must use its own prompt, got source '$($prFromEntry.source)'" }
+        if ($prFromEntry.prompt -ne 'ORIGINAL PROSE PROMPT') { throw 'A pre-3.8 entry must receive its original prompt unchanged' }
+        $prFromPacket = Resolve-RunnerPrompt -Entry $prEntry -Packet $script:SmokePromptPacket
+        if ($prFromPacket.source -ne 'work-packet') { throw "An entry with a packet must render from it, got source '$($prFromPacket.source)'" }
+        if (-not $prFromPacket.prompt.Contains('## Acceptance Criteria')) { throw 'The rendered prompt should carry the packet sections' }
+        Write-Host '  prompt selection: packet beats prose, pre-3.8 entries unchanged' -ForegroundColor DarkGray
 
         # summary status transitions (queued -> awaiting-review, fields merged)
         $sp = Join-Path $dispTmp 'r1.summary.json'
