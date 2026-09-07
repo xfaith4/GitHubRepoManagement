@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { type CopilotTaskPacket, type CopilotTaskHistoryItem } from '../types';
+import { type CopilotTaskPacket, type CopilotTaskHistoryItem, type ProviderToken } from '../types';
 import { previewCopilotTaskPacket, getCopilotTaskHistory, getRunnerPresence } from '../services/apiClient';
 import {
   resolveDispatchGate,
@@ -54,6 +54,18 @@ interface CopilotTaskPreviewModalProps {
     repoName: string,
     options: { prompt: string; acknowledgeNoRunner?: boolean }
   ) => Promise<LaneDispatchResult>;
+  /**
+   * H38-19 — which provider would really run this task, supplied by the
+   * surface that knows (the Dispatch Board reads it from the presence
+   * payload's `dispatch.defaultTarget`).
+   *
+   * Deliberately has no default. Before the registry this modal would have
+   * said "copilot" whatever actually ran, and a preview that names the wrong
+   * provider is worse than one that admits it does not know — so an absent
+   * value renders "not yet known" rather than a guess. D-008 also settles the
+   * other half: naming the provider is exposure, not dispatch authority.
+   */
+  intendedProvider?: ProviderToken | null;
 }
 
 /**
@@ -122,6 +134,7 @@ const CopilotTaskPreviewModal: React.FC<CopilotTaskPreviewModalProps> = ({
   roadmapPath,
   onClose,
   onDispatch,
+  intendedProvider,
 }) => {
   const [activeTab, setActiveTab] = useState<'packet' | 'prompt' | 'history'>('packet');
   const [packet, setPacket] = useState<CopilotTaskPacket | null>(null);
@@ -295,6 +308,15 @@ const CopilotTaskPreviewModal: React.FC<CopilotTaskPreviewModalProps> = ({
                 <div className="flex gap-2">
                   <span className="text-gray-400 w-28 flex-shrink-0">Roadmap file</span>
                   <span className="text-gray-300 font-mono text-xs truncate" title={packet.repoContext.roadmapPath}>{packet.repoContext.roadmapPath}</span>
+                </div>
+                {/* H38-19 — the provider that would really run this, named
+                    before dispatch rather than discovered afterwards. One text
+                    node, so the whole line reads as a sentence to a screen
+                    reader instead of a label and an orphaned token. */}
+                <div className="flex gap-2">
+                  <span className="text-sm text-gray-300" data-testid="intended-provider">
+                    {`Intended provider: ${intendedProvider ?? 'not yet known'}`}
+                  </span>
                 </div>
                 {packet.repoContext.dispatchReadiness && (
                   <div className="flex gap-2">
