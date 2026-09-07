@@ -215,6 +215,28 @@ function ConvertTo-ClaudeExecutionResult {
         -Source 'adapter'
 }
 
+<#
+.SYNOPSIS
+    Render a WorkPacket as the prompt Claude Code is given.
+
+.DESCRIPTION
+    Claude Code takes plain markdown, so the provider-neutral rendering needs
+    no translation beyond a title. The adapter is ALLOWED to reshape prompting
+    for its provider but MUST NOT change the objective, scope, acceptance
+    criteria or permission envelope — so it adds a heading and nothing else.
+
+    Note what this does not do: it does not map the packet's permission
+    envelope onto --allowedTools / --disallowedTools. That enforcement waits on
+    D-012, the operator's ruling on what an agent may touch and whether it may
+    edit workflow files. The envelope is rendered into the prompt, so the agent
+    is told; it is not yet enforced by the CLI.
+#>
+function ConvertTo-ClaudePrompt {
+    param([Parameter(Mandatory)][object]$Packet)
+    $taskId = [string](_Claude_Field -Obj $Packet -Name 'taskId' -Default '')
+    return ConvertTo-WorkPacketPrompt -Packet $Packet -Preamble ("# Task {0}" -f $taskId) -Postamble ''
+}
+
 # ---------------------------------------------------------------------------
 # The A4 interface names. Declared here so H38-15's conformance gate finds a
 # complete set for `claude` rather than a partial one it has to special-case.

@@ -285,6 +285,109 @@ function Read-WorkPacket {
     }
 }
 
+<#
+.SYNOPSIS
+    Render a WorkPacket as the prompt text a provider is given.
+
+.DESCRIPTION
+    The spec allows an adapter to translate a packet into provider-specific
+    prompting but forbids it changing the objective, scope, acceptance criteria
+    or permission envelope. That is why the criteria are emitted **verbatim**,
+    one per line, with no reflowing, re-wrapping, trimming or renumbering: a
+    criterion is the thing the work will be judged against, and a renderer that
+    tidies it has quietly changed what was asked for.
+
+    Fixed section order, because a provider prompt that varies its own shape
+    between runs makes two attempts at the same task incomparable.
+
+.PARAMETER Preamble
+    Emitted verbatim before the first heading; the adapter's place to name
+    itself or the task. Empty by default.
+
+.PARAMETER Postamble
+    Emitted verbatim after the last section.
+#>
+function ConvertTo-WorkPacketPrompt {
+    param(
+        [Parameter(Mandatory)][object]$Packet,
+        [AllowEmptyString()][string]$Preamble = '',
+        [AllowEmptyString()][string]$Postamble = ''
+    )
+
+    $lines = @()
+    if (-not [string]::IsNullOrWhiteSpace($Preamble)) {
+        $lines += $Preamble
+        $lines += ''
+    }
+
+    $lines += '## Objective'
+    $lines += ''
+    $lines += [string](_WP_Field -Obj $Packet -Name 'objective' -Default '')
+    $lines += ''
+
+    $scope = _WP_Field -Obj $Packet -Name 'scope' -Default $null
+    $lines += '## Scope'
+    $lines += ''
+    $lines += 'Allowed:'
+    foreach ($allowedPath in @(_WP_Field -Obj $scope -Name 'allowedPaths' -Default @())) {
+        $lines += ('- {0}' -f [string]$allowedPath)
+    }
+    $forbiddenPaths = @(_WP_Field -Obj $scope -Name 'forbiddenPaths' -Default @())
+    if ($forbiddenPaths.Count -gt 0) {
+        $lines += ''
+        $lines += 'Forbidden:'
+        foreach ($forbiddenPath in $forbiddenPaths) {
+            $lines += ('- {0}' -f [string]$forbiddenPath)
+        }
+    }
+    $lines += ''
+
+    # Verbatim. No trim, no reflow, no renumbering — see the description.
+    $lines += '## Acceptance Criteria'
+    $lines += ''
+    $criteria = @(_WP_Field -Obj $Packet -Name 'acceptanceCriteria' -Default @())
+    if ($criteria.Count -eq 0) {
+        $lines += '- (none declared)'
+    }
+    else {
+        foreach ($criterion in $criteria) {
+            $lines += ('- {0}' -f [string]$criterion)
+        }
+    }
+    $lines += ''
+
+    $verification = _WP_Field -Obj $Packet -Name 'verification' -Default $null
+    $lines += '## Verification'
+    $lines += ''
+    $commands = @(_WP_Field -Obj $verification -Name 'commands' -Default @())
+    if ($commands.Count -eq 0) {
+        $lines += '- (none declared)'
+    }
+    else {
+        foreach ($command in $commands) {
+            $lines += ('- `{0}`' -f [string]$command)
+        }
+    }
+    $lines += ''
+
+    $permissions = _WP_Field -Obj $Packet -Name 'permissions' -Default $null
+    $lines += '## Permissions'
+    $lines += ''
+    foreach ($permissionKey in @('filesystemWrite', 'shell', 'network', 'githubWrite')) {
+        $permissionValue = _WP_Field -Obj $permissions -Name $permissionKey -Default $null
+        $rendered = 'unset'
+        if ($permissionValue -is [bool]) { $rendered = $(if ($permissionValue) { 'true' } else { 'false' }) }
+        $lines += ('- {0}: {1}' -f $permissionKey, $rendered)
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($Postamble)) {
+        $lines += ''
+        $lines += $Postamble
+    }
+
+    return ($lines -join "`n")
+}
+
 # ---------------------------------------------------------------------------
 # The other half of the contract: what came back.
 #
