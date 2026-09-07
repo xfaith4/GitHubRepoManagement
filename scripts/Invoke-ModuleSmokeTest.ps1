@@ -2816,8 +2816,11 @@ if ([int]$pcConfig.localExecutionSlots -ne 1) { throw 'MVP concurrency is one lo
 # router exists (A18), and the ranking values are D-013's ruling, so a silent
 # edit to either is a behaviour change disguised as a config tweak.
 if ([string]$pcConfig.schemaVersion -ne 'v1') { throw 'The provider config must declare schemaVersion v1' }
-if ([bool]$pcConfig.dispatch.autoEnabled) { throw 'dispatch.autoEnabled must stay false until H38-17 builds the router' }
-if ([string]$pcConfig.dispatch.defaultTarget -ne 'claude') { throw "dispatch.defaultTarget should be 'claude' until routing is on, got '$($pcConfig.dispatch.defaultTarget)'" }
+# H38-17 flipped both. The tripwire inverts rather than disappearing: turning
+# routing back off is a behaviour change for every dispatch in the estate, and
+# it should have to be deliberate rather than a config tweak nobody notices.
+if (-not [bool]$pcConfig.dispatch.autoEnabled) { throw 'dispatch.autoEnabled is false — routing is off, and every dispatch goes to one hardcoded provider. H38-17 turned it on; turning it back off is an operator decision, not a config tidy-up.' }
+if ([string]$pcConfig.dispatch.defaultTarget -ne 'auto') { throw "dispatch.defaultTarget should be 'auto' now the router exists, got '$($pcConfig.dispatch.defaultTarget)'" }
 if ([string]$pcConfig.ranking.tieBreak -ne 'nearest-reset-first') { throw 'ranking.tieBreak is the decided D-013 value, nearest-reset-first' }
 if ($pcConfig.ranking.PSObject.Properties.Name -contains 'provisional') { throw 'ranking carries no provisional flag: D-013 is decided, not assumed' }
 # D-011, decided 2026-09-07: the reserves are Ben's ruling (15/20 as the spec
@@ -2885,7 +2888,11 @@ Test-SmokeProviderConfigError -Expected 'reserves.shortWindowRatio must be betwe
 Test-SmokeProviderConfigError -Expected 'reserves.weeklyRatio must be between 0 and 1' -Mutate { param($c) $c.reserves.weeklyRatio = -0.2 }
 Test-SmokeProviderConfigError -Expected 'localExecutionSlots must be 1' -Mutate { param($c) $c.localExecutionSlots = 2 }
 Test-SmokeProviderConfigError -Expected 'dispatch.defaultTarget must name a provider or auto' -Mutate { param($c) $c.dispatch.defaultTarget = 'gemini' }
-Test-SmokeProviderConfigError -Expected 'dispatch.defaultTarget is auto but dispatch.autoEnabled is false' -Mutate { param($c) $c.dispatch.defaultTarget = 'auto' }
+# Sets BOTH halves. Before H38-17 this set only defaultTarget and leaned on the
+# committed autoEnabled being false — so turning routing on made the mutation
+# valid and the test passed vacuously. A rule test must build the invalid state
+# it is checking rather than borrow half of it from whatever is shipped.
+Test-SmokeProviderConfigError -Expected 'dispatch.defaultTarget is auto but dispatch.autoEnabled is false' -Mutate { param($c) $c.dispatch.defaultTarget = 'auto'; $c.dispatch.autoEnabled = $false }
 Test-SmokeProviderConfigError -Expected 'ranking.tieBreak must be nearest-reset-first or alphabetical' -Mutate { param($c) $c.ranking.tieBreak = 'coin-flip' }
 Test-SmokeProviderConfigError -Expected 'providers.claude.supported must be true or false' -Mutate { param($c) $c.providers.claude.supported = 'yes' }
 Test-SmokeProviderConfigError -Expected 'providers.claude.enabled was removed -- use supported; whether a provider is installed is detected per installation, not configured' -Mutate { param($c) $c.providers.claude | Add-Member -NotePropertyName 'enabled' -NotePropertyValue $true -Force }
@@ -3559,6 +3566,125 @@ if ((Test-ProviderLimitSignal -Provider 'claude' -Text '' -Config $pcConfig).mat
 Write-Host '  provider limit: capacity_exhausted not failed, session survives, reset time believed when given and marked assumed when not, cooldown persisted and honoured by the verdict' -ForegroundColor DarkGray
 
 # --- H38-11: refusing to CLAIM, and what counts as running ----------------
+# ---------------------------------------------------------------------------
+# Release 3.8 M3 (H38-17) — the router.
+#
+# The acceptance criterion is that provider selection RECORDS ITS REASON, so
+# most of what follows asserts the explanation rather than only the choice. A
+# provider that is never selected has to be explainable without reading a log.
+# ---------------------------------------------------------------------------
+Write-Step 'Provider router — smoke: eligibility then ranking, offline'
+
+$prRouterModule = Join-Path $WorkspaceRoot 'backend\modules\execution\Execution.ProviderRouter.ps1'
+if (-not (Test-Path -LiteralPath $prRouterModule)) { throw "Execution.ProviderRouter.ps1 not found at: $prRouterModule" }
+. $prRouterModule
+
+$prNow = [datetime]::Parse('2026-09-07T12:00:00Z', [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal -bor [System.Globalization.DateTimeStyles]::AssumeUniversal)
+$prRegistry = @('claude', 'codex', 'copilot')
+$prAllAvailable = @{ claude = $true; codex = $true; copilot = $true }
+$prPacket = [pscustomobject]@{
+    taskId      = 'router-1'
+    repository  = 'owner/repo'
+    execution   = [pscustomobject]@{ preferredProvider = 'auto' }
+    permissions = [pscustomobject]@{ githubWrite = $false }
+}
+
+# Equal inputs: a genuine tie, broken by the configured rule, and both scores
+# reported so an operator can see it WAS a tie rather than a preference.
+$prTie = Resolve-ProviderSelection -Packet $prPacket -Registry @('claude', 'codex') -AuthStatus $prAllAvailable -Config $pcConfig -NowUtc $prNow
+if (-not $prTie.tie) { throw 'Two providers with identical inputs must register as a tie, not a preference' }
+if ($prTie.selected -ne 'claude') { throw "With no reset times the tie-break falls back to alphabetical, expected claude, got '$($prTie.selected)'" }
+if (@($prTie.reason | Where-Object { $_ -match 'for claude' }).Count -ne 1) { throw 'The reason must carry claude''s score' }
+if (@($prTie.reason | Where-Object { $_ -match 'for codex' }).Count -ne 1) { throw 'The reason must carry codex''s score, or a tie is indistinguishable from a walkover' }
+if (@($prTie.reason | Where-Object { $_ -match 'tie broken by' }).Count -ne 1) { throw 'A tie must name the rule that decided it' }
+
+# A cooldown excludes ONLY when the verdict is enforced.
+$prCooling = New-ProviderCapacityRecord -Provider 'claude' -Windows @(@{ name = 'short-term'; unit = 'provider-allowance'; remainingRatio = 0.9; source = 'provider-status' }) -Available $true -CooldownUntil '2026-09-10T13:00:00Z'
+$prHealthy = New-ProviderCapacityRecord -Provider 'codex' -Windows @(@{ name = 'short-term'; unit = 'provider-allowance'; remainingRatio = 0.8; source = 'provider-status'; resetAt = '2026-09-08T00:00:00Z' }) -Available $true
+$prEnforcing = ConvertFrom-Json -InputObject $pcRaw
+$prEnforcing.estimates.provisional = $false
+
+$prCooled = Resolve-ProviderSelection -Packet $prPacket -Registry @('claude', 'codex') -AuthStatus $prAllAvailable `
+    -CapacityRecords @{ claude = $prCooling; codex = $prHealthy } -Config $prEnforcing -NowUtc $prNow
+if ($prCooled.selected -ne 'codex') { throw "An enforced cooldown must move the work, expected codex, got '$($prCooled.selected)'" }
+if (@($prCooled.reason | Where-Object { $_ -match 'cooling-down until 2026-09-10T13:00:00Z' }).Count -lt 1) { throw 'The reason must name the cooldown that excluded claude, and when it lifts' }
+
+$prAdvisory = Resolve-ProviderSelection -Packet $prPacket -Registry @('claude', 'codex') -AuthStatus $prAllAvailable `
+    -CapacityRecords @{ claude = $prCooling; codex = $prHealthy } -Config $pcConfig -NowUtc $prNow
+$prClaudeCandidate = @($prAdvisory.candidates | Where-Object { $_.provider -eq 'claude' })[0]
+if (-not $prClaudeCandidate.eligible) { throw 'An UNENFORCED capacity verdict must not exclude a provider; D-011 left the estimate provisional' }
+if (@($prClaudeCandidate.checks | Where-Object { $_ -match 'advisory' }).Count -lt 1) { throw 'An unenforced check must still be RECORDED, as advisory — omitting it hides what was known' }
+
+# ENFORCEMENT WITH NO RECORDS ROUTES NOWHERE. Asserted so it is a known,
+# tested property rather than a mystery outage the first time someone turns
+# enforcement on: a fresh install has no capacity records, and H38-09 treats
+# "nothing is known about what is left" as not-eligible on purpose.
+$prNoRecords = Resolve-ProviderSelection -Packet $prPacket -Registry @('claude', 'codex') -AuthStatus $prAllAvailable -Config $prEnforcing -NowUtc $prNow
+if ($null -ne $prNoRecords.selected) { throw 'With enforcement on and no capacity records, nothing is measurable and nothing may be spent' }
+if (@($prNoRecords.reason | Where-Object { $_ -match 'no-capacity-record' }).Count -lt 1) { throw 'The refusal must name the missing records rather than reading as a generic failure' }
+
+# A github-hosted provider has nothing to run against without a repository.
+$prNoRepo = Resolve-ProviderSelection -Packet ([pscustomobject]@{ taskId = 'r2'; repository = ''; execution = [pscustomobject]@{ preferredProvider = 'auto' }; permissions = [pscustomobject]@{ githubWrite = $false } }) `
+    -Registry $prRegistry -AuthStatus $prAllAvailable -Config $pcConfig -NowUtc $prNow
+$prCopilot = @($prNoRepo.candidates | Where-Object { $_.provider -eq 'copilot' })[0]
+if ($prCopilot.eligible) { throw 'copilot runs on GitHub and a packet with no repository gives it nothing to run against' }
+if ($prCopilot.ineligibleBecause -notmatch 'repository') { throw "ineligibleBecause must name the reason, got '$($prCopilot.ineligibleBecause)'" }
+
+# githubWrite is the spec's boundary: only a github-hosted provider satisfies it.
+$prGhWrite = Resolve-ProviderSelection -Packet ([pscustomobject]@{ taskId = 'r3'; repository = 'owner/repo'; execution = [pscustomobject]@{ preferredProvider = 'auto' }; permissions = [pscustomobject]@{ githubWrite = $true } }) `
+    -Registry $prRegistry -AuthStatus $prAllAvailable -Config $pcConfig -NowUtc $prNow
+if ($prGhWrite.selected -ne 'copilot') { throw "githubWrite requires github-hosted execution, expected copilot, got '$($prGhWrite.selected)'" }
+foreach ($prLocal in @('claude', 'codex')) {
+    if (@($prGhWrite.candidates | Where-Object { $_.provider -eq $prLocal })[0].eligible) { throw "$prLocal cannot satisfy githubWrite" }
+}
+
+# Nothing available anywhere. Absent availability is NOT permission.
+$prNone = Resolve-ProviderSelection -Packet $prPacket -Registry $prRegistry -AuthStatus @{} -Config $pcConfig -NowUtc $prNow
+if ($null -ne $prNone.selected) { throw 'A provider whose availability was never detected must not be selected' }
+if (@($prNone.reason)[0] -ne 'no eligible provider') { throw "The reason must begin 'no eligible provider', got '$(@($prNone.reason)[0])'" }
+foreach ($prProvider in $prRegistry) {
+    if (@($prNone.reason | Where-Object { $_ -match ("^{0}:" -f $prProvider) }).Count -ne 1) { throw "Every provider must say why it was excluded; '$prProvider' did not" }
+}
+
+# Every reason element is a usable sentence, and an empty registry serializes
+# as [] rather than null — the route that publishes this must not emit `null`.
+foreach ($prResult in @($prTie, $prCooled, $prNone, $prGhWrite)) {
+    foreach ($prLine in @($prResult.reason)) {
+        if ([string]::IsNullOrWhiteSpace([string]$prLine)) { throw 'Every reason element must be a non-empty string' }
+    }
+}
+$prEmpty = Resolve-ProviderSelection -Packet $prPacket -Registry @() -AuthStatus $prAllAvailable -Config $pcConfig -NowUtc $prNow
+if ((ConvertTo-Json -InputObject @($prEmpty.candidates) -Compress) -ne '[]') { throw 'candidates must serialize as [] for an empty registry, never null' }
+
+# A packet that names a provider gets that provider, and the others say why not.
+$prPreferred = Resolve-ProviderSelection -Packet ([pscustomobject]@{ taskId = 'r4'; repository = 'owner/repo'; execution = [pscustomobject]@{ preferredProvider = 'codex' }; permissions = [pscustomobject]@{ githubWrite = $false } }) `
+    -Registry $prRegistry -AuthStatus $prAllAvailable -Config $pcConfig -NowUtc $prNow
+if ($prPreferred.selected -ne 'codex') { throw 'An explicit preferredProvider must win' }
+if (@($prPreferred.candidates | Where-Object { $_.provider -eq 'claude' })[0].ineligibleBecause -notmatch 'codex') { throw 'The excluded providers must name the packet''s preference as the reason' }
+
+# History is a ranking input, and an untried provider must not be punished for
+# it: unmeasured is 0.5, not 0.
+$prStat = Get-ProviderHistoryStat -History @() -Provider 'claude' -Repository 'owner/repo'
+if ($null -ne $prStat.successRatio) { throw 'With no history the success ratio is unmeasured, which is not the same as zero' }
+$prStatReal = Get-ProviderHistoryStat -History @(
+    [pscustomobject]@{ provider = 'claude'; repository = 'owner/repo'; status = 'implementation_complete' },
+    [pscustomobject]@{ provider = 'claude'; repository = 'owner/repo'; status = 'implementation_failed' }
+) -Provider 'claude' -Repository 'owner/repo'
+if ([math]::Abs([double]$prStatReal.successRatio - 0.5) -gt 0.0001) { throw "Expected a 0.5 success ratio, got '$($prStatReal.successRatio)'" }
+
+# The runner must resolve `auto` BEFORE it branches on the provider, or the
+# token reaches a branch that has no case for it.
+$prRunnerSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'scripts\Invoke-RoadmapTaskRunner.ps1') -Raw -Encoding UTF8
+if ($prRunnerSource -notmatch "if \(\`$dispatchTarget -eq 'auto'\) \{") { throw 'The runner must resolve auto at claim time' }
+$prAutoAt = $prRunnerSource.IndexOf("if (`$dispatchTarget -eq 'auto') {")
+$prCopilotAt = $prRunnerSource.IndexOf("if (`$dispatchTarget -eq 'copilot') {")
+if ($prAutoAt -lt 0 -or $prCopilotAt -lt 0 -or $prAutoAt -gt $prCopilotAt) { throw 'auto must be resolved before the provider branches, or it falls through to a branch with no case for it' }
+# And it must read availability from the shared map rather than probing PATH
+# itself — a second copy drifts from what Settings shows the operator (A20).
+if ($prRunnerSource -match "Get-Command\s+codex\b") { throw 'The runner must not probe provider availability inline; Get-AgentProviderAvailabilityMap is the one detector' }
+
+Write-Host '  provider router: eligibility recorded per check, ranking explains every candidate, a tie names the rule that broke it, unenforced capacity stays advisory, and enforcement with no records routes nowhere by design' -ForegroundColor DarkGray
+
 Write-Step 'Runner claim gate — smoke: cooldown, one local slot, and liveness by heartbeat pid'
 
 & {

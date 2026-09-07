@@ -78,8 +78,8 @@
     "provisional": true
   },
   "dispatch": {
-    "defaultTarget": "claude",
-    "autoEnabled": false
+    "defaultTarget": "auto",
+    "autoEnabled": true
   },
   "localExecutionSlots": 1
 }
