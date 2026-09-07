@@ -912,10 +912,14 @@ to the queue — never fails it — when a provider is exhausted.
       [`BudgetLedger.ps1`](backend/modules/agent-runs/BudgetLedger.ps1) keeps the
       portfolio work-unit quota and gains no token conversion it cannot source.
       A limit re-queues the task with workspace, branch, attempt and session
-      intact. _(state: scaffolded 2026-09-07 — H38-07 agent-providers.json
-      (schemaVersion v1) + Get-AgentProviderConfig; reserves are data marked
-      provisional pending D-011; ranking weights and tieBreak are the decided
-      D-013 values)_
+      intact. _(state: scaffolded 2026-09-07 — H38-07 added
+      agent-providers.json (schemaVersion v1) + Get-AgentProviderConfig;
+      reserves are data marked provisional pending D-011; ranking weights and
+      tieBreak are the decided D-013 values; corrected same day —
+      `providers.<name>.supported` replaces `enabled`, a repository fact CI can
+      verify, because whether a provider is installed and funded is
+      per-installation state that is detected at runtime and shown in Settings,
+      never committed on every operator's behalf)_
 - [ ] **Route between providers, and add the Codex adapter.** One registry
       replaces the `claude`/`copilot` pair hardcoded in
       [`Automation.RoadmapQueue.ps1`](backend/modules/automation/Automation.RoadmapQueue.ps1),
