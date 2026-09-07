@@ -6,7 +6,7 @@
   "PSProvideCommentHelp": 18,
   "PSReviewUnusedParameter": 26,
   "PSUseApprovedVerbs": 18,
-  "PSUseBOMForUnicodeEncodedFile": 56,
+  "PSUseBOMForUnicodeEncodedFile": 55,
   "PSUseOutputTypeCorrectly": 126,
   "PSUseShouldProcessForStateChangingFunctions": 67,
   "PSUseSingularNouns": 90,

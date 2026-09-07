@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 <#
 .SYNOPSIS
     Local runner: execute queued roadmap tasks with Claude Code on the LOCAL repo.
@@ -146,6 +146,8 @@ if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) { $WorkspaceRoot = Split-Path 
 # H38-15: the copilot dispatch functions moved here from this file. Dot-sourced
 # BEFORE any use, so every existing call site is unchanged by the move.
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\agent-adapters\Adapter.Copilot.ps1')
+# H38-16: the codex branch below runs through this.
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\agent-adapters\Adapter.Codex.ps1')
 if ([string]::IsNullOrWhiteSpace($QueuePath)) { $QueuePath = Get-RoadmapQueuePath -WorkspaceRoot $WorkspaceRoot }
 if ([string]::IsNullOrWhiteSpace($StopFilePath)) { $StopFilePath = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.stop' }
 $runsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
@@ -876,20 +878,28 @@ function Invoke-QueuedTask {
     }
 
     # H38-14 widened the VOCABULARY from claude|copilot to the full registry, so
-    # a token can now be valid without this runner being able to execute it:
-    # `codex` gets its branch in H38-16, and `auto` is resolved to a real
-    # provider by the router in H38-17. Everything below is the Claude Code
-    # path, so without this guard either token would silently run Claude Code
-    # against a real repository -- the exact failure the old hardcoded list's
-    # refusal existed to prevent. Refuse by name instead.
-    if ($dispatchTarget -ne 'claude') {
-        $unrunnable = ("dispatchTarget '{0}' is a known token but this runner has no branch for it yet; refusing rather than running Claude Code in its place" -f $dispatchTarget)
+    # a token can be valid without this runner being able to execute it. H38-16
+    # added the `codex` branch, which leaves `auto` -- resolved to a real
+    # provider by the router in H38-17. Everything below is the LOCAL execution
+    # path, and it now runs one of two different CLIs, so without this guard an
+    # unhandled token would silently run whichever one the code happens to
+    # default to against a real repository. Refuse by name instead.
+    $localProviders = @('claude', 'codex')
+    if ($dispatchTarget -notin $localProviders) {
+        $unrunnable = ("dispatchTarget '{0}' is a known token but this runner has no branch for it yet; refusing rather than running {1} in its place" -f $dispatchTarget, ($localProviders -join ' or '))
         Write-Host ("  refused: {0}" -f $unrunnable) -ForegroundColor Red
         if (-not $DryRun) {
             Update-TaskSummary -SummaryPath $summaryPath -Set @{ status = 'failed'; error = $unrunnable; runnerCompletedAt = (Get-Date).ToString('o') }
         }
         return
     }
+
+    # From here down the provider is a VARIABLE, never a literal. Every 'claude'
+    # left hardcoded below this line would be a codex run reported as a Claude
+    # one -- in the result file, in the usage ledger, and in the cooldown that
+    # decides which subscription is rested.
+    $localProvider = [string]$dispatchTarget
+    $localCommand = Get-AgentProviderCommandName -Provider $localProvider
 
     # Release 3.1 — verify the base BEFORE branching from it, and before the
     # dry-run shortcut, so a dry run reports the refusal it would hit. The
@@ -937,8 +947,13 @@ function Invoke-QueuedTask {
     }
 
     if ($DryRun) {
-        Write-Host "  [DRYRUN] would: claim -> git switch -c $branch -> launch claude -> verify -> commit -> awaiting-review" -ForegroundColor Yellow
-        Write-Host ("  [DRYRUN] claude {0} (cwd={1})" -f $(if ($Headless) { "-p <prompt> --permission-mode $PermissionMode" } else { "--permission-mode $PermissionMode <prompt>" }), $repo) -ForegroundColor Yellow
+        Write-Host "  [DRYRUN] would: claim -> git switch -c $branch -> launch $localCommand -> verify -> commit -> awaiting-review" -ForegroundColor Yellow
+        if ($localProvider -eq 'codex') {
+            Write-Host ("  [DRYRUN] {0} {1} (cwd={2})" -f $localCommand, "exec --json --sandbox workspace-write --output-schema <schema> <prompt>", $repo) -ForegroundColor Yellow
+        }
+        else {
+            Write-Host ("  [DRYRUN] {0} {1} (cwd={2})" -f $localCommand, $(if ($Headless) { "-p <prompt> --permission-mode $PermissionMode" } else { "--permission-mode $PermissionMode <prompt>" }), $repo) -ForegroundColor Yellow
+        }
         return
     }
 
@@ -953,23 +968,34 @@ function Invoke-QueuedTask {
             if ($LASTEXITCODE -ne 0) { throw "Failed to switch to branch '$branch' in repo '$repo'." }
         }
 
-        # Launch Claude Code in the repo.
-        if (-not (Get-Command claude -ErrorAction SilentlyContinue)) { throw "'claude' not found on PATH. Run this as the operator with Claude Code installed." }
+        # Launch the provider CLI in the repo.
+        if (-not (Get-Command $localCommand -ErrorAction SilentlyContinue)) {
+            throw ("'{0}' not found on PATH. Run this as the operator with the {1} CLI installed." -f $localCommand, $localProvider)
+        }
         # Declared before the launch so the parse below can read it
         # unconditionally: Tee-Object -Variable writes into this scope, and an
         # interactive run never sets it at all.
         $claudeLines = @()
         Push-Location $repo
         try {
-            if ($Headless) {
+            if ($localProvider -eq 'codex') {
+                # H38-16. Codex has one mode: structured, sandboxed, with the
+                # ExecutionResult schema handed to it. There is no interactive
+                # variant here because the runner is not a terminal the operator
+                # is watching -- an unattended interactive session would block
+                # on the first approval prompt forever.
+                $codexArgv = New-CodexExecutionArgument -Prompt $prompt -SchemaPath (Get-CodexOutputSchemaPath -WorkspaceRoot $WorkspaceRoot)
+                & $localCommand @codexArgv 2>&1 | Tee-Object -Variable claudeLines | Out-Null
+            }
+            elseif ($Headless) {
                 # Release 3.8 M1 (H38-04) - structured output, captured.
                 # Tee rather than redirect: the operator still sees the stream
                 # live, and the same lines are kept for the adapter to parse.
                 $claudeArgv = New-ClaudeExecutionArgument -Prompt $prompt -PermissionMode $PermissionMode
-                & claude @claudeArgv 2>&1 | Tee-Object -Variable claudeLines | Out-Null
+                & $localCommand @claudeArgv 2>&1 | Tee-Object -Variable claudeLines | Out-Null
             }
-            else { & claude --permission-mode $PermissionMode $prompt }
-            if ($LASTEXITCODE -ne 0) { throw "Claude Code execution failed with exit code $LASTEXITCODE." }
+            else { & $localCommand --permission-mode $PermissionMode $prompt }
+            if ($LASTEXITCODE -ne 0) { throw ("{0} execution failed with exit code {1}." -f $localProvider, $LASTEXITCODE) }
         }
         finally { Pop-Location }
 
@@ -999,7 +1025,9 @@ function Invoke-QueuedTask {
         # was never involved. Every run leaves a result file either way.
         $runExitCode = if ($null -ne $LASTEXITCODE) { [int]$LASTEXITCODE } else { 0 }
         $executionResult = $null
-        if ($Headless) {
+        # Codex is always structured -- see the launch above -- so it takes the
+        # transcript path regardless of -Headless, which is a Claude Code flag.
+        if ($Headless -or $localProvider -eq 'codex') {
             # Release 3.8 M1 (H38-04) - the adapter turns the transcript into a
             # result. The provider-native payload is retained alongside it: the
             # spec asks for it for diagnosis, and it is also how a REAL
@@ -1007,11 +1035,11 @@ function Invoke-QueuedTask {
             # to record one.
             $claudeCaptured = @(@($claudeLines) | ForEach-Object { [string]$_ })
             if ($claudeCaptured.Count -gt 0) {
-                $streamPath = Join-Path $runsDir ("{0}.claude.stream.jsonl" -f $runId)
+                $streamPath = Join-Path $runsDir ("{0}.{1}.stream.jsonl" -f $runId, $localProvider)
                 try { Set-Content -LiteralPath $streamPath -Value $claudeCaptured -Encoding UTF8 }
                 catch { Write-Host ("  [warn] could not retain the provider transcript: {0}" -f $_.Exception.Message) -ForegroundColor DarkYellow }
 
-                $parsedStream = ConvertFrom-ClaudeStreamJson -Lines $claudeCaptured
+                $parsedStream = if ($localProvider -eq 'codex') { ConvertFrom-CodexJsonl -Lines $claudeCaptured } else { ConvertFrom-ClaudeStreamJson -Lines $claudeCaptured }
                 if (@($parsedStream.parseErrors).Count -gt 0) {
                     Write-Host ("  [warn] {0} unparseable transcript line(s): {1}" -f @($parsedStream.parseErrors).Count, (@($parsedStream.parseErrors) -join ', ')) -ForegroundColor DarkYellow
                 }
@@ -1024,7 +1052,12 @@ function Invoke-QueuedTask {
                 if (Get-Command -Name 'Get-AgentProviderConfig' -ErrorAction SilentlyContinue) {
                     $providerConfigForResult = Get-AgentProviderConfig -ConfigPath (Get-AgentProviderConfigPath -WorkspaceRoot (Split-Path -Parent $PSScriptRoot))
                 }
-                $adapterResult = ConvertTo-ClaudeExecutionResult -Parsed $parsedStream -TaskId $runId -ExecutionId $runId -ChangedFiles $changedForResult -Config $providerConfigForResult
+                $adapterResult = if ($localProvider -eq 'codex') {
+                    ConvertTo-CodexExecutionResult -Parsed $parsedStream -TaskId $runId -ExecutionId $runId -ChangedFiles $changedForResult -Config $providerConfigForResult
+                }
+                else {
+                    ConvertTo-ClaudeExecutionResult -Parsed $parsedStream -TaskId $runId -ExecutionId $runId -ChangedFiles $changedForResult -Config $providerConfigForResult
+                }
                 if ($null -ne $adapterResult) {
                     $null = Save-ExecutionResult -WorkspaceRoot $WorkspaceRoot -Result $adapterResult
 
@@ -1034,11 +1067,15 @@ function Invoke-QueuedTask {
                     # must never fail a run that succeeded.
                     try {
                         if (Get-Command -Name 'Add-ProviderUsageObservation' -ErrorAction SilentlyContinue) {
-                            $null = Add-ProviderUsageObservation -WorkspaceRoot $WorkspaceRoot -Provider 'claude' -Result $adapterResult
+                            $null = Add-ProviderUsageObservation -WorkspaceRoot $WorkspaceRoot -Provider $localProvider -Result $adapterResult
                         }
-                        $adapterWindow = Get-ClaudeAdapterCapacity -Parsed $parsedStream
+                        # Codex answers $null here by construction: the spec
+                        # forbids equating its token telemetry with remaining
+                        # allowance, so the tokens above are consumption
+                        # evidence and no window is derived from them.
+                        $adapterWindow = if ($localProvider -eq 'codex') { Get-CodexAdapterCapacity -Parsed $parsedStream } else { Get-ClaudeAdapterCapacity -Parsed $parsedStream }
                         if ($null -ne $adapterWindow -and (Get-Command -Name 'Merge-ProviderCapacityWindow' -ErrorAction SilentlyContinue)) {
-                            $capacityRecordNow = Read-ProviderCapacityRecord -WorkspaceRoot $WorkspaceRoot -Provider 'claude'
+                            $capacityRecordNow = Read-ProviderCapacityRecord -WorkspaceRoot $WorkspaceRoot -Provider $localProvider
                             if ($null -ne $capacityRecordNow) {
                                 $mergeOutcome = Merge-ProviderCapacityWindow -Record $capacityRecordNow -Window $adapterWindow
                                 if ($mergeOutcome.merged) { $null = Save-ProviderCapacityRecord -WorkspaceRoot $WorkspaceRoot -Record $mergeOutcome.record }
@@ -1054,7 +1091,7 @@ function Invoke-QueuedTask {
             $executionResult = New-ExecutionResult `
                 -TaskId $runId `
                 -ExecutionId $runId `
-                -Provider 'claude' `
+                -Provider $localProvider `
                 -Status 'implementation_complete' `
                 -Summary 'interactive session; result recorded by the runner' `
                 -Source 'interactive'
@@ -1085,7 +1122,7 @@ function Invoke-QueuedTask {
             # attempt and providerSessionId exactly as they are so the task can
             # resume on the same session when the window reopens.
             $capacitySummary = ''
-            $capacityProvider = 'claude'
+            $capacityProvider = $localProvider
             if ($null -ne $executionResult) {
                 if ($executionResult -is [System.Collections.IDictionary]) {
                     if ($executionResult.Contains('summary')) { $capacitySummary = [string]$executionResult['summary'] }

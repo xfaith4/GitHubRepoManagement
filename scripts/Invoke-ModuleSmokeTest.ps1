@@ -2578,8 +2578,17 @@ foreach ($pcName in @($pcConfig.providers.PSObject.Properties | ForEach-Object {
     }
     if ($pcEntry.supported -isnot [bool]) { throw "providers.$pcName.supported must be a boolean" }
 }
-if ([bool]$pcConfig.providers.codex.supported) { throw 'codex.supported stays false until H38-16 writes a conforming adapter' }
-if (-not [bool]$pcConfig.providers.claude.supported) { throw 'claude.supported must be true: its adapter landed in H38-04' }
+# Since H38-16 every configured provider has an adapter in this build, so the
+# tripwire inverts: `supported` must be true for all of them. Flipping one to
+# false would hide a provider from routing in EVERY installation, which is a
+# per-installation concern that belongs in the opt-out (A20), not in committed
+# config -- and it would do so silently, because an unrouted provider looks the
+# same as one that was simply never the best choice.
+foreach ($pcName in @($pcConfig.providers.PSObject.Properties | ForEach-Object { $_.Name })) {
+    if (-not [bool]$pcConfig.providers.$pcName.supported) {
+        throw "providers.$pcName.supported is false. Every provider in this build has a conforming adapter as of H38-16; use the per-installation opt-out to switch one off here, rather than un-supporting it for everyone."
+    }
+}
 
 # Absent, unparseable and wrong-schema all answer $null, so a caller gets one
 # thing to test rather than three.
@@ -2632,6 +2641,10 @@ $paAdapterModule = Join-Path $WorkspaceRoot 'backend\modules\agent-adapters\Adap
 if (-not (Test-Path -LiteralPath $paAdapterModule)) { throw "Adapter.Copilot.ps1 not found at: $paAdapterModule" }
 . $paAdapterModule
 
+$paCodexModule = Join-Path $WorkspaceRoot 'backend\modules\agent-adapters\Adapter.Codex.ps1'
+if (-not (Test-Path -LiteralPath $paCodexModule)) { throw "Adapter.Codex.ps1 not found at: $paCodexModule" }
+. $paCodexModule
+
 if ((Get-AgentProviderAdapterPath -WorkspaceRoot $WorkspaceRoot -Provider 'copilot') -ne $paAdapterModule) { throw 'The adapter path resolver and the smoke disagree about where adapters live' }
 
 # `supported` is the REPOSITORY fact -- an adapter exists here -- so this gate
@@ -2640,16 +2653,22 @@ if ((Get-AgentProviderAdapterPath -WorkspaceRoot $WorkspaceRoot -Provider 'copil
 # and would fail on a perfectly conforming adapter.
 foreach ($paProvider in @($pcConfig.providers.PSObject.Properties | ForEach-Object { $_.Name })) {
     $paConformance = Test-AgentProviderAdapter -Provider $paProvider
-    if ([bool]$pcConfig.providers.$paProvider.supported) {
-        if (-not $paConformance.conforms) {
-            throw ("Provider '{0}' is marked supported but its adapter is missing: {1}" -f $paProvider, (@($paConformance.missing) -join ', '))
-        }
+    if (-not [bool]$pcConfig.providers.$paProvider.supported) {
+        throw ("Provider '{0}' is marked unsupported. Since H38-16 every configured provider has an adapter in this build; marking one unsupported hides it from routing repository-wide, which is a per-INSTALLATION concern that belongs in the opt-out (A20), not in committed config." -f $paProvider)
     }
-    elseif ($paProvider -ne 'codex') {
-        throw "Only codex may be unsupported before H38-16; '$paProvider' is not"
+    if (-not $paConformance.conforms) {
+        throw ("Provider '{0}' is marked supported but its adapter is missing: {1}" -f $paProvider, (@($paConformance.missing) -join ', '))
     }
 }
-if ((Test-AgentProviderAdapter -Provider 'codex').conforms) { throw 'codex has no adapter yet; a conformance pass would mean the gate is not checking anything' }
+
+# The gate must be able to say NO, and after H38-16 no committed provider is
+# unsupported any more. Rather than delete the assertion along with its last
+# example -- a gate that disappears when its example does protects nothing --
+# the negative case is injected: a provider named in config with no adapter
+# behind it must fail conformance and name all seven missing functions.
+$paPhantom = Test-AgentProviderAdapter -Provider 'phantom'
+if ($paPhantom.conforms) { throw 'A provider with no adapter conformed; the gate is not checking anything' }
+if (@($paPhantom.missing).Count -ne 7) { throw "A provider with no adapter is missing all seven names; the gate reported $(@($paPhantom.missing).Count)" }
 
 # The gate must NAME what is missing, or fixing a new adapter becomes an
 # exercise in re-running it. Injection: rename one function and confirm the gate
@@ -2701,7 +2720,147 @@ if (-not (Test-ExecutionResult -Result $paResult).valid) { throw 'The copilot ad
 if ($paResult.providerSessionId -ne 'https://github.com/o/r/pull/12') { throw 'The task URL is the only durable handle, so it is the session id' }
 if (@(ConvertTo-CopilotCanonicalEvent).Count -ne 0) { throw 'A GitHub-hosted run emits nothing this machine sees; no events is the honest answer' }
 
-Write-Host '  provider adapters: claude and copilot conform to all seven names, codex is honestly unsupported, the gate names a removed function, and the three moved functions are byte-identical to their pre-move behaviour' -ForegroundColor DarkGray
+Write-Host '  provider adapters: all three providers conform to all seven names, a provider with no adapter still fails, the gate names a removed function, and the three moved functions are byte-identical to their pre-move behaviour' -ForegroundColor DarkGray
+
+# ---------------------------------------------------------------------------
+# Release 3.8 M3 (H38-16) — the Codex adapter.
+#
+# The fixture is SYNTHETIC, authored from the documented `codex exec --json`
+# shape, because no packet in this release may require spending subscription
+# quota to produce a test input. That makes it an assumption, so the assertions
+# below are weighted toward TOLERANCE: a transcript missing the thread id,
+# missing usage, or carrying an unfamiliar usage shape must still yield a valid
+# result rather than a throw or a confidently wrong parse.
+#
+# Two assertions here exist because discovery over the fixture found two ways a
+# loose match goes wrong, and both would have been silent:
+#   - `item.id` matches ^(thread_id|session_id|id)$ one level down, four times,
+#     and is an ITEM identifier, not the thread. Resuming on it resumes nothing.
+#   - `item.completed` matches a `...completed` pattern four times before the
+#     real terminal object, so a loose terminal match reports a finished turn
+#     from a transcript that never finished one.
+# ---------------------------------------------------------------------------
+Write-Step 'Codex adapter — smoke: recorded JSONL to ExecutionResult, offline'
+
+$cxSyntheticPath = Join-Path $WorkspaceRoot 'tests\fixtures\providers\codex-exec-success.synthetic.jsonl'
+if (-not (Test-Path -LiteralPath $cxSyntheticPath)) { throw "Synthetic Codex fixture not found at: $cxSyntheticPath" }
+
+$cxTranscripts = [ordered]@{ synthetic = $cxSyntheticPath }
+$cxRealPath = Join-Path $WorkspaceRoot 'tests\fixtures\providers\codex-exec-success.jsonl'
+if (Test-Path -LiteralPath $cxRealPath) { $cxTranscripts['recorded'] = $cxRealPath }
+
+foreach ($cxName in @($cxTranscripts.Keys)) {
+    $cxLines = @(Get-Content -LiteralPath $cxTranscripts[$cxName] -Encoding UTF8)
+    $cxParsed = ConvertFrom-CodexJsonl -Lines $cxLines
+    if ($null -eq $cxParsed.result) { throw "[$cxName] transcript has no terminal turn object" }
+    if (@($cxParsed.parseErrors).Count -ne 0) { throw "[$cxName] transcript has unparseable lines: $(@($cxParsed.parseErrors) -join ', ')" }
+    if (@($cxParsed.events).Count -lt 2) { throw "[$cxName] expected several events, got $(@($cxParsed.events).Count)" }
+
+    $cxResult = ConvertTo-CodexExecutionResult -Parsed $cxParsed -TaskId 'smoke-cx-1' -ExecutionId 'exec-cx-1' -ChangedFiles @('src/thing.ps1')
+    if ($null -eq $cxResult) { throw "[$cxName] adapter returned no ExecutionResult for a transcript that has one" }
+    $cxValid = Test-ExecutionResult -Result $cxResult
+    if (-not $cxValid.valid) { throw ("[$cxName] adapter produced an invalid result: " + ($cxValid.errors -join '; ')) }
+    if ($cxResult.provider -ne 'codex') { throw "[$cxName] expected provider=codex" }
+    if ($cxResult.status -ne 'implementation_complete') { throw "[$cxName] expected implementation_complete, got '$($cxResult.status)'" }
+    if ($cxResult.source -ne 'adapter') { throw "[$cxName] expected source=adapter" }
+    if ([string]::IsNullOrWhiteSpace([string]$cxResult.providerSessionId)) { throw "[$cxName] thread id was not carried onto the result" }
+    if ($null -eq $cxResult.usage.native) { throw "[$cxName] provider usage was not retained" }
+    Write-Host ("  codex adapter [{0}]: thread={1} tokens={2}" -f $cxName, $cxResult.providerSessionId, $cxResult.usage.tokensObserved) -ForegroundColor DarkGray
+}
+if (-not $cxTranscripts.Contains('recorded')) {
+    Write-Host '  codex adapter: no recorded transcript present yet — synthetic only. Copy any real `codex exec --json` output here to assert against both.' -ForegroundColor DarkGray
+}
+
+$cxSyntheticLines = @(Get-Content -LiteralPath $cxSyntheticPath -Encoding UTF8)
+
+# The session id is the THREAD, never an item. If this ever reads 'item_3' the
+# adapter has started resuming on an identifier that resumes nothing.
+$cxFull = ConvertFrom-CodexJsonl -Lines $cxSyntheticLines
+if ($cxFull.threadId -notmatch '^[0-9a-f]{8}-') { throw "The thread id must be the top-level thread_id, not an item id; got '$($cxFull.threadId)'" }
+
+# Drop the terminal line and the result must vanish. `item.completed` is still
+# present four times, so a loose terminal match passes this by reporting one of
+# those -- which is why the constant is matched exactly.
+$cxTruncated = @($cxSyntheticLines[0..($cxSyntheticLines.Count - 2)])
+if ((@($cxTruncated | Where-Object { $_ -match '"type"\s*:\s*"item\.completed"' })).Count -lt 1) {
+    throw 'The truncated transcript should still contain item.completed lines, or this assertion proves nothing'
+}
+$cxNoResult = ConvertFrom-CodexJsonl -Lines $cxTruncated
+if ($null -ne $cxNoResult.result) { throw 'Expected no terminal turn once the final line is removed; item.completed must not be mistaken for it' }
+if ($null -ne (ConvertTo-CodexExecutionResult -Parsed $cxNoResult -TaskId 't' -ExecutionId 'e')) { throw 'Expected $null ExecutionResult when the transcript has no terminal turn' }
+
+# One garbage line must not lose the transcript.
+$cxGarbled = @($cxSyntheticLines[0]) + @('this is not json at all') + @($cxSyntheticLines[1..($cxSyntheticLines.Count - 1)])
+$cxGarbledParsed = ConvertFrom-CodexJsonl -Lines $cxGarbled
+if (@($cxGarbledParsed.parseErrors) -notcontains 2) { throw "Expected line 2 to be reported as unparseable, got: $(@($cxGarbledParsed.parseErrors) -join ', ')" }
+if ($null -eq $cxGarbledParsed.result) { throw 'A single garbage line must not lose the terminal turn' }
+
+# A failed turn is a failure, not a missing result.
+$cxFailed = ConvertTo-CodexExecutionResult -Parsed (ConvertFrom-CodexJsonl -Lines @('{"type":"thread.started","thread_id":"t-1"}', '{"type":"turn.failed","thread_id":"t-1","error":{"message":"the sandbox refused the write"}}')) -TaskId 't' -ExecutionId 'e'
+if ($null -eq $cxFailed) { throw 'A failed turn is still a terminal turn and must produce a result' }
+if ($cxFailed.status -ne 'implementation_failed') { throw "turn.failed must map to implementation_failed, got '$($cxFailed.status)'" }
+if ($cxFailed.summary -ne 'the sandbox refused the write') { throw "A failed turn must carry its own reason, got '$($cxFailed.summary)'" }
+
+# Shape tolerance. This is what makes a synthetic fixture safe to build on.
+$cxBare = ConvertTo-CodexExecutionResult -Parsed (ConvertFrom-CodexJsonl -Lines @('{"type":"turn.completed"}')) -TaskId 't' -ExecutionId 'e'
+if ($null -eq $cxBare) { throw 'A terminal turn with no thread id or usage must still produce an ExecutionResult' }
+if (-not (Test-ExecutionResult -Result $cxBare).valid) { throw 'The tolerated bare result must still be a valid ExecutionResult' }
+if ($null -ne $cxBare.providerSessionId) { throw 'A missing thread id must be $null, not an empty string' }
+if ($null -ne $cxBare.usage.native) { throw 'A missing usage block must be $null' }
+if ($null -ne $cxBare.usage.tokensObserved) { throw 'A missing usage block must give tokensObserved=$null' }
+
+# An unknown count and a count of zero are different claims.
+if ((Get-CodexTokenTotal -Usage ([pscustomobject]@{ input_tokens = 10; output_tokens = 5; model = 'x' })) -ne 15) { throw 'Token totalling should sum every numeric *_tokens property' }
+if ($null -ne (Get-CodexTokenTotal -Usage ([pscustomobject]@{}))) { throw 'Get-CodexTokenTotal must answer $null for an empty object, not throw' }
+if ($null -ne (Get-CodexTokenTotal -Usage ([pscustomobject]@{ detail_tokens = 'lots' }))) { throw 'A usage block with no numeric *_tokens must give $null, never 0' }
+
+# We invoke with --output-schema, so a compliant run answers JSON. The operator
+# reads this summary, so it must be the sentence and not the envelope.
+if ((ConvertTo-CodexExecutionResult -Parsed $cxFull -TaskId 't' -ExecutionId 'e').summary -ne 'Implemented the change and the module smoke passes.') {
+    throw 'A schema-compliant final message must be unwrapped to its summary, not shown as raw JSON'
+}
+# And a run that ignored the schema still said something worth reading.
+$cxProse = ConvertTo-CodexExecutionResult -Parsed (ConvertFrom-CodexJsonl -Lines @('{"type":"item.completed","item":{"id":"i1","item_type":"agent_message","text":"I could not find the file."}}', '{"type":"turn.completed","thread_id":"t-1"}')) -TaskId 't' -ExecutionId 'e'
+if ($cxProse.summary -ne 'I could not find the file.') { throw "Plain prose must survive unwrapped, got '$($cxProse.summary)'" }
+
+# Argv is an array, never a command string, and the prompt goes LAST because
+# `codex exec` takes it positionally.
+$cxArgv = New-CodexExecutionArgument -Prompt "a`nb" -SchemaPath 'C:\schema.json'
+if (@($cxArgv).Count -ne 7) { throw "Expected 7 argv elements, got $(@($cxArgv).Count)" }
+$cxSandboxIndex = [array]::IndexOf([string[]]$cxArgv, '--sandbox')
+if ($cxSandboxIndex -lt 0) { throw 'Codex runs must declare a sandbox' }
+if ($cxArgv[$cxSandboxIndex + 1] -ne 'workspace-write') { throw "--sandbox must be followed by workspace-write, got '$($cxArgv[$cxSandboxIndex + 1])'" }
+if ($cxArgv[$cxArgv.Count - 1] -ne "a`nb") { throw 'The prompt is positional and must be last, with its newline intact' }
+if ($cxArgv -notcontains '--output-schema') { throw 'Headless runs must request the structured output schema' }
+$cxSchemaPath = Get-CodexOutputSchemaPath -WorkspaceRoot $WorkspaceRoot
+if (-not (Test-Path -LiteralPath $cxSchemaPath)) { throw "The --output-schema file must exist at: $cxSchemaPath" }
+$cxSchema = Get-Content -LiteralPath $cxSchemaPath -Raw -Encoding UTF8 | ConvertFrom-Json
+if ($cxSchema.properties.status.enum.Count -ne (Get-ExecutionResultStatus).Count) { throw 'The published schema and Get-ExecutionResultStatus have drifted on the status vocabulary' }
+foreach ($cxStatus in (Get-ExecutionResultStatus)) {
+    if (@($cxSchema.properties.status.enum) -notcontains $cxStatus) { throw "The published schema is missing status '$cxStatus'" }
+}
+
+# The A4 interface: all seven names exist for codex.
+foreach ($cxFn in @('Get-CodexAdapterCapability', 'Get-CodexAdapterCapacity', 'Start-CodexExecution', 'Resume-CodexExecution', 'Stop-CodexExecution', 'ConvertTo-CodexCanonicalEvent', 'Get-CodexExecutionResult')) {
+    if (-not (Get-Command $cxFn -ErrorAction SilentlyContinue)) { throw "Adapter contract incomplete: $cxFn is missing" }
+}
+if ((Get-CodexAdapterCapability).executionMode -ne 'local') { throw 'The Codex adapter runs locally' }
+if ((Get-CodexAdapterCapability).supportsResume) { throw 'Codex resume is fixture-gated until H38-29; claiming it here would be a promise the adapter cannot keep' }
+
+# The spec forbids equating Codex token telemetry with remaining allowance, so
+# capacity must stay $null EVEN on a transcript that reports plenty of tokens.
+# That is the case worth asserting: a transcript with no usage at all would
+# yield $null by accident.
+if ($null -ne (Get-CodexAdapterCapacity -Parsed $cxFull)) { throw 'Codex token telemetry is consumption, not allowance; capacity must stay unmeasured (spec)' }
+if ($null -eq (ConvertTo-CodexExecutionResult -Parsed $cxFull -TaskId 't' -ExecutionId 'e').usage.tokensObserved) { throw 'The tokens themselves must still be recorded as consumption evidence' }
+
+foreach ($cxUnsupported in @('Resume-CodexExecution', 'Stop-CodexExecution')) {
+    $cxThrew = $false
+    try { $null = & $cxUnsupported } catch { $cxThrew = $true }
+    if (-not $cxThrew) { throw "$cxUnsupported must refuse rather than silently do nothing" }
+}
+
+Write-Host '  codex adapter: transcript parsed, thread id is the thread and not an item, item.completed is not mistaken for a finished turn, tokens recorded as consumption but never as allowance' -ForegroundColor DarkGray
 
 Write-Step 'Provider availability — smoke: detected per installation, never committed'
 
@@ -2725,17 +2884,39 @@ if ($LASTEXITCODE -eq 0) {
     $null = New-Item -ItemType Directory -Path (Join-Path $avWs 'backend\config') -Force
     Copy-Item -LiteralPath $agentProvidersConfig -Destination (Join-Path $avWs 'backend\config\agent-providers.json') -Force
 
-    # codex is unsupported in this build, and that must decide the answer
-    # REGARDLESS of the PATH: `supported` is the repository fact, availability is
-    # the machine fact, and conflating them is what A20 removed.
+    # An UNSUPPORTED provider must read unavailable regardless of the PATH:
+    # `supported` is the repository fact, availability is the machine fact, and
+    # conflating them is what A20 removed.
+    #
+    # H38-16 gave codex an adapter, so it is no longer an example of this. The
+    # example is now injected into the fixture config rather than borrowed from
+    # whichever provider happens to be unfinished -- an assertion that only
+    # holds while some provider is unbuilt stops holding the moment the release
+    # succeeds, which is the wrong time for a gate to go quiet.
+    $avFixtureConfigPath = Join-Path $avWs 'backend\config\agent-providers.json'
+    $avFixtureConfig = Get-Content -LiteralPath $avFixtureConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    Add-Member -InputObject $avFixtureConfig.providers -NotePropertyName 'unbuilt' -NotePropertyValue ([pscustomobject]@{
+            supported     = $false
+            executionMode = 'local'
+            providerTool  = 'nothing-here'
+        }) -Force
+    $avFixtureConfig | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $avFixtureConfigPath -Encoding UTF8
+
     $avOriginalCommandName = ${function:Get-AgentProviderCommandName}
     try {
-        # A command that certainly exists. codex must STILL be unavailable.
+        # A command that certainly exists. The unsupported provider must STILL
+        # be unavailable.
         Set-Item -Path 'function:\Get-AgentProviderCommandName' -Value { param([Parameter(Mandatory)][string]$Provider) $null = $Provider; return 'git' }
+        $avUnbuiltPresent = Test-AgentProviderAvailability -Provider 'unbuilt' -WorkspaceRoot $avWs
+        if ($avUnbuiltPresent.installed -ne $true) { throw 'The stub should have reported an installed command' }
+        if ($avUnbuiltPresent.available) { throw 'A provider with no adapter in this build must not be made available by an installed CLI' }
+        if ($avUnbuiltPresent.detail -ne 'no adapter in this build') { throw "Expected the missing-adapter reason, got '$($avUnbuiltPresent.detail)'" }
+
+        # And the converse, which is what H38-16 actually changed: codex is
+        # supported now, so an installed CLI DOES make it available.
         $avCodexPresent = Test-AgentProviderAvailability -Provider 'codex' -WorkspaceRoot $avWs
-        if ($avCodexPresent.installed -ne $true) { throw 'The stub should have reported an installed command' }
-        if ($avCodexPresent.available) { throw 'codex has no adapter in this build; an installed CLI must not make it available' }
-        if ($avCodexPresent.detail -ne 'no adapter in this build') { throw "Expected the missing-adapter reason, got '$($avCodexPresent.detail)'" }
+        if (-not $avCodexPresent.supported) { throw 'codex is supported in this build since H38-16, regardless of the machine' }
+        if (-not $avCodexPresent.available) { throw "codex is supported and its CLI is installed, so it must read available; got '$($avCodexPresent.detail)'" }
 
         # And a command that certainly does not exist.
         Set-Item -Path 'function:\Get-AgentProviderCommandName' -Value { param([Parameter(Mandatory)][string]$Provider) $null = $Provider; return 'definitely-not-a-real-command-38b' }
@@ -3202,9 +3383,24 @@ Write-Step 'Runner claim gate — smoke: cooldown, one local slot, and liveness 
     # branch itself would launch an agent.
     if ((Resolve-ClaimToken -Entry $clAutoEntry).token -ne 'auto') { throw 'Resolve-ClaimToken must recognise auto' }
     if ((Get-QueueEntryDispatchTarget -Entry $clAutoEntry) -ne 'auto') { throw 'After H38-14 the runner resolver shares the one vocabulary' }
+    # H38-16 gave codex its branch, so the local set is claude|codex and `auto`
+    # is the only known token still without one. The guard is what keeps that
+    # honest: two different CLIs now run below it, so an unhandled token would
+    # be executed by whichever the code falls through to.
     $clRunnerSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'scripts\Invoke-RoadmapTaskRunner.ps1') -Raw -Encoding UTF8
-    if ($clRunnerSource -notmatch "if \(\`$dispatchTarget -ne 'claude'\) \{") {
-        throw 'Invoke-QueuedTask must refuse a token it has no branch for; without that guard codex and auto would silently run Claude Code'
+    if ($clRunnerSource -notmatch "if \(\`$dispatchTarget -notin \`$localProviders\) \{") {
+        throw 'Invoke-QueuedTask must refuse a token it has no branch for; without that guard auto would silently run whichever local CLI the code falls through to'
+    }
+    if ($clRunnerSource -notmatch "\`$localProviders = @\('claude', 'codex'\)") {
+        throw 'The runner must name the providers it can actually execute locally, so the refusal above can be checked against a list rather than a literal'
+    }
+    # The launch and the bookkeeping must use the resolved provider, never the
+    # literal: a codex run recorded as a claude one rests the wrong subscription
+    # and bills the wrong ledger.
+    foreach ($clLiteral in @("-Provider 'claude' ``", "Add-ProviderUsageObservation -WorkspaceRoot `$WorkspaceRoot -Provider 'claude'", "& claude @claudeArgv")) {
+        if ($clRunnerSource -match [regex]::Escape($clLiteral)) {
+            throw "The runner still hardcodes the provider at: $clLiteral — a codex run would be recorded, rested and billed as a claude one"
+        }
     }
 
     # An unenforced verdict is advisory: reported, not binding. Enforcing on a
