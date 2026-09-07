@@ -130,6 +130,19 @@ function Test-RoadmapExecutionContract {
         }
     )
 
+    # Lane 0.18 (H-13b). A dead-end dependency graph is a dispatch refusal,
+    # so it joins the checks the verdict already reports rather than getting
+    # a field of its own that no surface reads.
+    $depVerdict = _ExecutionContractGetField -InputObject $RoadmapContext -Name 'nextItemVerdict' -Default $null
+    if ($null -ne $depVerdict) {
+        $depBlocked = ([string](_ExecutionContractGetField -InputObject $depVerdict -Name 'verdict' -Default '') -eq 'blocked')
+        $depReason = [string](_ExecutionContractGetField -InputObject $depVerdict -Name 'reason' -Default '')
+        $checks = @($checks) + @([pscustomobject]@{
+            name = 'dependencies'; passed = (-not $depBlocked); code = 'execution-contract-dependencies-blocked'
+            explanation = $(if ($depBlocked) { $depReason } else { 'No unmet item dependencies block the next item.' })
+        })
+    }
+
     $failed = @($checks | Where-Object { -not $_.passed })
     $sufficient = ($failed.Count -eq 0)
     $code = if ($sufficient) { 'execution-contract-sufficient' } else { [string]$failed[0].code }

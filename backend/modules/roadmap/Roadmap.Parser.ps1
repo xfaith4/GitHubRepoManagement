@@ -764,6 +764,7 @@ function Invoke-ParseRoadmapContent {
             completedCount  = 0
             totalCount      = 0
             nextPendingItem = $null
+            nextItemVerdict = $null
             sections        = @()
             items           = @()
             dependencyFindings = [pscustomobject]@{ unknownIds = @(); cycles = @() }
@@ -844,6 +845,29 @@ function Invoke-ParseRoadmapContent {
         }
     }
 
+    # Lane 0.18 (H-13b). Dependency-aware selection REPLACES first-pending,
+    # and only where a dependency is actually declared: with no notation
+    # every item is eligible immediately, so the first pending item still
+    # wins and this changes nothing. The module is optional at load time so
+    # the parser keeps working for callers that dot-source it alone.
+    $nextItemVerdict = $null
+    if (Get-Command -Name 'Get-NextEligibleRoadmapItem' -ErrorAction SilentlyContinue) {
+        $nextItemVerdict = Get-NextEligibleRoadmapItem -Items @($items)
+        if ($nextItemVerdict.verdict -eq 'ready' -and $null -ne $nextItemVerdict.item) {
+            $nextPendingItem = [pscustomobject]@{
+                text    = [string]$nextItemVerdict.item.text
+                section = [string]$nextItemVerdict.item.section
+                tags    = @($nextItemVerdict.item.tags)
+            }
+        }
+        elseif ($nextItemVerdict.verdict -eq 'blocked') {
+            # No eligible item means no next item. Leaving the first pending
+            # one here would hand a caller work whose prerequisites are
+            # unmet, which is the dispatch this packet exists to prevent.
+            $nextPendingItem = $null
+        }
+    }
+
     $totalCount = $pendingCount + $completedCount
     if ($totalCount -eq 0) {
         # Read, understood, and carrying no checkbox items — which is a fact
@@ -883,6 +907,11 @@ function Invoke-ParseRoadmapContent {
         sections        = @($sections)
         items           = @($items)
         dependencyFindings = (Get-RoadmapDependencyReport -Items @($items))
+        # Lane 0.18 (H-13b). The verdict travels beside nextPendingItem so a
+        # caller can tell "nothing is eligible" apart from "nothing is left";
+        # collapsing those two into a null next item is what made a dead end
+        # look like a finished roadmap.
+        nextItemVerdict = $nextItemVerdict
         allTags         = @($allTagsSet | Sort-Object)
         releaseContexts = @($releaseContexts)
         activeRelease   = $activeRelease
