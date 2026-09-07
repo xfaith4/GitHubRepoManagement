@@ -22,6 +22,21 @@ All notable changes to this project are documented here.
   value trial: the trial measures the loop as it exists, and 3.8 changes what
   runs inside it. Two new guardrails in §8 carry the invariants that outlive
   the release.
+- **Both work-packet renderings, so the plan is executable by a small model.**
+  [`HAIKU-WORK-PACKETS.md`](docs/reference/HAIKU-WORK-PACKETS.md) carries the
+  open lane items and the operating rules R1–R10 that every packet inherits.
+  [`HAIKU-WORK-PACKETS-3.8.md`](docs/reference/HAIKU-WORK-PACKETS-3.8.md)
+  decomposes Release 3.8 into **37 packets** written against the code rather
+  than the roadmap, each naming the files it may edit, the gate that must fail
+  first with a predicted message, the roadmap state clause it appends, and the
+  condition that stops it. Every gate is **offline**: provider behaviour is
+  proven against recorded fixture transcripts, so no packet needs a
+  subscription, an authenticated `gh`, or the running portal. Nineteen choices
+  the spec left open are made in the file for the operator to veto; five that
+  are product or security judgements are emitted as **D-011 … D-015** and the
+  packets that depend on them stop rather than guess. Notably, provider routing
+  ships **off** until D-013 is answered, so nothing can write a dispatch target
+  the runner is unable to claim.
 
 ### Changed
 
