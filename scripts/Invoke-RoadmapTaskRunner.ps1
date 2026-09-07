@@ -138,6 +138,10 @@ if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) { $WorkspaceRoot = Split-Path 
 # for the same reason as the queue module directly above: the runner is pointed
 # at fixture workspaces that carry no backend/ tree of their own.
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\execution\Execution.WorkPacket.ps1')
+# Release 3.8 M2 (H38-10) - the registry supplies the configured limitSignals
+# and the capacity module records the cooldown a matched signal implies.
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\execution\Execution.ProviderRegistry.ps1')
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\execution\Execution.ProviderCapacity.ps1')
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\agent-adapters\Adapter.Claude.ps1')
 if ([string]::IsNullOrWhiteSpace($QueuePath)) { $QueuePath = Get-RoadmapQueuePath -WorkspaceRoot $WorkspaceRoot }
 if ([string]::IsNullOrWhiteSpace($StopFilePath)) { $StopFilePath = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.stop' }
@@ -560,6 +564,69 @@ function Resolve-RunOutcomeFromResult {
     }
 }
 
+function Resolve-CapacityWaitUpdate {
+    <#
+    .SYNOPSIS
+        Pure - the summary fields and cooldown target for a capacity wait.
+
+    .DESCRIPTION
+        Release 3.8 M2 (H38-10). A provider limit means the work was never
+        attempted, so the task goes back to `queued` and everything needed to
+        resume it must survive untouched: branch, attempt and the provider
+        session id. This computes what to write; the caller writes it.
+
+        Separated from the runner's IO so the rule can be asserted without
+        launching an agent. That matters more than usual here, because the only
+        way to produce a real usage limit is to exhaust a subscription -- which
+        is exactly the cost this release exists to avoid spending.
+
+        When the provider named no reset time, the wait is NowUtc + 60 minutes
+        and `resetAssumed` is true (A17). The assumption is marked rather than
+        hidden, so a board can show a guessed wait differently from a promised
+        one and a later real reset time can replace it without ambiguity.
+    .OUTPUTS
+        [pscustomobject] set (hashtable of summary fields), cooldownUntil,
+        resetAssumed
+    #>
+    param(
+        [Parameter()][AllowEmptyString()][string]$Provider = 'claude',
+        [Parameter()][AllowNull()][object]$LimitSignal = $null,
+        [Parameter()][datetime]$NowUtc = [datetime]::UtcNow,
+        [Parameter()][AllowEmptyString()][string]$Summary = ''
+    )
+
+    $resetAt = $null
+    $pattern = $null
+    if ($null -ne $LimitSignal) {
+        if ($LimitSignal.PSObject.Properties.Name -contains 'resetAt') { $resetAt = $LimitSignal.resetAt }
+        if ($LimitSignal.PSObject.Properties.Name -contains 'pattern') { $pattern = $LimitSignal.pattern }
+    }
+
+    $resetAssumed = $false
+    $cooldownUntil = [string]$resetAt
+    if ([string]::IsNullOrWhiteSpace($cooldownUntil)) {
+        $cooldownUntil = $NowUtc.AddMinutes(60).ToString('yyyy-MM-ddTHH:mm:ssZ')
+        $resetAssumed = $true
+    }
+
+    return [pscustomobject]@{
+        set           = @{
+            status            = 'queued'
+            error             = ''
+            capacityWait      = @{
+                provider   = $Provider
+                detectedAt = $NowUtc.ToString('yyyy-MM-ddTHH:mm:ssZ')
+                resetAt    = $(if ([string]::IsNullOrWhiteSpace([string]$resetAt)) { $null } else { [string]$resetAt })
+                pattern    = $pattern
+                summary    = $Summary
+            }
+            runnerCompletedAt = (Get-Date).ToString('o')
+        }
+        cooldownUntil = $cooldownUntil
+        resetAssumed  = $resetAssumed
+    }
+}
+
 if ($LoadFunctionsOnly) { return }
 
 # ── Execution ─────────────────────────────────────────────────────────────────
@@ -810,7 +877,15 @@ function Invoke-QueuedTask {
                     Write-Host ("  [warn] {0} unparseable transcript line(s): {1}" -f @($parsedStream.parseErrors).Count, (@($parsedStream.parseErrors) -join ', ')) -ForegroundColor DarkYellow
                 }
                 $changedForResult = @(& git -C $repo status --porcelain | ForEach-Object { $_.Substring(3) })
-                $adapterResult = ConvertTo-ClaudeExecutionResult -Parsed $parsedStream -TaskId $runId -ExecutionId $runId -ChangedFiles $changedForResult
+                # The config carries the limitSignals that tell a provider limit
+                # apart from an implementation failure. $null when it cannot be
+                # loaded, and the adapter then reports the plain failure it can
+                # actually see rather than guessing at limit wording.
+                $providerConfigForResult = $null
+                if (Get-Command -Name 'Get-AgentProviderConfig' -ErrorAction SilentlyContinue) {
+                    $providerConfigForResult = Get-AgentProviderConfig -ConfigPath (Get-AgentProviderConfigPath -WorkspaceRoot (Split-Path -Parent $PSScriptRoot))
+                }
+                $adapterResult = ConvertTo-ClaudeExecutionResult -Parsed $parsedStream -TaskId $runId -ExecutionId $runId -ChangedFiles $changedForResult -Config $providerConfigForResult
                 if ($null -ne $adapterResult) {
                     $null = Save-ExecutionResult -WorkspaceRoot $WorkspaceRoot -Result $adapterResult
                 }
@@ -841,6 +916,54 @@ function Invoke-QueuedTask {
                 runnerCompletedAt = (Get-Date).ToString('o')
             }
             Write-Host ("  [failed] {0}" -f $outcome.error) -ForegroundColor Red
+            return
+        }
+
+        if ($outcome.status -eq 'queued') {
+            # A provider limit is state, not a failure. Before H38-10 this fell
+            # THROUGH to verify-commit-push, so an exhausted subscription would
+            # have committed whatever happened to be on the branch and called it
+            # ready for review. Return without committing, and leave branch,
+            # attempt and providerSessionId exactly as they are so the task can
+            # resume on the same session when the window reopens.
+            $capacitySummary = ''
+            $capacityProvider = 'claude'
+            if ($null -ne $executionResult) {
+                if ($executionResult -is [System.Collections.IDictionary]) {
+                    if ($executionResult.Contains('summary')) { $capacitySummary = [string]$executionResult['summary'] }
+                    if ($executionResult.Contains('provider')) { $capacityProvider = [string]$executionResult['provider'] }
+                }
+                else {
+                    if ($executionResult.PSObject.Properties.Name -contains 'summary') { $capacitySummary = [string]$executionResult.summary }
+                    if ($executionResult.PSObject.Properties.Name -contains 'provider') { $capacityProvider = [string]$executionResult.provider }
+                }
+            }
+
+            $capacitySignal = $null
+            if ((Get-Command -Name 'Test-ProviderLimitSignal' -ErrorAction SilentlyContinue) -and $null -ne $providerConfigForResult) {
+                $capacitySignal = Test-ProviderLimitSignal -Provider $capacityProvider -Text $capacitySummary -Config $providerConfigForResult
+            }
+
+            $capacityWait = Resolve-CapacityWaitUpdate -Provider $capacityProvider -LimitSignal $capacitySignal -Summary $capacitySummary
+            Update-TaskSummary -SummaryPath $summaryPath -Set $capacityWait.set
+
+            if (Get-Command -Name 'Set-ProviderCooldown' -ErrorAction SilentlyContinue) {
+                try {
+                    $null = Set-ProviderCooldown -WorkspaceRoot $WorkspaceRoot -Provider $capacityProvider `
+                        -Until $capacityWait.cooldownUntil -Source 'rate-limit-response' -ResetAssumed:$capacityWait.resetAssumed
+                }
+                catch { Write-Host ("  [warn] could not record the provider cooldown: {0}" -f $_.Exception.Message) -ForegroundColor DarkYellow }
+            }
+
+            # H38-33 wires the canonical execution.* events. Write-AgentRunEvent
+            # is not loaded in the runner today, so this is a no-op until then
+            # rather than a dot-source added for one call site.
+            if (Get-Command -Name 'Write-AgentRunEvent' -ErrorAction SilentlyContinue) {
+                try { Write-AgentRunEvent -WorkspaceRoot $WorkspaceRoot -RunId $runId -EventType 'execution.capacity.exhausted' }
+                catch { Write-Host ("  [warn] could not record the capacity event: {0}" -f $_.Exception.Message) -ForegroundColor DarkYellow }
+            }
+
+            Write-Host ("  [capacity-wait] {0} until {1}{2}" -f $capacityProvider, $capacityWait.cooldownUntil, $(if ($capacityWait.resetAssumed) { ' (assumed)' } else { '' })) -ForegroundColor DarkYellow
             return
         }
 

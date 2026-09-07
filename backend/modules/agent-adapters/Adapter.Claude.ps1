@@ -188,7 +188,8 @@ function ConvertTo-ClaudeExecutionResult {
         [Parameter(Mandatory)][object]$Parsed,
         [Parameter(Mandatory)][string]$TaskId,
         [Parameter(Mandatory)][string]$ExecutionId,
-        [Parameter()][AllowEmptyCollection()][string[]]$ChangedFiles = @()
+        [Parameter()][AllowEmptyCollection()][string[]]$ChangedFiles = @(),
+        [Parameter()][object]$Config = $null
     )
 
     $resultObject = _Claude_Field -Obj $Parsed -Name 'result' -Default $null
@@ -206,7 +207,24 @@ function ConvertTo-ClaudeExecutionResult {
     $summary = [string](_Claude_Field -Obj $resultObject -Name 'result' -Default '')
     if ($summary.Length -gt 500) { $summary = $summary.Substring(0, 500) }
 
+    # A provider limit is STATE, not an execution failure (spec, and the §8
+    # guardrail). Without this an exhausted subscription reads as
+    # implementation_failed, which blames the roadmap item for the account's
+    # condition and burns the attempt. Detection needs the configured
+    # limitSignals, so it only runs when a caller supplied the config -- an
+    # adapter that silently guessed at limit wording would be worse than one
+    # that reports the plain failure it can actually see.
+    $risks = @()
+    if ([bool]$isError -and $null -ne $Config -and (Get-Command -Name 'Test-ProviderLimitSignal' -ErrorAction SilentlyContinue)) {
+        $limit = Test-ProviderLimitSignal -Provider 'claude' -Text $summary -Config $Config
+        if ($limit.matched) {
+            $status = 'capacity_exhausted'
+            $risks = @('provider-limit')
+        }
+    }
+
     return New-ExecutionResult `
+        -Risks $risks `
         -TaskId $TaskId `
         -ExecutionId $ExecutionId `
         -Provider 'claude' `
