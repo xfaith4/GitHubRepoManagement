@@ -15,7 +15,7 @@
       "provisional": true
     },
     "codex": {
-      "supported": false,
+      "supported": true,
       "executionMode": "local",
       "providerTool": "codex-cli",
       "autoPush": true,

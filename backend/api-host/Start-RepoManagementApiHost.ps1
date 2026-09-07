@@ -93,6 +93,7 @@ $executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 # GET /api/providers; it never executes one. Execution belongs to the operator
 # session, which is the only process holding a provider credential.
 . (Join-Path $WorkspaceRoot 'backend\modules\agent-adapters\Adapter.Copilot.ps1')
+. (Join-Path $WorkspaceRoot 'backend\modules\agent-adapters\Adapter.Codex.ps1')
 . (Join-Path $WorkspaceRoot 'backend\modules\auth\GitHubApp.ps1')
 . (Join-Path $WorkspaceRoot 'backend\modules\auth\SessionAuth.ps1')
 $docStdModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\docstandardization'

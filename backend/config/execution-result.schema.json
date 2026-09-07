@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/xfaith4/GitHubRepoManagement/backend/config/execution-result.schema.json",
+  "title": "ExecutionResult",
+  "description": "The structured answer an agent adapter owes the runner (release 3.8, H38-03). Handed to `codex exec --output-schema` so the provider emits this shape directly instead of prose the runner has to guess at. Mirrors New-ExecutionResult in backend/modules/execution/Execution.WorkPacket.ps1; the PowerShell constructor is the authority and this file must be changed with it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "taskId", "executionId", "provider", "status", "summary"],
+  "properties": {
+    "schemaVersion": {
+      "description": "Matches $script:ExecutionResultSchemaVersion.",
+      "type": "integer",
+      "const": 1
+    },
+    "taskId": {
+      "description": "The queue entry / run identifier this result answers for.",
+      "type": "string",
+      "minLength": 1
+    },
+    "executionId": {
+      "description": "One attempt at that task. Distinct from taskId once a task is resumed.",
+      "type": "string",
+      "minLength": 1
+    },
+    "provider": {
+      "description": "Which provider produced this. Never inferred by the reader.",
+      "type": "string",
+      "minLength": 1
+    },
+    "providerSessionId": {
+      "description": "The provider's own thread/session identifier, so a run can be resumed on the same session. Null when the provider did not report one -- an absent identifier is not an error.",
+      "type": ["string", "null"]
+    },
+    "status": {
+      "description": "capacity_exhausted is a first-class outcome, not a kind of failure: a provider limit means the work was never attempted, so recording it as failed would blame the task for the subscription's state.",
+      "type": "string",
+      "enum": ["implementation_complete", "implementation_failed", "capacity_exhausted", "cancelled"]
+    },
+    "changedFiles": {
+      "description": "Repository-relative paths the run modified.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "passed": {
+          "description": "Tri-state on purpose: true, false, or null for \"no verification ran\". Collapsing null into false would report an unverified run as a failed one, which is a different and much louder claim.",
+          "type": ["boolean", "null"]
+        },
+        "commands": {
+          "description": "The commands actually run, verbatim, so a reviewer can re-run them.",
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "native": {
+          "description": "Whatever the provider reported, in the provider's own units, kept unconverted. Deliberately unconstrained: the spec forbids inventing a token conversion for a subscription allowance, so this stays opaque.",
+          "type": ["object", "null"]
+        },
+        "tokensObserved": {
+          "description": "A count only when the provider genuinely gave one. Null means \"not measured\", which is a different claim from 0.",
+          "type": ["integer", "null"]
+        }
+      }
+    },
+    "risks": {
+      "description": "Named conditions a reviewer should know about, e.g. provider-limit.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "operatorAttentionRequired": {
+      "type": "boolean"
+    },
+    "summary": {
+      "description": "What happened, in the agent's own words. Bounded, because it lands in a run summary an operator reads rather than in a log.",
+      "type": "string",
+      "maxLength": 500
+    },
+    "source": {
+      "description": "adapter = parsed from provider output; interactive = recorded by the runner because a human watched the session.",
+      "type": "string",
+      "enum": ["adapter", "interactive"]
+    }
+  }
+}

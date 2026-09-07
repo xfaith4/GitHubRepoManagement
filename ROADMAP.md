@@ -949,23 +949,29 @@ to the queue — never fails it — when a provider is exhausted.
       `frontend/types.ts`, and reconciles the third vocabulary
       (`operator-runner`) the approval route writes. Eligibility then ranking,
       selection reason recorded, presence counts derived from the registry
-      rather than naming providers. _(state: scaffolded 2026-09-07 — H38-14
-      Execution.ProviderRegistry.ps1 is the one token list (claude, codex,
-      copilot, auto); the queue module and the runner delegate to it, and the
-      two ValidateSet attributes that cannot are gated against it so drift
-      fails a smoke rather than rejecting a valid provider unnoticed;
+      rather than naming providers. _(state: scaffolded 2026-09-07 —
+      H38-14 Execution.ProviderRegistry.ps1 is the one token list (claude,
+      codex, copilot, auto); the queue module and the runner delegate to it,
+      and the two ValidateSet attributes that cannot are gated against it so
+      drift fails a smoke rather than rejecting a valid provider unnoticed;
       Invoke-QueuedTask now refuses a known token it has no branch for, so the
       wider vocabulary cannot run Claude Code in codex's place; H38-15
-      seven-function adapter contract gated per supported provider, naming every
-      missing function at once; Adapter.Copilot.ps1 holds the three moved runner
-      functions unchanged, asserted byte-identical, and a cloud dispatch now
-      writes an ExecutionResult like every other provider; H38-15b provider
+      seven-function adapter contract gated per supported provider, naming
+      every missing function at once; Adapter.Copilot.ps1 holds the three moved
+      runner functions unchanged, asserted byte-identical, and a cloud dispatch
+      now writes an ExecutionResult like every other provider; H38-15b provider
       availability detected per installation (PATH probe, and deliberately no
       authentication — proving an account works would spend its quota) and
       surfaced in GET /setup/prerequisites, which the setup wizard already
       renders, plus GET /api/providers; the operator opt-out lives in an
       untracked installation.local.json that a gate refuses to let become
-      tracked)_
+      tracked; H38-16 Adapter.Codex.ps1 from a synthetic codex exec --json
+      transcript, with the thread id and the terminal turn matched exactly
+      rather than by pattern — item.id and item.completed both match the loose
+      forms and mean something else entirely; the runner runs codex tasks
+      through the same branch, launch, parse, verify and commit path, with the
+      provider held in a variable at every launch and ledger site so a codex
+      run is never recorded, rested or billed as a claude one)_
 - [ ] **Move push and PR opening to Repo Manager; bind approval to the verified
       SHA.** The agent exits at `IMPLEMENTATION_COMPLETE`; Repo Manager pushes,
       opens the pull request and monitors CI on a cadence without holding an
