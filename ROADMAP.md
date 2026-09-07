@@ -949,8 +949,8 @@ to the queue — never fails it — when a provider is exhausted.
       `frontend/types.ts`, and reconciles the third vocabulary
       (`operator-runner`) the approval route writes. Eligibility then ranking,
       selection reason recorded, presence counts derived from the registry
-      rather than naming providers. _(state: routing-on 2026-09-07 —
-      H38-14 Execution.ProviderRegistry.ps1 is the one token list (claude,
+      rather than naming providers. _(state: routing-on 2026-09-07 — H38-14
+      Execution.ProviderRegistry.ps1 is the one token list (claude,
       codex, copilot, auto); the queue module and the runner delegate to it,
       and the two ValidateSet attributes that cannot are gated against it so
       drift fails a smoke rather than rejecting a valid provider unnoticed;
