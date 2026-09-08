@@ -35,7 +35,9 @@ export interface PackagedItemPacket {
   estimatedWorkUnits?: number;
   generatedPrompt?: string;
   repairPlan?: Record<string, unknown> | null;
-  dispatchTarget?: string;
+  // No dispatchTarget: the packet record never carried a provider token, only
+  // the retired 'operator-runner' channel name, and nothing rendered it.
+  // Records written before 2026-09-07 still hold the field; it is ignored.
 }
 
 export interface PackagedItemHistoryEntry {

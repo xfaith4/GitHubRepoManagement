@@ -460,7 +460,11 @@ function New-RoadmapItemTaskPacket {
         estimatedWorkUnits = [double]$EstimatedWorkUnits
         generatedPrompt    = $prompt
         repairPlan         = $repairPlan
-        dispatchTarget     = 'operator-runner'
+        # No dispatchTarget here. It carried 'operator-runner' — a dispatch
+        # CHANNEL, not a provider — while the field means WHICH provider
+        # everywhere else, and nothing ever read it off this record. The token
+        # that matters is written onto the queue entry by
+        # New-PackagedItemQueueEntry, which is what the runner claims.
         dispatched         = $false
     }
 }
