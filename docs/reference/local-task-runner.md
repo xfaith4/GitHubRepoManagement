@@ -13,10 +13,14 @@ Because the portal runs as a LocalSystem service, dispatch is split in two:
 2. **You run the runner** — `scripts/Invoke-RoadmapTaskRunner.ps1`, in your own
    session (your `claude` + auth), picks up queued tasks and executes them.
 
-Nothing is pushed to GitHub by the runner. It stops at `awaiting-review` so you
-review the branch first — then push either yourself from the shell, or with the
-ROADMAP modal's **Approve & push** action (`POST /api/roadmap-agent/approve-push`),
-which pushes the run's branch to `origin` and marks the run `pushed`.
+With `autoPush` on (the default for local providers) the runner pushes the
+branch after a successful result and verification; the PR is opened by the
+portal's reconcile tick. With `autoPush` off, the runner stops at
+`awaiting-review` as before — review the branch first, then push either
+yourself from the shell, or with the ROADMAP modal's **Approve & push** action
+(`POST /api/roadmap-agent/approve-push`), which pushes the run's branch to
+`origin` and marks the run `pushed`. That path is also where a run lands when a
+push is rejected by the remote, so nothing is stranded by a failed push.
 
 ## Flow
 

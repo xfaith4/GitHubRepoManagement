@@ -999,7 +999,10 @@ to the queue — never fails it — when a provider is exhausted.
       execution slot — which also closes Lane 0.17's open "nothing refreshes the
       board" non-blocker. A head change after verification invalidates
       `READY_FOR_OPERATOR`. Merge stays an explicit operator action.
-      _(state: planned)_
+      _(state: scaffolded 2026-09-08 — H38-21 the runner pushes after a
+      complete, verified result (autoPush per provider, default on for local
+      providers); awaiting-review survives at off or on push failure, and the
+      default branch is refused before git is asked)_
 - [ ] **Remediate from evidence, and hand off between providers.** Attempt and
       remediation counts survive a restart; a CI failure builds a
       `RemediationPacket`, resumes the original session where capacity allows,

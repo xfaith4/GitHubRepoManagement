@@ -159,6 +159,10 @@ $runsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
 # to both the analyzer and the next reader.
 $script:AcknowledgeStaleBase = [bool]$AcknowledgeStaleBase
 $script:SyncMain = [bool]$SyncMain
+# H38-21: the push decision reads the provider policy from inside
+# Invoke-QueuedTask. Declared here so -LoadFunctionsOnly leaves it defined
+# rather than tripping StrictMode on the first read.
+$script:RunnerProviderConfig = $null
 
 # Release 3.1 — the base-freshness probe lives in the git module so the submit-PR
 # path and this runner share one definition of "stale" rather than each growing
@@ -500,6 +504,124 @@ function Resolve-RunOutcomeFromResult {
         error    = $errorText
         exitCode = [int]$ExitCode
     }
+}
+
+function Resolve-PostImplementationTransition {
+    <#
+    .SYNOPSIS
+        Pure - decide whether a completed run pushes, and what status it takes.
+
+    .DESCRIPTION
+        Release 3.8 M4. Push belongs to the RUNNER because the runner is the
+        process holding the operator's git credential helper; opening the pull
+        request belongs to the host because the host holds the token. Splitting
+        the two across the two processes that actually hold the credentials is
+        the whole point, and this is the runner's half of the decision.
+
+        autoPush is a rollback lever, not a second design: at false the run
+        stops at `awaiting-review` exactly as it did before this existed, and
+        the operator's Approve & push path is untouched.
+
+        A FAILED local verification does not push. That is not timidity about
+        the remote -- it is that a failed verification is
+        LOCAL_VERIFYING -> REMEDIATION territory, and H38-31 owns the enqueue.
+        Until it lands the operator sees today's behaviour rather than a branch
+        pushed on evidence that says it does not work.
+
+        A null ProviderConfig does not push either. Absent evidence that the
+        flag is on, do the thing the operator already expects.
+    .OUTPUTS
+        [pscustomobject] nextStatus, push
+    #>
+    param(
+        [Parameter()][string]$Outcome = '',
+        [Parameter()][object]$ProviderConfig = $null,
+        [Parameter()][string]$VerifyResult = 'skipped'
+    )
+
+    if ($Outcome -ne 'awaiting-review') {
+        return [pscustomobject]@{ nextStatus = $Outcome; push = $false }
+    }
+
+    $autoPush = $false
+    if ($null -ne $ProviderConfig) {
+        if ($ProviderConfig -is [System.Collections.IDictionary]) {
+            if ($ProviderConfig.Contains('autoPush')) { $autoPush = [bool]$ProviderConfig['autoPush'] }
+        }
+        elseif ($null -ne $ProviderConfig.PSObject -and ($ProviderConfig.PSObject.Properties.Name -contains 'autoPush')) {
+            $autoPush = [bool]$ProviderConfig.autoPush
+        }
+    }
+
+    if (-not $autoPush) { return [pscustomobject]@{ nextStatus = 'awaiting-review'; push = $false } }
+    if ($VerifyResult -eq 'failed') { return [pscustomobject]@{ nextStatus = 'awaiting-review'; push = $false } }
+
+    return [pscustomobject]@{ nextStatus = 'pushing'; push = $true }
+}
+
+function Invoke-RunnerBranchPush {
+    <#
+    .SYNOPSIS
+        Push the run's feature branch to origin, refusing the default branch.
+
+    .DESCRIPTION
+        Release 3.8 M4. The push itself, kept separate from the decision so the
+        smoke can drive it against a real bare remote: "git push succeeded" is
+        not a claim a stub can make honestly, and the failure this has to
+        survive -- a remote that rejects -- only exists when the remote is real.
+
+        A push failure is NOT a run failure. The work is committed on the
+        branch and reviewable; what is missing is one network step. The run
+        lands at `awaiting-review` with the git output retained, which is
+        exactly the state the operator's existing Approve & push path expects,
+        so a rejected push degrades to today's behaviour rather than to a lost
+        run.
+
+        The default branch is refused before git is asked. A bare remote would
+        accept that push, and a real one might too -- the refusal has to be
+        ours, not the remote's, or it is not a refusal at all.
+    .OUTPUTS
+        [pscustomobject] status, error, pushError, pushedAt, pushedBy, prState
+    #>
+    param(
+        [Parameter(Mandatory)][string]$RepoPath,
+        [Parameter(Mandatory)][string]$Branch
+    )
+
+    $result = [ordered]@{
+        status    = 'awaiting-review'
+        error     = ''
+        pushError = ''
+        pushedAt  = $null
+        pushedBy  = $null
+        prState   = $null
+    }
+
+    # Same reading as the completion-edit refusal in Roadmap.WriteBack: the
+    # remote's HEAD names the default branch when it is known, and main/master
+    # cover a clone whose origin/HEAD was never set.
+    $defaultNames = @('main', 'master')
+    $originHead = (& git -C $RepoPath symbolic-ref --quiet --short 'refs/remotes/origin/HEAD' 2>&1) | Out-String
+    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($originHead)) {
+        $defaultNames += ($originHead.Trim() -replace '^origin/', '')
+    }
+    if ($Branch -in $defaultNames) {
+        $result.status = 'failed'
+        $result.error = ("refusing to push the default branch ('{0}'): work reaches it through a pull request, never directly." -f $Branch)
+        return [pscustomobject]$result
+    }
+
+    $pushOutput = (& git -C $RepoPath push -u origin $Branch 2>&1) | Out-String
+    if ($LASTEXITCODE -eq 0) {
+        $result.status = 'pushed'
+        $result.pushedAt = (Get-Date).ToString('o')
+        $result.pushedBy = 'runner'
+        $result.prState = 'pending-open'
+        return [pscustomobject]$result
+    }
+
+    $result.pushError = $pushOutput.Trim()
+    return [pscustomobject]$result
 }
 
 function Resolve-ClaimToken {
@@ -1355,8 +1477,44 @@ function Invoke-QueuedTask {
         }
         $commitSha = (& git -C $repo rev-parse --short HEAD 2>$null)
 
-        Update-TaskSummary -SummaryPath $summaryPath -Set @{
-            status          = $outcome.status
+        # Release 3.8 M4 (H38-21) - the runner pushes; the host opens the PR.
+        # This process is the one holding the operator's git credential helper,
+        # and the host is the one holding the token Open-RepoBranchPullRequest
+        # needs, so the two steps live where their credentials already are.
+        # $script:RunnerProviderConfig is resolved once at startup rather than
+        # per poll; the per-provider block is what carries autoPush.
+        $pushProviderConfig = $null
+        if ($null -ne $script:RunnerProviderConfig -and $null -ne $script:RunnerProviderConfig.providers -and
+            ($script:RunnerProviderConfig.providers.PSObject.Properties.Name -contains $localProvider)) {
+            $pushProviderConfig = $script:RunnerProviderConfig.providers.$localProvider
+        }
+        $transition = Resolve-PostImplementationTransition -Outcome $outcome.status `
+            -ProviderConfig $pushProviderConfig -VerifyResult $verifyResult
+
+        $finalStatus = $transition.nextStatus
+        $pushFields = @{}
+        if ($transition.push) {
+            $pushOutcome = Invoke-RunnerBranchPush -RepoPath $repo -Branch $branch
+            $finalStatus = $pushOutcome.status
+            if ($pushOutcome.status -eq 'pushed') {
+                $pushFields = @{ pushedAt = $pushOutcome.pushedAt; pushedBy = $pushOutcome.pushedBy; prState = $pushOutcome.prState }
+                Write-Host ("  [pushed] {0} -> origin; the PR opens on the next reconcile tick" -f $branch) -ForegroundColor Green
+            }
+            elseif ($pushOutcome.status -eq 'failed') {
+                $pushFields = @{ error = $pushOutcome.error }
+                Write-Host ("  [push-refused] {0}" -f $pushOutcome.error) -ForegroundColor Red
+            }
+            else {
+                # Rejected by the remote. The work is committed and reviewable;
+                # what is missing is one network step, so the run lands exactly
+                # where the operator's Approve & push path already expects it.
+                $pushFields = @{ pushError = $pushOutcome.pushError }
+                Write-Host ("  [push-failed] left at awaiting-review: {0}" -f $pushOutcome.pushError) -ForegroundColor DarkYellow
+            }
+        }
+
+        $summarySet = @{
+            status          = $finalStatus
             branch          = $branch
             commitSha       = "$commitSha"
             filesChanged    = $filesChanged
@@ -1369,8 +1527,12 @@ function Invoke-QueuedTask {
             providerSessionId = $resultSessionId
             runnerCompletedAt = (Get-Date).ToString('o')
         }
-        Write-Host ("  [{0}] branch={1} commit={2} files={3} verify={4} completion={5}" -f $outcome.status, $branch, $commitSha, $filesChanged, $verifyResult, $completionStatus) -ForegroundColor Green
-        Write-Host "  Review the branch, then approve the push - the PR opens through the product." -ForegroundColor DarkGray
+        foreach ($pushKey in $pushFields.Keys) { $summarySet[$pushKey] = $pushFields[$pushKey] }
+        Update-TaskSummary -SummaryPath $summaryPath -Set $summarySet
+        Write-Host ("  [{0}] branch={1} commit={2} files={3} verify={4} completion={5}" -f $finalStatus, $branch, $commitSha, $filesChanged, $verifyResult, $completionStatus) -ForegroundColor Green
+        if ($finalStatus -eq 'awaiting-review') {
+            Write-Host "  Review the branch, then approve the push - the PR opens through the product." -ForegroundColor DarkGray
+        }
     }
     catch {
         Update-TaskSummary -SummaryPath $summaryPath -Set @{ status = 'failed'; error = $_.Exception.Message; runnerCompletedAt = (Get-Date).ToString('o') }
@@ -1395,6 +1557,7 @@ $runnerProviderConfig = $null
 if (Get-Command -Name 'Get-AgentProviderConfig' -ErrorAction SilentlyContinue) {
     $runnerProviderConfig = Get-AgentProviderConfig -ConfigPath (Get-AgentProviderConfigPath -WorkspaceRoot (Split-Path -Parent $PSScriptRoot))
 }
+$script:RunnerProviderConfig = $runnerProviderConfig
 
 # Orphan repair runs ONCE, here, before the first poll. A run left `running` by
 # a runner that died is not just holding a slot -- it shows on the board as work
