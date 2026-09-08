@@ -1011,8 +1011,13 @@ to the queue — never fails it — when a provider is exhausted.
       every fourth poll. H38-23 `Invoke-AgentRunRefresh` in
       [`backend/modules/agent-runs/AgentRuns.ps1`](backend/modules/agent-runs/AgentRuns.ps1)
       records `prHeadSha` and `verifiedHeadSha` only when CI passed on that exact
-      head; a moved head clears it and emits `run.head-moved`. All three are
-      gated in [`scripts/Invoke-ModuleSmokeTest.ps1`](scripts/Invoke-ModuleSmokeTest.ps1))_
+      head; a moved head clears it and emits `run.head-moved`. H38-24
+      `POST /api/agent-runs/{id}/approve` stores `operatorApproval` bound to
+      `verifiedHeadSha`, and `Get-MergeReadinessEvaluation` in
+      [`backend/modules/agent-runs/MergeReadiness.ps1`](backend/modules/agent-runs/MergeReadiness.ps1)
+      refuses `no-verified-head`, `no-operator-approval` and
+      `head-moved-since-approval`. All four are gated in
+      [`scripts/Invoke-ModuleSmokeTest.ps1`](scripts/Invoke-ModuleSmokeTest.ps1))_
 - [ ] **Remediate from evidence, and hand off between providers.** Attempt and
       remediation counts survive a restart; a CI failure builds a
       `RemediationPacket`, resumes the original session where capacity allows,

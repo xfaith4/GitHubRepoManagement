@@ -4202,6 +4202,68 @@ A release should not be marked `done` unless:
         Remove-Item -LiteralPath $reconcileFixture -Recurse -Force -ErrorAction SilentlyContinue
     }
 
+    # ── Release 3.8 M4 (H38-24) — approval binds to a commit ────────────────
+    # Driven for real: the point is that the route REFUSES a sha that is not the
+    # verified head, and only a real request proves the refusal is a JSON 409
+    # rather than the SPA fallback quietly answering 200.
+    Write-Host '[STEP] Approve binds to a SHA - a mismatched commit is refused (Release 3.8 M4)' -ForegroundColor Cyan
+    $approveBindOk = $false
+    $approveBindRunId = $null
+    try {
+        if (-not (Get-Command New-AgentRunRecord -ErrorAction SilentlyContinue)) {
+            . (Join-Path $WorkspaceRoot 'backend\modules\agent-runs\AgentRuns.ps1')
+        }
+        $approveBindRun = New-AgentRunRecord -WorkspaceRoot $WorkspaceRoot -RepoName 'smoke-approve-bind' `
+            -GitHubRepo 'smoke-owner/smoke-approve-bind' -SelectedTaskText 'Smoke-test approval binding to a verified head'
+        $approveBindRunId = [string]$approveBindRun.runId
+        $null = Update-AgentRunRecord -WorkspaceRoot $WorkspaceRoot -RunId $approveBindRunId -Actor 'smoke' `
+            -Summary 'Seed a verified head for the approval smoke.' `
+            -Patch @{ prHeadSha = 'aaa'; verifiedHeadSha = 'aaa'; readyForOperatorAt = (Get-Date).ToUniversalTime().ToString('o') }
+
+        # An unknown run is a 404, in JSON. A deleted route would answer 200 html.
+        $approveMissing = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/agent-runs/no-such-run-id/approve" -Body @{ sha = 'aaa' }
+        if (([string]$approveMissing.ContentType) -notlike 'application/json*') {
+            throw ("POST /api/agent-runs/{id}/approve did not answer JSON (HTTP {0}, {1})" -f $approveMissing.StatusCode, $approveMissing.ContentType)
+        }
+        if ([int]$approveMissing.StatusCode -ne 404) { throw ("An unknown runId must be 404, got {0}" -f $approveMissing.StatusCode) }
+
+        # The wrong commit. This is the whole packet: the operator is looking at
+        # a screen that may be stale, and the server holds the truth.
+        $approveWrong = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/agent-runs/$approveBindRunId/approve" -Body @{ sha = 'bbb' }
+        if ([int]$approveWrong.StatusCode -ne 409) { throw ("Approving a commit that is not the verified head must be 409, got {0}" -f $approveWrong.StatusCode) }
+        if ([string]$approveWrong.Json.category -ne 'not-ready') { throw ("Expected category 'not-ready', got '{0}'" -f $approveWrong.Json.category) }
+        if ([string]$approveWrong.Json.error -notmatch 'aaa') { throw 'The refusal must name the head that IS verified, or the operator cannot act on it' }
+
+        # A sha-less body is refused too: an approval that names no commit is
+        # exactly the thing this route replaces.
+        $approveNoSha = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/agent-runs/$approveBindRunId/approve" -Body @{}
+        if ([int]$approveNoSha.StatusCode -ne 400) { throw ("An approval naming no commit must be 400, got {0}" -f $approveNoSha.StatusCode) }
+
+        # The right commit.
+        $approveRight = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/agent-runs/$approveBindRunId/approve" -Body @{ sha = 'aaa' }
+        if ([int]$approveRight.StatusCode -ne 200) { throw ("Approving the verified head must be 200, got {0}: {1}" -f $approveRight.StatusCode, $approveRight.Content) }
+        if ([string]$approveRight.Json.data.operatorApproval.sha -ne 'aaa') {
+            throw ("The record must carry operatorApproval.sha, got '{0}'" -f $approveRight.Json.data.operatorApproval.sha)
+        }
+        if ([string]$approveRight.Json.data.operatorApproval.actor -ne 'operator') { throw 'The approval must record who made it' }
+        if ([string]::IsNullOrWhiteSpace([string]$approveRight.Json.data.operatorApproval.at)) { throw 'The approval must record when it was made' }
+
+        # The approval is an EVENT as well as a field: a ledger that only held
+        # the latest value could not answer "when was this approved, and was it
+        # approved before or after the head moved?".
+        $approveEvents = @((Get-AgentRunDetail -WorkspaceRoot $WorkspaceRoot -RunId $approveBindRunId).events |
+            Where-Object { [string]$_.eventType -eq 'run.operator-approved' })
+        if ($approveEvents.Count -ne 1) { throw ("Expected exactly one run.operator-approved event, got {0}" -f $approveEvents.Count) }
+
+        $approveBindOk = $true
+        Write-Host '  approve binding ok: unknown run 404, wrong sha 409 not-ready naming the verified head, no sha 400, right sha 200 + one run.operator-approved event' -ForegroundColor DarkGray
+    }
+    finally {
+        if (-not [string]::IsNullOrWhiteSpace($approveBindRunId)) {
+            Remove-Item -LiteralPath (Join-Path $WorkspaceRoot ("output\agent-runs\runs\{0}.json" -f $approveBindRunId)) -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     Write-Host '[STEP] Route census — critical API routes must return JSON (not the SPA fallback)' -ForegroundColor Cyan
     $censusRoutes = @(
         '/health/live', '/health/ready', '/health/dependencies', '/metrics',
@@ -4326,6 +4388,7 @@ A release should not be marked `done` unless:
         automationStatusOk = { $automationStatusOk }
         packagingOk = { $packagingOk }
         runnerRouteOk = { $runnerRouteOk }
+        approveBindOk = { $approveBindOk }
         deliveryReconcileOk = { $reconcileOk }
         githubAuthProbeOk = { $githubAuthProbeOk }
         githubTokenSource = { $ghAuthData.tokenSource }

@@ -5554,8 +5554,14 @@ try {
         actions = [pscustomobject]@{ status = 'completed'; conclusion = 'success'; workflowName = 'CI' }
     }
     $mrPrDetail = [pscustomobject]@{ draft = $false; state = 'open'; merged_at = $null; mergeable = $true; mergeable_state = 'clean' }
-    $mrReady = Get-MergeReadinessEvaluation -RepoId 'repo:mr-smoke' -RepoName 'mr-smoke' -AgentRun $mrReadyRun -PrDetail $mrPrDetail
-    if (-not $mrReady.ready) { throw "Fully-validated run should be ready; blockers: $((@($mrReady.blockers | ForEach-Object { $_.code })) -join ', ')" }
+    # Release 3.8 M4 (H38-24): "fully validated" now includes a verified head and
+    # an operator approval bound to that exact head. The run carries the head
+    # H38-23 recorded; the approval names the same commit.
+    $mrReadyRun | Add-Member -NotePropertyName 'verifiedHeadSha' -NotePropertyValue 'aaa' -Force
+    $mrReadyRun | Add-Member -NotePropertyName 'operatorApproval' -NotePropertyValue ([pscustomobject]@{ sha = 'aaa'; at = '2026-09-08T00:00:00Z'; actor = 'operator' }) -Force
+    $mrReady = Get-MergeReadinessEvaluation -RepoId 'repo:mr-smoke' -RepoName 'mr-smoke' -AgentRun $mrReadyRun -PrDetail $mrPrDetail `
+        -OperatorApproval $mrReadyRun.operatorApproval -CurrentHeadSha 'aaa'
+    if (-not $mrReady.ready) { throw "Fully-validated, approved run should be ready; blockers: $((@($mrReady.blockers | ForEach-Object { $_.code })) -join ', ')" }
 
     # Failing fresh Actions state must override the stale ledger view.
     $mrFreshFail = Get-MergeReadinessEvaluation -RepoId 'repo:mr-smoke' -RepoName 'mr-smoke' -AgentRun $mrReadyRun -PrDetail $mrPrDetail `
@@ -5570,6 +5576,67 @@ try {
     $mrMerged = Get-MergeReadinessEvaluation -RepoId 'repo:mr-smoke' -RepoName 'mr-smoke' -AgentRun $mrReadyRun `
         -PrDetail ([pscustomobject]@{ draft = $false; state = 'closed'; merged_at = '2026-06-11T12:00:00Z'; mergeable = $null; mergeable_state = 'unknown' })
     if ('pr-already-merged' -notin @($mrMerged.blockers | ForEach-Object { [string]$_.code })) { throw 'Missing pr-already-merged blocker' }
+
+    # ── Release 3.8 M4 (H38-24) — approval names a commit ────────────────────
+    # Merge is an explicit operator action against a SPECIFIC head. Three ways
+    # that can be untrue, each refused by its own name so the board can say
+    # which one it is rather than a bare "not ready".
+    $mrApprovalCodes = @('no-verified-head', 'no-operator-approval', 'head-moved-since-approval')
+
+    # Approved, but the head moved underneath the approval. This is the case the
+    # packet exists for: the approval is real, and it is no longer about this
+    # commit.
+    $mrDrifted = Get-MergeReadinessEvaluation -RepoId 'repo:mr-smoke' -RepoName 'mr-smoke' -AgentRun $mrReadyRun -PrDetail $mrPrDetail `
+        -OperatorApproval ([pscustomobject]@{ sha = 'aaa'; at = '2026-09-08T00:00:00Z'; actor = 'operator' }) -CurrentHeadSha 'bbb'
+    if ($mrDrifted.ready) { throw 'A head that moved since approval must not be ready' }
+    $mrDriftedCodes = @($mrDrifted.blockers | ForEach-Object { [string]$_.code })
+    if ('head-moved-since-approval' -notin $mrDriftedCodes) { throw "Missing head-moved-since-approval (got: $($mrDriftedCodes -join ', '))" }
+    if ('no-operator-approval' -in $mrDriftedCodes) { throw 'A drifted head is not the same fault as a missing approval; only one may be named' }
+
+    # Verified, never approved.
+    $mrUnapproved = Get-MergeReadinessEvaluation -RepoId 'repo:mr-smoke' -RepoName 'mr-smoke' -AgentRun $mrReadyRun -PrDetail $mrPrDetail `
+        -CurrentHeadSha 'aaa'
+    if ($mrUnapproved.ready) { throw 'An unapproved run must not be ready' }
+    $mrUnapprovedCodes = @($mrUnapproved.blockers | ForEach-Object { [string]$_.code })
+    if ('no-operator-approval' -notin $mrUnapprovedCodes) { throw "Missing no-operator-approval (got: $($mrUnapprovedCodes -join ', '))" }
+    if ('head-moved-since-approval' -in $mrUnapprovedCodes) { throw 'With no approval there is nothing for the head to have moved away from' }
+
+    # Never verified. A run CI never passed on cannot be approved into a merge
+    # no matter who clicks what.
+    $mrUnverifiedRun = [pscustomobject]@{
+        runId = 'mr-r3'; prUrl = 'https://github.com/o/r/pull/9'; prNumber = 9; prState = 'open'; prDraft = $false
+        actions = [pscustomobject]@{ status = 'completed'; conclusion = 'success'; workflowName = 'CI' }
+    }
+    $mrUnverified = Get-MergeReadinessEvaluation -RepoId 'repo:mr-smoke' -RepoName 'mr-smoke' -AgentRun $mrUnverifiedRun -PrDetail $mrPrDetail `
+        -CurrentHeadSha 'aaa'
+    if ($mrUnverified.ready) { throw 'A run with no verified head must not be ready' }
+    if ('no-verified-head' -notin @($mrUnverified.blockers | ForEach-Object { [string]$_.code })) { throw 'Missing no-verified-head blocker' }
+
+    # Golden: strip the three new codes from a pre-change fixture and what is
+    # left must be exactly the pre-change blocker list, in the pre-change order.
+    # Every existing refusal keeps its code, its message and its position.
+    $mrGolden = Get-MergeReadinessEvaluation -RepoId 'repo:mr-smoke' -RepoName 'mr-smoke' `
+        -AgentRun $mrDraftRun -LocalDirtyCount 2 -AuditBlockers @('Roadmap maturity below L3')
+    $mrGoldenCodes = @($mrGolden.blockers | ForEach-Object { [string]$_.code } | Where-Object { $_ -notin $mrApprovalCodes })
+    $mrGoldenExpected = @('pr-draft', 'actions-pending', 'dirty-worktree', 'audit-blocker')
+    if (($mrGoldenCodes -join '|') -ne ($mrGoldenExpected -join '|')) {
+        throw ("The pre-existing blocker list changed: expected '{0}', got '{1}'" -f ($mrGoldenExpected -join ', '), ($mrGoldenCodes -join ', '))
+    }
+    $mrGoldenDraft = @($mrGolden.blockers | Where-Object { $_.code -eq 'pr-draft' })[0]
+    if ($mrGoldenDraft.message -notmatch 'still a draft' -or $mrGoldenDraft.source -ne 'github') {
+        throw 'The pr-draft blocker changed its message or source'
+    }
+    # The new codes sit after actions-* and before dirty-worktree, so a reader
+    # walking the list meets validation faults before local ones.
+    $mrGoldenAll = @($mrGolden.blockers | ForEach-Object { [string]$_.code })
+    $mrDirtyIndex = [array]::IndexOf($mrGoldenAll, 'dirty-worktree')
+    foreach ($mrNewCode in @($mrGoldenAll | Where-Object { $_ -in $mrApprovalCodes })) {
+        if ([array]::IndexOf($mrGoldenAll, $mrNewCode) -gt $mrDirtyIndex) {
+            throw ("Blocker '{0}' must be ordered before dirty-worktree" -f $mrNewCode)
+        }
+    }
+
+    Write-Host ("  merge approval ok: drift, missing approval and missing verification each refuse by name; pre-existing blockers unchanged ({0})" -f ($mrGoldenExpected -join ', ')) -ForegroundColor DarkGray
 
     $null = Save-MergeReadinessSnapshot -WorkspaceRoot $mrWorkspace -Evaluation $mrReady
     $mrLoaded = Get-MergeReadinessSnapshot -WorkspaceRoot $mrWorkspace -RepoId 'repo:mr-smoke'

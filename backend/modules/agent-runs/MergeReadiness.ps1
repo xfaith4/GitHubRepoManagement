@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Merge-readiness evaluator for Release 2.0 (Agent Run Monitoring and
     Actions-Gated Merge Readiness), Phase 3.
@@ -79,7 +79,14 @@ function Get-MergeReadinessEvaluation {
         # overrides the possibly-stale state on the ledger record.
         [Parameter()][object]$ActionsState = $null,
         [Parameter()][int]$LocalDirtyCount = 0,
-        [Parameter()][string[]]$AuditBlockers = @()
+        [Parameter()][string[]]$AuditBlockers = @(),
+        # Release 3.8 M4 (H38-24). The operator's approval, and the head the
+        # pull request carries RIGHT NOW. Approval is about a commit, not about
+        # a pull request number: a PR keeps its number across a force-push, so
+        # an approval that named only the PR would survive the rewrite that
+        # made it untrue.
+        [Parameter()][object]$OperatorApproval = $null,
+        [Parameter()][string]$CurrentHeadSha = ''
     )
 
     $blockers = New-Object System.Collections.Generic.List[object]
@@ -140,6 +147,23 @@ function Get-MergeReadinessEvaluation {
         } elseif ($actionsConclusion -ne 'success') {
             & $addBlocker 'actions-failing' "The latest Actions conclusion is '$actionsConclusion'; merge requires a successful validation run." 'github'
         }
+
+        # Release 3.8 M4 (H38-24) - the promotion invariant, as refusals.
+        # Ordered after the validation checks and before the local ones so a
+        # reader walking the list meets "is this work good?" before "is this
+        # machine tidy?". Exactly one of these three can be true at a time:
+        # nothing was verified, nothing was approved, or the approval has been
+        # outrun -- and each says which, because "not ready" alone tells an
+        # operator nothing about what to do next.
+        $verifiedHeadSha = [string](_MergeReadinessField -Obj $AgentRun -Name 'verifiedHeadSha' -Default '')
+        $approvalSha = [string](_MergeReadinessField -Obj $OperatorApproval -Name 'sha' -Default '')
+        if ([string]::IsNullOrWhiteSpace($verifiedHeadSha)) {
+            & $addBlocker 'no-verified-head' 'No commit on this pull request has been verified by CI yet, so there is nothing an approval could name.' 'agent-run-ledger'
+        } elseif ($null -eq $OperatorApproval -or [string]::IsNullOrWhiteSpace($approvalSha)) {
+            & $addBlocker 'no-operator-approval' "Commit $verifiedHeadSha is verified but has not been approved. Merge is an explicit operator action." 'agent-run-ledger'
+        } elseif (-not [string]::IsNullOrWhiteSpace($CurrentHeadSha) -and $approvalSha -ne $CurrentHeadSha) {
+            & $addBlocker 'head-moved-since-approval' "The approval names commit $approvalSha but the pull request now heads at $CurrentHeadSha; approve the commit you are actually merging." 'github'
+        }
     }
 
     if ($LocalDirtyCount -gt 0) {
@@ -149,6 +173,17 @@ function Get-MergeReadinessEvaluation {
     foreach ($reason in @($AuditBlockers | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
         & $addBlocker 'audit-blocker' $reason 'assessment'
     }
+
+    # What the verdict was reached ON, so a refusal can be read without
+    # re-deriving it from the blocker text.
+    $evidenceVerifiedHead = $null
+    $runVerifiedHead = [string](_MergeReadinessField -Obj $AgentRun -Name 'verifiedHeadSha' -Default '')
+    if (-not [string]::IsNullOrWhiteSpace($runVerifiedHead)) { $evidenceVerifiedHead = $runVerifiedHead }
+    $evidenceApprovedSha = $null
+    $runApprovedSha = [string](_MergeReadinessField -Obj $OperatorApproval -Name 'sha' -Default '')
+    if (-not [string]::IsNullOrWhiteSpace($runApprovedSha)) { $evidenceApprovedSha = $runApprovedSha }
+    $evidenceCurrentHead = $null
+    if (-not [string]::IsNullOrWhiteSpace($CurrentHeadSha)) { $evidenceCurrentHead = $CurrentHeadSha }
 
     return [pscustomobject]@{
         repoId      = $RepoId
@@ -166,6 +201,9 @@ function Get-MergeReadinessEvaluation {
             actionsStatus      = [string](_MergeReadinessField -Obj $actions -Name 'status' -Default '')
             actionsConclusion  = [string](_MergeReadinessField -Obj $actions -Name 'conclusion' -Default '')
             actionsWorkflowName = [string](_MergeReadinessField -Obj $actions -Name 'workflowName' -Default '')
+            verifiedHeadSha    = $evidenceVerifiedHead
+            approvedSha        = $evidenceApprovedSha
+            currentHeadSha     = $evidenceCurrentHead
             localDirtyCount    = $LocalDirtyCount
             auditBlockerCount  = @($AuditBlockers | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
         }
