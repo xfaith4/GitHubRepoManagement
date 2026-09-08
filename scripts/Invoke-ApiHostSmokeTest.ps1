@@ -4088,6 +4088,120 @@ A release should not be marked `done` unless:
             $runnerResp.Json.data.state, $runnerResp.Json.data.present, $runnerResp.Json.data.queuedTotal, `
             $runnerResp.Json.data.strandedCount, $inProcessResp.Json.category) -ForegroundColor DarkGray
 
+    # ── Release 3.8 M4 (H38-22) — POST /api/delivery/reconcile ──────────────
+    # Driven for real rather than asserted over source: the point of the route
+    # is that a pushed branch produces a NAMED refusal recorded on the run, and
+    # only a real request through the real route proves the summary is actually
+    # rewritten.
+    #
+    # The fixture's origin is a LOCAL bare repo, so this cannot reach GitHub
+    # whatever the environment holds. That also makes the expected category
+    # deterministic instead of environment-dependent, which is the trap that
+    # makes a gate pass locally and fail on the runner:
+    #   no token  -> 'auth'       (Test-RepoBranchPrReadiness checks the token
+    #                              before it checks the remote's slug)
+    #   a token   -> 'validation' (a local path is not a GitHub URL)
+    # The host has already reported which of those it is, at
+    # /api/auth/github/status above. The branch is pushed to the bare remote
+    # first because BranchExists is checked before either -- a missing branch
+    # would refuse as 'validation' and pass the assertion for the wrong reason.
+    Write-Host '[STEP] Delivery reconcile - a pushed branch refuses by name and is not retried (Release 3.8 M4)' -ForegroundColor Cyan
+    $reconcileOk = $false
+    $reconcileRunId = ("smoke-reconcile-{0}" -f ([guid]::NewGuid().ToString('n').Substring(0, 8)))
+    $reconcileFixture = Join-Path $WorkspaceRoot 'output\smoke\api-host\reconcile'
+    $reconcileSummaryPath = Join-Path $WorkspaceRoot ("output\roadmap-task-history\runs\{0}.summary.json" -f $reconcileRunId)
+    try {
+        if (Test-Path -LiteralPath $reconcileFixture) { Remove-Item -LiteralPath $reconcileFixture -Recurse -Force }
+        $null = New-Item -ItemType Directory -Path $reconcileFixture -Force
+        $reconcileGitCfg = @('-c', 'user.email=smoke@local', '-c', 'user.name=smoke', '-c', 'commit.gpgsign=false')
+        $reconcileBare = Join-Path $reconcileFixture 'origin.git'
+        $reconcileClone = Join-Path $reconcileFixture 'clone'
+        & git init --bare -b main $reconcileBare --quiet 2>&1 | Out-Null
+        & git clone $reconcileBare $reconcileClone --quiet 2>&1 | Out-Null
+        Set-Content -LiteralPath (Join-Path $reconcileClone 'a.txt') -Value 'base' -Encoding UTF8
+        & git -C $reconcileClone add -A 2>&1 | Out-Null
+        & git -C $reconcileClone @reconcileGitCfg commit -m 'base' --quiet 2>&1 | Out-Null
+        & git -C $reconcileClone push -u origin main --quiet 2>&1 | Out-Null
+        & git -C $reconcileClone switch -c 'roadmap/reconcile-smoke' --quiet 2>&1 | Out-Null
+        Set-Content -LiteralPath (Join-Path $reconcileClone 'b.txt') -Value 'work' -Encoding UTF8
+        & git -C $reconcileClone add -A 2>&1 | Out-Null
+        & git -C $reconcileClone @reconcileGitCfg commit -m 'work' --quiet 2>&1 | Out-Null
+        & git -C $reconcileClone push -u origin 'roadmap/reconcile-smoke' --quiet 2>&1 | Out-Null
+
+        # The state H38-21's runner leaves behind. `pending-open` is a Release
+        # 3.8 field, so no pre-existing summary on any machine can match this
+        # filter -- the sweep cannot reach an operator's real run history.
+        @{
+            runId         = $reconcileRunId
+            status        = 'pushed'
+            prState       = 'pending-open'
+            branch        = 'roadmap/reconcile-smoke'
+            localRepoPath = $reconcileClone
+            selectedTask  = 'Smoke-test the delivery reconcile tick'
+            pushedBy      = 'runner'
+            pushedAt      = (Get-Date).ToUniversalTime().ToString('o')
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $reconcileSummaryPath -Encoding UTF8
+
+        $reconcileResp = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/delivery/reconcile" -Body @{}
+        $reconcileCt = [string]$reconcileResp.ContentType
+        if ($reconcileCt -notlike 'application/json*') {
+            throw ("POST /api/delivery/reconcile did not answer JSON (HTTP {0}, {1}) - a deleted route is shadowed by the SPA fallback" -f $reconcileResp.StatusCode, $reconcileCt)
+        }
+        if (-not $reconcileResp.Json.success) { throw 'POST /api/delivery/reconcile reported success=false' }
+        $reconcileData = $reconcileResp.Json.data
+        foreach ($reconcileField in @('prsOpened', 'refreshed', 'failed', 'skipped')) {
+            if ($reconcileData.PSObject.Properties.Name -notcontains $reconcileField) {
+                throw ("reconcile summary is missing '{0}'" -f $reconcileField)
+            }
+        }
+        if ([int]$reconcileData.failed -lt 1) {
+            throw ("A pushed run that cannot open a PR must be counted as failed, got failed={0}" -f $reconcileData.failed)
+        }
+        if ([int]$reconcileData.prsOpened -ne 0) {
+            throw ("Nothing openable exists in this fixture; prsOpened must be 0, got {0}" -f $reconcileData.prsOpened)
+        }
+
+        $reconcileExpectedCategory = if ([string]$ghAuthData.tokenSource -eq 'none') { 'auth' } else { 'validation' }
+        $reconcileAfter = Get-Content -LiteralPath $reconcileSummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ([string]$reconcileAfter.prState -ne 'open-refused') {
+            throw ("The run summary must record prState='open-refused', got '{0}'" -f $reconcileAfter.prState)
+        }
+        if ([string]$reconcileAfter.prRefusal.category -ne $reconcileExpectedCategory) {
+            throw ("With tokenSource='{0}' the refusal must be category '{1}', got '{2}': {3}" -f `
+                    $ghAuthData.tokenSource, $reconcileExpectedCategory, $reconcileAfter.prRefusal.category, $reconcileAfter.prRefusal.reason)
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$reconcileAfter.prRefusal.reason)) {
+            throw 'A refusal must carry a reason an operator can act on, not just a category'
+        }
+        # Pushed work is never lost to a refusal: the branch and the push
+        # evidence survive, which is what keeps Approve & push viable.
+        if ([string]$reconcileAfter.status -ne 'pushed' -or [string]$reconcileAfter.branch -ne 'roadmap/reconcile-smoke') {
+            throw 'A PR refusal must not disturb the pushed status or the branch'
+        }
+        if ([string]$reconcileAfter.pushedBy -ne 'runner') {
+            throw 'A PR refusal must not erase who pushed the branch'
+        }
+
+        # Not a retry loop. Asserted on the RUN, not on the tick's counters:
+        # Invoke-AgentRunAutoClose contributes to `failed` too, so a count is
+        # not evidence about this run. An untouched summary is.
+        $reconcileFirstBytes = Get-Content -LiteralPath $reconcileSummaryPath -Raw -Encoding UTF8
+        $reconcileSecond = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/delivery/reconcile" -Body @{}
+        if (-not $reconcileSecond.Json.success) { throw 'The second reconcile tick reported success=false' }
+        $reconcileSecondBytes = Get-Content -LiteralPath $reconcileSummaryPath -Raw -Encoding UTF8
+        if ($reconcileSecondBytes -ne $reconcileFirstBytes) {
+            throw 'A refused run was rewritten by the next tick; one missing token would become an unbounded stream of identical failures'
+        }
+
+        $reconcileOk = $true
+        Write-Host ("  delivery reconcile ok: failed={0} prsOpened=0 prState=open-refused category={1} (tokenSource={2}); a second tick left the run untouched" -f `
+                $reconcileData.failed, $reconcileExpectedCategory, $ghAuthData.tokenSource) -ForegroundColor DarkGray
+    }
+    finally {
+        Remove-Item -LiteralPath $reconcileSummaryPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $reconcileFixture -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
     Write-Host '[STEP] Route census — critical API routes must return JSON (not the SPA fallback)' -ForegroundColor Cyan
     $censusRoutes = @(
         '/health/live', '/health/ready', '/health/dependencies', '/metrics',
@@ -4212,6 +4326,7 @@ A release should not be marked `done` unless:
         automationStatusOk = { $automationStatusOk }
         packagingOk = { $packagingOk }
         runnerRouteOk = { $runnerRouteOk }
+        deliveryReconcileOk = { $reconcileOk }
         githubAuthProbeOk = { $githubAuthProbeOk }
         githubTokenSource = { $ghAuthData.tokenSource }
         workspaceValidationOk = { $script:WorkspaceValidationOk }

@@ -1002,7 +1002,9 @@ to the queue — never fails it — when a provider is exhausted.
       _(state: scaffolded 2026-09-08 — H38-21 the runner pushes after a
       complete, verified result (autoPush per provider, default on for local
       providers); awaiting-review survives at off or on push failure, and the
-      default branch is refused before git is asked)_
+      default branch is refused before git is asked; H38-22 POST
+      /api/delivery/reconcile opens pending PRs with the host's token and
+      refreshes CI; the runner calls it every fourth poll)_
 - [ ] **Remediate from evidence, and hand off between providers.** Attempt and
       remediation counts survive a restart; a CI failure builds a
       `RemediationPacket`, resumes the original session where capacity allows,
@@ -2356,7 +2358,9 @@ not observed agent activity.
       distinguish "the agent stopped" from "nobody looked". Release 3.8's
       fourth milestone owns the cadence — Repo Manager monitors CI without
       holding an execution slot — so close this item there rather than building
-      a second poller. _(state: planned)_
+      a second poller. _(state: smoke-tested 2026-09-08 — closed by Release 3.8
+      H38-22: the runner's poll loop calls POST /api/delivery/reconcile every
+      fourth poll, which runs Invoke-AgentRunAutoClose)_
 - [ ] **Restrict dispatch authority to the Dispatch Board.** _(state: planned)_
       Decided 2026-09-06 (D-008), and it **reverses the default shipped the
       same day** under D-010. `CopilotTaskPreviewModal` opens from the Dispatch

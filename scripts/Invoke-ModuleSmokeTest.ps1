@@ -7111,6 +7111,81 @@ Write-Step 'Runner push — smoke: autoPush transitions and a real push to a bar
     }
 }
 
+# ── Release 3.8 M4 (H38-22) — the reconcile tick ─────────────────────────────
+# The host half is asserted over SOURCE, because Invoke-DeliveryReconciliation
+# lives in the api-host script and cannot be dot-sourced without booting a
+# listener; the api-host smoke drives it for real. The runner half is pure and
+# is asserted directly.
+Write-Step 'Delivery reconcile — smoke: the host function exists and the runner builds a TLS request (Release 3.8 M4)'
+& {
+    $root = $WorkspaceRoot
+    $reconcileHostSource = Get-Content -LiteralPath (Join-Path $root 'backend\api-host\Start-RepoManagementApiHost.ps1') -Raw -Encoding UTF8
+
+    if ($reconcileHostSource -notmatch 'function Invoke-DeliveryReconciliation \{') {
+        throw 'Invoke-DeliveryReconciliation is missing from the api-host; nothing turns a pushed branch into a pull request'
+    }
+    # The reconcile tick has to do BOTH halves. A version that opened PRs and
+    # never refreshed CI would leave the board exactly as stale as Lane 0.17
+    # reported, which is the non-blocker this packet closes.
+    $reconcileBody = [regex]::Match($reconcileHostSource, '(?s)function Invoke-DeliveryReconciliation \{.*?\n\}\r?\n')
+    if (-not $reconcileBody.Success) { throw 'Could not isolate the Invoke-DeliveryReconciliation body' }
+    if ($reconcileBody.Value -notmatch 'Invoke-AgentRunAutoClose') {
+        throw 'Invoke-DeliveryReconciliation must call Invoke-AgentRunAutoClose; without it the board still has nothing refreshing it on a cadence'
+    }
+    if ($reconcileHostSource -notmatch "'POST /api/delivery/reconcile'") {
+        throw 'The POST /api/delivery/reconcile route is missing; the runner has nothing to call'
+    }
+
+    . (Join-Path $root 'scripts\Invoke-RoadmapTaskRunner.ps1') -LoadFunctionsOnly
+
+    # Every fourth poll, and never on iteration 0 -- a tick at startup would
+    # fire before the first claim has produced anything to reconcile.
+    foreach ($due in @(4, 8, 12, 400)) {
+        if (-not (Test-RunnerReconcileDue -Iteration $due -Every 4)) { throw "Iteration $due must be a reconcile tick" }
+    }
+    foreach ($notDue in @(0, 1, 2, 3, 5, 7)) {
+        if (Test-RunnerReconcileDue -Iteration $notDue -Every 4) { throw "Iteration $notDue must NOT be a reconcile tick" }
+    }
+
+    # TLS + api key. The portal has been TLS-only since 2026-08-29; a request
+    # built without SkipCertificateCheck reaches a self-signed certificate and
+    # fails in a way that reads as a host outage.
+    $reqTls = New-RunnerReconcileRequest -BaseUrl 'https://127.0.0.1:7071/' -ApiKey 'k'
+    if ($reqTls.Uri -ne 'https://127.0.0.1:7071/api/delivery/reconcile') { throw "Trailing slash not normalised: '$($reqTls.Uri)'" }
+    if ($reqTls.Method -ne 'Post') { throw 'The reconcile request must be a POST' }
+    if ($reqTls.ContentType -ne 'application/json') { throw 'The reconcile request must declare application/json' }
+    if ($reqTls.Body -ne '{}') { throw 'The reconcile request takes an empty JSON body' }
+    if ([int]$reqTls.TimeoutSec -ne 20) { throw 'The reconcile request must be bounded by a timeout' }
+    if (-not $reqTls.ContainsKey('SkipCertificateCheck') -or -not $reqTls.SkipCertificateCheck) {
+        throw 'An https base URL must set SkipCertificateCheck; the portal serves a self-signed certificate'
+    }
+    if (-not $reqTls.ContainsKey('Headers') -or $reqTls.Headers['X-Api-Key'] -ne 'k') {
+        throw 'A non-blank api key must travel as X-Api-Key'
+    }
+
+    # Plain http and no key: BOTH optional keys must be absent, not present and
+    # empty. Invoke-RestMethod treats a $null Headers value differently from an
+    # omitted one, and SkipCertificateCheck on a plain-http call is noise that
+    # hides which transport is actually in use.
+    $reqPlain = New-RunnerReconcileRequest -BaseUrl 'http://127.0.0.1:7171' -ApiKey ''
+    if ($reqPlain.Uri -ne 'http://127.0.0.1:7171/api/delivery/reconcile') { throw "Wrong plain-http uri: '$($reqPlain.Uri)'" }
+    if ($reqPlain.ContainsKey('SkipCertificateCheck')) { throw 'A plain-http base URL must not carry SkipCertificateCheck' }
+    if ($reqPlain.ContainsKey('Headers')) { throw 'A blank api key must omit Headers entirely, not send an empty one' }
+
+    # The TLS flip's fallout, as a tripwire. A reintroduced plain-http default
+    # against the portal's own port does not fail loudly -- it silently never
+    # answers, and the reconcile tick goes quiet without anyone noticing.
+    $reconcileRunnerSource = Get-Content -LiteralPath (Join-Path $root 'scripts\Invoke-RoadmapTaskRunner.ps1') -Raw -Encoding UTF8
+    if ($reconcileRunnerSource -match 'http://127\.0\.0\.1:7071') {
+        throw 'The runner must never address the portal over plain http on 7071; it has been TLS-only since 2026-08-29 and plain http does not answer'
+    }
+    if ($reconcileRunnerSource -match 'https?://localhost:') {
+        throw 'Use 127.0.0.1, never localhost: name resolution costs ~2s per request on this machine'
+    }
+
+    Write-Host '  delivery reconcile ok: host function calls autoclose, route present, tick every 4th poll, https+key request shape, no plain-http portal literal' -ForegroundColor DarkGray
+}
+
 # ── Release 3.0 — operator-runner presence and the in-host dispatch refusal ──
 Write-Step 'Runner presence — smoke: queueing into an empty room is visible (Release 3.0)'
 & {

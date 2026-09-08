@@ -163,6 +163,12 @@ $script:SyncMain = [bool]$SyncMain
 # Invoke-QueuedTask. Declared here so -LoadFunctionsOnly leaves it defined
 # rather than tripping StrictMode on the first read.
 $script:RunnerProviderConfig = $null
+# H38-22: where the reconcile tick posts. 127.0.0.1 and https are not
+# stylistic -- localhost costs ~2s of name resolution per request on this
+# machine, and the portal has answered https only since 2026-08-29, so a
+# plain-http default would simply go quiet rather than fail.
+$script:PortalBaseUrl = [Environment]::GetEnvironmentVariable('REPO_MGMT_PORTAL_BASE_URL')
+if ([string]::IsNullOrWhiteSpace($script:PortalBaseUrl)) { $script:PortalBaseUrl = 'https://127.0.0.1:7071' }
 
 # Release 3.1 — the base-freshness probe lives in the git module so the submit-PR
 # path and this runner share one definition of "stale" rather than each growing
@@ -622,6 +628,78 @@ function Invoke-RunnerBranchPush {
 
     $result.pushError = $pushOutput.Trim()
     return [pscustomobject]$result
+}
+
+function Test-RunnerReconcileDue {
+    <#
+    .SYNOPSIS
+        Pure - is this poll iteration a reconcile tick?
+
+    .DESCRIPTION
+        Release 3.8 M4 (H38-22). Every fourth poll, and never iteration 0: a
+        tick at startup would fire before the first claim has produced anything
+        to reconcile, and would make a cold runner's first act a network call
+        to a host that may not be up yet.
+    .OUTPUTS
+        [bool]
+    #>
+    param(
+        [Parameter()][int]$Iteration = 0,
+        [Parameter()][int]$Every = 4
+    )
+
+    if ($Every -le 0) { return $false }
+    if ($Iteration -le 0) { return $false }
+    return (($Iteration % $Every) -eq 0)
+}
+
+function New-RunnerReconcileRequest {
+    <#
+    .SYNOPSIS
+        Pure - the Invoke-RestMethod splat for POST /api/delivery/reconcile.
+
+    .DESCRIPTION
+        Release 3.8 M4 (H38-22). Built as data so the request shape can be
+        asserted without a listener. Two details are load-bearing and neither
+        fails loudly when it is wrong:
+
+        TLS. The portal has served https only since 2026-08-29 (Lane 0.2) with
+        a self-signed certificate, so an https call without
+        SkipCertificateCheck fails in a way that reads as a host outage. This
+        script is #Requires -Version 7.0, so the parameter always exists and
+        there is no 5.1 callback fallback to carry.
+
+        The api key. Omitted ENTIRELY when blank rather than sent empty:
+        Invoke-RestMethod treats an omitted Headers differently from one
+        carrying a blank value, and an empty key reads as a rejected caller
+        rather than an unauthenticated one.
+
+        The caller re-reads the key every tick rather than caching it --
+        Enable-SharedLanAccess.ps1 sets it at Machine scope while a runner may
+        already be up.
+    .OUTPUTS
+        [hashtable] splat for Invoke-RestMethod
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Pure builder: it returns a hashtable and changes no state, so -WhatIf plumbing would describe an action it does not take. The state change is the caller Invoke-RestMethod.')]
+    param(
+        [Parameter()][string]$BaseUrl = 'https://127.0.0.1:7071',
+        [Parameter()][string]$ApiKey = ''
+    )
+
+    $trimmed = ([string]$BaseUrl).TrimEnd('/')
+    $request = @{
+        Method      = 'Post'
+        Uri         = ("{0}/api/delivery/reconcile" -f $trimmed)
+        ContentType = 'application/json'
+        Body        = '{}'
+        TimeoutSec  = 20
+    }
+
+    if ($request.Uri -match '^(?i)https:') { $request['SkipCertificateCheck'] = $true }
+    if (-not [string]::IsNullOrWhiteSpace($ApiKey)) { $request['Headers'] = @{ 'X-Api-Key' = $ApiKey } }
+
+    return $request
 }
 
 function Resolve-ClaimToken {
@@ -1546,6 +1624,7 @@ $heartbeatPath = Get-RunnerHeartbeatPath -WorkspaceRoot $WorkspaceRoot
 Write-Host ("Roadmap task runner — queue: {0}" -f $QueuePath) -ForegroundColor White
 Write-Host ("  mode: {0}{1}  permission: {2}" -f $runnerMode, $(if ($DryRun) { ' (dry-run)' } else { '' }), $PermissionMode) -ForegroundColor DarkGray
 Write-Host ("  heartbeat: {0}" -f $heartbeatPath) -ForegroundColor DarkGray
+Write-Host ("  portal: {0}  (reconcile tick every 4th poll)" -f $script:PortalBaseUrl) -ForegroundColor DarkGray
 # A marker left by a previous run would stop this one at its first poll.
 Clear-RunnerStopFile -StopFilePath $StopFilePath
 Write-Host ("  stop with: New-Item -ItemType File '{0}'  (honored at the next poll boundary)" -f $StopFilePath) -ForegroundColor DarkGray
@@ -1574,6 +1653,7 @@ if ((Get-Command -Name 'Repair-OrphanedRunSummary' -ErrorAction SilentlyContinue
     catch { Write-Host ("  [warn] orphan repair failed: {0}" -f $_.Exception.Message) -ForegroundColor DarkYellow }
 }
 
+$reconcileIteration = 0
 do {
     if (Test-RunnerStopRequested -StopFilePath $StopFilePath) {
         Write-Host ("Stop requested ({0}); exiting before claiming anything." -f $StopFilePath) -ForegroundColor Yellow
@@ -1660,6 +1740,40 @@ do {
         Clear-RunnerStopFile -StopFilePath $StopFilePath
         break
     }
+    # H38-22. Best-effort, every fourth poll: the host opens the pull requests
+    # this runner pushed and refreshes what CI has said since. Any failure is
+    # logged and ignored -- the host may legitimately be down, and a tick that
+    # could stop the loop would make the portal a dependency of the runner.
+    $reconcileIteration++
+    if (Test-RunnerReconcileDue -Iteration $reconcileIteration -Every 4) {
+        # Re-read every tick rather than cached: Enable-SharedLanAccess.ps1
+        # sets this at Machine scope while a runner may already be up.
+        $reconcileKey = [Environment]::GetEnvironmentVariable('REPO_MGMT_API_KEY')
+        $reconcileRequest = New-RunnerReconcileRequest -BaseUrl $script:PortalBaseUrl -ApiKey $reconcileKey
+        try {
+            $reconcileResult = Invoke-RestMethod @reconcileRequest
+            $reconcileData = if ($null -ne $reconcileResult -and $reconcileResult.PSObject.Properties.Name -contains 'data') { $reconcileResult.data } else { $null }
+            if ($null -ne $reconcileData -and ([int]$reconcileData.prsOpened -gt 0 -or [int]$reconcileData.refreshed -gt 0)) {
+                Write-Host ("  [reconcile] {0} PR(s) opened, {1} run(s) refreshed" -f $reconcileData.prsOpened, $reconcileData.refreshed) -ForegroundColor DarkGray
+            }
+        }
+        catch {
+            $reconcileStatus = $null
+            if ($null -ne $_.Exception.Response) { $reconcileStatus = [int]$_.Exception.Response.StatusCode }
+            if ($reconcileStatus -eq 401) {
+                # Not a host outage. Say so, or the operator restarts a healthy
+                # portal looking for a problem that is in this shell.
+                Write-Host '  [reconcile] reconcile refused: 401 - set REPO_MGMT_API_KEY in this shell' -ForegroundColor DarkYellow
+            }
+            elseif ($null -ne $reconcileStatus) {
+                Write-Host ("  [reconcile] skipped ({0}): {1}" -f $reconcileStatus, $_.Exception.Message) -ForegroundColor DarkYellow
+            }
+            else {
+                Write-Host ("  [reconcile] skipped: {0}" -f $_.Exception.Message) -ForegroundColor DarkYellow
+            }
+        }
+    }
+
     if ($Once) { break }
     Start-Sleep -Seconds $PollSeconds
 } while ($true)
