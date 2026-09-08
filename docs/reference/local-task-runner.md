@@ -189,6 +189,41 @@ A provider is selectable only where its CLI is installed, which is detected on
 each machine and shown in Settings — never configured in the repository,
 because a committed answer about one laptop is wrong for every other install.
 
+## From a pushed branch to a merge (Release 3.8 M4)
+
+Two credentials, two processes. The runner holds your git credential helper, so
+**the runner pushes**. The portal holds the GitHub token, so **the portal opens
+the pull request** — on its own cadence, not as part of your run.
+
+Every fourth poll the runner calls `POST /api/delivery/reconcile`. That tick
+opens a pull request for each branch it pushed, then refreshes what CI has said
+since. It is best-effort: a failure is logged and ignored, because the portal
+being down must not stop the runner working. A `401` says so by name rather
+than looking like an outage — set `REPO_MGMT_API_KEY` in the runner's shell.
+
+The tick posts to `https://127.0.0.1:7071` unless `REPO_MGMT_PORTAL_BASE_URL`
+says otherwise; the address in use is printed beside the heartbeat path at
+startup. It is `https` and `127.0.0.1` deliberately: the portal has served TLS
+only since 2026-08-29, and `localhost` costs about two seconds of name
+resolution per request on Windows.
+
+A PR that cannot be opened is **named, not retried**. The run records
+`prState = 'open-refused'` with the category and reason, and the tick will not
+look at it again — the branch is pushed and safe, and re-asking every fourth
+poll would turn one missing token into an endless stream of identical failures.
+Your **Approve & push** button still works on that run.
+
+### Merging still needs you, and needs a commit
+
+A pull request keeps its number across a force-push, so "PR #42 is green" can
+outlive the rewrite that made it false. Merge readiness therefore tracks a
+**commit**: CI passing on the head the PR actually carries records
+`verifiedHeadSha`, and merge refuses until you approve *that commit* by name.
+Three refusals say which is missing — `no-verified-head`,
+`no-operator-approval`, `head-moved-since-approval` — and the Merge Readiness
+panel shows the SHA it is asking you to approve. If the head moves after you
+approve, the approval is cleared and the merge control disables itself.
+
 ## Cloud (Copilot) dispatch runs here too — Release 3.0
 
 The guided-improvement wizard's final step used to call
