@@ -7186,6 +7186,150 @@ Write-Step 'Delivery reconcile — smoke: the host function exists and the runne
     Write-Host '  delivery reconcile ok: host function calls autoclose, route present, tick every 4th poll, https+key request shape, no plain-http portal literal' -ForegroundColor DarkGray
 }
 
+# ── Release 3.8 M4 (H38-23) — approval names a verified head, not a PR ───────
+# The promotion invariant is that approval applies to the COMMIT that CI
+# passed on, not to the pull request number. Everything below is one question:
+# can this record be read to mean "CI passed on this exact head"? A rollup
+# success with no head attached is evidence about something, not about a head.
+Write-Step 'Verified head SHA — smoke: CI success binds to a head, and a moved head clears it (Release 3.8 M4)'
+& {
+    $root = $WorkspaceRoot
+    $vhWorkspace = Join-Path $root 'output\smoke\module\verified-head'
+    if (Test-Path -LiteralPath $vhWorkspace) { Remove-Item -LiteralPath $vhWorkspace -Recurse -Force }
+    $null = New-Item -ItemType Directory -Path $vhWorkspace -Force
+    try {
+        $vhNow = (Get-Date).ToUniversalTime()
+        $vhRun = New-AgentRunRecord -WorkspaceRoot $vhWorkspace -RepoName 'smoke-verified-head' `
+            -GitHubRepo 'owner/smoke-verified-head' -SelectedTaskText 'Bind approval to a verified head'
+
+        $vhPr = [pscustomobject]@{
+            number     = 77
+            html_url   = 'https://github.com/owner/smoke-verified-head/pull/77'
+            state      = 'open'
+            draft      = $false
+            title      = 'Bind approval to a verified head'
+            body       = ''
+            created_at = $vhNow.AddMinutes(2).ToString('o')
+            updated_at = $vhNow.AddMinutes(3).ToString('o')
+            merged_at  = $null
+            closed_at  = $null
+            head       = [pscustomobject]@{ ref = 'copilot/verified-head'; sha = 'aaa' }
+        }
+
+        # CI passed on the head the PR actually carries -> verified.
+        $vhOk = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhRun.runId -PullRequests @($vhPr) `
+            -ActionsRun ([pscustomobject]@{ status = 'completed'; conclusion = 'success'; name = 'CI'; runUrl = 'https://x/1'; headSha = 'aaa' })
+        if ([string]$vhOk.run.prHeadSha -ne 'aaa') { throw "The PR's head must be recorded, got '$($vhOk.run.prHeadSha)'" }
+        if ([string]$vhOk.run.verifiedHeadSha -ne 'aaa') { throw "CI passing on the PR's head must verify it, got '$($vhOk.run.verifiedHeadSha)'" }
+        if ([string]::IsNullOrWhiteSpace([string]$vhOk.run.readyForOperatorAt)) { throw 'A verified head must record readyForOperatorAt' }
+        # H-10 has not landed, so the basis is the Actions rollup. Recorded
+        # rather than assumed: an operator reading this record must be able to
+        # tell a per-check verdict from a rollup one.
+        if ([string]$vhOk.run.verificationBasis -ne 'actions-rollup') {
+            throw "Without H-10 the basis must be named 'actions-rollup', got '$($vhOk.run.verificationBasis)'"
+        }
+
+        # CI passed on a DIFFERENT head. This is the whole packet: a green run
+        # on some other commit says nothing about this one.
+        $vhMismatchRun = New-AgentRunRecord -WorkspaceRoot $vhWorkspace -RepoName 'smoke-verified-head-2' `
+            -GitHubRepo 'owner/smoke-verified-head-2' -SelectedTaskText 'Mismatched head commit verification'
+        $vhPr2 = [pscustomobject]@{
+            number = 78; html_url = 'https://github.com/owner/smoke-verified-head-2/pull/78'
+            state = 'open'; draft = $false; title = 'Mismatched head commit verification'; body = ''
+            created_at = $vhNow.AddMinutes(2).ToString('o'); updated_at = $vhNow.AddMinutes(3).ToString('o')
+            merged_at = $null; closed_at = $null
+            head = [pscustomobject]@{ ref = 'copilot/mismatch'; sha = 'aaa' }
+        }
+        $vhMismatch = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhMismatchRun.runId -PullRequests @($vhPr2) `
+            -ActionsRun ([pscustomobject]@{ status = 'completed'; conclusion = 'success'; name = 'CI'; runUrl = 'https://x/2'; headSha = 'bbb' })
+        if ($null -ne $vhMismatch.run.verifiedHeadSha) {
+            throw "A success on a different head must not verify this one, got '$($vhMismatch.run.verifiedHeadSha)'"
+        }
+
+        # A success with NO head at all. Same rule, different road: evidence
+        # about an unknown commit is not evidence about this one.
+        $vhNoHeadRun = New-AgentRunRecord -WorkspaceRoot $vhWorkspace -RepoName 'smoke-verified-head-3' `
+            -GitHubRepo 'owner/smoke-verified-head-3' -SelectedTaskText 'Headless rollup verification evidence'
+        $vhPr3 = [pscustomobject]@{
+            number = 79; html_url = 'https://github.com/owner/smoke-verified-head-3/pull/79'
+            state = 'open'; draft = $false; title = 'Headless rollup verification evidence'; body = ''
+            created_at = $vhNow.AddMinutes(2).ToString('o'); updated_at = $vhNow.AddMinutes(3).ToString('o')
+            merged_at = $null; closed_at = $null
+            head = [pscustomobject]@{ ref = 'copilot/headless'; sha = 'aaa' }
+        }
+        $vhNoHead = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhNoHeadRun.runId -PullRequests @($vhPr3) `
+            -ActionsRun ([pscustomobject]@{ status = 'completed'; conclusion = 'success'; name = 'CI'; runUrl = 'https://x/3' })
+        if ($null -ne $vhNoHead.run.verifiedHeadSha) {
+            throw 'A rollup carrying no head must never verify a head'
+        }
+
+        # The head moves after verification. READY_FOR_OPERATOR is invalidated,
+        # and the event says so -- a cleared field with no event would look
+        # like the verification never happened.
+        $vhPr.head = [pscustomobject]@{ ref = 'copilot/verified-head'; sha = 'ccc' }
+        $vhMoved = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhRun.runId -PullRequests @($vhPr) `
+            -ActionsRun ([pscustomobject]@{ status = 'completed'; conclusion = 'success'; name = 'CI'; runUrl = 'https://x/1'; headSha = 'aaa' })
+        if ([string]$vhMoved.run.prHeadSha -ne 'ccc') { throw "The moved head must be recorded, got '$($vhMoved.run.prHeadSha)'" }
+        if ($null -ne $vhMoved.run.verifiedHeadSha) { throw 'A moved head must invalidate the verified head' }
+        if ($null -ne $vhMoved.run.readyForOperatorAt) { throw 'A moved head must clear readyForOperatorAt' }
+        if ([string]::IsNullOrWhiteSpace([string]$vhMoved.run.headMovedAt)) { throw 'A moved head must record headMovedAt' }
+
+        $vhDetail = Get-AgentRunDetail -WorkspaceRoot $vhWorkspace -RunId $vhRun.runId
+        $vhMovedEvents = @($vhDetail.events | Where-Object { [string]$_.eventType -eq 'run.head-moved' })
+        if ($vhMovedEvents.Count -ne 1) { throw "Expected exactly one run.head-moved event, got $($vhMovedEvents.Count)" }
+        # Both SHAs, or the event cannot answer "moved from what to what".
+        $vhMovedData = $vhMovedEvents[0].data
+        if ([string]$vhMovedData.fromSha -ne 'aaa' -or [string]$vhMovedData.toSha -ne 'ccc') {
+            throw ("run.head-moved must carry both SHAs, got from='{0}' to='{1}'" -f $vhMovedData.fromSha, $vhMovedData.toSha)
+        }
+
+        # Golden: a refresh whose PR carries no head sha at all must leave the
+        # pre-existing fields exactly as they were before this packet existed.
+        $vhGoldenRun = New-AgentRunRecord -WorkspaceRoot $vhWorkspace -RepoName 'smoke-verified-head-4' `
+            -GitHubRepo 'owner/smoke-verified-head-4' -SelectedTaskText 'Golden headless refresh behaviour'
+        $vhGoldenPr = [pscustomobject]@{
+            number = 80; html_url = 'https://github.com/owner/smoke-verified-head-4/pull/80'
+            state = 'open'; draft = $false; title = 'Golden headless refresh behaviour'; body = ''
+            created_at = $vhNow.AddMinutes(2).ToString('o'); updated_at = $vhNow.AddMinutes(3).ToString('o')
+            merged_at = $null; closed_at = $null
+            head = [pscustomobject]@{ ref = 'copilot/golden' }
+        }
+        $vhGolden = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhGoldenRun.runId -PullRequests @($vhGoldenPr) `
+            -ActionsRun ([pscustomobject]@{ status = 'completed'; conclusion = 'success'; name = 'CI'; runUrl = 'https://x/4' })
+        if ([string]$vhGolden.run.status -ne 'completed' -or [string]$vhGolden.run.outcome -ne 'awaiting-merge') {
+            throw 'A headless PR must still refresh exactly as it did before this packet'
+        }
+        if ([string]$vhGolden.run.branch -ne 'copilot/golden') { throw 'A headless PR must still associate its branch' }
+        if ([string]$vhGolden.validationEvent -ne 'validation.passed') { throw 'A headless PR must still emit validation.passed' }
+        $vhGoldenNames = @($vhGolden.run.PSObject.Properties.Name)
+        foreach ($vhAbsent in @('prHeadSha', 'verifiedHeadSha', 'readyForOperatorAt', 'headMovedAt', 'verificationBasis')) {
+            if ($vhGoldenNames -notcontains $vhAbsent) { continue }
+            $vhValue = $vhGolden.run.$vhAbsent
+            if ($null -ne $vhValue -and -not [string]::IsNullOrWhiteSpace([string]$vhValue)) {
+                throw ("A PR with no head sha must leave '{0}' unset, got '{1}'" -f $vhAbsent, $vhValue)
+            }
+        }
+        # The Actions block still records what it observed, including that the
+        # rollup named no head -- absent evidence is itself worth keeping.
+        # A patched record round-trips as nested HASHTABLES, not PSCustomObjects,
+        # so the member list has to be read from whichever shape arrived.
+        $vhGoldenActions = $vhGolden.run.actions
+        $vhActionsNames = @($vhGoldenActions.PSObject.Properties.Name)
+        if ($vhGoldenActions -is [System.Collections.IDictionary]) { $vhActionsNames = @($vhGoldenActions.Keys) }
+        if ($vhActionsNames -notcontains 'headSha') {
+            throw 'The actions record must carry headSha even when the rollup named none'
+        }
+        if ($null -ne $vhGolden.run.actions.headSha) {
+            throw ("A rollup with no head must record headSha as null, got '{0}'" -f $vhGolden.run.actions.headSha)
+        }
+
+        Write-Host '  verified head ok: matching head verifies (basis=actions-rollup), mismatched and headless rollups do not, a moved head clears it and emits run.head-moved with both SHAs' -ForegroundColor DarkGray
+    }
+    finally {
+        Remove-Item -LiteralPath $vhWorkspace -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 # ── Release 3.0 — operator-runner presence and the in-host dispatch refusal ──
 Write-Step 'Runner presence — smoke: queueing into an empty room is visible (Release 3.0)'
 & {
