@@ -883,9 +883,20 @@ function Invoke-MergeReadinessForRepo {
     }
     $auditBlockers = @(Get-ObjectPropertyValue -InputObject $RepoRecord -PropertyName 'blockingReasons' -Default @() | ForEach-Object { [string]$_ })
 
+    # H38-24: the approval on the ledger, and the head the pull request
+    # carries right now. Threaded here rather than at the /merge branch so
+    # /evaluate reports the same verdict the merge will enforce -- a board
+    # that showed 'ready' and then refused would be worse than either.
+    $mrOperatorApproval = Get-ObjectPropertyValue -InputObject $latestRun -PropertyName 'operatorApproval' -Default $null
+    $mrCurrentHeadSha = ''
+    if ($null -ne $prDetail) {
+        $mrPrHead = Get-ObjectPropertyValue -InputObject $prDetail -PropertyName 'head' -Default $null
+        if ($null -ne $mrPrHead) { $mrCurrentHeadSha = [string](Get-ObjectPropertyValue -InputObject $mrPrHead -PropertyName 'sha' -Default '') }
+    }
     $evaluation = Get-MergeReadinessEvaluation -RepoId $RepoId -RepoName $repoName `
         -AgentRun $latestRun -PrDetail $prDetail -ActionsState $freshActions `
-        -LocalDirtyCount $dirtyCount -AuditBlockers $auditBlockers
+        -LocalDirtyCount $dirtyCount -AuditBlockers $auditBlockers `
+        -OperatorApproval $mrOperatorApproval -CurrentHeadSha $mrCurrentHeadSha
     $null = Save-MergeReadinessSnapshot -WorkspaceRoot $WorkspaceRoot -Evaluation $evaluation
 
     $dbSnapshot = Write-AppDbMergeReadinessSnapshot -Evaluation $evaluation
@@ -6887,6 +6898,83 @@ try {
                     $client.Close()
                     continue
                 }
+            }
+
+            # Release 3.8 M4 (H38-24). Approval names a COMMIT. The body must
+            # carry the sha the operator believes they are approving, and it must
+            # match the head CI actually passed on -- so an operator approving a
+            # stale screen is refused rather than silently approving whatever the
+            # branch has become since.
+            if ($req.Method -eq 'POST' -and $path -like '/api/agent-runs/*/approve') {
+                Add-MetricCounter -Name 'api_requests_total'
+                $approveAgentRunId = [System.Uri]::UnescapeDataString($path.Substring('/api/agent-runs/'.Length, $path.Length - '/api/agent-runs/'.Length - '/approve'.Length))
+                $approveBody = Parse-JsonBody -Body $req.Body
+                $approveSha = ''
+                if ($null -ne $approveBody -and $approveBody.ContainsKey('sha')) { $approveSha = [string]$approveBody.sha }
+
+                if ([string]::IsNullOrWhiteSpace($approveAgentRunId)) {
+                    Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        error = 'runId is required in /api/agent-runs/{runId}/approve.'
+                    }
+                    $client.Close()
+                    continue
+                }
+                if ([string]::IsNullOrWhiteSpace($approveSha)) {
+                    Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        category = 'validation'
+                        error = 'A sha is required: an approval that names no commit is exactly what this route exists to prevent.'
+                    }
+                    $client.Close()
+                    continue
+                }
+
+                $approveRunDetail = Get-AgentRunDetail -WorkspaceRoot $WorkspaceRoot -RunId $approveAgentRunId
+                if ($null -eq $approveRunDetail) {
+                    Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        error = "No agent run found for runId '$approveAgentRunId'."
+                    }
+                    $client.Close()
+                    continue
+                }
+
+                $approveVerifiedSha = [string](Get-ObjectPropertyValue -InputObject $approveRunDetail.run -PropertyName 'verifiedHeadSha' -Default '')
+                if ([string]::IsNullOrWhiteSpace($approveVerifiedSha)) {
+                    Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        category = 'not-ready'
+                        error = "Agent run '$approveAgentRunId' has no verified head; CI has not passed on any commit of this pull request yet."
+                    }
+                    $client.Close()
+                    continue
+                }
+                if ($approveVerifiedSha -ne $approveSha) {
+                    Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                        success = $false
+                        category = 'not-ready'
+                        error = "The verified head is $approveVerifiedSha, not $approveSha. Refresh the run and approve the commit CI actually passed on."
+                    }
+                    $client.Close()
+                    continue
+                }
+
+                $approveRecord = Update-AgentRunRecord -WorkspaceRoot $WorkspaceRoot -RunId $approveAgentRunId -Actor 'operator' `
+                    -Summary ("Operator approved commit {0} for merge." -f $approveSha) `
+                    -Patch @{ operatorApproval = [ordered]@{ sha = $approveSha; at = (Get-Date).ToUniversalTime().ToString('o'); actor = 'operator' } }
+                $null = Write-AgentRunEvent -WorkspaceRoot $WorkspaceRoot -EventType 'run.operator-approved' -RunId $approveAgentRunId `
+                    -RepoName ([string](Get-ObjectPropertyValue -InputObject $approveRecord -PropertyName 'repoName' -Default '')) -Actor 'operator' `
+                    -Summary ("Operator approved commit {0} for merge." -f $approveSha) `
+                    -Data ([ordered]@{ sha = $approveSha })
+
+                Write-HostLog ("[TRACE] agent-runs.approve correlationId={0} runId={1} sha={2}" -f $correlationId, $approveAgentRunId, $approveSha)
+                Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                    success = $true
+                    data = $approveRecord
+                }
+                $client.Close()
+                continue
             }
 
             if ($req.Method -eq 'POST' -and $path -like '/api/agent-runs/*/refresh') {
