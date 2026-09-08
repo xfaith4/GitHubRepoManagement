@@ -999,7 +999,7 @@ to the queue — never fails it — when a provider is exhausted.
       execution slot — which also closes Lane 0.17's open "nothing refreshes the
       board" non-blocker. A head change after verification invalidates
       `READY_FOR_OPERATOR`. Merge stays an explicit operator action.
-      _(state: scaffolded 2026-09-08 — H38-21 `Resolve-PostImplementationTransition`
+      _(state: smoke-tested 2026-09-08 — H38-21 `Resolve-PostImplementationTransition`
       and `Invoke-RunnerBranchPush` in
       [`scripts/Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1)
       push after a complete, verified result (`autoPush` per provider, default on

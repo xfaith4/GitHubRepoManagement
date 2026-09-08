@@ -73,9 +73,9 @@ sync operation and its operator surface, then again as milestones 3-6 landed.
 | 3 | Create feature branch | built — `git switch -c` in the runner, `checkout -b` in the PR submitter |
 | 4 | Implement, test, document | built — runner launches Claude; `Resolve-VerifyCommand` runs the repo's own suite |
 | 5 | Commit locally | built |
-| 6 | Push feature branch | built, operator-gated |
-| 7 | Open the pull request | built — approve-push opens the PR through `Open-RepoBranchPullRequest`, the same refusal matrix as the roadmap repair; a PR refusal after a proven push reports as partial success by name |
-| 8 | CI / verification | built — `MergeReadiness.ps1`, including a `merge-conflicts` blocker |
+| 6 | Push feature branch | built, operator-gated — Release 3.8: runner pushes; host opens the PR on the reconcile tick; approval binds to the verified SHA (H38-21/22/24) |
+| 7 | Open the pull request | built — approve-push opens the PR through `Open-RepoBranchPullRequest`, the same refusal matrix as the roadmap repair; a PR refusal after a proven push reports as partial success by name — Release 3.8: runner pushes; host opens the PR on the reconcile tick; approval binds to the verified SHA (H38-21/22/24) |
+| 8 | CI / verification | built — `MergeReadiness.ps1`, including a `merge-conflicts` blocker — Release 3.8: runner pushes; host opens the PR on the reconcile tick; approval binds to the verified SHA (H38-21/22/24) |
 | 9 | Merge on GitHub | built, explicit operator action |
 | 10 | Sync local `main` | built — `POST /api/git/sync-default-branch` and the control in the per-repo git status modal; operator-invoked, not automatic after merge |
 | 11 | Delete the feature branch | built — `Remove-MergedRepoBranch` requires the merged PR's head SHA; `tip-advanced`, `checked-out`, `default-branch` and `no-merge-evidence` refuse by name; `POST /api/git/cleanup-branch` is the door |
