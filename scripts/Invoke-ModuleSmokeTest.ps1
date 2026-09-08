@@ -6991,6 +6991,126 @@ Write-Step 'Local Claude Code dispatch — smoke: queue writer + runner logic (R
     }
 }
 
+# ── Release 3.8 M4 (H38-21) — the runner pushes after a complete result ──────
+# Two halves, because the decision and the push fail differently. The
+# transition table is pure and asserted as a table; the push is asserted
+# against a REAL bare remote, because "git push succeeded" is not a claim a
+# stub can make honestly — the failure this packet has to survive is a remote
+# that rejects, and only a real remote produces that rejection.
+Write-Step 'Runner push — smoke: autoPush transitions and a real push to a bare remote (Release 3.8 M4)'
+& {
+    $root = $WorkspaceRoot
+    . (Join-Path $root 'scripts\Invoke-RoadmapTaskRunner.ps1') -LoadFunctionsOnly
+
+    $on = [pscustomobject]@{ autoPush = $true }
+    $off = [pscustomobject]@{ autoPush = $false }
+
+    # Complete + autoPush on + verification not failed -> push.
+    foreach ($verify in @('passed', 'skipped', 'error')) {
+        $t = Resolve-PostImplementationTransition -Outcome 'awaiting-review' -ProviderConfig $on -VerifyResult $verify
+        if ($t.nextStatus -ne 'pushing' -or -not $t.push) {
+            throw ("autoPush on with verify='{0}' must push and move to 'pushing', got status='{1}' push={2}" -f $verify, $t.nextStatus, $t.push)
+        }
+    }
+
+    # A FAILED local verification does not push. H38-31 owns the remediation
+    # enqueue; until then the operator sees exactly today's awaiting-review.
+    $tFailedVerify = Resolve-PostImplementationTransition -Outcome 'awaiting-review' -ProviderConfig $on -VerifyResult 'failed'
+    if ($tFailedVerify.nextStatus -ne 'awaiting-review' -or $tFailedVerify.push) {
+        throw ("A failed verification must not push, got status='{0}' push={1}" -f $tFailedVerify.nextStatus, $tFailedVerify.push)
+    }
+
+    # autoPush off is the rollback lever: today's behaviour, unchanged.
+    $tOff = Resolve-PostImplementationTransition -Outcome 'awaiting-review' -ProviderConfig $off -VerifyResult 'passed'
+    if ($tOff.nextStatus -ne 'awaiting-review' -or $tOff.push) {
+        throw ("autoPush off must stay at awaiting-review without pushing, got status='{0}' push={1}" -f $tOff.nextStatus, $tOff.push)
+    }
+
+    # Any other outcome passes through untouched — a failed or queued run is
+    # never a push candidate no matter what the flag says.
+    foreach ($other in @('failed', 'queued')) {
+        $tOther = Resolve-PostImplementationTransition -Outcome $other -ProviderConfig $on -VerifyResult 'passed'
+        if ($tOther.nextStatus -ne $other -or $tOther.push) {
+            throw ("Outcome '{0}' must pass through without pushing, got status='{1}' push={2}" -f $other, $tOther.nextStatus, $tOther.push)
+        }
+    }
+
+    # A missing config is not an invitation to push: absent evidence that
+    # autoPush is on, do what the operator already expects.
+    $tNoConfig = Resolve-PostImplementationTransition -Outcome 'awaiting-review' -ProviderConfig $null -VerifyResult 'passed'
+    if ($tNoConfig.nextStatus -ne 'awaiting-review' -or $tNoConfig.push) {
+        throw 'A null provider config must not push'
+    }
+
+    # ── The real push ───────────────────────────────────────────────────────
+    $pushTmp = Join-Path $root 'output\smoke\module\runner-push'
+    if (Test-Path -LiteralPath $pushTmp) { Remove-Item -LiteralPath $pushTmp -Recurse -Force }
+    $null = New-Item -ItemType Directory -Path $pushTmp -Force
+    try {
+        $gitCfg = @('-c', 'user.email=smoke@local', '-c', 'user.name=smoke', '-c', 'commit.gpgsign=false')
+        $bare = Join-Path $pushTmp 'origin.git'
+        $clone = Join-Path $pushTmp 'clone'
+        & git init --bare -b main $bare --quiet 2>&1 | Out-Null
+        & git clone $bare $clone --quiet 2>&1 | Out-Null
+        Set-Content -LiteralPath (Join-Path $clone 'a.txt') -Value 'base' -Encoding UTF8
+        & git -C $clone add -A 2>&1 | Out-Null
+        & git -C $clone @gitCfg commit -m 'base' --quiet 2>&1 | Out-Null
+        & git -C $clone push -u origin main --quiet 2>&1 | Out-Null
+
+        # Refusing the default branch comes FIRST, because it is the one
+        # failure that must not depend on the remote's cooperation: a bare
+        # remote would happily accept this push.
+        $refuse = Invoke-RunnerBranchPush -RepoPath $clone -Branch 'main'
+        if ($refuse.status -ne 'failed' -or $refuse.error -notmatch 'refusing to push the default branch') {
+            throw ("Pushing the default branch must refuse by name, got status='{0}' error='{1}'" -f $refuse.status, $refuse.error)
+        }
+
+        # The ordinary case: a feature branch reaches the remote.
+        & git -C $clone switch -c 'roadmap/push-ok' --quiet 2>&1 | Out-Null
+        Set-Content -LiteralPath (Join-Path $clone 'b.txt') -Value 'work' -Encoding UTF8
+        & git -C $clone add -A 2>&1 | Out-Null
+        & git -C $clone @gitCfg commit -m 'work' --quiet 2>&1 | Out-Null
+        $ok = Invoke-RunnerBranchPush -RepoPath $clone -Branch 'roadmap/push-ok'
+        if ($ok.status -ne 'pushed') { throw ("A clean push must report 'pushed', got '{0}' ({1})" -f $ok.status, $ok.error) }
+        if ($ok.prState -ne 'pending-open') { throw "A pushed branch must be handed to the reconcile tick as prState='pending-open', got '$($ok.prState)'" }
+        if ($ok.pushedBy -ne 'runner') { throw "pushedBy must name the runner, got '$($ok.pushedBy)'" }
+        if ([string]::IsNullOrWhiteSpace([string]$ok.pushedAt)) { throw 'A pushed branch must record pushedAt' }
+        $remoteSha = ((& git -C $bare rev-parse 'roadmap/push-ok' 2>&1) | Out-String).Trim()
+        $localSha = ((& git -C $clone rev-parse 'roadmap/push-ok' 2>&1) | Out-String).Trim()
+        if ($remoteSha -ne $localSha) { throw 'The branch did not actually reach the bare remote' }
+
+        # A remote that rejects. The bare repo is given a diverging commit on
+        # the same branch name, so the non-fast-forward is real rather than
+        # simulated: the run stays reviewable at awaiting-review and the git
+        # output is kept as evidence.
+        $other = Join-Path $pushTmp 'other'
+        & git clone $bare $other --quiet 2>&1 | Out-Null
+        & git -C $other switch -c 'roadmap/push-reject' --quiet 2>&1 | Out-Null
+        Set-Content -LiteralPath (Join-Path $other 'theirs.txt') -Value 'theirs' -Encoding UTF8
+        & git -C $other add -A 2>&1 | Out-Null
+        & git -C $other @gitCfg commit -m 'theirs' --quiet 2>&1 | Out-Null
+        & git -C $other push -u origin 'roadmap/push-reject' --quiet 2>&1 | Out-Null
+
+        & git -C $clone switch main --quiet 2>&1 | Out-Null
+        & git -C $clone switch -c 'roadmap/push-reject' --quiet 2>&1 | Out-Null
+        Set-Content -LiteralPath (Join-Path $clone 'mine.txt') -Value 'mine' -Encoding UTF8
+        & git -C $clone add -A 2>&1 | Out-Null
+        & git -C $clone @gitCfg commit -m 'mine' --quiet 2>&1 | Out-Null
+        $rejected = Invoke-RunnerBranchPush -RepoPath $clone -Branch 'roadmap/push-reject'
+        if ($rejected.status -ne 'awaiting-review') {
+            throw ("A rejected push must leave the run at awaiting-review, got '{0}'" -f $rejected.status)
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$rejected.pushError)) {
+            throw 'A rejected push must keep the git output as pushError'
+        }
+
+        Write-Host '  runner push ok: transition table (on/off/failed-verify/passthrough), real push to a bare remote, default-branch refusal, rejection stays reviewable' -ForegroundColor DarkGray
+    }
+    finally {
+        Remove-Item -LiteralPath $pushTmp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 # ── Release 3.0 — operator-runner presence and the in-host dispatch refusal ──
 Write-Step 'Runner presence — smoke: queueing into an empty room is visible (Release 3.0)'
 & {
