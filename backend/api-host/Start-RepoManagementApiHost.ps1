@@ -6244,6 +6244,152 @@ function Invoke-AgentRunAutoClose {
     return [pscustomobject]$summary
 }
 
+function Invoke-DeliveryReconciliation {
+    <#
+    .SYNOPSIS
+        Turn pushed branches into pull requests, and refresh what CI has said
+        since — on a cadence, without holding an execution slot.
+
+    .DESCRIPTION
+        Release 3.8 M4 (H38-22). H38-21 moved the push to the runner, which is
+        the process holding the operator's git credential helper. It cannot
+        open the pull request: that needs the GitHub token, and the token lives
+        here. So a run reaches `pushed`/`pending-open` and then waits for
+        somebody to notice. This is the noticing, and it is what closes Lane
+        0.17's open "the board reads observed state; nothing refreshes it on a
+        cadence" non-blocker.
+
+        Deliberately BOUNDED, in the style of Invoke-AgentRunAutoClose beside
+        it: at most `MaxRuns` pull requests are opened per invocation, every
+        per-run failure is swallowed and counted, and the function never
+        throws. The runner calls this every fourth poll; a tick that could fail
+        the caller would turn a GitHub outage into a broken runner.
+
+        A REFUSAL IS NOT A RETRY LOOP. When Open-RepoBranchPullRequest refuses
+        -- no token, no GitHub remote, branch missing -- the summary records
+        `prState = 'open-refused'` plus the named category and reason, and this
+        function will not look at that run again. The branch is pushed and the
+        work is safe; what is missing is named. Re-examining it every fourth
+        poll forever would turn one missing token into an unbounded stream of
+        identical failures in the log.
+
+        NOT gated by the automation flag, for the same reason autoclose is not:
+        that flag governs an external cron firing scheduled WORK. This opens a
+        pull request for work the operator already approved by queueing it, and
+        otherwise reads state and writes local bookkeeping.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+        [Parameter()][string]$CorrelationId = '',
+        [Parameter()][int]$MaxRuns = 3
+    )
+
+    $summary = [ordered]@{ prsOpened = 0; refreshed = 0; failed = 0; skipped = 0 }
+
+    try {
+        $runsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
+        if (Test-Path -LiteralPath $runsDir -PathType Container) {
+            # Newest first: a freshly pushed branch is the one an operator is
+            # waiting on, and MaxRuns means the oldest may not be reached this
+            # tick. It will be on the next one.
+            $pending = @(
+                Get-ChildItem -LiteralPath $runsDir -Filter '*.summary.json' -File -ErrorAction SilentlyContinue |
+                    Sort-Object LastWriteTimeUtc -Descending
+            )
+
+            $opened = 0
+            foreach ($summaryFile in $pending) {
+                if ($opened -ge $MaxRuns) { break }
+
+                $record = $null
+                try { $record = Get-Content -LiteralPath $summaryFile.FullName -Raw -Encoding UTF8 | ConvertFrom-Json }
+                catch { continue }
+                if ($null -eq $record) { continue }
+
+                $recStatus = [string](Get-ObjectPropertyValue -InputObject $record -PropertyName 'status' -Default '')
+                $recPrState = [string](Get-ObjectPropertyValue -InputObject $record -PropertyName 'prState' -Default '')
+                if ($recStatus -ne 'pushed' -or $recPrState -ne 'pending-open') { continue }
+
+                $opened++
+                $recRunId = [string](Get-ObjectPropertyValue -InputObject $record -PropertyName 'runId' -Default '')
+                $recRepoPath = [string](Get-ObjectPropertyValue -InputObject $record -PropertyName 'localRepoPath' -Default '')
+                $recBranch = [string](Get-ObjectPropertyValue -InputObject $record -PropertyName 'branch' -Default '')
+                $recTask = [string](Get-ObjectPropertyValue -InputObject $record -PropertyName 'selectedTask' -Default '')
+
+                try {
+                    if ([string]::IsNullOrWhiteSpace($recRepoPath) -or [string]::IsNullOrWhiteSpace($recBranch)) {
+                        $summary['skipped'] = [int]$summary['skipped'] + 1
+                        continue
+                    }
+                    if (-not (Get-Command -Name 'Open-RepoBranchPullRequest' -ErrorAction SilentlyContinue)) {
+                        $summary['skipped'] = [int]$summary['skipped'] + 1
+                        continue
+                    }
+
+                    # The same title/body the approve-push route builds, so a
+                    # PR opened by the tick and one opened by the button are
+                    # indistinguishable to a reviewer.
+                    $recToken = Get-ConfiguredGitHubToken -Settings (Get-HostSettings)
+                    $recTitle = if (-not [string]::IsNullOrWhiteSpace($recTask)) { $recTask } else { ("Roadmap task {0}" -f $recRunId) }
+                    $recPr = Open-RepoBranchPullRequest -RepoName (Split-Path -Leaf $recRepoPath) `
+                        -RepoPath $recRepoPath -Branch $recBranch -Token $recToken `
+                        -Title $recTitle `
+                        -Body ("Automated roadmap task run ``{0}``.`n`n{1}`n`nGenerated by GitHubRepoManagement (Release 3.4). Review the diff before merging." -f $recRunId, $recTask)
+
+                    $patch = @{}
+                    foreach ($prop in $record.PSObject.Properties) { $patch[$prop.Name] = $prop.Value }
+
+                    if ($null -ne $recPr -and -not $recPr.refused) {
+                        $patch['prState'] = 'open'
+                        $patch['prOpenedAt'] = (Get-Date).ToUniversalTime().ToString('o')
+                        if ($recPr.prUrl) { $patch['prUrl'] = [string]$recPr.prUrl }
+                        if ($recPr.prNumber) { $patch['prNumber'] = [int]$recPr.prNumber }
+                        $summary['prsOpened'] = [int]$summary['prsOpened'] + 1
+                        Write-HostLog ("[TRACE] delivery.reconcile correlationId={0} runId={1} branch={2} prUrl={3}" -f $CorrelationId, $recRunId, $recBranch, $(if ($recPr.prUrl) { $recPr.prUrl } else { '(none)' }))
+                    }
+                    else {
+                        # Named, recorded, and not retried. The branch is
+                        # pushed; the operator needs the reason, not a loop.
+                        $patch['prState'] = 'open-refused'
+                        $patch['prRefusal'] = @{
+                            category = $(if ($null -ne $recPr) { [string]$recPr.category } else { 'unknown' })
+                            reason   = $(if ($null -ne $recPr) { [string]$recPr.reason } else { 'Open-RepoBranchPullRequest returned nothing.' })
+                        }
+                        $summary['failed'] = [int]$summary['failed'] + 1
+                        Write-HostLog ("[WARN ] delivery.reconcile correlationId={0} runId={1} PR refused ({2}): {3}" -f $CorrelationId, $recRunId, $patch['prRefusal'].category, $patch['prRefusal'].reason)
+                    }
+
+                    ($patch | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $summaryFile.FullName -Encoding UTF8
+                }
+                catch {
+                    $summary['failed'] = [int]$summary['failed'] + 1
+                    Write-HostLog ("[WARN ] delivery.reconcile correlationId={0} runId={1} skipped: {2}" -f $CorrelationId, $recRunId, $_.Exception.Message)
+                }
+            }
+        }
+    }
+    catch {
+        Write-HostLog ("[WARN ] delivery.reconcile correlationId={0} PR sweep aborted: {1}" -f $CorrelationId, $_.Exception.Message)
+    }
+
+    # The other half of the tick: what has CI said since anyone last looked.
+    # A one-minute cooldown rather than autoclose's ten, because this is called
+    # on a cadence by a runner that is already watching the same work.
+    try {
+        $autoClose = Invoke-AgentRunAutoClose -WorkspaceRoot $WorkspaceRoot -CorrelationId $CorrelationId -MaxRuns $MaxRuns -CooldownMinutes 1
+        if ($null -ne $autoClose) {
+            $summary['refreshed'] = [int](Get-ObjectPropertyValue -InputObject $autoClose -PropertyName 'advanced' -Default 0)
+            $summary['failed'] = [int]$summary['failed'] + [int](Get-ObjectPropertyValue -InputObject $autoClose -PropertyName 'failed' -Default 0)
+        }
+    }
+    catch {
+        Write-HostLog ("[WARN ] delivery.reconcile correlationId={0} refresh aborted: {1}" -f $CorrelationId, $_.Exception.Message)
+    }
+
+    return [pscustomobject]$summary
+}
+
 function Get-PortalTransportState {
     <#
     .SYNOPSIS
@@ -7830,6 +7976,26 @@ try {
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data = @{ delivered = [bool]$delivered; webhookConfigured = (-not [string]::IsNullOrWhiteSpace($webhookUrl)); deliveryError = $deliveryError; payload = $digest }
+                    }
+                }
+                'POST /api/delivery/reconcile' {
+                    # Release 3.8 M4 (H38-22). The runner pushes (it holds the
+                    # git credential helper) and this opens the pull request (it
+                    # holds the token). The runner calls this every fourth poll,
+                    # so the board refreshes on a cadence rather than only when
+                    # an operator clicks something -- Lane 0.17's open
+                    # "nothing refreshes it" non-blocker.
+                    #
+                    # No body is required, and none is read. Under
+                    # RunningAsService this behaves identically: it reads local
+                    # ledgers, writes local bookkeeping, and makes at most
+                    # MaxRuns PR-create calls with the token this host already
+                    # uses for the approve-push route.
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $reconcileSummary = Invoke-DeliveryReconciliation -WorkspaceRoot $WorkspaceRoot -CorrelationId $correlationId
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data = $reconcileSummary
                     }
                 }
                 'POST /api/automation/run' {
