@@ -1,7 +1,7 @@
 # Model routing for roadmap phase runs
 
-One JSONL ledger answers: which model was _supposed_ to run each phase step,
-which model _actually_ ran, and did they match.
+One JSONL ledger answers: which model was *supposed* to run each phase step,
+which model *actually* ran, and did they match.
 
 ## How the validation chain works
 
@@ -36,30 +36,18 @@ level is recorded as intent but is not CLI-enforceable — verify in the
 {
   "hooks": {
     "SessionStart": [
-      {
-        "matcher": "startup",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "pwsh -NoProfile -File \"$CLAUDE_PROJECT_DIR/.claude/hooks/Assert-ModelRouting.ps1\""
-          }
-        ]
-      },
-      {
-        "matcher": "compact",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "pwsh -NoProfile -File \"$CLAUDE_PROJECT_DIR/.claude/hooks/Assert-ModelRouting.ps1\""
-          }
-        ]
-      }
+      { "matcher": "startup",
+        "hooks": [ { "type": "command",
+          "command": "pwsh -NoProfile -File \"$CLAUDE_PROJECT_DIR/.claude/hooks/Assert-ModelRouting.ps1\"" } ] },
+      { "matcher": "compact",
+        "hooks": [ { "type": "command",
+          "command": "pwsh -NoProfile -File \"$CLAUDE_PROJECT_DIR/.claude/hooks/Assert-ModelRouting.ps1\"" } ] }
     ]
   }
 }
 ```
 
-1. Run `/hooks` once in a session to confirm registration (Claude Code
+4. Run `/hooks` once in a session to confirm registration (Claude Code
    snapshots hook config at session start).
 
 ## Usage
