@@ -7122,6 +7122,32 @@ Write-Step 'Runner presence — smoke: queueing into an empty room is visible (R
     # a provider, and reporting it where a provider token belongs is the
     # contradiction this packet closes.
     if ($hostCode -match "'operator-runner'") { throw "The host reports 'operator-runner' as a dispatchTarget again; it is a channel, not a provider" }
+
+    # The same rule, everywhere a record is BUILT rather than only where one is
+    # served. H38-18 gated the host source alone, and the packaged-item record
+    # kept writing dispatchTarget='operator-runner' one layer down for another
+    # two packets -- unread, but naming a vocabulary the product had retired.
+    # A tripwire that only looks where the last defect was found does not find
+    # the next one.
+    #
+    # ASSIGNMENT only. Execution.ProviderCapacity.ps1 legitimately COMPARES
+    # against the token to recognise pre-3.8 run summaries, and a gate that
+    # fired on that would be deleted rather than fixed the first time it went
+    # off.
+    $moduleOffenders = @()
+    foreach ($moduleFile in @(Get-ChildItem -Path (Join-Path $root 'backend\modules') -Filter '*.ps1' -Recurse -File)) {
+        $moduleLines = @(Get-Content -LiteralPath $moduleFile.FullName -Encoding UTF8)
+        for ($mi = 0; $mi -lt $moduleLines.Count; $mi++) {
+            $moduleLine = $moduleLines[$mi]
+            if ($moduleLine -match '^\s*#') { continue }
+            if ($moduleLine -match "dispatchTarget\s*=\s*'operator-runner'") {
+                $moduleOffenders += ("{0}:{1}" -f $moduleFile.Name, ($mi + 1))
+            }
+        }
+    }
+    if ($moduleOffenders.Count -gt 0) {
+        throw ("'operator-runner' is assigned as a dispatchTarget in {0} site(s): {1}. It names a dispatch CHANNEL, not a provider; the field means WHICH provider everywhere else." -f $moduleOffenders.Count, ($moduleOffenders -join ', '))
+    }
     Remove-Item -LiteralPath $backlogWs -Recurse -Force -ErrorAction SilentlyContinue
     Write-Host '  runner presence ok: absent/stale/present classified from the runner own interval, backlog split by target, corrupt heartbeat is absent, in-host cloud dispatch refused in both modes' -ForegroundColor DarkGray
 }
