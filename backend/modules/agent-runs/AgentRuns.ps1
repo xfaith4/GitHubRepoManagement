@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Agent-run ledger and append-only run-event telemetry for Release 2.0
     (Agent Run Monitoring and Actions-Gated Merge Readiness), Phase 1.
@@ -702,6 +702,7 @@ function Invoke-AgentRunRefresh {
 
     $patch = @{ lastRefreshAt = $nowIso }
     $summaryParts = @()
+    $headMovedEvent = $null
 
     if ($null -ne $candidate.pullRequest) {
         $pr = $candidate.pullRequest
@@ -719,6 +720,35 @@ function Invoke-AgentRunRefresh {
         }
 
         if (-not [string]::IsNullOrWhiteSpace($headRef)) { $patch['branch'] = $headRef }
+
+        # Release 3.8 M4 (H38-23) - the promotion invariant. Approval applies
+        # to the COMMIT that CI passed on, not to the pull request number: a PR
+        # keeps its number across a force-push, so "PR #42 is green" survives a
+        # rewrite that made it false.
+        $prHeadSha = [string](_AgentRunsField -Obj $head -Name 'sha' -Default '')
+        if (-not [string]::IsNullOrWhiteSpace($prHeadSha)) {
+            $patch['prHeadSha'] = $prHeadSha
+            $previousHeadSha = [string](_AgentRunsField -Obj $run -Name 'prHeadSha' -Default '')
+            $previousVerified = [string](_AgentRunsField -Obj $run -Name 'verifiedHeadSha' -Default '')
+            $verificationHolds = (-not [string]::IsNullOrWhiteSpace($previousVerified)) -and ($previousVerified -eq $prHeadSha)
+
+            # Written on EVERY refresh that knows a head, not only when it
+            # changes. A consumer asking "is this run approvable?" must get an
+            # answer from the record rather than from the absence of a field --
+            # H38-24 binds approval to exactly this value.
+            $patch['verifiedHeadSha'] = if ($verificationHolds) { $previousVerified } else { $null }
+            if (-not $verificationHolds) { $patch['readyForOperatorAt'] = $null }
+
+            # The head moved past what was verified. Clearing the fields is not
+            # enough on its own -- a record that simply lost its verification
+            # reads as one that was never verified, which is why the move is
+            # also an event carrying both SHAs.
+            if (-not [string]::IsNullOrWhiteSpace($previousVerified) -and $previousVerified -ne $prHeadSha) {
+                $patch['headMovedAt'] = $nowIso
+                $headMovedFrom = if ([string]::IsNullOrWhiteSpace($previousHeadSha)) { $previousVerified } else { $previousHeadSha }
+                $headMovedEvent = [ordered]@{ fromSha = $headMovedFrom; toSha = $prHeadSha }
+            }
+        }
         $prUrl = [string](_AgentRunsField -Obj $pr -Name 'html_url' -Default '')
         if (-not [string]::IsNullOrWhiteSpace($prUrl)) { $patch['prUrl'] = $prUrl }
         $patch['prNumber'] = _AgentRunsField -Obj $pr -Name 'number'
@@ -792,6 +822,23 @@ function Invoke-AgentRunRefresh {
         }
         $summaryParts += "Actions $actionsStatus$(if ($actionsConclusion) { "/$actionsConclusion" })"
 
+        # Release 3.8 M4 (H38-23). A green rollup is evidence about the commit
+        # it ran on. When that commit is unknown, or is not the one this PR
+        # currently carries, it is evidence about SOMETHING -- just not about
+        # this head, so it cannot make the run ready for an operator.
+        $actionsHeadSha = [string](_AgentRunsField -Obj $ActionsRun -Name 'headSha' -Default '')
+        $patch['actions']['headSha'] = if ([string]::IsNullOrWhiteSpace($actionsHeadSha)) { $null } else { $actionsHeadSha }
+        if ($actionsStatus -eq 'completed' -and $actionsConclusion -eq 'success' -and
+            -not [string]::IsNullOrWhiteSpace($actionsHeadSha) -and
+            $actionsHeadSha -eq [string]$patch['prHeadSha']) {
+            $patch['verifiedHeadSha'] = $actionsHeadSha
+            $patch['readyForOperatorAt'] = $nowIso
+            # Named, never assumed: an operator must be able to tell a
+            # per-check verdict from a rollup one. H-10 introduces the
+            # per-check basis; until it lands this is the rollup.
+            $patch['verificationBasis'] = if (Get-Command -Name 'Get-PullRequestCheckRuns' -ErrorAction SilentlyContinue) { 'check-runs' } else { 'actions-rollup' }
+        }
+
         $previousActions = _AgentRunsField -Obj $run -Name 'actions'
         $previousConclusion = [string](_AgentRunsField -Obj $previousActions -Name 'conclusion' -Default '')
         if (-not [string]::IsNullOrWhiteSpace($actionsConclusion) -and $actionsConclusion -ne $previousConclusion) {
@@ -801,6 +848,13 @@ function Invoke-AgentRunRefresh {
 
     $summary = 'Refreshed from GitHub: ' + ($summaryParts -join '; ') + '.'
     $updated = Update-AgentRunRecord -WorkspaceRoot $WorkspaceRoot -RunId $RunId -Patch $patch -Actor $Actor -Summary $summary
+
+    if ($null -ne $headMovedEvent) {
+        $null = Write-AgentRunEvent -WorkspaceRoot $WorkspaceRoot -EventType 'run.head-moved' -RunId $RunId `
+            -RepoName ([string](_AgentRunsField -Obj $updated -Name 'repoName' -Default '')) -Actor $Actor `
+            -Summary ("The pull request head moved from {0} to {1}; the recorded verification no longer applies." -f $headMovedEvent.fromSha, $headMovedEvent.toSha) `
+            -Data $headMovedEvent
+    }
 
     if ($null -ne $validationEventType) {
         $null = Write-AgentRunEvent -WorkspaceRoot $WorkspaceRoot -EventType $validationEventType -RunId $RunId `

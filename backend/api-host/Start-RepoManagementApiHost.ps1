@@ -3114,6 +3114,10 @@ function Get-LatestGitHubWorkflowRunViaApi {
             conclusion = [string](Get-ObjectPropertyValue -InputObject $run -PropertyName 'conclusion' -Default '')
             name       = [string](Get-ObjectPropertyValue -InputObject $run -PropertyName 'name' -Default '')
             runUrl     = [string](Get-ObjectPropertyValue -InputObject $run -PropertyName 'html_url' -Default '')
+            # H38-23: which commit this run actually ran on. Without it the
+            # ledger can only say "CI was green", never "CI was green on the
+            # commit you are approving".
+            headSha    = [string](Get-ObjectPropertyValue -InputObject $run -PropertyName 'head_sha' -Default '')
             timestamp  = if ([string]::IsNullOrWhiteSpace($runTimestamp)) { $null } else { $runTimestamp }
         }
     }

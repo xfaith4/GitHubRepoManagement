@@ -999,12 +999,20 @@ to the queue — never fails it — when a provider is exhausted.
       execution slot — which also closes Lane 0.17's open "nothing refreshes the
       board" non-blocker. A head change after verification invalidates
       `READY_FOR_OPERATOR`. Merge stays an explicit operator action.
-      _(state: scaffolded 2026-09-08 — H38-21 the runner pushes after a
-      complete, verified result (autoPush per provider, default on for local
-      providers); awaiting-review survives at off or on push failure, and the
-      default branch is refused before git is asked; H38-22 POST
-      /api/delivery/reconcile opens pending PRs with the host's token and
-      refreshes CI; the runner calls it every fourth poll)_
+      _(state: scaffolded 2026-09-08 — H38-21 `Resolve-PostImplementationTransition`
+      and `Invoke-RunnerBranchPush` in
+      [`scripts/Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1)
+      push after a complete, verified result (`autoPush` per provider, default on
+      for local providers); awaiting-review survives at off or on push failure,
+      and the default branch is refused before git is asked. H38-22
+      `Invoke-DeliveryReconciliation` and `POST /api/delivery/reconcile` in
+      [`backend/api-host/Start-RepoManagementApiHost.ps1`](backend/api-host/Start-RepoManagementApiHost.ps1)
+      open pending PRs with the host's token and refresh CI; the runner calls it
+      every fourth poll. H38-23 `Invoke-AgentRunRefresh` in
+      [`backend/modules/agent-runs/AgentRuns.ps1`](backend/modules/agent-runs/AgentRuns.ps1)
+      records `prHeadSha` and `verifiedHeadSha` only when CI passed on that exact
+      head; a moved head clears it and emits `run.head-moved`. All three are
+      gated in [`scripts/Invoke-ModuleSmokeTest.ps1`](scripts/Invoke-ModuleSmokeTest.ps1))_
 - [ ] **Remediate from evidence, and hand off between providers.** Attempt and
       remediation counts survive a restart; a CI failure builds a
       `RemediationPacket`, resumes the original session where capacity allows,
