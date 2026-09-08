@@ -1,4 +1,4 @@
-# Local task runner (Claude Code and Copilot)
+# Local task runner (Claude Code, Codex and Copilot)
 
 **Release 3.0 — one dispatch model.** The portal enqueues; this runner executes
 in your session. That is now true for *both* targets: local Claude Code work and
@@ -164,6 +164,26 @@ provider's record, verdict and reason.
 Capacity verdicts are **recorded but not enforced**: the reserves are decided
 (15% short window, 20% weekly) but the per-task cost estimate is still a guess,
 so a verdict can look wrong without blocking work.
+
+## Which provider runs a task (Release 3.8 M3)
+
+A queue entry carries one of four tokens: `claude`, `codex`, `copilot` or
+`auto`. The first three name a provider; `auto` is an instruction to choose.
+
+`auto` resolves **at claim time by the runner**, not when the task is queued:
+the portal runs as a LocalSystem service holding no provider credential, so
+only the operator session can see what is authenticated and what capacity
+remains — and capacity moves in between anyway.
+
+Eligibility first, then ranking. Each Stage 1 condition is kept per candidate
+whether it passed or failed, so a provider that is never chosen is explainable
+without reading a log. The runner writes `selectedProvider` and
+`selectionReason` onto the run summary; with nothing eligible the entry stays
+`queued` rather than failing.
+
+A provider is selectable only where its CLI is installed, which is detected on
+each machine and shown in Settings — never configured in the repository,
+because a committed answer about one laptop is wrong for every other install.
 
 ## Cloud (Copilot) dispatch runs here too — Release 3.0
 
