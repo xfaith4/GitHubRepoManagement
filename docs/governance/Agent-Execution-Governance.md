@@ -8,6 +8,22 @@ This document governs how GitHub Repo Manager dispatches well-formed work to cod
 
 `delivery-loop.md` remains authoritative for repository lifecycle and promotion state.
 
+**Amended 2026-09-08.** Ben's *Multi-Provider Agent Execution Strategy* was
+absorbed into this document rather than kept beside it: it covered the same
+subject, and a second authority would have made the packet rule "where the
+spec and the roadmap differ, the spec wins" unresolvable — an agent facing a
+three-way disagreement has no tiebreak. The sections it added are *Task
+classification*, *Execution tiers*, *Provider and model*, *Effective cost*,
+*Historical performance*, *Adaptive routing*, *Independent review*,
+*Confidence*, *Parallel execution*, and the acceptance criteria at the end.
+
+Three of its claims were corrected by what Release 3.8 actually built, and the
+corrected form is what appears below: routing resolves at **claim** time
+rather than dispatch time, because the host holds no provider credential;
+**supported** and **available** are different facts, one a repository property
+and one per-installation; and an effective-cost model **cannot enforce**
+anything until consumption has been measured.
+
 ## Core invariant
 
 **The work contract is provider-neutral. The scheduler is provider-aware.**
@@ -150,6 +166,82 @@ The provider adapter MAY translate the WorkPacket into provider-specific prompti
 
 ---
 
+# Task classification
+
+Every task MUST carry a profile before dispatch. Routing reads the profile;
+it does not re-derive it per provider.
+
+```text
+taskType
+complexity              LOW | MEDIUM | HIGH
+risk                    LOW | MEDIUM | HIGH
+contextScope
+expectedOutput
+verificationAvailable
+githubInteractionRequired
+codeChangeRequired
+reasoningRequired
+estimatedContextSize
+```
+
+`taskType` is one of:
+
+| Type | Covers |
+| --- | --- |
+| `CODE_SMALL` | Isolated fix, added test, config change, bounded rename, small UI change, lint/type correction |
+| `CODE_COMPLEX` | Multi-file implementation, architectural refactor, concurrency or state defects, cross-module behaviour, migration, work whose files are initially unknown |
+| `CODE_REMEDIATION` | A previous implementation failed tests, lint, build, security validation, CI, or acceptance criteria |
+| `REPOSITORY_ANALYSIS` | Locating an implementation, tracing behaviour, identifying debt, roadmap qualification, root-cause investigation |
+| `GITHUB_COMMUNICATION` | Issues, PR descriptions, review summaries, commit summaries, release notes, comment responses |
+| `DOCUMENTATION` | README, ROADMAP, architecture docs, SECURITY.md, CONTRIBUTING.md, decision records |
+| `PROMPT_OR_AGENT_REFINEMENT` | Agent instructions, skill files, system prompts, task contracts, acceptance criteria |
+| `REVIEW` | Implementation, architectural or security review; verification of another agent's work |
+
+Classification MUST NOT be a restatement of a provider preference. A profile
+that is derived from the requested provider explains nothing and cannot
+override a cold-start prior.
+
+---
+
+# Execution tiers
+
+Capability is chosen before a provider is. The cheapest tier expected to
+succeed is used first, and escalation MUST increase capability rather than
+repeat the same request more expensively.
+
+| Tier | Name | Use |
+| --- | --- | --- |
+| 0 | Deterministic | Any answer application logic, Git, the GitHub API, or schema validation can produce |
+| 1 | Economical agent | Bounded changes, GitHub communication, formatting, basic documentation, obvious tests, well-specified implementation |
+| 2 | Advanced agent | Multi-file coding, debugging, architectural reasoning, unclear implementation paths, failed Tier 1 |
+| 3 | Frontier reasoning | High complexity or consequence, repeated lower-tier failure, architectural uncertainty, security-sensitive reasoning, unusually tangled context |
+
+## Tier 0 is a routing outcome, not an absence of routing
+
+`NO_AGENT` is a first-class selection result and MUST be recorded like any
+other. Branch state, CI status, file existence, repository metrics, schema
+validation, test execution, value comparison, branch creation from known
+inputs, label application, mergeability, and configured policy evaluation are
+all deterministic. Spending a provider turn on them is the most expensive way
+to obtain an answer the repository already has.
+
+---
+
+# Provider and model
+
+Provider choice and model choice are separate decisions wherever a provider
+exposes model selection. A provider is an execution channel with an adapter,
+a credential and a capacity envelope; a model is a capability and price point
+inside it.
+
+Collapsing the two makes "use a cheaper model on the same provider"
+unexpressible, which is the most common way to reduce cost without losing a
+task class. Telemetry, capacity records and routing records therefore all key
+on `provider × model`, and a provider with one model records it explicitly
+rather than leaving the field absent.
+
+---
+
 # Provider capacity model
 
 Capacity MUST NOT be represented by one universal `tokensRemaining` value.
@@ -265,6 +357,42 @@ The system learns actual consumption per task and provider and improves estimate
 
 Provider selection has two stages.
 
+## Selection resolves at claim time, not dispatch time
+
+`auto` is resolved by the **runner**, when it claims the task — not by the
+host when it enqueues one.
+
+The host runs as a LocalSystem service and holds no provider credential, so it
+cannot answer "is this provider eligible here": authentication and local
+capacity are visible only in the operator session. Capacity and cooldowns also
+move between enqueue and claim, so a decision made at dispatch can be stale
+before the work starts.
+
+The host MAY record a `provisionalSelection` for a board to display. The
+binding decision, its `selectedProvider` and its `selectionReason` are written
+by the runner onto the run summary.
+
+## Supported and available are different facts
+
+`supported` means *this build contains a conforming adapter*. It is a property
+of the repository, identical for everyone, and CI can verify it.
+
+Whether the CLI is installed, and whether the operator has switched the
+provider off, are **per-installation** facts detected at runtime. They MUST
+NOT be committed: a repository that records "this operator has no Codex"
+asserts one machine's state on behalf of every installation, and no gate can
+check it because CI has never seen that machine.
+
+A provider is a routing candidate only when it is `supported`, detected as
+available, and not opted out.
+
+**Availability detection never authenticates.** The probe answers *is the CLI
+present*, which costs nothing. Running the tool to prove the account works
+would spend the very quota this layer exists to conserve, so authentication is
+learned from the first real run — an auth failure is a cheap, distinguishable
+outcome. Until then a provider reports `authenticated: "unknown"`, which is
+honest rather than absent.
+
 ## Stage 1 — eligibility
 
 A provider is eligible only when:
@@ -364,6 +492,130 @@ original provider session available?
 A provider switch MUST start a new provider session.
 
 Context MUST be transferred through structured evidence, not by pretending the second provider has access to the first provider's conversation.
+
+---
+
+# Effective cost
+
+Routing compares an effective cost, not a list price:
+
+```text
+effective_cost =
+    estimated_metered_cost
+  + quota_pressure_cost
+  + retry_cost
+  + expected_failure_cost
+```
+
+Subscription capacity is not free. As remaining allowance becomes scarce its
+shadow cost rises, so one provider cannot spend its month on trivial work.
+Abundant capacity lowers a provider's effective cost; a nearly exhausted
+window raises it; metered usage contributes its actual estimated token cost.
+
+Provider pricing MUST NOT be hard-coded where it can be discovered or
+configured.
+
+## Effective cost cannot be enforced before it is measured
+
+A reserve can only refuse work if the cost of a task is known. Until observed
+consumption exists, the per-task estimate is a guess, and refusing dispatches
+on a guessed number blocks real execution for an unmeasured reason.
+
+Capacity verdicts are therefore **computed and recorded while enforcing
+nothing** until both the reserve values and the consumption estimate are
+non-provisional. A wrong estimate must be able to look wrong without being
+able to stop work.
+
+---
+
+# Historical performance
+
+The Repo Manager learns which provider performs best for *its* workload, not
+which benchmarks best. Every execution records at minimum:
+
+```text
+provider              model                 taskType
+repository            complexity            risk
+estimatedContextSize  startTime             completionTime
+inputUsage            outputUsage           estimatedCost
+attemptCount          verificationPassed    firstPassSuccess
+remediationRequired   crossProviderEscalation
+humanInterventionRequired                   humanChangesAfterAgent
+ciResult              finalTaskResult
+```
+
+Rolling metrics derive from those records:
+
+```text
+firstPassSuccessRate      eventualSuccessRate
+averageCostPerSuccess     averageDurationPerSuccess
+averageRemediations       humanInterventionRate
+ciFailureRate
+```
+
+They MUST be broken down by `provider × model × taskType × complexity`. A
+global provider average hides the case this exists to find: a provider that is
+excellent at documentation and poor at one coding workload, or the reverse.
+
+---
+
+# Adaptive routing
+
+Cold-start preferences are priors, not specialisations. Once sufficient
+history exists for a task class, empirical results override them.
+
+A provider with a higher invocation cost but a higher first-pass rate can be
+the cheaper route per *verified* task, and the router must be able to reach
+that conclusion from evidence rather than have it asserted. The reverse holds
+equally: a cheaper provider that succeeds first time should dominate its class.
+
+---
+
+# Independent review
+
+Cross-provider review is bought by risk, not applied to everything. Its value
+is an independent evaluation; its cost is a second provider turn.
+
+| Risk | Review |
+| --- | --- |
+| Low — documentation typo, small test, simple GitHub communication | None. Repository verification suffices |
+| Medium — ordinary feature, multi-file refactor, meaningful behaviour change | Required when automated verification is incomplete, the diff exceeds the configured threshold, the implementing agent reported low confidence, or architecture changed |
+| High — authentication, authorization, secrets, destructive operations, execution orchestration, Git operations affecting repository state, security controls, data migration, foundational architecture | Required, by a provider other than the implementer |
+
+The reviewer receives the requirements and the resulting diff. It MUST NOT
+receive the implementer's reasoning transcript: a reviewer shown the original
+chain of thought tends to ratify it, which is the opposite of an independent
+evaluation.
+
+---
+
+# Confidence
+
+An agent MAY report `confidence: HIGH | MEDIUM | LOW`.
+
+Low confidence MUST NOT automatically trigger another execution. It raises the
+likelihood of stronger verification, independent review, or escalation. A
+low-confidence result that passes comprehensive deterministic verification is
+worth more than an expensive second opinion, because the verification is
+evidence and the second opinion is another claim.
+
+---
+
+# Parallel execution
+
+Prefer parallelising **different independent tasks** over asking several
+providers to perform the same one. Redundant first-pass generation multiplies
+routine cost by the number of providers and is disabled by default.
+
+Two providers on one task is justified for foundational architectural
+decisions, genuinely ambiguous defects, high-risk security decisions,
+competing implementation approaches, work that has already failed sequential
+escalation, and blockers where wall-clock time outweighs token cost. Prefer
+two, never three.
+
+Independent tasks may execute concurrently across providers only where their
+file sets do not overlap, unless conflict handling is explicitly supported.
+Provider availability is a scheduling resource like any other.
 
 ---
 
@@ -830,3 +1082,53 @@ The desired outcome is not:
 It is:
 
 "use the available providers at the times and frequencies that maximize verified roadmap progress without unexpectedly exhausting any subscription."
+
+## The metric that decides between routes
+
+```text
+Verified Tasks Completed
+------------------------
+     Total Agent Cost
+```
+
+Throughput and quality are tracked beside it, never in place of it:
+
+```text
+Verified Tasks Completed          First-Pass Verified Tasks
+------------------------          -------------------------
+    Wall Clock Hour                 Total Executed Tasks
+```
+
+Cost per request is not the objective. A cheaper request that fails
+verification and is remediated twice costs more than one that succeeds.
+
+No provider is "best" by benchmark reputation, token price, or preference. The
+best provider is the one producing the most verified value for this
+repository's actual workload — which is a measurement, and therefore cannot be
+settled in this document.
+
+---
+
+# Acceptance criteria
+
+The provider-aware execution layer is complete when:
+
+1. tasks are classified before AI dispatch;
+2. deterministic tasks bypass AI completely;
+3. all three providers implement a common adapter contract;
+4. provider and model are separately represented where the provider allows it;
+5. routing considers task class, complexity, risk, cost, latency, capability, quota and historical performance;
+6. provider pricing and usage assumptions are configurable or dynamically discoverable rather than embedded in code;
+7. one remediation attempt can remain with the original provider;
+8. repeated failure can trigger cross-provider escalation;
+9. high-risk tasks can require review by a different provider;
+10. redundant multi-provider execution is off by default;
+11. independent roadmap tasks may execute concurrently across providers;
+12. every execution captures cost, duration, verification, retry and final-result telemetry;
+13. routing decisions are persisted with an explanation;
+14. historical success data can override cold-start provider preferences;
+15. circuit breakers prevent an unavailable or exhausted provider from blocking the queue;
+16. repository verification and delivery-state semantics remain the authority on completion.
+
+Which release satisfies which criterion is recorded in `ROADMAP.md`, not here.
+This document states the design; the roadmap states the schedule.
