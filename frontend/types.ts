@@ -1827,6 +1827,12 @@ export interface AgentRunAssociation {
   associatedAt: string;
 }
 
+export interface AgentRunOperatorApproval {
+  sha: string;
+  at: string;
+  actor: string;
+}
+
 export interface AgentRun {
   runId: string;
   repoName: string;
@@ -1847,6 +1853,17 @@ export interface AgentRun {
   prNumber?: number | null;
   prState?: 'open' | 'closed' | 'merged' | null;
   prDraft?: boolean | null;
+  /**
+   * Release 3.8 M4. Approval names a COMMIT, not a pull request: a PR keeps
+   * its number across a force-push, so an approval bound to the number would
+   * survive the rewrite that made it untrue.
+   */
+  prHeadSha?: string | null;
+  verifiedHeadSha?: string | null;
+  readyForOperatorAt?: string | null;
+  verificationBasis?: 'check-runs' | 'actions-rollup' | null;
+  headMovedAt?: string | null;
+  operatorApproval?: AgentRunOperatorApproval | null;
   status: AgentRunStatus;
   outcome?: string | null;
   createdAt: string;
@@ -1902,6 +1919,10 @@ export interface MergeReadinessEvidence {
   actionsStatus?: string;
   actionsConclusion?: string;
   actionsWorkflowName?: string;
+  /** Release 3.8 M4 — what the readiness verdict was reached on. */
+  verifiedHeadSha?: string | null;
+  approvedSha?: string | null;
+  currentHeadSha?: string | null;
   localDirtyCount?: number;
   auditBlockerCount?: number;
 }

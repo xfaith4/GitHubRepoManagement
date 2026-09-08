@@ -1016,8 +1016,12 @@ to the queue — never fails it — when a provider is exhausted.
       `verifiedHeadSha`, and `Get-MergeReadinessEvaluation` in
       [`backend/modules/agent-runs/MergeReadiness.ps1`](backend/modules/agent-runs/MergeReadiness.ps1)
       refuses `no-verified-head`, `no-operator-approval` and
-      `head-moved-since-approval`. All four are gated in
-      [`scripts/Invoke-ModuleSmokeTest.ps1`](scripts/Invoke-ModuleSmokeTest.ps1))_
+      `head-moved-since-approval`. H38-25 the merge control in
+      [`frontend/components/OperationsWorkspaceView.tsx`](frontend/components/OperationsWorkspaceView.tsx)
+      shows and approves the verified SHA and disables on head drift. All five
+      are gated in
+      [`scripts/Invoke-ModuleSmokeTest.ps1`](scripts/Invoke-ModuleSmokeTest.ps1)
+      and [`OperationsWorkspaceView.test.tsx`](frontend/components/OperationsWorkspaceView.test.tsx))_
 - [ ] **Remediate from evidence, and hand off between providers.** Attempt and
       remediation counts survive a restart; a CI failure builds a
       `RemediationPacket`, resumes the original session where capacity allows,

@@ -22,7 +22,7 @@ import {
   type RepoLifecycleState,
   type RoadmapContent,
 } from '../types';
-import { applyAiDocImprovement, evaluateMergeReadiness, executeMergeReadinessMerge, executeRoadmapDispatch, getAgentRuns, getAiDocImprovementHistory, getAiDocTemplates, getMergeReadiness, getOperationsPromptHistory, getOperationsRepoDetail, getPortfolioScanStatus, getReadmeContent, getRoadmapContent, getRunnerPresence, previewAiDocImprovement, refineOperationsPrompt, refreshAgentRun, startPortfolioScan } from '../services/apiClient';
+import { applyAiDocImprovement, approveAgentRun, evaluateMergeReadiness, executeMergeReadinessMerge, executeRoadmapDispatch, getAgentRuns, getAiDocImprovementHistory, getAiDocTemplates, getMergeReadiness, getOperationsPromptHistory, getOperationsRepoDetail, getPortfolioScanStatus, getReadmeContent, getRoadmapContent, getRunnerPresence, previewAiDocImprovement, refineOperationsPrompt, refreshAgentRun, startPortfolioScan } from '../services/apiClient';
 import { resolveDispatchGate, type RunnerPresencePayload } from '../lib/runnerPresence';
 import { withPanelTimeout } from '../lib/asyncPanel';
 import { describeUsage } from '../lib/aiUsage';
@@ -311,6 +311,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
   const [mergeReadinessLoading, setMergeReadinessLoading] = useState(false);
   const [mergeReadinessError, setMergeReadinessError] = useState<string | null>(null);
   const [mergeActionLoading, setMergeActionLoading] = useState(false);
+  const [approveLoading, setApproveLoading] = useState(false);
   const [mergeActionNotice, setMergeActionNotice] = useState<string | null>(null);
 
   const filteredEntries = useMemo(() => {
@@ -706,6 +707,46 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
     }
   };
 
+  /**
+   * Release 3.8 M4 (H38-25) — approve the commit that is on screen.
+   *
+   * The sha travels explicitly rather than as "whatever is current": the server
+   * refuses anything that is not the verified head, and sending the value the
+   * operator actually saw is what turns that refusal into a real safeguard
+   * instead of a formality.
+   */
+  // An approval that no longer names the head is not stale UI -- it is an
+  // approval of a commit nobody is about to merge. Derived from the server's
+  // own evidence so the button and the server cannot disagree.
+  const mergeHeadDrifted = Boolean(
+    mergeReadiness?.evidence?.approvedSha &&
+    mergeReadiness?.evidence?.currentHeadSha &&
+    mergeReadiness.evidence.approvedSha !== mergeReadiness.evidence.currentHeadSha,
+  );
+
+  const handleApproveVerifiedHead = async () => {
+    const runId = mergeReadiness?.runId;
+    const sha = mergeReadiness?.evidence?.verifiedHeadSha;
+    if (!runId || !sha) {
+      return;
+    }
+
+    setApproveLoading(true);
+    setMergeReadinessError(null);
+    setMergeActionNotice(null);
+    try {
+      await approveAgentRun(runId, sha);
+      setMergeActionNotice(`Approved ${sha.substring(0, 7)}.`);
+      // Re-evaluate rather than patch state locally: the approval only means
+      // anything alongside the server's own view of the current head.
+      await handleEvaluateMergeReadiness();
+    } catch (err) {
+      setMergeReadinessError(err instanceof Error ? err.message : 'Approval was refused.');
+    } finally {
+      setApproveLoading(false);
+    }
+  };
+
   const handleLoadAgentRuns = async () => {
     if (!selectedEntry) {
       return;
@@ -716,7 +757,9 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
     setAgentRunNotice(null);
     try {
       const result = await getAgentRuns({ repoName: selectedEntry.repoName, limit: 10 });
-      setAgentRuns(result.items);
+      // A payload without items must not take the whole workspace down:
+      // every render below reads agentRuns.length unguarded.
+      setAgentRuns(Array.isArray(result.items) ? result.items : []);
     } catch (err) {
       setAgentRuns([]);
       setAgentRunsError(err instanceof Error ? err.message : 'Failed to load agent runs.');
@@ -2315,12 +2358,25 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                         {mergeReadinessLoading ? <SpinnerIcon className="w-3.5 h-3.5" /> : <RefreshIcon className="w-3.5 h-3.5" />}
                         Evaluate
                       </button>
+                      {mergeReadiness && !mergeReadiness.evidence.approvedSha && mergeReadiness.evidence.verifiedHeadSha && (
+                        <button
+                          data-testid="merge-approve-button"
+                          onClick={() => void handleApproveVerifiedHead()}
+                          disabled={approveLoading || mergeReadinessLoading}
+                          className="inline-flex items-center gap-2 rounded-md border border-amber-700/50 bg-amber-950/40 px-3 py-1.5 text-sm text-amber-100 hover:bg-amber-900/50 disabled:opacity-50 transition-colors"
+                          title="Approve this exact commit for merge — the server refuses any other"
+                        >
+                          {approveLoading ? <SpinnerIcon className="w-3.5 h-3.5" /> : null}
+                          Approve {mergeReadiness.evidence.verifiedHeadSha.substring(0, 7)}
+                        </button>
+                      )}
                       {mergeReadiness?.ready && (
                         <button
+                          data-testid="merge-pr-button"
                           onClick={() => void handleMergeAction()}
-                          disabled={mergeActionLoading || mergeReadinessLoading}
+                          disabled={mergeActionLoading || mergeReadinessLoading || mergeHeadDrifted}
                           className="inline-flex items-center gap-2 rounded-md border border-emerald-700/50 bg-emerald-950/40 px-3 py-1.5 text-xs text-emerald-100 hover:bg-emerald-900/50 disabled:opacity-50 transition-colors"
-                          title="Explicit operator merge — the server re-evaluates readiness and refuses if any blocker remains"
+                          title={mergeHeadDrifted ? 'Head moved since approval' : 'Explicit operator merge — the server re-evaluates readiness and refuses if any blocker remains'}
                         >
                           {mergeActionLoading ? <SpinnerIcon className="w-3.5 h-3.5" /> : null}
                           Merge PR
@@ -2328,6 +2384,25 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                       )}
                     </div>
                   </div>
+                  {mergeReadiness && (
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                      <span data-testid="merge-verified-head" className={mergeReadiness.evidence.verifiedHeadSha ? 'text-emerald-200' : 'text-gray-400'}>
+                        {mergeReadiness.evidence.verifiedHeadSha
+                          ? `Verified head: ${mergeReadiness.evidence.verifiedHeadSha.substring(0, 7)}`
+                          : 'Not yet verified'}
+                      </span>
+                      {mergeReadiness.evidence.approvedSha && (
+                        <span data-testid="merge-approved" className="text-emerald-200">
+                          Approved {mergeReadiness.evidence.approvedSha.substring(0, 7)}
+                        </span>
+                      )}
+                      {mergeHeadDrifted && (
+                        <span data-testid="merge-head-drifted" className="text-red-300">
+                          Head moved since approval
+                        </span>
+                      )}
+                    </div>
+                  )}
                   <div className="mt-2 text-xs text-gray-500">
                     Actions-gated merge signal for the latest agent run: merge stays blocked while the PR is missing, draft, conflicted, or unvalidated, while Actions are failing or pending, while the worktree is dirty, or while audit blockers remain. Merging is always an explicit operator action.
                   </div>

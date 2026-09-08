@@ -2937,6 +2937,36 @@ export async function executeMergeReadinessMerge(repoId: string): Promise<MergeR
   return data.data as MergeReadinessMergeResult;
 }
 
+interface ApproveEnvelope {
+  success?: boolean;
+  data?: AgentRun;
+  error?: string | { message?: string };
+}
+
+/**
+ * Release 3.8 M4 — approve a specific commit for merge.
+ *
+ * The sha is required and is sent as the operator saw it. The server refuses
+ * (409 `not-ready`) unless it is the head CI actually passed on, so approving
+ * from a stale screen fails loudly instead of approving whatever the branch
+ * has since become.
+ */
+export async function approveAgentRun(runId: string, sha: string): Promise<AgentRun> {
+  if (!runId.trim()) {
+    throw new Error('runId is required to approve an agent run.');
+  }
+  if (!sha.trim()) {
+    throw new Error('A commit sha is required: an approval that names no commit is what this action replaces.');
+  }
+
+  const data = await postJson<ApproveEnvelope>(`/agent-runs/${encodeURIComponent(runId)}/approve`, { sha });
+  if (!data?.success) {
+    const detail = typeof data?.error === 'string' ? data.error : data?.error?.message;
+    throw new Error(detail ?? 'Approval was refused.');
+  }
+  return data.data as AgentRun;
+}
+
 export async function refreshAgentRun(runId: string): Promise<AgentRunRefreshResult> {
   if (!runId.trim()) {
     throw new Error('runId is required to refresh an agent run.');
