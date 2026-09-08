@@ -1013,6 +1013,21 @@ to the queue — never fails it — when a provider is exhausted.
       [`status-vocabulary.md`](docs/reference/status-vocabulary.md), keeping the
       Release 3.5 rule that no two dimensions share a word. Per D-008 this is
       the one surface that dispatches. _(state: planned)_
+- [ ] **Amendments from the execution strategy — the three that are cheap now
+      and expensive later.** Absorbed into
+      [`Agent-Execution-Governance.md`](docs/governance/Agent-Execution-Governance.md)
+      on 2026-09-08. These three are in 3.8 **only** because a packet that has
+      not been written yet is their natural home; deferring them means reopening
+      work that has already shipped. Everything else the strategy adds is
+      Release 3.9. **(a)** Cost, duration and first-pass telemetry join the
+      canonical `execution.*` vocabulary as it is defined, not after — adding
+      them later is a second vocabulary migration through the reconciliation
+      that follows it, and no run executed before then can be costed
+      retroactively. **(b)** Provider and model become separate fields before
+      the resume path encodes provider-only session assumptions. **(c)**
+      Risk-based independent review enters the approval flow while that flow is
+      being built, rather than reopening the approve-binds-to-SHA contract and
+      its frontend afterwards. _(state: planned)_
 
 #### Acceptance criteria
 
@@ -1048,6 +1063,100 @@ ordinary work starves.
 **Dependencies:** D-001 for the dependency clause of eligibility; D-003's
 `Checks: Read` grant for check-run-level CI evidence; Release 3.7's trial for
 the measured baseline this release changes.
+
+---
+
+### Release 3.9 — Adaptive Routing
+
+**Status:** planned — defined 2026-09-08. Design authority is
+[`Agent-Execution-Governance.md`](docs/governance/Agent-Execution-Governance.md),
+which absorbed Ben's _Multi-Provider Agent Execution Strategy_ the same day.
+Follows Release 3.8, and cannot precede it: every milestone here consumes
+telemetry that 3.8 is what starts recording.
+
+**Goal:** Release 3.8 routes on _capacity_. This release routes on _evidence_.
+The router learns which provider actually completes this repository's workload,
+at what cost per verified task, and stops paying a frontier tier for work a
+cheaper one finishes first time — or stops sending an agent at all where the
+answer is deterministic.
+
+#### Product outcomes
+
+- Work the repository can answer itself never reaches a provider, so the
+  cheapest routing decision is also the fastest one.
+- The operator can see which provider is genuinely better for a kind of task in
+  this repository, rather than which one has the better reputation.
+- A cold-start preference that the evidence contradicts is overridden by the
+  evidence, not defended by the configuration.
+
+#### Engineering milestones
+
+- [ ] **Classify a task before choosing anything to run it.** A task profile —
+      type, complexity, risk, context scope, whether verification exists, whether
+      the work is deterministic — attached at qualification and carried on the
+      WorkPacket. Today `suitability` scores 1.0 when the packet's
+      `preferredProvider` matches the candidate and 0.5 otherwise, which echoes a
+      preference someone already stated rather than deriving one from the task,
+      so the initial routing policy has nothing to attach to. _(state: planned)_
+- [ ] **`NO_AGENT`: the deterministic tier is a routing outcome, not the absence
+      of one.** Branch state, CI status, file existence, repository metrics,
+      schema validation, mergeability and configured policy evaluation are
+      answered by application logic and recorded as a selection like any other.
+      _(state: planned)_
+- [ ] **A cost estimator that can eventually enforce.** `effective_cost` =
+      metered cost + quota pressure + retry + expected failure, with pricing
+      configurable or discovered rather than embedded. Enforcement stays off
+      until both the reserves and the per-task consumption estimate are
+      non-provisional — D-011 left the estimate a guess, and refusing dispatches
+      on a guessed number blocks real work for an unmeasured reason.
+      _(state: planned)_
+- [ ] **A performance store keyed by what actually varies.** Rolling first-pass
+      rate, eventual success, cost and duration per success, remediation count,
+      human-intervention rate and CI failure rate, broken down by
+      `provider × model × taskType × complexity`. The router reads
+      `provider × repository` success ratio today, which cannot distinguish a
+      provider that is excellent at documentation and poor at one coding
+      workload. _(state: planned)_
+- [ ] **Evidence overrides the cold-start prior.** Once a task class has enough
+      history, the empirical result wins over the configured preference, and the
+      routing record says which of the two decided it. _(state: planned)_
+- [ ] **Report the metric the release exists to move.** Verified tasks ÷ total
+      agent cost, with throughput and first-pass rate beside it, on
+      `GET /api/providers` and the Dispatch Board. _(state: planned)_
+
+#### Acceptance criteria
+
+- A task carries a classification before any provider is considered, and that
+  classification is not derived from a requested provider.
+- A deterministic task completes without an agent and records `NO_AGENT` as its
+  selection.
+- Provider and model are separately represented wherever the provider exposes
+  model choice.
+- Cost per verified task is computable from stored telemetry for any
+  `provider × model × taskType × complexity` slice with history.
+- A documented cold-start preference is demonstrably overridden by contrary
+  evidence in at least one task class, and the routing record names the
+  evidence.
+
+#### Out of scope
+
+- Redundant multi-provider execution of the same task as a default. Two-provider
+  work stays deliberate and risk-justified.
+- Raising concurrency above one local execution slot, which stays a Release 3.8
+  boundary until capacity accounting is proven.
+
+**Validation plan:** the classifier, the cost estimator and the performance
+store are pure decision tables, gated offline against fixtures in the shape the
+module smoke already uses; no packet spends provider quota to produce a fixture.
+
+**Risks:** a classifier that encodes the same provider preference it was meant
+to replace; a performance store confident on too little history — the router
+must keep distinguishing "unmeasured" from "measured as bad", as it already does
+for capacity; enforcement switched on before consumption is measured.
+
+**Dependencies:** Release 3.8 for the telemetry these milestones read, and in
+particular the 3.8 amendment that puts cost and duration into the canonical
+event vocabulary as it is defined.
 
 ---
 

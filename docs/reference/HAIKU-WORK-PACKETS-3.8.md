@@ -249,16 +249,19 @@ companion (`H-`).
 | H38-22 | M4 | `POST /api/delivery/reconcile`: open pending PRs, refresh CI, called from the runner's poll loop over https with the api key | H38-21 | high |
 | H38-23 | M4 | Record `verifiedHeadSha` and `readyForOperatorAt` when CI passes on a known head | H38-22, H-10 | medium |
 | H38-24 | M4 | `POST /api/agent-runs/{id}/approve` binds approval to a SHA; merge refuses on head drift | H38-23 | high |
+| H38-24b | M4 | **Strategy amendment.** Risk-based independent review: a high-risk run requires review by a provider other than the implementer before `READY_FOR_OPERATOR`; the reviewer receives requirements + diff, never the implementer's transcript | H38-24 | medium |
 | H38-25 | M4 | Frontend: approve control shows the SHA it approves; merge control disabled on drift | H38-24 | medium |
 | H38-26 | M4 | Milestone 4 closing; Lane 0.17 cadence non-blocker written back | H38-21…25 | low |
 | H38-27 | M5 | Attempt and remediation counters, persisted before any halt, cap from config | H38-03 | low |
 | H38-28 | M5 | `RemediationPacket` from CI evidence | H38-27, H38-23 | medium |
-| H38-29 | M5 | Resume the original session where capacity allows (Claude; Codex fixture-gated) | H38-28, H38-09 | high |
+| H38-28b | M5 | **Strategy amendment.** Provider and model become separate fields across registry, capacity records, routing records and telemetry. **Must precede H38-29**, which otherwise encodes provider-only session assumptions | H38-14, H38-15 | medium |
+| H38-29 | M5 | Resume the original session where capacity allows (Claude; Codex fixture-gated) | H38-28, H38-28b, H38-09 | high |
 | H38-30 | M5 | `HandoffPacket`: durable evidence only, cross-provider redispatch | H38-29, H38-17 | medium |
 | H38-31 | M5 | `CI_FAILED` → remediation enqueue on the reconcile tick, bounded by cap and capacity | H38-30, H38-22 | high |
 | H38-32 | M5 | Milestone 5 closing; Lane 0.18 carryover and cap items written back | H38-27…31 | low |
 | H38-33 | M6 | Canonical `execution.*` event vocabulary on the existing append-only stream | H38-04, H38-15 | medium |
-| H38-34 | M6 | Vocabulary reconciliation: sixth dimension, glossary, `roadmap-events.md` + mirror | H38-33 | medium |
+| H38-33b | M6 | **Strategy amendment.** Cost, duration and first-pass fields join the canonical `execution.*` vocabulary. **Must land between H38-33 and H38-34**: after the reconciliation it is a second vocabulary migration, and runs executed before it cannot be costed retroactively | H38-33 | medium |
+| H38-34 | M6 | Vocabulary reconciliation: sixth dimension, glossary, `roadmap-events.md` + mirror | H38-33, H38-33b | medium |
 | H38-35 | M6 | Dispatch Board renders provider, capacity, selection reason; capacity wait is not stalled | H38-19, H38-12, H-07 | medium |
 | H38-36 | M6 | Milestone 6 closing; Release 3.8 acceptance-criteria audit | H38-33…35 | low |
 | H38-37 | — | Close the UTF-8 BOM debt across 56 PowerShell files; ratchet to 0 | none (runs last) | low |
@@ -1425,6 +1428,105 @@ Against that: every flagged file is PowerShell (55 `.ps1` plus `PSScriptAnalyzer
 **Roadmap write-back:** the item is `- [ ] **P4 — BOM/PS5.1 hazard (60).**` in Lane 0.8 (verified 2026-09-07; the `(60)` is a stale count, the measured figure is 56). Append `_(state: done <date> — <n> PowerShell files given a UTF-8 BOM, byte prefix only; PSUseBOMForUnicodeEncodedFile ratcheted to <baseline>)_` to it. Leave the checkbox unchecked and the bullet in place: the archive move is a separate decision, and R3 forbids marking `[x]`.
 
 **Stop if:** step 2 finds a non-PowerShell file; or step 4 finds a file with more than one changed line; or the flagged count differs from 56 by more than ±5 (the set has drifted enough that it should be re-read rather than swept blind).
+
+---
+
+### H38-24b — Risk-based independent review
+
+**Why this packet exists.** Ben's execution strategy was absorbed into the spec
+on 2026-09-08. Most of what it added is Release 3.9. This is one of three
+amendments kept in 3.8, and only because the packet that owns its natural home
+has not been written yet: a review stage sits between `CI_PASSED` and
+`READY_FOR_OPERATOR`, which is exactly the contract H38-23/H38-24 are building.
+Adding it afterwards means reopening approve-binds-to-SHA and its frontend.
+
+**Roadmap item:** Release 3.8 M4. Spec: *Independent review*.
+
+**Prerequisites:** H38-24.
+
+**Scope (edit only):** `backend/modules/execution/` (one new reviewer-policy
+module); `backend/api-host/Start-RepoManagementApiHost.ps1` (the approve route
+only); `scripts/Invoke-ModuleSmokeTest.ps1`; `ROADMAP.md`.
+
+**Steps**
+
+1. `Resolve-ReviewRequirement -Risk <low|medium|high> -Implementer <token> -DiffLines <int> -VerificationComplete <bool> -Confidence <string>` → `[pscustomobject] { required (bool); reason (string); eligibleReviewers (string[]) }`. Pure. Low → never required. High → always required. Medium → required when verification is incomplete, the diff exceeds the configured threshold, confidence is `LOW`, or architecture changed.
+2. `eligibleReviewers` is every registry token except `auto` **and except the implementer**. A provider cannot review itself; that is the whole value being bought.
+3. The approve route refuses with `409` and `category = 'review-required'` when a run needs review and carries none, naming the eligible reviewers. It does **not** dispatch the review itself — that is H38-30's redispatch path, and this packet must not grow a second dispatcher.
+4. Config: `review.mediumRiskDiffLines`, default `200`, marked `provisional: true` — nobody has measured the right threshold, and D-011's lesson is that an unmeasured number must not silently enforce.
+
+**Gate (red first):**
+
+- Module smoke: low risk never requires; high risk always does; medium requires on each of the four triggers independently and not otherwise; `eligibleReviewers` never contains the implementer or `auto`. Predicted red: the function does not exist.
+- Api-host smoke: approving a high-risk run with no review → `409`, `category = 'review-required'`, `application/json` (assert the content-type, not the status — an unmatched route returns the SPA shell with 200).
+
+**Roadmap write-back:** append `; H38-24b risk-based independent review — high risk requires a different provider, medium risk requires one on four named triggers, and the reviewer is never the implementer`.
+
+**Stop if:** the approve route cannot see the run's risk without a new read (report the shape it does see); or the registry exposes fewer than two non-`auto` tokens on this installation, which would make every review requirement unsatisfiable (report, and do not ship a rule nothing can satisfy).
+
+---
+
+### H38-28b — Provider and model are separate fields
+
+**Why this packet exists.** The second of the three 3.8 amendments. `H38-29`
+resumes a provider session; written against a provider-only identity it will
+encode "one provider, one model" into the resume path, and unpicking that later
+touches every adapter. Cheaper by far to separate the fields first.
+
+**Roadmap item:** Release 3.8 M5. Spec: *Provider and model*.
+
+**Prerequisites:** H38-14, H38-15. **Must merge before H38-29.**
+
+**Scope (edit only):** `backend/config/agent-providers.json`; `backend/modules/execution/Execution.ProviderRegistry.ps1`; `backend/modules/execution/Execution.ProviderCapacity.ps1` (record key only); `backend/modules/execution/Execution.ProviderRouter.ps1` (selection record only); `scripts/Invoke-ModuleSmokeTest.ps1`; `ROADMAP.md`.
+
+**Steps**
+
+1. Each provider entry gains `models` (ordered array) and `defaultModel`. A provider exposing no model choice declares one entry naming the model it actually runs — **explicitly**, never an absent field: "no choice" and "unknown" are different claims, and only one of them is safe to report.
+2. `Get-AgentProviderModel -Provider <token> [-WorkspaceRoot]` returns the configured default; the registry gate asserts every `supported` provider declares at least one model and that `defaultModel` is in `models`.
+3. Capacity records and the routing record key on `provider` **and** `model`. A record written before this packet has no model: read it as `defaultModel` and mark the row `modelInferred = $true`, so a backfilled value is never mistaken for an observed one.
+4. `selectionReason` gains the model chosen and why, using the same shape the provider reason already uses.
+
+**Gate (red first):**
+
+- Module smoke: a provider with no `models` fails the config tripwire by name; `defaultModel` outside `models` fails; a pre-packet capacity record reads back with `modelInferred = $true` and a post-packet one with `$false`. Predicted red: `models` is not a recognised key.
+
+**Roadmap write-back:** append `; H38-28b provider and model are separate fields across registry, capacity and routing records, with a pre-packet record's model marked inferred rather than observed`.
+
+**Stop if:** any provider's real model identifier cannot be determined from its own CLI or documentation without running it (R12 forbids spending quota to find out) — record the token as `unknown`, gate that `unknown` is never written as a *default*, and report.
+
+---
+
+### H38-33b — Cost, duration and first-pass in the canonical vocabulary
+
+**Why this packet exists.** The third and most time-sensitive amendment.
+`H38-34` reconciles the event vocabulary across the glossary,
+`roadmap-events.md` and its mirror. Fields added to the vocabulary **before**
+that reconciliation cost one pass; fields added after cost a second migration
+through all of it. Worse, the spec's *Governor objective* metric — verified tasks ÷
+total agent cost — is not computable retroactively: a run that completed
+without recording its cost cannot be re-costed, so every run executed between
+H38-33 and this packet is permanently missing from the denominator.
+
+**Roadmap item:** Release 3.8 M6. Spec: *Historical performance*, *Governor objective*.
+
+**Prerequisites:** H38-33. **Must merge before H38-34.**
+
+**Scope (edit only):** `backend/modules/execution/Execution.Trace.ps1`; the execution-result contract module; `scripts/Invoke-ModuleSmokeTest.ps1`; `ROADMAP.md`.
+
+**Steps**
+
+1. The `execution.*` event vocabulary gains, per completed run: `inputUsage`, `outputUsage`, `estimatedCost`, `costBasis`, `startedAt`, `completedAt`, `durationSeconds`, `attemptCount`, `firstPassSuccess`, `verificationPassed`, `remediationRequired`, `ciResult`, `finalTaskResult`.
+2. `estimatedCost` is `$null` with `costBasis = 'no-rate-configured'` when no rate exists — the shape `AiDocImprovement.ps1` already uses. A null cost is an honest unknown; a zero is a claim that the run was free.
+3. `firstPassSuccess` is true only when `attemptCount -eq 1` **and** verification passed. It is derived at write time, not inferred later from an event stream that may have been truncated by retention.
+4. The record carries `taskType`, `complexity` and `model` when the packet supplies them, `$null` when it does not — so the Release 3.9 performance store can key on `provider × model × taskType × complexity` without a migration.
+
+**Gate (red first):**
+
+- Module smoke: a completed run emits every field; a run with no configured rate reads `estimatedCost = $null` and a named `costBasis`, never `0`; `firstPassSuccess` is false on a second attempt that passes and true only on a first attempt that passes; the fields absent from the packet are `$null` rather than missing keys. Predicted red: the fields are not in the vocabulary.
+
+**Roadmap write-back:** append `; H38-33b cost, duration and first-pass telemetry are in the canonical vocabulary before the reconciliation, with an unpriced run reading null rather than zero`.
+
+**Stop if:** the execution-result contract has no place for usage without a schema-version bump (report the version and the shape) — a silent shape change to a persisted contract is the defect this release exists to remove.
 
 ---
 
