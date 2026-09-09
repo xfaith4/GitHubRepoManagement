@@ -6303,7 +6303,11 @@ function Invoke-DeliveryReconciliation {
     param(
         [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
         [Parameter()][string]$CorrelationId = '',
-        [Parameter()][int]$MaxRuns = 3
+        [Parameter()][int]$MaxRuns = 3,
+        # H38-31: the caller's reading of runner presence, so a request reads it
+        # once. Absent means "derive it here", which is what the runner's own
+        # poll loop relies on.
+        [Parameter()][AllowNull()][object]$RunnerPresence = $null
     )
 
     $summary = [ordered]@{ prsOpened = 0; refreshed = 0; failed = 0; skipped = 0 }
@@ -6406,6 +6410,187 @@ function Invoke-DeliveryReconciliation {
     }
     catch {
         Write-HostLog ("[WARN ] delivery.reconcile correlationId={0} refresh aborted: {1}" -f $CorrelationId, $_.Exception.Message)
+    }
+
+    # H38-31 -- the third thing this tick does: a CI failure becomes queued work.
+    #
+    # The host ENQUEUES and never executes. Whether the remediation resumes the
+    # original session or is handed to a different provider is decided at claim
+    # time by the runner, against the capacity that is true then rather than the
+    # capacity that was true now.
+    #
+    # Idempotent on the Actions run URL. Without that key a tick every fourth
+    # poll would enqueue the same remediation repeatedly, and a cap counted per
+    # attempt would be exhausted by the ticking rather than by any real work.
+    $summary['remediationsEnqueued'] = 0
+    try {
+        $remCfg = $null
+        if (Get-Command -Name 'Get-AgentProviderConfig' -ErrorAction SilentlyContinue) {
+            try { $remCfg = Get-AgentProviderConfig -ConfigPath (Get-AgentProviderConfigPath -WorkspaceRoot $WorkspaceRoot) }
+            catch { $remCfg = $null }
+        }
+
+        # A18: the target comes from the config, never from a literal here. The
+        # one value that must not be passed through is `auto` while auto is
+        # disabled -- the runner cannot claim a token it will not resolve, so
+        # the entry would sit queued forever looking dispatched.
+        $remDispatch = Get-ObjectPropertyValue -InputObject $remCfg -PropertyName 'dispatch' -Default $null
+        $remTarget = [string](Get-ObjectPropertyValue -InputObject $remDispatch -PropertyName 'defaultTarget' -Default 'claude')
+        $remAutoEnabled = [bool](Get-ObjectPropertyValue -InputObject $remDispatch -PropertyName 'autoEnabled' -Default $false)
+        if ([string]::IsNullOrWhiteSpace($remTarget)) { $remTarget = 'claude' }
+        if ($remTarget -eq 'auto' -and -not $remAutoEnabled) { $remTarget = 'claude' }
+
+        $remRunsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
+
+        # Release 3.1's invariant, and it belongs on the write rather than on
+        # the surface that offers it: work queued with nothing able to claim it
+        # is stranded whichever road it took.
+        #
+        # Nothing is lost by waiting. The run keeps its failing conclusion and
+        # no `remediationEnqueuedFor`, so the first tick with a runner present
+        # enqueues it. Checked BEFORE the loop on purpose -- a tick that
+        # recorded attempts it could not queue would burn the cap by ticking.
+        $remPresence = $RunnerPresence
+        if ($null -eq $remPresence -and (Get-Command -Name 'Get-RunnerPresence' -ErrorAction SilentlyContinue)) {
+            try { $remPresence = Get-RunnerPresence -WorkspaceRoot $WorkspaceRoot }
+            catch { $remPresence = $null }
+        }
+        $remRunnerPresent = [bool](Get-ObjectPropertyValue -InputObject $remPresence -PropertyName 'present' -Default $false)
+
+        $remReady = $remRunnerPresent -and
+                    (Get-Command -Name 'New-RemediationPacket' -ErrorAction SilentlyContinue) -and
+                    (Get-Command -Name 'Write-RemediationAttempt' -ErrorAction SilentlyContinue) -and
+                    (Get-Command -Name 'New-RoadmapQueueEntry' -ErrorAction SilentlyContinue)
+
+        if (-not $remRunnerPresent) {
+            Write-HostLog ("[TRACE] delivery.reconcile correlationId={0} remediation sweep skipped: no operator runner is present to claim it" -f $CorrelationId)
+        }
+
+        if ($remReady -and (Test-Path -LiteralPath $remRunsDir -PathType Container)) {
+            $remEnqueued = 0
+            $remFiles = @(
+                Get-ChildItem -LiteralPath $remRunsDir -Filter '*.summary.json' -File -ErrorAction SilentlyContinue |
+                    Sort-Object LastWriteTimeUtc -Descending
+            )
+
+            foreach ($remFile in $remFiles) {
+                if ($remEnqueued -ge $MaxRuns) { break }
+
+                $remRecord = $null
+                try { $remRecord = Get-Content -LiteralPath $remFile.FullName -Raw -Encoding UTF8 | ConvertFrom-Json }
+                catch { continue }
+                if ($null -eq $remRecord) { continue }
+
+                $remActions = Get-ObjectPropertyValue -InputObject $remRecord -PropertyName 'actions' -Default $null
+                if ($null -eq $remActions) { continue }
+
+                $remConclusion = [string](Get-ObjectPropertyValue -InputObject $remActions -PropertyName 'conclusion' -Default '')
+                # An absent conclusion is CI still running, not CI failing.
+                if ([string]::IsNullOrWhiteSpace($remConclusion) -or $remConclusion -eq 'success') { continue }
+                if ([string](Get-ObjectPropertyValue -InputObject $remRecord -PropertyName 'status' -Default '') -eq 'completed') { continue }
+
+                $remRunUrl = [string](Get-ObjectPropertyValue -InputObject $remActions -PropertyName 'runUrl' -Default '')
+                $remAlready = [string](Get-ObjectPropertyValue -InputObject $remRecord -PropertyName 'remediationEnqueuedFor' -Default '')
+                if (-not [string]::IsNullOrWhiteSpace($remRunUrl) -and $remAlready -eq $remRunUrl) { continue }
+
+                $remPacketPath = [string](Get-ObjectPropertyValue -InputObject $remRecord -PropertyName 'workPacketPath' -Default '')
+                if ([string]::IsNullOrWhiteSpace($remPacketPath) -or -not (Test-Path -LiteralPath $remPacketPath -PathType Leaf)) {
+                    # A pre-3.8 run has no packet, and a remediation packet
+                    # cannot be honestly synthesized from prose. Skipped rather
+                    # than guessed at.
+                    $summary['skipped'] = [int]$summary['skipped'] + 1
+                    continue
+                }
+
+                try {
+                    $remOriginal = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $remPacketPath -Raw -Encoding UTF8)
+
+                    # The cap FIRST, and persisted before it is evaluated
+                    # (H38-27). Write-RemediationAttempt writes `blocked` and
+                    # the operator string itself when the cap is reached.
+                    $remVerdict = Write-RemediationAttempt -SummaryPath $remFile.FullName -Config $remCfg
+                    if ($remVerdict.reached) { continue }
+
+                    # Re-read: the attempt writer just rewrote this file, and
+                    # patching the stale copy would drop the count it persisted.
+                    $remRecord = Get-Content -LiteralPath $remFile.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+
+                    $remRunId = [string](Get-ObjectPropertyValue -InputObject $remRecord -PropertyName 'runId' -Default '')
+                    if ([string]::IsNullOrWhiteSpace($remRunId)) { $remRunId = [System.IO.Path]::GetFileNameWithoutExtension($remFile.Name) -replace '\.summary$', '' }
+                    $remTaskId = ('{0}-r{1}' -f $remRunId, [int]$remVerdict.count)
+
+                    # H-10 has not landed, so there is one coarse entry per run
+                    # rather than one per check. The shape is the same either
+                    # way, so nothing downstream changes when it does.
+                    $remFailures = @(
+                        [pscustomobject]@{
+                            name       = [string](Get-ObjectPropertyValue -InputObject $remActions -PropertyName 'workflowName' -Default 'CI')
+                            conclusion = $remConclusion
+                            url        = $remRunUrl
+                        }
+                    )
+
+                    $remPacket = New-RemediationPacket -WorkPacket $remOriginal -AgentRun $remRecord `
+                        -Summary $remRecord -CiFailures $remFailures -TaskId $remTaskId
+                    $remNewPacketPath = Save-WorkPacket -WorkspaceRoot $WorkspaceRoot -Packet $remPacket
+
+                    $remQueuedAt = (Get-Date).ToUniversalTime().ToString('o')
+                    $remEntry = New-RoadmapQueueEntry `
+                        -RunId $remTaskId `
+                        -Repository ([string](Get-ObjectPropertyValue -InputObject $remRecord -PropertyName 'repository' -Default '')) `
+                        -LocalRepoPath ([string](Get-ObjectPropertyValue -InputObject $remRecord -PropertyName 'localRepoPath' -Default '')) `
+                        -RoadmapPath ([string](Get-ObjectPropertyValue -InputObject $remRecord -PropertyName 'roadmapPath' -Default '')) `
+                        -SelectedTask ([string](Get-ObjectPropertyValue -InputObject $remRecord -PropertyName 'selectedTask' -Default '')) `
+                        -TaskDescription ([string]$remPacket.objective) `
+                        -Branch ([string](Get-ObjectPropertyValue -InputObject $remRecord -PropertyName 'branch' -Default '')) `
+                        -QueuedAt $remQueuedAt `
+                        -DispatchTarget $remTarget `
+                        -BaseBranch ([string](Get-ObjectPropertyValue -InputObject $remRecord -PropertyName 'baseBranch' -Default '')) `
+                        -WorkPacketPath $remNewPacketPath
+
+                    $remQueuePath = Get-RoadmapQueuePath -WorkspaceRoot $WorkspaceRoot
+                    $remQueueDir = Split-Path -Parent $remQueuePath
+                    if (-not (Test-Path -LiteralPath $remQueueDir)) { $null = New-Item -ItemType Directory -Path $remQueueDir -Force }
+                    Add-Content -LiteralPath $remQueuePath -Value ([pscustomobject]$remEntry | ConvertTo-Json -Depth 8 -Compress) -Encoding UTF8
+
+                    ([ordered]@{
+                        runId            = $remTaskId
+                        status           = 'queued'
+                        dispatchTarget   = $remTarget
+                        startedAt        = $remQueuedAt
+                        repository       = [string](Get-ObjectPropertyValue -InputObject $remRecord -PropertyName 'repository' -Default '')
+                        roadmapPath      = [string](Get-ObjectPropertyValue -InputObject $remRecord -PropertyName 'roadmapPath' -Default '')
+                        localRepoPath    = [string](Get-ObjectPropertyValue -InputObject $remRecord -PropertyName 'localRepoPath' -Default '')
+                        baseBranch       = [string](Get-ObjectPropertyValue -InputObject $remRecord -PropertyName 'baseBranch' -Default '')
+                        branch           = [string](Get-ObjectPropertyValue -InputObject $remRecord -PropertyName 'branch' -Default '')
+                        selectedTask     = [string](Get-ObjectPropertyValue -InputObject $remRecord -PropertyName 'selectedTask' -Default '')
+                        workPacketPath   = $remNewPacketPath
+                        attempt          = [int]$remPacket.execution.attempt
+                        remediationCount = [int]$remVerdict.count
+                        remediationOf    = $remRunId
+                        queuedBy         = 'delivery-reconcile'
+                    } | ConvertTo-Json -Depth 8) | Set-Content -LiteralPath (Join-Path $remRunsDir ("{0}.summary.json" -f $remTaskId)) -Encoding UTF8
+
+                    $remPatch = @{}
+                    foreach ($remProp in $remRecord.PSObject.Properties) { $remPatch[$remProp.Name] = $remProp.Value }
+                    $remPatch['remediationEnqueuedFor'] = $remRunUrl
+                    $remPatch['remediationTaskId'] = $remTaskId
+                    $remPatch['remediationDispatchTarget'] = $remTarget
+                    ($remPatch | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $remFile.FullName -Encoding UTF8
+
+                    $remEnqueued++
+                    $summary['remediationsEnqueued'] = [int]$summary['remediationsEnqueued'] + 1
+                    Write-HostLog ("[TRACE] delivery.reconcile correlationId={0} runId={1} remediation={2} target={3} ci={4}" -f $CorrelationId, $remRunId, $remTaskId, $remTarget, $remConclusion)
+                }
+                catch {
+                    $summary['failed'] = [int]$summary['failed'] + 1
+                    Write-HostLog ("[WARN ] delivery.reconcile correlationId={0} remediation enqueue failed: {1}" -f $CorrelationId, $_.Exception.Message)
+                }
+            }
+        }
+    }
+    catch {
+        Write-HostLog ("[WARN ] delivery.reconcile correlationId={0} remediation sweep aborted: {1}" -f $CorrelationId, $_.Exception.Message)
     }
 
     return [pscustomobject]$summary
@@ -8134,8 +8319,17 @@ try {
                     # ledgers, writes local bookkeeping, and makes at most
                     # MaxRuns PR-create calls with the token this host already
                     # uses for the approve-push route.
+                    #
+                    # H38-31 made this route a road to the task queue, so it
+                    # reads Get-RunnerPresence here and hands the answer down.
+                    # Work queued with nothing able to claim it is stranded, and
+                    # the gate belongs on every road to the write rather than on
+                    # the surfaces that offer it. Read once per request and
+                    # passed, rather than derived again inside.
                     Add-MetricCounter -Name 'api_requests_total'
-                    $reconcileSummary = Invoke-DeliveryReconciliation -WorkspaceRoot $WorkspaceRoot -CorrelationId $correlationId
+                    $reconcilePresence = $null
+                    try { $reconcilePresence = Get-RunnerPresence -WorkspaceRoot $WorkspaceRoot } catch { $reconcilePresence = $null }
+                    $reconcileSummary = Invoke-DeliveryReconciliation -WorkspaceRoot $WorkspaceRoot -CorrelationId $correlationId -RunnerPresence $reconcilePresence
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data = $reconcileSummary
