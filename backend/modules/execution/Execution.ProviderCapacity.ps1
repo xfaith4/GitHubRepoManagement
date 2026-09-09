@@ -197,7 +197,12 @@ function New-ProviderCapacityRecord {
         [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Windows,
         [bool]$Available = $true,
         [AllowEmptyString()][string]$ObservedAt = '',
-        [AllowEmptyString()][string]$CooldownUntil = ''
+        [AllowEmptyString()][string]$CooldownUntil = '',
+        # Release 3.8 M5 (H38-28b). Capacity is a property of a subscription AND
+        # of what ran on it. A record keyed on the provider alone cannot answer
+        # "which model burned this allowance", which is the question the 3.9
+        # performance store is built to ask.
+        [AllowEmptyString()][string]$Model = ''
     )
 
     $observed = $ObservedAt
@@ -235,8 +240,21 @@ function New-ProviderCapacityRecord {
         $normalized += , $entry
     }
 
+    # A model supplied here was OBSERVED. modelInferred stays false so a reader
+    # can tell it apart from a value backfilled on read.
+    $recordModel = $Model
+    if ([string]::IsNullOrWhiteSpace($recordModel)) {
+        $recordModel = 'unknown'
+        if (Get-Command -Name 'Get-AgentProviderModel' -ErrorAction SilentlyContinue) {
+            $resolvedModel = Get-AgentProviderModel -Provider $Provider
+            if (-not [string]::IsNullOrWhiteSpace($resolvedModel)) { $recordModel = $resolvedModel }
+        }
+    }
+
     return [ordered]@{
         provider         = $Provider
+        model            = $recordModel
+        modelInferred    = [bool][string]::IsNullOrWhiteSpace($Model)
         available        = [bool]$Available
         observedAt       = $observed
         activeExecutions = 0
@@ -373,6 +391,26 @@ function Read-ProviderCapacityRecord {
     # place records enter from disk -- means every consumer sees the same shape
     # whether the record was just built or just read, instead of each one
     # having to remember which it was handed.
+    # H38-28b. A record written before this packet carries no model. Reading it
+    # as the configured default is useful; reading it as an OBSERVATION would be
+    # a lie, so the backfill announces itself and every consumer can tell the
+    # difference without knowing when the record was written.
+    $parsedNames = @()
+    if ($null -ne $parsed.PSObject) { $parsedNames = @($parsed.PSObject.Properties.Name) }
+    $recordModel = ''
+    if ($parsedNames -contains 'model') { $recordModel = [string]$parsed.model }
+    $modelInferred = [string]::IsNullOrWhiteSpace($recordModel)
+    if ($modelInferred) {
+        $recordModel = 'unknown'
+        if (Get-Command -Name 'Get-AgentProviderModel' -ErrorAction SilentlyContinue) {
+            $resolvedModel = Get-AgentProviderModel -Provider $Provider -WorkspaceRoot $WorkspaceRoot
+            if (-not [string]::IsNullOrWhiteSpace($resolvedModel)) { $recordModel = $resolvedModel }
+        }
+    }
+    elseif ($parsedNames -contains 'modelInferred') {
+        $modelInferred = [bool]$parsed.modelInferred
+    }
+
     $windows = @()
     if ($null -ne $parsed.PSObject -and ($parsed.PSObject.Properties.Name -contains 'windows')) {
         foreach ($window in @($parsed.windows)) {
@@ -393,6 +431,11 @@ function Read-ProviderCapacityRecord {
         }
         $rebuilt[$property] = $parsed.$property
     }
+    # Set after the copy loop, which only carries properties the FILE had: a
+    # pre-packet record has neither key, and the backfill would be silently
+    # dropped by the very rebuild meant to normalise it.
+    $rebuilt['model'] = $recordModel
+    $rebuilt['modelInferred'] = [bool]$modelInferred
     return [pscustomobject]$rebuilt
 }
 

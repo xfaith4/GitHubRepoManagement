@@ -1036,7 +1036,11 @@ to the queue — never fails it — when a provider is exhausted.
       them, and `Write-RemediationAttempt` in
       [`backend/modules/execution/Execution.WorkPacket.ps1`](backend/modules/execution/Execution.WorkPacket.ps1)
       persists the incremented count before it evaluates the cap; an
-      unwritable summary throws rather than returning a verdict)_
+      unwritable summary throws rather than returning a verdict. H38-28b
+      provider and model are separate fields across registry, capacity and
+      routing records, with a pre-packet record's model marked inferred rather
+      than observed; every provider declares `unknown` explicitly, because no
+      model identifier is determinable without running a CLI (R12))_
 - [ ] **Normalize execution events onto the Dispatch Board.** Provider output
       converts to the canonical `execution.*` vocabulary, reconciled with
       [`roadmap-events.md`](standards/roadmap/roadmap-events.md) so exactly one
