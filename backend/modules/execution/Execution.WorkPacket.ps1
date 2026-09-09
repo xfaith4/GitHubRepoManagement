@@ -41,6 +41,8 @@ $ErrorActionPreference = 'Stop'
 # Bump only for a breaking shape change, and only alongside a reader that can
 # still open version 1 — a packet on disk outlives the process that wrote it.
 $script:WorkPacketSchemaVersion = 1
+# H38-27: a missing remediation cap must not read as an infinite one.
+$script:WorkPacketDefaultRemediationCap = 2
 
 <#
 .SYNOPSIS
@@ -163,6 +165,105 @@ function New-WorkPacket {
     route with one chance to tell an operator what is wrong. Accepts a freshly
     built [ordered] hashtable or one read back from JSON.
 #>
+function Test-RemediationCapReached {
+    <#
+    .SYNOPSIS
+        Pure - has this run used up its remediation attempts?
+
+    .DESCRIPTION
+        Release 3.8 M5 (H38-27). The count comes off the run summary rather
+        than from a variable, because the spec forbids a retry counter that
+        exists only in process memory: a runner that dies mid-remediation and
+        restarts believing this is attempt one turns a cap into a suggestion.
+
+        Absent configuration FAILS CLOSED. A missing cap is not an infinite
+        one -- reading it as "no limit" would let a misconfigured install
+        remediate forever, which is the failure a cap exists to prevent. The
+        documented default stands in instead.
+    .OUTPUTS
+        [pscustomobject] reached, count, cap
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter()][object]$Summary = $null,
+        [Parameter()][object]$Config = $null
+    )
+
+    $count = 0
+    $rawCount = _WP_Field -Obj $Summary -Name 'remediationCount' -Default 0
+    if ($null -ne $rawCount) { $count = [int]$rawCount }
+
+    $cap = $script:WorkPacketDefaultRemediationCap
+    $remediation = _WP_Field -Obj $Config -Name 'remediation' -Default $null
+    $configuredCap = _WP_Field -Obj $remediation -Name 'maxRemediationAttempts' -Default $null
+    if ($null -ne $configuredCap) {
+        $parsed = [int]$configuredCap
+        if ($parsed -gt 0) { $cap = $parsed }
+    }
+
+    return [pscustomobject]@{
+        reached = ($count -ge $cap)
+        count   = $count
+        cap     = $cap
+    }
+}
+
+function Write-RemediationAttempt {
+    <#
+    .SYNOPSIS
+        Record one remediation attempt, then say whether the cap is reached.
+
+    .DESCRIPTION
+        Release 3.8 M5 (H38-27). The ORDER is the whole point, and it is the
+        persist-before-halt rule from Lane 0.18: the incremented count reaches
+        disk first, and only then is the cap evaluated. Evaluating first and
+        writing after leaves a window where a crash loses the attempt, and a
+        lost attempt is an uncapped loop.
+
+        A write that cannot land THROWS rather than returning a verdict. A
+        caller that halted on a count nobody persisted would be acting on the
+        in-memory-only counter the spec exists to remove -- so there is
+        deliberately no path from a failed write to an answer.
+    .OUTPUTS
+        [pscustomobject] reached, count, cap
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Records an attempt that has already been decided on; -WhatIf on a durability write would offer to skip the very persistence this function exists to guarantee.')]
+    param(
+        [Parameter(Mandatory)][string]$SummaryPath,
+        [Parameter()][object]$Config = $null
+    )
+
+    $summary = @{}
+    if (Test-Path -LiteralPath $SummaryPath -PathType Leaf) {
+        try { $summary = Get-Content -LiteralPath $SummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable }
+        catch { $summary = @{} }
+    }
+    if ($null -eq $summary) { $summary = @{} }
+
+    $current = 0
+    if ($summary.ContainsKey('remediationCount') -and $null -ne $summary['remediationCount']) {
+        $current = [int]$summary['remediationCount']
+    }
+    $summary['remediationCount'] = $current + 1
+
+    $verdict = Test-RemediationCapReached -Summary ([pscustomobject]$summary) -Config $Config
+    if ($verdict.reached) {
+        $summary['status'] = 'blocked'
+        $summary['blockedCode'] = 'remediation-cap-reached'
+        $summary['error'] = ('remediation cap {0} reached after {1} attempts' -f $verdict.cap, $verdict.count)
+    }
+
+    # -ErrorAction Stop: a silent write failure here would hand back a verdict
+    # about a number that never reached disk.
+    ($summary | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $SummaryPath -Encoding UTF8 -ErrorAction Stop
+
+    return $verdict
+}
+
 function Test-WorkPacket {
     param([Parameter(Mandatory)][object]$Packet)
 

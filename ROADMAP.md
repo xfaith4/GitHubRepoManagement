@@ -1031,7 +1031,12 @@ to the queue — never fails it — when a provider is exhausted.
       `RemediationPacket`, resumes the original session where capacity allows,
       and otherwise transfers a `HandoffPacket` of durable evidence to another
       eligible provider. No provider depends on another's conversation.
-      _(state: planned)_
+      _(state: scaffolded 2026-09-09 — H38-27 `attempt` and `remediationCount`
+      live on the run summary, written with the claim so a crash cannot lose
+      them, and `Write-RemediationAttempt` in
+      [`backend/modules/execution/Execution.WorkPacket.ps1`](backend/modules/execution/Execution.WorkPacket.ps1)
+      persists the incremented count before it evaluates the cap; an
+      unwritable summary throws rather than returning a verdict)_
 - [ ] **Normalize execution events onto the Dispatch Board.** Provider output
       converts to the canonical `execution.*` vocabulary, reconciled with
       [`roadmap-events.md`](standards/roadmap/roadmap-events.md) so exactly one
