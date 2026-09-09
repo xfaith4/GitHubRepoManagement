@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Release 2.2 auth smoke — proves the API-key gate and the non-loopback bind
     guard end-to-end against a live host.

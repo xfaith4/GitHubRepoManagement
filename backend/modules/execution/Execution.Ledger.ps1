@@ -1,4 +1,4 @@
-# Execution.Ledger.ps1
+﻿# Execution.Ledger.ps1
 # Persistent two-lane execution state ledger for Release 1.0.
 # Manages repo assignment, duplicate-dispatch prevention, execution states,
 # and task outcomes for the portfolio execution console.

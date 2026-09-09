@@ -1,4 +1,4 @@
-# ── Portal user login: password credential + signed session cookie ───────────
+﻿# ── Portal user login: password credential + signed session cookie ───────────
 # Release 2.7 — human login layer that composes with the Release 2.2 API key.
 #
 # Model: one operator password (PBKDF2-SHA256, per-install salt) is exchanged at

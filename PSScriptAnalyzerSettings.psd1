@@ -1,4 +1,4 @@
-@{
+﻿@{
     # PSScriptAnalyzer policy for this repo (ROADMAP Lane 0.8), consumed by
     # scripts/Invoke-LintGate.ps1 (the suite/CI gate) and picked up
     # automatically by the VS Code PowerShell extension.

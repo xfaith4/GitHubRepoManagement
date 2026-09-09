@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Builds a repository-scoped README/ROADMAP improvement task preview.
 .DESCRIPTION

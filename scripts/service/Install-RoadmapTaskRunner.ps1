@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Register (or remove) the roadmap task runner as a per-user LOGON Scheduled Task.
 

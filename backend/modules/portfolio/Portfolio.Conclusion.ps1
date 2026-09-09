@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Release 3.6 milestone 1 - one explainable conclusion per repository.
 .DESCRIPTION

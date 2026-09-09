@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Documentation audit scanner for local repositories.
 .DESCRIPTION

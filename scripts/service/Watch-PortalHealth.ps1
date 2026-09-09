@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     External liveness watchdog for the always-on RepoMgmtPortal service.
 

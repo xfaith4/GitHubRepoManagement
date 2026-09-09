@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Copilot-assisted README generation for repositories without a README.md.
 

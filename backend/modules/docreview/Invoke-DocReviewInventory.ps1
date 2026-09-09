@@ -1,4 +1,4 @@
-### BEGIN FILE: Invoke-DocReviewInventory.ps1
+﻿### BEGIN FILE: Invoke-DocReviewInventory.ps1
 
 [CmdletBinding()]
 param(

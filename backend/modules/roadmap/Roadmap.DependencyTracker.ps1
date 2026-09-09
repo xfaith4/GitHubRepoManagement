@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Cross-repo dependency tracker for ROADMAP.md files.
 .DESCRIPTION

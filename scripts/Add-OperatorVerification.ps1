@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Record that an operator has verified a smoke-tested surface end-to-end.
 

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     The daily evidence driver — one command that proves the gate and captures
     decision-grade evidence for the single-operator execution console.

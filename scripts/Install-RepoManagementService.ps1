@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 <#
 .SYNOPSIS
     Install, repair, reconfigure, or remove the GitHub Repo Management portal as

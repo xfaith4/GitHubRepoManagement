@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Validates ROADMAP.md structural integrity for the GitHub Repo Management
     portfolio execution console.
