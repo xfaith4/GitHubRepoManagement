@@ -4202,6 +4202,220 @@ A release should not be marked `done` unless:
         Remove-Item -LiteralPath $reconcileFixture -Recurse -Force -ErrorAction SilentlyContinue
     }
 
+    # ── Release 3.8 M5 (H38-31) — CI_FAILED becomes queued remediation ───────
+    # Driven for real through the route, because the point is that the tick
+    # WRITES a queue line and a packet. Asserting over source would prove the
+    # code exists and nothing about whether the enqueue lands in the queue the
+    # runner actually reads.
+    #
+    # The target is read from the COMMITTED config rather than hardcoded here.
+    # Hardcoding it is how a gate comes to assert the value the test author
+    # expected instead of the value the product ships.
+    Write-Host '[STEP] Remediation enqueue - a CI failure becomes queued work, once (Release 3.8 M5)' -ForegroundColor Cyan
+    $remRunId = ("smoke-remediate-{0}" -f ([guid]::NewGuid().ToString('n').Substring(0, 8)))
+    $remCapRunId = ("smoke-remediate-cap-{0}" -f ([guid]::NewGuid().ToString('n').Substring(0, 8)))
+    $remFixture = Join-Path $WorkspaceRoot 'output\smoke\api-host\remediation'
+    $remRunsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
+    $remSummaryPath = Join-Path $remRunsDir ("{0}.summary.json" -f $remRunId)
+    $remCapSummaryPath = Join-Path $remRunsDir ("{0}.summary.json" -f $remCapRunId)
+    # The operator's real heartbeat file. Backed up and put back exactly as
+    # found, or a smoke run on a machine with a live runner would disrupt it.
+    $remHeartbeatPath = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.heartbeat.json'
+    $remHeartbeatBackup = if (Test-Path -LiteralPath $remHeartbeatPath) { Get-Content -LiteralPath $remHeartbeatPath -Raw -Encoding UTF8 } else { $null }
+    try {
+        if (Test-Path -LiteralPath $remFixture) { Remove-Item -LiteralPath $remFixture -Recurse -Force }
+        $null = New-Item -ItemType Directory -Path $remFixture -Force
+
+        $remCfgPath = Join-Path $WorkspaceRoot 'backend\config\agent-providers.json'
+        $remCfgJson = Get-Content -LiteralPath $remCfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $remExpectedTarget = [string]$remCfgJson.dispatch.defaultTarget
+        if ([string]::IsNullOrWhiteSpace($remExpectedTarget)) { throw 'agent-providers.json declares no dispatch.defaultTarget' }
+        $remCap = 3
+        if ($remCfgJson.PSObject.Properties.Name -contains 'remediation' -and $null -ne $remCfgJson.remediation.maxRemediationAttempts) {
+            $remCap = [int]$remCfgJson.remediation.maxRemediationAttempts
+        }
+
+        # The original task, as data. A pre-3.8 run has no packet and the host
+        # skips it rather than synthesizing one, so the fixture carries a real
+        # one.
+        $remPacketPath = Join-Path $remFixture 'original.workpacket.json'
+        @{
+            schemaVersion      = 1
+            taskId             = $remRunId
+            repository         = 'acme/widget'
+            baseBranch         = 'main'
+            baseSha            = 'base111'
+            objective          = 'Add a retry to the uploader'
+            scope              = @{ allowedPaths = @('src/**'); forbiddenPaths = @() }
+            acceptanceCriteria = @('The uploader retries three times')
+            verification       = @{ commands = @('npm test') }
+            permissions        = @{ filesystemWrite = $true; shell = $true; network = $false; githubWrite = $false }
+            execution          = @{ attempt = 1; preferredProvider = 'auto'; previousSessionId = $null }
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $remPacketPath -Encoding UTF8
+
+        # A run CI has failed and nobody has acted on. `status` is deliberately
+        # not 'completed': a completed run is finished, whatever CI said.
+        @{
+            runId             = $remRunId
+            status            = 'awaiting-review'
+            branch            = 'roadmap/remediate-smoke'
+            localRepoPath     = $remFixture
+            repository        = 'acme/widget'
+            selectedTask      = 'Smoke-test the remediation enqueue'
+            workPacketPath    = $remPacketPath
+            attempt           = 1
+            remediationCount  = 0
+            providerSessionId = 's1'
+            selectedProvider  = 'claude'
+            prHeadSha         = 'aaa111'
+            actions           = @{ status = 'completed'; conclusion = 'failure'; workflowName = 'CI Smoke'; runUrl = 'https://smoke.invalid/actions/u1' }
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $remSummaryPath -Encoding UTF8
+
+        # The same run, already at its cap. It must enqueue nothing and say so.
+        @{
+            runId            = $remCapRunId
+            status           = 'awaiting-review'
+            branch           = 'roadmap/remediate-cap-smoke'
+            localRepoPath    = $remFixture
+            repository       = 'acme/widget'
+            workPacketPath   = $remPacketPath
+            attempt          = 1
+            remediationCount = $remCap
+            selectedProvider = 'claude'
+            actions          = @{ status = 'completed'; conclusion = 'failure'; workflowName = 'CI Smoke'; runUrl = 'https://smoke.invalid/actions/u2' }
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $remCapSummaryPath -Encoding UTF8
+
+        # With NO runner, the tick must enqueue nothing and must not touch the
+        # run. Asserted before the happy path because the gate belongs on the
+        # write: work queued with nothing able to claim it is stranded, and a
+        # tick that recorded an attempt it could not queue would burn the cap
+        # by ticking rather than by any real work.
+        if (Test-Path -LiteralPath $remHeartbeatPath) { Remove-Item -LiteralPath $remHeartbeatPath -Force }
+        $remNoRunner = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/delivery/reconcile" -Body @{}
+        if (-not $remNoRunner.Json.success) { throw 'The no-runner reconcile tick reported success=false' }
+        if ([int]$remNoRunner.Json.data.remediationsEnqueued -ne 0) {
+            throw ("With no runner present nothing may be enqueued, got remediationsEnqueued={0}" -f $remNoRunner.Json.data.remediationsEnqueued)
+        }
+        $remNoRunnerAfter = Get-Content -LiteralPath $remSummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ([int]$remNoRunnerAfter.remediationCount -ne 0) {
+            throw ("A tick with no runner burned an attempt; remediationCount is {0}" -f $remNoRunnerAfter.remediationCount)
+        }
+        if ($remNoRunnerAfter.PSObject.Properties.Name -contains 'remediationEnqueuedFor') {
+            throw 'A tick with no runner marked the failure as remediated; the next tick would never retry it'
+        }
+
+        # A present runner lets the same failure through.
+        $remHeartbeatDir = Split-Path -Parent $remHeartbeatPath
+        if (-not (Test-Path -LiteralPath $remHeartbeatDir)) { $null = New-Item -ItemType Directory -Path $remHeartbeatDir -Force }
+        ([pscustomobject]@{
+                hostname = 'api-host-smoke'; user = 'smoke'; pid = 4242; mode = 'claude'
+                pollSeconds = 5; claimedCount = 0; lastHeartbeatAt = ([datetime]::UtcNow).ToString('o')
+            } | ConvertTo-Json -Depth 5) | Set-Content -LiteralPath $remHeartbeatPath -Encoding UTF8
+
+        $remResp = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/delivery/reconcile" -Body @{}
+        $remCt = [string]$remResp.ContentType
+        if ($remCt -notlike 'application/json*') {
+            throw ("POST /api/delivery/reconcile did not answer JSON (HTTP {0}, {1})" -f $remResp.StatusCode, $remCt)
+        }
+        if ($remResp.Json.data.PSObject.Properties.Name -notcontains 'remediationsEnqueued') {
+            throw "The reconcile summary is missing 'remediationsEnqueued'"
+        }
+        # >= 1 rather than = 1: this runs against the operator's real run
+        # history, which may hold other failing runs. The count proves the tick
+        # enqueued; the per-run assertions below prove it enqueued THIS one.
+        if ([int]$remResp.Json.data.remediationsEnqueued -lt 1) {
+            throw ("A failing CI run must enqueue a remediation, got remediationsEnqueued={0}" -f $remResp.Json.data.remediationsEnqueued)
+        }
+
+        $remAfter = Get-Content -LiteralPath $remSummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ([string]$remAfter.remediationEnqueuedFor -ne 'https://smoke.invalid/actions/u1') {
+            throw ("The original run must record the Actions URL it remediated, got '{0}'" -f $remAfter.remediationEnqueuedFor)
+        }
+        if ([int]$remAfter.remediationCount -ne 1) {
+            throw ("The attempt must be persisted, expected remediationCount=1, got {0}" -f $remAfter.remediationCount)
+        }
+        if ([string]$remAfter.remediationDispatchTarget -ne $remExpectedTarget) {
+            throw ("The recorded target must be the config's dispatch.defaultTarget '{0}', got '{1}'" -f $remExpectedTarget, $remAfter.remediationDispatchTarget)
+        }
+        $remTaskId = [string]$remAfter.remediationTaskId
+        if ([string]::IsNullOrWhiteSpace($remTaskId)) { throw 'The original run must name the remediation task it created' }
+        if ($remTaskId -ne ("{0}-r1" -f $remRunId)) { throw ("The remediation task id must carry the count, got '{0}'" -f $remTaskId) }
+
+        # The queue line, in the queue the runner actually reads.
+        $remQueueLines = @(Get-Content -LiteralPath $smokeQueuePath -Encoding UTF8 | Where-Object { $_ })
+        $remEntry = $null
+        foreach ($remLine in $remQueueLines) {
+            $remParsed = $null
+            try { $remParsed = $remLine | ConvertFrom-Json } catch { continue }
+            if ($null -ne $remParsed -and [string]$remParsed.runId -eq $remTaskId) { $remEntry = $remParsed }
+        }
+        if ($null -eq $remEntry) { throw ("No queue line was written for '{0}'; the enqueue did not reach the runner's queue" -f $remTaskId) }
+        if ([string]$remEntry.dispatchTarget -ne $remExpectedTarget) {
+            throw ("The queue line must carry the config's dispatch.defaultTarget '{0}', got '{1}'" -f $remExpectedTarget, $remEntry.dispatchTarget)
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$remEntry.workPacketPath)) { throw 'The queue line must point at a work packet' }
+        if (-not (Test-Path -LiteralPath ([string]$remEntry.workPacketPath) -PathType Leaf)) {
+            throw ("The queued work packet does not exist at {0}" -f $remEntry.workPacketPath)
+        }
+
+        $remNewPacket = Get-Content -LiteralPath ([string]$remEntry.workPacketPath) -Raw -Encoding UTF8 | ConvertFrom-Json
+        if (@($remNewPacket.remediation.ciFailures).Count -lt 1) { throw 'The remediation packet must carry the CI evidence it was built from' }
+        if ([string]$remNewPacket.execution.previousProvider -ne 'claude') { throw 'The remediation packet must name the provider that failed' }
+        if ([string]$remNewPacket.execution.previousSessionId -ne 's1') { throw 'The remediation packet must carry the session to resume' }
+        if (@($remNewPacket.acceptanceCriteria) -notcontains 'The uploader retries three times') {
+            throw 'The original acceptance criteria must survive into the remediation'
+        }
+
+        # At the cap: nothing queued, and the run says why.
+        $remCapAfter = Get-Content -LiteralPath $remCapSummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ([string]$remCapAfter.status -ne 'blocked') {
+            throw ("A run at its remediation cap must read blocked, got '{0}'" -f $remCapAfter.status)
+        }
+        if ([string]$remCapAfter.blockedCode -ne 'remediation-cap-reached') {
+            throw ("Wrong blockedCode at the cap: '{0}'" -f $remCapAfter.blockedCode)
+        }
+        # Absent, not empty: under StrictMode the property simply does not
+        # exist on a run that enqueued nothing, which is the state being
+        # asserted rather than an accident of the fixture.
+        if ($remCapAfter.PSObject.Properties.Name -contains 'remediationTaskId') {
+            throw 'A run at its cap must not have enqueued anything'
+        }
+
+        # Idempotent on the Actions run URL. Without this key the tick would
+        # enqueue the same remediation every fourth poll and exhaust the cap by
+        # ticking rather than by any real work.
+        $remSecond = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/delivery/reconcile" -Body @{}
+        if (-not $remSecond.Json.success) { throw 'The second reconcile tick reported success=false' }
+        $remSecondAfter = Get-Content -LiteralPath $remSummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ([int]$remSecondAfter.remediationCount -ne 1) {
+            throw ("A second tick re-enqueued the same failure; remediationCount went to {0}" -f $remSecondAfter.remediationCount)
+        }
+        if ([string]$remSecondAfter.remediationTaskId -ne $remTaskId) {
+            throw 'A second tick created a different remediation task for the same CI failure'
+        }
+        $remQueueAfterSecond = @(Get-Content -LiteralPath $smokeQueuePath -Encoding UTF8 | Where-Object { $_ } |
+                Where-Object { $_ -like ("*{0}*" -f $remTaskId) })
+        if ($remQueueAfterSecond.Count -ne 1) {
+            throw ("Exactly one queue line may exist for '{0}', found {1}" -f $remTaskId, $remQueueAfterSecond.Count)
+        }
+
+        Write-Host ("  remediation enqueue ok: no runner enqueues nothing and burns no attempt; target='{0}' from config, task='{1}', packet carries the CI evidence and the original criteria; the cap blocks without queueing; a second tick changed nothing" -f `
+                $remExpectedTarget, $remTaskId) -ForegroundColor DarkGray
+    }
+    finally {
+        if ($null -ne $remHeartbeatBackup) {
+            Set-Content -LiteralPath $remHeartbeatPath -Value $remHeartbeatBackup -Encoding UTF8 -NoNewline
+        }
+        elseif (Test-Path -LiteralPath $remHeartbeatPath) {
+            Remove-Item -LiteralPath $remHeartbeatPath -Force -ErrorAction SilentlyContinue
+        }
+        Remove-Item -LiteralPath $remSummaryPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $remCapSummaryPath -Force -ErrorAction SilentlyContinue
+        Get-ChildItem -LiteralPath $remRunsDir -Filter 'smoke-remediate-*' -File -ErrorAction SilentlyContinue |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $remFixture -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
     # ── Release 3.8 M4 (H38-24) — approval binds to a commit ────────────────
     # Driven for real: the point is that the route REFUSES a sha that is not the
     # verified head, and only a real request proves the refusal is a JSON 409

@@ -1031,7 +1031,7 @@ to the queue — never fails it — when a provider is exhausted.
       `RemediationPacket`, resumes the original session where capacity allows,
       and otherwise transfers a `HandoffPacket` of durable evidence to another
       eligible provider. No provider depends on another's conversation.
-      _(state: scaffolded 2026-09-09 — H38-27 `attempt` and `remediationCount` live on the run summary, written with the claim so a crash cannot lose them, and `Write-RemediationAttempt` in
+      _(state: smoke-tested 2026-09-09 — H38-27 `attempt` and `remediationCount` live on the run summary, written with the claim so a crash cannot lose them, and `Write-RemediationAttempt` in
       [`backend/modules/execution/Execution.WorkPacket.ps1`](backend/modules/execution/Execution.WorkPacket.ps1)
       persists the incremented count before it evaluates the cap; an
       unwritable summary throws rather than returning a verdict. H38-28b
@@ -1048,7 +1048,12 @@ to the queue — never fails it — when a provider is exhausted.
       H38-30 `New-HandoffPacket` carries only durable evidence — a
       `priorResult` holding a transcript is refused by name and by length —
       and a switch excludes the previous provider through the router's new
-      `-Exclude` and starts a fresh session)_
+      `-Exclude` and starts a fresh session; H38-31 the reconcile tick enqueues
+      one remediation per failing CI run, idempotent on the Actions run URL,
+      cap checked first, target read from `dispatch.defaultTarget` rather than
+      any literal — the host enqueues and never executes, so resume-versus-
+      handoff stays a claim-time decision made against the capacity that is
+      true then)_
 - [ ] **Normalize execution events onto the Dispatch Board.** Provider output
       converts to the canonical `execution.*` vocabulary, reconciled with
       [`roadmap-events.md`](standards/roadmap/roadmap-events.md) so exactly one
@@ -2489,7 +2494,7 @@ are re-scoped into Release 3.8** rather than built standalone; each says how.
       **Re-scoped 2026-09-06:** this is the `HandoffPacket`'s `priorResult` and
       `remainingScope` in Release 3.8 — build it there, once, rather than as a
       separate carryover channel that a cross-provider handoff would then have
-      to duplicate. _(state: planned)_
+      to duplicate. _(state: smoke-tested 2026-09-09 — delivered as Release 3.8 H38-30: `HandoffPacket.priorResult` and `remainingScope` carry the prior run's evidence into the next prompt, and a repository with no prior run renders the H38-05 prompt unchanged)_
 - [ ] **Check the acceptance criteria before a pull request is called ready.**
       Dispatch prompts already carry acceptance criteria and nothing verifies
       them; merge evidence answers "did this land", not "did it do what the
@@ -2519,7 +2524,7 @@ are re-scoped into Release 3.8** rather than built standalone; each says how.
       persist-before-halt ordering applied to the unit each provider actually
       exposes; the work-unit quota stays the portfolio budget beside it. The
       two measure different things and neither replaces the other.
-      _(state: planned)_
+      _(state: smoke-tested 2026-09-09 — delivered as Release 3.8 H38-09/H38-27: per-provider reserves in `agent-providers.json` and a remediation cap persisted before the halt; the work-unit quota in `BudgetLedger.ps1` is unchanged)_
 - [ ] **Order work inside one repository's roadmap, and detect dead ends.**
       [`Roadmap.DependencyTracker.ps1`](backend/modules/roadmap/Roadmap.DependencyTracker.ps1)
       finds references _between_ repositories; nothing orders items _within_ a

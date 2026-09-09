@@ -1,4 +1,4 @@
-# Local task runner (Claude Code, Codex and Copilot)
+﻿# Local task runner (Claude Code, Codex and Copilot)
 
 **Release 3.0 — one dispatch model.** The portal enqueues; this runner executes
 in your session. That is now true for *both* targets: local Claude Code work and
@@ -223,6 +223,29 @@ Three refusals say which is missing — `no-verified-head`,
 `no-operator-approval`, `head-moved-since-approval` — and the Merge Readiness
 panel shows the SHA it is asking you to approve. If the head moves after you
 approve, the approval is cleared and the merge control disables itself.
+
+## Remediation and handoff (Release 3.8 M5)
+
+When CI fails on a run nobody has closed, the reconcile tick turns that failure
+back into queued work. Each failing check becomes an acceptance criterion, and
+the original criteria travel with it, so a fix that turned the check green by
+deleting the test still fails the packet it was given.
+
+The attempt is written to disk **before** the cap is evaluated. A runner that
+died between the two would otherwise come back believing this was attempt one,
+which turns a cap into a suggestion.
+
+At claim time the runner decides between resuming the original provider session
+and handing the work to a different provider. It resumes only when the session
+id exists, the provider's adapter can resume, and remediation capacity allows.
+Everything else hands off, because a resume against a session that is gone
+fails *after* the capacity has been spent.
+
+A handoff carries durable evidence only: changed files, CI failures, and the
+structured result. Never a transcript — one model's reasoning in another
+model's format invites the second model to adopt the first one's wrong turns as
+fact. A switch always starts a fresh session and never returns the work to the
+provider it came from.
 
 ## Cloud (Copilot) dispatch runs here too — Release 3.0
 
