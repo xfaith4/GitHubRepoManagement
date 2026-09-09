@@ -7506,6 +7506,86 @@ Write-Step 'Independent review — smoke: risk decides, and the implementer is n
     Write-Host ("  independent review ok: low never / high always / medium on four separate triggers (> not >=), reason names the trigger, no self-review across {0} token(s), threshold provisional" -f @($rvTokens | Where-Object { $_ -ne 'auto' }).Count) -ForegroundColor DarkGray
 }
 
+# ── Release 3.8 M5 (H38-27) — a counter that survives the crash ──────────────
+# The spec's rule: no retry counter may exist only in process memory. The
+# failure it removes is a runner that dies mid-remediation and comes back
+# believing this is attempt one -- which turns a cap into a suggestion and a
+# loop into an unbounded one. So the count is written BEFORE the cap is
+# evaluated, and the ordering is what these assertions are actually about.
+Write-Step 'Remediation counters — smoke: persisted before the halt, not after (Release 3.8 M5)'
+& {
+    $root = $WorkspaceRoot
+    . (Join-Path $root 'backend\modules\execution\Execution.WorkPacket.ps1')
+
+    $rcTmp = Join-Path $root 'output\smoke\module\remediation-counters'
+    if (Test-Path -LiteralPath $rcTmp) { Remove-Item -LiteralPath $rcTmp -Recurse -Force }
+    $null = New-Item -ItemType Directory -Path $rcTmp -Force
+    try {
+        $rcConfig = [pscustomobject]@{ remediation = [pscustomobject]@{ maxRemediationAttempts = 2 } }
+
+        # The pure verdict, first: does a count meet its cap?
+        if ((Test-RemediationCapReached -Summary ([pscustomobject]@{ remediationCount = 0 }) -Config $rcConfig).reached) {
+            throw 'A run with no remediations must not be at its cap'
+        }
+        $rcAtCap = Test-RemediationCapReached -Summary ([pscustomobject]@{ remediationCount = 2 }) -Config $rcConfig
+        if (-not $rcAtCap.reached) { throw 'A count equal to the cap must be reached' }
+        if ([int]$rcAtCap.cap -ne 2 -or [int]$rcAtCap.count -ne 2) { throw "The verdict must carry both numbers, got count=$($rcAtCap.count) cap=$($rcAtCap.cap)" }
+        # Over the cap is still reached -- a record that drifted past it must
+        # not read as headroom.
+        if (-not (Test-RemediationCapReached -Summary ([pscustomobject]@{ remediationCount = 5 }) -Config $rcConfig).reached) {
+            throw 'A count past the cap must still be reached'
+        }
+
+        # Below the cap: the file moves, the status does not.
+        $rcUnder = Join-Path $rcTmp 'under.summary.json'
+        @{ runId = 'rc-1'; status = 'awaiting-review'; remediationCount = 0 } | ConvertTo-Json | Set-Content -LiteralPath $rcUnder -Encoding UTF8
+        $rcUnderVerdict = Write-RemediationAttempt -SummaryPath $rcUnder -Config $rcConfig
+        $rcUnderFile = Get-Content -LiteralPath $rcUnder -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ([int]$rcUnderFile.remediationCount -ne 1) { throw "Expected remediationCount 1 on disk, got $($rcUnderFile.remediationCount)" }
+        if ($rcUnderVerdict.reached) { throw 'One attempt against a cap of two must not be reached' }
+        if ([string]$rcUnderFile.status -ne 'awaiting-review') { throw 'A run below the cap must keep its status' }
+
+        # At the cap: the file moves FIRST, then the halt is recorded.
+        $rcAt = Join-Path $rcTmp 'at.summary.json'
+        @{ runId = 'rc-2'; status = 'awaiting-review'; remediationCount = 1 } | ConvertTo-Json | Set-Content -LiteralPath $rcAt -Encoding UTF8
+        $rcAtVerdict = Write-RemediationAttempt -SummaryPath $rcAt -Config $rcConfig
+        $rcAtFile = Get-Content -LiteralPath $rcAt -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ([int]$rcAtFile.remediationCount -ne 2) { throw "Expected remediationCount 2 on disk, got $($rcAtFile.remediationCount)" }
+        if (-not $rcAtVerdict.reached) { throw 'The second attempt against a cap of two must be reached' }
+        if ([string]$rcAtFile.status -ne 'blocked') { throw "A capped run must be blocked, got '$($rcAtFile.status)'" }
+        if ([string]$rcAtFile.blockedCode -ne 'remediation-cap-reached') { throw "Wrong blockedCode: '$($rcAtFile.blockedCode)'" }
+        # The exact string, because an operator reads this and nothing else.
+        if ([string]$rcAtFile.error -ne 'remediation cap 2 reached after 2 attempts') {
+            throw "Wrong error text: '$($rcAtFile.error)'"
+        }
+
+        # The ordering, made visible. A write that cannot land must not produce
+        # a verdict: a caller that halted on an unpersisted count is exactly
+        # the in-memory-only counter the spec forbids.
+        $rcVerdictReturned = $true
+        $rcThrew = $false
+        try {
+            $null = Write-RemediationAttempt -SummaryPath (Join-Path $rcTmp 'no-such-dir\deep\x.summary.json') -Config $rcConfig
+        }
+        catch {
+            $rcThrew = $true
+            $rcVerdictReturned = $false
+        }
+        if (-not $rcThrew) { throw 'An unwritable summary must throw rather than proceed' }
+        if ($rcVerdictReturned) { throw 'No verdict may be returned when the count could not be persisted' }
+
+        # A missing cap is not an infinite one. Absent configuration must fail
+        # closed toward the documented default rather than toward "never stop".
+        $rcNoCap = Test-RemediationCapReached -Summary ([pscustomobject]@{ remediationCount = 99 }) -Config $null
+        if (-not $rcNoCap.reached) { throw 'With no configured cap, a large count must still be reported as reached' }
+
+        Write-Host '  remediation counters ok: count persisted before the verdict, cap halts with the exact operator string, an unwritable summary yields no verdict, absent config fails closed' -ForegroundColor DarkGray
+    }
+    finally {
+        Remove-Item -LiteralPath $rcTmp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 # ── Release 3.0 — operator-runner presence and the in-host dispatch refusal ──
 Write-Step 'Runner presence — smoke: queueing into an empty room is visible (Release 3.0)'
 & {

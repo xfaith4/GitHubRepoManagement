@@ -1288,7 +1288,34 @@ function Invoke-QueuedTask {
         return
     }
 
-    Update-TaskSummary -SummaryPath $summaryPath -Set @{ status = 'running'; runnerStartedAt = (Get-Date).ToString('o'); runnerPid = $PID }
+    # H38-27. The counters ride the SAME write that claims the run, so a crash
+    # between claim and completion still leaves them on disk. The spec forbids a
+    # retry counter that exists only in process memory: a runner that died
+    # mid-remediation and restarted believing this is attempt one would turn a
+    # cap into a suggestion. Existing values win -- a resumed task keeps its
+    # history rather than starting over.
+    $claimSummary = $null
+    if (Test-Path -LiteralPath $summaryPath -PathType Leaf) {
+        try { $claimSummary = Get-Content -LiteralPath $summaryPath -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $claimSummary = $null }
+    }
+    $claimAttempt = 1
+    $claimRemediations = 0
+    if ($null -ne $claimSummary -and $null -ne $claimSummary.PSObject) {
+        $claimNames = @($claimSummary.PSObject.Properties.Name)
+        if ($claimNames -contains 'attempt' -and $null -ne $claimSummary.attempt -and [int]$claimSummary.attempt -gt 0) {
+            $claimAttempt = [int]$claimSummary.attempt
+        }
+        if ($claimNames -contains 'remediationCount' -and $null -ne $claimSummary.remediationCount) {
+            $claimRemediations = [int]$claimSummary.remediationCount
+        }
+    }
+    Update-TaskSummary -SummaryPath $summaryPath -Set @{
+        status           = 'running'
+        runnerStartedAt  = (Get-Date).ToString('o')
+        runnerPid        = $PID
+        attempt          = $claimAttempt
+        remediationCount = $claimRemediations
+    }
     try {
         if (-not (Test-Path -LiteralPath (Join-Path $repo '.git'))) { throw "Not a git repo: $repo" }
 
