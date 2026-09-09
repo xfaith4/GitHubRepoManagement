@@ -144,6 +144,9 @@ if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) { $WorkspaceRoot = Split-Path 
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\execution\Execution.ProviderCapacity.ps1')
 # H38-17: `auto` is resolved to a real provider here, at claim time.
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\execution\Execution.ProviderRouter.ps1')
+# H38-29/H38-30: remediation routing (resume vs handoff) and the handoff
+# packet itself. After the router, whose selection the handoff path calls.
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\execution\Execution.Handoff.ps1')
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\agent-adapters\Adapter.Claude.ps1')
 # H38-15: the copilot dispatch functions moved here from this file. Dot-sourced
 # BEFORE any use, so every existing call site is unchanged by the move.
@@ -898,7 +901,12 @@ function Resolve-QueuedTaskProvider {
     [OutputType([pscustomobject])]
     param(
         [Parameter(Mandatory)][object]$Entry,
-        [Parameter(Mandatory)][AllowEmptyString()][string]$RunId
+        [Parameter(Mandatory)][AllowEmptyString()][string]$RunId,
+        # H38-30: a handoff must not return to the provider it came from, and a
+        # remediation may draw on the reserve set aside for it (D-011).
+        [Parameter()][AllowEmptyCollection()][string[]]$Exclude = @(),
+        [Parameter()][ValidateSet('normal', 'remediation')][string]$TaskClass = 'normal',
+        [Parameter()][AllowNull()][object]$WorkPacket = $null
     )
 
     $empty = [pscustomobject]@{ selected = $null; reason = @('router unavailable'); candidates = @(); tie = $false }
@@ -966,8 +974,53 @@ function Resolve-QueuedTaskProvider {
         }
     }
 
+    if ($null -ne $WorkPacket) { $packet = $WorkPacket }
+
     return Resolve-ProviderSelection -Packet $packet -Registry $registry -CapacityRecords $records `
-        -AuthStatus $availability -ActiveCounts $active -History @($history) -Config $config -NowUtc ([datetime]::UtcNow)
+        -AuthStatus $availability -ActiveCounts $active -History @($history) -Config $config `
+        -TaskClass $TaskClass -Exclude @($Exclude) -NowUtc ([datetime]::UtcNow)
+}
+
+function Resolve-QueuedTaskRemediationRoute {
+    <#
+    .SYNOPSIS
+        Release 3.8 M5 (H38-29) - resume the original session, or hand on.
+    .DESCRIPTION
+        The same registry, config and capacity records the router reads, handed
+        to the pure decision in Execution.Handoff.ps1. Kept next to
+        Resolve-QueuedTaskProvider because a second way of assembling this
+        context is a second way for the two decisions to disagree about what is
+        available.
+    .OUTPUTS
+        [pscustomobject] mode, provider, reason
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory)][object]$WorkPacket)
+
+    if (-not (Get-Command -Name 'Resolve-RemediationRoute' -ErrorAction SilentlyContinue)) {
+        return [pscustomobject]@{ mode = 'blocked'; provider = ''; reason = 'remediation routing unavailable' }
+    }
+
+    $config = $null
+    if (Get-Command -Name 'Get-AgentProviderConfig' -ErrorAction SilentlyContinue) {
+        $config = Get-AgentProviderConfig -ConfigPath (Get-AgentProviderConfigPath -WorkspaceRoot $WorkspaceRoot)
+    }
+    if ($null -eq $config) {
+        return [pscustomobject]@{ mode = 'blocked'; provider = ''; reason = 'the provider config could not be loaded' }
+    }
+
+    $registry = @(@(Get-AgentProviderToken -WorkspaceRoot $WorkspaceRoot) | Where-Object { $_ -ne 'auto' })
+
+    $records = @{}
+    foreach ($provider in $registry) {
+        if (Get-Command -Name 'Read-ProviderCapacityRecord' -ErrorAction SilentlyContinue) {
+            $records[$provider] = Read-ProviderCapacityRecord -WorkspaceRoot $WorkspaceRoot -Provider $provider
+        }
+    }
+
+    return Resolve-RemediationRoute -Packet $WorkPacket -Registry $registry `
+        -CapacityRecords $records -Config $config -NowUtc ([datetime]::UtcNow)
 }
 
 function Resolve-CapacityWaitUpdate {
@@ -1167,6 +1220,107 @@ function Invoke-QueuedTask {
 
     Write-Host ("`n[task] runId={0} repo={1} target={2}" -f $runId, $repo, $dispatchTarget) -ForegroundColor Cyan
 
+    # H38-29/H38-30 -- a remediation decides its own provider, and the cap is
+    # evaluated before anything that could spend capacity.
+    #
+    # The attempt is PERSISTED first (H38-27) and only then evaluated, so a
+    # crash between the two cannot lose an attempt and turn the cap into a
+    # suggestion. `Resolve-RemediationLaunch` is what enforces that ordering,
+    # and it is pure so the smoke can assert it without a live provider.
+    $remediationResumeSession = ''
+    if ((Get-Command -Name 'Test-WorkPacketIsRemediation' -ErrorAction SilentlyContinue) -and
+        (Test-WorkPacketIsRemediation -Packet $runWorkPacket)) {
+
+        $remediationConfig = $null
+        if (Get-Command -Name 'Get-AgentProviderConfig' -ErrorAction SilentlyContinue) {
+            try { $remediationConfig = Get-AgentProviderConfig -ConfigPath (Get-AgentProviderConfigPath -WorkspaceRoot $WorkspaceRoot) }
+            catch { $remediationConfig = $null }
+        }
+
+        $capVerdict = $null
+        if (-not $DryRun) {
+            $capVerdict = Write-RemediationAttempt -SummaryPath $summaryPath -Config $remediationConfig
+        }
+
+        $remediationRoute = Resolve-QueuedTaskRemediationRoute -WorkPacket $runWorkPacket
+        $remediationPlan = Resolve-RemediationLaunch -Packet $runWorkPacket -CapVerdict $capVerdict -Route $remediationRoute
+
+        Write-Host ("  [remediation] {0}: {1}" -f $remediationPlan.action, $remediationPlan.reason) -ForegroundColor Cyan
+
+        if ($remediationPlan.action -eq 'halt') {
+            # Write-RemediationAttempt already wrote `blocked` and the operator
+            # string. Nothing further is claimed and no provider is launched.
+            Write-Host '  [remediation] cap reached; the run is blocked and nothing was launched' -ForegroundColor DarkYellow
+            return
+        }
+
+        if ($remediationPlan.action -eq 'resume') {
+            $dispatchTarget = [string]$remediationPlan.provider
+            $remediationResumeSession = [string]$remediationPlan.sessionId
+        }
+        elseif ($remediationPlan.action -eq 'handoff') {
+            # A switch starts a NEW session and never carries the previous
+            # provider's transcript: the handoff packet is durable evidence
+            # only, and Test-HandoffPacket refuses one that is not.
+            # The prior attempt's STRUCTURED result, never its transcript.
+            # Absent is an ordinary answer here (a run that died before writing
+            # one), and the handoff says so rather than inventing evidence.
+            $priorResult = $null
+            $priorTaskId = [string](_PRT_Field -Obj $runWorkPacket -Name 'taskId' -Default '')
+            if ((Get-Command -Name 'Read-ExecutionResult' -ErrorAction SilentlyContinue) -and -not [string]::IsNullOrWhiteSpace($priorTaskId)) {
+                try { $priorResult = Read-ExecutionResult -WorkspaceRoot $WorkspaceRoot -TaskId $priorTaskId } catch { $priorResult = $null }
+            }
+            $handoffPacket = New-HandoffPacket -RemediationPacket $runWorkPacket -PriorResult $priorResult
+            $handoffValid = Test-HandoffPacket -Packet $handoffPacket
+            if (-not $handoffValid.valid) {
+                $handoffError = ('handoff packet rejected: {0}' -f ($handoffValid.errors -join '; '))
+                Write-Host ("  [remediation] {0}" -f $handoffError) -ForegroundColor Red
+                if (-not $DryRun) {
+                    Update-TaskSummary -SummaryPath $summaryPath -Set @{ status = 'failed'; error = $handoffError; runnerCompletedAt = (Get-Date).ToString('o') }
+                }
+                return
+            }
+
+            $previousProvider = [string](_PRT_Field -Obj (_PRT_Field -Obj $runWorkPacket -Name 'execution' -Default $null) -Name 'previousProvider' -Default '')
+            $handoffRouting = Resolve-QueuedTaskProvider -Entry $Entry -RunId $runId `
+                -Exclude @($previousProvider) -TaskClass 'remediation' -WorkPacket $runWorkPacket
+            if ([string]::IsNullOrWhiteSpace($handoffRouting.selected)) {
+                Write-Host '  [remediation] no other provider can take this handoff; leaving the task queued' -ForegroundColor DarkYellow
+                foreach ($handoffLine in @($handoffRouting.reason)) { Write-Host ("             {0}" -f $handoffLine) -ForegroundColor DarkGray }
+                if (-not $DryRun) {
+                    Update-TaskSummary -SummaryPath $summaryPath -Set @{
+                        status             = 'queued'
+                        selectedProvider   = $null
+                        selectionReason    = @($handoffRouting.reason)
+                        capacityWaitReason = 'no eligible provider for handoff'
+                    }
+                }
+                return
+            }
+
+            $dispatchTarget = [string]$handoffRouting.selected
+            $prompt = ConvertTo-HandoffPrompt -HandoffPacket $handoffPacket -Packet $runWorkPacket
+            Write-Host ("  [remediation] handoff {0} -> {1}" -f $previousProvider, $dispatchTarget) -ForegroundColor Cyan
+            if (-not $DryRun) {
+                Update-TaskSummary -SummaryPath $summaryPath -Set @{
+                    selectedProvider = $dispatchTarget
+                    selectionReason  = @($handoffRouting.reason)
+                    handoffFrom      = $previousProvider
+                }
+            }
+        }
+        else {
+            Write-Host ("  [remediation] no route: {0}; leaving the task queued" -f $remediationPlan.reason) -ForegroundColor DarkYellow
+            if (-not $DryRun) {
+                Update-TaskSummary -SummaryPath $summaryPath -Set @{
+                    status             = 'queued'
+                    capacityWaitReason = [string]$remediationPlan.reason
+                }
+            }
+            return
+        }
+    }
+
     # H38-17 -- resolve `auto` BEFORE any provider branch, at claim time.
     #
     # At claim time and not at enqueue time on purpose: capacity, cooldowns
@@ -1349,7 +1503,17 @@ function Invoke-QueuedTask {
                 # Release 3.8 M1 (H38-04) - structured output, captured.
                 # Tee rather than redirect: the operator still sees the stream
                 # live, and the same lines are kept for the adapter to parse.
-                $claudeArgv = New-ClaudeExecutionArgument -Prompt $prompt -PermissionMode $PermissionMode
+                # H38-29: resuming carries the session id so the provider
+                # continues its own context rather than rediscovering the task.
+                # Only Claude reaches this today -- Codex declares
+                # supportsResume = false, so Resolve-RemediationRoute never
+                # routes a resume to it.
+                $claudeArgv = if ([string]::IsNullOrWhiteSpace($remediationResumeSession)) {
+                    New-ClaudeExecutionArgument -Prompt $prompt -PermissionMode $PermissionMode
+                }
+                else {
+                    Resume-ClaudeExecution -SessionId $remediationResumeSession -Prompt $prompt -PermissionMode $PermissionMode
+                }
                 & $localCommand @claudeArgv 2>&1 | Tee-Object -Variable claudeLines | Out-Null
             }
             else { & $localCommand --permission-mode $PermissionMode $prompt }

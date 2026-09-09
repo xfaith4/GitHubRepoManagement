@@ -1031,16 +1031,24 @@ to the queue — never fails it — when a provider is exhausted.
       `RemediationPacket`, resumes the original session where capacity allows,
       and otherwise transfers a `HandoffPacket` of durable evidence to another
       eligible provider. No provider depends on another's conversation.
-      _(state: scaffolded 2026-09-09 — H38-27 `attempt` and `remediationCount`
-      live on the run summary, written with the claim so a crash cannot lose
-      them, and `Write-RemediationAttempt` in
+      _(state: scaffolded 2026-09-09 — H38-27 `attempt` and `remediationCount` live on the run summary, written with the claim so a crash cannot lose them, and `Write-RemediationAttempt` in
       [`backend/modules/execution/Execution.WorkPacket.ps1`](backend/modules/execution/Execution.WorkPacket.ps1)
       persists the incremented count before it evaluates the cap; an
       unwritable summary throws rather than returning a verdict. H38-28b
       provider and model are separate fields across registry, capacity and
       routing records, with a pre-packet record's model marked inferred rather
       than observed; every provider declares `unknown` explicitly, because no
-      model identifier is determinable without running a CLI (R12))_
+      model identifier is determinable without running a CLI (R12); H38-28
+      `New-RemediationPacket` carries the CI failures as acceptance criteria
+      and the prior session/provider, with the original criteria surviving
+      verbatim as a superset; H38-29 `Resolve-RemediationRoute` resumes the
+      original session when it exists, the provider supports it and
+      remediation capacity allows, and `Resolve-RemediationLaunch` evaluates
+      the cap first so a halted attempt never builds an argument vector;
+      H38-30 `New-HandoffPacket` carries only durable evidence — a
+      `priorResult` holding a transcript is refused by name and by length —
+      and a switch excludes the previous provider through the router's new
+      `-Exclude` and starts a fresh session)_
 - [ ] **Normalize execution events onto the Dispatch Board.** Provider output
       converts to the canonical `execution.*` vocabulary, reconciled with
       [`roadmap-events.md`](standards/roadmap/roadmap-events.md) so exactly one

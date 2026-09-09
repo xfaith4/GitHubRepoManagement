@@ -188,6 +188,12 @@ function Resolve-ProviderSelection {
         [Parameter()][AllowEmptyCollection()][object[]]$History = @(),
         [Parameter()][AllowNull()][object]$Config = $null,
         [Parameter()][ValidateSet('normal', 'remediation')][string]$TaskClass = 'normal',
+        # H38-30: a handoff must not go back to the provider it came from. The
+        # exclusion is a CHECK rather than a filtered registry so that the
+        # decision still says the excluded provider was considered and why --
+        # a provider that silently vanishes from the candidate list is exactly
+        # the unreviewable routing H38-17 was written against.
+        [Parameter()][AllowEmptyCollection()][string[]]$Exclude = @(),
         [Parameter()][datetime]$NowUtc = [datetime]::UtcNow
     )
 
@@ -228,6 +234,8 @@ function Resolve-ProviderSelection {
         # build. Whether the tool is installed here is availability, which
         # arrives on AuthStatus and is a different question.
         $supported = [bool](_PRT_Field -Obj $entry -Name 'supported' -Default $false)
+        $notExcluded = (@($Exclude) -notcontains $name)
+        $checkList.Add([pscustomobject]@{ label = 'not excluded'; passed = $notExcluded; detail = $(if ($notExcluded) { '' } else { 'excluded by the caller' }) }) | Out-Null
         $checkList.Add([pscustomobject]@{ label = 'supported'; passed = $supported; detail = '' }) | Out-Null
 
         # Absent means NOT available. An undetected provider is not permission.
