@@ -240,6 +240,49 @@ function Resolve-AgentProviderToken {
     what to look for. `copilot` runs through the GitHub CLI, which is why its
     command is `gh` and not its own name.
 #>
+function Get-AgentProviderModel {
+    <#
+    .SYNOPSIS
+        The model a provider runs by default, as configured.
+
+    .DESCRIPTION
+        Release 3.8 M5 (H38-28b). Provider and model are separate facts: a
+        provider is which subscription and which CLI, a model is what actually
+        answered. Collapsing them makes "one provider, one model" true by
+        construction, which is wrong today and would be baked into H38-29's
+        resume path.
+
+        Returns the configured default, or an empty string for a provider the
+        registry does not recognise -- never a guess. An unrecognised provider
+        with an invented model would be indistinguishable from a real one at
+        every call site downstream.
+    .OUTPUTS
+        [string]
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][string]$Provider,
+        [Parameter()][string]$WorkspaceRoot = ''
+    )
+
+    $config = $null
+    try { $config = Get-AgentProviderConfig -ConfigPath (Get-AgentProviderConfigPath -WorkspaceRoot $WorkspaceRoot) }
+    catch {
+        Write-Verbose ("provider registry: could not read the config for model lookup: {0}" -f $_.Exception.Message)
+        return ''
+    }
+    if ($null -eq $config -or $null -eq $config.providers) { return '' }
+
+    $normalized = ([string]$Provider).Trim().ToLowerInvariant()
+    foreach ($name in @($config.providers.PSObject.Properties.Name)) {
+        if ($name.ToLowerInvariant() -ne $normalized) { continue }
+        return [string]$config.providers.$name.defaultModel
+    }
+
+    return ''
+}
+
 function Get-AgentProviderCommandName {
     [CmdletBinding()]
     [OutputType([string])]

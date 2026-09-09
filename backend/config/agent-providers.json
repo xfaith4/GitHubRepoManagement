@@ -5,6 +5,11 @@
       "supported": true,
       "executionMode": "local",
       "providerTool": "claude-code",
+      "models": [
+        "unknown"
+      ],
+      "defaultModel": "unknown",
+      "modelKnown": false,
       "autoPush": true,
       "maxConcurrentExecutions": 1,
       "windows": [
@@ -28,6 +33,11 @@
       "supported": true,
       "executionMode": "local",
       "providerTool": "codex-cli",
+      "models": [
+        "unknown"
+      ],
+      "defaultModel": "unknown",
+      "modelKnown": false,
       "autoPush": true,
       "maxConcurrentExecutions": 1,
       "windows": [
@@ -51,6 +61,11 @@
       "supported": true,
       "executionMode": "github-hosted",
       "providerTool": "github-copilot-agent",
+      "models": [
+        "unknown"
+      ],
+      "defaultModel": "unknown",
+      "modelKnown": false,
       "autoPush": false,
       "maxConcurrentExecutions": 2,
       "windows": [

@@ -7586,6 +7586,112 @@ Write-Step 'Remediation counters — smoke: persisted before the halt, not after
     }
 }
 
+# ── Release 3.8 M5 (H38-28b) — provider and model are different facts ────────
+# H38-29 resumes a provider session. Written against a provider-only identity
+# it would encode "one provider, one model" into the resume path, and unpicking
+# that later touches every adapter. Separating the fields first is the cheap
+# order to do this in.
+#
+# The honesty rule this packet turns on: "no choice" and "unknown" are
+# different claims, and only one of them is safe to report. Nothing in this
+# repository names the model any of the three CLIs actually runs, and R12
+# forbids spending quota to find out -- so every provider declares `unknown`
+# EXPLICITLY and carries modelKnown = false. A downstream reader can tell an
+# unmeasured value from a measured one without asking anybody.
+Write-Step 'Provider and model — smoke: separate fields, and an unknown never passes as measured (Release 3.8 M5)'
+& {
+    $root = $WorkspaceRoot
+    . (Join-Path $root 'backend\modules\execution\Execution.ProviderRegistry.ps1')
+    . (Join-Path $root 'backend\modules\execution\Execution.ProviderCapacity.ps1')
+
+    $pmConfigPath = Join-Path $root 'backend\config\agent-providers.json'
+    $pmConfig = Get-Content -LiteralPath $pmConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+
+    foreach ($pmName in @($pmConfig.providers.PSObject.Properties.Name)) {
+        $pmProvider = $pmConfig.providers.$pmName
+        $pmNames = @($pmProvider.PSObject.Properties.Name)
+        if ($pmNames -notcontains 'models') { throw "Provider '$pmName' declares no models array" }
+        if ($pmNames -notcontains 'defaultModel') { throw "Provider '$pmName' declares no defaultModel" }
+        $pmModels = @($pmProvider.models)
+        if ($pmModels.Count -lt 1) { throw "Provider '$pmName' declares an empty models array; a provider with no model CHOICE still runs a model" }
+        if ($pmModels -notcontains [string]$pmProvider.defaultModel) {
+            throw "Provider '$pmName' has defaultModel '$($pmProvider.defaultModel)' outside its own models list"
+        }
+        # The whole point of the field: an unmeasured model must announce
+        # itself. A default of 'unknown' with modelKnown absent or true would
+        # be a guess wearing the clothes of an observation.
+        if ([string]$pmProvider.defaultModel -eq 'unknown') {
+            if ($pmNames -notcontains 'modelKnown') { throw "Provider '$pmName' defaults to 'unknown' but declares no modelKnown flag" }
+            if ($pmProvider.modelKnown) { throw "Provider '$pmName' cannot claim modelKnown while its default model is 'unknown'" }
+        }
+    }
+
+    # The accessor agrees with the file, for every token the registry supports.
+    foreach ($pmToken in @(Get-AgentProviderToken -WorkspaceRoot $root | Where-Object { $_ -ne 'auto' })) {
+        $pmResolved = Get-AgentProviderModel -Provider $pmToken -WorkspaceRoot $root
+        if ([string]::IsNullOrWhiteSpace($pmResolved)) { throw "Get-AgentProviderModel returned nothing for '$pmToken'" }
+        if ($pmResolved -ne [string]$pmConfig.providers.$pmToken.defaultModel) {
+            throw "Get-AgentProviderModel disagrees with config for '$pmToken': '$pmResolved' vs '$($pmConfig.providers.$pmToken.defaultModel)'"
+        }
+    }
+    # An unknown provider is not an excuse to invent a model.
+    if (-not [string]::IsNullOrWhiteSpace((Get-AgentProviderModel -Provider 'gpt' -WorkspaceRoot $root))) {
+        throw 'An unrecognised provider must not resolve to a model'
+    }
+
+    # The selection record names the model too, and says why -- otherwise the
+    # 3.9 performance store cannot key on provider x model without a migration.
+    $pmSelSplat = @{
+        Registry        = @('claude')
+        Config          = $pmConfig
+        CapacityRecords = @{ claude = [pscustomobject]@{ provider = 'claude'; available = $true; windows = @() } }
+        AuthStatus      = @{ claude = $true }
+    }
+    $pmSel = Resolve-ProviderSelection @pmSelSplat
+    if ($null -ne $pmSel.selected) {
+        if (@($pmSel.PSObject.Properties.Name) -notcontains 'selectedModel') { throw 'The selection record must name the model' }
+        if ([string]$pmSel.selectedModel -ne 'unknown') { throw "Expected the configured default model, got '$($pmSel.selectedModel)'" }
+        if (-not (@($pmSel.reason) -match '^model ')) { throw 'The reason must say which model was chosen and why' }
+    }
+
+    # ── Capacity records key on provider AND model ──────────────────────────
+    $pmTmp = Join-Path $root 'output\smoke\module\provider-model'
+    if (Test-Path -LiteralPath $pmTmp) { Remove-Item -LiteralPath $pmTmp -Recurse -Force }
+    $null = New-Item -ItemType Directory -Path $pmTmp -Force
+    try {
+        $pmWindows = @([ordered]@{ name = 'short-term'; unit = 'provider-allowance'; remainingRatio = 0.5; source = 'provider-status' })
+        $pmRecord = New-ProviderCapacityRecord -Provider 'claude' -Windows $pmWindows -Model 'claude-test-model'
+        if ([string]$pmRecord.model -ne 'claude-test-model') { throw "A capacity record must carry its model, got '$($pmRecord.model)'" }
+        if ($pmRecord.modelInferred) { throw 'A model supplied at construction is observed, not inferred' }
+
+        # A record written BEFORE this packet has no model. Reading it as the
+        # default is fine; reading it as an OBSERVATION is not, which is what
+        # modelInferred exists to prevent.
+        $pmLegacyPath = Get-ProviderCapacityRecordPath -WorkspaceRoot $pmTmp -Provider 'claude'
+        $null = New-Item -ItemType Directory -Path (Split-Path -Parent $pmLegacyPath) -Force -ErrorAction SilentlyContinue
+        @{
+            provider = 'claude'; available = $true; observedAt = '2026-01-01T00:00:00Z'
+            activeExecutions = 0; windows = @(); cooldownUntil = $null
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $pmLegacyPath -Encoding UTF8
+
+        $pmLegacy = Read-ProviderCapacityRecord -WorkspaceRoot $pmTmp -Provider 'claude'
+        if ($null -eq $pmLegacy) { throw 'The pre-packet record did not read back' }
+        if (-not $pmLegacy.modelInferred) { throw 'A record with no model must read back as modelInferred = $true' }
+        if ([string]::IsNullOrWhiteSpace([string]$pmLegacy.model)) { throw 'A backfilled record must still name the model it was read as' }
+
+        # A record written WITH a model reads back as observed.
+        $null = Save-ProviderCapacityRecord -WorkspaceRoot $pmTmp -Record $pmRecord
+        $pmFresh = Read-ProviderCapacityRecord -WorkspaceRoot $pmTmp -Provider 'claude'
+        if ($pmFresh.modelInferred) { throw 'A record written with a model must read back as observed, not inferred' }
+        if ([string]$pmFresh.model -ne 'claude-test-model') { throw "The model did not survive the round trip: '$($pmFresh.model)'" }
+
+        Write-Host '  provider/model ok: every provider declares models + defaultModel, unknown never claims modelKnown, capacity records key on both and mark a backfilled model inferred' -ForegroundColor DarkGray
+    }
+    finally {
+        Remove-Item -LiteralPath $pmTmp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 # ── Release 3.0 — operator-runner presence and the in-host dispatch refusal ──
 Write-Step 'Runner presence — smoke: queueing into an empty room is visible (Release 3.0)'
 & {

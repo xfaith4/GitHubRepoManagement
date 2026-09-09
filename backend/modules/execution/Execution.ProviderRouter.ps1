@@ -439,11 +439,27 @@ function Resolve-ProviderSelection {
         $reason.Add(("{0} excluded: {1}" -f $candidate.provider, $candidate.ineligibleBecause)) | Out-Null
     }
 
+    # H38-28b. The selection record names the MODEL as well as the provider, and
+    # says which of the two the reason is about. Without this the 3.9
+    # performance store cannot key on provider x model, and a record written
+    # today would need a migration to answer "which model did we pick, and why".
+    # Read from the Config this function was already handed, not from a path:
+    # the router stays pure, and it cannot disagree with the very policy the
+    # rest of the selection was made against.
+    $selectedModel = 'unknown'
+    $winnerConfig = _PRT_Field -Obj $providersConfig -Name ([string]$winner.provider) -Default $null
+    $winnerModel = [string](_PRT_Field -Obj $winnerConfig -Name 'defaultModel' -Default '')
+    if (-not [string]::IsNullOrWhiteSpace($winnerModel)) { $selectedModel = $winnerModel }
+    # Same shape the provider reason already uses: a line naming the choice and
+    # its cause, so a reader meets one vocabulary rather than two.
+    $reason += ("model {0}: the provider's configured default" -f $selectedModel)
+
     return [pscustomobject]@{
-        selected   = [string]$winner.provider
-        reason     = @($reason)
-        candidates = @($candidates)
-        tie        = $isTie
-        tieBreak   = $tieBreak
+        selected      = [string]$winner.provider
+        selectedModel = $selectedModel
+        reason        = @($reason)
+        candidates    = @($candidates)
+        tie           = $isTie
+        tieBreak      = $tieBreak
     }
 }
