@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Append a roadmap task to the local Claude Code task queue.
 

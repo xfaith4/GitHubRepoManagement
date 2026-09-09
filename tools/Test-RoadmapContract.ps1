@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Parses ROADMAP.md into a normalized roadmap contract, validates the contract
     shape, evaluates standards/roadmap/roadmap-audit-rules.json, and assigns a

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Generates a self-signed TLS certificate (PFX) for the Repo Management portal.
 

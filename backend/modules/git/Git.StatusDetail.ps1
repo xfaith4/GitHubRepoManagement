@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Git status detail functions for the GitHubRepoManagement API host.
 

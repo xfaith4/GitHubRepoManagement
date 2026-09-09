@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Sets (or changes) the operator password used to log in to the portal.
 

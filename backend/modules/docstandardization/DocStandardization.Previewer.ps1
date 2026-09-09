@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     README standardization previewer and applier for Release 1.1.
 .DESCRIPTION

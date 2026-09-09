@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Roadmap content linter for Release 1.1.
 .DESCRIPTION

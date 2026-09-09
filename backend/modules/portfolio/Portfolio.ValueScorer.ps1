@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Value scoring for pending roadmap work in portfolio assessment responses.
 

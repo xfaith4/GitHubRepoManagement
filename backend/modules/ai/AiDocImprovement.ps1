@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     AI documentation improvement provider adapters and preview orchestrator
     for Release 1.9 (AI Documentation Improvement Cycles), Phase 1.

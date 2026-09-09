@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     PowerShell lint gate — PSScriptAnalyzer with a per-rule ratchet baseline.
 
@@ -87,7 +87,7 @@ foreach ($ruleName in ($currentCounts.Keys | Sort-Object)) {
     }
 }
 
-$improved = @($baseline.Keys | Where-Object { $currentCounts[$_] -lt $baseline[$_] -or -not $currentCounts.ContainsKey($_) })
+$improved = @($baseline.Keys | Where-Object { (& { if ($currentCounts.ContainsKey($_)) { $currentCounts[$_] } else { 0 } }) -lt $baseline[$_] })
 if (@($improved).Count -gt 0) {
     Write-Host ("  {0} rule(s) below baseline — run -UpdateBaseline to lock the improvement in: {1}" -f @($improved).Count, ($improved -join ', ')) -ForegroundColor Yellow
 }

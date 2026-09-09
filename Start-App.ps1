@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Developer launcher for GitHub Repo Management (Vite hot-reload / debugging).
 

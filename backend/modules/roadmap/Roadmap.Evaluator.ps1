@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Repo structure evaluator — produces hardening and feature suggestions.
 .DESCRIPTION

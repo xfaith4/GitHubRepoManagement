@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Register (or remove) the portal health watchdog as a SYSTEM Scheduled Task.
 

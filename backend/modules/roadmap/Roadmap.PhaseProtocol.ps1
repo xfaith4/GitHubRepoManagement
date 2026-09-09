@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Phase-plan protocol layer for the execution orchestrator (P0).
 .DESCRIPTION

@@ -1,4 +1,4 @@
-<#
+﻿<#
 Non-destructive GitHub token access probe.
 - Reads the token from $env:GitHubRepoManagerKey (never printed).
 - Confirms identity + token scopes.

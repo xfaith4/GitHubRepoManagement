@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Canonical test suite — the exit-0/1 gate behind `npm test` AND behind CI.
 

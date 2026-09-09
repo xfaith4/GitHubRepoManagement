@@ -1,4 +1,4 @@
-### BEGIN FILE: Repo-Reconciliation-Dashboard.ps1
+﻿### BEGIN FILE: Repo-Reconciliation-Dashboard.ps1
 <#!
 .SYNOPSIS
     Reconciles local repository folders with GitHub repositories to identify matches, discrepancies, and duplicates.

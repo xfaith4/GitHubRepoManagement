@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # Adapters.ps1 — unified adapter layer
 # Merges: Adapter.Common.ps1, Status.Adapter.ps1,
 #         Reconcile.Adapter.ps1, DocReview.Adapter.ps1

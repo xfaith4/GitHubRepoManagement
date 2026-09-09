@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Release 2.7 Phase B — scheduled documentation-refinement automation.
 

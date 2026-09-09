@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Release 3.8 M4 (H38-24b) — when a run needs a second pair of eyes, and
     whose.

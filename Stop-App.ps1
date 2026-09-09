@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Stops the dev processes started by Start-App.ps1 (the developer launcher).
 

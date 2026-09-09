@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Notification hub — webhook registry and event dispatcher for Release 1.1.
 .DESCRIPTION

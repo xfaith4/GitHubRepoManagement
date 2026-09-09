@@ -1,4 +1,4 @@
-#Requires -Modules Pester
+﻿#Requires -Modules Pester
 <#
 .SYNOPSIS
     Pester suite for tools/Test-RoadmapStructure.ps1 — covers the original

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Release 2.2 — GitHub App authentication helpers: RS256 JWT minting and
     installation-token exchange.

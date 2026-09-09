@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     # Scan target, not the tool's own location — see Invoke-Reconciliation.ps1.
     [Parameter()]

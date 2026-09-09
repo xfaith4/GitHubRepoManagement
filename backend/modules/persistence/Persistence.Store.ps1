@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     SQLite persistence foundation for Release 2.1 (Persistent Data Layer),
     Phase 1.
