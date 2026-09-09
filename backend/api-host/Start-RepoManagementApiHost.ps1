@@ -88,6 +88,9 @@ $executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 . (Join-Path $executionModuleRoot 'Execution.WorkPacket.ps1')
 . (Join-Path $executionModuleRoot 'Execution.ProviderRegistry.ps1')
 . (Join-Path $executionModuleRoot 'Execution.ProviderCapacity.ps1')
+# H38-28: the reconcile tick builds a RemediationPacket from CI evidence.
+# The host constructs and enqueues; the runner is what decides resume vs handoff.
+. (Join-Path $executionModuleRoot 'Execution.Handoff.ps1')
 # H38-24b: the approve route asks this whether a run needs an independent
 # review. It decides only; redispatch is H38-30's.
 . (Join-Path $executionModuleRoot 'Execution.ReviewPolicy.ps1')

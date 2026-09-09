@@ -7692,6 +7692,287 @@ Write-Step 'Provider and model — smoke: separate fields, and an unknown never 
     }
 }
 
+# ── Release 3.8 M5 (H38-28/29/30) — remediation and handoff ──────────────────
+# What happens after CI says no, and who does it.
+#
+# The invariant with teeth is in the third block: no provider may depend on
+# another provider's conversation. A transcript is one model's reasoning in one
+# model's format, and handing it to a second model invites it to adopt the
+# first one's wrong turns as established fact. So the handoff carries durable
+# artifacts only, and the validator refuses a packet that smuggles a transcript
+# through under a legitimate-looking field name.
+Write-Step 'Remediation packet — smoke: built from evidence, offline (Release 3.8 M5)'
+& {
+    $root = $WorkspaceRoot
+
+    $rpTmp = Join-Path $root 'output\smoke\module\remediation-handoff'
+    if (Test-Path -LiteralPath $rpTmp) { Remove-Item -LiteralPath $rpTmp -Recurse -Force }
+    $null = New-Item -ItemType Directory -Path $rpTmp -Force
+    try {
+        . (Join-Path $root 'backend\modules\execution\Execution.WorkPacket.ps1')
+        . (Join-Path $root 'backend\modules\execution\Execution.ProviderCapacity.ps1')
+        . (Join-Path $root 'backend\modules\execution\Execution.Handoff.ps1')
+        . (Join-Path $root 'backend\modules\agent-adapters\Adapter.Claude.ps1')
+        . (Join-Path $root 'backend\modules\agent-adapters\Adapter.Codex.ps1')
+        . (Join-Path $root 'backend\modules\agent-adapters\Adapter.Copilot.ps1')
+
+        # ---- H38-28: evidence becomes a task ---------------------------------
+        $rpOriginal = New-WorkPacket `
+            -TaskId 'smoke-rp-1' `
+            -Repository 'acme/widget' `
+            -BaseBranch 'main' `
+            -BaseSha 'base111' `
+            -Objective 'Add a retry to the uploader' `
+            -AllowedPaths @('src/**') `
+            -ForbiddenPaths @('secrets/**') `
+            -AcceptanceCriteria @('The uploader retries three times', 'No new lint warnings') `
+            -VerificationCommands @('npm test') `
+            -Permissions @{ filesystemWrite = $true; shell = $true; network = $false; githubWrite = $false }
+
+        $rpSummary = [pscustomobject]@{
+            attempt           = 1
+            providerSessionId = 's1'
+            selectedProvider  = 'claude'
+            remediationCount  = 0
+        }
+        $rpRun = [pscustomobject]@{ branch = 'feat/uploader-retry'; prHeadSha = 'aaa' }
+        $rpFailures = @(
+            [pscustomobject]@{ name = 'unit'; conclusion = 'failure'; url = 'https://ci/1' },
+            [pscustomobject]@{ name = 'lint'; conclusion = 'timed_out'; url = 'https://ci/2' }
+        )
+
+        $rpPacket = New-RemediationPacket -WorkPacket $rpOriginal -AgentRun $rpRun -Summary $rpSummary -CiFailures $rpFailures
+
+        $rpValid = Test-WorkPacket -Packet $rpPacket
+        if (-not $rpValid.valid) { throw "A remediation packet must be a valid WorkPacket: $($rpValid.errors -join '; ')" }
+
+        if ([int]$rpPacket.execution.attempt -ne 2) { throw "Expected attempt 2, got $($rpPacket.execution.attempt)" }
+        if ([string]$rpPacket.execution.previousSessionId -ne 's1') { throw "Expected previous session 's1', got '$($rpPacket.execution.previousSessionId)'" }
+        if ([string]$rpPacket.execution.previousProvider -ne 'claude') { throw "Expected previous provider 'claude', got '$($rpPacket.execution.previousProvider)'" }
+        if ([string]$rpPacket.remediation.headSha -ne 'aaa') { throw "Expected remediation.headSha 'aaa', got '$($rpPacket.remediation.headSha)'" }
+        if (@($rpPacket.remediation.ciFailures).Count -ne 2) { throw 'Both CI failures must reach the packet' }
+        if ($rpPacket.objective -notlike 'Remediate CI failure on feat/uploader-retry:*') {
+            throw "The objective must name the branch: '$($rpPacket.objective)'"
+        }
+
+        # A criterion per failure, naming the check and what it did.
+        $rpCriteria = @($rpPacket.acceptanceCriteria)
+        foreach ($expected in @("CI check 'unit' must pass (was: failure)", "CI check 'lint' must pass (was: timed_out)")) {
+            if ($rpCriteria -notcontains $expected) { throw "Missing appended criterion: $expected" }
+        }
+
+        # SUPERSET, not replacement. A remediation that turned the check green
+        # by deleting the test would satisfy the new criterion and quietly drop
+        # the original one, and the packet has to still be able to say so.
+        foreach ($original in @($rpOriginal.acceptanceCriteria)) {
+            if ($rpCriteria -notcontains $original) { throw "Original criterion lost verbatim: $original" }
+        }
+        if ($rpCriteria.Count -ne (@($rpOriginal.acceptanceCriteria).Count + 2)) {
+            throw "Expected exactly two appended criteria, got $($rpCriteria.Count) total"
+        }
+
+        # The permission envelope is carried, never widened. A remediation is
+        # the moment an agent is most tempted to reach for something it was not
+        # granted on the first attempt.
+        if ([bool]$rpPacket.permissions.network) { throw 'A remediation must not widen the permission envelope' }
+
+        # dispatchTarget stands in for a run dispatched before routing was on.
+        $rpLegacy = New-RemediationPacket -WorkPacket $rpOriginal -AgentRun $rpRun `
+            -Summary ([pscustomobject]@{ attempt = 1; providerSessionId = 's9'; dispatchTarget = 'copilot'; remediationCount = 1 }) `
+            -CiFailures $rpFailures
+        if ([string]$rpLegacy.execution.previousProvider -ne 'copilot') {
+            throw 'With no selectedProvider, dispatchTarget must stand in as the previous provider'
+        }
+
+        # ---- H38-29: resume, or hand on ---------------------------------------
+        $rpConfig = [pscustomobject]@{
+            providers = [pscustomobject]@{
+                claude  = [pscustomobject]@{ supported = $true }
+                codex   = [pscustomobject]@{ supported = $true }
+                copilot = [pscustomobject]@{ supported = $true }
+            }
+            reserves  = [pscustomobject]@{ shortWindowRatio = 0.15; weeklyRatio = 0.2; remediationInsideWeekly = $true }
+            estimates = [pscustomobject]@{ defaultTaskConsumptionRatio = 0.02 }
+        }
+        $rpNow = [datetime]::Parse('2026-09-09T12:00:00Z').ToUniversalTime()
+        $rpRegistry = @('claude', 'codex', 'copilot')
+
+        # A record with room to spare.
+        $rpRoomy = [pscustomobject]@{
+            provider = 'claude'; available = $true
+            windows  = @([pscustomobject]@{ name = 'weekly'; usedRatio = 0.10; confidence = 'observed' })
+        }
+
+        $rpResume = Resolve-RemediationRoute -Packet $rpPacket -Registry $rpRegistry `
+            -CapacityRecords ([pscustomobject]@{ claude = $rpRoomy }) -Config $rpConfig -NowUtc $rpNow
+        if ($rpResume.mode -ne 'resume') { throw "Expected resume for claude with a session and capacity, got '$($rpResume.mode)': $($rpResume.reason)" }
+        if ($rpResume.provider -ne 'claude') { throw "Resume must name the provider, got '$($rpResume.provider)'" }
+
+        # Remediation MAY draw on the weekly reserve (D-011). A remediation
+        # blocked by a reserve set aside for remediation is the reserve
+        # defeating its own purpose.
+        $rpTight = [pscustomobject]@{
+            provider = 'claude'; available = $true
+            windows  = @([pscustomobject]@{ name = 'weekly'; usedRatio = 0.85; confidence = 'observed' })
+        }
+        $rpTightRoute = Resolve-RemediationRoute -Packet $rpPacket -Registry $rpRegistry `
+            -CapacityRecords ([pscustomobject]@{ claude = $rpTight }) -Config $rpConfig -NowUtc $rpNow
+        if ($rpTightRoute.mode -ne 'resume') {
+            throw "Inside the weekly reserve a remediation must still resume, got '$($rpTightRoute.mode)': $($rpTightRoute.reason)"
+        }
+
+        # Copilot's adapter cannot resume, and saying so is the whole answer.
+        $rpCopilotPacket = New-RemediationPacket -WorkPacket $rpOriginal -AgentRun $rpRun `
+            -Summary ([pscustomobject]@{ attempt = 1; providerSessionId = 's1'; selectedProvider = 'copilot'; remediationCount = 0 }) `
+            -CiFailures $rpFailures
+        $rpNoResume = Resolve-RemediationRoute -Packet $rpCopilotPacket -Registry $rpRegistry `
+            -CapacityRecords ([pscustomobject]@{ copilot = $rpRoomy }) -Config $rpConfig -NowUtc $rpNow
+        if ($rpNoResume.mode -ne 'handoff') { throw "Copilot cannot resume; expected handoff, got '$($rpNoResume.mode)'" }
+        if ($rpNoResume.reason -ne 'provider does not support resume') { throw "Wrong reason: '$($rpNoResume.reason)'" }
+
+        # No session id: there is nothing to resume INTO.
+        $rpNoSession = New-RemediationPacket -WorkPacket $rpOriginal -AgentRun $rpRun `
+            -Summary ([pscustomobject]@{ attempt = 1; providerSessionId = ''; selectedProvider = 'claude'; remediationCount = 0 }) `
+            -CiFailures $rpFailures
+        $rpNoSessionRoute = Resolve-RemediationRoute -Packet $rpNoSession -Registry $rpRegistry `
+            -CapacityRecords ([pscustomobject]@{ claude = $rpRoomy }) -Config $rpConfig -NowUtc $rpNow
+        if ($rpNoSessionRoute.mode -ne 'handoff') { throw "Expected handoff with no session, got '$($rpNoSessionRoute.mode)'" }
+        if ($rpNoSessionRoute.reason -ne 'no previous session') { throw "Wrong reason: '$($rpNoSessionRoute.reason)'" }
+
+        # An exhausted provider hands on, and the capacity reason travels.
+        $rpCooling = [pscustomobject]@{
+            provider = 'claude'; available = $true; cooldownUntil = '2026-09-09T18:00:00Z'
+            windows  = @([pscustomobject]@{ name = 'weekly'; usedRatio = 0.10; confidence = 'observed' })
+        }
+        $rpCapacityRoute = Resolve-RemediationRoute -Packet $rpPacket -Registry $rpRegistry `
+            -CapacityRecords ([pscustomobject]@{ claude = $rpCooling }) -Config $rpConfig -NowUtc $rpNow
+        if ($rpCapacityRoute.mode -ne 'handoff') { throw "A cooling provider must hand off, got '$($rpCapacityRoute.mode)'" }
+        if ($rpCapacityRoute.reason -notlike 'capacity: *') { throw "The capacity reason must travel: '$($rpCapacityRoute.reason)'" }
+
+        # blocked is reserved for genuinely nowhere to go.
+        $rpBlocked = Resolve-RemediationRoute -Packet $rpPacket -Registry @() `
+            -CapacityRecords ([pscustomobject]@{}) -Config $rpConfig -NowUtc $rpNow
+        if ($rpBlocked.mode -ne 'blocked') { throw "With no enabled provider the answer is blocked, got '$($rpBlocked.mode)'" }
+
+        # ---- H38-30: durable evidence only ------------------------------------
+        $rpPrior = New-ExecutionResult `
+            -TaskId 'smoke-rp-1' -ExecutionId 'x1' -Provider 'claude' -ProviderSessionId 's1' `
+            -Status 'implementation_complete' `
+            -ChangedFiles @('src/upload.ts', 'src/upload.test.ts') `
+            -Summary 'Added a retry loop; the lint check was not run locally.'
+
+        $rpHandoff = New-HandoffPacket -RemediationPacket $rpPacket -PriorResult $rpPrior -Summary $rpSummary
+
+        $rpExpectedKeys = @('taskId', 'attempt', 'previousProvider', 'objective', 'baseSha', 'headSha',
+            'changedFiles', 'priorResult', 'ciFailures', 'acceptanceCriteria', 'remainingScope')
+        $rpActualKeys = @($rpHandoff.Keys)
+        if ($rpActualKeys.Count -ne 11) { throw "The handoff packet must carry exactly 11 keys, got $($rpActualKeys.Count)" }
+        foreach ($key in $rpExpectedKeys) {
+            if ($rpActualKeys -notcontains $key) { throw "Handoff packet is missing '$key'" }
+        }
+        foreach ($forbidden in @('events', 'stream', 'lines', 'messages')) {
+            if ($rpActualKeys -contains $forbidden) { throw "A handoff packet must not carry '$forbidden'" }
+        }
+
+        $rpHandoffValid = Test-HandoffPacket -Packet $rpHandoff
+        if (-not $rpHandoffValid.valid) { throw "A freshly built handoff packet must validate: $($rpHandoffValid.errors -join '; ')" }
+
+        # The prior result travels intact, not summarized. Compared on
+        # serialized JSON so a field silently dropped in the copy is caught.
+        $rpPriorJson = ($rpPrior | ConvertTo-Json -Depth 10 -Compress)
+        $rpCarriedJson = ($rpHandoff.priorResult | ConvertTo-Json -Depth 10 -Compress)
+        if ($rpPriorJson -ne $rpCarriedJson) { throw 'The prior ExecutionResult must cross the boundary unchanged' }
+
+        if (@($rpHandoff.changedFiles).Count -ne 2) { throw 'The changed-file list must travel' }
+        if (@($rpHandoff.remainingScope).Count -ne @($rpHandoff.acceptanceCriteria).Count) {
+            throw 'With no per-criterion result, remainingScope is every criterion'
+        }
+
+        # The rule with teeth, both halves.
+        $rpFatResult = [pscustomobject]@{ summary = ('x' * 5000) }
+        $rpFat = New-HandoffPacket -RemediationPacket $rpPacket -PriorResult $rpFatResult -Summary $rpSummary
+        $rpFatVerdict = Test-HandoffPacket -Packet $rpFat
+        if ($rpFatVerdict.valid) { throw 'A 5,000-character string in priorResult must be refused as a transcript' }
+        if (($rpFatVerdict.errors -join ' ') -notlike '*must not contain a transcript*') {
+            throw "The transcript rule must name itself: $($rpFatVerdict.errors -join '; ')"
+        }
+
+        $rpEventyResult = [pscustomobject]@{ summary = 'ok'; events = @('a', 'b') }
+        $rpEventy = New-HandoffPacket -RemediationPacket $rpPacket -PriorResult $rpEventyResult -Summary $rpSummary
+        if ((Test-HandoffPacket -Packet $rpEventy).valid) { throw "A priorResult carrying 'events' must be refused" }
+
+        # A switch starts a NEW session, and never reuses the one it left.
+        $rpPrompt = ConvertTo-HandoffPrompt -HandoffPacket $rpHandoff -Packet $rpPacket
+        if ($rpPrompt -notlike '*## Prior attempt (claude)*') { throw 'The prompt must name the previous provider' }
+        foreach ($criterion in @($rpPacket.acceptanceCriteria)) {
+            if ($rpPrompt -notlike ("*$criterion*")) { throw "Criterion missing from the handoff prompt: $criterion" }
+        }
+        if ($rpPrompt -notlike '*src/upload.ts*') { throw 'The changed files must reach the next provider' }
+        if ($rpPrompt -notlike '*lint: timed_out*') { throw 'The CI failures must reach the next provider' }
+        if ($rpPrompt -like '*s1*') { throw 'A handoff prompt must not carry the previous session id' }
+
+        # Excluding the previous provider is what makes a handoff a handoff.
+        # With claude excluded and nothing else eligible, the honest answer is
+        # no selection at all -- the runner leaves the entry queued.
+        . (Join-Path $root 'backend\modules\execution\Execution.ProviderRouter.ps1')
+        $rpExcluded = Resolve-ProviderSelection -Packet $rpPacket -Registry $rpRegistry `
+            -CapacityRecords ([pscustomobject]@{ claude = $rpRoomy }) `
+            -AuthStatus ([pscustomobject]@{ claude = $true; codex = $false; copilot = $false }) `
+            -Config $rpConfig -TaskClass 'remediation' -NowUtc $rpNow `
+            -Exclude @('claude')
+        if ($null -ne $rpExcluded.selected) {
+            throw "With claude excluded and nothing else available, no provider may be selected; got '$($rpExcluded.selected)'"
+        }
+        if (($rpExcluded.reason -join ' ') -notlike '*exclude*') {
+            throw "The exclusion must be recorded as a reason: $($rpExcluded.reason -join '; ')"
+        }
+
+        # ---- H38-29: the cap is evaluated BEFORE anything spends capacity ----
+        # The ordering is the whole difference between a bounded remediation
+        # loop and an unbounded one, so it is asserted directly rather than
+        # inferred from a live run: hand the decision a cap that is reached
+        # AND a route that would resume happily, and the answer must still be
+        # halt with no provider to launch.
+        $rpCapReached = [pscustomobject]@{ reached = $true; count = 2; cap = 2 }
+        $rpWouldResume = [pscustomobject]@{ mode = 'resume'; provider = 'claude'; reason = 'resuming session on claude' }
+
+        $rpHalt = Resolve-RemediationLaunch -Packet $rpPacket -CapVerdict $rpCapReached -Route $rpWouldResume
+        if ($rpHalt.action -ne 'halt') { throw "At the cap the answer must be halt even with a resume route, got '$($rpHalt.action)'" }
+        if (-not [string]::IsNullOrWhiteSpace($rpHalt.provider)) { throw 'A halted remediation must name no provider to launch' }
+        if ($rpHalt.reason -ne 'remediation-cap-reached') { throw "Wrong halt reason: '$($rpHalt.reason)'" }
+
+        $rpUnderCap = [pscustomobject]@{ reached = $false; count = 0; cap = 2 }
+        $rpGo = Resolve-RemediationLaunch -Packet $rpPacket -CapVerdict $rpUnderCap -Route $rpWouldResume
+        if ($rpGo.action -ne 'resume') { throw "Under the cap a resume route must resume, got '$($rpGo.action)'" }
+        if ($rpGo.sessionId -ne 's1') { throw "The resume must carry the session id, got '$($rpGo.sessionId)'" }
+
+        $rpHandoffPlan = Resolve-RemediationLaunch -Packet $rpPacket -CapVerdict $rpUnderCap `
+            -Route ([pscustomobject]@{ mode = 'handoff'; provider = ''; reason = 'no previous session' })
+        if ($rpHandoffPlan.action -ne 'handoff') { throw "A handoff route must plan a handoff, got '$($rpHandoffPlan.action)'" }
+
+        # An unrecognized mode is not permission to run.
+        $rpUnknown = Resolve-RemediationLaunch -Packet $rpPacket -CapVerdict $rpUnderCap `
+            -Route ([pscustomobject]@{ mode = 'sideways'; provider = ''; reason = '' })
+        if ($rpUnknown.action -ne 'blocked') { throw "An unknown route mode must block, got '$($rpUnknown.action)'" }
+
+        # Only a remediation packet takes this path at all.
+        if (Test-WorkPacketIsRemediation -Packet $rpOriginal) { throw 'A plain work packet is not a remediation' }
+        if (-not (Test-WorkPacketIsRemediation -Packet $rpPacket)) { throw 'A remediation packet must be recognized as one' }
+
+        # The resume argv is a DIFFERENT vector, and it carries the session.
+        $rpResumeArgv = @(Resume-ClaudeExecution -SessionId 's1' -Prompt 'x' -PermissionMode 'acceptEdits')
+        if ($rpResumeArgv -notcontains '--resume') { throw 'The resume argument vector must pass --resume' }
+        if ($rpResumeArgv -notcontains 's1') { throw 'The resume argument vector must carry the session id' }
+        $rpFreshArgv = @(New-ClaudeExecutionArgument -Prompt 'x' -PermissionMode 'acceptEdits')
+        if ($rpFreshArgv -contains '--resume') { throw 'A fresh run must not pass --resume' }
+
+        Write-Host '  remediation/handoff ok: failures become criteria and the originals survive verbatim; resume needs a session, a resuming adapter and remediation capacity; the handoff carries 11 durable keys, refuses a transcript by length and by name, and excludes the provider it came from; the cap is evaluated before any argument vector is built' -ForegroundColor DarkGray
+    }
+    finally {
+        Remove-Item -LiteralPath $rpTmp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 # ── Release 3.0 — operator-runner presence and the in-host dispatch refusal ──
 Write-Step 'Runner presence — smoke: queueing into an empty room is visible (Release 3.0)'
 & {
