@@ -88,6 +88,9 @@ $executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 . (Join-Path $executionModuleRoot 'Execution.WorkPacket.ps1')
 . (Join-Path $executionModuleRoot 'Execution.ProviderRegistry.ps1')
 . (Join-Path $executionModuleRoot 'Execution.ProviderCapacity.ps1')
+# H38-24b: the approve route asks this whether a run needs an independent
+# review. It decides only; redispatch is H38-30's.
+. (Join-Path $executionModuleRoot 'Execution.ReviewPolicy.ps1')
 . (Join-Path $WorkspaceRoot 'backend\modules\agent-adapters\Adapter.Claude.ps1')
 # H38-15. The host needs each adapter's CAPABILITY and CAPACITY to answer
 # GET /api/providers; it never executes one. Execution belongs to the operator
@@ -6958,6 +6961,51 @@ try {
                     }
                     $client.Close()
                     continue
+                }
+
+                # Release 3.8 M4 (H38-24b). A high-risk change is not approvable
+                # on the implementer's own word. The refusal NAMES who could
+                # review, because "review required" with no eligible reviewer
+                # is a dead end rather than an instruction.
+                #
+                # This route decides and refuses; it does not dispatch the
+                # review. H38-30 owns redispatch, and a second dispatcher here
+                # would make the review stage impossible to reason about.
+                #
+                # `risk` is read from the run record this route already loaded.
+                # Nothing writes it yet, so every run today reads `low` and no
+                # review is required -- the mechanism is in place and gated,
+                # and it starts refusing the moment a risk producer lands.
+                $approveRisk = [string](Get-ObjectPropertyValue -InputObject $approveRunDetail.run -PropertyName 'risk' -Default 'low')
+                $approveExistingReview = Get-ObjectPropertyValue -InputObject $approveRunDetail.run -PropertyName 'independentReview' -Default $null
+                if ($null -eq $approveExistingReview -and (Get-Command -Name 'Resolve-ReviewRequirement' -ErrorAction SilentlyContinue)) {
+                    # selectedProvider is the token the runner chose (H38-17); providerTool
+                    # is the older tool name. Either resolves to a token in the policy.
+                    $approveImplementer = [string](Get-ObjectPropertyValue -InputObject $approveRunDetail.run -PropertyName 'selectedProvider' -Default '')
+                    if ([string]::IsNullOrWhiteSpace($approveImplementer)) {
+                        $approveImplementer = [string](Get-ObjectPropertyValue -InputObject $approveRunDetail.run -PropertyName 'providerTool' -Default '')
+                    }
+                    $approveReviewVerdict = Resolve-ReviewRequirement -Risk $approveRisk -Implementer $approveImplementer `
+                        -DiffLines ([int](Get-ObjectPropertyValue -InputObject $approveRunDetail.run -PropertyName 'diffLines' -Default 0)) `
+                        -VerificationComplete ([bool](Get-ObjectPropertyValue -InputObject $approveRunDetail.run -PropertyName 'verificationComplete' -Default $true)) `
+                        -Confidence ([string](Get-ObjectPropertyValue -InputObject $approveRunDetail.run -PropertyName 'confidence' -Default '')) `
+                        -ArchitectureChanged ([bool](Get-ObjectPropertyValue -InputObject $approveRunDetail.run -PropertyName 'architectureChanged' -Default $false)) `
+                        -WorkspaceRoot $WorkspaceRoot
+                    if ($approveReviewVerdict.required) {
+                        Write-HostLog ("[TRACE] agent-runs.approve correlationId={0} runId={1} refused: review required ({2})" -f $correlationId, $approveAgentRunId, $approveReviewVerdict.reason)
+                        Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            category = 'review-required'
+                            error = $approveReviewVerdict.reason
+                            data = @{
+                                risk              = $approveRisk
+                                implementer       = $approveImplementer
+                                eligibleReviewers = @($approveReviewVerdict.eligibleReviewers)
+                            }
+                        }
+                        $client.Close()
+                        continue
+                    }
                 }
 
                 $approveRecord = Update-AgentRunRecord -WorkspaceRoot $WorkspaceRoot -RunId $approveAgentRunId -Actor 'operator' `

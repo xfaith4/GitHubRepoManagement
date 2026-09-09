@@ -7397,6 +7397,115 @@ Write-Step 'Verified head SHA — smoke: CI success binds to a head, and a moved
     }
 }
 
+# ── Release 3.8 M4 (H38-24b) — a provider must not review itself ─────────────
+# The value bought by an independent review is independence. Everything below
+# is that one rule and the question of when to spend it: never on low risk,
+# always on high, and on medium only where something specific says this change
+# is not as small as it looks.
+Write-Step 'Independent review — smoke: risk decides, and the implementer is never the reviewer (Release 3.8 M4)'
+& {
+    $root = $WorkspaceRoot
+    $reviewModule = Join-Path $root 'backend\modules\execution\Execution.ReviewPolicy.ps1'
+    if (-not (Test-Path -LiteralPath $reviewModule)) { throw "Missing module file: $reviewModule" }
+    . $reviewModule
+    if (-not (Get-Command Get-AgentProviderToken -ErrorAction SilentlyContinue)) {
+        . (Join-Path $root 'backend\modules\execution\Execution.ProviderRegistry.ps1')
+    }
+
+    # Low risk never buys a review. A rule that fired on everything would be
+    # a tax rather than a safeguard, and would train an operator to bypass it.
+    $rvLow = Resolve-ReviewRequirement -Risk 'low' -Implementer 'claude' -DiffLines 5000 `
+        -VerificationComplete $false -Confidence 'LOW'
+    if ($rvLow.required) { throw 'Low risk must never require review, whatever else is true' }
+    if ([string]::IsNullOrWhiteSpace($rvLow.reason)) { throw 'Even a "no" must say why' }
+
+    # High risk always does, whatever the other signals say.
+    $rvHigh = Resolve-ReviewRequirement -Risk 'high' -Implementer 'claude' -DiffLines 1 `
+        -VerificationComplete $true -Confidence 'HIGH'
+    if (-not $rvHigh.required) { throw 'High risk must always require review' }
+
+    # Medium is where the four triggers live. Each must fire ON ITS OWN, or the
+    # rule is really "all four" wearing a disguise.
+    $rvMediumQuiet = Resolve-ReviewRequirement -Risk 'medium' -Implementer 'claude' -DiffLines 10 `
+        -VerificationComplete $true -Confidence 'HIGH' -ArchitectureChanged $false -MediumRiskDiffLines 200
+    if ($rvMediumQuiet.required) { throw 'Medium risk with no trigger must not require review' }
+
+    $rvMediumUnverified = Resolve-ReviewRequirement -Risk 'medium' -Implementer 'claude' -DiffLines 10 `
+        -VerificationComplete $false -Confidence 'HIGH' -ArchitectureChanged $false -MediumRiskDiffLines 200
+    if (-not $rvMediumUnverified.required) { throw 'Incomplete verification must trigger review at medium risk' }
+
+    $rvMediumBig = Resolve-ReviewRequirement -Risk 'medium' -Implementer 'claude' -DiffLines 201 `
+        -VerificationComplete $true -Confidence 'HIGH' -ArchitectureChanged $false -MediumRiskDiffLines 200
+    if (-not $rvMediumBig.required) { throw 'A diff over the threshold must trigger review at medium risk' }
+    # Strictly over, not equal: the threshold is the largest diff still allowed
+    # through, and an off-by-one here silently doubles or halves the rule.
+    $rvMediumAt = Resolve-ReviewRequirement -Risk 'medium' -Implementer 'claude' -DiffLines 200 `
+        -VerificationComplete $true -Confidence 'HIGH' -ArchitectureChanged $false -MediumRiskDiffLines 200
+    if ($rvMediumAt.required) { throw 'A diff exactly at the threshold must not trigger review' }
+
+    $rvMediumLowConf = Resolve-ReviewRequirement -Risk 'medium' -Implementer 'claude' -DiffLines 10 `
+        -VerificationComplete $true -Confidence 'LOW' -ArchitectureChanged $false -MediumRiskDiffLines 200
+    if (-not $rvMediumLowConf.required) { throw 'LOW confidence must trigger review at medium risk' }
+
+    $rvMediumArch = Resolve-ReviewRequirement -Risk 'medium' -Implementer 'claude' -DiffLines 10 `
+        -VerificationComplete $true -Confidence 'HIGH' -ArchitectureChanged $true -MediumRiskDiffLines 200
+    if (-not $rvMediumArch.required) { throw 'An architecture change must trigger review at medium risk' }
+
+    # The reason names the trigger. "Review required" with no cause gives an
+    # operator nothing to act on and nothing to disagree with.
+    if ($rvMediumBig.reason -notmatch '200') { throw "The diff-threshold reason must name the threshold: '$($rvMediumBig.reason)'" }
+    if ($rvMediumLowConf.reason -notmatch '(?i)confidence') { throw "The confidence reason must name confidence: '$($rvMediumLowConf.reason)'" }
+
+    # Independence, asserted for every registry token rather than for one.
+    $rvTokens = @(Get-AgentProviderToken -WorkspaceRoot $root)
+    foreach ($rvImplementer in ($rvTokens | Where-Object { $_ -ne 'auto' })) {
+        $rvReq = Resolve-ReviewRequirement -Risk 'high' -Implementer $rvImplementer -DiffLines 10 `
+            -VerificationComplete $true -Confidence 'HIGH'
+        $rvEligible = @($rvReq.eligibleReviewers)
+        if ($rvEligible -contains $rvImplementer) { throw "A provider must never be eligible to review itself ($rvImplementer)" }
+        if ($rvEligible -contains 'auto') { throw "'auto' is an instruction to choose, not a reviewer" }
+        if ($rvEligible.Count -lt 1) { throw "No eligible reviewer for implementer '$rvImplementer'; a rule nothing can satisfy is worse than no rule" }
+    }
+
+    # The ledger records providerTool (claude-code), the registry speaks tokens
+    # (claude). Compared raw they never match, the implementer stays eligible to
+    # review its own work, and it fails SILENTLY -- the refusal still appears and
+    # still names reviewers, one of whom is the author.
+    $rvByTool = Resolve-ReviewRequirement -Risk 'high' -Implementer 'claude-code' -DiffLines 10 `
+        -VerificationComplete $true -Confidence 'HIGH' -WorkspaceRoot $root
+    if (@($rvByTool.eligibleReviewers) -contains 'claude') {
+        throw 'A providerTool name must resolve to its token; otherwise the implementer reviews its own work'
+    }
+    if ((Resolve-ReviewImplementerToken -Value 'github-copilot-agent' -WorkspaceRoot $root) -ne 'copilot') {
+        throw 'providerTool -> token resolution failed for github-copilot-agent'
+    }
+    if ((Resolve-ReviewImplementerToken -Value 'codex' -WorkspaceRoot $root) -ne 'codex') {
+        throw 'A token handed in must come back unchanged'
+    }
+
+    # The threshold is configuration, and it is PROVISIONAL: nobody has measured
+    # the right number, and D-011's lesson is that an unmeasured number must not
+    # enforce silently.
+    $rvConfig = Get-Content -LiteralPath (Join-Path $root 'backend\config\agent-providers.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($null -eq $rvConfig.review) { throw 'agent-providers.json must carry a review section' }
+    if ([int]$rvConfig.review.mediumRiskDiffLines -ne 200) { throw "review.mediumRiskDiffLines must default to 200, got '$($rvConfig.review.mediumRiskDiffLines)'" }
+    if (-not $rvConfig.review.provisional) { throw 'review.mediumRiskDiffLines is an unmeasured threshold and must be marked provisional' }
+
+    # The route refuses, and it does so by name. Asserted over source because
+    # the api-host smoke drives the live request.
+    $rvHostSource = Get-Content -LiteralPath (Join-Path $root 'backend\api-host\Start-RepoManagementApiHost.ps1') -Raw -Encoding UTF8
+    if ($rvHostSource -notmatch "category = 'review-required'") {
+        throw 'The approve route must refuse an unreviewed run with category review-required'
+    }
+    # It must not grow a second dispatcher: H38-30 owns redispatch.
+    $rvApproveBlock = [regex]::Match($rvHostSource, "(?s)/api/agent-runs/\*/approve'\) \{.*?\n            \}\r?\n")
+    if ($rvApproveBlock.Success -and $rvApproveBlock.Value -match 'Add-RoadmapQueueEntry|New-RoadmapQueueEntry|Start-RoadmapCopilotTask') {
+        throw 'The approve route must not dispatch the review itself; H38-30 owns redispatch'
+    }
+
+    Write-Host ("  independent review ok: low never / high always / medium on four separate triggers (> not >=), reason names the trigger, no self-review across {0} token(s), threshold provisional" -f @($rvTokens | Where-Object { $_ -ne 'auto' }).Count) -ForegroundColor DarkGray
+}
+
 # ── Release 3.0 — operator-runner presence and the in-host dispatch refusal ──
 Write-Step 'Runner presence — smoke: queueing into an empty room is visible (Release 3.0)'
 & {
