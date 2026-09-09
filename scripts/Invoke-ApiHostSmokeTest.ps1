@@ -4255,8 +4255,28 @@ A release should not be marked `done` unless:
             Where-Object { [string]$_.eventType -eq 'run.operator-approved' })
         if ($approveEvents.Count -ne 1) { throw ("Expected exactly one run.operator-approved event, got {0}" -f $approveEvents.Count) }
 
+        # ── H38-24b — a high-risk run is not approvable on the implementer's
+        # own word. Content-type asserted, not just status: an unmatched route
+        # answers 200 text/html from the SPA shell and would pass a status-only
+        # check for the wrong reason.
+        $null = Update-AgentRunRecord -WorkspaceRoot $WorkspaceRoot -RunId $approveBindRunId -Actor 'smoke' `
+            -Summary 'Raise the run to high risk for the review-required assertion.' `
+            -Patch @{ risk = 'high' }
+        $approveRisky = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/agent-runs/$approveBindRunId/approve" -Body @{ sha = 'aaa' }
+        if (([string]$approveRisky.ContentType) -notlike 'application/json*') {
+            throw ("The review refusal must be JSON (HTTP {0}, {1})" -f $approveRisky.StatusCode, $approveRisky.ContentType)
+        }
+        if ([int]$approveRisky.StatusCode -ne 409) { throw ("A high-risk run with no review must be 409, got {0}" -f $approveRisky.StatusCode) }
+        if ([string]$approveRisky.Json.category -ne 'review-required') {
+            throw ("Expected category 'review-required', got '{0}'" -f $approveRisky.Json.category)
+        }
+        # Naming the reviewers is what turns the refusal into an instruction.
+        $approveEligible = @($approveRisky.Json.data.eligibleReviewers)
+        if ($approveEligible.Count -lt 1) { throw 'The refusal must name at least one eligible reviewer' }
+        if ($approveEligible -contains 'auto') { throw "'auto' is an instruction to choose, not a reviewer" }
+
         $approveBindOk = $true
-        Write-Host '  approve binding ok: unknown run 404, wrong sha 409 not-ready naming the verified head, no sha 400, right sha 200 + one run.operator-approved event' -ForegroundColor DarkGray
+        Write-Host ('  approve binding ok: unknown run 404, wrong sha 409 not-ready naming the verified head, no sha 400, right sha 200 + one run.operator-approved event; high risk 409 review-required naming {0} reviewer(s)' -f $approveEligible.Count) -ForegroundColor DarkGray
     }
     finally {
         if (-not [string]::IsNullOrWhiteSpace($approveBindRunId)) {

@@ -1018,7 +1018,11 @@ to the queue — never fails it — when a provider is exhausted.
       refuses `no-verified-head`, `no-operator-approval` and
       `head-moved-since-approval`. H38-25 the merge control in
       [`frontend/components/OperationsWorkspaceView.tsx`](frontend/components/OperationsWorkspaceView.tsx)
-      shows and approves the verified SHA and disables on head drift. All five
+      shows and approves the verified SHA and disables on head drift. H38-24b
+      risk-based independent review in
+      [`backend/modules/execution/Execution.ReviewPolicy.ps1`](backend/modules/execution/Execution.ReviewPolicy.ps1)
+      — high risk requires a different provider, medium risk requires one on
+      four named triggers, and the reviewer is never the implementer. All six
       are gated in
       [`scripts/Invoke-ModuleSmokeTest.ps1`](scripts/Invoke-ModuleSmokeTest.ps1)
       and [`OperationsWorkspaceView.test.tsx`](frontend/components/OperationsWorkspaceView.test.tsx))_

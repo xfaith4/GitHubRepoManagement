@@ -8,10 +8,20 @@
       "autoPush": true,
       "maxConcurrentExecutions": 1,
       "windows": [
-        { "name": "short-term", "unit": "provider-allowance" },
-        { "name": "weekly", "unit": "provider-allowance" }
+        {
+          "name": "short-term",
+          "unit": "provider-allowance"
+        },
+        {
+          "name": "weekly",
+          "unit": "provider-allowance"
+        }
       ],
-      "limitSignals": [ "(?i)usage limit", "(?i)rate limit", "(?i)429" ],
+      "limitSignals": [
+        "(?i)usage limit",
+        "(?i)rate limit",
+        "(?i)429"
+      ],
       "provisional": true
     },
     "codex": {
@@ -21,10 +31,20 @@
       "autoPush": true,
       "maxConcurrentExecutions": 1,
       "windows": [
-        { "name": "short-term", "unit": "provider-allowance" },
-        { "name": "weekly", "unit": "provider-allowance" }
+        {
+          "name": "short-term",
+          "unit": "provider-allowance"
+        },
+        {
+          "name": "weekly",
+          "unit": "provider-allowance"
+        }
       ],
-      "limitSignals": [ "(?i)usage limit", "(?i)rate limit", "(?i)429" ],
+      "limitSignals": [
+        "(?i)usage limit",
+        "(?i)rate limit",
+        "(?i)429"
+      ],
       "provisional": true
     },
     "copilot": {
@@ -34,7 +54,10 @@
       "autoPush": false,
       "maxConcurrentExecutions": 2,
       "windows": [
-        { "name": "billing", "unit": "unknown" }
+        {
+          "name": "billing",
+          "unit": "unknown"
+        }
       ],
       "limitSignals": [],
       "provisional": true
@@ -42,7 +65,7 @@
   },
   "reserves": {
     "shortWindowRatio": 0.15,
-    "weeklyRatio": 0.20,
+    "weeklyRatio": 0.2,
     "remediationInsideWeekly": true
   },
   "estimates": {
@@ -65,9 +88,17 @@
   "remediation": {
     "maxRemediationAttempts": 2
   },
+  "review": {
+    "mediumRiskDiffLines": 200,
+    "provisional": true
+  },
   "defaultScope": {
-    "allowedPaths": [ "**" ],
-    "forbiddenPaths": [ ".github/workflows/**" ],
+    "allowedPaths": [
+      "**"
+    ],
+    "forbiddenPaths": [
+      ".github/workflows/**"
+    ],
     "provisional": true
   },
   "defaultPermissions": {
