@@ -243,4 +243,79 @@ describe('CopilotTaskPreviewModal — dispatch action and honest error hints', (
     // The old hardcode must not come back as a default.
     expect(screen.queryByText(/Intended provider: copilot/)).not.toBeInTheDocument();
   });
+
+  // -- H-07 (D-008): dispatch authority belongs to the Dispatch Board --------
+  // Previewing is how an operator decides whether work is worth doing, and it
+  // happens from Work Queue and Operations too. So the preview stays available
+  // on all three surfaces and only the control that spends quota moves. These
+  // tests pin the three shapes the modal can be handed.
+
+  it('offers Dispatch and nothing else when the surface holds the authority', async () => {
+    mockedPreview.mockResolvedValue(packet());
+    mockedHistory.mockResolvedValue([]);
+    mockedRunner.mockResolvedValue(runnerPresent());
+
+    render(<CopilotTaskPreviewModal isOpen repoName="fixture-repo" onClose={vi.fn()} onDispatch={vi.fn()} />);
+
+    expect(await screen.findByRole('button', { name: /^Dispatch$/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Open on Dispatch Board/ })).not.toBeInTheDocument();
+  });
+
+  it('sends the operator to the board instead of spending quota where it may not', async () => {
+    // The failure this closes: Dashboard passed its dispatch callback to every
+    // preview, so previewing from Work Queue or Operations could queue a real
+    // agent run from a surface that was never meant to hold that authority.
+    mockedPreview.mockResolvedValue(packet());
+    mockedHistory.mockResolvedValue([]);
+    mockedRunner.mockResolvedValue(runnerPresent());
+    const onOpenOnBoard = vi.fn();
+
+    render(<CopilotTaskPreviewModal isOpen repoName="fixture-repo" onClose={vi.fn()} onOpenOnBoard={onOpenOnBoard} />);
+
+    const button = await screen.findByRole('button', { name: /Open on Dispatch Board/ });
+    expect(screen.queryByRole('button', { name: /^Dispatch$/ })).not.toBeInTheDocument();
+
+    fireEvent.click(button);
+    expect(onOpenOnBoard).toHaveBeenCalledTimes(1);
+    expect(onOpenOnBoard).toHaveBeenCalledWith('fixture-repo');
+  });
+
+  it('still offers nothing at all when handed neither callback', async () => {
+    // A route to the board is an improvement on a dead end, but it is not a
+    // default: a caller that passes neither is asking for a read-only preview
+    // and must keep getting one.
+    mockedPreview.mockResolvedValue(packet());
+    mockedHistory.mockResolvedValue([]);
+    mockedRunner.mockResolvedValue(runnerPresent());
+
+    render(<CopilotTaskPreviewModal isOpen repoName="fixture-repo" onClose={vi.fn()} />);
+
+    expect(await screen.findByText('Ship the widget')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Dispatch$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Open on Dispatch Board/ })).not.toBeInTheDocument();
+  });
+
+  it('keeps the preview content identical whichever authority the surface holds', async () => {
+    // D-008 moves the dispatch control, not the information. An operator
+    // deciding whether work is worth doing needs the same readiness and the
+    // same intended provider on all three surfaces, or the board becomes the
+    // only place the question can be asked.
+    mockedPreview.mockResolvedValue(packet());
+    mockedHistory.mockResolvedValue([]);
+    mockedRunner.mockResolvedValue(runnerPresent());
+
+    const { unmount } = render(
+      <CopilotTaskPreviewModal isOpen repoName="fixture-repo" onClose={vi.fn()} onDispatch={vi.fn()} intendedProvider="claude" />
+    );
+    expect(await screen.findByText('Ship the widget')).toBeInTheDocument();
+    expect(screen.getByText(/claude/)).toBeInTheDocument();
+    unmount();
+
+    render(
+      <CopilotTaskPreviewModal isOpen repoName="fixture-repo" onClose={vi.fn()} onOpenOnBoard={vi.fn()} intendedProvider="claude" />
+    );
+    expect(await screen.findByText('Ship the widget')).toBeInTheDocument();
+    expect(screen.getByText(/claude/)).toBeInTheDocument();
+  });
+
 });

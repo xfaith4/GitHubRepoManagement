@@ -2408,7 +2408,7 @@ not observed agent activity.
       a second poller. _(state: smoke-tested 2026-09-08 — closed by Release 3.8
       H38-22: the runner's poll loop calls POST /api/delivery/reconcile every
       fourth poll, which runs Invoke-AgentRunAutoClose)_
-- [ ] **Restrict dispatch authority to the Dispatch Board.** _(state: planned)_
+- [ ] **Restrict dispatch authority to the Dispatch Board.** _(state: smoke-tested 2026-09-09 — H-07: the dispatch callback is passed only when the preview was opened from the `execution-queue` view; Work Queue and Operations previews offer `Open on Dispatch Board` in the same slot and keep the full preview unchanged; the origin is snapshotted at open time rather than read live, so a tab switch cannot change the operator's available actions mid-preview, and a surface added later inherits no dispatch authority by default; gated by four component tests, the decisive one proven red against the unchanged component; the board has no row-focus prop today so switching the view is the whole of the navigation)_
       Decided 2026-09-06 (D-008), and it **reverses the default shipped the
       same day** under D-010. `CopilotTaskPreviewModal` opens from the Dispatch
       Board, the Work Queue and Operations, and

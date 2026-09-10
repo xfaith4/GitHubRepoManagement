@@ -55,6 +55,22 @@ interface CopilotTaskPreviewModalProps {
     options: { prompt: string; acknowledgeNoRunner?: boolean }
   ) => Promise<LaneDispatchResult>;
   /**
+   * H-07 (D-008) — offered INSTEAD of `onDispatch` on a surface that may
+   * preview but not dispatch.
+   *
+   * Dispatch authority belongs to the Dispatch Board alone. Previewing is how
+   * an operator decides whether work is worth doing, and it happens from Work
+   * Queue and Operations too, so the preview stays available everywhere and
+   * only the control that spends quota moves. A surface that cannot dispatch
+   * offers the route to the one that can rather than a disabled button or
+   * nothing at all, because a dead end is what sent operators looking for the
+   * ungated road in the first place.
+   *
+   * Never supply both. The modal treats `onDispatch` as authority and this as
+   * its absence; passing both would put two different answers on screen.
+   */
+  onOpenOnBoard?: (repoName: string) => void;
+  /**
    * H38-19 — which provider would really run this task, supplied by the
    * surface that knows (the Dispatch Board reads it from the presence
    * payload's `dispatch.defaultTarget`).
@@ -134,6 +150,7 @@ const CopilotTaskPreviewModal: React.FC<CopilotTaskPreviewModalProps> = ({
   roadmapPath,
   onClose,
   onDispatch,
+  onOpenOnBoard,
   intendedProvider,
 }) => {
   const [activeTab, setActiveTab] = useState<'packet' | 'prompt' | 'history'>('packet');
@@ -718,6 +735,18 @@ const CopilotTaskPreviewModal: React.FC<CopilotTaskPreviewModalProps> = ({
           >
             Close
           </button>
+          {/* H-07: the same slot, because this IS the dispatch affordance on a
+              surface that does not hold the authority. `!onDispatch` rather
+              than a separate mode flag -- one source of truth for whether this
+              render may spend quota. */}
+          {!onDispatch && onOpenOnBoard && repoName && packet && !loading && !error && (
+            <button
+              onClick={() => { onOpenOnBoard(repoName); }}
+              className="px-4 py-1.5 text-sm bg-blue-700 hover:bg-blue-600 text-white rounded border border-blue-600 transition-colors"
+            >
+              Open on Dispatch Board
+            </button>
+          )}
           {onDispatch && packet && !loading && !error && !dispatched && (
             dispatchGate.canQueue ? (
               <button

@@ -120,6 +120,8 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   // Release 3.6 M3 -- Today is the default landing: the first screen answers
   // what to do next and why, instead of opening on an unranked grid.
   const [activeView, setActiveView] = useState<ViewKey>('today');
+  // H-07: the view the task preview was opened from. Null until one is opened.
+  const [copilotTaskPreviewOrigin, setCopilotTaskPreviewOrigin] = useState<ViewKey | null>(null);
   const [docsAuditIndex, setDocsAuditIndex] = useState<DocAuditIndex | null>(null);
   const [docsAuditLoading, setDocsAuditLoading] = useState(false);
   const [docsAuditError, setDocsAuditError] = useState<string | null>(null);
@@ -1016,10 +1018,21 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
       });
   };
 
+  // H-07 (D-008) — which view opened the preview, captured at open time.
+  //
+  // Snapshotted rather than read live from `activeView`: the modal renders
+  // outside the per-view branch, so a live read would change the operator's
+  // available actions underneath them if they switched tabs with the preview
+  // open. The origin of a preview does not change after it is opened.
+  //
+  // Derived rather than declared by each caller on purpose. A surface added
+  // later inherits the safe default instead of having to remember to opt out
+  // of dispatch authority, which is the mistake this closes.
   const handlePreviewCopilotTask = (repoName: string, roadmapPath?: string, repoPath?: string) => {
     setCopilotTaskPreviewRepo(repoName);
     setCopilotTaskPreviewRoadmapPath(roadmapPath);
     setCopilotTaskPreviewRepoPath(repoPath);
+    setCopilotTaskPreviewOrigin(activeView);
     setIsCopilotTaskPreviewOpen(true);
   };
 
@@ -1904,7 +1917,22 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
           isOpen={isCopilotTaskPreviewOpen}
           repoName={copilotTaskPreviewRepo}
           roadmapPath={copilotTaskPreviewRoadmapPath}
-          onDispatch={handleDispatchToLane}
+          {...(copilotTaskPreviewOrigin === 'execution-queue'
+            ? { onDispatch: handleDispatchToLane }
+            : {
+                onOpenOnBoard: (repoName: string) => {
+                  // The board has no row-focus prop today (its only inputs are
+                  // a dispatch callback and a refresh token), so switching the
+                  // view is the whole of this. Recorded rather than left as an
+                  // unexplained omission: if the panel gains row focus, this is
+                  // where the repo name is already in hand to use it.
+                  void repoName;
+                  setActiveView('execution-queue');
+                  setIsCopilotTaskPreviewOpen(false);
+                  setCopilotTaskPreviewRoadmapPath(undefined);
+                  setCopilotTaskPreviewRepoPath(undefined);
+                },
+              })}
           onClose={() => {
             setIsCopilotTaskPreviewOpen(false);
             setCopilotTaskPreviewRoadmapPath(undefined);
