@@ -968,7 +968,7 @@ function Select-CanonicalRoadmapFile {
 
     $normalizedRepoPath = ''
     if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
-        $normalizedRepoPath = $RepoPath.TrimEnd('\', '/')
+        $normalizedRepoPath = $RepoPath.TrimEnd('\', '/').Replace('\', '/')
     }
 
     $ranked = [System.Collections.Generic.List[object]]::new()
@@ -983,7 +983,7 @@ function Select-CanonicalRoadmapFile {
         if ($leaf -notmatch '(?i)^roadmap(\..+)?\.(md|markdown)$') { continue }
 
         $parent = ''
-        try { $parent = (Split-Path -Path $fullPath -Parent).TrimEnd('\', '/') } catch { $parent = '' }
+        try { $parent = (Split-Path -Path $fullPath -Parent).TrimEnd('\', '/').Replace('\', '/') } catch { $parent = '' }
         $atRepoRoot = $normalizedRepoPath -and $parent -and
             [string]::Equals($parent, $normalizedRepoPath, [StringComparison]::OrdinalIgnoreCase)
 
@@ -991,7 +991,7 @@ function Select-CanonicalRoadmapFile {
             fullPath    = $fullPath
             rootRank    = if ($atRepoRoot) { 0 } else { 1 }
             exactRank   = if ($leaf -match '(?i)^roadmap\.(md|markdown)$') { 0 } else { 1 }
-            depth       = @($fullPath -split '[\/]').Count
+            depth       = @($fullPath -split '[\/\\]').Count
             fullPathKey = $fullPath
         }) | Out-Null
     }

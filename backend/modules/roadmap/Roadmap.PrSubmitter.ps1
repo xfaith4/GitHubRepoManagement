@@ -270,7 +270,10 @@ function Open-RepoBranchPullRequest {
         [Parameter()][switch]$PushFirst
     )
 
-    $isGitRepo = (-not [string]::IsNullOrWhiteSpace($RepoPath)) -and (Test-Path -LiteralPath (Join-Path $RepoPath '.git'))
+    $isGitRepo = $false
+    if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
+        try { $isGitRepo = Test-Path -LiteralPath (Join-Path $RepoPath '.git') } catch { $isGitRepo = $false }
+    }
     $remoteUrl = if ($isGitRepo) { Get-GitRemoteUrl -RepoPath $RepoPath } else { '' }
     $slug      = Resolve-GitHubRepoSlug -RemoteUrl $remoteUrl
 
@@ -400,7 +403,10 @@ function Invoke-RoadmapRepairPrSubmission {
         [Parameter()][switch]$AcknowledgeStaleBase
     )
 
-    $isGitRepo = (-not [string]::IsNullOrWhiteSpace($RepoPath)) -and (Test-Path -LiteralPath (Join-Path $RepoPath '.git'))
+    $isGitRepo = $false
+    if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
+        try { $isGitRepo = Test-Path -LiteralPath (Join-Path $RepoPath '.git') } catch { $isGitRepo = $false }
+    }
     $remoteUrl = if ($isGitRepo) { Get-GitRemoteUrl -RepoPath $RepoPath } else { '' }
     $slug      = Resolve-GitHubRepoSlug -RemoteUrl $remoteUrl
     $dirty     = if ($isGitRepo) { Test-GitWorkingTreeDirty -RepoPath $RepoPath } else { $false }

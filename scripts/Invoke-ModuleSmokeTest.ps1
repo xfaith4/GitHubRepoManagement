@@ -7142,7 +7142,7 @@ Write-Step 'Runner push — smoke: autoPush transitions and a real push to a bar
         if ($ok.prState -ne 'pending-open') { throw "A pushed branch must be handed to the reconcile tick as prState='pending-open', got '$($ok.prState)'" }
         if ($ok.pushedBy -ne 'runner') { throw "pushedBy must name the runner, got '$($ok.pushedBy)'" }
         if ([string]::IsNullOrWhiteSpace([string]$ok.pushedAt)) { throw 'A pushed branch must record pushedAt' }
-        $remoteSha = ((& git -C $bare rev-parse 'roadmap/push-ok' 2>&1) | Out-String).Trim()
+        $remoteSha = ((& git '--git-dir' $bare rev-parse 'roadmap/push-ok' 2>&1) | Out-String).Trim()
         $localSha = ((& git -C $clone rev-parse 'roadmap/push-ok' 2>&1) | Out-String).Trim()
         if ($remoteSha -ne $localSha) { throw 'The branch did not actually reach the bare remote' }
 
@@ -10407,7 +10407,7 @@ Write-Step 'Bounded git sweep - Release 3.2: timeout honored, cap honored, order
     }
 
     # --- Fixtures: three real repos and a plain folder. ---------------------
-    $sweepFixtureRoot = Join-Path $env:TEMP ('smoke-boundedsweep-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    $sweepFixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('smoke-boundedsweep-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
     $sweepScanRoot = Join-Path $sweepFixtureRoot 'root'
     New-Item -ItemType Directory -Path $sweepScanRoot -Force | Out-Null
     try {
@@ -10524,8 +10524,13 @@ $s = [datetime]::UtcNow.Ticks
 Start-Sleep -Milliseconds 250
 Set-Content -Path $f -Value ($s.ToString() + ' ' + [datetime]::UtcNow.Ticks.ToString())
 '@
-        $sweepMarkerShim = Join-Path $sweepFixtureRoot 'marker.cmd'
-        Set-Content -Path $sweepMarkerShim -Value ("@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"$sweepMarkerScript`"")
+        $sweepMarkerShim = Join-Path $sweepFixtureRoot $(if ($sweepIsWindows) { 'marker.cmd' } else { 'marker.sh' })
+        if ($sweepIsWindows) {
+            Set-Content -Path $sweepMarkerShim -Value ("@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"$sweepMarkerScript`"")
+        } else {
+            Set-Content -Path $sweepMarkerShim -Value ("#!/bin/sh`npwsh -NoProfile -File `"$sweepMarkerScript`"")
+            & chmod +x $sweepMarkerShim
+        }
         $env:SMOKE_SWEEP_MARKER_DIR = $sweepMarkerDir
         try {
             $sweepFakeRepoPaths = @(1..4 | ForEach-Object {
@@ -10570,7 +10575,7 @@ Write-Step 'Ledger retention - Release 3.3 milestone 1: archive-then-trim, bound
     if (-not (Test-Path -LiteralPath $retentionModule)) { throw "Missing $retentionModule" }
     . $retentionModule
 
-    $retFixture = Join-Path $env:TEMP ('smoke-ledgerret-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    $retFixture = Join-Path ([System.IO.Path]::GetTempPath()) ('smoke-ledgerret-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
     $retWorkspace = Join-Path $retFixture 'ws'
     $null = New-Item -ItemType Directory -Path (Join-Path $retWorkspace 'output\logs') -Force
     try {
@@ -10708,7 +10713,7 @@ Write-Step 'AppDb backup/restore - Release 3.3 milestone 2: rehearsed, verified,
         return
     }
 
-    $bakFixture = Join-Path $env:TEMP ('smoke-appdbbak-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    $bakFixture = Join-Path ([System.IO.Path]::GetTempPath()) ('smoke-appdbbak-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
     $bakWorkspace = Join-Path $bakFixture 'ws'
     $null = New-Item -ItemType Directory -Path $bakWorkspace -Force
     try {
@@ -11170,7 +11175,7 @@ Write-Step 'Live-service currency check - derived routes, and the SPA-fallback t
 
     # The deriver must fail loudly on source it cannot read, rather than
     # reporting a healthy zero.
-    $currencyEmptyFixture = Join-Path $env:TEMP ('smoke-currency-' + [guid]::NewGuid().ToString('n').Substring(0, 8) + '.ps1')
+    $currencyEmptyFixture = Join-Path ([System.IO.Path]::GetTempPath()) ('smoke-currency-' + [guid]::NewGuid().ToString('n').Substring(0, 8) + '.ps1')
     Set-Content -LiteralPath $currencyEmptyFixture -Value '# no routes here' -Encoding UTF8
     try {
         $currencyEmpty = @(Get-DeclaredGetRoute -HostScriptPath $currencyEmptyFixture)
@@ -11207,7 +11212,7 @@ Write-Step 'Dispatch severity gate - the code blocks on what the config declares
     if ($gateBlocks -notcontains 'critical') { throw 'The declared gate does not block on critical findings; a real doc defect would dispatch.' }
     if ([string]::IsNullOrWhiteSpace([string]$gateDeclared.rationale)) { throw 'The severity gate carries no rationale; a future reader cannot tell a decision from an accident.' }
 
-    $gateFixture = Join-Path $env:TEMP ('smoke-sevgate-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    $gateFixture = Join-Path ([System.IO.Path]::GetTempPath()) ('smoke-sevgate-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
     $null = New-Item -ItemType Directory -Path $gateFixture -Force
     try {
         # A repo with a good README and pending roadmap work, missing only a
@@ -11325,19 +11330,20 @@ Write-Step 'Queue path resolver - Release 2.9: one definition, so the smoke cann
 
     # The override must actually redirect, or the smoke cannot isolate itself.
     . $queuePathResolver
-    $queuePathDefault = Get-RoadmapQueuePath -WorkspaceRoot 'C:\fixture-ws'
+    $queueFixtureWs = Join-Path ([System.IO.Path]::GetTempPath()) 'fixture-ws'
+    $queuePathDefault = Get-RoadmapQueuePath -WorkspaceRoot $queueFixtureWs
     if ($queuePathDefault -notmatch 'roadmap-task-queue\.jsonl$') { throw "Default queue path is wrong: $queuePathDefault" }
-    $env:REPO_MGMT_QUEUE_PATH = 'C:\fixture-ws\isolated-queue.jsonl'
+    $env:REPO_MGMT_QUEUE_PATH = Join-Path $queueFixtureWs 'isolated-queue.jsonl'
     try {
-        $queuePathOverridden = Get-RoadmapQueuePath -WorkspaceRoot 'C:\fixture-ws'
-        if ($queuePathOverridden -ne 'C:\fixture-ws\isolated-queue.jsonl') {
+        $queuePathOverridden = Get-RoadmapQueuePath -WorkspaceRoot $queueFixtureWs
+        if ($queuePathOverridden -ne (Join-Path $queueFixtureWs 'isolated-queue.jsonl')) {
             throw "REPO_MGMT_QUEUE_PATH did not redirect the resolver (got $queuePathOverridden); the smoke cannot isolate its fixtures."
         }
     }
     finally {
         Remove-Item Env:REPO_MGMT_QUEUE_PATH -ErrorAction SilentlyContinue
     }
-    if ((Get-RoadmapQueuePath -WorkspaceRoot 'C:\fixture-ws') -ne $queuePathDefault) {
+    if ((Get-RoadmapQueuePath -WorkspaceRoot $queueFixtureWs) -ne $queuePathDefault) {
         throw 'The resolver did not return to its default after the override was cleared.'
     }
 
@@ -11443,13 +11449,14 @@ Write-Step 'Settings path resolver - one definition, so a gate cannot write the 
 
     # The override must actually redirect, or no gate can isolate itself.
     . $settingsPathResolver
-    $settingsPathDefault = Get-PortalSettingsPath -WorkspaceRoot 'C:\fixture-ws'
+    $settingsFixtureWs = Join-Path ([System.IO.Path]::GetTempPath()) 'fixture-ws'
+    $settingsPathDefault = Get-PortalSettingsPath -WorkspaceRoot $settingsFixtureWs
     if ($settingsPathDefault -notmatch 'settings\.json$') { throw "Default settings path is wrong: $settingsPathDefault" }
     if (Test-PortalSettingsPathOverridden) { throw 'Test-PortalSettingsPathOverridden reported an override with none set.' }
-    $env:REPO_MGMT_SETTINGS_PATH = 'C:\fixture-ws\isolated-settings.json'
+    $env:REPO_MGMT_SETTINGS_PATH = Join-Path $settingsFixtureWs 'isolated-settings.json'
     try {
-        $settingsPathOverridden = Get-PortalSettingsPath -WorkspaceRoot 'C:\fixture-ws'
-        if ($settingsPathOverridden -ne 'C:\fixture-ws\isolated-settings.json') {
+        $settingsPathOverridden = Get-PortalSettingsPath -WorkspaceRoot $settingsFixtureWs
+        if ($settingsPathOverridden -ne (Join-Path $settingsFixtureWs 'isolated-settings.json')) {
             throw "REPO_MGMT_SETTINGS_PATH did not redirect the resolver (got $settingsPathOverridden); a gate cannot isolate its config."
         }
         if (-not (Test-PortalSettingsPathOverridden)) { throw 'Test-PortalSettingsPathOverridden missed an active override.' }
@@ -11457,7 +11464,7 @@ Write-Step 'Settings path resolver - one definition, so a gate cannot write the 
     finally {
         Remove-Item Env:REPO_MGMT_SETTINGS_PATH -ErrorAction SilentlyContinue
     }
-    if ((Get-PortalSettingsPath -WorkspaceRoot 'C:\fixture-ws') -ne $settingsPathDefault) {
+    if ((Get-PortalSettingsPath -WorkspaceRoot $settingsFixtureWs) -ne $settingsPathDefault) {
         throw 'The settings resolver did not return to its default after the override was cleared.'
     }
 
@@ -11518,7 +11525,7 @@ Write-Step 'Runner stop mechanism - Release 2.9: a detached runner can be stoppe
         if (-not (Test-Path -LiteralPath $stopFile)) { throw "Missing $stopFile" }
     }
 
-    $stopFixture = Join-Path $env:TEMP ('smoke-runnerstop-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    $stopFixture = Join-Path ([System.IO.Path]::GetTempPath()) ('smoke-runnerstop-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
     $null = New-Item -ItemType Directory -Path (Join-Path $stopFixture 'output\roadmap-task-history\runs') -Force
     try {
         $stopQueue = Join-Path $stopFixture 'output\roadmap-task-queue.jsonl'
@@ -11529,11 +11536,17 @@ Write-Step 'Runner stop mechanism - Release 2.9: a detached runner can be stoppe
         # --- The marker stops a live loop. --------------------------------
         # An empty queue means the loop parks in its idle branch, which is the
         # state a stranded runner is actually in.
-        $stopProc = Start-Process -FilePath $stopPsExe -ArgumentList @(
-            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $stopRunnerScript,
-            '-WorkspaceRoot', $stopFixture, '-QueuePath', $stopQueue,
-            '-StopFilePath', $stopMarker, '-PollSeconds', '2', '-DryRun'
-        ) -WindowStyle Hidden -PassThru
+        $stopProcArgs = @{
+            FilePath     = $stopPsExe
+            ArgumentList = @(
+                '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $stopRunnerScript,
+                '-WorkspaceRoot', $stopFixture, '-QueuePath', $stopQueue,
+                '-StopFilePath', $stopMarker, '-PollSeconds', '2', '-DryRun'
+            )
+            PassThru     = $true
+        }
+        if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { $stopProcArgs.WindowStyle = 'Hidden' }
+        $stopProc = Start-Process @stopProcArgs
 
         Start-Sleep -Seconds 6
         if ($stopProc.HasExited) { throw "Fixture runner exited before the stop was requested (exit $($stopProc.ExitCode)); the test proves nothing." }
@@ -11553,11 +11566,17 @@ Write-Step 'Runner stop mechanism - Release 2.9: a detached runner can be stoppe
         # --- A stale marker must not stop a fresh runner. -----------------
         # Startup clears it; this proves that, by planting one first.
         Set-Content -LiteralPath $stopMarker -Value 'stale' -Encoding UTF8
-        $stopProc2 = Start-Process -FilePath $stopPsExe -ArgumentList @(
-            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $stopRunnerScript,
-            '-WorkspaceRoot', $stopFixture, '-QueuePath', $stopQueue,
-            '-StopFilePath', $stopMarker, '-PollSeconds', '2', '-DryRun'
-        ) -WindowStyle Hidden -PassThru
+        $stopProc2Args = @{
+            FilePath     = $stopPsExe
+            ArgumentList = @(
+                '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $stopRunnerScript,
+                '-WorkspaceRoot', $stopFixture, '-QueuePath', $stopQueue,
+                '-StopFilePath', $stopMarker, '-PollSeconds', '2', '-DryRun'
+            )
+            PassThru     = $true
+        }
+        if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { $stopProc2Args.WindowStyle = 'Hidden' }
+        $stopProc2 = Start-Process @stopProc2Args
         Start-Sleep -Seconds 8
         $survivedStaleMarker = -not $stopProc2.HasExited
         Set-Content -LiteralPath $stopMarker -Value 'stop' -Encoding UTF8
@@ -11581,6 +11600,303 @@ Write-Step 'Runner stop mechanism - Release 2.9: a detached runner can be stoppe
     finally {
         Remove-Item -Recurse -Force $stopFixture -ErrorAction SilentlyContinue
     }
+}
+
+# ── Release 3.8 M6 (H38-34) — canonical execution events + delivery state ────
+# Gates-not-documents: every claim here is proved red against a violating
+# fixture first. Unknown event types are refused at construction time (not
+# silently accepted), and Get-DeliveryState returns $null rather than throwing
+# for unrecognised inputs so callers can tolerate new states.
+#
+# The delivery state is the sixth status dimension. The invariant: no two
+# dimensions share a word. This is the claim the ALL_CAPS convention enforces —
+# delivery states are uppercase and appear nowhere in the other five.
+Write-Step 'Execution events — smoke: type validation, delivery state mapping (Release 3.8 M6, H38-34)'
+& {
+    $root = $WorkspaceRoot
+    . (Join-Path $root 'backend\modules\execution\Execution.Events.ps1')
+
+    # ── H38-34 red: an unknown type is refused (proved red before green) ──
+    $refused = $false
+    try { $null = New-ExecutionEvent -EventId 'e1' -TaskId 't1' -ExecutionId 'ex1' -Provider 'claude' -Timestamp '2026-01-01T00:00:00Z' -Type 'execution.invented' }
+    catch { $refused = $true }
+    if (-not $refused) { throw 'New-ExecutionEvent must reject an unknown type; a producer typo must not silently emit an unclassifiable event' }
+
+    # ── H38-34 green: all 14 canonical types accepted ─────────────────────
+    $ts = '2026-01-01T00:00:00Z'
+    foreach ($type in @(
+        'execution.queued', 'execution.started', 'execution.progress',
+        'execution.command.started', 'execution.command.completed',
+        'execution.files.changed',
+        'execution.verification.started', 'execution.verification.completed',
+        'execution.usage', 'execution.capacity.warning', 'execution.capacity.exhausted',
+        'execution.completed', 'execution.failed', 'execution.cancelled'
+    )) {
+        $ev = New-ExecutionEvent -EventId ([guid]::NewGuid().ToString()) -TaskId 't1' -ExecutionId 'ex1' -Provider 'claude' -Timestamp $ts -Type $type
+        if ([string]$ev['type'] -ne $type) { throw "New-ExecutionEvent must preserve type '$type'" }
+        $evValid = Test-ExecutionEvent -ExecutionEvent $ev
+        if (-not $evValid.ok) { throw ("Test-ExecutionEvent rejected a valid event of type '{0}': {1}" -f $type, ($evValid.errors -join '; ')) }
+    }
+
+    # ── H38-34: required fields are present in every event ────────────────
+    $ev14 = New-ExecutionEvent -EventId 'eid' -TaskId 'tid' -ExecutionId 'exid' -Provider 'codex' -Timestamp $ts -Type 'execution.started'
+    foreach ($field in @('eventId', 'taskId', 'executionId', 'provider', 'timestamp', 'type')) {
+        if (-not $ev14.Contains($field) -or [string]::IsNullOrWhiteSpace([string]$ev14[$field])) {
+            throw ("New-ExecutionEvent must set required field '{0}'" -f $field)
+        }
+    }
+
+    # ── H38-34: Test-ExecutionEvent catches a missing required field ───────
+    $broken = [ordered]@{ eventId = 'x'; taskId = ''; executionId = 'ex'; provider = 'claude'; timestamp = $ts; type = 'execution.started' }
+    $result = Test-ExecutionEvent -ExecutionEvent $broken
+    if ($result.ok) { throw 'Test-ExecutionEvent must report invalid when taskId is empty' }
+    if (@($result.errors).Count -eq 0) { throw 'Test-ExecutionEvent must return at least one error message' }
+
+    # ── H38-34: delivery state mapping ────────────────────────────────────
+    $expectedMappings = @(
+        @{ status = 'queued';                   state = 'QUEUED' }
+        @{ status = 'dispatched';               state = 'PROVIDER_SELECTED' }
+        @{ status = 'running';                  state = 'AGENT_RUNNING' }
+        @{ status = 'active';                   state = 'AGENT_RUNNING' }
+        @{ status = 'local-verifying';          state = 'LOCAL_VERIFYING' }
+        @{ status = 'implementation_complete';  state = 'IMPLEMENTATION_COMPLETE' }
+        @{ status = 'completed';                state = 'IMPLEMENTATION_COMPLETE' }
+        @{ status = 'implementation_failed';    state = 'REMEDIATION' }
+        @{ status = 'capacity_exhausted';       state = 'CAPACITY_WAIT' }
+        @{ status = 'pushing';                  state = 'PUSHING' }
+        @{ status = 'awaiting-review';          state = 'PR_OPEN' }
+        @{ status = 'merged';                   state = 'MERGED' }
+        @{ status = 'finished';                 state = 'COMPLETE' }
+        @{ status = 'complete';                 state = 'COMPLETE' }
+    )
+    foreach ($pair in $expectedMappings) {
+        $got = Get-DeliveryState -Status $pair.status
+        if ($got -ne $pair.state) {
+            throw ("Get-DeliveryState('{0}') expected '{1}', got '{2}'" -f $pair.status, $pair.state, $got)
+        }
+    }
+
+    # ── H38-34: unknown status returns $null, does not throw ──────────────
+    $unknown = Get-DeliveryState -Status 'invented-state'
+    if ($null -ne $unknown) { throw "Get-DeliveryState must return `$null for an unrecognised status, got '$unknown'" }
+
+    $nullState = Get-DeliveryState -Status ''
+    if ($null -ne $nullState) { throw "Get-DeliveryState must return `$null for an empty status" }
+
+    # ── H38-34: delivery state words are ALL_CAPS — no overlap with the five existing dimensions ──
+    # The existing five use lowercase/kebab words. A delivery state that contains
+    # any lowercase letter would violate "no two dimensions share a word."
+    $script:DeliveryStates | ForEach-Object {
+        if ($_ -cne $_.ToUpperInvariant()) {
+            throw ("Delivery state '{0}' is not ALL_CAPS; it risks colliding with an existing dimension word" -f $_)
+        }
+    }
+
+    # ── H38-34: case-insensitive lookup ───────────────────────────────────
+    $upper = Get-DeliveryState -Status 'QUEUED'
+    $mixed = Get-DeliveryState -Status 'Queued'
+    if ($upper -ne 'QUEUED' -or $mixed -ne 'QUEUED') {
+        throw 'Get-DeliveryState must be case-insensitive'
+    }
+
+    Write-Host '  execution events ok: unknown type refused; all 14 canonical types accepted; required fields present; validation catches missing fields; delivery state maps 14 known statuses, $null on unknown, ALL_CAPS invariant holds, case-insensitive' -ForegroundColor DarkGray
+}
+
+# ── Release 3.8 M7a (H38-35) — execution.completed telemetry ─────────────────
+# The execution.completed event carries cost/duration/first-pass fields so
+# historical routing has actual numbers to adapt on, not just status strings.
+# Null is honest for subscription-allowance cost; invented cost is worse than
+# no number.
+Write-Step 'Execution.completed telemetry — smoke: duration, cost, first-pass (Release 3.8 M7a, H38-35)'
+& {
+    $root = $WorkspaceRoot
+    . (Join-Path $root 'backend\modules\execution\Execution.Events.ps1')
+
+    # ── H38-35 red: all-null must still build (no mandatory telemetry params) ──
+    $empty = New-ExecutionCompletedPayload
+    if ($null -eq $empty) { throw 'New-ExecutionCompletedPayload must return a payload object even when all inputs are null' }
+    if ($null -ne $empty['durationSeconds']) { throw 'Duration must be null when timestamps are absent' }
+    if ($null -ne $empty['cost']) { throw 'Cost must be null when EstimatedCost is not supplied' }
+
+    # ── H38-35: duration is computed from valid ISO-8601 timestamps ───────
+    $start = '2026-01-01T10:00:00Z'
+    $finish = '2026-01-01T10:01:30Z'  # 90 seconds later
+    $timed = New-ExecutionCompletedPayload -StartTime $start -CompletionTime $finish
+    if ($null -eq $timed['durationSeconds']) { throw 'durationSeconds must be populated when valid timestamps are supplied' }
+    if ([double]$timed['durationSeconds'] -ne 90.0) { throw ("Expected duration 90.0, got {0}" -f $timed['durationSeconds']) }
+    if ($timed['startTime'] -ne $start) { throw 'startTime must be preserved verbatim' }
+    if ($timed['completionTime'] -ne $finish) { throw 'completionTime must be preserved verbatim' }
+
+    # ── H38-35: cost payload with unit ────────────────────────────────────
+    $withCost = New-ExecutionCompletedPayload -EstimatedCost 0.0034 -CostUnit 'usd'
+    if ($null -eq $withCost['cost']) { throw 'cost must be populated when EstimatedCost is supplied' }
+    if ([double]$withCost['cost']['estimated'] -ne 0.0034) { throw 'cost.estimated must match EstimatedCost' }
+    if ([string]$withCost['cost']['unit'] -ne 'usd') { throw 'cost.unit must default to usd' }
+
+    # ── H38-35: cost unit defaults to usd when omitted ────────────────────
+    $defaultUnit = New-ExecutionCompletedPayload -EstimatedCost 0.001
+    if ([string]$defaultUnit['cost']['unit'] -ne 'usd') { throw 'cost.unit must default to usd when CostUnit is omitted' }
+
+    # ── H38-35: first-pass success and token counts travel with the event ─
+    $fp = New-ExecutionCompletedPayload -FirstPassSuccess $true -InputTokens 1234 -OutputTokens 567 -AttemptCount 1
+    if ($fp['firstPassSuccess'] -ne $true) { throw 'firstPassSuccess must be preserved' }
+    if ([int]$fp['inputTokens'] -ne 1234) { throw 'inputTokens must be preserved' }
+    if ([int]$fp['outputTokens'] -ne 567) { throw 'outputTokens must be preserved' }
+    if ([int]$fp['attemptCount'] -ne 1) { throw 'attemptCount must be preserved' }
+
+    # ── H38-35: the payload can be attached to an execution.completed event ──
+    $payload = New-ExecutionCompletedPayload -StartTime $start -CompletionTime $finish -FirstPassSuccess $true
+    $ev = New-ExecutionEvent `
+        -EventId ([guid]::NewGuid().ToString()) `
+        -TaskId 'smoke-task-1' `
+        -ExecutionId 'smoke-ex-1' `
+        -Provider 'claude' `
+        -Timestamp $finish `
+        -Type 'execution.completed' `
+        -Payload $payload
+    $evValid = Test-ExecutionEvent -ExecutionEvent $ev
+    if (-not $evValid.ok) { throw ("An execution.completed event with telemetry payload must pass Test-ExecutionEvent: {0}" -f ($evValid.errors -join '; ')) }
+    if (-not $ev.Contains('payload')) { throw 'The payload must be attached to the event' }
+    if ($ev['payload']['firstPassSuccess'] -ne $true) { throw 'Payload firstPassSuccess must survive the round-trip through New-ExecutionEvent' }
+
+    Write-Host '  execution.completed telemetry ok: empty payload valid; duration computed from timestamps; cost with unit; first-pass + token counts preserved; payload round-trips through New-ExecutionEvent' -ForegroundColor DarkGray
+}
+
+# ── Release 3.8 Lane 0.18 (H38-36) — LOCAL_VERIFYING acceptance criteria ─────
+# Gates-not-documents: the transition table is a pure decision table, exercised
+# offline with injected CommandRunner stubs. A criterion with a passing command
+# is PASSED; with a non-zero exit is FAILED; with no command is SKIPPED (not
+# failed — an environment that lacks a tool must not mark the work bad).
+Write-Step 'LOCAL_VERIFYING — smoke: acceptance criteria pass/fail/skip, transition table (Release 3.8 Lane 0.18, H38-36)'
+& {
+    $root = $WorkspaceRoot
+    . (Join-Path $root 'backend\modules\execution\Execution.WorkPacket.ps1')
+    . (Join-Path $root 'backend\modules\execution\Execution.AcceptanceVerification.ps1')
+
+    # ── H38-36 red: a failed command makes the overall result 'failed' ────
+    $failRunner = {
+        param([string]$Command, [string]$WorkingDirectory)
+        [void]$Command
+        [void]$WorkingDirectory
+        [pscustomobject]@{ exitCode = 1; output = 'assertion failed' }
+    }
+    $packetFail = New-WorkPacket `
+        -TaskId 'smoke-av-fail' -Repository '' -BaseBranch '' -BaseSha '' `
+        -Objective 'Test' `
+        -AllowedPaths @('src/**') `
+        -ForbiddenPaths @() `
+        -AcceptanceCriteria @('Tests pass') `
+        -VerificationCommands @('npm test') `
+        -Permissions @{ filesystemWrite = $true; shell = $true; network = $false; githubWrite = $false }
+
+    $failResult = Invoke-LocalAcceptanceVerification -WorkPacket $packetFail -CommandRunner $failRunner
+    if ($failResult.status -ne 'failed') { throw "A failing command must produce status 'failed', got '$($failResult.status)'" }
+    if ($failResult.failed -ne 1) { throw "One criterion must be reported failed" }
+
+    $failTrans = Resolve-LocalVerifyingTransition -VerificationResult $failResult
+    if ($failTrans.nextStatus -ne 'remediation' -or $failTrans.proceed) {
+        throw ("A failed verification must transition to remediation with proceed=false, got nextStatus='$($failTrans.nextStatus)' proceed=$($failTrans.proceed)")
+    }
+
+    # ── H38-36 green: a passing command makes the overall result 'passed' ─
+    $passRunner = {
+        param([string]$Command, [string]$WorkingDirectory)
+        [void]$Command
+        [void]$WorkingDirectory
+        [pscustomobject]@{ exitCode = 0; output = '' }
+    }
+    $packetPass = New-WorkPacket `
+        -TaskId 'smoke-av-pass' -Repository '' -BaseBranch '' -BaseSha '' `
+        -Objective 'Test' `
+        -AllowedPaths @('src/**') `
+        -ForbiddenPaths @() `
+        -AcceptanceCriteria @('Tests pass', 'Lint clean') `
+        -VerificationCommands @('npm test', 'npm run lint') `
+        -Permissions @{ filesystemWrite = $true; shell = $true; network = $false; githubWrite = $false }
+
+    $passResult = Invoke-LocalAcceptanceVerification -WorkPacket $packetPass -CommandRunner $passRunner
+    if ($passResult.status -ne 'passed') { throw "Two passing commands must produce status 'passed', got '$($passResult.status)'" }
+    if ($passResult.passed -ne 2) { throw "Both criteria must be reported passed, got $($passResult.passed)" }
+    if ($passResult.failed -ne 0) { throw "No criteria must be failed" }
+
+    $passTrans = Resolve-LocalVerifyingTransition -VerificationResult $passResult
+    if ($passTrans.nextStatus -ne 'implementation_complete' -or -not $passTrans.proceed) {
+        throw ("A passing verification must transition to implementation_complete with proceed=true, got nextStatus='$($passTrans.nextStatus)' proceed=$($passTrans.proceed)")
+    }
+
+    # ── H38-36: no command → skipped, not failed ──────────────────────────
+    $packetNoCmd = New-WorkPacket `
+        -TaskId 'smoke-av-skip' -Repository '' -BaseBranch '' -BaseSha '' `
+        -Objective 'Test' `
+        -AllowedPaths @('src/**') `
+        -ForbiddenPaths @() `
+        -AcceptanceCriteria @('The uploader retries three times') `
+        -VerificationCommands @() `
+        -Permissions @{ filesystemWrite = $true; shell = $true; network = $false; githubWrite = $false }
+
+    $skipResult = Invoke-LocalAcceptanceVerification -WorkPacket $packetNoCmd -CommandRunner $passRunner
+    if ($skipResult.status -ne 'skipped') { throw "A criterion with no command must produce status 'skipped', got '$($skipResult.status)'" }
+    if ($skipResult.skipped -ne 1) { throw "One criterion must be reported skipped" }
+
+    $skipTrans = Resolve-LocalVerifyingTransition -VerificationResult $skipResult
+    if ($skipTrans.nextStatus -ne 'implementation_complete' -or -not $skipTrans.proceed) {
+        throw ("A skipped verification must proceed to implementation_complete, got nextStatus='$($skipTrans.nextStatus)' proceed=$($skipTrans.proceed)")
+    }
+
+    # ── H38-36: empty criteria list → skipped, proceed ────────────────────
+    $packetEmpty = New-WorkPacket `
+        -TaskId 'smoke-av-empty' -Repository '' -BaseBranch '' -BaseSha '' `
+        -Objective 'Test' `
+        -AllowedPaths @('src/**') `
+        -ForbiddenPaths @() `
+        -AcceptanceCriteria @() `
+        -VerificationCommands @() `
+        -Permissions @{ filesystemWrite = $true; shell = $true; network = $false; githubWrite = $false }
+
+    $emptyResult = Invoke-LocalAcceptanceVerification -WorkPacket $packetEmpty -CommandRunner $passRunner
+    if ($emptyResult.status -ne 'skipped') { throw "Empty criteria must produce status 'skipped'" }
+
+    $emptyTrans = Resolve-LocalVerifyingTransition -VerificationResult $emptyResult
+    if ($emptyTrans.nextStatus -ne 'implementation_complete' -or -not $emptyTrans.proceed) {
+        throw 'Empty criteria must still proceed to implementation_complete'
+    }
+
+    # ── H38-36: CommandRunner exception → skipped, not thrown ────────────
+    $throwRunner = {
+        param([string]$Command, [string]$WorkingDirectory)
+        [void]$Command
+        [void]$WorkingDirectory
+        throw 'tool not found'
+    }
+    $throwResult = Invoke-LocalAcceptanceVerification -WorkPacket $packetPass -CommandRunner $throwRunner
+    if ($throwResult.status -ne 'skipped') { throw "A CommandRunner that throws must produce status 'skipped', not '$($throwResult.status)'" }
+    if ($throwResult.failed -ne 0) { throw "A CommandRunner exception must not count as a failure" }
+
+    # ── H38-36: mixed pass+fail → overall failed ──────────────────────────
+    $script:callCount = 0
+    $mixedRunner = {
+        param([string]$Command, [string]$WorkingDirectory)
+        [void]$Command
+        [void]$WorkingDirectory
+        $script:callCount++
+        [pscustomobject]@{ exitCode = $(if ($script:callCount -eq 1) { 0 } else { 1 }); output = '' }
+    }
+    $packetMixed = New-WorkPacket `
+        -TaskId 'smoke-av-mixed' -Repository '' -BaseBranch '' -BaseSha '' `
+        -Objective 'Test' `
+        -AllowedPaths @('src/**') `
+        -ForbiddenPaths @() `
+        -AcceptanceCriteria @('First passes', 'Second fails') `
+        -VerificationCommands @('cmd1', 'cmd2') `
+        -Permissions @{ filesystemWrite = $true; shell = $true; network = $false; githubWrite = $false }
+
+    $mixedResult = Invoke-LocalAcceptanceVerification -WorkPacket $packetMixed -CommandRunner $mixedRunner
+    if ($mixedResult.status -ne 'failed') { throw "A mix of pass+fail must produce overall status 'failed'" }
+    if ($mixedResult.passed -ne 1 -or $mixedResult.failed -ne 1) {
+        throw ("Expected passed=1 failed=1, got passed=$($mixedResult.passed) failed=$($mixedResult.failed)")
+    }
+
+    Write-Host '  LOCAL_VERIFYING ok: failing command → remediation; passing commands → implementation_complete; no command → skipped (not failed); empty criteria → proceed; CommandRunner exception → skipped; mix of pass+fail → failed overall' -ForegroundColor DarkGray
 }
 
 Write-Step 'Smoke test completed'
