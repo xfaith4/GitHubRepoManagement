@@ -867,7 +867,7 @@ repositories and records the tenth category as having no cohort member.
 
 ### Release 3.8 — Provider-Aware Execution
 
-**Status:** smoke-tested — all six engineering milestones and Lane 0.18 items
+**Status:** done — all six engineering milestones and Lane 0.18 items
 complete 2026-09-11. The design authority is
 [`docs/governance/Agent-Execution-Governance.md`](docs/governance/Agent-Execution-Governance.md);
 this block carries only milestones and gates. It supersedes the 2026-07-07

@@ -11755,7 +11755,12 @@ Write-Step 'LOCAL_VERIFYING — smoke: acceptance criteria pass/fail/skip, trans
     . (Join-Path $root 'backend\modules\execution\Execution.AcceptanceVerification.ps1')
 
     # ── H38-36 red: a failed command makes the overall result 'failed' ────
-    $failRunner = { param([string]$Command, [string]$WorkingDirectory) [pscustomobject]@{ exitCode = 1; output = 'assertion failed' } }
+    $failRunner = {
+        param([string]$Command, [string]$WorkingDirectory)
+        [void]$Command
+        [void]$WorkingDirectory
+        [pscustomobject]@{ exitCode = 1; output = 'assertion failed' }
+    }
     $packetFail = New-WorkPacket `
         -TaskId 'smoke-av-fail' -Repository '' -BaseBranch '' -BaseSha '' `
         -Objective 'Test' `
@@ -11775,7 +11780,12 @@ Write-Step 'LOCAL_VERIFYING — smoke: acceptance criteria pass/fail/skip, trans
     }
 
     # ── H38-36 green: a passing command makes the overall result 'passed' ─
-    $passRunner = { param([string]$Command, [string]$WorkingDirectory) [pscustomobject]@{ exitCode = 0; output = '' } }
+    $passRunner = {
+        param([string]$Command, [string]$WorkingDirectory)
+        [void]$Command
+        [void]$WorkingDirectory
+        [pscustomobject]@{ exitCode = 0; output = '' }
+    }
     $packetPass = New-WorkPacket `
         -TaskId 'smoke-av-pass' -Repository '' -BaseBranch '' -BaseSha '' `
         -Objective 'Test' `
@@ -11833,7 +11843,12 @@ Write-Step 'LOCAL_VERIFYING — smoke: acceptance criteria pass/fail/skip, trans
     }
 
     # ── H38-36: CommandRunner exception → skipped, not thrown ────────────
-    $throwRunner = { param([string]$Command, [string]$WorkingDirectory) throw 'tool not found' }
+    $throwRunner = {
+        param([string]$Command, [string]$WorkingDirectory)
+        [void]$Command
+        [void]$WorkingDirectory
+        throw 'tool not found'
+    }
     $throwResult = Invoke-LocalAcceptanceVerification -WorkPacket $packetPass -CommandRunner $throwRunner
     if ($throwResult.status -ne 'skipped') { throw "A CommandRunner that throws must produce status 'skipped', not '$($throwResult.status)'" }
     if ($throwResult.failed -ne 0) { throw "A CommandRunner exception must not count as a failure" }
@@ -11842,6 +11857,8 @@ Write-Step 'LOCAL_VERIFYING — smoke: acceptance criteria pass/fail/skip, trans
     $callCount = 0
     $mixedRunner = {
         param([string]$Command, [string]$WorkingDirectory)
+        [void]$Command
+        [void]$WorkingDirectory
         $script:callCount++
         [pscustomobject]@{ exitCode = $(if ($script:callCount -eq 1) { 0 } else { 1 }); output = '' }
     }

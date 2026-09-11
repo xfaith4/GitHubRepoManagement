@@ -5,7 +5,7 @@
  * one at that.
  *
  * So this suite reads `docs/reference/status-vocabulary.md`, the canonical
- * five-dimension table, and fails when a value documented there has no entry
+ * six-dimension table, and fails when a value documented there has no entry
  * in the glossary. The compile side is already covered: the readiness and
  * maturity groups are `Record`s over their unions, so a new union member is a
  * type error. This closes the other direction.
@@ -13,7 +13,7 @@
  * PARSER NON-VACUITY. A test that reads a file and asserts over what it found
  * passes trivially when it finds nothing — the failure mode that makes a gate
  * worse than no gate. The first assertions here are therefore about the PARSE
- * itself: five dimension rows, a floor on token count. Break the table format
+ * itself: six dimension rows, a floor on token count. Break the table format
  * or move the file and this suite goes red instead of quietly green.
  */
 import { describe, it, expect } from 'vitest';
@@ -31,7 +31,7 @@ interface DimensionRow {
 }
 
 /**
- * Pull the five-dimension table out of the vocabulary doc.
+ * Pull the six-dimension table out of the vocabulary doc.
  *
  * Only the Values column (index 1 of the cells) is read for tokens — the
  * Source column legitimately carries backticked things that are not status
@@ -61,7 +61,7 @@ const markdown = readFileSync(VOCABULARY_DOC, 'utf8');
 const dimensionRows = parseDimensionRows(markdown);
 
 describe('status-vocabulary.md parses', () => {
-  it('finds the five independent dimensions', () => {
+  it('finds the six independent dimensions', () => {
     // If this drops to 0 the sync assertions below become vacuous, so the
     // count is asserted before anything is checked against it.
     expect(dimensionRows.map(r => r.dimension)).toEqual([
@@ -70,6 +70,7 @@ describe('status-vocabulary.md parses', () => {
       'Dispatch readiness',
       'Roadmap maturity',
       'Execution lane',
+      'Delivery state',
     ]);
   });
 
