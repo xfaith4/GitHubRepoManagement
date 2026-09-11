@@ -2571,6 +2571,51 @@ are re-scoped into Release 3.8** rather than built standalone; each says how.
 
 ---
 
+### Lane 0.19 — The queue steered toward work only the operator could do (operator evaluation 2026-09-11)
+
+Two defects, found together while assessing `FowlingScorecard` and reproduced
+against its live index entry. They compound: the repository was dispatch-blocked
+for a heading, and the work it would have picked once unblocked was work the
+operator would have had to perform by hand.
+
+**The ranker could not tell operator-facing from operator-executed.** The impact
+dimension in [`value-scoring.json`](backend/config/value-scoring.json) awards its
+top score to any item containing "operator", which is right for an outcome and
+fatal for a task. `FowlingScorecard`'s top-ranked item scored 71 on
+"Record device, network, and operator friction" with the stored rationale
+"user-visible or operator-facing outcome" — it ranked first partly because it
+named the operator. First-pending selected a live smoke checklist. Both
+selectors chose work no agent can run, in a queue whose entire purpose is
+dispatching work the operator does not have to do.
+
+**The execution contract demanded a release that pre-release repositories have no
+reason to cut.** The four fields the contract actually checks — goal,
+acceptance, boundary, and a runnable verification — are exactly the questions an
+agent would otherwise stop and ask, and they earn their place. The version
+number does not. The parser matched one heading form, so the same four fields
+written under "Phase 2.5" produced `activeRelease = null` and failed three of
+four checks on content that was present.
+
+- [x] Classify every pending item by who can perform it, and keep that separate
+      from what it is worth. A declared `[operator]` or `[agent]` tag beats an
+      inferred keyword, because the author knows and the regex guesses; the
+      default is `agent`, since a wrongly parked item is work nobody picks up.
+      _(state: smoke-tested 2026-09-11 — model 1.2 adds `executorClassification` to value-scoring.json; `Get-RoadmapItemExecutor` attaches executor/executorSource/executorReason to every scored item; the assessment carries `topDispatchableItem` and `operatorOnlyItemCount` alongside an unchanged `topValueItem`; 5 operator cases caught and 5 lookalikes spared, including "human-readable", "user manual" and "operator dashboard", which are the false positives that would park real work.)_
+- [x] Make the dispatch lane reach past operator-only work instead of stopping
+      on it, and name the refusal when there is nothing left but manual work.
+      _(state: smoke-tested 2026-09-11 — `Select-TopValueRoadmapItem` skips operator-only items unless asked for them, `Test-RoadmapPackagingCandidate` refuses an all-manual roadmap as `operator-verification-required` rather than `no-scored-item`, and the CLI selector demotes rather than drops so a purely manual roadmap reads as blocked on a person rather than empty. An item scored before model 1.2 carries no executor field and stays selectable, so a stale cache degrades to the old behaviour instead of emptying the queue for the estate.)_
+- [x] Let a bounded unit of work earn dispatch without a version number, and stop
+      the four copies of the release-heading pattern from ever disagreeing again.
+      _(state: smoke-tested 2026-09-11 — `## Slice — Title`, `## Milestone N — Title` and `## Workstream — Title` parse exactly as `## Release X.Y — Title` does, colon accepted for the dash; a versionless slice carrying the four required fields satisfies the execution contract end to end. The pattern lives in Roadmap.Parser.ps1, Roadmap.Dispatcher.ps1, Roadmap.Auditor.ps1 and both rule-pack copies, and a tripwire compares all five against 10 heading fixtures — behaviour, not text, since the copies are written differently and meant to be equivalent. The no-separator guard still keeps "Release 2.0 completion snapshot" out.)_
+- [ ] [non-blocker] Surface the operator-only backlog as a verification queue in
+      the console. [`Add-OperatorVerification.ps1`](scripts/Add-OperatorVerification.ps1)
+      already records evidence against a verify queue for this repository; the
+      portfolio lane now produces `operatorOnlyItemCount` per repo but nothing
+      reads it yet, so parked work is correctly out of the dispatch queue and
+      not yet visible anywhere else.
+
+---
+
 ## 8. Risks and Guardrails
 
 Full list in [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md);

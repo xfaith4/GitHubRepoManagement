@@ -98,6 +98,20 @@ _Exactly one row above should show `active`. If a second release needs to become
 
 ## 5. Release Roadmap
 
+> **A repository that has never shipped does not have to invent a release.** The
+> heading below may read `## Release {X.Y} — {Title}`, or `## Slice — {Title}`,
+> `## Milestone {N} — {Title}`, or `## Workstream — {Title}`. The version number
+> is optional and so is the word "Release"; a colon works in place of the dash.
+> Every parser, the auditor, and the dispatcher recognize all four forms
+> identically, and a module-smoke tripwire fails if they ever stop agreeing.
+>
+> What is **not** optional is the body: **Goal**, **Acceptance criteria**,
+> **Out of scope**, and a **Validation plan** naming a runnable command. Those
+> four are what the execution contract checks, because they are the questions an
+> agent would otherwise have to stop and ask. A version number is not one of
+> them. Use "Slice" while the product is pre-release and rename later if you
+> start cutting versions; nothing downstream depends on which word you picked.
+
 ## Release {X.Y} — {Release Title}
 
 > Status: active

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "v1",
-  "modelVersion": "1.1",
-  "description": "Release 1.7.5 value-scoring model for ranking pending roadmap work in portfolio assessment responses. Aggregation semantics settled by operator 2026-07-06 (Release 2.7 Phase A): MAX within a dimension, with an effortFit floor for sprawling items.",
+  "modelVersion": "1.2",
+  "description": "Release 1.7.5 value-scoring model for ranking pending roadmap work in portfolio assessment responses. Aggregation semantics settled by operator 2026-07-06 (Release 2.7 Phase A): MAX within a dimension, with an effortFit floor for sprawling items. Model 1.2 adds executor classification (2026-09-11): value and dispatchability are separate questions, so an item only a person can perform keeps its score and leaves the dispatch queue.",
   "maxScore": 100,
   "aggregation": {
     "withinDimension": "max",
@@ -10,6 +10,39 @@
       "cap": 2,
       "description": "A larger-surface effortFit keyword (score <= cap, e.g. refactor/rewrite/persistent/oauth/distribution/analytics/autonomous) floors effortFit at the lowest matched score even when a bounded verb (add/wire/...) also matched, so sprawling items do not read as bounded one-task work. Operator decision 2026-07-06."
     }
+  },
+  "executorClassification": {
+    "enabled": true,
+    "default": "agent",
+    "description": "Who can actually perform the item. The impact dimension rewards operator-FACING outcomes, which is correct, but it cannot tell them apart from operator-EXECUTED tasks — so before this block existed, manual work outranked agent work in a queue whose whole purpose is dispatching work the operator does not have to do. Classification never changes valueScore; it decides which lane the item belongs in. A declared tag always beats an inferred keyword, because the roadmap author knows and the regex only guesses. Rules are deliberately high-precision: mislabelling agent work as operator work parks something nobody picks up, which is the exact harm this fixes.",
+    "operatorTags": ["operator", "manual", "human", "field", "field-test", "physical", "verify-in-person"],
+    "agentTags": ["agent", "automated", "auto"],
+    "operatorRules": [
+      {
+        "pattern": "\\b(on a (phone|real device|handset|tablet)|over mobile data|in person|in-person|physical (device|hardware|venue)|walk the floor)\\b",
+        "label": "needs a physical device or a person on site"
+      },
+      {
+        "pattern": "\\b(live (league|night|event|smoke|trial|run)|real (league|night|event|game|match|captain|captains|player|players|attendee)|shadow (night|thursday|run|week)|game night|field (test|trial)|dress rehearsal)\\b",
+        "label": "needs a live event with real participants"
+      },
+      {
+        "pattern": "\\b(manually|by hand|hands-on|manual (test|testing|verification|check|smoke|step|run)|by a human|human (operator|tester|reviewer))\\b",
+        "label": "explicitly described as manual work"
+      },
+      {
+        "pattern": "\\b(operator (must|verif|confirm|record|observe|run|sign)|requires? an operator|ask the operator|commissioner (must|manually))\\b",
+        "label": "names a person as the actor"
+      },
+      {
+        "pattern": "\\b(billing|credit card|payment method|purchase|subscription|domain registration|register a domain|provider console|cloud console|at the (database )?provider)\\b",
+        "label": "needs a third-party account, billing, or provider console action"
+      },
+      {
+        "pattern": "\\b(record .{0,30}(friction|feedback)|user (research|testing|interview)|usability (test|session)|survey participants)\\b",
+        "label": "needs first-hand user observation"
+      }
+    ]
   },
   "dimensions": {
     "impact": {

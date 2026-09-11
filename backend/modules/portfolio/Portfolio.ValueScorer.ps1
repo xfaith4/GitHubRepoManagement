@@ -124,6 +124,87 @@ function _PV_EvaluateKeywordRules {
     }
 }
 
+function Get-RoadmapItemExecutor {
+    <#
+    .SYNOPSIS
+        Pure — decide whether a pending roadmap item can be executed by an agent
+        or requires a person, and say why.
+
+    .DESCRIPTION
+        Value and dispatchability are different questions. The impact dimension
+        rewards operator-FACING outcomes, which is right, but nothing in the
+        weighted model asked whether an agent could perform the item at all — so
+        manual work floated to the top of a queue that exists to dispatch work
+        the operator does not have to do.
+
+        A declared tag wins over an inferred keyword: the roadmap author knows,
+        the regex guesses. `default` is 'agent', because refusing to dispatch is
+        the expensive mistake — a wrongly parked item is work nobody picks up.
+
+    .OUTPUTS
+        [pscustomobject] executor ('agent'|'operator'), source
+        ('declared-tag'|'inferred'|'default'), label
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter()][AllowEmptyString()][string]$ItemText = '',
+        [Parameter()][AllowEmptyString()][string]$Section = '',
+        [Parameter()][AllowEmptyCollection()][string[]]$Tags = @(),
+        [Parameter()][object]$ScoringConfig
+    )
+
+    $cfg = if ($null -ne $ScoringConfig) { $ScoringConfig } else { Get-PortfolioValueScoringConfig }
+    $classification = _PV_GetField -Obj $cfg -Name 'executorClassification' -Default $null
+
+    $result = [pscustomobject]@{ executor = 'agent'; source = 'default'; label = '' }
+    if ($null -eq $classification) { return $result }
+    if (-not [bool](_PV_GetField -Obj $classification -Name 'enabled' -Default $false)) { return $result }
+
+    $defaultExecutor = [string](_PV_GetField -Obj $classification -Name 'default' -Default 'agent')
+    if ($defaultExecutor -in @('agent', 'operator')) { $result.executor = $defaultExecutor }
+
+    # A declared tag is authoritative, and an explicit agent tag is what an author
+    # uses to overrule a keyword that reads as manual but is not.
+    $normalizedTags = @(@($Tags) | ForEach-Object { ([string]$_).Trim().ToLowerInvariant() } | Where-Object { $_ })
+    $operatorTags = @(@(_PV_GetField -Obj $classification -Name 'operatorTags' -Default @()) | ForEach-Object { ([string]$_).ToLowerInvariant() })
+    $agentTags = @(@(_PV_GetField -Obj $classification -Name 'agentTags' -Default @()) | ForEach-Object { ([string]$_).ToLowerInvariant() })
+
+    foreach ($tag in $normalizedTags) {
+        if ($agentTags -contains $tag) {
+            $result.executor = 'agent'
+            $result.source = 'declared-tag'
+            $result.label = ("declared agent-executable by the [{0}] tag" -f $tag)
+            return $result
+        }
+    }
+    foreach ($tag in $normalizedTags) {
+        if ($operatorTags -contains $tag) {
+            $result.executor = 'operator'
+            $result.source = 'declared-tag'
+            $result.label = ("declared operator-only by the [{0}] tag" -f $tag)
+            return $result
+        }
+    }
+
+    # The section heading is part of the match surface on purpose: a sub-bullet
+    # like "Captains submit in the PWA" is only recognizable as manual from the
+    # section it sits under ("One shadow Thursday").
+    $combined = ((@($ItemText, $Section) + @($Tags)) -join ' ').ToLowerInvariant()
+    foreach ($rule in @(_PV_GetField -Obj $classification -Name 'operatorRules' -Default @())) {
+        if ($null -eq $rule) { continue }
+        $pattern = [string](_PV_GetField -Obj $rule -Name 'pattern' -Default '')
+        if ([string]::IsNullOrWhiteSpace($pattern)) { continue }
+        if ($combined -match $pattern) {
+            $result.executor = 'operator'
+            $result.source = 'inferred'
+            $result.label = [string](_PV_GetField -Obj $rule -Name 'label' -Default 'matches an operator-only pattern')
+            return $result
+        }
+    }
+
+    return $result
+}
+
 function _PV_GetMaturityScore {
     param([string]$MaturityLevel)
 
@@ -226,6 +307,17 @@ function Invoke-PortfolioValueScore {
         $rationale.Add('baseline roadmap value with no strong keyword signal') | Out-Null
     }
 
+    # Classification is reported, never scored. An operator-only item keeps the
+    # value it earned; it simply belongs in the verification lane rather than the
+    # dispatch queue, and the rationale says so where the operator reads it.
+    $executor = Get-RoadmapItemExecutor -ItemText $ItemText -Section $Section -Tags $Tags -ScoringConfig $cfg
+    if ($executor.executor -eq 'operator') {
+        $reason = if ([string]::IsNullOrWhiteSpace([string]$executor.label)) { 'operator-only work' } else { [string]$executor.label }
+        # Inserted at the head, not appended: valueRationale is truncated to five
+        # entries, and "nobody can dispatch this" outranks every keyword label.
+        $rationale.Insert(0, ("operator-only: {0}" -f $reason))
+    }
+
     return [pscustomobject]@{
         text           = $ItemText
         section        = $Section
@@ -233,6 +325,9 @@ function Invoke-PortfolioValueScore {
         roadmapOrder   = $ItemIndex + 1
         valueScore     = $valueScore
         valueTier      = (_PV_GetTier -Score $valueScore)
+        executor       = [string]$executor.executor
+        executorSource = [string]$executor.source
+        executorReason = [string]$executor.label
         valueRationale = @($rationale | Select-Object -Unique | Select-Object -First 5)
         scoringSignals = [pscustomobject]@{
             dimensions = [pscustomobject]$dimensionScores

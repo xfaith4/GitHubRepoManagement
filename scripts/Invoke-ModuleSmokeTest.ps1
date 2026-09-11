@@ -1760,6 +1760,97 @@ if ($unimplementedRules.Count -gt 0) {
 }
 Write-Host ("  all {0} audit rules implemented in Roadmap.Auditor.ps1" -f @($auditRules.rules).Count) -ForegroundColor DarkGray
 
+Write-Step 'Bounded work units — a slice earns dispatch without inventing a version number'
+# A repository that has never shipped should not have to author "Release 2.5" to
+# be dispatchable. The execution contract wants a goal, a done-condition, a
+# boundary and a proof command; a version number is none of those.
+$sliceRoadmap = @'
+## Slice — Teams In The Console
+
+> Status: active
+
+**Goal:** A commissioner can put a roster into an event and see the teams, without an API call.
+
+### Engineering milestones
+
+- [ ] Add a console import panel that previews a roster CSV and applies it
+
+### Acceptance criteria
+
+- A commissioner pastes a roster CSV and the team picker lists every team.
+
+### Out of scope
+
+- The public signup form.
+
+### Validation plan
+
+- Run `npm test` and confirm it exits successfully.
+'@
+$sliceParsed = Invoke-ParseRoadmapContent -Content $sliceRoadmap
+if ($null -eq $sliceParsed.activeRelease) { throw 'A versionless slice heading must produce an active release context' }
+if ([string]$sliceParsed.activeRelease.releaseKind -ne 'Slice') { throw "Expected releaseKind 'Slice'; got '$($sliceParsed.activeRelease.releaseKind)'" }
+$sliceContract = Test-RoadmapExecutionContract -RoadmapContext $sliceParsed.activeRelease -MaturityLevel 'L3-Contract-Ready' -RepoType 'node'
+if (-not $sliceContract.sufficient) {
+    $failedChecks = @($sliceContract.checks | Where-Object { -not $_.passed } | ForEach-Object { $_.name })
+    throw ("A slice carrying goal/acceptance/boundary/verification must satisfy the execution contract; failed: {0}" -f ($failedChecks -join ', '))
+}
+# The version-bearing form is unchanged, and a heading without a separator is
+# still not a release block — that guard is what keeps a completion snapshot out.
+$classicParsed = Invoke-ParseRoadmapContent -Content "## Release 2.5 — Earn The Cutover`n`n**Goal:** Convert a tested system into a trusted one.`n`n- [ ] Enable automated backups`n"
+if ([string]$classicParsed.activeRelease.releaseVersion -ne '2.5') { throw 'A versioned release heading must still parse its version' }
+if (@(Get-RoadmapReleaseContexts -RoadmapContent "## Release 2.0 completion snapshot`n`n- [ ] x`n").Count -ne 0) {
+    throw 'A heading with no separator must not be treated as a release block'
+}
+
+# Tripwire: four files carry this pattern, and the auditor file says in a comment
+# why they must agree — three repos once straddled the L3 threshold depending on
+# which tool ran. Compare BEHAVIOUR, not text: the copies are written differently
+# (— escapes in JSON, [0-9] vs \d) and are meant to be equivalent, not equal.
+Write-Step 'Bounded work units — every release-heading pattern in the estate agrees on what a heading is'
+function Get-SmokeSingleQuotedPattern {
+    param([string]$Path, [string]$MarkerPattern)
+    $text = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+    $match = [regex]::Match($text, $MarkerPattern)
+    if (-not $match.Success) { throw "Could not extract a release-heading pattern from: $Path" }
+    return $match.Groups[1].Value
+}
+$headingPatternSources = [ordered]@{
+    'Roadmap.Parser.ps1'     = Get-SmokeSingleQuotedPattern -Path (Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Parser.ps1') -MarkerPattern '\$releaseHeadingRx\s*=\s*\[regex\]''([^'']+)'''
+    'Roadmap.Dispatcher.ps1' = Get-SmokeSingleQuotedPattern -Path (Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Dispatcher.ps1') -MarkerPattern '\$releaseHeadingRx\s*=\s*\[regex\]''([^'']+)'''
+    'Roadmap.Auditor.ps1'    = Get-SmokeSingleQuotedPattern -Path (Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.Auditor.ps1') -MarkerPattern 'releaseHeadingPattern\s*=\s*''([^'']+)'''
+    'standards rule pack'    = [string]((Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'standards\roadmap\roadmap-audit-rules.json') -Raw -Encoding UTF8 | ConvertFrom-Json).detection.releaseHeadingPattern)
+    'spec rule pack'         = [string]((Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'spec\roadmap-contract\roadmap-audit-rules.json') -Raw -Encoding UTF8 | ConvertFrom-Json).detection.releaseHeadingPattern)
+}
+$headingFixtures = [ordered]@{
+    '## Release 2.5 — Earn The Cutover'   = $true
+    '#### Release 1.0 — Initial'          = $true
+    '## Slice — Teams In The Console'     = $true
+    '## Milestone 3 — Import'             = $true
+    '## Workstream — Signup'              = $true
+    '## Slice: Roster import'             = $true
+    '### Release 2.0 completion snapshot' = $false
+    '## Releases — overview'              = $false
+    '## 6. Future Releases'               = $false
+    '# Release 2.5 — top level only'      = $false
+}
+$headingDisagreements = @()
+foreach ($sourceName in $headingPatternSources.Keys) {
+    $pattern = [string]$headingPatternSources[$sourceName]
+    if ([string]::IsNullOrWhiteSpace($pattern)) { throw "Empty release-heading pattern from: $sourceName" }
+    foreach ($fixture in $headingFixtures.Keys) {
+        $expected = [bool]$headingFixtures[$fixture]
+        $actual = [regex]::IsMatch([string]$fixture, $pattern)
+        if ($actual -ne $expected) {
+            $headingDisagreements += ("{0}: '{1}' expected match={2}, got {3}" -f $sourceName, $fixture, $expected, $actual)
+        }
+    }
+}
+if ($headingDisagreements.Count -gt 0) {
+    throw ("Release-heading patterns have drifted. A repository's maturity and dispatch readiness then depend on which tool ran:`n  {0}" -f ($headingDisagreements -join "`n  "))
+}
+Write-Host ("  heading patterns ok: {0} source(s) agree on {1} fixture(s), versioned and versionless both recognized" -f @($headingPatternSources.Keys).Count, @($headingFixtures.Keys).Count) -ForegroundColor DarkGray
+
 # Tripwire: the published spec copy must not drift from the live rule pack.
 # standards/roadmap is code-referenced at runtime; spec/roadmap-contract is the
 # publishable Release 2.3 deliverable. README.md is intentionally per-location.
@@ -5164,6 +5255,66 @@ if ([int]$boundedItem.scoringSignals.dimensions.effortFit -ne 4) { throw "Expect
 if ($sprawlItem.scoringSignals.dimensions.effortFit -ge $boundedItem.scoringSignals.dimensions.effortFit) { throw 'effortFit floor did not penalize the sprawling item below the bounded item' }
 Write-Host ("  effortFit floor ok: sprawl effortFit={0} < bounded effortFit={1} (model {2})" -f $sprawlItem.scoringSignals.dimensions.effortFit, $boundedItem.scoringSignals.dimensions.effortFit, $valueScoringConfig.modelVersion) -ForegroundColor DarkGray
 
+Write-Step 'Executor classification — model 1.2: work only a person can do leaves the dispatch lane, keeping its value'
+# The defect this closes: the impact dimension scores "operator" at 5, so
+# operator-EXECUTED work outranked agent work in a queue whose purpose is
+# dispatching work the operator does not have to do. Classification is the fix,
+# and a value penalty is deliberately NOT: the item is still valuable.
+$executorOperatorCases = @(
+    @{ text = 'Record device, network, and operator friction'; section = '2.5c — One shadow Thursday'; why = 'first-hand observation' }
+    @{ text = 'Run the Phase 0 live smoke checklist'; section = 'Phase 0'; why = 'live event' }
+    @{ text = 'Confirm the captain PWA installs and runs on a phone over mobile data'; section = 'Deployment'; why = 'physical device' }
+    @{ text = 'Enable automated backups at the database provider and restore one'; section = 'Deployment'; why = 'provider console' }
+    @{ text = 'Captains submit in the PWA. The commissioner approves in the console.'; section = '2.5c — One shadow Thursday'; why = 'section names the live drill' }
+)
+foreach ($case in $executorOperatorCases) {
+    $verdict = Get-RoadmapItemExecutor -ItemText $case.text -Section $case.section -ScoringConfig $valueScoringConfig
+    if ([string]$verdict.executor -ne 'operator') {
+        throw ("Expected operator classification ({0}) for: {1}" -f $case.why, $case.text)
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$verdict.label)) {
+        throw ("Operator classification must say why, for: {0}" -f $case.text)
+    }
+}
+# False positives are the expensive mistake: a wrongly parked item is work
+# nobody picks up. These three read as manual and are not.
+$executorAgentCases = @(
+    'Give a commissioner a way to create their first event without an API call',
+    'Add a console import panel that previews a roster CSV and applies it',
+    'Produce a human-readable report plus JSON',
+    'Write the user manual for the console',
+    'Refactor the operator dashboard view'
+)
+foreach ($agentText in $executorAgentCases) {
+    $verdict = Get-RoadmapItemExecutor -ItemText $agentText -Section 'Engineering milestones' -ScoringConfig $valueScoringConfig
+    if ([string]$verdict.executor -ne 'agent') {
+        throw ("Expected agent classification for: {0} (got {1} — {2})" -f $agentText, $verdict.executor, $verdict.label)
+    }
+}
+# A declared tag beats an inferred keyword in both directions: the author knows,
+# the regex guesses.
+$taggedAgent = Get-RoadmapItemExecutor -ItemText 'Run a real league night' -Tags @('agent') -ScoringConfig $valueScoringConfig
+if ([string]$taggedAgent.executor -ne 'agent' -or [string]$taggedAgent.source -ne 'declared-tag') {
+    throw "An [agent] tag must overrule an inferred operator keyword; got $($taggedAgent.executor)/$($taggedAgent.source)"
+}
+$taggedOperator = Get-RoadmapItemExecutor -ItemText 'Add a console import panel' -Tags @('operator') -ScoringConfig $valueScoringConfig
+if ([string]$taggedOperator.executor -ne 'operator' -or [string]$taggedOperator.source -ne 'declared-tag') {
+    throw "An [operator] tag must classify as operator-only; got $($taggedOperator.executor)/$($taggedOperator.source)"
+}
+# Value and lane stay separate: the operator item still outscores the agent item,
+# and still says why it cannot be dispatched.
+$operatorScored = Invoke-PortfolioValueScore -ItemText 'Record device, network, and operator friction' -Section '2.5c — One shadow Thursday' -ItemIndex 0 -RepoContext ([pscustomobject]@{ maturityLevel = 'L3-Contract-Ready' }) -ScoringConfig $valueScoringConfig
+$agentScored = Invoke-PortfolioValueScore -ItemText 'Give a commissioner a way to create their first event without an API call' -Section 'Deployment' -ItemIndex 3 -RepoContext ([pscustomobject]@{ maturityLevel = 'L3-Contract-Ready' }) -ScoringConfig $valueScoringConfig
+if ([string]$operatorScored.executor -ne 'operator') { throw 'Scored item did not carry the operator classification' }
+if ([string]$agentScored.executor -ne 'agent') { throw 'Scored item did not carry the agent classification' }
+if ($operatorScored.valueScore -le $agentScored.valueScore) {
+    throw 'This fixture is meant to prove classification does NOT penalize value; the operator item should still outscore the agent item'
+}
+if (-not (@($operatorScored.valueRationale) -match 'operator-only')) {
+    throw 'An operator-only item must carry its reason in valueRationale, where the operator reads it'
+}
+Write-Host ("  executor ok: {0} operator case(s) caught, {1} lookalike(s) spared, tags overrule both ways; operator item keeps the higher score ({2} > {3}) and says why it cannot dispatch" -f @($executorOperatorCases).Count, @($executorAgentCases).Count, $operatorScored.valueScore, $agentScored.valueScore) -ForegroundColor DarkGray
+
 Write-Step 'Portfolio assessment — smoke: ready-for-work fires on L4 + pending items'
 $readyRepo = [pscustomobject]@{ name = 'ready-repo'; localPath = $WorkspaceRoot; isArchived = $false; htmlUrl = ''; branch = 'main'; status = 'clean' }
 $readyRoadmap = @([pscustomobject]@{
@@ -8211,6 +8362,75 @@ $packagingPresenceModule = Join-Path $WorkspaceRoot 'backend\modules\automation\
 if (-not (Test-Path -LiteralPath $packagingPresenceModule)) { throw "Missing module file: $packagingPresenceModule" }
 . $packagingPresenceModule
 Write-Host '  Roadmap-packaging module loaded successfully' -ForegroundColor DarkGray
+
+Write-Step 'Packaging selection — model 1.2: the queue reaches past operator-only work instead of stopping on it'
+$packSelectionScored = @(
+    [pscustomobject]@{ text = 'Record device, network, and operator friction'; section = '2.5c — One shadow Thursday'; valueScore = 71; roadmapOrder = 6; executor = 'operator' }
+    [pscustomobject]@{ text = 'Run the Phase 0 live smoke checklist'; section = 'Phase 0'; valueScore = 58; roadmapOrder = 1; executor = 'operator' }
+    [pscustomobject]@{ text = 'Give a commissioner a way to create their first event without an API call'; section = 'Deployment'; valueScore = 52; roadmapOrder = 4; executor = 'agent' }
+)
+$packEntry = [pscustomobject]@{
+    repoId = 'path:selection-fixture'; repoName = 'selection-fixture'
+    localPath = $WorkspaceRoot; roadmapPath = (Join-Path $WorkspaceRoot 'ROADMAP.md')
+    curationState = 'favorite'; maturityLevel = 'L3-Contract-Ready'; repoType = 'other'
+    pendingItemCount = @($packSelectionScored).Count
+    valueRankedItems = $packSelectionScored
+    topValueItem = $packSelectionScored[0]
+}
+$packPicked = Select-TopValueRoadmapItem -Entry $packEntry
+if ($null -eq $packPicked) { throw 'Expected an agent-executable item to be selected' }
+if ([string]$packPicked.executor -ne 'agent') {
+    throw ("Dispatch selection must skip operator-only work; picked '{0}' ({1})" -f $packPicked.text, $packPicked.executor)
+}
+# The highest-scoring item is still reachable when the caller asks for it — the
+# verification lane needs to name the work, it just must not queue it.
+$packAny = Select-TopValueRoadmapItem -Entry $packEntry -IncludeOperatorOnly
+if ([string]$packAny.executor -ne 'operator' -or [int]$packAny.valueScore -ne 71) {
+    throw 'IncludeOperatorOnly must still return the highest-value item regardless of who can run it'
+}
+# "Nothing pending" and "everything pending needs a person" are different states
+# and must not collapse into the same refusal word.
+$packManualEntry = [pscustomobject]@{
+    repoId = 'path:manual-fixture'; repoName = 'manual-fixture'
+    localPath = $WorkspaceRoot; roadmapPath = (Join-Path $WorkspaceRoot 'ROADMAP.md')
+    curationState = 'favorite'; maturityLevel = 'L3-Contract-Ready'; repoType = 'other'
+    pendingItemCount = 2
+    valueRankedItems = @($packSelectionScored | Where-Object { $_.executor -eq 'operator' })
+    topValueItem = $packSelectionScored[0]
+}
+$packManualDecision = Test-RoadmapPackagingCandidate -Entry $packManualEntry
+if ($packManualDecision.selected) { throw 'An all-operator roadmap must not be packaged' }
+if ([string]$packManualDecision.reason -ne 'operator-verification-required') {
+    throw ("An all-operator roadmap must refuse with 'operator-verification-required'; got '{0}'" -f $packManualDecision.reason)
+}
+# A pre-1.2 assessment carries no executor field. It must degrade to the old
+# behaviour rather than reporting an empty queue for the whole estate.
+$packLegacyEntry = [pscustomobject]@{
+    repoId = 'path:legacy-fixture'; repoName = 'legacy-fixture'
+    localPath = $WorkspaceRoot; roadmapPath = (Join-Path $WorkspaceRoot 'ROADMAP.md')
+    curationState = 'favorite'; maturityLevel = 'L3-Contract-Ready'; repoType = 'other'
+    pendingItemCount = 1
+    topValueItem = [pscustomobject]@{ text = 'Run a real league night'; section = 'x'; valueScore = 70; roadmapOrder = 1 }
+}
+$packLegacyPicked = Select-TopValueRoadmapItem -Entry $packLegacyEntry
+if ($null -eq $packLegacyPicked -or [string]$packLegacyPicked.text -ne 'Run a real league night') {
+    throw 'An unclassified (pre-model-1.2) item must stay selectable, so a stale cache cannot empty the queue'
+}
+# topDispatchableItem is what the index carries for this call; prefer it over
+# topValueItem even when no ranked list is present.
+$packIndexEntry = [pscustomobject]@{
+    repoId = 'path:index-fixture'; repoName = 'index-fixture'
+    localPath = $WorkspaceRoot; roadmapPath = (Join-Path $WorkspaceRoot 'ROADMAP.md')
+    curationState = 'favorite'; maturityLevel = 'L3-Contract-Ready'; repoType = 'other'
+    pendingItemCount = 3
+    topValueItem = $packSelectionScored[0]
+    topDispatchableItem = $packSelectionScored[2]
+}
+$packIndexPicked = Select-TopValueRoadmapItem -Entry $packIndexEntry
+if ([string]$packIndexPicked.executor -ne 'agent') {
+    throw 'topDispatchableItem must be preferred over topValueItem when the entry carries no ranked list'
+}
+Write-Host ("  packaging selection ok: skipped 2 operator item(s) to pick '{0}'; all-manual refuses as operator-verification-required; unclassified items still select" -f $packPicked.text.Substring(0, 34)) -ForegroundColor DarkGray
 
 Write-Step 'Packaging scope — smoke: every refusal is named, and scope opts in'
 $pkgItemHigh = [pscustomobject]@{ text = 'Add the merge-readiness route'; section = 'Release 1.0'; roadmapOrder = 3; valueScore = 88; valueTier = 'highest'; valueRationale = @('unblocks dispatch') }

@@ -656,6 +656,49 @@ function _SelectTopValueItem {
     return $selected[0]
 }
 
+function _SelectTopDispatchableItem {
+    <#
+        The highest-value item an AGENT can perform. Ranking is unchanged — this
+        filters the same sorted list — so the dashboard's "most valuable" and the
+        queue's "next to dispatch" can differ, which is the point: an operator-only
+        item keeps its value and stops holding up work nobody is waiting on.
+
+        Items scored before model 1.2 carry no `executor` field. They are treated
+        as dispatchable, so a stale cache degrades to the old behaviour instead of
+        emptying the queue.
+    #>
+    param([object[]]$ScoredItems = @())
+
+    $dispatchable = [System.Collections.Generic.List[object]]::new()
+    foreach ($scored in @($ScoredItems)) {
+        if ($null -eq $scored) { continue }
+        # @() flattens a nested array and wraps a lone item, so one loop handles
+        # both shapes _SelectTopValueItem has to cope with.
+        foreach ($candidate in @($scored)) {
+            if ($null -eq $candidate) { continue }
+            $executor = [string](_GetField -Obj $candidate -Name 'executor' -Default 'agent')
+            if ($executor -ne 'operator') { $dispatchable.Add($candidate) | Out-Null }
+        }
+    }
+
+    if ($dispatchable.Count -eq 0) { return $null }
+    return (_SelectTopValueItem -ScoredItems $dispatchable.ToArray())
+}
+
+function _CountOperatorOnlyItem {
+    param([object[]]$ScoredItems = @())
+
+    $count = 0
+    foreach ($scored in @($ScoredItems)) {
+        if ($null -eq $scored) { continue }
+        foreach ($candidate in @($scored)) {
+            if ($null -eq $candidate) { continue }
+            if ([string](_GetField -Obj $candidate -Name 'executor' -Default 'agent') -eq 'operator') { $count++ }
+        }
+    }
+    return $count
+}
+
 # ---------------------------------------------------------------------------
 # Main orchestrator
 # ---------------------------------------------------------------------------
@@ -859,6 +902,8 @@ function Invoke-PortfolioAssessment {
         }
         $scoredPendingItems = @(_ScorePendingRoadmapItems -PendingItems $pendingItemsRaw -RepoContext $repoContext -ValueScoringConfig $ValueScoringConfig)
         $topValueItem = _SelectTopValueItem -ScoredItems $scoredPendingItems
+        $topDispatchableItem = _SelectTopDispatchableItem -ScoredItems $scoredPendingItems
+        $operatorOnlyItemCount = _CountOperatorOnlyItem -ScoredItems $scoredPendingItems
         $readmeScore = _Get-ReadmeScore -HasReadme $hasReadme -DocFindingCount @($docFindings).Count
         $roadmapScore = _Get-RoadmapScore -HasRoadmap $hasRoadmap -RoadmapState $roadmapState -MaturityScore $maturityScore -PendingItemCount $pendingCount
         $documentationHealthScore = _Get-DocumentationHealthScore -ReadmeScore $readmeScore -RoadmapScore $roadmapScore -DocFindingCount @($docFindings).Count -HasCiSignal $hasCiSignal -HasTestSignal $hasTestSignal
@@ -901,6 +946,8 @@ function Invoke-PortfolioAssessment {
             nextPendingItemText = $nextItemText
             pendingItems        = @($scoredPendingItems)
             topValueItem        = $topValueItem
+            topDispatchableItem = $topDispatchableItem
+            operatorOnlyItemCount = $operatorOnlyItemCount
             activeRelease       = $activeRelease
             activePhasePlan     = $activePhasePlan
             budgetGuardrail     = $budgetGuardrail
@@ -962,6 +1009,8 @@ function Invoke-PortfolioAssessment {
             nextPendingItemText = ''
             pendingItems        = @()
             topValueItem        = $null
+            topDispatchableItem = $null
+            operatorOnlyItemCount = 0
             activeRelease       = $null
             activePhasePlan     = $null
             budgetGuardrail     = $null
@@ -1532,6 +1581,10 @@ function New-PortfolioIndexPayload {
             pendingItemCount    = [int](_GetField -Obj $assessment -Name 'pendingItemCount' -Default 0)
             nextPendingItemText = [string](_GetField -Obj $assessment -Name 'nextPendingItemText' -Default '')
             topValueItem        = _GetField -Obj $assessment -Name 'topValueItem' -Default $null
+            # The dispatch lane reads this one; topValueItem stays the dashboard's
+            # "most valuable" answer even when only a person can perform it.
+            topDispatchableItem = _GetField -Obj $assessment -Name 'topDispatchableItem' -Default $null
+            operatorOnlyItemCount = [int](_GetField -Obj $assessment -Name 'operatorOnlyItemCount' -Default 0)
             activeRelease       = _GetField -Obj $assessment -Name 'activeRelease' -Default $null
             activePhasePlan     = _GetField -Obj $assessment -Name 'activePhasePlan' -Default $null
             budgetGuardrail     = _GetField -Obj $assessment -Name 'budgetGuardrail' -Default $null
