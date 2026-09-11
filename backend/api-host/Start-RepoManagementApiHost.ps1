@@ -4973,7 +4973,14 @@ function Get-DispatchPlanningContext {
     }
 
     if ([string]::IsNullOrWhiteSpace($planning.selectedTaskText) -and $null -ne $AssessmentEntry) {
-        $topValueItem = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'topValueItem' -Default $null
+        # Prefer the highest-value item an AGENT can perform. topValueItem remains
+        # the fallback: when every pending item needs a person there is nothing
+        # better to name here, and Test-RoadmapPackagingCandidate is the single
+        # place that refuses with 'operator-verification-required'.
+        $topValueItem = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'topDispatchableItem' -Default $null
+        if ($null -eq $topValueItem) {
+            $topValueItem = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'topValueItem' -Default $null
+        }
         $planning.selectedTaskText = [string](Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'text' -Default (Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'nextPendingItemText' -Default ''))
         $planning.selectedTaskSection = [string](Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'section' -Default '')
     }
@@ -5192,8 +5199,15 @@ function Build-CopilotTaskPacket {
         # If the forced text is not found in pending items, fall through to value-ranking below.
     }
 
+    # topDispatchableItem first: value-ranking should steer toward work an agent
+    # can actually run, not toward the manual item that happens to score highest.
     $topValueItem = if ($null -ne $AssessmentEntry) {
-        Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'topValueItem' -Default $null
+        $dispatchablePreference = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'topDispatchableItem' -Default $null
+        if ($null -ne $dispatchablePreference) {
+            $dispatchablePreference
+        } else {
+            Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'topValueItem' -Default $null
+        }
     } else {
         $null
     }

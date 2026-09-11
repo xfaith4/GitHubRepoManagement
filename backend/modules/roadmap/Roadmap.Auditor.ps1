@@ -40,7 +40,13 @@ $ErrorActionPreference = 'Stop'
 # reintroduce a private copy of any pattern here.
 
 $script:RoadmapDetectionDefaults = [pscustomobject]@{
-    releaseHeadingPattern            = '(?im)^#{2,}\s+Release\s+([0-9]+(?:\.[0-9]+)*)\s*[—–-]+\s*(.+?)\s*$'
+    # Kind word and version are both optional (2026-09-11): a bounded unit of work
+    # is a "Slice" or "Milestone" in a repository that has not cut a release and
+    # does not intend to. Kept byte-identical to the parser's pattern in
+    # Roadmap.Parser.ps1 and to detection.releaseHeadingPattern in both copies of
+    # roadmap-audit-rules.json — divergence here is what once made three repos
+    # straddle the L3 threshold depending on which tool ran.
+    releaseHeadingPattern            = '(?im)^#{2,}\s+(Release|Slice|Milestone|Workstream)\s*([0-9]+(?:\.[0-9]+)*)?\s*[—–:-]+\s*(.+?)\s*$'
     releaseStatusPattern             = '(?im)^\s*>?\s*\**\s*Status\s*\**\s*:\s*\**\s*([A-Za-z][A-Za-z \-]*?)\s*\**\s*(?:$|[—–\-(.,;])'
     activeStatuses                   = @('active')
     statusAliases                    = @{

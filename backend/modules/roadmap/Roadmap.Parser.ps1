@@ -585,9 +585,17 @@ function Get-RoadmapReleaseContexts {
     $boundedContent = (_RoadmapParserGetBoundedLines -Content $RoadmapContent) -join "`n"
     # Heading-level tolerant: releases are often nested under a section heading
     # (e.g. "## 6. Future Releases"), so the release heading is ### or deeper.
-    # Match any depth >= 2. The mandatory " — Title" dash separator still keeps
+    # Match any depth >= 2. The mandatory " — Title" separator still keeps
     # "### Release 2.0 completion snapshot" (no dash) from being treated as a block.
-    $releaseHeadingRx = [regex]'(?im)^#{2,}\s+Release (\d+[\d\.]*)\s*[—–-]+\s*(.+?)$'
+    #
+    # The version number and the word "Release" are both optional (2026-09-11).
+    # The four fields this block feeds the execution contract — goal, acceptance,
+    # boundary, verification — are what an agent needs in order to work without
+    # asking. A version number is not one of them, and demanding one made every
+    # pre-release repository author a release it had no intention of cutting:
+    # ceremony that answered no question. "Slice", "Milestone", and "Workstream"
+    # name the same bounded unit of work without implying anything ships.
+    $releaseHeadingRx = [regex]'(?im)^#{2,}\s+(Release|Slice|Milestone|Workstream)\s*(\d[\d\.]*)?\s*[—–:-]+\s*(.+?)$'
     $headingMatches = $releaseHeadingRx.Matches($boundedContent)
     if ($headingMatches.Count -eq 0) {
         return @()
@@ -596,8 +604,9 @@ function Get-RoadmapReleaseContexts {
     $blocks = [System.Collections.Generic.List[hashtable]]::new()
     foreach ($m in $headingMatches) {
         $blocks.Add(@{
-            version    = $m.Groups[1].Value.Trim()
-            title      = $m.Groups[2].Value.Trim()
+            kind       = $m.Groups[1].Value.Trim()
+            version    = $m.Groups[2].Value.Trim()
+            title      = $m.Groups[3].Value.Trim()
             startIndex = $m.Index
         }) | Out-Null
     }
@@ -639,8 +648,15 @@ function Get-RoadmapReleaseContexts {
         }
 
         $budgetGuardrail = _RoadmapParserGetBudgetGuardrailFromLines -Lines $blockLines
+        $releaseName = if ([string]::IsNullOrWhiteSpace([string]$block.version)) {
+            "$($block.kind) — $($block.title)"
+        } else {
+            "$($block.kind) $($block.version) — $($block.title)"
+        }
+
         $contexts.Add([pscustomobject]@{
-            releaseName               = "Release $($block.version) — $($block.title)"
+            releaseName               = $releaseName
+            releaseKind               = $block.kind
             releaseVersion            = $block.version
             releaseTitle              = $block.title
             releaseGoal               = (_RoadmapParserExtractGoal -Lines $blockLines)
@@ -675,6 +691,7 @@ function Get-RoadmapSelectedReleaseContext {
 
     $empty = [pscustomobject]@{
         releaseName               = $null
+        releaseKind               = $null
         releaseVersion            = $null
         releaseTitle              = $null
         releaseGoal               = ''

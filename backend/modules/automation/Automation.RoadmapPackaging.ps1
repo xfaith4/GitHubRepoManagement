@@ -143,20 +143,48 @@ function Select-TopValueRoadmapItem {
 
         An unscored item is deliberately NOT selected: packaging work that never
         went through the scorer would defeat the point of ranking it.
+
+        Operator-only items are skipped unless -IncludeOperatorOnly is passed.
+        Packaging one would mint a work packet no runner can claim, and park the
+        whole repository behind a task waiting on a person. The caller uses the
+        switch to tell "nothing is pending" apart from "everything pending needs
+        the operator", which are different answers deserving different words.
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][object]$Entry)
+    param(
+        [Parameter(Mandatory = $true)][object]$Entry,
+        [Parameter()][switch]$IncludeOperatorOnly
+    )
+
+    # Absent `executor` means the item was scored before model 1.2. Treat it as
+    # dispatchable so a stale assessment degrades to the old behaviour rather
+    # than silently emptying the queue.
+    $isDispatchable = {
+        param($Candidate)
+        if ($IncludeOperatorOnly.IsPresent) { return $true }
+        return ([string](_Pack_GetField -Obj $Candidate -Name 'executor' -Default 'agent') -ne 'operator')
+    }
 
     $ranked = @(_Pack_GetField -Obj $Entry -Name 'valueRankedItems' -Default @())
     if (@($ranked).Count -gt 0) {
-        $sorted = @(@($ranked) | Where-Object { $null -ne $_ } | Sort-Object `
+        $sorted = @(@($ranked) | Where-Object { $null -ne $_ -and (& $isDispatchable $_) } | Sort-Object `
             @{ Expression = { [int](_Pack_GetField -Obj $_ -Name 'valueScore' -Default 0) }; Descending = $true }, `
             @{ Expression = { [int](_Pack_GetField -Obj $_ -Name 'roadmapOrder' -Default 999999) }; Ascending = $true })
         if ($sorted.Count -gt 0) { return $sorted[0] }
     }
 
+    # topDispatchableItem is precomputed by the assessment for exactly this call.
+    # It is consulted before topValueItem because the index carries both and only
+    # the former is guaranteed to be something an agent can run.
+    if (-not $IncludeOperatorOnly.IsPresent) {
+        $dispatchable = _Pack_GetField -Obj $Entry -Name 'topDispatchableItem' -Default $null
+        if ($null -ne $dispatchable -and -not [string]::IsNullOrWhiteSpace([string](_Pack_GetField -Obj $dispatchable -Name 'text' -Default ''))) {
+            return $dispatchable
+        }
+    }
+
     $top = _Pack_GetField -Obj $Entry -Name 'topValueItem' -Default $null
-    if ($null -ne $top -and -not [string]::IsNullOrWhiteSpace([string](_Pack_GetField -Obj $top -Name 'text' -Default ''))) {
+    if ($null -ne $top -and -not [string]::IsNullOrWhiteSpace([string](_Pack_GetField -Obj $top -Name 'text' -Default '')) -and (& $isDispatchable $top)) {
         return $top
     }
 
@@ -221,7 +249,11 @@ function Test-RoadmapPackagingCandidate {
 
     $item = Select-TopValueRoadmapItem -Entry $Entry
     if ($null -eq $item) {
-        $decision.reason = 'no-scored-item'
+        # "Nothing to do" and "everything left needs a person" are different
+        # states. Naming them apart is what lets the queue view send the second
+        # one to the verification lane instead of reporting an empty roadmap.
+        $anyItem = Select-TopValueRoadmapItem -Entry $Entry -IncludeOperatorOnly
+        $decision.reason = if ($null -ne $anyItem) { 'operator-verification-required' } else { 'no-scored-item' }
         return $decision
     }
     if ([string]::IsNullOrWhiteSpace($repoPath)) {

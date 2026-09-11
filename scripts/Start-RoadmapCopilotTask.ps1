@@ -48,6 +48,22 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# The executor classifier, so this path ranks the same way the packager does.
+# Loaded defensively: when it is unavailable every item classifies as agent work
+# and selection falls back to pure roadmap order, which is the prior behaviour.
+$script:ValueScorerLoaded = $false
+$script:ValueScoringConfig = $null
+try {
+    $scorerPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\portfolio\Portfolio.ValueScorer.ps1'
+    if (Test-Path -LiteralPath $scorerPath -PathType Leaf) {
+        . $scorerPath
+        $script:ValueScoringConfig = Get-PortfolioValueScoringConfig -ConfigPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\config\value-scoring.json')
+        $script:ValueScorerLoaded = $true
+    }
+} catch {
+    Write-Warning ("Executor classification unavailable; selecting by roadmap order only: {0}" -f $_.Exception.Message)
+}
+
 function Initialize-HistoryStore {
     param(
         [Parameter()]
@@ -323,11 +339,27 @@ function Get-NextRoadmapTask {
                 }
             }
 
+            # Demoted, not dropped: an operator-only item still belongs in the
+            # list, it just must never outrank work an agent can start tonight.
+            # Dropping it outright would make a roadmap of purely manual work
+            # look empty instead of blocked on a person.
+            $executorRank = 0
+            $executorReason = ''
+            if ($script:ValueScorerLoaded) {
+                $classification = Get-RoadmapItemExecutor -ItemText $taskText -Section $currentHeading -ScoringConfig $script:ValueScoringConfig
+                if ([string]$classification.executor -eq 'operator') {
+                    $executorRank = 1
+                    $executorReason = [string]$classification.label
+                }
+            }
+
             $items.Add([pscustomobject]@{
                     TaskText = $taskText
                     Heading = $currentHeading
                     LineNumber = $index + 1
                     Priority = $priority
+                    ExecutorRank = $executorRank
+                    ExecutorReason = $executorReason
                 })
         }
     }
@@ -336,7 +368,7 @@ function Get-NextRoadmapTask {
         throw "No unchecked roadmap tasks ('- [ ]') were found in eligible roadmap sections."
     }
 
-    $ordered = $items | Sort-Object -Property Priority, LineNumber
+    $ordered = $items | Sort-Object -Property ExecutorRank, Priority, LineNumber
     return [pscustomobject]@{
         Next = $ordered[0]
         Additional = @($ordered | Select-Object -Skip 1 -First 3)
@@ -444,6 +476,11 @@ try {
 
     Write-Host "Roadmap file resolved: $($resolvedRoadmap.Path)"
     Write-Host "Selected next task: $($nextTask.TaskText)"
+    if ([int]$nextTask.ExecutorRank -gt 0) {
+        # Every remaining item needs a person, so this one was selected despite
+        # being undispatchable. Say so rather than queueing it silently.
+        Write-Warning ("This task looks operator-only ({0}). No agent-executable item remains in this roadmap; tag an item [agent] to override." -f $nextTask.ExecutorReason)
+    }
 
     if ($PreviewOnly.IsPresent) {
         $previewPayload = [pscustomobject]@{

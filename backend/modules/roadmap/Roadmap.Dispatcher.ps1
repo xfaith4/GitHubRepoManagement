@@ -126,23 +126,27 @@ function Get-NextPendingRelease {
         }
     }
 
-    # Releases may be nested under a parent such as "Open Releases".
-    $releaseHeadingRx = [regex]'(?im)^#{2,6}\s+Release (\d+[\d\.]*)\s*[—–-]+\s*(.+?)$'
+    # Releases may be nested under a parent such as "Open Releases". Kind word and
+    # version are optional, matching Roadmap.Parser.ps1 and the audit rules: this
+    # file and those must recognize the same headings or a repository's dispatch
+    # context disappears at exactly the moment its contract says it is ready.
+    $releaseHeadingRx = [regex]'(?im)^#{2,6}\s+(Release|Slice|Milestone|Workstream)\s*(\d[\d\.]*)?\s*[—–:-]+\s*(.+?)$'
     $headingMatches = $releaseHeadingRx.Matches($RoadmapContent)
 
     if ($headingMatches.Count -eq 0) {
         return [pscustomobject]@{
             found    = $false
-            notFound = 'No release sections (## Release X.Y) found in roadmap.'
+            notFound = 'No release or slice sections (## Release X.Y — Title, or ## Slice — Title) found in roadmap.'
         }
     }
 
-    # Build list of blocks: { version, title, startIndex }
+    # Build list of blocks: { kind, version, title, startIndex }
     $blocks = [System.Collections.Generic.List[hashtable]]::new()
     foreach ($m in $headingMatches) {
         $blocks.Add(@{
-            version    = $m.Groups[1].Value.Trim()
-            title      = $m.Groups[2].Value.Trim()
+            kind       = $m.Groups[1].Value.Trim()
+            version    = $m.Groups[2].Value.Trim()
+            title      = $m.Groups[3].Value.Trim()
             startIndex = $m.Index
         })
     }
@@ -181,7 +185,11 @@ function Get-NextPendingRelease {
             @(_ExtractSubsectionLines -Lines $blockLines -HeadingPattern '(?:Validation|Test)\s+plan')
         })
 
-        $releaseName = "Release $($block.version) — $($block.title)"
+        $releaseName = if ([string]::IsNullOrWhiteSpace([string]$block.version)) {
+            "$($block.kind) — $($block.title)"
+        } else {
+            "$($block.kind) $($block.version) — $($block.title)"
+        }
 
         return [pscustomobject]@{
             found               = $true
