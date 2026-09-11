@@ -867,7 +867,8 @@ repositories and records the tenth category as having no cohort member.
 
 ### Release 3.8 — Provider-Aware Execution
 
-**Status:** planned — defined 2026-09-06. The design authority is
+**Status:** smoke-tested — all six engineering milestones and Lane 0.18 items
+complete 2026-09-11. The design authority is
 [`docs/governance/Agent-Execution-Governance.md`](docs/governance/Agent-Execution-Governance.md);
 this block carries only milestones and gates. It supersedes the 2026-07-07
 decisions in [`docs/execution-orchestrator-design.md`](docs/execution-orchestrator-design.md),
@@ -1060,7 +1061,19 @@ to the queue — never fails it — when a provider is exhausted.
       is canonical. New states arrive as a mapped dimension in
       [`status-vocabulary.md`](docs/reference/status-vocabulary.md), keeping the
       Release 3.5 rule that no two dimensions share a word. Per D-008 this is
-      the one surface that dispatches. _(state: planned)_
+      the one surface that dispatches. _(state: smoke-tested 2026-09-11 —
+      H38-34 `Execution.Events.ps1` defines the 14-type canonical
+      `execution.*` vocabulary; `New-ExecutionEvent` rejects unknown types so a
+      producer typo fails immediately; `Test-ExecutionEvent` validates all
+      required envelope fields; `Get-DeliveryState` maps run-summary and
+      lane-verdict strings to the ALL_CAPS delivery states from the spec,
+      returns `$null` for unknown inputs, and is case-insensitive.
+      `docs/reference/status-vocabulary.md` now documents the sixth dimension
+      with its full state progression; the ALL_CAPS invariant is gated in the
+      smoke so no delivery state word can collide with the five existing
+      dimensions. `roadmap-events.md` is complementary and non-overlapping:
+      `execution.*` events are per-agent-run step events; `roadmap-events.jsonl`
+      is phase-level lifecycle history.)_
 - [ ] **Amendments from the execution strategy — the three that are cheap now
       and expensive later.** Absorbed into
       [`Agent-Execution-Governance.md`](docs/governance/Agent-Execution-Governance.md)
@@ -1075,7 +1088,16 @@ to the queue — never fails it — when a provider is exhausted.
       the resume path encodes provider-only session assumptions. **(c)**
       Risk-based independent review enters the approval flow while that flow is
       being built, rather than reopening the approve-binds-to-SHA contract and
-      its frontend afterwards. _(state: planned)_
+      its frontend afterwards. _(state: smoke-tested 2026-09-11 —
+      **(a)** H38-35: `New-ExecutionCompletedPayload` adds `startTime`,
+      `completionTime`, `durationSeconds`, `cost` (with unit), `firstPassSuccess`,
+      `inputTokens`, `outputTokens`, and `attemptCount` to the
+      `execution.completed` event payload; duration is computed from timestamps
+      when both are present, cost is `$null` when no unit-cost is measurable
+      (subscription allowances carry no per-token price), and the payload
+      attaches to a full `execution.completed` event via `New-ExecutionEvent`.
+      **(b)** Delivered 2026-09-08 as H38-28b. **(c)** Delivered 2026-09-08 as
+      H38-24b.)_
 
 #### Acceptance criteria
 
@@ -2509,7 +2531,18 @@ are re-scoped into Release 3.8** rather than built standalone; each says how.
       current strictness. **Re-scoped 2026-09-06:** this check is what gives
       Release 3.8's `LOCAL_VERIFYING` state its meaning — without it
       `IMPLEMENTATION_COMPLETE` asserts only that an agent stopped. Build it as
-      that gate. _(state: planned)_
+      that gate. _(state: smoke-tested 2026-09-11 — H38-36
+      `Execution.AcceptanceVerification.ps1` implements the LOCAL_VERIFYING
+      read-only pass: `Invoke-LocalAcceptanceVerification` checks each
+      acceptance criterion against its verification command via an injected
+      `CommandRunner` scriptblock (pure, offline-testable); a passing command
+      yields `passed`, a non-zero exit yields `failed`, a missing command yields
+      `skipped` (not `failed` — an environment lacking a tool must not block
+      valid work), and a `CommandRunner` exception is `skipped` not `failed`.
+      `Resolve-LocalVerifyingTransition` is the decision table: `failed` →
+      `remediation` (no push), `passed`/`skipped` → `implementation_complete`.
+      The gate exercises all six cases including mixed pass+fail (overall
+      `failed`) and the empty-criteria list (proceeds without error).)_
 - [ ] **Cap cumulative spend across a dispatch sequence.**
       [`BudgetLedger.ps1`](backend/modules/agent-runs/BudgetLedger.ps1)
       evaluates one dispatch against a work-unit quota. The orchestrator's run

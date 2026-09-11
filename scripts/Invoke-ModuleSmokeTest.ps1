@@ -11583,4 +11583,284 @@ Write-Step 'Runner stop mechanism - Release 2.9: a detached runner can be stoppe
     }
 }
 
+# ── Release 3.8 M6 (H38-34) — canonical execution events + delivery state ────
+# Gates-not-documents: every claim here is proved red against a violating
+# fixture first. Unknown event types are refused at construction time (not
+# silently accepted), and Get-DeliveryState returns $null rather than throwing
+# for unrecognised inputs so callers can tolerate new states.
+#
+# The delivery state is the sixth status dimension. The invariant: no two
+# dimensions share a word. This is the claim the ALL_CAPS convention enforces —
+# delivery states are uppercase and appear nowhere in the other five.
+Write-Step 'Execution events — smoke: type validation, delivery state mapping (Release 3.8 M6, H38-34)'
+& {
+    $root = $WorkspaceRoot
+    . (Join-Path $root 'backend\modules\execution\Execution.Events.ps1')
+
+    # ── H38-34 red: an unknown type is refused (proved red before green) ──
+    $refused = $false
+    try { $null = New-ExecutionEvent -EventId 'e1' -TaskId 't1' -ExecutionId 'ex1' -Provider 'claude' -Timestamp '2026-01-01T00:00:00Z' -Type 'execution.invented' }
+    catch { $refused = $true }
+    if (-not $refused) { throw 'New-ExecutionEvent must reject an unknown type; a producer typo must not silently emit an unclassifiable event' }
+
+    # ── H38-34 green: all 14 canonical types accepted ─────────────────────
+    $ts = '2026-01-01T00:00:00Z'
+    foreach ($type in @(
+        'execution.queued', 'execution.started', 'execution.progress',
+        'execution.command.started', 'execution.command.completed',
+        'execution.files.changed',
+        'execution.verification.started', 'execution.verification.completed',
+        'execution.usage', 'execution.capacity.warning', 'execution.capacity.exhausted',
+        'execution.completed', 'execution.failed', 'execution.cancelled'
+    )) {
+        $ev = New-ExecutionEvent -EventId ([guid]::NewGuid().ToString()) -TaskId 't1' -ExecutionId 'ex1' -Provider 'claude' -Timestamp $ts -Type $type
+        if ([string]$ev['type'] -ne $type) { throw "New-ExecutionEvent must preserve type '$type'" }
+        $evValid = Test-ExecutionEvent -ExecutionEvent $ev
+        if (-not $evValid.ok) { throw ("Test-ExecutionEvent rejected a valid event of type '{0}': {1}" -f $type, ($evValid.errors -join '; ')) }
+    }
+
+    # ── H38-34: required fields are present in every event ────────────────
+    $ev14 = New-ExecutionEvent -EventId 'eid' -TaskId 'tid' -ExecutionId 'exid' -Provider 'codex' -Timestamp $ts -Type 'execution.started'
+    foreach ($field in @('eventId', 'taskId', 'executionId', 'provider', 'timestamp', 'type')) {
+        if (-not $ev14.Contains($field) -or [string]::IsNullOrWhiteSpace([string]$ev14[$field])) {
+            throw ("New-ExecutionEvent must set required field '{0}'" -f $field)
+        }
+    }
+
+    # ── H38-34: Test-ExecutionEvent catches a missing required field ───────
+    $broken = [ordered]@{ eventId = 'x'; taskId = ''; executionId = 'ex'; provider = 'claude'; timestamp = $ts; type = 'execution.started' }
+    $result = Test-ExecutionEvent -ExecutionEvent $broken
+    if ($result.ok) { throw 'Test-ExecutionEvent must report invalid when taskId is empty' }
+    if (@($result.errors).Count -eq 0) { throw 'Test-ExecutionEvent must return at least one error message' }
+
+    # ── H38-34: delivery state mapping ────────────────────────────────────
+    $expectedMappings = @(
+        @{ status = 'queued';                   state = 'QUEUED' }
+        @{ status = 'dispatched';               state = 'PROVIDER_SELECTED' }
+        @{ status = 'running';                  state = 'AGENT_RUNNING' }
+        @{ status = 'active';                   state = 'AGENT_RUNNING' }
+        @{ status = 'local-verifying';          state = 'LOCAL_VERIFYING' }
+        @{ status = 'implementation_complete';  state = 'IMPLEMENTATION_COMPLETE' }
+        @{ status = 'completed';                state = 'IMPLEMENTATION_COMPLETE' }
+        @{ status = 'implementation_failed';    state = 'REMEDIATION' }
+        @{ status = 'capacity_exhausted';       state = 'CAPACITY_WAIT' }
+        @{ status = 'pushing';                  state = 'PUSHING' }
+        @{ status = 'awaiting-review';          state = 'PR_OPEN' }
+        @{ status = 'merged';                   state = 'MERGED' }
+        @{ status = 'finished';                 state = 'COMPLETE' }
+        @{ status = 'complete';                 state = 'COMPLETE' }
+    )
+    foreach ($pair in $expectedMappings) {
+        $got = Get-DeliveryState -Status $pair.status
+        if ($got -ne $pair.state) {
+            throw ("Get-DeliveryState('{0}') expected '{1}', got '{2}'" -f $pair.status, $pair.state, $got)
+        }
+    }
+
+    # ── H38-34: unknown status returns $null, does not throw ──────────────
+    $unknown = Get-DeliveryState -Status 'invented-state'
+    if ($null -ne $unknown) { throw "Get-DeliveryState must return `$null for an unrecognised status, got '$unknown'" }
+
+    $nullState = Get-DeliveryState -Status ''
+    if ($null -ne $nullState) { throw "Get-DeliveryState must return `$null for an empty status" }
+
+    # ── H38-34: delivery state words are ALL_CAPS — no overlap with the five existing dimensions ──
+    # The existing five use lowercase/kebab words. A delivery state that contains
+    # any lowercase letter would violate "no two dimensions share a word."
+    $script:DeliveryStates | ForEach-Object {
+        if ($_ -cne $_.ToUpperInvariant()) {
+            throw ("Delivery state '{0}' is not ALL_CAPS; it risks colliding with an existing dimension word" -f $_)
+        }
+    }
+
+    # ── H38-34: case-insensitive lookup ───────────────────────────────────
+    $upper = Get-DeliveryState -Status 'QUEUED'
+    $mixed = Get-DeliveryState -Status 'Queued'
+    if ($upper -ne 'QUEUED' -or $mixed -ne 'QUEUED') {
+        throw 'Get-DeliveryState must be case-insensitive'
+    }
+
+    Write-Host '  execution events ok: unknown type refused; all 14 canonical types accepted; required fields present; validation catches missing fields; delivery state maps 14 known statuses, $null on unknown, ALL_CAPS invariant holds, case-insensitive' -ForegroundColor DarkGray
+}
+
+# ── Release 3.8 M7a (H38-35) — execution.completed telemetry ─────────────────
+# The execution.completed event carries cost/duration/first-pass fields so
+# historical routing has actual numbers to adapt on, not just status strings.
+# Null is honest for subscription-allowance cost; invented cost is worse than
+# no number.
+Write-Step 'Execution.completed telemetry — smoke: duration, cost, first-pass (Release 3.8 M7a, H38-35)'
+& {
+    $root = $WorkspaceRoot
+    . (Join-Path $root 'backend\modules\execution\Execution.Events.ps1')
+
+    # ── H38-35 red: all-null must still build (no mandatory telemetry params) ──
+    $empty = New-ExecutionCompletedPayload
+    if ($null -eq $empty) { throw 'New-ExecutionCompletedPayload must return a payload object even when all inputs are null' }
+    if ($null -ne $empty['durationSeconds']) { throw 'Duration must be null when timestamps are absent' }
+    if ($null -ne $empty['cost']) { throw 'Cost must be null when EstimatedCost is not supplied' }
+
+    # ── H38-35: duration is computed from valid ISO-8601 timestamps ───────
+    $start = '2026-01-01T10:00:00Z'
+    $finish = '2026-01-01T10:01:30Z'  # 90 seconds later
+    $timed = New-ExecutionCompletedPayload -StartTime $start -CompletionTime $finish
+    if ($null -eq $timed['durationSeconds']) { throw 'durationSeconds must be populated when valid timestamps are supplied' }
+    if ([double]$timed['durationSeconds'] -ne 90.0) { throw ("Expected duration 90.0, got {0}" -f $timed['durationSeconds']) }
+    if ($timed['startTime'] -ne $start) { throw 'startTime must be preserved verbatim' }
+    if ($timed['completionTime'] -ne $finish) { throw 'completionTime must be preserved verbatim' }
+
+    # ── H38-35: cost payload with unit ────────────────────────────────────
+    $withCost = New-ExecutionCompletedPayload -EstimatedCost 0.0034 -CostUnit 'usd'
+    if ($null -eq $withCost['cost']) { throw 'cost must be populated when EstimatedCost is supplied' }
+    if ([double]$withCost['cost']['estimated'] -ne 0.0034) { throw 'cost.estimated must match EstimatedCost' }
+    if ([string]$withCost['cost']['unit'] -ne 'usd') { throw 'cost.unit must default to usd' }
+
+    # ── H38-35: cost unit defaults to usd when omitted ────────────────────
+    $defaultUnit = New-ExecutionCompletedPayload -EstimatedCost 0.001
+    if ([string]$defaultUnit['cost']['unit'] -ne 'usd') { throw 'cost.unit must default to usd when CostUnit is omitted' }
+
+    # ── H38-35: first-pass success and token counts travel with the event ─
+    $fp = New-ExecutionCompletedPayload -FirstPassSuccess $true -InputTokens 1234 -OutputTokens 567 -AttemptCount 1
+    if ($fp['firstPassSuccess'] -ne $true) { throw 'firstPassSuccess must be preserved' }
+    if ([int]$fp['inputTokens'] -ne 1234) { throw 'inputTokens must be preserved' }
+    if ([int]$fp['outputTokens'] -ne 567) { throw 'outputTokens must be preserved' }
+    if ([int]$fp['attemptCount'] -ne 1) { throw 'attemptCount must be preserved' }
+
+    # ── H38-35: the payload can be attached to an execution.completed event ──
+    $payload = New-ExecutionCompletedPayload -StartTime $start -CompletionTime $finish -FirstPassSuccess $true
+    $ev = New-ExecutionEvent `
+        -EventId ([guid]::NewGuid().ToString()) `
+        -TaskId 'smoke-task-1' `
+        -ExecutionId 'smoke-ex-1' `
+        -Provider 'claude' `
+        -Timestamp $finish `
+        -Type 'execution.completed' `
+        -Payload $payload
+    $evValid = Test-ExecutionEvent -ExecutionEvent $ev
+    if (-not $evValid.ok) { throw ("An execution.completed event with telemetry payload must pass Test-ExecutionEvent: {0}" -f ($evValid.errors -join '; ')) }
+    if (-not $ev.Contains('payload')) { throw 'The payload must be attached to the event' }
+    if ($ev['payload']['firstPassSuccess'] -ne $true) { throw 'Payload firstPassSuccess must survive the round-trip through New-ExecutionEvent' }
+
+    Write-Host '  execution.completed telemetry ok: empty payload valid; duration computed from timestamps; cost with unit; first-pass + token counts preserved; payload round-trips through New-ExecutionEvent' -ForegroundColor DarkGray
+}
+
+# ── Release 3.8 Lane 0.18 (H38-36) — LOCAL_VERIFYING acceptance criteria ─────
+# Gates-not-documents: the transition table is a pure decision table, exercised
+# offline with injected CommandRunner stubs. A criterion with a passing command
+# is PASSED; with a non-zero exit is FAILED; with no command is SKIPPED (not
+# failed — an environment that lacks a tool must not mark the work bad).
+Write-Step 'LOCAL_VERIFYING — smoke: acceptance criteria pass/fail/skip, transition table (Release 3.8 Lane 0.18, H38-36)'
+& {
+    $root = $WorkspaceRoot
+    . (Join-Path $root 'backend\modules\execution\Execution.WorkPacket.ps1')
+    . (Join-Path $root 'backend\modules\execution\Execution.AcceptanceVerification.ps1')
+
+    # ── H38-36 red: a failed command makes the overall result 'failed' ────
+    $failRunner = { param([string]$Command, [string]$WorkingDirectory) [pscustomobject]@{ exitCode = 1; output = 'assertion failed' } }
+    $packetFail = New-WorkPacket `
+        -TaskId 'smoke-av-fail' -Repository '' -BaseBranch '' -BaseSha '' `
+        -Objective 'Test' `
+        -AllowedPaths @('src/**') `
+        -ForbiddenPaths @() `
+        -AcceptanceCriteria @('Tests pass') `
+        -VerificationCommands @('npm test') `
+        -Permissions @{ filesystemWrite = $true; shell = $true; network = $false; githubWrite = $false }
+
+    $failResult = Invoke-LocalAcceptanceVerification -WorkPacket $packetFail -CommandRunner $failRunner
+    if ($failResult.status -ne 'failed') { throw "A failing command must produce status 'failed', got '$($failResult.status)'" }
+    if ($failResult.failed -ne 1) { throw "One criterion must be reported failed" }
+
+    $failTrans = Resolve-LocalVerifyingTransition -VerificationResult $failResult
+    if ($failTrans.nextStatus -ne 'remediation' -or $failTrans.proceed) {
+        throw ("A failed verification must transition to remediation with proceed=false, got nextStatus='$($failTrans.nextStatus)' proceed=$($failTrans.proceed)")
+    }
+
+    # ── H38-36 green: a passing command makes the overall result 'passed' ─
+    $passRunner = { param([string]$Command, [string]$WorkingDirectory) [pscustomobject]@{ exitCode = 0; output = '' } }
+    $packetPass = New-WorkPacket `
+        -TaskId 'smoke-av-pass' -Repository '' -BaseBranch '' -BaseSha '' `
+        -Objective 'Test' `
+        -AllowedPaths @('src/**') `
+        -ForbiddenPaths @() `
+        -AcceptanceCriteria @('Tests pass', 'Lint clean') `
+        -VerificationCommands @('npm test', 'npm run lint') `
+        -Permissions @{ filesystemWrite = $true; shell = $true; network = $false; githubWrite = $false }
+
+    $passResult = Invoke-LocalAcceptanceVerification -WorkPacket $packetPass -CommandRunner $passRunner
+    if ($passResult.status -ne 'passed') { throw "Two passing commands must produce status 'passed', got '$($passResult.status)'" }
+    if ($passResult.passed -ne 2) { throw "Both criteria must be reported passed, got $($passResult.passed)" }
+    if ($passResult.failed -ne 0) { throw "No criteria must be failed" }
+
+    $passTrans = Resolve-LocalVerifyingTransition -VerificationResult $passResult
+    if ($passTrans.nextStatus -ne 'implementation_complete' -or -not $passTrans.proceed) {
+        throw ("A passing verification must transition to implementation_complete with proceed=true, got nextStatus='$($passTrans.nextStatus)' proceed=$($passTrans.proceed)")
+    }
+
+    # ── H38-36: no command → skipped, not failed ──────────────────────────
+    $packetNoCmd = New-WorkPacket `
+        -TaskId 'smoke-av-skip' -Repository '' -BaseBranch '' -BaseSha '' `
+        -Objective 'Test' `
+        -AllowedPaths @('src/**') `
+        -ForbiddenPaths @() `
+        -AcceptanceCriteria @('The uploader retries three times') `
+        -VerificationCommands @() `
+        -Permissions @{ filesystemWrite = $true; shell = $true; network = $false; githubWrite = $false }
+
+    $skipResult = Invoke-LocalAcceptanceVerification -WorkPacket $packetNoCmd -CommandRunner $passRunner
+    if ($skipResult.status -ne 'skipped') { throw "A criterion with no command must produce status 'skipped', got '$($skipResult.status)'" }
+    if ($skipResult.skipped -ne 1) { throw "One criterion must be reported skipped" }
+
+    $skipTrans = Resolve-LocalVerifyingTransition -VerificationResult $skipResult
+    if ($skipTrans.nextStatus -ne 'implementation_complete' -or -not $skipTrans.proceed) {
+        throw ("A skipped verification must proceed to implementation_complete, got nextStatus='$($skipTrans.nextStatus)' proceed=$($skipTrans.proceed)")
+    }
+
+    # ── H38-36: empty criteria list → skipped, proceed ────────────────────
+    $packetEmpty = New-WorkPacket `
+        -TaskId 'smoke-av-empty' -Repository '' -BaseBranch '' -BaseSha '' `
+        -Objective 'Test' `
+        -AllowedPaths @('src/**') `
+        -ForbiddenPaths @() `
+        -AcceptanceCriteria @() `
+        -VerificationCommands @() `
+        -Permissions @{ filesystemWrite = $true; shell = $true; network = $false; githubWrite = $false }
+
+    $emptyResult = Invoke-LocalAcceptanceVerification -WorkPacket $packetEmpty -CommandRunner $passRunner
+    if ($emptyResult.status -ne 'skipped') { throw "Empty criteria must produce status 'skipped'" }
+
+    $emptyTrans = Resolve-LocalVerifyingTransition -VerificationResult $emptyResult
+    if ($emptyTrans.nextStatus -ne 'implementation_complete' -or -not $emptyTrans.proceed) {
+        throw 'Empty criteria must still proceed to implementation_complete'
+    }
+
+    # ── H38-36: CommandRunner exception → skipped, not thrown ────────────
+    $throwRunner = { param([string]$Command, [string]$WorkingDirectory) throw 'tool not found' }
+    $throwResult = Invoke-LocalAcceptanceVerification -WorkPacket $packetPass -CommandRunner $throwRunner
+    if ($throwResult.status -ne 'skipped') { throw "A CommandRunner that throws must produce status 'skipped', not '$($throwResult.status)'" }
+    if ($throwResult.failed -ne 0) { throw "A CommandRunner exception must not count as a failure" }
+
+    # ── H38-36: mixed pass+fail → overall failed ──────────────────────────
+    $callCount = 0
+    $mixedRunner = {
+        param([string]$Command, [string]$WorkingDirectory)
+        $script:callCount++
+        [pscustomobject]@{ exitCode = $(if ($script:callCount -eq 1) { 0 } else { 1 }); output = '' }
+    }
+    $packetMixed = New-WorkPacket `
+        -TaskId 'smoke-av-mixed' -Repository '' -BaseBranch '' -BaseSha '' `
+        -Objective 'Test' `
+        -AllowedPaths @('src/**') `
+        -ForbiddenPaths @() `
+        -AcceptanceCriteria @('First passes', 'Second fails') `
+        -VerificationCommands @('cmd1', 'cmd2') `
+        -Permissions @{ filesystemWrite = $true; shell = $true; network = $false; githubWrite = $false }
+
+    $mixedResult = Invoke-LocalAcceptanceVerification -WorkPacket $packetMixed -CommandRunner $mixedRunner
+    if ($mixedResult.status -ne 'failed') { throw "A mix of pass+fail must produce overall status 'failed'" }
+    if ($mixedResult.passed -ne 1 -or $mixedResult.failed -ne 1) {
+        throw ("Expected passed=1 failed=1, got passed=$($mixedResult.passed) failed=$($mixedResult.failed)")
+    }
+
+    Write-Host '  LOCAL_VERIFYING ok: failing command → remediation; passing commands → implementation_complete; no command → skipped (not failed); empty criteria → proceed; CommandRunner exception → skipped; mix of pass+fail → failed overall' -ForegroundColor DarkGray
+}
+
 Write-Step 'Smoke test completed'
