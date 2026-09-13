@@ -1,0 +1,402 @@
+{
+  "schemaVersion": "v1",
+  "capturedAt": "2026-09-05T13:28:24.146501+00:00",
+  "status": "selection-complete; measured execution still gated",
+  "selectionRule": "One distinct repository in each declared kind; never selected for conformance. No automatic substitutions.",
+  "measuredExecutionReady": false,
+  "records": [
+    {
+      "category": "mature-active-application",
+      "repository": "ActiveFamilyArchive",
+      "selectionReason": "Established family application with authentication, administration and extensive completed roadmap work; README and ROADMAP inspected.",
+      "selectionStatus": "selected",
+      "localPath": "F:\\Development\\20_Staging\\Family Tree Projects\\ActiveFamilyArchive",
+      "sourceIndexGeneratedAt": "2026-09-05T13:13:16.4425488Z",
+      "sourceIndexSha256": "60d31995ae75b582706bda55bced9226e1a0f499ad7c6507e9a339a6bffec1f7",
+      "sourceStatus": "diagnostic-only; refresh through product after truth fixes are deployed",
+      "fileEvidence": [
+        {
+          "path": "/mnt/f/Development/20_Staging/Family Tree Projects/ActiveFamilyArchive/README.md",
+          "exists": true,
+          "sha256": "3aa81d90448e7f7e6307acd525e6237bf4a693ce49de900012f6978306db984d"
+        },
+        {
+          "path": "/mnt/f/Development/20_Staging/Family Tree Projects/ActiveFamilyArchive/ROADMAP.md",
+          "exists": true,
+          "sha256": "6c91cfaca55db276528df966f3411266b51603c27722f95b69dd4442cfc74cb9"
+        }
+      ],
+      "productConclusion": null,
+      "stillMatters": null,
+      "highestValueNextAction": null,
+      "previewEvidence": null,
+      "operatorApprovalEvidence": null,
+      "runId": null,
+      "operatorMinutes": null,
+      "agentFirstPassResult": null,
+      "beforeEvidence": null,
+      "afterEvidence": null,
+      "acceptanceChecks": [],
+      "independentReviewer": null,
+      "outcomeQuality": null,
+      "materiallyImproved": false,
+      "countedImprovement": false,
+      "headCommit": "69c39c4c494ee9acd017be3ba8dacc43d8889b28",
+      "cachedOutcomeDiagnostic": null,
+      "ownerIntentConfirmed": true
+    },
+    {
+      "category": "weak-active-application",
+      "repository": "FowlingScorecard",
+      "selectionReason": "ROADMAP Current Situation explicitly describes useful working parts but no single finished product.",
+      "selectionStatus": "selected",
+      "localPath": "F:\\Development\\20_Staging\\FowlingScorecard",
+      "sourceIndexGeneratedAt": "2026-09-05T13:13:16.4425488Z",
+      "sourceIndexSha256": "60d31995ae75b582706bda55bced9226e1a0f499ad7c6507e9a339a6bffec1f7",
+      "sourceStatus": "diagnostic-only; refresh through product after truth fixes are deployed",
+      "fileEvidence": [
+        {
+          "path": "/mnt/f/Development/20_Staging/FowlingScorecard/README.md",
+          "exists": true,
+          "sha256": "7d6632a606dbb6888c6a4db9a348dc95862c0a83d18d72ef666513ad1a32bc01"
+        },
+        {
+          "path": "/mnt/f/Development/20_Staging/FowlingScorecard/ROADMAP.md",
+          "exists": true,
+          "sha256": "1a65ed78a3a84d692b4dedcfd58d09ad20fc5dd4ef7429a015b5b6dfa1d87bfb"
+        }
+      ],
+      "productConclusion": null,
+      "stillMatters": null,
+      "highestValueNextAction": null,
+      "previewEvidence": null,
+      "operatorApprovalEvidence": null,
+      "runId": null,
+      "operatorMinutes": null,
+      "agentFirstPassResult": null,
+      "beforeEvidence": null,
+      "afterEvidence": null,
+      "acceptanceChecks": [],
+      "independentReviewer": null,
+      "outcomeQuality": null,
+      "materiallyImproved": false,
+      "countedImprovement": false,
+      "headCommit": "0838d4c57a2ab6ea8fdd9afea7d3e94afba00544",
+      "cachedOutcomeDiagnostic": null,
+      "ownerIntentConfirmed": true
+    },
+    {
+      "category": "small-utility",
+      "repository": "DevPortConsole",
+      "selectionReason": "README describes a self-contained single-script utility; roadmap says all six phases complete. Tests the appropriate-as-is conclusion.",
+      "selectionStatus": "selected",
+      "localPath": "F:\\Development\\20_Staging\\DevPortConsole",
+      "sourceIndexGeneratedAt": "2026-09-05T13:13:16.4425488Z",
+      "sourceIndexSha256": "60d31995ae75b582706bda55bced9226e1a0f499ad7c6507e9a339a6bffec1f7",
+      "sourceStatus": "diagnostic-only; refresh through product after truth fixes are deployed",
+      "fileEvidence": [
+        {
+          "path": "/mnt/f/Development/20_Staging/DevPortConsole/README.md",
+          "exists": true,
+          "sha256": "08bb3ddb2d4dd5b3399b55daaaed46c49ebdd17ab6f34e508c2733ae992c7cc0"
+        },
+        {
+          "path": "/mnt/f/Development/20_Staging/DevPortConsole/ROADMAP.md",
+          "exists": true,
+          "sha256": "38e8e810c075f06dc3afa85786dd65202beeded1076e73e3bd7f7c7407ca20e9"
+        }
+      ],
+      "productConclusion": null,
+      "stillMatters": null,
+      "highestValueNextAction": null,
+      "previewEvidence": null,
+      "operatorApprovalEvidence": null,
+      "runId": null,
+      "operatorMinutes": null,
+      "agentFirstPassResult": null,
+      "beforeEvidence": null,
+      "afterEvidence": null,
+      "acceptanceChecks": [],
+      "independentReviewer": null,
+      "outcomeQuality": null,
+      "materiallyImproved": false,
+      "countedImprovement": false,
+      "headCommit": "d25d29c3fe57a45d2f49a5b79bc8c06de82fd3e3",
+      "cachedOutcomeDiagnostic": null,
+      "ownerIntentConfirmed": true
+    },
+    {
+      "category": "experiment",
+      "repository": "2026-06-13_Orchestration",
+      "selectionReason": "README describes a phase-0.1 bootstrap; roadmap prioritizes reaching a successful run. Experimental classification is provisional, not inferred from conformance.",
+      "selectionStatus": "selected",
+      "localPath": "F:\\Development\\20_Staging\\AI Projects\\2026-06-13_Orchestration",
+      "sourceIndexGeneratedAt": "2026-09-05T13:13:16.4425488Z",
+      "sourceIndexSha256": "60d31995ae75b582706bda55bced9226e1a0f499ad7c6507e9a339a6bffec1f7",
+      "sourceStatus": "diagnostic-only; refresh through product after truth fixes are deployed",
+      "fileEvidence": [
+        {
+          "path": "/mnt/f/Development/20_Staging/AI Projects/2026-06-13_Orchestration/README.md",
+          "exists": true,
+          "sha256": "f059f0bc05809ee8bebb6272075fc7ab81edf07d5394f791131a288ffb1f8f7b"
+        },
+        {
+          "path": "/mnt/f/Development/20_Staging/AI Projects/2026-06-13_Orchestration/ROADMAP.md",
+          "exists": true,
+          "sha256": "e3c427e63c04189ac4292e5eaf8158f827b655438fab0108844735fe85dd6104"
+        }
+      ],
+      "productConclusion": null,
+      "stillMatters": null,
+      "highestValueNextAction": null,
+      "previewEvidence": null,
+      "operatorApprovalEvidence": null,
+      "runId": null,
+      "operatorMinutes": null,
+      "agentFirstPassResult": null,
+      "beforeEvidence": null,
+      "afterEvidence": null,
+      "acceptanceChecks": [],
+      "independentReviewer": null,
+      "outcomeQuality": null,
+      "materiallyImproved": false,
+      "countedImprovement": false,
+      "headCommit": "bfeb833d44713a925f6512fb6b2951492e1dccdd",
+      "cachedOutcomeDiagnostic": null,
+      "ownerIntentConfirmed": true
+    },
+    {
+      "category": "abandoned-project",
+      "repository": "Genesys-Telecom-Powershell",
+      "selectionReason": "Existing archived-ignore curation supplies intent evidence; operator may correct abandoned versus intentionally archived.",
+      "selectionStatus": "selected",
+      "localPath": "F:\\Development\\20_Staging\\GenesysCloud\\Genesys-Telecom-Powershell",
+      "sourceIndexGeneratedAt": "2026-09-05T13:13:16.4425488Z",
+      "sourceIndexSha256": "60d31995ae75b582706bda55bced9226e1a0f499ad7c6507e9a339a6bffec1f7",
+      "sourceStatus": "diagnostic-only; refresh through product after truth fixes are deployed",
+      "fileEvidence": [
+        {
+          "path": "/mnt/f/Development/20_Staging/GenesysCloud/Genesys-Telecom-Powershell/README.md",
+          "exists": true,
+          "sha256": "91dc3b2bfedf1ccdf247564e3d900baf35184474172707d476f04a4efd49915a"
+        },
+        {
+          "path": "/mnt/f/Development/20_Staging/GenesysCloud/Genesys-Telecom-Powershell/ROADMAP.md",
+          "exists": true,
+          "sha256": "f78e5b40a5b01860926f546905ae1d86f0fc680b9f79713034450764d8d88bec"
+        }
+      ],
+      "productConclusion": null,
+      "stillMatters": null,
+      "highestValueNextAction": null,
+      "previewEvidence": null,
+      "operatorApprovalEvidence": null,
+      "runId": null,
+      "operatorMinutes": null,
+      "agentFirstPassResult": null,
+      "beforeEvidence": null,
+      "afterEvidence": null,
+      "acceptanceChecks": [],
+      "independentReviewer": null,
+      "outcomeQuality": null,
+      "materiallyImproved": false,
+      "countedImprovement": false,
+      "headCommit": "45b909516b6ec0ddb7223d5cbdef71836bdc580a",
+      "cachedOutcomeDiagnostic": null,
+      "ownerIntentConfirmed": false,
+      "ownerIntentNote": "Owner intent is not established. D-006 keeps the intent LABEL open even though the selection is released; this category assignment is not a claim about what the owner intended."
+    },
+    {
+      "category": "repository-without-roadmap",
+      "repository": "AI_PromptRefiner_GUI",
+      "selectionReason": "Active tool README exists; root ROADMAP.md is absent. Accepted alternate locations must be checked by the product before recommending creation.",
+      "selectionStatus": "selected",
+      "localPath": "F:\\Development\\20_Staging\\AI Projects\\AI_PromptRefiner_GUI",
+      "sourceIndexGeneratedAt": "2026-09-05T13:13:16.4425488Z",
+      "sourceIndexSha256": "60d31995ae75b582706bda55bced9226e1a0f499ad7c6507e9a339a6bffec1f7",
+      "sourceStatus": "diagnostic-only; refresh through product after truth fixes are deployed",
+      "fileEvidence": [
+        {
+          "path": "/mnt/f/Development/20_Staging/AI Projects/AI_PromptRefiner_GUI/README.md",
+          "exists": true,
+          "sha256": "80f13cdb7cdc37edc43d235e0310c1df181d72c33754e71bb04960604b1c20f4"
+        },
+        {
+          "path": "/mnt/f/Development/20_Staging/AI Projects/AI_PromptRefiner_GUI/ROADMAP.md",
+          "exists": false,
+          "sha256": null
+        }
+      ],
+      "productConclusion": null,
+      "stillMatters": null,
+      "highestValueNextAction": null,
+      "previewEvidence": null,
+      "operatorApprovalEvidence": null,
+      "runId": null,
+      "operatorMinutes": null,
+      "agentFirstPassResult": null,
+      "beforeEvidence": null,
+      "afterEvidence": null,
+      "acceptanceChecks": [],
+      "independentReviewer": null,
+      "outcomeQuality": null,
+      "materiallyImproved": false,
+      "countedImprovement": false,
+      "headCommit": "5deaa85756112656c3e33aa18d55b51c79d0ec69",
+      "cachedOutcomeDiagnostic": null,
+      "ownerIntentConfirmed": true
+    },
+    {
+      "category": "library",
+      "repository": "genesys-contract-client",
+      "selectionReason": "README describes a reusable deterministic API wrapper; roadmap explicitly names library plus MCP server.",
+      "selectionStatus": "selected",
+      "localPath": "F:\\Development\\20_Staging\\GenesysCloud\\genesys-contract-client",
+      "sourceIndexGeneratedAt": "2026-09-05T13:13:16.4425488Z",
+      "sourceIndexSha256": "60d31995ae75b582706bda55bced9226e1a0f499ad7c6507e9a339a6bffec1f7",
+      "sourceStatus": "diagnostic-only; refresh through product after truth fixes are deployed",
+      "fileEvidence": [
+        {
+          "path": "/mnt/f/Development/20_Staging/GenesysCloud/genesys-contract-client/README.md",
+          "exists": true,
+          "sha256": "0acc2290f0da043b86e75a4dcdf930cf9bd4fce7c9ec971c96f765a7ed7a9612"
+        },
+        {
+          "path": "/mnt/f/Development/20_Staging/GenesysCloud/genesys-contract-client/ROADMAP.md",
+          "exists": true,
+          "sha256": "2f18607d97adc8b0659a24a1df77bffe5e317805cd549635a0bf6a54cb441d45"
+        }
+      ],
+      "productConclusion": null,
+      "stillMatters": null,
+      "highestValueNextAction": null,
+      "previewEvidence": null,
+      "operatorApprovalEvidence": null,
+      "runId": null,
+      "operatorMinutes": null,
+      "agentFirstPassResult": null,
+      "beforeEvidence": null,
+      "afterEvidence": null,
+      "acceptanceChecks": [],
+      "independentReviewer": null,
+      "outcomeQuality": null,
+      "materiallyImproved": false,
+      "countedImprovement": false,
+      "headCommit": "32f952a91323c63b49a873c7a5e7cb23ad9ce0b7",
+      "cachedOutcomeDiagnostic": null,
+      "ownerIntentConfirmed": true
+    },
+    {
+      "category": "externally-managed-project",
+      "repository": null,
+      "selectionReason": "No cohort member. External management is owner intent and may not be inferred from age, activity, remote ownership or documentation maturity (D-006, 2026-09-06); no repository in the portfolio is known to be intentionally externally managed. An empty category is a valid trial outcome, not a gap to be filled with a substitute chosen for conformance.",
+      "selectionStatus": "unrepresented",
+      "localPath": null,
+      "sourceIndexGeneratedAt": "2026-09-05T13:13:16.4425488Z",
+      "sourceIndexSha256": "60d31995ae75b582706bda55bced9226e1a0f499ad7c6507e9a339a6bffec1f7",
+      "sourceStatus": "diagnostic-only; refresh through product after truth fixes are deployed",
+      "fileEvidence": [],
+      "productConclusion": null,
+      "stillMatters": null,
+      "highestValueNextAction": null,
+      "previewEvidence": null,
+      "operatorApprovalEvidence": null,
+      "runId": null,
+      "operatorMinutes": null,
+      "agentFirstPassResult": null,
+      "beforeEvidence": null,
+      "afterEvidence": null,
+      "acceptanceChecks": [],
+      "independentReviewer": null,
+      "outcomeQuality": null,
+      "materiallyImproved": false,
+      "countedImprovement": false,
+      "ownerIntentConfirmed": false,
+      "ownerIntentNote": "Owner intent is not established. D-006 keeps the intent LABEL open even though the selection is released; this category assignment is not a claim about what the owner intended."
+    },
+    {
+      "category": "nearly-finished-repository",
+      "repository": "300PixelLED_2812B",
+      "selectionReason": "ROADMAP contains 46 checked items and 7 open items, including simulator and diagram finishing work; counts select a category, not proof of completion.",
+      "selectionStatus": "selected",
+      "localPath": "F:\\Development\\20_Staging\\300PixelLED_2812B",
+      "sourceIndexGeneratedAt": "2026-09-05T13:13:16.4425488Z",
+      "sourceIndexSha256": "60d31995ae75b582706bda55bced9226e1a0f499ad7c6507e9a339a6bffec1f7",
+      "sourceStatus": "diagnostic-only; refresh through product after truth fixes are deployed",
+      "fileEvidence": [
+        {
+          "path": "/mnt/f/Development/20_Staging/300PixelLED_2812B/README.md",
+          "exists": true,
+          "sha256": "ec0691313555e8d75550de2b5158ff5e5b3ea50f086bcee0dec241132e33a1fb"
+        },
+        {
+          "path": "/mnt/f/Development/20_Staging/300PixelLED_2812B/ROADMAP.md",
+          "exists": true,
+          "sha256": "fd34d667b87227541924714ec29d9dcd538c686c50b2571bd2c97e9b3e4d447b"
+        }
+      ],
+      "productConclusion": null,
+      "stillMatters": null,
+      "highestValueNextAction": null,
+      "previewEvidence": null,
+      "operatorApprovalEvidence": null,
+      "runId": null,
+      "operatorMinutes": null,
+      "agentFirstPassResult": null,
+      "beforeEvidence": null,
+      "afterEvidence": null,
+      "acceptanceChecks": [],
+      "independentReviewer": null,
+      "outcomeQuality": null,
+      "materiallyImproved": false,
+      "countedImprovement": false,
+      "headCommit": "fe4b5b57e8e66e8bc0e85720973d859affd79ce7",
+      "cachedOutcomeDiagnostic": null,
+      "ownerIntentConfirmed": true
+    },
+    {
+      "category": "messy-repository",
+      "repository": "Genesys.Core",
+      "selectionReason": "README describes a Genesys API collection engine while ROADMAP names SereneHarmony Site Starter and website performance work. Directly observed provenance mismatch.",
+      "selectionStatus": "selected",
+      "localPath": "F:\\Development\\20_Staging\\GenesysCloud\\Genesys.Core",
+      "sourceIndexGeneratedAt": "2026-09-05T13:13:16.4425488Z",
+      "sourceIndexSha256": "60d31995ae75b582706bda55bced9226e1a0f499ad7c6507e9a339a6bffec1f7",
+      "sourceStatus": "diagnostic-only; refresh through product after truth fixes are deployed",
+      "fileEvidence": [
+        {
+          "path": "/mnt/f/Development/20_Staging/GenesysCloud/Genesys.Core/README.md",
+          "exists": true,
+          "sha256": "2c4ba2656ca9e8bab99e123d983465a65cae3d9e20b117d337aa3ee9a0aecfc2"
+        },
+        {
+          "path": "/mnt/f/Development/20_Staging/GenesysCloud/Genesys.Core/ROADMAP.md",
+          "exists": true,
+          "sha256": "8d249574f51d9e7db59087e8e215dba097be2c5fefcd39f2687b589664df0ec3"
+        }
+      ],
+      "productConclusion": null,
+      "stillMatters": null,
+      "highestValueNextAction": null,
+      "previewEvidence": null,
+      "operatorApprovalEvidence": null,
+      "runId": null,
+      "operatorMinutes": null,
+      "agentFirstPassResult": null,
+      "beforeEvidence": null,
+      "afterEvidence": null,
+      "acceptanceChecks": [],
+      "independentReviewer": null,
+      "outcomeQuality": null,
+      "materiallyImproved": false,
+      "countedImprovement": false,
+      "headCommit": "77b1ad9f7fd9125a628bb635919587b2f2c362a3",
+      "cachedOutcomeDiagnostic": null,
+      "ownerIntentConfirmed": true
+    }
+  ],
+  "selectionStatus": "complete",
+  "selectionCompletedAt": "2026-09-13T21:30:00Z",
+  "selectionRuling": "D-006 (2026-09-06): an empty category is a valid trial outcome. Selection completes with nine named repositories and externally-managed-project recorded as unrepresented.",
+  "representedCategoryCount": 9
+}

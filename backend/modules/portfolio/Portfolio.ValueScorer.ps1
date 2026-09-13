@@ -15,8 +15,29 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 function Get-PortfolioValueScoringConfig {
+    <#
+    .SYNOPSIS
+        The committed scoring model, or a stub when it cannot be read.
+    .DESCRIPTION
+        Omitting -ConfigPath used to mean "use the stub", and the stub carries no
+        `executorClassification` block. Get-RoadmapItemExecutor treats a missing
+        block as "classification off" and answers `agent` for everything -- so a
+        caller that simply forgot the path got 100% of items marked
+        agent-executable, which is precisely the failure the classifier was built
+        to prevent, arriving silently through the loader instead of the regex.
+        Measured 2026-09-13 over this repository's own ROADMAP: 83 of 83 items
+        agent-executable without a path, 74 of 83 with one.
+
+        Every caller in the tree passes a path, so this closes a trap rather than
+        fixing a live defect. The stub survives for the case it was written for:
+        a config that is genuinely missing or unparseable.
+    #>
     [CmdletBinding()]
     param([string]$ConfigPath = '')
+
+    if ([string]::IsNullOrWhiteSpace($ConfigPath)) {
+        $ConfigPath = Join-Path $PSScriptRoot '..\..\config\value-scoring.json'
+    }
 
     if (-not [string]::IsNullOrWhiteSpace($ConfigPath) -and (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) {
         try {

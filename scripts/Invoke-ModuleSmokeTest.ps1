@@ -4223,6 +4223,21 @@ $valueScoringConfig = Get-PortfolioValueScoringConfig -ConfigPath $portfolioValu
 if ($null -eq $structStds) { throw 'Get-RepoStructureStandards returned null for an existing standards file' }
 if ($null -eq $structStds.common) { throw 'Standards file is missing the common section' }
 if ($null -eq $valueScoringConfig) { throw 'Get-PortfolioValueScoringConfig returned null for an existing config file' }
+# The loader's no-argument form must reach the committed model, not the stub.
+# Every assertion below passes an explicit config, so none of them would notice
+# the parameterless call silently degrading -- and that degradation is not
+# cosmetic: the stub carries no executorClassification, which makes
+# Get-RoadmapItemExecutor answer 'agent' for EVERY item. Measured 2026-09-13
+# over this repository's own ROADMAP: 83 of 83 agent-executable without a path,
+# 74 of 83 with one. The classifier's whole purpose, off, and silent.
+$valueScoringDefault = Get-PortfolioValueScoringConfig
+if ($null -eq $valueScoringDefault -or -not ($valueScoringDefault.PSObject.Properties.Name -contains 'executorClassification')) {
+    throw 'Get-PortfolioValueScoringConfig with no -ConfigPath did not resolve the committed model; a caller that omits the path would classify every roadmap item as agent-executable.'
+}
+$valueScoringDefaultVerdict = Get-RoadmapItemExecutor -ItemText 'Operator-verify the empty-room gate against the live portal'
+if ([string]$valueScoringDefaultVerdict.executor -ne 'operator') {
+    throw ("Get-RoadmapItemExecutor with no -ScoringConfig called plainly operator work '{0}'; the loader default is not reaching the classification rules." -f $valueScoringDefaultVerdict.executor)
+}
 # repo-structure-standards.json renamed 'version' to 'schemaVersion' in the v1 schema;
 # accept either so the smoke works against old and new standards files.
 $structStdsVersion = if ($structStds.PSObject.Properties.Name -contains 'schemaVersion') { [string]$structStds.schemaVersion } elseif ($structStds.PSObject.Properties.Name -contains 'version') { [string]$structStds.version } else { '(none)' }

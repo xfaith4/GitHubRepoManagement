@@ -768,7 +768,7 @@ api-host steps, and 47 frontend tests across `foundationConclusion`,
       per task needs an operator-side timer the product does not have;
       recommendations accepted vs rejected needs an accept/reject ledger the
       packaging approve/reject routes do not write. Both render with their
-      reason rather than a zero — Release 3.7's ten repositories decide
+      reason rather than a zero — Release 3.7's nine repositories decide
       whether either earns a capture.
 - [ ] **[non-blocker]** Only `archived` has a kind-detection rule. `library`,
       `service`, `script-collection`, `minimal` and `externally-managed`
@@ -803,24 +803,38 @@ recorded; the result decides the full 80+ rollout.
 
 - "Is this product making the portfolio better, faster?" is answered with
   recorded numbers, not impressions; false positives and bad recommendations
-  are found on ten repositories before they are found on eighty.
+  are found on nine repositories before they are found on eighty.
 
 #### Engineering milestones
 
-- [ ] **Select the ten by rule** — one each: mature active application, weak
-      active application, small utility, experiment, abandoned project,
-      repository without a roadmap, library, externally managed project,
-      nearly finished repository, messy repository — recording why each was
-      chosen. Nine provisional candidates and an explicit unfilled external-management
-      slot are recorded in `evidence/trials/release-3.7/cohort.json`. **D-006's
-      ruling (2026-09-06) releases the selection:** external management is owner
-      intent and may not be inferred from age, activity, remote ownership or
-      documentation maturity, so a category with **no natural member is recorded
-      as unrepresented** rather than filled by a substitute. An empty category
-      is a valid trial outcome. Selection completes with nine named
-      repositories and the tenth category recorded as having no cohort member.
-      _(state: scaffolded)_
-- [ ] **Run the conclusion model over the ten**, recording per repository:
+**Selection closed 2026-09-13 — recorded as prose, because a `[x]` in this file
+is a mistake, not a record.** Nine repositories are selected by rule, one per
+category, each with its reason; `externally-managed-project` is recorded as
+**unrepresented**, which D-006 ruled a valid trial outcome rather than a gap to
+fill with a substitute chosen for conformance. Selection is not owner intent:
+the abandoned and externally-managed categories carry `ownerIntentConfirmed:
+false`, because assigning a repository to a category is not a claim about what
+its owner intended.
+
+Nothing engineering-side had been blocking it. D-006's ruling released the
+selection on 2026-09-06 and stated its own default — nine named plus one
+unrepresented — but `cohort.json` still carried the 2026-09-05 state, with the
+tenth slot reading `operator-input-required`. The artifact asked for a decision
+that had already been made, and the milestone sat at `scaffolded` for a week on
+nothing.
+
+**The trial record was not in the repository.** `/evidence/**` was ignored
+except `evidence/verified/**`, so both files this release links —
+`evidence/trials/release-3.7/README.md` and `cohort.json` — existed only on one
+machine. The acceptance criteria below require results "recorded per repository
+in `evidence/`", and not one of them could have shipped with the PR that earned
+it. `.gitignore` now excepts `/evidence/trials/**` on the same grounds the file
+already states for curated proof: a selection reason written by hand is
+judgement, not regenerable run spill.
+
+**Still open:**
+
+- [ ] **Run the conclusion model over the nine**, recording per repository:
       what it is, whether it still matters, its state, what limits its value,
       the highest-value next action, and whether the product can execute or
       facilitate it. _(state: planned)_
@@ -832,14 +846,18 @@ recorded; the result decides the full 80+ rollout.
       independently checked acceptance criterion and before/after evidence;
       merge evidence alone is insufficient. _(state: planned)_
 - [ ] **Adjust and decide** — fix the false positives and bad recommendations
-      the ten expose; record the go/no-go for the full rollout and the
+      the nine expose; record the go/no-go for the full rollout and the
       leverage numbers behind it. _(state: planned)_
 
 #### Acceptance criteria
 
-- Ten repositories selected by the rule, none for conformance, each with a
-  recorded conclusion and reason.
-- At least five materially improved through the product's own workflow, with
+- All ten categories ruled on by the rule, none selected for conformance: nine
+  repositories selected with a recorded reason, and `externally-managed-project`
+  recorded as unrepresented (D-006 — an empty category is a valid outcome). Each
+  selected repository carries a recorded conclusion and reason. Closed
+  2026-09-13; a criterion asking for ten repositories could no longer be met by
+  a cohort the ruling settled at nine.
+- At least five of the nine materially improved through the product's own workflow, with
   operator minutes, outcome quality, and agent first-pass result recorded per
   repository in `evidence/`; a recorded rollout decision with the numbers.
 
@@ -850,7 +868,7 @@ recorded; the result decides the full 80+ rollout.
 **Validation plan:** conclusions, actions, and outcomes recorded in `evidence/`
 via [`Add-OperatorVerification.ps1`](scripts/Add-OperatorVerification.ps1) and
 the agent-run ledgers; module smoke and api-host smoke stay green; CI is the
-arbiter for any product fix the ten expose.
+arbiter for any product fix the nine expose.
 
 **Risks:** choosing repositories that flatter the product (the selection rule
 prevents it); counting a repair as an improvement when the repository is not
@@ -1480,7 +1498,7 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
       credible estimate from signals that do exist (pending item count, item
       text, repo kind) or render the column as explicitly unmeasured — the
       Release 3.6 leverage panel already sets that precedent with its two
-      `available: false` metrics. Decide which, with the ten repositories of
+      `available: false` metrics. Decide which, with the nine repositories of
       Release 3.7.
 
 ---
