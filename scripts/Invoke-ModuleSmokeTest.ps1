@@ -11460,7 +11460,37 @@ Write-Step 'Live-service currency check - derived routes, and the SPA-fallback t
         Remove-Item -LiteralPath $currencyEmptyFixture -Force -ErrorAction SilentlyContinue
     }
 
-    Write-Host ("  currency ok: {0} GET route(s) derived from source (no parameterised or wildcard), content-type keyed so the SPA fallback cannot fake presence, zero-derivation fails loudly" -f @($currencyRoutes).Count) -ForegroundColor DarkGray
+    # Two false verdicts this check gave on a healthy portal, 2026-09-13.
+    #
+    # It defaulted to http for the two weeks after the portal moved to TLS, so it
+    # answered "Is the service running?" about a service that was serving. And it
+    # treated ANY non-HTTP error as the service being down, so one slow route
+    # (/api/maintenance/ledgers, past 10s) condemned the whole run and stopped it.
+    # Both point the operator at the wrong problem at the exact moment they are
+    # asking whether a deploy landed.
+    if ($currencyText -notmatch "BaseUrl\s*=\s*'https://") {
+        throw 'The currency check defaults to a non-https BaseUrl. The portal has served TLS since 2026-08-29 and plain http does not answer, so this default reports a healthy service as unreachable.'
+    }
+    if ($currencyText -notmatch 'TaskCanceledException') {
+        throw 'The currency check does not classify a timeout apart from a connection failure. One slow route would then be reported as "Could not reach ... Is the service running?" on a healthy portal.'
+    }
+    foreach ($currencyBucket in @('timedOut', 'errored')) {
+        if ($currencyText -notmatch [regex]::Escape($currencyBucket)) {
+            throw ("The currency check has no '{0}' bucket; a route it could not decide would be silently folded into a decided one." -f $currencyBucket)
+        }
+    }
+    # An undecided route must not read as current -- that is the false-green half
+    # of the same defect. Presence of `missing.Count -eq 0` ALONE is the old rule.
+    if ($currencyText -notmatch '\$isCurrent\s*=\s*\(\$missing\.Count -eq 0 -and \$timedOut\.Count -eq 0 -and \$errored\.Count -eq 0\)') {
+        throw 'The currency check reports "current" without requiring every route to have been decided; a timed-out route would pass as served.'
+    }
+    # The connection-failure path must be scoped to "nothing has answered yet",
+    # or a single broken route late in the run still condemns the service.
+    if ($currencyText -notmatch '\$present\.Count -eq 0 -and \$missing\.Count -eq 0 -and \$timedOut\.Count -eq 0') {
+        throw 'The currency check can still declare the service unreachable after a route has already answered; that is a route problem, not a dead service.'
+    }
+
+    Write-Host ("  currency ok: {0} GET route(s) derived from source (no parameterised or wildcard), content-type keyed so the SPA fallback cannot fake presence, zero-derivation fails loudly; https by default and a timeout is reported as undecided rather than as a dead service" -f @($currencyRoutes).Count) -ForegroundColor DarkGray
 }
 
 Write-Step 'Dispatch severity gate - the code blocks on what the config declares, and nothing more'

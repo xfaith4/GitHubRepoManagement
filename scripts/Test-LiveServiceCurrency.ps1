@@ -28,6 +28,15 @@
 .PARAMETER WorkspaceRoot
     Source of truth for what routes SHOULD exist. Defaults to this repo.
 
+.PARAMETER ApiKey
+    Sent as X-Api-Key. Only needed once API authentication is enabled; a 401 from
+    a route that exists would otherwise still read as present, so this is about
+    speaking to the portal normally rather than about the verdict.
+
+.PARAMETER SkipCertificateCheck
+    Accept the portal's self-signed certificate. Implied when BaseUrl is https on
+    a loopback address, because that is the only certificate it can be.
+
 .EXAMPLE
     pwsh -File scripts/Test-LiveServiceCurrency.ps1
 .EXAMPLE
@@ -37,9 +46,16 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter()][string]$BaseUrl = 'http://127.0.0.1:7071',
+    # https, not http: the portal has served TLS since Lane 0.2 (2026-08-29) and
+    # plain http stopped answering that day. This default said http for two weeks
+    # after that, so the script reported "Is the service running?" against a
+    # perfectly healthy service -- the one answer it must never give wrongly,
+    # because its whole job is telling an operator whether a deploy landed.
+    [Parameter()][string]$BaseUrl = 'https://127.0.0.1:7071',
     [Parameter()][string]$WorkspaceRoot = (Split-Path -Parent $PSScriptRoot),
-    [Parameter()][int]$TimeoutSeconds = 10
+    [Parameter()][int]$TimeoutSeconds = 10,
+    [Parameter()][string]$ApiKey = $env:REPO_MGMT_API_KEY,
+    [Parameter()][switch]$SkipCertificateCheck
 )
 
 Set-StrictMode -Version Latest
@@ -86,41 +102,98 @@ Write-Host ("Checking {0} against {1} declared GET route(s)..." -f $BaseUrl, $de
 
 $present = [System.Collections.Generic.List[string]]::new()
 $missing = [System.Collections.Generic.List[string]]::new()
+# Routes this run could not decide about, kept apart from the ones it decided.
+# A timeout is not evidence of absence -- an absent route hits the SPA fallback
+# and returns 200 text/html immediately, so it cannot be the slow one.
+$timedOut = [System.Collections.Generic.List[string]]::new()
+$errored = [System.Collections.Generic.List[string]]::new()
 $unreachable = $false
+
+# One request shape for every route. The certificate on a loopback https bind is
+# the portal's own self-signed one, so requiring -SkipCertificateCheck there would
+# only be a flag the operator has to remember at the moment the tool is meant to
+# be answering a question for them.
+$requestArgs = @{
+    Method          = 'Get'
+    TimeoutSec      = $TimeoutSeconds
+    UseBasicParsing = $true
+    ErrorAction     = 'Stop'
+}
+$isLoopbackTls = $BaseUrl -match '^https://(127\.0\.0\.1|\[::1\]|localhost)\b'
+if ($SkipCertificateCheck.IsPresent -or $isLoopbackTls) { $requestArgs.SkipCertificateCheck = $true }
+if (-not [string]::IsNullOrWhiteSpace($ApiKey)) { $requestArgs.Headers = @{ 'X-Api-Key' = $ApiKey } }
 
 foreach ($route in $declared) {
     try {
-        $response = Invoke-WebRequest -Uri ($BaseUrl + $route) -Method Get -TimeoutSec $TimeoutSeconds -UseBasicParsing -ErrorAction Stop
+        $response = Invoke-WebRequest -Uri ($BaseUrl + $route) @requestArgs
         $contentType = [string]$response.Headers['Content-Type']
         # The SPA fallback answers 200 text/html for anything unmatched, so a
         # JSON content type -- not a 2xx -- is what proves the route exists.
         if ($contentType -like '*application/json*') { $present.Add($route) | Out-Null }
         else { $missing.Add($route) | Out-Null }
     }
-    catch [System.Net.WebException] {
-        $unreachable = $true
-        break
-    }
     catch {
-        # A 4xx/5xx from a route that EXISTS still proves the code is there;
-        # only the SPA fallback means absent, and that arrives as a 200.
+        # One classification path, deliberately. When this had two catch blocks
+        # they disagreed about what counts as "the service is down", and the
+        # narrower one won for the wrong reason.
         $statusCode = 0
         try { $statusCode = [int]$_.Exception.Response.StatusCode } catch { $statusCode = 0 }
-        if ($statusCode -ge 400 -and $statusCode -lt 600) { $present.Add($route) | Out-Null }
-        else { $unreachable = $true; break }
+        if ($statusCode -ge 400 -and $statusCode -lt 600) {
+            # A 4xx/5xx from a route that EXISTS still proves the code is there;
+            # only the SPA fallback means absent, and that arrives as a 200.
+            # 401 lands here whenever API authentication is on, which is normal.
+            $present.Add($route) | Out-Null
+            continue
+        }
+
+        # A slow route is not a dead service. Measured 2026-09-13:
+        # /api/maintenance/ledgers exceeded the 10s timeout on a healthy portal
+        # and this script answered "Could not reach ... Is the service running?"
+        # -- about a service that was serving. That is the worst answer this tool
+        # can give, because an operator reads it to decide whether a deploy
+        # landed and it points them at the wrong problem entirely.
+        if ($_.Exception -is [System.Threading.Tasks.TaskCanceledException] -or
+            $_.Exception -is [System.TimeoutException] -or
+            $_.Exception -is [System.OperationCanceledException]) {
+            $timedOut.Add($route) | Out-Null
+            continue
+        }
+
+        # A genuine connection failure. Only the service can be unreachable, and
+        # only while nothing has answered yet: once a route has responded, a
+        # broken one is a route problem and the run should finish and say so.
+        if ($present.Count -eq 0 -and $missing.Count -eq 0 -and $timedOut.Count -eq 0) {
+            $unreachable = $true
+            break
+        }
+        $errored.Add($route) | Out-Null
     }
 }
 
 if ($unreachable) {
-    Write-Host ("Could not reach {0}. Is the service running?" -f $BaseUrl) -ForegroundColor Red
-    return [pscustomobject]@{ current = $false; reachable = $false; declaredCount = $declared.Count; missing = @() }
+    Write-Host ("Could not reach {0} on the first route. Is the service running?" -f $BaseUrl) -ForegroundColor Red
+    Write-Host '  If it is running, check the scheme: the portal has served TLS since 2026-08-29 and plain http does not answer.' -ForegroundColor DarkGray
+    return [pscustomobject]@{
+        current = $false; reachable = $false; declaredCount = $declared.Count
+        missing = @(); timedOut = @(); errored = @()
+    }
 }
 
-$isCurrent = ($missing.Count -eq 0)
+# Undecided routes must not read as current. Saying "all served" while some were
+# never proven is the false green half of the same defect as the false red above.
+$isCurrent = ($missing.Count -eq 0 -and $timedOut.Count -eq 0 -and $errored.Count -eq 0)
 
 Write-Host ''
 if ($isCurrent) {
     Write-Host ("CURRENT: all {0} declared GET route(s) are served." -f $declared.Count) -ForegroundColor Green
+}
+elseif ($missing.Count -eq 0) {
+    Write-Host ("REACHABLE, NOT PROVEN: {0} of {1} route(s) answered; none is missing, but {2} could not be decided." -f $present.Count, $declared.Count, ($timedOut.Count + $errored.Count)) -ForegroundColor Yellow
+    foreach ($route in $timedOut) { Write-Host ("  timed out after {0}s: {1}" -f $TimeoutSeconds, $route) -ForegroundColor DarkYellow }
+    foreach ($route in $errored) { Write-Host ("  errored: {0}" -f $route) -ForegroundColor DarkYellow }
+    Write-Host ''
+    Write-Host ("A slow route is not a missing one. Re-run with a longer budget to decide it:" ) -ForegroundColor Cyan
+    Write-Host ("  pwsh -File scripts/Test-LiveServiceCurrency.ps1 -TimeoutSeconds 30") -ForegroundColor Cyan
 }
 else {
     Write-Host ("STALE: {0} of {1} declared GET route(s) are missing from the running service." -f $missing.Count, $declared.Count) -ForegroundColor Yellow
@@ -137,4 +210,6 @@ return [pscustomobject]@{
     declaredCount = $declared.Count
     presentCount  = $present.Count
     missing       = $missing.ToArray()
+    timedOut      = $timedOut.ToArray()
+    errored       = $errored.ToArray()
 }
