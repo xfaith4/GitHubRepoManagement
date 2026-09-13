@@ -1985,29 +1985,33 @@ it from the service" is not a missing button; it is a cross-identity problem.
 already queued, so starting it unattended does not let unsanctioned work begin.
 That separation must survive this lane.
 
-- [ ] Run the runner as a logon-triggered scheduled task in the operator's own
-      session, registered by the installer beside the portal watchdog but as
-      the operator rather than SYSTEM, with restart-on-failure. This is the
-      primary answer to the operator's ask: the runner is simply up whenever
-      they are logged in, and the empty-room banner becomes the rare truthful
-      case instead of a routine obstacle.
-      **Feasibility proved 2026-09-13, and it removes the hard part.** A probe
-      task registered on this machine **without elevation** as
-      `xfaith` / `LogonType=Interactive` / `RunLevel=Limited`, carried an
-      `MSFT_TaskLogonTrigger`, and started on demand. So the installer needs no
-      admin rights for this half, and — more importantly — the cross-identity
-      problem leaves the critical path entirely: at logon it is _Windows_ that
-      starts the runner in the operator's session, not the service.
-- [ ] Keep the service out of the start path for the restart case too, by giving
-      the same task a repeating trigger that starts the runner when none is
-      present. Then a LocalSystem caller never has to reach into a user session
-      at all, and the design stops depending on whether it could. The cost is
-      restart latency bounded by the repeat interval, which is the right trade
-      against a cross-identity call that may not work when logged out anyway.
-      That the repeating trigger brings a stopped runner straight back is the
-      INTENDED behaviour, not a problem to solve. Keeping it running is the
-      service's job; a "stay stopped" flag would exist only to let someone
-      manufacture the failure, and that is not a state worth building for.
+**Two thirds of this lane was closed the day it was written; recorded here as
+prose because a `[x]` in this file is a mistake, not a record.**
+
+The logon-triggered task **already existed** and this lane was wrong to propose
+building it: [`Install-RoadmapTaskRunner.ps1`](scripts/service/Install-RoadmapTaskRunner.ps1)
+registers `RepoMgmtRoadmapTaskRunner` as `xfaith` / `LogonType=Interactive` /
+`RunLevel=Limited`, unelevated, and it was present and enabled on THESHIRE with
+a clean exit from 2026-09-11. The logon start was never the gap.
+
+The gap was recovery, and it is now shipped. The operator stopped the runner at
+17:59 UTC to verify the empty-room gate; two hours later nothing had restarted
+it, because a logon trigger cannot fire again until they log out. So the queue
+had nobody to work it and the console's only advice was a command to paste.
+`-RepeatMinutes` (default 5) now sets `$trigger.Repetition` on that logon
+trigger. It is safe **only** because `-MultipleInstances IgnoreNew` makes a
+repeat a no-op while a runner is alive, and the module smoke fails if either
+half is removed — a repetition without that policy would start a second runner
+against the same queue. Proved live 2026-09-13: runner up at PID 28224,
+`GET /api/roadmap/runner` reporting `state: present` with a 3.4s heartbeat.
+
+That the repeating trigger brings a stopped runner straight back is the INTENDED
+behaviour, not a problem to solve. Keeping it running is the service's job. This
+also retires the cross-identity question entirely: a LocalSystem caller never
+reaches into a user session at all.
+
+**Still open:**
+
 - [ ] Replace the banner's pasted command with the action itself. Keep the
       refusal honest when the runner genuinely cannot be started — logged out is
       still "nothing will pick this up" — and when the start attempt fails, show

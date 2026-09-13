@@ -8397,7 +8397,23 @@ Write-Step 'Runner logon-task installer — smoke: refuses service accounts (Rel
     if ($installerSource -notmatch 'LogonType Interactive') { throw 'The runner task must register with LogonType Interactive' }
     if ($installerSource -notmatch 'RunLevel Limited') { throw 'The runner task must register unelevated (RunLevel Limited)' }
     if ($installerSource -match "UserId 'NT AUTHORITY\\SYSTEM'") { throw 'The runner task must never register as SYSTEM' }
-    Write-Host '  runner installer ok: 4 service accounts refused, paths quoted, 4 action cases, interactive + unelevated principal' -ForegroundColor DarkGray
+
+    # A logon trigger alone cannot recover a runner stopped mid-session: it
+    # cannot fire again until the operator logs out. Measured 2026-09-13 -- the
+    # runner was stopped at 17:59 UTC and was still down two hours later, so the
+    # queue had nobody to work it and the console could only print a command to
+    # paste. The repetition is what makes keeping the runner alive the service's
+    # job rather than the operator's.
+    if ($installerSource -notmatch '\$trigger\.Repetition\s*=') {
+        throw 'The runner task registers a logon trigger with no repetition. A runner stopped mid-session would stay down until the operator logs out, which makes keeping it alive their job.'
+    }
+    # The repetition is only safe because a repeat while one is already running
+    # is ignored. Without this policy the interval would spawn duplicate runners
+    # competing for the same queue.
+    if ($installerSource -notmatch 'MultipleInstances IgnoreNew') {
+        throw 'The runner task repeats but does not set -MultipleInstances IgnoreNew; the interval would start a second runner against the same queue.'
+    }
+    Write-Host '  runner installer ok: 4 service accounts refused, paths quoted, 4 action cases, interactive + unelevated principal, logon trigger repeats and duplicate starts are ignored' -ForegroundColor DarkGray
 }
 
 # ── Release 2.7 Phase C — scheduled roadmap-item packaging ───────────────────
