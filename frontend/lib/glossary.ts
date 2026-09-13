@@ -4,7 +4,7 @@
  * WHY THIS EXISTS. The audit's headline was that the console contradicts
  * itself: the same word means different things on different tabs, and a
  * number arrives with no statement of what produced it.
- * `docs/reference/status-vocabulary.md` settled the first half — five
+ * `docs/reference/status-vocabulary.md` settled the first half — six
  * independent dimensions, no two sharing a word — but it settled it in a file
  * the operator never opens. Badge meanings lived in a legend inside the
  * Repository Grid; readiness meanings lived in a hover title; maturity levels
@@ -254,10 +254,39 @@ const EXECUTION_LANE_TERMS: GlossaryTerm[] = [
       'The most commonly confused label in the console. Blocked here counts LEDGER ENTRIES; Blocked under dispatch readiness counts REPOSITORIES. Both are correct and they are not the same number.',
   },
   {
-    term: 'Complete',
+    term: 'Complete (execution lane)',
     token: 'complete',
     definition: 'The entry finished. Its outcome is in the run history, not in the queue.',
     basis: 'The execution ledger.',
+  },
+];
+
+// --- Dimension 6: delivery state --------------------------------------------
+
+const DELIVERY_STATE_TERMS: GlossaryTerm[] = [
+  {
+    term: 'Discovered',
+    token: 'DISCOVERED',
+    definition: 'The task exists in run history but has not started any execution step yet.',
+    basis: 'Delivery-state machine in `Execution.Events.ps1` (`Get-DeliveryState`).',
+  },
+  {
+    term: 'Complete (delivery state)',
+    token: 'COMPLETE',
+    definition: 'The task completed its full delivery flow, including post-merge verification.',
+    basis: 'Delivery-state machine in `Execution.Events.ps1` (`Get-DeliveryState`).',
+  },
+  {
+    term: 'Remediation',
+    token: 'REMEDIATION',
+    definition: 'The task re-entered the loop to correct a failed verification or CI outcome.',
+    basis: 'Delivery-state machine in `Execution.Events.ps1` (`Get-DeliveryState`).',
+  },
+  {
+    term: 'Capacity wait',
+    token: 'CAPACITY_WAIT',
+    definition: 'Execution is paused because no eligible provider currently has available capacity.',
+    basis: 'Delivery-state machine in `Execution.Events.ps1` (`Get-DeliveryState`).',
   },
 ];
 
@@ -368,6 +397,12 @@ export const GLOSSARY_GROUPS: GlossaryGroup[] = [
     terms: EXECUTION_LANE_TERMS,
   },
   {
+    id: 'delivery-state',
+    title: 'Delivery state',
+    blurb: 'Per-task state from the provider-aware delivery lifecycle.',
+    terms: DELIVERY_STATE_TERMS,
+  },
+  {
     id: 'portfolio',
     title: 'Portfolio figures',
     blurb: 'The counts on the summary cards, and what each was computed over.',
@@ -382,7 +417,7 @@ export const GLOSSARY_GROUPS: GlossaryGroup[] = [
 ];
 
 /**
- * The five independent dimensions, named as the vocabulary doc names them.
+ * The six independent dimensions, named as the vocabulary doc names them.
  * Rendered above the terms so the operator sees WHY two labels that look
  * alike are allowed to disagree, before they read either one.
  */
@@ -392,6 +427,7 @@ export const DIMENSION_GROUP_IDS = [
   'dispatch-readiness',
   'roadmap-maturity',
   'execution-lane',
+  'delivery-state',
 ] as const;
 
 /** Every documented term, flattened — the search corpus and the test's corpus. */

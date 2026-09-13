@@ -11,7 +11,7 @@ independent dimensions**, and collapsing them would recreate the lie the
 snapshot contract exists to remove. The fix is this table: every label in the
 UI belongs to exactly one dimension, and no two dimensions share a word.
 
-## The five dimensions
+## The six dimensions
 
 | Dimension | Values | Source | Where it renders |
 | --- | --- | --- | --- |
@@ -20,9 +20,22 @@ UI belongs to exactly one dimension, and no two dimensions share a word.
 | **Dispatch readiness** | `ready` · `needs-doc-standardization` · `missing-roadmap` · `roadmap-complete` · `no-checklist` · `parse-error` · `blocked` | docs-audit cache | Doc Readiness rows, grid readiness filter |
 | **Roadmap maturity** | `L0-Absent` → `L4-Orchestration-Ready` | roadmap contract audit | Insights maturity views, assessment |
 | **Execution lane** | `idle` · `ready` · `running` · `blocked` · `complete` | execution ledger | Execution Queue lanes |
+| **Delivery state** | `DISCOVERED` → `COMPLETE` (plus `REMEDIATION`, `CAPACITY_WAIT`) | `Execution.Events.ps1` `Get-DeliveryState` | Dispatch Board per-task delivery column |
 
-Release 3.8 adds a sixth dimension, Delivery state, in H38-34; until then the
-run summary's status field is the per-task state.
+**Release 3.8 H38-34.** The Delivery state dimension is the sixth. It maps the
+run summary's per-task status string to the canonical ALL_CAPS states from the
+delivery state machine in `Agent-Execution-Governance.md`. No two dimensions
+share a word: delivery states are ALL_CAPS and appear nowhere else.
+
+Full state progression (happy path):
+`DISCOVERED` → `FORMING` → `QUALIFIED` → `QUEUED` → `CAPACITY_EVALUATING` →
+`PROVIDER_SELECTED` → `WORKSPACE_PREPARING` → `AGENT_RUNNING` →
+`LOCAL_VERIFYING` → `IMPLEMENTATION_COMPLETE` → `PUSHING` → `PR_OPEN` →
+`CI_PENDING` → `CI_PASSED` → `READY_FOR_OPERATOR` → `OPERATOR_APPROVED` →
+`MERGING` → `MERGED` → `POST_MERGE_VERIFYING` → `COMPLETE`
+
+Off-path states: `CAPACITY_WAIT`, `CI_FAILED`, `POST_MERGE_REMEDIATION`,
+`REMEDIATION`.
 
 The Genesys.Core collision, decoded: *Ready* was **dispatch readiness**
 (docs in shape to receive work); *blocked / L0-Absent* was **execution lane**
