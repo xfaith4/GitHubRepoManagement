@@ -1960,6 +1960,101 @@ four checks on content that was present.
 
 ---
 
+### Lane 0.20 — The console tells the operator to open a terminal (operator evaluation 2026-09-13)
+
+Found while the operator verified the Release 3.1 empty-room gate. The gate
+works: previewing a dispatch with no runner alive refuses, says why, and names
+the remedy. The remedy is the problem — it is a command to paste into a shell:
+
+> Runner stalled: nothing would pick this up. Start the operator runner first —
+> `pwsh -File "F:\Development\GitHubRepoManagement\scripts\Invoke-RoadmapTaskRunner.ps1"`.
+
+A console that hands its operator a terminal command has made them the
+mechanism. Operator intent, 2026-09-13: **the app should start the runner
+itself when one is not running**, not ask.
+
+**The constraint that makes this non-trivial, stated once so it is not
+rediscovered.** The runner must execute as the OPERATOR, because it launches
+their authenticated Claude Code. The portal is a LocalSystem service. A runner
+spawned by the service would come up as SYSTEM with no Claude credentials,
+claim packets and fail them — strictly worse than refusing, and the same
+boundary that made this product enqueue rather than dispatch at all. So "start
+it from the service" is not a missing button; it is a cross-identity problem.
+
+**Auto-start is not auto-approve.** The runner only claims what approval has
+already queued, so starting it unattended does not let unsanctioned work begin.
+That separation must survive this lane.
+
+- [ ] Run the runner as a logon-triggered scheduled task in the operator's own
+      session, registered by the installer beside the portal watchdog but as
+      the operator rather than SYSTEM, with restart-on-failure. This is the
+      primary answer to the operator's ask: the runner is simply up whenever
+      they are logged in, and the empty-room banner becomes the rare truthful
+      case instead of a routine obstacle.
+      **Feasibility proved 2026-09-13, and it removes the hard part.** A probe
+      task registered on this machine **without elevation** as
+      `xfaith` / `LogonType=Interactive` / `RunLevel=Limited`, carried an
+      `MSFT_TaskLogonTrigger`, and started on demand. So the installer needs no
+      admin rights for this half, and — more importantly — the cross-identity
+      problem leaves the critical path entirely: at logon it is _Windows_ that
+      starts the runner in the operator's session, not the service.
+- [ ] Keep the service out of the start path for the restart case too, by giving
+      the same task a repeating trigger that starts the runner when none is
+      present. Then a LocalSystem caller never has to reach into a user session
+      at all, and the design stops depending on whether it could. The cost is
+      restart latency bounded by the repeat interval, which is the right trade
+      against a cross-identity call that may not work when logged out anyway.
+      That the repeating trigger brings a stopped runner straight back is the
+      INTENDED behaviour, not a problem to solve. Keeping it running is the
+      service's job; a "stay stopped" flag would exist only to let someone
+      manufacture the failure, and that is not a state worth building for.
+- [ ] Replace the banner's pasted command with the action itself. Keep the
+      refusal honest when the runner genuinely cannot be started — logged out is
+      still "nothing will pick this up" — and when the start attempt fails, show
+      the error the attempt actually produced. Do not remove the empty-room gate;
+      it was operator-verified 2026-09-13, and once is the right number of times
+      to verify it.
+
+- [ ] Show it in one place. The operator should watch the queue and the work in
+      flight from a single pane rather than inferring either — Insights is the
+      intended home ([`InsightsView.tsx`](frontend/components/InsightsView.tsx),
+      with [`ExecutionQueuePanel.tsx`](frontend/components/ExecutionQueuePanel.tsx)
+      and [`WorkQueueView.tsx`](frontend/components/WorkQueueView.tsx) already
+      holding most of the pieces). The data exists: `GET /api/roadmap/runner`
+      already returns runner presence and queued backlog together.
+- [ ] Give the operator a kill switch that stops every runner on demand, and
+      surface it wherever the work is visible. This is control without a
+      bottleneck: work proceeds unattended by default, and the operator can halt
+      it the moment they see something they do not want, rather than being asked
+      to authorise each step.
+
+**The kill switch needs the durable flag this lane previously refused, and that
+is not a reversal.** A stop file alone cannot hold: the runner clears it as it
+exits and the repeating trigger revives it minutes later, so "stop" would mean
+"stop for a few minutes". The mechanism is the same one rejected above; what
+changed is the reason. Built to let someone manufacture a down runner it was
+scaffolding for a rehearsal. Built to let the operator halt real work they can
+see happening, it is the control that makes unattended execution acceptable.
+Ship it for the second reason, and resuming is then clearing that flag — not a
+separate start path.
+
+**The limit to state plainly rather than design around.** "If the service is
+running, start the runner" cannot be wholly true. The service is LocalSystem and
+outlives any session; the runner needs the operator's session for their
+authenticated Claude Code. So the runner is up whenever they are **logged in**,
+not whenever the service is up. When they are logged out the queue accumulates
+and nothing works it — which is correct behaviour, and the console must say so
+rather than let a growing queue read as progress.
+
+**Not doing, decided 2026-09-13.** Creating a scenario where the runner is down,
+purely to watch how the app reacts to a job that is the app's own
+responsibility, spends time to learn nothing. If a real case arrives where the
+runner is not running and the service fails to start it, the error that case
+produces is the thing to read — a rehearsed one would not have told us what the
+real one will.
+
+---
+
 ## 8. Risks and Guardrails
 
 Full list in [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md);
