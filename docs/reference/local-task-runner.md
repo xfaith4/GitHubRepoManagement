@@ -10,8 +10,14 @@ Because the portal runs as a LocalSystem service, dispatch is split in two:
 
 1. **Portal enqueues** — "Queue Task" in the ROADMAP modal writes the task to
    `output/roadmap-task-queue.jsonl` (status `queued`).
-2. **You run the runner** — `scripts/Invoke-RoadmapTaskRunner.ps1`, in your own
-   session (your `claude` + auth), picks up queued tasks and executes them.
+2. **A runner executes it in your session** — `scripts/Invoke-RoadmapTaskRunner.ps1`,
+   running as you (your `claude` + auth), claims queued tasks and works them.
+
+You are not the one who starts it. A scheduled task starts the runner at logon
+and repeats every five minutes, so one that stopped comes back without you; the
+console can also start, stop and resume runners directly. See
+[Runner lifecycle](#runner-lifecycle) — the commands below remain useful for a
+one-off pass or a dry run, not as the way you keep a runner alive.
 
 With `autoPush` on (the default for local providers) the runner pushes the
 branch after a successful result and verification; the PR is opened by the
@@ -305,24 +311,101 @@ Invoke-RestMethod http://127.0.0.1:7071/api/roadmap/runner
 | `secondsSinceBeat` / `staleAfterSeconds` | Age, and the budget derived from the runner's own `-PollSeconds` (so a slow runner is not called dead). |
 | `queuedClaude` / `queuedCopilot` | Still-`queued` backlog, split by target — this names *which* runner session is missing. |
 | `strandedCount` | Queued work with nothing to pick it up. Zero when a runner is present. |
+| `stoppedByOperator` | You pressed the kill switch and it is still held. A held runner and a dead one produce the same missing heartbeat and mean opposite things. |
+| `stoppedAt` / `stoppedBy` / `stopReason` | Attribution for the hold, so a stopped runner is explained rather than alarming. |
+| `startable` | Whether the scheduled task a **Start** would trigger is registered here. False means the installer was never run, and the console says so instead of offering a button that fails. |
 
 The roadmap dispatch modal reads this while you review the packet and warns
 before you commit to queueing.
 
-### Start it automatically at logon
+The same payload drives **Execution right now**, the panel at the top of the
+Insights tab: runner state, queued total, claimable now, stranded count,
+oldest-queued age, the per-provider backlog and the live runner's identity, with
+the start/stop controls beside them. It shares one hook with the header pill, so
+the two cannot report different things.
+
+## Runner lifecycle
+
+### It starts itself
 
 ```powershell
-# from YOUR normal (non-elevated) PowerShell:
+# once, from YOUR normal (non-elevated) PowerShell:
 pwsh -File scripts/service/Install-RoadmapTaskRunner.ps1
 pwsh -File scripts/service/Install-RoadmapTaskRunner.ps1 -Uninstall
 ```
 
-This registers an **interactive, unelevated** logon task — the mirror image of
+This registers an **interactive, unelevated** task — the mirror image of
 `Install-PortalWatchdog.ps1`, which demands elevation and registers as SYSTEM.
 The installer **refuses** SYSTEM, LOCAL SERVICE and NETWORK SERVICE outright: a
 runner registered as a service account installs fine, shows as running, claims
 queued work, and fails every task for a credential reason that looks nothing like
 the cause.
+
+It triggers at logon **and repeats every `-RepeatMinutes` (default 5)**, so a
+runner that stopped mid-session comes back without you. That repetition is safe
+only because the task sets `-MultipleInstances IgnoreNew`: while a runner is
+alive every repeat is a no-op, so the interval costs nothing normally and acts
+only when nothing is running. The module smoke fails if either half is removed —
+a repetition without that policy would start a second runner against one queue.
+
+### Starting and stopping from the console
+
+| Route | Does |
+| --- | --- |
+| `POST /api/roadmap/runner/start` | Releases any hold and triggers the scheduled task. `202` = requested. |
+| `POST /api/roadmap/runner/stop` | Writes the hold and the stop marker. `202` = accepted. |
+
+The portal **never spawns a runner**. It is a LocalSystem service, and a process
+it spawned would come up as SYSTEM in session 0 holding neither your Claude Code
+login nor the `gh` OAuth credential — it would claim packets and fail every one,
+which is strictly worse than refusing. Instead it asks Task Scheduler to run the
+task you registered above, and the scheduler makes the cross-identity hop.
+
+Because of that, **a start is reported as requested, never as started.** An
+interactive task only runs when you are signed in; logged out, Task Scheduler
+accepts the request and nothing happens. The console watches for the heartbeat
+and, if none arrives, says exactly that instead of spinning. If the start is
+refused outright, it shows the error the attempt actually produced, with the
+command as a fallback — that is the only place the command still appears.
+
+### The kill switch holds
+
+Stopping writes two files, and both are needed:
+
+| File | Lifetime | Purpose |
+| --- | --- | --- |
+| `output/roadmap-task-runner.stop` | Consumed by the runner that honors it | Winds down a runner that is alive **right now**, at its next poll boundary. |
+| `output/roadmap-task-runner.hold.json` | Durable until you resume | Makes the five-minute repeat leave instead of reviving. |
+
+Without the hold, "stop" would mean "stop for about five minutes" — the runner
+clears the marker as it exits and the repeating trigger starts a fresh one. The
+runner reads the hold before anything else and exits, so each repeat becomes a
+two-second no-op. The hold **fails closed**, unlike every other reader here: an
+unreadable record still holds, because a corrupt byte must not resume work you
+deliberately halted.
+
+A runner working when you press stop **finishes its current task first**.
+Abandoning a live `claude` session would leave a claimed item with no owner and a
+half-written branch — expect the wind-down to take up to one task's remaining
+time, not one poll interval.
+
+Resuming is releasing the hold. There is deliberately no separate start path:
+"start" and "resume" differ only in whether a file has to be deleted first, and a
+second entry point would be a second place for the two to drift apart.
+
+`REPO_MGMT_RUNNER_CONTROL_ROOT` relocates both files. The override names the
+root so they always move together, and the api-host smoke sets it — that gate
+starts its host with your **real** workspace root, so without it a test of the
+stop route would stop your live runner and, a hold being durable, keep it
+stopped.
+
+### What runs while you are logged out
+
+Nothing. The service stays up and keeps answering the portal, but the runner
+needs your session, so queued work waits. That is correct behaviour rather than
+a gap — but it means a growing queue must not be read as progress, which is why
+`strandedCount` and the oldest-queued age are on the same panel as the runner
+state.
 
 ## Notes
 
