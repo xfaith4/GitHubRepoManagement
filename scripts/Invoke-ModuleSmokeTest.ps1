@@ -5266,6 +5266,15 @@ $executorOperatorCases = @(
     @{ text = 'Confirm the captain PWA installs and runs on a phone over mobile data'; section = 'Deployment'; why = 'physical device' }
     @{ text = 'Enable automated backups at the database provider and restore one'; section = 'Deployment'; why = 'provider console' }
     @{ text = 'Captains submit in the PWA. The commissioner approves in the console.'; section = '2.5c — One shadow Thursday'; why = 'section names the live drill' }
+    # Found 2026-09-13 by classifying this repo's OWN roadmap: all 70 blocking
+    # items came back agent-executable, including eleven that say "Operator-verify".
+    # The rule ended in \b, so `verif` could never match `verify` — the trailing
+    # boundary needs a non-word character and "y" is a word character. The idiom
+    # the estate actually uses was the one idiom the rule could not see.
+    @{ text = 'Operator-verify the Release 3.1 empty-room gate against the live portal'; section = 'Release 2.9'; why = 'hyphenated Operator-verify' }
+    @{ text = 'Operator verify the reworked dispatch console'; section = 'Release 2.9'; why = 'spaced Operator verify' }
+    @{ text = 'Deploy the Release 2.7 Phase D freeze prevention to the live service'; section = 'Release 2.9'; why = 'acts on the live deployment' }
+    @{ text = 'Run the elevated installer and confirm the service restarts'; section = 'Release 2.9'; why = 'needs elevation an agent cannot obtain' }
 )
 foreach ($case in $executorOperatorCases) {
     $verdict = Get-RoadmapItemExecutor -ItemText $case.text -Section $case.section -ScoringConfig $valueScoringConfig
@@ -5283,7 +5292,12 @@ $executorAgentCases = @(
     'Add a console import panel that previews a roster CSV and applies it',
     'Produce a human-readable report plus JSON',
     'Write the user manual for the console',
-    'Refactor the operator dashboard view'
+    'Refactor the operator dashboard view',
+    # "operator-runner" and "live dashboard" are code nouns in this repo. Widening
+    # the rules to catch "Operator-verify" must not swallow either, or the fix for
+    # a blind spot becomes a way to park real work.
+    'Add operator-runner presence detection to the dispatch route',
+    'Show the runner heartbeat on the live dashboard component'
 )
 foreach ($agentText in $executorAgentCases) {
     $verdict = Get-RoadmapItemExecutor -ItemText $agentText -Section 'Engineering milestones' -ScoringConfig $valueScoringConfig
@@ -5314,6 +5328,38 @@ if (-not (@($operatorScored.valueRationale) -match 'operator-only')) {
     throw 'An operator-only item must carry its reason in valueRationale, where the operator reads it'
 }
 Write-Host ("  executor ok: {0} operator case(s) caught, {1} lookalike(s) spared, tags overrule both ways; operator item keeps the higher score ({2} > {3}) and says why it cannot dispatch" -f @($executorOperatorCases).Count, @($executorAgentCases).Count, $operatorScored.valueScore, $agentScored.valueScore) -ForegroundColor DarkGray
+
+# Tripwire against the real corpus, not a fixture list. The 2026-09-13 blind spot
+# was invisible to hand-written cases precisely because nobody writing them had
+# noticed which words the estate actually uses. This reads this repository's own
+# ROADMAP.md, so the next such idiom fails here rather than silently queueing
+# manual work. Scoped to phrasings that are unambiguous by construction: an item
+# that literally says "operator-verify" is not agent work under any reading.
+Write-Step 'Executor classification — tripwire: the real roadmap corpus, not just hand-picked fixtures'
+$ownRoadmapPath = Join-Path $WorkspaceRoot 'ROADMAP.md'
+if (-not (Test-Path -LiteralPath $ownRoadmapPath -PathType Leaf)) { throw "Own ROADMAP.md not found at: $ownRoadmapPath" }
+$corpusSection = ''
+$corpusMisses = @()
+$corpusChecked = 0
+foreach ($roadmapLine in (Get-Content -LiteralPath $ownRoadmapPath -Encoding UTF8)) {
+    if ($roadmapLine -match '^#{2,3}\s+(.+?)\s*$') { $corpusSection = $Matches[1]; continue }
+    if ($roadmapLine -notmatch '^\s*-\s*\[\s\]\s*(.+)$') { continue }
+    $corpusText = ($Matches[1] -replace '_\(state:.*$', '').Trim()
+    if ([string]::IsNullOrWhiteSpace($corpusText)) { continue }
+    if ($corpusText -notmatch '(?i)operator[-\s]verif|elevated (installer|shell|prompt)|live portal|live service') { continue }
+    $corpusChecked++
+    $corpusVerdict = Get-RoadmapItemExecutor -ItemText $corpusText -Section $corpusSection -ScoringConfig $valueScoringConfig
+    if ([string]$corpusVerdict.executor -ne 'operator') {
+        $corpusMisses += ("{0} :: {1}" -f $corpusSection, $corpusText.Substring(0, [Math]::Min(80, $corpusText.Length)))
+    }
+}
+if ($corpusChecked -eq 0) {
+    throw 'The corpus tripwire matched no items in this repository''s own ROADMAP.md. Either the roadmap no longer contains operator-verification work (update this assertion deliberately) or the extraction above has stopped reading checkbox lines.'
+}
+if ($corpusMisses.Count -gt 0) {
+    throw ("{0} of {1} unambiguously operator-only item(s) in this repository's own ROADMAP.md classified as agent work. They would be queued for dispatch and nothing could run them:`n  {2}" -f $corpusMisses.Count, $corpusChecked, ($corpusMisses -join "`n  "))
+}
+Write-Host ("  corpus tripwire ok: {0} unambiguous operator item(s) in this repo's own ROADMAP.md all classify as operator" -f $corpusChecked) -ForegroundColor DarkGray
 
 Write-Step 'Portfolio assessment — smoke: ready-for-work fires on L4 + pending items'
 $readyRepo = [pscustomobject]@{ name = 'ready-repo'; localPath = $WorkspaceRoot; isArchived = $false; htmlUrl = ''; branch = 'main'; status = 'clean' }
