@@ -144,6 +144,8 @@ $automationModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\automation'
 . (Join-Path $automationModuleRoot 'Automation.DocRefinement.ps1')
 . (Join-Path $automationModuleRoot 'Automation.RoadmapPackaging.ps1')
 . (Join-Path $automationModuleRoot 'Automation.RunnerPresence.ps1')
+# Lane 0.20 -- start and stop, so the console acts instead of naming a command.
+. (Join-Path $automationModuleRoot 'Automation.RunnerControl.ps1')
 # The roadmap-queue contract, loaded here with every other library rather than
 # mid-request. Dot-sourcing runs the target in the CALLER'S scope and assigns
 # its `param()` variables there, so the dispatch route's old in-route
@@ -8484,9 +8486,74 @@ try {
                         defaultTarget = if ($null -ne $runnerProviderConfig -and $null -ne $runnerProviderConfig.dispatch) { [string]$runnerProviderConfig.dispatch.defaultTarget } else { $null }
                         autoEnabled   = if ($null -ne $runnerProviderConfig -and $null -ne $runnerProviderConfig.dispatch) { [bool]$runnerProviderConfig.dispatch.autoEnabled } else { $null }
                     }
+                    # Lane 0.20 -- "absent" and "the operator stopped it" are the
+                    # same heartbeat and completely different situations. Without
+                    # this the kill switch reads on every surface as a fault, and
+                    # the console would urge the operator to undo what they just
+                    # deliberately did.
+                    $runnerHold = Read-RunnerHoldRecord -WorkspaceRoot $WorkspaceRoot
+                    $runnerPayload['stoppedByOperator'] = [bool]$runnerHold.held
+                    $runnerPayload['stoppedAt'] = $runnerHold.since
+                    $runnerPayload['stoppedBy'] = $runnerHold.by
+                    $runnerPayload['stopReason'] = $runnerHold.reason
+                    # Whether a Start control can do anything at all. A console
+                    # that offers a button for a task nobody registered is worse
+                    # than one that says the installer has not been run.
+                    $runnerTask = Get-RunnerTaskState
+                    $runnerPayload['startable'] = [bool]$runnerTask.registered
+                    $runnerPayload['taskName'] = [string]$runnerTask.taskName
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data    = $runnerPayload
+                    }
+                }
+                # ── Lane 0.20 — the action, not the command ─────────────────────
+                # The empty-room gate was operator-verified and stays. What it
+                # hands back changes: a console that answers "paste this into a
+                # shell" has made its operator the mechanism.
+                #
+                # This host is LocalSystem and deliberately spawns nothing. It
+                # triggers the operator-owned scheduled task and lets Task
+                # Scheduler make the cross-identity hop; a runner this process
+                # started would hold no Claude credential and fail everything it
+                # claimed. See Automation.RunnerControl.ps1 for the full note.
+                'POST /api/roadmap/runner/start' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $startResult = Resume-OperatorRunner -WorkspaceRoot $WorkspaceRoot
+                    Write-HostLog ("[TRACE] runner.start correlationId={0} requested={1} holdReleased={2} task={3}" -f `
+                        $correlationId, $startResult.requested, $startResult.holdReleased, $startResult.taskName)
+                    if (-not $startResult.requested) {
+                        Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
+                            success = $false
+                            error   = [string]$startResult.error
+                            data    = $startResult
+                        }
+                        break
+                    }
+                    # 202, not 200. The task was triggered; whether a runner
+                    # actually appears depends on the operator being logged on,
+                    # and only the heartbeat can answer that. The caller polls
+                    # GET /api/roadmap/runner for the truth.
+                    Send-HttpJson -Stream $req.Stream -StatusCode 202 -StatusText 'Accepted' -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        message = 'Runner start requested. It reports in within a poll interval once it is up; if nothing appears, the operator account is not logged on.'
+                        data    = $startResult
+                    }
+                }
+                # The kill switch. Operator control without an operator
+                # bottleneck: work runs unattended by default, and this halts it
+                # the moment they see something they do not want.
+                'POST /api/roadmap/runner/stop' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $stopBody = Parse-JsonBody -Body $req.Body
+                    $stopReason = if ($null -ne $stopBody -and $stopBody.ContainsKey('reason')) { [string]$stopBody.reason } else { '' }
+                    $stopBy = if ($null -ne $stopBody -and $stopBody.ContainsKey('requestedBy')) { [string]$stopBody.requestedBy } else { '' }
+                    $stopResult = Suspend-OperatorRunner -WorkspaceRoot $WorkspaceRoot -RequestedBy $stopBy -Reason $stopReason
+                    Write-HostLog ("[TRACE] runner.stop correlationId={0} held={1} stoppedAt={2}" -f $correlationId, $stopResult.held, $stopResult.stoppedAt)
+                    Send-HttpJson -Stream $req.Stream -StatusCode 202 -StatusText 'Accepted' -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        message = 'Runners held. One already working finishes its current task first, then exits; nothing restarts until Start is pressed.'
+                        data    = $stopResult
                     }
                 }
                 # ── Release 3.8 M2 (H38-12) — what is left with each provider ──

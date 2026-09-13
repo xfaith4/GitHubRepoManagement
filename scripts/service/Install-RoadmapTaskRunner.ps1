@@ -37,6 +37,10 @@ param(
     [switch]$Headless,
     [string]$TaskName = 'RepoMgmtRoadmapTaskRunner',
     [string]$UserId,
+    # How often the logon trigger repeats, so a runner stopped mid-session comes
+    # back on its own. Every repeat is a no-op while one is already alive.
+    [ValidateRange(1, 1440)]
+    [int]$RepeatMinutes = 5,
     [switch]$Uninstall,
     [switch]$LoadFunctionsOnly
 )
@@ -203,6 +207,18 @@ $argString = New-RunnerTaskArgumentString `
 
 $taskAction = New-ScheduledTaskAction -Execute $exe -Argument $argString -WorkingDirectory $WorkspaceRoot
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $UserId
+# Repeat on top of the logon trigger, so a runner that stopped mid-session comes
+# back without the operator doing anything. Measured 2026-09-13: the operator
+# stopped the runner at 17:59 UTC to verify the empty-room gate, and two hours
+# later nothing had restarted it -- the logon trigger cannot fire again until
+# they log out, so the queue had no one to work it and the console could only
+# tell them to open a terminal.
+#
+# This is safe to repeat BECAUSE of `-MultipleInstances IgnoreNew` below: while a
+# runner is alive every repeat is a no-op, so the interval costs nothing in the
+# normal case and only acts when there is genuinely nobody running.
+$runnerRepeat = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes $RepeatMinutes)
+$trigger.Repetition = $runnerRepeat.Repetition
 # Interactive, RunLevel Limited: the runner needs the operator's own logon
 # session and no elevation. Highest would gain nothing and widen the blast
 # radius of a tool that runs agent-authored code.
@@ -214,7 +230,8 @@ $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoi
 $null = Register-ScheduledTask -TaskName $TaskName -Action $taskAction -Trigger $trigger -Principal $principal -Settings $settings -Force `
     -Description 'Roadmap task runner: executes portal-queued Claude Code and GitHub Copilot tasks in the operator logon session, where the credentials live.'
 
-Write-Host ("[OK] Registered scheduled task '{0}' at logon, as {1} (interactive, not elevated)." -f $TaskName, $UserId) -ForegroundColor Green
+Write-Host ("[OK] Registered scheduled task '{0}' at logon and every {1} min, as {2} (interactive, not elevated)." -f $TaskName, $RepeatMinutes, $UserId) -ForegroundColor Green
+Write-Host ("     A repeat while the runner is alive is ignored; it only acts when nothing is running.") -ForegroundColor DarkGray
 Write-Host  "     Runner: $exe $argString" -ForegroundColor DarkGray
 Write-Host  ''
 Write-Host  'Verify:' -ForegroundColor Cyan

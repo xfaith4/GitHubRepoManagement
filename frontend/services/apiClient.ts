@@ -1848,6 +1848,57 @@ export async function setProviderOptOut(provider: ProviderToken, optOut: boolean
   return { provider, ...(data?.data?.availability ?? {}) } as ProviderAvailability;
 }
 
+/**
+ * Lane 0.20 — ask the host to bring a runner up, and resume if one was held.
+ *
+ * There is one start path on purpose: the host releases any operator hold and
+ * triggers the operator-owned scheduled task in the same call, because
+ * "resume" and "start" differ only in whether a file has to be deleted first.
+ *
+ * Resolves on a 202 meaning REQUESTED, never "a runner is now up" — an
+ * Interactive task cannot run while the operator is logged out, and the
+ * heartbeat is the only thing that can say a runner exists. Callers poll
+ * getRunnerPresence and report what they actually observe.
+ *
+ * Unlike getRunnerPresence this does NOT swallow failures: a start that was
+ * refused must surface the error Task Scheduler produced, which is the whole
+ * reason the console does this instead of dictating a command.
+ */
+export async function startRunner(): Promise<RunnerStartResult> {
+  const data = await postJson<{ data?: RunnerStartResult }>('/roadmap/runner/start', {});
+  return data?.data ?? { requested: true, holdReleased: false, taskTriggered: false };
+}
+
+/**
+ * The kill switch. Holds every runner until the operator resumes.
+ *
+ * Returns as soon as the hold is written. A runner working right now finishes
+ * its current task before exiting — abandoning a live session mid-task would
+ * leave a claimed queue item with no owner — so the caller watches presence to
+ * see it wind down rather than treating this as already-stopped.
+ */
+export async function stopRunner(reason?: string): Promise<RunnerStopResult> {
+  const data = await postJson<{ data?: RunnerStopResult }>('/roadmap/runner/stop', {
+    reason: reason ?? '',
+  });
+  return data?.data ?? { held: true, stoppedAt: null };
+}
+
+export interface RunnerStartResult {
+  requested: boolean;
+  holdReleased: boolean;
+  taskTriggered: boolean;
+  taskName?: string;
+  error?: string | null;
+}
+
+export interface RunnerStopResult {
+  held: boolean;
+  stoppedAt: string | null;
+  stoppedBy?: string;
+  reason?: string;
+}
+
 export async function getRunnerPresence(): Promise<RunnerPresencePayload | null> {
   try {
     const data = await fetchJson<any>(`${API_BASE_URL}/roadmap/runner`);

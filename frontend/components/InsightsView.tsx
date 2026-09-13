@@ -12,6 +12,7 @@ import ProvenanceNotice from './ProvenanceNotice';
 import PortfolioMissionSection, { type PortfolioMission } from './PortfolioMissionSection';
 import type { PortfolioSnapshot } from '../types';
 import ChangeHistoryPanel from './ChangeHistoryPanel';
+import RunnerControlPanel from './RunnerControlPanel';
 import TrendSparkline from './TrendSparkline';
 import { SpinnerIcon, IssuesIcon, ProjectsIcon, BranchIcon, HealthIcon } from './icons';
 import {
@@ -123,8 +124,15 @@ const InsightsView: React.FC<InsightsViewProps> = ({
 
   return (
     <div data-testid="insights-view" className="px-4 py-4">
-      <div className="rounded-lg border border-gray-700 bg-gray-900/40 px-4 py-3 text-sm text-gray-300">
-        Insights is read-only analytics — portfolio trends, throughput, and documentation health. The Repository Grid tab stays the primary operational workflow.
+      {/* Lane 0.20 — the single pane, first on the tab. The operator asked to
+          watch the queue and the work in flight from one place instead of
+          joining the header pill to the Work Queue tab in their head. It leads
+          because "is anything actually running" is the question every number
+          below it is only meaningful in the light of. */}
+      <RunnerControlPanel />
+
+      <div className="mt-4 rounded-lg border border-gray-700 bg-gray-900/40 px-4 py-3 text-sm text-gray-300">
+        Below this, Insights is read-only analytics — portfolio trends, throughput, and documentation health. The Repository Grid tab stays the primary operational workflow.
       </div>
 
       {/* Portfolio Mission, Documentation Health, and Portfolio Analytics all

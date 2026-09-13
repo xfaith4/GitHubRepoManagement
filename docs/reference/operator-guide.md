@@ -66,10 +66,19 @@ same preview-first + quota-guard flow as desktop.
 
 ## Local task runner (Claude Code)
 
-"Queue Task" in the ROADMAP modal enqueues the selected roadmap item; run
-`scripts/Invoke-RoadmapTaskRunner.ps1` **as yourself** to have Claude Code work it
-on the local repo and stop at `awaiting-review` before anything is pushed. Full
-flow: [`local-task-runner.md`](local-task-runner.md).
+"Queue Task" in the ROADMAP modal enqueues the selected roadmap item; a runner
+executes it **in your session** — it needs your Claude Code login, which the
+LocalSystem portal service does not have — and stops at `awaiting-review` before
+anything is pushed.
+
+You do not start it. It starts at logon and the scheduled task repeats every
+five minutes, so a runner that stopped comes back on its own; the console's
+**Start runner** button only makes that immediate. The **Execution right now**
+panel at the top of the Insights tab is the single pane for this: runner state,
+what is queued, what is stranded, and a **Stop runners** kill switch that holds
+until you resume. A runner working when you press stop finishes its current task
+first, because abandoning a live session would leave a claimed item with no
+owner. Full flow: [`local-task-runner.md`](local-task-runner.md).
 
 ## Agent integration (`/api/v1/agent/*`)
 

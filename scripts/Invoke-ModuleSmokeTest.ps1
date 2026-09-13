@@ -4223,6 +4223,21 @@ $valueScoringConfig = Get-PortfolioValueScoringConfig -ConfigPath $portfolioValu
 if ($null -eq $structStds) { throw 'Get-RepoStructureStandards returned null for an existing standards file' }
 if ($null -eq $structStds.common) { throw 'Standards file is missing the common section' }
 if ($null -eq $valueScoringConfig) { throw 'Get-PortfolioValueScoringConfig returned null for an existing config file' }
+# The loader's no-argument form must reach the committed model, not the stub.
+# Every assertion below passes an explicit config, so none of them would notice
+# the parameterless call silently degrading -- and that degradation is not
+# cosmetic: the stub carries no executorClassification, which makes
+# Get-RoadmapItemExecutor answer 'agent' for EVERY item. Measured 2026-09-13
+# over this repository's own ROADMAP: 83 of 83 agent-executable without a path,
+# 74 of 83 with one. The classifier's whole purpose, off, and silent.
+$valueScoringDefault = Get-PortfolioValueScoringConfig
+if ($null -eq $valueScoringDefault -or -not ($valueScoringDefault.PSObject.Properties.Name -contains 'executorClassification')) {
+    throw 'Get-PortfolioValueScoringConfig with no -ConfigPath did not resolve the committed model; a caller that omits the path would classify every roadmap item as agent-executable.'
+}
+$valueScoringDefaultVerdict = Get-RoadmapItemExecutor -ItemText 'Operator-verify the empty-room gate against the live portal'
+if ([string]$valueScoringDefaultVerdict.executor -ne 'operator') {
+    throw ("Get-RoadmapItemExecutor with no -ScoringConfig called plainly operator work '{0}'; the loader default is not reaching the classification rules." -f $valueScoringDefaultVerdict.executor)
+}
 # repo-structure-standards.json renamed 'version' to 'schemaVersion' in the v1 schema;
 # accept either so the smoke works against old and new standards files.
 $structStdsVersion = if ($structStds.PSObject.Properties.Name -contains 'schemaVersion') { [string]$structStds.schemaVersion } elseif ($structStds.PSObject.Properties.Name -contains 'version') { [string]$structStds.version } else { '(none)' }
@@ -8397,7 +8412,23 @@ Write-Step 'Runner logon-task installer — smoke: refuses service accounts (Rel
     if ($installerSource -notmatch 'LogonType Interactive') { throw 'The runner task must register with LogonType Interactive' }
     if ($installerSource -notmatch 'RunLevel Limited') { throw 'The runner task must register unelevated (RunLevel Limited)' }
     if ($installerSource -match "UserId 'NT AUTHORITY\\SYSTEM'") { throw 'The runner task must never register as SYSTEM' }
-    Write-Host '  runner installer ok: 4 service accounts refused, paths quoted, 4 action cases, interactive + unelevated principal' -ForegroundColor DarkGray
+
+    # A logon trigger alone cannot recover a runner stopped mid-session: it
+    # cannot fire again until the operator logs out. Measured 2026-09-13 -- the
+    # runner was stopped at 17:59 UTC and was still down two hours later, so the
+    # queue had nobody to work it and the console could only print a command to
+    # paste. The repetition is what makes keeping the runner alive the service's
+    # job rather than the operator's.
+    if ($installerSource -notmatch '\$trigger\.Repetition\s*=') {
+        throw 'The runner task registers a logon trigger with no repetition. A runner stopped mid-session would stay down until the operator logs out, which makes keeping it alive their job.'
+    }
+    # The repetition is only safe because a repeat while one is already running
+    # is ignored. Without this policy the interval would spawn duplicate runners
+    # competing for the same queue.
+    if ($installerSource -notmatch 'MultipleInstances IgnoreNew') {
+        throw 'The runner task repeats but does not set -MultipleInstances IgnoreNew; the interval would start a second runner against the same queue.'
+    }
+    Write-Host '  runner installer ok: 4 service accounts refused, paths quoted, 4 action cases, interactive + unelevated principal, logon trigger repeats and duplicate starts are ignored' -ForegroundColor DarkGray
 }
 
 # ── Release 2.7 Phase C — scheduled roadmap-item packaging ───────────────────
@@ -11980,6 +12011,112 @@ Write-Step 'Runner stop mechanism - Release 2.9: a detached runner can be stoppe
     }
     finally {
         Remove-Item -Recurse -Force $stopFixture -ErrorAction SilentlyContinue
+    }
+}
+
+Write-Step 'Runner hold - Lane 0.20: the kill switch outlives the runner it stopped'
+& {
+    # The stop marker cannot hold anything down. A runner consumes it on the way
+    # out, and the logon task repeats every five minutes by design -- so a stop
+    # built on the marker alone means "stop for about five minutes". The hold
+    # record is the durable half, and this proves the difference the only way
+    # that counts: against a real detached runner.
+    #
+    # This is NOT scaffolding for reproducing a down runner -- that was refused
+    # on 2026-09-13 and stays refused. It is the operator's control over work
+    # they can see happening, which is what makes unattended execution
+    # acceptable at all.
+    $holdControlModule = Join-Path $WorkspaceRoot 'backend\modules\automation\Automation.RunnerControl.ps1'
+    $holdRunnerScript = Join-Path $WorkspaceRoot 'scripts\Invoke-RoadmapTaskRunner.ps1'
+    foreach ($holdFile in @($holdControlModule, $holdRunnerScript)) {
+        if (-not (Test-Path -LiteralPath $holdFile)) { throw "Missing $holdFile" }
+    }
+    . $holdControlModule
+
+    $holdFixture = Join-Path ([System.IO.Path]::GetTempPath()) ('smoke-runnerhold-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    $null = New-Item -ItemType Directory -Path (Join-Path $holdFixture 'output\roadmap-task-history\runs') -Force
+    try {
+        $holdQueue = Join-Path $holdFixture 'output\roadmap-task-queue.jsonl'
+        Set-Content -LiteralPath $holdQueue -Value '' -Encoding UTF8
+        $holdPath = Get-RunnerHoldFilePath -WorkspaceRoot $holdFixture
+        $holdMarker = Get-RunnerStopMarkerPath -WorkspaceRoot $holdFixture
+
+        # --- The console and the runner must name the SAME file. ----------
+        # The path is written in two places (the module for the host, the script
+        # for the runner) because the runner is standalone and dot-sources no
+        # backend module. If they ever disagree the console writes a hold nobody
+        # reads, the kill switch silently does nothing, and the symptom is a
+        # runner that "ignores" stop.
+        . $holdRunnerScript -LoadFunctionsOnly
+        $holdPathFromRunner = Get-RunnerHoldFilePath -WorkspaceRoot $holdFixture
+        if ($holdPathFromRunner -ne $holdPath) {
+            throw ("The runner and the control module disagree about the hold file: runner '{0}' vs module '{1}'. The kill switch would write a file nothing reads." -f $holdPathFromRunner, $holdPath)
+        }
+
+        # --- Stopping writes both halves. ---------------------------------
+        $holdResult = Suspend-OperatorRunner -WorkspaceRoot $holdFixture -RequestedBy 'smoke' -Reason 'module smoke' -Confirm:$false
+        if (-not $holdResult.held) { throw 'Suspend-OperatorRunner reported it did not hold.' }
+        if (-not (Test-Path -LiteralPath $holdPath)) { throw 'No hold record was written; the next scheduled start would revive the runner within minutes.' }
+        if (-not (Test-Path -LiteralPath $holdMarker)) { throw 'No stop marker was written; a runner alive right now would keep claiming work.' }
+        $holdRead = Read-RunnerHoldRecord -WorkspaceRoot $holdFixture
+        if (-not $holdRead.held) { throw 'Read-RunnerHoldRecord does not see the hold it just wrote.' }
+        if ([string]$holdRead.by -ne 'smoke') { throw "The hold record lost its attribution; got '$($holdRead.by)'." }
+
+        # --- A held runner leaves instead of working. ---------------------
+        # The behavioural claim. A repeating scheduled task starts this process
+        # every five minutes; with a hold in place each of those must be a
+        # no-op, not a revival.
+        $holdPsExe = (Get-Process -Id $PID).Path
+        $holdProcArgs = @{
+            FilePath     = $holdPsExe
+            ArgumentList = @(
+                '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $holdRunnerScript,
+                '-WorkspaceRoot', $holdFixture, '-QueuePath', $holdQueue,
+                '-StopFilePath', $holdMarker, '-PollSeconds', '2', '-DryRun'
+            )
+            PassThru     = $true
+        }
+        if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { $holdProcArgs.WindowStyle = 'Hidden' }
+        $holdProc = Start-Process @holdProcArgs
+        if (-not $holdProc.WaitForExit(60000)) {
+            try { $holdProc.Kill() } catch { $null = $_ }
+            throw 'A held runner kept running. The hold does not stop a scheduled start, so the kill switch lasts only until the next repeat.'
+        }
+        if ($holdProc.ExitCode -ne 0) { throw "A held runner must exit 0 (operator action, not failure); got $($holdProc.ExitCode)." }
+
+        # --- The hold is NOT consumed. ------------------------------------
+        # This is the whole difference from the stop marker, which IS consumed.
+        if (-not (Test-Path -LiteralPath $holdPath)) {
+            throw 'The held runner consumed the hold record on exit. That is the stop marker''s behaviour, and it would let the next repeat revive the runner the operator stopped.'
+        }
+
+        # --- An unreadable hold still holds. ------------------------------
+        # Fails closed, unlike every other reader here. Presence defaults an
+        # unreadable heartbeat to "absent" because a false "ready" is the
+        # dangerous direction; here the dangerous direction is the opposite -- a
+        # corrupt byte must not quietly resume work the operator halted.
+        Set-Content -LiteralPath $holdPath -Value '{ this is not json' -Encoding UTF8
+        $holdCorrupt = Read-RunnerHoldRecord -WorkspaceRoot $holdFixture
+        if (-not $holdCorrupt.held) { throw 'A corrupt hold record read as "not held". A damaged file must never resume work the operator stopped.' }
+        if ($holdCorrupt.readable) { throw 'A corrupt hold record reported itself readable.' }
+
+        # --- Resuming releases the hold even when it cannot start a task. --
+        # The operator must never be left holding a flag they cannot clear. A
+        # missing scheduled task is a real state (the installer was never run),
+        # and the refusal has to name the installer rather than a generic error.
+        $holdResume = Resume-OperatorRunner -WorkspaceRoot $holdFixture -TaskName ('SmokeNoSuchRunnerTask-' + [guid]::NewGuid().ToString('n').Substring(0, 8)) -Confirm:$false
+        if ($holdResume.requested) { throw 'Resume-OperatorRunner claimed it requested a start for a task that does not exist.' }
+        if (-not $holdResume.holdReleased) { throw 'Resume-OperatorRunner left the hold in place when the task was missing; the operator could not undo their own stop from the console.' }
+        if (Test-Path -LiteralPath $holdPath) { throw 'The hold record survived a resume.' }
+        if (Test-Path -LiteralPath $holdMarker) { throw 'The stop marker survived a resume; it would stop the next runner at its first poll.' }
+        if ([string]$holdResume.error -notmatch 'Install-RoadmapTaskRunner\.ps1') {
+            throw ("A missing runner task must name the installer that fixes it; got '{0}'." -f $holdResume.error)
+        }
+
+        Write-Host '  runner hold ok: console and runner agree on the path; a real held runner exited 0 without claiming and did NOT consume the hold; a corrupt record still holds; resume clears both files and names the installer when no task exists' -ForegroundColor DarkGray
+    }
+    finally {
+        Remove-Item -Recurse -Force $holdFixture -ErrorAction SilentlyContinue
     }
 }
 

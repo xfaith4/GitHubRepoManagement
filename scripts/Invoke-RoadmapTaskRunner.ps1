@@ -352,6 +352,54 @@ function Test-RunnerStopRequested {
     return (Test-Path -LiteralPath $StopFilePath)
 }
 
+function Get-RunnerHoldFilePath {
+    <# Must resolve to the SAME file the console writes, including the
+       REPO_MGMT_RUNNER_CONTROL_ROOT override -- see the note in
+       Automation.RunnerControl.ps1. If the two ever disagree, the kill switch
+       writes a hold nothing reads and appears to do nothing at all. The module
+       smoke compares the two resolvers for exactly that reason. #>
+    param([Parameter(Mandatory)][string]$WorkspaceRoot)
+    $controlRoot = [Environment]::GetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT')
+    if ([string]::IsNullOrWhiteSpace($controlRoot)) { $controlRoot = Join-Path $WorkspaceRoot 'output' }
+    return (Join-Path $controlRoot 'roadmap-task-runner.hold.json')
+}
+
+function Test-RunnerHoldRequested {
+    <#
+    .SYNOPSIS
+        Has the operator pressed the kill switch and meant it to stick?
+    .DESCRIPTION
+        The difference from the stop marker is lifetime, and it is the whole
+        point. A stopped runner consumes the marker on its way out, and the
+        logon task's five-minute repetition then starts a fresh one -- so the
+        marker alone makes "stop" mean "stop for about five minutes". This file
+        is never consumed, so the next scheduled start reads it and leaves
+        immediately.
+
+        Existence IS the hold; contents are attribution only. A corrupt byte
+        must not quietly resume work the operator deliberately halted.
+    #>
+    param([Parameter(Mandatory)][string]$HoldFilePath)
+    if ([string]::IsNullOrWhiteSpace($HoldFilePath)) { return $false }
+    return (Test-Path -LiteralPath $HoldFilePath)
+}
+
+function Get-RunnerHoldDescription {
+    <# Who stopped it and why, for the exit message. Best-effort: an unreadable
+       record still holds, it just cannot say who is responsible. #>
+    param([Parameter(Mandatory)][string]$HoldFilePath)
+    try {
+        $raw = Get-Content -LiteralPath $HoldFilePath -Raw -Encoding UTF8
+        if ([string]::IsNullOrWhiteSpace($raw)) { return 'no detail recorded' }
+        $record = ConvertFrom-Json -InputObject $raw
+        $names = @($record.PSObject.Properties.Name)
+        $who = if ($names -contains 'stoppedBy') { [string]$record.stoppedBy } else { 'operator' }
+        $when = if ($names -contains 'stoppedAt') { [string]$record.stoppedAt } else { 'unknown time' }
+        return ('{0} at {1}' -f $who, $when)
+    }
+    catch { return 'unreadable hold record' }
+}
+
 function Clear-RunnerStopFile {
     <#
     .SYNOPSIS
@@ -1816,6 +1864,17 @@ Write-Host ("Roadmap task runner — queue: {0}" -f $QueuePath) -ForegroundColor
 Write-Host ("  mode: {0}{1}  permission: {2}" -f $runnerMode, $(if ($DryRun) { ' (dry-run)' } else { '' }), $PermissionMode) -ForegroundColor DarkGray
 Write-Host ("  heartbeat: {0}" -f $heartbeatPath) -ForegroundColor DarkGray
 Write-Host ("  portal: {0}  (reconcile tick every 4th poll)" -f $script:PortalBaseUrl) -ForegroundColor DarkGray
+# The kill switch, read BEFORE anything else and honored by leaving. The logon
+# task repeats every five minutes precisely so a stopped runner comes back; that
+# is the right default and exactly what an operator who pressed stop does not
+# want. Exiting here makes each of those repeats a two-second no-op instead of a
+# revival, and resuming is just deleting this file -- no privilege, no terminal.
+$HoldFilePath = Get-RunnerHoldFilePath -WorkspaceRoot $WorkspaceRoot
+if (Test-RunnerHoldRequested -HoldFilePath $HoldFilePath) {
+    Write-Host ("Runner held by the operator ({0}). Exiting without claiming anything." -f (Get-RunnerHoldDescription -HoldFilePath $HoldFilePath)) -ForegroundColor Yellow
+    Write-Host ("  release with: Remove-Item '{0}'   (or press Start in the console)" -f $HoldFilePath) -ForegroundColor DarkGray
+    exit 0
+}
 # A marker left by a previous run would stop this one at its first poll.
 Clear-RunnerStopFile -StopFilePath $StopFilePath
 Write-Host ("  stop with: New-Item -ItemType File '{0}'  (honored at the next poll boundary)" -f $StopFilePath) -ForegroundColor DarkGray
@@ -1846,6 +1905,15 @@ if ((Get-Command -Name 'Repair-OrphanedRunSummary' -ErrorAction SilentlyContinue
 
 $reconcileIteration = 0
 do {
+    # Held wins over the marker and is checked alongside it, so "held" means one
+    # thing everywhere: no runner, however the hold arrived. The marker is
+    # consumed on the way out; the hold is not, or the next scheduled start
+    # would undo it.
+    if (Test-RunnerHoldRequested -HoldFilePath $HoldFilePath) {
+        Write-Host ("Runner held by the operator ({0}); exiting before claiming anything." -f (Get-RunnerHoldDescription -HoldFilePath $HoldFilePath)) -ForegroundColor Yellow
+        Clear-RunnerStopFile -StopFilePath $StopFilePath
+        break
+    }
     if (Test-RunnerStopRequested -StopFilePath $StopFilePath) {
         Write-Host ("Stop requested ({0}); exiting before claiming anything." -f $StopFilePath) -ForegroundColor Yellow
         Clear-RunnerStopFile -StopFilePath $StopFilePath

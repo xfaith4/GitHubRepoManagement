@@ -2,6 +2,47 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-13 — The console runs the runner, and the operator gets a kill switch
+
+### Added
+
+- **Start and stop runners from the portal.**
+  `POST /api/roadmap/runner/start` and `POST /api/roadmap/runner/stop` replace
+  the terminal command the console used to hand over when no runner was alive.
+  The portal is a LocalSystem service and still never spawns a runner — one it
+  spawned would hold neither your Claude Code login nor the `gh` OAuth
+  credential, and would fail every task it claimed. It triggers the
+  operator-owned scheduled task instead and lets Task Scheduler make the
+  cross-identity hop. A start is reported as **requested, never started**: an
+  interactive task cannot run while you are logged out, so only the heartbeat
+  may claim a runner exists.
+- **A kill switch that holds.** Stopping writes a durable
+  `output/roadmap-task-runner.hold.json` alongside the existing stop marker.
+  The marker alone could not hold anything — the runner consumes it on the way
+  out and the repeating logon task revives one minutes later — so the hold is
+  what makes "stop" mean stop. It fails closed: an unreadable record still
+  holds, because a corrupt byte must not resume work you deliberately halted.
+  A runner mid-task finishes that task before exiting.
+- **Execution right now**, a single pane at the top of the Insights tab:
+  runner state, queued total, claimable now, stranded count, oldest-queued age,
+  per-provider backlog and the live runner's identity, with the controls beside
+  them. It shares one hook with the header pill so the two cannot disagree.
+- `REPO_MGMT_RUNNER_CONTROL_ROOT` relocates both control files together. The
+  api-host smoke sets it: that gate starts its host with the operator's real
+  workspace root, so without it a test of the stop route would have stopped
+  their live runner and — a hold being durable — kept it stopped.
+
+### Changed
+
+- **The runner task recovers on its own.** `Install-RoadmapTaskRunner.ps1`
+  gained `-RepeatMinutes` (default 5) and sets it on the logon trigger, so a
+  runner stopped mid-session comes back without the operator. Safe only because
+  `-MultipleInstances IgnoreNew` makes a repeat a no-op while one is alive; the
+  module smoke fails if either half is removed.
+- The empty-room dispatch gate is unchanged and still refuses to queue work
+  nothing will pick up. Only the remedy it names changed — it points at the
+  control instead of a command to paste.
+
 ## 2026-09-07 — Provider routing gets its weights, and four questions get a home
 
 ### Changed

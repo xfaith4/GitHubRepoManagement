@@ -61,6 +61,16 @@ backend/modules/output/**
 # evidence/verified/ and is tracked, reviewed in the PR, and permanent.
 !/evidence/verified/**
 
+# Trial records are the same kind of thing, and were missed (2026-09-13).
+# ROADMAP Release 3.7 links evidence/trials/release-3.7/README.md and names
+# cohort.json as where the selection is recorded — and both were ignored, so
+# neither existed in any clone or on CI. The release whose acceptance criterion
+# is "recorded per repository in evidence/" could not have shipped a single one
+# of those records with the PR that earned it. cohort.json is curated judgement
+# (a selection reason per repository, written by hand), not regenerable run
+# spill, which is the line this file already draws one comment above.
+!/evidence/trials/**
+
 # Agent worklogs at the repository root. The 2026-07-15 cleanup archived these
 # to docs/history/worklogs/ and they re-accrued within three weeks, so the
 # convention is enforced rather than restated: keep worklogs under

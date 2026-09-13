@@ -768,7 +768,7 @@ api-host steps, and 47 frontend tests across `foundationConclusion`,
       per task needs an operator-side timer the product does not have;
       recommendations accepted vs rejected needs an accept/reject ledger the
       packaging approve/reject routes do not write. Both render with their
-      reason rather than a zero — Release 3.7's ten repositories decide
+      reason rather than a zero — Release 3.7's nine repositories decide
       whether either earns a capture.
 - [ ] **[non-blocker]** Only `archived` has a kind-detection rule. `library`,
       `service`, `script-collection`, `minimal` and `externally-managed`
@@ -803,27 +803,70 @@ recorded; the result decides the full 80+ rollout.
 
 - "Is this product making the portfolio better, faster?" is answered with
   recorded numbers, not impressions; false positives and bad recommendations
-  are found on ten repositories before they are found on eighty.
+  are found on nine repositories before they are found on eighty.
 
 #### Engineering milestones
 
-- [ ] **Select the ten by rule** — one each: mature active application, weak
-      active application, small utility, experiment, abandoned project,
-      repository without a roadmap, library, externally managed project,
-      nearly finished repository, messy repository — recording why each was
-      chosen. Nine provisional candidates and an explicit unfilled external-management
-      slot are recorded in `evidence/trials/release-3.7/cohort.json`. **D-006's
-      ruling (2026-09-06) releases the selection:** external management is owner
-      intent and may not be inferred from age, activity, remote ownership or
-      documentation maturity, so a category with **no natural member is recorded
-      as unrepresented** rather than filled by a substitute. An empty category
-      is a valid trial outcome. Selection completes with nine named
-      repositories and the tenth category recorded as having no cohort member.
-      _(state: scaffolded)_
-- [ ] **Run the conclusion model over the ten**, recording per repository:
-      what it is, whether it still matters, its state, what limits its value,
-      the highest-value next action, and whether the product can execute or
-      facilitate it. _(state: planned)_
+**Selection closed 2026-09-13 — recorded as prose, because a `[x]` in this file
+is a mistake, not a record.** Nine repositories are selected by rule, one per
+category, each with its reason; `externally-managed-project` is recorded as
+**unrepresented**, which D-006 ruled a valid trial outcome rather than a gap to
+fill with a substitute chosen for conformance. Selection is not owner intent:
+the abandoned and externally-managed categories carry `ownerIntentConfirmed:
+false`, because assigning a repository to a category is not a claim about what
+its owner intended.
+
+Nothing engineering-side had been blocking it. D-006's ruling released the
+selection on 2026-09-06 and stated its own default — nine named plus one
+unrepresented — but `cohort.json` still carried the 2026-09-05 state, with the
+tenth slot reading `operator-input-required`. The artifact asked for a decision
+that had already been made, and the milestone sat at `scaffolded` for a week on
+nothing.
+
+**The trial record was not in the repository.** `/evidence/**` was ignored
+except `evidence/verified/**`, so both files this release links —
+`evidence/trials/release-3.7/README.md` and `cohort.json` — existed only on one
+machine. The acceptance criteria below require results "recorded per repository
+in `evidence/`", and not one of them could have shipped with the PR that earned
+it. `.gitignore` now excepts `/evidence/trials/**` on the same grounds the file
+already states for curated proof: a selection reason written by hand is
+judgement, not regenerable run spill.
+
+**Still open:**
+
+**Conclusions recorded 2026-09-13 — prose, not a `[x]`.** All six fields are in
+`cohort.json` per repository (kind and its basis, the conclusion and its reason,
+the limiting foundation with evidence, the next action, and whether the product
+can perform it), drawn by `foundation-conclusions v1` over the index generated
+`2026-09-13T21:07:51Z` with that index's SHA-256 recorded beside each result.
+Zero conclusion-contract violations. Eight of nine reach **strengthen**, one is
+**appropriate-as-is**, one **insufficiently-understood**. Eight name an action
+the product performs itself. **Not operator-verified** — the entry gate still
+wants eyes on the live surfaces, so this is what the product concluded, not a
+confirmed finding, and no improvement is claimed.
+
+**Three false positives the first pass exposed, for milestone 4 to fix.** This
+is the trial working: finding them on nine repositories rather than eighty.
+
+1. **Kind detection resolves only `archived`.** Eight of nine were concluded
+   with the basis "no kind signal in the index; every scored domain applies",
+   so per-kind applicability never engaged and a library was judged by an
+   application's yardstick. Already recorded as a 3.6 out-of-scope gap; what is
+   new is that it undercuts a cohort selected **by kind**.
+2. **Seven of nine share one limiting pair** — `planning` weak plus `structure`
+   weak — across a finished LED firmware project, an API client library and an
+   orchestration experiment. A ranking that answers the same for most of the
+   portfolio cannot say what to do first.
+3. **Every actionable repository gets the same next action**,
+   `POST /api/roadmap/repair/preview`. Defensible as a default when planning is
+   weakest, but as the universal recommendation it means the model is currently
+   a planning detector rather than a portfolio advisor.
+
+Deliberately recorded and not fixed: adjusting the model now, before the
+improvements are executed and measured, would change it mid-measurement.
+
+**Still open:**
+
 - [ ] **Execute at least five improvements** through preview → approve →
       execute → validate, recording operator minutes, agent first-pass
       result, and whether the repository is materially stronger afterwards —
@@ -832,14 +875,18 @@ recorded; the result decides the full 80+ rollout.
       independently checked acceptance criterion and before/after evidence;
       merge evidence alone is insufficient. _(state: planned)_
 - [ ] **Adjust and decide** — fix the false positives and bad recommendations
-      the ten expose; record the go/no-go for the full rollout and the
+      the nine expose; record the go/no-go for the full rollout and the
       leverage numbers behind it. _(state: planned)_
 
 #### Acceptance criteria
 
-- Ten repositories selected by the rule, none for conformance, each with a
-  recorded conclusion and reason.
-- At least five materially improved through the product's own workflow, with
+- All ten categories ruled on by the rule, none selected for conformance: nine
+  repositories selected with a recorded reason, and `externally-managed-project`
+  recorded as unrepresented (D-006 — an empty category is a valid outcome). Each
+  selected repository carries a recorded conclusion and reason. Closed
+  2026-09-13; a criterion asking for ten repositories could no longer be met by
+  a cohort the ruling settled at nine.
+- At least five of the nine materially improved through the product's own workflow, with
   operator minutes, outcome quality, and agent first-pass result recorded per
   repository in `evidence/`; a recorded rollout decision with the numbers.
 
@@ -850,7 +897,7 @@ recorded; the result decides the full 80+ rollout.
 **Validation plan:** conclusions, actions, and outcomes recorded in `evidence/`
 via [`Add-OperatorVerification.ps1`](scripts/Add-OperatorVerification.ps1) and
 the agent-run ledgers; module smoke and api-host smoke stay green; CI is the
-arbiter for any product fix the ten expose.
+arbiter for any product fix the nine expose.
 
 **Risks:** choosing repositories that flatter the product (the selection rule
 prevents it); counting a repair as an improvement when the repository is not
@@ -1480,7 +1527,7 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
       credible estimate from signals that do exist (pending item count, item
       text, repo kind) or render the column as explicitly unmeasured — the
       Release 3.6 leverage panel already sets that precedent with its two
-      `available: false` metrics. Decide which, with the ten repositories of
+      `available: false` metrics. Decide which, with the nine repositories of
       Release 3.7.
 
 ---
@@ -1957,6 +2004,128 @@ four checks on content that was present.
       portfolio lane now produces `operatorOnlyItemCount` per repo but nothing
       reads it yet, so parked work is correctly out of the dispatch queue and
       not yet visible anywhere else.
+
+---
+
+### Lane 0.20 — The console tells the operator to open a terminal (operator evaluation 2026-09-13)
+
+Found while the operator verified the Release 3.1 empty-room gate. The gate
+works: previewing a dispatch with no runner alive refuses, says why, and names
+the remedy. The remedy is the problem — it is a command to paste into a shell:
+
+> Runner stalled: nothing would pick this up. Start the operator runner first —
+> `pwsh -File "F:\Development\GitHubRepoManagement\scripts\Invoke-RoadmapTaskRunner.ps1"`.
+
+A console that hands its operator a terminal command has made them the
+mechanism. Operator intent, 2026-09-13: **the app should start the runner
+itself when one is not running**, not ask.
+
+**The constraint that makes this non-trivial, stated once so it is not
+rediscovered.** The runner must execute as the OPERATOR, because it launches
+their authenticated Claude Code. The portal is a LocalSystem service. A runner
+spawned by the service would come up as SYSTEM with no Claude credentials,
+claim packets and fail them — strictly worse than refusing, and the same
+boundary that made this product enqueue rather than dispatch at all. So "start
+it from the service" is not a missing button; it is a cross-identity problem.
+
+**Auto-start is not auto-approve.** The runner only claims what approval has
+already queued, so starting it unattended does not let unsanctioned work begin.
+That separation must survive this lane.
+
+**Two thirds of this lane was closed the day it was written; recorded here as
+prose because a `[x]` in this file is a mistake, not a record.**
+
+The logon-triggered task **already existed** and this lane was wrong to propose
+building it: [`Install-RoadmapTaskRunner.ps1`](scripts/service/Install-RoadmapTaskRunner.ps1)
+registers `RepoMgmtRoadmapTaskRunner` as `xfaith` / `LogonType=Interactive` /
+`RunLevel=Limited`, unelevated, and it was present and enabled on THESHIRE with
+a clean exit from 2026-09-11. The logon start was never the gap.
+
+The gap was recovery, and it is now shipped. The operator stopped the runner at
+17:59 UTC to verify the empty-room gate; two hours later nothing had restarted
+it, because a logon trigger cannot fire again until they log out. So the queue
+had nobody to work it and the console's only advice was a command to paste.
+`-RepeatMinutes` (default 5) now sets `$trigger.Repetition` on that logon
+trigger. It is safe **only** because `-MultipleInstances IgnoreNew` makes a
+repeat a no-op while a runner is alive, and the module smoke fails if either
+half is removed — a repetition without that policy would start a second runner
+against the same queue. Proved live 2026-09-13: runner up at PID 28224,
+`GET /api/roadmap/runner` reporting `state: present` with a 3.4s heartbeat.
+
+That the repeating trigger brings a stopped runner straight back is the INTENDED
+behaviour, not a problem to solve. Keeping it running is the service's job. This
+also retires the cross-identity question entirely: a LocalSystem caller never
+reaches into a user session at all.
+
+**The remaining three shipped 2026-09-13; recorded as prose, because a `[x]` in
+this file is a mistake, not a record.**
+
+*The action, not the command.* `POST /api/roadmap/runner/start` and
+`POST /api/roadmap/runner/stop`
+([`Automation.RunnerControl.ps1`](backend/modules/automation/Automation.RunnerControl.ps1))
+replace the pasted remedy everywhere it was offered: the header popover, the
+Insights pane, and the empty-room refusal text. The gate itself is untouched —
+it was operator-verified and refusing to queue into an empty room is still
+right; only the remedy it names changed. The command survives in exactly one
+place, beside the error, when the console tried to start a runner and could not.
+Three frontend assertions were INVERTED to hold that line: they used to require
+the command in the detail and the precondition, and now forbid it.
+
+The host never spawns a runner. It is LocalSystem, and a runner it spawned would
+hold no Claude credential and fail everything it claimed. It triggers the
+operator-owned scheduled task and lets Task Scheduler make the cross-identity
+hop. A start therefore reports REQUESTED, never STARTED: an Interactive task
+cannot run while the operator is logged out, so only the heartbeat may say a
+runner exists, and the console watches for it and says plainly when it never
+arrives.
+
+*The kill switch.* `roadmap-task-runner.hold.json` is the durable half the stop
+marker could never be — the marker is consumed by the runner honoring it, so on
+its own "stop" would have lasted one repeat interval. The runner reads the hold
+before anything else and leaves, making each five-minute repeat a two-second
+no-op instead of a revival. It fails CLOSED, the only reader here that does: an
+unreadable record still holds, because a corrupt byte must not resume work the
+operator deliberately halted. Resuming is releasing it, as designed above — one
+start path, not two.
+
+Both control files sit under `REPO_MGMT_RUNNER_CONTROL_ROOT`, the fifth
+resolver of its kind. The api-host smoke starts its host with the operator's
+REAL workspace root, so without it a gate exercising the stop route would have
+stopped their live runner and — a hold being durable by design — kept it
+stopped. Same shape as the gate that twice emptied the portfolio index, with a
+worse recovery, and asserted rather than assumed: the gate fails if a hold ever
+appears in the operator's own output directory.
+
+*One pane.* [`RunnerControlPanel.tsx`](frontend/components/RunnerControlPanel.tsx)
+leads the Insights tab with runner state, queued total, claimable now, stranded
+count, oldest-queued age, the per-provider backlog and the live runner's
+identity — the two facts that arrive on one route and had never been rendered
+together. It carries the kill switch, because a control to halt work put
+anywhere but where the work is visible asks the operator to decide blind. The
+header pill and this pane share one hook, so they cannot disagree.
+
+Proved 2026-09-13 against a real host on 127.0.0.1:7099 with the control root
+isolated: stop answered 202 and wrote both files, `GET /api/roadmap/runner`
+then reported `stoppedByOperator=true`, start answered 202 with
+`holdReleased=true` and `taskTriggered=true`, and the operator's live runner
+(pid 28224) kept beating throughout. The module smoke proves the behavioural
+half against a real detached runner: a held runner exits 0 without claiming, and
+does NOT consume the hold.
+
+**The limit to state plainly rather than design around.** "If the service is
+running, start the runner" cannot be wholly true. The service is LocalSystem and
+outlives any session; the runner needs the operator's session for their
+authenticated Claude Code. So the runner is up whenever they are **logged in**,
+not whenever the service is up. When they are logged out the queue accumulates
+and nothing works it — which is correct behaviour, and the console must say so
+rather than let a growing queue read as progress.
+
+**Not doing, decided 2026-09-13.** Creating a scenario where the runner is down,
+purely to watch how the app reacts to a job that is the app's own
+responsibility, spends time to learn nothing. If a real case arrives where the
+runner is not running and the service fails to start it, the error that case
+produces is the thing to read — a rehearsed one would not have told us what the
+real one will.
 
 ---
 

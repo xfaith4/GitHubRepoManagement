@@ -57,8 +57,45 @@ export interface RunnerPresencePayload {
    * The command that starts a runner, with the script's ABSOLUTE path, built by
    * the host from its workspace root. The relative form only works from a shell
    * already inside the repo — an elevated terminal opens in the user profile.
+   *
+   * Lane 0.20 demoted this from the remedy to the fallback. It is shown when the
+   * console's own Start attempt FAILED, beside the error that attempt produced —
+   * never as the first thing an operator is asked to do.
    */
   startCommand?: string;
+  /**
+   * Lane 0.20 — the operator pressed the kill switch and it is still held.
+   *
+   * Absent and false mean the same thing; only true is a hold. This is the one
+   * field that separates "something is wrong" from "you did this on purpose",
+   * and without it every surface renders a deliberate stop as a fault.
+   */
+  stoppedByOperator?: boolean;
+  /** When the hold was taken (ISO), for attribution rather than alarm. */
+  stoppedAt?: string | null;
+  stoppedBy?: string | null;
+  stopReason?: string | null;
+  /**
+   * Whether the scheduled task a Start would trigger is actually registered.
+   * False means the installer was never run here, and a Start button would fail
+   * every time — so the surface says that instead of offering the button.
+   */
+  startable?: boolean;
+  taskName?: string;
+}
+
+/**
+ * What the operator can do about the runner right now.
+ *
+ * Lane 0.20. The console used to hand over a command; this is the same
+ * information expressed as an action, so the surface renders a control rather
+ * than instructions. `kind: 'none'` is honest unavailability, and
+ * `unavailableReason` is why — a greyed control with no reason reads as broken.
+ */
+export interface RunnerControlOffer {
+  kind: 'start' | 'stop' | 'none';
+  label: string;
+  unavailableReason: string;
 }
 
 export type RunnerSeverity = 'ok' | 'warning' | 'error' | 'unknown';
@@ -87,6 +124,60 @@ export interface RunnerPresenceView {
    * whole job is to say what is waiting.
    */
   queuedByProviderSummary: string | null;
+  /** Lane 0.20 — the control this state should render, if any. */
+  control: RunnerControlOffer;
+  /**
+   * True when the runner is down because the operator stopped it. Surfaces use
+   * it to drop the alarm styling: a held runner is the kill switch working, and
+   * colouring it like a fault trains the operator to ignore the colour.
+   */
+  stoppedByOperator: boolean;
+}
+
+const NO_CONTROL: RunnerControlOffer = { kind: 'none', label: '', unavailableReason: '' };
+
+/**
+ * Which control to offer, from presence plus the hold.
+ *
+ * Start is offered for any down runner, held or not, because there is only one
+ * start path by design: resuming is releasing the hold, and a second entry point
+ * would be a second place for the two to drift.
+ */
+function resolveControlOffer(
+  payload: RunnerPresencePayload | null | undefined,
+  isPresent: boolean
+): RunnerControlOffer {
+  if (!payload) return NO_CONTROL;
+  if (isPresent) return { kind: 'stop', label: 'Stop runners', unavailableReason: '' };
+  // `startable` absent means a host older than this packet: it cannot say
+  // whether the task exists, and refusing to offer the control on that silence
+  // would disable the button against every host that has not restarted yet.
+  if (payload.startable === false) {
+    return {
+      kind: 'none',
+      label: '',
+      unavailableReason:
+        'No runner task is registered on this machine, so there is nothing to start. Register it once, unelevated: pwsh -File scripts/service/Install-RoadmapTaskRunner.ps1',
+    };
+  }
+  return {
+    kind: 'start',
+    label: payload.stoppedByOperator === true ? 'Resume runners' : 'Start runner',
+    unavailableReason: '',
+  };
+}
+
+/** Attribution for a hold, as one sentence. Empty when nothing is held. */
+function describeHold(payload: RunnerPresencePayload | null | undefined): string {
+  if (payload?.stoppedByOperator !== true) return '';
+  const who = (payload.stoppedBy ?? '').trim();
+  const at = (payload.stoppedAt ?? '').trim();
+  const when = at ? new Date(at) : null;
+  const stamp = when && !Number.isNaN(when.getTime()) ? when.toLocaleString() : '';
+  const by = who ? ` by ${who}` : '';
+  const on = stamp ? ` on ${stamp}` : '';
+  const why = (payload.stopReason ?? '').trim();
+  return `Runners were stopped${by}${on}. Nothing restarts until you resume.${why ? ` ${why}` : ''}`;
 }
 
 /**
@@ -142,16 +233,19 @@ export function resolveRunnerPresence(
     return {
       severity: 'unknown',
       label: 'Runner unknown',
-      detail: `Could not read runner status. If no runner is running, queued work will wait: ${runnerStartCommand(null)}`,
+      detail: 'Could not read runner status. If no runner is running, queued work will wait.',
       needsAttention: false,
       warnBeforeQueueing: true,
       queueAgeAlarmHours: null,
       queuedByProviderSummary: null,
+      control: NO_CONTROL,
+      stoppedByOperator: false,
     };
   }
 
   const queueAgeAlarmHours = computeQueueAgeAlarmHours(payload, nowMs);
   const queuedByProviderSummary = summarizeQueuedByProvider(payload);
+  const stoppedByOperator = payload.stoppedByOperator === true;
 
   const stranded = Number(payload.strandedCount ?? 0);
   const strandedSuffix =
@@ -171,6 +265,28 @@ export function resolveRunnerPresence(
       warnBeforeQueueing: queueAgeAlarmHours != null,
       queueAgeAlarmHours,
       queuedByProviderSummary,
+      control: resolveControlOffer(payload, true),
+      stoppedByOperator,
+    };
+  }
+
+  // Lane 0.20 — a held runner is checked BEFORE stale/absent, because the same
+  // missing heartbeat means two opposite things. Reported as a fault it would
+  // read as the kill switch having broken something, and the console would push
+  // the operator to undo the thing they just deliberately did.
+  if (stoppedByOperator) {
+    return {
+      severity: 'warning',
+      label: 'Runners stopped',
+      detail: describeHold(payload) + strandedSuffix,
+      // Deliberate, so not an alarm — but still true that nothing is being
+      // worked, which is why it keeps warning before queueing.
+      needsAttention: false,
+      warnBeforeQueueing: true,
+      queueAgeAlarmHours,
+      queuedByProviderSummary,
+      control: resolveControlOffer(payload, false),
+      stoppedByOperator,
     };
   }
 
@@ -184,18 +300,21 @@ export function resolveRunnerPresence(
       warnBeforeQueueing: true,
       queueAgeAlarmHours,
       queuedByProviderSummary,
+      control: resolveControlOffer(payload, false),
+      stoppedByOperator,
     };
   }
 
   return {
     severity: 'error',
     label: 'No runner',
-    detail:
-      `Nothing will execute queued work until a runner runs: ${runnerStartCommand(payload)}` + strandedSuffix,
+    detail: 'Nothing will execute queued work until a runner is running.' + strandedSuffix,
     needsAttention: stranded > 0 || queueAgeAlarmHours != null,
     warnBeforeQueueing: true,
     queueAgeAlarmHours,
     queuedByProviderSummary,
+    control: resolveControlOffer(payload, false),
+    stoppedByOperator,
   };
 }
 
@@ -253,10 +372,19 @@ export function resolveDispatchGate(
       ? ` ${stranded} task${stranded === 1 ? '' : 's'} already queued with nothing to claim ${stranded === 1 ? 'it' : 'them'}.`
       : '';
 
+  // Lane 0.20 — the gate itself is unchanged and stays: it was
+  // operator-verified on 2026-09-13 and refusing to queue into an empty room is
+  // still right. What changed is the remedy it names. It used to end in a
+  // command to paste, which made the operator the mechanism for something the
+  // console can simply do.
+  const remedy =
+    view.control.kind === 'start'
+      ? `Use ${view.control.label} to bring one up.`
+      : view.control.unavailableReason || 'No runner can be started from here.';
+
   return {
     canQueue: false,
-    unmetPrecondition:
-      `${view.label}: nothing would pick this up. Start the operator runner first — ${runnerStartCommand(payload)}.${pile}`,
+    unmetPrecondition: `${view.label}: nothing would pick this up. ${remedy}${pile}`,
     overrideLabel: 'Queue anyway',
   };
 }
