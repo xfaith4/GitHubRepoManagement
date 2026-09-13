@@ -5297,7 +5297,12 @@ $executorAgentCases = @(
     # the rules to catch "Operator-verify" must not swallow either, or the fix for
     # a blind spot becomes a way to park real work.
     'Add operator-runner presence detection to the dispatch route',
-    'Show the runner heartbeat on the live dashboard component'
+    'Show the runner heartbeat on the live dashboard component',
+    # "the operator-verification log" is a ledger this product writes, not a
+    # person acting. Widening the rule to catch "Operator-verify" caught this
+    # Release 3.6 measurement feature too, which is a whole trend series an agent
+    # should build. The noun usage is excluded by what follows the word.
+    'Add a leverage family derived from ledgers the product already keeps (agent-run metrics, queue summaries, the operator-verification log) and render operator minutes per completed task'
 )
 foreach ($agentText in $executorAgentCases) {
     $verdict = Get-RoadmapItemExecutor -ItemText $agentText -Section 'Engineering milestones' -ScoringConfig $valueScoringConfig

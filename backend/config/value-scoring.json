@@ -31,7 +31,7 @@
         "label": "explicitly described as manual work"
       },
       {
-        "pattern": "\\b(operator[-\\s](?:must|verif|confirm|record|observ|sign)|requires? an operator|ask the operator|commissioner[-\\s](?:must|manually))",
+        "pattern": "\\b(operator[-\\s](?:must|confirm|record|observ|sign)|operator[-\\s]verif\\w*\\b(?![-\\s](?:log|ledger|record))|requires? an operator|ask the operator|commissioner[-\\s](?:must|manually))",
         "label": "names a person as the actor"
       },
       {
