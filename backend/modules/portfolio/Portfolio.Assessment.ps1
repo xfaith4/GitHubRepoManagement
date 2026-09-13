@@ -35,6 +35,9 @@ $ErrorActionPreference = 'Stop'
 # location the standards accept. The structure audit and the roadmap path
 # tokens below must answer the same way the evaluator and the doc audit do.
 . (Join-Path $PSScriptRoot '..\common\RepoStandardFile.ps1')
+# One decision for where the index lives, so a gate cannot write through to the
+# index the operator is reading. See Config.IndexPath.ps1 for the incident.
+. (Join-Path $PSScriptRoot '..\common\Config.IndexPath.ps1')
 
 # ---------------------------------------------------------------------------
 # Standards loader
@@ -1628,7 +1631,10 @@ function Save-PortfolioIndexArtifacts {
         [Parameter(Mandatory = $true)][string]$GeneratedAt
     )
 
-    $indexRoot = Join-Path $WorkspaceRoot 'output\index'
+    $indexRoot = Get-PortfolioIndexRoot -WorkspaceRoot $WorkspaceRoot
+    # scans\ derives from the resolved root deliberately: overriding only the
+    # index file would still drop a gate's scan snapshots into the operator's
+    # history, which is the same leak one directory down.
     $scansRoot = Join-Path $indexRoot 'scans'
     if (-not (Test-Path -LiteralPath $indexRoot)) {
         $null = New-Item -ItemType Directory -Path $indexRoot -Force
@@ -1818,7 +1824,7 @@ function Get-PortfolioIndexPayload {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$WorkspaceRoot)
 
-    $indexPath = Join-Path (Join-Path $WorkspaceRoot 'output\index') 'repos.index.json'
+    $indexPath = Get-PortfolioIndexPath -WorkspaceRoot $WorkspaceRoot
     if (-not (Test-Path -LiteralPath $indexPath -PathType Leaf -ErrorAction SilentlyContinue)) {
         return $null
     }

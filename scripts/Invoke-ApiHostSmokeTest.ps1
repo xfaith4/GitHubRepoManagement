@@ -379,6 +379,15 @@ $script:SmokeInstallationStatePath = Join-Path $smokeRoot 'installation.local.sm
 Remove-Item -LiteralPath $script:SmokeInstallationStatePath -Force -ErrorAction SilentlyContinue
 Write-Host ("  installation state isolated to {0} (the operator's own opt-outs are untouched)" -f $script:SmokeInstallationStatePath) -ForegroundColor DarkGray
 
+# The portfolio-index twin of the three isolations above, and the one that
+# actually bit. This gate's fixture scans wrote through to the operator's
+# output\index\, emptying every portal surface that reads it. The host resolves
+# it through Get-PortfolioIndexRoot, which honours REPO_MGMT_INDEX_ROOT; this
+# must stay in step with the job's assignment below.
+$script:SmokeIndexRoot = Join-Path $smokeRoot 'index'
+Remove-Item -LiteralPath $script:SmokeIndexRoot -Recurse -Force -ErrorAction SilentlyContinue
+Write-Host ("  portfolio index isolated to {0} (the operator's own index is never written)" -f $script:SmokeIndexRoot) -ForegroundColor DarkGray
+
 $job = Start-Job -ScriptBlock {
     param($ScriptPath, $Root, $Log, $ListenPort, $SignalPath, $QueuePath, $SettingsPath)
     # Both overrides are set on the JOB, never on the parent, so a crashed smoke
@@ -390,6 +399,14 @@ $job = Start-Job -ScriptBlock {
     # PSUseUsingScopeModifierInNewRunspaces finding, and that ratchet only
     # moves down. Must stay in step with $script:SmokeInstallationStatePath.
     $env:REPO_MGMT_INSTALLATION_STATE_PATH = (Join-Path $Root 'output\smoke\api-host\installation.local.smoke.json')
+    # Same reason, one directory over. Before this, this gate's fixture scan wrote
+    # through to output\index\repos.index.json and replaced the operator's 59
+    # repositories with its own 3 -- twice in two days, the second time four
+    # minutes before they ticked "rebuild the index" on their own checklist.
+    # Every portal surface reads that file, so the product emptied while a test
+    # ran and nothing on screen said why. Rebuilt from $Root for the same
+    # ratchet reason as the line above; keep in step with $script:SmokeIndexRoot.
+    $env:REPO_MGMT_INDEX_ROOT = (Join-Path $Root 'output\smoke\api-host\index')
     # Start-Job inherits the parent environment. Every assertion below speaks
     # plain HTTP to this host, so an inherited REPO_MGMT_TLS_PFX -- which the
     # installed service sets at MACHINE scope -- would wrap the listener in an

@@ -12,11 +12,20 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Guarded: this module is dot-sourced by callers that already loaded the
+# resolver, and by at least one that does not.
+if (-not (Get-Command -Name 'Get-PortfolioIndexRoot' -ErrorAction SilentlyContinue)) {
+    . (Join-Path $PSScriptRoot '..\common\Config.IndexPath.ps1')
+}
+
 function Get-PortfolioCurationFilePath {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$WorkspaceRoot)
 
-    return (Join-Path (Join-Path $WorkspaceRoot 'output\index') 'repo-curation.json')
+    # Through the resolver, because this file is operator-AUTHORED state -- the
+    # favourites and portfolio candidates they picked by hand. A gate writing the
+    # index directory would take those with it.
+    return (Join-Path (Get-PortfolioIndexRoot -WorkspaceRoot $WorkspaceRoot) 'repo-curation.json')
 }
 
 function Get-AllowedCurationStates {

@@ -70,6 +70,9 @@ $executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 # switched off -- kept apart from the tracked settings file for the reason
 # Config.InstallationStatePath.ps1's header records.
 . (Join-Path $commonRoot 'Config.InstallationStatePath.ps1')
+# And the portfolio index, for the same reason one directory over -- see
+# Config.IndexPath.ps1's header for the run that emptied the operator's console.
+. (Join-Path $commonRoot 'Config.IndexPath.ps1')
 # Standard-file locator (ROADMAP.md at root or docs/, SECURITY.md at .github/,
 # ...). The modules below dot-source it themselves; loading it here too keeps
 # the host's own roadmap resolvers on the same answer.
@@ -740,7 +743,7 @@ function Update-PortfolioIndexRepoCuration {
     if (-not $updated) { return $false }
 
     try {
-        $indexPath = Join-Path (Join-Path $WorkspaceRoot 'output\index') 'repos.index.json'
+        $indexPath = Get-PortfolioIndexPath -WorkspaceRoot $WorkspaceRoot
         $json = $payload | ConvertTo-Json -Depth 12
         Set-Content -LiteralPath $indexPath -Value $json -Encoding UTF8
         return $true
@@ -8930,7 +8933,7 @@ try {
                         $roots = @($s.inventory.localRoots | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
                     }
                     $configExists = Test-Path -LiteralPath (Get-PortalSettingsPath -WorkspaceRoot $WorkspaceRoot)
-                    $firstScanComplete = Test-Path -LiteralPath (Join-Path $WorkspaceRoot 'output\index\repos.index.json')
+                    $firstScanComplete = Test-Path -LiteralPath (Get-PortfolioIndexPath -WorkspaceRoot $WorkspaceRoot)
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data = @{
@@ -11605,7 +11608,7 @@ try {
                         roadmap        = Get-CacheDiagnosticEntry -Path (Get-RoadmapCacheFilePath) -TtlSeconds $roadmapTtl
                         roadmapAudit   = Get-CacheDiagnosticEntry -Path (Get-RoadmapAuditCacheFilePath) -TtlSeconds $roadmapTtl
                         docAudit       = Get-CacheDiagnosticEntry -Path (Get-DocAuditCacheFilePath) -TtlSeconds $roadmapTtl
-                        portfolioIndex = Get-CacheDiagnosticEntry -Path (Join-Path $WorkspaceRoot 'output\index\repos.index.json') -TtlSeconds 0
+                        portfolioIndex = Get-CacheDiagnosticEntry -Path (Get-PortfolioIndexPath -WorkspaceRoot $WorkspaceRoot) -TtlSeconds 0
                     }
                     $staleCount = @($caches.Values | Where-Object { $_.stale }).Count
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{

@@ -11651,6 +11651,86 @@ Write-Step 'Queue path resolver - Release 2.9: one definition, so the smoke cann
     Write-Host '  queue path ok: detector rejected its own inline fixture first; no bypass under backend/; REPO_MGMT_QUEUE_PATH redirects and clears cleanly' -ForegroundColor DarkGray
 }
 
+Write-Step 'Portfolio index resolver - one definition, so a gate cannot empty the portfolio the operator is reading'
+& {
+    # Third instance of the shape the two sweeps around this one already cover,
+    # and the one that actually reached the operator. The api-host smoke scans a
+    # fixture root; with the path built inline at five call sites, that scan wrote
+    # straight through to output\index\repos.index.json and replaced 59 real
+    # repositories with the gate's 3 -- then, on a second run, with none.
+    # 2026-09-13, twice in two days. Every portal surface reads that file, so the
+    # product emptied while a test ran, and the second occurrence landed four
+    # minutes before the operator ticked "rebuild the index" on their checklist:
+    # a verification step recording work a gate had just undone.
+    $indexPathResolver = Join-Path $WorkspaceRoot 'backend\modules\common\Config.IndexPath.ps1'
+    if (-not (Test-Path -LiteralPath $indexPathResolver)) { throw "Missing $indexPathResolver" }
+
+    # Prove the detector before trusting the sweep it drives. Both spellings the
+    # converted call sites used appear here, because a pattern that caught only
+    # the nested Join-Path form would have spared three of the five.
+    $indexPathPattern = "Join-Path\s+.*'[^']*output.index"
+    foreach ($indexPathViolatingFixture in @(
+            "`$indexRoot = Join-Path `$WorkspaceRoot 'output\index'",
+            "`$indexPath = Join-Path (Join-Path `$WorkspaceRoot 'output\index') 'repos.index.json'",
+            "`$p = Join-Path `$WorkspaceRoot 'output\index\repos.index.json'")) {
+        if ($indexPathViolatingFixture -notmatch $indexPathPattern) {
+            throw ('Index-path detector failed a violating fixture; the sweep below is vacuous: {0}' -f $indexPathViolatingFixture)
+        }
+    }
+    # ...and prove it does NOT fire on the resolved forms, or every converted
+    # call site would read as a violation and the gate would be unpassable.
+    foreach ($indexPathResolvedForm in @(
+            '$indexRoot = Get-PortfolioIndexRoot -WorkspaceRoot $WorkspaceRoot',
+            '$indexPath = Get-PortfolioIndexPath -WorkspaceRoot $WorkspaceRoot')) {
+        if ($indexPathResolvedForm -match $indexPathPattern) {
+            throw 'Index-path detector matches a resolved form; it would fail correct code.'
+        }
+    }
+
+    $indexPathBypasses = New-Object System.Collections.Generic.List[string]
+    foreach ($indexPathFile in @(Get-ChildItem -LiteralPath (Join-Path $WorkspaceRoot 'backend') -Filter '*.ps1' -Recurse -File)) {
+        if ($indexPathFile.FullName -eq (Resolve-Path -LiteralPath $indexPathResolver).Path) { continue }
+        foreach ($indexPathLine in ((Get-Content -LiteralPath $indexPathFile.FullName -Raw -Encoding UTF8) -split "`r?`n")) {
+            if ($indexPathLine -match '^\s*#') { continue }
+            if ($indexPathLine -match $indexPathPattern) {
+                $indexPathBypasses.Add(("{0}: {1}" -f $indexPathFile.Name, $indexPathLine.Trim())) | Out-Null
+            }
+        }
+    }
+    if ($indexPathBypasses.Count -gt 0) {
+        throw ("Portfolio index path built inline instead of via Get-PortfolioIndexRoot/Path:`n    {0}`n  One resolver, or a gate empties the portfolio the operator's portal is reading." -f ($indexPathBypasses -join "`n    "))
+    }
+
+    # The gate must actually redirect, not merely be able to. An override that
+    # nothing sets is a resolver with no isolation behind it.
+    $apiHostSmokeText = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'scripts\Invoke-ApiHostSmokeTest.ps1') -Raw -Encoding UTF8
+    if ($apiHostSmokeText -notmatch 'REPO_MGMT_INDEX_ROOT') {
+        throw 'The api-host smoke does not set REPO_MGMT_INDEX_ROOT; its fixture scans would write the operator''s real index again.'
+    }
+
+    # And the override must work. Set it, resolve, clear, resolve.
+    $indexProbeRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('smoke-indexroot-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    . $indexPathResolver
+    try {
+        [System.Environment]::SetEnvironmentVariable('REPO_MGMT_INDEX_ROOT', $indexProbeRoot, 'Process')
+        $redirected = Get-PortfolioIndexPath -WorkspaceRoot $WorkspaceRoot
+        if ($redirected -notlike (Join-Path $indexProbeRoot '*')) {
+            throw ("REPO_MGMT_INDEX_ROOT did not redirect the index path; got '{0}'." -f $redirected)
+        }
+        if (-not (Test-PortfolioIndexRootOverridden)) { throw 'Test-PortfolioIndexRootOverridden did not report the active override.' }
+    }
+    finally {
+        [System.Environment]::SetEnvironmentVariable('REPO_MGMT_INDEX_ROOT', $null, 'Process')
+    }
+    $restored = Get-PortfolioIndexPath -WorkspaceRoot $WorkspaceRoot
+    if ($restored -notlike (Join-Path $WorkspaceRoot 'output\index\*')) {
+        throw ("Clearing REPO_MGMT_INDEX_ROOT did not restore the default index path; got '{0}'." -f $restored)
+    }
+    if (Test-PortfolioIndexRootOverridden) { throw 'Test-PortfolioIndexRootOverridden still reports an override after it was cleared.' }
+
+    Write-Host '  index path ok: detector rejected 3 inline fixtures and spared both resolved forms; no bypass under backend/; the api-host smoke sets REPO_MGMT_INDEX_ROOT; override redirects and clears' -ForegroundColor DarkGray
+}
+
 Write-Step 'Settings path resolver - one definition, so a gate cannot write the file the operator is reading'
 & {
     # The reading-side twin of the queue incident above, one release later.
