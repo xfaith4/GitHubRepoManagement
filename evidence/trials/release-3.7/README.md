@@ -40,10 +40,57 @@ would launder a pending judgement into a recorded fact.
 
 Use `cohort.json` records for conclusions, why the repository matters, limiting foundation, next action and preview. Record the explicit operator approval, agent-run id, operator minutes measured by the operator, first-pass result, before/after artifacts and independent criterion-level checks against the resulting branch/commit. A check names its criterion, command or observation, result and evidence path. A merge alone is not an acceptance check. Failed or unparseable validation is not a pass.
 
-Keep appropriate-as-is, archive and insufficiently-understood outcomes in the ten-repository conclusion tally. Count toward the five improvements only when an approved action through the product has independently evidenced material benefit. Do not infer minutes or savings from timestamps. Unavailable cost or effort stays unavailable.
+Keep appropriate-as-is, archive and insufficiently-understood outcomes in the nine-repository conclusion tally. Count toward the five improvements only when an approved action through the product has independently evidenced material benefit. Do not infer minutes or savings from timestamps. Unavailable cost or effort stays unavailable.
 
 Record release-level operator verification with `scripts/Add-OperatorVerification.ps1 -List` and the resolved SurfaceId plus observed evidence. Per-repository results live here and reference the existing agent-run ledgers; the script does not invent trial surface IDs.
 
 ## Exit gate
 
-Ten recorded conclusions, at least five independently validated material improvements, recorded operator minutes/first-pass/outcome quality, corrected false positives and a numeric rollout go/no-go. Until those exist, rollout is no-go. Carryover, cumulative sequence caps and dependency ordering remain deferred Lane 0.18 work.
+Nine recorded conclusions, at least five independently validated material improvements, recorded operator minutes/first-pass/outcome quality, corrected false positives and a numeric rollout go/no-go. Until those exist, rollout is no-go. Carryover, cumulative sequence caps and dependency ordering remain deferred Lane 0.18 work.
+
+## Conclusions (2026-09-13)
+
+Engine output from `Get-RepositoryFoundationConclusion` (foundation-conclusions v1) over the index generated 2026-09-13T21:07:51Z, which scanned all nine that morning. Zero conclusion-contract violations. **Not operator-verified** — the entry gate still wants eyes on the live Today, outcome-card and Insights surfaces, so these are what the product concluded, not confirmed findings. No improvement is claimed and nothing here counts toward the five.
+
+| Repository | Detected kind | Conclusion | Limiting foundation | Product can act |
+| --- | --- | --- | --- | --- |
+| ActiveFamilyArchive | `unknown` | **strengthen** | `planning` weak, `structure` weak | yes — `/api/roadmap/repair/preview` |
+| FowlingScorecard | `unknown` | **strengthen** | `planning` weak, `structure` weak | yes — `/api/roadmap/repair/preview` |
+| DevPortConsole | `unknown` | **strengthen** | `planning` weak, `structure` weak | yes — `/api/roadmap/repair/preview` |
+| 2026-06-13_Orchestration | `unknown` | **strengthen** | `planning` weak, `structure` weak | yes — `/api/roadmap/repair/preview` |
+| Genesys-Telecom-Powershell | `archived` | **appropriate-as-is** | nothing limiting | no action to take |
+| AI_PromptRefiner_GUI | `unknown` | **strengthen** | `planning` missing | yes — `/api/roadmap/repair/preview` |
+| genesys-contract-client | `unknown` | **insufficiently-understood** | `planning` weak, `structure` weak | yes — `/api/roadmap/repair/preview` |
+| 300PixelLED_2812B | `unknown` | **strengthen** | `planning` weak, `structure` weak | yes — `/api/roadmap/repair/preview` |
+| Genesys.Core | `unknown` | **strengthen** | `planning` weak, `structure` weak | yes — `/api/roadmap/repair/preview` |
+
+### What the first pass exposes
+
+The trial exists to find false positives and bad recommendations on nine
+repositories before they are found on eighty. Three surfaced on the first pass.
+None is an engineering failure; all three are the model not yet discriminating,
+which is the thing measured execution would otherwise have hidden.
+
+**F-01 — kind detection resolves only `archived`.** Eight of nine conclusions
+were drawn with the basis *"no kind signal in the index; every scored domain
+applies"*. The cohort was selected BY KIND, and the product cannot tell those
+kinds apart, so per-kind applicability never engaged: a library is judged
+against the same yardstick as a mature application. The roadmap already records
+this as a known gap under Release 3.6 out-of-scope; what is new is evidence that
+it undercuts the trial's own premise rather than being cosmetic.
+
+**F-02 — seven of nine share one limiting pair.** `planning` weak plus
+`structure` weak is the answer for seven repositories, including a finished LED
+firmware project, an API client library and an orchestration experiment. A
+ranking that returns the same answer for most of the portfolio cannot say what
+to do *first*, which is the product's stated job.
+
+**F-03 — every actionable repository gets the same next action.** All eight
+resolve to `POST /api/roadmap/repair/preview`. That is a defensible default when
+planning is the weakest foundation, but as the universal recommendation it means
+the conclusion model is currently a planning detector rather than a portfolio
+advisor. This is the clearest thing for milestone 4 to fix.
+
+These are recorded, not acted on. Fixing them is milestone 4's job ("adjust and
+decide"), and doing it now — before the improvements are executed and measured —
+would change the model mid-measurement.

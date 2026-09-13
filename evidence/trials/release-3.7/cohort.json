@@ -1,7 +1,7 @@
 {
   "schemaVersion": "v1",
   "capturedAt": "2026-09-05T13:28:24.146501+00:00",
-  "status": "selection-complete; measured execution still gated",
+  "status": "selection complete; conclusions recorded (engine output, not operator-verified); measured execution still gated",
   "selectionRule": "One distinct repository in each declared kind; never selected for conformance. No automatic substitutions.",
   "measuredExecutionReady": false,
   "records": [
@@ -26,9 +26,9 @@
           "sha256": "6c91cfaca55db276528df966f3411266b51603c27722f95b69dd4442cfc74cb9"
         }
       ],
-      "productConclusion": null,
-      "stillMatters": null,
-      "highestValueNextAction": null,
+      "productConclusion": "strengthen",
+      "stillMatters": "Planning is weak: ROADMAP.md exists but audits as 'L0-Absent' (no plan recorded in contract terms).",
+      "highestValueNextAction": "@{domain=planning; kind=roadmap-repair-preview; label=Preview the smallest credible plan; method=POST; route=/api/roadmap/repair/preview; body=; previewFirst=True}",
       "previewEvidence": null,
       "operatorApprovalEvidence": null,
       "runId": null,
@@ -43,7 +43,42 @@
       "countedImprovement": false,
       "headCommit": "69c39c4c494ee9acd017be3ba8dacc43d8889b28",
       "cachedOutcomeDiagnostic": null,
-      "ownerIntentConfirmed": true
+      "ownerIntentConfirmed": true,
+      "conclusionRun": {
+        "generatedAt": "2026-09-13T21:46:30.5031086Z",
+        "indexGeneratedAt": "2026-09-13T21:07:51.3160158Z",
+        "indexSha256": "fd33787bed2a755e62f619f31f5db14fed5486c2c69a7d6f4e36e212500cbcb9",
+        "engine": "foundation-conclusions v1 (Portfolio.Conclusion.ps1)",
+        "operatorVerified": false,
+        "operatorVerifiedNote": "Engine output. The entry gate still requires the live Today, outcome-card and Insights surfaces to be checked by the operator; until then this is what the product concluded, not a confirmed finding.",
+        "kind": "unknown",
+        "kindBasis": "no kind signal in the index; every scored domain applies",
+        "limitingFoundation": [
+          {
+            "domain": "planning",
+            "title": "Planning",
+            "status": "weak",
+            "evidence": [
+              "ROADMAP.md exists but audits as 'L0-Absent' (no plan recorded in contract terms)"
+            ]
+          },
+          {
+            "domain": "structure",
+            "title": "Structure",
+            "status": "weak",
+            "evidence": [
+              "4 structure warning(s) for a node repository: LICENSE, SECURITY.md, .github/workflows, tests"
+            ]
+          }
+        ],
+        "limitingFoundationNote": "",
+        "productCanExecute": true,
+        "productCanExecuteBasis": "the next action names a route the product performs: roadmap-repair-preview via /api/roadmap/repair/preview (previewFirst=True)",
+        "nextActionRoute": "/api/roadmap/repair/preview",
+        "nextActionKind": "roadmap-repair-preview",
+        "nextActionPreviewFirst": true,
+        "contractViolations": []
+      }
     },
     {
       "category": "weak-active-application",
@@ -66,9 +101,9 @@
           "sha256": "1a65ed78a3a84d692b4dedcfd58d09ad20fc5dd4ef7429a015b5b6dfa1d87bfb"
         }
       ],
-      "productConclusion": null,
-      "stillMatters": null,
-      "highestValueNextAction": null,
+      "productConclusion": "strengthen",
+      "stillMatters": "Planning is weak: ROADMAP.md exists but audits as 'L0-Absent' (no plan recorded in contract terms).",
+      "highestValueNextAction": "@{domain=planning; kind=roadmap-repair-preview; label=Preview the smallest credible plan; method=POST; route=/api/roadmap/repair/preview; body=; previewFirst=True}",
       "previewEvidence": null,
       "operatorApprovalEvidence": null,
       "runId": null,
@@ -83,7 +118,44 @@
       "countedImprovement": false,
       "headCommit": "0838d4c57a2ab6ea8fdd9afea7d3e94afba00544",
       "cachedOutcomeDiagnostic": null,
-      "ownerIntentConfirmed": true
+      "ownerIntentConfirmed": true,
+      "conclusionRun": {
+        "generatedAt": "2026-09-13T21:46:30.5031086Z",
+        "indexGeneratedAt": "2026-09-13T21:07:51.3160158Z",
+        "indexSha256": "fd33787bed2a755e62f619f31f5db14fed5486c2c69a7d6f4e36e212500cbcb9",
+        "engine": "foundation-conclusions v1 (Portfolio.Conclusion.ps1)",
+        "operatorVerified": false,
+        "operatorVerifiedNote": "Engine output. The entry gate still requires the live Today, outcome-card and Insights surfaces to be checked by the operator; until then this is what the product concluded, not a confirmed finding.",
+        "kind": "unknown",
+        "kindBasis": "no kind signal in the index; every scored domain applies",
+        "limitingFoundation": [
+          {
+            "domain": "planning",
+            "title": "Planning",
+            "status": "weak",
+            "evidence": [
+              "ROADMAP.md exists but audits as 'L0-Absent' (no plan recorded in contract terms)"
+            ]
+          },
+          {
+            "domain": "structure",
+            "title": "Structure",
+            "status": "weak",
+            "evidence": [
+              "4 structure warning(s) for a node repository: LICENSE, SECURITY.md, CONTRIBUTING.md, docs",
+              "a CI workflow is present",
+              "a test signal is present"
+            ]
+          }
+        ],
+        "limitingFoundationNote": "",
+        "productCanExecute": true,
+        "productCanExecuteBasis": "the next action names a route the product performs: roadmap-repair-preview via /api/roadmap/repair/preview (previewFirst=True)",
+        "nextActionRoute": "/api/roadmap/repair/preview",
+        "nextActionKind": "roadmap-repair-preview",
+        "nextActionPreviewFirst": true,
+        "contractViolations": []
+      }
     },
     {
       "category": "small-utility",
@@ -106,9 +178,9 @@
           "sha256": "38e8e810c075f06dc3afa85786dd65202beeded1076e73e3bd7f7c7407ca20e9"
         }
       ],
-      "productConclusion": null,
-      "stillMatters": null,
-      "highestValueNextAction": null,
+      "productConclusion": "strengthen",
+      "stillMatters": "Planning is weak: roadmap at L2-Structured - below the contract-ready bar - with 0 pending item(s); every recorded item is complete.",
+      "highestValueNextAction": "@{domain=planning; kind=roadmap-repair-preview; label=Preview the smallest credible plan; method=POST; route=/api/roadmap/repair/preview; body=; previewFirst=True}",
       "previewEvidence": null,
       "operatorApprovalEvidence": null,
       "runId": null,
@@ -123,7 +195,44 @@
       "countedImprovement": false,
       "headCommit": "d25d29c3fe57a45d2f49a5b79bc8c06de82fd3e3",
       "cachedOutcomeDiagnostic": null,
-      "ownerIntentConfirmed": true
+      "ownerIntentConfirmed": true,
+      "conclusionRun": {
+        "generatedAt": "2026-09-13T21:46:30.5031086Z",
+        "indexGeneratedAt": "2026-09-13T21:07:51.3160158Z",
+        "indexSha256": "fd33787bed2a755e62f619f31f5db14fed5486c2c69a7d6f4e36e212500cbcb9",
+        "engine": "foundation-conclusions v1 (Portfolio.Conclusion.ps1)",
+        "operatorVerified": false,
+        "operatorVerifiedNote": "Engine output. The entry gate still requires the live Today, outcome-card and Insights surfaces to be checked by the operator; until then this is what the product concluded, not a confirmed finding.",
+        "kind": "unknown",
+        "kindBasis": "no kind signal in the index; every scored domain applies",
+        "limitingFoundation": [
+          {
+            "domain": "planning",
+            "title": "Planning",
+            "status": "weak",
+            "evidence": [
+              "roadmap at L2-Structured - below the contract-ready bar - with 0 pending item(s)",
+              "every recorded item is complete"
+            ]
+          },
+          {
+            "domain": "structure",
+            "title": "Structure",
+            "status": "weak",
+            "evidence": [
+              "6 structure warning(s) for a powershell repository: LICENSE, SECURITY.md, CONTRIBUTING.md, .gitignore, docs, .github/workflows",
+              "a test signal is present"
+            ]
+          }
+        ],
+        "limitingFoundationNote": "",
+        "productCanExecute": true,
+        "productCanExecuteBasis": "the next action names a route the product performs: roadmap-repair-preview via /api/roadmap/repair/preview (previewFirst=True)",
+        "nextActionRoute": "/api/roadmap/repair/preview",
+        "nextActionKind": "roadmap-repair-preview",
+        "nextActionPreviewFirst": true,
+        "contractViolations": []
+      }
     },
     {
       "category": "experiment",
@@ -146,9 +255,9 @@
           "sha256": "e3c427e63c04189ac4292e5eaf8158f827b655438fab0108844735fe85dd6104"
         }
       ],
-      "productConclusion": null,
-      "stillMatters": null,
-      "highestValueNextAction": null,
+      "productConclusion": "strengthen",
+      "stillMatters": "Planning is weak: ROADMAP.md exists but audits as 'L0-Absent' (no plan recorded in contract terms).",
+      "highestValueNextAction": "@{domain=planning; kind=roadmap-repair-preview; label=Preview the smallest credible plan; method=POST; route=/api/roadmap/repair/preview; body=; previewFirst=True}",
       "previewEvidence": null,
       "operatorApprovalEvidence": null,
       "runId": null,
@@ -163,7 +272,44 @@
       "countedImprovement": false,
       "headCommit": "bfeb833d44713a925f6512fb6b2951492e1dccdd",
       "cachedOutcomeDiagnostic": null,
-      "ownerIntentConfirmed": true
+      "ownerIntentConfirmed": true,
+      "conclusionRun": {
+        "generatedAt": "2026-09-13T21:46:30.5031086Z",
+        "indexGeneratedAt": "2026-09-13T21:07:51.3160158Z",
+        "indexSha256": "fd33787bed2a755e62f619f31f5db14fed5486c2c69a7d6f4e36e212500cbcb9",
+        "engine": "foundation-conclusions v1 (Portfolio.Conclusion.ps1)",
+        "operatorVerified": false,
+        "operatorVerifiedNote": "Engine output. The entry gate still requires the live Today, outcome-card and Insights surfaces to be checked by the operator; until then this is what the product concluded, not a confirmed finding.",
+        "kind": "unknown",
+        "kindBasis": "no kind signal in the index; every scored domain applies",
+        "limitingFoundation": [
+          {
+            "domain": "planning",
+            "title": "Planning",
+            "status": "weak",
+            "evidence": [
+              "ROADMAP.md exists but audits as 'L0-Absent' (no plan recorded in contract terms)"
+            ]
+          },
+          {
+            "domain": "structure",
+            "title": "Structure",
+            "status": "weak",
+            "evidence": [
+              "3 structure warning(s) for a node repository: LICENSE, SECURITY.md, CONTRIBUTING.md",
+              "a CI workflow is present",
+              "a test signal is present"
+            ]
+          }
+        ],
+        "limitingFoundationNote": "",
+        "productCanExecute": true,
+        "productCanExecuteBasis": "the next action names a route the product performs: roadmap-repair-preview via /api/roadmap/repair/preview (previewFirst=True)",
+        "nextActionRoute": "/api/roadmap/repair/preview",
+        "nextActionKind": "roadmap-repair-preview",
+        "nextActionPreviewFirst": true,
+        "contractViolations": []
+      }
     },
     {
       "category": "abandoned-project",
@@ -186,9 +332,9 @@
           "sha256": "f78e5b40a5b01860926f546905ae1d86f0fc680b9f79713034450764d8d88bec"
         }
       ],
-      "productConclusion": null,
-      "stillMatters": null,
-      "highestValueNextAction": null,
+      "productConclusion": "appropriate-as-is",
+      "stillMatters": "Archived: intentionally closed, kept for reference.",
+      "highestValueNextAction": "",
       "previewEvidence": null,
       "operatorApprovalEvidence": null,
       "runId": null,
@@ -204,7 +350,25 @@
       "headCommit": "45b909516b6ec0ddb7223d5cbdef71836bdc580a",
       "cachedOutcomeDiagnostic": null,
       "ownerIntentConfirmed": false,
-      "ownerIntentNote": "Owner intent is not established. D-006 keeps the intent LABEL open even though the selection is released; this category assignment is not a claim about what the owner intended."
+      "ownerIntentNote": "Owner intent is not established. D-006 keeps the intent LABEL open even though the selection is released; this category assignment is not a claim about what the owner intended.",
+      "conclusionRun": {
+        "generatedAt": "2026-09-13T21:46:30.5031086Z",
+        "indexGeneratedAt": "2026-09-13T21:07:51.3160158Z",
+        "indexSha256": "fd33787bed2a755e62f619f31f5db14fed5486c2c69a7d6f4e36e212500cbcb9",
+        "engine": "foundation-conclusions v1 (Portfolio.Conclusion.ps1)",
+        "operatorVerified": false,
+        "operatorVerifiedNote": "Engine output. The entry gate still requires the live Today, outcome-card and Insights surfaces to be checked by the operator; until then this is what the product concluded, not a confirmed finding.",
+        "kind": "archived",
+        "kindBasis": "curationState=archived-ignore",
+        "limitingFoundation": [],
+        "limitingFoundationNote": "No scored foundation is weak or missing. Nothing is limiting this repository in the domains the product judges.",
+        "productCanExecute": false,
+        "productCanExecuteBasis": "the next action names no route; dispatchReadiness=blocked; operatorOnlyItemCount=0",
+        "nextActionRoute": "",
+        "nextActionKind": "",
+        "nextActionPreviewFirst": false,
+        "contractViolations": []
+      }
     },
     {
       "category": "repository-without-roadmap",
@@ -227,9 +391,9 @@
           "sha256": null
         }
       ],
-      "productConclusion": null,
-      "stillMatters": null,
-      "highestValueNextAction": null,
+      "productConclusion": "strengthen",
+      "stillMatters": "Planning is missing: no plan recorded (no ROADMAP.md).",
+      "highestValueNextAction": "@{domain=planning; kind=roadmap-repair-preview; label=Preview the smallest credible plan; method=POST; route=/api/roadmap/repair/preview; body=; previewFirst=True}",
       "previewEvidence": null,
       "operatorApprovalEvidence": null,
       "runId": null,
@@ -244,7 +408,34 @@
       "countedImprovement": false,
       "headCommit": "5deaa85756112656c3e33aa18d55b51c79d0ec69",
       "cachedOutcomeDiagnostic": null,
-      "ownerIntentConfirmed": true
+      "ownerIntentConfirmed": true,
+      "conclusionRun": {
+        "generatedAt": "2026-09-13T21:46:30.5031086Z",
+        "indexGeneratedAt": "2026-09-13T21:07:51.3160158Z",
+        "indexSha256": "fd33787bed2a755e62f619f31f5db14fed5486c2c69a7d6f4e36e212500cbcb9",
+        "engine": "foundation-conclusions v1 (Portfolio.Conclusion.ps1)",
+        "operatorVerified": false,
+        "operatorVerifiedNote": "Engine output. The entry gate still requires the live Today, outcome-card and Insights surfaces to be checked by the operator; until then this is what the product concluded, not a confirmed finding.",
+        "kind": "unknown",
+        "kindBasis": "no kind signal in the index; every scored domain applies",
+        "limitingFoundation": [
+          {
+            "domain": "planning",
+            "title": "Planning",
+            "status": "missing",
+            "evidence": [
+              "no plan recorded (no ROADMAP.md)"
+            ]
+          }
+        ],
+        "limitingFoundationNote": "",
+        "productCanExecute": true,
+        "productCanExecuteBasis": "the next action names a route the product performs: roadmap-repair-preview via /api/roadmap/repair/preview (previewFirst=True)",
+        "nextActionRoute": "/api/roadmap/repair/preview",
+        "nextActionKind": "roadmap-repair-preview",
+        "nextActionPreviewFirst": true,
+        "contractViolations": []
+      }
     },
     {
       "category": "library",
@@ -267,9 +458,9 @@
           "sha256": "2f18607d97adc8b0659a24a1df77bffe5e317805cd549635a0bf6a54cb441d45"
         }
       ],
-      "productConclusion": null,
-      "stillMatters": null,
-      "highestValueNextAction": null,
+      "productConclusion": "insufficiently-understood",
+      "stillMatters": "ROADMAP.md was read in full and records its plan in prose rather than \"- [ ]\" checklist items, so the product needs a checklist-shaped plan before it can rank or dispatch this repository's work. The file itself is sound. A preview-first repair is offered.",
+      "highestValueNextAction": "@{domain=planning; kind=roadmap-repair-preview; label=Preview the smallest credible plan; method=POST; route=/api/roadmap/repair/preview; body=; previewFirst=True}",
       "previewEvidence": null,
       "operatorApprovalEvidence": null,
       "runId": null,
@@ -284,7 +475,44 @@
       "countedImprovement": false,
       "headCommit": "32f952a91323c63b49a873c7a5e7cb23ad9ce0b7",
       "cachedOutcomeDiagnostic": null,
-      "ownerIntentConfirmed": true
+      "ownerIntentConfirmed": true,
+      "conclusionRun": {
+        "generatedAt": "2026-09-13T21:46:30.5031086Z",
+        "indexGeneratedAt": "2026-09-13T21:07:51.3160158Z",
+        "indexSha256": "fd33787bed2a755e62f619f31f5db14fed5486c2c69a7d6f4e36e212500cbcb9",
+        "engine": "foundation-conclusions v1 (Portfolio.Conclusion.ps1)",
+        "operatorVerified": false,
+        "operatorVerifiedNote": "Engine output. The entry gate still requires the live Today, outcome-card and Insights surfaces to be checked by the operator; until then this is what the product concluded, not a confirmed finding.",
+        "kind": "unknown",
+        "kindBasis": "no kind signal in the index; every scored domain applies",
+        "limitingFoundation": [
+          {
+            "domain": "planning",
+            "title": "Planning",
+            "status": "weak",
+            "evidence": [
+              "ROADMAP.md was read in full and plans in prose rather than \"- [ ]\" items, so no unit of work can be tracked from it"
+            ]
+          },
+          {
+            "domain": "structure",
+            "title": "Structure",
+            "status": "weak",
+            "evidence": [
+              "3 structure warning(s) for a powershell repository: LICENSE, SECURITY.md, CONTRIBUTING.md",
+              "a CI workflow is present",
+              "a test signal is present"
+            ]
+          }
+        ],
+        "limitingFoundationNote": "",
+        "productCanExecute": true,
+        "productCanExecuteBasis": "the next action names a route the product performs: roadmap-repair-preview via /api/roadmap/repair/preview (previewFirst=True)",
+        "nextActionRoute": "/api/roadmap/repair/preview",
+        "nextActionKind": "roadmap-repair-preview",
+        "nextActionPreviewFirst": true,
+        "contractViolations": []
+      }
     },
     {
       "category": "externally-managed-project",
@@ -335,9 +563,9 @@
           "sha256": "fd34d667b87227541924714ec29d9dcd538c686c50b2571bd2c97e9b3e4d447b"
         }
       ],
-      "productConclusion": null,
-      "stillMatters": null,
-      "highestValueNextAction": null,
+      "productConclusion": "strengthen",
+      "stillMatters": "Planning is weak: roadmap at L2-Structured - below the contract-ready bar - with 7 pending item(s).",
+      "highestValueNextAction": "@{domain=planning; kind=roadmap-repair-preview; label=Preview the smallest credible plan; method=POST; route=/api/roadmap/repair/preview; body=; previewFirst=True}",
       "previewEvidence": null,
       "operatorApprovalEvidence": null,
       "runId": null,
@@ -352,7 +580,42 @@
       "countedImprovement": false,
       "headCommit": "fe4b5b57e8e66e8bc0e85720973d859affd79ce7",
       "cachedOutcomeDiagnostic": null,
-      "ownerIntentConfirmed": true
+      "ownerIntentConfirmed": true,
+      "conclusionRun": {
+        "generatedAt": "2026-09-13T21:46:30.5031086Z",
+        "indexGeneratedAt": "2026-09-13T21:07:51.3160158Z",
+        "indexSha256": "fd33787bed2a755e62f619f31f5db14fed5486c2c69a7d6f4e36e212500cbcb9",
+        "engine": "foundation-conclusions v1 (Portfolio.Conclusion.ps1)",
+        "operatorVerified": false,
+        "operatorVerifiedNote": "Engine output. The entry gate still requires the live Today, outcome-card and Insights surfaces to be checked by the operator; until then this is what the product concluded, not a confirmed finding.",
+        "kind": "unknown",
+        "kindBasis": "no kind signal in the index; every scored domain applies",
+        "limitingFoundation": [
+          {
+            "domain": "planning",
+            "title": "Planning",
+            "status": "weak",
+            "evidence": [
+              "roadmap at L2-Structured - below the contract-ready bar - with 7 pending item(s)"
+            ]
+          },
+          {
+            "domain": "structure",
+            "title": "Structure",
+            "status": "weak",
+            "evidence": [
+              "6 structure warning(s) for a powershell repository: LICENSE, SECURITY.md, CONTRIBUTING.md, .gitignore, .github/workflows, tests"
+            ]
+          }
+        ],
+        "limitingFoundationNote": "",
+        "productCanExecute": true,
+        "productCanExecuteBasis": "the next action names a route the product performs: roadmap-repair-preview via /api/roadmap/repair/preview (previewFirst=True)",
+        "nextActionRoute": "/api/roadmap/repair/preview",
+        "nextActionKind": "roadmap-repair-preview",
+        "nextActionPreviewFirst": true,
+        "contractViolations": []
+      }
     },
     {
       "category": "messy-repository",
@@ -375,9 +638,9 @@
           "sha256": "8d249574f51d9e7db59087e8e215dba097be2c5fefcd39f2687b589664df0ec3"
         }
       ],
-      "productConclusion": null,
-      "stillMatters": null,
-      "highestValueNextAction": null,
+      "productConclusion": "strengthen",
+      "stillMatters": "Planning is weak: ROADMAP.md exists but audits as 'L0-Absent' (no plan recorded in contract terms).",
+      "highestValueNextAction": "@{domain=planning; kind=roadmap-repair-preview; label=Preview the smallest credible plan; method=POST; route=/api/roadmap/repair/preview; body=; previewFirst=True}",
       "previewEvidence": null,
       "operatorApprovalEvidence": null,
       "runId": null,
@@ -392,11 +655,50 @@
       "countedImprovement": false,
       "headCommit": "77b1ad9f7fd9125a628bb635919587b2f2c362a3",
       "cachedOutcomeDiagnostic": null,
-      "ownerIntentConfirmed": true
+      "ownerIntentConfirmed": true,
+      "conclusionRun": {
+        "generatedAt": "2026-09-13T21:46:30.5031086Z",
+        "indexGeneratedAt": "2026-09-13T21:07:51.3160158Z",
+        "indexSha256": "fd33787bed2a755e62f619f31f5db14fed5486c2c69a7d6f4e36e212500cbcb9",
+        "engine": "foundation-conclusions v1 (Portfolio.Conclusion.ps1)",
+        "operatorVerified": false,
+        "operatorVerifiedNote": "Engine output. The entry gate still requires the live Today, outcome-card and Insights surfaces to be checked by the operator; until then this is what the product concluded, not a confirmed finding.",
+        "kind": "unknown",
+        "kindBasis": "no kind signal in the index; every scored domain applies",
+        "limitingFoundation": [
+          {
+            "domain": "planning",
+            "title": "Planning",
+            "status": "weak",
+            "evidence": [
+              "ROADMAP.md exists but audits as 'L0-Absent' (no plan recorded in contract terms)"
+            ]
+          },
+          {
+            "domain": "structure",
+            "title": "Structure",
+            "status": "weak",
+            "evidence": [
+              "2 structure warning(s) for a dotnet repository: SECURITY.md, CONTRIBUTING.md",
+              "a CI workflow is present",
+              "a test signal is present"
+            ]
+          }
+        ],
+        "limitingFoundationNote": "",
+        "productCanExecute": true,
+        "productCanExecuteBasis": "the next action names a route the product performs: roadmap-repair-preview via /api/roadmap/repair/preview (previewFirst=True)",
+        "nextActionRoute": "/api/roadmap/repair/preview",
+        "nextActionKind": "roadmap-repair-preview",
+        "nextActionPreviewFirst": true,
+        "contractViolations": []
+      }
     }
   ],
   "selectionStatus": "complete",
   "selectionCompletedAt": "2026-09-13T21:30:00Z",
   "selectionRuling": "D-006 (2026-09-06): an empty category is a valid trial outcome. Selection completes with nine named repositories and externally-managed-project recorded as unrepresented.",
-  "representedCategoryCount": 9
+  "representedCategoryCount": 9,
+  "conclusionPassAt": "2026-09-13T21:46:30.5031086Z",
+  "conclusionPassIndexSha256": "fd33787bed2a755e62f619f31f5db14fed5486c2c69a7d6f4e36e212500cbcb9"
 }

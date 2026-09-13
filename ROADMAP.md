@@ -834,10 +834,39 @@ judgement, not regenerable run spill.
 
 **Still open:**
 
-- [ ] **Run the conclusion model over the nine**, recording per repository:
-      what it is, whether it still matters, its state, what limits its value,
-      the highest-value next action, and whether the product can execute or
-      facilitate it. _(state: planned)_
+**Conclusions recorded 2026-09-13 — prose, not a `[x]`.** All six fields are in
+`cohort.json` per repository (kind and its basis, the conclusion and its reason,
+the limiting foundation with evidence, the next action, and whether the product
+can perform it), drawn by `foundation-conclusions v1` over the index generated
+`2026-09-13T21:07:51Z` with that index's SHA-256 recorded beside each result.
+Zero conclusion-contract violations. Eight of nine reach **strengthen**, one is
+**appropriate-as-is**, one **insufficiently-understood**. Eight name an action
+the product performs itself. **Not operator-verified** — the entry gate still
+wants eyes on the live surfaces, so this is what the product concluded, not a
+confirmed finding, and no improvement is claimed.
+
+**Three false positives the first pass exposed, for milestone 4 to fix.** This
+is the trial working: finding them on nine repositories rather than eighty.
+
+1. **Kind detection resolves only `archived`.** Eight of nine were concluded
+   with the basis "no kind signal in the index; every scored domain applies",
+   so per-kind applicability never engaged and a library was judged by an
+   application's yardstick. Already recorded as a 3.6 out-of-scope gap; what is
+   new is that it undercuts a cohort selected **by kind**.
+2. **Seven of nine share one limiting pair** — `planning` weak plus `structure`
+   weak — across a finished LED firmware project, an API client library and an
+   orchestration experiment. A ranking that answers the same for most of the
+   portfolio cannot say what to do first.
+3. **Every actionable repository gets the same next action**,
+   `POST /api/roadmap/repair/preview`. Defensible as a default when planning is
+   weakest, but as the universal recommendation it means the model is currently
+   a planning detector rather than a portfolio advisor.
+
+Deliberately recorded and not fixed: adjusting the model now, before the
+improvements are executed and measured, would change it mid-measurement.
+
+**Still open:**
+
 - [ ] **Execute at least five improvements** through preview → approve →
       execute → validate, recording operator minutes, agent first-pass
       result, and whether the repository is materially stronger afterwards —
