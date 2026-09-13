@@ -388,6 +388,16 @@ $script:SmokeIndexRoot = Join-Path $smokeRoot 'index'
 Remove-Item -LiteralPath $script:SmokeIndexRoot -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ("  portfolio index isolated to {0} (the operator's own index is never written)" -f $script:SmokeIndexRoot) -ForegroundColor DarkGray
 
+# Lane 0.20 — the kill switch's two files. This gate exercises the stop route,
+# and a hold is DURABLE by design: written into the operator's real output
+# directory it would stop their live runner mid-task and keep it stopped, since
+# the repeating logon task honours a hold by leaving. Same shape as the index
+# damage above, with a worse recovery — nothing on screen would explain why
+# execution had quietly ceased. Keep in step with the job's assignment below.
+$script:SmokeRunnerControlRoot = Join-Path $smokeRoot 'runner-control'
+Remove-Item -LiteralPath $script:SmokeRunnerControlRoot -Recurse -Force -ErrorAction SilentlyContinue
+Write-Host ("  runner control files isolated to {0} (the operator's live runner is never held)" -f $script:SmokeRunnerControlRoot) -ForegroundColor DarkGray
+
 $job = Start-Job -ScriptBlock {
     param($ScriptPath, $Root, $Log, $ListenPort, $SignalPath, $QueuePath, $SettingsPath)
     # Both overrides are set on the JOB, never on the parent, so a crashed smoke
@@ -407,6 +417,11 @@ $job = Start-Job -ScriptBlock {
     # ran and nothing on screen said why. Rebuilt from $Root for the same
     # ratchet reason as the line above; keep in step with $script:SmokeIndexRoot.
     $env:REPO_MGMT_INDEX_ROOT = (Join-Path $Root 'output\smoke\api-host\index')
+    # Lane 0.20, same reason and the same ratchet-driven rebuild from $Root: the
+    # stop route writes a DURABLE hold, and pointed at the real output directory
+    # it would stop the operator's live runner and keep it stopped. Must stay in
+    # step with $script:SmokeRunnerControlRoot.
+    $env:REPO_MGMT_RUNNER_CONTROL_ROOT = (Join-Path $Root 'output\smoke\api-host\runner-control')
     # Start-Job inherits the parent environment. Every assertion below speaks
     # plain HTTP to this host, so an inherited REPO_MGMT_TLS_PFX -- which the
     # installed service sets at MACHINE scope -- would wrap the listener in an
@@ -3959,6 +3974,103 @@ A release should not be marked `done` unless:
         throw 'The smoke host has no operator runner; reporting one present would be the false-green this route exists to prevent.'
     }
 
+    # ── Lane 0.20 — the action replaced the command, over HTTP ───────────────
+    # The console used to answer "no runner" with a shell command to paste,
+    # which made the operator the mechanism for something the portal can do.
+    # These two routes are that mechanism. Both write only inside
+    # $script:SmokeRunnerControlRoot; the operator's live runner is untouched.
+    foreach ($controlField in @('stoppedByOperator', 'stoppedAt', 'stoppedBy', 'stopReason', 'startable', 'taskName')) {
+        if (-not ($runnerResp.Json.data.PSObject.Properties.Name -contains $controlField)) {
+            throw "GET /api/roadmap/runner missing '$controlField'; the console cannot tell a deliberate stop from a fault. Body=$($runnerResp.Content)"
+        }
+    }
+    if ([bool]$runnerResp.Json.data.stoppedByOperator) {
+        throw 'Nothing has been stopped yet, so stoppedByOperator must be false. A hold reported here would mean the isolation leaked into a real one.'
+    }
+
+    $runnerHoldFile = Join-Path $script:SmokeRunnerControlRoot 'roadmap-task-runner.hold.json'
+    $runnerStopFile = Join-Path $script:SmokeRunnerControlRoot 'roadmap-task-runner.stop'
+    $runnerLiveHoldFile = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.hold.json'
+    $runnerControlOk = $false
+    try {
+        # --- The kill switch, end to end. ---------------------------------
+        $stopResp = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/runner/stop" -Body @{ reason = 'api-host smoke' }
+        Assert-Not503 -Name 'POST /api/roadmap/runner/stop' -Response $stopResp
+        if ([int]$stopResp.StatusCode -ne 202) {
+            throw "POST /api/roadmap/runner/stop must answer 202 Accepted -- a runner mid-task exits at its next poll boundary, so the stop is accepted, not completed. Got HTTP $($stopResp.StatusCode). Body=$($stopResp.Content)"
+        }
+        if (-not [bool]$stopResp.Json.success -or -not [bool]$stopResp.Json.data.held) {
+            throw "POST /api/roadmap/runner/stop did not report a hold. Body=$($stopResp.Content)"
+        }
+        # Both halves, or the stop does not stick: the marker alone is consumed
+        # by the exiting runner and the repeating logon task revives it minutes
+        # later, which would make the kill switch last one interval.
+        if (-not (Test-Path -LiteralPath $runnerHoldFile)) {
+            throw "No hold record at $runnerHoldFile; the next scheduled start would revive the runner the operator just stopped."
+        }
+        if (-not (Test-Path -LiteralPath $runnerStopFile)) {
+            throw "No stop marker at $runnerStopFile; a runner alive right now would keep claiming work."
+        }
+        # The isolation itself, asserted rather than assumed. This gate runs
+        # against the operator's real workspace root.
+        if (Test-Path -LiteralPath $runnerLiveHoldFile) {
+            throw "The stop route wrote a hold into the OPERATOR'S workspace ($runnerLiveHoldFile). Their runner would stop mid-task and stay stopped. REPO_MGMT_RUNNER_CONTROL_ROOT is not reaching the host."
+        }
+
+        # --- The hold is visible on the route every surface reads. ---------
+        # "Absent" and "the operator stopped it" are the same missing heartbeat
+        # and opposite situations; without this the console renders a deliberate
+        # stop as a fault and urges the operator to undo their own decision.
+        $heldResp = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/roadmap/runner"
+        if (-not [bool]$heldResp.Json.data.stoppedByOperator) {
+            throw "GET /api/roadmap/runner reports stoppedByOperator=false directly after a successful stop. Body=$($heldResp.Content)"
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$heldResp.Json.data.stoppedAt)) {
+            throw "A hold must carry when it was taken; stoppedAt is empty. Body=$($heldResp.Content)"
+        }
+
+        # --- Resuming releases the hold even when it cannot start anything. -
+        # The CI runner has no registered task, so this exercises the refusal
+        # path: it must still clear both files (the operator must never be stuck
+        # holding a flag they cannot clear from the console) and must name the
+        # installer rather than a generic failure. Where the task DOES exist the
+        # answer is 202 and a runner is requested.
+        $startResp = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap/runner/start" -Body @{}
+        Assert-Not503 -Name 'POST /api/roadmap/runner/start' -Response $startResp
+        if ([int]$startResp.StatusCode -notin @(202, 409)) {
+            throw "POST /api/roadmap/runner/start must answer 202 (requested) or 409 (no task registered); got HTTP $($startResp.StatusCode). Body=$($startResp.Content)"
+        }
+        if (-not [bool]$startResp.Json.data.holdReleased) {
+            throw "POST /api/roadmap/runner/start left the hold in place. The operator could not undo their own stop from the console. Body=$($startResp.Content)"
+        }
+        if (Test-Path -LiteralPath $runnerHoldFile) { throw 'The hold record survived a start request.' }
+        if (Test-Path -LiteralPath $runnerStopFile) {
+            throw 'The stop marker survived a start request; it would stop the runner just requested at its very first poll, which reads as "the console cannot start the runner".'
+        }
+        if ([int]$startResp.StatusCode -eq 409) {
+            if ([string]$startResp.Json.error -notmatch 'Install-RoadmapTaskRunner\.ps1') {
+                throw ("A start refused for a missing task must name the installer that fixes it; got '{0}'." -f $startResp.Json.error)
+            }
+        }
+        else {
+            # 202 is REQUESTED, never STARTED: an Interactive task cannot run
+            # while the operator is logged out, and only the heartbeat can say a
+            # runner exists. Claiming otherwise rebuilds the false-green the
+            # presence route was built to remove.
+            if ([string]$startResp.Json.message -notmatch 'requested') {
+                throw ("A 202 from the start route must say the start was REQUESTED, not that a runner is up; got '{0}'." -f $startResp.Json.message)
+            }
+        }
+
+        $runnerControlOk = $true
+        Write-Host ("  runner control ok: stop -> 202 + both files written and the operator's workspace untouched; the hold shows on GET; start -> HTTP {0} clearing both files{1}" -f `
+                $startResp.StatusCode, $(if ([int]$startResp.StatusCode -eq 409) { ' and naming the installer' } else { ' and reporting a request, not a running runner' })) -ForegroundColor DarkGray
+    }
+    finally {
+        Remove-Item -LiteralPath $runnerHoldFile -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $runnerStopFile -Force -ErrorAction SilentlyContinue
+    }
+
     # Release 3.8 M2 (H38-12) — the governor's reasoning, over HTTP.
     $providersResp = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/providers"
     Assert-Not503 -Name '/api/providers' -Response $providersResp
@@ -4639,6 +4751,7 @@ A release should not be marked `done` unless:
         automationStatusOk = { $automationStatusOk }
         packagingOk = { $packagingOk }
         runnerRouteOk = { $runnerRouteOk }
+        runnerControlOk = { $runnerControlOk }
         approveBindOk = { $approveBindOk }
         deliveryReconcileOk = { $reconcileOk }
         githubAuthProbeOk = { $githubAuthProbeOk }

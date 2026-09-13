@@ -29,10 +29,15 @@ describe('resolveRunnerPresence', () => {
     expect(view.detail).toContain('3 tasks already queued');
   });
 
-  it('names the command that fixes an absent runner', () => {
+  // Lane 0.20 — inverted deliberately. This used to assert the detail CONTAINED
+  // the start command; the console handing over a terminal command is the defect
+  // the lane exists to remove, so the assertion now guards the other direction.
+  it('offers the action for an absent runner instead of a command to paste', () => {
     const view = resolveRunnerPresence({ state: 'absent', present: false });
     expect(view.severity).toBe('error');
-    expect(view.detail).toContain(runnerStartCommand());
+    expect(view.detail).not.toContain('pwsh');
+    expect(view.control.kind).toBe('start');
+    expect(view.control.label).toBe('Start runner');
     expect(view.warnBeforeQueueing).toBe(true);
   });
 
@@ -78,8 +83,11 @@ describe('resolveDispatchGate', () => {
     const gate = resolveDispatchGate({ state: 'absent', present: false });
     expect(gate.canQueue).toBe(false);
     // A disabled control with no reason is worse than a failing one: the
-    // operator cannot tell broken from not-yet-applicable.
-    expect(gate.unmetPrecondition).toContain(runnerStartCommand());
+    // operator cannot tell broken from not-yet-applicable. Lane 0.20 — the
+    // reason names the action, not a shell command.
+    expect(gate.unmetPrecondition).toContain('nothing would pick this up');
+    expect(gate.unmetPrecondition).toContain('Start runner');
+    expect(gate.unmetPrecondition).not.toContain('pwsh');
     expect(gate.overrideLabel).not.toBe('');
   });
 
@@ -157,11 +165,16 @@ describe('runnerStartCommand', () => {
     expect(runnerStartCommand({ state: 'absent', startCommand: absolute })).toBe(absolute);
   });
 
-  it('carries the absolute command into every surface that names the remedy', () => {
+  // Lane 0.20 — the command is now the FALLBACK, reached only when the console
+  // tried to start a runner and could not, so no routine surface may print it.
+  // It still has to be the absolute form when it is printed: the relative one
+  // fails in any shell that did not open inside the repo.
+  it('stays off the surfaces entirely, while remaining absolute for the failure path', () => {
     const payload = { state: 'absent', present: false, startCommand: absolute };
-    expect(resolveRunnerPresence(payload).detail).toContain(absolute);
+    expect(resolveRunnerPresence(payload).detail).not.toContain(absolute);
     expect(resolveRunnerPresence(payload).detail).not.toContain(relative);
-    expect(resolveDispatchGate(payload).unmetPrecondition).toContain(absolute);
+    expect(resolveDispatchGate(payload).unmetPrecondition).not.toContain('pwsh');
+    expect(runnerStartCommand(payload)).toBe(absolute);
   });
 
   it('falls back to the relative form only when the host did not say where the repo is', () => {
@@ -243,5 +256,89 @@ describe('resolveRunnerPresence — queuedByProvider (H38-19)', () => {
       warnBeforeQueueing: true,
       queueAgeAlarmHours: null,
     });
+  });
+});
+
+// ── Lane 0.20 — the kill switch, and the action that replaced the command ────
+// A held runner and a dead runner produce an identical heartbeat (none) and
+// mean opposite things. Rendering a deliberate stop as a fault would push the
+// operator to undo what they just chose, and would teach them to discount the
+// alarm colour on the one surface that most needs to keep it.
+describe('the operator hold', () => {
+  const held = {
+    state: 'absent',
+    present: false,
+    stoppedByOperator: true,
+    stoppedBy: 'ben',
+    stoppedAt: '2026-09-13T18:00:00.000Z',
+    stopReason: 'Stopped from the console.',
+  };
+
+  it('reads as deliberate, not as a fault', () => {
+    const view = resolveRunnerPresence(held);
+    expect(view.severity).toBe('warning');
+    expect(view.label).toBe('Runners stopped');
+    expect(view.stoppedByOperator).toBe(true);
+    // Deliberate, so no alarm — but nothing is being worked, so it must still
+    // warn anything about to queue into the silence.
+    expect(view.needsAttention).toBe(false);
+    expect(view.warnBeforeQueueing).toBe(true);
+  });
+
+  it('attributes the hold so the operator can tell it was theirs', () => {
+    expect(resolveRunnerPresence(held).detail).toContain('ben');
+    expect(resolveRunnerPresence(held).detail).toContain('until you resume');
+  });
+
+  it('takes precedence over the stale reading of the same missing heartbeat', () => {
+    const view = resolveRunnerPresence({ ...held, state: 'stale', message: 'heartbeat 900s ago' });
+    expect(view.label).toBe('Runners stopped');
+    expect(view.detail).not.toContain('900s');
+  });
+
+  it('offers resume rather than start, because there is one start path', () => {
+    expect(resolveRunnerPresence(held).control).toEqual({
+      kind: 'start',
+      label: 'Resume runners',
+      unavailableReason: '',
+    });
+  });
+
+  it('still blocks queueing, naming the action', () => {
+    const gate = resolveDispatchGate(held);
+    expect(gate.canQueue).toBe(false);
+    expect(gate.unmetPrecondition).toContain('Resume runners');
+    expect(gate.unmetPrecondition).not.toContain('pwsh');
+  });
+});
+
+describe('the control a state offers', () => {
+  it('offers stop while a runner is alive', () => {
+    expect(resolveRunnerPresence({ state: 'present', present: true }).control).toEqual({
+      kind: 'stop',
+      label: 'Stop runners',
+      unavailableReason: '',
+    });
+  });
+
+  // A button for a task nobody registered fails every press. Saying so beats
+  // offering it, because the operator otherwise reads the failure as the
+  // console being broken rather than the installer never having been run.
+  it('withholds the control, with a reason, when no runner task is registered', () => {
+    const view = resolveRunnerPresence({ state: 'absent', present: false, startable: false });
+    expect(view.control.kind).toBe('none');
+    expect(view.control.unavailableReason).toContain('Install-RoadmapTaskRunner.ps1');
+  });
+
+  // `startable` absent means a host that predates this packet, not a host with
+  // no task. Treating silence as "false" would disable the button against every
+  // installation that has not restarted its service yet.
+  it('treats a host that cannot answer as able to start, not as unable', () => {
+    expect(resolveRunnerPresence({ state: 'absent', present: false }).control.kind).toBe('start');
+  });
+
+  it('offers nothing when the status call itself failed', () => {
+    expect(resolveRunnerPresence(null).control.kind).toBe('none');
+    expect(resolveRunnerPresence(null).detail).not.toContain('pwsh');
   });
 });

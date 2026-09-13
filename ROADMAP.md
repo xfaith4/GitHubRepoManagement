@@ -2010,37 +2010,60 @@ behaviour, not a problem to solve. Keeping it running is the service's job. This
 also retires the cross-identity question entirely: a LocalSystem caller never
 reaches into a user session at all.
 
-**Still open:**
+**The remaining three shipped 2026-09-13; recorded as prose, because a `[x]` in
+this file is a mistake, not a record.**
 
-- [ ] Replace the banner's pasted command with the action itself. Keep the
-      refusal honest when the runner genuinely cannot be started — logged out is
-      still "nothing will pick this up" — and when the start attempt fails, show
-      the error the attempt actually produced. Do not remove the empty-room gate;
-      it was operator-verified 2026-09-13, and once is the right number of times
-      to verify it.
+*The action, not the command.* `POST /api/roadmap/runner/start` and
+`POST /api/roadmap/runner/stop`
+([`Automation.RunnerControl.ps1`](backend/modules/automation/Automation.RunnerControl.ps1))
+replace the pasted remedy everywhere it was offered: the header popover, the
+Insights pane, and the empty-room refusal text. The gate itself is untouched —
+it was operator-verified and refusing to queue into an empty room is still
+right; only the remedy it names changed. The command survives in exactly one
+place, beside the error, when the console tried to start a runner and could not.
+Three frontend assertions were INVERTED to hold that line: they used to require
+the command in the detail and the precondition, and now forbid it.
 
-- [ ] Show it in one place. The operator should watch the queue and the work in
-      flight from a single pane rather than inferring either — Insights is the
-      intended home ([`InsightsView.tsx`](frontend/components/InsightsView.tsx),
-      with [`ExecutionQueuePanel.tsx`](frontend/components/ExecutionQueuePanel.tsx)
-      and [`WorkQueueView.tsx`](frontend/components/WorkQueueView.tsx) already
-      holding most of the pieces). The data exists: `GET /api/roadmap/runner`
-      already returns runner presence and queued backlog together.
-- [ ] Give the operator a kill switch that stops every runner on demand, and
-      surface it wherever the work is visible. This is control without a
-      bottleneck: work proceeds unattended by default, and the operator can halt
-      it the moment they see something they do not want, rather than being asked
-      to authorise each step.
+The host never spawns a runner. It is LocalSystem, and a runner it spawned would
+hold no Claude credential and fail everything it claimed. It triggers the
+operator-owned scheduled task and lets Task Scheduler make the cross-identity
+hop. A start therefore reports REQUESTED, never STARTED: an Interactive task
+cannot run while the operator is logged out, so only the heartbeat may say a
+runner exists, and the console watches for it and says plainly when it never
+arrives.
 
-**The kill switch needs the durable flag this lane previously refused, and that
-is not a reversal.** A stop file alone cannot hold: the runner clears it as it
-exits and the repeating trigger revives it minutes later, so "stop" would mean
-"stop for a few minutes". The mechanism is the same one rejected above; what
-changed is the reason. Built to let someone manufacture a down runner it was
-scaffolding for a rehearsal. Built to let the operator halt real work they can
-see happening, it is the control that makes unattended execution acceptable.
-Ship it for the second reason, and resuming is then clearing that flag — not a
-separate start path.
+*The kill switch.* `roadmap-task-runner.hold.json` is the durable half the stop
+marker could never be — the marker is consumed by the runner honoring it, so on
+its own "stop" would have lasted one repeat interval. The runner reads the hold
+before anything else and leaves, making each five-minute repeat a two-second
+no-op instead of a revival. It fails CLOSED, the only reader here that does: an
+unreadable record still holds, because a corrupt byte must not resume work the
+operator deliberately halted. Resuming is releasing it, as designed above — one
+start path, not two.
+
+Both control files sit under `REPO_MGMT_RUNNER_CONTROL_ROOT`, the fifth
+resolver of its kind. The api-host smoke starts its host with the operator's
+REAL workspace root, so without it a gate exercising the stop route would have
+stopped their live runner and — a hold being durable by design — kept it
+stopped. Same shape as the gate that twice emptied the portfolio index, with a
+worse recovery, and asserted rather than assumed: the gate fails if a hold ever
+appears in the operator's own output directory.
+
+*One pane.* [`RunnerControlPanel.tsx`](frontend/components/RunnerControlPanel.tsx)
+leads the Insights tab with runner state, queued total, claimable now, stranded
+count, oldest-queued age, the per-provider backlog and the live runner's
+identity — the two facts that arrive on one route and had never been rendered
+together. It carries the kill switch, because a control to halt work put
+anywhere but where the work is visible asks the operator to decide blind. The
+header pill and this pane share one hook, so they cannot disagree.
+
+Proved 2026-09-13 against a real host on 127.0.0.1:7099 with the control root
+isolated: stop answered 202 and wrote both files, `GET /api/roadmap/runner`
+then reported `stoppedByOperator=true`, start answered 202 with
+`holdReleased=true` and `taskTriggered=true`, and the operator's live runner
+(pid 28224) kept beating throughout. The module smoke proves the behavioural
+half against a real detached runner: a held runner exits 0 without claiming, and
+does NOT consume the hold.
 
 **The limit to state plainly rather than design around.** "If the service is
 running, start the runner" cannot be wholly true. The service is LocalSystem and
