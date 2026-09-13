@@ -5771,3 +5771,716 @@ Release 2.9 stays open for its operator half.
       _(state: smoke-tested 2026-08-26 — preview-first repair is reachable and
       named at L1/L2; canonical module and api-host smoke exit 0 in CI Smoke
       run 32949331713.)_
+
+---
+
+## Closed 2026-09-13 (archived from ROADMAP.md)
+
+Completed milestones lifted out of [`ROADMAP.md`](../../ROADMAP.md) so that
+file carries open work only, which is the rule it states about itself: a
+`[x]` in the active roadmap is a mistake, not a record. Text is preserved
+verbatim and grouped under the section each item came from; nothing was
+reworded or summarised, because the evidence notes are the reason a closed
+milestone is worth keeping.
+
+### Lane 0.2 — Credential freshness
+
+- [x] **Regenerate the portal TLS certificate (recovery is dead).** _(state:
+      done 2026-08-29 — the portal serves HTTPS; verified live:
+      `tlsState: enabled`, `CN=localhost`, valid to 2031-08-29, and plain
+      `http://` no longer answers)_ The "one elevated step remains" note below
+      resolved itself: shawl's restart policy recycled the service during the
+      test-suite work and the new host loaded the repaired certificate — the
+      elevated restart was never run by hand. Unplanned, and worth recording:
+      the service's own restart policy is an unelevated path to picking up
+      config changes, at the cost of not choosing the moment.
+      Machine-scoped `REPO_MGMT_TLS_PFX_PASSWORD` (17 chars) does not open
+      `backend\config\tls\portal.pfx`, so the portal serves plain HTTP on
+      loopback while `REPO_MGMT_TLS_PFX` points at the pfx. Re-confirmed
+      2026-08-29 against the live service, which logs the degraded state on
+      every start: `the certificate could not be loaded ("The specified
+      network password is not correct")`. The pfx on disk dates from
+      2026-07-07; the password was rotated after it and the certificate was
+      never regenerated to match, which is the whole defect.
+
+      **Recovery of the old password is not an option** and is not needed: the
+      pre-#53 shawl logs that recorded it have rotated away (a 2026-08-10 sweep
+      of the shawl log dir, `evidence/` and `output/` found zero `-PfxPassword`
+      matches, which also closes the old plaintext-leak concern).
+
+      **The remedy is cheaper than this item previously recorded.** The earlier
+      plan generated a NEW password and reconfigured the service, which needs
+      an elevated session twice over (a Machine-scope env write plus a service
+      restart). Instead, regenerate the certificate **around the password
+      already stored in `REPO_MGMT_TLS_PFX_PASSWORD`** — `New-RepoManagement‑
+      TlsCertificate.ps1` writes the pfx with .NET directly (no PKI module, no
+      certificate store, no elevation) and accepts `-PfxPassword`. Nothing then
+      has to change in the environment or in `settings.json`, so **only the
+      service restart needs admin**, and the blast radius is one file.
+
+      All steps are **done** (2026-08-29); only 5 (client trust) is optional
+      and still open — accept the browser warning, or import
+      `backend\config\tls\portal.cer`:
+
+      1. ~~Read the existing Machine-scope `REPO_MGMT_TLS_PFX_PASSWORD`; abort
+         if absent rather than inventing a new secret.~~ Present, 17 chars.
+      2. ~~`New-RepoManagementTlsCertificate.ps1 -Force -PfxPassword <existing>`
+         with SANs covering `localhost`, the hostname, `127.0.0.1` and the
+         current LAN IPv4.~~ Issued `CN=localhost`, SAN
+         `DNS=localhost, DNS=THESHIRE, IP=127.0.0.1, IP=192.168.50.200`,
+         thumbprint `3ECA086B0D5C…`, valid to 2031-08-29. The old pfx
+         (2026-07-07) is kept out of the repo as evidence; `*.pfx` and
+         `backend/config/tls/` are both gitignored, so no key is committed.
+      3. ~~Prove the pfx opens with the stored password before touching the
+         service, and prove the old one did not.~~ Both, with the **same**
+         password: old → `The specified network password is not correct`;
+         new → loads, `CN=localhost`, `notAfter=2031-08-29`. Nothing in the
+         environment or in `settings.json` changed, and no elevation was used.
+      4. ~~Restart `RepoMgmtPortal` (elevated).~~ Attempted unelevated and
+         refused as expected; then shawl's restart policy recycled the service
+         on its own and the new host loaded the certificate. Confirmed live:
+         `tlsState: enabled`, `encryptedInTransit: true`, 72 repos over
+         `https://127.0.0.1:7071`, plain `http://` refused.
+      5. Trust the exported `.cer` on this machine (`-TrustLocally`, also
+         elevated) or accept the browser warning; import it on the phone for
+         the LAN portal.
+
+      **Consequence, stated because it breaks working URLs:** once the
+      certificate loads, the host wraps every connection in an SslStream, so
+      the portal becomes `https://127.0.0.1:7071` and plain `http://` stops
+      answering. Bookmarks, the Vite dev proxy and any script calling the
+      loopback API must move to `https://`.
+- [x] **The HTTPS flip's fallout, swept rather than awaited.** _(state:
+      shipped 2026-08-29)_ Enabling TLS makes the portal stop answering plain
+      `http://`, so everything holding an `http` assumption about a live portal
+      broke or would have. Found by sweeping for `7071`/`http://` consumers,
+      not by waiting for each to fail:
+      [`Enable-SharedLanAccess.ps1`](scripts/Enable-SharedLanAccess.ps1) probed
+      `http` only (its verification would burn 90s and blame the service) and
+      printed "TLS is NOT enabled" unconditionally — it now probes both
+      schemes, tolerates the self-signed certificate, carries the answering
+      scheme into the phone URL it prints, and states the transport it actually
+      saw; the Vite dev proxy needed `secure: false` for a self-signed https
+      target; the frontend smoke's probe needed `-SkipCertificateCheck`;
+      [`ApiReference.tsx`](frontend/components/ApiReference.tsx) had a
+      hardcoded `http://192.168.50.200:7071` fallback — one operator's LAN
+      address compiled into every build, wrong host for anyone else and wrong
+      scheme for everyone — replaced with an honest "unavailable outside a
+      browser"; and [`Invoke-DailyEvidence.ps1`](scripts/Invoke-DailyEvidence.ps1)
+      was the fourth host-starting gate inheriting `REPO_MGMT_TLS_PFX`, now
+      cleared in its job and added to the inherited-env gate.
+- [x] **Surface `tlsState: degraded` to signed-in operators, not only at the
+      login screen.** _(state: shipped 2026-08-29 — found while diagnosing the
+      item above)_ The host has reported TLS state on every transport payload
+      since Release 3.x, and the frontend renders it in exactly one place:
+      [`Login.tsx:115`](frontend/components/Login.tsx#L115). An operator who is
+      already signed in — which is every operator, most of the time — is never
+      told that the portal claiming TLS is serving plain HTTP. That is how this
+      certificate stayed broken from 2026-08-10 to 2026-08-29 with the warning
+      printed on every single service start. **Done means the degraded state is
+      visible on an authenticated surface** (the page header carries
+      `RunnerHealthIndicator` and `AgentActivityIndicator` already and is the
+      obvious home), and a test proves it renders for `degraded` and stays
+      silent for `enabled`. Shipped as
+      [`TransportSecurityIndicator`](frontend/components/TransportSecurityIndicator.tsx)
+      in the page header, fed from the `authStatus` the header already holds —
+      no new request. It warns on two states and no others: `degraded` (config
+      claims TLS, the connection has none) and unencrypted on a **non-loopback**
+      bind (the shared-LAN path without a certificate). A plain-HTTP loopback
+      bind is the documented default and renders nothing, because a permanent
+      chip nobody needs is how the ones that matter stop being read. Eight tests
+      cover both directions, including that an unreported bind is not treated as
+      exposed.
+
+### Lane 0.8 — Verification gate integrity (CI audit 2026-08-10)
+
+- [x] **Give the portal settings file the override its queue already has, so a
+      gate stops writing the file the operator is reading.** _(state: shipped
+      2026-08-29 — reproduced live, then closed)_
+      `Invoke-ApiHostSmokeTest.ps1` repoints the git-tracked
+      [`backend/config/settings.json`](backend/config/settings.json) at its own
+      fixture workspace for the duration of the gate. It restores the file
+      afterwards, byte-exact, and that restore works — but for the ~10 minutes
+      the gate runs, the **live portal reads the same file**. Observed
+      2026-08-29 during a routine suite run: the console emptied mid-session
+      because the status cache is keyed by scan root
+      (`f:\development\20_staging|depth:3|nonGit:False`), and while the fixture
+      path was installed that key had no entry to serve. The operator sees a
+      portfolio that has apparently vanished, with nothing on screen connecting
+      it to a test run.
+
+      This is the reading-side twin of the 2026-08-19 queue incident, and it
+      has the same shape of fix. Release 2.9 gave the queue `Get-RoadmapQueue‑
+      Path` plus `REPO_MGMT_QUEUE_PATH` so redirecting it is one decision
+      instead of four edits that can disagree; settings never got an
+      equivalent, so the only way for a gate to point the host at different
+      settings is to **overwrite the operator's copy**.
+
+      Note the smoke does not write the file directly — it `POST`s
+      `/api/settings` and the **host** writes it. So the override has to be
+      honoured by the host on both the read and the write path, or the fixture
+      POST lands on the tracked file regardless.
+
+      Precise steps:
+
+      1. Add `Get-PortalSettingsPath -WorkspaceRoot` beside the queue resolver's
+         pattern, honouring `REPO_MGMT_SETTINGS_PATH` and falling back to
+         `backend\config\settings.json`. Home it where both the api-host and
+         `backend/adapters` can dot-source it without a circular load.
+      2. Route all **seven** current construction sites through it: six in
+         [`Start-RepoManagementApiHost.ps1`](backend/api-host/Start-RepoManagementApiHost.ps1)
+         (settings read, secret-strip, setup-status probe, setup config write,
+         `GET /api/settings`, `POST /api/settings`) and one in
+         [`Adapters.ps1`](backend/adapters/Adapters.ps1) (the scope policy).
+      3. Point the api-host smoke at a temp copy via the override, and **delete
+         the backup/restore machinery it needed** — a restore that never has to
+         run is the proof the mutation is gone. Keep one assertion that the
+         tracked file's bytes are unchanged across the whole gate.
+      4. Extend the module-smoke queue-path gate to refuse inline settings-path
+         construction under `backend/`, with the same operator-path-only rule
+         under `scripts/` (the smokes legitimately build settings paths inside
+         their own fixture workspaces).
+      5. Prove it non-vacuously: the detector must fail a planted violating
+         fixture first, and the gate must name the file when the old inline
+         line is re-injected.
+
+      **Done means** a full api-host smoke run leaves `git status` clean for
+      `backend/config/settings.json` at every point during the run, not merely
+      at the end.
+
+      **Shipped, with two things the plan did not foresee.** First, there were
+      **three** gates writing the tracked file, not one:
+      `Invoke-AuthSmokeTest.ps1` did the same backup-and-restore, and
+      `Invoke-DailyEvidence.ps1` kept a net for both. All three now redirect or
+      declare intent, and the two host smokes assert the tracked bytes are
+      byte-identical across the run instead of restoring them. Second, the
+      auth smoke's "must not persist a secret into settings" assertions had to
+      follow the host's file rather than the tracked one — left pointing at the
+      tracked file they would pass because the host can no longer write it,
+      which is a vacuous green, not a proof.
+
+      The gate itself was **wrong on its first two attempts and the injection
+      test is what said so.** Attempt one anchored on
+      `'backend\config\settings.json'`, but `Adapters.ps1` resolves from
+      `backend\` and writes `'config\settings.json'` — re-injecting that exact
+      inline build left the gate green, meaning it would never have caught the
+      call site it was written for. Attempt two matched its own detector
+      fixtures. Final form: match any `Join-Path` ending in a
+      `config\settings.json`, skip the resolver and this smoke's own source,
+      exempt `Install-RepoManagementService.ps1` (acting on the operator's real
+      file is its job), and allow a `$...Tracked...` variable so the
+      untouched-assertions can still name the file. Verified both ways —
+      green clean, and red naming `Adapters.ps1` with the bypass re-injected.
+- [x] **The api-host smoke defaulted to the port the portal service listens
+      on, and the host it starts evicts whatever holds that port.** _(state:
+      shipped 2026-08-29 — found while verifying the settings override above)_
+      `Invoke-ApiHostSmokeTest.ps1` declared `-Port 7071` and
+      `-BaseUrl http://127.0.0.1:7071` as its DEFAULTS. 7071 is the installed
+      portal service's port, and `Start-RepoManagementApiHost.ps1` deliberately
+      terminates whatever already holds the port it is told to bind, so that a
+      restart-in-place is not blocked by its own stale process. Pointed at the
+      operator's port, that mechanism attacks the operator's service:
+
+      ```text
+      Port 7071 is already in use by pwsh (PID 35160). Terminating it before startup.
+      ```
+
+      The portal survived only because an unelevated smoke cannot kill a
+      LocalSystem service — luck, not design; run from an elevated shell it
+      would have taken the portal down mid-session.
+      [`Invoke-TestSuite.ps1`](scripts/Invoke-TestSuite.ps1) always passed
+      `7171` explicitly, so the suite was never exposed and the default sat
+      unnoticed behind it; only a direct invocation reached it.
+
+      Two changes, because the default alone is not a guarantee: the default is
+      now **7171**, and the smoke **refuses to start** when anything already
+      holds its target port, naming the PID and process rather than evicting
+      it. An explicit `-Port 7071` is now a refusal, not a kill. Verified both:
+      `-Port 7071` against the live service refuses by name and leaves PID
+      35160 listening; the default run proceeds untouched.
+- [x] **The API contract gate could not pass on a machine running our own
+      shared-LAN configuration.**
+      [`Enable-SharedLanAccess.ps1`](scripts/Enable-SharedLanAccess.ps1) writes
+      `REPO_MGMT_API_KEY` and `REPO_MGMT_REQUIRE_API_KEY` at **Machine** scope —
+      correctly; that is the Release 2.9 feature doing its job. But a
+      machine-scope variable reaches every shell forever, so the host
+      [`Invoke-ApiContractTest.ps1`](scripts/Invoke-ApiContractTest.ps1) starts
+      inherited it, enforced auth, and answered `401` to tests that send no
+      credentials by design. Measured on this machine: **32 of 37 failed, every
+      one a `401`, not one a contract violation** — and the gate reported them
+      as 32 broken contracts, pointing at the routes instead of at the
+      environment. The same defect class as the task runner's inherited
+      `GITHUB_TOKEN`: a variable no one passed silently changing what a process
+      does. The gate now clears the inherited value for **its own process only**
+      and says so, leaving the operator's LAN auth intact at User and Machine
+      scope; auth enforcement stays the Auth smoke's gate, which sets the
+      variables itself. Verified both ways: 32 failures before, 37/37 after,
+      with a real machine-scope key inherited. _(state: shipped 2026-08-29)_
+
+### Lane 0.12 — Two local clones of one repo collapse to one row, arbitrarily (found 2026-08-27)
+
+- [x] **[non-blocker]** Decide which local clone represents a repository when
+      more than one exists, and record the loser rather than dropping it.
+      `F:\Development\20_Staging\Archive\MusicLibrary` and
+      `F:\Development\20_Staging\MusicLibraryProjects\MusicLibrary_v2` are two
+      checkouts of the same GitHub repository, so the status scan emits two rows
+      both named `MusicLibrary_v2`.
+      [`Portfolio.Assessment.ps1`](backend/modules/portfolio/Portfolio.Assessment.ps1)
+      dedupes with `$seenLocalKeys.Add($key)` — first wins, keyed on the name —
+      so one checkout is discarded and **which one survives depends on
+      enumeration order**: the index snapshot kept the active checkout, the
+      status cache order keeps the archived one. Found while verifying Lane
+      0.11: before the path join, the surviving archived row was displayed with
+      the *active* checkout's 52 pending items — a roadmap belonging to a
+      directory it is not. The path join fixed the attribution (the archived row
+      now reports its own 13), but the active checkout is still absent from the
+      portfolio whenever ordering favours the archive, which is the worse of the
+      two outcomes and the one the operator would never guess. The status
+      response already computes `duplicateIdentities`; the assessment does not
+      read it. Options: prefer the non-archived checkout, prefer the one whose
+      folder matches the remote name, or emit both and mark the duplicate.
+      Whichever is chosen, the discarded checkout should appear in the row's
+      evidence rather than vanishing. Gate: a fixture with two local repos
+      sharing one remote name asserts the active one survives and the dropped
+      path is named.
+      Fixed by `Select-CanonicalLocalCheckout`
+      ([`Portfolio.Assessment.ps1`](backend/modules/portfolio/Portfolio.Assessment.ps1)),
+      which resolves every collision **before** the loop instead of inside it:
+      an in-scope checkout beats one the scope policy excluded, a folder name
+      matching the repository name beats one that differs, and an ordinal path
+      comparison settles the rest — so enumeration order decides nothing. The
+      surviving row carries `duplicateCheckouts` (the chosen path, why it was
+      chosen, and every displaced checkout with its scope reason), threaded
+      through `New-PortfolioIndexPayload` and
+      `Convert-PortfolioIndexReposToAssessments` so it survives an index
+      round-trip. Measured against the live caches: the active
+      `MusicLibraryProjects\MusicLibrary_v2` now survives with its own 52
+      pending items and `L2-Structured`, the archived clone is named as
+      dropped, and reversing the scan order changes no survivor across all 71
+      assessed repositories. Gated by the module-smoke section "Duplicate
+      checkouts", confirmed red against `HEAD` first — the reversal assertion
+      failed with the archived clone as survivor. _(state: smoke-tested)_
+
+### Lane 0.13 — Truthful uncertainty: the product could not tell "unreadable" from "not present" (found 2026-08-27)
+
+- [x] **Stop reporting a sound roadmap as a damaged file.** Measured against
+      the live portfolio: **15 of the 48 roadmaps on disk (31%) were reported
+      `parse-error`** — among them a **212 KB, 1,496-line** roadmap, a 43 KB
+      one and a 35 KB one, every one of them well-formed. The rule was stated
+      outright in [`Roadmap.Parser.ps1`](backend/modules/roadmap/Roadmap.Parser.ps1):
+      _"parse-error — content is empty, null, or contains no checkbox items."_
+      That state propagated to `lifecycleState`, `dispatchReadiness` and the
+      operator-facing `recommendedAction` — **"Open the roadmap and fix the
+      parse error before this repo can be assessed"** — so the console spent
+      the operator's time repairing files that were not broken, which is the
+      §2 admission rule running in reverse.
+      Fixed by splitting the state: `no-checklist` means the file was read in
+      full and records no `- [ ]` items; `parse-error` now means only that
+      there was nothing to read. Threaded through the lifecycle, dispatch
+      readiness and explanation, the roadmap score (a real plan no longer
+      scores as a damaged file), the summary tally,
+      [`DocAudit.Scanner.ps1`](backend/modules/docaudit/DocAudit.Scanner.ps1),
+      [`Roadmap.Auditor.ps1`](backend/modules/roadmap/Roadmap.Auditor.ps1),
+      [`Roadmap.Repairer.ps1`](backend/modules/roadmap/Roadmap.Repairer.ps1),
+      the execution ledger, the portfolio report, and the frontend
+      (`RepoGrid`, `WorkQueueView`, `OperationsWorkspaceView`, `needsAttention`,
+      `refineReadiness`, `portfolioTrendView`, `types.ts`).
+      [`Portfolio.Conclusion.ps1`](backend/modules/portfolio/Portfolio.Conclusion.ps1)
+      now concludes `insufficiently-understood` **naming what it needs**
+      instead of asserting the file is unparseable. Re-parsing all 48 live
+      roadmaps with the new parser: **15 move `parse-error` → `no-checklist`
+      and zero remain `parse-error` — not one roadmap in the portfolio was
+      ever actually damaged.** Gated by the module-smoke section "Truthful
+      uncertainty", confirmed red against `HEAD` first, plus 3 new frontend
+      tests pinning that the two states never share a sentence. _(state:
+      smoke-tested)_
+- [x] **Give the served index a staleness contract.** On
+      2026-08-27 `output/index/repos.index.json` was generated at 09:46Z and
+      reported **58 repositories, all `L0-Absent`, 0 ready-for-work, 58
+      blocked**. The roadmap-audit cache written at 16:09Z the same day held
+      **10 `L3-Contract-Ready`, 23 `L2`, 15 `L1`**, and re-running the join
+      offline over those caches produces **71 assessed repositories, 9 of them
+      `L3-Contract-Ready`**. The index simply predated the Lane 0.11 identity
+      fix (merged 10:47Z) and nothing re-scanned — but **nothing in the
+      product notices, records, or says so**, so every surface Release 3.6
+      shipped was rendering a portfolio that was wrong about a third of its
+      inputs and short 13 repositories. Before the Release 2.9 operator
+      session: every index-backed surface should state how old its data is
+      and refuse to present a conclusion drawn from an index older than the
+      last correctness-affecting change.
+      Shipped as two verdicts, because they fail differently: **stale by
+      clock** (generated outside the freshness window) and **stale by logic**
+      (produced by different code than is running now — the dangerous one, an
+      index minutes old can still be wrong about every row).
+      `Get-PortfolioIndexLogicFingerprint` derives the second from a SHA256
+      over every `.ps1` under `backend/modules/{portfolio,roadmap,docaudit}` —
+      **derived by directory, never a maintained list**, so adding a module
+      moves the fingerprint on its own; line endings are normalized so a CRLF
+      CI checkout does not read every index as stale.
+      `Save-PortfolioIndexArtifacts` stamps `producedBy`, and the verdict is
+      attached inside `Get-PortfolioIndexPayload` — the single place every
+      consumer already goes through — so no surface can render index data
+      without the verdict on the same object. `GET
+      /api/portfolio/conclusions` carries it as `basis`, where **absent means
+      "not established", never "fresh"**. Verified against the live index: it
+      reads `stale: true`, age 14.2 h, reason _"does not record which version
+      of the assessment logic produced it"_ — the incident above, caught.
+      Gated by the module-smoke section "Index staleness", confirmed red
+      against `HEAD` first ("Reading the portfolio index produced no staleness
+      verdict — a surface can still render it as fact"); the gate also proves
+      the fingerprint moves when a producer is edited **and** when one is
+      added, is CRLF-insensitive, and that an unknown current fingerprint
+      reads as uncertainty rather than freshness. _(state: smoke-tested)_
+- [x] **Surface the staleness verdict where the operator ranks work.** The
+      `Today` landing — the default view, and the one the Release 2.9 operator
+      session reads first — now leads with a banner naming the index age and
+      every reason it cannot be trusted, above the orientation paragraph and
+      before any row. `GET /api/operations/repos` carries `basis` from the
+      same verdict (the assessment-cache fallback says it has no index behind
+      it at all, which is a stronger reason to speak, not a reason to stay
+      quiet), `normalizeConclusionBasis` treats **only an explicit `false` as
+      fresh**, and `TodayView` shows the banner when the prop is absent — so
+      the failure mode of every layer is to warn, never to reassure. Covered
+      by three component tests including one that the banner stays out of the
+      way when the index is current, so the gate cannot pass by always
+      warning. _(state: smoke-tested)_
+- [x] **Put the scan the banner asks for inside the banner.** The staleness
+      banner told the operator to _"run a portfolio scan before acting"_ while
+      offering no control that does so — found by the operator on 2026-08-30,
+      searching the screen for a button that did not exist. `POST
+      /api/portfolio/scan` and its client wrapper `startPortfolioScan()` had
+      shipped with Release 3.2's background scan, but nothing in the UI ever
+      called them: the chip could observe and cancel a scan, never start one,
+      and the only rescan affordances lived on the Repository Grid tab under
+      different names ("Rescan all", Refresh). The banner now carries a **Run
+      portfolio scan** button wired to that route; progress shows in the
+      existing header chip, and the Dashboard watches for the terminal state
+      and re-pulls `/api/operations/repos` so the banner clears — or restates
+      its reasons — from the rebuilt index instead of freezing on the
+      pre-scan verdict. An already-running scan and a refused start are each
+      said, never pretended. Covered by five component tests, including that
+      a still-stale refresh re-offers the button and that the guidance
+      renders without a dead control when no handler is wired.
+      _(state: smoke-tested)_
+- [x] **Remove the staleness banner from the Today landing (operator
+      decision, 2026-08-30).** With a scan completed three minutes earlier,
+      the landing still opened with the amber warning — showing the fallback
+      _"was not established"_ reason, which explains nothing an operator can
+      act on — and the operator's verdict was that a first screen that
+      appears to have a problem costs more confidence than the freshness
+      warning earns. The banner is gone from `TodayView` (a component comment
+      marks the removal as deliberate, so it is not "restored" as a
+      regression); a component test now pins that **no** staleness banner
+      renders on this view, stale or absent basis alike. The verdict itself
+      is unchanged and still rides every payload as `basis`
+      (`/api/operations/repos`, `/api/portfolio/conclusions`,
+      `/api/portfolio/tech-inventory`) and the Dependencies inventory panel;
+      the **Run portfolio scan** control survives as a quiet neutral button
+      in the Today filter row, with the same started / already-running /
+      refused reporting and re-arm on refresh. This decision also supersedes
+      the former non-blocker _"render the same verdict on the outcome card
+      and Insights"_ — no more warning banners; the basis stays a payload
+      fact for surfaces to consult, not an alarm to lead with.
+      _(state: smoke-tested)_
+
+### Lane 0.14 — Console UI audit follow-ups (operator audit 2026-08-29)
+
+- [x] **Put Help where the question gets asked, and give the console's words a
+      definition.** Two findings, one fix. **(a) Reach** — `Help` and
+      `API Docs` were buttons in the Repository Grid's action bar, so the
+      guide and the endpoint reference were reachable from one of seven tabs.
+      An operator on Today, Work Queue or Operations had no route to either.
+      They now sit in the page header beside `Settings`, which moved there for
+      exactly this reason in an earlier release, and they are **one dialog**:
+      the API reference is a tab inside Help
+      ([`ApiReference.tsx`](frontend/components/ApiReference.tsx), converted
+      from a modal to a panel) rather than a second button answering an
+      adjacent question. **(b) Vocabulary** — the console had no glossary.
+      Badge meanings lived in a legend inside the grid, readiness meanings in a
+      hover `title`, and maturity levels in a modal reachable only from a repo
+      that already had a roadmap; `docs/reference/status-vocabulary.md` settled
+      the model but in a file the operator never opens. A `Definitions` tab now
+      renders [`lib/glossary.ts`](frontend/lib/glossary.ts): every term states
+      what it means **and what computed it**, with a `caveat` wherever a
+      displayed value can be mistaken for a measurement it is not —
+      `PRs` reads 0 in Local mode because nothing populates it, `Clean` in
+      GitHub mode means unmeasured, `unknown` drift is not stale, and
+      `no-checklist` is a sound document, never a damaged one. The two
+      `Blocked` meanings are documented as two entries, which is Lane 0.15's
+      finding explained rather than resolved — the surfaces still share the
+      word. Drift is gated in both directions: the readiness and maturity
+      groups are `Record`s over their unions, so a new union member is a
+      **compile** error, and `glossary.test.ts` reads the vocabulary doc and
+      fails naming any documented value with no entry (proven by injecting
+      one). The doc itself was missing `no-checklist` from the readiness row;
+      added. Help also adopted `useDialogDismiss`, taking the dialog contract
+      to 3 of 20. _(state: shipped 2026-08-29 — 390 frontend tests green,
+      UI ratchet re-baselined down 649→643 tinyText and 5→4 outlineNone)_
+- [x] **Raise the type floor from 12px to 13px.** **Superseded — not done, and
+      no longer wanted.** The item assumed the console's ≤12px text was
+      accidental debt. The Nocturne migration ([`MIGRATION.md`](MIGRATION.md)
+      §4) makes it deliberate: the ladder is 10px eyebrows, 11px meta, 12–13px
+      body, because "the density is the point — an operator sees the whole
+      state without scrolling." Raising the floor would now break the design
+      the console is being migrated to, so the `tinyText` ratchet rule that
+      policed it was retired in the same change
+      ([`tools/Measure-UiRatchet.mjs`](tools/Measure-UiRatchet.mjs)) — it had
+      also only ever matched integer px, so the ladder's 11.5px and 12.5px
+      steps passed it unseen. The accessibility question underneath it did NOT
+      go away and is now the open one: the §2 opacity ladder's bottom three
+      rungs measure 4.55:1, 3.91:1 and 3.58:1 on `--color-bg`, which is
+      large-text-only, and the design uses them at 10–11.5px — including for
+      `unmeasured`. That is tracked as its own item below rather than as a type
+      floor. _(state: superseded 2026-09-01 — density is a design decision, not
+      debt)_
+
+### Lane 0.15 — The console contradicts itself (operator audit 2026-08-29)
+
+- [x] **Never render "not computed" as a number.** In GitHub mode
+      `Dirty Repositories` showed **0**, which reads as "clean" and means "no
+      working tree exists here". Confirmed at the source, not just the
+      consumer: `Get-GitHubReposViaApi`
+      ([`Start-RepoManagementApiHost.ps1`](backend/api-host/Start-RepoManagementApiHost.ps1))
+      hardcodes `status = 'clean'` and `uncommittedChanges = 0` for every
+      remote repository, so the Dashboard filter could only ever return 0.
+      A count is now `number | null`, where `null` means **not measurable from
+      this source**; [`SummaryCard.tsx`](frontend/components/SummaryCard.tsx)
+      renders it as an em dash with the reason beneath it and a
+      `data-unavailable` marker, and the Dashboard passes `null` for dirty
+      whenever the source is GitHub. The sibling tiles were checked rather
+      than assumed: `Commits This Week` and `Stale Repositories` ARE genuinely
+      computed in GitHub mode (commit counts from the API, staleness from
+      `pushed_at` via `Resolve-RepoStaleness`), so they keep their numbers.
+      Gated by three `PortfolioSummarySection` tests including a row-wide
+      tripwire — proven red first by forcing the old always-render path, where
+      2 of 7 failed. _(state: smoke-tested)_
+- [x] **Explain the 70-vs-72 repository gap — the scan was right.** _(state:
+      operator-verified 2026-09-04; re-runnable, see below)_ The audit's
+      independent walk was the thing miscounting, for two compounding reasons.
+      It **stopped at the first `.git`**, so it could not see a repository
+      nested inside another one (`SereneHarmony_Site_Starter` contains
+      `custom_SereneHarmonySite`, and both are working trees), and it walked
+      to **depth 3** while the scan walks one level deeper, the same
+      `MaxDepth + 1` convention `Invoke-RoadmapScan` uses so a repo at the
+      deepest level is not invisible. A descending walk reproduces the product
+      exactly: depth 3 finds 71, depth 4 finds 72, depth 5 finds 72. One more
+      shape a naive walk misses: a linked worktree stores `.git` as a **file**,
+      not a directory, so a directory-only test skips it. No product change;
+      the number on the landing surface was correct all along. Whether a
+      repository nested inside another should be its own portfolio row is a
+      product question, recorded as D-002 in
+      [`docs/governance/open-decisions.md`](docs/governance/open-decisions.md).
+
+### Lane 0.16 — The Dependencies tab answered a different question than it asked (operator feedback 2026-08-30)
+
+- [x] **Make the Dependencies tab answer with technologies.**
+      `Get-RepoTechnologyProfile`
+      ([`Portfolio.Assessment.ps1`](backend/modules/portfolio/Portfolio.Assessment.ps1))
+      detects languages, frameworks, data stores, and infrastructure from
+      each repository's manifests — named files, dependency names in
+      `package.json` (root and one level down, for monorepos), Python
+      manifest contents, and compose service images — **during the index
+      build**, because a scan belongs to the background worker, never to a
+      request. Every index row now carries `technologies`, each detection
+      with the manifest evidence that produced it. `GET
+      /api/portfolio/tech-inventory` aggregates from the written index only
+      (read-budget class `portfolio-index`, on the route census and the
+      budget-wiring gate), carrying the index staleness verdict as `basis` —
+      and because the detector lives under `backend/modules/portfolio`, the
+      logic fingerprint moved on its own, so every pre-upgrade index honestly
+      reads stale-by-logic until the next scan. The tab now leads with a
+      `TechInventoryPanel` grouped by category with per-technology repo
+      counts and expandable evidence, renames the old section to _"Cross-repo
+      roadmap references"_, and the tab question becomes _"What does the
+      portfolio run on?"_. A pre-detection index renders as **"predates
+      technology detection — rescan"**, never as a portfolio with no
+      technology in it. Gated by the module-smoke section "Technology
+      inventory" (which caught a StrictMode empty-pipeline bug on its first
+      red run) plus 6 `TechInventoryPanel` component tests; full module smoke
+      and the 409-repo-free census pass locally.
+      _(state: smoke-tested)_
+- [x] **Amber means a problem, never a statement about the data (operator
+      principle, 2026-08-30).** Stated while removing the Today staleness
+      banner and extended here: _"Anytime we show an amber text box, it
+      better represent an actual problem"_ — a validity note styled as a
+      warning reads as an error in the manager itself. The inventory panel's
+      amber basis banner is gone; freshness is quiet footer metadata (when
+      the index was generated, plus _"a portfolio scan refreshes this"_ when
+      stale), with a component comment and test pinning that no amber basis
+      banner returns. Fetch-failure notices (the `stale` async-panel state)
+      keep their amber: a refresh that failed is an actual problem. Pinned by
+      the reworked `TechInventoryPanel` basis test.
+      _(state: smoke-tested)_
+
+### Lane 0.17 — The dispatch console could not dispatch (operator evaluation 2026-08-30)
+
+- [x] **Deliver route errors over the stream the request arrived on.** The
+      accept-loop catch in
+      [`Start-RepoManagementApiHost.ps1`](backend/api-host/Start-RepoManagementApiHost.ps1)
+      wrote its 500 to the raw `$client.GetStream()`; under TLS the request
+      rode an `SslStream`, so plaintext bytes corrupted the session and every
+      uncaught route error reached the browser as _"Failed to fetch"_ with
+      the real message lost. _(state: smoke-tested 2026-08-30 — the catch now
+      prefers `$req.Stream`, then `$activeStream`, and reuses the request's
+      correlation id; per-request variables reset at loop start so a stale
+      `$req` from a previous connection can never answer. `POST
+      /api/copilot-task/preview` gained a route-level catch, pinned by a new
+      api-host smoke step: an unknown repo must return structured JSON whose
+      `operation` is `copilot-task.preview` — shown red first against the
+      pre-fix host, which answered from `api.request`. The preview modal's
+      roadmap-scan hint now renders only for roadmap errors (a network
+      failure gets a connectivity hint), pinned by two component tests. The
+      TLS half specifically — plaintext-on-SslStream — is asserted by code
+      path, not by an automated TLS fixture; the operation-name gate is the
+      tripwire that keeps route errors out of the accept-loop catch.)_
+- [x] **Carry the known roadmap path through dispatch, and never write item
+      text into `roadmapPath`.** The ledger entry carries `roadmapPath`, but
+      [`ExecutionQueuePanel.tsx`](frontend/components/ExecutionQueuePanel.tsx)
+      dropped it when opening the preview, so the packet build re-resolved
+      from caches and threw when they were cold; and
+      [`Execution.Ledger.ps1`](backend/modules/execution/Execution.Ledger.ps1)
+      fell back to `$doc.nextPendingRoadmapItem` — the roadmap item _text_ —
+      when no roadmap-audit entry existed, which is why a queue row could
+      show raw markdown as its "path". _(state: smoke-tested 2026-08-30 —
+      `entry.roadmapPath` travels with the dispatch callback (component test:
+      a pathless entry passes `undefined`, never `''`); the ledger fallback
+      is now empty, pinned by a module-smoke fixture (`smoke-repo-noaudit`)
+      proven red against the pre-fix module first.)_
+- [x] **Give the preview modal its dispatch.** From this tab the flow
+      dead-ended: preview opened, and the only actions were Copy and Close —
+      `assignExecutionLane` was unreachable. _(state: smoke-tested 2026-08-30
+      — [`CopilotTaskPreviewModal.tsx`](frontend/components/CopilotTaskPreviewModal.tsx)
+      offers "Dispatch to Lane" when its caller provides the action;
+      `Dashboard.tsx` wires it to `assignExecutionLane` and bumps a refresh
+      token so the board reloads its ledger on success; a backend refusal
+      (lanes full, not dispatchable) renders inline, and a preview-only
+      caller gets no dispatch button. Five component tests cover the action,
+      the refusal, the absence, and both error hints.)_
+- [x] **One filtered queue instead of three overlapping lists; the state
+      tiles become the filters.** The five state tiles were static; the page
+      said 27 Ready while showing three; "Top Candidates" was rows 1–3 of the
+      next tab; blocked repos hid in an "Other repos" appendix. _(state:
+      smoke-tested 2026-08-30 —
+      [`ExecutionQueuePanel.tsx`](frontend/components/ExecutionQueuePanel.tsx)
+      pins the two lanes on top, renders one ranked ledger list filtered by
+      state-tile toggle buttons (counts stay portfolio-wide; the active tile
+      clicked again clears the filter; Total shows everything), and keeps
+      History as the only remaining tab. Seven component tests, including
+      the every-ready-repo-renders pin. The new tiles are `text-sm`; the
+      UI-ratchet baseline moved DOWN six tiny-text nodes and was locked in.)_
+- [x] **Rename the tab to what the page does.** "Copilot Execution Lanes"
+      claimed monitoring; the page is a dispatch board — ready work ranked,
+      two lanes of work in progress, a paper trail. _(state: smoke-tested
+      2026-08-30 — renamed to **Dispatch Board** (short "Dispatch") in
+      [`viewMeta.ts`](frontend/viewMeta.ts) with question "What is
+      dispatched, and what should go next?"; the panel header, the
+      improvement-workflow modal copy, `viewMeta.test.ts` (old label
+      asserted gone) and [`frontend-smoke.cjs`](scripts/frontend-smoke.cjs)
+      all follow. The `execution-queue` view key is unchanged, so no route
+      or persisted state breaks.)_
+- [x] **Follow-up (operator, 2026-08-31): dispatching a sparse repo crashed
+      the whole portal.** The Lane 0.17 fixes made packets buildable for
+      repos with no value assessment — and exposed a latent serializer bug:
+      a PowerShell `if`-EXPRESSION enumerates its result, so an empty `@()`
+      collapses to `$null` and `valueContext.rationale` reached the browser
+      as JSON `null`; the modal's `.length` read then threw, and because the
+      modal renders outside the per-view boundary the app-level card took
+      the entire portal down. _(state: smoke-tested 2026-08-31 — reproduced
+      by rendering the modal against the live captured packets; three-layer
+      fix: the backend wraps the whole if-expression in `@(...)` (micro-proof:
+      the old shape serializes `null`, the new `[]`);
+      [`copilotTaskPacket.ts`](frontend/lib/copilotTaskPacket.ts) normalizes
+      every UI-iterated array at the API-client choke point so a stale
+      service cannot crash the page (3 lib tests with the field-observed
+      payload + a modal render test); and `Dashboard.tsx` wraps the modal in
+      its own `ErrorBoundary` so any future preview crash degrades to a
+      labeled card instead of the whole portal. Requires a service restart
+      to take effect on the live host.)_
+- [x] **[non-blocker]** Sweep the `$x = if (...) { @(...) } else { @() }`
+      pattern portfolio-wide: the estimate of ~30 sites across
+      [`Start-RepoManagementApiHost.ps1`](backend/api-host/Start-RepoManagementApiHost.ps1)
+      and `backend/modules/` was low — an AST sweep found **56** across 12
+      files, each assigning an if-expression that silently turns an empty
+      array into `$null` (and `@($x)` then makes a one-element `[null]`).
+      Only the payload-literal site crashed a surface; the local-variable
+      sites are now wrapped too, and the pattern has the lint gate the audit
+      asked for. _(state: smoke-tested 2026-09-05 — all 56 wrapped; `tools/Assert-NoArrayCollapsingIfExpression.ps1` is AST-based, not textual, proves itself against a collapsing fixture before sweeping, spares the wrapped and scalar forms, and holds a zero baseline in `scripts/array-collapse-baseline.json`; wired into the module smoke)_
+- [x] **The "Running" state was bookkeeping — an operator clicked Dispatch and
+      had not clicked Complete.** Every occupied lane rendered identically
+      whether its agent was three minutes into a draft PR or had died an hour
+      earlier, because `Invoke-AssignLane` minted a throwaway GUID that
+      resolved to nothing. Two halves closed it: the board now **really
+      dispatches** (operator decision, 2026-09-06), and the lane carries the
+      dispatch run id that joins it to the run ledgers.
+      _(state: smoke-tested 2026-09-06 — `backend/modules/execution/Execution.LaneObservation.ps1` is pure (`Resolve-LaneObservation` takes already-read records and a clock, so the whole decision table runs offline) and reports two orthogonal facts: `verdict` (unlinked | queued | working | awaiting-review | finished | failed) and `stalled`, each non-terminal verdict carrying its own patience (queued 15m, working 90m, awaiting-review 24h) because one threshold is wrong in both directions. `Execution.Ledger.ps1` stores `dispatchRunId`/`agentRunId`/`dispatchSource` through a shape-tolerant setter (a pre-Lane-0.17 PSCustomObject entry throws on assignment to a property it lacks) and releases them on complete/cancel so a finished run never follows the repo into its next lane; `Get-ExecutionQueueSummary` derives the observation on read and never persists it. `CopilotTaskPreviewModal.tsx` dispatches the previewed prompt through `POST /api/roadmap/dispatch/execute` and binds the returned run id via `POST /api/execution/assign`, in that order — occupying the lane first would rebuild the very defect — behind Release 3.1's runner-presence gate with the `Queue anyway` override. A dispatch that succeeds while the lane refuses reports success and names the lane problem, because the work is queued either way. Lane closure stays the operator's (operator decision, 2026-09-06): the verdict highlights Complete or Cancel and never presses them. Covered by 8 module-smoke assertions (decision table + an on-disk join proving lane -> run summary -> agent run -> PR #7, proven red by reverting the assign to drop the id) and 8 component tests (4 proven red against the pre-change card); `sources` is asserted to serialize as `[]`, never JSON `null`.)_
+
+### Lane 0.19 — The queue steered toward work only the operator could do (operator evaluation 2026-09-11)
+
+- [x] Classify every pending item by who can perform it, and keep that separate
+      from what it is worth. A declared `[operator]` or `[agent]` tag beats an
+      inferred keyword, because the author knows and the regex guesses; the
+      default is `agent`, since a wrongly parked item is work nobody picks up.
+      _(state: smoke-tested 2026-09-11 — model 1.2 adds `executorClassification` to value-scoring.json; `Get-RoadmapItemExecutor` attaches executor/executorSource/executorReason to every scored item; the assessment carries `topDispatchableItem` and `operatorOnlyItemCount` alongside an unchanged `topValueItem`; 5 operator cases caught and 5 lookalikes spared, including "human-readable", "user manual" and "operator dashboard", which are the false positives that would park real work.)_
+- [x] Make the dispatch lane reach past operator-only work instead of stopping
+      on it, and name the refusal when there is nothing left but manual work.
+      _(state: smoke-tested 2026-09-11 — `Select-TopValueRoadmapItem` skips operator-only items unless asked for them, `Test-RoadmapPackagingCandidate` refuses an all-manual roadmap as `operator-verification-required` rather than `no-scored-item`, and the CLI selector demotes rather than drops so a purely manual roadmap reads as blocked on a person rather than empty. An item scored before model 1.2 carries no executor field and stays selectable, so a stale cache degrades to the old behaviour instead of emptying the queue for the estate.)_
+- [x] Let a bounded unit of work earn dispatch without a version number, and stop
+      the four copies of the release-heading pattern from ever disagreeing again.
+      _(state: smoke-tested 2026-09-11 — `## Slice — Title`, `## Milestone N — Title` and `## Workstream — Title` parse exactly as `## Release X.Y — Title` does, colon accepted for the dash; a versionless slice carrying the four required fields satisfies the execution contract end to end. The pattern lives in Roadmap.Parser.ps1, Roadmap.Dispatcher.ps1, Roadmap.Auditor.ps1 and both rule-pack copies, and a tripwire compares all five against 10 heading fixtures — behaviour, not text, since the copies are written differently and meant to be equivalent. The no-separator guard still keeps "Release 2.0 completion snapshot" out.)_
+
+### Lane 0.11 — Roadmap identity: repos were being found by folder name (found 2026-08-27) — closed, moved whole
+
+
+- [x] **[non-blocker]** Join scanner output to the index by repository path,
+      and pick one canonical roadmap file per repository. Found from the portal:
+      `CupHandleDetectionv2` reported "Roadmap file exists but could not be
+      parsed" *and* "This repo does not have a roadmap" at the same time, with
+      a 36 KB `ROADMAP.md` on disk. Three separate defects, all confirmed
+      against the live index:
+      **(a) identity** — `Invoke-RoadmapScan`
+      ([`Start-RepoManagementApiHost.ps1`](backend/api-host/Start-RepoManagementApiHost.ps1))
+      keys entries by the `.git`-ancestor *folder* name while the index keys
+      repos by their *remote* name, so every repo whose folder differs from its
+      GitHub name lost its roadmap, doc audit and maturity together
+      (`CupHandleDetectionv2` in `CupHandleDetection`,
+      `GenesysCloud-API-Explorer_v3` in `GenesysCloudOpsConsole` — both read as
+      `L0-Absent` / `needs-roadmap` / dispatch-blocked).
+      **(b) file selection** — discovery accepted any name starting with
+      `ROADMAP` at any depth, and `_IndexByRepoName` keeps the *last* write, so
+      a nested copy always beat the repository's own file: five repos resolved
+      to the wrong one, four of them reported `parse-error` with 0 pending
+      items while holding 34, 53 and 25 real items, and
+      `2026-06-13_Orchestration` was being planned from
+      `archive\roadmaps\ROADMAP.v1.0_original.md`. The doc audit took the
+      *first* match, so one repo could be assessed against two different files
+      in a single pass.
+      **(c) wording** — `ROADMAP-002` said the file "could not be parsed" when
+      the parser had read it perfectly and found no `- [ ]` items, sending the
+      operator to fix a file that was not broken.
+      Fixed by `Select-CanonicalRoadmapFile`
+      ([`Roadmap.Parser.ps1`](backend/modules/roadmap/Roadmap.Parser.ps1) —
+      markdown only, repository root beats any subdirectory, exact `ROADMAP.md`
+      beats a decorated sibling, ordinal tiebreak so enumeration order decides
+      nothing), by path-keyed companion maps in
+      [`Portfolio.Assessment.ps1`](backend/modules/portfolio/Portfolio.Assessment.ps1)
+      with the name join kept as the fallback, and by restating `ROADMAP-002`
+      in both rule copies. Gated by the module-smoke section "Roadmap identity";
+      all three assertions were confirmed red against `HEAD` first. Still to do:
+      the caches under `backend/modules/output/cache/` were built by the old
+      logic, so the corrected figures appear only after the next portfolio
+      scan. _(state: smoke-tested)_
+
+- [x] **[non-blocker]** Make the prompt-refinement blocker name the condition
+      it actually checks. The banner fired on `hasRoadmap` alone while claiming
+      refinement "requires a ROADMAP.md with at least one pending item", so one
+      sentence covered four different failures and was wrong for two of them --
+      a repository with a real roadmap and no checklist items was told it had
+      no roadmap, which sends the operator to create a file that already
+      exists. `describeRefineBlocker`
+      ([`refineReadiness.ts`](frontend/lib/refineReadiness.ts)) now returns a
+      distinct sentence and next action for each state (no file / no checklist
+      items / all complete / parsed but nothing pending), and the button's
+      disabled reason is the same string the banner shows. Covered by six
+      assertions in `refineReadiness.test.ts`, one of which pins that a repo
+      with a roadmap is never told it has none. _(state: smoke-tested)_
+
