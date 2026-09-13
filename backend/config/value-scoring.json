@@ -31,8 +31,12 @@
         "label": "explicitly described as manual work"
       },
       {
-        "pattern": "\\b(operator (must|verif|confirm|record|observe|run|sign)|requires? an operator|ask the operator|commissioner (must|manually))\\b",
+        "pattern": "\\b(operator[-\\s](?:must|confirm|record|observ|sign)|operator[-\\s]verif\\w*\\b(?![-\\s](?:log|ledger|record))|requires? an operator|ask the operator|commissioner[-\\s](?:must|manually))",
         "label": "names a person as the actor"
+      },
+      {
+        "pattern": "\\b(live (portal|service|site|host|deployment|environment|install)|elevated (installer|prompt|shell|session|powershell)|requires? elevation|run elevated)\\b",
+        "label": "acts on the live deployment or needs elevation"
       },
       {
         "pattern": "\\b(billing|credit card|payment method|purchase|subscription|domain registration|register a domain|provider console|cloud console|at the (database )?provider)\\b",
