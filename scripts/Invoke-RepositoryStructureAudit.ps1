@@ -60,13 +60,29 @@ foreach ($file in $trackedFiles) {
         $violations.Add("Tracked generated export: $normalized")
     }
 
-    # Generated evidence stays untracked; curated proof under evidence/verified/
-    # is tracked deliberately. The roadmap requires a durable evidence entry per
-    # operator-verified milestone, so a blanket ban made its own acceptance
-    # criteria impossible to satisfy in a PR. The carve-out is one directory
-    # wide: run spill under evidence/baseline/ is still a violation.
+    # Generated evidence stays untracked; curated proof is tracked deliberately.
+    # The roadmap requires a durable evidence entry per operator-verified
+    # milestone, so a blanket ban made its own acceptance criteria impossible to
+    # satisfy in a PR.
+    #
+    # evidence/trials/ joined the carve-out on 2026-09-13 for that same reason,
+    # not as an exception to it. Release 3.7's acceptance criteria require
+    # results "recorded per repository in evidence/", and the release body links
+    # evidence/trials/release-3.7/README.md and cohort.json directly -- while
+    # both were ignored, so neither existed in any clone or on CI and the
+    # release could not have shipped a single record with the PR that earned it.
+    # cohort.json is curated judgement: a selection reason per repository,
+    # written by hand, plus the conclusions recorded against a named index SHA.
+    #
+    # The carve-out stays two directories wide and no wider. Run spill under
+    # evidence/baseline/ is still a violation, and that is the line this rule
+    # actually defends: regenerable output must not enter source control.
+    $curatedEvidencePrefixes = @('evidence/verified/', 'evidence/trials/')
+    $isCuratedEvidence = @($curatedEvidencePrefixes | Where-Object {
+            $normalized.StartsWith($_, [System.StringComparison]::OrdinalIgnoreCase)
+        }).Count -gt 0
     if ($normalized.StartsWith('evidence/', [System.StringComparison]::OrdinalIgnoreCase) -and
-        -not $normalized.StartsWith('evidence/verified/', [System.StringComparison]::OrdinalIgnoreCase) -and
+        -not $isCuratedEvidence -and
         -not $normalized.EndsWith('/.gitkeep', [System.StringComparison]::OrdinalIgnoreCase)) {
         $violations.Add("Tracked evidence output: $normalized")
     }
