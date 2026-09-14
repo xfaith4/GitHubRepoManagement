@@ -77,6 +77,57 @@ against that mistaken test and had to be withdrawn; see
 - **Blocks.** The enforcement half of packet H38-05 and the Codex sandbox
   mapping in H38-16. The envelope still travels; it just does not yet bind.
 
+### D-020 — Should curation state gate the lifecycle model as it gates conclusions?
+
+- **Asked** 2026-09-14, from the lifecycle/conclusion consistency contract
+  (#298). Its one explained disagreement is Genesys-Telecom-Powershell:
+  `lifecycleState = needs-roadmap-repair`, `conclusion = appropriate-as-is`,
+  evidence `kind rule: curationState=archived-ignore`. The conclusion model
+  reads curation; `_ResolveLifecycleState` never does.
+- **Question.** The pair is *explained*, but the lifecycle's next action still
+  sends an operator to Roadmap Repair on a repository Ben curated
+  `archived-ignore`. Is that an accepted asymmetry or a wrong next action?
+- **Why it is not an agent's call.** Curation is the owner's declared intent
+  (contract 7); whether it silences the lifecycle model's action is a product
+  stance on what "archived-ignore" means, not something the code can settle.
+- **Ruling (Ben, 2026-09-14).** **A wrong next action, not an accepted
+  asymmetry.** Default **yes**: `archived-ignore` resolves to a distinct
+  curated-out lifecycle state with no next action, so the two models agree by
+  construction and the operator is never sent to repair a repository they
+  chose to leave alone.
+- **What it changes.** `_ResolveLifecycleState` gains a curation gate ahead of
+  its roadmap checks; the assessment vocabulary, the consistency table, the
+  reference doc and the byLifecycle counters carry the new state. Implemented
+  stacked on 3.7 M4b, not in #298.
+- **Blocks.** Nothing.
+
+### D-021 — Which foundations do not apply to which kinds?
+
+- **Asked** 2026-09-14, building 3.7 M4b. Applicability is per kind
+  (steering Rung 1: "modest repositories are not graded against enterprise
+  standards"); the mechanism, the check and the reason rendering are M4b's.
+  Which rows the table carries is product policy.
+- **Question.** Beyond the Release 3.6 starting set (minimal → planning;
+  externally-managed → planning, structure; archived → planning, structure,
+  intentional-engineering), which domains do not apply to `application`,
+  `library`, `firmware`, `experiment`, `tooling`, `script-collection`,
+  `service`? Steering names two examples — a script collection is not
+  missing a test suite; a firmware sketch is not missing a Dockerfile — but
+  both live in `intentional-engineering`'s sub-areas (test, operational),
+  and applicability is per domain, not per sub-area. Marking the whole
+  domain not-applicable for those kinds says more than the sentence does.
+- **Why it is not an agent's call.** Every row changes which repositories the
+  product tells Ben need nothing, and steering section 6 forbids adding a
+  row to make one repository come out right.
+- **Default proceeded under (2026-09-14).** One row: `experiment` → planning
+  not applicable ("an experiment plans by trying; a roadmap is optional until
+  it has a direction"), fixture-only, recorded in the kind's
+  `applicabilityBasis`. Every other new kind keeps every scored domain
+  applicable. `intentional-engineering` stays `not-scored` for all of them;
+  its per-kind sub-area applicability is decided when it is scored.
+- **Blocks.** Nothing. M4b's check holds whatever the table says; a row is a
+  data change with a `modelVersion` bump.
+
 ---
 
 ## Withdrawn

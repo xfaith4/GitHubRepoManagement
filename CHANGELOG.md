@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-14 — The limiting foundation is chosen among the domains that apply (3.7 M4b)
+
+Every conclusion record now carries `limitingFoundation`: the applicable
+domains that are missing or weak, missing first, then config order. A domain
+`foundation-domains.json` marks not applicable for the repository's kind
+renders its configured reason and can never limit; a strengthen's next action
+answers the lead, and `Test-FoundationConclusion` fails a record that names a
+not-applicable domain as limiting or whose action answers a different domain.
+The payload carries `byLimitingFoundation` — a count of what leads, never a
+target. `foundation-conclusions v2.2`: `experiment` → planning not applicable
+(D-021 default, fixture-only, recorded in `applicabilityBasis`); every kind
+with applicability rows now says where they were observed. D-020 filed and
+ruled: curation will gate the lifecycle model too (implemented next, stacked
+on M4b). Check: `pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort
+evidence/trials/release-3.7/cohort.json -Assert applicability -FailOnError`
+— every kind forced against an all-gaps fixture, a config-only applicability
+row proved to move a domain out of the limiting foundation, the validator
+proved red on a hand-built violation, and the local index and cohort assessed
+where present.
+
 ## 2026-09-14 — Lifecycle and conclusion may not disagree unexplained (steering extension 3)
 
 `lifecycleState` (the assessment's operator-facing status) and `conclusion`

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "v1",
   "model": "foundation-domains",
-  "modelVersion": "foundation-conclusions v2.1",
+  "modelVersion": "foundation-conclusions v2.2",
   "principle": "The product does not prescribe what a repository should become; it identifies and strengthens the foundations that allow each repository to succeed at what it is intended to be.",
   "refinementRule": "Domains and kinds are data, not a taxonomy. Add, split, merge or re-weight one here; every change stays covered by the foundation-domains.json integrity gate and the module-smoke fixture set. Never add a domain the product cannot evidence from visible repository state, and never let a conclusion cite the absence of findings as evidence.",
   "conclusions": {
@@ -109,12 +109,24 @@
     { "id": "application", "title": "Application", "applicability": {}, "note": "Release 3.7 M4a: a served page, an app-framework manifest, an executable project, or a README that says so. M4b decides what this kind is not judged on." },
     { "id": "library", "title": "Library", "applicability": {} },
     { "id": "firmware", "title": "Firmware", "applicability": {}, "note": "Release 3.7 M4a: a firmware target (platformio.ini, Arduino sketch, ESP sdkconfig) or a README that says so." },
-    { "id": "experiment", "title": "Experiment", "applicability": {}, "note": "Release 3.7 M4a: the README purpose line calls it an experiment, prototype, spike or bootstrap. Provisional by nature; D-006 owner intent may overrule it." },
+    {
+      "id": "experiment",
+      "title": "Experiment",
+      "applicability": {
+        "planning": "An experiment plans by trying; a roadmap is optional until it has a direction. Experiments never meant to be finished are a normal state of this portfolio, not a gap (steering Rung 1)."
+      },
+      "applicabilityBasis": {
+        "observedOn": [],
+        "note": "3.7 M4b default, recorded as D-021. No cohort repository resolves experiment yet (2026-06-13_Orchestration's root carries no wording); fixture only. A cohort observation or Ben's ruling on D-021 changes this row, never code."
+      },
+      "note": "Release 3.7 M4a: the README purpose line calls it an experiment, prototype, spike or bootstrap. Provisional by nature; D-006 owner intent may overrule it."
+    },
     { "id": "tooling", "title": "Tooling", "applicability": {}, "note": "Release 3.7 M4a: a CLI entry, loose root scripts with no module manifest, or a README that calls it a tool or utility." },
     {
       "id": "minimal",
       "title": "Minimal utility",
-      "applicability": { "planning": "A minimal utility with no pending work needs no roadmap." }
+      "applicability": { "planning": "A minimal utility with no pending work needs no roadmap." },
+      "applicabilityBasis": { "observedOn": [], "note": "Release 3.6 M1 starting set; module-smoke fixture 'minimal-utility'. No detection rule resolves minimal yet, so no cohort repository has carried it." }
     },
     {
       "id": "externally-managed",
@@ -123,6 +135,7 @@
         "planning": "Plans live with the upstream owner.",
         "structure": "Layout is dictated upstream."
       },
+      "applicabilityBasis": { "observedOn": [], "note": "Release 3.6 M1 starting set. External management is owner intent (D-006); the trial recorded the category as unrepresented, so no repository has carried it." },
       "conclusion": "appropriate-as-is",
       "reason": "Externally managed: the upstream owner decides its plan and layout."
     },
@@ -134,6 +147,7 @@
         "structure": "An archived repository is not reorganized.",
         "intentional-engineering": "An archived repository is not judged on ongoing engineering."
       },
+      "applicabilityBasis": { "observedOn": ["Genesys-Telecom-Powershell"], "note": "Release 3.6 M1 starting set; observed on the trial's curated archive (curationState archived-ignore), which concludes appropriate-as-is with planning, structure and intentional-engineering not applicable." },
       "conclusion": "appropriate-as-is",
       "reason": "Archived: intentionally closed, kept for reference."
     }
