@@ -346,6 +346,55 @@ function _PC_ActionFromDefinition {
     }
 }
 
+function _PC_LifecycleConsistency {
+    <#
+        Steering extension 3: lifecycleState and conclusion are two verdicts
+        over the same signals; they may not disagree without saying why. The
+        allowed pairs and the explained exceptions are data
+        (foundation-domains.json lifecycleConsistency); an exception counts
+        only when its `requires` pattern is found in the record's basis lines
+        or domain=status facts, and that fact is the explanation's evidence.
+        Returns $null when the config carries no table (no claim either way).
+    #>
+    param([object]$Config, [string]$LifecycleState, [string]$Conclusion, [string[]]$Basis, [object[]]$Domains)
+    $table = _PC_GetField -Obj $Config -Name 'lifecycleConsistency' -Default $null
+    if ($null -eq $table) { return $null }
+    $allowed = _PC_GetField -Obj $table -Name 'allowed' -Default $null
+    $states = @(_PC_PropertyNames -Obj $allowed)
+    $record = [ordered]@{ lifecycleState = $LifecycleState; conclusion = $Conclusion; holds = $false; agreement = ''; explanation = ''; evidence = @() }
+    if ($LifecycleState -notin $states) {
+        $record.agreement = 'unknown-lifecycle'
+        $record.explanation = "lifecycleState '$LifecycleState' is not in lifecycleConsistency.allowed, so nothing says which conclusions agree with it"
+        return [pscustomobject]$record
+    }
+    $okList = @(_PC_Strings -Values @(_PC_GetField -Obj $allowed -Name $LifecycleState -Default @()))
+    if ($Conclusion -in $okList) {
+        $record.holds = $true; $record.agreement = 'allowed'
+        $record.explanation = "lifecycleState '$LifecycleState' and conclusion '$Conclusion' agree"
+        return [pscustomobject]$record
+    }
+    $facts = [System.Collections.Generic.List[string]]::new()
+    foreach ($b in @($Basis)) { if (-not [string]::IsNullOrWhiteSpace($b)) { $facts.Add([string]$b) | Out-Null } }
+    foreach ($d in @($Domains)) { $facts.Add(('{0}={1}' -f [string](_PC_GetField -Obj $d -Name 'domain' -Default ''), [string](_PC_GetField -Obj $d -Name 'status' -Default ''))) | Out-Null }
+    foreach ($ex in @(_PC_GetField -Obj $table -Name 'exceptions' -Default @())) {
+        $exState = [string](_PC_GetField -Obj $ex -Name 'lifecycleState' -Default '*')
+        $exConclusion = [string](_PC_GetField -Obj $ex -Name 'conclusion' -Default '*')
+        if ($exState -ne '*' -and $exState -ne $LifecycleState) { continue }
+        if ($exConclusion -ne '*' -and $exConclusion -ne $Conclusion) { continue }
+        $pattern = [string](_PC_GetField -Obj $ex -Name 'requires' -Default '')
+        if ([string]::IsNullOrWhiteSpace($pattern)) { continue }
+        $hit = @($facts | Where-Object { $_ -match $pattern } | Select-Object -First 1)
+        if ($hit.Count -eq 0) { continue }
+        $record.holds = $true; $record.agreement = 'explained'
+        $record.explanation = [string](_PC_GetField -Obj $ex -Name 'explanation' -Default 'an exception applies')
+        $record.evidence = @($hit)
+        return [pscustomobject]$record
+    }
+    $record.agreement = 'contradiction'
+    $record.explanation = "lifecycleState '$LifecycleState' and conclusion '$Conclusion' disagree and nothing in the basis explains it"
+    return [pscustomobject]$record
+}
+
 function Get-RepositoryFoundationConclusion {
     <#
     .SYNOPSIS
@@ -473,6 +522,8 @@ function Get-RepositoryFoundationConclusion {
         }
     }
 
+    $consistency = _PC_LifecycleConsistency -Config $Config -LifecycleState ([string](_PC_GetField -Obj $Entry -Name 'lifecycleState' -Default '')) -Conclusion $conclusion -Basis @($basis) -Domains @($domains)
+
     return [pscustomobject]@{
         schemaVersion = 'v1'
         model         = 'foundation-conclusion'
@@ -497,6 +548,10 @@ function Get-RepositoryFoundationConclusion {
         nextAction    = $nextAction
         maturityLevel = [string](_PC_GetField -Obj $Entry -Name 'maturityLevel' -Default 'L0-Absent')
         lifecycleState = [string](_PC_GetField -Obj $Entry -Name 'lifecycleState' -Default '')
+        # Steering extension 3: whether the lifecycle state and this conclusion
+        # agree, and when they do not, the configured explanation with the
+        # basis fact that earns it. Null only when the config has no table.
+        consistency   = $consistency
         generatedAt   = $GeneratedAt
     }
 }
@@ -510,7 +565,9 @@ function Test-FoundationConclusion {
         - a conclusion from the config's set and every domain status from its set;
         - strengthen names a next action with a route;
         - appropriate-as-is cites evidence (never an absence of findings);
-        - nothing presents 'L0-Absent' as the only thing it has to say.
+        - nothing presents 'L0-Absent' as the only thing it has to say;
+        - lifecycleState and conclusion agree, or an explained exception applies
+          (steering extension 3; the table is foundation-domains.json lifecycleConsistency).
     #>
     [CmdletBinding()]
     [OutputType([System.Object[]])]
@@ -540,6 +597,11 @@ function Test-FoundationConclusion {
         $ev = @(_PC_Strings -Values @(_PC_GetField -Obj $d -Name 'evidence' -Default @()))
         if ($ev.Count -eq 0) { $violations.Add("$name domain '$(_PC_GetField -Obj $d -Name 'domain' -Default '?')' has no evidence") }
         foreach ($line in $ev) { if ($line.Trim() -eq 'L0-Absent') { $violations.Add("$name cites bare 'L0-Absent' as evidence") } }
+    }
+
+    $consistency = _PC_GetField -Obj $Conclusion -Name 'consistency' -Default $null
+    if ($null -ne $consistency -and -not [bool](_PC_GetField -Obj $consistency -Name 'holds' -Default $false)) {
+        $violations.Add(("{0}: {1}" -f $name, [string](_PC_GetField -Obj $consistency -Name 'explanation' -Default 'lifecycle and conclusion disagree')))
     }
 
     switch ($verdict) {
@@ -651,6 +713,15 @@ function Get-PortfolioConclusionsPayload {
     $byKind = [ordered]@{}
     foreach ($i in $items) { $k = [string]$i.kind; if (-not $byKind.Contains($k)) { $byKind[$k] = 0 }; $byKind[$k]++ }
 
+    # Steering extension 3: how the two verdict models relate across the set.
+    $byConsistency = [ordered]@{ allowed = 0; explained = 0; contradiction = 0; 'unknown-lifecycle' = 0; 'not-assessed' = 0 }
+    foreach ($i in $items) {
+        $c = _PC_GetField -Obj $i -Name 'consistency' -Default $null
+        $a = if ($null -eq $c) { 'not-assessed' } else { [string](_PC_GetField -Obj $c -Name 'agreement' -Default 'not-assessed') }
+        if (-not $byConsistency.Contains($a)) { $byConsistency[$a] = 0 }
+        $byConsistency[$a]++
+    }
+
     $statuses = @(_PC_GetField -Obj $Config -Name 'domainStatuses' -Default @())
     $coverage = [ordered]@{}
     foreach ($domain in @(_PC_GetField -Obj $Config -Name 'domains' -Default @())) {
@@ -674,6 +745,7 @@ function Get-PortfolioConclusionsPayload {
         modelVersion  = [string](_PC_GetField -Obj $Config -Name 'modelVersion' -Default 'foundation-conclusions v1')
         generatedAt   = $GeneratedAt
         count         = $items.Count
+        byConsistency = [pscustomobject]$byConsistency
         byConclusion  = [pscustomobject]$byConclusion
         byKind        = [pscustomobject]$byKind
         coverage      = [pscustomobject]$coverage
