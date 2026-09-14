@@ -239,7 +239,8 @@ try {
         $null = New-Item -ItemType Directory -Path $opsLogDir -Force
     }
     $script:OpsLogPath = Join-Path $opsLogDir 'operations.jsonl'
-} catch { }
+# Best-effort: the ops log mirrors apihost.log; if its directory cannot be created the host still serves, and Write-HostLog skips the mirror while OpsLogPath is unset.
+} catch { $null = $_ }
 
 function Write-HostLog {
     param([string]$Message)
@@ -269,7 +270,8 @@ function Write-HostLog {
             if ($script:OpsLogWriteCount % 250 -eq 0) {
                 Invoke-TrimOpsLog -MaxLines $script:OpsLogMaxLines
             }
-        } catch { }
+        # Best-effort: this IS the logger: a failed mirror write must not fail the request that logged, and logging about it here would recurse.
+        } catch { $null = $_ }
     }
 }
 
@@ -283,14 +285,16 @@ function Invoke-TrimOpsLog {
         if ($allLines.Count -le $MaxLines) { return }
         $kept = $allLines[($allLines.Count - $MaxLines)..($allLines.Count - 1)]
         [System.IO.File]::WriteAllLines($script:OpsLogPath, $kept, [System.Text.Encoding]::UTF8)
-    } catch { }
+    # Best-effort: housekeeping only; a failed trim leaves a longer file, nothing worse.
+    } catch { $null = $_ }
 
     try {
         $dbTrim = Invoke-AppDbOpsLogTrim -MaxRows $MaxLines
         if (-not $dbTrim.success -and $dbTrim.reason -ne 'app-db-not-initialized') {
             Write-Verbose ("Invoke-TrimOpsLog: app-db trim skipped: {0}" -f $dbTrim.reason)
         }
-    } catch { }
+    # Best-effort: housekeeping only; the app-db trim mirrors the JSONL trim that already ran.
+    } catch { $null = $_ }
 }
 
 function Parse-Bool {
@@ -396,7 +400,8 @@ function Get-ListeningProcessIds {
             if ($connections.Count -gt 0) {
                 return @($connections | Select-Object -ExpandProperty OwningProcess -Unique)
             }
-        } catch { }
+        # Best-effort: Get-NetTCPConnection can be absent or refused on this host; an empty result means "not detected", which is the honest answer.
+        } catch { $null = $_ }
     }
 
     $ssCommand = Get-Command -Name 'ss' -ErrorAction SilentlyContinue
@@ -456,7 +461,8 @@ function Stop-PortListeners {
         try {
             $process = Get-Process -Id $listenerPid -ErrorAction Stop
             $processLabel = "$($process.ProcessName) (PID $listenerPid)"
-        } catch { }
+        # Best-effort: the listener process may already have exited; the label then names only the pid.
+        } catch { $null = $_ }
 
         Write-HostLog "Port $LocalPort is already in use by $processLabel. Terminating it before startup."
 
@@ -1057,7 +1063,8 @@ function Send-HttpJson {
 
     $json = $Payload | ConvertTo-Json -Depth 12
     $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($json)
-    try { $Stream.WriteTimeout = $script:ClientIoTimeoutMs } catch { }
+    # Best-effort: not every Stream honours WriteTimeout (a MemoryStream in tests throws); the write proceeds without it.
+    try { $Stream.WriteTimeout = $script:ClientIoTimeoutMs } catch { $null = $_ }
 
     $headerLines = [System.Collections.Generic.List[string]]::new()
     $headerLines.Add("HTTP/1.1 $StatusCode $StatusText")
@@ -1258,7 +1265,8 @@ function Read-HttpRequest {
     try {
         $stream.ReadTimeout = $script:ClientIoTimeoutMs
         $stream.WriteTimeout = $script:ClientIoTimeoutMs
-    } catch { }
+    # Best-effort: not every Stream honours ReadTimeout/WriteTimeout (a MemoryStream in tests throws); the read proceeds without them.
+    } catch { $null = $_ }
     # Latin-1 (ISO-8859-1), not ASCII: it is the only single-byte encoding with a
     # lossless 1:1 byte<->char mapping for all 256 values, so the reader stays
     # byte-exact while Content-Length (a BYTE count) still matches the char count
@@ -2929,7 +2937,8 @@ function Get-GitHubTokenResolution {
                 $scoped = [Environment]::GetEnvironmentVariable($envVarName, $candidate)
                 if ($scoped -eq $envToken) { $scope = $candidate; break }
             }
-            catch { }
+            # Best-effort: reading the Machine or User scope can be refused; the scope then stays reported as Process.
+            catch { $null = $_ }
         }
 
         return [pscustomobject]@{
@@ -2956,7 +2965,8 @@ function Get-GitHubTokenResolution {
                 }
             }
         }
-        catch { }
+        # Best-effort: gh may be absent, unauthenticated or unable to print a token; the caller then reports no token.
+        catch { $null = $_ }
     }
 
     return [pscustomobject]@{
@@ -4102,9 +4112,11 @@ function Get-RoadmapRepairHistory {
             try {
                 $obj = $line | ConvertFrom-Json
                 $items.Add($obj)
-            } catch { }
+            # Best-effort: a malformed JSONL line is skipped rather than failing the whole read.
+            } catch { $null = $_ }
         }
-    } catch { }
+    # Best-effort: an unreadable file returns whatever was parsed before the failure.
+    } catch { $null = $_ }
     return @($items)
 }
 
@@ -5091,6 +5103,7 @@ function Normalize-TaskSelectionMatchValue {
         $normalized = $normalized.Normalize([Text.NormalizationForm]::FormKC)
     } catch {
         # Fall back to the original value when Unicode normalization is unavailable.
+        $null = $_
     }
 
     $normalized = $normalized `
@@ -5327,7 +5340,8 @@ function Build-CopilotTaskPacket {
             })
             $executionHistorySection = "`n`nExecution history for this repo (most recent first):`n" + ($histLines -join "`n")
         }
-    } catch { }
+    # Best-effort: the execution-history section is optional prompt context; an unreadable ledger omits it.
+    } catch { $null = $_ }
 
     # Step 6c: Roadmap audit quality context — maturity level and high-severity findings
     $auditQualitySection = ''
@@ -5357,7 +5371,8 @@ function Build-CopilotTaskPacket {
                 }
             }
         }
-    } catch { }
+    # Best-effort: the audit section is optional prompt context; an unreadable audit omits it.
+    } catch { $null = $_ }
 
     # Step 6d: Cross-cutting tag context from parsed roadmap
     $tagSection = ''
@@ -6807,7 +6822,8 @@ try {
                     $activeStream = $sslStream
                 } catch {
                     Write-HostLog ("WARN TLS handshake failed remote={0}: {1}" -f $tlsRemote, $_.Exception.Message)
-                    try { $client.Close() } catch { }
+                    # Best-effort: closing a socket whose handshake already failed can itself throw.
+                    try { $client.Close() } catch { $null = $_ }
                     continue
                 }
             }
@@ -8273,7 +8289,8 @@ try {
                                 $probeResponse = Invoke-WebRequest -Uri 'https://api.github.com/user' -Headers $probeHeaders -Method Get -UseBasicParsing -ErrorAction Stop
                                 $probeLogin = (ConvertFrom-JsonCompat -Json $probeResponse.Content).login
                                 $probeExpiry = ''
-                                try { $probeExpiry = [string]($probeResponse.Headers['github-authentication-token-expiration'] | Select-Object -First 1) } catch { }
+                                # Best-effort: the expiry header is absent for classic tokens; expiry then stays blank.
+                                try { $probeExpiry = [string]($probeResponse.Headers['github-authentication-token-expiration'] | Select-Object -First 1) } catch { $null = $_ }
                                 $liveCheck = @{
                                     checked   = $true
                                     valid     = $true
@@ -9774,7 +9791,8 @@ try {
                                     }
                                 }
                             }
-                        } catch { }
+                        # Best-effort: an unreadable or malformed disk cache entry leaves diskInfo null, which the diagnostics report as such.
+                        } catch { $null = $_ }
                     }
                     Add-MetricCounter -Name 'api_requests_total'
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
@@ -10248,7 +10266,8 @@ try {
                                     }
                                 }
                             }
-                        } catch { }
+                        # Best-effort: an unreadable or malformed disk cache entry leaves diskInfo null, which the diagnostics report as such.
+                        } catch { $null = $_ }
                     }
                     Add-MetricCounter -Name 'api_requests_total'
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
@@ -12417,7 +12436,7 @@ try {
                     # allowed, warned, or blocked — as a quota-burn snapshot so burn-down
                     # is queryable over time. Best-effort; the quota.* JSONL events remain
                     # the raw debugging artifact and dispatch never fails on a mirror error.
-                    try { $null = Write-AppDbQuotaBurnSnapshot -RepoName $repoName -Evaluation $quotaResult } catch { }
+                    try { $null = Write-AppDbQuotaBurnSnapshot -RepoName $repoName -Evaluation $quotaResult } catch { $null = $_ }
 
                     $quotaEventBase = [ordered]@{
                         budgetPeriod            = [string]$quotaResult.period
@@ -13700,7 +13719,8 @@ try {
                                         timestamp = [string](Get-ObjectPropertyValue -InputObject $entry -PropertyName 'timestamp' -Default (Get-ObjectPropertyValue -InputObject $entry -PropertyName 'appliedAt' -Default ''))
                                         appliedAt = [string](Get-ObjectPropertyValue -InputObject $entry -PropertyName 'appliedAt' -Default $null)
                                     })
-                                } catch { }
+                                # Best-effort: a malformed history line is skipped rather than failing the whole listing.
+                                } catch { $null = $_ }
                             }
                         }
                         Add-MetricCounter -Name 'api_requests_total'
@@ -14291,7 +14311,8 @@ try {
                                         msg = $entryMsg
                                     })
                                     $parsed = $true
-                                } catch { }
+                                # Best-effort: a line that is not JSON falls through to the plain-text parser below ($parsed stays false).
+                                } catch { $null = $_ }
                                 if (-not $parsed -and $rawLine -match '^\[(?<ts>[^\]]+)\]\s+\[(?<level>[^\]]+)\]\s+(?<msg>.*)$') {
                                     try {
                                         $entryTs = ([datetime]$matches['ts']).ToUniversalTime().ToString('o')
@@ -14313,7 +14334,8 @@ try {
                                     })
                                 }
                             }
-                        } catch { }
+                        # Best-effort: an unreadable log file returns the entries parsed before the failure.
+                        } catch { $null = $_ }
                     }
 
                     Add-MetricCounter -Name 'api_requests_total'
