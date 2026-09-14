@@ -1435,9 +1435,19 @@ controlled debt — **no blanket lint sweep.** Small, behaviorally coherent
 batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
 
 - P1 — PSSA correctness micro-batch — **done 2026-08-15**, all 12 fixed and five rules now gate at zero; [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
-- [ ] **E1 — ESLint `exhaustive-deps` review (8 findings).** Behavioral, not
-      mechanical: each missing dep is either a real staleness bug or a
-      deliberate omission that earns a comment. Small enough for one PR.
+- **E1 — ESLint `exhaustive-deps` review — done 2026-09-13.** Eight findings,
+  none a staleness bug. Five were the same performance mistake: `RepoGrid`
+  recreated two pure functions every render and listed them as `useMemo`
+  dependencies, so the grid re-filtered and re-sorted on every render;
+  `WorkQueueView` handed its memos a fresh `[]` whenever the audit index was
+  null. Fixed by hoisting to module scope and one shared empty array. One was a
+  fetch keyed on two optional-chain reads of the assessment; it now keys on a
+  derived `generatedAt|count` string that says what it means. Two are
+  deliberate omissions that now carry their reason in a comment beside the
+  disable: a one-shot load gated by `hasAttemptedOperationsLoad`, and a
+  workspace reset keyed on the repository that must not fire when a background
+  refresh changes the entry's item text, or it would wipe the operator's
+  in-progress prompt. `--max-warnings` ratcheted 161 → 153.
 - [ ] **P2 — empty catch blocks (79), classify then fix.** Guardrail-aligned
       ("never swallow silently"): each site becomes either an annotated
       deliberate best-effort (narrowed catch + comment) or a surfaced

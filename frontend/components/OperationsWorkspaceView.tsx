@@ -483,6 +483,11 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
     setMergeReadiness(null);
     setMergeReadinessError(null);
     setMergeActionNotice(null);
+    // Keyed on the repository, deliberately not on its item text. This resets
+    // the whole workspace; if it also fired when topValueItem or
+    // nextPendingItemText changed -- which a background index refresh does --
+    // it would wipe the operator's in-progress prompt and history mid-session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedEntry?.repoId]);
 
   useEffect(() => {

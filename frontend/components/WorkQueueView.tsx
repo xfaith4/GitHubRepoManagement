@@ -194,6 +194,11 @@ interface SavedFilter {
   searchText: string;
 }
 
+// One shared empty array. `auditIndex?.entries ?? []` handed the memos a fresh
+// array on every render while the index was null, so they recomputed every
+// render for an empty list (Lane 0.8 E1).
+const EMPTY_ENTRIES: DocAuditIndex['entries'] = [];
+
 const WorkQueueView: React.FC<WorkQueueViewProps> = ({
   auditIndex,
   loading,
@@ -232,7 +237,7 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
   const [showSaveFilter, setShowSaveFilter] = useState(false);
   const [newFilterName, setNewFilterName] = useState('');
 
-  const entries = auditIndex?.entries ?? [];
+  const entries = auditIndex?.entries ?? EMPTY_ENTRIES;
 
   // Rows can outlive the scan that produced them (the index is persisted). When
   // the live scan is known-empty, every row targets a repo the app cannot

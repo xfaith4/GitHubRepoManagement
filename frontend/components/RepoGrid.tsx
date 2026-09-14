@@ -204,6 +204,23 @@ function buildScanDecisionTooltip(repo: RepoStatus): string {
   return lines.join('\n');
 }
 
+// Pure: reads only the repo, so it lives at module scope. Inside the component
+// it was recreated on every render and listed as a dependency of the grid's
+// filter/sort memo, which therefore recomputed the entire grid on every render
+// (Lane 0.8 E1). The acute-problem definition itself stays in the shared
+// lib/needsAttention module, in sync with the Dashboard's "Needs Attention"
+// metric (Release 2.6 Phase 1 / 2.7 Ph D), and is now called directly.
+const isRoadmapFlagged = (repo: RepoStatus): boolean => {
+  const roadmapState = repo.roadmapState ?? 'missing';
+  return roadmapState === 'missing' || roadmapState === 'pending' || roadmapState === 'parse-error' ||
+    roadmapState === 'no-checklist' ||
+    repo.dispatchReadiness === 'missing-roadmap' ||
+    repo.dispatchReadiness === 'needs-doc-standardization' ||
+    repo.dispatchReadiness === 'parse-error' ||
+    repo.dispatchReadiness === 'no-checklist' ||
+    repo.dispatchReadiness === 'blocked';
+};
+
 const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRunRepoAction, onOpenDocReview, onRunRoadmapScan, dataSource, selectedRepos, setSelectedRepos, groupBy, setGroupBy, scanSummary, scanGeneratedAt, onRefreshAll, refreshAllInProgress, onSetCuration }: RepoGridProps) => {
   const [sortKey, setSortKey] = useState<SortKey>('priority');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
@@ -264,20 +281,6 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
     return ids;
   }, [duplicateLocalRepoGroups, getRepoSelectionId]);
 
-  const isRoadmapFlagged = (repo: RepoStatus) => {
-    const roadmapState = repo.roadmapState ?? 'missing';
-    return roadmapState === 'missing' || roadmapState === 'pending' || roadmapState === 'parse-error' ||
-      roadmapState === 'no-checklist' ||
-      repo.dispatchReadiness === 'missing-roadmap' ||
-      repo.dispatchReadiness === 'needs-doc-standardization' ||
-      repo.dispatchReadiness === 'parse-error' ||
-      repo.dispatchReadiness === 'no-checklist' ||
-      repo.dispatchReadiness === 'blocked';
-  };
-
-  // Acute-problem definition — shared pure module keeps this in sync with the
-  // Dashboard summary's "Needs Attention" metric (Release 2.6 Phase 1 / 2.7 Ph D).
-  const isNeedsAttention = (repo: RepoStatus) => isRepoNeedsAttention(repo);
 
   const filteredAndSortedRepos = useMemo(() => {
     const searchLower = search.trim().toLowerCase();
@@ -295,7 +298,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
       const matchesDirtyOnly = !quickFilters.dirtyOnly || repo.status === 'dirty';
       const matchesUncommitted = !quickFilters.hasUncommitted || repo.uncommittedChanges > 0;
       const matchesStale = !quickFilters.staleOnly || repo.isStale;
-      const matchesAttention = !quickFilters.needsAttention || isNeedsAttention(repo);
+      const matchesAttention = !quickFilters.needsAttention || isRepoNeedsAttention(repo);
       const matchesOpenPrs = !quickFilters.hasOpenPrs || (repo.openPrCount ?? 0) > 0;
       const matchesBuildProblem = !quickFilters.buildProblem || !repo.lastBuildStatus || repo.lastBuildStatus === 'none' || repo.lastBuildStatus === 'failure';
       const matchesRoadmapFlag = !quickFilters.roadmapFlagged || isRoadmapFlagged(repo);
@@ -329,7 +332,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
         case 'openPrCount':
           return Number(repo.openPrCount ?? 0);
         case 'needsAttention':
-          return isNeedsAttention(repo) ? 1 : 0;
+          return isRepoNeedsAttention(repo) ? 1 : 0;
         default:
           return repo.name;
       }
@@ -347,7 +350,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
       const rightString = String(rightValue);
       return sortOrder === 'asc' ? leftString.localeCompare(rightString) : rightString.localeCompare(leftString);
     });
-  }, [duplicateRepoIds, getRepoSelectionId, isNeedsAttention, isRoadmapFlagged, quickFilters, readinessFilter, search, sortKey, sortOrder, uniqueRepos]);
+  }, [duplicateRepoIds, getRepoSelectionId, quickFilters, readinessFilter, search, sortKey, sortOrder, uniqueRepos]);
 
   useEffect(() => {
     setPageIndex(1);
@@ -367,7 +370,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
         case 'status':
           return repo.status;
         case 'needsAttention':
-          return isNeedsAttention(repo) ? 'Needs attention' : 'No attention needed';
+          return isRepoNeedsAttention(repo) ? 'Needs attention' : 'No attention needed';
         case 'isStale':
           return repo.isStale ? 'Stale repositories' : 'Current repositories';
         case 'lastBuildStatus':
@@ -396,7 +399,7 @@ const RepoGrid = ({ repos, onViewArtifacts, onViewRoadmap, onViewGitStatus, onRu
       acc[key].push(repo);
       return acc;
     }, {} as Record<string, RepoStatus[]>);
-  }, [groupBy, isNeedsAttention, pagedRepos]);
+  }, [groupBy, pagedRepos]);
 
   useEffect(() => {
     if (groupBy === 'needsAttention') {

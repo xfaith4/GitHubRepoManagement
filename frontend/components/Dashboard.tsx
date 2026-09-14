@@ -460,8 +460,15 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     refreshPortfolioAssessment(false).catch(() => {/* silent */});
   }, [loading, repos.length]);
 
+  // The trend re-fetches when the assessment is NEW, not whenever the object is
+  // re-set: generatedAt and count are its identity. Keyed on one derived string
+  // so the dependency list says exactly that, instead of listing two
+  // optional-chain reads the lint rule cannot tell apart from the whole object.
+  const portfolioAssessmentKey = portfolioAssessment
+    ? `${portfolioAssessment.generatedAt}|${portfolioAssessment.count}`
+    : null;
   useEffect(() => {
-    if (!portfolioAssessment) {
+    if (portfolioAssessmentKey === null) {
       setPortfolioTrend(null);
       setPortfolioTrendError(null);
       setPortfolioTrendLoading(false);
@@ -494,7 +501,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
     return () => {
       cancelled = true;
     };
-  }, [portfolioAssessment?.generatedAt, portfolioAssessment?.count]);
+  }, [portfolioAssessmentKey]);
 
   // Release 1.2 — fetch execution metrics and auto-scan schedule on mount
   useEffect(() => {
@@ -553,6 +560,11 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
         refreshOperationsRepos(true).catch(() => {/* surfaced in-panel */});
       }
     });
+    // refreshOperationsRepos is a plain function recreated every render. Listing
+    // it would re-run this effect on every render for nothing: the
+    // hasAttemptedOperationsLoad gate above makes every run after the first a
+    // no-op. This is a one-shot load keyed on the view opening, by design.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeView, hasAttemptedOperationsLoad]);
 
   // Load docs audit when Work Queue or Operations is first opened.
