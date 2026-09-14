@@ -11922,6 +11922,24 @@ Write-Step 'Settings path resolver - one definition, so a gate cannot write the 
 
     Write-Host '  inherited-env ok: all four host-starting gates neutralise REPO_MGMT_TLS_PFX before starting a plain-HTTP host' -ForegroundColor DarkGray
 
+    # The operator's portfolio index was emptied by a test host for the THIRD
+    # time on 2026-09-13: PR #283 isolated the api-host smoke, and the contract
+    # suite and auth smoke -- which start hosts of their own against the real
+    # workspace root -- were never given the same override. A host started
+    # without REPO_MGMT_INDEX_ROOT writes its first assessment to
+    # output\index\repos.index.json, and a fixture root yields repoCount 0.
+    # Invoke-DailyEvidence.ps1 is deliberately absent from this list: capturing
+    # the real portfolio is its purpose.
+    foreach ($indexGate in @('scripts\Invoke-ApiHostSmokeTest.ps1', 'scripts\Invoke-AuthSmokeTest.ps1', 'backend\api-host\ApiHost.Contract.Tests.ps1')) {
+        $indexGateText = Get-Content -LiteralPath (Join-Path $WorkspaceRoot $indexGate) -Raw -Encoding UTF8
+        foreach ($required in @('REPO_MGMT_INDEX_ROOT', 'REPO_MGMT_QUEUE_PATH', 'REPO_MGMT_RUNNER_CONTROL_ROOT')) {
+            if ($indexGateText -notmatch [regex]::Escape($required)) {
+                throw ("{0} starts an API host without setting {1}; that host can write the operator's real index, queue or runner state. Set it beside the gate's other overrides." -f $indexGate, $required)
+            }
+        }
+    }
+    Write-Host '  host isolation ok: every test gate that starts a host sets REPO_MGMT_INDEX_ROOT, REPO_MGMT_QUEUE_PATH and REPO_MGMT_RUNNER_CONTROL_ROOT' -ForegroundColor DarkGray
+
     Write-Host '  settings path ok: detector rejected its own inline fixture and spared the resolved form; no bypass under backend/ or scripts/ (installer exempt); REPO_MGMT_SETTINGS_PATH redirects and clears; both host smokes isolate and assert' -ForegroundColor DarkGray
 }
 

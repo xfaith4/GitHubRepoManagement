@@ -108,6 +108,23 @@ BeforeAll {
         $Response.Json.error.message | Should -Not -BeNullOrEmpty
     }
 
+    # The host below runs in-process, so it reads THIS process's environment.
+    # Without these three overrides it starts against the real workspace root
+    # and its first assessment writes output\index\repos.index.json -- which is
+    # exactly what happened on 2026-09-13, fifteen seconds after this suite
+    # started: the operator's 59-repository index became repoCount 0 for the
+    # third time. PR #283 isolated the api-host smoke; this suite never got the
+    # same treatment. Previous values are restored in AfterAll so a run from an
+    # operator's own session leaves their environment as it found it.
+    $script:IsolationPrevious = @{}
+    foreach ($name in 'REPO_MGMT_INDEX_ROOT', 'REPO_MGMT_QUEUE_PATH', 'REPO_MGMT_RUNNER_CONTROL_ROOT') {
+        $script:IsolationPrevious[$name] = [Environment]::GetEnvironmentVariable($name)
+    }
+    [Environment]::SetEnvironmentVariable('REPO_MGMT_INDEX_ROOT', (Join-Path $script:LogRoot 'contract-index'))
+    [Environment]::SetEnvironmentVariable('REPO_MGMT_QUEUE_PATH', (Join-Path $script:LogRoot 'contract-task-queue.jsonl'))
+    [Environment]::SetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT', (Join-Path $script:LogRoot 'contract-runner-control'))
+    $null = New-Item -ItemType Directory -Path (Join-Path $script:LogRoot 'contract-runner-control') -Force
+
     $script:HostPowerShell = [powershell]::Create()
     $null = $script:HostPowerShell.AddScript({
         param($ScriptPath, $Root, $Port, $LogPath, $StopPath)
@@ -119,6 +136,13 @@ BeforeAll {
 }
 
 AfterAll {
+    # Restore the isolation overrides first; the host is being stopped and no
+    # longer reads them, and an operator's session must not keep them.
+    if ($null -ne $script:IsolationPrevious) {
+        foreach ($name in $script:IsolationPrevious.Keys) {
+            [Environment]::SetEnvironmentVariable($name, $script:IsolationPrevious[$name])
+        }
+    }
     if ($null -ne $script:HostPowerShell) {
         try {
             Set-Content -LiteralPath $script:ShutdownSignalPath -Value 'stop' -Encoding UTF8

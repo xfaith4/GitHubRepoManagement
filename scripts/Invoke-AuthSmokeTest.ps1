@@ -66,6 +66,20 @@ Set-Content -LiteralPath $settingsPath `
 $env:REPO_MGMT_SETTINGS_PATH = $settingsPath
 Write-Host ("  settings isolated to {0} (the operator's tracked settings.json is never written)" -f $settingsPath) -ForegroundColor DarkGray
 
+# The same isolation the api-host smoke has, for the same reason. On
+# 2026-09-13 the operator's portfolio index was emptied for the third time --
+# repoCount 0, written fifteen seconds after a test host started against the
+# real workspace root with no index override, so its first assessment over an
+# empty fixture landed on output\index\repos.index.json. Every host this script
+# starts inherits these, so none of them can reach the operator's index, queue
+# or runner state. The api-host smoke proves the host honours each override;
+# this only has to set them.
+$env:REPO_MGMT_INDEX_ROOT = Join-Path $smokeRoot 'index'
+$env:REPO_MGMT_QUEUE_PATH = Join-Path $smokeRoot 'roadmap-task-queue.jsonl'
+$env:REPO_MGMT_RUNNER_CONTROL_ROOT = Join-Path $smokeRoot 'runner-control'
+$null = New-Item -ItemType Directory -Path $env:REPO_MGMT_RUNNER_CONTROL_ROOT -Force
+Write-Host ("  index, queue and runner state isolated under {0}" -f $smokeRoot) -ForegroundColor DarkGray
+
 # Every host started here except the TLS step speaks plain HTTP, and Start-Job
 # inherits this process's environment. An inherited REPO_MGMT_TLS_PFX -- set at
 # MACHINE scope by the installed service -- would wrap those listeners in an
