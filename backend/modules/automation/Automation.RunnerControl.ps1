@@ -35,31 +35,12 @@ $ErrorActionPreference = 'Stop'
     what makes unattended execution acceptable in the first place.
 #>
 
-function Get-RunnerControlRoot {
-    <#
-    .SYNOPSIS
-        Directory holding the two files that govern whether runners may run.
-    .DESCRIPTION
-        Overridable with REPO_MGMT_RUNNER_CONTROL_ROOT, and the override names
-        the ROOT rather than either file so the hold record and the stop marker
-        always move together -- exactly the shape REPO_MGMT_INDEX_ROOT settled
-        on, for the same reason.
-
-        The isolation is not hypothetical. The api-host smoke starts its host
-        with the OPERATOR'S real workspace root, so without this a gate that
-        exercised the stop route would write a hold into their live output
-        directory: their runner would stop mid-task and, because a hold is
-        durable by design, would never come back. That is the same shape as the
-        gate that twice emptied the operator's portfolio index.
-    #>
-    [CmdletBinding()]
-    [OutputType([string])]
-    param([Parameter(Mandatory = $true)][string]$WorkspaceRoot)
-
-    $override = [Environment]::GetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT')
-    if (-not [string]::IsNullOrWhiteSpace($override)) { return $override }
-    return (Join-Path $WorkspaceRoot 'output')
-}
+# Get-RunnerControlRoot lives in Automation.RunnerPresence.ps1, which every
+# caller of this module loads first. It resolves REPO_MGMT_RUNNER_CONTROL_ROOT
+# for the heartbeat as well as the two files below, so a test that isolates one
+# runner-state file isolates all three. Without that override, a gate exercising
+# the stop route would write a DURABLE hold into the operator's live output
+# directory: their runner would stop mid-task and never come back.
 
 function Get-RunnerHoldFilePath {
     <#

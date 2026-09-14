@@ -393,11 +393,20 @@ Resuming is releasing the hold. There is deliberately no separate start path:
 "start" and "resume" differ only in whether a file has to be deleted first, and a
 second entry point would be a second place for the two to drift apart.
 
-`REPO_MGMT_RUNNER_CONTROL_ROOT` relocates both files. The override names the
-root so they always move together, and the api-host smoke sets it — that gate
-starts its host with your **real** workspace root, so without it a test of the
-stop route would stop your live runner and, a hold being durable, keep it
-stopped.
+`REPO_MGMT_RUNNER_CONTROL_ROOT` relocates **all three** runner-state files —
+the heartbeat as well as these two. The override names the root so they always
+move together, and every reader and writer resolves through it: the portal, the
+runner, and `Stop-RoadmapTaskRunner.ps1`. A reader left behind while its writer
+moved is the failure it prevents — a live runner the portal reports absent, or a
+stop the runner never sees.
+
+The api-host smoke sets it, because that gate starts its host with your **real**
+workspace root. Without it, a test of the stop route would stop your live runner
+and, a hold being durable, keep it stopped. Until 2026-09-13 five of its steps
+also deleted your real heartbeat and wrote a fake runner over it, so the portal
+flickered while tests ran and the api-host smoke could only pass after you
+stopped your own runner. Neither is true any more: that smoke no longer reads,
+fakes or deletes your runner's files, so a live runner no longer fails it.
 
 ### What runs while you are logged out
 

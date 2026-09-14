@@ -51,8 +51,13 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$heartbeatPath = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.heartbeat.json'
-$stopFilePath = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.stop'
+# Same resolution as the portal and the runner, REPO_MGMT_RUNNER_CONTROL_ROOT
+# included: a stop request written where the runner is not looking is a stop
+# that silently never happens.
+$runnerControlRoot = [Environment]::GetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT')
+if ([string]::IsNullOrWhiteSpace($runnerControlRoot)) { $runnerControlRoot = Join-Path $WorkspaceRoot 'output' }
+$heartbeatPath = Join-Path $runnerControlRoot 'roadmap-task-runner.heartbeat.json'
+$stopFilePath = Join-Path $runnerControlRoot 'roadmap-task-runner.stop'
 
 function Get-RunnerProcessId {
     param([Parameter(Mandatory)][string]$HeartbeatPath)

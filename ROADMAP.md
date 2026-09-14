@@ -1371,52 +1371,48 @@ Intent: **awareness, not enforcement.**
 
 **Re-homed from Release 3.1 on its closure (2026-08-15):**
 
-- [ ] **The portal watchdog is restarting a healthy service every 3 minutes —
-      its probe URL was frozen at registration time.** _(state: diagnosed
-      2026-08-29; the fix is ONE elevated re-registration, waiting on the
-      operator)_ Found live the evening the portal flipped to HTTPS: shawl's
-      log shows `Received stop event` every ~3 minutes (59 restarts in one
-      window), each an SCM stop ordered by `RepoMgmtPortalWatchdog` — a SYSTEM
-      scheduled task invisible to unelevated queries (`schtasks` answers
-      _Access is denied_, not _not found_, which is itself the tell).
-      [`Watch-PortalHealth.ps1`](scripts/service/Watch-PortalHealth.ps1) on
-      disk handles HTTPS correctly — defaults to `https`, skips the
-      self-signed certificate on both pwsh and 5.1, and documents this exact
-      failure — but the REGISTERED task carries the `-BaseUrl` baked into its
-      argument string when it was installed, before TLS. The plain-http probe
-      dies in the TLS handshake, the watchdog declares the host frozen, and
-      restarts a healthy service, forever. The handshake-failure flood in
-      `apihost.log` is that probe.
+**Three items closed 2026-09-13 — recorded as prose, because a `[x]` in this
+file is a mistake, not a record.**
 
-      The lesson the HTTPS fallout sweep missed, stated for the next flip of
-      any kind: **grep finds stale assumptions in files; it cannot find frozen
-      copies of arguments in the task registry.** Registered tasks, service
-      ImagePaths, and shortcuts all hold snapshots of defaults that later
-      change — a config-flip sweep must enumerate REGISTRATIONS, not just
-      sources. The runner task from this same release has the identical
-      exposure (its argument string is also frozen; benign today).
+_The watchdog restart loop — cause confirmed, fixed by the operator._ The
+registered `RepoMgmtPortalWatchdog` task kept the `-BaseUrl` it was installed
+with, which predated the 2026-08-29 HTTPS switch, so every one-minute probe went
+to `http://` and failed the TLS handshake. After three failures in a row the
+watchdog force-killed the host and restarted the service, which reset the count:
+**a restart every three minutes, around the clock, from 29 August to 12:29 on
+13 September — about 7,000 restarts**, roughly 480 a day, almost none preceded
+by a clean shutdown. `apihost.log` holds 122,411 handshake failures, the bulk
+of them this probe: four per run, once a minute, 5,665–5,771 a day. The Task
+Scheduler log shows the operator updating the task at 12:29, 12:40 and 12:44;
+the last plain-http failure is 12:44:58, and the task still runs every minute
+without killing the host, so its HTTPS probe now succeeds — fixed, not merely
+removed. The lesson above about frozen registration arguments stands, and the
+runner task carries the same exposure (benign today). Not related: the API
+contract test timeouts, which run against their own host on another port.
 
-      Fix, elevated: `pwsh -File .\scripts\service\Install-PortalWatchdog.ps1`
-      — the installer already unregisters and re-registers with current
-      defaults. Done means shawl's log shows no stop events for an hour and
-      the watchdog's next cycles leave the service pid unchanged.
+_Runner heartbeat isolation._ One override, `REPO_MGMT_RUNNER_CONTROL_ROOT`, now
+moves all three runner-state files (heartbeat, hold, stop marker), and every
+reader and writer resolves through it: the portal, the runner and
+`Stop-RoadmapTaskRunner.ps1`. The problem was worse than recorded here: five
+api-host smoke steps did not just read the real heartbeat, they deleted it and
+wrote a fake runner over it, so the portal flickered while tests ran and the live
+runner rewrote the file underneath them. Proved on the operator's machine with
+their runner alive: the api-host smoke passed for the first time, and 290 samples
+of the real heartbeat taken during the run all showed the live runner's pid,
+never missing and never faked. The smoke's pre-flight warning also never fired —
+it read `processId` where the field is `pid` — and now correctly reports a live
+runner as left alone.
 
-- [ ] **[non-blocker]** **Isolate the runner heartbeat the way the queue,
-      settings and TLS config now are.** _(state: planned — found 2026-08-29
-      while verifying the port and settings fixes)_ The api-host smoke asserts
-      the **no-operator-runner** path of the presence route
-      (`The smoke host has no operator runner; reporting one present would be
-      the false-green this route exists to prevent`). The route reads the real
-      heartbeat at `output\roadmap-task-runner.heartbeat.json`, so a live
-      scheduled runner makes it correctly report a runner and the assertion
-      fails. The operator must therefore **stop their runner to run the test
-      suite** — the same "a gate cannot coexist with the operator's live state"
-      shape as the three fixes above, and the last one left. CI never sees it
-      because a runner is never installed there. An override on the heartbeat
-      path, set by the smoke exactly as `REPO_MGMT_QUEUE_PATH` and
-      `REPO_MGMT_SETTINGS_PATH` now are, removes the constraint. Deliberately
-      **not** bundled into this PR: it changes what the presence route reads,
-      which deserves its own change and its own proof.
+_TLS handshake hardening, found while attributing the flood._ The host serves one
+connection at a time, and the handshake ran on that loop before
+`Read-HttpRequest` applied its read timeout, so a client that connected and sent
+nothing would have stalled every request behind it — the exact condition the
+watchdog kills. The socket now gets the 15-second client timeout before
+`AuthenticateAsServer`, and a failed handshake logs `remote=<address>`, so the
+next flood names its caller in the log line instead of costing an afternoon.
+Takes effect on the next service restart.
+
+**Still open:**
 
 - [ ] **[non-blocker]** **No `.gitattributes`, with `core.autocrlf=true`.**
       Byte-level comparisons are non-deterministic locally while passing in
