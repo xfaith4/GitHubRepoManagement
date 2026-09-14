@@ -6484,3 +6484,18 @@ milestone is worth keeping.
       assertions in `refineReadiness.test.ts`, one of which pins that a repo
       with a roadmap is never told it has none. _(state: smoke-tested)_
 
+### Lane 0.8 — E1 (moved verbatim from ROADMAP.md, 2026-09-13)
+
+- **E1 — ESLint `exhaustive-deps` review — done 2026-09-13.** Eight findings,
+  none a staleness bug. Five were the same performance mistake: `RepoGrid`
+  recreated two pure functions every render and listed them as `useMemo`
+  dependencies, so the grid re-filtered and re-sorted on every render;
+  `WorkQueueView` handed its memos a fresh `[]` whenever the audit index was
+  null. Fixed by hoisting to module scope and one shared empty array. One was a
+  fetch keyed on two optional-chain reads of the assessment; it now keys on a
+  derived `generatedAt|count` string that says what it means. Two are
+  deliberate omissions that now carry their reason in a comment beside the
+  disable: a one-shot load gated by `hasAttemptedOperationsLoad`, and a
+  workspace reset keyed on the repository that must not fire when a background
+  refresh changes the entry's item text, or it would wipe the operator's
+  in-progress prompt. `--max-warnings` ratcheted 161 → 153.

@@ -13,7 +13,7 @@
 
 ## Current Status (Agent Context)
 
-**Last updated:** 2026-09-06
+**Last updated:** 2026-09-13
 
 Releases 0.4 through 2.6, 2.8 and 3.0 are **engineering-complete and archived**,
 as is every completed milestone from the releases and lanes still open below.
@@ -24,97 +24,42 @@ Their full text lives in
 to do — if an item is `[x]` here it is a mistake, not a record (rule restored
 by the 2026-08-11 archive pass, recorded in `CHANGELOG.md`).
 
-What remains falls into four kinds of work that are **not** interchangeable —
-mixing them once made the roadmap read "everything is done" over real gaps:
+**Current focus (next agent actions), in order.** Every item here is agent-closable;
+the operator queue is a separate file. Take the first `[ ]` and open a PR.
 
-1. **Genuinely unbuilt engineering** — Release 3.7's four milestones, Release
-   3.8's six (defined 2026-09-06, sequenced after 3.7) and the recorded
-   cross-cutting items. This is the only kind an autonomous agent can close on
-   its own.
-2. **Elevated / hardware / human verification** — SYSTEM rights, a physical
-   Android phone, or an operator at an authenticated session; no autonomous
-   test can produce these.
-3. **Product / design decisions** — waiting on a judgement, not on time or
-   engineering. These have one durable home:
-   [`docs/governance/open-decisions.md`](docs/governance/open-decisions.md).
-   **Nine of the ten are now answered** (2026-09-06 closed D-001 through D-005,
-   D-007 and D-008); only D-006's owner-intent labels remain open, and its
-   ruling already released the work it was blocking. A decision raised only in
-   conversation gets made by default, by whichever agent next touches the code.
-4. **Calendar-gated accrual** — the 7/90-day trend windows fill only as
-   time passes with capture running.
-
-**Priority reset — 2026-08-11** (mobile deferred until a PC workflow ran to
-completion) was satisfied and lifted 2026-08-19 — narrative [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
-
-**Product lens — 2026-08-23.** Every remaining item is ranked on operational
-efficiency and actionable improvement, under one principle: **the product does
-not prescribe what a repository should become; it identifies and strengthens
-the foundations that allow each repository to succeed at what it is intended
-to be.** Full statement and admission rule in §2; it resequenced Release 2.9
-and defined Releases 3.6 and 3.7.
-
-**What changed 2026-09-05 (record, not an action).** Lane 0.15's truth defects
-are fixed and validated (#228): every portfolio timestamp now carries a UTC ISO
-8601 basis before any `DateTime` coercion, a value with no determinable basis
-reports unavailable instead of inventing one, and `Blocked` is named and given a
-denominator wherever it is shown. A raw-wire gate inspects JSON tokens before
-`ConvertFrom-Json` can parse the evidence away. Lane 0.17's array-collapse sweep
-landed with it (#229): 56 sites, not the estimated ~30, plus an AST lint gate
-holding a zero baseline. Together these clear the **engineering** half of Release
-3.7's entry gate; everything still open on that gate is operator work, below.
-This is emphatically **not** live operator verification, which no agent may
-claim. Evidence: [`evidence/verified/trial-truth-readiness-2026-09-05.md`](evidence/verified/trial-truth-readiness-2026-09-05.md).
-
-**What changed 2026-09-06 (record, not an action).** The execution model gained
-a written spec and the decision backlog was cleared.
-[`docs/governance/Agent-Execution-Governance.md`](docs/governance/Agent-Execution-Governance.md)
-is now the design authority for how work reaches a coding agent: a
-**provider-neutral task contract** with a **provider-aware scheduler** across
-Codex, Claude Code and GitHub Copilot, per-provider capacity in each provider's
-own unit, and a promotion boundary where the operator approves a **verified head
-SHA**. It is defined as **Release 3.8** (§6) and it supersedes the 2026-07-07
-decisions in `docs/execution-orchestrator-design.md`, whose P0 is the only part
-ever built — notably reversing that document's "merge automatically when green".
-Seven open decisions were answered the same day and one was re-ruled: roadmaps
-may declare dependencies (D-001), nested repositories are not portfolio entries
-by default (D-002), the PAT gets `Checks: Read` (D-003), RoadmapOrchestrator
-does **not** become a third dispatch target (D-004), the archive signal ships as
-awareness metadata (D-005), the lane patience defaults stand (D-007), and
-**dispatch authority narrows to the Dispatch Board** (D-008, reversing the
-default shipped hours earlier under D-010). D-006 stays open but no longer
-blocks: an unrepresented trial category is recorded as such, never filled by a
-substitute. Nothing in `backend/` or `scripts/` changed — this was a contract
-and planning pass.
-
-**Current focus (next agent actions), in order:**
-
-- [ ] **Release 3.7 — Portfolio Value Proof** is the next engineering release
-      (§6). Release 3.6 finished its engineering 2026-08-27 — all six
-      milestones `smoke-tested`, every acceptance criterion gated — so the
-      product now reaches a conclusion for every repository, ranks what to do
-      first, and measures its own leverage. 3.7 turns that on ten real
-      repositories chosen by kind, and decides the 80+ rollout with recorded
-      numbers. It needs Ben for the approvals, not for the engineering.
-- [ ] **Operator-verify Release 3.6** — eyes on the live portal for the
-      `Today` landing, the outcome card, and the Insights leverage panel. No
-      agent may claim it; batch it with the 2.9 operator session below.
-- [ ] **Batch the remaining operator-session work (2.9).** An elevated shell
-      covers the watchdog _and_ the service installer; one authenticated shell
-      covers the `gh agent-task` run and the re-homed live-portal proofs; the
-      phone proof rides the same visit when the device is on the LAN.
-- [ ] **Release 3.8 — Provider-Aware Execution** is defined and sequenced
-      **after** 3.7, not started before it: the trial measures the loop as it
-      exists, and 3.8 changes what runs inside it. Two dependencies can be
-      satisfied in parallel — D-001's dependency notion and D-003's
-      `Checks: Read` grant.
-- [ ] **Grant the PAT `Checks: Read`** — decided 2026-09-06 (D-003), so this is
-      now an operator action rather than an open question. It rides the same
-      operator batch. The TLS certificate
-      closed 2026-08-29: regenerated around the stored password and live as
-      `https://127.0.0.1:7071`. Operator note: plain `http://` bookmarks stop
-      working, and the login password is unrecoverable by design — reset with
-      `scripts\Set-PortalLogin.ps1` if forgotten.
+- [ ] **3.7 / M4a — kind detection.** Resolve `library`, `firmware`, `application`,
+      `experiment`, `tooling` from index signals (manifest, entry points, README
+      purpose line), not only `archived`. Eight of nine trial repositories currently
+      conclude with "no kind signal". Ship as `foundation-conclusions v2`; the
+      conclusion record already carries the index SHA, so add `modelVersion`
+      beside it and the trial stays measurable across versions. _(state: planned)_
+      `check: pwsh ./tests/Test-KindDetection.ps1 -FailOnError`
+- [ ] **3.7 / M4b — limiting-pair differentiation.** Seven of nine share
+      `planning`-weak + `structure`-weak. Weight the limiting foundation by kind
+      applicability so a finished firmware project and an API client library do
+      not produce the same limiting pair. _(state: planned)_
+      `check: pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort evidence/trials/release-3.7/cohort.json -MaxSharedLimitingPair 0.5`
+- [ ] **3.7 / M4c — next-action diversity.** Every actionable repository is told
+      `POST /api/roadmap/repair/preview`. Map limiting foundation → action so
+      `structure` and `documentation` gaps route to their own previews.
+      _(state: planned)_
+      `check: pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort evidence/trials/release-3.7/cohort.json -MaxSameAction 0.5`
+- [ ] **3.7 / M5 prep — previews staged, not applied.** For each of the eight
+      `strengthen` repositories, generate the preview the product recommends and
+      write it to `evidence/trials/release-3.7/previews/<repo>.md`. The operator
+      approves from the queue; the agent's job ends at a reviewable preview.
+      _(state: planned)_
+      `check: pwsh ./tests/Test-TrialPreviews.ps1 -Cohort evidence/trials/release-3.7/cohort.json -RequireAll`
+- [ ] **Lane 0.19 — surface the operator queue in the console.**
+      `operatorOnlyItemCount` is produced and read nowhere. Render
+      `docs/governance/operator-queue.md` as a Verify tab so parked work is
+      visible somewhere other than this file. _(state: planned)_
+      `check: pwsh ./tests/Test-ApiHostSmoke.ps1 -Route /api/operator-queue`
+- [ ] **3.8 / D-001 — dependency notion.** Optional, single-repo, acyclic,
+      keyed on stable item ids, gating dispatch eligibility. Schema + parser +
+      cycle check. Does not wait on the trial: it changes what the contract
+      *can express*, not what runs. _(state: planned)_
+      `check: pwsh ./tests/Test-RoadmapDependencies.ps1 -FailOnError`
 
 **Forward arc.** Releases 3.0-3.5 describe the finished product: dispatch that
 runs, the loop closing legibly and without a hand-off, numbers an operator can
@@ -140,6 +85,26 @@ guardrails) lives in
 and is summarized below in section 2. Every completed release lives, verbatim,
 in [`docs/history/completed-releases.md`](docs/history/completed-releases.md);
 this document references them by version + status only.
+
+What remains falls into four kinds of work that are **not** interchangeable —
+mixing them once made the roadmap read "everything is done" over real gaps:
+
+1. **Genuinely unbuilt engineering** — Release 3.7's four milestones, Release
+   3.8's six (defined 2026-09-06, sequenced after 3.7) and the recorded
+   cross-cutting items. This is the only kind an autonomous agent can close on
+   its own.
+2. **Elevated / hardware / human verification** — SYSTEM rights, a physical
+   Android phone, or an operator at an authenticated session; no autonomous
+   test can produce these.
+3. **Product / design decisions** — waiting on a judgement, not on time or
+   engineering. These have one durable home:
+   [`docs/governance/open-decisions.md`](docs/governance/open-decisions.md).
+   **Nine of the ten are now answered** (2026-09-06 closed D-001 through D-005,
+   D-007 and D-008); only D-006's owner-intent labels remain open, and its
+   ruling already released the work it was blocking. A decision raised only in
+   conversation gets made by default, by whichever agent next touches the code.
+4. **Calendar-gated accrual** — the 7/90-day trend windows fill only as
+   time passes with capture running.
 
 ---
 
@@ -185,37 +150,47 @@ risks, and guardrails, see
 
 ## 3. Implementation-State Vocabulary
 
-Every milestone in this roadmap should carry one of these states. A `[x]`
-checkbox alone is not enough — it does not distinguish "backend exists" from
-"end-to-end working."
+Every milestone carries exactly one state and exactly one `check:` — the command
+that decides it. A milestone with no runnable check is not a milestone; it is a
+question, and it goes to `docs/governance/open-decisions.md` instead.
 
-| State               | Meaning                                                                      |
-| ------------------- | ---------------------------------------------------------------------------- |
-| `planned`           | Proposed; no code yet                                                        |
-| `scaffolded`        | Files / route / UI exist but stubbed or returns mock data                    |
-| `backend-complete`  | Server-side logic implemented; no UI consumer yet                            |
-| `ui-connected`      | Frontend wires through to live backend; manual smoke ok                      |
-| `smoke-tested`      | Automated module / api-host smoke covers it                                  |
-| `operator-verified` | Confirmed working end-to-end against the live workspace                      |
-| `done`              | All four of: backend-complete, ui-connected, smoke-tested, operator-verified |
+| State      | Meaning                                                                   | Closed by |
+| ---------- | ------------------------------------------------------------------------- | --------- |
+| `planned`  | Contract written (goal, boundary, `check:`); no code on any branch        | agent     |
+| `built`    | Code on a branch; `check:` not yet green in CI                            | agent     |
+| `verified` | `check:` exits 0 in CI on the PR head; evidence linked from the PR        | agent     |
 
-Render the state inline on each milestone in italics, e.g. `- [x] Add the
-route. _(state: smoke-tested)_`.
+`verified` is the terminal state for this file. It is the only state that earns `[x]`,
+and `[x]` means the item leaves this file for the archive in the same PR.
 
-**Checkbox rule.** `[x]` means _nothing remains for that item in this roadmap_.
-An item whose engineering is complete but whose proof is still outstanding stays
-`[ ]` and names the resource it waits on.
+**Field proof is not a state.** "Seen working on the live portal", "ran under SYSTEM",
+"confirmed on the phone" are recorded as ratchets in
+[`docs/governance/operator-queue.md`](docs/governance/operator-queue.md) via
+`scripts/Add-OperatorVerification.ps1`. A ratchet may be recorded any time after
+`verified`, may be recorded never, and never blocks a later milestone. The
+promotion boundary — merge to the protected default branch on an operator-approved
+verified head SHA — is unchanged and lives in §8; it gates *merge*, not *the next item*.
 
-**Archive rule (2026-08-11).** A completed item does not stay here. Once `[x]`,
-it moves to [the archive](docs/history/completed-releases.md) **verbatim** —
-evidence prose intact, because that is what stops the next agent re-litigating a
-settled decision — and this file keeps at most a one-line pointer. A release
-whose remaining work is only an external-resource proof is closed, and that
-proof re-homed to Release 2.9, rather than held open.
+**Milestone format.** One bullet, action-first, with the check on its own line:
 
-**Pending-item phrasing rule:** action-first, surface-specific wording a coding
-agent can select without rereading surrounding prose: `verb + artifact/route/
-module + verification boundary`.
+- [ ] Resolve repository kind for `library`, `firmware`, `application`, `experiment`
+      from the index, not just `archived`. _(state: planned)_
+      `check: pwsh ./tests/Test-KindDetection.ps1 -FailOnError`
+
+**Checkbox rule.** `[x]` = `verified`. An item whose code is merged but whose field
+proof is unrecorded is `[x]` here and open in the operator queue — two ledgers, no
+overlap. The old rule ("stays `[ ]` and names the resource it waits on") is retired
+2026-09-13: it made the operator the terminal state of every item and taught agents
+to end each session by asking for verification.
+
+**Archive rule** unchanged: once `[x]`, the item moves verbatim to
+`docs/history/completed-releases.md` in the same PR.
+
+**Operator-work rule.** Nothing in this file may name an action only the operator can
+take. If a milestone needs SYSTEM rights, a device, an authenticated session, a grant
+outside the repository, or eyes on a browser, the agent-closable half stays here with
+its own `check:` and the human half is appended to the operator queue. The validator
+(`R021`) rejects the file otherwise.
 
 ---
 
@@ -301,22 +276,19 @@ against a named target instead of an unwritten one. Two of its dependencies are
 already satisfiable in parallel — D-001's dependency notion and D-003's
 `Checks: Read` grant — and both are listed in the map below.
 
-**Dependency map (open work only):**
+**Dependency map (agent-closable work only; operator rows live in
+[`operator-queue.md`](docs/governance/operator-queue.md)):**
 
-| Open item                                            | Depends on                                    | Type                                          |
-| ---------------------------------------------------- | --------------------------------------------- | --------------------------------------------- |
-| Release 3.6 operator verification                    | Eyes on the live portal (batch with 2.9)      | hard - human; engineering is done             |
-| Release 3.7 measured value trial                     | Lane 0.15 truth; live 3.6 proof; approvals    | hard — evidence integrity + operator          |
-| Release 3.8 provider-aware execution                 | Release 3.7 baseline; D-001; D-003 grant      | soft — sequencing; one operator grant         |
-| Lane 0.2 `Checks: Read` grant (D-003: grant it)      | An operator action outside this repository    | hard — external                               |
-| Lane 0.5 tab disclosure                              | A product decision, not engineering time      | hard — design                                 |
-| Release 2.9 freeze-prevention deploy (from 2.7)      | An elevated (SYSTEM) Windows install          | hard — privilege; batch with the two below    |
-| Release 2.9 watchdog + service-installer proof       | An elevated (SYSTEM) session                  | hard — privilege                              |
-| Release 2.9 physical-Android proof (2.5 + 2.6)       | The operator's Galaxy S24 Ultra on the LAN    | hard — hardware; the software is ready for it |
-| Release 2.9 real `claude` + `gh agent-task` runs     | An authenticated operator session             | hard — human; one session covers both         |
-| Release 2.9 re-homed 3.1 proofs (portal + schedule)  | The same authenticated operator session       | hard — human; batch with the runs above       |
-| Release 2.9 GitHub App installation-token exchange   | A registered GitHub App                       | hard — optional; PAT supersedes               |
-| Release 2.9 trend accrual (2.3 Ph2)                  | Days of live capture                          | hard, time-gated                              |
+| Open item                                 | Depends on                                             | Type               |
+| ----------------------------------------- | ------------------------------------------------------ | ------------------ |
+| 3.7 M4a/b/c model fixes                   | nothing — ship as `foundation-conclusions v2`          | none               |
+| 3.7 M5 previews staged                    | M4a (kind must resolve before previews are meaningful) | soft — sequencing  |
+| 3.7 measured execution + rollout decision | operator approvals (queue item OQ-3)                   | **operator queue** |
+| 3.8 D-001 dependency notion               | nothing                                                | none               |
+| 3.8 provider-aware scheduler              | 3.7 rollout decision; D-003 grant (OQ-5)               | soft — sequencing  |
+| Lane 0.19 verify tab                      | nothing                                                | none               |
+| Lane 0.5 tab disclosure                   | product decision — `open-decisions.md`                 | hard — design      |
+| 2.9 trend accrual                         | calendar time                                          | time-gated         |
 
 ---
 
@@ -393,10 +365,6 @@ engineering items shipped the same day (archived below); the third needs the
 operator's device on the LAN.
 
 - Touch ergonomics (device-keyed ~44px floor + `DefinitionHint`) and the tap-through agent-run list (`AgentRunSheet`) — both `smoke-tested` 2026-08-19; [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
-- [ ] Verify the four Release 2.5 workflows and the Release 2.6
-      clarity affordances on a **physical Android phone**, per
-      [`lan-mobile-setup.md`](docs/reference/lan-mobile-setup.md). _(state: both
-      smoke-tested at an emulated 390px viewport → need real hardware)_
 
 **Field proof — one elevated (SYSTEM) session covers all three:**
 
@@ -413,15 +381,6 @@ operator's device on the LAN.
       [`Watch-PortalHealth.ps1`](scripts/service/Watch-PortalHealth.ps1),
       covered by the module smoke's installer and watchdog gates. _(state:
       smoke-tested → needs an elevated Windows install)_
-- [ ] Run the elevated
-      [`Install-PortalWatchdog.ps1`](scripts/service/Install-PortalWatchdog.ps1)
-      and confirm a real freeze-and-recover, with the
-      `output/logs/service-watchdog.jsonl` line and the `execution.failed`
-      webhook to prove it. _(state: smoke-tested → needs `operator-verified`)_
-- [ ] Operator-verify the reworked
-      [`Install-RepoManagementService.ps1`](scripts/Install-RepoManagementService.ps1):
-      install / repair / `icacls` / scheduled task, secrets from machine env
-      vars, tracked `settings.json` secret-free. _(state: smoke-tested)_
 
 **Field proof — one authenticated operator session covers all three:**
 
@@ -431,60 +390,10 @@ operator's device on the LAN.
       residual. _(state: smoke-tested. Requires `gh auth login` and **no**
       `GH_TOKEN`/`GITHUB_TOKEN` set; gh ignores stored OAuth when one is.)_
 - Release 3.1's scheduled-trigger loop proof — `operator-verified` 2026-08-18 ([evidence](evidence/verified/scheduled-loop-proof-2026-08-18.md)); [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
-- [ ] Operator-verify the Release 3.1 empty-room gate against the live portal
-      (the refusal, the disabled approve controls, the stranded badge). What
-      exists:
-      [`Automation.RunnerPresence.ps1`](backend/modules/automation/Automation.RunnerPresence.ps1)
-      and [`runnerPresence.ts`](frontend/lib/runnerPresence.ts), both gated.
-      Only eyes on the live portal remain.
-      _(state: smoke-tested; re-homed from 3.1 on closure)_
-- [ ] Operator-verify Release 3.1 engine attribution on the live portal (the
-      `engine` block above the findings, `providerId` null for rule engines).
-      What exists:
-      [`RepositoryImprovement.Workflow.ps1`](backend/modules/docaudit/RepositoryImprovement.Workflow.ps1)
-      and [`AiDocImprovement.ps1`](backend/modules/ai/AiDocImprovement.ps1).
-      _(state: smoke-tested; re-homed from 3.1 on closure)_
-- [ ] Operator-verify Release 3.5 on the live portal — the before/after
-      screenshots of every tab the trust report describes, the scope toggle,
-      the runner pill, and the async panels under a real slow backend. The
-      per-finding record of what shipped is
-      [`trust-report.md`](docs/reference/trust-report.md); this item is the
-      eyes-on half.
-      _(state: smoke-tested; re-homed from 3.5 on closure 2026-08-17)_
 
 **Field proof — credential / calendar:**
 
 - Release 2.1 operator sign-off — `operator-verified` 2026-08-18 against the live `output/app.db`; [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
-- [ ] Operator-verify the auth + shared-LAN path so automation runs on a bound,
-      authenticated host. **Engineering closed 2026-08-28; only the elevated
-      run and eyes-on remain.** The portal bound `127.0.0.1` because the
-      Release 2.2 guard refuses a non-loopback bind while API auth is off, and
-      auth had never been configured (`settings.json` carried no `auth` block);
-      the installer's own default of `0.0.0.0` would have been refused. The
-      listener is a raw `TcpListener`, so a LAN bind needs **no urlacl and no
-      elevation** — only the Machine-scope variables, firewall rule and service
-      reconfigure do. What shipped:
-      [`Enable-SharedLanAccess.ps1`](scripts/Enable-SharedLanAccess.ps1) does
-      the sequence in the order that never leaves the API open (key → toggle →
-      firewall on Private only → rebind → verify), supports `-WhatIf`
-      unelevated, prints the key once, and **fails loudly if an anonymous
-      request is not refused after the rebind**. Proved on this machine
-      against `192.168.50.200:7099`: guard refuses with auth off, binds with
-      auth on, anonymous `401`, keyed `200 application/json`.
-      **Adjacent leak found and fixed in flight:** enabling auth with the
-      toggle alone made the host write a 64-character plaintext API key into
-      `backend/config/settings.json` — a file listed in `.gitignore` but still
-      **tracked**, so the ignore entry does nothing and one `git add -A`
-      publishes it. Demonstrated, then fixed: a generated key now goes to
-      `output/auth/api-key` (genuinely ignored), and a key found in
-      `settings.json` is honored but warned about by name. Gates: two new
-      `Invoke-AuthSmokeTest.ps1` sections — "Non-loopback bind WITH auth binds
-      and still enforces the key" (the positive case nothing covered: Part 1
-      proved the gate on loopback, Part 2 proved refusal off it, so
-      bind-plus-auth was untested) and "Auth enabled without a key stores it
-      outside version control" — both confirmed red against `HEAD` first, the
-      second reporting the 64-character key it found in the tracked file.
-      _(state: smoke-tested → needs one elevated run + `operator-verified`)_
 - [ ] (Optional) Prove live GitHub App installation-token exchange + refresh,
       closing the Release 2.2 residual. _(state: planned — the PAT supersedes)_
 - [ ] Let the Release 2.3 Phase 2 trend windows accrue: `GET /api/portfolio/trend`
@@ -682,7 +591,7 @@ wherever it is not.
       the one site that writes maturity history, and read back with the same
       latest-capture-per-day rule. Leverage derives agent first-pass success,
       estimate accuracy, time to deliver, tasks completed, repositories
-      needing nothing, and operator-verified surfaces from ledgers already
+      needing nothing, and field-proof surfaces from ledgers already
       kept; **operator minutes per task and recommendations accepted vs
       rejected ship `available: false` with the reason they are not
       captured** — the roadmap names them and the product does not have them,
@@ -760,10 +669,6 @@ api-host steps, and 47 frontend tests across `foundationConclusion`,
 
 **Known issues:**
 
-- [ ] **Operator verification is outstanding** — every milestone is
-      `smoke-tested`, none is `operator-verified`. The `Today` landing, the
-      outcome card and the Insights leverage panel need eyes on the live
-      portal; batch with the Release 2.9 operator session.
 - [ ] **Two leverage metrics ship uncaptured, by design.** Operator minutes
       per task needs an operator-side timer the product does not have;
       recommendations accepted vs rejected needs an accept/reject ledger the
@@ -1286,14 +1191,6 @@ Completed cross-cutting items are in
 
 ### Lane 0.2 — Credential freshness
 
-- [ ] **Grant the PAT `Checks: Read` — decided 2026-09-06 (D-003).**
-      _(state: planned — an operator action outside this repository)_ The token
-      403s on check-runs and GraphQL `statusCheckRollup`. The open question was
-      grant-or-decline-permanently, and the answer is **grant**: detailed CI
-      state is becoming a first-class input to orchestration, remediation and
-      merge readiness rather than the optional `gh pr checks --watch` detail it
-      was when this was raised. The scope stays read-only and within least
-      privilege. Batch it with the Release 2.9 operator session.
 - [ ] **Read check-run detail where it exists; keep `mergeStateStatus` as the
       documented fallback.** _(state: planned)_
       [`MergeReadiness.ps1`](backend/modules/agent-runs/MergeReadiness.ps1)
@@ -1323,8 +1220,6 @@ fix made progress, not liveness or CPU, the contract, and taught the rule every
 tripwire here now follows: derive scope from a classifier or the AST, never a
 maintained list.
 
-- Insights panels that told you to run an assessment but offered no control — **closed 2026-08-14** under Release 3.1; [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
-- `/health/live` independently responsive during long operations — **closed 2026-08-19** under Release 3.2 M1 (the scan is not the host's job); [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
 - [ ] **Clear and harden the stale browser-persisted GitHub owner.** _(state:
       planned — recorded 2026-08-10, not bundled into the watchdog fix)_ Every
       scan queries GitHub for owner `Benjamin-Fuhr_genesys`, which 404s/422s
@@ -1333,7 +1228,6 @@ maintained list.
       it in the request body, and has since **2026-07-07** (116 occurrences in
       the host log). Clear the persisted client value and stop a client-supplied
       owner from silently overriding validated configuration.
-- The bare `Failed to fetch` screen replaced by a classified, actionable retry state (`fetchFailure.ts`) — **closed 2026-08-14** under Release 3.1; [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
 
 ### Lane 0.5 — Portal UX follow-ups (empty-state audit 2026-08-08)
 
@@ -1439,20 +1333,7 @@ debt the ratchets hold, and it is deliberately not a sweep.
 controlled debt — **no blanket lint sweep.** Small, behaviorally coherent
 batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
 
-- P1 — PSSA correctness micro-batch — **done 2026-08-15**, all 12 fixed and five rules now gate at zero; [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
-- **E1 — ESLint `exhaustive-deps` review — done 2026-09-13.** Eight findings,
-  none a staleness bug. Five were the same performance mistake: `RepoGrid`
-  recreated two pure functions every render and listed them as `useMemo`
-  dependencies, so the grid re-filtered and re-sorted on every render;
-  `WorkQueueView` handed its memos a fresh `[]` whenever the audit index was
-  null. Fixed by hoisting to module scope and one shared empty array. One was a
-  fetch keyed on two optional-chain reads of the assessment; it now keys on a
-  derived `generatedAt|count` string that says what it means. Two are
-  deliberate omissions that now carry their reason in a comment beside the
-  disable: a one-shot load gated by `hasAttemptedOperationsLoad`, and a
-  workspace reset keyed on the repository that must not fire when a background
-  refresh changes the entry's item text, or it would wipe the operator's
-  in-progress prompt. `--max-warnings` ratcheted 161 → 153.
+- E1 — ESLint `exhaustive-deps` review: [archived](docs/history/completed-releases.md#closed-2026-09-13-archived-from-roadmapmd).
 - [ ] **P2 — empty catch blocks (79 → 56), classify then fix.** Guardrail-aligned
       ("never swallow silently"): each site becomes either an annotated
       deliberate best-effort (narrowed catch + comment) or a surfaced
@@ -2204,23 +2085,23 @@ toward it.
 
 ---
 
-## 10. Definition of Done for Release Execution
+## 10. Definition of Done
 
-A release should not be marked complete unless:
+**A milestone is done when its `check:` exits 0 in CI on the PR head.** Nothing
+else. Everything below is what a `check:` must cover to be admitted, so that the
+sentence above stays true:
 
-- all checklist items for that release are truly implemented or explicitly
-  blocked
-- UI elements are connected to real behavior rather than placeholders
-- affected docs are updated where workflow or product behavior changed
-- logging and error handling are sufficient to diagnose failures
-- later releases were not partially started just to create the illusion of
-  momentum
-- dashboard signals can be traced back to their source data
-- preview-first flows have explicit apply/dispatch/submit/merge actions
-- validation and smoke coverage exist for new routes or workflows
+- the check exercises real behaviour — a route returning mock data fails it
+- the check is in the repository and runs under `-FailOnError` in the smoke workflow
+- affected docs changed in the same PR when behaviour changed (`Test-RoadmapCapabilityRecord.ps1`)
+- the milestone it closes is marked `[x]` and archived in the same PR
+- a signal it adds to a dashboard resolves to source data (`Test-BadgeProvenance.ps1`, or add it)
 
-This roadmap intentionally treats each release as a bounded, agent-usable
-execution contract.
+**A release is done when every milestone in it is `[x]`.** Field proof for the
+release is a separate line in the operator queue and does not hold the release.
+
+A check you cannot write is a design decision you have not made. Record it in
+`open-decisions.md`, take the next item, and do not ask the operator in chat.
 
 ---
 

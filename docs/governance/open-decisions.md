@@ -418,3 +418,53 @@ intact — the reasoning is what stops the next agent reopening a settled point.
   previewed prompt goes to `POST /api/roadmap/dispatch/execute` behind Release
   3.1's runner-presence gate, and the returned run id binds to the lane. The
   board is the dispatcher, and its lanes hold real runs.
+
+---
+
+### D-016 — Should `Add-OperatorVerification.ps1` append to the operator queue?
+
+- **Asked** 2026-09-13, while applying the roadmap vocabulary rewrite.
+- **Question.** ROADMAP §3 and `docs/governance/operator-queue.md` both say
+  ratchets are recorded in the queue "via `scripts/Add-OperatorVerification.ps1`".
+  The script writes only `evidence/operator-verification-log.jsonl`; it has no
+  queue mode. The rewrite's six steps do not include changing it.
+- **Why it is not an agent's call.** The queue's row shape (Id / Needs / Action /
+  Ratchets) is Ben's, and whether a done row is deleted by the script or by hand
+  decides who owns that file.
+- **Default if unanswered.** The queue is edited by hand; the script keeps
+  writing the JSONL log. The two sentences that name the script stay as the
+  intended end state.
+- **Blocks.** Nothing.
+
+### D-017 — Where does the "four kinds of work" taxonomy live?
+
+- **Asked** 2026-09-13, while applying the roadmap vocabulary rewrite.
+- **Question.** R022 bounds the Current Status preamble to 25 lines. After the
+  dated records moved to `CHANGELOG.md` the preamble was still 34 lines, all of
+  it the 19-line "four kinds of work" list. It was moved verbatim to §1 ("What
+  This Document Is"), which the rewrite did not name. Its kinds 2 and 3
+  (human verification; decisions) now have their own ledgers — the operator
+  queue and this file — so the list may be redundant rather than misplaced.
+- **Why it is not an agent's call.** Deleting a taxonomy Ben wrote is his
+  call; relocating it kept the text intact.
+- **Default if unanswered.** It stays in §1 as moved.
+- **Blocks.** Nothing.
+
+### D-018 — Convert the existing `(state: …)` markers to the new vocabulary?
+
+- **Asked** 2026-09-13, while applying the roadmap vocabulary rewrite.
+- **Question.** §3 now defines `planned` / `built` / `verified` only, but ~60
+  open milestones still carry `scaffolded`, `smoke-tested` and the other
+  retired states in their `_(state: …)_` clause, and Release 3.6's six
+  milestones are all `smoke-tested` under a release in `validation`. By the
+  new rule a milestone whose check is green in CI is `verified`, which is
+  `[x]`, which means it archives in the same PR — a sweep the rewrite's six
+  steps did not ask for and R020 does not enforce (it checks for `check:`
+  only). Nothing was converted.
+- **Why it is not an agent's call.** Marking 3.6 `verified` closes the release;
+  its field proof would move wholesale to OQ-1. That is the rewrite's intent,
+  but it is a release closure, not a rename.
+- **Default if unanswered.** Markers stay as written; each item converts when
+  it is next touched, and R020 (a warning this PR, an error next) is what
+  brings it forward.
+- **Blocks.** Nothing.

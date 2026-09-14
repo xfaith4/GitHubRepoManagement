@@ -2,6 +2,55 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-13 — Records moved out of ROADMAP.md Current Status
+
+Moved verbatim from `ROADMAP.md` "Current Status (Agent Context)" when the
+roadmap vocabulary rewrite bounded that section (validator rule R022). Dated
+records belong here; the roadmap keeps only open work.
+
+**Priority reset — 2026-08-11** (mobile deferred until a PC workflow ran to
+completion) was satisfied and lifted 2026-08-19 — narrative [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
+
+**Product lens — 2026-08-23.** Every remaining item is ranked on operational
+efficiency and actionable improvement, under one principle: **the product does
+not prescribe what a repository should become; it identifies and strengthens
+the foundations that allow each repository to succeed at what it is intended
+to be.** Full statement and admission rule in §2; it resequenced Release 2.9
+and defined Releases 3.6 and 3.7.
+
+**What changed 2026-09-05 (record, not an action).** Lane 0.15's truth defects
+are fixed and validated (#228): every portfolio timestamp now carries a UTC ISO
+8601 basis before any `DateTime` coercion, a value with no determinable basis
+reports unavailable instead of inventing one, and `Blocked` is named and given a
+denominator wherever it is shown. A raw-wire gate inspects JSON tokens before
+`ConvertFrom-Json` can parse the evidence away. Lane 0.17's array-collapse sweep
+landed with it (#229): 56 sites, not the estimated ~30, plus an AST lint gate
+holding a zero baseline. Together these clear the **engineering** half of Release
+3.7's entry gate; everything still open on that gate is operator work, below.
+This is emphatically **not** live operator verification, which no agent may
+claim. Evidence: [`evidence/verified/trial-truth-readiness-2026-09-05.md`](evidence/verified/trial-truth-readiness-2026-09-05.md).
+
+**What changed 2026-09-06 (record, not an action).** The execution model gained
+a written spec and the decision backlog was cleared.
+[`docs/governance/Agent-Execution-Governance.md`](docs/governance/Agent-Execution-Governance.md)
+is now the design authority for how work reaches a coding agent: a
+**provider-neutral task contract** with a **provider-aware scheduler** across
+Codex, Claude Code and GitHub Copilot, per-provider capacity in each provider's
+own unit, and a promotion boundary where the operator approves a **verified head
+SHA**. It is defined as **Release 3.8** (§6) and it supersedes the 2026-07-07
+decisions in `docs/execution-orchestrator-design.md`, whose P0 is the only part
+ever built — notably reversing that document's "merge automatically when green".
+Seven open decisions were answered the same day and one was re-ruled: roadmaps
+may declare dependencies (D-001), nested repositories are not portfolio entries
+by default (D-002), the PAT gets `Checks: Read` (D-003), RoadmapOrchestrator
+does **not** become a third dispatch target (D-004), the archive signal ships as
+awareness metadata (D-005), the lane patience defaults stand (D-007), and
+**dispatch authority narrows to the Dispatch Board** (D-008, reversing the
+default shipped hours earlier under D-010). D-006 stays open but no longer
+blocks: an unrepresented trial category is recorded as such, never filled by a
+substitute. Nothing in `backend/` or `scripts/` changed — this was a contract
+and planning pass.
+
 ## 2026-09-13 — The console runs the runner, and the operator gets a kill switch
 
 ### Added

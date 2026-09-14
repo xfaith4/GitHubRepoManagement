@@ -5377,12 +5377,25 @@ foreach ($roadmapLine in (Get-Content -LiteralPath $ownRoadmapPath -Encoding UTF
     }
 }
 if ($corpusChecked -eq 0) {
-    throw 'The corpus tripwire matched no items in this repository''s own ROADMAP.md. Either the roadmap no longer contains operator-verification work (update this assertion deliberately) or the extraction above has stopped reading checkbox lines.'
+    # Updated deliberately 2026-09-13, as the message below once asked. The
+    # roadmap vocabulary rewrite forbids operator-only bullets in ROADMAP.md
+    # (validator rule R021, tools/Test-RoadmapStructure.rules.ps1); that work
+    # lives in docs/governance/operator-queue.md now. Zero matches is therefore
+    # the EXPECTED state -- but only while that rule is actually enforced, so
+    # prove the enforcement rather than trust the silence.
+    $corpusRulesPath = Join-Path $WorkspaceRoot 'tools\Test-RoadmapStructure.rules.ps1'
+    $corpusValidatorSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'tools\Test-RoadmapStructure.ps1') -Raw -Encoding UTF8
+    if (-not (Test-Path -LiteralPath $corpusRulesPath) -or $corpusValidatorSource -notmatch 'Test-R021OperatorGate') {
+        throw 'The corpus tripwire matched no items in this repository''s own ROADMAP.md, and R021 (no operator-only bullets in the roadmap) is not enforced by tools/Test-RoadmapStructure.ps1. Either the extraction above has stopped reading checkbox lines, or operator work has vanished from every ledger.'
+    }
+    Write-Host '  corpus tripwire: 0 operator-only item(s) in this repo''s own ROADMAP.md, as R021 requires; that work is ledgered in docs/governance/operator-queue.md' -ForegroundColor DarkGray
 }
-if ($corpusMisses.Count -gt 0) {
+elseif ($corpusMisses.Count -gt 0) {
     throw ("{0} of {1} unambiguously operator-only item(s) in this repository's own ROADMAP.md classified as agent work. They would be queued for dispatch and nothing could run them:`n  {2}" -f $corpusMisses.Count, $corpusChecked, ($corpusMisses -join "`n  "))
 }
-Write-Host ("  corpus tripwire ok: {0} unambiguous operator item(s) in this repo's own ROADMAP.md all classify as operator" -f $corpusChecked) -ForegroundColor DarkGray
+else {
+    Write-Host ("  corpus tripwire ok: {0} unambiguous operator item(s) in this repo's own ROADMAP.md all classify as operator" -f $corpusChecked) -ForegroundColor DarkGray
+}
 
 Write-Step 'Portfolio assessment — smoke: ready-for-work fires on L4 + pending items'
 $readyRepo = [pscustomobject]@{ name = 'ready-repo'; localPath = $WorkspaceRoot; isArchived = $false; htmlUrl = ''; branch = 'main'; status = 'clean' }
