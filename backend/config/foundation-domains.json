@@ -1,7 +1,7 @@
 {
   "schemaVersion": "v1",
   "model": "foundation-domains",
-  "modelVersion": "foundation-conclusions v2",
+  "modelVersion": "foundation-conclusions v2.1",
   "principle": "The product does not prescribe what a repository should become; it identifies and strengthens the foundations that allow each repository to succeed at what it is intended to be.",
   "refinementRule": "Domains and kinds are data, not a taxonomy. Add, split, merge or re-weight one here; every change stays covered by the foundation-domains.json integrity gate and the module-smoke fixture set. Never add a domain the product cannot evidence from visible repository state, and never let a conclusion cite the absence of findings as evidence.",
   "conclusions": {
@@ -139,19 +139,34 @@
     }
   ],
   "kindDetection": {
-    "note": "Only signals the index already carries. First matching rule wins; `when` is field equality, `whenAny` is 'this dotted path holds one of these values' (kindSignals.hints comes from Portfolio.KindSignals.ps1 at scan time). Anything undetected is 'unknown' - honest, and every scored domain applies.",
+    "hintKinds": {
+      "note": "Which kind each hint speaks for. Read by the coherence observation (steering extension 2): when the manifest hints and the README wording hints name kinds that share nothing, the disagreement is emitted as an observation with canonicalEffect none. It changes no verdict.",
+      "firmware-target": "firmware",
+      "module-manifest": "library",
+      "library-manifest": "library",
+      "web-app": "application",
+      "executable-manifest": "application",
+      "cli-entry": "tooling",
+      "script-entry": "tooling",
+      "firmware-wording": "firmware",
+      "library-wording": "library",
+      "application-wording": "application",
+      "tooling-wording": "tooling",
+      "experiment-wording": "experiment"
+    },
+    "note": "Only signals the index already carries. Every matching rule is a ranked candidate and the first is the kind; each rule names the repositories it was observed on (steering section 5); `when` is field equality, `whenAny` is 'this dotted path holds one of these values' (kindSignals.hints comes from Portfolio.KindSignals.ps1 at scan time). Anything undetected is 'unknown' - honest, and every scored domain applies.",
     "rules": [
       { "kind": "archived", "when": { "lifecycleState": "archived" }, "basis": "lifecycleState=archived" },
       { "kind": "archived", "when": { "curationState": "archived-ignore" }, "basis": "curationState=archived-ignore" },
-      { "kind": "firmware", "whenAny": { "kindSignals.hints": ["firmware-target"] }, "basis": "a firmware target is checked in (platformio.ini, Arduino sketch or ESP sdkconfig)" },
-      { "kind": "experiment", "whenAny": { "kindSignals.hints": ["experiment-wording"] }, "basis": "the README purpose line calls it an experiment, prototype, spike or bootstrap" },
-      { "kind": "application", "whenAny": { "kindSignals.hints": ["web-app", "executable-manifest"] }, "basis": "a served page or app framework outranks a helper module in the same repository: a served page, an app-framework dependency or an executable project" },
-      { "kind": "library", "whenAny": { "kindSignals.hints": ["module-manifest", "library-manifest"] }, "basis": "the manifest declares a module or publishable package" },
-      { "kind": "firmware", "whenAny": { "kindSignals.hints": ["firmware-wording"] }, "basis": "the README purpose line names a firmware target" },
-      { "kind": "tooling", "whenAny": { "kindSignals.hints": ["cli-entry"] }, "basis": "the manifest declares a command-line entry" },
-      { "kind": "library", "whenAny": { "kindSignals.hints": ["library-wording"] }, "basis": "the README purpose line calls it a library, module, client or wrapper" },
-      { "kind": "application", "whenAny": { "kindSignals.hints": ["application-wording"] }, "basis": "the README purpose line calls it an application, site, dashboard or engine" },
-      { "kind": "tooling", "whenAny": { "kindSignals.hints": ["tooling-wording", "script-entry"] }, "basis": "the README purpose line calls it a tool or utility, or loose scripts sit at the root with no module manifest" }
+      { "kind": "firmware", "whenAny": { "kindSignals.hints": ["firmware-target"] }, "basis": "a firmware target is checked in (platformio.ini, Arduino sketch or ESP sdkconfig)" , "observedOn": ["300PixelLED_2812B"] },
+      { "kind": "experiment", "whenAny": { "kindSignals.hints": ["experiment-wording"] }, "basis": "the README purpose line calls it an experiment, prototype, spike or bootstrap" , "observedOn": [] },
+      { "kind": "application", "whenAny": { "kindSignals.hints": ["web-app", "executable-manifest"] }, "basis": "a served page or app framework outranks a helper module in the same repository: a served page, an app-framework dependency or an executable project" , "observedOn": ["ActiveFamilyArchive", "FowlingScorecard", "AI_PromptRefiner_GUI", "Genesys.Core"] },
+      { "kind": "library", "whenAny": { "kindSignals.hints": ["module-manifest", "library-manifest"] }, "basis": "the manifest declares a module or publishable package" , "observedOn": ["FowlingScorecard"] },
+      { "kind": "firmware", "whenAny": { "kindSignals.hints": ["firmware-wording"] }, "basis": "the README purpose line names a firmware target" , "observedOn": ["300PixelLED_2812B"] },
+      { "kind": "tooling", "whenAny": { "kindSignals.hints": ["cli-entry"] }, "basis": "the manifest declares a command-line entry" , "observedOn": [] },
+      { "kind": "library", "whenAny": { "kindSignals.hints": ["library-wording"] }, "basis": "the README purpose line calls it a library, module, client or wrapper" , "observedOn": ["genesys-contract-client"] },
+      { "kind": "application", "whenAny": { "kindSignals.hints": ["application-wording"] }, "basis": "the README purpose line calls it an application, site, dashboard or engine" , "observedOn": ["Genesys.Core"] },
+      { "kind": "tooling", "whenAny": { "kindSignals.hints": ["tooling-wording", "script-entry"] }, "basis": "the README purpose line calls it a tool or utility, or loose scripts sit at the root with no module manifest" , "observedOn": ["DevPortConsole"] }
     ]
   }
 }

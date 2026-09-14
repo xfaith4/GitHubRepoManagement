@@ -1,0 +1,101 @@
+{
+  "schemaVersion": "v1",
+  "model": "kind-signals",
+  "modelVersion": "kind-signals v1",
+  "note": "Read by backend/modules/portfolio/Portfolio.KindSignals.ps1 while the index build has a checkout in hand. The code holds only the mechanics (how to look); every opinion - which files, which dependencies, which words, which manifest keys - lives here, and each group names the repositories it was observed on (steering section 5). A wrong hint is a change to this file and a modelVersion bump, never a code change. The hint ids are the contract with foundation-domains.json kindDetection.",
+  "readme": {
+    "fileNames": ["README.md", "readme.md", "README.MD", "README", "README.txt"],
+    "maxLines": 40,
+    "maxLength": 240,
+    "skipLinePattern": "^(#|!\\[|<|\\[!\\[|\\[!|---|\\*\\*\\*|___|\\||```|>\\s*\\[!)"
+  },
+  "firmware": {
+    "hint": "firmware-target",
+    "manifest": "firmware",
+    "rootFiles": ["platformio.ini", "sdkconfig", "sdkconfig.defaults", "boards.txt"],
+    "sketchGlob": "*.ino",
+    "depth": 2,
+    "observedOn": ["300PixelLED_2812B"]
+  },
+  "powershell": {
+    "moduleHint": "module-manifest",
+    "moduleManifest": "powershell-module",
+    "manifestGlob": "*.psd1",
+    "manifestDepth": 1,
+    "manifestExclude": "(?i)PSScriptAnalyzer(Settings)?\\.psd1$",
+    "manifestKeys": ["RootModule", "ModuleVersion", "FunctionsToExport"],
+    "scriptHint": "script-entry",
+    "scriptManifest": "powershell-scripts",
+    "scriptExclude": "(?i)\\.Tests\\.ps1$",
+    "maxEntryPoints": 6,
+    "observedOn": ["FowlingScorecard", "DevPortConsole", "Genesys-Telecom-Powershell", "AI_PromptRefiner_GUI", "300PixelLED_2812B"]
+  },
+  "servedPage": {
+    "hint": "web-app",
+    "files": ["index.html", "public/index.html", "web/index.html", "src/index.html"],
+    "observedOn": ["ActiveFamilyArchive", "FowlingScorecard", "AI_PromptRefiner_GUI", "Genesys.Core"]
+  },
+  "node": {
+    "manifest": "package.json",
+    "cliHint": "cli-entry",
+    "appHint": "web-app",
+    "libraryHint": "library-manifest",
+    "workspaceHint": "monorepo",
+    "appDependencies": ["react", "react-dom", "next", "vue", "nuxt", "svelte", "@angular/core", "express", "fastify", "koa", "electron", "vite", "firebase"],
+    "observedOn": ["ActiveFamilyArchive", "FowlingScorecard", "2026-06-13_Orchestration", "300PixelLED_2812B"]
+  },
+  "dotnet": {
+    "manifest": "dotnet-project",
+    "webHint": "web-app",
+    "exeHint": "executable-manifest",
+    "libraryHint": "library-manifest",
+    "projectGlobs": ["*.csproj", "*.fsproj"],
+    "depth": 2,
+    "webSdkPattern": "(?i)Sdk=\"Microsoft\\.NET\\.Sdk\\.Web\"",
+    "exePattern": "(?i)<OutputType>\\s*(Win)?Exe\\s*</OutputType>",
+    "testPattern": "(?i)<IsTestProject>\\s*true",
+    "observedOn": [],
+    "observedNote": "Fixture only so far; no cohort repository carries a project file within two directory levels."
+  },
+  "python": {
+    "pyprojectManifest": "pyproject",
+    "setupManifest": "setup.py",
+    "cliHint": "cli-entry",
+    "libraryHint": "library-manifest",
+    "webHint": "web-app",
+    "scriptsPattern": "(?im)^\\s*\\[project\\.scripts\\]",
+    "packagePattern": "(?im)^\\s*\\[(project|tool\\.poetry)\\]",
+    "entryFiles": ["app.py", "main.py", "manage.py", "wsgi.py", "asgi.py"],
+    "webEntryFiles": ["manage.py", "wsgi.py", "asgi.py"],
+    "observedOn": [],
+    "observedNote": "Fixture only so far; the cohort has no Python repository."
+  },
+  "wording": [
+    {
+      "hint": "experiment-wording",
+      "pattern": "\\b(experiment(al)?|prototype|proof[- ]of[- ]concept|spike|sandbox|playground|scratch(pad)?|bootstrap|phase[- ]?0)\\b",
+      "observedOn": [],
+      "observedNote": "Fixture only; 2026-06-13_Orchestration's purpose line names its packages, not its nature, so the trial's experiment category has no wording match yet."
+    },
+    {
+      "hint": "firmware-wording",
+      "pattern": "\\b(firmware|arduino|sketch(es)?|esp(32|8266)|microcontroller|platformio|ws2812b?|neopixel|led strip)\\b",
+      "observedOn": ["300PixelLED_2812B"]
+    },
+    {
+      "hint": "library-wording",
+      "pattern": "\\b(library|module|sdk|client|wrapper|package|api client|bindings?)\\b",
+      "observedOn": ["genesys-contract-client"]
+    },
+    {
+      "hint": "tooling-wording",
+      "pattern": "\\b(tool|utility|utilities|script(s)?|cli|command[- ]line|helper|automation|toolbox|console)\\b",
+      "observedOn": ["DevPortConsole", "FowlingScorecard", "Genesys.Core", "Genesys-Telecom-Powershell"]
+    },
+    {
+      "hint": "application-wording",
+      "pattern": "\\b(app|application|web app|dashboard|portal|site|website|workbench|studio|engine|server|service)\\b",
+      "observedOn": ["ActiveFamilyArchive", "AI_PromptRefiner_GUI", "Genesys.Core"]
+    }
+  ]
+}
