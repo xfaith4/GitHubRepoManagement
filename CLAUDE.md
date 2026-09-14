@@ -10,10 +10,15 @@
 
 - `.claude/settings.json` is the versioned repo contract (hooks, permissions).
   `settings.local.json` is per-machine and gitignored; policy never goes there.
-- The monitor-to-green-then-merge loop in `AGENTS.md` is **durably authorized
-  for this repository** — open the PR, poll `mergeStateStatus`, merge on
-  `CLEAN` without asking again. That authorization does not extend to other
-  repositories, where the merge is the operator's call.
+- The monitor-to-green-then-merge loop in `AGENTS.md` is authorized for this
+  repository **for pure engineering with a green check only** (D-019,
+  2026-09-14, mirroring steering contract 10): open the PR, poll
+  `mergeStateStatus`, merge on `CLEAN` without asking again. A change that
+  touches `backend/config/`, a CI gate (`scripts/Invoke-TestSuite.ps1`,
+  `tools/Test-*.ps1`, `.github/workflows/**`), `docs/governance/`, or what a
+  verdict says about a repository is opened as a PR and **waits for Ben's
+  review** — never merged by a watch on green. Neither authorization extends
+  to other repositories, where the merge is the operator's call.
 - A scheduled wakeup must carry its own verification command inline, because
   the wakeup prompt is the only text guaranteed to be in context when it
   fires. Write it as an end-state to verify, never as a list of steps.

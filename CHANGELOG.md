@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-14 — Steering adopted; merge-on-green narrowed (D-019)
+
+`docs/governance/steering.md` is Ben's statement of what the product is for,
+its eleven contracts, the proof ladder and the order of the extensions. D-019
+narrows the merge authorization to match contract 10: pure engineering with a
+green check merges on green; changes to `backend/config/`, CI gates,
+`docs/governance/`, or what a verdict says about a repository wait for review.
+Current focus is re-sequenced to the steering order (M4a follow-through,
+lifecycle/conclusion consistency, M4b, the accept/reject ledger, M4c, M5 prep,
+one manifest walk, the portfolio brief), and the M4b/M4c checks are rewritten
+as properties — no distribution targets. M4a is `verified` (its check was green
+in CI on #295) and moves to the archive. The trial record gains the "what the
+product could not see" section steering asks of every trial.
+
 ## 2026-09-14 — Repository kind resolves from what is checked in (Release 3.7 M4a)
 
 Eight of the nine Release 3.7 trial repositories concluded with "no kind signal"
