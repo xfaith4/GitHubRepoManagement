@@ -1720,16 +1720,17 @@ Invoke-RuleOpenItemNamesArtifact   -Releases $releases
 # bullet naming operator-only work, an unbounded status preamble, and a
 # completed item narrated in place instead of archived are the three shapes the
 # 2026-09-13 vocabulary rewrite exists to reject. R020 (every open milestone
-# carries a `check:`) is a warning in the PR that introduced it, so the roadmap
-# could be rewritten without first writing every check; it becomes an error in
-# the next PR that touches this file.
+# carries a `check:`) was a warning in the PR that introduced it, so the roadmap
+# could be rewritten without first writing every check; D-018's sweep
+# (2026-09-14) gave every open milestone its check, and R020 is an error from
+# that PR on.
 if (-not $script:VocabularyRulesLoaded) {
     Add-Finding -Severity 'error' -Code 'R020-RULES-MISSING' -Category 'vocabulary' -Rule 'rules-file' `
         -Message ('Vocabulary rules file not found at ' + $script:VocabularyRulesPath + '; R020-R023 were not evaluated.') `
         -RecommendedAction 'Restore tools/Test-RoadmapStructure.rules.ps1 beside this script.'
 } else {
     $vocabularyRules = @(
-        @{ fn = 'Test-R020MilestoneCheck';    severity = 'warning'; rule = 'milestone-check' },
+        @{ fn = 'Test-R020MilestoneCheck';    severity = 'error';   rule = 'milestone-check' },
         @{ fn = 'Test-R021OperatorGate';      severity = 'error';   rule = 'operator-gate' },
         @{ fn = 'Test-R022StatusProseLength'; severity = 'error';   rule = 'status-prose' },
         @{ fn = 'Test-R023CompletionProse';   severity = 'error';   rule = 'completion-prose' }

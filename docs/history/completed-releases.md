@@ -6499,3 +6499,16 @@ milestone is worth keeping.
   workspace reset keyed on the repository that must not fire when a background
   refresh changes the entry's item text, or it would wipe the operator's
   in-progress prompt. `--max-warnings` ratcheted 161 → 153.
+
+## Closed 2026-09-14 (archived from ROADMAP.md)
+
+### Lane 0.8 — P4 (moved verbatim, D-018 sweep)
+
+- [x] **P4 — BOM/PS5.1 hazard (60).** Measure first: which BOM-less files
+      contain non-ASCII AND can run under Windows PowerShell 5.1; add BOMs to
+      that subset only. The measurement found 53, not 60, and all 53 were
+      PowerShell (52 `.ps1`, one `.psd1`), for which a BOM is correct under
+      both 5.1 and 7 — so the operator ruled on 2026-09-09 for the wider sweep
+      over the subset, because a subset leaves the ratchet loose and the tax in
+      place. *(state: done 2026-09-09 — H38-37 gave 53 PowerShell files a UTF-8 BOM, byte prefix only, each verified as a one-line diff and a byte-identical tail; PSUseBOMForUnicodeEncodedFile ratcheted from 54 to 0)*
+

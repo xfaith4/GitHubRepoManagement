@@ -366,26 +366,27 @@ operator's device on the LAN.
       [`Watch-PortalHealth.ps1`](scripts/service/Watch-PortalHealth.ps1),
       covered by the module smoke's installer and watchdog gates. _(state:
       smoke-tested → needs an elevated Windows install)_
+      `check: pwsh ./scripts/Test-LiveServiceCurrency.ps1`
 
 **Field proof — one authenticated operator session covers all three:**
 
 - One real `claude` run through the runner — `operator-verified`, proven three times (PRs #140/#142, scheduled 2026-08-18); [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
 - [ ] One real **copilot** entry through the runner — `gh agent-task create`
       reaches a live task, URL in the run summary. Closes the Release 3.0
-      residual. _(state: smoke-tested. Requires `gh auth login` and **no**
+      residual. _(state: built. Requires `gh auth login` and **no**
       `GH_TOKEN`/`GITHUB_TOKEN` set; gh ignores stored OAuth when one is.)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
 - Release 3.1's scheduled-trigger loop proof — `operator-verified` 2026-08-18 ([evidence](evidence/verified/scheduled-loop-proof-2026-08-18.md)); [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
 
 **Field proof — credential / calendar:**
 
 - Release 2.1 operator sign-off — `operator-verified` 2026-08-18 against the live `output/app.db`; [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
-- [ ] (Optional) Prove live GitHub App installation-token exchange + refresh,
-      closing the Release 2.2 residual. _(state: planned — the PAT supersedes)_
 - [ ] Let the Release 2.3 Phase 2 trend windows accrue: `GET /api/portfolio/trend`
       reports a real 7-day, then 90-day, window. _(state: 7-day closed by
       accrual 2026-08-18, `availableDays: 20`, verified live; 90-day filling
       (20/90) — keep
       [`Invoke-DailyEvidence.ps1`](scripts/Invoke-DailyEvidence.ps1) running.)_
+      `check: pwsh ./scripts/Invoke-DailyEvidence.ps1`
 
 #### Acceptance criteria
 
@@ -494,6 +495,7 @@ wherever it is not.
       the route census guards the route; the config-integrity gate versions
       the JSON. CI Smoke is the arbiter. No UI consumer yet — that is the
       outcome card.)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
 - [ ] **Outcome card (UI).** Per repository: the conclusion, why, each
       domain's status and evidence, and the next action wired to the existing
       preview-first repair and packaging flows; repos without a roadmap show
@@ -518,6 +520,7 @@ wherever it is not.
       rogue route is refused, a broken contract is shown not hidden), 11 data
       tests, module smoke and api-host smoke on the payloads. Filtering by
       conclusion lands with the ranked `Today` landing below.)_
+      `check: pwsh ./scripts/Invoke-ApiHostSmokeTest.ps1`
 - [ ] **First interaction — the ranked `Today` landing.** The default view is
       a ranked table with _why now_, one primary next action per row, and
       effort (the value score and work-unit estimate already exist, three
@@ -541,6 +544,7 @@ wherever it is not.
       viewMeta contract test (every view has a unique question ending in `?`),
       and the module smoke's Dashboard source-order tripwire. This closes Lane
       0.5.)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
 - [ ] **Flexible standards.** Per-kind applicability in
       `foundation-domains.json` (library, service, script collection,
       archived, minimal, externally managed) so a domain can be
@@ -556,6 +560,7 @@ wherever it is not.
       renders a `not-applicable` domain with its stated reason — asserted by
       an `OutcomeCard` test, which is the rendering half this item was
       waiting on.)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
 - [ ] **Measure — coverage and leverage.** `GET /api/portfolio/trend` gains a
       foundation-coverage series (per domain: present / weak / missing /
       not-applicable) captured by
@@ -589,6 +594,7 @@ wherever it is not.
       frontend palette, leverage contract red on a zeroed fixture first),
       api-host smoke (series shape and range, every metric states a basis, the
       two uncaptured ones named and null), and 15 frontend tests.)_
+      `check: pwsh ./scripts/Invoke-ApiHostSmokeTest.ps1`
 - [ ] **Define the intentional-engineering evidence model — define, not
       score.** Name the evidence per sub-area (test, architecture,
       operational, maintenance, delivery health), how each is read from a
@@ -602,6 +608,7 @@ wherever it is not.
       signals; architecture, release: need a detector). The config-integrity
       gate refuses a scored status on it; the conclusion reports what it
       observes for the domain, "observed, not judged".)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
 
 #### Acceptance criteria
 
@@ -660,6 +667,7 @@ api-host steps, and 47 frontend tests across `foundationConclusion`,
       packaging approve/reject routes do not write. Both render with their
       reason rather than a zero — Release 3.7's nine repositories decide
       whether either earns a capture.
+      `check: pwsh ./scripts/Invoke-ApiHostSmokeTest.ps1`
 - [ ] **[non-blocker]** Only `archived` has a kind-detection rule. `library`,
       `service`, `script-collection`, `minimal` and `externally-managed`
       exist as data with their applicability reasons but await a signal, so
@@ -764,9 +772,11 @@ improvements are executed and measured, would change it mid-measurement.
       as one of the five improvements. Each counted improvement needs an
       independently checked acceptance criterion and before/after evidence;
       merge evidence alone is insufficient. _(state: planned)_
+      `check: pwsh ./tests/Test-TrialExecution.ps1 -Cohort evidence/trials/release-3.7/cohort.json -MinCountedImprovements 5`
 - [ ] **Adjust and decide** — fix the false positives and bad recommendations
       the nine expose; record the go/no-go for the full rollout and the
       leverage numbers behind it. _(state: planned)_
+      `check: pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort evidence/trials/release-3.7/cohort.json -MaxSharedLimitingPair 0.5 -MaxSameAction 0.5`
 
 #### Acceptance criteria
 
@@ -837,20 +847,21 @@ to the queue — never fails it — when a provider is exhausted.
       [`Roadmap.Dispatcher.ps1`](backend/modules/roadmap/Roadmap.Dispatcher.ps1)
       builds prose today and nothing reads a result back. A run producing no
       structured `ExecutionResult` fails by name instead of reaching
-      `awaiting-review`. _(state: smoke-tested 2026-09-07 — H38-01 WorkPacket schema v1
+      `awaiting-review`. _(state: built 2026-09-07 — H38-01 WorkPacket schema v1
       under output/work-packets/; H38-02 dispatch and approval both save one and
       carry workPacketPath; H38-03 ExecutionResult schema v1, a headless run with
       no/invalid result is failed by name; H38-04 Adapter.Claude.ps1 parses
       stream-json, session_id and usage recorded on the run's result.json;
       H38-05 ConvertTo-WorkPacketPrompt renders the packet with criteria
       verbatim, enforcement waits on D-012)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
 - [ ] **Persist capacity per provider, in the provider's own unit.** Named
       windows with `remainingRatio`, `resetAt` and a confidence rank; reserves
       and ranking weights live in `backend/config/`, not in code.
       [`BudgetLedger.ps1`](backend/modules/agent-runs/BudgetLedger.ps1) keeps the
       portfolio work-unit quota and gains no token conversion it cannot source.
       A limit re-queues the task with workspace, branch, attempt and session
-      intact. _(state: smoke-tested 2026-09-07 — H38-07 added
+      intact. _(state: built 2026-09-07 — H38-07 added
       agent-providers.json (schemaVersion v1) and Get-AgentProviderConfig;
       ranking weights and tieBreak are the decided D-013 values; corrected the
       same day — `providers.<name>.supported` replaces `enabled`, a repository fact
@@ -880,6 +891,7 @@ to the queue — never fails it — when a provider is exhausted.
       milestone — six module-smoke sections green in one run, capacity and
       cooldown documented in local-task-runner.md, and the delivery-loop
       addendum names where a wait is persisted)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
 - [ ] **Route between providers, and add the Codex adapter.** One registry
       replaces the `claude`/`copilot` pair hardcoded in
       [`Automation.RoadmapQueue.ps1`](backend/modules/automation/Automation.RoadmapQueue.ps1),
@@ -887,7 +899,7 @@ to the queue — never fails it — when a provider is exhausted.
       `frontend/types.ts`, and reconciles the third vocabulary
       (`operator-runner`) the approval route writes. Eligibility then ranking,
       selection reason recorded, presence counts derived from the registry
-      rather than naming providers. _(state: smoke-tested 2026-09-08 —
+      rather than naming providers. _(state: built 2026-09-08 —
       H38-14 Execution.ProviderRegistry.ps1 is the one token list (claude,
       codex, copilot, auto); the queue module and the runner delegate to it,
       and the two ValidateSet attributes that cannot are gated against it so
@@ -931,13 +943,14 @@ to the queue — never fails it — when a provider is exhausted.
       payload, preview names the intended provider; H38-19b Settings shows each
       provider as available, not installed, switched off or not in this build,
       and the opt-out writes per-machine state that is never committed.)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
 - [ ] **Move push and PR opening to Repo Manager; bind approval to the verified
       SHA.** The agent exits at `IMPLEMENTATION_COMPLETE`; Repo Manager pushes,
       opens the pull request and monitors CI on a cadence without holding an
       execution slot — which also closes Lane 0.17's open "nothing refreshes the
       board" non-blocker. A head change after verification invalidates
       `READY_FOR_OPERATOR`. Merge stays an explicit operator action.
-      _(state: smoke-tested 2026-09-08 — H38-21 `Resolve-PostImplementationTransition`
+      _(state: built 2026-09-08 — H38-21 `Resolve-PostImplementationTransition`
       and `Invoke-RunnerBranchPush` in
       [`scripts/Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1)
       push after a complete, verified result (`autoPush` per provider, default on
@@ -964,12 +977,13 @@ to the queue — never fails it — when a provider is exhausted.
       are gated in
       [`scripts/Invoke-ModuleSmokeTest.ps1`](scripts/Invoke-ModuleSmokeTest.ps1)
       and [`OperationsWorkspaceView.test.tsx`](frontend/components/OperationsWorkspaceView.test.tsx))_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
 - [ ] **Remediate from evidence, and hand off between providers.** Attempt and
       remediation counts survive a restart; a CI failure builds a
       `RemediationPacket`, resumes the original session where capacity allows,
       and otherwise transfers a `HandoffPacket` of durable evidence to another
       eligible provider. No provider depends on another's conversation.
-      _(state: smoke-tested 2026-09-09 — H38-27 `attempt` and `remediationCount` live on the run summary, written with the claim so a crash cannot lose them, and `Write-RemediationAttempt` in
+      _(state: built 2026-09-09 — H38-27 `attempt` and `remediationCount` live on the run summary, written with the claim so a crash cannot lose them, and `Write-RemediationAttempt` in
       [`backend/modules/execution/Execution.WorkPacket.ps1`](backend/modules/execution/Execution.WorkPacket.ps1)
       persists the incremented count before it evaluates the cap; an
       unwritable summary throws rather than returning a verdict. H38-28b
@@ -992,13 +1006,14 @@ to the queue — never fails it — when a provider is exhausted.
       any literal — the host enqueues and never executes, so resume-versus-
       handoff stays a claim-time decision made against the capacity that is
       true then)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
 - [ ] **Normalize execution events onto the Dispatch Board.** Provider output
       converts to the canonical `execution.*` vocabulary, reconciled with
       [`roadmap-events.md`](standards/roadmap/roadmap-events.md) so exactly one
       is canonical. New states arrive as a mapped dimension in
       [`status-vocabulary.md`](docs/reference/status-vocabulary.md), keeping the
       Release 3.5 rule that no two dimensions share a word. Per D-008 this is
-      the one surface that dispatches. _(state: smoke-tested 2026-09-11 —
+      the one surface that dispatches. _(state: built 2026-09-11 —
       H38-34 `Execution.Events.ps1` defines the 14-type canonical
       `execution.*` vocabulary; `New-ExecutionEvent` rejects unknown types so a
       producer typo fails immediately; `Test-ExecutionEvent` validates all
@@ -1011,6 +1026,7 @@ to the queue — never fails it — when a provider is exhausted.
       dimensions. `roadmap-events.md` is complementary and non-overlapping:
       `execution.*` events are per-agent-run step events; `roadmap-events.jsonl`
       is phase-level lifecycle history.)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
 - [ ] **Amendments from the execution strategy — the three that are cheap now
       and expensive later.** Absorbed into
       [`Agent-Execution-Governance.md`](docs/governance/Agent-Execution-Governance.md)
@@ -1025,7 +1041,7 @@ to the queue — never fails it — when a provider is exhausted.
       the resume path encodes provider-only session assumptions. **(c)**
       Risk-based independent review enters the approval flow while that flow is
       being built, rather than reopening the approve-binds-to-SHA contract and
-      its frontend afterwards. _(state: smoke-tested 2026-09-11 —
+      its frontend afterwards. _(state: built 2026-09-11 —
       **(a)** H38-35: `New-ExecutionCompletedPayload` adds `startTime`,
       `completionTime`, `durationSeconds`, `cost` (with unit), `firstPassSuccess`,
       `inputTokens`, `outputTokens`, and `attemptCount` to the
@@ -1035,6 +1051,7 @@ to the queue — never fails it — when a provider is exhausted.
       attaches to a full `execution.completed` event via `New-ExecutionEvent`.
       **(b)** Delivered 2026-09-08 as H38-28b. **(c)** Delivered 2026-09-08 as
       H38-24b.)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
 
 #### Acceptance criteria
 
@@ -1105,11 +1122,13 @@ answer is deterministic.
       `preferredProvider` matches the candidate and 0.5 otherwise, which echoes a
       preference someone already stated rather than deriving one from the task,
       so the initial routing policy has nothing to attach to. _(state: planned)_
+      `check: pwsh ./tests/Test-TaskProfile.ps1 -FailOnError`
 - [ ] **`NO_AGENT`: the deterministic tier is a routing outcome, not the absence
       of one.** Branch state, CI status, file existence, repository metrics,
       schema validation, mergeability and configured policy evaluation are
       answered by application logic and recorded as a selection like any other.
       _(state: planned)_
+      `check: pwsh ./tests/Test-NoAgentTier.ps1 -FailOnError`
 - [ ] **A cost estimator that can eventually enforce.** `effective_cost` =
       metered cost + quota pressure + retry + expected failure, with pricing
       configurable or discovered rather than embedded. Enforcement stays off
@@ -1117,6 +1136,7 @@ answer is deterministic.
       non-provisional — D-011 left the estimate a guess, and refusing dispatches
       on a guessed number blocks real work for an unmeasured reason.
       _(state: planned)_
+      `check: pwsh ./tests/Test-CostEstimator.ps1 -FailOnError`
 - [ ] **A performance store keyed by what actually varies.** Rolling first-pass
       rate, eventual success, cost and duration per success, remediation count,
       human-intervention rate and CI failure rate, broken down by
@@ -1124,12 +1144,15 @@ answer is deterministic.
       `provider × repository` success ratio today, which cannot distinguish a
       provider that is excellent at documentation and poor at one coding
       workload. _(state: planned)_
+      `check: pwsh ./tests/Test-PerformanceStore.ps1 -FailOnError`
 - [ ] **Evidence overrides the cold-start prior.** Once a task class has enough
       history, the empirical result wins over the configured preference, and the
       routing record says which of the two decided it. _(state: planned)_
+      `check: pwsh ./tests/Test-EvidenceOverridesPrior.ps1 -FailOnError`
 - [ ] **Report the metric the release exists to move.** Verified tasks ÷ total
       agent cost, with throughput and first-pass rate beside it, on
       `GET /api/providers` and the Dispatch Board. _(state: planned)_
+      `check: pwsh ./tests/Test-VerifiedTaskRate.ps1 -FailOnError`
 
 #### Acceptance criteria
 
@@ -1188,6 +1211,7 @@ Completed cross-cutting items are in
       and one failed required check reports different blockers, and a token
       lacking `Checks: Read` still evaluates through the proxy rather than
       erroring.
+      `check: pwsh ./tests/Test-CheckRunDetail.ps1 -FailOnError`
 
 ### Lanes 0.3, 0.4 and 0.6 — closed entirely
 
@@ -1213,6 +1237,7 @@ maintained list.
       it in the request body, and has since **2026-07-07** (116 occurrences in
       the host log). Clear the persisted client value and stop a client-supplied
       owner from silently overriding validated configuration.
+      `check: pwsh ./tests/Test-OwnerCacheReset.ps1 -FailOnError`
 
 ### Lane 0.5 — Portal UX follow-ups (empty-state audit 2026-08-08)
 
@@ -1244,6 +1269,7 @@ Intent: **awareness, not enforcement.**
       semantic accuracy for portfolio reporting, progress calculation and future
       automation. The `spec/roadmap-contract` mirror moves with the schema, so
       the sync gate is part of this item, not a follow-up.
+      `check: pwsh ./tests/Test-ExternalizedHistory.ps1 -FailOnError`
 - Sanction the external-archive pattern in the standard — done (`ROADMAP_TEMPLATE.md` §6 "External archive option"); [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
 
 ### Lane 0.8 — Verification gate integrity (CI audit 2026-08-10)
@@ -1331,20 +1357,17 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
       caller already handles. **Batches 2 and 3, `backend/modules` (20) and
       `scripts`/`tools` (21), done the same day** on the same finding: every
       site best-effort, each now stating its reason. Ratchet locked at 420 (was
-      484; empty-catch 79 → 15). The 15 left sit outside the module tree.
+      484; empty-catch 79 → 15). The 15 left sit outside the module tree. _(state: built)_
+      `check: pwsh ./scripts/Invoke-LintGate.ps1`
 - [ ] **E2 — type the API client (`no-explicit-any`, 123, bulk in
       `apiClient.ts`).** Per endpoint-group batches; the value is contract
-      drift caught at typecheck, not style. Lower the ratchet after each.
+      drift caught at typecheck, not style. Lower the ratchet after each. _(state: planned)_
+      `check: npm --prefix frontend run lint`
 - [ ] **P3 — plaintext-password params (9).** Design review per surface
       (SecureString vs env-var flow), coupled to the Lane 0.2 TLS work —
-      **not** mechanical remediation.
-- [ ] **P4 — BOM/PS5.1 hazard (60).** Measure first: which BOM-less files
-      contain non-ASCII AND can run under Windows PowerShell 5.1; add BOMs to
-      that subset only. The measurement found 53, not 60, and all 53 were
-      PowerShell (52 `.ps1`, one `.psd1`), for which a BOM is correct under
-      both 5.1 and 7 — so the operator ruled on 2026-09-09 for the wider sweep
-      over the subset, because a subset leaves the ratchet loose and the tax in
-      place. _(state: done 2026-09-09 — H38-37 gave 53 PowerShell files a UTF-8 BOM, byte prefix only, each verified as a one-line diff and a byte-identical tail; PSUseBOMForUnicodeEncodedFile ratcheted from 54 to 0)_
+      **not** mechanical remediation. _(state: planned)_
+      `check: pwsh ./scripts/Invoke-LintGate.ps1`
+- P4 — BOM/PS5.1 hazard: [archived](docs/history/completed-releases.md#closed-2026-09-14-archived-from-roadmapmd).
 - **Deliberately unscheduled (accepted debt, held at baseline):** the naming
   and style tiers (`UseSingularNouns` 90, `UseOutputTypeCorrectly` 136,
   `UseShouldProcessForStateChangingFunctions` 67, five smaller) — churn for
@@ -1401,6 +1424,7 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
       drift. Gate: a fixture with a repository inside a repository classifies
       the inner one `nested` and drops it from the managed count, and the
       opt-in promotes it back.
+      `check: pwsh ./tests/Test-NestedRepoClassification.ps1 -FailOnError`
 
 ### Lane 0.13 — Truthful uncertainty: the product could not tell "unreadable" from "not present" (found 2026-08-27)
 
@@ -1415,6 +1439,7 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
       Release 3.6 leverage panel already sets that precedent with its two
       `available: false` metrics. Decide which, with the nine repositories of
       Release 3.7.
+      `check: pwsh ./tests/Test-SessionWorkUnits.ps1 -FailOnError`
 
 ---
 
@@ -1447,6 +1472,7 @@ that had neither.
       **Done means CI rejects a raw hex or a bare Tailwind color utility in a
       button background** — at which point the second ratchet rule ships with
       it. _(state: planned)_
+      `check: npx vitest run frontend/lib/buttonTokens.test.ts`
 
 - [ ] **Resolve the Nocturne opacity ladder against WCAG AA.** The migration's
       text hierarchy is opacity over `--color-text`
@@ -1459,6 +1485,7 @@ that had neither.
       dropping the value. **Done means every rung used for body text clears
       4.5:1 on both grounds, or the ones that cannot are moved off body text**,
       with the measurement recorded. _(state: planned)_
+      `check: npx vitest run frontend/lib/contrast.test.ts`
 
 - [ ] **Add breakpoints above 768px.** The console declares **two responsive
       breakpoints, both under 768px**, so every viewport from a laptop to a
@@ -1466,6 +1493,7 @@ that had neither.
       controls the audit counted on a single tab are laid out for none of them
       specifically. Define the wide tiers and prove them at 1280px and 1920px.
       _(state: planned)_
+      `check: npx vitest run frontend/lib/breakpoints.test.ts`
 
 - [ ] **Write `settings.json` with a stable key order, and not at all when
       nothing changed.** A running portal rewrites
@@ -1477,6 +1505,7 @@ that had neither.
       the audit: the system generating noise that trains its operator to
       ignore signals. Serialize with a fixed key order and skip the write when
       the content is unchanged. _(state: planned)_
+      `check: pwsh ./tests/Test-SettingsWriteOrder.ps1 -FailOnError`
 
 - [ ] **Adopt the dialog dismiss contract in the remaining 17 modals.**
       [`useDialogDismiss`](frontend/hooks/useDialogDismiss.ts) now carries
@@ -1487,6 +1516,7 @@ that had neither.
       (`AgentRunSheet`, with its own inline implementation to be replaced by
       the hook). Each remaining dialog is a two-line change: call the hook,
       attach the ref to the panel. _(state: planned)_
+      `check: pwsh ./tests/Test-DialogDismissAdoption.ps1 -FailOnError`
 
 ---
 
@@ -1514,7 +1544,8 @@ from the screenshot.
       plus a per-repo badge and a filter value in `RepoGrid`. Reconciling the
       numbers is the wrong fix — they are different quantities wearing one
       word. Name each, and state the denominator on the surface that shows it.
-      _(state: ui-connected — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
+      _(state: built — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
+      `check: npx vitest run frontend`
 
 - [ ] **Stop the app switching data source without being asked.**
       [`App.tsx:240`](frontend/App.tsx#L240) calls `setViewMode('github')` on a
@@ -1523,7 +1554,8 @@ from the screenshot.
       silently changes which source the operator is _looking at_, and `Cancel`
       cannot revert it because `viewMode` was never modal state. Connecting a
       credential and choosing a view are different acts; the source toggle
-      already exists for the second. _(state: ui-connected — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
+      already exists for the second. _(state: built — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
+      `check: npx vitest run frontend`
 
 - [ ] **Show the Today rank basis instead of hiding it in a tooltip.** The
       audit read a value-49 repo above a value-80 one as a sort bug; it is not.
@@ -1535,7 +1567,8 @@ from the screenshot.
       **only as a `title=` tooltip**
       ([`TodayView.tsx:187`](frontend/components/TodayView.tsx#L187)) — invisible,
       hover-only, unreachable by keyboard. Do not change the comparator.
-      _(state: ui-connected — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
+      _(state: built — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
+      `check: npx vitest run frontend`
 
 - [ ] **Fix the dead-end automation instruction.**
       [`automationStatus.ts:100`](frontend/lib/automationStatus.ts#L100) tells
@@ -1543,7 +1576,8 @@ from the screenshot.
       automatically."_ The Settings dialog holds seven fields and none of them
       is that toggle — nor packaging, auto-scan, lane concurrency, or the
       scoring thresholds that drive every number in the product. Either build
-      the control or stop naming it. _(state: ui-connected — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
+      the control or stop naming it. _(state: built — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
+      `check: npx vitest run frontend`
 
 **Already fixed (2026-08-29) — the snapshot route answered 500 on every
 operator machine.** `Get-StatusFromCache` returns
@@ -1605,18 +1639,8 @@ item above; they are not a second implementation task.
       surfaces with no basis at all. This is what the existing contract
       assertion was written to catch and cannot, because it skips any value
       `ConvertFrom-Json` has already promoted to `[datetime]`. Fix the
-      serializer and the assertion together. _(state: ui-connected — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
-
-- [ ] **Verify the remaining clock and denominator presentation on the live console.**
-      The snapshot 500 and 70-versus-72 discrepancy are resolved above. The
-      re-audit established the coherent 72 scanned → 58 in-scope → 57 dispatch
-      blocked chain; different quantities must retain their own denominators.
-      Do not repeat the obsolete hypothesis that the snapshot has never run.
-      Verify the newly named execution/dispatch/PR blockers, stable selected
-      source, visible rank basis and local rendering of explicitly based UTC
-      timestamps after deployment. Automated proof is in
-      `evidence/verified/trial-truth-readiness-2026-09-05.md`.
-      _(state: ui-connected)_
+      serializer and the assertion together. _(state: built — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
+      `check: pwsh ./scripts/Invoke-ApiContractTest.ps1`
 
 - [ ] **Close the timestamp-basis test's own blind spot.** The contract test
       _"every timestamp field in key payloads carries an explicit timezone
@@ -1625,7 +1649,8 @@ item above; they are not a second implementation task.
       `[datetime]`. Every timestamp that parses as a date is therefore skipped
       by the very test that exists to check timestamps. Assert against the raw
       response body instead, as the new cache-fixture test does.
-      _(state: ui-connected — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
+      _(state: built — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
+      `check: pwsh ./scripts/Invoke-ApiContractTest.ps1`
 
 ---
 
@@ -1682,10 +1707,10 @@ not observed agent activity.
       distinguish "the agent stopped" from "nobody looked". Release 3.8's
       fourth milestone owns the cadence — Repo Manager monitors CI without
       holding an execution slot — so close this item there rather than building
-      a second poller. _(state: smoke-tested 2026-09-08 — closed by Release 3.8
+      a second poller. _(state: built 2026-09-08 — closed by Release 3.8
       H38-22: the runner's poll loop calls POST /api/delivery/reconcile every
       fourth poll, which runs Invoke-AgentRunAutoClose)_
-- [ ] **Restrict dispatch authority to the Dispatch Board.** _(state: smoke-tested 2026-09-09 — H-07: the dispatch callback is passed only when the preview was opened from the `execution-queue` view; Work Queue and Operations previews offer `Open on Dispatch Board` in the same slot and keep the full preview unchanged; the origin is snapshotted at open time rather than read live, so a tab switch cannot change the operator's available actions mid-preview, and a surface added later inherits no dispatch authority by default; gated by four component tests, the decisive one proven red against the unchanged component; the board has no row-focus prop today so switching the view is the whole of the navigation)_
+- [ ] **Restrict dispatch authority to the Dispatch Board.** _(state: built 2026-09-09 — H-07: the dispatch callback is passed only when the preview was opened from the `execution-queue` view; Work Queue and Operations previews offer `Open on Dispatch Board` in the same slot and keep the full preview unchanged; the origin is snapshotted at open time rather than read live, so a tab switch cannot change the operator's available actions mid-preview, and a surface added later inherits no dispatch authority by default; gated by four component tests, the decisive one proven red against the unchanged component; the board has no row-focus prop today so switching the view is the whole of the navigation)_
       Decided 2026-09-06 (D-008), and it **reverses the default shipped the
       same day** under D-010. `CopilotTaskPreviewModal` opens from the Dispatch
       Board, the Work Queue and Operations, and
@@ -1700,6 +1725,7 @@ not observed agent activity.
       impact one consistent surface to appear on before work begins. Gate:
       component tests prove the dispatch action is present from the board and
       absent from the two preview-only surfaces.
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
 - [ ] **[non-blocker]** Archive this lane's eight closed items to
       [`docs/history/completed-releases.md`](docs/history/completed-releases.md).
       The roadmap's own rule is that this file carries open work only and an
@@ -1771,7 +1797,8 @@ are re-scoped into Release 3.8** rather than built standalone; each says how.
       **Re-scoped 2026-09-06:** this is the `HandoffPacket`'s `priorResult` and
       `remainingScope` in Release 3.8 — build it there, once, rather than as a
       separate carryover channel that a cross-provider handoff would then have
-      to duplicate. _(state: smoke-tested 2026-09-09 — delivered as Release 3.8 H38-30: `HandoffPacket.priorResult` and `remainingScope` carry the prior run's evidence into the next prompt, and a repository with no prior run renders the H38-05 prompt unchanged)_
+      to duplicate. _(state: built 2026-09-09 — delivered as Release 3.8 H38-30: `HandoffPacket.priorResult` and `remainingScope` carry the prior run's evidence into the next prompt, and a repository with no prior run renders the H38-05 prompt unchanged)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
 - [ ] **Check the acceptance criteria before a pull request is called ready.**
       Dispatch prompts already carry acceptance criteria and nothing verifies
       them; merge evidence answers "did this land", not "did it do what the
@@ -1786,7 +1813,7 @@ are re-scoped into Release 3.8** rather than built standalone; each says how.
       current strictness. **Re-scoped 2026-09-06:** this check is what gives
       Release 3.8's `LOCAL_VERIFYING` state its meaning — without it
       `IMPLEMENTATION_COMPLETE` asserts only that an agent stopped. Build it as
-      that gate. _(state: smoke-tested 2026-09-11 — H38-36
+      that gate. _(state: built 2026-09-11 — H38-36
       `Execution.AcceptanceVerification.ps1` implements the LOCAL_VERIFYING
       read-only pass: `Invoke-LocalAcceptanceVerification` checks each
       acceptance criterion against its verification command via an injected
@@ -1798,6 +1825,7 @@ are re-scoped into Release 3.8** rather than built standalone; each says how.
       `remediation` (no push), `passed`/`skipped` → `implementation_complete`.
       The gate exercises all six cases including mixed pass+fail (overall
       `failed`) and the empty-criteria list (proceeds without error).)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
 - [ ] **Cap cumulative spend across a dispatch sequence.**
       [`BudgetLedger.ps1`](backend/modules/agent-runs/BudgetLedger.ps1)
       evaluates one dispatch against a work-unit quota. The orchestrator's run
@@ -1812,7 +1840,8 @@ are re-scoped into Release 3.8** rather than built standalone; each says how.
       persist-before-halt ordering applied to the unit each provider actually
       exposes; the work-unit quota stays the portfolio budget beside it. The
       two measure different things and neither replaces the other.
-      _(state: smoke-tested 2026-09-09 — delivered as Release 3.8 H38-09/H38-27: per-provider reserves in `agent-providers.json` and a remediation cap persisted before the halt; the work-unit quota in `BudgetLedger.ps1` is unchanged)_
+      _(state: built 2026-09-09 — delivered as Release 3.8 H38-09/H38-27: per-provider reserves in `agent-providers.json` and a remediation cap persisted before the halt; the work-unit quota in `BudgetLedger.ps1` is unchanged)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
 - [ ] **Order work inside one repository's roadmap, and detect dead ends.**
       [`Roadmap.DependencyTracker.ps1`](backend/modules/roadmap/Roadmap.DependencyTracker.ps1)
       finds references _between_ repositories; nothing orders items _within_ a
@@ -1834,7 +1863,7 @@ are re-scoped into Release 3.8** rather than built standalone; each says how.
       [`ROADMAP_TEMPLATE.md`](standards/roadmap/ROADMAP_TEMPLATE.md) already
       recommends `[[M3]]` ids and an inline `(depends: M3)` tag that nothing
       reads; the schema and parser have to catch up with the authoring
-      convention. _(state: smoke-tested 2026-09-07 — H-13a notation
+      convention. _(state: built 2026-09-07 — H-13a notation
       parsed into item id/dependsOn and published on the parse result as an
       additive `items` array, so the fifteen consumers of the existing
       string lists are untouched; unknown-id and cycle findings are
@@ -1856,6 +1885,7 @@ are re-scoped into Release 3.8** rather than built standalone; each says how.
       contract checks where every other dispatch refusal already does. A
       roadmap with no notation selects exactly what first-pending selected
       before, asserted against this file.)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
 
 ---
 
