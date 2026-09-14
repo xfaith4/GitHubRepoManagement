@@ -17,5 +17,6 @@ session, one phone on the LAN — and take the batch when convenient.
 | OQ-9  | Elevated shell          | Run `Enable-SharedLanAccess.ps1`; confirm an anonymous request is refused after the rebind | Release 2.9 shared-LAN proof |
 | OQ-11 | Browser, logged in      | Clock and denominator presentation on the console (Lane 0.15)                              | Lane 0.15 field proof        |
 | OQ-10 | Registered GitHub App   | Prove live installation-token exchange and refresh (optional; PAT supersedes)              | Release 2.9 optional proof   |
+| OQ-12 | Elevated (UAC) shell    | Restart the portal service so the M4a `kindSignals` scanner goes live; then refresh the index | 3.7 M4a field proof — the next agent session re-concludes the cohort on v2 |
 
 Done rows move to `evidence/operator-verification-log.jsonl` and are deleted here.

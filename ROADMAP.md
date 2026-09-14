@@ -32,7 +32,7 @@ the operator queue is a separate file. Take the first `[ ]` and open a PR.
       purpose line), not only `archived`. Eight of nine trial repositories currently
       conclude with "no kind signal". Ship as `foundation-conclusions v2`; the
       conclusion record already carries the index SHA, so add `modelVersion`
-      beside it and the trial stays measurable across versions. _(state: planned)_
+      beside it and the trial stays measurable across versions. _(state: built)_
       `check: pwsh ./tests/Test-KindDetection.ps1 -FailOnError`
 - [ ] **3.7 / M4b — limiting-pair differentiation.** Seven of nine share
       `planning`-weak + `structure`-weak. Weight the limiting foundation by kind

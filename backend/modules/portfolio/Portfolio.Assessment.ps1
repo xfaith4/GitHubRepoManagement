@@ -38,6 +38,7 @@ $ErrorActionPreference = 'Stop'
 # One decision for where the index lives, so a gate cannot write through to the
 # index the operator is reading. See Config.IndexPath.ps1 for the incident.
 . (Join-Path $PSScriptRoot '..\common\Config.IndexPath.ps1')
+. (Join-Path $PSScriptRoot 'Portfolio.KindSignals.ps1')
 
 # ---------------------------------------------------------------------------
 # Standards loader
@@ -1569,6 +1570,10 @@ function New-PortfolioIndexPayload {
             # manifests while the index build already has the repo in hand.
             # A request never computes this; it reads it from the index.
             technologies        = @(Get-RepoTechnologyProfile -LocalPath $localPath)
+            # Release 3.7 M4a — what the repository IS (manifest, entry points,
+            # README purpose line). foundation-domains.json's kind rules read
+            # the hint ids here; a request never re-derives them.
+            kindSignals         = Get-RepoKindSignalProfile -LocalPath $localPath
             lifecycleState      = [string](_GetField -Obj $assessment -Name 'lifecycleState' -Default 'discovered')
             recommendedAction   = [string](_GetField -Obj $assessment -Name 'recommendedAction' -Default '')
             blockingReasons     = @(_GetField -Obj $assessment -Name 'blockingReasons' -Default @())

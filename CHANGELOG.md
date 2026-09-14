@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-14 — Repository kind resolves from what is checked in (Release 3.7 M4a)
+
+Eight of the nine Release 3.7 trial repositories concluded with "no kind signal"
+because the index carried only `repoType` and `technologies`, and neither tells
+a PowerShell library apart from a PowerShell utility. The scan now emits a
+`kindSignals` object per index entry (`backend/modules/portfolio/Portfolio.KindSignals.ps1`):
+the manifest kind, entry points, the README purpose line and a list of hint ids,
+each with one evidence line. `foundation-domains.json` (now
+`modelVersion: foundation-conclusions v2`) defines `application`, `firmware`,
+`experiment` and `tooling` beside the existing kinds, and its detection rules
+gained `whenAny` — "this dotted path holds one of these values" — so
+`kindSignals.hints` and `technologies.id` are matchable without code. Every
+conclusion record and the conclusions payload carry `modelVersion`, so the
+trial's per-record index SHA stays comparable across model versions.
+
+Run over the real cohort checkouts before merge: ActiveFamilyArchive,
+FowlingScorecard, AI_PromptRefiner_GUI and Genesys.Core resolve `application`;
+DevPortConsole `tooling`; genesys-contract-client `library`; 300PixelLED_2812B
+`firmware`; Genesys-Telecom-Powershell `archived`; 2026-06-13_Orchestration
+stays `unknown` (a workspace root with no purpose wording and no root
+dependencies — the signals do not say "experiment", so the product does not
+either). Check: `pwsh ./tests/Test-KindDetection.ps1 -FailOnError`, wired into
+the suite as the `Kind detection` gate. The live portal emits `kindSignals`
+after its next service restart (OQ-12); until then the live index has none and
+every non-archived repository still reads `unknown`.
+
 ## 2026-09-13 — Records moved out of ROADMAP.md Current Status
 
 Moved verbatim from `ROADMAP.md` "Current Status (Agent Context)" when the
