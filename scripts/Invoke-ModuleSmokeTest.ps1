@@ -12264,6 +12264,67 @@ Write-Step 'Runner state isolation - Lane 0.8: no gate reads, fakes or deletes t
     }
 }
 
+Write-Step 'Operator verification - D-016: the queue row is appended once, after the log, and never deleted'
+& {
+    # D-016 (2026-09-13): Add-OperatorVerification.ps1 appends a Ratchets row to
+    # docs/governance/operator-queue.md after writing the JSONL log. Proved
+    # against a fixture workspace with a two-line roadmap and a seeded queue:
+    # one run adds one row, a second run adds nothing, the log still grows, and
+    # no existing row is touched or removed.
+    $ovScript = Join-Path $WorkspaceRoot 'scripts\Add-OperatorVerification.ps1'
+    if (-not (Test-Path -LiteralPath $ovScript)) { throw "Missing $ovScript" }
+    $ovFixture = Join-Path ([System.IO.Path]::GetTempPath()) ('smoke-opverify-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    $null = New-Item -ItemType Directory -Path (Join-Path $ovFixture 'docs\governance') -Force
+    $null = New-Item -ItemType Directory -Path (Join-Path $ovFixture 'evidence') -Force
+    try {
+        @(
+            '# Fixture roadmap',
+            '',
+            '## Release 9.9 — Fixture',
+            '',
+            '- [ ] Render the fixture surface end to end. _(state: smoke-tested)_'
+        ) | Set-Content -LiteralPath (Join-Path $ovFixture 'ROADMAP.md') -Encoding UTF8
+        $ovQueue = Join-Path $ovFixture 'docs\governance\operator-queue.md'
+        @(
+            '# Operator Queue',
+            '',
+            '| Id   | Needs | Action | Ratchets |',
+            '| ---- | ----- | ------ | -------- |',
+            '| OQ-1 | Browser | Eyes on the fixture | fixture proof |',
+            '',
+            'Done rows move to `evidence/operator-verification-log.jsonl` and are deleted here.'
+        ) | Set-Content -LiteralPath $ovQueue -Encoding UTF8
+        $ovBefore = Get-Content -LiteralPath $ovQueue
+
+        $ovList = & pwsh -NoProfile -File $ovScript -WorkspaceRoot $ovFixture -List 2>&1 | Out-String
+        $ovId = [regex]::Match($ovList, '\[([0-9a-f]{10})\]').Groups[1].Value
+        if ([string]::IsNullOrWhiteSpace($ovId)) { throw "Could not read a surface id from -List output: $ovList" }
+
+        foreach ($ovRun in 1, 2) {
+            $ovOut = & pwsh -NoProfile -File $ovScript -WorkspaceRoot $ovFixture -SurfaceId $ovId -Evidence 'module smoke fixture' -VerifiedBy 'smoke' 2>&1 | Out-String
+            if ($LASTEXITCODE -ne 0) { throw "Run $ovRun exited $LASTEXITCODE`: $ovOut" }
+        }
+
+        $ovLog = @(Get-Content -LiteralPath (Join-Path $ovFixture 'evidence\operator-verification-log.jsonl') | Where-Object { $_ -ne '' })
+        if ($ovLog.Count -ne 2) { throw "The JSONL log should hold one record per run (2); found $($ovLog.Count). The log is the source of truth and must always be written." }
+
+        $ovAfter = Get-Content -LiteralPath $ovQueue
+        $ovRows = @($ovAfter | Where-Object { $_.StartsWith('| OV-' + $ovId + ' ') })
+        if ($ovRows.Count -ne 1) { throw "Expected exactly one OV-$ovId row after two runs (idempotent on Id); found $($ovRows.Count)." }
+        if ($ovRows[0] -notmatch '\| done \|' -or $ovRows[0] -notmatch 'Release 9\.9|9\.9') { throw "The queue row does not carry the expected shape: $($ovRows[0])" }
+        foreach ($ovLine in $ovBefore) {
+            if ($ovAfter -notcontains $ovLine) { throw "An existing queue line was changed or removed by the script: $ovLine. The script must never delete." }
+        }
+        $ovRowIndex = [array]::IndexOf($ovAfter, $ovRows[0])
+        if ($ovAfter[$ovRowIndex - 1] -notmatch '^\| OQ-1 ') { throw 'The new row was not appended directly after the last table row.' }
+
+        Write-Host ("  operator verification ok: two runs -> 2 log records, 1 queue row ({0}), existing rows untouched, row placed after the table" -f ('OV-' + $ovId)) -ForegroundColor DarkGray
+    }
+    finally {
+        Remove-Item -Recurse -Force $ovFixture -ErrorAction SilentlyContinue
+    }
+}
+
 Write-Step 'TLS handshake hardening - Lane 0.8: a silent client cannot stall the host, and a failure names its caller'
 & {
     # The host serves one connection at a time, and the TLS handshake runs on that

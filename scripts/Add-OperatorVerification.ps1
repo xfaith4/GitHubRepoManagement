@@ -9,6 +9,11 @@
     that proves it." The daily driver (Invoke-DailyEvidence.ps1) reads this log
     to shrink its verify-next queue.
 
+    D-016 (2026-09-13): after the log, one Ratchets row is appended to
+    docs/governance/operator-queue.md, idempotent on its Id (OV-<surfaceId>).
+    The log is written first and the queue never loses a row to this script;
+    removing a done row from the queue is a human act.
+
     The SurfaceId is the short id shown in the driver's verify-queue.md (a stable
     hash of release + surface text). This script recomputes ROADMAP ids to
     resolve the surface and REFUSES an unknown id, so a typo can't silently log
@@ -71,7 +76,8 @@ function Get-RoadmapSurfaces {
     # Must mirror Invoke-DailyEvidence.ps1's Get-RoadmapSurfaces id derivation
     # EXACTLY, or ids will not match the verify queue. The *(state: ...)* marker
     # usually sits on a wrapped continuation line, so item text is accumulated
-    # across continuation lines; fenced code blocks are skipped so the section-3
+    # across continuation lines (the marker is written _(state: x)_ today and was
+    # *(state: x)* before 2026-08; both are read); fenced code blocks are skipped so the section-3
     # vocabulary example is not treated as a real milestone.
     param([string]$RoadmapPath)
     $surfaces = [System.Collections.Generic.List[object]]::new()
@@ -112,10 +118,10 @@ function Get-RoadmapSurfaces {
         }
 
         if ($null -ne $pendingText) {
-            $sm = [regex]::Match($pendingText, '\*\(state:\s*([a-z][a-z-]*)')
+            $sm = [regex]::Match($pendingText, '[*_]\(state:\s*([a-z][a-z-]*)')
             if ($sm.Success) {
                 $state = $sm.Groups[1].Value
-                $text = ($pendingText -replace '\s*\*\(state:.*$', '').Trim()
+                $text = ($pendingText -replace '\s*[*_]\(state:.*$', '').Trim()
                 if (-not [string]::IsNullOrWhiteSpace($text)) {
                     $norm = ($text.ToLowerInvariant() -replace '\s+', ' ')
                     $idBytes = $sha1.ComputeHash([System.Text.Encoding]::UTF8.GetBytes(("{0}||{1}" -f $pendingRelease, $norm)))
@@ -169,7 +175,44 @@ $record = [ordered]@{
 $json = $record | ConvertTo-Json -Depth 5 -Compress
 Add-Content -LiteralPath $logPath -Value $json -Encoding UTF8
 
+# D-016 (Ben, 2026-09-13): the queue gets a Ratchets row too. The log is written
+# FIRST, so a failed queue edit leaves the log complete rather than the reverse;
+# the row is idempotent on its Id, so re-recording changes nothing; and there is
+# no delete path -- removing a done row from the queue is a human act, and the
+# JSONL log stays the source of truth.
+$queuePath = Join-Path $WorkspaceRoot 'docs\governance\operator-queue.md'
+$queueRowId = 'OV-' + $match.id
+$queueOutcome = 'skipped (no operator queue at ' + $queuePath + ')'
+if (Test-Path -LiteralPath $queuePath -PathType Leaf) {
+    try {
+        $queueLines = [System.Collections.Generic.List[string]]([System.IO.File]::ReadAllLines($queuePath))
+        $alreadyThere = $false
+        foreach ($queueLine in $queueLines) { if ($queueLine.StartsWith('| ' + $queueRowId + ' ')) { $alreadyThere = $true; break } }
+        if ($alreadyThere) {
+            $queueOutcome = 'already in the queue as ' + $queueRowId + '; nothing changed'
+        }
+        else {
+            # Append after the last table row, so the closing paragraph stays last.
+            $lastRow = -1
+            for ($qi = 0; $qi -lt $queueLines.Count; $qi++) { if ($queueLines[$qi] -match '^\| O[QV]-') { $lastRow = $qi } }
+            if ($lastRow -lt 0) { throw 'no queue table rows found' }
+            $cell = { param($s) ([string]$s -replace '\|', '\|' -replace '\s+', ' ').Trim() }
+            $queueRow = '| {0} | done | {1} | {2} field proof — {3}, {4}, {5} |' -f `
+                $queueRowId, (& $cell $match.text), (& $cell $match.release), (& $cell $State), (& $cell $VerifiedBy), (Get-Date).ToString('yyyy-MM-dd')
+            $queueLines.Insert($lastRow + 1, $queueRow)
+            [System.IO.File]::WriteAllLines($queuePath, $queueLines, (New-Object System.Text.UTF8Encoding $false))
+            $queueOutcome = 'appended ' + $queueRowId + ' to ' + $queuePath
+        }
+    }
+    catch {
+        # The log above is already complete; say what did not happen and why.
+        $queueOutcome = 'NOT appended to ' + $queuePath + ': ' + $_.Exception.Message
+        Write-Warning ('Operator queue row not written: {0}' -f $_.Exception.Message)
+    }
+}
+
 Write-Host '[PASS] Verification recorded' -ForegroundColor Green
+Write-Host ("  queue: {0}" -f $queueOutcome) -ForegroundColor DarkGray
 Write-Host ("  {0} — {1}" -f $match.release, $match.text) -ForegroundColor DarkGray
 Write-Host ("  {0} -> {1} by {2}" -f $match.state, $State, $VerifiedBy) -ForegroundColor DarkGray
 Write-Host ("  logged to {0}" -f $logPath) -ForegroundColor DarkGray

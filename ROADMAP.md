@@ -86,25 +86,10 @@ and is summarized below in section 2. Every completed release lives, verbatim,
 in [`docs/history/completed-releases.md`](docs/history/completed-releases.md);
 this document references them by version + status only.
 
-What remains falls into four kinds of work that are **not** interchangeable —
-mixing them once made the roadmap read "everything is done" over real gaps:
-
-1. **Genuinely unbuilt engineering** — Release 3.7's four milestones, Release
-   3.8's six (defined 2026-09-06, sequenced after 3.7) and the recorded
-   cross-cutting items. This is the only kind an autonomous agent can close on
-   its own.
-2. **Elevated / hardware / human verification** — SYSTEM rights, a physical
-   Android phone, or an operator at an authenticated session; no autonomous
-   test can produce these.
-3. **Product / design decisions** — waiting on a judgement, not on time or
-   engineering. These have one durable home:
-   [`docs/governance/open-decisions.md`](docs/governance/open-decisions.md).
-   **Nine of the ten are now answered** (2026-09-06 closed D-001 through D-005,
-   D-007 and D-008); only D-006's owner-intent labels remain open, and its
-   ruling already released the work it was blocking. A decision raised only in
-   conversation gets made by default, by whichever agent next touches the code.
-4. **Calendar-gated accrual** — the 7/90-day trend windows fill only as
-   time passes with capture running.
+Open work is one of four kinds — unbuilt engineering, human verification,
+product decisions, calendar-gated accrual — and this file tracks only the
+first; the others and their ledgers are named in
+[`docs/governance/kinds-of-work.md`](docs/governance/kinds-of-work.md).
 
 ---
 

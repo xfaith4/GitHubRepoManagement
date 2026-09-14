@@ -428,12 +428,23 @@ intact — the reasoning is what stops the next agent reopening a settled point.
   ratchets are recorded in the queue "via `scripts/Add-OperatorVerification.ps1`".
   The script writes only `evidence/operator-verification-log.jsonl`; it has no
   queue mode. The rewrite's six steps do not include changing it.
-- **Why it is not an agent's call.** The queue's row shape (Id / Needs / Action /
-  Ratchets) is Ben's, and whether a done row is deleted by the script or by hand
-  decides who owns that file.
-- **Default if unanswered.** The queue is edited by hand; the script keeps
-  writing the JSONL log. The two sentences that name the script stay as the
-  intended end state.
+- **Why it was not an agent's call.** The queue's row shape (Id / Needs /
+  Action / Ratchets) is Ben's, and whether a done row is deleted by the script
+  or by hand decides who owns that file.
+- **Decision (Ben, 2026-09-13).** **Yes — the script appends; it never
+  deletes.** Two governance documents describing an end state the script does
+  not implement is the same silent drift the structure policy forbids between
+  the audit script and `.gitignore`; leaving it was the worst of the three
+  options. Appending a Ratchets row does not transfer ownership of the queue:
+  the row is a record of something a person verified, and removing a done row
+  remains a human act, in the same spirit as D-009 (show the verdict, the
+  operator clicks). The JSONL log stays the source of truth.
+- **What it changes.** `Add-OperatorVerification.ps1` gains a queue write
+  after the JSONL append. It is **idempotent on Id** — re-running for a
+  verification already in the queue changes nothing — and it writes the log
+  first, so a failed queue edit leaves the log complete rather than the
+  reverse. It has no delete path. ROADMAP §3 and `operator-queue.md` need no
+  change; they now describe what exists.
 - **Blocks.** Nothing.
 
 ### D-017 — Where does the "four kinds of work" taxonomy live?
@@ -445,9 +456,22 @@ intact — the reasoning is what stops the next agent reopening a settled point.
   This Document Is"), which the rewrite did not name. Its kinds 2 and 3
   (human verification; decisions) now have their own ledgers — the operator
   queue and this file — so the list may be redundant rather than misplaced.
-- **Why it is not an agent's call.** Deleting a taxonomy Ben wrote is his
+- **Why it was not an agent's call.** Deleting a taxonomy Ben wrote is his
   call; relocating it kept the text intact.
-- **Default if unanswered.** It stays in §1 as moved.
+- **Decision (Ben, 2026-09-13).** **It moves to governance; §1 keeps one
+  sentence.** The roadmap follows a contract imposed on every repository in
+  the portfolio, and that contract should not carry a 19-line description of
+  how this one repository organises its work. An agent reading the roadmap
+  needs only the kind the roadmap tracks. Kinds 2 and 3 already have ledgers,
+  so the list was mostly pointing elsewhere; the full text is worth keeping
+  because it is the one place all four kinds and their homes are named
+  together.
+- **What it changes.** The list moves verbatim to
+  `docs/governance/kinds-of-work.md` beside `operator-queue.md`, and each kind
+  links to its ledger. ROADMAP §1 replaces it with a single sentence naming
+  the four kinds and linking that file. The preamble stays within R022 with
+  room to spare. If kinds 1 or 4 have no home of their own, the governance
+  file is their pointer until they do.
 - **Blocks.** Nothing.
 
 ### D-018 — Convert the existing `(state: …)` markers to the new vocabulary?
@@ -461,10 +485,33 @@ intact — the reasoning is what stops the next agent reopening a settled point.
   `[x]`, which means it archives in the same PR — a sweep the rewrite's six
   steps did not ask for and R020 does not enforce (it checks for `check:`
   only). Nothing was converted.
-- **Why it is not an agent's call.** Marking 3.6 `verified` closes the release;
+- **Why it was not an agent's call.** Marking 3.6 `verified` closes the release;
   its field proof would move wholesale to OQ-1. That is the rewrite's intent,
   but it is a release closure, not a rename.
-- **Default if unanswered.** Markers stay as written; each item converts when
-  it is next touched, and R020 (a warning this PR, an error next) is what
-  brings it forward.
-- **Blocks.** Nothing.
+- **Decision (Ben, 2026-09-13).** **Convert everything now, deliberately, in
+  two PRs.** The default — each marker converts when next touched, with R020
+  escalating to an error — hands the closure of Release 3.6 to whichever agent
+  trips the rule first. That is the exact failure this file exists to prevent:
+  a decision made by default, by whoever touches the code next.
+  **Conversion is by evidence, not by name.** A milestone whose `check:` is
+  green in CI is `verified`. A milestone with a `check:` that is not green, or
+  carrying `scaffolded` / `smoke-tested` with no check, is `built`. A milestone
+  with no implementation is `planned`. The retired names carry no information
+  the check does not.
+  **`verified` means the CI check is green.** Operator verification is a
+  separate fact recorded in the operator queue and the JSONL log, never
+  implied by `verified` or by archiving. An agent must neither refuse to
+  convert on the grounds that `verified` needs Windows/WSL proof, nor read an
+  archived milestone as operator sign-off.
+- **What it changes.**
+  **PR 1 — mechanical sweep.** Every open marker outside Release 3.6 converts
+  by the rule above. The same PR promotes R020 from warning to error, since
+  after the sweep nothing is left to warn about; promoting it before the
+  sweep would have blocked the sweep itself.
+  **PR 2 — closure of Release 3.6, titled as such.** The six milestones move
+  to `verified`, archive per the rewrite, and their field proof moves to
+  OQ-1. The PR adds a tracked `evidence/verified/release-3.6/` entry — the
+  structure policy carves that path out precisely so a closure is reviewable
+  in the PR rather than inferred from a state flip. It is not merged by a
+  watch on green; Ben reviews it.
+- **Blocks.** Nothing. R020's promotion to error waits on PR 1.
