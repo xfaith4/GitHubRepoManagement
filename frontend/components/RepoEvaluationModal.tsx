@@ -1,7 +1,7 @@
-import React, { useState, useCallback } from 'react';
-import type { RepoEvaluationResult, EvaluationFinding, EvaluationFindingSeverity, EvaluationFindingCategory } from '../types';
-import { evaluateRepo, createRepoRoadmap, runConclusionNextAction } from '../services/apiClient';
-import type { FoundationNextAction } from '../lib/foundationConclusion';
+import React, { useState, useCallback, useEffect } from 'react';
+import type { AiEgressRequest, RepoEvaluationResult, EvaluationFinding, EvaluationFindingSeverity, EvaluationFindingCategory } from '../types';
+import { evaluateRepo, createRepoRoadmap, getSettings, runConclusionNextAction } from '../services/apiClient';
+import { explainPrivateScopeAction, type FoundationNextAction } from '../lib/foundationConclusion';
 import OutcomeCard from './OutcomeCard';
 import { SpinnerIcon } from './icons';
 
@@ -82,13 +82,59 @@ export const RepoEvaluationModal: React.FC<Props> = ({ repoName, localPath, onCl
   const [roadmapContent, setRoadmapContent] = useState('');
   const [createError, setCreateError] = useState('');
   const [actionSummary, setActionSummary] = useState('');
+  const [pendingEgress, setPendingEgress] = useState<{ action: FoundationNextAction; request: AiEgressRequest } | null>(null);
+  const [sendingEgress, setSendingEgress] = useState(false);
+  const [privateScopeRepos, setPrivateScopeRepos] = useState<string[]>([]);
+
+  // 3.7 M4c — private scope is a setting; the card disables the AI action for
+  // a marked repository before it is clicked. The backend refuses regardless.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const settings = await getSettings();
+        if (!cancelled) setPrivateScopeRepos(settings.aiPrivateScopeRepos ?? []);
+      } catch {
+        // Settings unreadable: the card stays enabled and the backend still refuses.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Release 3.6 M2 — the conclusion's next action is preview-first: it reports
-  // what it would do and applies nothing, so running it needs no confirmation.
+  // what it would do and applies nothing. 3.7 M4c — an action that would send a
+  // file to an AI provider comes back first as a request naming the provider
+  // and the file; nothing is sent until the operator confirms that request.
   const handleNextAction = useCallback(async (action: FoundationNextAction) => {
     setActionSummary('');
+    setPendingEgress(null);
     const outcome = await runConclusionNextAction(action);
-    setActionSummary(outcome.summary);
+    setActionSummary(outcome.egressRequest ? '' : outcome.summary);
+    if (outcome.egressRequest) setPendingEgress({ action, request: outcome.egressRequest });
+  }, []);
+
+  const confirmEgress = useCallback(async () => {
+    if (!pendingEgress) return;
+    setSendingEgress(true);
+    try {
+      const outcome = await runConclusionNextAction(pendingEgress.action, {
+        providerId: pendingEgress.request.providerId,
+        file: pendingEgress.request.file,
+      });
+      // The provider or file changed between asking and confirming: ask again.
+      setPendingEgress(outcome.egressRequest ? { action: pendingEgress.action, request: outcome.egressRequest } : null);
+      setActionSummary(outcome.egressRequest ? '' : outcome.summary);
+    } catch (e) {
+      setPendingEgress(null);
+      setActionSummary(e instanceof Error ? e.message : 'The preview could not be started.');
+    } finally {
+      setSendingEgress(false);
+    }
+  }, [pendingEgress]);
+
+  const cancelEgress = useCallback(() => {
+    setPendingEgress(null);
+    setActionSummary('Not sent. Nothing left this machine.');
   }, []);
 
   const runEvaluation = useCallback(async () => {
@@ -190,12 +236,53 @@ export const RepoEvaluationModal: React.FC<Props> = ({ repoName, localPath, onCl
                   Findings below are the detail behind it. It is absent only when
                   the portfolio index does not know this repository yet. */}
               {result.conclusion ? (
-                <OutcomeCard conclusion={result.conclusion} onRunNextAction={handleNextAction} />
+                <OutcomeCard
+                  conclusion={result.conclusion}
+                  onRunNextAction={handleNextAction}
+                  actionDisabledReason={explainPrivateScopeAction(result.conclusion.nextAction, privateScopeRepos)}
+                />
               ) : (
                 <p className="text-xs text-gray-500">
                   No portfolio conclusion yet for {repoName} — it is not in the portfolio index. Run a portfolio scan to
                   have the product reach one.
                 </p>
+              )}
+              {pendingEgress && (
+                <div role="alertdialog" aria-labelledby="ai-egress-title" className="bg-gray-900 border border-amber-600/70 rounded-lg px-4 py-3 space-y-2">
+                  <p id="ai-egress-title" className="text-sm font-semibold text-white">
+                    Send this file to {pendingEgress.request.providerLabel}?
+                  </p>
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+                    <dt className="text-gray-400">File</dt>
+                    <dd className="font-mono text-gray-200 break-all">{pendingEgress.request.file}</dd>
+                    <dt className="text-gray-400">Provider</dt>
+                    <dd className="text-gray-200">
+                      {pendingEgress.request.providerLabel}
+                      {pendingEgress.request.modelId ? ` (${pendingEgress.request.modelId})` : ''}
+                    </dd>
+                  </dl>
+                  <p className="text-sm text-gray-400">Nothing has been sent yet. The preview writes nothing to the repository.</p>
+                  <div className="flex gap-2 justify-end">
+                    <button
+                      type="button"
+                      onClick={cancelEgress}
+                      disabled={sendingEgress}
+                      title={sendingEgress ? 'The file is already being sent; wait for the preview.' : 'Sends nothing and closes this request.'}
+                      className="px-3 py-1.5 text-sm text-gray-300 hover:text-white border border-gray-600 hover:border-gray-400 rounded-lg transition-colors"
+                    >
+                      Don't send
+                    </button>
+                    <button
+                      type="button"
+                      onClick={confirmEgress}
+                      disabled={sendingEgress}
+                      title={sendingEgress ? 'The file is being sent; wait for the preview.' : `Sends ${pendingEgress.request.file} to ${pendingEgress.request.providerLabel}. Nothing is written to the repository.`}
+                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 disabled:bg-gray-700 disabled:text-gray-500 text-white text-sm rounded-lg font-medium transition-colors"
+                    >
+                      {sendingEgress ? 'Sending…' : `Send to ${pendingEgress.request.providerLabel}`}
+                    </button>
+                  </div>
+                </div>
               )}
               {actionSummary && (
                 <div className="bg-indigo-950/50 border border-indigo-700 rounded px-3 py-2 text-xs text-indigo-200">

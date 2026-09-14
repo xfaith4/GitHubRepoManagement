@@ -66,8 +66,11 @@ the operator queue is a separate file. Take the first `[ ]` and open a PR.
       complete roadmaps. Route on the planning domain's case (no roadmap, prose
       roadmap, parse error, below contract-ready, complete below contract-ready),
       each to its own runnable preview, configured in `foundation-domains.json`
-      `actionsByCase`. The check asserts properties and that the cohort routes to
-      more than one action — never a ratio of repositories. _(state: built)_
+      `actionsByCase`. No one-click egress: an action that reaches an AI provider
+      sends nothing until the operator confirms the provider and the file, and
+      nothing for a repository marked private scope in Settings. The check asserts
+      properties and that the cohort routes to more than one action — never a
+      ratio of repositories. _(state: built)_
       `check: pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort evidence/trials/release-3.7/cohort.json -Assert action-routing -FailOnError`
 - [ ] **3.7 / M5 prep — previews staged, not applied.** For each of the eight
       `strengthen` repositories, generate the preview the product recommends and

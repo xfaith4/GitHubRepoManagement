@@ -11,6 +11,12 @@ import {
   summarizeRepositoryConclusion,
   isRunnableNextAction,
   summarizeNextActionResult,
+  AI_EGRESS_ROUTES,
+  RUNNABLE_NEXT_ACTION_ROUTES,
+  egressRequestFromError,
+  explainPrivateScopeAction,
+  isAiEgressAction,
+  parseAiEgressRequest,
 } from './foundationConclusion';
 
 // The wire shape GET /api/portfolio/conclusions/{repoId} serves (data.conclusion),
@@ -191,5 +197,50 @@ describe('isRunnableNextAction - M4c routes', () => {
 
   it('still refuses a route outside the preview-first flows', () => {
     expect(isRunnableNextAction({ ...base, route: '/api/roadmap/repair/apply', body: { repoName: 'r' } })).toBe(false);
+  });
+});
+
+describe('AI egress - no one-click egress (M4c)', () => {
+  const base = { domain: 'planning', kind: 'k', label: 'l', method: 'POST' as const, previewFirst: true };
+  const aiAction = { ...base, route: '/api/ai/docs/improve/preview', body: { repoName: 'Private-Repo', docType: 'roadmap' } };
+  const asking = {
+    previewState: 'ai-egress-confirmation-required',
+    previewId: null,
+    egress: { state: 'confirmation-required', providerId: 'anthropic', providerLabel: 'Anthropic', modelId: 'claude-x', file: 'C:\\r\\ROADMAP.md', reason: 'needs your confirmation' },
+  };
+
+  it('every AI egress route is a runnable route, and only AI routes count as egress', () => {
+    for (const route of AI_EGRESS_ROUTES) expect(RUNNABLE_NEXT_ACTION_ROUTES).toContain(route);
+    expect(isAiEgressAction(aiAction)).toBe(true);
+    expect(isAiEgressAction({ ...base, route: '/api/roadmap/repair/preview', body: { repoName: 'r' } })).toBe(false);
+  });
+
+  it('reads the confirmation request, naming the provider and the file', () => {
+    expect(parseAiEgressRequest(asking)).toEqual({ providerId: 'anthropic', providerLabel: 'Anthropic', modelId: 'claude-x', file: 'C:\\r\\ROADMAP.md', reason: 'needs your confirmation' });
+    expect(summarizeNextActionResult(asking)).toBe('Waiting for your confirmation. Nothing has been sent.');
+  });
+
+  it('cannot confirm a request that names no provider or no file', () => {
+    expect(parseAiEgressRequest({ ...asking, egress: { ...asking.egress, file: '' } })).toBeNull();
+    expect(parseAiEgressRequest({ ...asking, egress: { ...asking.egress, providerId: '' } })).toBeNull();
+    expect(parseAiEgressRequest({ proposedContent: '# plan' })).toBeNull();
+  });
+
+  it('reports a private-scope refusal as not previewable, with its reason', () => {
+    expect(summarizeNextActionResult({ previewState: 'ai-egress-blocked', blockReason: 'Private-Repo is marked private scope in Settings.' }))
+      .toBe('Not previewable: Private-Repo is marked private scope in Settings.');
+  });
+
+  it('disables an AI action for a private-scope repository, matching names without case', () => {
+    expect(explainPrivateScopeAction(aiAction, ['private-repo'])).toMatch(/marked private scope in Settings/);
+    expect(explainPrivateScopeAction(aiAction, ['Other'])).toBeNull();
+    expect(explainPrivateScopeAction({ ...base, route: '/api/roadmap/repair/preview', body: { repoName: 'Private-Repo' } }, ['Private-Repo'])).toBeNull();
+  });
+
+  it('recognizes only the confirmation-required error as an egress request', () => {
+    const err = Object.assign(new Error('needs your confirmation'), { name: 'AiEgressConfirmationRequiredError', egressRequest: parseAiEgressRequest(asking) });
+    expect(egressRequestFromError(err)?.file).toBe('C:\\r\\ROADMAP.md');
+    expect(egressRequestFromError(new Error('boom'))).toBeNull();
+    expect(egressRequestFromError('not an error')).toBeNull();
   });
 });

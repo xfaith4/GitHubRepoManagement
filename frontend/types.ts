@@ -145,6 +145,11 @@ export interface AppSettings {
    * in settings.json or transmitted from the browser.
    */
   gitHubTokenEnvVar?: string;
+  /**
+   * 3.7 M4c — repositories marked private scope: their files are never sent to
+   * an AI provider. Names only; stored as ai.privateScopeRepos.
+   */
+  aiPrivateScopeRepos?: string[];
 }
 
 /** Reported by GET /api/auth/github/status — diagnostics for the env var name. */
@@ -1721,6 +1726,25 @@ export interface AiDocImprovePreviewRequest {
   /** Optional inline content; when omitted the backend resolves it from the roadmap cache or portfolio index. */
   currentContent?: string;
   path?: string;
+  /** 3.7 M4c — the provider and file the operator agreed to send; see AiEgressRequest. */
+  egressConfirmation?: AiEgressConfirmation;
+}
+
+/**
+ * 3.7 M4c — what an AI preview would send, and where, before anything is sent.
+ * The backend answers an unconfirmed external request with this and sends nothing.
+ */
+export interface AiEgressRequest {
+  providerId: string;
+  providerLabel: string;
+  modelId: string | null;
+  file: string;
+  reason: string;
+}
+
+export interface AiEgressConfirmation {
+  providerId: string;
+  file: string;
 }
 
 export interface AiDocImprovePreviewResult {

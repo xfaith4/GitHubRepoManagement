@@ -1,4 +1,4 @@
-import { type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type BackgroundScanStatus, type PortfolioSnapshot, type RepoStatus, type RepoScopeClassification, type RepoScopeSummary, type RepoStaleness, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type RepositoryImprovementPreview, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioTechInventoryResult, type TechInventoryEntry, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioAssessmentScanSummary, type PortfolioChangeState, type PortfolioScanDecisionReason, type PortfolioScanStatus, type RepoCurationState, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocUsage, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult, type GitHubAuthStatus, type ProviderToken, type ProviderAvailability } from '../types';
+import { type AiEgressConfirmation, type AiEgressRequest, type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type BackgroundScanStatus, type PortfolioSnapshot, type RepoStatus, type RepoScopeClassification, type RepoScopeSummary, type RepoStaleness, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type RepositoryImprovementPreview, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioTechInventoryResult, type TechInventoryEntry, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioAssessmentScanSummary, type PortfolioChangeState, type PortfolioScanDecisionReason, type PortfolioScanStatus, type RepoCurationState, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocUsage, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult, type GitHubAuthStatus, type ProviderToken, type ProviderAvailability } from '../types';
 import { type AutomationHealthPayload } from '../lib/automationStatus';
 import { type PackagedItem } from '../lib/packagedItems';
 import { type RunnerPresencePayload } from '../lib/runnerPresence';
@@ -13,6 +13,7 @@ import {
   type RepositoryConclusion,
   explainUnrunnableAction,
   summarizeNextActionResult,
+  parseAiEgressRequest,
   isRunnableNextAction,
   normalizeConclusionBasis,
   normalizeConclusionContract,
@@ -243,7 +244,8 @@ function settingsFromApi(data: any): AppSettings {
     zipArchive: true,
     scanDepth: Number(root?.inventory?.maxDepth ?? 3),
     githubUser: (root?.reconcile?.gitHubOwner as string | undefined) ?? '',
-    gitHubTokenEnvVar: (root?.secrets?.gitHubTokenEnvVar as string | undefined) ?? 'GITHUB_TOKEN'
+    gitHubTokenEnvVar: (root?.secrets?.gitHubTokenEnvVar as string | undefined) ?? 'GITHUB_TOKEN',
+    aiPrivateScopeRepos: Array.isArray(root?.ai?.privateScopeRepos) ? root.ai.privateScopeRepos.map(String) : []
   };
 }
 
@@ -853,7 +855,8 @@ const mockSettings: AppSettings = {
   zipArchive: true,
   scanDepth: 3,
   githubUser: '',
-  gitHubTokenEnvVar: 'GITHUB_TOKEN'
+  gitHubTokenEnvVar: 'GITHUB_TOKEN',
+  aiPrivateScopeRepos: []
 };
 
 const mockArtifacts: Record<string, Artifact[]> = {};
@@ -2509,21 +2512,33 @@ export async function getRepositoryConclusion(repoId: string): Promise<{ conclus
  * is checked against the flows this console actually exposes before anything is
  * sent. Every allowed route previews or reports; none applies a change.
  */
-export async function runConclusionNextAction(action: FoundationNextAction): Promise<{ ok: boolean; summary: string }> {
+export async function runConclusionNextAction(
+  action: FoundationNextAction,
+  egressConfirmation?: AiEgressConfirmation
+): Promise<{ ok: boolean; summary: string; egressRequest?: AiEgressRequest }> {
   if (!isRunnableNextAction(action)) {
     throw new Error(explainUnrunnableAction(action) ?? 'This action cannot be run from here.');
   }
   if (USE_MOCK_API) {
     return { ok: true, summary: 'Mock API: no preview was generated.' };
   }
+  // 3.7 M4c: the confirmation rides only on the request the operator agreed
+  // to; the first request carries none, so an AI route answers with what it
+  // would send and where, and sends nothing.
+  const body = egressConfirmation ? { ...action.body, egressConfirmation } : action.body;
   const data = await postJson<{ success?: boolean; data?: Record<string, unknown> } | null>(
     action.route.replace(/^\/api/, ''),
-    action.body
+    body
   );
+  const result = (data?.data ?? {}) as Record<string, unknown>;
+  const egressRequest = parseAiEgressRequest(result);
   // Each preview flow names its result differently; report what came back
   // rather than inventing a uniform shape none of them actually has, and
   // report a flow that declined as declined.
-  const summary = summarizeNextActionResult((data?.data ?? {}) as Record<string, unknown>);
+  const summary = summarizeNextActionResult(result);
+  if (egressRequest) {
+    return { ok: false, summary, egressRequest };
+  }
   return { ok: data?.success !== false && !summary.startsWith('Not previewable'), summary };
 }
 
@@ -2773,6 +2788,19 @@ function parseAiUsage(raw: unknown): AiDocUsage {
   };
 }
 
+/**
+ * 3.7 M4c — the backend would send a file to an AI provider and is waiting
+ * for the operator to confirm that provider and that file. Nothing was sent.
+ */
+export class AiEgressConfirmationRequiredError extends Error {
+  readonly egressRequest: AiEgressRequest;
+  constructor(egressRequest: AiEgressRequest) {
+    super(egressRequest.reason || `Sending ${egressRequest.file} to ${egressRequest.providerLabel} needs your confirmation. Nothing has been sent.`);
+    this.name = 'AiEgressConfirmationRequiredError';
+    this.egressRequest = egressRequest;
+  }
+}
+
 export async function previewAiDocImprovement(request: AiDocImprovePreviewRequest): Promise<AiDocImprovePreviewResult> {
   const repoName = request.repoName.trim();
   if (!repoName) {
@@ -2787,6 +2815,7 @@ export async function previewAiDocImprovement(request: AiDocImprovePreviewReques
     provider: request.provider ?? '',
     currentContent: request.currentContent ?? '',
     path: request.path ?? '',
+    ...(request.egressConfirmation ? { egressConfirmation: request.egressConfirmation } : {}),
   };
 
   const data = await postJson<any>('/ai/docs/improve/preview', body);
@@ -2795,6 +2824,13 @@ export async function previewAiDocImprovement(request: AiDocImprovePreviewReques
   }
 
   const preview = data.data ?? {};
+  const egressRequest = parseAiEgressRequest(preview);
+  if (egressRequest) {
+    throw new AiEgressConfirmationRequiredError(egressRequest);
+  }
+  if (preview?.previewState === 'ai-egress-blocked') {
+    throw new Error(String(preview?.blockReason ?? 'This repository is marked private scope; nothing was sent.'));
+  }
   return {
     previewId: String(preview?.previewId ?? ''),
     repoName: String(preview?.repoName ?? repoName),

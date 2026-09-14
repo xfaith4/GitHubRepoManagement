@@ -438,6 +438,10 @@ $job = Start-Job -ScriptBlock {
     # supplies its own certificate; this gate wants none.
     $env:REPO_MGMT_TLS_PFX = ''
     $env:REPO_MGMT_TLS_PFX_PASSWORD = ''
+    # 3.7 M4c: a placeholder, never a real key. The AI egress step points the
+    # settings copy at this name so an external provider is selectable, then
+    # asserts the host refuses to send without a confirmation.
+    $env:REPO_MGMT_SMOKE_AI_PLACEHOLDER_KEY = 'smoke-placeholder-not-a-key'
     & $ScriptPath -WorkspaceRoot $Root -BindAddress '127.0.0.1' -Port $ListenPort -LogPath $Log -ShutdownSignalPath $SignalPath -QueuePath $QueuePath
 } -ArgumentList $hostScript, $WorkspaceRoot, $logPath, $Port, $shutdownSignalPath, $smokeQueuePath, $script:HostSettingsPath
 
@@ -1701,6 +1705,56 @@ try {
     if ([string]$aiImproveData.providerId -ne 'heuristic') { throw "/api/ai/docs/improve/preview expected heuristic provider, got '$($aiImproveData.providerId)'" }
     if ([string]::IsNullOrWhiteSpace([string]$aiImproveData.proposedContent)) { throw '/api/ai/docs/improve/preview returned empty proposedContent' }
     Write-Host ("  /api/ai/docs/improve/preview -> provider={0} scoreDelta={1} changes={2}" -f $aiImproveData.providerId, $aiImproveData.estimatedScore.delta, @($aiImproveData.changeSummary).Count) -ForegroundColor DarkGray
+
+    # 3.7 M4c -- no one-click egress. The host job carries a placeholder "key"
+    # (never a real one), so pointing the private settings copy at it makes
+    # Anthropic the selected provider. Every request below is one the host must
+    # answer WITHOUT calling the provider; none carries a matching confirmation
+    # for a repository that may send, so none can leave the runner.
+    Write-Host '[STEP] AI egress gate - confirmation naming provider and file; private scope refuses (3.7 M4c)' -ForegroundColor Cyan
+    $settingsBeforeEgress = Get-Content -LiteralPath $script:HostSettingsPath -Raw
+    try {
+        $egressSettings = if ([string]::IsNullOrWhiteSpace($settingsBeforeEgress)) { @{} } else { $settingsBeforeEgress | ConvertFrom-Json -AsHashtable }
+        $egressSettings['ai'] = @{ provider = 'auto'; anthropic = @{ apiKeyEnvVar = 'REPO_MGMT_SMOKE_AI_PLACEHOLDER_KEY'; model = 'smoke-model' } }
+        ($egressSettings | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $script:HostSettingsPath -Encoding UTF8
+
+        $egressAsk = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/ai/docs/improve/preview" -Body @{
+            repoName = $workspaceRepoName; docType = 'readme'; currentContent = $aiImproveSampleReadme
+        }
+        Assert-Not503 -Name '/api/ai/docs/improve/preview (unconfirmed egress)' -Response $egressAsk
+        $egressAskData = $egressAsk.Json.data
+        if ([string]$egressAskData.previewState -ne 'ai-egress-confirmation-required') {
+            throw ("An unconfirmed request to an external provider must be answered with previewState 'ai-egress-confirmation-required' and nothing sent; got '{0}'. Body={1}" -f $egressAskData.previewState, $egressAsk.Content)
+        }
+        if ([string]$egressAskData.egress.providerId -ne 'anthropic' -or [string]::IsNullOrWhiteSpace([string]$egressAskData.egress.file)) {
+            throw "The confirmation request must name the provider and the file it would send. Body=$($egressAsk.Content)"
+        }
+        if ($egressAskData.PSObject.Properties.Name -contains 'proposedContent') {
+            throw 'An unconfirmed egress request returned proposed content, so something produced it without confirmation.'
+        }
+
+        # Private scope is a setting: saved through the settings route, names only.
+        $scopeSave = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/settings" -Body @{ aiPrivateScopeRepos = @("  $workspaceRepoName ", '', $workspaceRepoName) }
+        if ([int]$scopeSave.StatusCode -ne 200) { throw ("Saving aiPrivateScopeRepos failed: HTTP {0}. Body={1}" -f $scopeSave.StatusCode, $scopeSave.Content) }
+        $savedScope = @((Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/settings").Json.data.ai.privateScopeRepos)
+        if ($savedScope.Count -ne 1 -or [string]$savedScope[0] -ne $workspaceRepoName) {
+            throw ("aiPrivateScopeRepos must persist as trimmed, de-duplicated names; got [{0}]" -f ($savedScope -join ', '))
+        }
+
+        # Even a confirmation naming the right provider and file cannot send a private-scope repository.
+        $egressBlocked = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/ai/docs/improve/preview" -Body @{
+            repoName = $workspaceRepoName; docType = 'readme'; currentContent = $aiImproveSampleReadme
+            egressConfirmation = @{ providerId = 'anthropic'; file = [string]$egressAskData.egress.file }
+        }
+        Assert-Not503 -Name '/api/ai/docs/improve/preview (private scope)' -Response $egressBlocked
+        if ([string]$egressBlocked.Json.data.previewState -ne 'ai-egress-blocked' -or [string]::IsNullOrWhiteSpace([string]$egressBlocked.Json.data.blockReason)) {
+            throw ("A private-scope repository must be refused with previewState 'ai-egress-blocked' and a reason, confirmation or not. Body={0}" -f $egressBlocked.Content)
+        }
+        Write-Host ("  unconfirmed -> {0} naming {1} and {2}; private scope with a matching confirmation -> {3}" -f $egressAskData.previewState, $egressAskData.egress.providerId, $egressAskData.egress.file, $egressBlocked.Json.data.previewState) -ForegroundColor DarkGray
+    }
+    finally {
+        Set-Content -LiteralPath $script:HostSettingsPath -Value $settingsBeforeEgress -Encoding UTF8 -NoNewline
+    }
 
     # Templates route serves the data-driven built-in improvement templates.
     $aiTemplatesResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/ai/docs/templates"

@@ -20,8 +20,27 @@ complete below contract-ready → `/api/repo/evaluate` for next-release
 candidates. Every entry says where it was observed. `Test-FoundationConclusion`
 fails a gap whose case the config does not route and a record carrying any
 other action; the payload carries `byNextAction`. The console may now run the
-two new routes, and a declined preview reads "Not previewable: <reason>".
+two new routes, and a declined preview reads "Not previewable" with its reason.
 The repair flow stops calling a prose roadmap "cannot be parsed".
+
+No one-click egress (Ben's ruling). `Invoke-AiDocImprovePreview` now checks
+`Get-AiDocEgressDecision` before any provider call. An external provider
+(Anthropic, OpenAI) runs only when the request carries a confirmation naming
+that provider and that file. Without one, the preview returns
+`ai-egress-confirmation-required`, naming both, and sends nothing. A repository
+listed in `ai.privateScopeRepos` is refused (`ai-egress-blocked`) even with a
+confirmation. The offline heuristic provider sends nothing and asks nothing.
+The gate lives in the module, so every caller passes through it: the outcome
+card, the Operations docs panel, and scheduled doc refinement, which records a
+gated preview as an error. Private scope is a setting, a list of names saved
+through `POST /api/settings` (`aiPrivateScopeRepos`). The card disables the AI
+action for a marked repository, and both console surfaces show the provider,
+model and file before offering "Send". The action-routing check reads which
+host routes reach a provider from the host source and requires the console to
+ask before each one. Against a stand-in provider, it asserts that nothing is
+sent unconfirmed, for another file or provider, or for private scope, and that
+a matching confirmation sends exactly once. The api-host smoke asserts the
+route's answers without sending anything.
 
 Check: `pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort
 evidence/trials/release-3.7/cohort.json -Assert action-routing -FailOnError`.

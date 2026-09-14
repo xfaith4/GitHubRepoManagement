@@ -210,6 +210,149 @@ function Get-AiDocProviderAvailability {
     }
 }
 
+<#
+.SYNOPSIS
+    Pick the provider a preview would use, without calling it.
+.DESCRIPTION
+    One function so the egress gate and the preview cannot disagree: the
+    operator confirms the provider this returns, and the preview runs that one.
+#>
+function Resolve-AiDocProviderSelection {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory = $true)][object]$ProviderSettings,
+        [Parameter(Mandatory = $true)][object]$Availability,
+        [Parameter()][string]$Provider = ''
+    )
+
+    $warnings = [System.Collections.Generic.List[string]]::new()
+    $requested = if (-not [string]::IsNullOrWhiteSpace($Provider)) { $Provider.ToLowerInvariant() } else { $ProviderSettings.configuredProvider.ToLowerInvariant() }
+    if ([string]::IsNullOrWhiteSpace($requested)) { $requested = 'auto' }
+
+    $selected = 'heuristic'
+    if ($requested -eq 'heuristic') {
+        $selected = 'heuristic'
+    }
+    elseif ($requested -eq 'anthropic') {
+        if ($Availability.anthropic) { $selected = 'anthropic' }
+        else { $warnings.Add('Anthropic provider requested but no API key is configured; falling back to the offline heuristic provider.') }
+    }
+    elseif ($requested -eq 'openai') {
+        if ($Availability.openai) { $selected = 'openai' }
+        else { $warnings.Add('OpenAI provider requested but no API key is configured; falling back to the offline heuristic provider.') }
+    }
+    else {
+        # auto
+        if ($Availability.anthropic) { $selected = 'anthropic' }
+        elseif ($Availability.openai) { $selected = 'openai' }
+        else {
+            $selected = 'heuristic'
+            $warnings.Add('No AI provider key configured; using the offline heuristic provider. Set an Anthropic or OpenAI API key to enable AI rewrites.')
+        }
+    }
+
+    $modelId = switch ($selected) {
+        'anthropic' { [string]$ProviderSettings.anthropicModel }
+        'openai' { [string]$ProviderSettings.openAiModel }
+        default { $null }
+    }
+    return [pscustomobject]@{
+        selected = $selected
+        label    = switch ($selected) { 'anthropic' { 'Anthropic' } 'openai' { 'OpenAI' } default { 'the offline heuristic provider' } }
+        modelId  = $modelId
+        external = ($selected -ne 'heuristic')
+        warnings = @($warnings)
+    }
+}
+
+<#
+.SYNOPSIS
+    True when settings mark the repository private scope (ai.privateScopeRepos).
+.DESCRIPTION
+    A private-scope repository's files never go to an external AI provider.
+    The mark is operator-authored and matched by repository name, ignoring case.
+#>
+function Test-AiDocPrivateScope {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoName,
+        [Parameter()][object]$Settings = $null
+    )
+
+    $ai = _AiGetField -Obj $Settings -Name 'ai' -Default $null
+    foreach ($name in @(_AiGetField -Obj $ai -Name 'privateScopeRepos' -Default @())) {
+        if ([string]::Equals(([string]$name).Trim(), $RepoName.Trim(), [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+    }
+    return $false
+}
+
+<#
+.SYNOPSIS
+    Decide whether a preview may send a document to its provider (3.7 M4c).
+.DESCRIPTION
+    No one-click egress (Ben, 2026-09-14). Nothing leaves the machine unless the
+    caller has confirmed the exact provider and file this decision names; a
+    repository marked private scope never leaves at all. The offline heuristic
+    provider sends nothing, so it needs neither.
+
+    state: local | blocked | confirmation-required | confirmed.
+    A confirmation for a different provider or file is not a confirmation: the
+    operator agreed to send that file to that provider, nothing else.
+#>
+function Get-AiDocEgressDecision {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoName,
+        [Parameter()][string]$DocType = 'readme',
+        [Parameter()][AllowEmptyString()][string]$DocPath = '',
+        [Parameter()][string]$Provider = '',
+        [Parameter()][object]$Confirmation = $null,
+        [Parameter()][object]$Settings = $null
+    )
+
+    $providerSettings = Get-AiDocProviderSettings -Settings $Settings
+    $availability = Get-AiDocProviderAvailability -ProviderSettings $providerSettings
+    $selection = Resolve-AiDocProviderSelection -ProviderSettings $providerSettings -Availability $availability -Provider $Provider
+    $docName = if ($DocType -eq 'roadmap') { 'ROADMAP.md' } else { 'README.md' }
+    $file = if ([string]::IsNullOrWhiteSpace($DocPath)) { "$docName content supplied for $RepoName" } else { $DocPath }
+    $privateScope = Test-AiDocPrivateScope -RepoName $RepoName -Settings $Settings
+
+    $state = 'local'
+    $reason = "Nothing leaves this machine: $($selection.label) runs locally."
+    if ($selection.external) {
+        $confirmedProvider = [string](_AiGetField -Obj $Confirmation -Name 'providerId' -Default '')
+        $confirmedFile = [string](_AiGetField -Obj $Confirmation -Name 'file' -Default '')
+        if ($privateScope) {
+            $state = 'blocked'
+            $reason = "$RepoName is marked private scope in Settings, so its files are never sent to an AI provider. Nothing was sent to $($selection.label)."
+        }
+        elseif ($confirmedProvider -eq $selection.selected -and $confirmedFile -eq $file) {
+            $state = 'confirmed'
+            $reason = "Confirmed: $file is sent to $($selection.label) ($($selection.modelId))."
+        }
+        else {
+            $state = 'confirmation-required'
+            $reason = "Sending $file to $($selection.label) ($($selection.modelId)) needs your confirmation. Nothing has been sent."
+        }
+    }
+
+    return [pscustomobject]@{
+        state         = $state
+        providerId    = $selection.selected
+        providerLabel = $selection.label
+        modelId       = $selection.modelId
+        external      = [bool]$selection.external
+        file          = $file
+        docType       = $DocType
+        privateScope  = [bool]$privateScope
+        reason        = $reason
+        warnings      = @($selection.warnings)
+    }
+}
+
 # ---------------------------------------------------------------------------
 # Scoring (estimated movement based on required-section coverage)
 # ---------------------------------------------------------------------------
@@ -716,7 +859,9 @@ function Invoke-AiDocImprovePreview {
         [Parameter()][string]$TemplateId = '',
         [Parameter()][string]$CustomPrompt = '',
         [Parameter()][string]$Provider = '',
-        [Parameter()][object]$Settings = $null
+        [Parameter()][object]$Settings = $null,
+        [Parameter()][AllowEmptyString()][string]$DocPath = '',
+        [Parameter()][object]$EgressConfirmation = $null
     )
 
     $previewId = [guid]::NewGuid().ToString('n')
@@ -724,6 +869,24 @@ function Invoke-AiDocImprovePreview {
     $docType = if ($DocType -eq 'roadmap') { 'roadmap' } else { 'readme' }
     $currentContent = if ($null -eq $CurrentContent) { '' } else { $CurrentContent }
     $warnings = [System.Collections.Generic.List[string]]::new()
+
+    # ---- Egress gate (3.7 M4c) ----
+    # Before anything else touches the provider: an external provider runs only
+    # on a confirmation naming it and the file, and never for private scope.
+    # Every caller of this function passes through here, not only the route.
+    $egress = Get-AiDocEgressDecision -RepoName $RepoName -DocType $docType -DocPath $DocPath `
+        -Provider $Provider -Confirmation $EgressConfirmation -Settings $Settings
+    if ($egress.state -eq 'blocked' -or $egress.state -eq 'confirmation-required') {
+        return [pscustomobject]@{
+            previewId    = $null
+            repoName     = $RepoName
+            docType      = $docType
+            previewState = if ($egress.state -eq 'blocked') { 'ai-egress-blocked' } else { 'ai-egress-confirmation-required' }
+            blockReason  = if ($egress.state -eq 'blocked') { $egress.reason } else { $null }
+            egress       = $egress
+            generatedAt  = $now
+        }
+    }
 
     # ---- Resolve template ----
     $templates = Get-AiDocTemplates -WorkspaceRoot $WorkspaceRoot
@@ -740,33 +903,11 @@ function Invoke-AiDocImprovePreview {
     }
 
     # ---- Resolve provider ----
+    # The gate already chose it; the preview runs exactly the provider the
+    # operator confirmed.
     $providerSettings = Get-AiDocProviderSettings -Settings $Settings
-    $availability = Get-AiDocProviderAvailability -ProviderSettings $providerSettings
-
-    $requested = if (-not [string]::IsNullOrWhiteSpace($Provider)) { $Provider.ToLowerInvariant() } else { $providerSettings.configuredProvider.ToLowerInvariant() }
-    if ([string]::IsNullOrWhiteSpace($requested)) { $requested = 'auto' }
-
-    $selected = 'heuristic'
-    if ($requested -eq 'heuristic') {
-        $selected = 'heuristic'
-    }
-    elseif ($requested -eq 'anthropic') {
-        if ($availability.anthropic) { $selected = 'anthropic' }
-        else { $warnings.Add('Anthropic provider requested but no API key is configured; falling back to the offline heuristic provider.') }
-    }
-    elseif ($requested -eq 'openai') {
-        if ($availability.openai) { $selected = 'openai' }
-        else { $warnings.Add('OpenAI provider requested but no API key is configured; falling back to the offline heuristic provider.') }
-    }
-    else {
-        # auto
-        if ($availability.anthropic) { $selected = 'anthropic' }
-        elseif ($availability.openai) { $selected = 'openai' }
-        else {
-            $selected = 'heuristic'
-            $warnings.Add('No AI provider key configured; using the offline heuristic provider. Set an Anthropic or OpenAI API key to enable AI rewrites.')
-        }
-    }
+    $selected = [string]$egress.providerId
+    foreach ($w in @($egress.warnings)) { $warnings.Add([string]$w) }
 
     # ---- Invoke provider ----
     $result = $null
@@ -836,6 +977,8 @@ function Invoke-AiDocImprovePreview {
         }
         usage           = $usage
         warnings        = @($warnings)
+        # What left the machine, and on whose confirmation: state local or confirmed.
+        egress          = $egress
         generatedAt     = $now
     }
 }

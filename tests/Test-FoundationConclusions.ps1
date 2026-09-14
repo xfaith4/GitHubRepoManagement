@@ -42,7 +42,11 @@
         maps, each record carries its case and that case's action, and the
         cases do not collapse onto one route; a config-only change reroutes a
         case with no code change; the validator goes red on a record carrying
-        the wrong action and on a case the config does not map. The trial
+        the wrong action and on a case the config does not map. No one-click
+        egress: every host route that reaches an AI provider is one the console
+        asks about first (AI_EGRESS_ROUTES), and the module sends nothing
+        without a confirmation naming the provider and the file, nothing for a
+        private-scope repository, and exactly once when confirmed. The trial
         cohort, replayed from evidence/trials/release-3.7/cohort-entries.json
         (keyed by index SHA, so CI runs it too), routes to more than one
         action - and the snapshot carries every field the model reads.
@@ -342,6 +346,76 @@ if ($Assert -eq 'action-routing') {
     $caseKinds = @($caseNames | ForEach-Object { [string]$planningDef.actionsByCase.$_.kind })
     if (@($caseKinds | Select-Object -Unique).Count -ne $caseKinds.Count) { $failures.Add("planning cases share an action kind ($($caseKinds -join ', ')); each kind of gap needs its own action") }
 
+    # --- An action that reaches an AI provider asks before it sends ---------
+    # No one-click egress (Ben, 2026-09-14). Which host routes send a file to a
+    # provider is read from the host, not listed here: a route clause whose
+    # body calls Invoke-AiDocImprovePreview. The console must ask before every
+    # one of them, and the module must send nothing without a confirmation
+    # naming the provider and the file, and nothing at all for private scope.
+    $hostSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1') -Raw -Encoding UTF8
+    $clauseMatches = [regex]::Matches($hostSource, "(?m)^\s*'(?:GET|POST|PUT|PATCH|DELETE) (/api/[^']+)'\s*\{")
+    $egressRoutes = [System.Collections.Generic.List[string]]::new()
+    for ($i = 0; $i -lt $clauseMatches.Count; $i++) {
+        $clauseEnd = if ($i + 1 -lt $clauseMatches.Count) { $clauseMatches[$i + 1].Index } else { $hostSource.Length }
+        $clauseText = $hostSource.Substring($clauseMatches[$i].Index, $clauseEnd - $clauseMatches[$i].Index)
+        if ($clauseText -match 'Invoke-AiDocImprovePreview') {
+            $egressRoutes.Add($clauseMatches[$i].Groups[1].Value) | Out-Null
+            if ($clauseText -notmatch '-EgressConfirmation') { $failures.Add("$($clauseMatches[$i].Groups[1].Value) calls Invoke-AiDocImprovePreview without passing the operator's confirmation, so no request through it can ever be confirmed") }
+        }
+    }
+    if ($egressRoutes.Count -eq 0) { $failures.Add('no host route calls Invoke-AiDocImprovePreview; the egress property has lost its scope') }
+    $egressListMatch = [regex]::Match($frontendSource, '(?s)AI_EGRESS_ROUTES:\s*readonly string\[\]\s*=\s*\[(.*?)\];')
+    if (-not $egressListMatch.Success) { throw 'could not read AI_EGRESS_ROUTES from frontend/lib/foundationConclusion.ts' }
+    $consoleEgress = @([regex]::Matches($egressListMatch.Groups[1].Value, "'(/api/[^']+)'") | ForEach-Object { $_.Groups[1].Value })
+    foreach ($route in $egressRoutes) {
+        if ($route -notin $consoleEgress) { $failures.Add("$route sends a file to an AI provider, but the console does not ask before sending (AI_EGRESS_ROUTES)") }
+    }
+
+    $egressProbe = & {
+        . (Join-Path $WorkspaceRoot 'backend\modules\ai\AiDocImprovement.ps1')
+        $providerCalls = [System.Collections.Generic.List[string]]::new()
+        # Stand-ins for the two adapters: a call is recorded, nothing is sent.
+        function Invoke-AnthropicDocProvider { param($ApiKey, $Model, $SystemPrompt, $UserPrompt, $MaxTokens) $null = $ApiKey, $SystemPrompt, $UserPrompt, $MaxTokens; $providerCalls.Add('anthropic') | Out-Null; [pscustomobject]@{ providerId = 'anthropic'; modelId = $Model; proposedContent = "# stand-in`n"; changeSummary = @(); warnings = @(); error = ''; usage = (New-AiDocUsage -Source 'absent') } }
+        function Invoke-OpenAiDocProvider { param($ApiKey, $Model, $SystemPrompt, $UserPrompt, $MaxTokens) $null = $ApiKey, $SystemPrompt, $UserPrompt, $MaxTokens; $providerCalls.Add('openai') | Out-Null; [pscustomobject]@{ providerId = 'openai'; modelId = $Model; proposedContent = "# stand-in`n"; changeSummary = @(); warnings = @(); error = ''; usage = (New-AiDocUsage -Source 'absent') } }
+        $keyVar = 'REPO_MGMT_EGRESS_CHECK_PLACEHOLDER'
+        [Environment]::SetEnvironmentVariable($keyVar, 'placeholder-not-a-key', 'Process')
+        try {
+            $file = 'C:\fixture\open-repo\ROADMAP.md'
+            $settings = @{ ai = @{ provider = 'auto'; anthropic = @{ apiKeyEnvVar = $keyVar; model = 'check-model' }; openai = @{ apiKeyEnvVar = 'REPO_MGMT_EGRESS_CHECK_UNSET' }; privateScopeRepos = @('Private-Repo') } }
+            $run = {
+                param($RepoName, $Provider, $Confirmation)
+                $before = $providerCalls.Count
+                $p = Invoke-AiDocImprovePreview -WorkspaceRoot $WorkspaceRoot -RepoName $RepoName -DocType 'roadmap' -CurrentContent "# plan`n" -Provider $Provider -Settings $settings -DocPath $file -EgressConfirmation $Confirmation
+                [pscustomobject]@{ preview = $p; sent = ($providerCalls.Count - $before) }
+            }
+            [pscustomobject]@{
+                file         = $file
+                unconfirmed  = & $run 'open-repo' '' $null
+                otherFile    = & $run 'open-repo' '' @{ providerId = 'anthropic'; file = 'C:\fixture\other\ROADMAP.md' }
+                otherProv    = & $run 'open-repo' '' @{ providerId = 'openai'; file = $file }
+                privateScope = & $run 'private-repo' '' @{ providerId = 'anthropic'; file = $file }
+                offline      = & $run 'private-repo' 'heuristic' $null
+                confirmed    = & $run 'open-repo' '' @{ providerId = 'anthropic'; file = $file }
+            }
+        }
+        finally { [Environment]::SetEnvironmentVariable($keyVar, $null, 'Process') }
+    }
+    $stateOf = { param($r) [string]$(if ($r.preview.PSObject.Properties.Name -contains 'previewState') { $r.preview.previewState } else { 'preview' }) }
+    foreach ($case in @(
+            @{ name = 'unconfirmed'; expect = 'ai-egress-confirmation-required' },
+            @{ name = 'otherFile'; expect = 'ai-egress-confirmation-required' },
+            @{ name = 'otherProv'; expect = 'ai-egress-confirmation-required' },
+            @{ name = 'privateScope'; expect = 'ai-egress-blocked' })) {
+        $r = $egressProbe.($case.name)
+        if ($r.sent -ne 0) { $failures.Add("egress: the $($case.name) request reached the provider $($r.sent) time(s); nothing may be sent without a matching confirmation, and nothing for private scope") }
+        if ((& $stateOf $r) -ne $case.expect) { $failures.Add("egress: the $($case.name) request answered '$(& $stateOf $r)', expected '$($case.expect)'") }
+        if ($r.preview.PSObject.Properties.Name -contains 'proposedContent') { $failures.Add("egress: the $($case.name) request produced proposed content without sending, which cannot be") }
+    }
+    if ([string]$egressProbe.unconfirmed.preview.egress.providerId -ne 'anthropic' -or [string]$egressProbe.unconfirmed.preview.egress.file -ne $egressProbe.file) { $failures.Add('egress: the confirmation request must name the provider and the file it would send') }
+    if ([string]::IsNullOrWhiteSpace([string]$egressProbe.privateScope.preview.blockReason)) { $failures.Add('egress: a private-scope refusal must say why') }
+    if ($egressProbe.offline.sent -ne 0 -or [string]$egressProbe.offline.preview.egress.state -ne 'local') { $failures.Add('egress: the offline provider sends nothing and needs no confirmation, private scope or not') }
+    if ($egressProbe.confirmed.sent -ne 1 -or [string]$egressProbe.confirmed.preview.egress.state -ne 'confirmed') { $failures.Add("egress: a confirmation naming the provider and file must send exactly once (sent $($egressProbe.confirmed.sent), state '$($egressProbe.confirmed.preview.egress.state)')") }
+
     # --- Fixtures: every planning case the evaluator can emit ----------------
     $planningFixtures = [ordered]@{
         'no-roadmap'                    = @{ repoName = 'no-roadmap'; hasRoadmap = $false; roadmapState = 'missing'; maturityLevel = 'L0-Absent'; pendingCount = 0 }
@@ -445,7 +519,7 @@ if ($Assert -eq 'action-routing') {
     }
 
     $headline = 'Next-action routing by the kind of gap (3.7 M4c):'
-    $okLine = "ok: {0} planning cases each routed to their own runnable action; evaluator and config agree both ways; a data-only reroute took effect; validator red on a wrong action and an unrouted case; the cohort routes to more than one action" -f $caseNames.Count
+    $okLine = "ok: {0} planning cases each routed to their own runnable action; evaluator and config agree both ways; a data-only reroute took effect; validator red on a wrong action and an unrouted case; the cohort routes to more than one action; AI egress: {1} host route(s) ask first, sends without a matching confirmation {2}, for private scope {3}, when confirmed {4}" -f $caseNames.Count, $egressRoutes.Count, ($egressProbe.unconfirmed.sent + $egressProbe.otherFile.sent + $egressProbe.otherProv.sent), $egressProbe.privateScope.sent, $egressProbe.confirmed.sent
 }
 
 # ============================================================================

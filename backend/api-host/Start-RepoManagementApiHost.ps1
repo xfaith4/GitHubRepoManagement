@@ -9355,6 +9355,13 @@ try {
                         if (-not $existing.ContainsKey('reconcile')) { $existing.reconcile = @{} }
                         $existing.reconcile.gitHubOwner = [string]$body.githubUser
                     }
+                    # 3.7 M4c: repositories whose files never go to an AI provider.
+                    # Names only; the AI preview refuses egress for any of them.
+                    if ($body.ContainsKey('aiPrivateScopeRepos')) {
+                        $requestedPrivateScope = @(@($body.aiPrivateScopeRepos) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Sort-Object -Unique)
+                        if (-not $existing.ContainsKey('ai')) { $existing.ai = @{} }
+                        $existing.ai.privateScopeRepos = $requestedPrivateScope
+                    }
                     # Storing a literal token is no longer supported: settings.json
                     # is git-tracked, so a secret written here leaks on commit.
                     if ($body.ContainsKey('githubToken') -and -not [string]::IsNullOrWhiteSpace([string]$body.githubToken)) {
@@ -11898,46 +11905,49 @@ try {
                     }
 
                     $settings = Get-HostSettings
+                    # 3.7 M4c: the confirmation names the provider and the file; the
+                    # module refuses to send without one that matches.
+                    $egressConfirmation = if ($body.ContainsKey('egressConfirmation')) { $body.egressConfirmation } else { $null }
 
-                    # Resolve current content when the caller did not supply it inline.
-                    if ([string]::IsNullOrWhiteSpace($currentContent)) {
-                        $targetPath = $requestedPath
-                        $docFileName = if ($docType -eq 'roadmap') { 'ROADMAP.md' } else { 'README.md' }
-
-                        if ([string]::IsNullOrWhiteSpace($targetPath) -and $docType -eq 'roadmap') {
-                            $roadmapTtl   = Get-RoadmapCacheTtlSeconds -Settings $settings
-                            $roadmapCache = Get-RoadmapFromCache -TtlSeconds $roadmapTtl
-                            if ($roadmapCache.hit -and $roadmapCache.entries) {
-                                $rEntry = @($roadmapCache.entries) | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1
-                                if ($null -ne $rEntry) {
-                                    $rp = if ($rEntry -is [System.Collections.IDictionary]) { [string]$rEntry['roadmapPath'] } else { [string]$rEntry.roadmapPath }
-                                    if (-not [string]::IsNullOrWhiteSpace($rp)) { $targetPath = $rp }
-                                }
-                            }
-                        }
-
-                        if ([string]::IsNullOrWhiteSpace($targetPath)) {
-                            $indexPayload = Get-PortfolioIndexPayload -WorkspaceRoot $WorkspaceRoot
-                            if ($null -ne $indexPayload -and ($indexPayload.PSObject.Properties.Name -contains 'repos')) {
-                                $indexMatch = @($indexPayload.repos | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1)
-                                if ($indexMatch.Count -gt 0) {
-                                    $localPath = [string](Get-ObjectPropertyValue -InputObject $indexMatch[0] -PropertyName 'localPath' -Default '')
-                                    if (-not [string]::IsNullOrWhiteSpace($localPath)) {
-                                        $candidatePath = Join-Path $localPath $docFileName
-                                        if (Test-Path -LiteralPath $candidatePath) { $targetPath = $candidatePath }
-                                    }
-                                }
-                            }
-                        }
-
-                        if (-not [string]::IsNullOrWhiteSpace($targetPath) -and (Test-Path -LiteralPath $targetPath)) {
-                            try {
-                                $currentContent = Get-Content -LiteralPath $targetPath -Raw -Encoding UTF8 -ErrorAction Stop
-                            } catch {
-                                $currentContent = ''
+                    # Resolve the document's path even when the content came inline:
+                    # the egress confirmation has to name the file being sent.
+                    $targetPath = $requestedPath
+                    $docFileName = if ($docType -eq 'roadmap') { 'ROADMAP.md' } else { 'README.md' }
+                    if ([string]::IsNullOrWhiteSpace($targetPath) -and $docType -eq 'roadmap') {
+                        $roadmapTtl   = Get-RoadmapCacheTtlSeconds -Settings $settings
+                        $roadmapCache = Get-RoadmapFromCache -TtlSeconds $roadmapTtl
+                        if ($roadmapCache.hit -and $roadmapCache.entries) {
+                            $rEntry = @($roadmapCache.entries) | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1
+                            if ($null -ne $rEntry) {
+                                $rp = if ($rEntry -is [System.Collections.IDictionary]) { [string]$rEntry['roadmapPath'] } else { [string]$rEntry.roadmapPath }
+                                if (-not [string]::IsNullOrWhiteSpace($rp)) { $targetPath = $rp }
                             }
                         }
                     }
+
+                    if ([string]::IsNullOrWhiteSpace($targetPath)) {
+                        $indexPayload = Get-PortfolioIndexPayload -WorkspaceRoot $WorkspaceRoot
+                        if ($null -ne $indexPayload -and ($indexPayload.PSObject.Properties.Name -contains 'repos')) {
+                            $indexMatch = @($indexPayload.repos | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1)
+                            if ($indexMatch.Count -gt 0) {
+                                $localPath = [string](Get-ObjectPropertyValue -InputObject $indexMatch[0] -PropertyName 'localPath' -Default '')
+                                if (-not [string]::IsNullOrWhiteSpace($localPath)) {
+                                    $candidatePath = Join-Path $localPath $docFileName
+                                    if (Test-Path -LiteralPath $candidatePath) { $targetPath = $candidatePath }
+                                }
+                            }
+                        }
+                    }
+
+                    # Read current content only when the caller did not supply it inline.
+                    if ([string]::IsNullOrWhiteSpace($currentContent) -and -not [string]::IsNullOrWhiteSpace($targetPath) -and (Test-Path -LiteralPath $targetPath)) {
+                        try {
+                            $currentContent = Get-Content -LiteralPath $targetPath -Raw -Encoding UTF8 -ErrorAction Stop
+                        } catch {
+                            $currentContent = ''
+                        }
+                    }
+                    $docPathForEgress = if (-not [string]::IsNullOrWhiteSpace($targetPath) -and (Test-Path -LiteralPath $targetPath)) { [string]$targetPath } else { '' }
 
                     $preview = Invoke-AiDocImprovePreview `
                         -WorkspaceRoot $WorkspaceRoot `
@@ -11947,13 +11957,23 @@ try {
                         -TemplateId $templateId `
                         -CustomPrompt $customPrompt `
                         -Provider $provider `
-                        -Settings $settings
+                        -Settings $settings `
+                        -DocPath $docPathForEgress `
+                        -EgressConfirmation $egressConfirmation
 
-                    $null = Write-AiDocImprovementHistory -WorkspaceRoot $WorkspaceRoot -Preview $preview
+                    # A gated request sent nothing and produced no preview: no history.
+                    $gatedState = [string](Get-ObjectPropertyValue -InputObject $preview -PropertyName 'previewState' -Default '')
+                    if ($gatedState -notlike 'ai-egress-*') {
+                        $null = Write-AiDocImprovementHistory -WorkspaceRoot $WorkspaceRoot -Preview $preview
+                    }
 
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
-                    Write-HostLog ("[TRACE] ai.docs.improve.preview correlationId={0} done repoName={1} docType={2} provider={3} scoreDelta={4}" -f $correlationId, $repoName, $docType, $preview.providerId, $preview.estimatedScore.delta)
+                    if ($gatedState -like 'ai-egress-*') {
+                        Write-HostLog ("[TRACE] ai.docs.improve.preview correlationId={0} gated repoName={1} docType={2} provider={3} state={4}" -f $correlationId, $repoName, $docType, $preview.egress.providerId, $gatedState)
+                    } else {
+                        Write-HostLog ("[TRACE] ai.docs.improve.preview correlationId={0} done repoName={1} docType={2} provider={3} scoreDelta={4}" -f $correlationId, $repoName, $docType, $preview.providerId, $preview.estimatedScore.delta)
+                    }
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data    = $preview

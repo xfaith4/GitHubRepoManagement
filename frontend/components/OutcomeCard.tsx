@@ -6,6 +6,7 @@ import {
   describeConclusion,
   describeDomainStatus,
   explainUnrunnableAction,
+  isAiEgressAction,
   isRunnableNextAction,
 } from '../lib/foundationConclusion';
 
@@ -74,15 +75,18 @@ export interface OutcomeCardProps {
   onRunNextAction?: (action: FoundationNextAction) => Promise<void> | void;
   /** Shown when the backend reported the conclusion contract broken for this repo. */
   contractViolations?: string[];
+  /** 3.7 M4c — why the caller disables this action here (a private-scope repository's AI action). */
+  actionDisabledReason?: string | null;
 }
 
-export const OutcomeCard: React.FC<OutcomeCardProps> = ({ conclusion, onRunNextAction, contractViolations }) => {
+export const OutcomeCard: React.FC<OutcomeCardProps> = ({ conclusion, onRunNextAction, contractViolations, actionDisabledReason }) => {
   const [running, setRunning] = useState(false);
   const [actionError, setActionError] = useState('');
   const presentation = describeConclusion(conclusion.conclusion);
   const action = conclusion.nextAction;
-  const runnable = isRunnableNextAction(action) && Boolean(onRunNextAction);
-  const unrunnableReason = explainUnrunnableAction(action);
+  const unrunnableReason = explainUnrunnableAction(action) ?? actionDisabledReason ?? null;
+  const runnable = isRunnableNextAction(action) && Boolean(onRunNextAction) && !unrunnableReason;
+  const sendsToAiProvider = isAiEgressAction(action);
 
   const handleRun = useCallback(async () => {
     if (!action || !onRunNextAction) return;
@@ -167,6 +171,11 @@ export const OutcomeCard: React.FC<OutcomeCardProps> = ({ conclusion, onRunNextA
               <span className="text-[11px] text-gray-500">Preview first — nothing is applied.</span>
             )}
           </div>
+          {sendsToAiProvider && !unrunnableReason && (
+            <p className="text-sm text-gray-400">
+              Uses an AI provider. You will see which provider and which file before anything is sent.
+            </p>
+          )}
           {unrunnableReason && <p className="text-xs text-amber-300/90">{unrunnableReason}</p>}
           {actionError && <p className="text-xs text-red-300">{actionError}</p>}
         </div>
