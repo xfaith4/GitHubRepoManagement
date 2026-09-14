@@ -129,6 +129,122 @@ function Test-R023CompletionProse {
     }
 }
 
+# --- R024: a built or verified milestone's check is a step CI runs ---------
+# Ben, 2026-09-14, after M4b shipped `-Assert applicability` as its check line
+# and the suite never ran it: a milestone called built on a check CI does not
+# run is built on nobody's word. CI here is the canonical suite
+# (scripts/Invoke-TestSuite.ps1, which ci-smoke.yml delegates to) plus every
+# workflow `run:` line. A check is run when one CI line names the same target
+# and carries every argument the check passes, switches included: a check run
+# without -FailOnError cannot fail CI. The rule does nothing in a repository
+# with no suite, so the validator stays usable on roadmaps elsewhere.
+
+function Get-CiStepLine {
+    param([Parameter(Mandatory = $true)][string]$RepoRoot)
+    $suitePath = Join-Path $RepoRoot 'scripts/Invoke-TestSuite.ps1'
+    if (-not (Test-Path -LiteralPath $suitePath)) { return }
+    foreach ($l in @(Get-Content -LiteralPath $suitePath -Encoding UTF8)) {
+        if ($l -notmatch '^\s*#') { $l }
+    }
+    $workflowDir = Join-Path $RepoRoot '.github/workflows'
+    if (Test-Path -LiteralPath $workflowDir) {
+        foreach ($wf in @(Get-ChildItem -LiteralPath $workflowDir -File | Where-Object { $_.Extension -in '.yml', '.yaml' })) {
+            foreach ($l in @(Get-Content -LiteralPath $wf.FullName -Encoding UTF8)) {
+                if ($l -match '^\s*(-\s*)?run:\s*(.+)$') { $Matches[2] }
+            }
+        }
+    }
+}
+
+# The command each npm script finally runs, following `npm run X --workspace W`
+# into the workspace's own package.json.
+function Resolve-NpmScriptCommand {
+    param([Parameter(Mandatory = $true)][string]$RepoRoot, [Parameter(Mandatory = $true)][string]$ScriptName, [string]$PackageDir = '')
+    $dir = if ($PackageDir) { Join-Path $RepoRoot $PackageDir } else { $RepoRoot }
+    $pkgPath = Join-Path $dir 'package.json'
+    if (-not (Test-Path -LiteralPath $pkgPath)) { return '' }
+    $scripts = (Get-Content -LiteralPath $pkgPath -Raw -Encoding UTF8 | ConvertFrom-Json).PSObject.Properties['scripts']
+    if ($null -eq $scripts -or $null -eq $scripts.Value.PSObject.Properties[$ScriptName]) { return '' }
+    $command = [string]$scripts.Value.PSObject.Properties[$ScriptName].Value
+    if ($command -match '^npm run (?:--silent )?([\w:\-]+) --workspace[ =]([\w.\-/]+)$') {
+        return Resolve-NpmScriptCommand -RepoRoot $RepoRoot -ScriptName $Matches[1] -PackageDir $Matches[2]
+    }
+    return $command
+}
+
+function ConvertTo-CiToken {
+    param([string]$Text)
+    return (($Text -replace '\\', '/') -replace '^\./', '').Trim("'", '"', ' ')
+}
+
+function Test-R024CheckRunsInCi {
+    param([string[]]$Lines, [string]$RepoRoot = '')
+    if ([string]::IsNullOrWhiteSpace($RepoRoot)) { return }
+    # No suite, no rule. A suite that runs nothing is still a suite, and holds nothing.
+    if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot 'scripts/Invoke-TestSuite.ps1'))) { return }
+    $ciLines = @(Get-CiStepLine -RepoRoot $RepoRoot)
+    $ciText = ($ciLines | ForEach-Object { ConvertTo-CiToken $_ }) -join "`n"
+    # What each npm gate the suite runs actually executes.
+    $npmCommands = @($ciLines | ForEach-Object {
+            if ($_ -match "Invoke-NpmGate\b.*-ScriptName\s+'([\w:\-]+)'") { Resolve-NpmScriptCommand -RepoRoot $RepoRoot -ScriptName $Matches[1] }
+            elseif ($_ -match '\bnpm run (?:--silent )?([\w:\-]+)') { Resolve-NpmScriptCommand -RepoRoot $RepoRoot -ScriptName $Matches[1] }
+        } | Where-Object { $_ })
+    # A script an npm gate runs is a step CI runs (ui:ratchet -> node tools/Measure-UiRatchet.mjs).
+    if ($npmCommands.Count -gt 0) { $ciText += "`n" + (($npmCommands | ForEach-Object { ConvertTo-CiToken $_ }) -join "`n") }
+
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        if ($Lines[$i] -notmatch '^\s*-\s\[( |x)\]') { continue }
+        $end = $i
+        while ($end + 1 -lt $Lines.Count -and $Lines[$end + 1] -match '^\s{2,}\S') { $end++ }
+        $block = $Lines[$i..$end] -join "`n"
+        if ($block -notmatch '\(state:\s*(built|verified)\b') { continue }
+        foreach ($cm in [regex]::Matches($block, '`check:\s*([^`]+)`')) {
+            $check = $cm.Groups[1].Value.Trim()
+            $tokens = @($check -split '\s+' | Where-Object { $_ } | ForEach-Object { ConvertTo-CiToken $_ })
+            $reason = $null
+            if ($tokens.Count -ge 2 -and $tokens[0] -in 'npx', 'npm' -and ($tokens -contains 'vitest' -or $tokens[1] -eq 'test:unit' -or ($tokens[1] -eq 'run' -and $tokens.Count -ge 3 -and $tokens[2] -eq 'test:unit'))) {
+                # A vitest path filter is a subset of the full run.
+                if (-not ($npmCommands | Where-Object { $_ -match '\bvitest run\b' })) { $reason = 'CI runs no vitest suite' }
+            }
+            elseif ($tokens.Count -ge 3 -and $tokens[0] -eq 'npm' -and $tokens[1] -eq 'run') {
+                $target = $tokens[2]
+                if (-not ($ciLines | Where-Object { $_ -match "Invoke-NpmGate\b.*-ScriptName\s+'$([regex]::Escape($target))'" -or $_ -match "\bnpm run (?:--silent )?$([regex]::Escape($target))(\s|$)" })) { $reason = "CI runs no npm script '$target'" }
+            }
+            else {
+                $targetIndex = -1
+                for ($t = 0; $t -lt $tokens.Count; $t++) { if ($tokens[$t] -match '\.(ps1|mjs|cjs|js)$') { $targetIndex = $t; break } }
+                if ($targetIndex -lt 0) {
+                    $reason = 'the validator cannot tell which script it runs'
+                }
+                else {
+                    $leaf = Split-Path $tokens[$targetIndex] -Leaf
+                    $required = @($tokens | Select-Object -Skip ($targetIndex + 1))
+                    $candidates = @($ciText -split "`n" | Where-Object { $_ -match "(?<![\w.\-])$([regex]::Escape($leaf))(?![\w.\-])" })
+                    if ($candidates.Count -eq 0) { $reason = "CI never runs $leaf" }
+                    else {
+                        $matched = $candidates | Where-Object {
+                            $line = $_
+                            @($required | Where-Object { $line -notmatch "(?<![\w.\-/])$([regex]::Escape($_))(?![\w.\-/])" }).Count -eq 0
+                        }
+                        if (-not $matched) {
+                            $missing = @($required | Where-Object { $tok = $_; -not ($candidates | Where-Object { $_ -match "(?<![\w.\-/])$([regex]::Escape($tok))(?![\w.\-/])" }) })
+                            $reason = if ($missing.Count -gt 0) { "CI runs $leaf but never with $($missing -join ' ')" } else { "CI runs $leaf but no single step carries all of: $($required -join ' ')" }
+                        }
+                    }
+                }
+            }
+            if ($reason) {
+                [pscustomobject]@{
+                    Rule     = 'R024-CHECK-RUNS-IN-CI'
+                    Severity = 'error'
+                    Line     = $i + 1
+                    Message  = "Milestone is built or verified on a check CI does not run ($reason): $check. Wire it into scripts/Invoke-TestSuite.ps1 exactly as written, or return the milestone to planned."
+                }
+            }
+        }
+    }
+}
+
 # Wire-up example for the existing script's aggregation loop:
 #   $findings += Test-R020MilestoneCheck   -Lines $lines
 #   $findings += Test-R021OperatorGate     -Lines $lines

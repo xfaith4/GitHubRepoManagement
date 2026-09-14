@@ -335,6 +335,10 @@ Invoke-ScriptGate -Name 'Applicability' -ScriptPath (Join-Path $WorkspaceRoot 't
 # 3.7 M4c - the milestone's own check line.
 Invoke-ScriptGate -Name 'Action routing' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-FoundationConclusions.ps1') -ScriptArgs @('-Cohort', 'evidence/trials/release-3.7/cohort.json', '-Assert', 'action-routing', '-FailOnError')
 
+# Validator R024 - a built or verified milestone's check is a step CI runs; the
+# milestone's own check line. The rule itself also runs inside the lint below.
+Invoke-ScriptGate -Name 'Check runs in CI' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-RoadmapCheckRunsInCi.ps1') -ScriptArgs @('-FailOnError')
+
 Invoke-ScriptGate -Name 'Roadmap structure lint' -ScriptPath (Join-Path $toolsDir 'Test-RoadmapStructure.ps1') -ScriptArgs @('-Path', (Join-Path $WorkspaceRoot 'ROADMAP.md'), '-FailOnError')
 
 # Release 3.4, recorded 2026-08-15. PR #134 shipped a tested 306-line module and
