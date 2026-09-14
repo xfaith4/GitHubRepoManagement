@@ -60,14 +60,17 @@ Intro paragraph.
 #### Engineering milestones
 
 - [ ] Implement the sample endpoint in `backend/sample.ps1`.
+      `check: pwsh ./Verify-Fixture.ps1 -FailOnError`
 
 #### Acceptance criteria
 
 - [ ] The sample endpoint returns a 200 response verified by `npm test`.
+      `check: pwsh ./Verify-Fixture.ps1 -FailOnError`
 
 #### Validation plan
 
 - [ ] Run `npm test` and `Invoke-Pester` against the sample suite.
+      `check: pwsh ./Verify-Fixture.ps1 -FailOnError`
 
 #### Risks and blockers
 
@@ -99,10 +102,12 @@ Intro paragraph.
 #### Engineering milestones
 
 - [ ] Implement the sample endpoint in `backend/sample.ps1`.
+      `check: pwsh ./Verify-Fixture.ps1 -FailOnError`
 
 #### Acceptance criteria
 
 - [ ] The sample endpoint returns a 200 response verified by integration tests.
+      `check: pwsh ./Verify-Fixture.ps1 -FailOnError`
 '@
 
     # Run the validator end-to-end against $Content; return exit code + findings.
@@ -229,6 +234,7 @@ Describe 'Roadmap-quality rules (RQ)' {
 #### Acceptance criteria
 
 - [ ] Something observable happens and is verified by tests.
+      `check: pwsh ./Verify-Fixture.ps1 -FailOnError`
 '@
         (Invoke-Validator -Content $c).codes | Should -Contain 'RQ007-BLOCKED-WITHOUT-BLOCKER'
     }
@@ -263,6 +269,7 @@ Describe 'Roadmap-quality rules (RQ)' {
 
 - [x] First criterion is met and verified.
 - [ ] Second criterion was never finished.
+      `check: pwsh ./Verify-Fixture.ps1 -FailOnError`
 '@
         (Invoke-Validator -Content $c).codes | Should -Contain 'RQ008-DONE-WITH-UNCHECKED-CRITERIA'
     }

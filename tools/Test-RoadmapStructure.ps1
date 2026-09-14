@@ -98,6 +98,19 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Vocabulary rules R020–R023 live beside this script in
+# Test-RoadmapStructure.rules.ps1 so they can be read on their own. Dot-sourced
+# here, before -LoadFunctionsOnly returns, so the Pester suite sees them too.
+# A missing rules file is reported as an error in main rather than skipped: a
+# gate that silently checks nothing is the failure every gate here exists to
+# prevent.
+$script:VocabularyRulesPath = if ($PSScriptRoot) { Join-Path $PSScriptRoot 'Test-RoadmapStructure.rules.ps1' } else { 'Test-RoadmapStructure.rules.ps1' }
+$script:VocabularyRulesLoaded = $false
+if (Test-Path -LiteralPath $script:VocabularyRulesPath) {
+    . $script:VocabularyRulesPath
+    $script:VocabularyRulesLoaded = $true
+}
+
 # ---------------------------------------------------------------------------
 # Defaults — each finding carries a stable code so consumers can suppress.
 # These are the built-in defaults. A roadmap-validation.config.json file (when
@@ -1700,6 +1713,35 @@ Invoke-RuleBlockedReleaseHasBlocker -StatusBlocks $statusBlocks
 Invoke-RuleDoneReleaseCompletion   -StatusBlocks $statusBlocks -Cfg $script:ActiveConfig
 Invoke-RulePlannedReleaseRecommendations -Releases $releases -Cfg $script:ActiveConfig
 Invoke-RuleOpenItemNamesArtifact   -Releases $releases
+
+# --- Vocabulary rules (R020–R023, Test-RoadmapStructure.rules.ps1) ---
+# The rule file reports Rule/Severity/Line/Message; severity is decided HERE so
+# the gate's policy is visible in one place. R021–R023 are errors: an open
+# bullet naming operator-only work, an unbounded status preamble, and a
+# completed item narrated in place instead of archived are the three shapes the
+# 2026-09-13 vocabulary rewrite exists to reject. R020 (every open milestone
+# carries a `check:`) is a warning in the PR that introduced it, so the roadmap
+# could be rewritten without first writing every check; it becomes an error in
+# the next PR that touches this file.
+if (-not $script:VocabularyRulesLoaded) {
+    Add-Finding -Severity 'error' -Code 'R020-RULES-MISSING' -Category 'vocabulary' -Rule 'rules-file' `
+        -Message ('Vocabulary rules file not found at ' + $script:VocabularyRulesPath + '; R020-R023 were not evaluated.') `
+        -RecommendedAction 'Restore tools/Test-RoadmapStructure.rules.ps1 beside this script.'
+} else {
+    $vocabularyRules = @(
+        @{ fn = 'Test-R020MilestoneCheck';    severity = 'warning'; rule = 'milestone-check' },
+        @{ fn = 'Test-R021OperatorGate';      severity = 'error';   rule = 'operator-gate' },
+        @{ fn = 'Test-R022StatusProseLength'; severity = 'error';   rule = 'status-prose' },
+        @{ fn = 'Test-R023CompletionProse';   severity = 'error';   rule = 'completion-prose' }
+    )
+    foreach ($vr in $vocabularyRules) {
+        foreach ($f in @(& $vr.fn -Lines $lines)) {
+            if ($null -eq $f) { continue }
+            Add-Finding -Severity $vr.severity -Code ([string]$f.Rule) -Message ([string]$f.Message) `
+                -Line ([int]$f.Line) -Category 'vocabulary' -Rule $vr.rule
+        }
+    }
+}
 
 # Pretty-print release sequence summary so the operator sees what was parsed.
 Write-Host ''

@@ -27,3 +27,13 @@
   `aggregation.{withinDimension, effortFitFloor}` in `value-scoring.json`
   (model 1.1), implemented in `Portfolio.ValueScorer.ps1`, and covered by the
   module-smoke "effortFit floor" assertion. No longer a drive-by hazard.
+
+## Roadmap turn rule
+
+A session ends with the first `[ ]` in ROADMAP.md "Current focus" started or a PR
+opened against it — never with a status summary, a "record, not an action"
+paragraph, or a request for the operator to verify something. If the item needs an
+operator action, split it: keep the agent half with its `check:`, append the human
+half to `docs/governance/operator-queue.md` with `Add-OperatorVerification.ps1`,
+and take the agent half. `pwsh ./tools/Test-RoadmapStructure.ps1 -FailOnError` must
+pass before the PR is opened; R020–R022 are errors, not warnings.
