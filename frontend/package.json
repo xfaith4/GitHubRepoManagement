@@ -9,7 +9,7 @@
     "build": "npm run ensure:rolldown && vite build",
     "preview": "npm run ensure:rolldown && vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint . --max-warnings 161",
+    "lint": "eslint . --max-warnings 153",
     "test:unit": "vitest run"
   },
   "dependencies": {
