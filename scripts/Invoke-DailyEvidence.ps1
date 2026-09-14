@@ -185,7 +185,8 @@ function Get-GitContext {
 }
 
 # ── ROADMAP implementation-state parsing (the verify-next queue) ──────────────
-# The *(state: ...)* marker usually sits on a WRAPPED continuation line of a
+# The _(state: ...)_ marker (written *(state: ...)* before 2026-08; both are read)
+# usually sits on a WRAPPED continuation line of a
 # multi-line `- [ ]` item, not on the checkbox line itself, so we accumulate an
 # item's text across continuation lines and attribute it to its section heading.
 # Fenced code blocks are skipped so the vocabulary EXAMPLE in section 3 is not
@@ -231,10 +232,10 @@ function Get-RoadmapSurfaces {
         }
 
         if ($null -ne $pendingText) {
-            $sm = [regex]::Match($pendingText, '\*\(state:\s*([a-z][a-z-]*)')
+            $sm = [regex]::Match($pendingText, '[*_]\(state:\s*([a-z][a-z-]*)')
             if ($sm.Success) {
                 $state = $sm.Groups[1].Value
-                $text = ($pendingText -replace '\s*\*\(state:.*$', '').Trim()
+                $text = ($pendingText -replace '\s*[*_]\(state:.*$', '').Trim()
                 if (-not [string]::IsNullOrWhiteSpace($text)) {
                     $norm = ($text.ToLowerInvariant() -replace '\s+', ' ')
                     $idBytes = $sha1.ComputeHash([System.Text.Encoding]::UTF8.GetBytes(("{0}||{1}" -f $pendingRelease, $norm)))
