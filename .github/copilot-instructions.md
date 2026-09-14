@@ -128,7 +128,9 @@ pattern itself:
    (`scripts/Invoke-TestSuite.ps1`, `tools/Test-*.ps1`, `.github/workflows/**`),
    `docs/governance/`, or what a verdict says about a repository is opened as
    a PR and waits for the owner's review (steering contract 10; D-019,
-   2026-09-14). The handoff names it as waiting.
+   2026-09-14). The handoff names it as waiting. **At most two review PRs wait
+   unmerged at once** (steering §5, 2026-09-14): a further item is built and
+   verified on its branch, and its PR is opened only when a slot frees.
 
 ## Conventions
 
