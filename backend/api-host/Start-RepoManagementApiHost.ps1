@@ -6786,12 +6786,27 @@ try {
             # configured; otherwise the plain NetworkStream is used unchanged.
             $activeStream = $null
             if ($null -ne $script:TlsCertificate) {
+                # Who connected, captured before the handshake: once it fails
+                # and the client is closed the endpoint is gone. On 2026-09-13 a
+                # watchdog probing over plain http had produced 122,411 of these
+                # failures, and naming the caller took an afternoon of log
+                # archaeology because the line said nothing about who it was.
+                $tlsRemote = 'unknown'
+                try { $tlsRemote = [string]$client.Client.RemoteEndPoint } catch { $null = $_ }
                 try {
+                    # The handshake runs on this loop, which serves one
+                    # connection at a time, BEFORE Read-HttpRequest applies its
+                    # read timeout. Without a socket timeout here, a client that
+                    # connects and never sends its hello stalls every other
+                    # request until that connection dies -- and a stalled host is
+                    # exactly what the portal watchdog kills.
+                    $client.ReceiveTimeout = $script:ClientIoTimeoutMs
+                    $client.SendTimeout = $script:ClientIoTimeoutMs
                     $sslStream = [System.Net.Security.SslStream]::new($client.GetStream(), $false)
                     $sslStream.AuthenticateAsServer($script:TlsCertificate, $false, [System.Security.Authentication.SslProtocols]::None, $false)
                     $activeStream = $sslStream
                 } catch {
-                    Write-HostLog ("WARN TLS handshake failed: {0}" -f $_.Exception.Message)
+                    Write-HostLog ("WARN TLS handshake failed remote={0}: {1}" -f $tlsRemote, $_.Exception.Message)
                     try { $client.Close() } catch { }
                     continue
                 }

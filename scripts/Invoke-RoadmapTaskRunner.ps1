@@ -154,7 +154,13 @@ if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) { $WorkspaceRoot = Split-Path 
 # H38-16: the codex branch below runs through this.
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\agent-adapters\Adapter.Codex.ps1')
 if ([string]::IsNullOrWhiteSpace($QueuePath)) { $QueuePath = Get-RoadmapQueuePath -WorkspaceRoot $WorkspaceRoot }
-if ([string]::IsNullOrWhiteSpace($StopFilePath)) { $StopFilePath = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.stop' }
+if ([string]::IsNullOrWhiteSpace($StopFilePath)) {
+    # Resolved through REPO_MGMT_RUNNER_CONTROL_ROOT like the portal's writer, so a
+    # stop the console writes lands where this runner is actually watching.
+    $stopControlRoot = [Environment]::GetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT')
+    if ([string]::IsNullOrWhiteSpace($stopControlRoot)) { $stopControlRoot = Join-Path $WorkspaceRoot 'output' }
+    $StopFilePath = Join-Path $stopControlRoot 'roadmap-task-runner.stop'
+}
 $runsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
 
 # Hoisted to an explicit script-scoped value: Invoke-QueuedTask reads it from
@@ -327,13 +333,21 @@ function New-RunnerHeartbeat {
 }
 
 function Get-RunnerHeartbeatPath {
+    <# Must resolve to the SAME file the portal reads, including the
+       REPO_MGMT_RUNNER_CONTROL_ROOT override. A runner that beats into one
+       place while the host reads another is a live runner the portal reports
+       absent. The module smoke compares this against the host's resolver. #>
     param([Parameter(Mandatory)][string]$WorkspaceRoot)
-    return (Join-Path $WorkspaceRoot 'output\roadmap-task-runner.heartbeat.json')
+    $controlRoot = [Environment]::GetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT')
+    if ([string]::IsNullOrWhiteSpace($controlRoot)) { $controlRoot = Join-Path $WorkspaceRoot 'output' }
+    return (Join-Path $controlRoot 'roadmap-task-runner.heartbeat.json')
 }
 
 function Get-RunnerStopFilePath {
     param([Parameter(Mandatory)][string]$WorkspaceRoot)
-    return (Join-Path $WorkspaceRoot 'output\roadmap-task-runner.stop')
+    $controlRoot = [Environment]::GetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT')
+    if ([string]::IsNullOrWhiteSpace($controlRoot)) { $controlRoot = Join-Path $WorkspaceRoot 'output' }
+    return (Join-Path $controlRoot 'roadmap-task-runner.stop')
 }
 
 function Test-RunnerStopRequested {

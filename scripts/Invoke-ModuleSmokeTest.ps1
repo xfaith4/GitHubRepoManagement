@@ -12028,9 +12028,14 @@ Write-Step 'Runner hold - Lane 0.20: the kill switch outlives the runner it stop
     # acceptable at all.
     $holdControlModule = Join-Path $WorkspaceRoot 'backend\modules\automation\Automation.RunnerControl.ps1'
     $holdRunnerScript = Join-Path $WorkspaceRoot 'scripts\Invoke-RoadmapTaskRunner.ps1'
-    foreach ($holdFile in @($holdControlModule, $holdRunnerScript)) {
+    $holdPresenceModule = Join-Path $WorkspaceRoot 'backend\modules\automation\Automation.RunnerPresence.ps1'
+    foreach ($holdFile in @($holdPresenceModule, $holdControlModule, $holdRunnerScript)) {
         if (-not (Test-Path -LiteralPath $holdFile)) { throw "Missing $holdFile" }
     }
+    # Presence first: Get-RunnerControlRoot lives there, and the control module
+    # resolves the hold and the stop marker through it -- the same load order
+    # the api host uses.
+    . $holdPresenceModule
     . $holdControlModule
 
     $holdFixture = Join-Path ([System.IO.Path]::GetTempPath()) ('smoke-runnerhold-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
@@ -12118,6 +12123,140 @@ Write-Step 'Runner hold - Lane 0.20: the kill switch outlives the runner it stop
     finally {
         Remove-Item -Recurse -Force $holdFixture -ErrorAction SilentlyContinue
     }
+}
+
+Write-Step 'Runner state isolation - Lane 0.8: no gate reads, fakes or deletes the operator''s live heartbeat'
+& {
+    # Until 2026-09-13 the api-host smoke started its host against the operator's
+    # real workspace and, at five steps, deleted the REAL heartbeat and wrote a
+    # fake runner over it before restoring a backup. The portal the operator was
+    # watching flickered between "no runner" and a runner that did not exist, the
+    # live runner rewrote the file every poll underneath the test, and the suite
+    # could only pass on a machine where the operator had first stopped their own
+    # runner. One override now moves all three runner-state files together.
+
+    $isoPresence = Join-Path $WorkspaceRoot 'backend\modules\automation\Automation.RunnerPresence.ps1'
+    $isoControl = Join-Path $WorkspaceRoot 'backend\modules\automation\Automation.RunnerControl.ps1'
+    $isoRunner = Join-Path $WorkspaceRoot 'scripts\Invoke-RoadmapTaskRunner.ps1'
+    $isoStopScript = Join-Path $WorkspaceRoot 'scripts\Stop-RoadmapTaskRunner.ps1'
+    $isoApiSmoke = Join-Path $WorkspaceRoot 'scripts\Invoke-ApiHostSmokeTest.ps1'
+    foreach ($isoFile in @($isoPresence, $isoControl, $isoRunner, $isoStopScript, $isoApiSmoke)) {
+        if (-not (Test-Path -LiteralPath $isoFile)) { throw "Missing $isoFile" }
+    }
+
+    $isoFixture = Join-Path ([System.IO.Path]::GetTempPath()) ('smoke-runnerstate-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    $isoOverride = Join-Path $isoFixture 'isolated-state'
+    $isoPrevious = [Environment]::GetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT')
+    try {
+        # Each side is measured with its OWN definitions loaded. The runner
+        # script and the control module both define Get-RunnerHoldFilePath, so
+        # dot-sourcing the runner replaces the host's copy -- comparing the two
+        # after both are loaded would compare one function with itself.
+        function Get-IsoHostPath {
+            param([string]$Root)
+            . $isoPresence
+            . $isoControl
+            return [ordered]@{
+                heartbeat = Get-RunnerHeartbeatFilePath -WorkspaceRoot $Root
+                hold      = Get-RunnerHoldFilePath -WorkspaceRoot $Root
+                stop      = Get-RunnerStopMarkerPath -WorkspaceRoot $Root
+            }
+        }
+        function Get-IsoRunnerPath {
+            param([string]$Root)
+            . $isoRunner -LoadFunctionsOnly
+            return [ordered]@{
+                heartbeat = Get-RunnerHeartbeatPath -WorkspaceRoot $Root
+                hold      = Get-RunnerHoldFilePath -WorkspaceRoot $Root
+                stop      = Get-RunnerStopFilePath -WorkspaceRoot $Root
+            }
+        }
+        $isoNames = [ordered]@{
+            heartbeat = 'roadmap-task-runner.heartbeat.json'
+            hold      = 'roadmap-task-runner.hold.json'
+            stop      = 'roadmap-task-runner.stop'
+        }
+
+        foreach ($isoPhase in @(
+                @{ label = 'without an override'; value = $null; root = (Join-Path $isoFixture 'output') },
+                @{ label = 'with REPO_MGMT_RUNNER_CONTROL_ROOT set'; value = $isoOverride; root = $isoOverride }
+            )) {
+            [Environment]::SetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT', $isoPhase.value)
+            $isoHost = Get-IsoHostPath -Root $isoFixture
+            $isoRun = Get-IsoRunnerPath -Root $isoFixture
+            foreach ($kind in $isoNames.Keys) {
+                $expected = Join-Path $isoPhase.root $isoNames[$kind]
+                foreach ($side in @(@('host', $isoHost), @('runner', $isoRun))) {
+                    if ([string]$side[1][$kind] -ne $expected) {
+                        throw ("{0}, the {1}'s {2} path is '{3}', not '{4}'. A reader and writer on different paths means a live runner the portal reports absent, or a stop nobody sees -- and a test that can still reach the operator's real files." -f $isoPhase.label, $side[0], $kind, $side[1][$kind], $expected)
+                    }
+                }
+            }
+        }
+        # --- The stop script reads through the same root. ---------------------
+        # It is a standalone script with no function to call, so its source is
+        # the evidence: it must consult the override rather than hand-build
+        # output\ paths, or an operator-run stop goes where the runner isn't.
+        $isoStopSource = Get-Content -LiteralPath $isoStopScript -Raw -Encoding UTF8
+        if ($isoStopSource -notmatch 'REPO_MGMT_RUNNER_CONTROL_ROOT') {
+            throw 'Stop-RoadmapTaskRunner.ps1 does not consult REPO_MGMT_RUNNER_CONTROL_ROOT; a stop it writes can land somewhere the runner is not watching.'
+        }
+        if ($isoStopSource -match "Join-Path\s+\`$WorkspaceRoot\s+'output\\roadmap-task-runner\.(heartbeat\.json|stop)'") {
+            throw 'Stop-RoadmapTaskRunner.ps1 still hand-builds an output\ runner-state path that ignores the override.'
+        }
+
+        # --- No api-host smoke step may write the operator's real heartbeat. --
+        # The live form is allowed exactly once: the informational pre-flight
+        # that only READS it. Any second occurrence is a step that can fake or
+        # delete the heartbeat the operator is watching.
+        $isoApiSource = Get-Content -LiteralPath $isoApiSmoke -Raw -Encoding UTF8
+        $isoLiveForm = [regex]::Escape("Join-Path `$WorkspaceRoot 'output\roadmap-task-runner.heartbeat.json'")
+        $isoLiveCount = ([regex]::Matches($isoApiSource, $isoLiveForm)).Count
+        if ($isoLiveCount -ne 1) {
+            throw ("The api-host smoke builds the operator's real heartbeat path {0} time(s); exactly one read-only pre-flight is allowed. A step that writes or deletes the real heartbeat makes the portal flicker while tests run and races the live runner." -f $isoLiveCount)
+        }
+        if ($isoApiSource -notmatch [regex]::Escape("`$env:REPO_MGMT_RUNNER_CONTROL_ROOT")) {
+            throw 'The api-host smoke never sets REPO_MGMT_RUNNER_CONTROL_ROOT on its host, so every fixture heartbeat it writes reaches the host as the real one.'
+        }
+        if ($isoApiSource -notmatch 'New-Item\s+-ItemType\s+Directory\s+-Path\s+\$script:SmokeRunnerControlRoot') {
+            throw 'The api-host smoke does not create its isolated runner-state folder. Its fixture heartbeat writes fail on a fresh clone, where nothing under output/ exists yet.'
+        }
+
+        Write-Host '  runner state isolation ok: all six runner-state resolvers agree without an override and all move together with one; the stop script reads through the same root; the api-host smoke builds the real heartbeat path only for its read-only pre-flight, sets the override on its host, and creates its isolated folder' -ForegroundColor DarkGray
+    }
+    finally {
+        [Environment]::SetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT', $isoPrevious)
+        Remove-Item -Recurse -Force $isoFixture -ErrorAction SilentlyContinue
+    }
+}
+
+Write-Step 'TLS handshake hardening - Lane 0.8: a silent client cannot stall the host, and a failure names its caller'
+& {
+    # The host serves one connection at a time, and the TLS handshake runs on that
+    # loop before Read-HttpRequest applies its read timeout. A client that connects
+    # and never sends its hello would stall every request behind it -- and a
+    # stalled host is what the portal watchdog kills. Separately, 122,411
+    # handshake failures (a watchdog probing over plain http for two weeks) took an
+    # afternoon to attribute because the log line never said who connected.
+    $tlsHost = Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1'
+    $tlsSource = Get-Content -LiteralPath $tlsHost -Raw -Encoding UTF8
+    $handshakeAt = $tlsSource.IndexOf('.AuthenticateAsServer(')
+    if ($handshakeAt -lt 0) { throw 'AuthenticateAsServer not found in the api host; this check has lost what it guards.' }
+
+    # The timeout must be on the socket and set BEFORE the handshake, inside the
+    # same block -- look back from the call, not across the whole file.
+    $windowStart = [Math]::Max(0, $handshakeAt - 2500)
+    $before = $tlsSource.Substring($windowStart, $handshakeAt - $windowStart)
+    if ($before -notmatch '\$client\.ReceiveTimeout\s*=') {
+        throw 'The TLS handshake runs with no receive timeout on the socket. One client that connects and sends nothing stalls the whole host until its connection dies.'
+    }
+
+    $after = $tlsSource.Substring($handshakeAt, [Math]::Min(1500, $tlsSource.Length - $handshakeAt))
+    if ($after -notmatch 'WARN TLS handshake failed remote=') {
+        throw 'The TLS handshake failure line does not name the remote endpoint; the next flood of these will be as hard to attribute as the last.'
+    }
+
+    Write-Host '  tls handshake ok: the socket has a receive timeout before AuthenticateAsServer, and a failed handshake logs who connected' -ForegroundColor DarkGray
 }
 
 # ── Release 3.8 M6 (H38-34) — canonical execution events + delivery state ────

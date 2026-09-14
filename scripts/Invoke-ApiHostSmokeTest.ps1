@@ -311,23 +311,25 @@ function Wait-ApiHostReady {
 $shutdownSignalPath = Join-Path $smokeRoot 'api-host-shutdown.signal'
 Remove-Item -LiteralPath $shutdownSignalPath -Force -ErrorAction SilentlyContinue
 
-# This smoke's dispatch section enqueues into the operator's REAL task queue
-# and cancels ~1s later. A live headless runner polling that queue can claim
-# the fixture inside that window and then have the fixture deleted out from
-# under its claude session -- proven 2026-08-19 (run 20260819-145958-7bc51ee2),
-# where only the runner's repo-root guard kept the orphaned session's commit
-# out of the real working tree. Warn loudly; CI has no runner and stays quiet.
+# Informational only, and deliberately the one place this smoke still reads the
+# operator's REAL heartbeat. It used to tell the operator to stop their runner,
+# because this smoke once enqueued into the real queue (a live runner claimed a
+# fixture on 2026-08-19) and later faked the real heartbeat. Both are isolated
+# now -- the queue since Release 2.9, the heartbeat since 2026-09-13 -- so a live
+# runner can neither claim a fixture nor be overwritten, and there is nothing to
+# stop. It also never fired: it read `processId`, and the heartbeat's field is
+# `pid`, so under StrictMode every live runner took the "unreadable" branch.
 $runnerHeartbeatPath = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.heartbeat.json'
 if (Test-Path -LiteralPath $runnerHeartbeatPath) {
     try {
         $runnerHeartbeat = Get-Content -LiteralPath $runnerHeartbeatPath -Raw | ConvertFrom-Json
-        $runnerHeartbeatPid = [int]$runnerHeartbeat.processId
+        $runnerHeartbeatPid = if ($runnerHeartbeat.PSObject.Properties.Name -contains 'pid') { [int]$runnerHeartbeat.pid } else { 0 }
         if ($runnerHeartbeatPid -gt 0 -and $null -ne (Get-Process -Id $runnerHeartbeatPid -ErrorAction Ignore)) {
-            Write-Host ("[WARN] A live task runner (pid {0}) is polling the real queue this smoke enqueues into. It can claim the dispatch fixture mid-test. Stop the runner before running this smoke on an operator machine." -f $runnerHeartbeatPid) -ForegroundColor Yellow
+            Write-Host ("  a live task runner (pid {0}) is running; this smoke's queue and runner state are isolated, so it is left alone" -f $runnerHeartbeatPid) -ForegroundColor DarkGray
         }
     }
     catch {
-        Write-Host ("[WARN] Runner heartbeat at {0} is unreadable; if a runner is alive it can race this smoke's dispatch fixture." -f $runnerHeartbeatPath) -ForegroundColor Yellow
+        Write-Host ("  runner heartbeat at {0} is unreadable; harmless here, since this smoke never reads it for its assertions" -f $runnerHeartbeatPath) -ForegroundColor DarkGray
     }
 }
 
@@ -396,7 +398,11 @@ Write-Host ("  portfolio index isolated to {0} (the operator's own index is neve
 # execution had quietly ceased. Keep in step with the job's assignment below.
 $script:SmokeRunnerControlRoot = Join-Path $smokeRoot 'runner-control'
 Remove-Item -LiteralPath $script:SmokeRunnerControlRoot -Recurse -Force -ErrorAction SilentlyContinue
-Write-Host ("  runner control files isolated to {0} (the operator's live runner is never held)" -f $script:SmokeRunnerControlRoot) -ForegroundColor DarkGray
+# Created, not just cleared: five steps below write a fixture heartbeat straight
+# into it with Set-Content, which fails when the folder does not exist -- and on
+# a fresh CI clone nothing under output/ exists until something makes it.
+$null = New-Item -ItemType Directory -Path $script:SmokeRunnerControlRoot -Force
+Write-Host ("  runner state isolated to {0} (heartbeat, hold and stop marker; the operator's live runner is never read, faked or held)" -f $script:SmokeRunnerControlRoot) -ForegroundColor DarkGray
 
 $job = Start-Job -ScriptBlock {
     param($ScriptPath, $Root, $Log, $ListenPort, $SignalPath, $QueuePath, $SettingsPath)
@@ -1385,7 +1391,7 @@ try {
     # section further down is careful to put back exactly as found. Back it up
     # before removing it, or a smoke run on a machine with a live runner would
     # silently disrupt that runner.
-    $agentHeartbeatPath = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.heartbeat.json'
+    $agentHeartbeatPath = Join-Path $script:SmokeRunnerControlRoot 'roadmap-task-runner.heartbeat.json'
     $agentHeartbeatBackup = if (Test-Path -LiteralPath $agentHeartbeatPath) { Get-Content -LiteralPath $agentHeartbeatPath -Raw -Encoding UTF8 } else { $null }
     if (Test-Path -LiteralPath $agentHeartbeatPath) { Remove-Item -LiteralPath $agentHeartbeatPath -Force }
     $dispatchNoRunner = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/roadmap-agent/start" -Body @{
@@ -1823,7 +1829,7 @@ try {
     # Release 3.1 — the route now refuses to queue into an empty room, so the
     # success path has to supply the room. This is the operator's real heartbeat
     # file (its path derives from the workspace root), hence the backup.
-    $heartbeatPath = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.heartbeat.json'
+    $heartbeatPath = Join-Path $script:SmokeRunnerControlRoot 'roadmap-task-runner.heartbeat.json'
     $heartbeatBackup = if (Test-Path -LiteralPath $heartbeatPath) { Get-Content -LiteralPath $heartbeatPath -Raw -Encoding UTF8 } else { $null }
     # Assigned before the try so the finally can always restore, including when
     # the step throws on its first line.
@@ -2162,7 +2168,7 @@ try {
     # A live heartbeat, so this step still tests the QUOTA guard. Without it the
     # Release 3.1 presence gate answers first and the assertion below would be
     # asserting the wrong refusal.
-    $quotaHeartbeatPath = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.heartbeat.json'
+    $quotaHeartbeatPath = Join-Path $script:SmokeRunnerControlRoot 'roadmap-task-runner.heartbeat.json'
     $quotaHeartbeatBackup = if (Test-Path -LiteralPath $quotaHeartbeatPath) { Get-Content -LiteralPath $quotaHeartbeatPath -Raw -Encoding UTF8 } else { $null }
     try {
         Set-Content -LiteralPath $quotaHeartbeatPath -Encoding UTF8 -Value (([ordered]@{
@@ -3749,7 +3755,7 @@ A release should not be marked `done` unless:
         # heartbeat the packet must stay pending-approval, because `approved` may
         # only become `dispatched` or `dispatch-failed` — an approval recorded
         # here and then refused would strand the packet permanently.
-        $approveHeartbeatPath = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.heartbeat.json'
+        $approveHeartbeatPath = Join-Path $script:SmokeRunnerControlRoot 'roadmap-task-runner.heartbeat.json'
         $approveHeartbeatBackup = if (Test-Path -LiteralPath $approveHeartbeatPath) { Get-Content -LiteralPath $approveHeartbeatPath -Raw -Encoding UTF8 } else { $null }
         if (Test-Path -LiteralPath $approveHeartbeatPath) { Remove-Item -LiteralPath $approveHeartbeatPath -Force }
         $queueBeforeRefusal = if (Test-Path -LiteralPath $packagingQueuePath) { Get-Content -LiteralPath $packagingQueuePath -Raw -Encoding UTF8 } else { '' }
@@ -4349,7 +4355,7 @@ A release should not be marked `done` unless:
     $remCapSummaryPath = Join-Path $remRunsDir ("{0}.summary.json" -f $remCapRunId)
     # The operator's real heartbeat file. Backed up and put back exactly as
     # found, or a smoke run on a machine with a live runner would disrupt it.
-    $remHeartbeatPath = Join-Path $WorkspaceRoot 'output\roadmap-task-runner.heartbeat.json'
+    $remHeartbeatPath = Join-Path $script:SmokeRunnerControlRoot 'roadmap-task-runner.heartbeat.json'
     $remHeartbeatBackup = if (Test-Path -LiteralPath $remHeartbeatPath) { Get-Content -LiteralPath $remHeartbeatPath -Raw -Encoding UTF8 } else { $null }
     try {
         if (Test-Path -LiteralPath $remFixture) { Remove-Item -LiteralPath $remFixture -Recurse -Force }

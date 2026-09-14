@@ -50,10 +50,41 @@ function _Runner_ToUtc {
     return $dt.ToUniversalTime()
 }
 
+function Get-RunnerControlRoot {
+    <#
+    .SYNOPSIS
+        Directory holding the runner's state files: heartbeat, hold, stop marker.
+    .DESCRIPTION
+        Overridable with REPO_MGMT_RUNNER_CONTROL_ROOT. The override names the
+        ROOT rather than any one file so the three always move together -- the
+        shape REPO_MGMT_INDEX_ROOT settled on, for the same reason.
+
+        Defined here, in the presence module, because the heartbeat is the most
+        basic of the three and everything that reads runner state loads this
+        file first; Automation.RunnerControl.ps1 resolves the hold and the stop
+        marker through the same function.
+
+        The isolation is not hypothetical. The api-host smoke starts its host
+        with the OPERATOR'S real workspace root, and until 2026-09-13 five of its
+        steps deleted the real heartbeat and wrote a fake runner over it,
+        restoring a backup afterwards. While a test ran, the portal the operator
+        was watching flickered between "no runner" and a runner that did not
+        exist, and their live runner rewrote the file every poll underneath the
+        test -- which is why those steps were flaky on any machine with a runner.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][string]$WorkspaceRoot)
+
+    $override = [Environment]::GetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT')
+    if (-not [string]::IsNullOrWhiteSpace($override)) { return $override }
+    return (Join-Path $WorkspaceRoot 'output')
+}
+
 function Get-RunnerHeartbeatFilePath {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$WorkspaceRoot)
-    return (Join-Path $WorkspaceRoot 'output\roadmap-task-runner.heartbeat.json')
+    return (Join-Path (Get-RunnerControlRoot -WorkspaceRoot $WorkspaceRoot) 'roadmap-task-runner.heartbeat.json')
 }
 
 function Get-RunnerStartCommand {
